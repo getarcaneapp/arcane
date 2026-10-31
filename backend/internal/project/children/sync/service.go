@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
 func PersistEffectiveEnvContent(ctx context.Context, projectPath, projectsDirectory, envContent string) error {
@@ -124,7 +124,7 @@ func ensureEffectiveEnvFile(ctx context.Context, projectPath, projectsDirectory 
 			}
 			return projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, effectiveContent)
 		}
-		return projects.EnsureEnvFile(ctx, projectsDirectory, projectPath)
+		return nil
 	}
 
 	effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
@@ -243,11 +243,11 @@ func PrepareGitSyncEnvUpdate(projectPath string, gitEnvContent *string) (GitSync
 
 // GitSyncEnvUpdate is the resolved three-file env change for one git sync.
 type GitSyncEnvUpdate struct {
-	State           projects.ProjectEnvState
-	gitEnvContent   *string
-	overrideContent string
+	gitEnvContent *string
 	// EffectiveContent is the merged .env content, or nil when none is kept.
 	EffectiveContent *string
+	overrideContent  string
+	State            projects.ProjectEnvState
 }
 
 // PersistGitSyncEnvFiles writes a prepared env merge.
@@ -270,7 +270,7 @@ func PersistGitSyncEnvFiles(ctx context.Context, projectPath, projectsDirectory 
 			slog.WarnContext(ctx, "skipping permission-locked .env file; leaving it untouched", "projectPath", projectPath)
 			return nil
 		}
-		return projects.EnsureEnvFile(ctx, projectsDirectory, projectPath)
+		return nil
 	}
 
 	if update.EffectiveContent == nil {
@@ -303,15 +303,15 @@ func ApplyGitSyncEnv(ctx context.Context, projectPath, projectsDirectory string,
 // Results are cached by dirPath until a compose, include or env file changes.
 func LoadComposeMetadata(
 	ctx context.Context,
-	cache project.ComposeCache[project.ComposeIdentity],
+	cache types.ComposeCache[types.ComposeIdentity],
 	dirPath, dirName, projectsDirectory string,
 	autoInjectEnv bool,
 	pathMapper *projects.PathMapper,
-) (project.ComposeIdentity, error) {
+) (types.ComposeIdentity, error) {
 	normName := projects.NormalizeProjectName(dirName)
 	composeFile, err := projects.DetectComposeFile(ctx, projectsDirectory, dirPath)
 	if err != nil {
-		return project.ComposeIdentity{ResolvedProjectName: normName}, err
+		return types.ComposeIdentity{ResolvedProjectName: normName}, err
 	}
 	fingerprint := fmt.Sprintf("%q|%q|%q|%t|%#v", composeFile, normName, projectsDirectory, autoInjectEnv, pathMapper)
 	if cached, ok := cache.Get(dirPath, fingerprint); ok {
@@ -320,17 +320,17 @@ func LoadComposeMetadata(
 
 	// Load unnamed first so COMPOSE_PROJECT_NAME from .env wins; fall back to
 	// the normalized directory name when that fails.
-	dependencies := project.ComposeDependencies{}
+	dependencies := types.ComposeDependencies{}
 	loadedAt := time.Now()
 	proj, loadErr := projects.LoadComposeProject(ctx, composeFile, "", projectsDirectory, autoInjectEnv, pathMapper, nil, nil, false, &dependencies, nil, nil)
 	if loadErr != nil {
-		dependencies = project.ComposeDependencies{}
+		dependencies = types.ComposeDependencies{}
 		proj, err = projects.LoadComposeProject(ctx, composeFile, normName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil, false, &dependencies, nil, nil)
 		if err != nil {
-			return project.ComposeIdentity{ResolvedProjectName: normName}, err
+			return types.ComposeIdentity{ResolvedProjectName: normName}, err
 		}
 	}
-	meta := project.ComposeIdentity{
+	meta := types.ComposeIdentity{
 		ServiceCount:        len(proj.Services),
 		ResolvedProjectName: cmp.Or(proj.Name, normName),
 		// Keep a COMPOSE_PROJECT_NAME override so containers match.

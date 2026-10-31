@@ -14,13 +14,13 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
 const (
@@ -40,10 +40,10 @@ type AnalyticsJob struct {
 	settingsService *settings.SettingsService
 	kvService       *kv.KVService
 	httpClient      *http.Client
-	heartbeatURL    string
 	cfg             *config.Config
-	runMu           sync.Mutex
 	now             func() time.Time
+	heartbeatURL    string
+	runMu           sync.Mutex
 }
 
 func NewAnalyticsJob(
@@ -78,26 +78,30 @@ func (j *AnalyticsJob) Schedule(_ context.Context) string {
 	return analyticsHeartbeatCheckSchedule
 }
 
-func (j *AnalyticsJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
-	if j.cfg.AnalyticsDisabled {
-		slog.DebugContext(ctx, "analytics disabled; skipping heartbeat", "analyticsDisabled", j.cfg.AnalyticsDisabled)
-		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
+func (j *AnalyticsJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
+	if !j.settingsService.GetBoolSetting(ctx, "analyticsEnabled") {
+		slog.DebugContext(ctx, "analytics disabled; skipping heartbeat")
+		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
 	if j.cfg.Environment.IsTestEnvironment() {
 		slog.DebugContext(ctx, "test environment; skipping heartbeat", "env", j.cfg.Environment)
-		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
+	}
+	if strings.Contains(config.Version, "-beta") {
+		slog.DebugContext(ctx, "beta release; skipping heartbeat", "version", config.Version)
+		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
 
 	allowed, err := j.claimHeartbeat(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to acquire analytics heartbeat send window", "error", err)
-		return schedulertypes.Outcome{}, err
+		return types.SchedulerOutcome{}, err
 	}
 	if !allowed {
-		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
 
-	instanceID := j.settingsService.GetStringSetting(ctx, "instanceId", "")
+	instanceID := j.settingsService.GetStringSetting(ctx, "instanceId")
 
 	payload := struct {
 		Version    string `json:"version"`
@@ -106,13 +110,13 @@ func (j *AnalyticsJob) Run(ctx context.Context) (schedulertypes.Outcome, error) 
 	}{
 		Version:    getAnalyticsVersion(),
 		InstanceID: instanceID,
-		ServerType: kit.Ternary(j.cfg.AgentMode, "agent", "manager"),
+		ServerType: kit.Ternary(j.cfg.AgentEnabled, "agent", "manager"),
 	}
 
 	body, err := json.Marshal(payload)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to marshal analytics heartbeat body", "error", err)
-		return schedulertypes.Outcome{}, err
+		return types.SchedulerOutcome{}, err
 	}
 
 	slog.InfoContext(ctx, "sending analytics heartbeat", "version", payload.Version, "instanceId", payload.InstanceID,
@@ -171,11 +175,11 @@ func (j *AnalyticsJob) Run(ctx context.Context) (schedulertypes.Outcome, error) 
 		if retryErr := j.kvService.Set(ctx, analyticsHeartbeatNextAttemptKey, retryAt); retryErr != nil {
 			slog.WarnContext(ctx, "failed to shorten analytics heartbeat window after a failed send", "error", retryErr)
 		}
-		return schedulertypes.Outcome{}, err
+		return types.SchedulerOutcome{}, err
 	}
 
 	slog.InfoContext(ctx, "analytics heartbeat sent successfully", "version", payload.Version, "instanceId", payload.InstanceID, "serverType", payload.ServerType)
-	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
+	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }
 
 func (j *AnalyticsJob) Reschedule(ctx context.Context) error {

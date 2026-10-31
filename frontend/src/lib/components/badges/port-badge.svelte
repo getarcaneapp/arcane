@@ -3,8 +3,8 @@
 
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import { badgeVariants } from '#lib/components/ui/badge/index.js';
+	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { ContainerPorts } from '#lib/types/docker.js';
 	import type { ServicePort } from '#lib/types/swarm.js';
 	import { cn } from '#lib/utils.js';
@@ -12,12 +12,14 @@
 
 	let {
 		ports = [] as PortBadgePort[],
+		environmentId,
 		collapsible = true,
 		maxVisible = 3,
 		hideExposed = false,
 		wrap = true
 	}: {
 		ports?: PortBadgePort[];
+		environmentId: string;
 		collapsible?: boolean;
 		maxVisible?: number;
 		hideExposed?: boolean;
@@ -26,7 +28,8 @@
 
 	let expanded = $state(false);
 
-	const baseServerUrl = $derived(settingsStore.current?.baseServerUrl ?? 'http://localhost');
+	const environmentSettings = useEnvironmentSettings(() => environmentId);
+	const baseServerUrl = $derived(environmentSettings.current?.values.baseServerUrl ?? 'http://localhost');
 	type PortBadgePort = ContainerPorts | ServicePort;
 
 	type NormalizedPort = {
@@ -116,7 +119,7 @@
 						{@const triggerProps = mergeProps(props, {
 							class: cn(
 								badgeVariants({ variant: 'sky', size: 'sm' }),
-								'hover:bg-info/20 hover:border-info/40 focus-visible:outline-none'
+								'shrink-0 hover:bg-info/20 hover:border-info/40 focus-visible:outline-none'
 							),
 							href: toPortHref(p.hostPort!, baseServerUrl),
 							target: '_blank',
@@ -147,7 +150,7 @@
 		{#each exposedOnly as p (portKey(p))}
 			<ArcaneTooltip.Root>
 				<ArcaneTooltip.Trigger>
-					<span class={badgeVariants({ variant: 'gray', size: 'sm' })}>
+					<span class={cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'shrink-0')}>
 						<span class="tabular-nums">{p.containerPort}</span>
 						{#if p.proto}
 							<span class="text-muted-foreground uppercase">{p.proto}</span>
@@ -167,7 +170,7 @@
 					{#snippet child({ props })}
 						{@const triggerProps = mergeProps(props, {
 							onclick: () => (expanded = !expanded),
-							class: cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'hover:bg-muted cursor-pointer')
+							class: cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'shrink-0 hover:bg-muted cursor-pointer')
 						})}
 						<button {...triggerProps}>{expanded ? '−' : `+${hiddenCount}`}</button>
 					{/snippet}

@@ -2,14 +2,15 @@ package volumes
 
 import (
 	"context"
+	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/backup"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
 // Handler serves the system-managed volume backup endpoints.
@@ -23,23 +24,23 @@ func NewHandler(service *Service, appCtx context.Context) *Handler {
 }
 
 type SystemVolumeBackupConfigOutput struct {
-	Body backup.SystemVolumeBackupPolicyCollection
+	Body types.SystemVolumeBackupPolicyCollection
 }
 
 type UpdateSystemVolumeBackupConfigInput struct {
-	Body backup.UpdateSystemVolumeBackupPolicies
+	Body types.UpdateSystemVolumeBackupPolicies
 }
 
 type SystemVolumeBackupOptionsOutput struct {
-	Body []backup.SystemVolumeBackupOption
+	Body []types.SystemVolumeBackupOption
 }
 
 type SystemVolumeBackupRunOutput struct {
-	Body backup.BackupRunAccepted
+	Body types.BackupRunAccepted
 }
 
 type RunSystemVolumeBackupsInput struct {
-	Body *backup.RunSystemVolumeBackupsRequest `json:"body,omitempty"`
+	Body *types.RunSystemVolumeBackupsRequest `json:"body,omitempty"`
 }
 
 func (h *Handler) GetSystemVolumeConfig(ctx context.Context, _ *struct{}) (*SystemVolumeBackupConfigOutput, error) {
@@ -52,6 +53,9 @@ func (h *Handler) GetSystemVolumeConfig(ctx context.Context, _ *struct{}) (*Syst
 
 func (h *Handler) UpdateSystemVolumeConfig(ctx context.Context, input *UpdateSystemVolumeBackupConfigInput) (*SystemVolumeBackupConfigOutput, error) {
 	config, err := h.service.UpdateConfig(ctx, input.Body.Policies)
+	if errors.Is(err, common.ErrValidation) {
+		return nil, handlerutil.APIError(err)
+	}
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}

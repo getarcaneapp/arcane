@@ -4,21 +4,22 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/getarcaneapp/arcane/types/v2/event"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
 // Command is the parent command for event operations
 func Command() *cobra.Command {
 	command := &cobra.Command{
-		Use:     "events",
-		Aliases: []string{"event", "evt"},
-		Short:   "Manage events",
+		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
+		Use:         "events",
+		Aliases:     []string{"event", "evt"},
+		Short:       "Manage events",
 	}
 	command.AddCommand(newListCmd())
 	command.AddCommand(newDeleteCmd())
@@ -45,17 +46,17 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			endpoint := types.Events()
+			endpoint := clitypes.Events()
 			if opts.envOnly {
-				endpoint = types.EventsEnvironment(c.EnvID())
+				endpoint = clitypes.EventsEnvironment(c.EnvID())
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[event.Event]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.Event]{
 				Resource: "events",
 				Endpoint: endpoint,
 				Params:   cmdutil.ListParams{Resource: "events", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
 				Headers:  []string{"ID", "TYPE", "RESOURCE", "USER", "TIMESTAMP"},
-				Row: func(evt event.Event) []string {
+				Row: func(evt types.Event) []string {
 					resource := ""
 					if evt.ResourceName != nil && evt.ResourceType != nil {
 						resource = fmt.Sprintf("%s (%s)", *evt.ResourceName, *evt.ResourceType)
@@ -76,7 +77,7 @@ func newListCmd() *cobra.Command {
 	command.Flags().IntVarP(&opts.limit, "limit", "n", 20, "Number of events to show")
 	command.Flags().IntVar(&opts.start, "start", 0, cmdutil.StartFlagUsage)
 	command.Flags().BoolVarP(&opts.all, "all", "a", false, cmdutil.AllFlagUsage)
-	command.Flags().BoolVar(&opts.envOnly, "environment", false, "Only list events for the current environment")
+	command.Flags().BoolVar(&opts.envOnly, "environment", false, "List each environment's events instead of global events")
 	return command
 }
 
@@ -98,7 +99,7 @@ func newDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete event %s?", args[0]),
-				Path:           types.Event(args[0]),
+				Path:           clitypes.Event(args[0]),
 				FailureMessage: "failed to delete event",
 				SuccessMessage: "Event deleted successfully",
 			})
@@ -120,11 +121,11 @@ func newStatsCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[event.SeverityCounts]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.EventSeverityCounts]{
 				Method:         http.MethodGet,
-				Path:           types.EventsStats(),
+				Path:           clitypes.EventsStats(),
 				FailureMessage: "failed to get event stats",
-				Render: func(data event.SeverityCounts) error {
+				Render: func(data types.EventSeverityCounts) error {
 					output.Header("Event Stats")
 					output.KeyValue("Total", data.Total)
 					output.KeyValue("Info", data.Info)

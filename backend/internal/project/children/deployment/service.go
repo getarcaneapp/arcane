@@ -15,22 +15,19 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/getarcaneapp/arcane/types/v2"
-	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/acfs"
 	buildtypes "go.getarcane.app/builds/types"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 // Builder builds Compose service images.
 type Builder interface {
-	BuildImage(ctx context.Context, environmentID string, req buildtypes.BuildRequest, progressWriter io.Writer, serviceName string, user *usertypes.Actor) (*buildtypes.BuildResult, error)
+	BuildImage(ctx context.Context, environmentID string, req buildtypes.BuildRequest, progressWriter io.Writer, serviceName string, user *types.Actor) (*buildtypes.BuildResult, error)
 	BuildSettings() buildtypes.BuildSettings
 }
 
@@ -80,15 +77,15 @@ func (s *Service) NamespaceDependents(ctx context.Context, compProj *composetype
 }
 
 // ImageOperations wires image pulls, existence checks and builds for Compose.
-func (s *Service) ImageOperations(user *usertypes.Actor, credentials []containerregistry.Credential) projecttypes.ComposeImageOperations {
-	return projecttypes.ComposeImageOperations{
+func (s *Service) ImageOperations(user *types.Actor, credentials []types.ContainerRegistryCredential) types.ComposeImageOperations {
+	return types.ComposeImageOperations{
 		Exists:     s.imageService.ImageExistsLocally,
 		LastTagged: s.imageService.ImageLastTagTime,
 		Pull: func(ctx context.Context, ref string, progress io.Writer) error {
 			return s.imageService.Pull(ctx, image.PullRequest{
 				Ref:         ref,
 				Progress:    progress,
-				User:        *cmp.Or(user, &usertypes.SystemUser),
+				User:        *cmp.Or(user, &types.SystemUser),
 				Credentials: credentials,
 			})
 		},

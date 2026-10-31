@@ -3,7 +3,9 @@ import { browser } from '$app/env';
 import { STREAM_CHANNEL_ENVIRONMENTS } from '#lib/services/stream-service.js';
 import { clientStream } from '#lib/stores/client-stream.svelte.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import { featureStore } from '#lib/stores/features.store.svelte.js';
 import type { Environment } from '#lib/types/environment.js';
+import { createAbortLifecycle } from '#lib/utils/abort-lifecycle.js';
 
 type EnvironmentStreamEvent = {
 	type: string;
@@ -13,17 +15,13 @@ type EnvironmentStreamEvent = {
 /**
  * Keeps environmentStore's records live for as long as the app shell is mounted.
  *
- * Whether an edge environment is reachable lives only in the manager's
- * in-memory tunnel and poll registries, so the browser can never work it out
+ * Whether an agent environment is reachable lives only in the manager's
+ * in-memory tunnel registry, so the browser can never work it out
  * on its own — it has to be told. Without this stream the environment list is
- * frozen at whatever the root layout load happened to see, which after a fleet
- * update is "every agent offline".
+ * frozen at whatever the root layout load happened to see.
  */
 function createEnvironmentStatusStoreInternal() {
-	let started = false;
-	let lifecycleGeneration = 0;
-
-	let unsubscribeChannel: (() => void) | null = null;
+	const lifecycle = createAbortLifecycle();
 
 	return {
 		get streamConnected(): boolean {
@@ -32,34 +30,43 @@ function createEnvironmentStatusStoreInternal() {
 		get streamFailed(): boolean {
 			return clientStream.streamFailed;
 		},
-		async start() {
-			if (!browser || started) {
+		start() {
+			if (!browser || lifecycle.active) {
 				return;
 			}
-			started = true;
-			const generation = ++lifecycleGeneration;
-			// The first snapshot replaces the list, so wait for the load-time
-			// list to land or the two would race on an empty store.
-			await environmentStore.ready;
-			if (generation !== lifecycleGeneration) {
-				return;
-			}
-			unsubscribeChannel = clientStream.subscribe(STREAM_CHANNEL_ENVIRONMENTS, {
-				onEvent: (payload) => {
-					const event = payload as EnvironmentStreamEvent;
-					if (event.type !== 'snapshot' || !event.environments) {
+			lifecycle.start((signal) => {
+				void environmentStore.ready.then(() => {
+					if (signal.aborted) {
 						return;
 					}
-					environmentStore.applyLiveEnvironments(event.environments);
-				}
+					const unsubscribers = [
+						clientStream.subscribe(STREAM_CHANNEL_ENVIRONMENTS, {
+							onEvent: (payload) => {
+								const event = payload as EnvironmentStreamEvent;
+								if (event.type !== 'snapshot' || !event.environments) {
+									return;
+								}
+								for (const environmentId of environmentStore.applyLiveEnvironments(event.environments)) {
+									void featureStore.refresh(environmentId);
+									clientStream.invalidateEnvironment(environmentId);
+								}
+							}
+						}),
+						clientStream.watchChanges()
+					];
+					signal.addEventListener(
+						'abort',
+						() => {
+							for (const unsubscribe of unsubscribers) unsubscribe();
+						},
+						{ once: true }
+					);
+				});
 			});
 		},
 		stop() {
-			const wasStarted = started;
-			started = false;
-			lifecycleGeneration += 1;
-			unsubscribeChannel?.();
-			unsubscribeChannel = null;
+			const wasStarted = lifecycle.active;
+			lifecycle.stop();
 			return wasStarted;
 		}
 	};

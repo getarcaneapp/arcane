@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
@@ -28,9 +28,9 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 )
 
 const (
@@ -43,25 +43,25 @@ const (
 
 // Service collects container stats through the parent's Docker client.
 type Service struct {
+	flight        singleflight.Group
 	getClient     func(context.Context) (*client.Client, error)
 	dockerHost    func() string
-	history       stats.Store
 	cache         *hot.HotCache[string, cachedStats]
 	inspectCache  *hot.HotCache[string, container.InspectResponse]
-	flight        singleflight.Group
+	history       stats.Store
 	sampleTimeout time.Duration
 	batchTimeout  time.Duration
 }
 
 // cachedStats records when Arcane fetched a sample, so freshness checks don't depend on the daemon's clock.
 type cachedStats struct {
-	stats     container.StatsResponse
 	fetchedAt time.Time
+	stats     container.StatsResponse
 }
 
 type resourceSample struct {
-	stats   container.StatsResponse
 	inspect *container.InspectResponse
+	stats   container.StatsResponse
 }
 
 type resourceInstruments struct {
@@ -146,7 +146,7 @@ func (s *Service) Stream(ctx context.Context, containerID string, statsChan chan
 // Collect fetches one sample per running container, reusing cached samples younger than maxAge.
 // Individual failures leave the container unsampled; a batch timeout or cancellation fails so partial
 // lists never sort as global.
-func (s *Service) Collect(ctx context.Context, items []containertypes.Summary, maxAge time.Duration) (map[string]*containertypes.ResourceSample, error) {
+func (s *Service) Collect(ctx context.Context, items []types.ContainerSummary, maxAge time.Duration, waitForBaseline bool) (map[string]*types.ContainerResourceSample, error) {
 	ids := make([]string, 0, len(items))
 	for i := range items {
 		if items[i].State == string(container.StateRunning) {
@@ -154,15 +154,15 @@ func (s *Service) Collect(ctx context.Context, items []containertypes.Summary, m
 		}
 	}
 	raw, err := collect(ctx, s.batchTimeout, ids, func(ctx context.Context, id string) (container.StatsResponse, error) {
-		return s.fetch(ctx, id, maxAge)
+		return s.fetch(ctx, id, maxAge, waitForBaseline)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect container resource samples: %w", err)
 	}
-	samples := make(map[string]*containertypes.ResourceSample, len(raw))
+	samples := make(map[string]*types.ContainerResourceSample, len(raw))
 	for id, statsData := range raw {
 		built := stats.BuildSample(statsData)
-		samples[id] = &containertypes.ResourceSample{
+		samples[id] = &types.ContainerResourceSample{
 			CPUPercent:       float64(built.CPUTenths) / 10,
 			MemoryUsageBytes: built.MemoryUsageBytes,
 			MemoryLimitBytes: statsData.MemoryStats.Limit,
@@ -202,8 +202,9 @@ func collect[T any](ctx context.Context, timeout time.Duration, ids []string, fe
 }
 
 // fetch returns a cached stats sample younger than maxAge and coalesces concurrent fetches per daemon
-// and container. IncludePreviousSample gives the CPU delta a valid previous sample.
-func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Duration) (container.StatsResponse, error) {
+// and container. The CPU delta is measured from the last cached sample; without one, waitForBaseline
+// asks Docker for a second sample one second later instead of the delta since container start.
+func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Duration, waitForBaseline bool) (container.StatsResponse, error) {
 	key := s.dockerHost() + "\x00" + containerID
 	if cached, ok, _ := s.cache.Get(key); ok && time.Since(cached.fetchedAt) < maxAge {
 		return cached.stats, nil
@@ -217,7 +218,11 @@ func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Dur
 		if err != nil {
 			return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 		}
-		statsResponse, err := dockerClient.ContainerStats(flightCtx, containerID, client.ContainerStatsOptions{Stream: false, IncludePreviousSample: true})
+		previous, hasPrevious, _ := s.cache.Get(key)
+		statsResponse, err := dockerClient.ContainerStats(flightCtx, containerID, client.ContainerStatsOptions{
+			Stream:                false,
+			IncludePreviousSample: waitForBaseline && !hasPrevious,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch container stats: %w", err)
 		}
@@ -229,6 +234,10 @@ func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Dur
 		}
 		if statsData.Read.IsZero() {
 			statsData.Read = time.Now() // keep: StatsResponse is filled by json.UnmarshalDecode and has ~15 nested fields
+		}
+		if hasPrevious {
+			statsData.PreCPUStats = previous.stats.CPUStats
+			statsData.PreRead = previous.stats.Read
 		}
 		s.cache.Set(key, cachedStats{stats: statsData, fetchedAt: time.Now()})
 		return statsData, nil
@@ -300,7 +309,7 @@ func (s *Service) ObserveResources(meter metric.Meter, list func(context.Context
 			}
 		}
 		samples, err := collect(ctx, ContainerMetricsCollectTimeout, slices.Collect(maps.Keys(running)), func(ctx context.Context, id string) (resourceSample, error) {
-			statsData, fetchErr := s.fetch(ctx, id, ContainerResourceSampleTTL)
+			statsData, fetchErr := s.fetch(ctx, id, ContainerResourceSampleTTL, true)
 			if fetchErr != nil {
 				return resourceSample{}, fetchErr
 			}
@@ -388,21 +397,21 @@ func (r *resourceInstruments) observe(o metric.Observer, c container.Summary, sa
 
 // ContainerResourceSampleSort orders summaries by sample value with unsampled containers last in both
 // directions, breaking ties by name then ID. Valid zero values sort as zero, not as unavailable.
-func ContainerResourceSampleSort(sort string, descending bool) pagination.SortOption[containertypes.Summary] {
+func ContainerResourceSampleSort(sort string, descending bool) pagination.SortOption[types.ContainerSummary] {
 	value := kit.Ternary(
-		sort == containertypes.SortCPUUsage,
-		func(sample *containertypes.ResourceSample) float64 { return sample.CPUPercent },
-		func(sample *containertypes.ResourceSample) float64 { return float64(sample.MemoryUsageBytes) },
+		sort == types.ContainerSortCPUUsage,
+		func(sample *types.ContainerResourceSample) float64 { return sample.CPUPercent },
+		func(sample *types.ContainerResourceSample) float64 { return float64(sample.MemoryUsageBytes) },
 	)
 
-	tieBreak := func(a, b containertypes.Summary) int {
+	tieBreak := func(a, b types.ContainerSummary) int {
 		if c := CompareContainerNamesForSort(a, b); c != 0 {
 			return c
 		}
 		return strings.Compare(a.ID, b.ID)
 	}
 
-	return func(a, b containertypes.Summary) int {
+	return func(a, b types.ContainerSummary) int {
 		if a.ResourceSample == nil && b.ResourceSample == nil {
 			return tieBreak(a, b)
 		}
@@ -421,7 +430,7 @@ func ContainerResourceSampleSort(sort string, descending bool) pagination.SortOp
 	}
 }
 
-func CompareContainerNamesForSort(a, b containertypes.Summary) int {
+func CompareContainerNamesForSort(a, b types.ContainerSummary) int {
 	firstName := func(names []string) string {
 		if len(names) == 0 {
 			return ""
@@ -434,7 +443,7 @@ func CompareContainerNamesForSort(a, b containertypes.Summary) int {
 // ContainerResourceSortPermissionDenied enforces the extra containers:read
 // requirement on resource-sorted list requests.
 func ContainerResourceSortPermissionDenied(ps *authz.PermissionSet, envID, sort string) bool {
-	if !containertypes.IsResourceSort(sort) {
+	if !types.IsContainerResourceSort(sort) {
 		return false
 	}
 	return !ps.Allows(authz.PermContainersRead, envID)

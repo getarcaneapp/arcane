@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import type { Snippet } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -69,7 +70,7 @@
 					class="gap-2 bg-transparent"
 					icon={ArrowLeftIcon}
 					customLabel={m.common_back()}
-					onclick={() => goto('/customize/templates')}
+					onclick={() => goto(resolve('/(app)/customize/templates'))}
 				/>
 				<div class="hidden h-4 w-px bg-border sm:block"></div>
 				<div class="hidden min-w-0 items-center gap-3 sm:flex">

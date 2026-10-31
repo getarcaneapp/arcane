@@ -7,7 +7,7 @@
 	import { AddIcon, ApiKeyIcon, CopyIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { apiKeyService } from '#lib/services/api-key-service.js';
-	import type { ApiKey, ApiKeyCreated, ApiKeyPermissionGrant, CreateUserApiKey } from '#lib/types/auth.js';
+	import type { ApiKey, ApiKeyCreated, ApiKeyUpdate, PersonalApiKeyCreate } from '#lib/types/auth.js';
 	import { confirmDeleteApiKey } from '#lib/utils/api-keys.js';
 	import { formatDate, formatRelativeTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -35,23 +35,20 @@
 		}
 	}
 
-	async function createApiKey({
-		apiKey
-	}: {
-		apiKey: { name: string; description?: string; expiresAt?: string; permissions?: ApiKeyPermissionGrant[] };
-		isEditMode: boolean;
-		apiKeyId?: string;
-	}) {
+	async function createApiKey(
+		submission: { isEditMode: true; apiKeyId: string; apiKey: ApiKeyUpdate } | { isEditMode: false; apiKey: PersonalApiKeyCreate }
+	) {
+		if (submission.isEditMode) return;
+		const apiKey = submission.apiKey;
 		creatingKey = true;
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const payload: CreateUserApiKey = {
+					createdKey = await apiKeyService.createMine({
 						name: apiKey.name,
 						description: apiKey.description,
 						expiresAt: apiKey.expiresAt
-					};
-					createdKey = await apiKeyService.createMine(payload);
+					});
 					showCreateKeyForm = false;
 					await loadApiKeys();
 				})()
@@ -110,7 +107,7 @@
 				<div class="truncate text-sm font-semibold">{m.api_key_created_title()}: {createdKey.name}</div>
 				<p class="mt-1 text-xs text-muted-foreground">{m.api_key_save_warning()}</p>
 			</div>
-			<code class="block truncate rounded border bg-background px-3 py-2 font-mono text-xs">
+			<code class="block truncate rounded-xl border bg-background px-3 py-2 font-mono text-xs">
 				{createdKey.key}
 			</code>
 			<div class="flex flex-wrap justify-end gap-2">
@@ -133,7 +130,7 @@
 		</div>
 	{/if}
 
-	<div class="overflow-hidden rounded-xl border border-border/60 bg-card/30">
+	<div class="overflow-hidden rounded-xl border border-border/70 bg-card/10">
 		{#if apiKeysLoading && apiKeys.length === 0}
 			<div class="p-6 text-center text-sm text-muted-foreground">{m.common_loading()}</div>
 		{:else if apiKeys.length === 0}
@@ -166,7 +163,7 @@
 							/>
 						</div>
 						<div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-							<code class="rounded bg-muted/40 px-1.5 py-0.5 font-mono">{key.keyPrefix}…</code>
+							<code class="rounded-xl bg-muted/40 px-1.5 py-0.5 font-mono">{key.keyPrefix}…</code>
 							{#if formatDate(key.createdAt)}
 								<span>{m.common_created()} {formatDate(key.createdAt)}</span>
 								<span aria-hidden="true">·</span>

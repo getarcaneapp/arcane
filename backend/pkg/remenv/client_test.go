@@ -4,13 +4,9 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net"
 	"net/http"
-	"net/http/httptest"
-	"syscall"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,79 +34,46 @@ func TestRedactedTokenFingerprint(t *testing.T) {
 	require.Equal(t, "123456...cdef", RedactedTokenFingerprint(" 1234567890abcdef "))
 }
 
-func TestClientDo_DirectHTTPSuccess(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !assert.Equal(t, http.MethodPost, r.Method) {
-			return
-		}
-		if !assert.Equal(t, "/api/registries/sync", r.URL.Path) {
-			return
-		}
-		if !assert.Equal(t, "application/json", r.Header.Get("Content-Type")) {
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"ok":true}`))
-	}))
-	defer server.Close()
-
-	client := NewClient(server.Client(), nil)
-	resp, err := client.Do(t.Context(), Request{
-		Method:  http.MethodPost,
-		URL:     server.URL + "/api/registries/sync",
-		Path:    "/api/registries/sync",
-		Headers: map[string]string{"Content-Type": "application/json"},
-		Body:    []byte(`{"sync":true}`),
-	})
-	require.NoError(t, err)
-	require.Equal(t, http.StatusAccepted, resp.StatusCode)
-	require.Equal(t, `{"ok":true}`, string(resp.Body))
-	require.Equal(t, "application/json", resp.Headers["Content-Type"])
-}
-
-func TestClientDo_EdgeUsesTunnelTransport(t *testing.T) {
+func TestClientDo_AgentUsesTunnelTransport(t *testing.T) {
 	var ensured bool
-	client := NewClient(nil, TunnelTransportFuncs{
+	client := NewClient(TunnelTransportFuncs{
 		EnsureAvailableFunc: func(ctx context.Context, envID string) error {
 			ensured = true
-			require.Equal(t, "env-edge-1", envID)
+			require.Equal(t, "env-agent-1", envID)
 			return nil
 		},
 		DoFunc: func(ctx context.Context, envID, method, path string, headers map[string]string, body []byte) (*Response, error) {
-			require.Equal(t, "env-edge-1", envID)
+			require.Equal(t, "env-agent-1", envID)
 			require.Equal(t, http.MethodGet, method)
 			require.Equal(t, "/api/health", path)
 			return &Response{
 				StatusCode: http.StatusOK,
-				Body:       []byte(`{"edge":true}`),
+				Body:       []byte(`{"agent":true}`),
 				Headers:    map[string]string{"Content-Type": "application/json"},
 			}, nil
 		},
 	})
 
 	resp, err := client.Do(t.Context(), Request{
-		EnvironmentID: "env-edge-1",
-		IsEdge:        true,
+		EnvironmentID: "env-agent-1",
 		Method:        http.MethodGet,
 		Path:          "/api/health",
 	})
 	require.NoError(t, err)
 	require.True(t, ensured)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	require.Equal(t, `{"edge":true}`, string(resp.Body))
+	require.Equal(t, `{"agent":true}`, string(resp.Body))
 }
 
 func TestClientDo_WrapsTransportErrors(t *testing.T) {
-	client := NewClient(nil, TunnelTransportFuncs{
+	client := NewClient(TunnelTransportFuncs{
 		EnsureAvailableFunc: func(ctx context.Context, envID string) error {
 			return ErrEnvironmentUnavailable
 		},
 	})
 
 	_, err := client.Do(t.Context(), Request{
-		EnvironmentID: "env-edge-2",
-		IsEdge:        true,
+		EnvironmentID: "env-agent-2",
 		Method:        http.MethodGet,
 		Path:          "/api/health",
 	})
@@ -119,17 +82,14 @@ func TestClientDo_WrapsTransportErrors(t *testing.T) {
 	require.Contains(t, transportErr.Error(), "not connected")
 	require.True(t, transportErr.Unavailable())
 	for _, test := range []struct {
-		name        string
 		cause       error
+		name        string
 		unavailable bool
 	}{
-		{"deadline", context.DeadlineExceeded, true},
-		{"connection refused", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}, true},
-		{"response truncated", io.ErrUnexpectedEOF, false},
-		{"invalid request", errors.New("invalid URL"), false},
-		{"invalid address", &net.OpError{Op: "dial", Err: &net.AddrError{Err: "invalid port", Addr: "agent:invalid"}}, false},
-		{"canceled", context.Canceled, false},
-		{"canceled dial", &net.OpError{Op: "dial", Err: context.Canceled}, false},
+		{name: "deadline", cause: context.DeadlineExceeded, unavailable: true},
+		{name: "response truncated", cause: io.ErrUnexpectedEOF},
+		{name: "invalid request", cause: errors.New("invalid URL")},
+		{name: "canceled", cause: context.Canceled},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			require.Equal(t, test.unavailable, (&TransportError{Err: test.cause}).Unavailable())

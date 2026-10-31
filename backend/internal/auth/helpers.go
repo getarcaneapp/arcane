@@ -12,8 +12,8 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
 )
 
 const (
@@ -35,11 +35,11 @@ const (
 )
 
 type accessTokenClaims struct {
+	ExpiresAt  time.Time
 	UserID     string
 	SessionID  string
 	Username   string
 	AppVersion string
-	ExpiresAt  time.Time
 }
 
 type refreshTokenClaims struct {

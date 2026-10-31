@@ -17,28 +17,20 @@ import (
 	"path"
 	"slices"
 	"strings"
-	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/container"
-	"github.com/getarcaneapp/arcane/types/v2/gitops"
-	httpxtypes "github.com/getarcaneapp/arcane/types/v2/httpx"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
-	"go.getarcane.app/kit/pkg"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 const (
 	apiEnvironmentsPrefix  = "/api/environments/"
 	environmentsPathMarker = "/environments/"
-
-	proxyDialTimeout = 5 * time.Second
 
 	maxProxiedWorkspaceManifestBytes = 1024 * 1024
 	maxProxiedWorkspacePrefixBytes   = 16 * 1024 * 1024
@@ -49,70 +41,53 @@ var errProxiedBodyTooLarge = errors.New("proxied request body is too large")
 
 // managementEndpointSet contains paths handled locally and never proxied to remote environments.
 var managementEndpointSet = map[string]struct{}{
-	"/test":            {},
-	"/heartbeat":       {},
-	"/sync-registries": {},
-	"/sync":            {},
-	"/deployment":      {},
-	"/agent/pair":      {},
-	"/version":         {},
-	"/settings":        {},
-	"/job-schedules":   {},
-	"/jobs":            {},
+	"/test":       {},
+	"/sync":       {},
+	"/deployment": {},
+	"/version":    {},
+	"/settings":   {},
+	"/jobs":       {},
 }
 
 // EnvResolver resolves an environment ID to its connection details.
-// Returns: apiURL, accessToken, enabled, error
-type EnvResolver func(ctx context.Context, id string) (string, *string, bool, error)
+// Returns: accessToken, enabled, error
+type EnvResolver func(ctx context.Context, id string) (*string, bool, error)
 
 // AuthValidator authenticates a request and returns the caller's permission set and user (nil for non-user callers).
 // Sudo permission sets (internal agent proxies) bypass authorization.
-type AuthValidator func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *usertypes.Actor, bool)
+type AuthValidator func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool)
 
 // EnvironmentMiddleware proxies requests for remote environments to their respective agents.
 type EnvironmentMiddleware struct {
-	localID       string
-	paramName     string
 	resolver      EnvResolver
 	authValidator AuthValidator
-	httpClient    *http.Client
-	registry      *edge.TunnelRegistry
+	registry      *agent.TunnelRegistry
 	matcher       *authz.PermissionMatcher
 	// checkOrigin is the local WebSocket Origin validator, so proxied upgrades cannot ride a cross-origin session.
 	checkOrigin func(*http.Request) bool
+	localID     string
+	paramName   string
 }
 
-// NewEnvProxyMiddlewareWithParamAndRegistry creates middleware with an injected tunnel registry.
-func NewEnvProxyMiddlewareWithParamAndRegistry(
-	localID,
-	paramName string,
-	resolver EnvResolver,
-	authValidator AuthValidator,
-	matcher *authz.PermissionMatcher,
-	registry *edge.TunnelRegistry,
-	checkOrigin func(*http.Request) bool,
-) echo.MiddlewareFunc {
-	if registry == nil {
-		registry = edge.NewTunnelRegistry()
-	}
+type EnvironmentProxyConfig struct {
+	Resolver      EnvResolver
+	AuthValidator AuthValidator
+	Matcher       *authz.PermissionMatcher
+	Registry      *agent.TunnelRegistry
+	CheckOrigin   func(*http.Request) bool
+	LocalID       string
+	ParamName     string
+}
 
-	// Traced so direct agents continue the manager's trace.
-	httpClient := httpx.NewHTTPClient(httpxtypes.ClientOptions{
-		TLSHandshakeTimeout:   10 * time.Second,
-		DialTimeout:           proxyDialTimeout,
-		ResponseHeaderTimeout: edge.ProxyResponseHeaderTimeout,
-	})
-	httpClient.Transport = otelhttp.NewTransport(httpClient.Transport)
-
+func NewEnvironmentProxyMiddleware(cfg EnvironmentProxyConfig) echo.MiddlewareFunc {
 	m := &EnvironmentMiddleware{
-		localID:       localID,
-		paramName:     paramName,
-		resolver:      resolver,
-		authValidator: authValidator,
-		httpClient:    httpClient,
-		registry:      registry,
-		matcher:       matcher,
-		checkOrigin:   checkOrigin,
+		localID:       cfg.LocalID,
+		paramName:     cfg.ParamName,
+		resolver:      cfg.Resolver,
+		authValidator: cfg.AuthValidator,
+		registry:      cfg.Registry,
+		matcher:       cfg.Matcher,
+		checkOrigin:   cfg.CheckOrigin,
 	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
@@ -142,38 +117,33 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	}
 
 	// SECURITY: Validate authentication BEFORE proxying to remote environments.
-	var perms *authz.PermissionSet
-	var user *usertypes.Actor
-	if m.authValidator != nil {
-		var authenticated bool
-		perms, user, authenticated = m.authValidator(ctx, c)
-		if !authenticated {
-			return writeProxyError(c, http.StatusUnauthorized, "Authentication required to access remote environments")
-		}
-		if user != nil {
-			RecordAuthenticatedRequest(ctx, req.Header, user)
-		}
+	perms, user, authenticated := m.authValidator(ctx, c)
+	if !authenticated {
+		return writeProxyError(c, http.StatusUnauthorized, "Authentication required to access remote environments")
+	}
+	if user != nil {
+		RecordAuthenticatedRequest(ctx, req.Header, user)
 	}
 
 	// SECURITY: forwarded identity headers are always cleared first; only server-resolved values are sent.
 	req.Header.Del(HeaderIconCatalog)
-	if user != nil && user.Preferences.IconCatalog != nil && *user.Preferences.IconCatalog != "" {
-		req.Header.Set(HeaderIconCatalog, *user.Preferences.IconCatalog)
+	if iconCatalog := kit.FromPtr(kit.FromPtr(user).Preferences.IconCatalog); iconCatalog != "" {
+		req.Header.Set(HeaderIconCatalog, iconCatalog)
 	}
 	req.Header.Del(HeaderUpdateInitiatorID)
 	req.Header.Del(HeaderUpdateInitiatorName)
 	req.Header.Del(HeaderUpdateInitiatorDisplayName)
-	isContainerUpdate := req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/containers/") && strings.HasSuffix(req.URL.Path, "/update")
-	if isContainerUpdate && user != nil && user.ID != "" {
+	if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/containers/") && strings.HasSuffix(req.URL.Path, "/update") &&
+		kit.FromPtr(user).ID != "" {
 		req.Header.Set(HeaderUpdateInitiatorID, user.ID)
 		req.Header.Set(HeaderUpdateInitiatorName, user.Username)
-		if user.DisplayName != nil {
-			req.Header.Set(HeaderUpdateInitiatorDisplayName, *user.DisplayName)
+		if displayName := kit.FromPtr(user.DisplayName); displayName != "" {
+			req.Header.Set(HeaderUpdateInitiatorDisplayName, displayName)
 		}
 	}
 
-	apiURL, accessToken, enabled, err := m.resolver(ctx, envID)
-	if err != nil || apiURL == "" {
+	accessToken, enabled, err := m.resolver(ctx, envID)
+	if err != nil {
 		return writeProxyError(c, http.StatusNotFound, "Environment not found")
 	}
 	if !enabled {
@@ -195,36 +165,16 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		return writeProxyError(c, status, "Invalid request body")
 	}
 
-	tunnel, unavailable := m.activeTunnel(ctx, envID, apiURL)
-	if unavailable {
-		return writeProxyError(c, http.StatusServiceUnavailable, "Edge agent is not connected")
+	tunnel, connected := m.registry.WaitForActive(ctx, envID, kit.Ternary(httpx.IsEnvironmentFanOutRequest(ctx), 0, agent.DefaultTunnelAcquireTimeout)).Get()
+	if !connected {
+		slog.WarnContext(ctx, "No active agent tunnel for environment", "environmentId", envID)
+		return writeProxyError(c, http.StatusServiceUnavailable, "Agent is not connected")
 	}
 
-	proxyPath := path.Join(apiEnvironmentsPrefix, m.localID) + suffix
-	isWebSocket := httpx.IsWebSocketUpgradeRequest(req)
-	client := m.httpClient
-	if tunnel != nil {
-		slog.DebugContext(ctx, "Routing request through edge tunnel", "environmentId", envID, "path", req.URL.Path)
-		muxClient, isMux := tunnel.HTTPClient().Get()
-		if !isMux {
-			// Legacy edge message protocol; remove in v3.
-			edge.SetAgentToken(req, accessToken)
-			if isWebSocket {
-				return edge.ProxyWebSocketRequest(c, tunnel, proxyPath, m.checkOrigin) //nolint:staticcheck // legacy edge protocol; remove in v3
-			}
-			return edge.ProxyHTTPRequest(c, tunnel, proxyPath) //nolint:staticcheck // legacy edge protocol; remove in v3
-		}
-		// A multiplexed tunnel carries plain HTTP, so it shares the direct-agent path below.
-		apiURL = edge.MuxAgentBaseURL
-		client = muxClient
-	}
-
-	target := strings.TrimRight(apiURL, "/") + proxyPath
-	if req.URL.RawQuery != "" {
-		target += "?" + req.URL.RawQuery
-	}
-	if isWebSocket {
-		if proxyErr := ws.ProxyHTTP(c.Response(), req, edge.HTTPToWebSocketURL(target), edge.BuildWebSocketHeaders(c, accessToken), m.checkOrigin, client); proxyErr != nil {
+	slog.DebugContext(ctx, "Routing request through agent tunnel", "environmentId", envID, "path", req.URL.Path)
+	target := agent.MuxAgentBaseURL + path.Join(apiEnvironmentsPrefix, m.localID) + suffix + kit.Ternary(req.URL.RawQuery != "", "?"+req.URL.RawQuery, "")
+	if httpx.IsWebSocketUpgradeRequest(req) {
+		if proxyErr := ws.ProxyHTTP(c.Response(), req, agent.HTTPToWebSocketURL(target), agent.BuildWebSocketHeaders(c, accessToken), m.checkOrigin, tunnel.HTTPClient); proxyErr != nil {
 			slog.ErrorContext(ctx, "websocket proxy failed", "err", proxyErr)
 		}
 		return nil
@@ -236,13 +186,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	}
 
 	// Stream the body unbuffered (uploads reach gigabytes); ContentLength 0 means no body, -1 means chunked.
-	var requestBody io.ReadCloser
-	var contentLength int64
-	switch {
-	case req.Body == nil:
-	case req.ContentLength != 0:
-		requestBody, contentLength = req.Body, req.ContentLength
-	default:
+	if req.Body != nil && req.ContentLength == 0 {
 		_ = req.Body.Close()
 	}
 
@@ -254,22 +198,22 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		URL:           targetURL,
 		Host:          targetURL.Host,
 		Header:        make(http.Header),
-		Body:          requestBody,
-		ContentLength: contentLength,
+		Body:          kit.Ternary(req.ContentLength != 0, req.Body, nil),
+		ContentLength: kit.Ternary(req.Body != nil, req.ContentLength, 0),
 	}).WithContext(ctx)
 
-	edge.CopyRequestHeaders(req.Header, proxyReq.Header)
-	edge.SetAuthHeader(proxyReq, c)
-	edge.SetAgentToken(proxyReq, accessToken)
-	edge.SetForwardedHeaders(proxyReq, c.RealIP(), req.Host)
+	agent.CopyRequestHeaders(req.Header, proxyReq.Header)
+	agent.SetAuthHeader(proxyReq, c)
+	agent.SetAgentToken(proxyReq, accessToken)
+	agent.SetForwardedHeaders(proxyReq, c.RealIP(), req.Host)
 
-	if requestBody != nil {
+	if proxyReq.Body != nil {
 		if fullDuplexErr := http.NewResponseController(c.Response()).EnableFullDuplex(); fullDuplexErr != nil {
 			slog.DebugContext(ctx, "Failed to enable full duplex for proxied request", "error", fullDuplexErr)
 		}
 	}
 
-	resp, err := client.Do(proxyReq)
+	resp, err := tunnel.HTTPClient.Do(proxyReq)
 	if err != nil {
 		netErr, isNetErr := errors.AsType[net.Error](err)
 		return writeProxyError(c, kit.Ternary(isNetErr && netErr.Timeout(), http.StatusGatewayTimeout, http.StatusBadGateway), "Proxy request failed: "+err.Error())
@@ -282,10 +226,10 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		return writeProxyError(c, http.StatusBadGateway, "Remote environment rejected the manager's credentials")
 	}
 	w := c.Response()
-	edge.CopyResponseHeaders(resp.Header, w.Header(), edge.BuildHopByHopHeaders(resp.Header))
+	agent.CopyResponseHeaders(resp.Header, w.Header(), agent.BuildHopByHopHeaders(resp.Header))
 	w.WriteHeader(resp.StatusCode)
 	if req.Method != http.MethodHead {
-		if copyErr := edge.CopyBodyWithFlush(w, resp.Body); copyErr != nil {
+		if copyErr := agent.CopyBodyWithFlush(w, resp.Body); copyErr != nil {
 			slog.WarnContext(ctx, "Proxied response ended early", "environmentId", envID, "error", copyErr)
 			// Headers are already sent, so abort the connection instead of ending a truncated response as complete.
 			panic(http.ErrAbortHandler)
@@ -294,34 +238,10 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	return nil
 }
 
-// activeTunnel returns the environment's live tunnel, if any. Edge environments refresh poll demand on every
-// request and wait briefly only for an agent with a fresh poll check-in; unavailable reports an offline edge agent.
-func (m *EnvironmentMiddleware) activeTunnel(ctx context.Context, envID, apiURL string) (tunnel *edge.AgentTunnel, unavailable bool) {
-	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(apiURL)), "edge://") {
-		tunnel, _ = m.registry.Active(envID).Get()
-		return tunnel, false
-	}
-	edge.TouchTunnelDemand(envID, edge.DefaultTunnelDemandTTL)
-	if active, ok := m.registry.Active(envID).Get(); ok {
-		return active, false
-	}
-	if edge.GetPollRuntimeRegistry().Get(envID, time.Now()).IsAbsent() {
-		slog.WarnContext(ctx, "No active edge tunnel or recent poll check-in for environment", "environmentId", envID)
-		return nil, true
-	}
-	tunnel, ok := m.registry.WaitForActive(ctx, envID, edge.DefaultTunnelAcquireTimeout()).Get()
-	if !ok {
-		slog.WarnContext(ctx, "No active edge tunnel for environment", "environmentId", envID)
-		return nil, true
-	}
-	slog.InfoContext(ctx, "Recovered edge tunnel during request", "environmentId", envID)
-	return tunnel, false
-}
-
 // proxyPermissionStatus returns http.StatusOK when the caller may perform the proxied request, mirroring local
 // RequirePermission checks. Sudo bypasses it; routes without a permission mapping are denied by default.
 func (m *EnvironmentMiddleware) proxyPermissionStatus(c *echo.Context, ps *authz.PermissionSet, envID, suffix string) int {
-	if m.matcher == nil || (ps != nil && ps.Sudo) {
+	if kit.FromPtr(ps).Sudo {
 		return http.StatusOK
 	}
 
@@ -332,16 +252,9 @@ func (m *EnvironmentMiddleware) proxyPermissionStatus(c *echo.Context, ps *authz
 
 	// Upload-session routes derive their permission from the {kind} segment; unknown kinds fail closed.
 	if len(segments) >= 2 && segments[0] == "uploads" && segments[1] != "" {
-		var isUploadSession bool
-		switch len(segments) {
-		case 2:
-			isUploadSession = method == http.MethodPost
-		case 3:
-			isUploadSession = method == http.MethodGet || method == http.MethodDelete
-		case 5:
-			isUploadSession = method == http.MethodPut && segments[3] == "chunks"
-		}
-		if isUploadSession {
+		if len(segments) == 2 && method == http.MethodPost ||
+			len(segments) == 3 && (method == http.MethodGet || method == http.MethodDelete) ||
+			len(segments) == 5 && method == http.MethodPut && segments[3] == "chunks" {
 			perm, known := authz.UploadKindPermission(segments[1])
 			denied := !known || !ps.Allows(perm, envID)
 			if denied {
@@ -352,7 +265,7 @@ func (m *EnvironmentMiddleware) proxyPermissionStatus(c *echo.Context, ps *authz
 		}
 	}
 
-	perm, ok := m.matcher.Lookup(method, suffix).Get()
+	perm, ok := m.matcher.Lookup(method, suffix, req.URL.Query()).Get()
 	if !ok {
 		slog.WarnContext(ctx, "Denying proxied request with no known permission mapping", "method", method, "path", suffix, "environmentId", envID)
 		return http.StatusForbidden
@@ -366,19 +279,18 @@ func (m *EnvironmentMiddleware) proxyPermissionStatus(c *echo.Context, ps *authz
 		return http.StatusForbidden
 	}
 
-	var required []string
-	var err error
-	if method == http.MethodPut && len(segments) == 3 && segments[0] == "volumes" && segments[1] != "" && segments[2] == "workspace" {
-		required, err = proxiedVolumeWorkspacePermissions(req)
-	} else {
-		required, err = proxiedGitOpsSyncPermissions(req, method, segments)
-	}
+	required, err := func() ([]string, error) {
+		if method == http.MethodPatch && len(segments) == 3 && segments[0] == "volumes" && segments[1] != "" && segments[2] == "workspace" {
+			return proxiedVolumeWorkspacePermissions(req)
+		}
+		return proxiedGitOpsSyncPermissions(req, method, segments)
+	}()
 	if err != nil {
 		slog.DebugContext(ctx, "Rejecting proxied request with invalid body", "path", suffix, "environmentId", envID, "error", err)
 		return kit.Ternary(errors.Is(err, errProxiedBodyTooLarge), http.StatusRequestEntityTooLarge, http.StatusBadRequest)
 	}
 	// Resource-sorted container lists collect per-container stats, so they also need containers:read.
-	if method == http.MethodGet && len(segments) == 1 && segments[0] == "containers" && container.IsResourceSort(req.URL.Query().Get("sort")) {
+	if method == http.MethodGet && len(segments) == 1 && segments[0] == "containers" && types.IsContainerResourceSort(req.URL.Query().Get("sort")) {
 		required = append(required, authz.PermContainersRead)
 	}
 	for _, operationPermission := range required {
@@ -441,7 +353,7 @@ func proxiedVolumeWorkspacePermissions(request *http.Request) ([]string, error) 
 		if len(manifestJSON) > maxProxiedWorkspaceManifestBytes {
 			return nil, fmt.Errorf("workspace manifest: %w", errProxiedBodyTooLarge)
 		}
-		var manifest volume.WorkspaceUpdateManifest
+		var manifest types.VolumeWorkspaceUpdateManifest
 		if unmarshalErr := json.Unmarshal(manifestJSON, &manifest); unmarshalErr != nil {
 			return nil, fmt.Errorf("decode workspace manifest: %w", unmarshalErr)
 		}
@@ -456,9 +368,9 @@ func proxiedVolumeWorkspacePermissions(request *http.Request) ([]string, error) 
 // proxiedGitOpsSyncPermissions mirrors the handler lifecycle and backup gates for gitops sync create, import,
 // and update, since the agent trusts forwarded requests as sudo. Returns nil for any other route.
 func proxiedGitOpsSyncPermissions(request *http.Request, method string, segments []string) ([]string, error) {
-	isCreate := len(segments) == 1 && segments[0] == "gitops-syncs" && method == http.MethodPost
-	isImport := len(segments) == 2 && segments[0] == "gitops-syncs" && segments[1] == "import" && method == http.MethodPost
-	isUpdate := len(segments) == 2 && segments[0] == "gitops-syncs" && segments[1] != "" && method == http.MethodPut
+	isCreate := len(segments) == 2 && segments[0] == "gitops" && segments[1] == "syncs" && method == http.MethodPost
+	isImport := len(segments) == 3 && segments[0] == "gitops" && segments[1] == "syncs" && segments[2] == "import" && method == http.MethodPost
+	isUpdate := len(segments) == 3 && segments[0] == "gitops" && segments[1] == "syncs" && segments[2] != "" && method == http.MethodPatch
 	if !isCreate && !isImport && !isUpdate || request.Body == nil {
 		return nil, nil
 	}
@@ -474,27 +386,22 @@ func proxiedGitOpsSyncPermissions(request *http.Request, method string, segments
 	request.Body = io.NopCloser(bytes.NewReader(body))
 
 	type syncBody struct {
-		gitops.PreDeployConfigRequest
+		types.GitOpsPreDeployConfigRequest
 
 		Mode string `json:"mode"`
 	}
-	var items []syncBody
-	var decodeErr error
-	if isImport {
-		decodeErr = json.Unmarshal(body, &items)
-	} else {
-		items = make([]syncBody, 1)
-		decodeErr = json.Unmarshal(body, &items[0])
+	var batch []syncBody
+	var single syncBody
+	if err := json.Unmarshal(body, kit.Ternary[any](isImport, &batch, &single)); err != nil {
+		return nil, fmt.Errorf("decode gitops sync body: %w", err)
 	}
-	if decodeErr != nil {
-		return nil, fmt.Errorf("decode gitops sync body: %w", decodeErr)
-	}
+	items := kit.Ternary(isImport, batch, []syncBody{single})
 
 	var required []string
 	if slices.ContainsFunc(items, func(item syncBody) bool { return item.HasPreDeployConfig() }) {
 		required = append(required, authz.PermGitOpsLifecycle)
 	}
-	if isCreate && slices.ContainsFunc(items, func(item syncBody) bool { return item.Mode == gitops.SyncModeBackup }) {
+	if isCreate && slices.ContainsFunc(items, func(item syncBody) bool { return item.Mode == types.GitOpsSyncModeBackup }) {
 		required = append(required, authz.PermGitOpsBackup)
 	}
 	return required, nil
@@ -526,17 +433,18 @@ func IsManagerLocalPath(method, suffix string) bool {
 			return true
 		}
 	}
-	if strings.HasPrefix(suffix, "/notifications") || strings.HasPrefix(suffix, "/deployment/mtls/") {
+	if strings.HasPrefix(suffix, "/deployment/mtls/") {
 		return true
 	}
 
 	switch method + " " + suffix {
-	case "GET /swarm/join-candidates", "GET /swarm/nodes", "POST /swarm/join-environments", "POST /swarm/nodes/agents/reconcile":
+	case "GET /swarm/join/candidates", "GET /swarm/nodes", "POST /swarm/join/environments", "POST /swarm/nodes/agents/reconcile",
+		"POST /system/upgrade/jobs", "GET /system/upgrade/jobs/current":
 		return true
 	}
 
 	parts := strings.Split(strings.Trim(suffix, "/"), "/")
-	if len(parts) == 3 && parts[0] == "volumes" && parts[1] != "" && parts[2] == "backup-policy" {
+	if len(parts) == 4 && parts[0] == "volumes" && parts[1] != "" && parts[2] == "backups" && parts[3] == "policy" {
 		return method == http.MethodGet || method == http.MethodPut
 	}
 	if len(parts) < 3 || parts[0] != "swarm" || parts[1] != "nodes" {

@@ -10,31 +10,29 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
-	"github.com/labstack/echo-otel/v5"
+	"github.com/getarcaneapp/arcane/types/v3"
+	echootel "github.com/labstack/echo-otel/v5"
 	"github.com/labstack/echo/v5"
 	echomiddleware "github.com/labstack/echo/v5/middleware"
-	"github.com/samber/slog-echo/v2"
+	slogecho "github.com/samber/slog-echo/v2"
 	"go.uber.org/fx"
 
-	"github.com/getarcaneapp/arcane/backend/v2/api"
-	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
-	"github.com/getarcaneapp/arcane/backend/v2/frontend"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/federated"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/telemetry"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/api"
+	"github.com/getarcaneapp/arcane/backend/v3/api/ws"
+	"github.com/getarcaneapp/arcane/backend/v3/frontend"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/federated"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/telemetry"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 var (
@@ -43,7 +41,6 @@ var (
 )
 
 var loggerSkipPatterns = []string{
-	"POST /api/tunnel/poll",
 	"GET /api/environments/*/ws/containers/stats",
 	"GET /api/environments/*/ws/containers/*/logs",
 	"GET /api/environments/*/ws/containers/*/stats",
@@ -56,12 +53,12 @@ var loggerSkipPatterns = []string{
 	"GET /img",
 	"GET /api/health",
 	"HEAD /api/health",
-	"GET /api/app-images/*",
+	"GET /api/app/images/*",
 	"PUT /api/environments/*/uploads/*/*/chunks/*",
 }
 
 func createAuthValidator(deps api.HandlerDeps) middleware.AuthValidator {
-	resolveUser := func(ctx context.Context, user *usertypes.Actor) *authz.PermissionSet {
+	resolveUser := func(ctx context.Context, user *types.Actor) *authz.PermissionSet {
 		ps, err := deps.Role.Service().ResolvePermissions(ctx, user.ID)
 		if err != nil || ps == nil {
 			slog.WarnContext(ctx, "failed to resolve user permissions for env proxy", "error", err)
@@ -77,7 +74,7 @@ func createAuthValidator(deps api.HandlerDeps) middleware.AuthValidator {
 		}
 		return ps
 	}
-	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *usertypes.Actor, bool) {
+	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
 		req := c.Request()
 		// Check for API key authentication
 		if apiKey := req.Header.Get(middleware.HeaderApiKey); apiKey != "" {
@@ -130,14 +127,10 @@ type RouterParams struct {
 	Config         *config.Config
 	HandlerDeps    api.HandlerDeps
 	AuthMiddleware *auth.AuthMiddleware
-	TunnelRegistry *edge.TunnelRegistry
+	TunnelRegistry *agent.TunnelRegistry
 }
 
-func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
-	ctx := p.Context
-	cfg := p.Config
-	deps := p.HandlerDeps
-
+func newRouter(p RouterParams) (*echo.Echo, *agent.TunnelServer) {
 	// Path params are decoded after matching on the escaped path, so an encoded "/" cannot change the route.
 	e := echo.NewWithConfig(echo.Config{
 		Router: echo.NewRouter(echo.RouterConfig{AllowOverwritingRoute: true, UnescapePathParamValues: true}),
@@ -146,21 +139,21 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	var trustedProxyNets []*net.IPNet
 	// Trust only the configured ranges, not Echo's built-in loopback/link-local/private defaults.
 	trustOpts := []echo.TrustOption{echo.TrustLoopback(false), echo.TrustLinkLocal(false), echo.TrustPrivateNet(false)}
-	for cidr := range strings.SplitSeq(cfg.TrustedProxies, ",") {
+	for cidr := range strings.SplitSeq(p.Config.TrustedProxies, ",") {
 		cidr = strings.TrimSpace(cidr)
 		if cidr == "" {
 			continue
 		}
 		_, ipnet, err := net.ParseCIDR(cidr)
 		if err != nil {
-			slog.WarnContext(ctx, "invalid TRUSTED_PROXIES CIDR, ignoring", "cidr", cidr, "error", err)
+			slog.WarnContext(p.Context, "invalid ARCANE_TRUSTED_PROXIES CIDR, ignoring", "cidr", cidr, "error", err)
 			continue
 		}
 		trustedProxyNets = append(trustedProxyNets, ipnet)
 		trustOpts = append(trustOpts, echo.TrustIPRange(ipnet))
 	}
-	if cfg.TrustedProxies != "" && len(trustedProxyNets) == 0 {
-		slog.WarnContext(ctx, "TRUSTED_PROXIES set but no valid CIDRs found; falling back to direct IP extraction")
+	if p.Config.TrustedProxies != "" && len(trustedProxyNets) == 0 {
+		slog.WarnContext(p.Context, "ARCANE_TRUSTED_PROXIES set but no valid CIDRs found; falling back to direct IP extraction")
 	}
 	if len(trustedProxyNets) == 0 {
 		e.IPExtractor = echo.ExtractIPDirect()
@@ -178,7 +171,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 			strings.HasPrefix(p, "/api/telemetry/") || strings.HasPrefix(p, "/api/tunnel/") ||
 			httpx.IsWebSocketUpgradeRequest(req) || strings.Contains(req.Header.Get("Accept"), "text/event-stream")
 	}}))
-	e.Use(middleware.SpanEnvironment(deps.Environment.Service().ResolveEnvironmentName))
+	e.Use(middleware.SpanEnvironment(p.HandlerDeps.Environment.Service().ResolveEnvironmentName))
 	requestLogger := slogecho.NewWithConfig(slog.Default(), slogecho.Config{
 		DefaultLevel:     slog.LevelInfo,
 		ClientErrorLevel: slog.LevelWarn,
@@ -197,13 +190,9 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		WithTraceID:   true,
 		WithSpanID:    true,
 	})
-	// Internal edge tunnel requests are never logged.
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		logged := requestLogger(next)
 		return func(c *echo.Context) error {
-			if edge.IsInternalTunnelRequest(c.Request().Context()) {
-				return next(c)
-			}
 			if c.Request().Body == nil {
 				c.Request().Body = http.NoBody
 			}
@@ -213,9 +202,8 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	e.Use(secureCookieContextMiddleware(trustedProxyNets))
 	e.Use(middleware.WarnUntrustedForwardedFor(trustedProxyNets))
 
-	authMiddleware := p.AuthMiddleware
-	e.Use(middleware.NewCORSMiddleware(cfg).Add())
-	e.Use(middleware.NewCSRFMiddleware(cfg).Add())
+	e.Use(middleware.NewCORSMiddleware(p.Config).Add())
+	e.Use(middleware.NewCSRFMiddleware(p.Config).Add())
 
 	apiGroup := e.Group("/api")
 
@@ -242,7 +230,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	apiGroup.Use(middleware.PerTokenRateLimitForPaths(
 		[]string{"/api/webhooks/trigger/:token"}, 60, 10,
 		func(c *echo.Context) string { return c.Param("token") },
-		deps.Webhook.Service().IsKnownToken,
+		p.HandlerDeps.Webhook.Service().IsKnownToken,
 	))
 	// Agent event ingestion sits outside the auth middleware, so it needs its own ceiling; agents batch events.
 	apiGroup.Use(middleware.PerTokenRateLimitForPaths(
@@ -250,26 +238,26 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		func(c *echo.Context) string {
 			return strings.TrimSpace(c.Request().Header.Get(middleware.HeaderAgentToken))
 		},
-		deps.Environment.Service().IsKnownAccessToken,
+		p.HandlerDeps.Environment.Service().IsKnownAccessToken,
 	))
-	handlerAppCtx := handlerutil.NewActivityAppContext(ctx)
+	handlerAppCtx := handlerutil.NewActivityAppContext(p.Context)
 
-	envResolver := func(ctx context.Context, id string) (string, *string, bool, error) {
-		env, err := deps.Environment.Service().GetEnvironmentByIDCached(ctx, id)
-		if err != nil || env == nil {
-			return "", nil, false, err
+	envResolver := func(ctx context.Context, id string) (*string, bool, error) {
+		env, err := p.HandlerDeps.Environment.Service().GetEnvironmentByIDCached(ctx, id)
+		if err != nil {
+			return nil, false, err
 		}
-		return env.ApiUrl, env.AccessToken, env.Enabled, nil
+		return env.AccessToken, env.Enabled, nil
 	}
 
 	// Register public webhook trigger endpoint before auth middleware (token in URL is the sole auth)
-	api.RegisterWebhookTrigger(apiGroup, deps.Webhook.Service(), handlerAppCtx)
-	federated.RegisterFederatedTokenExchange(apiGroup, deps.Federated)
-	if !cfg.AgentMode {
+	api.RegisterWebhookTrigger(apiGroup, p.HandlerDeps.Webhook.Service(), handlerAppCtx)
+	federated.RegisterFederatedTokenExchange(apiGroup, p.HandlerDeps.Federated)
+	if !p.Config.AgentEnabled {
 		telemetry.RegisterRoutes(apiGroup, telemetry.NewService())
 	}
-	deps.Event.RegisterAgentRoutes(apiGroup, func(ctx context.Context, token string) (string, error) {
-		env, err := deps.Environment.Service().ResolveEnvironmentByAccessToken(ctx, token)
+	p.HandlerDeps.Event.RegisterAgentRoutes(apiGroup, func(ctx context.Context, token string) (string, error) {
+		env, err := p.HandlerDeps.Environment.Service().ResolveEnvironmentByAccessToken(ctx, token)
 		if err != nil {
 			return "", err
 		}
@@ -281,27 +269,27 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 
 	permissionMatcher := authz.NewPermissionMatcher()
 
-	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParamAndRegistry(
-		types.LocalDockerEnvironmentID,
-		"id",
-		envResolver,
-		createAuthValidator(deps),
-		permissionMatcher,
-		p.TunnelRegistry,
-		httpx.ValidateWebSocketOrigin(cfg.GetAppURL()),
-	)
-	apiGroup.Use(middleware.NewEnvironmentScopeMiddleware(func(ctx context.Context, id string) (base.EnvironmentRef, error) {
-		env, err := deps.Environment.Service().GetEnvironmentByIDCached(ctx, id)
+	envProxyMiddleware := middleware.NewEnvironmentProxyMiddleware(middleware.EnvironmentProxyConfig{
+		LocalID:       types.LocalDockerEnvironmentID,
+		ParamName:     "id",
+		Resolver:      envResolver,
+		AuthValidator: createAuthValidator(p.HandlerDeps),
+		Matcher:       permissionMatcher,
+		Registry:      p.TunnelRegistry,
+		CheckOrigin:   httpx.ValidateWebSocketOrigin(p.Config.GetAppURL()),
+	})
+	apiGroup.Use(middleware.NewEnvironmentScopeMiddleware(func(ctx context.Context, id string) (types.EnvironmentRef, error) {
+		env, err := p.HandlerDeps.Environment.Service().GetEnvironmentByIDCached(ctx, id)
 		if err != nil {
-			return base.EnvironmentRef{}, err
+			return types.EnvironmentRef{}, err
 		}
-		return base.EnvironmentRef{ID: id, Name: environment.DisplayName(id, env.Name)}, nil
+		return types.EnvironmentRef{ID: id, Name: environment.DisplayName(id, env.Name)}, nil
 	}, permissionMatcher, func(ctx context.Context) int {
-		return deps.Settings.Service().GetIntSetting(ctx, "allEnvironmentsLimit", 64)
+		return p.HandlerDeps.Settings.Service().GetIntSetting(ctx, "allEnvironmentsLimit")
 	}))
 	apiGroup.Use(envProxyMiddleware)
 
-	humaAPI := api.SetupAPI(e, apiGroup, handlerAppCtx, cfg, deps)
+	humaAPI := api.SetupAPI(e, apiGroup, handlerAppCtx, p.Config, p.HandlerDeps)
 
 	// Fill the proxy's shared matcher from the local API surface before serving so remote
 	// requests are authorized with the same permissions.
@@ -309,21 +297,41 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	ws.AddProxiedPermissions(permissionMatcher)
 
 	for _, register := range registerBuildableRoutes {
-		register(apiGroup, deps)
+		register(apiGroup, p.HandlerDeps)
 	}
 
 	// Remaining echo handlers (WebSocket/streaming)
-	ws.NewWebSocketHandler(ctx, apiGroup, deps.Project.Service(), deps.Container.Service(), deps.Swarm.Service(), deps.System.Service(), deps.Diagnostics, authMiddleware, cfg)
+	ws.NewWebSocketHandler(
+		p.Context,
+		apiGroup,
+		p.HandlerDeps.Project.Service(),
+		p.HandlerDeps.Container.Service(),
+		p.HandlerDeps.Swarm.Service(),
+		p.HandlerDeps.System.Service(),
+		p.HandlerDeps.Diagnostics,
+		p.AuthMiddleware,
+		p.HandlerDeps.Settings.Service(),
+		p.Config,
+	)
 
-	// Managers accept agent connections on the edge tunnel endpoint.
-	var tunnelServer *edge.TunnelServer
-	if !cfg.AgentMode {
-		tunnelServer = registerEdgeTunnelRoutes(ctx, p.Lifecycle, cfg, apiGroup, deps.Environment.Service(), deps.Event.Service(), deps.Notification.Service(), p.TunnelRegistry)
+	// Managers accept agent connections on the agent tunnel endpoint.
+	var tunnelServer *agent.TunnelServer
+	if !p.Config.AgentEnabled {
+		tunnelServer = registerAgentTunnelRoutes(
+			p.Context,
+			p.Lifecycle,
+			p.Config,
+			apiGroup,
+			p.HandlerDeps.Environment.Service(),
+			p.HandlerDeps.Event.Service(),
+			p.HandlerDeps.Notification.Service(),
+			p.TunnelRegistry,
+		)
 	}
 
-	if cfg.Environment != "production" {
+	if p.Config.Environment != "production" {
 		for _, registerFunc := range registerPlaywrightRoutes {
-			registerFunc(apiGroup, deps)
+			registerFunc(apiGroup, p.HandlerDeps)
 		}
 	}
 
@@ -339,9 +347,9 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	//nolint:staticcheck,nolintlint // SA4023 only under exclude_frontend: the stub always returns ErrFrontendNotIncluded
 	if err := frontend.RegisterFrontend(e); err != nil {
 		if errors.Is(err, frontend.ErrFrontendNotIncluded) {
-			slog.DebugContext(ctx, "Frontend not included in this build; skipping frontend registration")
+			slog.DebugContext(p.Context, "Frontend not included in this build; skipping frontend registration")
 		} else {
-			slog.ErrorContext(ctx, "Failed to register frontend", "error", err)
+			slog.ErrorContext(p.Context, "Failed to register frontend", "error", err)
 		}
 	}
 

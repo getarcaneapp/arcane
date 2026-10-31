@@ -1,10 +1,10 @@
 package authz
 
 import (
+	"net/url"
 	"strings"
 
-	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	kit "go.getarcane.app/kit/pkg"
 )
@@ -23,14 +23,16 @@ import (
 // The matcher is populated once during startup and is read-only afterwards, so
 // concurrent Lookup calls during request serving need no synchronization.
 type PermissionMatcher struct {
-	routes     []permRoute
 	aggregates map[string]struct{}
+	routes     []permRoute
 }
 
 type permRoute struct {
-	method   string
-	segments []string // literal segment, or "*" for a path parameter
-	perm     string
+	actionPerms map[string]string
+	method      string
+	perm        string
+	actionParam string
+	segments    []string // literal segment, or "*" for a path parameter
 }
 
 // NewPermissionMatcher returns an empty matcher.
@@ -45,7 +47,7 @@ func NewPermissionMatcher() *PermissionMatcher {
 func (m *PermissionMatcher) Add(method, pathTemplate, perm string) {
 	m.routes = append(m.routes, permRoute{
 		method:   strings.ToUpper(method),
-		segments: templateSegmentsInternal(pathTemplate),
+		segments: templateSegments(pathTemplate),
 		perm:     perm,
 	})
 }
@@ -57,24 +59,37 @@ func (m *PermissionMatcher) AddPublic(method, pathTemplate string) {
 	m.Add(method, pathTemplate, "")
 }
 
+// AddActions registers method + pathTemplate as a proxied route whose
+// permission is selected by the param query parameter. perms maps each accepted
+// value to its permission. Lookup yields None for a missing or unknown value,
+// which the proxy treats as "deny".
+func (m *PermissionMatcher) AddActions(method, pathTemplate, param string, perms map[string]string) {
+	m.routes = append(m.routes, permRoute{
+		method:      strings.ToUpper(method),
+		segments:    templateSegments(pathTemplate),
+		actionParam: param,
+		actionPerms: perms,
+	})
+}
+
 // Lookup returns the permission required for method + suffixPath, where
-// suffixPath is the resource path after /environments/{id} (for example
-// "/containers/abc123/start"). When multiple templates match, the most specific
-// one wins — a route with more literal (non-wildcard) segments is preferred, so
-// static routes such as "/containers/counts" take precedence over
-// parameterized routes such as "/containers/{containerId}".
+// suffixPath is the resource path after /environments/{id} without a query
+// string (for example "/containers/abc123") and query holds the request's
+// query parameters. When multiple templates match, the most specific one wins —
+// a route with more literal (non-wildcard) segments is preferred, so static
+// routes such as "/containers/counts" take precedence over parameterized routes
+// such as "/containers/{containerId}".
 //
 // The returned option contains the required permission when a route matched.
-// Callers should treat None as "deny" for proxied resource paths.
-func (m *PermissionMatcher) Lookup(method, suffixPath string) mo.Option[string] {
-	if i := strings.IndexByte(suffixPath, '?'); i >= 0 {
-		suffixPath = suffixPath[:i]
-	}
-	reqSegs := pathSegmentsInternal(suffixPath)
+// For action routes (see AddActions) the permission is selected by the action
+// query parameter, and a missing or unknown action yields None. Callers should
+// treat None as "deny" for proxied resource paths.
+func (m *PermissionMatcher) Lookup(method, suffixPath string, query url.Values) mo.Option[string] {
+	reqSegs := pathSegments(suffixPath)
 	method = strings.ToUpper(method)
 
 	bestScore := -1
-	bestPerm := ""
+	var best permRoute
 	found := false
 	for i := range m.routes {
 		r := m.routes[i]
@@ -95,14 +110,21 @@ func (m *PermissionMatcher) Lookup(method, suffixPath string) mo.Option[string] 
 		}
 		if match && score > bestScore {
 			bestScore = score
-			bestPerm = r.perm
+			best = r
 			found = true
 		}
 	}
-	if found {
-		return mo.Some(bestPerm)
+	if !found {
+		return mo.None[string]()
 	}
-	return mo.None[string]()
+	if best.actionParam == "" {
+		return mo.Some(best.perm)
+	}
+	perm, ok := best.actionPerms[query.Get(best.actionParam)]
+	if !ok {
+		return mo.None[string]()
+	}
+	return mo.Some(perm)
 }
 
 func (m *PermissionMatcher) SupportsEnvironmentAggregation(method, suffix string) bool {
@@ -110,9 +132,9 @@ func (m *PermissionMatcher) SupportsEnvironmentAggregation(method, suffix string
 	return ok
 }
 
-// pathSegmentsInternal splits a path into its non-empty segments, ignoring
+// pathSegments splits a path into its non-empty segments, ignoring
 // leading and trailing slashes.
-func pathSegmentsInternal(p string) []string {
+func pathSegments(p string) []string {
 	p = strings.Trim(p, "/")
 	if p == "" {
 		return nil
@@ -120,19 +142,19 @@ func pathSegmentsInternal(p string) []string {
 	return strings.Split(p, "/")
 }
 
-// templateSegmentsInternal splits a path template into segments, normalizing
+// templateSegments splits a path template into segments, normalizing
 // any path parameter ("{name}" or ":name") to the "*" wildcard.
-func templateSegmentsInternal(t string) []string {
-	segs := pathSegmentsInternal(t)
+func templateSegments(t string) []string {
+	segs := pathSegments(t)
 	for i, s := range segs {
-		if isParamSegmentInternal(s) {
+		if isParamSegment(s) {
 			segs[i] = "*"
 		}
 	}
 	return segs
 }
 
-func isParamSegmentInternal(s string) bool {
+func isParamSegment(s string) bool {
 	if strings.HasPrefix(s, ":") {
 		return true
 	}
@@ -144,11 +166,11 @@ func isParamSegmentInternal(s string) bool {
 // is false for unknown kinds so callers (and remote proxies) fail closed.
 func UploadKindPermission(kind string) (string, bool) {
 	switch kind {
-	case uploadtypes.KindImage:
+	case types.UploadKindImage:
 		return PermImagesUpload, true
-	case uploadtypes.KindVolumeBackup:
+	case types.UploadKindVolumeBackup:
 		return PermVolumesUpload, true
-	case uploadtypes.KindBuildWorkspace:
+	case types.UploadKindBuildWorkspace:
 		return PermBuildWorkspacesManage, true
 	}
 	return "", false
@@ -157,19 +179,19 @@ func UploadKindPermission(kind string) (string, bool) {
 // VolumeWorkspaceRequiredPermissions returns the distinct mutation permissions
 // required by a Volume Workspace manifest. The boolean is false when a change
 // uses an unknown operation so remote proxies can fail closed.
-func VolumeWorkspaceRequiredPermissions(changes []volumetypes.WorkspaceFileChange) ([]string, bool) {
+func VolumeWorkspaceRequiredPermissions(changes []types.VolumeWorkspaceFileChange) ([]string, bool) {
 	required := make([]string, 0, 3)
 
 	for _, change := range changes {
 		switch change.Operation {
-		case volumetypes.FileOpCreateFile, volumetypes.FileOpCreateFolder, volumetypes.FileOpUpdateFile:
+		case types.FileOpCreateFile, types.FileOpCreateFolder, types.FileOpUpdateFile:
 			required = append(required, PermVolumesUpload)
-		case volumetypes.FileOpRename, volumetypes.FileOpMove:
+		case types.FileOpRename, types.FileOpMove:
 			required = append(required, PermVolumesUpload)
 			required = append(required, PermVolumesDelete)
-		case volumetypes.FileOpDelete:
+		case types.FileOpDelete:
 			required = append(required, PermVolumesDelete)
-		case volumetypes.FileOpRestoreFile:
+		case types.FileOpRestoreFile:
 			required = append(required, PermVolumesBackup)
 		default:
 			return nil, false

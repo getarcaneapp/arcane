@@ -1,76 +1,67 @@
 package api
 
 import (
-	"cmp"
 	"context"
 	"encoding/json/v2"
 	"io"
 	"maps"
 	"net/http"
-	"path"
-	"reflect"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
 	"github.com/labstack/echo/v5"
-	kit "go.getarcane.app/kit/pkg"
 	"go.uber.org/fx"
 
-	"github.com/getarcaneapp/arcane/backend/v2/api/handlers"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/appimages"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/dashboard"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/federated"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/health"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/oidc"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/port"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/variable"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/userctx"
-	"github.com/getarcaneapp/arcane/backend/v2/resources"
+	"github.com/getarcaneapp/arcane/backend/v3/api/handlers"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apns"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/appimages"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/build"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/diagnostics"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/federated"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/health"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/job"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/network"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/notification"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/oidc"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/passkey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/podman"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/port"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/search"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/template"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/updater"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/upload"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/variable"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/vulnerability"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/webhook"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
+	"github.com/getarcaneapp/arcane/backend/v3/resources"
 )
 
 const (
-	arcaneTypesPrefix = "github.com/getarcaneapp/arcane/types/v2/"
-	dockerSDKPrefix   = "github.com/moby/moby"
-
 	scalarDocsHTML = `<!doctype html>
 <html>
   <head>
@@ -94,23 +85,6 @@ const (
 </html>`
 )
 
-var dockerSchemaPrefixes = map[string]string{
-	"types":     "DockerTypes",
-	"registry":  "DockerRegistry",
-	"system":    "DockerSystem",
-	"container": "DockerContainer",
-	"network":   "DockerNetwork",
-	"volume":    "DockerVolume",
-	"swarm":     "DockerSwarm",
-	"podman":    "Podman",
-	"mount":     "DockerMount",
-	"filters":   "DockerFilters",
-	"blkiodev":  "DockerBlkiodev",
-	"strslice":  "DockerStrslice",
-	"events":    "DockerEvents",
-	"image":     "DockerImage",
-}
-
 var jsonV2Format = huma.Format{
 	Marshal: func(writer io.Writer, value any) error {
 		return json.MarshalWrite(writer, value, jsonV2APIOptions)
@@ -118,70 +92,6 @@ var jsonV2Format = huma.Format{
 	Unmarshal: func(data []byte, value any) error {
 		return json.Unmarshal(data, value, jsonV2APIOptions)
 	},
-}
-
-// customSchemaNamer prefixes Arcane and Docker type schemas with their package name
-// so same-named types (e.g. image.Summary vs env.Summary) do not collide.
-func customSchemaNamer(t reflect.Type, hint string) string {
-	name := huma.DefaultSchemaNamer(t, hint)
-	typeStr := t.String()
-	elem := t
-	for elem.Kind() == reflect.Pointer {
-		elem = elem.Elem()
-	}
-	pkgPath := elem.PkgPath()
-	pkgName := path.Base(pkgPath)
-	shortPkg, _, _ := strings.Cut(typeStr, ".")
-	isArcaneType := strings.HasPrefix(pkgPath, arcaneTypesPrefix)
-
-	if isArcaneType {
-		name = kit.Capitalize(pkgName) + name
-	} else {
-		prefix := dockerSchemaPrefixes[shortPkg]
-		if strings.Contains(pkgPath, dockerSDKPrefix) {
-			prefix = cmp.Or(dockerSchemaPrefixes[pkgName], prefix)
-		}
-		name = prefix + name
-	}
-	// Preserve the published name after moving the volume backup response to types.
-	if pkgPath == arcaneTypesPrefix+"volume" && strings.TrimLeft(typeStr, "*") == "volume.Backup" {
-		name = "DockerVolumeVolumeBackup"
-	}
-
-	// Qualify Arcane generic arguments with their package unless it matches the outer type's package.
-	openBracket := strings.IndexByte(typeStr, '[')
-	if !isArcaneType || openBracket < 0 {
-		return name
-	}
-	anonymous := reflect.TypeFor[struct{}]()
-	schemaPrefix, ok := strings.CutSuffix(name, huma.DefaultSchemaNamer(anonymous, typeStr))
-	if !ok {
-		return name
-	}
-
-	rewrittenTypeName := typeStr
-	searchOffset := openBracket + 1
-	for {
-		prefixIndex := strings.Index(rewrittenTypeName[searchOffset:], arcaneTypesPrefix)
-		if prefixIndex == -1 {
-			break
-		}
-		prefixIndex += searchOffset
-
-		afterPrefix := rewrittenTypeName[prefixIndex+len(arcaneTypesPrefix):]
-		separator := strings.IndexByte(afterPrefix, '.')
-		if separator < 0 {
-			break
-		}
-
-		innerPackage := path.Base(afterPrefix[:separator])
-		replacement := kit.Ternary(innerPackage != pkgName, kit.Capitalize(innerPackage), "")
-		argumentTypeIndex := prefixIndex + len(arcaneTypesPrefix) + separator + 1
-		rewrittenTypeName = rewrittenTypeName[:prefixIndex] + replacement + rewrittenTypeName[argumentTypeIndex:]
-		searchOffset = prefixIndex + len(replacement)
-	}
-
-	return schemaPrefix + huma.DefaultSchemaNamer(anonymous, rewrittenTypeName)
 }
 
 // HandlerDeps contains the services required to register HTTP API handlers.
@@ -226,7 +136,6 @@ type HandlerDeps struct {
 	GitOpsSync        *gitops.Module
 	Webhook           *webhook.Module
 	Vulnerability     *vulnerability.Module
-	Dashboard         *dashboard.Module
 	Role              *role.Module
 	Variable          *variable.Module
 	Upload            *upload.Module
@@ -244,7 +153,7 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 	humaConfig.Info.Description = "Modern Docker Management, Designed for Everyone"
 	// Disable default docs path - we'll use Scalar instead
 	humaConfig.DocsPath = ""
-	humaConfig.Servers = []*huma.Server{{URL: cfg.AppUrl + "/api"}}
+	humaConfig.Servers = []*huma.Server{{URL: cfg.GetAppURL() + "/api"}}
 	humaConfig.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 		"BearerAuth": {
 			Type:         "http",
@@ -263,7 +172,9 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 		{"BearerAuth": {}},
 		{"ApiKeyAuth": {}},
 	}
-	humaConfig.Components.Schemas = huma.NewMapRegistry("#/components/schemas/", customSchemaNamer)
+	for t, alias := range schemaTypeAliases {
+		humaConfig.Components.Schemas.RegisterTypeAlias(t, alias)
+	}
 
 	api := humaecho.NewWithGroup(e, apiGroup, humaConfig)
 
@@ -317,8 +228,7 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 	deps.GitOpsSync.RegisterRoutes(api)
 	deps.Webhook.RegisterRoutes(api)
 	deps.Vulnerability.RegisterRoutes(api, appCtx)
-	deps.Dashboard.RegisterRoutes(api)
-	handlers.RegisterStream(api, deps.Dashboard.Handler(), deps.Activity.Handler(), deps.Environment.Handler(), deps.Event.Service(), deps.Version)
+	handlers.RegisterStream(api, deps.Activity.Handler(), deps.Environment.Handler(), deps.Event.Service(), deps.Version, deps.System.Service())
 
 	apiGroup.GET("/docs", func(c *echo.Context) error {
 		return c.HTML(http.StatusOK, scalarDocsHTML)

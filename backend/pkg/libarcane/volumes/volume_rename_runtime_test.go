@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
 )
 
 func TestGetProjectVolumeCopyRuntimeInternal_UsesToolsImageWhenAvailable(t *testing.T) {
@@ -27,7 +27,7 @@ func TestGetProjectVolumeCopyRuntimeInternal_UsesToolsImageWhenAvailable(t *test
 	}))
 	t.Cleanup(server.Close)
 
-	copyRuntime, err := getProjectVolumeCopyRuntimeInternal(t.Context(), newTestDockerClientInternal(t, server), volumehelper.ToolsImage(""))
+	copyRuntime, err := getProjectVolumeCopyRuntime(t.Context(), newTestDockerClient(t, server), volumehelper.ToolsImage(""))
 
 	require.NoError(t, err)
 	require.Equal(t, volumehelper.ToolsImage(""), copyRuntime.Image)
@@ -56,9 +56,9 @@ func TestCreateProjectVolumeCopyHolderContainerInternal_UsesPassiveHolderCommand
 	}))
 	t.Cleanup(server.Close)
 
-	_, cleanup, err := createProjectVolumeCopyHolderContainerInternal(
+	_, cleanup, err := createProjectVolumeCopyHolderContainer(
 		t.Context(),
-		newTestDockerClientInternal(t, server),
+		newTestDockerClient(t, server),
 		projectVolumeCopyRuntimeInternal{Image: "arcane:local"},
 		"nginx_data",
 		true,

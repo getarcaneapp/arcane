@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
@@ -10,12 +12,13 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { BoxIcon, CalendarIcon, ContainersIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import type { PodmanPodAction } from '#lib/services/podman-service.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { PodmanPod } from '#lib/types/podman.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { environmentHref, hasShownPermission, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
+	import { hasShownPermission, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { podmanStateVariant } from '#lib/utils/podman.js';
 
@@ -24,24 +27,26 @@
 	type PodRow = EnvironmentRow<PodmanPod>;
 
 	let {
-		pods = $bindable(),
+		pods,
 		requestOptions = $bindable(),
-		onRefreshData
+		onRetry
 	}: {
 		pods: EnvironmentPage<Paginated<PodmanPod>>;
 		requestOptions: SearchPaginationSortRequest;
-		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
+		onRetry: () => Promise<unknown>;
 	} = $props();
 
-	const canManagePods = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('podman:pods');
-	});
+	const queryClient = useQueryClient();
+	const scope = $derived(environmentStore.shownKey);
+
+	async function invalidatePods() {
+		await queryClient.invalidateQueries({ queryKey: queryKeys.podman.podsPrefix(scope) });
+	}
+
+	const canManagePods = $derived(hasShownPermission('podman:pods'));
 	const lifecycleActions: PodmanPodAction[] = ['start', 'stop', 'restart', 'pause', 'unpause', 'kill'];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
-
-	const podHref = (pod: PodRow) => environmentHref(`/podman/pods/${encodeURIComponent(pod.id)}`, pod.environmentId);
 
 	const columns = $derived([
 		...environmentColumns<PodRow>(),
@@ -62,7 +67,11 @@
 </script>
 
 {#snippet NameCell({ item }: { item: PodRow })}
-	<a class="font-medium hover:underline" href={podHref(item)}>{item.name}</a>
+	<a
+		class="font-medium hover:underline"
+		href={resolve(`/(app)/podman/pods/[id]?env=${encodeURIComponent(item.environmentId)}`, { id: encodeURIComponent(item.id) })}
+		>{item.name}</a
+	>
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: PodRow })}
@@ -107,36 +116,31 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={() => goto(podHref(item))}
+		onclick={() =>
+			goto(resolve(`/(app)/podman/pods/[id]?env=${encodeURIComponent(item.environmentId)}`, { id: encodeURIComponent(item.id) }))}
 	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: PodRow })}
 	<RowActionsMenu>
-		<DropdownMenu.Item onclick={() => goto(podHref(item))}>
+		<DropdownMenu.Item
+			onclick={() =>
+				goto(
+					resolve(`/(app)/podman/pods/[id]?env=${encodeURIComponent(item.environmentId)}`, { id: encodeURIComponent(item.id) })
+				)}
+		>
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
 		{#if canManagePods && hasPermission('podman:pods', item.environmentId)}
 			<DropdownMenu.Separator />
 			{#each lifecycleActions as action (action)}
-				<DropdownMenu.Item
-					onclick={() =>
-						runPodAction(item, action, async () => {
-							await onRefreshData(requestOptions);
-						})}
-				>
+				<DropdownMenu.Item onclick={() => runPodAction(item, action, invalidatePods)}>
 					{podActionLabels[action]()}
 				</DropdownMenu.Item>
 			{/each}
 			<DropdownMenu.Separator />
-			<DropdownMenu.Item
-				variant="destructive"
-				onclick={() =>
-					confirmRemovePod(item, async () => {
-						await onRefreshData(requestOptions);
-					})}
-			>
+			<DropdownMenu.Item variant="destructive" onclick={() => confirmRemovePod(item, invalidatePods)}>
 				<TrashIcon class="size-4" />
 				{m.common_remove()}
 			</DropdownMenu.Item>
@@ -150,11 +154,7 @@
 	bind:requestOptions
 	bind:mobileFieldVisibility
 	selectionDisabled={true}
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await onRefreshData(options);
-		return pods;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

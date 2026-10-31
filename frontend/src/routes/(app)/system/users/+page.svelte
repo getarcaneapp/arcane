@@ -1,0 +1,311 @@
+<script lang="ts">
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
+	import { toast } from 'svelte-sonner';
+
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
+	import UserFormSheet from '#lib/components/sheets/user-form-sheet.svelte';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { UsersIcon } from '#lib/icons/index.js';
+	import { SettingsPageLayout } from '#lib/layouts/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { userListQuery } from '#lib/query/users.js';
+	import { roleService } from '#lib/services/role-service.js';
+	import { userService } from '#lib/services/user-service.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
+	import type { User, UserCreate, UserUpdate } from '#lib/types/auth.js';
+	import type { Settings } from '#lib/types/settings.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { tryCatch } from '#lib/utils/try-catch.js';
+
+	import UserTable from './components/user-table.svelte';
+
+	let { data } = $props();
+	const queryClient = useQueryClient();
+
+	const pageState = new ResourceListPageState(untrack(() => data.userRequestOptions));
+	const usersQuery = createQuery(() => ({
+		...userListQuery(pageState.requestOptions),
+		placeholderData: (previous) => previous
+	}));
+	const users = $derived(usersQuery.data ?? data.users);
+
+	const isDialogOpen = $state({
+		create: false,
+		edit: false
+	});
+
+	let userToEdit = $state<User | null>(null);
+
+	// Role assignment is admin-only on the server. Non-admins editing users can
+	// still update profile fields but must not call the assignments endpoint.
+	const isAdmin = $derived(userStore.isGlobalAdmin());
+
+	// availableRoleAssignments for the edit form — manual assignments only,
+	// stripped to (roleId, environmentId) tuples. OIDC-sourced assignments must
+	// not round-trip: PUT /users/{id}/roles replaces source='manual'
+	// rows, so resubmitting oidc rows would duplicate them as manual.
+	const editingAssignments = $derived(
+		userToEdit?.roleAssignments
+			?.filter((a) => a.source !== 'oidc')
+			.map((a) => ({ roleId: a.roleId, environmentId: a.environmentId }))
+			.sort(compareAssignments) ?? []
+	);
+
+	const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+	// Global assignments sort first because their environment name is empty.
+	function compareAssignments(a: { roleId: string; environmentId?: string }, b: { roleId: string; environmentId?: string }) {
+		const envName = (id?: string) => (id ? (data.environments.find((e) => e.id === id)?.name ?? id) : '');
+		const roleName = (id: string) => data.roles.find((r) => r.id === id)?.name ?? id;
+		return (
+			nameCollator.compare(envName(a.environmentId), envName(b.environmentId)) ||
+			nameCollator.compare(roleName(a.roleId), roleName(b.roleId))
+		);
+	}
+
+	const isLoading = $state({
+		creating: false,
+		editing: false,
+		refresh: false
+	});
+
+	function openCreateDialog() {
+		userToEdit = null;
+		isDialogOpen.create = true;
+	}
+
+	function openEditDialog(user: User) {
+		userToEdit = user;
+		isDialogOpen.edit = true;
+	}
+
+	async function completeUserEdit(username: string) {
+		toast.success(m.common_update_success({ resource: `${m.resource_user()} "${username}"` }));
+		isDialogOpen.edit = false;
+		await queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+	}
+
+	async function handleUserSubmit({
+		user,
+		isEditMode,
+		userId
+	}: {
+		user: UserUpdate & {
+			roleAssignments?: { roleId: string; environmentId?: string }[];
+		};
+		isEditMode: boolean;
+		userId?: string;
+	}): Promise<boolean> {
+		const loading = isEditMode ? 'editing' : 'creating';
+		isLoading[loading] = true;
+		let assignmentsFailed = false;
+
+		if (isEditMode && userId) {
+			const safeUsername = userToEdit?.username || m.common_unknown();
+			// Split: profile fields go to PATCH /users/{id}; role assignments
+			// go to PUT /users/{id}/roles (separate endpoint).
+			const { roleAssignments, ...profile } = user;
+
+			// OIDC users submit role assignments only — skip the empty profile PUT.
+			if (Object.keys(profile).length === 0 && isAdmin && roleAssignments) {
+				const assignmentsResult = await tryCatch(roleService.setUserAssignments(userId, { assignments: roleAssignments }));
+				await handleApiResultWithCallbacks({
+					result: assignmentsResult,
+					message: m.common_update_failed({ resource: `${m.resource_user()} "${safeUsername}"` }),
+					setLoadingState: (value) => (isLoading[loading] = value),
+					onSuccess: async () => {
+						await completeUserEdit(safeUsername);
+					}
+				});
+				return !assignmentsResult.error;
+			}
+
+			const result = await tryCatch(userService.update(userId, profile));
+			await handleApiResultWithCallbacks({
+				result,
+				message: m.common_update_failed({ resource: `${m.resource_user()} "${safeUsername}"` }),
+				setLoadingState: (value) => (isLoading[loading] = value),
+				onSuccess: async () => {
+					if (isAdmin && roleAssignments) {
+						const assignmentsResult = await tryCatch(roleService.setUserAssignments(userId, { assignments: roleAssignments }));
+						await handleApiResultWithCallbacks({
+							result: assignmentsResult,
+							message: m.common_update_failed({ resource: `${m.resource_user()} "${safeUsername}"` })
+						});
+						assignmentsFailed = assignmentsResult.error !== null;
+						if (assignmentsFailed) return;
+					}
+					await completeUserEdit(safeUsername);
+				}
+			});
+			return !result.error && !assignmentsFailed;
+		} else {
+			if (!user.username) {
+				toast.error(m.common_username_required());
+				isLoading[loading] = false;
+				return false;
+			}
+
+			const safeUsername = user.username!.trim() || m.common_unknown();
+
+			const createUser: UserCreate = {
+				username: user.username!,
+				displayName: user.displayName,
+				email: user.email,
+				password: user.password!
+			};
+
+			const result = await tryCatch(userService.create(createUser));
+			await handleApiResultWithCallbacks({
+				result,
+				message: m.common_create_failed({ resource: `${m.resource_user()} "${safeUsername}"` }),
+				setLoadingState: (value) => (isLoading[loading] = value),
+				onSuccess: async (created) => {
+					if (isAdmin && user.roleAssignments && created?.id) {
+						const assignmentsResult = await tryCatch(
+							roleService.setUserAssignments(created.id, { assignments: user.roleAssignments })
+						);
+						await handleApiResultWithCallbacks({
+							result: assignmentsResult,
+							message: m.common_update_failed({ resource: `${m.resource_user()} "${safeUsername}"` })
+						});
+						assignmentsFailed = assignmentsResult.error !== null;
+					}
+					if (!assignmentsFailed) {
+						toast.success(m.common_create_success({ resource: `${m.resource_user()} "${safeUsername}"` }));
+					}
+					isDialogOpen.create = false;
+					await queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+				}
+			});
+			return !result.error;
+		}
+	}
+
+	// Avatar policy: server-wide settings that belong with user management.
+	const gravatarEnabled = $derived(Boolean(settingsStore.current?.enableGravatar));
+	const avatarMaxUploadSizeMb = $derived(
+		Number(settingsStore.current?.avatarMaxUploadSizeMb) > 0 ? Number(settingsStore.current?.avatarMaxUploadSizeMb) : 2
+	);
+	let avatarSizeInput = $derived(String(avatarMaxUploadSizeMb));
+	let avatarSizeError = $state<string | null>(null);
+
+	async function saveAvatarSettings(patch: Partial<Settings>) {
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(settingsStore.save(patch)),
+			message: m.common_update_failed({ resource: m.settings() }),
+			onSuccess: () => {
+				toast.success(m.common_update_success({ resource: m.settings() }));
+			}
+		});
+	}
+
+	function handleAvatarSizeCommit() {
+		const parsed = Number(avatarSizeInput);
+		if (!Number.isInteger(parsed) || parsed < 1 || parsed > 50) {
+			avatarSizeError = m.general_avatar_upload_size_help();
+			return;
+		}
+		avatarSizeError = null;
+		if (parsed === avatarMaxUploadSizeMb) return;
+		void saveAvatarSettings({ avatarMaxUploadSizeMb: parsed });
+	}
+
+	const actionButtons: ActionButton[] = $derived.by(() => [
+		{
+			id: 'create',
+			action: 'create',
+			placement: 'primary',
+			label: m.common_create_button({ resource: m.common_user() }),
+			onclick: openCreateDialog,
+			loading: isLoading.creating,
+			disabled: isLoading.creating
+		}
+	]);
+</script>
+
+<SettingsPageLayout
+	title={m.users_title()}
+	description={m.users_subtitle()}
+	icon={UsersIcon}
+	pageType="management"
+	{actionButtons}
+>
+	{#snippet mainContent()}
+		<SettingsSection title={m.settings_section_avatars()} description={m.settings_section_avatars_description()} class="mb-8">
+			<SettingsRow
+				for="enableGravatar"
+				label={m.general_enable_gravatar_label()}
+				description={m.general_enable_gravatar_description()}
+				layout="switch"
+				lock={settingsStore.lock('enableGravatar')}
+			>
+				<Switch
+					id="enableGravatar"
+					checked={gravatarEnabled}
+					onCheckedChange={(checked) => void saveAvatarSettings({ enableGravatar: checked })}
+				/>
+			</SettingsRow>
+			<SettingsRow
+				for="avatarMaxUploadSizeMb"
+				label={m.general_avatar_upload_size_label()}
+				description={m.general_avatar_upload_size_description()}
+				helpText={m.general_avatar_upload_size_help()}
+				error={avatarSizeError}
+				lock={settingsStore.lock('avatarMaxUploadSizeMb')}
+			>
+				<Input
+					id="avatarMaxUploadSizeMb"
+					type="number"
+					min="1"
+					max="50"
+					bind:value={avatarSizeInput}
+					placeholder="2"
+					aria-invalid={Boolean(avatarSizeError)}
+					onblur={handleAvatarSizeCommit}
+				/>
+			</SettingsRow>
+		</SettingsSection>
+
+		<UserTable
+			{users}
+			bind:selectedIds={pageState.selectedIds}
+			bind:requestOptions={pageState.requestOptions}
+			roles={data.roles}
+			onRetry={() => usersQuery.refetch()}
+			onEditUser={openEditDialog}
+		/>
+	{/snippet}
+
+	{#snippet additionalContent()}
+		<UserFormSheet
+			bind:open={isDialogOpen.create}
+			userToEdit={null}
+			roles={data.roles}
+			environments={data.environments}
+			availableRoleAssignments={[]}
+			onSubmit={handleUserSubmit}
+			isLoading={isLoading.creating}
+		/>
+
+		{#key userToEdit?.id ?? 'new'}
+			<UserFormSheet
+				bind:open={isDialogOpen.edit}
+				{userToEdit}
+				roles={data.roles}
+				environments={data.environments}
+				availableRoleAssignments={editingAssignments}
+				onSubmit={handleUserSubmit}
+				isLoading={isLoading.editing}
+				allowUsernameEdit={true}
+			/>
+		{/key}
+	{/snippet}
+</SettingsPageLayout>

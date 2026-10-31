@@ -1,83 +1,71 @@
 <script lang="ts">
-	import { beforeNavigate, goto, refreshAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import { ActionButtonGroup, type ActionButton } from '#lib/components/action-button-group/index.js';
+	import AgentCommandBlock from '#lib/components/agent-command-block.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
-	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
-	import ImagePatchSettings from '#lib/components/settings/image-patch-settings.svelte';
-	import LifecycleSecuritySettings from '#lib/components/settings/lifecycle-security-settings.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import TrivySecuritySettings from '#lib/components/settings/trivy-security-settings.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
-	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
+	import type { TabItem } from '#lib/components/tab-bar/index.js';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { featureDefinitions } from '#lib/config/features.js';
 	import { useEasyJoinCandidates } from '#lib/hooks/use-easy-join-candidates.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
-	import {
-		AlertIcon,
-		DockerBrandIcon,
-		SecurityIcon,
-		GitBranchIcon,
-		JobsIcon,
-		ResetIcon,
-		ConnectionIcon,
-		VolumesIcon,
-		ScanIcon,
-		ShieldCheckIcon,
-		CodeIcon,
-		SettingsIcon
-	} from '#lib/icons/index.js';
+	import { AlertIcon, ResetIcon, ConnectionIcon, SettingsIcon, InfoIcon, JobsIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { environmentDeploymentSnippetsQuery, environmentDetailQuery } from '#lib/query/environments.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
+	import type { Environment } from '#lib/types/environment.js';
 	import type { FeatureID } from '#lib/types/features.js';
-	import type { Settings } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createSettingsForm } from '#lib/utils/settings-form.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import EditableName from '../../projects/components/editable-name.svelte';
 	import EasyJoinDialog from '../../swarm/cluster/components/easy-join-dialog.svelte';
-	import ConnectionEdgeTab from './components/connection-edge-tab.svelte';
-	import DockerTab from './components/docker-tab.svelte';
+	import ConnectionAgentTab from './components/connection-agent-tab.svelte';
+	import EngineInfoTab from './components/engine-info-tab.svelte';
 	import {
 		environmentFormSchema,
 		environmentUpdateSchema,
 		type EnvironmentFormValues
 	} from './components/environment-form-schema';
+	import EnvironmentJobHistoryTab from './components/environment-job-history-tab.svelte';
 	import EnvironmentStatusSummary from './components/environment-status-summary.svelte';
-	import JobsTab from './components/jobs-tab.svelte';
-	import StorageTab from './components/storage-tab.svelte';
 
 	let { data } = $props();
 	let { settings, versionInformation } = $derived(data);
 	const swarmActive = $derived(data.swarmActive === true);
 	let lastEnvironment: Environment | undefined;
 	let loadedEnvironment = $derived((lastEnvironment = data.environment ?? lastEnvironment));
-	let environment = $derived(loadedEnvironment);
-	// Edge reachability only reaches the browser through the live environment stream; the certificate is detail-only.
+	const environmentQuery = createQuery(() => environmentDetailQuery(loadedEnvironment.id));
+	const environment = $derived(environmentQuery.data ?? loadedEnvironment);
 	const liveEnvironment = $derived(
-		environment.isEdge ? environmentStore.available.find((env) => env.id === environment.id) : undefined
+		environment.id === '0' ? undefined : environmentStore.available.find((env) => env.id === environment.id)
 	);
 	let runtimeEnvironment: Environment = $derived(
-		liveEnvironment ? { ...liveEnvironment, edgeMTLSCertificate: environment.edgeMTLSCertificate } : environment
+		liveEnvironment
+			? {
+					...liveEnvironment,
+					agentMTLSCertificate: environment.agentMTLSCertificate
+				}
+			: environment
 	);
 	const queryClient = useQueryClient();
 
@@ -87,16 +75,18 @@
 	let isRegeneratingKey = $state(false);
 	let showRegenerateDialog = $state(false);
 	let regeneratedApiKey = $state<string | null>(null);
+	const regeneratedSnippetsQuery = createQuery(() => ({
+		...environmentDeploymentSnippetsQuery(environment.id),
+		enabled: regeneratedApiKey !== null
+	}));
+	const regeneratedSnippets = $derived(regeneratedApiKey ? regeneratedSnippetsQuery.data : undefined);
 	let easyJoinDialogOpen = $state(false);
 	let easyJoinSession = $state(0);
 	let nameInputRef = $state<HTMLInputElement | null>(null);
-	let isEditingApiUrl = $state(false);
 	const easyJoinCandidates = useEasyJoinCandidates();
 
-	// Only non-edge custom URL tests should temporarily override the displayed status.
-	let statusOverride = $state<EnvironmentStatus | null>(null);
-	let currentStatus = $derived(resolveEnvironmentStatus(runtimeEnvironment, statusOverride));
-	let isCurrentlyOnline = $derived(isEnvironmentOnline(runtimeEnvironment, statusOverride));
+	let currentStatus = $derived(resolveEnvironmentStatus(runtimeEnvironment));
+	let isCurrentlyOnline = $derived(isEnvironmentOnline(runtimeEnvironment));
 
 	const versionQuery = createQuery(() => {
 		const environmentId = environment.id;
@@ -110,18 +100,14 @@
 	const remoteVersion = $derived(versionQuery.data ?? null);
 	const isLoadingVersion = $derived(versionQuery.isFetching);
 
-	let isCurrentlyStandby = $derived(currentStatus === 'standby');
-	// Settings tabs stay listed while offline so the selected tab survives a temporary outage.
-	let showSettingsTabs = $derived(runtimeEnvironment.enabled && hasPermission('settings:read', environment.id));
-	let settingsAvailable = $derived(isCurrentlyOnline && settings !== null);
-	let showJobsTab = $derived(showSettingsTabs && hasPermission('jobs:manage', environment.id));
-	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.edgeMTLSCertificate));
-	let canPairEnvironments = $derived(hasPermission('environments:pair'));
+	let showSettingsAction = $derived(runtimeEnvironment.enabled && hasPermission('settings:read', environment.id));
+	let showEngineTab = $derived(runtimeEnvironment.enabled && hasPermission('system:read', environment.id));
+	let showHistoryTab = $derived(runtimeEnvironment.enabled && hasPermission('jobs:manage', environment.id));
+	const podmanStatus = $derived(hasPermission('podman:read', environment.id) ? data.podmanStatuses?.[environment.id] : undefined);
+	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.agentMTLSCertificate));
+	let canPairEnvironments = $derived(hasPermission('environments:pair', environment.id));
 	let showMTLSDownloads = $derived(
-		canPairEnvironments &&
-			runtimeEnvironment.id !== '0' &&
-			runtimeEnvironment.isEdge &&
-			(runtimeEnvironment.edgeSecurityMode === 'mtls' || hasMTLSAssets)
+		canPairEnvironments && runtimeEnvironment.id !== '0' && (runtimeEnvironment.agentSecurityMode === 'mtls' || hasMTLSAssets)
 	);
 	let canEasyJoin = $derived(
 		runtimeEnvironment.id !== '0' &&
@@ -152,6 +138,15 @@
 			disabled: !settingsForm.hasChanges || settingsForm.isLoading,
 			loading: settingsForm.isLoading
 		});
+		if (showSettingsAction) {
+			actions.push({
+				id: 'settings',
+				action: 'base',
+				label: m.settings(),
+				href: resolve(`/(app)/settings/docker?env=${encodeURIComponent(environment.id)}`),
+				icon: SettingsIcon
+			});
+		}
 		actions.push({
 			id: 'test',
 			action: 'test',
@@ -193,23 +188,6 @@
 			});
 		}
 
-		if (environment.id !== '0') {
-			// Edge environments manage mTLS downloads and API key regeneration in the Connection & Edge tab.
-			if (!runtimeEnvironment.isEdge) {
-				actions.push({
-					id: 'regenerate-api-key',
-					action: 'base',
-					label: m.environments_regenerate_api_key(),
-					onclick: () => {
-						showRegenerateDialog = true;
-					},
-					disabled: isRegeneratingKey,
-					loading: isRegeneratingKey,
-					icon: ResetIcon
-				});
-			}
-		}
-
 		return actions;
 	});
 
@@ -220,157 +198,42 @@
 		if (runtimeEnvironment.id !== '0') {
 			items.push({
 				value: 'connection',
-				label: runtimeEnvironment.isEdge ? m.connection_edge() : m.environments_edge_connection_title(),
+				label: m.connection_agent(),
 				icon: ConnectionIcon
 			});
 		}
-		items.push({ value: 'features', label: m.features_title(), icon: SettingsIcon });
-
-		if (showSettingsTabs) {
-			items.push(
-				{
-					value: 'storage',
-					label: m.storage_limits(),
-					icon: VolumesIcon
-				},
-				{
-					value: 'docker',
-					label: m.environments_docker_settings_title(),
-					icon: DockerBrandIcon
-				},
-				{
-					value: 'security',
-					label: m.security(),
-					icon: SecurityIcon
-				}
-			);
-		}
-
-		if (showJobsTab) {
-			items.push({
-				value: 'jobs',
-				label: m.automations(),
-				icon: JobsIcon
-			});
-		}
-
 		items.push({
-			value: 'gitops',
-			label: m.git_syncs_title(),
-			icon: GitBranchIcon
+			value: 'features',
+			label: m.features_title(),
+			icon: SettingsIcon
 		});
+
+		if (showEngineTab) {
+			items.push({ value: 'engine', label: m.engine(), icon: InfoIcon });
+		}
+
+		if (showHistoryTab) {
+			items.push({ value: 'history', label: m.history(), icon: JobsIcon });
+		}
 
 		return items;
 	});
 
 	const urlTab = useUrlTab({
 		validTabs: () => tabItems.map((tab) => tab.value),
-		defaultTab: () => tabItems.find((tab) => tab.value !== 'gitops')?.value ?? 'gitops'
+		defaultTab: () => tabItems[0]?.value ?? 'features'
 	});
 	const activeTab = $derived(urlTab.value);
 
-	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', environment.id));
-	let securitySubTab = $state('trivy');
-	const activeSecuritySubTab = $derived(
-		!vulnerabilityManagementEnabled && securitySubTab === 'trivy' ? 'patching' : securitySubTab
-	);
-	const securityTabItems: TabItem[] = $derived([
-		...(vulnerabilityManagementEnabled
-			? [{ value: 'trivy', label: m.security_vulnerability_scanning_heading(), icon: ScanIcon }]
-			: []),
-		{ value: 'patching', label: m.security_image_patching_heading(), icon: ShieldCheckIcon },
-		{ value: 'lifecycle', label: m.security_lifecycle_hooks_heading(), icon: CodeIcon }
-	]);
-
-	$effect(() => {
-		// Don't bounce away when gitops is the only tab (offline/disabled environment) — the
-		// header still needs to be reachable to fix the connection.
-		if (activeTab === 'gitops' && tabItems.some((tab) => tab.value !== 'gitops'))
-			void goto(`/environments/${environment.id}/gitops`);
-	});
-
-	function handleTabChange(value: string) {
-		if (value === 'gitops') {
-			goto(`/environments/${environment.id}/gitops`);
-			return;
-		}
-		urlTab.select(value);
-	}
-
-	const formSchema = environmentFormSchema;
-
-	// Build current settings object from environment and settings data
 	const currentSettings = $derived({
+		featureVulnerabilityManagementEnabled: Boolean(settings?.values.featureVulnerabilityManagementEnabled),
+		featureSwarmEnabled: Boolean(settings?.values.featureSwarmEnabled),
 		name: loadedEnvironment.name,
-		enabled: loadedEnvironment.enabled,
-		apiUrl: loadedEnvironment.apiUrl,
-		accessToken: '',
-		pollingEnabled: settings?.pollingEnabled ?? false,
-		imageEventWatcherEnabled: settings?.imageEventWatcherEnabled ?? false,
-		autoUpdate: settings?.autoUpdate ?? false,
-		autoInjectEnv: settings?.autoInjectEnv ?? false,
-		followProjectSymlinks: settings?.followProjectSymlinks ?? false,
-		defaultDeployPullPolicy: (settings?.defaultDeployPullPolicy as 'missing' | 'always' | 'never') || 'missing',
-		defaultShell: settings?.defaultShell || '/bin/sh',
-		projectsDirectory: settings?.projectsDirectory || '/app/data/projects',
-		templatesDirectory: settings?.templatesDirectory || '/app/data/templates',
-		swarmStackSourcesDirectory: settings?.swarmStackSourcesDirectory || '/app/data/swarm/sources',
-		diskUsagePath: settings?.diskUsagePath || '/app/data/projects',
-		maxImageUploadSize: settings?.maxImageUploadSize || 500,
-		gitSyncMaxFiles: settings?.gitSyncMaxFiles ?? 500,
-		gitSyncMaxTotalSizeMb: settings?.gitSyncMaxTotalSizeMb ?? 50,
-		gitSyncMaxBinarySizeMb: settings?.gitSyncMaxBinarySizeMb ?? 10,
-		baseServerUrl: settings?.baseServerUrl || 'http://localhost',
-		scheduledPruneEnabled: settings?.scheduledPruneEnabled ?? false,
-		pruneContainerMode: settings?.pruneContainerMode ?? 'stopped',
-		pruneContainerUntil: settings?.pruneContainerUntil ?? '',
-		pruneImageMode: settings?.pruneImageMode ?? 'dangling',
-		pruneImageUntil: settings?.pruneImageUntil ?? '',
-		pruneVolumeMode: settings?.pruneVolumeMode ?? 'none',
-		pruneNetworkMode: settings?.pruneNetworkMode ?? 'unused',
-		pruneNetworkUntil: settings?.pruneNetworkUntil ?? '',
-		pruneBuildCacheMode: settings?.pruneBuildCacheMode ?? 'none',
-		pruneBuildCacheUntil: settings?.pruneBuildCacheUntil ?? '',
-		featureVulnerabilityManagementEnabled: settings?.featureVulnerabilityManagementEnabled ?? true,
-		featureSwarmEnabled: settings?.featureSwarmEnabled ?? false,
-		vulnerabilityScanEnabled: settings?.vulnerabilityScanEnabled ?? false,
-		toolsImageRegistry: settings?.toolsImageRegistry ?? 'ghcr.io',
-		updateCheckRegistry: settings?.updateCheckRegistry ?? 'auto',
-		trivyDbRegistry: settings?.trivyDbRegistry ?? 'ghcr.io',
-		trivyNetwork: settings?.trivyNetwork || '',
-		trivySecurityOpts: settings?.trivySecurityOpts || '',
-		trivyPrivileged: settings?.trivyPrivileged ?? false,
-		trivyResourceLimitsEnabled: settings?.trivyResourceLimitsEnabled ?? true,
-		trivyCpuLimit: settings?.trivyCpuLimit ?? 1,
-		trivyMemoryLimitMb: settings?.trivyMemoryLimitMb ?? 0,
-		trivyConcurrentScanContainers: settings?.trivyConcurrentScanContainers ?? 1,
-		trivyServerEnabled: settings?.trivyServerEnabled ?? false,
-		trivyServerUrl: settings?.trivyServerUrl || '',
-		trivyServerToken: settings?.trivyServerToken || '',
-		trivyIgnoreUnfixed: settings?.trivyIgnoreUnfixed ?? true,
-		vulnerabilityThreatIntelEnabled: settings?.vulnerabilityThreatIntelEnabled ?? true,
-		trivyConfig: settings?.trivyConfig || '',
-		trivyIgnore: settings?.trivyIgnore || '',
-		imagePatchSuffix: settings?.imagePatchSuffix || 'patched',
-		imagePatchTimeoutSec: settings?.imagePatchTimeoutSec ?? 600,
-		imagePatchAllPlatforms: settings?.imagePatchAllPlatforms ?? false,
-		imageAutoPatchEnabled: settings?.imageAutoPatchEnabled ?? false,
-		lifecycleEnabled: settings?.lifecycleEnabled ?? false,
-		lifecycleDefaultRunnerImage: settings?.lifecycleDefaultRunnerImage || 'alpine:latest',
-		lifecycleMaxTimeoutSec: settings?.lifecycleMaxTimeoutSec ?? 300,
-		autoUpdateDelay: settings?.autoUpdateDelay ?? 0,
-		autoUpdateExcludedContainers: settings?.autoUpdateExcludedContainers || '',
-		autoHealEnabled: settings?.autoHealEnabled ?? false,
-		autoHealExcludedContainers: settings?.autoHealExcludedContainers || '',
-		autoHealMaxRestarts: settings?.autoHealMaxRestarts ?? 5,
-		autoHealRestartWindow: settings?.autoHealRestartWindow ?? 30
-	});
+		enabled: loadedEnvironment.enabled
+	} as EnvironmentFormValues);
 
-	// Custom save handler for environment-specific settings
 	async function saveEnvironmentSettings(formData: EnvironmentFormValues) {
 		const environmentId = environment.id;
-		const submittedInputs = formInputs;
-		const apiUrlChanged = formData.apiUrl !== environment.apiUrl;
 		const changedFeatures = featureDefinitions.filter(
 			(feature) => formData[feature.settingKey] !== currentSettings[feature.settingKey]
 		);
@@ -381,100 +244,20 @@
 		) {
 			throw new Error(m.features_unavailable());
 		}
-		if (formData.name !== environment.name || formData.enabled !== environment.enabled || apiUrlChanged) {
-			const update = environmentUpdateSchema.parse({
-				...formData,
-				accessToken: directRemoteUrlChanged ? formData.accessToken : undefined
-			});
+		if (formData.name !== environment.name || formData.enabled !== environment.enabled) {
+			const update = changedFields(environment, environmentUpdateSchema.parse(formData));
 			const result = await tryCatch(environmentManagementService.update(environmentId, update));
 			if (result.error) {
 				throw new Error(result.error.message);
 			}
-			submittedInputs.accessToken.value = '';
-			formData.accessToken = '';
-			if (environment.id === environmentId) {
-				environment = result.data;
-			}
+			queryClient.setQueryData(environmentDetailQuery(environmentId).queryKey, result.data);
 		}
-		const parsedCurrentSettings = formSchema.safeParse(currentSettings);
-		const savedFormValues = parsedCurrentSettings.success ? parsedCurrentSettings.data : currentSettings;
-		const separatelySavedKeys: string[] = [
-			'name',
-			'enabled',
-			'apiUrl',
-			'accessToken',
-			...featureDefinitions.map((feature) => feature.settingKey)
-		];
-		const otherSettingsChanged = (Object.keys(formData) as (keyof EnvironmentFormValues)[]).some(
-			(key) => !separatelySavedKeys.includes(key) && formData[key] !== savedFormValues[key]
-		);
-		let updates: Partial<Settings> = {};
-
-		// Update environment settings if they exist
-		if (settings && otherSettingsChanged) {
-			updates = {
-				pollingEnabled: formData.pollingEnabled,
-				imageEventWatcherEnabled: formData.imageEventWatcherEnabled,
-				autoUpdate: formData.autoUpdate,
-				autoInjectEnv: formData.autoInjectEnv,
-				followProjectSymlinks: formData.followProjectSymlinks,
-				defaultDeployPullPolicy: formData.defaultDeployPullPolicy,
-				defaultShell: formData.defaultShell,
-				projectsDirectory: formData.projectsDirectory,
-				templatesDirectory: formData.templatesDirectory,
-				swarmStackSourcesDirectory: formData.swarmStackSourcesDirectory,
-				diskUsagePath: formData.diskUsagePath,
-				maxImageUploadSize: formData.maxImageUploadSize,
-				gitSyncMaxFiles: formData.gitSyncMaxFiles,
-				gitSyncMaxTotalSizeMb: formData.gitSyncMaxTotalSizeMb,
-				gitSyncMaxBinarySizeMb: formData.gitSyncMaxBinarySizeMb,
-				baseServerUrl: formData.baseServerUrl,
-				scheduledPruneEnabled: formData.scheduledPruneEnabled,
-				pruneContainerMode: formData.pruneContainerMode,
-				pruneContainerUntil: formData.pruneContainerUntil,
-				pruneImageMode: formData.pruneImageMode,
-				pruneImageUntil: formData.pruneImageUntil,
-				pruneVolumeMode: formData.pruneVolumeMode,
-				pruneNetworkMode: formData.pruneNetworkMode,
-				pruneNetworkUntil: formData.pruneNetworkUntil,
-				pruneBuildCacheMode: formData.pruneBuildCacheMode,
-				pruneBuildCacheUntil: formData.pruneBuildCacheUntil,
-				vulnerabilityScanEnabled: formData.vulnerabilityScanEnabled,
-				toolsImageRegistry: formData.toolsImageRegistry,
-				updateCheckRegistry: formData.updateCheckRegistry,
-				trivyDbRegistry: formData.trivyDbRegistry,
-				trivyNetwork: formData.trivyNetwork,
-				trivySecurityOpts: formData.trivySecurityOpts,
-				trivyPrivileged: formData.trivyPrivileged,
-				trivyResourceLimitsEnabled: formData.trivyResourceLimitsEnabled,
-				trivyCpuLimit: formData.trivyResourceLimitsEnabled ? formData.trivyCpuLimit : 0,
-				trivyMemoryLimitMb: formData.trivyResourceLimitsEnabled ? formData.trivyMemoryLimitMb : 0,
-				trivyConcurrentScanContainers: formData.trivyConcurrentScanContainers,
-				trivyServerEnabled: formData.trivyServerEnabled,
-				trivyServerUrl: formData.trivyServerUrl,
-				trivyServerToken: formData.trivyServerToken,
-				trivyIgnoreUnfixed: formData.trivyIgnoreUnfixed,
-				vulnerabilityThreatIntelEnabled: formData.vulnerabilityThreatIntelEnabled,
-				trivyConfig: formData.trivyConfig,
-				trivyIgnore: formData.trivyIgnore,
-				imagePatchSuffix: formData.imagePatchSuffix,
-				imagePatchTimeoutSec: formData.imagePatchTimeoutSec,
-				imagePatchAllPlatforms: formData.imagePatchAllPlatforms,
-				imageAutoPatchEnabled: formData.imageAutoPatchEnabled,
-				lifecycleEnabled: formData.lifecycleEnabled,
-				lifecycleDefaultRunnerImage: formData.lifecycleDefaultRunnerImage,
-				lifecycleMaxTimeoutSec: formData.lifecycleMaxTimeoutSec,
-				autoUpdateDelay: formData.autoUpdateDelay,
-				autoUpdateExcludedContainers: formData.autoUpdateExcludedContainers,
-				autoHealEnabled: formData.autoHealEnabled,
-				autoHealExcludedContainers: formData.autoHealExcludedContainers,
-				autoHealMaxRestarts: formData.autoHealMaxRestarts,
-				autoHealRestartWindow: formData.autoHealRestartWindow
-			};
-		}
-		for (const feature of changedFeatures) updates[feature.settingKey] = formData[feature.settingKey];
-		if (Object.keys(updates).length > 0) await settingsService.updateSettingsForEnvironment(environmentId, updates);
-		if (changedFeatures.length > 0) {
+		if (settings && changedFeatures.length > 0) {
+			await settingsService.updateSettingsForEnvironment(
+				environmentId,
+				settings,
+				Object.fromEntries(changedFeatures.map((feature) => [feature.settingKey, formData[feature.settingKey]]))
+			);
 			await featureStore.refresh(environmentId);
 			if (featureStore.status(environmentId) !== 'ready') throw new Error(m.features_unavailable());
 			const overridden = changedFeatures.find(
@@ -484,8 +267,9 @@
 		}
 
 		// The root load's refresh re-reads the environment list into the store.
-		await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
-		await queryClient.invalidateQueries({ queryKey: queryKeys.jobs.list(environmentId) });
+		await queryClient.invalidateQueries({
+			queryKey: queryKeys.environments.all
+		});
 		await refreshEnvironment();
 	}
 
@@ -502,59 +286,31 @@
 		return (
 			!isCurrentlyOnline ||
 			!settings ||
-			settings.uiConfigDisabled ||
+			settings.readOnly ||
 			!hasPermission('settings:write', environment.id) ||
 			!featureStore.isSupported(id, environment.id)
 		);
 	}
 
-	function clearAccessToken(): void {
-		formInputs.accessToken.value = '';
-	}
-
 	let { formInputs, settingsForm, resetForm, onSubmit } = $derived(
 		createSettingsForm({
-			schema: formSchema,
+			schema: environmentFormSchema,
 			currentSettings,
 			getCurrentSettings: () => ({
 				...currentSettings,
 				name: environment.name,
-				enabled: environment.enabled,
-				apiUrl: environment.apiUrl
+				enabled: environment.enabled
 			}),
 			onSave: saveEnvironmentSettings,
-			successMessage: m.common_update_success({ resource: m.resource_environment_cap() }),
-			errorMessage: m.common_update_failed({ resource: m.resource_environment() }),
+			successMessage: m.common_update_success({
+				resource: m.resource_environment_cap()
+			}),
+			errorMessage: m.common_update_failed({
+				resource: m.resource_environment()
+			}),
 			onReset: () => toast.info(m.changes_reset())
 		})
 	);
-	let directRemoteUrlChanged = $derived(
-		environment.id !== '0' && !environment.isEdge && formInputs.apiUrl.value !== environment.apiUrl
-	);
-
-	beforeNavigate((navigation) => {
-		if (navigation.willUnload || (navigation.to && navigation.to.url.pathname !== navigation.from?.url.pathname)) {
-			clearAccessToken();
-		}
-	});
-
-	const shellOptions = [
-		{ value: '/bin/sh', label: '/bin/sh', description: m.docker_shell_sh_description() },
-		{ value: '/bin/bash', label: '/bin/bash', description: m.docker_shell_bash_description() },
-		{ value: '/bin/ash', label: '/bin/ash', description: m.docker_shell_ash_description() },
-		{ value: '/bin/zsh', label: '/bin/zsh', description: m.docker_shell_zsh_description() }
-	];
-
-	let shellSelectValue = $derived.by((): string => {
-		if (!settings) return 'custom';
-		return shellOptions.find((o) => o.value === settings.defaultShell)?.value ?? 'custom';
-	});
-
-	function handleShellSelectChange(value: string) {
-		if (value !== 'custom') {
-			formInputs.defaultShell.value = value;
-		}
-	}
 
 	async function refreshEnvironment() {
 		if (isRefreshing) return;
@@ -562,7 +318,6 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					isRefreshing = true;
-					statusOverride = null;
 					await featureStore.refresh(environment.id);
 					if (environment.id !== '0' && isCurrentlyOnline) await versionQuery.refetch();
 					await refreshAll();
@@ -572,7 +327,11 @@
 				const err = operationResult.error;
 
 				console.error('Failed to refresh environment:', err);
-				toast.error(m.common_refresh_failed({ resource: m.resource_environment() }));
+				toast.error(
+					m.common_refresh_failed({
+						resource: m.resource_environment()
+					})
+				);
 			}
 		} finally {
 			isRefreshing = false;
@@ -606,11 +365,7 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					isTestingConnection = true;
-					const customUrl = formInputs.apiUrl.value !== environment.apiUrl ? formInputs.apiUrl.value : undefined;
-					const result = await environmentManagementService.testConnection(environment.id, customUrl);
-
-					const nextStatus = result.status as EnvironmentStatus;
-					statusOverride = customUrl && !environment.isEdge ? nextStatus : null;
+					const result = await environmentManagementService.testConnection(environment.id);
 
 					if (result.status === 'online') {
 						toast.success(m.environments_test_connection_success());
@@ -618,17 +373,15 @@
 						toast.error(m.environments_test_connection_error());
 					}
 
-					// If testing with saved URL (not custom), refresh to get backend's updated status
-					if (!customUrl) {
-						await refreshAll();
-					}
+					await refreshAll();
 				})()
 			);
 			if (operationResult.error !== null) {
 				const error = operationResult.error;
 
-				statusOverride = environment.isEdge ? null : 'offline';
-				toast.error(m.environments_test_connection_failed(), { description: extractApiErrorMessage(error) });
+				toast.error(m.environments_test_connection_failed(), {
+					description: extractApiErrorMessage(error)
+				});
 			}
 		} finally {
 			isTestingConnection = false;
@@ -647,6 +400,9 @@
 					});
 
 					if (result.apiKey) {
+						queryClient.removeQueries({
+							queryKey: environmentDeploymentSnippetsQuery(environment.id).queryKey
+						});
 						regeneratedApiKey = result.apiKey;
 						toast.success(m.environments_regenerate_key_success());
 						await refreshAll();
@@ -717,69 +473,10 @@
 
 {#snippet apiUrlLine()}
 	<div class="flex min-w-0 items-center gap-1">
-		{#if isEditingApiUrl}
-			<Input
-				id="api-url"
-				type="url"
-				bind:value={formInputs.apiUrl.value}
-				oninput={clearAccessToken}
-				mono
-				size="sm"
-				class="h-7 w-full max-w-md"
-				aria-invalid={!!formInputs.apiUrl.error}
-				placeholder={m.environments_api_url_placeholder()}
-				autofocus
-				onkeydown={(e) => {
-					if (e.key === 'Enter') {
-						e.preventDefault();
-						isEditingApiUrl = false;
-					}
-					if (e.key === 'Escape') {
-						formInputs.apiUrl.value = environment.apiUrl;
-						clearAccessToken();
-						isEditingApiUrl = false;
-					}
-				}}
-				onblur={() => (isEditingApiUrl = false)}
-			/>
-		{:else if environment.id === '0'}
-			<ArcaneTooltip.Root>
-				<ArcaneTooltip.Trigger class="min-w-0">
-					<span class="block truncate px-1 font-mono text-xs text-muted-foreground">{formInputs.apiUrl.value}</span>
-				</ArcaneTooltip.Trigger>
-				<ArcaneTooltip.Content>
-					<p>{m.environments_local_setting_disabled()}</p>
-				</ArcaneTooltip.Content>
-			</ArcaneTooltip.Root>
-		{:else}
-			<button
-				type="button"
-				class="min-w-0 truncate rounded px-1 py-0.5 text-left font-mono text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-				title={m.environments_api_url()}
-				onclick={() => (isEditingApiUrl = true)}
-			>
-				{formInputs.apiUrl.value || m.environments_api_url_placeholder()}
-			</button>
-		{/if}
-		<CopyButton text={formInputs.apiUrl.value} size="icon" class="size-6 shrink-0" />
+		<span class="block min-w-0 truncate px-1 font-mono text-xs text-muted-foreground">{environment.apiUrl}</span>
+		<CopyButton text={environment.apiUrl} size="icon" class="size-6 shrink-0" />
 		<span class="shrink-0 font-mono text-xs text-muted-foreground/70">#{environment.id}</span>
 	</div>
-	{#if formInputs.apiUrl.error}
-		<p class="mt-1 text-xs text-destructive">{formInputs.apiUrl.error}</p>
-	{/if}
-	{#if directRemoteUrlChanged}
-		<div class="mt-3 max-w-md">
-			<TextInputWithLabel
-				id="agent-access-token-for-url"
-				type="password"
-				autocomplete="off"
-				label={m.environments_access_token_for_url_label()}
-				description={m.environments_access_token_for_url_help()}
-				bind:value={formInputs.accessToken.value}
-				disabled={settingsForm.isLoading}
-			/>
-		</div>
-	{/if}
 {/snippet}
 
 {#snippet environmentHeaderActions()}
@@ -793,14 +490,7 @@
 {/snippet}
 
 {#snippet environmentSubHeader()}
-	{#if environment.enabled && settings && isCurrentlyStandby}
-		<div class="flex items-start gap-3 rounded-lg border border-info/30 bg-info/10 p-4 text-info">
-			<AlertIcon class="mt-0.5 size-5 shrink-0 text-info" />
-			<div class="flex-1 space-y-1">
-				<p class="text-sm font-medium">{m.common_status()}: {m.common_standby()}</p>
-			</div>
-		</div>
-	{:else if !environment.enabled || !isCurrentlyOnline || !settings}
+	{#if !environment.enabled || !isCurrentlyOnline || !settings}
 		<div class="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/10 p-4 text-warning">
 			<AlertIcon class="mt-0.5 size-5 shrink-0 text-warning" />
 			<div class="flex-1 space-y-1">
@@ -808,11 +498,14 @@
 					{#if !environment.enabled}
 						{m.environments_warning_disabled()}
 					{:else if !isCurrentlyOnline}
-						{m.common_status()}: {currentStatus === 'pending'
-							? m.common_pending()
-							: currentStatus === 'error'
-								? m.common_error()
-								: m.common_offline()}
+						{m.common_status()}:
+						{#if currentStatus === 'pending'}
+							{m.common_pending()}
+						{:else if currentStatus === 'error'}
+							{m.common_error()}
+						{:else}
+							{m.common_offline()}
+						{/if}
 					{:else if !settings}
 						{m.environments_warning_no_settings()}
 					{/if}
@@ -823,21 +516,35 @@
 	{#if regeneratedApiKey}
 		<div class="rounded-lg border border-success/30 bg-success/10 p-4 text-success">
 			<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-				<div class="space-y-2">
-					<p class="text-sm font-medium">{m.environments_new_api_key()}</p>
+				<div class="min-w-0 flex-1 space-y-2">
+					<p class="text-sm font-medium">
+						{m.environments_new_api_key()}
+					</p>
 					<div class="flex items-center gap-2">
 						<code class="flex-1 rounded-md bg-background/70 px-3 py-2 font-mono text-sm break-all">
 							{regeneratedApiKey}
 						</code>
 						<CopyButton text={regeneratedApiKey} size="icon" class="size-8 shrink-0" />
 					</div>
-					<p class="text-sm">{m.environments_api_key_save_warning()}</p>
+					<p class="text-sm">
+						{m.environments_api_key_save_warning()}
+					</p>
+					{#if regeneratedSnippets}
+						<AgentCommandBlock
+							dockerRunLabel={m.docker_run_command()}
+							dockerRun={regeneratedSnippets.dockerRun}
+							dockerComposeLabel={m.common_docker_compose()}
+							dockerCompose={regeneratedSnippets.dockerCompose}
+						/>
+					{/if}
 				</div>
 
 				<ArcaneButton
 					action="base"
 					tone="outline"
-					onclick={() => (regeneratedApiKey = null)}
+					onclick={() => {
+						regeneratedApiKey = null;
+					}}
 					customLabel={m.common_dismiss()}
 					class="shrink-0"
 				/>
@@ -852,7 +559,7 @@
 	backLabel={m.common_back()}
 	{tabItems}
 	selectedTab={activeTab}
-	onTabChange={handleTabChange}
+	onTabChange={urlTab.select}
 	showFloatingHeader={false}
 >
 	{#snippet headerInfo()}
@@ -908,16 +615,34 @@
 					{/if}
 				{:else}
 					<div class="flex flex-col items-start gap-3 px-5 py-4">
-						<p role="status" class="text-sm text-muted-foreground">{m.features_unavailable()}</p>
+						<p role="status" class="text-sm text-muted-foreground">
+							{m.features_unavailable()}
+						</p>
 						<ArcaneButton action="base" customLabel={m.common_retry()} onclick={refreshEnvironment} />
 					</div>
 				{/if}
 			</SettingsSection>
 		</Tabs.Content>
 
+		{#if showEngineTab}
+			<Tabs.Content value="engine">
+				{#if isCurrentlyOnline}
+					<EngineInfoTab environmentId={environment.id} {podmanStatus} />
+				{:else}
+					{@render settingsOffline()}
+				{/if}
+			</Tabs.Content>
+		{/if}
+
+		{#if showHistoryTab}
+			<Tabs.Content value="history">
+				<EnvironmentJobHistoryTab environmentId={environment.id} />
+			</Tabs.Content>
+		{/if}
+
 		{#if runtimeEnvironment.id !== '0'}
 			<Tabs.Content value="connection">
-				<ConnectionEdgeTab
+				<ConnectionAgentTab
 					environment={runtimeEnvironment}
 					{currentStatus}
 					{showMTLSDownloads}
@@ -926,57 +651,6 @@
 				/>
 			</Tabs.Content>
 		{/if}
-
-		{#if showSettingsTabs && settingsAvailable}
-			<Tabs.Content value="storage">
-				<StorageTab bind:formInputs />
-			</Tabs.Content>
-
-			<Tabs.Content value="docker">
-				<DockerTab bind:formInputs environmentId={environment.id} {shellSelectValue} {handleShellSelectChange} {shellOptions} />
-			</Tabs.Content>
-
-			<Tabs.Content value="security">
-				<Tabs.Root value={activeSecuritySubTab} class="w-full">
-					<div class="mb-4">
-						<TabBar
-							items={securityTabItems}
-							value={activeSecuritySubTab}
-							onValueChange={(value) => {
-								securitySubTab = value;
-							}}
-						/>
-					</div>
-					<Tabs.Content value="trivy">
-						<TrivySecuritySettings bind:formInputs environmentId={environment.id} />
-					</Tabs.Content>
-					<Tabs.Content value="patching">
-						<ImagePatchSettings bind:formInputs environmentId={environment.id} />
-					</Tabs.Content>
-					<Tabs.Content value="lifecycle">
-						<LifecycleSecuritySettings bind:formInputs />
-					</Tabs.Content>
-				</Tabs.Root>
-			</Tabs.Content>
-		{:else if showSettingsTabs}
-			{#each ['storage', 'docker', 'security'] as tab (tab)}
-				<Tabs.Content value={tab}>
-					{@render settingsOffline()}
-				</Tabs.Content>
-			{/each}
-		{/if}
-
-		{#if showJobsTab && settingsAvailable}
-			<Tabs.Content value="jobs">
-				<JobsTab bind:formInputs environmentId={environment.id} />
-			</Tabs.Content>
-		{:else if showJobsTab}
-			<Tabs.Content value="jobs">
-				{@render settingsOffline()}
-			</Tabs.Content>
-		{/if}
-
-		<Tabs.Content value="gitops" />
 	{/snippet}
 </TabbedPageLayout>
 
@@ -996,10 +670,10 @@
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>
-{#key `${easyJoinSession}:${easyJoinCandidates.managerEnvironmentId}`}
+{#key `${easyJoinSession}:${easyJoinCandidates.managerFor(runtimeEnvironment.id)}`}
 	<EasyJoinDialog
 		bind:open={easyJoinDialogOpen}
-		managerEnvironmentId={easyJoinCandidates.managerEnvironmentId ?? undefined}
+		managerEnvironmentId={easyJoinCandidates.managerFor(runtimeEnvironment.id)}
 		targetEnvironmentId={runtimeEnvironment.id}
 		onComplete={easyJoinCandidates.refresh}
 	/>

@@ -11,27 +11,28 @@ import (
 	"slices"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 )
 
 // ListSpec describes a paginated list with raw JSON passthrough or table rendering.
 type ListSpec[T any] struct {
+	// Query holds extra query parameters, applied after pagination.
+	Query url.Values
+
+	Row func(T) []string
 	// Resource names the collection in error messages and the trailing
 	// "Showing x of y <resource>" line.
 	Resource string
 	// Endpoint is the list path (environment already applied).
 	Endpoint string
-	// Params configures pagination from the command's flags.
-	Params ListParams
-	// Query holds extra query parameters, applied after pagination.
-	Query url.Values
 
 	Headers []string
-	Row     func(T) []string
+	// Params configures pagination from the command's flags.
+	Params ListParams
 }
 
 // RunList executes one standard list command as described by spec.
@@ -61,7 +62,7 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 	merged, _ := cmd.Context().Value(mergedScopeKey{}).(*mergedScope)
 	if JSONOutputEnabled(cmd) {
 		if merged != nil {
-			var envelope base.Paginated[jsontext.Value]
+			var envelope types.Paginated[jsontext.Value]
 			if unmarshalErr := json.Unmarshal(body, &envelope); unmarshalErr != nil {
 				return fmt.Errorf("failed to parse response: %w", unmarshalErr)
 			}
@@ -70,7 +71,7 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 		return PrintRawJSON(body)
 	}
 
-	var result base.Paginated[T]
+	var result types.Paginated[T]
 	if unmarshalErr := json.Unmarshal(body, &result); unmarshalErr != nil {
 		return fmt.Errorf("failed to parse response: %w", unmarshalErr)
 	}
@@ -87,8 +88,8 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 		if merged == nil {
 			continue
 		}
-		var ref base.EnvironmentRef
-		if tagged, ok := any(item).(interface{ Environment() base.EnvironmentRef }); ok {
+		var ref types.EnvironmentRef
+		if tagged, ok := any(item).(interface{ Environment() types.EnvironmentRef }); ok {
 			ref = tagged.Environment()
 		}
 		rows[i] = slices.Concat([]string{cmp.Or(ref.Name, merged.names[cmp.Or(ref.ID, c.EnvID())], ref.ID)}, rows[i])
@@ -100,10 +101,10 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 // Spec describes a request with raw JSON data output or typed text rendering.
 // Render is required in text mode; a nil Render returns a programmer error before requesting.
 type Spec[T any] struct {
-	Method, Path, FailureMessage string
 	Body                         any
-	Timeout                      time.Duration
 	Render                       func(T) error
+	Method, Path, FailureMessage string
+	Timeout                      time.Duration
 }
 
 // Run enforces a success envelope and prints raw data in JSON mode or invokes Render in text mode.
@@ -148,9 +149,9 @@ func Run[T any](cmd *cobra.Command, c *client.Client, spec Spec[T]) error {
 
 // DeleteSpec describes a confirmed DELETE with optional body and human-readable success output.
 type DeleteSpec struct {
-	Force                                        bool
-	Prompt, Path, FailureMessage, SuccessMessage string
 	Body                                         any
+	Prompt, Path, FailureMessage, SuccessMessage string
+	Force                                        bool
 }
 
 // RunDelete returns nil on cancellation, otherwise printing raw data in JSON mode or SuccessMessage in text mode.

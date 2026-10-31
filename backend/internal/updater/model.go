@@ -3,7 +3,7 @@ package updater
 import (
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 )
 
 type AutoUpdateStatus string
@@ -21,18 +21,19 @@ const (
 type AutoUpdateRecord struct {
 	database.BaseModel
 
-	ResourceID       string           `json:"resourceId"`
-	ResourceType     string           `json:"resourceType"`
-	ResourceName     string           `json:"resourceName"`
-	Status           AutoUpdateStatus `json:"status"`
-	StartTime        time.Time        `json:"startTime"`
-	EndTime          *time.Time       `json:"endTime,omitempty"`
-	UpdateAvailable  bool             `json:"updateAvailable"`
-	UpdateApplied    bool             `json:"updateApplied"`
-	OldImageVersions database.JSON    `json:"oldImageVersions,omitempty" gorm:"type:text"`
-	NewImageVersions database.JSON    `json:"newImageVersions,omitempty" gorm:"type:text"`
-	Error            *string          `json:"error,omitempty"`
-	Details          database.JSON    `json:"details,omitempty" gorm:"type:text"`
+	StartTime        time.Time     `json:"startTime"`
+	EndTime          *time.Time    `json:"endTime,omitempty"`
+	OldImageVersions database.JSON `json:"oldImageVersions,omitempty" gorm:"type:text"`
+	NewImageVersions database.JSON `json:"newImageVersions,omitempty" gorm:"type:text"`
+	Error            *string       `json:"error,omitempty"`
+	Details          database.JSON `json:"details,omitempty" gorm:"type:text"`
+
+	ResourceID      string           `json:"resourceId"`
+	ResourceType    string           `json:"resourceType"`
+	ResourceName    string           `json:"resourceName"`
+	Status          AutoUpdateStatus `json:"status"`
+	UpdateAvailable bool             `json:"updateAvailable"`
+	UpdateApplied   bool             `json:"updateApplied"`
 }
 
 func (AutoUpdateRecord) TableName() string {

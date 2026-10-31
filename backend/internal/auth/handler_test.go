@@ -11,7 +11,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
-	"github.com/getarcaneapp/arcane/types/v2/auth"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwt"
@@ -19,16 +19,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
 )
 
 type secureInput struct{}
@@ -105,7 +105,7 @@ func TestNewHumaMiddleware_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToke
 	sessionSvc := session.NewSessionService(db)
 
 	signingKey := newTestSigningKey()
-	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, &config.Config{JWTRefreshExpiry: 24 * time.Hour}).WithSigningKey(signingKey)
+	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, nil, nil, &config.Config{JWTRefreshExpiry: 24 * time.Hour}).WithSigningKey(signingKey)
 	bearerToken := mintHumaMiddlewareTestToken(t, userSvc, sessionSvc, signingKey, "u-loopback")
 
 	ps := authz.NewPermissionSet()
@@ -269,7 +269,7 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 
 	signingKey := newTestSigningKey()
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
-	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, cfg).WithSigningKey(signingKey)
+	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, nil, nil, cfg).WithSigningKey(signingKey)
 
 	_, err := userSvc.CreateUser(t.Context(), &user.User{
 		ID:       "u-logout",
@@ -278,7 +278,7 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 	require.NoError(t, err)
 
 	exp := time.Now().Add(5 * time.Minute)
-	localSession, _, err := sessionSvc.CreateSession(t.Context(), "u-logout", exp, auth.SessionMeta{})
+	localSession, _, err := sessionSvc.CreateSession(t.Context(), "u-logout", exp, types.SessionMeta{})
 	require.NoError(t, err)
 
 	claims := map[string]any{
@@ -357,7 +357,7 @@ func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 	signingKey := newTestSigningKey()
 	browserSigningKey := bytes.Repeat([]byte{0x24}, browserSessionSigningKeySize)
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
-	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, cfg).WithSigningKey(signingKey)
+	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, nil, nil, cfg).WithSigningKey(signingKey)
 	authSvc.browserSigningKey = browserSigningKey
 
 	_, err := userSvc.CreateUser(t.Context(), &user.User{
@@ -367,7 +367,7 @@ func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 	require.NoError(t, err)
 
 	exp := time.Now().Add(5 * time.Minute)
-	localSession, _, err := sessionSvc.CreateSession(t.Context(), "u-ver", exp, auth.SessionMeta{})
+	localSession, _, err := sessionSvc.CreateSession(t.Context(), "u-ver", exp, types.SessionMeta{})
 	require.NoError(t, err)
 
 	// An empty appVersion omits the claim, which passes the version check (no pin).
@@ -448,8 +448,8 @@ func TestNewHumaMiddleware_AgentAuthAppliesForwardedIconCatalog(t *testing.T) {
 
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
 	api.UseMiddleware(NewHumaMiddleware(api, &AuthService{}, nil, nil, nil, &config.Config{
-		AgentMode:  true,
-		AgentToken: agentToken,
+		AgentEnabled: true,
+		AgentToken:   agentToken,
 	}))
 
 	huma.Register(api, huma.Operation{
@@ -503,7 +503,7 @@ func mintHumaMiddlewareTestToken(t *testing.T, userSvc *user.UserService, sessio
 	require.NoError(t, err)
 
 	exp := time.Now().Add(5 * time.Minute)
-	localSession, _, err := sessionSvc.CreateSession(t.Context(), userID, exp, auth.SessionMeta{})
+	localSession, _, err := sessionSvc.CreateSession(t.Context(), userID, exp, types.SessionMeta{})
 	require.NoError(t, err)
 
 	claims := map[string]any{
@@ -638,7 +638,7 @@ func TestAuthMiddleware_ManagerAuthResolvesPermissionsByKeyKind(t *testing.T) {
 		_, err = userSvc.CreateUser(ctx, browserUser)
 		require.NoError(t, err)
 		expiresAt := time.Now().Add(time.Hour)
-		browserSession, refreshJTI, err := sessionSvc.CreateSession(ctx, browserUser.ID, expiresAt, auth.SessionMeta{})
+		browserSession, refreshJTI, err := sessionSvc.CreateSession(ctx, browserUser.ID, expiresAt, types.SessionMeta{})
 		require.NoError(t, err)
 		tokenPair, err := authSvc.buildTokenPair(ctx, browserUser, browserSession, refreshJTI)
 		require.NoError(t, err)

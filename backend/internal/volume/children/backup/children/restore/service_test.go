@@ -4,13 +4,13 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/backup"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 )
 
 func TestArchiveMembersForSelectionExpandsFolders(t *testing.T) {
 	paths := []string{"./folder/", "./folder/a.txt", "./folder/nested/b.txt", "./other.txt"}
-	selected := []backup.BackupFileEntry{{Path: "folder", Name: "folder", IsDirectory: true}}
+	selected := []types.BackupFileEntry{{Path: "folder", Name: "folder", IsDirectory: true}}
 	require.Equal(
 		t,
 		[]string{"folder/", "folder/a.txt", "folder/nested/b.txt"},

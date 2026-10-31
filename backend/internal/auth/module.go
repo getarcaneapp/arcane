@@ -7,18 +7,18 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/auth"
+	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
 type Module struct {
 	service                *AuthService
 	user                   *user.UserService
 	settings               *settings.SettingsService
-	beginMFAAuthentication func(context.Context, string, auth.SessionMeta, string) (*auth.MFAChallenge, error)
+	beginMFAAuthentication func(context.Context, string, types.SessionMeta, string) (*types.MFAChallenge, error)
 }
 
 func New(
@@ -28,10 +28,10 @@ func New(
 	beginMFAAuthentication func(
 		context.Context,
 		string,
-		auth.SessionMeta,
+		types.SessionMeta,
 		string,
 	) (
-		*auth.MFAChallenge,
+		*types.MFAChallenge,
 		error,
 	),
 ) *Module {
@@ -62,10 +62,10 @@ func RegisterAuth(
 	beginMFAAuthentication func(
 		context.Context,
 		string,
-		auth.SessionMeta,
+		types.SessionMeta,
 		string,
 	) (
-		*auth.MFAChallenge,
+		*types.MFAChallenge,
 		error,
 	),
 ) {
@@ -107,6 +107,16 @@ func RegisterAuth(
 	}, h.GetCurrentUser)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-session-bootstrap",
+		Method:      http.MethodGet,
+		Path:        "/auth/bootstrap",
+		Summary:     "Get session bootstrap",
+		Description: "Get the current user, app version, accessible environments, and permission manifest in one response",
+		Tags:        []string{"Auth"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, h.GetSessionBootstrap)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "refresh-token",
 		Method:      http.MethodPost,
 		Path:        "/auth/refresh",
@@ -128,8 +138,8 @@ func RegisterAuth(
 
 	huma.Register(api, huma.Operation{
 		OperationID: "logout-all-other-sessions",
-		Method:      http.MethodPost,
-		Path:        "/auth/sessions/logout-all",
+		Method:      http.MethodDelete,
+		Path:        "/auth/sessions",
 		Summary:     "Logout all other sessions",
 		Description: "Revoke every session for the current user except the one making this request",
 		Tags:        []string{"Auth"},
@@ -138,7 +148,7 @@ func RegisterAuth(
 
 	huma.Register(api, huma.Operation{
 		OperationID: "update-my-profile",
-		Method:      http.MethodPut,
+		Method:      http.MethodPatch,
 		Path:        "/auth/me/profile",
 		Summary:     "Update own profile",
 		Description: "Update the current user's display name and email. Forbidden for OIDC-managed accounts.",

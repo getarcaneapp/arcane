@@ -10,5 +10,6 @@ export type PersistedPreferencesSnapshot = {
 	sort?: { column: string; direction: 'asc' | 'desc' };
 	limit: number;
 	mobileVisibility?: string[];
+	viewMode?: 'list' | 'grid';
 	customSettings?: Record<string, unknown>;
 };

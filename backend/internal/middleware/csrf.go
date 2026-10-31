@@ -8,8 +8,8 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 )
 
 // publicCrossOriginBypassPaths are endpoints intentionally reachable cross-origin
@@ -39,9 +39,9 @@ func NewCSRFMiddleware(cfg *config.Config) *CSRFMiddleware {
 }
 
 func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
-	// Edge Agent mode: skip. The agent only receives server-to-server requests
-	// through the edge tunnel from the manager — never from browsers. Mirrors CORSMiddleware.
-	if m.cfg != nil && m.cfg.EdgeAgent {
+	// Agent mode: skip. The agent only receives server-to-server requests
+	// through the agent tunnel from the manager — never from browsers. Mirrors CORSMiddleware.
+	if m.cfg != nil && m.cfg.AgentEnabled {
 		return func(next echo.HandlerFunc) echo.HandlerFunc {
 			return func(c *echo.Context) error { return next(c) }
 		}

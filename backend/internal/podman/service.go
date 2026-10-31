@@ -11,18 +11,19 @@ import (
 	"sync"
 	"time"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	"go.getarcane.app/docker/compat"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman/children/kube"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman/children/pods"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman/children/quadlets"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman/children/secrets"
-	libpodman "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/podman"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/kube"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/pods"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/quadlets"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/secrets"
+	libpodman "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
 const (
@@ -33,9 +34,9 @@ const (
 
 type Config struct {
 	Engine        func(context.Context) (compat.EngineCompatibilityInfo, error)
-	Host          string
 	NewSystemd    func(rootless bool) libpodman.Systemd
 	NotifyUpdates func(context.Context, []notifications.ContainerUpdateBatchEntry) error
+	Host          string
 }
 
 type Service struct {
@@ -48,13 +49,15 @@ type Service struct {
 }
 
 type detector struct {
-	config    Config
-	client    *libpodman.Client
+	cachedAt  time.Time
 	clientErr error
 
-	mu       sync.Mutex
-	cached   libpodman.Runtime
-	cachedAt time.Time
+	client *libpodman.Client
+
+	config Config
+	cached libpodman.Runtime
+
+	mu sync.Mutex
 }
 
 func NewService(cfg Config) *Service {
@@ -73,18 +76,18 @@ func NewService(cfg Config) *Service {
 	}
 }
 
-func (s *Service) Status(ctx context.Context) podmantypes.Status {
+func (s *Service) Status(ctx context.Context) types.PodmanStatus {
 	rt, err := s.detect(ctx)
 	if err != nil {
 		if !errors.Is(err, common.ErrPodmanNotDetected) {
 			slog.DebugContext(ctx, "Podman detection failed", "error", err)
 		}
-		return podmantypes.Status{AutoUpdateMode: podmantypes.AutoUpdateModeUnavailable}
+		return types.PodmanStatus{AutoUpdateMode: types.PodmanAutoUpdateModeUnavailable}
 	}
 
 	availability := rt.Systemd.Availability(ctx)
 	features := libpodman.DetectFeatures(rt.Version.Version, availability.Available)
-	return podmantypes.Status{
+	return types.PodmanStatus{
 		Detected:             true,
 		Version:              rt.Version.Version,
 		APIVersion:           rt.Version.APIVersion,
@@ -95,13 +98,29 @@ func (s *Service) Status(ctx context.Context) podmantypes.Status {
 		SystemdAvailable:     availability.Available,
 		SystemdScope:         availability.Scope,
 		SystemdReason:        availability.Reason,
+		PodCount:             s.PodCount(ctx).OrElse(0),
 	}
 }
 
-func (s *Service) Info(ctx context.Context) (podmantypes.Info, error) {
+func (s *Service) AggregateStatus(ctx context.Context) (types.ApiResponse[types.PodmanStatus], error) {
+	return httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[types.PodmanStatus]) types.PodmanStatus {
+		detected, podCount := false, 0
+		for _, environment := range environments {
+			detected = detected || environment.Data.Detected
+			podCount += environment.Data.PodCount
+		}
+		return types.PodmanStatus{
+			Detected:       detected,
+			AutoUpdateMode: types.PodmanAutoUpdateModeUnavailable,
+			PodCount:       podCount,
+		}
+	})
+}
+
+func (s *Service) Info(ctx context.Context) (types.PodmanInfo, error) {
 	rt, err := s.detect(ctx)
 	if err != nil {
-		return podmantypes.Info{}, err
+		return types.PodmanInfo{}, err
 	}
 	return rt.Client.Info(ctx)
 }
@@ -126,20 +145,20 @@ func (s *Service) ContainerUnitAction(ctx context.Context, containerRef string, 
 		return false, nil
 	}
 
-	containers, err := rt.Client.ContainerList(ctx, []string{podmantypes.SystemdUnitLabel}, nil)
+	containers, err := rt.Client.ContainerList(ctx, []string{types.PodmanSystemdUnitLabel}, nil)
 	if err != nil {
 		slog.WarnContext(ctx, "Could not list quadlet-managed containers", "container", containerRef, "error", err)
 		return false, nil
 	}
 
-	index := slices.IndexFunc(containers, func(c podmantypes.Container) bool {
+	index := slices.IndexFunc(containers, func(c types.PodmanContainer) bool {
 		return strings.HasPrefix(c.ID, containerRef) || slices.Contains(c.Names, strings.TrimPrefix(containerRef, "/"))
 	})
 	if index < 0 {
 		return false, nil
 	}
 
-	unit := podmantypes.QuadletUnit(containers[index].Labels)
+	unit := types.QuadletUnit(containers[index].Labels)
 	if unit == "" {
 		return false, nil
 	}
@@ -154,7 +173,7 @@ func (s *Service) ContainerUnitAction(ctx context.Context, containerRef string, 
 }
 
 func (s *Service) GuardQuadletManaged(ctx context.Context, labels map[string]string) error {
-	unit := podmantypes.QuadletUnit(labels)
+	unit := types.QuadletUnit(labels)
 	if unit == "" {
 		return nil
 	}
@@ -186,23 +205,23 @@ func (s *Service) quadletManaged(ctx context.Context, rt libpodman.Runtime, unit
 	if err != nil {
 		return false, err
 	}
-	return slices.ContainsFunc(installed, func(quadlet podmantypes.QuadletDetail) bool {
+	return slices.ContainsFunc(installed, func(quadlet types.QuadletDetail) bool {
 		return quadlet.UnitName == unit
 	}), nil
 }
 
-func (s *Service) AutoUpdate(ctx context.Context, opts podmantypes.AutoUpdateOptions) (podmantypes.AutoUpdateResult, error) {
+func (s *Service) AutoUpdate(ctx context.Context, opts types.PodmanAutoUpdateOptions) (types.PodmanAutoUpdateResult, error) {
 	rt, err := s.detect(ctx)
 	if err != nil {
-		return podmantypes.AutoUpdateResult{}, err
+		return types.PodmanAutoUpdateResult{}, err
 	}
 
 	availability := rt.Systemd.Availability(ctx)
 	switch libpodman.DetectFeatures(rt.Version.Version, availability.Available).AutoUpdateMode {
-	case podmantypes.AutoUpdateModeREST:
+	case types.PodmanAutoUpdateModeREST:
 		result, updateErr := rt.Client.AutoUpdate(ctx, opts)
 		if updateErr != nil {
-			return podmantypes.AutoUpdateResult{}, updateErr
+			return types.PodmanAutoUpdateResult{}, updateErr
 		}
 		if !opts.DryRun {
 			entries := make([]notifications.ContainerUpdateBatchEntry, 0, len(result.Reports))
@@ -219,36 +238,36 @@ func (s *Service) AutoUpdate(ctx context.Context, opts podmantypes.AutoUpdateOpt
 			}
 		}
 		return result, nil
-	case podmantypes.AutoUpdateModeSystemd:
+	case types.PodmanAutoUpdateModeSystemd:
 		if opts.DryRun {
-			return podmantypes.AutoUpdateResult{}, common.Classify(common.ErrBadRequest, errors.New("auto-update dry run requires Podman 6.2 or later"))
+			return types.PodmanAutoUpdateResult{}, common.Classify(common.ErrBadRequest, errors.New("auto-update dry run requires Podman 6.2 or later"))
 		}
 		if len(opts.Filters) > 0 || opts.Rollback != nil || opts.TLSVerify != nil || opts.Authfile != "" {
-			return podmantypes.AutoUpdateResult{}, common.Classify(common.ErrBadRequest, errors.New("auto-update filters, rollback, TLS verification and authfile options require Podman 6.2 or later"))
+			return types.PodmanAutoUpdateResult{}, common.Classify(common.ErrBadRequest, errors.New("auto-update filters, rollback, TLS verification and authfile options require Podman 6.2 or later"))
 		}
 		if startErr := rt.Systemd.Start(ctx, autoUpdateUnit); startErr != nil {
-			return podmantypes.AutoUpdateResult{}, startErr
+			return types.PodmanAutoUpdateResult{}, startErr
 		}
 		unit, statusErr := rt.Systemd.UnitStatus(ctx, autoUpdateUnit)
 		for statusErr == nil && unit.ActiveState == "activating" {
 			select {
 			case <-ctx.Done():
-				return podmantypes.AutoUpdateResult{}, ctx.Err()
+				return types.PodmanAutoUpdateResult{}, ctx.Err()
 			case <-time.After(autoUpdatePollInterval):
 			}
 			unit, statusErr = rt.Systemd.UnitStatus(ctx, autoUpdateUnit)
 		}
 		if statusErr != nil {
-			return podmantypes.AutoUpdateResult{}, statusErr
+			return types.PodmanAutoUpdateResult{}, statusErr
 		}
-		return podmantypes.AutoUpdateResult{
-			Mode:    podmantypes.AutoUpdateModeSystemd,
-			Reports: []podmantypes.AutoUpdateReport{},
+		return types.PodmanAutoUpdateResult{
+			Mode:    types.PodmanAutoUpdateModeSystemd,
+			Reports: []types.PodmanAutoUpdateReport{},
 			Errors:  kit.Ternary(unit.ActiveState == "failed", []string{autoUpdateUnit + " failed: " + unit.SubState}, []string{}),
 			Unit:    &unit,
 		}, nil
 	default:
-		return podmantypes.AutoUpdateResult{}, common.Classify(common.ErrConflict, fmt.Errorf("podman auto-update is unavailable: %s", cmp.Or(availability.Reason, "systemd is not reachable")))
+		return types.PodmanAutoUpdateResult{}, common.Classify(common.ErrConflict, fmt.Errorf("podman auto-update is unavailable: %s", cmp.Or(availability.Reason, "systemd is not reachable")))
 	}
 }
 

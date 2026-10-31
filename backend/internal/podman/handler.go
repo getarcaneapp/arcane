@@ -7,15 +7,15 @@ import (
 	"maps"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 type Handler struct {
@@ -23,33 +23,32 @@ type Handler struct {
 	eventService *event.EventService
 }
 
-type GetPodmanStatusInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type GetPodmanInfoInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 type RunPodmanAutoUpdateInput struct {
+	Body          *types.PodmanAutoUpdateOptions
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          *podmantypes.AutoUpdateOptions
 }
 
-func (h *Handler) GetStatus(ctx context.Context, _ *GetPodmanStatusInput) (*handlerutil.Out[podmantypes.Status], error) {
-	return &handlerutil.Out[podmantypes.Status]{Body: base.ApiResponse[podmantypes.Status]{Success: true, Data: h.service.Status(ctx)}}, nil
+func (h *Handler) GetStatus(ctx context.Context, _ *types.EnvironmentInput) (*handlerutil.Out[types.PodmanStatus], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.service.AggregateStatus(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to get Podman status: " + err.Error())
+		}
+		return &handlerutil.Out[types.PodmanStatus]{Body: body}, nil
+	}
+	return &handlerutil.Out[types.PodmanStatus]{Body: types.ApiResponse[types.PodmanStatus]{Success: true, Data: h.service.Status(ctx)}}, nil
 }
 
-func (h *Handler) GetInfo(ctx context.Context, _ *GetPodmanInfoInput) (*handlerutil.Out[podmantypes.Info], error) {
+func (h *Handler) GetInfo(ctx context.Context, _ *types.EnvironmentInput) (*handlerutil.Out[types.PodmanInfo], error) {
 	info, err := h.service.Info(ctx)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to get Podman info: "+apiErr.Message)
 	}
-	return &handlerutil.Out[podmantypes.Info]{Body: base.ApiResponse[podmantypes.Info]{Success: true, Data: info}}, nil
+	return &handlerutil.Out[types.PodmanInfo]{Body: types.ApiResponse[types.PodmanInfo]{Success: true, Data: info}}, nil
 }
 
-func (h *Handler) RunAutoUpdate(ctx context.Context, input *RunPodmanAutoUpdateInput) (*handlerutil.Out[podmantypes.AutoUpdateResult], error) {
+func (h *Handler) RunAutoUpdate(ctx context.Context, input *RunPodmanAutoUpdateInput) (*handlerutil.Out[types.PodmanAutoUpdateResult], error) {
 	opts := kit.FromPtr(input.Body)
 	result, err := h.service.AutoUpdate(ctx, opts)
 	if err != nil {
@@ -61,7 +60,7 @@ func (h *Handler) RunAutoUpdate(ctx context.Context, input *RunPodmanAutoUpdateI
 		"dryRun":  opts.DryRun,
 		"reports": len(result.Reports),
 	})
-	return &handlerutil.Out[podmantypes.AutoUpdateResult]{Body: base.ApiResponse[podmantypes.AutoUpdateResult]{Success: true, Data: result}}, nil
+	return &handlerutil.Out[types.PodmanAutoUpdateResult]{Body: types.ApiResponse[types.PodmanAutoUpdateResult]{Success: true, Data: result}}, nil
 }
 
 func (h *Handler) audit(ctx context.Context, environmentID, action, resourceType, resourceName string, metadata map[string]any) {

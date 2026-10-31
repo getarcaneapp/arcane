@@ -50,6 +50,17 @@
 		}
 	}
 
+	function getConflictingRoleId(roleId: string): string {
+		switch (roleId) {
+			case BUILT_IN_ROLE_ADMIN:
+				return BUILT_IN_ROLE_EDITOR;
+			case BUILT_IN_ROLE_EDITOR:
+				return BUILT_IN_ROLE_ADMIN;
+			default:
+				return '';
+		}
+	}
+
 	function envIdToSelectValue(envId: string | undefined): string {
 		return envId ?? GLOBAL_ENVIRONMENT_OPTION_ID;
 	}
@@ -92,8 +103,7 @@
 
 	function toggleQuickPreset(roleId: string, checked: boolean) {
 		if (disabled) return;
-		const conflictingRoleId =
-			roleId === BUILT_IN_ROLE_ADMIN ? BUILT_IN_ROLE_EDITOR : roleId === BUILT_IN_ROLE_EDITOR ? BUILT_IN_ROLE_ADMIN : '';
+		const conflictingRoleId = getConflictingRoleId(roleId);
 		let next = assignments;
 		if (checked) {
 			if (conflictingRoleId) {
@@ -141,7 +151,9 @@
 
 	{#each assignments as assignment, index (assignment)}
 		{@const envValue = envIdToSelectValue(assignment.environmentId)}
-		<div class="grid grid-cols-1 gap-2 rounded-md border bg-card/50 p-3 sm:grid-cols-halves-action sm:items-center">
+		<div
+			class="grid grid-cols-1 gap-2 rounded-md border border-border/70 bg-card/10 p-3 sm:grid-cols-halves-action sm:items-center"
+		>
 			<Select.Root
 				type="single"
 				value={envValue}

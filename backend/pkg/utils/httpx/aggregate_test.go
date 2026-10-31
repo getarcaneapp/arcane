@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,8 +29,8 @@ func aggregateContext(t *testing.T, handler http.Handler, ids ...string) context
 		IDs:     ids,
 		Request: request,
 		Handler: handler,
-		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
-			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
 		},
 	})
 }
@@ -65,7 +65,7 @@ func TestCollectEnvironmentsDispatchesEachEnvironmentInScopeOrder(t *testing.T) 
 	require.Empty(t, collection.Failures)
 	require.Len(t, collection.Results, 3)
 	for i, id := range []string{"b", "a", "c"} {
-		require.Equal(t, base.EnvironmentRef{ID: id, Name: "Env " + id}, collection.Results[i].Environment)
+		require.Equal(t, types.EnvironmentRef{ID: id, Name: "Env " + id}, collection.Results[i].Environment)
 		require.Equal(t, id, collection.Results[i].Value.ID)
 	}
 
@@ -85,12 +85,12 @@ func TestCollectEnvironmentsDispatchesEachEnvironmentInScopeOrder(t *testing.T) 
 
 func TestCollectEnvironmentsMapsFailures(t *testing.T) {
 	bodies := map[string]struct {
-		status int
 		body   string
+		status int
 	}{
 		"huma":      {status: http.StatusUnprocessableEntity, body: `{"title":"Unprocessable Entity","detail":"invalid sort"}`},
 		"api":       {status: http.StatusInternalServerError, body: `{"message":"docker unavailable"}`},
-		"proxy":     {status: http.StatusBadGateway, body: `{"success":false,"data":{"error":"Edge agent is not connected"}}`},
+		"proxy":     {status: http.StatusBadGateway, body: `{"success":false,"data":{"error":"Agent is not connected"}}`},
 		"forbidden": {status: http.StatusForbidden, body: `{"success":false,"data":{"error":"denied"}}`},
 		"empty":     {status: http.StatusServiceUnavailable},
 		"ok":        {status: http.StatusOK, body: `{"id":"ok"}`},
@@ -105,12 +105,12 @@ func TestCollectEnvironmentsMapsFailures(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, collection.Results, 1)
-	require.Equal(t, []base.EnvironmentFailure{
-		{Environment: base.EnvironmentRef{ID: "huma", Name: "huma"}, Message: "invalid sort"},
-		{Environment: base.EnvironmentRef{ID: "api", Name: "api"}, Message: "docker unavailable"},
-		{Environment: base.EnvironmentRef{ID: "proxy", Name: "proxy"}, Message: "Edge agent is not connected"},
-		{Environment: base.EnvironmentRef{ID: "forbidden", Name: "forbidden"}, Message: "denied"},
-		{Environment: base.EnvironmentRef{ID: "empty", Name: "empty"}, Message: "Service Unavailable"},
+	require.Equal(t, []types.EnvironmentFailure{
+		{Environment: types.EnvironmentRef{ID: "huma", Name: "huma"}, Message: "invalid sort"},
+		{Environment: types.EnvironmentRef{ID: "api", Name: "api"}, Message: "docker unavailable"},
+		{Environment: types.EnvironmentRef{ID: "proxy", Name: "proxy"}, Message: "Agent is not connected"},
+		{Environment: types.EnvironmentRef{ID: "forbidden", Name: "forbidden"}, Message: "denied"},
+		{Environment: types.EnvironmentRef{ID: "empty", Name: "empty"}, Message: "Service Unavailable"},
 	}, collection.Failures)
 }
 
@@ -125,7 +125,7 @@ func TestCollectEnvironmentsReturnsFailuresWhenEveryEnvironmentFails(t *testing.
 	require.NotNil(t, collection.Results)
 	require.Empty(t, collection.Results)
 	require.Len(t, collection.Failures, 2)
-	require.Equal(t, base.EnvironmentRef{ID: "a", Name: "a"}, collection.Failures[0].Environment)
+	require.Equal(t, types.EnvironmentRef{ID: "a", Name: "a"}, collection.Failures[0].Environment)
 }
 
 func TestCollectEnvironmentsRejectsOversizedAndEncodedResponses(t *testing.T) {
@@ -169,4 +169,43 @@ func TestCollectEnvironmentsRecoversAbortedHandler(t *testing.T) {
 	require.Len(t, collection.Failures, 1)
 	require.Equal(t, "aborted", collection.Failures[0].Environment.ID)
 	require.Contains(t, collection.Failures[0].Message, http.ErrAbortHandler.Error())
+}
+
+func TestCollectEnvironmentDataKeepsBreakdown(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch aggregateEnvironmentID(r) {
+		case "a":
+			_, _ = w.Write([]byte(`{"success":true,"data":2}`))
+		case "b":
+			_, _ = w.Write([]byte(`{"success":true,"data":3}`))
+		default:
+			w.WriteHeader(http.StatusBadGateway)
+		}
+	})
+
+	body, err := CollectEnvironmentData(aggregateContext(t, handler, "a", "b", "c"), nil, func(environments []types.EnvironmentData[int]) int {
+		total := 0
+		for _, environment := range environments {
+			total += environment.Data
+		}
+		return total
+	})
+
+	require.NoError(t, err)
+	require.True(t, body.Success)
+	require.Equal(t, 5, body.Data)
+	require.Equal(t, []types.EnvironmentData[int]{
+		{Environment: types.EnvironmentRef{ID: "a", Name: "Env a"}, Data: 2},
+		{Environment: types.EnvironmentRef{ID: "b", Name: "Env b"}, Data: 3},
+	}, body.Environments)
+	require.Equal(t, []types.EnvironmentFailure{
+		{Environment: types.EnvironmentRef{ID: "c", Name: "c"}, Message: "Bad Gateway"},
+	}, body.FailedEnvironments)
+}
+
+func TestCollectEnvironmentDataRequiresScope(t *testing.T) {
+	_, err := CollectEnvironmentData(t.Context(), nil, func([]types.EnvironmentData[int]) int {
+		return 0
+	})
+	require.Error(t, err)
 }

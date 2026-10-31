@@ -5,20 +5,19 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/cli/v2/pkg"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg"
 )
 
 var stdoutCaptureMu sync.Mutex
 
 // WriteConfig writes isolated configuration for command tests.
-func WriteConfig(t *testing.T, serverURL string, preview ...bool) string {
+func WriteConfig(t *testing.T, serverURL string) string {
 	t.Helper()
 
 	tempDir := t.TempDir()
@@ -29,8 +28,6 @@ func WriteConfig(t *testing.T, serverURL string, preview ...bool) string {
 	configContent := strings.Join([]string{
 		"server_url: " + serverURL,
 		"api_key: arc_test_key",
-		"default_environment: \"0\"",
-		"previews:\n  allEnvironments: " + strconv.FormatBool(len(preview) > 0 && preview[0]),
 		"log_level: info",
 		"",
 	}, "\n")

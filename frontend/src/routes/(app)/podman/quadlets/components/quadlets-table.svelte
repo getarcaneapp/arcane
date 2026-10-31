@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
@@ -10,11 +12,12 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { FileTextIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { PodmanQuadletDetail, PodmanStatus } from '#lib/types/podman.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { environmentHref, hasShownPermission, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
+	import { hasShownPermission, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { podmanStateVariant } from '#lib/utils/podman.js';
 
 	import { confirmRemoveQuadlet, quadletActionLabels, quadletActions, runQuadletAction } from '../quadlet-actions';
@@ -22,36 +25,33 @@
 	type QuadletRow = EnvironmentRow<PodmanQuadletDetail> & { id: string };
 
 	let {
-		quadlets = $bindable(),
+		quadlets,
 		requestOptions = $bindable(),
 		podmanStatuses,
-		onRefreshData
+		onRetry
 	}: {
 		quadlets: EnvironmentPage<Paginated<PodmanQuadletDetail>>;
 		requestOptions: SearchPaginationSortRequest;
 		podmanStatuses: Record<string, PodmanStatus>;
-		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
+		onRetry: () => Promise<unknown>;
 	} = $props();
 
-	const canManageQuadlets = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('podman:quadlets');
-	});
-	const canRunLifecycle = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('podman:quadlets:lifecycle');
-	});
+	const queryClient = useQueryClient();
+	const scope = $derived(environmentStore.shownKey);
+
+	async function invalidateQuadlets() {
+		await queryClient.invalidateQueries({ queryKey: queryKeys.podman.quadletsPrefix(scope) });
+	}
+
+	const canManageQuadlets = $derived(hasShownPermission('podman:quadlets'));
+	const canRunLifecycle = $derived(hasShownPermission('podman:quadlets:lifecycle'));
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 
-	function withRowIds(page: EnvironmentPage<Paginated<PodmanQuadletDetail>>) {
-		return { ...page, data: page.data.map((quadlet): QuadletRow => ({ ...quadlet, id: quadlet.name })) };
-	}
-
-	const rows = $derived(withRowIds(quadlets));
-
-	const quadletHref = (quadlet: QuadletRow) =>
-		environmentHref(`/podman/quadlets/${encodeURIComponent(quadlet.name)}`, quadlet.environmentId);
+	const rows = $derived({
+		...quadlets,
+		data: quadlets.data.map((quadlet): QuadletRow => ({ ...quadlet, id: quadlet.name }))
+	});
 
 	const columns = $derived([
 		...environmentColumns<QuadletRow>(),
@@ -72,7 +72,12 @@
 
 {#snippet NameCell({ item }: { item: QuadletRow })}
 	<div class="flex items-center gap-2">
-		<a class="font-medium hover:underline" href={quadletHref(item)}>{item.name}</a>
+		<a
+			class="font-medium hover:underline"
+			href={resolve(`/(app)/podman/quadlets/[name]?env=${encodeURIComponent(item.environmentId)}`, {
+				name: encodeURIComponent(item.name)
+			})}>{item.name}</a
+		>
 		{#if item.template}
 			<Badge variant="gray" size="sm">{m.podman_quadlet_template()}</Badge>
 		{/if}
@@ -127,13 +132,25 @@
 			}
 		]}
 		rowActions={RowActions}
-		onclick={() => goto(quadletHref(item))}
+		onclick={() =>
+			goto(
+				resolve(`/(app)/podman/quadlets/[name]?env=${encodeURIComponent(item.environmentId)}`, {
+					name: encodeURIComponent(item.name)
+				})
+			)}
 	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: QuadletRow })}
 	<RowActionsMenu>
-		<DropdownMenu.Item onclick={() => goto(quadletHref(item))}>
+		<DropdownMenu.Item
+			onclick={() =>
+				goto(
+					resolve(`/(app)/podman/quadlets/[name]?env=${encodeURIComponent(item.environmentId)}`, {
+						name: encodeURIComponent(item.name)
+					})
+				)}
+		>
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
@@ -144,10 +161,7 @@
 				<DropdownMenu.Item
 					disabled={!status?.systemdAvailable}
 					title={status?.systemdAvailable ? undefined : status?.systemdReason}
-					onclick={() =>
-						runQuadletAction(item.name, action, item.environmentId, async () => {
-							await onRefreshData(requestOptions);
-						})}
+					onclick={() => runQuadletAction(item.name, action, item.environmentId, invalidateQuadlets)}
 				>
 					{quadletActionLabels[action]()}
 				</DropdownMenu.Item>
@@ -157,10 +171,7 @@
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item
 				variant="destructive"
-				onclick={() =>
-					confirmRemoveQuadlet(item.name, item.environmentId, async () => {
-						await onRefreshData(requestOptions);
-					})}
+				onclick={() => confirmRemoveQuadlet(item.name, item.environmentId, invalidateQuadlets)}
 			>
 				<TrashIcon class="size-4" />
 				{m.common_remove()}
@@ -175,11 +186,7 @@
 	bind:requestOptions
 	bind:mobileFieldVisibility
 	selectionDisabled={true}
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await onRefreshData(options);
-		return withRowIds(quadlets);
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

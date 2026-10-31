@@ -44,7 +44,7 @@ async function selectPermission(page: Page, permission: string) {
 }
 
 async function createRoleThroughUI(page: Page, name: string, permissions: string[]) {
-	await page.goto('/settings/roles/new');
+	await page.goto('/system/roles/new');
 	await page.getByLabel('Name', { exact: true }).fill(name);
 	await page
 		.getByLabel('Description', { exact: true })
@@ -63,42 +63,42 @@ async function createRoleThroughUI(page: Page, name: string, permissions: string
 		.getByRole('button', { name: /Create Role/ })
 		.click();
 	const role = await readApiData<TestRole>(await responsePromise, `Create role ${name}`);
-	await expect(page).toHaveURL('/settings/roles');
+	await expect(page).toHaveURL('/system/roles');
 	return role;
 }
 
 async function editRoleThroughUI(page: Page, role: TestRole) {
-	await page.goto('/settings/roles');
+	await page.goto('/system/roles');
 	await page.getByPlaceholder('Search…').fill(role.name);
 	const row = page.getByRole('row').filter({ hasText: role.name });
 	const menu = await openRowActionsMenu(page, row);
 	await menu.getByRole('menuitem', { name: 'Edit', exact: true }).click();
 
-	await expect(page).toHaveURL(`/settings/roles/${role.id}`);
+	await expect(page).toHaveURL(`/system/roles/${role.id}`);
 	await page
 		.getByLabel('Description', { exact: true })
 		.fill('Updated by the Playwright RBAC journey');
 
 	const responsePromise = page.waitForResponse(
 		(response) =>
-			response.request().method() === 'PUT' &&
+			response.request().method() === 'PATCH' &&
 			new URL(response.url()).pathname === `/api/roles/${role.id}`
 	);
 	await page.getByRole('button', { name: 'Save changes', exact: true }).click();
 	const updated = await readApiData<TestRole>(await responsePromise, `Update role ${role.name}`);
-	await expect(page).toHaveURL('/settings/roles');
+	await expect(page).toHaveURL('/system/roles');
 	expect(updated.description).toBe('Updated by the Playwright RBAC journey');
 }
 
 async function cloneViewerRoleThroughUI(page: Page) {
-	await page.goto('/settings/roles/role_viewer');
+	await page.goto('/system/roles/role_viewer');
 	const responsePromise = page.waitForResponse(
 		(response) =>
 			response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/roles'
 	);
 	await page.getByRole('button', { name: 'Clone as custom role', exact: true }).click();
 	const cloned = await readApiData<TestRole>(await responsePromise, 'Clone the Viewer role');
-	await expect(page).toHaveURL(`/settings/roles/${cloned.id}`);
+	await expect(page).toHaveURL(`/system/roles/${cloned.id}`);
 	expect(cloned.builtIn).toBe(false);
 	expect(cloned.permissions.length).toBeGreaterThan(0);
 	return cloned;
@@ -131,7 +131,7 @@ async function createRestrictedUserThroughUI(
 	remoteEnvironmentName: string,
 	remoteRoleName: string
 ) {
-	await page.goto('/settings/users');
+	await page.goto('/system/users');
 	await page.getByRole('button', { name: 'Create User', exact: true }).click();
 	const dialog = page.getByRole('dialog', { name: 'Create New User' });
 	await expect(dialog).toBeVisible();
@@ -208,7 +208,7 @@ async function createRestrictedUserThroughUI(
 	const assignmentsResponsePromise = page.waitForResponse(
 		(response) =>
 			response.request().method() === 'PUT' &&
-			/^\/api\/users\/[^/]+\/role-assignments$/.test(new URL(response.url()).pathname)
+			/^\/api\/users\/[^/]+\/roles$/.test(new URL(response.url()).pathname)
 	);
 	await dialog.getByRole('button', { name: 'Create User', exact: true }).click();
 
@@ -229,7 +229,7 @@ async function createRestrictedUserThroughUI(
 }
 
 async function editUserThroughUI(page: Page, user: TestUser) {
-	await page.goto('/settings/users');
+	await page.goto('/system/users');
 	await page.getByPlaceholder('Search…').fill(user.username);
 	const row = page.getByRole('row').filter({ hasText: user.username });
 	const menu = await openRowActionsMenu(page, row);
@@ -241,7 +241,10 @@ async function editUserThroughUI(page: Page, user: TestUser) {
 
 	let profileUpdateRequests = 0;
 	const countProfileUpdateRequests = (request: Request) => {
-		if (request.method() === 'PUT' && new URL(request.url()).pathname === `/api/users/${user.id}`) {
+		if (
+			request.method() === 'PATCH' &&
+			new URL(request.url()).pathname === `/api/users/${user.id}`
+		) {
 			profileUpdateRequests += 1;
 		}
 	};
@@ -258,7 +261,7 @@ async function editUserThroughUI(page: Page, user: TestUser) {
 	const policyResponsePromise = page.waitForResponse(
 		(response) =>
 			response.status() === 400 &&
-			response.request().method() === 'PUT' &&
+			response.request().method() === 'PATCH' &&
 			new URL(response.url()).pathname === `/api/users/${user.id}`
 	);
 	await dialog.getByRole('button', { name: 'Save Changes', exact: true }).click();
@@ -285,13 +288,13 @@ async function editUserThroughUI(page: Page, user: TestUser) {
 
 	const updateResponsePromise = page.waitForResponse(
 		(response) =>
-			response.request().method() === 'PUT' &&
+			response.request().method() === 'PATCH' &&
 			new URL(response.url()).pathname === `/api/users/${user.id}`
 	);
 	const assignmentsResponsePromise = page.waitForResponse(
 		(response) =>
 			response.request().method() === 'PUT' &&
-			new URL(response.url()).pathname === `/api/users/${user.id}/role-assignments`
+			new URL(response.url()).pathname === `/api/users/${user.id}/roles`
 	);
 	await dialog.getByRole('button', { name: 'Save Changes', exact: true }).click();
 
@@ -341,7 +344,7 @@ async function createEnvironmentAdminViaApi(page: Page, username: string, passwo
 		`Create user ${username}`
 	);
 	await readApiData<unknown[]>(
-		await page.request.put(`/api/users/${user.id}/role-assignments`, {
+		await page.request.put(`/api/users/${user.id}/roles`, {
 			data: { assignments: [{ roleId: 'role_admin', environmentId: '0' }] }
 		}),
 		`Assign the Admin role on the local environment to ${username}`
@@ -363,7 +366,7 @@ async function toggleAutoUpdateThroughUI(
 		(response) =>
 			response.request().method() === 'PUT' &&
 			new URL(response.url()).pathname ===
-				`/api/environments/0/containers/${containerId}/auto-update`
+				`/api/environments/0/containers/${containerId}/autoupdate`
 	);
 	await card.getByRole('switch').click();
 	await readApiData<{ message: string }>(await responsePromise, 'Toggle container auto-update');
@@ -378,7 +381,7 @@ async function toggleAutoUpdateThroughUI(
 }
 
 async function deleteUserThroughUI(page: Page, user: TestUser) {
-	await page.goto('/settings/users');
+	await page.goto('/system/users');
 	await page.getByPlaceholder('Search…').fill(user.username);
 	const row = page.getByRole('row').filter({ hasText: user.username });
 	const menu = await openRowActionsMenu(page, row);
@@ -395,7 +398,7 @@ async function deleteUserThroughUI(page: Page, user: TestUser) {
 }
 
 async function deleteRoleThroughUI(page: Page, role: TestRole) {
-	await page.goto('/settings/roles');
+	await page.goto('/system/roles');
 	await page.getByPlaceholder('Search…').fill(role.name);
 	const row = page.getByRole('row').filter({ hasText: role.name });
 	const menu = await openRowActionsMenu(page, row);
@@ -469,9 +472,7 @@ test('administers scoped identities and enforces their browser access immediatel
 			await page.request.post('/api/environments', {
 				data: {
 					name: remoteEnvironmentName,
-					apiUrl: 'http://rbac-remote.invalid:3552',
-					enabled: true,
-					isEdge: false
+					enabled: true
 				}
 			}),
 			`Create environment ${remoteEnvironmentName}`
@@ -566,9 +567,9 @@ test('administers scoped identities and enforces their browser access immediatel
 			await expect(
 				restrictedPage.getByRole('link', { name: 'Containers', exact: true })
 			).toBeVisible();
-			await expect(restrictedPage.getByRole('link', { name: 'Projects', exact: true })).toHaveCount(
-				0
-			);
+			await expect(
+				restrictedPage.getByRole('link', { name: 'Projects', exact: true })
+			).toBeVisible();
 			await expect(
 				restrictedPage.getByRole('link', { name: 'Dashboard', exact: true })
 			).toHaveCount(0);
@@ -594,9 +595,7 @@ test('administers scoped identities and enforces their browser access immediatel
 			}
 			await restrictedPage.keyboard.press('Escape');
 
-			await restrictedPage.goto('/settings/backups');
-			await expect(restrictedPage).toHaveURL('/containers');
-			await restrictedPage.goto('/projects');
+			await restrictedPage.goto('/system/backups');
 			await expect(restrictedPage).toHaveURL('/containers');
 
 			const currentUser = await readApiData<TestUser>(
@@ -611,28 +610,11 @@ test('administers scoped identities and enforces their browser access immediatel
 			);
 			expect(currentUser.permissionsByEnv.global ?? []).toEqual([]);
 
-			await restrictedPage
-				.getByRole('button')
-				.filter({ hasText: localEnvironment.name })
-				.first()
-				.click();
-			const environmentDialog = restrictedPage.getByRole('dialog', {
-				name: 'Select Environment'
-			});
-			await expect(environmentDialog).toBeVisible();
-			await environmentDialog
-				.getByRole('button')
-				.filter({ hasText: remoteEnvironment.name })
-				.first()
-				.click();
-
+			await restrictedPage.getByRole('link', { name: 'Projects', exact: true }).click();
 			await expect(restrictedPage).toHaveURL('/projects');
 			await expect(
-				restrictedPage.getByRole('link', { name: 'Projects', exact: true })
-			).toBeVisible();
-			await expect(
 				restrictedPage.getByRole('link', { name: 'Containers', exact: true })
-			).toHaveCount(0);
+			).toBeVisible();
 		} finally {
 			restrictedErrors.stop();
 			expect(
@@ -723,7 +705,7 @@ test('administers scoped identities and enforces their browser access immediatel
 			}
 			forbiddenResponses.forbidden.length = 0;
 
-			await environmentAdminPage.goto(`/containers/${targetContainer.id}`);
+			await environmentAdminPage.goto(`/containers/${targetContainer.id}?env=0`);
 			await expect(
 				environmentAdminPage.getByRole('tab', { name: 'Overview', exact: true })
 			).toBeVisible();
@@ -773,7 +755,7 @@ test('administers scoped identities and enforces their browser access immediatel
 			environmentAdminPage.on('request', recordOptionalRequest);
 			await environmentAdminPage.goto('/projects/new?templateId=missing-template');
 			await expect(
-				environmentAdminPage.getByText('Docker Compose File', { exact: true })
+				environmentAdminPage.getByText('Workspace Files', { exact: true })
 			).toBeVisible();
 			await expect(
 				environmentAdminPage.getByText(
@@ -787,12 +769,14 @@ test('administers scoped identities and enforces their browser access immediatel
 				.filter({ visible: true })
 				.first();
 			await setCodeMirrorValue(composeEditor, TEST_COMPOSE_YAML);
-			await expect(environmentAdminPage.locator('button[data-action="create"]')).toBeVisible();
+			await expect(
+				environmentAdminPage.getByRole('button', { name: 'Create Project', exact: true })
+			).toBeVisible();
 			environmentAdminPage.off('request', recordOptionalRequest);
 			expect(optionalRequests).toEqual([]);
 
 			await environmentAdminPage.goto(
-				`/volumes/${encodeURIComponent(environmentAdminVolumeName)}?tab=backups`
+				`/volumes/${encodeURIComponent(environmentAdminVolumeName)}?tab=backups&env=0`
 			);
 			await expect(
 				environmentAdminPage.getByRole('button', { name: 'Add schedule', exact: true })

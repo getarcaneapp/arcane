@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -20,27 +20,28 @@ import (
 	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/api"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/health"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	"github.com/getarcaneapp/arcane/backend/v3/api"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/health"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/job"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
 type blockingBusWatcher struct {
@@ -84,7 +85,7 @@ func TestNormalizeTunnelGRPCRequestPath(t *testing.T) {
 	})
 
 	t.Run("nested proxy prefix is removed up to method path", func(t *testing.T) {
-		req := httptest.NewRequest("POST", "/edge/proxy/api"+fullMethodPath, http.NoBody)
+		req := httptest.NewRequest("POST", "/agent/proxy/api"+fullMethodPath, http.NoBody)
 		normalized := normalizeTunnelGRPCRequestPath(req)
 
 		assert.NotSame(t, req, normalized)
@@ -93,7 +94,7 @@ func TestNormalizeTunnelGRPCRequestPath(t *testing.T) {
 	})
 
 	t.Run("legacy /api/tunnel/connect is rewritten to gRPC method", func(t *testing.T) {
-		// Edge agents use /api/tunnel/connect as their gRPC method path so reverse proxies
+		// Agents use /api/tunnel/connect as their gRPC method path so reverse proxies
 		// can route tunnel traffic on a stable URL.
 		req := httptest.NewRequest("POST", "/api/tunnel/connect", http.NoBody)
 		normalized := normalizeTunnelGRPCRequestPath(req)
@@ -104,7 +105,7 @@ func TestNormalizeTunnelGRPCRequestPath(t *testing.T) {
 	})
 
 	t.Run("nested proxy with legacy /api/tunnel/connect is rewritten", func(t *testing.T) {
-		req := httptest.NewRequest("POST", "/edge/proxy/api/tunnel/connect", http.NoBody)
+		req := httptest.NewRequest("POST", "/agent/proxy/api/tunnel/connect", http.NoBody)
 		normalized := normalizeTunnelGRPCRequestPath(req)
 
 		assert.NotSame(t, req, normalized)
@@ -188,11 +189,28 @@ func TestConfigureHTTPProtocols(t *testing.T) {
 	})
 }
 
+func newTestSettingsModule(t *testing.T, cfg *config.Config) *settings.Module {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	settingsService, err := settings.NewSettingsService(t.Context(), &database.DB{DB: db}, cfg, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))
+	})
+	return settings.New(settingsService, nil, nil, cfg)
+}
+
 func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 	cfg := &config.Config{
-		AgentMode:   true,
-		AppUrl:      "http://localhost:3552",
-		Environment: config.AppEnvironmentTest,
+		AgentEnabled: true,
+		AppUrl:       "http://localhost:3552",
+		Environment:  config.AppEnvironmentTest,
 	}
 	router, _ := newRouter(RouterParams{
 		Context: t.Context(),
@@ -203,9 +221,10 @@ func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 			Swarm:     swarm.New(&swarm.SwarmService{}, nil, nil, nil),
 			System:    system.New(&system.SystemService{}, nil, nil),
 			Health:    health.New(&health.Service{}),
+			Settings:  newTestSettingsModule(t, cfg),
 		},
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
-		TunnelRegistry: edge.NewTunnelRegistry(),
+		TunnelRegistry: agent.NewTunnelRegistry(),
 	})
 	handler, protocols := configureHTTPProtocols(false, router)
 
@@ -323,9 +342,8 @@ func TestHTTPServerStopCancelsStreamingRequestContexts(t *testing.T) {
 	})
 
 	cfg := &config.Config{
-		AgentMode: true,
-		Listen:    "127.0.0.1",
-		Port:      "0",
+		Listen: "127.0.0.1",
+		Port:   "0",
 	}
 	lifecycle := fxtest.NewLifecycle(t)
 	srv, err := NewHTTPServer(lifecycle, HTTPServerParams{
@@ -350,7 +368,6 @@ func TestHTTPServerStopCancelsStreamingRequestContexts(t *testing.T) {
 
 func TestNewHTTPServerRejectsInvalidTLSCertificate(t *testing.T) {
 	cfg := &config.Config{
-		AgentMode:   true,
 		TLSEnabled:  true,
 		TLSCertFile: t.TempDir() + "/missing.crt",
 		TLSKeyFile:  t.TempDir() + "/missing.key",
@@ -362,24 +379,6 @@ func TestNewHTTPServerRejectsInvalidTLSCertificate(t *testing.T) {
 		Router: echo.New(),
 	})
 	require.Error(t, err)
-}
-
-func TestRegisterAppCancelHookRunsAfterLaterStopHooks(t *testing.T) {
-	appCtx, cancelApp := context.WithCancelCause(t.Context())
-	lifecycle := fxtest.NewLifecycle(t)
-	registerAppCancelHook(lifecycle, cancelApp)
-	appActiveDuringDependencyStop := false
-	lifecycle.Append(fx.Hook{
-		OnStop: func(context.Context) error {
-			appActiveDuringDependencyStop = appCtx.Err() == nil
-			return nil
-		},
-	})
-
-	lifecycle.RequireStart()
-	lifecycle.RequireStop()
-	require.True(t, appActiveDuringDependencyStop)
-	require.ErrorIs(t, appCtx.Err(), context.Canceled)
 }
 
 func TestJobSchedulerStopCancelsItsPrivateContext(t *testing.T) {
@@ -411,22 +410,22 @@ func TestJobSchedulerStopCancelsItsPrivateContext(t *testing.T) {
 		&config.Config{},
 		coordinator,
 		role.NewRoleService(&database.DB{DB: db}),
-		environment.NewEnvironmentService(&database.DB{DB: db}, nil, nil, nil, nil, nil),
+		environment.NewEnvironmentService(&database.DB{DB: db}, nil, nil, nil, nil),
 		activity.NewActivityService(&database.DB{DB: db}, nil),
 	)
 	gitopsSync := gitops.NewGitOpsSyncService(&database.DB{DB: db}, nil, nil, nil, nil, nil)
 	require.NoError(t, db.Create(&environment.Environment{ID: "0", Name: "Local", Enabled: true}).Error)
 	require.NoError(t, db.Create(&project.GitOpsSync{ID: "overdue", EnvironmentID: "0", AutoSync: true, SyncInterval: 1}).Error)
-	jobScheduler, err := newJobScheduler(appCtx, lifecycle, &config.Config{}, coordinator, admission, nil, nil, nil, jobService, workflows, nil, gitopsSync, runtime)
+	jobScheduler, err := newJobScheduler(appCtx, lifecycle, &config.Config{}, coordinator, admission, nil, nil, nil, jobService, workflows, nil, gitopsSync)
 	require.NoError(t, err)
 	require.NoError(t, registerDynamicJobs(dynamicJobsParams{
 		AppCtx: appCtx, Config: &config.Config{}, Scheduler: jobScheduler,
 		GitOpsSync: gitopsSync, Admission: admission,
 	}))
-	executed := make(chan schedulertypes.Run, 1)
-	coordinator.SetExecutor(func(_ context.Context, run schedulertypes.Run) (schedulertypes.Outcome, error) {
+	executed := make(chan types.SchedulerRun, 1)
+	coordinator.SetExecutor(func(_ context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
 		executed <- run
-		return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 	}, nil)
 	watcher := &blockingBusWatcher{
 		started: make(chan struct{}),
@@ -467,57 +466,36 @@ func TestApplicationOptionsValidate(t *testing.T) {
 	err := fx.ValidateApp(applicationOptions(
 		appCtx,
 		&config.Config{},
+		settings.Env{},
 		(*database.DB)(nil),
+		"test-encryption-key",
 		cancelApp,
 	))
 	require.NoError(t, err)
 }
 
-func TestPrepareServerTLS_AgentModeSkipsManagerMTLSValidation(t *testing.T) {
-	cfg := &config.Config{
-		AgentMode:     true,
-		EdgeMTLSMode:  "required",
-		ManagerApiUrl: "https://127.0.0.1:3552",
-	}
-
-	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLS(t.Context(), cfg)
-	require.NoError(t, err)
-	assert.False(t, useTLS)
-	assert.Empty(t, tlsCertFile)
-	assert.Empty(t, tlsKeyFile)
-	require.NotNil(t, edgeCfg)
-	assert.Equal(t, "required", edgeCfg.EdgeMTLSMode)
-}
-
 func TestPrepareServerTLS_AllowsExternalMTLSTermination(t *testing.T) {
 	libcrypto.InitEncryption(&libcrypto.Config{
-		EncryptionKey: "test-encryption-key-for-edge-mtls-32bytes-min",
+		EncryptionKey: "test-encryption-key-for-agent-mtls-32bytes-min",
 		Environment:   "test",
 	})
 
 	assetsDir := t.TempDir()
 	cfg := &config.Config{
-		TLSEnabled:        false,
-		EdgeMTLSMode:      "required",
-		EdgeMTLSAssetsDir: assetsDir,
-		EncryptionKey:     "test-encryption-key-for-edge-mtls-32bytes-min",
+		TLSEnabled:         false,
+		AgentMTLSMode:      "required",
+		AgentMTLSAssetsDir: assetsDir,
+		EncryptionKey:      "test-encryption-key-for-agent-mtls-32bytes-min",
 	}
 
-	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLS(t.Context(), cfg)
+	useTLS, tlsCertFile, tlsKeyFile, agentCfg, err := prepareServerTLS(t.Context(), cfg)
 	require.NoError(t, err)
 	assert.False(t, useTLS)
 	assert.Empty(t, tlsCertFile)
 	assert.Empty(t, tlsKeyFile)
-	require.NotNil(t, edgeCfg)
-	assert.Equal(t, "required", edgeCfg.EdgeMTLSMode)
-	require.FileExists(t, edgeCfg.EdgeMTLSCAFile)
+	require.NotNil(t, agentCfg)
+	assert.Equal(t, "required", agentCfg.AgentMTLSMode)
+	require.FileExists(t, agentCfg.AgentMTLSCAFile)
 	require.FileExists(t, assetsDir+"/ca.crt")
 	require.FileExists(t, assetsDir+"/ca.key")
-}
-
-func TestIsWeakProductionEncryptionKey(t *testing.T) {
-	assert.True(t, isWeakProductionEncryptionKey("short", "production", false))
-	assert.False(t, isWeakProductionEncryptionKey("test-encryption-key-for-edge-mtls-32bytes-min", "production", false))
-	assert.False(t, isWeakProductionEncryptionKey("hex:abc", "production", false))
-	assert.False(t, isWeakProductionEncryptionKey("short", "development", false))
 }

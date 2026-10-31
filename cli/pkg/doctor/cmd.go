@@ -1,7 +1,6 @@
 package doctor
 
 import (
-	"cmp"
 	"errors"
 	"slices"
 	"strings"
@@ -9,10 +8,10 @@ import (
 	"github.com/spf13/cobra"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/config"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/runtime"
 )
 
 type checkResult struct {
@@ -22,13 +21,14 @@ type checkResult struct {
 }
 
 type report struct {
-	Healthy bool          `json:"healthy"`
 	Checks  []checkResult `json:"checks"`
+	Healthy bool          `json:"healthy"`
 }
 
 // Command runs environment and connection diagnostics.
 func Command() *cobra.Command {
 	return &cobra.Command{
+		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
 		Use:          "doctor",
 		Short:        "Run CLI diagnostics",
 		SilenceUsage: true,
@@ -49,10 +49,6 @@ func Command() *cobra.Command {
 			}
 
 			path, _ := config.ConfigPath()
-			env := cmp.Or(app.EnvID(), cfg.DefaultEnvironment)
-			if strings.TrimSpace(env) == "" {
-				env = "0"
-			}
 			serverConfigured, hasAuth := strings.TrimSpace(cfg.ServerURL) != "", cfg.HasAuth()
 			checks := []checkResult{
 				{Name: "config_path", Status: "ok", Details: path},
@@ -61,7 +57,7 @@ func Command() *cobra.Command {
 					Status:  kit.Ternary(serverConfigured, "ok", "fail"),
 					Details: kit.Ternary(serverConfigured, cfg.ServerURL, "server_url is not configured (run `arcane config set server-url <url>`)"),
 				},
-				{Name: "environment", Status: "ok", Details: env},
+				{Name: "environment", Status: "ok", Details: kit.Ternary(app.AllEnvironments(), "all", app.EnvID())},
 				{
 					Name:    "auth",
 					Status:  kit.Ternary(hasAuth, "ok", "fail"),

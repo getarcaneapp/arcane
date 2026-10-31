@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
@@ -8,16 +9,10 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { ContainersIcon, ConnectionIcon, GlobeIcon, HashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { portService, type PortsPaginatedResponse } from '#lib/services/port-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import type { PortsPaginatedResponse } from '#lib/services/port-service.js';
 	import type { PortMappingDto } from '#lib/types/docker.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import {
-		environmentHref,
-		fetchAcrossEnvironments,
-		type EnvironmentPage,
-		type EnvironmentRow
-	} from '#lib/utils/environments.js';
+	import type { EnvironmentPage, EnvironmentRow } from '#lib/utils/environments.js';
 
 	type PortRow = EnvironmentRow<PortMappingDto>;
 	type PortPage = EnvironmentPage<PortsPaginatedResponse>;
@@ -26,12 +21,12 @@
 		ports,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		onRefreshData
+		onRetry
 	}: {
 		ports: PortPage;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
-		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
+		onRetry: () => Promise<unknown>;
 	} = $props();
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
@@ -52,16 +47,6 @@
 			return `${port.hostPort} -> ${port.containerPort}`;
 		}
 		return `${port.containerPort}/${port.protocol}`;
-	}
-
-	async function refreshPorts(options: SearchPaginationSortRequest = requestOptions): Promise<PortPage | void> {
-		if (onRefreshData) {
-			await onRefreshData(options);
-			return;
-		}
-		return await fetchAcrossEnvironments(environmentStore.shown, options, (id, request, config) =>
-			portService.getPortsForEnvironment(id, request, config)
-		);
 	}
 
 	const columns = $derived([
@@ -99,7 +84,12 @@
 {/snippet}
 
 {#snippet ContainerCell({ item }: { item: PortRow })}
-	<a class="font-medium hover:underline" href={environmentHref(`/containers/${item.containerId}`, item.environmentId)}>
+	<a
+		class="font-medium hover:underline"
+		href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, {
+			containerId: item.containerId
+		})}
+	>
 		{item.containerName}
 	</a>
 {/snippet}
@@ -164,7 +154,12 @@
 				show: mobileFieldVisibility['containerName'] ?? true
 			}
 		]}
-		onclick={() => void goto(environmentHref(`/containers/${item.containerId}`, item.environmentId))}
+		onclick={() =>
+			void goto(
+				resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, {
+					containerId: item.containerId
+				})
+			)}
 	/>
 {/snippet}
 
@@ -174,10 +169,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRefresh={async (options) => {
-		requestOptions = options;
-		return (await refreshPorts(options)) ?? ports;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	mobileCard={PortMobileCardSnippet}

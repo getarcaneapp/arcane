@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 )
 
 type APIErrorCode string
@@ -23,23 +23,23 @@ const (
 )
 
 type APIErrorResponse struct {
-	Success bool         `json:"success"`
+	Details any          `json:"details,omitempty"`
 	Error   string       `json:"error"`
 	Code    APIErrorCode `json:"code"`
-	Details any          `json:"details,omitempty"`
+	Success bool         `json:"success"`
 }
 
 type APISuccessResponse struct {
-	Success bool   `json:"success"`
 	Data    any    `json:"data,omitempty"`
 	Message string `json:"message,omitempty"`
+	Success bool   `json:"success"`
 }
 
 type APIError struct {
+	Details    any          `json:"details,omitempty"`
 	Message    string       `json:"message"`
 	Code       APIErrorCode `json:"code"`
 	StatusCode int          `json:"statusCode"`
-	Details    any          `json:"details,omitempty"`
 }
 
 func (e *APIError) Error() string {
@@ -72,9 +72,9 @@ func NewAPIErrorWithDetails(message string, code APIErrorCode, statusCode int, d
 }
 
 type DockerAPIError struct {
+	Details    any
 	Message    string
 	StatusCode int
-	Details    any
 }
 
 func (e *DockerAPIError) Error() string {
@@ -99,7 +99,7 @@ func ToAPIError(err error) *APIError {
 	switch {
 	case errors.Is(err, ErrValidation):
 		var details map[string]any
-		if fieldErr, ok := errors.AsType[*base.FieldError](err); ok {
+		if fieldErr, ok := errors.AsType[*types.FieldError](err); ok {
 			details = map[string]any{"field": fieldErr.Field}
 		}
 		return NewAPIErrorWithDetails(err.Error(), APIErrorCodeValidationError, http.StatusBadRequest, details)

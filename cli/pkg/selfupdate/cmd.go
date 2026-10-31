@@ -22,10 +22,10 @@ import (
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/selfupdate"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/config"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/selfupdate"
 )
 
 const (
@@ -52,11 +52,11 @@ type cliUpdatePlan struct {
 	ArtifactURL       string `json:"artifactUrl"`
 	ChecksumURL       string `json:"checksumUrl"`
 	BundleURL         string `json:"bundleUrl,omitempty"`
-	SignatureVerified bool   `json:"signatureVerified"`
 	ArtifactSHA       string `json:"artifactSha"`
 	ExpectedSHA       string `json:"expectedSha,omitempty"`
 	CurrentSHA        string `json:"currentSha"`
 	TargetPath        string `json:"targetPath"`
+	SignatureVerified bool   `json:"signatureVerified"`
 	UpdateNeeded      bool   `json:"updateNeeded"`
 }
 
@@ -68,7 +68,10 @@ type githubLatestRelease struct {
 func Command() *cobra.Command {
 	var opts cliUpdateOptions
 	cmd := &cobra.Command{
-		Use: "self-update", Aliases: []string{"self", "cli"}, Short: "Update arcane-cli",
+		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
+		Use:         "self-update",
+		Aliases:     []string{"self", "cli"},
+		Short:       "Update arcane-cli",
 		Long: `Update arcane-cli using the configured release channel.
 
 Enable Sigstore verification with arcane-cli config set previews.newSelfUpdater true.

@@ -7,7 +7,7 @@
 	import * as Accordion from '#lib/components/ui/accordion/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { VolumeCreateRequest } from '#lib/types/docker.js';
+	import type { VolumeCreate } from '#lib/types/docker.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { parseKeyValuePairs } from '#lib/utils/form-parsers.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
@@ -16,7 +16,7 @@
 
 	type CreateVolumeFormProps = {
 		open: boolean;
-		onSubmit: (data: VolumeCreateRequest, environmentId: string) => void;
+		onSubmit: (data: VolumeCreate, environmentId: string) => void;
 		isLoading: boolean;
 	};
 
@@ -40,27 +40,24 @@
 		volumeLabels: z.string().optional().default('')
 	});
 
-	let formData = $derived({
+	const form = createForm<typeof formSchema>(formSchema, {
 		volumeName: '',
 		volumeDriver: 'local',
 		volumeOptText: '',
 		volumeLabels: ''
 	});
 
-	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
-
 	function handleSubmit() {
 		const data = form.validate();
 		if (!data) return;
 
-		const driverOpts = parseKeyValuePairs(data.volumeOptText || '');
+		const options = parseKeyValuePairs(data.volumeOptText || '');
 		const labels = parseKeyValuePairs(data.volumeLabels || '');
 
-		const volumeOptions: VolumeCreateRequest = {
+		const volumeOptions: VolumeCreate = {
 			name: data.volumeName.trim(),
 			driver: data.volumeDriver,
-			driverOpts: Object.keys(driverOpts).length ? driverOpts : undefined,
+			options: Object.keys(options).length ? options : undefined,
 			labels: Object.keys(labels).length ? labels : undefined
 		};
 
@@ -71,10 +68,7 @@
 		open = newOpenState;
 		if (!newOpenState) {
 			pickedEnvironmentId = '';
-			inputs.volumeName.value = '';
-			inputs.volumeDriver.value = 'local';
-			inputs.volumeOptText.value = '';
-			inputs.volumeLabels.value = '';
+			form.reset();
 		}
 	}
 </script>
@@ -101,12 +95,12 @@
 				placeholder={m.volume_name_placeholder()}
 				description={m.volume_name_description()}
 				disabled={isLoading}
-				bind:input={inputs.volumeName}
+				bind:input={form.inputs.volumeName}
 			/>
 
 			<SelectWithLabel
 				id="driver-select"
-				bind:value={inputs.volumeDriver.value}
+				bind:value={form.inputs.volumeDriver.value}
 				label={m.volume_driver_label()}
 				description={m.volume_driver_description()}
 				options={drivers}
@@ -125,7 +119,7 @@
 								description={m.volume_driver_options_description()}
 								disabled={isLoading}
 								rows={3}
-								bind:input={inputs.volumeOptText}
+								bind:input={form.inputs.volumeOptText}
 							/>
 
 							<FormInput
@@ -135,7 +129,7 @@
 								description={m.volumes_labels_description()}
 								disabled={isLoading}
 								rows={3}
-								bind:input={inputs.volumeLabels}
+								bind:input={form.inputs.volumeLabels}
 							/>
 						</div>
 					</Accordion.Content>

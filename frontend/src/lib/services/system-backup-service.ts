@@ -1,5 +1,5 @@
 import type { BackupFileBrowseRequest, BackupFileEntry, BackupRestoreSelection } from '#lib/types/backup.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { MessageResponse, Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import type {
 	CreateSystemBackup,
 	BackupHistoryEntry,
@@ -53,11 +53,11 @@ class SystemBackupService extends BaseAPIService {
 	}
 
 	async generateRecoveryKey(): Promise<SystemBackupRecoveryKey> {
-		return this.handleResponse(this.api.post('/backups/recovery-key/generate'));
+		return this.handleResponse(this.api.post('/backups/recovery/key', undefined, { params: { action: 'generate' } }));
 	}
 
 	async setRecoveryKey(recoveryKey: string): Promise<{ configured: boolean }> {
-		return this.handleResponse(this.api.put('/backups/recovery-key', { recoveryKey }));
+		return this.handleResponse(this.api.put('/backups/recovery/key', { recoveryKey }));
 	}
 
 	async create(input: CreateSystemBackup): Promise<SystemBackupRun> {
@@ -65,7 +65,7 @@ class SystemBackupService extends BaseAPIService {
 	}
 
 	async restore(id: string, recoveryKey: string): Promise<void> {
-		await this.handleResponse(this.api.post(`/backups/${id}/restore`, { recoveryKey }));
+		await this.handleResponse(this.api.post(`/backups/${id}`, { recoveryKey }, { params: { action: 'restore' } }));
 	}
 
 	async browseFiles(id: string, recoveryKey: string, request: BackupFileBrowseRequest): Promise<Paginated<BackupFileEntry>> {
@@ -73,8 +73,10 @@ class SystemBackupService extends BaseAPIService {
 		return response.data;
 	}
 
-	async restoreFiles(id: string, recoveryKey: string, selection: BackupRestoreSelection): Promise<unknown> {
-		return this.handleResponse(this.api.post(`/backups/${id}/restore-files`, { recoveryKey, ...selection }));
+	async restoreFiles(id: string, recoveryKey: string, selection: BackupRestoreSelection): Promise<MessageResponse> {
+		return this.handleResponse(
+			this.api.post(`/backups/${id}`, { recoveryKey, ...selection }, { params: { action: 'restorefiles' } })
+		);
 	}
 
 	async upload(id: string, s3DestinationId: string, recoveryKey: string): Promise<SystemBackupRun> {

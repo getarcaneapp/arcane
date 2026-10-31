@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
 	import * as Avatar from '#lib/components/ui/avatar/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
@@ -44,7 +45,7 @@
 									{#if user?.avatarUrl}
 										<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
 									{:else if settingsStore.current?.enableGravatar}
-										{#await getGravatarUrl(user?.email)}
+										{#await getGravatarUrl(user?.email ?? undefined)}
 											<!-- Loading gravatar, show fallback -->
 										{:then url}
 											<Avatar.Image src={url} alt={displayLabel} />
@@ -86,7 +87,7 @@
 									{#if user?.avatarUrl}
 										<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
 									{:else if settingsStore.current?.enableGravatar}
-										{#await getGravatarUrl(user?.email)}
+										{#await getGravatarUrl(user?.email ?? undefined)}
 											<!-- Loading gravatar, show fallback -->
 										{:then url}
 											<Avatar.Image src={url} alt={displayLabel} />
@@ -109,7 +110,7 @@
 
 						<DropdownMenu.Item
 							onSelect={() => {
-								goto('/account');
+								goto(resolve('/(app)/account'));
 							}}
 						>
 							<UserIcon class="size-4 shrink-0 text-muted-foreground" />
@@ -118,7 +119,7 @@
 
 						<DropdownMenu.Item
 							onSelect={() => {
-								goto('/account?tab=preferences');
+								goto(resolve('/(app)/account?tab=preferences'));
 							}}
 						>
 							<SettingsIcon class="size-4 shrink-0 text-muted-foreground" />

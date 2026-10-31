@@ -1,0 +1,147 @@
+<script lang="ts">
+	import { onMount, onDestroy } from 'svelte';
+
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { TrashIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { LogEntry } from '#lib/types/diagnostics.js';
+	import { cn } from '#lib/utils.js';
+	import { formatTime } from '#lib/utils/formatting.js';
+	import { createBackendLogsWebSocket, ReconnectingWebSocket } from '#lib/utils/ws.js';
+
+	import { attrsText } from '../diagnostic-log-formatting';
+
+	interface Props {
+		height?: string;
+		maxLines?: number;
+	}
+
+	let { height = '360px', maxLines = 1000 }: Props = $props();
+
+	interface DisplayLogEntry {
+		id: number;
+		entry: LogEntry;
+	}
+
+	let nextLogId = 0;
+	let logs = $state<DisplayLogEntry[]>([]);
+	let connected = $state(false);
+	let autoScroll = $state(true);
+	let filterText = $state('');
+	let levelFilter = $state<'all' | 'error' | 'warn' | 'info' | 'debug'>('all');
+	let viewport = $state<HTMLElement>();
+	let ws: ReconnectingWebSocket<LogEntry> | null = null;
+
+	const filtered = $derived(
+		logs.filter(({ entry }) => {
+			const lvl = entry.level.toLowerCase();
+			if (levelFilter !== 'all' && !lvl.startsWith(levelFilter)) return false;
+			if (filterText && !entry.message.toLowerCase().includes(filterText.toLowerCase())) return false;
+			return true;
+		})
+	);
+
+	function scrollToBottom() {
+		if (autoScroll && viewport) {
+			requestAnimationFrame(() => {
+				if (viewport) viewport.scrollTop = viewport.scrollHeight;
+			});
+		}
+	}
+
+	function push(entry: LogEntry) {
+		logs.push({ id: nextLogId++, entry });
+		if (logs.length > maxLines) logs = logs.slice(logs.length - maxLines);
+		scrollToBottom();
+	}
+
+	function levelClass(level: string): string {
+		const l = level.toLowerCase();
+		if (l.startsWith('error')) return 'text-destructive';
+		if (l.startsWith('warn')) return 'text-warning';
+		if (l.startsWith('debug')) return 'text-muted-foreground';
+		return 'text-success';
+	}
+
+	function fmtTime(t: string): string {
+		return formatTime(t) || t;
+	}
+
+	onMount(async () => {
+		ws = createBackendLogsWebSocket({
+			onMessage: (e) => push(e),
+			onOpen: () => {
+				logs = [];
+				connected = true;
+			},
+			onClose: () => (connected = false)
+		});
+		await ws.connect();
+		requestAnimationFrame(() => {
+			if (viewport) viewport.scrollTop = viewport.scrollHeight;
+		});
+	});
+
+	onDestroy(() => ws?.close());
+</script>
+
+<div class="overflow-hidden rounded-xl border border-border/60">
+	<div class="flex flex-wrap items-center gap-2 border-b border-border/60 bg-muted/30 px-3 py-2">
+		<span class="text-xs text-muted-foreground tabular-nums">{m.diagnostics_logs_count({ count: filtered.length })}</span>
+
+		<div class="ml-auto flex items-center gap-2">
+			<select
+				bind:value={levelFilter}
+				class="h-7 rounded-md border border-border/60 bg-background px-2 text-xs"
+				aria-label={m.diagnostics_logs_all_levels()}
+			>
+				<option value="all">{m.diagnostics_logs_all_levels()}</option>
+				<option value="error">{m.common_error()}</option>
+				<option value="warn">{m.diagnostics_logs_level_warn()}</option>
+				<option value="info">{m.info()}</option>
+				<option value="debug">{m.diagnostics_logs_level_debug()}</option>
+			</select>
+			<input
+				bind:value={filterText}
+				placeholder={m.diagnostics_logs_filter_placeholder()}
+				class="h-7 w-32 rounded-md border border-border/60 bg-background px-2 text-xs"
+			/>
+			<label class="flex items-center gap-1 text-xs text-muted-foreground">
+				<input type="checkbox" bind:checked={autoScroll} class="size-3.5" />
+				{m.common_autoscroll()}
+			</label>
+			<ArcaneButton
+				action="base"
+				tone="ghost"
+				size="sm"
+				icon={TrashIcon}
+				customLabel={m.common_clear()}
+				onclick={() => (logs = [])}
+			/>
+		</div>
+	</div>
+
+	<div
+		bind:this={viewport}
+		class="h-(--panel-height) overflow-y-auto bg-background px-3 py-2 font-mono text-xs leading-relaxed"
+		style="--panel-height: {height}"
+		role="log"
+		aria-live={connected ? 'polite' : 'off'}
+	>
+		{#if filtered.length === 0}
+			<div class="py-6 text-center text-muted-foreground">{m.diagnostics_logs_empty()}</div>
+		{:else}
+			{#each filtered as item (item.id)}
+				{@const entry = item.entry}
+				<div class="flex gap-2 rounded-xl px-1 py-0.5 hover:bg-foreground/5">
+					<span class="shrink-0 text-muted-foreground tabular-nums">{fmtTime(entry.time)}</span>
+					<span class={cn('w-12 shrink-0 font-semibold uppercase', levelClass(entry.level))}>{entry.level}</span>
+					<span class="min-w-0 break-words whitespace-pre-wrap">
+						{entry.message}
+						{#if entry.attrs}<span class="ml-2 text-muted-foreground">{attrsText(entry.attrs)}</span>{/if}
+					</span>
+				</div>
+			{/each}
+		{/if}
+	</div>
+</div>

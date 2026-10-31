@@ -9,33 +9,32 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/user"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
 	return &EnvironmentMiddleware{
 		localID:   "0",
 		paramName: "id",
-		resolver: func(ctx context.Context, id string) (string, *string, bool, error) {
+		resolver: func(ctx context.Context, id string) (*string, bool, error) {
 			_ = ctx
-			return "edge://oracle-1", nil, true, nil
+			return nil, true, nil
 		},
-		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *user.Actor, bool) {
+		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
 			_ = ctx
 			_ = c
 			return authz.SudoPermissionSet(), nil, true
 		},
-		httpClient: &http.Client{},
-		registry:   edge.NewTunnelRegistry(),
+		registry: agent.NewTunnelRegistry(),
 	}
 }
 
@@ -49,7 +48,7 @@ func attachMiddleware(router *echo.Echo, mw *EnvironmentMiddleware) *echo.Group 
 	return api
 }
 
-func TestEnvironmentMiddleware_ReturnsServiceUnavailableForEdgeResourcesWithoutTunnel(t *testing.T) {
+func TestEnvironmentMiddleware_ReturnsServiceUnavailableForAgentResourcesWithoutTunnel(t *testing.T) {
 	middleware := newTestEnvironmentMiddleware()
 	router := echo.New()
 	api := attachMiddleware(router, middleware)
@@ -60,13 +59,13 @@ func TestEnvironmentMiddleware_ReturnsServiceUnavailableForEdgeResourcesWithoutT
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/containers", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-agent/containers", http.NoBody)
 	recorder := httptest.NewRecorder()
 
 	router.ServeHTTP(recorder, req)
 
 	assert.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "Edge agent is not connected")
+	assert.Contains(t, recorder.Body.String(), "Agent is not connected")
 	assert.False(t, localHandlerHit)
 }
 
@@ -81,17 +80,17 @@ func TestEnvironmentMiddleware_ProxiesDashboardResourcesForRemoteEnvironments(t 
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/dashboard", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-agent/dashboard", http.NoBody)
 	recorder := httptest.NewRecorder()
 
 	router.ServeHTTP(recorder, req)
 
 	assert.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "Edge agent is not connected")
+	assert.Contains(t, recorder.Body.String(), "Agent is not connected")
 	assert.False(t, localHandlerHit)
 }
 
-func TestEnvironmentMiddleware_KeepsEdgeManagementEndpointsLocal(t *testing.T) {
+func TestEnvironmentMiddleware_KeepsAgentManagementEndpointsLocal(t *testing.T) {
 	middleware := newTestEnvironmentMiddleware()
 	router := echo.New()
 	api := attachMiddleware(router, middleware)
@@ -102,7 +101,7 @@ func TestEnvironmentMiddleware_KeepsEdgeManagementEndpointsLocal(t *testing.T) {
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/settings", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-agent/settings", http.NoBody)
 	recorder := httptest.NewRecorder()
 
 	router.ServeHTTP(recorder, req)
@@ -112,7 +111,7 @@ func TestEnvironmentMiddleware_KeepsEdgeManagementEndpointsLocal(t *testing.T) {
 	assert.True(t, localHandlerHit)
 }
 
-func TestEnvironmentMiddleware_KeepsEdgeMTLSDownloadEndpointsLocal(t *testing.T) {
+func TestEnvironmentMiddleware_KeepsAgentMTLSDownloadEndpointsLocal(t *testing.T) {
 	middleware := newTestEnvironmentMiddleware()
 	router := echo.New()
 	api := attachMiddleware(router, middleware)
@@ -123,28 +122,7 @@ func TestEnvironmentMiddleware_KeepsEdgeMTLSDownloadEndpointsLocal(t *testing.T)
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/deployment/mtls/bundle", http.NoBody)
-	recorder := httptest.NewRecorder()
-
-	router.ServeHTTP(recorder, req)
-
-	assert.Equal(t, http.StatusOK, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "\"success\":true")
-	assert.True(t, localHandlerHit)
-}
-
-func TestEnvironmentMiddleware_KeepsNotificationEndpointsLocal(t *testing.T) {
-	middleware := newTestEnvironmentMiddleware()
-	router := echo.New()
-	api := attachMiddleware(router, middleware)
-
-	localHandlerHit := false
-	api.GET("/environments/:id/notifications/settings", func(c *echo.Context) error {
-		localHandlerHit = true
-		return c.JSON(http.StatusOK, map[string]any{"success": true})
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/notifications/settings", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-agent/deployment/mtls/bundle", http.NoBody)
 	recorder := httptest.NewRecorder()
 
 	router.ServeHTTP(recorder, req)
@@ -165,13 +143,13 @@ func TestEnvironmentMiddleware_KeepsWebhookEndpointsLocal(t *testing.T) {
 			name:   "list webhooks",
 			method: http.MethodGet,
 			route:  "/environments/:id/webhooks",
-			path:   "/api/environments/env-edge/webhooks",
+			path:   "/api/environments/env-agent/webhooks",
 		},
 		{
 			name:   "delete webhook",
 			method: http.MethodDelete,
 			route:  "/environments/:id/webhooks/:webhookId",
-			path:   "/api/environments/env-edge/webhooks/wh-1",
+			path:   "/api/environments/env-agent/webhooks/wh-1",
 		},
 	}
 
@@ -210,7 +188,7 @@ func TestEnvironmentMiddleware_KeepsActivityEndpointsLocal(t *testing.T) {
 			name:   "list activities",
 			method: http.MethodGet,
 			route:  "/environments/:id/activities",
-			path:   "/api/environments/env-edge/activities?limit=50",
+			path:   "/api/environments/env-agent/activities?limit=50",
 		},
 	}
 
@@ -252,13 +230,12 @@ func TestEnvironmentMiddleware_LocalEnvironmentSkipsProxyPermissionCheck(t *test
 		localID:   "0",
 		paramName: "id",
 		matcher:   matcher,
-		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *user.Actor, bool) {
+		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
 			_ = ctx
 			_ = c
 			return authz.NewPermissionSet(), nil, true
 		},
-		httpClient: &http.Client{},
-		registry:   edge.NewTunnelRegistry(),
+		registry: agent.NewTunnelRegistry(),
 	}
 
 	router := echo.New()
@@ -278,23 +255,6 @@ func TestEnvironmentMiddleware_LocalEnvironmentSkipsProxyPermissionCheck(t *test
 	assert.True(t, localHandlerHit, "local environment request must reach the local handler, not be proxy-authorized")
 }
 
-func TestEnvironmentMiddleware_RejectsInvalidProxyTarget(t *testing.T) {
-	middleware := newTestEnvironmentMiddleware()
-	middleware.resolver = func(ctx context.Context, id string) (string, *string, bool, error) {
-		_, _ = ctx, id
-		return "ftp://example.com", nil, true, nil
-	}
-	router := echo.New()
-	attachMiddleware(router, middleware)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-remote/containers", http.NoBody)
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, req)
-
-	assert.Equal(t, http.StatusInternalServerError, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "Invalid proxy target URL")
-}
-
 func TestEnvironmentMiddleware_KeepsNodeAgentDeploymentCreationLocal(t *testing.T) {
 	middleware := newTestEnvironmentMiddleware()
 	router := echo.New()
@@ -306,7 +266,7 @@ func TestEnvironmentMiddleware_KeepsNodeAgentDeploymentCreationLocal(t *testing.
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-edge/swarm/nodes/node-1/agent/deployment", http.NoBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-agent/swarm/nodes/node-1/agent/deployment", http.NoBody)
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, req)
 
@@ -334,31 +294,47 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 			var forwarded string
 			var forwardedInitiator string
 			var forwardedName string
-			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			registry := agent.NewTunnelRegistry()
+			manager := echo.New()
+			manager.GET("/api/tunnel/connect", agent.NewTunnelServer(agent.TunnelServerOptions{
+				Registry: registry,
+				Resolver: func(context.Context, string) (string, error) {
+					return "env-remote", nil
+				},
+			}).HandleConnect)
+			managerServer := httptest.NewServer(manager)
+			defer managerServer.Close()
+			agentCtx, cancelAgent := context.WithCancel(t.Context())
+			defer cancelAgent()
+			go agent.NewTunnelClient(&agent.Config{
+				AgentEnabled:   true,
+				AgentTransport: agent.TransportWebSocket,
+				ManagerApiUrl:  managerServer.URL,
+				AgentToken:     "agent-token",
+			}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				forwarded = r.Header.Get(HeaderIconCatalog)
 				forwardedInitiator = r.Header.Get(HeaderUpdateInitiatorID)
 				forwardedName = r.Header.Get(HeaderUpdateInitiatorName)
 				w.WriteHeader(http.StatusOK)
-			}))
-			defer backend.Close()
+			})).StartWithErrorChan(agentCtx, nil)
+			require.True(t, registry.WaitForActive(t.Context(), "env-remote", 5*time.Second).IsPresent())
 
 			mw := &EnvironmentMiddleware{
 				localID:   "0",
 				paramName: "id",
-				resolver: func(ctx context.Context, id string) (string, *string, bool, error) {
+				resolver: func(ctx context.Context, id string) (*string, bool, error) {
 					_, _ = ctx, id
-					return backend.URL, nil, true, nil
+					return nil, true, nil
 				},
-				authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *user.Actor, bool) {
+				authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
 					_, _ = ctx, c
-					u := &user.Actor{}
+					u := &types.Actor{}
 					u.ID = tt.userID
 					u.Username = tt.userName
 					u.Preferences.IconCatalog = tt.catalog
 					return authz.SudoPermissionSet(), u, true
 				},
-				httpClient: &http.Client{},
-				registry:   edge.NewTunnelRegistry(),
+				registry: registry,
 			}
 
 			router := echo.New()
@@ -395,9 +371,9 @@ func TestIsManagementPath_SwarmIsMethodAware(t *testing.T) {
 }
 
 func TestIsManagementPath_VolumeBackupPolicyIsMethodAware(t *testing.T) {
-	assert.True(t, IsManagerLocalPath(http.MethodGet, "/volumes/app-data/backup-policy"))
-	assert.True(t, IsManagerLocalPath(http.MethodPut, "/volumes/app-data/backup-policy"))
-	assert.False(t, IsManagerLocalPath(http.MethodPost, "/volumes/app-data/backup-policy"))
+	assert.True(t, IsManagerLocalPath(http.MethodGet, "/volumes/app-data/backups/policy"))
+	assert.True(t, IsManagerLocalPath(http.MethodPut, "/volumes/app-data/backups/policy"))
+	assert.False(t, IsManagerLocalPath(http.MethodPost, "/volumes/app-data/backups/policy"))
 	assert.False(t, IsManagerLocalPath(http.MethodGet, "/volumes/app-data/backups"))
 }
 
@@ -495,7 +471,7 @@ func TestProxyPermissionDeniedAllowsPublicRoute(t *testing.T) {
 		"expected an explicitly public route to be allowed for any authenticated caller")
 }
 
-func newProxyVolumeWorkspaceContext(t *testing.T, changes []volume.WorkspaceFileChange, fileFirst ...bool) (*echo.Context, []byte) {
+func newProxyVolumeWorkspaceContext(t *testing.T, changes []types.VolumeWorkspaceFileChange, fileFirst ...bool) (*echo.Context, []byte) {
 	t.Helper()
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -507,7 +483,7 @@ func newProxyVolumeWorkspaceContext(t *testing.T, changes []volume.WorkspaceFile
 	}
 	manifestPart, err := writer.CreateFormField("manifest")
 	require.NoError(t, err)
-	manifestJSON, err := json.Marshal(volume.WorkspaceUpdateManifest{FileTreeRevision: "revision", FileChanges: changes})
+	manifestJSON, err := json.Marshal(types.VolumeWorkspaceUpdateManifest{FileTreeRevision: "revision", FileChanges: changes})
 	require.NoError(t, err)
 	_, err = manifestPart.Write(manifestJSON)
 	require.NoError(t, err)
@@ -515,7 +491,7 @@ func newProxyVolumeWorkspaceContext(t *testing.T, changes []volume.WorkspaceFile
 
 	rawBody := append([]byte(nil), body.Bytes()...)
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPut, "/api/environments/"+proxyTestEnvID+"/volumes/data/workspace", bytes.NewReader(rawBody))
+	req := httptest.NewRequest(http.MethodPatch, "/api/environments/"+proxyTestEnvID+"/volumes/data/workspace", bytes.NewReader(rawBody))
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	t.Cleanup(func() { _ = req.Body.Close() })
 	return e.NewContext(req, httptest.NewRecorder()), rawBody
@@ -523,9 +499,9 @@ func newProxyVolumeWorkspaceContext(t *testing.T, changes []volume.WorkspaceFile
 
 func TestProxyPermissionDeniedChecksVolumeWorkspaceManifestPermissions(t *testing.T) {
 	matcher := authz.NewPermissionMatcher()
-	matcher.Add(http.MethodPut, "/volumes/{volumeName}/workspace", authz.PermVolumesRead)
+	matcher.Add(http.MethodPatch, "/volumes/{volumeName}/workspace", authz.PermVolumesRead)
 	m := newProxyAuthzMiddleware(matcher)
-	changes := []volume.WorkspaceFileChange{{Operation: volume.FileOpRename}}
+	changes := []types.VolumeWorkspaceFileChange{{Operation: types.FileOpRename}}
 
 	readOnly := authz.NewPermissionSet()
 	readOnly.AddEnv(proxyTestEnvID, authz.PermVolumesRead)
@@ -554,27 +530,27 @@ func TestProxyPermissionDeniedChecksVolumeWorkspaceManifestPermissions(t *testin
 
 func newProxyGitOpsImportContext(body string) *echo.Context {
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/environments/"+proxyTestEnvID+"/gitops-syncs/import", bytes.NewReader([]byte(body)))
+	req := httptest.NewRequest(http.MethodPost, "/api/environments/"+proxyTestEnvID+"/gitops/syncs/import", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 	return e.NewContext(req, httptest.NewRecorder())
 }
 
 func TestProxyPermissionDeniedChecksGitOpsImportLifecyclePermission(t *testing.T) {
 	matcher := authz.NewPermissionMatcher()
-	matcher.Add(http.MethodPost, "/gitops-syncs/import", authz.PermGitOpsCreate)
+	matcher.Add(http.MethodPost, "/gitops/syncs/import", authz.PermGitOpsCreate)
 	m := newProxyAuthzMiddleware(matcher)
 	hookBody := `[{"syncName":"a","gitRepo":"r","branch":"main","dockerComposePath":"compose.yaml","preDeployScriptPath":"scripts/run.sh"}]`
 	plainBody := `[{"syncName":"a","gitRepo":"r","branch":"main","dockerComposePath":"compose.yaml"}]`
 
 	createOnly := authz.NewPermissionSet()
 	createOnly.AddEnv(proxyTestEnvID, authz.PermGitOpsCreate)
-	require.Equal(t, http.StatusForbidden, m.proxyPermissionStatus(newProxyGitOpsImportContext(hookBody), createOnly, proxyTestEnvID, "/gitops-syncs/import"))
-	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(newProxyGitOpsImportContext(plainBody), createOnly, proxyTestEnvID, "/gitops-syncs/import"))
+	require.Equal(t, http.StatusForbidden, m.proxyPermissionStatus(newProxyGitOpsImportContext(hookBody), createOnly, proxyTestEnvID, "/gitops/syncs/import"))
+	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(newProxyGitOpsImportContext(plainBody), createOnly, proxyTestEnvID, "/gitops/syncs/import"))
 
 	withLifecycle := authz.NewPermissionSet()
 	withLifecycle.AddEnv(proxyTestEnvID, authz.PermGitOpsCreate, authz.PermGitOpsLifecycle)
 	c := newProxyGitOpsImportContext(hookBody)
-	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(c, withLifecycle, proxyTestEnvID, "/gitops-syncs/import"))
+	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(c, withLifecycle, proxyTestEnvID, "/gitops/syncs/import"))
 	replayed, err := io.ReadAll(c.Request().Body)
 	require.NoError(t, err)
 	require.Equal(t, hookBody, string(replayed))
@@ -634,7 +610,7 @@ func TestEnvironmentMiddleware_ServesMultiEnvironmentScopeLocally(t *testing.T) 
 	router.Pre(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			req := c.Request()
-			c.SetRequest(req.WithContext(httpx.WithEnvironmentScope(req.Context(), &httpx.EnvironmentScope{IDs: []string{"env-edge", "0"}})))
+			c.SetRequest(req.WithContext(httpx.WithEnvironmentScope(req.Context(), &httpx.EnvironmentScope{IDs: []string{"env-agent", "0"}})))
 			return next(c)
 		}
 	})
@@ -647,7 +623,7 @@ func TestEnvironmentMiddleware_ServesMultiEnvironmentScopeLocally(t *testing.T) 
 	})
 
 	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/containers", http.NoBody))
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/environments/env-agent/containers", http.NoBody))
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.True(t, localHandlerHit)

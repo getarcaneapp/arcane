@@ -7,7 +7,7 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -89,20 +89,20 @@ func TestCoordinatorUpdateServicesScopesDependents(t *testing.T) {
 	var stopped, upped, created, pulled, calls []string
 	var selectedNames []string
 	forceRecreate := false
-	coordinator := NewCoordinator(projecttypes.ComposeCommands{
-		Stop: func(_ context.Context, _ *composetypes.Project, services []string) error {
+	coordinator := NewCoordinator(types.ComposeCommands{
+		Stop: func(_ context.Context, _ string, _ *composetypes.Project, services []string) error {
 			stopped = services
 			calls = append(calls, "stop")
 			return nil
 		},
-		Up: func(_ context.Context, selected *composetypes.Project, services []string, _, force, _ bool, _ map[string]registry.AuthConfig, _ time.Duration) error {
+		Up: func(_ context.Context, _ string, selected *composetypes.Project, services []string, _, force, _ bool, _ map[string]registry.AuthConfig, _ time.Duration) error {
 			upped = services
 			selectedNames = selected.ServiceNames()
 			forceRecreate = force
 			calls = append(calls, "up")
 			return nil
 		},
-		Create: func(_ context.Context, selected *composetypes.Project, services []string, _ map[string]registry.AuthConfig) error {
+		Create: func(_ context.Context, _ string, selected *composetypes.Project, services []string, _ map[string]registry.AuthConfig) error {
 			created = services
 			assert.Equal(t, selectedNames, selected.ServiceNames(), "create reuses the scoped model")
 			calls = append(calls, "create")
@@ -118,12 +118,12 @@ func TestCoordinatorUpdateServicesScopesDependents(t *testing.T) {
 			"dormant": {Name: "dormant", Image: "example.com/dormant:1", Pid: "service:app"},
 		},
 	}
-	err := coordinator.UpdateServices(t.Context(), projecttypes.ComposeServiceUpdate{
+	err := coordinator.UpdateServices(t.Context(), types.ComposeServiceUpdate{
 		Project:           model,
 		Services:          []string{"app"},
 		Dependents:        []string{"sidecar"},
 		StoppedDependents: []string{"dormant"},
-		Images: projecttypes.ComposeImageOperations{Pull: func(_ context.Context, ref string, _ io.Writer) error {
+		Images: types.ComposeImageOperations{Pull: func(_ context.Context, ref string, _ io.Writer) error {
 			pulled = append(pulled, ref)
 			return nil
 		}},

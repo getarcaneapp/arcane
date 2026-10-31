@@ -21,8 +21,7 @@ import (
 	"github.com/cenkalti/backoff/v5"
 	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1"
@@ -45,17 +44,17 @@ import (
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry/children/browse"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/registry/children/browse"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/registryauth"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
 const (
@@ -68,12 +67,13 @@ const (
 	dockerHubRateLimitRepository        = "ratelimitpreview/test"
 	dockerHubRateLimitTag               = "latest"
 	ecrTokenTTL                         = 11 * time.Hour
-	ociImageVersionLabel                = "org.opencontainers.image.version"
+	OCIImageVersionLabel                = "org.opencontainers.image.version"
+	OCIImageRevisionLabel               = "org.opencontainers.image.revision"
+	OCIImageSourceLabel                 = "org.opencontainers.image.source"
+	OCIImageURLLabel                    = "org.opencontainers.image.url"
+	OCIImageDocumentationLabel          = "org.opencontainers.image.documentation"
 	versionLabelCacheTTL                = 3 * time.Hour
 )
-
-// ErrNoVersionLabel is returned when the remote image config carries no org.opencontainers.image.version label.
-var ErrNoVersionLabel = errors.New("image config has no version label")
 
 type RegistryDaemonClient interface {
 	RegistryLogin(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error)
@@ -89,8 +89,8 @@ type resolvedRegistryCredential struct {
 }
 
 type registryRateLimitCacheEntry struct {
-	RateLimit registry.RateLimitInfo `json:"rateLimit"`
 	CheckedAt time.Time              `json:"checkedAt"`
+	RateLimit registry.RateLimitInfo `json:"rateLimit"`
 }
 
 type rateLimitRoundTripFunc func(*http.Request) (*http.Response, error)
@@ -104,7 +104,7 @@ type ContainerRegistryService struct {
 	dockerClient           registryDaemonGetter
 	cache                  *hot.HotCache[string, string]
 	digestFailures         *hot.HotCache[string, error]
-	labelCache             *hot.HotCache[string, string]
+	labelCache             *hot.HotCache[string, map[string]string]
 	ecrRefreshGroup        singleflight.Group
 	distributionHTTPClient *http.Client
 	kvService              *kv.KVService
@@ -163,28 +163,28 @@ func NewContainerRegistryService(
 			WithTTL(registryDigestFailureTTL).
 			WithJanitor().
 			Build(),
-		// No static loader: ImageVersionLabel uses GetWithLoaders so failed resolutions retry on the next request.
-		labelCache: hot.NewHotCache[string, string](hot.LRU, 64).
+		// No static loader: ImageLabels uses GetWithLoaders so failed resolutions retry on the next request.
+		labelCache: hot.NewHotCache[string, map[string]string](hot.LRU, 64).
 			WithTTL(versionLabelCacheTTL).
 			Build(),
 		distributionHTTPClient: distributionHTTPClient,
 		kvService:              kvService,
 		settingsService:        settingsService,
 		browse: browse.NewService(
-			func(ctx context.Context, id string) (containerregistry.ContainerRegistry, *containerregistry.Credential, error) {
+			func(ctx context.Context, id string) (types.ContainerRegistry, *types.ContainerRegistryCredential, error) {
 				reg, err := service.GetRegistryByID(ctx, id)
 				if err != nil {
-					return containerregistry.ContainerRegistry{}, nil, err
+					return types.ContainerRegistry{}, nil, err
 				}
 				credential, err := service.credentialForRegistry(ctx, reg)
 				switch {
 				case err != nil:
-					return containerregistry.ContainerRegistry{}, nil, err
+					return types.ContainerRegistry{}, nil, err
 				case credential == nil:
-					return containerregistry.ContainerRegistry{ID: reg.ID, URL: reg.URL, Username: reg.Username, Insecure: reg.Insecure, Enabled: reg.Enabled}, nil, nil
+					return types.ContainerRegistry{ID: reg.ID, URL: reg.URL, Username: reg.Username, Insecure: reg.Insecure, Enabled: reg.Enabled}, nil, nil
 				default:
-					return containerregistry.ContainerRegistry{ID: reg.ID, URL: reg.URL, Username: reg.Username, Insecure: reg.Insecure, Enabled: reg.Enabled},
-						&containerregistry.Credential{URL: reg.URL, Username: credential.Username, Token: credential.Token, Enabled: true}, nil
+					return types.ContainerRegistry{ID: reg.ID, URL: reg.URL, Username: reg.Username, Insecure: reg.Insecure, Enabled: reg.Enabled},
+						&types.ContainerRegistryCredential{URL: reg.URL, Username: credential.Username, Token: credential.Token, Enabled: true}, nil
 				}
 			},
 			func(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -204,9 +204,9 @@ func (s *ContainerRegistryService) GetAllRegistries(ctx context.Context) ([]Cont
 	return registries, nil
 }
 
-func (s *ContainerRegistryService) GetRegistriesPaginated(ctx context.Context, params pagination.QueryParams) ([]containerregistry.ContainerRegistry, pagination.Response, error) {
+func (s *ContainerRegistryService) GetRegistriesPaginated(ctx context.Context, params pagination.QueryParams) ([]types.ContainerRegistry, pagination.Response, error) {
 	var registries []ContainerRegistry
-	out, paginationResp, err := params.PaginateSortAndMapDB[ContainerRegistry, containerregistry.ContainerRegistry](
+	out, paginationResp, err := params.PaginateSortAndMapDB[ContainerRegistry, types.ContainerRegistry](
 		pagination.ApplyBooleanFilter(
 			pagination.ApplyBooleanFilter(
 				pagination.ApplyLikeSearch(s.db.WithContext(ctx).Model(&ContainerRegistry{}), params.Search, "url LIKE ? OR username LIKE ? OR COALESCE(description, '') LIKE ?"),
@@ -234,9 +234,12 @@ func (s *ContainerRegistryService) GetRegistryByID(ctx context.Context, id strin
 	return &registryRecord, nil
 }
 
-func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req containerregistry.CreateContainerRegistryRequest) (*ContainerRegistry, error) {
+func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req types.ContainerRegistry, submitted map[string]bool) (*ContainerRegistry, error) {
 	if err := normalization.Normalize(&req); err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(req.URL) == "" {
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "url", Err: errors.New("registry URL is required")})
 	}
 	registryType, err := NormalizeRegistryType(req.RegistryType)
 	if err != nil {
@@ -248,25 +251,25 @@ func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req conta
 	}
 
 	if registryType == RegistryTypeECR {
-		if endpointErr := validateECRRegistryEndpoint(req.URL, mo.PointerToOption(req.Insecure).OrElse(false)); endpointErr != nil {
+		if endpointErr := validateECRRegistryEndpoint(req.URL, req.Insecure); endpointErr != nil {
 			return nil, endpointErr
 		}
 		if strings.TrimSpace(req.AWSRegion) == "" {
-			return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "awsRegion", Err: errors.New("AWS Region is required")})
+			return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "awsRegion", Err: errors.New("AWS Region is required")})
 		}
 		// Static keys are optional but paired; with neither, the default AWS credential chain applies.
 		if strings.TrimSpace(req.AWSSecretAccessKey) != "" && strings.TrimSpace(req.AWSAccessKeyID) == "" {
-			return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "awsAccessKeyId", Err: errors.New("AWS Access Key ID is required")})
+			return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "awsAccessKeyId", Err: errors.New("AWS Access Key ID is required")})
 		}
 		if strings.TrimSpace(req.AWSAccessKeyID) != "" && strings.TrimSpace(req.AWSSecretAccessKey) == "" {
-			return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "awsSecretAccessKey", Err: errors.New("AWS Secret Access Key is required")})
+			return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "awsSecretAccessKey", Err: errors.New("AWS Secret Access Key is required")})
 		}
 	} else {
 		if strings.TrimSpace(req.Username) == "" {
-			return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "username", Err: errors.New("username is required")})
+			return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "username", Err: errors.New("username is required")})
 		}
 		if strings.TrimSpace(req.Token) == "" {
-			return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "token", Err: errors.New("token is required")})
+			return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "token", Err: errors.New("token is required")})
 		}
 	}
 
@@ -284,8 +287,8 @@ func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req conta
 		Username:           kit.Ternary(registryType == RegistryTypeECR, "", req.Username),
 		Token:              encryptedToken,
 		Description:        req.Description,
-		Insecure:           mo.PointerToOption(req.Insecure).OrElse(false),
-		Enabled:            mo.PointerToOption(req.Enabled).OrElse(true),
+		Insecure:           req.Insecure,
+		Enabled:            kit.Ternary(submitted["enabled"], req.Enabled, true),
 		RegistryType:       registryType,
 		RepositoryNames:    repositoryNames,
 		AWSAccessKeyID:     kit.Ternary(registryType == RegistryTypeECR, req.AWSAccessKeyID, ""),
@@ -300,76 +303,78 @@ func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req conta
 	return registryRecord, nil
 }
 
-func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string, req containerregistry.UpdateContainerRegistryRequest) (*ContainerRegistry, error) {
+func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string, req types.ContainerRegistry, submitted map[string]bool) (*ContainerRegistry, error) {
 	if err := normalization.Normalize(&req); err != nil {
 		return nil, err
 	}
-	if req.URL != nil && strings.TrimSpace(*req.URL) == "" {
-		return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "url", Err: errors.New("registry URL is required")})
+	if submitted["url"] && strings.TrimSpace(req.URL) == "" {
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "url", Err: errors.New("registry URL is required")})
 	}
 	registryRecord, err := s.GetRegistryByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	if req.RegistryType != nil {
-		nextType, typeErr := NormalizeRegistryType(*req.RegistryType)
+	if submitted["registryType"] {
+		nextType, typeErr := NormalizeRegistryType(req.RegistryType)
 		if typeErr != nil {
 			return nil, typeErr
 		}
 		if nextType != registryRecord.RegistryType {
-			return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "registryType", Err: errors.New("registry type cannot be changed after creation")})
+			return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "registryType", Err: errors.New("registry type cannot be changed after creation")})
 		}
 	}
 
 	if targetErr := validation.ValidateCredentialTargetChange(
 		"registry URL",
 		registryRecord.URL,
-		req.URL,
+		kit.Ternary(submitted["url"], &req.URL, nil),
 		normalizeRegistryServerAddress,
 		kit.Ternary(registryRecord.RegistryType == RegistryTypeECR,
 			map[string]bool{"awsAccessKeyId": registryRecord.AWSAccessKeyID != "", "awsSecretAccessKey": registryRecord.AWSSecretAccessKey != ""},
 			map[string]bool{"token": registryRecord.Token != ""},
 		),
 		kit.Ternary(registryRecord.RegistryType == RegistryTypeECR,
-			map[string]bool{"awsAccessKeyId": kit.FromPtr(req.AWSAccessKeyID) != "", "awsSecretAccessKey": kit.FromPtr(req.AWSSecretAccessKey) != ""},
-			map[string]bool{"token": kit.FromPtr(req.Token) != ""},
+			map[string]bool{"awsAccessKeyId": req.AWSAccessKeyID != "", "awsSecretAccessKey": req.AWSSecretAccessKey != ""},
+			map[string]bool{"token": req.Token != ""},
 		),
 	); targetErr != nil {
 		return nil, targetErr
 	}
 
-	// RepositoryNames: nil pointer means "don't touch"; empty slice means "clear".
-	repositoryNames, err := normalizeRepositoryNames(kit.FromPtr(req.RepositoryNames))
+	repositoryNames, err := normalizeRepositoryNames(req.RepositoryNames)
 	if err != nil {
 		return nil, err
 	}
 
 	if registryRecord.RegistryType == RegistryTypeECR {
-		if endpointErr := validateECRRegistryEndpoint(mo.PointerToOption(req.URL).OrElse(registryRecord.URL), mo.PointerToOption(req.Insecure).OrElse(registryRecord.Insecure)); endpointErr != nil {
+		if endpointErr := validateECRRegistryEndpoint(
+			kit.Ternary(submitted["url"], req.URL, registryRecord.URL),
+			kit.Ternary(submitted["insecure"], req.Insecure, registryRecord.Insecure),
+		); endpointErr != nil {
 			return nil, endpointErr
 		}
-		if kit.FromPtr(req.AWSSecretAccessKey) != "" && strings.TrimSpace(mo.PointerToOption(req.AWSAccessKeyID).OrElse(registryRecord.AWSAccessKeyID)) == "" {
-			return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "awsAccessKeyId", Err: errors.New("AWS Access Key ID is required")})
+		if req.AWSSecretAccessKey != "" && strings.TrimSpace(kit.Ternary(submitted["awsAccessKeyId"], req.AWSAccessKeyID, registryRecord.AWSAccessKeyID)) == "" {
+			return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "awsAccessKeyId", Err: errors.New("AWS Access Key ID is required")})
 		}
-		if strings.TrimSpace(mo.PointerToOption(req.AWSRegion).OrElse(registryRecord.AWSRegion)) == "" {
-			return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "awsRegion", Err: errors.New("AWS Region is required")})
+		if strings.TrimSpace(kit.Ternary(submitted["awsRegion"], req.AWSRegion, registryRecord.AWSRegion)) == "" {
+			return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "awsRegion", Err: errors.New("AWS Region is required")})
 		}
-		if strings.TrimSpace(mo.PointerToOption(req.AWSAccessKeyID).OrElse(registryRecord.AWSAccessKeyID)) != "" &&
-			kit.FromPtr(req.AWSSecretAccessKey) == "" && registryRecord.AWSSecretAccessKey == "" {
-			return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "awsSecretAccessKey", Err: errors.New("AWS Secret Access Key is required")})
+		if strings.TrimSpace(kit.Ternary(submitted["awsAccessKeyId"], req.AWSAccessKeyID, registryRecord.AWSAccessKeyID)) != "" &&
+			req.AWSSecretAccessKey == "" && registryRecord.AWSSecretAccessKey == "" {
+			return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "awsSecretAccessKey", Err: errors.New("AWS Secret Access Key is required")})
 		}
-	} else if strings.TrimSpace(mo.PointerToOption(req.Username).OrElse(registryRecord.Username)) == "" {
-		return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "username", Err: errors.New("username is required")})
+	} else if strings.TrimSpace(kit.Ternary(submitted["username"], req.Username, registryRecord.Username)) == "" {
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "username", Err: errors.New("username is required")})
 	}
 
-	encryptedToken, err := crypto.Encrypt(kit.Ternary(registryRecord.RegistryType == RegistryTypeECR, "", kit.FromPtr(req.Token)))
+	encryptedToken, err := crypto.Encrypt(kit.Ternary(registryRecord.RegistryType == RegistryTypeECR, "", req.Token))
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt token: %w", err)
 	}
 	encryptedSecret, err := crypto.Encrypt(kit.Ternary(
-		registryRecord.RegistryType == RegistryTypeECR && strings.TrimSpace(mo.PointerToOption(req.AWSAccessKeyID).OrElse(registryRecord.AWSAccessKeyID)) != "",
-		kit.FromPtr(req.AWSSecretAccessKey),
+		registryRecord.RegistryType == RegistryTypeECR && strings.TrimSpace(kit.Ternary(submitted["awsAccessKeyId"], req.AWSAccessKeyID, registryRecord.AWSAccessKeyID)) != "",
+		req.AWSSecretAccessKey,
 		"",
 	))
 	if err != nil {
@@ -378,30 +383,30 @@ func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string
 
 	updated := ContainerRegistry{ //exhaustruct:enforce
 		BaseModel:       registryRecord.BaseModel,
-		URL:             mo.PointerToOption(req.URL).OrElse(registryRecord.URL),
-		Username:        kit.Ternary(registryRecord.RegistryType == RegistryTypeECR, registryRecord.Username, mo.PointerToOption(req.Username).OrElse(registryRecord.Username)),
+		URL:             kit.Ternary(submitted["url"], req.URL, registryRecord.URL),
+		Username:        kit.Ternary(registryRecord.RegistryType == RegistryTypeECR, registryRecord.Username, kit.Ternary(submitted["username"], req.Username, registryRecord.Username)),
 		Token:           cmp.Or(encryptedToken, registryRecord.Token),
-		Description:     kit.Ternary(req.Description == nil, registryRecord.Description, req.Description),
-		Insecure:        mo.PointerToOption(req.Insecure).OrElse(registryRecord.Insecure),
-		Enabled:         mo.PointerToOption(req.Enabled).OrElse(registryRecord.Enabled),
+		Description:     kit.Ternary(submitted["description"], req.Description, registryRecord.Description),
+		Insecure:        kit.Ternary(submitted["insecure"], req.Insecure, registryRecord.Insecure),
+		Enabled:         kit.Ternary(submitted["enabled"], req.Enabled, registryRecord.Enabled),
 		RegistryType:    registryRecord.RegistryType,
-		RepositoryNames: kit.Ternary(req.RepositoryNames == nil, registryRecord.RepositoryNames, repositoryNames),
+		RepositoryNames: kit.Ternary(submitted["repositoryNames"], repositoryNames, registryRecord.RepositoryNames),
 		AWSAccessKeyID: kit.Ternary(registryRecord.RegistryType == RegistryTypeECR,
-			mo.PointerToOption(req.AWSAccessKeyID).OrElse(registryRecord.AWSAccessKeyID), registryRecord.AWSAccessKeyID),
+			kit.Ternary(submitted["awsAccessKeyId"], req.AWSAccessKeyID, registryRecord.AWSAccessKeyID), registryRecord.AWSAccessKeyID),
 		// No static key: the default AWS credential chain applies, so drop any stored secret.
 		AWSSecretAccessKey: kit.Ternary(
-			registryRecord.RegistryType == RegistryTypeECR && strings.TrimSpace(mo.PointerToOption(req.AWSAccessKeyID).OrElse(registryRecord.AWSAccessKeyID)) == "",
+			registryRecord.RegistryType == RegistryTypeECR && strings.TrimSpace(kit.Ternary(submitted["awsAccessKeyId"], req.AWSAccessKeyID, registryRecord.AWSAccessKeyID)) == "",
 			"",
 			cmp.Or(encryptedSecret, registryRecord.AWSSecretAccessKey),
 		),
-		AWSRegion: kit.Ternary(registryRecord.RegistryType == RegistryTypeECR, mo.PointerToOption(req.AWSRegion).OrElse(registryRecord.AWSRegion), registryRecord.AWSRegion),
+		AWSRegion: kit.Ternary(registryRecord.RegistryType == RegistryTypeECR, kit.Ternary(submitted["awsRegion"], req.AWSRegion, registryRecord.AWSRegion), registryRecord.AWSRegion),
 		ECRToken: kit.Ternary(
-			registryRecord.RegistryType == RegistryTypeECR && (req.AWSAccessKeyID != nil || req.AWSSecretAccessKey != nil || req.AWSRegion != nil),
+			registryRecord.RegistryType == RegistryTypeECR && (submitted["awsAccessKeyId"] || submitted["awsSecretAccessKey"] || submitted["awsRegion"]),
 			"",
 			registryRecord.ECRToken,
 		),
 		ECRTokenGeneratedAt: kit.Ternary(
-			registryRecord.RegistryType == RegistryTypeECR && (req.AWSAccessKeyID != nil || req.AWSSecretAccessKey != nil || req.AWSRegion != nil),
+			registryRecord.RegistryType == RegistryTypeECR && (submitted["awsAccessKeyId"] || submitted["awsSecretAccessKey"] || submitted["awsRegion"]),
 			nil,
 			registryRecord.ECRTokenGeneratedAt,
 		),
@@ -543,21 +548,21 @@ func (s *ContainerRegistryService) RecordImagePull(ctx context.Context, imageRef
 }
 
 // GetRegistryPullUsage returns pull usage visibility for configured registries.
-func (s *ContainerRegistryService) GetRegistryPullUsage(ctx context.Context) (containerregistry.PullUsageResponse, error) {
+func (s *ContainerRegistryService) GetRegistryPullUsage(ctx context.Context) (types.ContainerRegistryPullUsageResponse, error) {
 	registries, err := s.GetAllRegistries(ctx)
 	if err != nil {
-		return containerregistry.PullUsageResponse{}, err
+		return types.ContainerRegistryPullUsageResponse{}, err
 	}
 
-	results := make([]containerregistry.PullUsage, 0, len(registries))
+	results := make([]types.ContainerRegistryPullUsage, 0, len(registries))
 	for _, reg := range registries {
 		results = append(results, s.buildRegistryPullUsage(ctx, reg))
 	}
 
-	return containerregistry.PullUsageResponse{Registries: results}, nil
+	return types.ContainerRegistryPullUsageResponse{Registries: results}, nil
 }
 
-func (s *ContainerRegistryService) buildRegistryPullUsage(ctx context.Context, reg ContainerRegistry) containerregistry.PullUsage {
+func (s *ContainerRegistryService) buildRegistryPullUsage(ctx context.Context, reg ContainerRegistry) types.ContainerRegistryPullUsage {
 	credential, credErr := func() (*resolvedRegistryCredential, error) {
 		if registryauth.NormalizeRegistryForComparison(reg.URL) != "docker.io" || !reg.Enabled || reg.RegistryType != RegistryTypeGeneric {
 			return nil, nil
@@ -611,7 +616,7 @@ func (s *ContainerRegistryService) buildRegistryPullUsage(ctx context.Context, r
 		return registryRateLimitCacheEntry{RateLimit: *fetched, CheckedAt: time.Now().UTC()}, nil
 	}()
 
-	return containerregistry.PullUsage{
+	return types.ContainerRegistryPullUsage{
 		RegistryID: reg.ID,
 		Provider: func() string {
 			switch {
@@ -773,7 +778,11 @@ func (s *ContainerRegistryService) ImageDigest(ctx context.Context, imageRef str
 	return digestValue, nil
 }
 
-func (s *ContainerRegistryService) InspectImageDigest(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (inspected *containerregistry.DigestResult, digestErr error) {
+func (s *ContainerRegistryService) InspectImageDigest(
+	ctx context.Context,
+	imageRef string,
+	externalCreds []types.ContainerRegistryCredential,
+) (inspected *types.ContainerRegistryDigestResult, digestErr error) {
 	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "registry.inspect_digest", trace.WithAttributes(attribute.String("arcane.image.ref", imageRef)))
 	defer func() {
 		if inspected != nil && inspected.Digest != "" {
@@ -786,8 +795,8 @@ func (s *ContainerRegistryService) InspectImageDigest(ctx context.Context, image
 		return nil, common.Classify(common.ErrValidation, err)
 	}
 
-	withDigest := func(value string, result *containerregistry.DigestResult, err error) (*containerregistry.DigestResult, error) {
-		return &containerregistry.DigestResult{
+	withDigest := func(value string, result *types.ContainerRegistryDigestResult, err error) (*types.ContainerRegistryDigestResult, error) {
+		return &types.ContainerRegistryDigestResult{
 			Digest:         value,
 			AuthMethod:     result.AuthMethod,
 			AuthUsername:   result.AuthUsername,
@@ -795,7 +804,7 @@ func (s *ContainerRegistryService) InspectImageDigest(ctx context.Context, image
 			UsedCredential: result.UsedCredential,
 		}, err
 	}
-	inspectViaDaemon := func() (*containerregistry.DigestResult, error) {
+	inspectViaDaemon := func() (*types.ContainerRegistryDigestResult, error) {
 		dockerClient, clientErr := s.getDockerClient(ctx)
 		if clientErr != nil {
 			return nil, clientErr
@@ -823,11 +832,11 @@ func (s *ContainerRegistryService) InspectImageDigest(ctx context.Context, image
 			}))
 	}
 
-	var lastResult *containerregistry.DigestResult
+	var lastResult *types.ContainerRegistryDigestResult
 	var lastErr error
 	fallbackWarningLogged := false
 
-	_, retryErr := backoff.Retry(ctx, func() (*containerregistry.DigestResult, error) {
+	_, retryErr := backoff.Retry(ctx, func() (*types.ContainerRegistryDigestResult, error) {
 		result, daemonErr := inspectViaDaemon()
 		lastResult, lastErr = result, daemonErr
 		if daemonErr == nil {
@@ -933,9 +942,9 @@ func registryOperationWithCredentials[T any](
 	ctx context.Context,
 	s *ContainerRegistryService,
 	registryHost, operation string,
-	externalCreds []containerregistry.Credential,
+	externalCreds []types.ContainerRegistryCredential,
 	fetch func(context.Context, *resolvedRegistryCredential) (T, error),
-) (T, *containerregistry.DigestResult, error) {
+) (T, *types.ContainerRegistryDigestResult, error) {
 	registries, credErr := func() ([]ContainerRegistry, error) {
 		if len(externalCreds) > 0 || s == nil || s.db == nil {
 			return nil, nil
@@ -966,9 +975,9 @@ func registryOperationWithCredentials[T any](
 	}
 
 	var lastErr error
-	var lastResult *containerregistry.DigestResult
+	var lastResult *types.ContainerRegistryDigestResult
 	for _, credential := range matchedCredentials {
-		lastResult = &containerregistry.DigestResult{AuthMethod: "credential", AuthUsername: credential.Username, AuthRegistry: registryHost, UsedCredential: true}
+		lastResult = &types.ContainerRegistryDigestResult{AuthMethod: "credential", AuthUsername: credential.Username, AuthRegistry: registryHost, UsedCredential: true}
 		value, fetchErr := fetch(ctx, &credential)
 		if fetchErr == nil {
 			return value, lastResult, nil
@@ -992,12 +1001,12 @@ func registryOperationWithCredentials[T any](
 	value, err := fetch(ctx, nil)
 	switch {
 	case err == nil:
-		return value, &containerregistry.DigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}, nil
+		return value, &types.ContainerRegistryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}, nil
 	case credErr != nil && browse.IsUnauthorizedRegistryError(err):
-		return *new(T), &containerregistry.DigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost},
+		return *new(T), &types.ContainerRegistryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost},
 			fmt.Errorf("%s: anonymous access unauthorized; credential lookup failed: %w", operation, errors.Join(err, fmt.Errorf("failed to load enabled registries: %w", credErr)))
 	default:
-		return *new(T), &containerregistry.DigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}, fmt.Errorf("%s failed: %w", operation, err)
+		return *new(T), &types.ContainerRegistryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}, fmt.Errorf("%s failed: %w", operation, err)
 	}
 }
 
@@ -1050,7 +1059,7 @@ func (s *ContainerRegistryService) credentialForRegistry(ctx context.Context, re
 
 // SyncRegistries syncs registries from a manager to this agent instance
 // It creates, updates, or deletes registries to match the provided list
-func (s *ContainerRegistryService) SyncRegistries(ctx context.Context, syncItems []containerregistry.Sync) error {
+func (s *ContainerRegistryService) SyncRegistries(ctx context.Context, syncItems []types.ContainerRegistrySync) error {
 	if err := normalization.Normalize(&syncItems); err != nil {
 		return err
 	}
@@ -1125,7 +1134,7 @@ func (s *ContainerRegistryService) SyncRegistries(ctx context.Context, syncItems
 	}
 
 	for id := range existingMap {
-		if slices.ContainsFunc(syncItems, func(item containerregistry.Sync) bool { return item.ID == id }) {
+		if slices.ContainsFunc(syncItems, func(item types.ContainerRegistrySync) bool { return item.ID == id }) {
 			continue
 		}
 		// Already gone is the desired state for sync.
@@ -1143,7 +1152,7 @@ func NormalizeRegistryType(value string) (string, error) {
 	case RegistryTypeECR:
 		return RegistryTypeECR, nil
 	default:
-		return "", common.Classify(common.ErrValidation, &base.FieldError{Field: "registryType", Err: errors.New("registry type must be one of: generic, ecr")})
+		return "", common.Classify(common.ErrValidation, &types.FieldError{Field: "registryType", Err: errors.New("registry type must be one of: generic, ecr")})
 	}
 }
 
@@ -1153,7 +1162,7 @@ func normalizeRepositoryNames(raw []string) (database.StringSlice, error) {
 	for _, name := range kit.Unique(kit.TrimNonEmpty(raw)) {
 		// A repository name is only a path, so placeholder domain and tag segments make it a full reference.
 		if _, err := reference.ParseNormalizedNamed("registry.invalid/" + name + "/placeholder:latest"); err != nil {
-			return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "repositoryNames", Err: fmt.Errorf("invalid repository name %q", name)})
+			return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "repositoryNames", Err: fmt.Errorf("invalid repository name %q", name)})
 		}
 	}
 	return append(database.StringSlice{}, kit.Unique(kit.TrimNonEmpty(raw))...), nil
@@ -1179,7 +1188,7 @@ func IsRateLimitErrorString(msg string) bool {
 
 // ListImageTags discovers repository tags with the same credential precedence as
 // digest checks. External credentials replace local credentials when supplied.
-func (s *ContainerRegistryService) ListImageTags(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (tagList []string, tagsErr error) {
+func (s *ContainerRegistryService) ListImageTags(ctx context.Context, imageRef string, externalCreds []types.ContainerRegistryCredential) (tagList []string, tagsErr error) {
 	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "registry.list_tags", trace.WithAttributes(attribute.String("arcane.image.ref", imageRef)))
 	defer func() {
 		span.SetAttributes(attribute.Int("arcane.result.count", len(tagList)))
@@ -1308,14 +1317,13 @@ func (s *ContainerRegistryService) GetOrRefreshECRToken(ctx context.Context, reg
 	return "AWS", ecrPassword, nil
 }
 
-// ImageVersionLabel resolves the org.opencontainers.image.version label from the remote image config without pulling.
-// Anonymous access only — this is used for Arcane's own public GHCR images.
-func (s *ContainerRegistryService) ImageVersionLabel(ctx context.Context, imageRef string) (string, error) {
+// ImageLabels resolves the remote image config labels without pulling.
+func (s *ContainerRegistryService) ImageLabels(ctx context.Context, imageRef string) (map[string]string, error) {
 	if strings.TrimSpace(imageRef) == "" {
-		return "", errors.New("empty image reference")
+		return nil, errors.New("empty image reference")
 	}
 
-	label, found, err := s.labelCache.GetWithLoaders(strings.TrimSpace(imageRef), func(_ []string) (map[string]string, error) {
+	labels, found, err := s.labelCache.GetWithLoaders(strings.TrimSpace(imageRef), func(_ []string) (map[string]map[string]string, error) {
 		loadCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultRegistry)
 		defer cancel()
 
@@ -1323,24 +1331,37 @@ func (s *ContainerRegistryService) ImageVersionLabel(ctx context.Context, imageR
 		if parseErr != nil {
 			return nil, fmt.Errorf("invalid image reference %q: %w", strings.TrimSpace(imageRef), parseErr)
 		}
-		img, fetchErr := remote.Image(parsedRef, remote.WithContext(loadCtx), remote.WithPlatform(v1.Platform{OS: "linux", Architecture: runtime.GOARCH}))
+		img, _, fetchErr := registryOperationWithCredentials(loadCtx, s, parsedRef.Context().RegistryStr(), "image labels fetch for "+strings.TrimSpace(imageRef), nil,
+			func(ctx context.Context, credential *resolvedRegistryCredential) (v1.Image, error) {
+				return remote.Image(parsedRef,
+					remote.WithContext(ctx),
+					remote.WithPlatform(v1.Platform{OS: "linux", Architecture: runtime.GOARCH}),
+					remote.WithTransport(s.distributionHTTPClient.Transport),
+					remote.WithAuth(func() authn.Authenticator {
+						if credential == nil {
+							return authn.Anonymous
+						}
+						return authn.FromConfig(authn.AuthConfig{Username: credential.Username, Password: credential.Token})
+					}()),
+				)
+			})
 		if fetchErr != nil {
-			return nil, fmt.Errorf("version label fetch failed for %s: %w", strings.TrimSpace(imageRef), fetchErr)
+			return nil, fetchErr
 		}
 		cfg, configErr := img.ConfigFile()
 		if configErr != nil {
-			return nil, fmt.Errorf("version label fetch failed for %s: %w", strings.TrimSpace(imageRef), configErr)
+			return nil, fmt.Errorf("image labels fetch failed for %s: %w", strings.TrimSpace(imageRef), configErr)
 		}
-		if cfg == nil || strings.TrimSpace(cfg.Config.Labels[ociImageVersionLabel]) == "" {
-			return nil, ErrNoVersionLabel
+		if cfg == nil {
+			return nil, fmt.Errorf("image labels fetch failed for %s: missing config", strings.TrimSpace(imageRef))
 		}
-		return map[string]string{strings.TrimSpace(imageRef): strings.TrimSpace(cfg.Config.Labels[ociImageVersionLabel])}, nil
+		return map[string]map[string]string{strings.TrimSpace(imageRef): cfg.Config.Labels}, nil
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if !found {
-		return "", errors.New("registry version label cache loader returned no label")
+		return nil, errors.New("registry image label cache loader returned no labels")
 	}
-	return label, nil
+	return labels, nil
 }

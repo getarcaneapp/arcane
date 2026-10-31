@@ -7,9 +7,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
 type Module struct {
@@ -52,6 +52,7 @@ func RegisterActivities(api huma.API, h *ActivityHandler) {
 		Description: "Get current and recent background activities for an environment",
 		Tags:        []string{"Activities"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermActivitiesRead, h.ListActivities)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
@@ -64,15 +65,17 @@ func RegisterActivities(api huma.API, h *ActivityHandler) {
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermActivitiesRead, h.GetActivity)
 
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "cancel-activity",
+	middleware.RegisterWithActionPermissions(api, huma.Operation{
+		OperationID: "activity-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/activities/{activityId}/cancel",
+		Path:        "/environments/{id}/activities/{activityId}",
 		Summary:     "Cancel a background activity",
 		Description: "Request cancellation of a running or queued background activity",
 		Tags:        []string{"Activities"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermActivitiesCancel, h.CancelActivity)
+	}, "action", map[string]string{
+		"cancel": authz.PermActivitiesCancel,
+	}, h.CancelActivity)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "clear-activity-history",

@@ -15,22 +15,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
-	"github.com/getarcaneapp/arcane/types/v2/notification"
-	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
 func setupNotificationTestDB(t *testing.T) *database.DB {
@@ -47,7 +45,7 @@ func setupNotificationTestDB(t *testing.T) *database.DB {
 	crypto.InitEncryption(&crypto.Config{
 		EncryptionKey: testCfg.EncryptionKey,
 		Environment:   string(testCfg.Environment),
-		AgentMode:     testCfg.AgentMode,
+		AgentMode:     testCfg.AgentEnabled,
 	})
 
 	return &database.DB{DB: db}
@@ -57,17 +55,19 @@ func setupNotificationTestService(t *testing.T) (*database.DB, *NotificationServ
 	t.Helper()
 
 	db := setupNotificationTestDB(t)
-	envSvc := environment.NewEnvironmentService(db, nil, nil, nil, nil, nil)
+	envSvc := environment.NewEnvironmentService(db, nil, nil, nil, nil)
 
 	cfg := &config.Config{
 		AppUrl: "http://localhost:3552",
 	}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, cfg, settings.Env{})
+	require.NoError(t, err)
 
-	return db, NewNotificationService(db, cfg, envSvc, event.NewEventService(db, cfg, nil), nil)
+	return db, NewNotificationService(db, cfg, envSvc, event.NewEventService(db, cfg, nil), nil, settingsService)
 }
 
-func newNotificationTestUpdateInfo() *imageupdate.Response {
-	return &imageupdate.Response{
+func newNotificationTestUpdateInfo() *types.ImageUpdateResponse {
+	return &types.ImageUpdateResponse{
 		HasUpdate:     true,
 		UpdateType:    "digest",
 		CurrentDigest: "sha256:current",
@@ -118,9 +118,9 @@ func TestNotificationService_DispatchNotification_InvalidAccessTokenReturnsUnaut
 	ctx := t.Context()
 	_, svc := setupNotificationTestService(t)
 
-	_, err := svc.DispatchNotification(ctx, "missing-token", notification.DispatchRequest{
-		Kind: notification.DispatchKindImageUpdate,
-		ImageUpdate: &notification.DispatchImageUpdate{
+	_, err := svc.DispatchNotification(ctx, "missing-token", types.NotificationDispatchRequest{
+		Kind: types.NotificationDispatchKindImageUpdate,
+		ImageUpdate: &types.NotificationDispatchImageUpdate{
 			ImageRef:   "nginx:latest",
 			UpdateInfo: *newNotificationTestUpdateInfo(),
 		},
@@ -138,14 +138,14 @@ func TestNotificationService_DispatchNotification_UnsupportedKindReturnsSentinel
 	now := time.Now()
 	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
 		ID: "env-remote", CreatedAt: now, UpdatedAt: &now,
-		Name:        "Remote Edge",
+		Name:        "Remote Agent",
 		ApiUrl:      "http://remote.example",
 		Enabled:     true,
 		Status:      string(environment.EnvironmentStatusOnline),
 		AccessToken: &token,
 	}).Error)
 
-	_, err := svc.DispatchNotification(ctx, token, notification.DispatchRequest{
+	_, err := svc.DispatchNotification(ctx, token, types.NotificationDispatchRequest{
 		Kind: "bogus_kind",
 	})
 
@@ -165,16 +165,16 @@ func TestNotificationService_DispatchNotification_LogsManagerDispatchForAgent(t 
 	now := time.Now()
 	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
 		ID: "env-remote", CreatedAt: now, UpdatedAt: &now,
-		Name:        "Remote Edge",
+		Name:        "Remote Agent",
 		ApiUrl:      "http://remote.example",
 		Enabled:     true,
 		Status:      string(environment.EnvironmentStatusOnline),
 		AccessToken: &token,
 	}).Error)
 
-	dispatchResponse, err := svc.DispatchNotification(ctx, token, notification.DispatchRequest{
-		Kind: notification.DispatchKindImageUpdate,
-		ImageUpdate: &notification.DispatchImageUpdate{
+	dispatchResponse, err := svc.DispatchNotification(ctx, token, types.NotificationDispatchRequest{
+		Kind: types.NotificationDispatchKindImageUpdate,
+		ImageUpdate: &types.NotificationDispatchImageUpdate{
 			ImageRef:   "nginx:latest",
 			UpdateInfo: *newNotificationTestUpdateInfo(),
 		},
@@ -186,17 +186,17 @@ func TestNotificationService_DispatchNotification_LogsManagerDispatchForAgent(t 
 	logs := logBuffer.String()
 	require.Contains(t, logs, "Manager dispatching notification on behalf of agent")
 	require.Contains(t, logs, "environmentId=env-remote")
-	require.Contains(t, logs, "environmentName=\"Remote Edge\"")
+	require.Contains(t, logs, "environmentName=\"Remote Agent\"")
 	require.Contains(t, logs, "kind=image_update")
 }
 
 func TestNotificationService_SendImageUpdateNotification_AgentModeDispatchesToManager(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
-	envSvc := environment.NewEnvironmentService(db, nil, nil, nil, nil, nil)
+	envSvc := environment.NewEnvironmentService(db, nil, nil, nil, nil)
 
 	var calls atomic.Int32
-	var dispatched notification.DispatchRequest
+	var dispatched types.NotificationDispatchRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !assert.Equal(t, http.MethodPost, r.Method) {
 			return
@@ -213,7 +213,7 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeDispatchesToMa
 		calls.Add(1)
 		if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
-			"data": notification.DispatchResponse{
+			"data": types.NotificationDispatchResponse{
 				Message:   "Notification dispatched successfully",
 				Delivered: 2,
 			},
@@ -225,16 +225,16 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeDispatchesToMa
 
 	svc := NewNotificationService(db, &config.Config{
 		AppUrl:        "http://localhost:3552",
-		AgentMode:     true,
+		AgentEnabled:  true,
 		AgentToken:    "agent-token",
 		ManagerApiUrl: server.URL,
-	}, envSvc, nil, nil)
+	}, envSvc, nil, nil, nil)
 
 	delivered, err := svc.SendImageUpdateNotification(ctx, "nginx:latest", newNotificationTestUpdateInfo(), notifications.NotificationEventImageUpdate)
 	require.NoError(t, err)
 	require.Equal(t, 2, delivered)
 	require.EqualValues(t, 1, calls.Load())
-	require.Equal(t, notification.DispatchKindImageUpdate, dispatched.Kind)
+	require.Equal(t, types.NotificationDispatchKindImageUpdate, dispatched.Kind)
 	require.NotNil(t, dispatched.ImageUpdate)
 	require.Equal(t, "nginx:latest", dispatched.ImageUpdate.ImageRef)
 }
@@ -242,9 +242,9 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeDispatchesToMa
 func TestNotificationService_SendBatchImageUpdateNotification_AgentModeUsesManagerDeliveredCount(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
-	envSvc := environment.NewEnvironmentService(db, nil, nil, nil, nil, nil)
+	envSvc := environment.NewEnvironmentService(db, nil, nil, nil, nil)
 
-	var dispatched notification.DispatchRequest
+	var dispatched types.NotificationDispatchRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !assert.Equal(t, http.MethodPost, r.Method) {
 			return
@@ -260,7 +260,7 @@ func TestNotificationService_SendBatchImageUpdateNotification_AgentModeUsesManag
 		}
 		if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
-			"data": notification.DispatchResponse{
+			"data": types.NotificationDispatchResponse{
 				Message:   "Notification dispatched successfully",
 				Delivered: 0,
 			},
@@ -272,17 +272,17 @@ func TestNotificationService_SendBatchImageUpdateNotification_AgentModeUsesManag
 
 	svc := NewNotificationService(db, &config.Config{
 		AppUrl:        "http://localhost:3552",
-		AgentMode:     true,
+		AgentEnabled:  true,
 		AgentToken:    "agent-token",
 		ManagerApiUrl: server.URL,
-	}, envSvc, nil, nil)
+	}, envSvc, nil, nil, nil)
 
-	delivered, err := svc.SendBatchImageUpdateNotification(ctx, map[string]*imageupdate.Response{
+	delivered, err := svc.SendBatchImageUpdateNotification(ctx, map[string]*types.ImageUpdateResponse{
 		"nginx:latest": newNotificationTestUpdateInfo(),
 	})
 	require.NoError(t, err)
 	require.Equal(t, 0, delivered)
-	require.Equal(t, notification.DispatchKindBatchImageUpdate, dispatched.Kind)
+	require.Equal(t, types.NotificationDispatchKindBatchImageUpdate, dispatched.Kind)
 	require.NotNil(t, dispatched.BatchImageUpdate)
 	require.Contains(t, dispatched.BatchImageUpdate.Updates, "nginx:latest")
 }
@@ -290,12 +290,12 @@ func TestNotificationService_SendBatchImageUpdateNotification_AgentModeUsesManag
 func TestNotificationService_SendImageUpdateNotification_AgentModeRequiresUpdateInfo(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
-	envSvc := environment.NewEnvironmentService(db, nil, nil, nil, nil, nil)
+	envSvc := environment.NewEnvironmentService(db, nil, nil, nil, nil)
 
 	svc := NewNotificationService(db, &config.Config{
-		AppUrl:    "http://localhost:3552",
-		AgentMode: true,
-	}, envSvc, nil, nil)
+		AppUrl:       "http://localhost:3552",
+		AgentEnabled: true,
+	}, envSvc, nil, nil, nil)
 
 	_, err := svc.SendImageUpdateNotification(ctx, "nginx:latest", nil, notifications.NotificationEventImageUpdate)
 	require.Error(t, err)
@@ -305,7 +305,7 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeRequiresUpdate
 func TestNotificationService_SendBatchImageUpdateNotification_AgentModeSkipsNoOpDispatch(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
-	envSvc := environment.NewEnvironmentService(db, nil, nil, nil, nil, nil)
+	envSvc := environment.NewEnvironmentService(db, nil, nil, nil, nil)
 
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -316,20 +316,20 @@ func TestNotificationService_SendBatchImageUpdateNotification_AgentModeSkipsNoOp
 
 	svc := NewNotificationService(db, &config.Config{
 		AppUrl:        "http://localhost:3552",
-		AgentMode:     true,
+		AgentEnabled:  true,
 		AgentToken:    "agent-token",
 		ManagerApiUrl: server.URL,
-	}, envSvc, nil, nil)
+	}, envSvc, nil, nil, nil)
 
 	t.Run("empty updates", func(t *testing.T) {
-		delivered, err := svc.SendBatchImageUpdateNotification(ctx, map[string]*imageupdate.Response{})
+		delivered, err := svc.SendBatchImageUpdateNotification(ctx, map[string]*types.ImageUpdateResponse{})
 		require.NoError(t, err)
 		require.Equal(t, 0, delivered)
 		require.EqualValues(t, 0, calls.Load())
 	})
 
 	t.Run("no changed updates", func(t *testing.T) {
-		delivered, err := svc.SendBatchImageUpdateNotification(ctx, map[string]*imageupdate.Response{
+		delivered, err := svc.SendBatchImageUpdateNotification(ctx, map[string]*types.ImageUpdateResponse{
 			"nginx:latest": {
 				HasUpdate:     false,
 				CurrentDigest: "sha256:current",
@@ -362,7 +362,7 @@ func TestBuildContainerUpdateNotificationMessage_IncludesEnvironment(t *testing.
 }
 
 func TestBuildBatchImageUpdateNotificationMessage_EnvironmentAppearsOnce(t *testing.T) {
-	updates := map[string]*imageupdate.Response{
+	updates := map[string]*types.ImageUpdateResponse{
 		"nginx:latest": newNotificationTestUpdateInfo(),
 		"redis:latest": {
 			HasUpdate:     true,
@@ -373,7 +373,7 @@ func TestBuildBatchImageUpdateNotificationMessage_EnvironmentAppearsOnce(t *test
 		},
 	}
 
-	message := notifications.BuildBatchImageUpdateNotificationMessage(notifications.MessageFormatMarkdown, "Cluster One", updates)
+	message := notifications.BuildBatchImageUpdateNotificationMessage(notifications.MessageFormatMarkdown, "Cluster One", updates, false)
 	require.Contains(t, message, "**Environment:** Cluster One")
 	require.Equal(t, 1, strings.Count(message, "Environment"))
 }
@@ -394,7 +394,7 @@ func TestBuildVulnerabilitySummaryNotificationMessage_IncludesEnvironment(t *tes
 }
 
 func TestBuildPruneReportNotificationMessage_IncludesEnvironment(t *testing.T) {
-	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatMarkdown, "Cluster One", &system.PruneAllResult{
+	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatMarkdown, "Cluster One", &types.PruneAllResult{
 		SpaceReclaimed:           3825205248,
 		ContainerSpaceReclaimed:  503316480,
 		ImageSpaceReclaimed:      2449473536,
@@ -456,7 +456,7 @@ func TestNotificationCredential_LeavesEmptyValuesEmpty(t *testing.T) {
 func TestNotificationService_CreateOrUpdateSettingsEncryptsCredentialFields(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
-	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil)
+	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil, nil)
 
 	_, err := svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderDiscord, true, database.JSON{
 		"webhookId": "123456789",
@@ -476,10 +476,42 @@ func TestNotificationService_CreateOrUpdateSettingsEncryptsCredentialFields(t *t
 	require.Equal(t, "discord-secret-token", decrypted)
 }
 
+func TestNotificationService_CreateOrUpdateSettingsValidatesFields(t *testing.T) {
+	ctx := t.Context()
+	svc := NewNotificationService(setupNotificationTestDB(t), &config.Config{}, nil, nil, nil, nil)
+
+	tests := []struct {
+		name     string
+		provider notifications.NotificationProvider
+		config   database.JSON
+		field    string
+	}{
+		{"email from", notifications.NotificationProviderEmail, database.JSON{"fromAddress": "not an email", "toAddresses": []any{"ops@example.com"}}, "fromAddress"},
+		{"email to", notifications.NotificationProviderEmail, database.JSON{"fromAddress": "Arcane <arcane@example.com>", "toAddresses": []any{"ops@example.com", "bad"}}, "toAddresses"},
+		{"telegram topic", notifications.NotificationProviderTelegram, database.JSON{"chatIds": []any{"-100123:0"}}, "destinations"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := svc.CreateOrUpdateSettings(ctx, tt.provider, true, tt.config)
+			require.ErrorIs(t, err, common.ErrValidation)
+			var fieldErr *types.FieldError
+			require.ErrorAs(t, err, &fieldErr)
+			assert.Equal(t, tt.field, fieldErr.Field)
+		})
+	}
+
+	_, err := svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderEmail, true, database.JSON{"fromAddress": "Arcane <arcane@example.com>", "toAddresses": []any{"ops@example.com"}})
+	require.NoError(t, err)
+	_, err = svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderTelegram, true, database.JSON{"chatIds": []any{"-100123:42", "@channel"}})
+	require.NoError(t, err)
+	_, err = svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderEmail, false, database.JSON{"fromAddress": ""})
+	require.NoError(t, err)
+}
+
 func TestNotificationService_CreateOrUpdateSettingsPreservesStoredCredentialWhenEmpty(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
-	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil)
+	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil, nil)
 
 	_, err := svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderGotify, true, database.JSON{
 		"host":  "gotify.example",
@@ -507,7 +539,7 @@ func TestNotificationService_CreateOrUpdateSettingsPreservesStoredCredentialWhen
 func TestNotificationService_CreateOrUpdateSettingsRejectsTargetChangeWithStoredCredential(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
-	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil)
+	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil, nil)
 
 	created, err := svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderGotify, true, database.JSON{
 		"host":  "gotify.example",
@@ -542,12 +574,13 @@ func TestNotificationService_CreateOrUpdateSettingsRejectsTargetChangeWithStored
 func TestNotificationService_CreateOrUpdateSettingsClearsEmailPasswordWhenAuthModeNone(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
-	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil)
+	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil, nil)
 
 	_, err := svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderEmail, true, database.JSON{
 		"smtpHost":     "smtp.example",
 		"smtpPassword": "stale-password",
 		"authMode":     "auto",
+		"fromAddress":  "arcane@example.com",
 	})
 	require.NoError(t, err)
 
@@ -555,6 +588,7 @@ func TestNotificationService_CreateOrUpdateSettingsClearsEmailPasswordWhenAuthMo
 		"smtpHost":     "smtp.example",
 		"smtpPassword": "",
 		"authMode":     string(notifications.EmailAuthModeNone),
+		"fromAddress":  "arcane@example.com",
 	})
 	require.NoError(t, err)
 
@@ -566,7 +600,7 @@ func TestNotificationService_CreateOrUpdateSettingsClearsEmailPasswordWhenAuthMo
 func TestNotificationService_CreateOrUpdateSettingsPreservesCredentialAcrossDisable(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
-	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil)
+	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil, nil)
 
 	_, err := svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderGotify, true, database.JSON{
 		"host":  "gotify.example",
@@ -597,7 +631,7 @@ func TestNotificationService_CreateOrUpdateSettingsPreservesCredentialAcrossDisa
 func TestNotificationService_CreateOrUpdateSettingsKeepsConfigWhenDisabled(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
-	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil)
+	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil, nil)
 
 	_, err := svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderNtfy, true, database.JSON{
 		"host":  "ntfy.example",
@@ -633,7 +667,7 @@ func TestNotificationService_CreateOrUpdateSettingsKeepsConfigWhenDisabled(t *te
 func TestNotificationService_NotifyEnabledProviders_SkipsFiltersAndAggregates(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
-	svc := NewNotificationService(db, &config.Config{}, nil, event.NewEventService(db, nil, nil), nil)
+	svc := NewNotificationService(db, &config.Config{}, nil, event.NewEventService(db, nil, nil), nil, nil)
 
 	var webhookCalls atomic.Int32
 	var cancelOnWebhook atomic.Pointer[context.CancelFunc]
@@ -737,16 +771,16 @@ func TestNotificationService_DispatchNotificationForEnvironment_ResolvesTunnelSe
 
 	now := time.Now()
 	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
-		ID: "env-edge", CreatedAt: now, UpdatedAt: &now,
-		Name:    "edge-env",
-		ApiUrl:  "http://edge:3553",
+		ID: "env-agent", CreatedAt: now, UpdatedAt: &now,
+		Name:    "agent-env",
+		ApiUrl:  "http://agent:3553",
 		Enabled: true,
 	}).Error)
 
 	// No access token involved: the environment comes from the tunnel session (#3002).
-	resp, err := svc.DispatchNotificationForEnvironment(ctx, "env-edge", notification.DispatchRequest{
-		Kind: notification.DispatchKindImageUpdate,
-		ImageUpdate: &notification.DispatchImageUpdate{
+	resp, err := svc.DispatchNotificationForEnvironment(ctx, "env-agent", types.NotificationDispatchRequest{
+		Kind: types.NotificationDispatchKindImageUpdate,
+		ImageUpdate: &types.NotificationDispatchImageUpdate{
 			ImageRef:   "nginx:latest",
 			UpdateInfo: *newNotificationTestUpdateInfo(),
 		},
@@ -754,39 +788,39 @@ func TestNotificationService_DispatchNotificationForEnvironment_ResolvesTunnelSe
 	require.NoError(t, err)
 	require.Equal(t, "Notification dispatched successfully", resp.Message)
 
-	_, err = svc.DispatchNotificationForEnvironment(ctx, "env-edge", notification.DispatchRequest{Kind: "bogus"})
+	_, err = svc.DispatchNotificationForEnvironment(ctx, "env-agent", types.NotificationDispatchRequest{Kind: "bogus"})
 	require.ErrorIs(t, err, ErrUnsupportedDispatchKind)
 }
 
 func TestNotificationService_AgentDispatchWithoutHTTPConfigFallsBackToTunnel(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
-	svc := NewNotificationService(db, &config.Config{AgentMode: true}, nil, event.NewEventService(db, &config.Config{AgentMode: true}, nil), nil)
+	svc := NewNotificationService(db, &config.Config{AgentEnabled: true}, nil, event.NewEventService(db, &config.Config{AgentEnabled: true}, nil), nil, nil)
 
 	// No MANAGER_API_URL/AGENT_TOKEN and no active tunnel: the error must point
 	// at both options instead of only the HTTP env vars (#3002).
-	_, err := svc.dispatchNotificationToManager(ctx, notification.DispatchRequest{
-		Kind: notification.DispatchKindImageUpdate,
-		ImageUpdate: &notification.DispatchImageUpdate{
+	_, err := svc.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
+		Kind: types.NotificationDispatchKindImageUpdate,
+		ImageUpdate: &types.NotificationDispatchImageUpdate{
 			ImageRef:   "nginx:latest",
 			UpdateInfo: *newNotificationTestUpdateInfo(),
 		},
 	})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "connected edge tunnel")
+	require.Contains(t, err.Error(), "connected agent tunnel")
 }
 
 func TestNotificationService_AgentDispatchHTTPFailureFallsBackToTunnel(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
-	cfg := &config.Config{AgentMode: true, ManagerApiUrl: "http://127.0.0.1:0", AgentToken: "token"}
-	svc := NewNotificationService(db, cfg, nil, event.NewEventService(db, cfg, nil), nil)
+	cfg := &config.Config{AgentEnabled: true, ManagerApiUrl: "http://127.0.0.1:0", AgentToken: "token"}
+	svc := NewNotificationService(db, cfg, nil, event.NewEventService(db, cfg, nil), nil, nil)
 
 	// HTTP dispatch fails and no tunnel is connected either: the fallback must
 	// not mask the HTTP transport error.
-	_, err := svc.dispatchNotificationToManager(ctx, notification.DispatchRequest{
-		Kind: notification.DispatchKindImageUpdate,
-		ImageUpdate: &notification.DispatchImageUpdate{
+	_, err := svc.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
+		Kind: types.NotificationDispatchKindImageUpdate,
+		ImageUpdate: &types.NotificationDispatchImageUpdate{
 			ImageRef:   "nginx:latest",
 			UpdateInfo: *newNotificationTestUpdateInfo(),
 		},
@@ -796,13 +830,13 @@ func TestNotificationService_AgentDispatchHTTPFailureFallsBackToTunnel(t *testin
 }
 
 func TestBatchImageUpdateLogRef_IsSortedSoRepeatsMatch(t *testing.T) {
-	updates := map[string]*imageupdate.Response{}
+	updates := map[string]*types.ImageUpdateResponse{}
 	for _, ref := range []string{"redis:7", "nginx:latest", "postgres:16", "alpine:3", "caddy:2"} {
 		updates[ref] = newNotificationTestUpdateInfo()
 	}
 
 	want := "alpine:3, caddy:2, nginx:latest, postgres:16, redis:7"
 	for range 20 {
-		require.Equal(t, want, batchImageUpdateLogRefInternal(maps.Clone(updates)))
+		require.Equal(t, want, batchImageUpdateLogRef(maps.Clone(updates)))
 	}
 }

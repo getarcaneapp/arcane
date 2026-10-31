@@ -10,9 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	arcaneupdater "github.com/getarcaneapp/arcane/types/v2/updater"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
@@ -21,14 +19,14 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/updater"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
 )
 
 // unresolvedDigests fails every registry digest lookup.
 type unresolvedDigests struct{}
 
-func (unresolvedDigests) RemoteDigest(context.Context, string, []containerregistry.Credential) (string, error) {
+func (unresolvedDigests) RemoteDigest(context.Context, string, []types.ContainerRegistryCredential) (string, error) {
 	return "", errors.New("registry digest unavailable")
 }
 
@@ -40,7 +38,7 @@ func newTestService(t *testing.T, server *httptest.Server, pending func(context.
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dockerClient.Close() })
 	return NewService(
-		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient),
+		(&docker.DockerClientService{}).WithClient(dockerClient),
 		unresolvedDigests{},
 		pending,
 		func(context.Context) string { return "" },
@@ -110,13 +108,13 @@ func TestFrozenTargetsPreserveAllSelectedContainers(t *testing.T) {
 	defer server.Close()
 	svc := newTestService(t, server, func(context.Context) ([]updater.ImageUpdateRecord, error) { return pending, nil })
 	var evidence []byte
-	ctx := jobcontext.WithExecution(t.Context(), scheduler.Run{ID: "run"}, func(target scheduler.TargetOutcome) error {
+	ctx := jobcontext.WithExecution(t.Context(), types.SchedulerRun{ID: "run"}, func(target types.TargetOutcome) error {
 		if target.ID == "auto-update" {
 			evidence = target.RecoveryData
 		}
 		return nil
 	})
-	frozenCtx, err := svc.FreezePending(ctx, scheduler.Run{ID: "run"}, nil, neverDeferred)
+	frozenCtx, err := svc.FreezePending(ctx, types.SchedulerRun{ID: "run"}, nil, neverDeferred)
 	require.NoError(t, err)
 	plan := frozenCtx.Value(frozenPendingKey{}).(*frozenUpdatePlan)
 	require.Len(t, plan.Records, 2)
@@ -185,7 +183,7 @@ func TestFrozenTargetConfirmsReplacementAndRejectsUnknownEffect(t *testing.T) {
 			svc := newTestService(t, server, nil)
 			confirmed, unchanged, err := svc.ConfirmTarget(
 				t.Context(),
-				arcaneupdater.FrozenUpdateTarget{
+				types.FrozenUpdateTarget{
 					ContainerID:       "old",
 					ContainerName:     "app",
 					BaselineImageID:   "sha256:baseline",
@@ -264,19 +262,19 @@ func TestFreezePendingExcludesFailedChecksAndIsolatesFreezeFailures(t *testing.T
 	}))
 	defer server.Close()
 	svc := newTestService(t, server, func(context.Context) ([]updater.ImageUpdateRecord, error) { return pending, nil })
-	targets := map[string]scheduler.TargetOutcome{}
-	ctx := jobcontext.WithExecution(t.Context(), scheduler.Run{ID: "run"}, func(target scheduler.TargetOutcome) error {
+	targets := map[string]types.TargetOutcome{}
+	ctx := jobcontext.WithExecution(t.Context(), types.SchedulerRun{ID: "run"}, func(target types.TargetOutcome) error {
 		targets[target.ID] = target
 		return nil
 	})
 
-	frozenCtx, err := svc.FreezePending(ctx, scheduler.Run{ID: "run"}, map[string]bool{"registry.example.com/unchecked:latest": true}, neverDeferred)
+	frozenCtx, err := svc.FreezePending(ctx, types.SchedulerRun{ID: "run"}, map[string]bool{"registry.example.com/unchecked:latest": true}, neverDeferred)
 	require.NoError(t, err)
 	plan := frozenCtx.Value(frozenPendingKey{}).(*frozenUpdatePlan)
 	require.Len(t, plan.Targets, 1)
 	require.Equal(t, "app", plan.Targets[0].ContainerID)
-	require.Equal(t, scheduler.Queued, targets["app"].Status)
-	require.Equal(t, scheduler.Failed, targets["unresolvable"].Status, "a target that cannot be frozen fails alone")
+	require.Equal(t, types.RunStatusQueued, targets["app"].Status)
+	require.Equal(t, types.RunStatusFailed, targets["unresolvable"].Status, "a target that cannot be frozen fails alone")
 	require.Contains(t, targets["unresolvable"].Message, "Update could not be planned")
 	require.NotContains(t, targets, "unchecked", "images whose check failed stay out of the plan")
 }
@@ -334,25 +332,25 @@ func TestFreezePendingSkipsDeferredCandidatesWithoutFailing(t *testing.T) {
 	}))
 	defer server.Close()
 	svc := newTestService(t, server, func(context.Context) ([]updater.ImageUpdateRecord, error) { return pending, nil })
-	targets := map[string]scheduler.TargetOutcome{}
-	ctx := jobcontext.WithExecution(t.Context(), scheduler.Run{ID: "run"}, func(target scheduler.TargetOutcome) error {
+	targets := map[string]types.TargetOutcome{}
+	ctx := jobcontext.WithExecution(t.Context(), types.SchedulerRun{ID: "run"}, func(target types.TargetOutcome) error {
 		targets[target.ID] = target
 		return nil
 	})
 
-	frozenCtx, err := svc.FreezePending(ctx, scheduler.Run{ID: "run"}, nil, func(record updater.ImageUpdateRecord, candidate container.Summary) bool {
+	frozenCtx, err := svc.FreezePending(ctx, types.SchedulerRun{ID: "run"}, nil, func(record updater.ImageUpdateRecord, candidate container.Summary) bool {
 		return record.ID == "young" && candidate.Labels["delay"] == "true"
 	})
 	require.NoError(t, err)
 	plan := frozenCtx.Value(frozenPendingKey{}).(*frozenUpdatePlan)
 	require.Len(t, plan.Targets, 1)
 	require.Equal(t, "app", plan.Targets[0].ContainerID)
-	require.Equal(t, scheduler.Queued, targets["app"].Status)
+	require.Equal(t, types.RunStatusQueued, targets["app"].Status)
 	require.NotContains(t, targets, "young", "a deferred candidate is neither planned nor failed")
 }
 
 func TestResumePlanConfirmsRedeliveredChangeWithoutReapplying(t *testing.T) {
-	target := arcaneupdater.FrozenUpdateTarget{
+	target := types.FrozenUpdateTarget{
 		ContainerID:       "old",
 		ContainerName:     "app",
 		BaselineImageID:   "sha256:baseline",
@@ -368,32 +366,34 @@ func TestResumePlanConfirmsRedeliveredChangeWithoutReapplying(t *testing.T) {
 			Tag:         "latest",
 			HasUpdate:   true,
 		}},
-		Targets: []arcaneupdater.FrozenUpdateTarget{target},
+		Targets: []types.FrozenUpdateTarget{target},
 	})
 	require.NoError(t, err)
-	run := scheduler.Run{ID: "run", Outcome: scheduler.Outcome{Targets: []scheduler.TargetOutcome{
+	run := types.SchedulerRun{ID: "run", Outcome: types.SchedulerOutcome{Targets: []types.TargetOutcome{
 		{
 			ID:           "auto-update",
 			ResourceType: "update-batch",
-			Status:       scheduler.Running,
+			Status:       types.RunStatusRunning,
 			RecoveryData: raw,
 		},
 		{
 			ID:           "old",
 			ResourceType: "container",
-			Status:       scheduler.Running,
+			Status:       types.RunStatusRunning,
 		},
 	}}}
 	for _, test := range []struct {
-		name, id, image string
-		remaining       int
-		status          scheduler.RunStatus
+		name      string
+		id        string
+		image     string
+		status    types.RunStatus
+		remaining int
 	}{
 		{
 			name:   "applied before the redelivery",
 			id:     "new",
 			image:  "sha256:desired",
-			status: scheduler.Succeeded,
+			status: types.RunStatusSucceeded,
 		},
 		{
 			name:      "not yet applied",
@@ -424,8 +424,8 @@ func TestResumePlanConfirmsRedeliveredChangeWithoutReapplying(t *testing.T) {
 			}))
 			defer server.Close()
 			svc := newTestService(t, server, nil)
-			var status scheduler.RunStatus
-			ctx := jobcontext.WithExecution(t.Context(), run, func(progress scheduler.TargetOutcome) error {
+			var status types.RunStatus
+			ctx := jobcontext.WithExecution(t.Context(), run, func(progress types.TargetOutcome) error {
 				status = progress.Status
 				return nil
 			})
@@ -445,8 +445,8 @@ func TestResumePlanConfirmsRedeliveredChangeWithoutReapplying(t *testing.T) {
 func TestConfirmTargetRequiresRunningReplacementWhenBaselineRan(t *testing.T) {
 	for _, test := range []struct {
 		name      string
-		running   bool
 		status    container.ContainerState
+		running   bool
 		confirmed bool
 	}{
 		{
@@ -485,7 +485,7 @@ func TestConfirmTargetRequiresRunningReplacementWhenBaselineRan(t *testing.T) {
 			}))
 			defer server.Close()
 			svc := newTestService(t, server, nil)
-			confirmed, unchanged, err := svc.ConfirmTarget(t.Context(), arcaneupdater.FrozenUpdateTarget{
+			confirmed, unchanged, err := svc.ConfirmTarget(t.Context(), types.FrozenUpdateTarget{
 				ContainerID:       "old",
 				ContainerName:     "app",
 				BaselineImageID:   "sha256:baseline",
@@ -528,7 +528,7 @@ func TestConfirmTargetStartsCreatedReplacementWhenBaselineRan(t *testing.T) {
 	defer server.Close()
 	svc := newTestService(t, server, nil)
 
-	confirmed, unchanged, err := svc.ConfirmTarget(t.Context(), arcaneupdater.FrozenUpdateTarget{
+	confirmed, unchanged, err := svc.ConfirmTarget(t.Context(), types.FrozenUpdateTarget{
 		ContainerID:       "old",
 		ContainerName:     "app",
 		BaselineImageID:   "sha256:baseline",
@@ -544,7 +544,7 @@ func TestConfirmTargetStartsCreatedReplacementWhenBaselineRan(t *testing.T) {
 }
 
 func TestResumePlanStartsStoppedOriginalAndPersistsNewBaseline(t *testing.T) {
-	target := arcaneupdater.FrozenUpdateTarget{
+	target := types.FrozenUpdateTarget{
 		ContainerID:       "old",
 		ContainerName:     "app",
 		BaselineImageID:   "sha256:baseline",
@@ -561,13 +561,13 @@ func TestResumePlanStartsStoppedOriginalAndPersistsNewBaseline(t *testing.T) {
 			Tag:         "latest",
 			HasUpdate:   true,
 		}},
-		Targets: []arcaneupdater.FrozenUpdateTarget{target},
+		Targets: []types.FrozenUpdateTarget{target},
 	})
 	require.NoError(t, err)
-	run := scheduler.Run{ID: "run", Outcome: scheduler.Outcome{Targets: []scheduler.TargetOutcome{{
+	run := types.SchedulerRun{ID: "run", Outcome: types.SchedulerOutcome{Targets: []types.TargetOutcome{{
 		ID:           "auto-update",
 		ResourceType: "update-batch",
-		Status:       scheduler.Running,
+		Status:       types.RunStatusRunning,
 		RecoveryData: raw,
 	}}}}
 	var started atomic.Bool
@@ -599,7 +599,7 @@ func TestResumePlanStartsStoppedOriginalAndPersistsNewBaseline(t *testing.T) {
 	defer server.Close()
 	svc := newTestService(t, server, nil)
 	var persisted []byte
-	ctx := jobcontext.WithExecution(t.Context(), run, func(progress scheduler.TargetOutcome) error {
+	ctx := jobcontext.WithExecution(t.Context(), run, func(progress types.TargetOutcome) error {
 		if progress.ID == "auto-update" {
 			persisted = progress.RecoveryData
 		}

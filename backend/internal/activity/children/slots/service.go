@@ -9,7 +9,7 @@ import (
 
 	"github.com/samber/mo"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
 const (
@@ -28,21 +28,22 @@ const (
 type Service struct {
 	settings *settings.SettingsService
 
-	mu    sync.Mutex
 	state map[string]*environmentSlots
 
 	// releases maps an activity ID to the release func of the slot it holds;
 	// the slot is freed when the activity completes.
+	releases map[string]func()
+
+	mu         sync.Mutex
 	releasesMu sync.Mutex
-	releases   map[string]func()
 }
 
 type environmentSlots struct {
-	held int
 	// wake is closed (and replaced) on every release to broadcast to waiters;
 	// each re-checks against the current limit, so a raised limit can admit
 	// more than one of them.
 	wake chan struct{}
+	held int
 }
 
 // NewService returns a slot limiter sized from the local settings.
@@ -70,7 +71,7 @@ func (s *Service) TryAcquire(ctx context.Context, environmentID string) mo.Optio
 	if s.settings == nil {
 		return mo.Some(func() {})
 	}
-	limit := s.settings.GetIntSetting(ctx, maxConcurrentActivitiesSettingKey, defaultMaxConcurrentActivities)
+	limit := s.settings.GetIntSetting(ctx, maxConcurrentActivitiesSettingKey)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -94,7 +95,7 @@ func (s *Service) Await(ctx context.Context, activityID, environmentID string) (
 	}
 
 	for s.settings != nil {
-		limit := s.settings.GetIntSetting(ctx, maxConcurrentActivitiesSettingKey, defaultMaxConcurrentActivities)
+		limit := s.settings.GetIntSetting(ctx, maxConcurrentActivitiesSettingKey)
 		s.mu.Lock()
 		slots := s.stateLocked(environmentID)
 		if limit <= 0 || slots.held < limit {

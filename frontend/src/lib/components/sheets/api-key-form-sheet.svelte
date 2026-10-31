@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Temporal } from 'temporal-polyfill';
+	import { untrack } from 'svelte';
 	import { z } from 'zod/v4';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
@@ -7,9 +7,10 @@
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import type { ApiKey } from '#lib/types/auth.js';
+	import type { ApiKey, ApiKeyUpdate, PersonalApiKeyCreate } from '#lib/types/auth.js';
 	import type { PermissionsManifest, ApiKeyPermissionGrant } from '#lib/types/auth.js';
 	import { plainDateFromInstant, plainDateToInstantString } from '#lib/utils/formatting.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { normalizePermissionSelection } from '#lib/utils/permissions.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
@@ -19,22 +20,17 @@
 		mode?: 'admin' | 'personal';
 		manifest?: PermissionsManifest;
 		availablePermissions?: ApiKeyPermissionGrant[];
-		onSubmit: (data: {
-			apiKey: {
-				name: string;
-				description?: string;
-				expiresAt?: string;
-				permissions?: ApiKeyPermissionGrant[];
-			};
-			isEditMode: boolean;
-			apiKeyId?: string;
-		}) => void;
+		onSubmit: (
+			data:
+				| { isEditMode: true; apiKeyId: string; apiKey: ApiKeyUpdate }
+				| { isEditMode: false; apiKey: PersonalApiKeyCreate & { permissions?: ApiKeyPermissionGrant[] } }
+		) => void;
 		isLoading: boolean;
 	};
 
 	let {
 		open = $bindable(false),
-		apiKeyToEdit = $bindable(),
+		apiKeyToEdit,
 		mode = 'admin',
 		manifest,
 		availablePermissions = [],
@@ -45,36 +41,47 @@
 	let isEditMode = $derived(!!apiKeyToEdit);
 	let isStaticApiKey = $derived(apiKeyToEdit?.isStatic ?? false);
 	let isBootstrapApiKey = $derived(apiKeyToEdit?.isBootstrap ?? false);
+	const sheetTitle = $derived.by(() => {
+		if (isStaticApiKey) return apiKeyToEdit?.name ?? m.api_key_static_title();
+		if (isBootstrapApiKey) return apiKeyToEdit?.name ?? m.api_key_bootstrap_title();
+		if (isEditMode) return m.api_key_edit_title();
+		return m.create_api_key();
+	});
+	const sheetDescription = $derived.by(() => {
+		if (!isEditMode) return m.api_key_create_description();
+		if (isStaticApiKey) return m.api_key_static_description();
+		if (isBootstrapApiKey) return m.api_key_bootstrap_description();
+		return m.api_key_edit_description({ name: apiKeyToEdit?.name ?? m.common_unknown() });
+	});
 	let isReadOnlyApiKey = $derived(isStaticApiKey || isBootstrapApiKey);
 	// Personal keys carry no grants; they inherit the owner's role permissions.
 	const hidePermissions = $derived(mode === 'personal' || apiKeyToEdit?.kind === 'personal');
 
-	const formSchema = $derived(
-		z.object({
-			name: z.string().min(1, m.common_field_required({ field: m.common_name() })),
-			description: z.string().optional(),
-			expiresAt: z.instanceof(Temporal.PlainDate).optional(),
-			permissions: hidePermissions
-				? z.array(z.string()).default([])
-				: z.array(z.string()).min(1, m.pick_at_least_one_permission())
-		})
-	);
-
-	let formData = $derived({
-		name: apiKeyToEdit?.name || '',
-		description: apiKeyToEdit?.description || '',
-		expiresAt: plainDateFromInstant(apiKeyToEdit?.expiresAt),
-		permissions:
-			hidePermissions || !manifest
-				? []
-				: normalizePermissionSelection(
-						manifest,
-						availablePermissions.map((p) => p.permission)
-					)
+	const formSchema = z.object({
+		name: z.string().min(1, m.common_field_required({ field: m.common_name() })),
+		description: z.string().optional(),
+		expiresAt: z.instanceof(Temporal.PlainDate).optional(),
+		permissions: untrack(() => hidePermissions)
+			? z.array(z.string()).default([])
+			: z.array(z.string()).min(1, m.pick_at_least_one_permission())
 	});
 
-	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
+	function formValues() {
+		return {
+			name: apiKeyToEdit?.name || '',
+			description: apiKeyToEdit?.description || '',
+			expiresAt: plainDateFromInstant(apiKeyToEdit?.expiresAt),
+			permissions:
+				hidePermissions || !manifest
+					? []
+					: normalizePermissionSelection(
+							manifest,
+							availablePermissions.map((p) => p.permission)
+						)
+		};
+	}
+
+	const form = createForm<typeof formSchema>(formSchema, untrack(formValues));
 
 	function handleSubmit() {
 		if (isReadOnlyApiKey) return;
@@ -82,22 +89,47 @@
 		const data = form.validate();
 		if (!data) return;
 
-		const apiKeyData = {
-			name: data.name,
-			description: data.description || undefined,
-			expiresAt: data.expiresAt ? plainDateToInstantString(data.expiresAt) : undefined,
-			// v1: persist all picks as global grants (environmentId undefined).
-			// env-scoped picking is a follow-up. Personal keys carry no grants.
-			...(hidePermissions ? {} : { permissions: data.permissions.map((p) => ({ permission: p })) })
-		};
+		// v1: persist all picks as global grants (environmentId undefined).
+		// env-scoped picking is a follow-up. Personal keys carry no grants.
+		const permissions = data.permissions.map((p) => ({ permission: p }));
 
-		onSubmit({ apiKey: apiKeyData, isEditMode, apiKeyId: apiKeyToEdit?.id });
+		if (!apiKeyToEdit) {
+			onSubmit({
+				isEditMode: false,
+				apiKey: {
+					name: data.name,
+					description: data.description || undefined,
+					expiresAt: data.expiresAt ? plainDateToInstantString(data.expiresAt) : undefined,
+					...(hidePermissions ? {} : { permissions })
+				}
+			});
+			return;
+		}
+
+		const originalExpiry = plainDateFromInstant(apiKeyToEdit.expiresAt);
+		onSubmit({
+			isEditMode: true,
+			apiKeyId: apiKeyToEdit.id,
+			apiKey: changedFields(
+				{
+					...apiKeyToEdit,
+					description: apiKeyToEdit.description || null,
+					expiresAt: originalExpiry ? plainDateToInstantString(originalExpiry) : null
+				},
+				{
+					name: data.name,
+					description: data.description || null,
+					expiresAt: data.expiresAt ? plainDateToInstantString(data.expiresAt) : null,
+					permissions: hidePermissions ? apiKeyToEdit.permissions : permissions
+				}
+			)
+		});
 	}
 
 	function handleOpenChange(newOpenState: boolean) {
 		open = newOpenState;
 		if (!newOpenState) {
-			apiKeyToEdit = null;
+			form.reset(formValues());
 		}
 	}
 </script>
@@ -106,20 +138,8 @@
 	{open}
 	onOpenChange={handleOpenChange}
 	variant="sheet"
-	title={isStaticApiKey
-		? (apiKeyToEdit?.name ?? m.api_key_static_title())
-		: isBootstrapApiKey
-			? (apiKeyToEdit?.name ?? m.api_key_bootstrap_title())
-			: isEditMode
-				? m.api_key_edit_title()
-				: m.create_api_key()}
-	description={isEditMode
-		? isStaticApiKey
-			? m.api_key_static_description()
-			: isBootstrapApiKey
-				? m.api_key_bootstrap_description()
-				: m.api_key_edit_description({ name: apiKeyToEdit?.name ?? m.common_unknown() })
-		: m.api_key_create_description()}
+	title={sheetTitle}
+	description={sheetDescription}
 	contentClass="sm:max-w-125"
 >
 	{#snippet children()}
@@ -132,7 +152,7 @@
 				type="text"
 				placeholder={m.api_key_name_placeholder()}
 				description={m.api_key_name_description()}
-				bind:input={inputs.name}
+				bind:input={form.inputs.name}
 				disabled={isReadOnlyApiKey}
 			/>
 			<FormInput
@@ -140,14 +160,14 @@
 				type="text"
 				placeholder={m.optional_description_placeholder()}
 				description={m.api_key_description_help()}
-				bind:input={inputs.description}
+				bind:input={form.inputs.description}
 				disabled={isReadOnlyApiKey}
 			/>
 			<FormInput
 				label={m.api_key_expires_at()}
 				type="date"
 				description={m.api_key_expires_at_description()}
-				bind:input={inputs.expiresAt}
+				bind:input={form.inputs.expiresAt}
 				disabled={isReadOnlyApiKey}
 			/>
 			{#if !isReadOnlyApiKey}
@@ -157,9 +177,9 @@
 					<div>
 						<label for="permissions" class="text-sm font-medium">{m.permissions()}</label>
 						<p class="mb-3 text-xs text-muted-foreground">{m.api_key_permissions_description()}</p>
-						<PermissionPicker {manifest} bind:selected={inputs.permissions.value} showSearch />
-						{#if inputs.permissions.error}
-							<p class="mt-1 text-xs text-destructive">{inputs.permissions.error}</p>
+						<PermissionPicker {manifest} bind:selected={form.inputs.permissions.value} showSearch />
+						{#if form.inputs.permissions.error}
+							<p class="mt-1 text-xs text-destructive">{form.inputs.permissions.error}</p>
 						{/if}
 					</div>
 				{/if}
@@ -170,6 +190,7 @@
 	{#snippet footer()}
 		<SheetFooterActions
 			bind:open
+			onCancel={() => handleOpenChange(false)}
 			cancelDisabled={isLoading}
 			showSubmit={!isReadOnlyApiKey}
 			submitAction={isEditMode ? 'save' : 'create'}

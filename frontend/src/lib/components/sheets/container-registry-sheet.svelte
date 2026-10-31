@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { z } from 'zod/v4';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
@@ -7,23 +8,19 @@
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type {
-		ContainerRegistry,
-		ContainerRegistryCreateDto,
-		ContainerRegistryUpdateDto,
-		RegistryType
-	} from '#lib/types/docker.js';
+	import type { ContainerRegistry, ContainerRegistryCreate, ContainerRegistryUpdate, RegistryType } from '#lib/types/docker.js';
 	import { parseLines } from '#lib/utils/form-parsers.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
 	type ContainerRegistryFormProps = {
 		open: boolean;
 		registryToEdit: ContainerRegistry | null;
-		onSubmit: (detail: { registry: ContainerRegistryCreateDto | ContainerRegistryUpdateDto; isEditMode: boolean }) => void;
+		onSubmit: (detail: { registry: ContainerRegistryCreate | ContainerRegistryUpdate; isEditMode: boolean }) => void;
 		isLoading: boolean;
 	};
 
-	let { open = $bindable(false), registryToEdit = $bindable(), onSubmit, isLoading }: ContainerRegistryFormProps = $props();
+	let { open = $bindable(false), registryToEdit, onSubmit, isLoading }: ContainerRegistryFormProps = $props();
 
 	let isEditMode = $derived(!!registryToEdit);
 
@@ -91,36 +88,43 @@
 			}
 		});
 
-	let formData = $derived({
-		registryType: (open && registryToEdit ? (registryToEdit.registryType ?? 'generic') : 'generic') as RegistryType,
-		url: open && registryToEdit ? registryToEdit.url : '',
-		username: open && registryToEdit ? registryToEdit.username : '',
-		token: '',
-		description: open && registryToEdit ? registryToEdit.description || '' : '',
-		repositoryNames: open && registryToEdit ? (registryToEdit.repositoryNames?.join('\n') ?? '') : '',
-		insecure: open && registryToEdit ? (registryToEdit.insecure ?? false) : false,
-		enabled: open && registryToEdit ? (registryToEdit.enabled ?? true) : true,
-		awsAccessKeyId: open && registryToEdit ? (registryToEdit.awsAccessKeyId ?? '') : '',
-		awsSecretAccessKey: '',
-		awsRegion: open && registryToEdit ? (registryToEdit.awsRegion ?? '') : ''
+	function formValues() {
+		return {
+			registryType: (registryToEdit ? (registryToEdit.registryType ?? 'generic') : 'generic') as RegistryType,
+			url: registryToEdit ? registryToEdit.url : '',
+			username: registryToEdit ? registryToEdit.username : '',
+			token: '',
+			description: registryToEdit ? registryToEdit.description || '' : '',
+			repositoryNames: registryToEdit ? (registryToEdit.repositoryNames?.join('\n') ?? '') : '',
+			insecure: registryToEdit ? (registryToEdit.insecure ?? false) : false,
+			enabled: registryToEdit ? (registryToEdit.enabled ?? true) : true,
+			awsAccessKeyId: registryToEdit ? (registryToEdit.awsAccessKeyId ?? '') : '',
+			awsSecretAccessKey: '',
+			awsRegion: registryToEdit ? (registryToEdit.awsRegion ?? '') : ''
+		};
+	}
+
+	const form = createForm<typeof formSchema>(formSchema, untrack(formValues));
+
+	$effect.pre(() => {
+		if (open) untrack(() => form.reset(formValues()));
 	});
 
-	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
+	let isECR = $derived(form.inputs.registryType.value === 'ecr');
 
-	let isECR = $derived(inputs.registryType.value === 'ecr');
+	function registryFields(values: z.infer<typeof formSchema>): ContainerRegistryCreate {
+		return { ...values, repositoryNames: parseLines(values.repositoryNames ?? '') };
+	}
 
 	function handleSubmit() {
 		const data = form.validate();
 		if (!data) return;
-		onSubmit({ registry: { ...data, repositoryNames: parseLines(data.repositoryNames ?? '') }, isEditMode });
+		const fields = registryFields(data);
+		onSubmit({ registry: isEditMode ? changedFields(registryFields(formValues()), fields) : fields, isEditMode });
 	}
 
 	function handleOpenChange(newOpenState: boolean) {
 		open = newOpenState;
-		if (!newOpenState) {
-			registryToEdit = null;
-		}
 	}
 </script>
 
@@ -138,7 +142,7 @@
 				id="registryTypeSelect"
 				label={m.registries_type_label()}
 				options={registryTypeOptions}
-				bind:value={inputs.registryType.value}
+				bind:value={form.inputs.registryType.value}
 				disabled={isEditMode}
 			/>
 
@@ -147,7 +151,7 @@
 				type="text"
 				placeholder={m.registries_url_placeholder()}
 				description={m.registries_url_description()}
-				bind:input={inputs.url}
+				bind:input={form.inputs.url}
 			/>
 
 			{#if !isECR}
@@ -155,33 +159,33 @@
 					label={m.common_username()}
 					type="text"
 					description={m.common_username_required()}
-					bind:input={inputs.username}
+					bind:input={form.inputs.username}
 				/>
 				<FormInput
 					label={m.common_token()}
 					type="password"
 					placeholder={isEditMode ? m.registries_token_keep_placeholder() : m.registries_token_placeholder()}
 					description={m.registries_token_description()}
-					bind:input={inputs.token}
+					bind:input={form.inputs.token}
 				/>
 			{:else}
 				<FormInput
 					label={m.registries_aws_access_key_id()}
 					type="text"
 					description={m.registries_aws_credentials_description()}
-					bind:input={inputs.awsAccessKeyId}
+					bind:input={form.inputs.awsAccessKeyId}
 				/>
 				<FormInput
 					label={m.registries_aws_secret_access_key()}
 					type="password"
 					placeholder={isEditMode && registryToEdit?.awsAccessKeyId ? m.registries_token_keep_placeholder() : ''}
-					bind:input={inputs.awsSecretAccessKey}
+					bind:input={form.inputs.awsSecretAccessKey}
 				/>
 				<FormInput
 					label={m.registries_aws_region()}
 					type="text"
 					placeholder={m.registries_aws_region_placeholder()}
-					bind:input={inputs.awsRegion}
+					bind:input={form.inputs.awsRegion}
 				/>
 			{/if}
 
@@ -189,7 +193,7 @@
 				label={m.common_description()}
 				type="text"
 				placeholder={m.registries_description_placeholder()}
-				bind:input={inputs.description}
+				bind:input={form.inputs.description}
 			/>
 			<FormInput
 				label={m.registries_repository_names()}
@@ -197,20 +201,20 @@
 				rows={3}
 				placeholder={m.registries_repository_names_placeholder()}
 				description={m.registries_repository_names_description()}
-				bind:input={inputs.repositoryNames}
+				bind:input={form.inputs.repositoryNames}
 			/>
 			<SwitchWithLabel
 				id="isEnabledSwitch"
 				label={m.common_enabled()}
 				description={m.registries_enabled_description()}
-				bind:checked={inputs.enabled.value}
+				bind:checked={form.inputs.enabled.value}
 			/>
 			{#if !isECR}
 				<SwitchWithLabel
 					id="insecureSwitch"
 					label={m.registries_allow_insecure_label()}
 					description={m.registries_allow_insecure_description()}
-					bind:checked={inputs.insecure.value}
+					bind:checked={form.inputs.insecure.value}
 				/>
 			{/if}
 			<!-- fallow-ignore-next-line code-duplication -- per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->

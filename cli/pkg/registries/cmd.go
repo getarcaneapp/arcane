@@ -6,22 +6,22 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "registries",
-		Aliases: []string{"registry", "reg"},
-		Short:   "Manage container registries",
+		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
+		Use:         "registries",
+		Aliases:     []string{"registry", "reg"},
+		Short:       "Manage container registries",
 	}
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newGetCmd())
@@ -51,9 +51,9 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[containerregistry.ContainerRegistry]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.ContainerRegistry]{
 				Resource: "registries",
-				Endpoint: types.ContainerRegistries(),
+				Endpoint: clitypes.ContainerRegistries(),
 				Params: cmdutil.ListParams{
 					Resource:        "registries",
 					Limit:           opts.limit,
@@ -62,7 +62,7 @@ func newListCmd() *cobra.Command {
 					All:             opts.all,
 				},
 				Headers: []string{"ID", "URL", "USERNAME", "ENABLED", "INSECURE"},
-				Row: func(reg containerregistry.ContainerRegistry) []string {
+				Row: func(reg types.ContainerRegistry) []string {
 					return []string{
 						reg.ID,
 						reg.URL,
@@ -92,11 +92,11 @@ func newTestCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.ContainerRegistryTest(args[0]),
+				Path:           clitypes.ContainerRegistryAction(args[0], "test"),
 				FailureMessage: "failed to test registry",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					output.Success("%s", "Registry connection test successful")
 					return nil
 				},
@@ -117,11 +117,11 @@ func newGetCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[containerregistry.ContainerRegistry]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ContainerRegistry]{
 				Method:         http.MethodGet,
-				Path:           types.ContainerRegistry(args[0]),
+				Path:           clitypes.ContainerRegistry(args[0]),
 				FailureMessage: "failed to get registry",
-				Render: func(data containerregistry.ContainerRegistry) error {
+				Render: func(data types.ContainerRegistry) error {
 					output.Header("Registry Details")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("URL", data.URL)
@@ -143,13 +143,12 @@ func newCreateCmd() *cobra.Command {
 		username     string
 		token        string
 		description  string
-		insecure     bool
-		disabled     bool
-		enabled      bool
 		registryType string
 		awsKeyID     string
 		awsSecret    string
 		awsRegion    string
+		insecure     bool
+		enabled      bool
 	}
 	cmd := &cobra.Command{
 		Use:          "create",
@@ -162,26 +161,25 @@ func newCreateCmd() *cobra.Command {
 				return err
 			}
 
-			req := containerregistry.CreateContainerRegistryRequest{
-				URL:          opts.url,
-				RegistryType: opts.registryType,
-				Username:     opts.username,
-				Token:        opts.token,
-				Description:  &opts.description,
-				Insecure:     &opts.insecure,
-				// TODO(v3): drop the deprecated flag handling.
-				Enabled:            new(opts.enabled && !opts.disabled),
+			req := types.ContainerRegistry{
+				URL:                opts.url,
+				RegistryType:       opts.registryType,
+				Username:           opts.username,
+				Token:              opts.token,
+				Description:        &opts.description,
+				Insecure:           opts.insecure,
+				Enabled:            opts.enabled,
 				AWSAccessKeyID:     opts.awsKeyID,
 				AWSSecretAccessKey: opts.awsSecret,
 				AWSRegion:          opts.awsRegion,
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[containerregistry.ContainerRegistry]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ContainerRegistry]{
 				Method:         http.MethodPost,
-				Path:           types.ContainerRegistries(),
+				Path:           clitypes.ContainerRegistries(),
 				Body:           req,
 				FailureMessage: "failed to create registry",
-				Render: func(data containerregistry.ContainerRegistry) error {
+				Render: func(data types.ContainerRegistry) error {
 					output.Success("Registry created successfully")
 					output.Header("Registry Details")
 					output.KeyValue("ID", data.ID)
@@ -201,15 +199,10 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.description, "description", "", "Description")
 	cmd.Flags().BoolVar(&opts.insecure, "insecure", false, "Allow insecure (HTTP) connections")
 	cmd.Flags().BoolVar(&opts.enabled, "enabled", true, "Enable registry")
-	cmd.Flags().BoolVar(&opts.disabled, "disabled", false, "Create registry in disabled state")
 	cmdutil.EnumVarP(cmd, cmd.Flags(), &opts.registryType, "registry-type", "", "generic", "Registry type", "generic", "ecr")
 	cmd.Flags().StringVar(&opts.awsKeyID, "aws-access-key-id", "", "AWS Access Key ID (ECR only; omit both keys to use the host's IAM role)")
 	cmd.Flags().StringVar(&opts.awsSecret, "aws-secret-access-key", "", "AWS Secret Access Key (ECR only; omit both keys to use the host's IAM role)")
 	cmd.Flags().StringVar(&opts.awsRegion, "aws-region", "", "AWS region (ECR only)")
-	// TODO(v3): remove the deprecated --disabled flag.
-	_ = cmd.Flags().MarkDeprecated("disabled", "use --enabled=false")
-	// TODO(v3): drop the deprecated flag handling.
-	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error { return cmdutil.ExclusiveFlags(cmd, "enabled", "disabled") }
 	_ = cmd.MarkFlagRequired("url")
 	return cmd
 }
@@ -220,7 +213,6 @@ func newUpdateCmd() *cobra.Command {
 		username string
 		password string
 		enabled  bool
-		disabled bool
 	}
 	cmd := &cobra.Command{
 		Use:          "update <registry-id>",
@@ -233,26 +225,32 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			req := containerregistry.UpdateContainerRegistryRequest{
-				URL:      kit.Ternary(cmd.Flags().Changed("url"), &opts.url, nil),
-				Username: kit.Ternary(cmd.Flags().Changed("username"), &opts.username, nil),
-				Token:    kit.Ternary(cmd.Flags().Changed("password"), &opts.password, nil),
-				// TODO(v3): drop the deprecated flag handling.
-				Enabled: kit.Ternary(cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled"),
-					new(cmd.Flags().Changed("enabled") && opts.enabled || cmd.Flags().Changed("disabled") && !opts.disabled), nil),
+			req := map[string]any{}
+			for _, field := range []struct {
+				value   any
+				key     string
+				changed bool
+			}{
+				{changed: cmd.Flags().Changed("url"), key: "url", value: opts.url},
+				{changed: cmd.Flags().Changed("username"), key: "username", value: opts.username},
+				{changed: cmd.Flags().Changed("password"), key: "token", value: opts.password},
+				{changed: cmd.Flags().Changed("enabled"), key: "enabled", value: opts.enabled},
+			} {
+				if field.changed {
+					req[field.key] = field.value
+				}
 			}
 
-			if req.URL == nil && req.Username == nil && req.Token == nil && req.Enabled == nil {
-				// TODO(v3): drop the deprecated flag handling.
-				return errors.New("no updates provided; use --url, --username, --password, --enabled, or --disabled")
+			if len(req) == 0 {
+				return errors.New("no updates provided; use --url, --username, --password, or --enabled")
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[containerregistry.ContainerRegistry]{
-				Method:         http.MethodPut,
-				Path:           types.ContainerRegistry(args[0]),
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ContainerRegistry]{
+				Method:         http.MethodPatch,
+				Path:           clitypes.ContainerRegistry(args[0]),
 				Body:           req,
 				FailureMessage: "failed to update registry",
-				Render: func(data containerregistry.ContainerRegistry) error {
+				Render: func(data types.ContainerRegistry) error {
 					output.Success("Registry updated successfully")
 					return nil
 				},
@@ -263,11 +261,6 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.username, "username", "", "Username")
 	cmd.Flags().StringVar(&opts.password, "password", "", "Password")
 	cmd.Flags().BoolVar(&opts.enabled, "enabled", false, "Enable registry")
-	cmd.Flags().BoolVar(&opts.disabled, "disabled", false, "Disable registry")
-	// TODO(v3): remove the deprecated --disabled flag.
-	_ = cmd.Flags().MarkDeprecated("disabled", "use --enabled=false")
-	// TODO(v3): drop the deprecated flag handling.
-	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error { return cmdutil.ExclusiveFlags(cmd, "enabled", "disabled") }
 	return cmd
 }
 
@@ -290,7 +283,7 @@ func newDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete registry %s?", args[0]),
-				Path:           types.ContainerRegistry(args[0]),
+				Path:           clitypes.ContainerRegistry(args[0]),
 				Body:           nil,
 				FailureMessage: "failed to delete registry",
 				SuccessMessage: "Registry deleted successfully",
@@ -314,11 +307,11 @@ func newUsageCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[containerregistry.PullUsageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ContainerRegistryPullUsageResponse]{
 				Method:         http.MethodGet,
-				Path:           types.ContainerRegistriesPullUsage(),
+				Path:           clitypes.ContainerRegistriesPullUsage(),
 				FailureMessage: "failed to get registry pull usage",
-				Render: func(data containerregistry.PullUsageResponse) error {
+				Render: func(data types.ContainerRegistryPullUsageResponse) error {
 					if len(data.Registries) == 0 {
 						output.Info("No registries configured")
 						return nil

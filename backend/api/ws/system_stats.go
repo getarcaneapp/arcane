@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
@@ -20,8 +20,8 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 
-	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
-	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
+	httputil "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 const (
@@ -70,9 +70,8 @@ func (h *WebSocketHandler) acquireSystemStatsSampler(ctx context.Context, interv
 		closeReady := sync.OnceFunc(func() {
 			close(ready)
 		})
-		if !h.initializeCPUCache(samplerCtx) {
-			closeReady()
-			return
+		if val, ok := h.readCPUUsage(0); ok {
+			h.cpuCache.Store(val)
 		}
 		if samplerCtx.Err() != nil {
 			closeReady()
@@ -160,7 +159,7 @@ func (h *WebSocketHandler) systemStatsSamplerInterval() time.Duration {
 	return systemStatsSamplerDefaultInterval
 }
 
-func (h *WebSocketHandler) runSystemStatsSampler(ctx context.Context, wake <-chan struct{}, collect func(context.Context) systemtypes.SystemStats) {
+func (h *WebSocketHandler) runSystemStatsSampler(ctx context.Context, wake <-chan struct{}, collect func(context.Context) types.SystemStats) {
 	interval := h.systemStatsSamplerInterval()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -191,7 +190,7 @@ func (h *WebSocketHandler) runSystemStatsSampler(ctx context.Context, wake <-cha
 }
 
 // collectSystemStats gathers all system statistics.
-func (h *WebSocketHandler) collectSystemStats(ctx context.Context) systemtypes.SystemStats {
+func (h *WebSocketHandler) collectSystemStats(ctx context.Context) types.SystemStats {
 	cpuUsage, _ := h.cpuCache.Load()
 
 	h.systemStaticInfo.once.Do(func() {
@@ -225,14 +224,14 @@ func (h *WebSocketHandler) collectSystemStats(ctx context.Context) systemtypes.S
 		diskInfo, _ = disk.Usage("/")
 	}
 
-	var gpuStats []systemtypes.GPUStats
-	if h.gpuMonitor != nil && h.gpuMonitor.Enabled() {
-		if stats, statsErr := h.gpuMonitor.Stats(ctx); statsErr == nil {
+	var gpuStats []types.GPUStats
+	if monitor := h.gpuMonitor.Load(); monitor != nil && monitor.Enabled() {
+		if stats, statsErr := monitor.Stats(ctx); statsErr == nil {
 			gpuStats = stats
 		}
 	}
 
-	return systemtypes.SystemStats{
+	return types.SystemStats{
 		CPUUsage:     cpuUsage,
 		MemoryUsage:  memUsed,
 		MemoryTotal:  memTotal,
@@ -293,31 +292,6 @@ func applyCPUAffinityLimit(cpuCount int) int {
 	return cpuCount
 }
 
-// initializeCPUCache permits unavailable CPU samples but stops on cancellation.
-func (h *WebSocketHandler) initializeCPUCache(ctx context.Context) bool {
-	result := make(chan float64, 1)
-
-	go func() {
-		if val, ok := h.readCPUUsage(time.Second); ok {
-			result <- val
-		}
-		close(result)
-	}()
-
-	select {
-	case <-ctx.Done():
-		return false
-	case val, ok := <-result:
-		if ctx.Err() != nil {
-			return false
-		}
-		if ok {
-			h.cpuCache.Store(val)
-		}
-		return true
-	}
-}
-
 func (h *WebSocketHandler) readCPUUsage(interval time.Duration) (float64, bool) {
 	if h.cpuUsageReader != nil {
 		return h.cpuUsageReader(interval)
@@ -359,7 +333,7 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 		}
 	}()
 
-	conn, unregister, ok := h.acceptWS(c, systemtypes.WSKindSystemStats, "")
+	conn, unregister, ok := h.acceptWS(c, types.WSKindSystemStats, "")
 	if !ok {
 		return nil
 	}

@@ -13,9 +13,9 @@ import (
 const DefaultMaxFileSizeMB = 10
 
 type UploadReference struct {
-	Operation     string
 	UploadIndex   *int
 	BaselineIndex *int
+	Operation     string
 }
 
 func EffectiveMaxFileSizeMB(configured int) int {

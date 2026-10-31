@@ -17,6 +17,7 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { getCustomHostname } from '#lib/utils/docker.js';
+	import { withOccurrenceKeys } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	interface Props {
@@ -36,7 +37,7 @@
 	let connectAliases = $state('');
 	let connectIp = $state('');
 	let connectPending = $state(false);
-	let disconnectPending = $state<Record<string, boolean>>({});
+	const disconnectPending = $state<Record<string, boolean>>({});
 
 	const networkListOptions = { pagination: { page: 1, limit: 500 } };
 	const networksQuery = createQuery(() => ({
@@ -140,7 +141,7 @@
 		<Card.Content>
 			{#if container.ports && container.ports.length > 0}
 				<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service network; typed props diverge across the boundary -->
-				<PortBadge ports={container.ports} />
+				<PortBadge ports={container.ports} environmentId={envId} />
 			{:else}
 				<div class="rounded-lg border border-dashed py-12 text-center text-muted-foreground">
 					<div class="text-sm">{m.containers_no_ports()}</div>
@@ -165,7 +166,7 @@
 				<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 					<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service network; typed props diverge across the boundary -->
 					{#each Object.entries(container.networkSettings.networks) as [networkName, rawNetworkConfig] (networkName)}
-						<Card.Root variant="subtle">
+						<Card.Root>
 							<Card.Content>
 								<div class="mb-4 flex items-center gap-3 border-b border-border pb-4">
 									<div class="rounded-lg bg-info/10 p-2">
@@ -193,7 +194,7 @@
 
 								<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 									{#each [{ label: m.containers_ip_address(), value: rawNetworkConfig.ipAddress || m.common_na() }, { label: m.common_gateway(), value: rawNetworkConfig.gateway || m.common_na() }, { label: m.containers_mac_address(), value: rawNetworkConfig.macAddress || m.common_na() }, { label: m.common_subnet(), value: rawNetworkConfig.ipPrefixLen ? `${rawNetworkConfig.ipAddress}/${rawNetworkConfig.ipPrefixLen}` : m.common_na() }] as field (field.label)}
-										<Card.Root variant="outlined" size="sm">
+										<Card.Root size="sm">
 											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">{field.label}</div>
 												<div
@@ -207,7 +208,7 @@
 									{/each}
 
 									{#if rawNetworkConfig.globalIPv6Address}
-										<Card.Root variant="outlined" size="sm">
+										<Card.Root size="sm">
 											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.ipv6_address()}</div>
 												<div
@@ -221,7 +222,7 @@
 											</Card.Content>
 										</Card.Root>
 
-										<Card.Root variant="outlined" size="sm">
+										<Card.Root size="sm">
 											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.ipv6_gateway()}</div>
 												<div
@@ -235,7 +236,7 @@
 									{/if}
 
 									{#if rawNetworkConfig.networkId}
-										<Card.Root variant="outlined" class="sm:col-span-2" size="sm">
+										<Card.Root class="sm:col-span-2" size="sm">
 											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.network_id()}</div>
 												<div
@@ -249,7 +250,7 @@
 									{/if}
 
 									{#if rawNetworkConfig.endpointId}
-										<Card.Root variant="outlined" class="sm:col-span-2" size="sm">
+										<Card.Root class="sm:col-span-2" size="sm">
 											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.container_endpoint_id()}</div>
 												<div
@@ -263,16 +264,15 @@
 									{/if}
 
 									{#if rawNetworkConfig.aliases && rawNetworkConfig.aliases.length > 0}
-										<Card.Root variant="outlined" class="sm:col-span-2" size="sm">
+										<Card.Root class="sm:col-span-2" size="sm">
 											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">
 													{m.containers_aliases()}
 												</div>
 												<div class="space-y-1 text-sm font-medium text-foreground">
-													<!-- Docker may repeat aliases; these rows render only text. -->
-													{#each rawNetworkConfig.aliases as alias}
+													{#each withOccurrenceKeys(rawNetworkConfig.aliases) as alias (alias.key)}
 														<div class="cursor-pointer font-mono break-all select-all" title={m.common_click_to_select()}>
-															{alias}
+															{alias.value}
 														</div>
 														<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service network; typed props diverge across the boundary -->
 													{/each}
@@ -330,7 +330,7 @@
 			{/if}
 
 			{#if customHostname}
-				<Card.Root variant="outlined" size="sm" class="mt-4">
+				<Card.Root size="sm" class="mt-4">
 					<Card.Content class="flex flex-col">
 						<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.hostname()}</div>
 						<div

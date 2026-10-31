@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -136,7 +137,7 @@
 						destructive: true,
 						placement: 'menu' as const,
 						label: m.common_remove(),
-						onclick: () => confirmRemoveQuadlet(quadlet.name, envId, () => goto('/podman/quadlets'))
+						onclick: () => confirmRemoveQuadlet(quadlet.name, envId, () => goto(resolve('/(app)/podman/quadlets')))
 					}
 				]
 			: [])
@@ -170,7 +171,7 @@
 				{quadlet.name}
 			</h1>
 			<Badge variant={podmanStateVariant(quadlet.status)} minWidth="20">{quadlet.status}</Badge>
-			<EnvironmentCell value={envId} />
+			<EnvironmentCell value={envId} plain />
 			{#if quadlet.template}
 				<Badge variant="gray" size="sm">{m.podman_quadlet_template()}</Badge>
 			{/if}
@@ -259,7 +260,9 @@
 									<div class="min-w-0">
 										<a
 											class="block truncate font-medium hover:underline"
-											href={environmentHref(`/containers/${container.id}`, envId)}
+											href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(envId)}`, {
+												containerId: container.id
+											})}
 										>
 											{container.names[0] ?? container.id.slice(0, 12)}
 										</a>

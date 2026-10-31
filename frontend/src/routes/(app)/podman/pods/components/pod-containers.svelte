@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+
 	import { PortBadge } from '#lib/components/badges/index.js';
 	import EmptyState from '#lib/components/states/empty-state.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -7,7 +9,6 @@
 	import { ContainersIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { PodmanPodInspect } from '#lib/types/podman.js';
-	import { environmentHref } from '#lib/utils/environments.js';
 	import { podmanStateVariant } from '#lib/utils/podman.js';
 
 	interface Props {
@@ -47,7 +48,8 @@
 								<div class="flex items-center gap-2">
 									<a
 										class="min-w-0 truncate font-medium hover:underline"
-										href={environmentHref(`/containers/${member.id}`, envId)}>{member.name}</a
+										href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(envId)}`, { containerId: member.id })}
+										>{member.name}</a
 									>
 									{#if member.isInfra || member.id === pod.infraContainerId}
 										<Badge variant="gray" size="sm">{m.podman_pod_infra()}</Badge>
@@ -61,6 +63,7 @@
 							<Table.Cell><span class="text-muted-foreground">{member.status ?? ''}</span></Table.Cell>
 							<Table.Cell>
 								<PortBadge
+									environmentId={envId}
 									ports={(member.ports ?? []).map((port) => ({
 										ip: port.hostIp,
 										privatePort: port.containerPort,

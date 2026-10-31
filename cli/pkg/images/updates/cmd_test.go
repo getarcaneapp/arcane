@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/testutil"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/testutil"
 )
 
 func TestImagesUpdatesCheckEncodesImageRefAndDecodesSingleResponse(t *testing.T) {
@@ -19,7 +19,7 @@ func TestImagesUpdatesCheckEncodesImageRefAndDecodesSingleResponse(t *testing.T)
 	receivedRawQuery := ""
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/api/environments/0/image-updates/check" {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/environments/0/images/updates/check" {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"success":false,"error":"not found"}`))
 			return
@@ -45,7 +45,7 @@ func TestImagesUpdatesCheckEncodesImageRefAndDecodesSingleResponse(t *testing.T)
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "images", "updates", "check", imageRef, "--json"},
+		[]string{"--config", configPath, "--env", "0", "images", "updates", "check", imageRef, "--json"},
 	)
 
 	require.NoError(t, err,
@@ -60,7 +60,7 @@ func TestImagesUpdatesCheckEncodesImageRefAndDecodesSingleResponse(t *testing.T)
 	require.NotContains(t, receivedRawQuery, "&debug=",
 		"imageRef escaped into a second query parameter: %q", receivedRawQuery)
 
-	var result imageupdate.Response
+	var result types.ImageUpdateResponse
 	{
 		unmarshalErr := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &result)
 		require.NoError(t, unmarshalErr,
@@ -72,7 +72,7 @@ func TestImagesUpdatesCheckEncodesImageRefAndDecodesSingleResponse(t *testing.T)
 }
 
 func TestImagesUpdatesCheckRequiresImageRef(t *testing.T) {
-	outBuf, _, err := testutil.Execute(t, []string{"images", "updates", "check"})
+	outBuf, _, err := testutil.Execute(t, []string{"--env", "0", "images", "updates", "check"})
 
 	require.Error(t, err,
 		"expected missing image reference to fail, got output %q", outBuf)
@@ -91,9 +91,9 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 			_, _ = w.Write([]byte(`{"success":true,"data":[]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/environments/remote/images":
 			_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"image-prefix-123","repoTags":["nginx:latest"]}]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/environments/remote/image-updates/check/image-prefix-123":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/environments/remote/images/updates/check/image-prefix-123":
 			_, _ = w.Write([]byte(`{"success":true,"data":{"hasUpdate":false,"currentVersion":"remote-version"}}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/environments/0/image-updates/check-all":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/environments/0/images/updates/check" && r.URL.Query().Get("action") == "all":
 			_, _ = w.Write([]byte(`{
 				"success": true,
 				"data": {
@@ -107,7 +107,7 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 					}
 				}
 			}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/environments/0/image-updates/check/image-123":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/environments/0/images/updates/check/image-123":
 			_, _ = w.Write([]byte(`{
 				"success": true,
 				"data": {
@@ -118,7 +118,7 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 					"responseTimeMs": 9
 				}
 			}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/environments/0/image-updates/summary":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/environments/0/images/updates/summary":
 			_, _ = w.Write([]byte(`{
 				"success": true,
 				"data": {
@@ -138,13 +138,13 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "images", "updates", "check-all", "--json"},
+		[]string{"--config", configPath, "--env", "0", "images", "updates", "check-all", "--json"},
 	)
 
 	require.NoError(t, err,
 		"check-all: %v (%s)", err, errOut)
 
-	var batch imageupdate.BatchResponse
+	var batch types.ImageUpdateBatchResponse
 	{
 		unmarshalErr := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &batch)
 		require.NoError(t, unmarshalErr,
@@ -156,13 +156,13 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 
 	outBuf, errOut, err = testutil.Execute(
 		t,
-		[]string{"--config", configPath, "images", "updates", "check-image", "image-123", "--json"},
+		[]string{"--config", configPath, "--env", "0", "images", "updates", "check-image", "image-123", "--json"},
 	)
 
 	require.NoError(t, err,
 		"check-image: %v (%s)", err, errOut)
 
-	var single imageupdate.Response
+	var single types.ImageUpdateResponse
 	{
 		decodeSingleResponseErr := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &single)
 		require.NoError(t, decodeSingleResponseErr,
@@ -174,13 +174,13 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 
 	outBuf, errOut, err = testutil.Execute(
 		t,
-		[]string{"--config", configPath, "images", "updates", "summary", "--json"},
+		[]string{"--config", configPath, "--env", "0", "images", "updates", "summary", "--json"},
 	)
 
 	require.NoError(t, err,
 		"summary: %v (%s)", err, errOut)
 
-	var summary imageupdate.Summary
+	var summary types.ImageUpdateSummary
 	{
 		decodeSummaryResponseErr := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &summary)
 		require.NoError(t, decodeSummaryResponseErr,
@@ -190,8 +190,7 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 	require.False(t, summary.TotalImages != 4 || summary.ImagesWithUpdates != 2 || summary.DigestUpdates != 1,
 		"unexpected summary response: %+v", summary)
 
-	previewPath := testutil.WriteConfig(t, srv.URL, true)
-	outBuf, errOut, err = testutil.Execute(t, []string{"--config", previewPath, "images", "updates", "check-image", "image-prefix", "--json"})
+	outBuf, errOut, err = testutil.Execute(t, []string{"--config", configPath, "images", "updates", "check-image", "image-prefix", "--json"})
 	require.NoError(t, err, errOut)
 	require.NoError(t, json.Unmarshal([]byte(outBuf), &single))
 	require.Equal(t, "remote-version", single.CurrentVersion)
@@ -210,9 +209,9 @@ func TestImageUpdateCommandsRejectHTTPAndEnvelopeFailures(t *testing.T) {
 	}
 	failures := []struct {
 		name       string
-		statusCode int
 		body       string
 		wantError  string
+		statusCode int
 	}{
 		{
 			name:       "non-2xx",
@@ -240,7 +239,7 @@ func TestImageUpdateCommandsRejectHTTPAndEnvelopeFailures(t *testing.T) {
 			configPath := testutil.WriteConfig(t, srv.URL)
 			for _, command := range commands {
 				t.Run(command.name, func(t *testing.T) {
-					args := append([]string{"--config", configPath}, command.args...)
+					args := append([]string{"--config", configPath, "--env", "0"}, command.args...)
 					outBuf, _, err := testutil.Execute(t, args)
 
 					require.Error(t, err,

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import {
 		browserSupportsWebAuthn,
 		startAuthentication,
@@ -68,7 +69,11 @@
 	// Only an explicit redirect is handed to the OIDC flow. Resolving the account
 	// landing page here would bake the signed-out default into the OIDC round
 	// trip, where it would then outrank the user's saved preference.
-	const oidcLoginHref = $derived(data.redirectTo ? `/oidc/login?redirect=${encodeURIComponent(data.redirectTo)}` : '/oidc/login');
+	const oidcLoginHref = $derived(
+		data.redirectTo
+			? resolve(`/(auth)/oidc/login?redirect=${encodeURIComponent(data.redirectTo)}`)
+			: resolve('/(auth)/oidc/login')
+	);
 
 	const oidcLoginMutation = createMutation(() => ({
 		mutationFn: async () => {
@@ -84,7 +89,7 @@
 			await queryClient.invalidateQueries({
 				queryKey: queryKeys.auth.all
 			});
-			const redirectTo = data.redirectTo || getEffectiveLandingPage();
+			const redirectTo = data.redirectTo ?? getEffectiveLandingPage();
 			await goto(redirectTo, { replace: true });
 		},
 		onError: (err) => {
@@ -115,7 +120,7 @@
 			await queryClient.invalidateQueries({
 				queryKey: queryKeys.auth.all
 			});
-			await goto(data.redirectTo || getEffectiveLandingPage(), {
+			await goto(data.redirectTo ?? getEffectiveLandingPage(), {
 				replace: true
 			});
 		},
@@ -168,7 +173,7 @@
 		await authService.completeAuthentication(response);
 		await refreshAll();
 		await queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
-		await goto(data.redirectTo || getEffectiveLandingPage(), {
+		await goto(data.redirectTo ?? getEffectiveLandingPage(), {
 			replace: true
 		});
 	}
@@ -187,7 +192,7 @@
 	<div class="w-full max-w-sm md:max-w-3xl">
 		<Card.Root>
 			<div
-				class={cn('login-beam pointer-events-none absolute inset-0 z-1 rounded-xl', animationsEnabled && 'login-beam--animated')}
+				class={cn('pointer-events-none absolute inset-0 z-1 rounded-xl border-beam', animationsEnabled && 'animate-border-beam')}
 			></div>
 			<div class="grid md:grid-cols-2">
 				<div class="p-6 md:p-8">
@@ -405,44 +410,3 @@
 		</div>
 	</div>
 </div>
-
-<style>
-	@property --login-beam-angle {
-		syntax: '<angle>';
-		initial-value: -45deg;
-		inherits: false;
-	}
-
-	/* A 1px ring masked out of a rotating conic gradient, so the highlight travels around the card edge. */
-	.login-beam {
-		padding: 1px;
-		background: conic-gradient(
-			from var(--login-beam-angle),
-			transparent 0deg,
-			var(--primary) 50deg,
-			transparent 100deg,
-			transparent 180deg,
-			color-mix(in oklab, var(--primary) 60%, transparent) 230deg,
-			transparent 280deg
-		);
-		mask:
-			linear-gradient(#000 0 0) content-box exclude,
-			linear-gradient(#000 0 0);
-	}
-
-	.login-beam--animated {
-		animation: login-beam-spin 6s linear infinite;
-	}
-
-	@keyframes login-beam-spin {
-		to {
-			--login-beam-angle: 315deg;
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.login-beam--animated {
-			animation: none;
-		}
-	}
-</style>

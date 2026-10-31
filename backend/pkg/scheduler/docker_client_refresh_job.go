@@ -4,11 +4,11 @@ import (
 	"context"
 	"log/slog"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	scheduleutil "github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
 )
 
 const (
@@ -36,15 +36,15 @@ func (j *DockerClientRefreshJob) Name() string {
 }
 
 func (j *DockerClientRefreshJob) Schedule(ctx context.Context) string {
-	return scheduleutil.Or(ctx, j.settingsService.GetStringSetting(ctx, "dockerClientRefreshInterval", dockerClientRefreshDefaultSchedule), dockerClientRefreshDefaultSchedule, "docker-client-refresh")
+	return scheduleutil.Or(ctx, j.settingsService.GetStringSetting(ctx, "dockerClientRefreshInterval"), dockerClientRefreshDefaultSchedule, "docker-client-refresh")
 }
 
-func (j *DockerClientRefreshJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
+func (j *DockerClientRefreshJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 	if err := j.dockerClientService.RefreshClient(ctx); err != nil {
 		slog.WarnContext(ctx, "Docker client refresh failed", "error", err)
-		return schedulertypes.Outcome{}, err
+		return types.SchedulerOutcome{}, err
 	}
 
 	slog.DebugContext(ctx, "Docker client refresh completed")
-	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
+	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }

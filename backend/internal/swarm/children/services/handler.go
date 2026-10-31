@@ -5,10 +5,10 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/swarm"
+	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 // Handler serves the swarm service endpoints.
@@ -41,14 +41,14 @@ type GetSwarmServiceInput struct {
 }
 
 type CreateSwarmServiceInput struct {
-	EnvironmentID string                     `path:"id" doc:"Environment ID"`
-	Body          swarm.ServiceCreateRequest `doc:"Service creation request"`
+	EnvironmentID string                          `path:"id" doc:"Environment ID"`
+	Body          types.SwarmServiceCreateRequest `doc:"Service creation request"`
 }
 
 type UpdateSwarmServiceInput struct {
+	Body          types.SwarmServiceUpdateRequest
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ServiceID     string `path:"serviceId" doc:"Service ID"`
-	Body          swarm.ServiceUpdateRequest
 }
 
 type DeleteSwarmServiceInput struct {
@@ -66,15 +66,16 @@ type ListSwarmServiceTasksInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
-type RollbackSwarmServiceInput struct {
+type SwarmServiceActionInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ServiceID     string `path:"serviceId" doc:"Service ID"`
+	Action        string `query:"action" required:"true" enum:"rollback" doc:"Service action"`
 }
 
 type ScaleSwarmServiceInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ServiceID     string `path:"serviceId" doc:"Service ID"`
-	Body          swarm.ServiceScaleRequest
+	Body          types.SwarmServiceScaleRequest
 }
 
 // ListServices lists swarm services for an environment and returns a paginated response.
@@ -89,17 +90,24 @@ type ScaleSwarmServiceInput struct {
 // Returns a successful response containing service summaries and pagination metadata.
 // Returns an HTTP-shaped error if the swarm service is unavailable or if the
 // underlying swarm lookup fails.
-func (h *Handler) ListServices(ctx context.Context, input *ListSwarmServicesInput) (*handlerutil.Page[swarm.ServiceSummary], error) {
+func (h *Handler) ListServices(ctx context.Context, input *ListSwarmServicesInput) (*handlerutil.Page[types.SwarmServiceSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.service.Aggregate(ctx, params)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list swarm services: " + err.Error())
+		}
+		return &handlerutil.Page[types.SwarmServiceSummary]{Body: body}, nil
+	}
 	items, paginationResp, err := h.service.ListServicesPaginated(ctx, params)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to list swarm services: "+err.Error())
 	}
 	if items == nil {
-		items = []swarm.ServiceSummary{}
+		items = []types.SwarmServiceSummary{}
 	}
 
-	return &handlerutil.Page[swarm.ServiceSummary]{Body: base.Paginated[swarm.ServiceSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
+	return &handlerutil.Page[types.SwarmServiceSummary]{Body: types.Paginated[types.SwarmServiceSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
 // GetService returns detailed information for a single swarm service.
@@ -113,7 +121,7 @@ func (h *Handler) ListServices(ctx context.Context, input *ListSwarmServicesInpu
 // Returns a successful response containing the service inspection payload.
 // Returns `404 Not Found` when the service does not exist and other mapped HTTP
 // errors when the inspection fails.
-func (h *Handler) GetService(ctx context.Context, input *GetSwarmServiceInput) (*handlerutil.Out[swarm.ServiceInspect], error) {
+func (h *Handler) GetService(ctx context.Context, input *GetSwarmServiceInput) (*handlerutil.Out[types.SwarmServiceInspect], error) {
 	service, err := h.service.GetService(ctx, input.ServiceID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -122,7 +130,7 @@ func (h *Handler) GetService(ctx context.Context, input *GetSwarmServiceInput) (
 		return nil, h.mapError(err, "Swarm service not found: "+err.Error())
 	}
 
-	return &handlerutil.Out[swarm.ServiceInspect]{Body: base.ApiResponse[swarm.ServiceInspect]{Success: true, Data: *service}}, nil
+	return &handlerutil.Out[types.SwarmServiceInspect]{Body: types.ApiResponse[types.SwarmServiceInspect]{Success: true, Data: *service}}, nil
 }
 
 // CreateService creates a new swarm service in the target environment.
@@ -136,7 +144,7 @@ func (h *Handler) GetService(ctx context.Context, input *GetSwarmServiceInput) (
 // Returns a successful response containing the created service ID and any Docker warnings.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when validation or creation fails.
-func (h *Handler) CreateService(ctx context.Context, input *CreateSwarmServiceInput) (*handlerutil.Out[swarm.ServiceCreateResponse], error) {
+func (h *Handler) CreateService(ctx context.Context, input *CreateSwarmServiceInput) (*handlerutil.Out[types.SwarmServiceCreateResponse], error) {
 	resp, err := h.service.CreateService(ctx, input.Body)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to create swarm service: "+err.Error())
@@ -144,7 +152,7 @@ func (h *Handler) CreateService(ctx context.Context, input *CreateSwarmServiceIn
 
 	h.audit(ctx, input.EnvironmentID, "service.create", "swarm_service", resp.ID, "", map[string]any{"serviceId": resp.ID})
 
-	return &handlerutil.Out[swarm.ServiceCreateResponse]{Body: base.ApiResponse[swarm.ServiceCreateResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[types.SwarmServiceCreateResponse]{Body: types.ApiResponse[types.SwarmServiceCreateResponse]{Success: true, Data: *resp}}, nil
 }
 
 // UpdateService updates an existing swarm service.
@@ -158,7 +166,7 @@ func (h *Handler) CreateService(ctx context.Context, input *CreateSwarmServiceIn
 // Returns a successful response containing any Docker warnings.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the update request is invalid or the underlying update fails.
-func (h *Handler) UpdateService(ctx context.Context, input *UpdateSwarmServiceInput) (*handlerutil.Out[swarm.ServiceUpdateResponse], error) {
+func (h *Handler) UpdateService(ctx context.Context, input *UpdateSwarmServiceInput) (*handlerutil.Out[types.SwarmServiceUpdateResponse], error) {
 	resp, err := h.service.UpdateService(ctx, input.ServiceID, input.Body)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to update swarm service: "+err.Error())
@@ -166,7 +174,7 @@ func (h *Handler) UpdateService(ctx context.Context, input *UpdateSwarmServiceIn
 
 	h.audit(ctx, input.EnvironmentID, "service.update", "swarm_service", input.ServiceID, "", map[string]any{"serviceId": input.ServiceID})
 
-	return &handlerutil.Out[swarm.ServiceUpdateResponse]{Body: base.ApiResponse[swarm.ServiceUpdateResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[types.SwarmServiceUpdateResponse]{Body: types.ApiResponse[types.SwarmServiceUpdateResponse]{Success: true, Data: *resp}}, nil
 }
 
 // DeleteService removes a swarm service.
@@ -181,7 +189,7 @@ func (h *Handler) UpdateService(ctx context.Context, input *UpdateSwarmServiceIn
 // Returns a successful response with a confirmation message.
 // Returns an authorization error for non-admin callers, `404 Not Found` when
 // the service does not exist, or another mapped HTTP error when removal fails.
-func (h *Handler) DeleteService(ctx context.Context, input *DeleteSwarmServiceInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) DeleteService(ctx context.Context, input *DeleteSwarmServiceInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.service.RemoveService(ctx, input.ServiceID); err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil, huma.Error404NotFound("Swarm service not found: " + err.Error())
@@ -204,17 +212,17 @@ func (h *Handler) DeleteService(ctx context.Context, input *DeleteSwarmServiceIn
 //
 // Returns a paginated list of task summaries for the service.
 // Returns a mapped HTTP error when the swarm task lookup fails.
-func (h *Handler) ListServiceTasks(ctx context.Context, input *ListSwarmServiceTasksInput) (*handlerutil.Page[swarm.TaskSummary], error) {
+func (h *Handler) ListServiceTasks(ctx context.Context, input *ListSwarmServiceTasksInput) (*handlerutil.Page[types.SwarmTaskSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.service.ListServiceTasksPaginated(ctx, input.ServiceID, params)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to list swarm tasks: "+err.Error())
 	}
 	if items == nil {
-		items = []swarm.TaskSummary{}
+		items = []types.SwarmTaskSummary{}
 	}
 
-	return &handlerutil.Page[swarm.TaskSummary]{Body: base.Paginated[swarm.TaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
+	return &handlerutil.Page[types.SwarmTaskSummary]{Body: types.Paginated[types.SwarmTaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
 // RollbackService requests a server-side rollback for a swarm service.
@@ -228,7 +236,7 @@ func (h *Handler) ListServiceTasks(ctx context.Context, input *ListSwarmServiceT
 // Returns a successful response containing any warnings reported by Docker.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the rollback cannot be performed.
-func (h *Handler) RollbackService(ctx context.Context, input *RollbackSwarmServiceInput) (*handlerutil.Out[swarm.ServiceUpdateResponse], error) {
+func (h *Handler) RollbackService(ctx context.Context, input *SwarmServiceActionInput) (*handlerutil.Out[types.SwarmServiceUpdateResponse], error) {
 	resp, err := h.service.RollbackService(ctx, input.ServiceID)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to update swarm service: "+err.Error())
@@ -236,7 +244,7 @@ func (h *Handler) RollbackService(ctx context.Context, input *RollbackSwarmServi
 
 	h.audit(ctx, input.EnvironmentID, "service.rollback", "swarm_service", input.ServiceID, "", map[string]any{"serviceId": input.ServiceID})
 
-	return &handlerutil.Out[swarm.ServiceUpdateResponse]{Body: base.ApiResponse[swarm.ServiceUpdateResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[types.SwarmServiceUpdateResponse]{Body: types.ApiResponse[types.SwarmServiceUpdateResponse]{Success: true, Data: *resp}}, nil
 }
 
 // ScaleService changes the replica count of a swarm service.
@@ -250,7 +258,7 @@ func (h *Handler) RollbackService(ctx context.Context, input *RollbackSwarmServi
 // Returns a successful response containing any warnings reported by Docker.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when scaling is invalid or the update fails.
-func (h *Handler) ScaleService(ctx context.Context, input *ScaleSwarmServiceInput) (*handlerutil.Out[swarm.ServiceUpdateResponse], error) {
+func (h *Handler) ScaleService(ctx context.Context, input *ScaleSwarmServiceInput) (*handlerutil.Out[types.SwarmServiceUpdateResponse], error) {
 	resp, err := h.service.ScaleService(ctx, input.ServiceID, input.Body.Replicas)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to update swarm service: "+err.Error())
@@ -258,5 +266,5 @@ func (h *Handler) ScaleService(ctx context.Context, input *ScaleSwarmServiceInpu
 
 	h.audit(ctx, input.EnvironmentID, "service.scale", "swarm_service", input.ServiceID, "", map[string]any{"serviceId": input.ServiceID, "replicas": input.Body.Replicas})
 
-	return &handlerutil.Out[swarm.ServiceUpdateResponse]{Body: base.ApiResponse[swarm.ServiceUpdateResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[types.SwarmServiceUpdateResponse]{Body: types.ApiResponse[types.SwarmServiceUpdateResponse]{Success: true, Data: *resp}}, nil
 }

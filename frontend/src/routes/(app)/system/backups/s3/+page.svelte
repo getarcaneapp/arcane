@@ -1,0 +1,158 @@
+<script lang="ts">
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
+	import { toast } from 'svelte-sonner';
+
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import { EmptyState } from '#lib/components/states/index.js';
+	import { CloudStorageIcon, RemoteEnvironmentIcon } from '#lib/icons/index.js';
+	import { SettingsPageLayout } from '#lib/layouts/index.js';
+	import * as m from '#lib/paraglide/messages.js';
+	import { s3DestinationListQuery } from '#lib/query/backups.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import type { S3DestinationCreate, S3Destination } from '#lib/types/s3-destination.js';
+	import { discoverDestinationBackups } from '#lib/utils/backups.js';
+	import { changedFields } from '#lib/utils/payload.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { tryCatch } from '#lib/utils/try-catch.js';
+
+	import S3DestinationDialog from './components/s3-destination-dialog.svelte';
+	import S3DestinationTable from './components/s3-destination-table.svelte';
+
+	let { data } = $props();
+	const queryClient = useQueryClient();
+
+	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
+	const destinationsQuery = createQuery(() => ({
+		...s3DestinationListQuery(pageState.requestOptions),
+		placeholderData: (previous) => previous
+	}));
+	const destinations = $derived(destinationsQuery.data ?? data.destinations);
+	let selected = $state<S3Destination | null>(null);
+	let dialogOpen = $state(false);
+	let destinationSession = $state(0);
+	let saving = $state(false);
+	const isReadOnly = $derived(settingsStore.readOnly);
+
+	function openCreate() {
+		selected = null;
+		destinationSession += 1;
+		dialogOpen = true;
+	}
+
+	function openEdit(destination: S3Destination) {
+		selected = destination;
+		destinationSession += 1;
+		dialogOpen = true;
+	}
+
+	async function saveDestination(input: Required<S3DestinationCreate>) {
+		saving = true;
+		try {
+			let created: S3Destination | null = null;
+			const operationResult = await tryCatch(
+				(async () => {
+					if (selected) {
+						const { secretAccessKey, ...fields } = input;
+						await s3DestinationService.update(selected.id, {
+							...changedFields(selected, fields),
+							...(secretAccessKey ? { secretAccessKey } : {})
+						});
+						toast.success(m.s3_destination_updated({ name: input.name }));
+					} else {
+						created = await s3DestinationService.create(input);
+						toast.success(m.s3_destination_created({ name: input.name }));
+					}
+					await queryClient.invalidateQueries({ queryKey: queryKeys.s3Destinations.all });
+					dialogOpen = false;
+					selected = null;
+					if (created) await discoverDestinationBackups(created.id);
+				})()
+			);
+			if (operationResult.error !== null) {
+				const error = operationResult.error;
+
+				toast.error(error instanceof Error ? error.message : m.s3_destination_save_failed());
+			}
+		} finally {
+			saving = false;
+		}
+	}
+
+	function deleteDestination(destination: S3Destination) {
+		openConfirmDialog({
+			title: m.delete_name({ name: destination.name }),
+			message: m.s3_destination_delete_message(),
+			confirm: {
+				label: m.common_delete(),
+				destructive: true,
+				action: async () => {
+					const operationResult = await tryCatch(
+						(async () => {
+							await s3DestinationService.delete(destination.id);
+							await queryClient.invalidateQueries({ queryKey: queryKeys.s3Destinations.all });
+							toast.success(m.s3_destination_deleted({ name: destination.name }));
+						})()
+					);
+					if (operationResult.error !== null) {
+						const error = operationResult.error;
+
+						toast.error(error instanceof Error ? error.message : m.s3_destination_delete_failed());
+					}
+				}
+			}
+		});
+	}
+
+	const actionButtons: ActionButton[] = $derived.by(() => [
+		{
+			id: 'create',
+			action: 'create',
+			placement: 'primary',
+			label: m.s3_destination_add(),
+			onclick: openCreate,
+			disabled: isReadOnly
+		}
+	]);
+</script>
+
+{#snippet destinationsEmptyState()}
+	<EmptyState
+		variant="plain"
+		icon={CloudStorageIcon}
+		title={m.s3_destinations_empty_title()}
+		description={m.s3_destinations_empty_description()}
+		actionLabel={isReadOnly ? undefined : m.s3_destination_add()}
+		onAction={openCreate}
+	/>
+{/snippet}
+
+<SettingsPageLayout
+	title={m.s3_destinations_title()}
+	description={m.s3_destinations_description()}
+	icon={RemoteEnvironmentIcon}
+	pageType="management"
+	showReadOnlyTag={isReadOnly}
+	{actionButtons}
+>
+	{#snippet mainContent()}
+		<S3DestinationTable
+			emptyState={destinationsEmptyState}
+			{destinations}
+			bind:requestOptions={pageState.requestOptions}
+			onRetry={() => destinationsQuery.refetch()}
+			onEdit={openEdit}
+			onDelete={deleteDestination}
+		/>
+	{/snippet}
+	{#snippet additionalContent()}
+		{#if destinationSession > 0}
+			{#key destinationSession}
+				<S3DestinationDialog bind:open={dialogOpen} destination={selected} {saving} onSubmit={saveDestination} />
+			{/key}
+		{/if}
+	{/snippet}
+</SettingsPageLayout>

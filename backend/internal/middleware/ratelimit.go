@@ -17,18 +17,18 @@ import (
 
 // ipRateLimiter tracks per-client token bucket limiters keyed by client IP.
 type ipRateLimiter struct {
-	mu         sync.Mutex
+	lastSweep  time.Time
 	limiters   map[string]*limiterEntry
 	rate       rate.Limit
 	burst      int
 	ttl        time.Duration
-	lastSweep  time.Time
 	maxEntries int
+	mu         sync.Mutex
 }
 
 type limiterAge struct {
-	key  string
 	seen time.Time
+	key  string
 }
 
 type limiterEntry struct {
@@ -131,7 +131,7 @@ func PerIPRateLimit(perMinute, burst int) echo.MiddlewareFunc {
 }
 
 // PerAgentTokenRateLimit returns an Echo middleware that limits requests per
-// edge agent token to the given rate and burst.
+// agent token to the given rate and burst.
 func PerAgentTokenRateLimit(perMinute, burst int) echo.MiddlewareFunc {
 	if perMinute <= 0 {
 		perMinute = 10
@@ -243,7 +243,7 @@ func WarnUntrustedForwardedFor(trustedProxyNets []*net.IPNet) echo.MiddlewareFun
 			if ip == nil || !slices.ContainsFunc(trustedProxyNets, func(n *net.IPNet) bool { return n.Contains(ip) }) {
 				once.Do(func() {
 					slog.WarnContext(req.Context(),
-						"X-Forwarded-For received from an untrusted peer; clients behind this proxy share one rate-limit bucket. Set TRUSTED_PROXIES to the proxy's address range.",
+						"X-Forwarded-For received from an untrusted peer; clients behind this proxy share one rate-limit bucket. Set ARCANE_TRUSTED_PROXIES to the proxy's address range.",
 						"peer", req.RemoteAddr)
 				})
 			}

@@ -7,7 +7,7 @@ import (
 	charmlog "charm.land/log/v2"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 )
 
 // Setup configures the global logger level and format, defaulting invalid levels to info.

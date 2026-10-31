@@ -24,17 +24,17 @@ type windowKey struct {
 }
 
 type window struct {
-	active  int
 	expires time.Time
+	active  int
 }
 
 // Service correlates Docker daemon observations with local Arcane actions.
 type Service struct {
-	mu                 sync.Mutex
 	expectations       map[expectation]time.Time
 	windows            map[windowKey]window
 	now                func() time.Time
 	updatingContainers func() []string
+	mu                 sync.Mutex
 }
 
 func NewService(now func() time.Time) *Service {

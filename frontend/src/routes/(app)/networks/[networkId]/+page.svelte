@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
@@ -29,7 +30,6 @@
 	import type { NetworkInspectDto, IPAMSubnetDto } from '#lib/types/docker.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { environmentHref } from '#lib/utils/environments.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -108,7 +108,7 @@
 								m.networks_remove_success({ name: network?.name ?? shortId }),
 								activityToastOptions(extractActivityId(data))
 							);
-							goto('/networks');
+							goto(resolve('/(app)/networks'));
 						},
 						onError: (error) => {
 							errorMessage = error?.message ?? m.error_occurred();
@@ -219,14 +219,14 @@
 						{#if service.VIP}
 							<span class="flex items-center gap-1.5 text-xs text-muted-foreground">
 								{m.networks_service_vip_label()}
-								<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all select-all">{service.VIP}</code>
+								<code class="rounded-xl bg-muted px-1.5 py-0.5 font-mono text-xs break-all select-all">{service.VIP}</code>
 							</span>
 						{/if}
 						{#if service.Ports && service.Ports.length > 0}
 							<span class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
 								{m.common_ports()}
 								{#each service.Ports as port (port)}
-									<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{port}</code>
+									<code class="rounded-xl bg-muted px-1.5 py-0.5 font-mono text-xs">{port}</code>
 								{/each}
 							</span>
 						{/if}
@@ -285,7 +285,9 @@
 						<div class="flex flex-col p-3 sm:flex-row sm:items-center">
 							<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
 								<a
-									href={environmentHref(`/containers/${container.id}`, data.envId)}
+									href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(data.envId)}`, {
+										containerId: container.id
+									})}
 									class="flex items-center text-primary hover:underline"
 								>
 									<ContainersIcon class="mr-1.5 size-3.5 text-muted-foreground" />
@@ -295,7 +297,7 @@
 							<div class="flex w-full flex-wrap gap-1.5 pl-0 sm:w-2/3 sm:pl-4">
 								{#each addresses.length > 0 ? addresses : [m.common_unknown()] as address (address)}
 									<code
-										class="cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
+										class="cursor-pointer rounded-xl bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
 										title={m.common_click_to_select()}
 									>
 										{address}
@@ -339,7 +341,7 @@
 			<Badge variant="blue" minWidth="20">{m.networks_predefined()}</Badge>
 		{/if}
 		<Badge variant="purple" minWidth="20">{network?.driver ?? m.common_unknown()}</Badge>
-		<EnvironmentCell value={data.envId} />
+		<EnvironmentCell value={data.envId} plain />
 	{/snippet}
 
 	{#if errorMessage}
@@ -401,7 +403,7 @@
 			<ArcaneButton
 				action="cancel"
 				customLabel={m.common_back_to({ resource: m.resource_networks_cap() })}
-				onclick={() => goto('/networks')}
+				onclick={() => goto(resolve('/(app)/networks'))}
 				size="sm"
 			/>
 		</div>

@@ -10,13 +10,16 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v2/event"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/events"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
@@ -28,22 +31,24 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event/children/correlation"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event/children/correlation"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// maxConcurrentEdgeSyncs bounds in-flight event forwards to the manager.
+// maxConcurrentAgentSyncs bounds in-flight event forwards to the manager.
 const (
-	maxConcurrentEdgeSyncs = 16
-	edgeSyncQueueTimeout   = time.Minute
-	edgeSyncPublishTimeout = 10 * time.Second
+	maxConcurrentAgentSyncs = 16
+	agentSyncQueueTimeout   = time.Minute
+	agentSyncPublishTimeout = 10 * time.Second
 )
 
 const (
@@ -52,19 +57,46 @@ const (
 	daemonEventFlushInterval = 250 * time.Millisecond
 )
 
+const (
+	changeKindAll             = "all"
+	changeStreamFlushInterval = time.Second
+	changeWaitCoalesce        = 250 * time.Millisecond
+	changeWaitLimit           = timeouts.DefaultProxyRequest - 5*time.Second
+)
+
+var changeKindAliases = map[string]string{
+	"activities":      "activity",
+	"builds":          "build",
+	"containers":      "container",
+	"environments":    "environment",
+	"events":          "event",
+	"git":             "gitops",
+	"image_updates":   "image_update",
+	"images":          "image",
+	"networks":        "network",
+	"projects":        "project",
+	"volumes":         "volume",
+	"vulnerabilities": "vulnerability",
+	"webhooks":        "webhook",
+}
+
 type EventService struct {
-	changes     *concurrency.Signal[struct{}]
+	Changes     *concurrency.Signal[types.EnvironmentChanges]
+	changeKinds map[string]map[string]uint64
 	correlation *correlation.Service
 	db          *database.DB
 	cfg         *config.Config
 	httpClient  *http.Client
-	edgeSyncs   *semaphore.Weighted
+	agentSyncs  *semaphore.Weighted
 	// Daemon events are persisted in batches by a writer started on first use.
-	daemonQueue   chan CreateEventRequest
-	daemonStart   sync.Once
-	daemonDone    chan struct{}
-	daemonMu      sync.RWMutex
-	daemonStopped bool
+	daemonQueue    chan CreateEventRequest
+	daemonDone     chan struct{}
+	changeEpoch    string
+	changeRevision uint64
+	changesMu      sync.RWMutex
+	daemonMu       sync.RWMutex
+	daemonStart    sync.Once
+	daemonStopped  bool
 }
 
 func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Client) *EventService {
@@ -74,31 +106,33 @@ func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Clien
 		}
 	}
 	return &EventService{
-		changes:     concurrency.NewSignal[struct{}](),
+		Changes:     concurrency.NewSignal[types.EnvironmentChanges](),
+		changeEpoch: uuid.New().String(),
+		changeKinds: map[string]map[string]uint64{},
 		correlation: correlation.NewService(time.Now),
 		db:          db,
 		cfg:         cfg,
 		httpClient:  httpClient,
-		edgeSyncs:   semaphore.NewWeighted(maxConcurrentEdgeSyncs),
+		agentSyncs:  semaphore.NewWeighted(maxConcurrentAgentSyncs),
 		daemonQueue: make(chan CreateEventRequest, daemonEventQueueSize),
 		daemonDone:  make(chan struct{}),
 	}
 }
 
 type CreateEventRequest struct {
+	ResourceType  *string       `json:"resourceType,omitempty"`
+	ResourceID    *string       `json:"resourceId,omitempty"`
+	ResourceName  *string       `json:"resourceName,omitempty"`
+	UserID        *string       `json:"userId,omitempty"`
+	Username      *string       `json:"username,omitempty"`
+	EnvironmentID *string       `json:"environmentId,omitempty"`
+	Metadata      database.JSON `json:"metadata,omitempty"`
 	// Internal identity for replay-safe daemon delivery; never accepted from API payloads.
 	deduplicationKey string
 	Type             EventType     `json:"type"`
 	Severity         EventSeverity `json:"severity,omitempty"`
 	Title            string        `json:"title"`
 	Description      string        `json:"description,omitempty"`
-	ResourceType     *string       `json:"resourceType,omitempty"`
-	ResourceID       *string       `json:"resourceId,omitempty"`
-	ResourceName     *string       `json:"resourceName,omitempty"`
-	UserID           *string       `json:"userId,omitempty"`
-	Username         *string       `json:"username,omitempty"`
-	EnvironmentID    *string       `json:"environmentId,omitempty"`
-	Metadata         database.JSON `json:"metadata,omitempty"`
 }
 
 func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) (*Event, error) {
@@ -154,7 +188,7 @@ func (s *EventService) persistEvents(ctx context.Context, reqs []CreateEventRequ
 			continue
 		}
 		s.correlateCreatedEvent(req)
-		s.changes.Publish(struct{}{})
+		s.PublishChange(kit.FromPtr(req.EnvironmentID), string(req.Type))
 		s.forwardEventToManager(ctx, records[index])
 	}
 	return records, nil
@@ -171,11 +205,11 @@ func (s *EventService) IngestAgentEvent(ctx context.Context, environmentID strin
 }
 
 func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *Event) {
-	if s.cfg == nil || !s.cfg.AgentMode {
+	if s.cfg == nil || !s.cfg.AgentEnabled {
 		return
 	}
 
-	evt := &edge.TunnelEvent{
+	evt := &agent.TunnelEvent{
 		Type:         string(eventModel.Type),
 		Severity:     string(eventModel.Severity),
 		Title:        eventModel.Title,
@@ -191,29 +225,29 @@ func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *Ev
 			}
 			metadataBytes, err := json.Marshal(map[string]any(eventModel.Metadata))
 			if err != nil {
-				slog.WarnContext(ctx, "Failed to marshal event metadata for edge sync", "type", eventModel.Type, "error", err)
+				slog.WarnContext(ctx, "Failed to marshal event metadata for agent sync", "type", eventModel.Type, "error", err)
 			}
 			return metadataBytes
 		}(),
 	}
 
-	go func(parentCtx context.Context, outgoing *edge.TunnelEvent) {
+	go func(parentCtx context.Context, outgoing *agent.TunnelEvent) {
 		baseCtx := context.WithoutCancel(parentCtx)
-		acquireCtx, cancelAcquire := context.WithTimeout(baseCtx, edgeSyncQueueTimeout)
-		acquireErr := s.edgeSyncs.Acquire(acquireCtx, 1)
+		acquireCtx, cancelAcquire := context.WithTimeout(baseCtx, agentSyncQueueTimeout)
+		acquireErr := s.agentSyncs.Acquire(acquireCtx, 1)
 		cancelAcquire()
 		if acquireErr != nil {
 			slog.WarnContext(baseCtx, "Dropped event sync to manager; too many in flight", "type", outgoing.Type, "error", acquireErr)
 			return
 		}
-		defer s.edgeSyncs.Release(1)
+		defer s.agentSyncs.Release(1)
 
-		syncCtx, cancel := context.WithTimeout(baseCtx, edgeSyncPublishTimeout)
+		syncCtx, cancel := context.WithTimeout(baseCtx, agentSyncPublishTimeout)
 		defer cancel()
 
-		if err := edge.PublishEventToManager(syncCtx, outgoing); err != nil {
-			if !errors.Is(err, edge.ErrNoActiveAgentTunnel) {
-				slog.WarnContext(syncCtx, "Failed to sync event to manager over edge tunnel", "type", outgoing.Type, "error", err)
+		if err := agent.PublishEventToManager(syncCtx, outgoing); err != nil {
+			if !errors.Is(err, agent.ErrNoActiveAgentTunnel) {
+				slog.WarnContext(syncCtx, "Failed to sync event to manager over agent tunnel", "type", outgoing.Type, "error", err)
 				return
 			}
 			if strings.TrimSpace(s.cfg.AgentToken) == "" || strings.TrimSpace(httpx.ManagerBaseURL(s.cfg.ManagerApiUrl)) == "" {
@@ -285,16 +319,16 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 	return fmt.Errorf("manager event sync failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
 }
 
-func (s *EventService) ListEventsPaginated(ctx context.Context, params pagination.QueryParams) ([]event.Event, pagination.Response, error) {
+func (s *EventService) ListEventsPaginated(ctx context.Context, params pagination.QueryParams) ([]types.Event, pagination.Response, error) {
 	return paginateEvents(pagination.ApplyFilter(s.db.WithContext(ctx).Model(&Event{}), "environment_id", params.Filters["environmentId"]), params)
 }
 
-func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]event.Event, pagination.Response, error) {
+func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.Event, pagination.Response, error) {
 	return paginateEvents(s.db.WithContext(ctx).Model(&Event{}).Where("environment_id = ?", environmentID), params)
 }
 
 // paginateEvents applies the shared search and filters to q, then pages and maps the rows.
-func paginateEvents(q *gorm.DB, params pagination.QueryParams) ([]event.Event, pagination.Response, error) {
+func paginateEvents(q *gorm.DB, params pagination.QueryParams) ([]types.Event, pagination.Response, error) {
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
 		q = q.Where(
@@ -336,7 +370,7 @@ func paginateEvents(q *gorm.DB, params pagination.QueryParams) ([]event.Event, p
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate events: %w", err)
 	}
 
-	eventDtos, mapErr := mapping.MapSlice[Event, event.Event](eventRecords)
+	eventDtos, mapErr := mapping.MapSlice[Event, types.Event](eventRecords)
 	if mapErr != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to map events: %w", mapErr)
 	}
@@ -344,7 +378,7 @@ func paginateEvents(q *gorm.DB, params pagination.QueryParams) ([]event.Event, p
 	return eventDtos, paginationResp, nil
 }
 
-func (s *EventService) GetEventSeverityCounts(ctx context.Context) (event.SeverityCounts, error) {
+func (s *EventService) GetEventSeverityCounts(ctx context.Context) (types.EventSeverityCounts, error) {
 	var rows []struct {
 		Severity string
 		Count    int64
@@ -353,10 +387,10 @@ func (s *EventService) GetEventSeverityCounts(ctx context.Context) (event.Severi
 		Select("severity, COUNT(*) AS count").
 		Group("severity").
 		Scan(&rows).Error; err != nil {
-		return event.SeverityCounts{}, fmt.Errorf("failed to count events by severity: %w", err)
+		return types.EventSeverityCounts{}, fmt.Errorf("failed to count events by severity: %w", err)
 	}
 
-	var counts event.SeverityCounts
+	var counts types.EventSeverityCounts
 	for _, r := range rows {
 		switch EventSeverity(r.Severity) {
 		case EventSeveritySuccess:
@@ -388,7 +422,7 @@ func (s *EventService) DeleteEvent(ctx context.Context, eventID string) error {
 		return nil
 	})
 	if err == nil {
-		s.changes.Publish(struct{}{})
+		s.PublishChange("0", "event")
 	}
 	return err
 }
@@ -405,7 +439,7 @@ func (s *EventService) DeleteOldEvents(ctx context.Context, olderThan time.Durat
 		return nil
 	})
 	if err == nil && deleted > 0 {
-		s.changes.Publish(struct{}{})
+		s.PublishChange("0", "event")
 	}
 	return err
 }
@@ -599,11 +633,100 @@ func describeEvent(eventType EventType, resourceType, resourceName string) (stri
 	return fmt.Sprintf(definition.TitleFormat, resourceName), fmt.Sprintf(definition.DescriptionFormat, resourceName), definition.Severity
 }
 
-// RunStreamProducer signals committed event changes so clients can refresh their current query.
-func (s *EventService) RunStreamProducer(ctx context.Context, streamEvents chan<- event.StreamEvent) {
+func (s *EventService) PublishChange(environmentID, kind string) {
+	if s == nil {
+		return
+	}
+	head, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(kind)), ".")
+	kind = cmp.Or(changeKindAliases[head], head)
+	if kind == "" {
+		return
+	}
+	environmentID = cmp.Or(strings.TrimSpace(environmentID), "0")
+
+	s.changesMu.Lock()
+	s.changeRevision++
+	kinds := maps.Clone(s.changeKinds[environmentID])
+	if kinds == nil {
+		kinds = map[string]uint64{}
+	}
+	kinds[kind] = s.changeRevision
+	s.changeKinds[environmentID] = kinds
+	s.changesMu.Unlock()
+
+	s.Changes.Publish(types.EnvironmentChanges{
+		EnvironmentID: environmentID,
+		Epoch:         s.changeEpoch,
+		Kinds:         kinds,
+	})
+}
+
+func (s *EventService) EnvironmentChanges(environmentID string) types.EnvironmentChanges {
+	s.changesMu.RLock()
+	defer s.changesMu.RUnlock()
+	return types.EnvironmentChanges{
+		EnvironmentID: environmentID,
+		Epoch:         s.changeEpoch,
+		Kinds:         s.changeKinds[environmentID],
+	}
+}
+
+func (s *EventService) WaitForChanges(ctx context.Context, environmentID, epoch string, since, waitSeconds uint64) types.EnvironmentChanges {
+	wake := make(chan struct{}, 1)
+	unsubscribe := s.Changes.Subscribe(func(changes types.EnvironmentChanges) {
+		if changes.EnvironmentID != environmentID {
+			return
+		}
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+	})
+	defer unsubscribe()
+
+	current := s.EnvironmentChanges(environmentID)
+	if epoch != current.Epoch || slices.ContainsFunc(slices.Collect(maps.Values(current.Kinds)), func(revision uint64) bool {
+		return revision > since
+	}) {
+		return current
+	}
+
+	limit := time.NewTimer(time.Duration(min(cmp.Or(waitSeconds, uint64(changeWaitLimit/time.Second)), uint64(changeWaitLimit/time.Second))) * time.Second)
+	defer limit.Stop()
+	select {
+	case <-ctx.Done():
+	case <-limit.C:
+	case <-wake:
+		coalesce := time.NewTimer(changeWaitCoalesce)
+		defer coalesce.Stop()
+		select {
+		case <-ctx.Done():
+		case <-coalesce.C:
+		}
+	}
+	return s.EnvironmentChanges(environmentID)
+}
+
+func (s *EventService) RelayChanges(environmentID string, previous, current types.EnvironmentChanges) {
+	switch {
+	case previous.Epoch != current.Epoch:
+		s.PublishChange(environmentID, changeKindAll)
+	default:
+		for kind, revision := range current.Kinds {
+			if revision > previous.Kinds[kind] {
+				s.PublishChange(environmentID, kind)
+			}
+		}
+	}
+}
+
+func (s *EventService) RunStreamProducer(ctx context.Context, ps *authz.PermissionSet, streamEvents chan<- types.EventStreamEvent) {
+	accessible := ps.AccessibleEnvironmentIDs()
 	changed := make(chan struct{}, 1)
-	unsubscribe := s.changes.Subscribe(func(struct{}) {
-		// One pending invalidation covers all changes, without blocking event persistence.
+	unsubscribe := s.Changes.Subscribe(func(changes types.EnvironmentChanges) {
+		if accessible != nil && !slices.Contains(accessible, changes.EnvironmentID) {
+			return
+		}
 		select {
 		case changed <- struct{}{}:
 		default:
@@ -611,19 +734,51 @@ func (s *EventService) RunStreamProducer(ctx context.Context, streamEvents chan<
 	})
 	defer unsubscribe()
 
-	// Subscribe first so connecting and reconnecting clients cannot miss a change.
-	if !agg.Send(ctx, streamEvents, event.StreamEvent{Type: "changed", Timestamp: time.Now()}) {
+	send := func() bool {
+		s.changesMu.RLock()
+		changes := make([]types.EnvironmentChanges, 0, len(s.changeKinds))
+		for _, environmentID := range slices.Sorted(maps.Keys(s.changeKinds)) {
+			if accessible == nil || slices.Contains(accessible, environmentID) {
+				changes = append(changes, types.EnvironmentChanges{
+					EnvironmentID: environmentID,
+					Epoch:         s.changeEpoch,
+					Kinds:         s.changeKinds[environmentID],
+				})
+			}
+		}
+		s.changesMu.RUnlock()
+		return agg.Send(ctx, streamEvents, types.EventStreamEvent{
+			Type:      "changed",
+			Timestamp: time.Now(),
+			Changes:   changes,
+		})
+	}
+
+	if !send() {
 		return
 	}
+	lastSent := time.Now()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-changed:
-			if !agg.Send(ctx, streamEvents, event.StreamEvent{Type: "changed", Timestamp: time.Now()}) {
-				return
-			}
 		}
+		flush := time.NewTimer(time.Until(lastSent.Add(changeStreamFlushInterval)))
+		select {
+		case <-ctx.Done():
+			flush.Stop()
+			return
+		case <-flush.C:
+		}
+		select {
+		case <-changed:
+		default:
+		}
+		if !send() {
+			return
+		}
+		lastSent = time.Now()
 	}
 }
 
@@ -636,21 +791,48 @@ func (s *EventService) SubscribeDockerEvents(eventBus *bus.DockerEventBus) (run 
 	images, unsubscribeImages := eventBus.Subscribe(events.ImageEventType, bus.WithSubscriberBuffer(daemonEventChanBuffer))
 	volumes, unsubscribeVolumes := eventBus.Subscribe(events.VolumeEventType, bus.WithSubscriberBuffer(daemonEventChanBuffer))
 	networks, unsubscribeNetworks := eventBus.Subscribe(events.NetworkEventType, bus.WithSubscriberBuffer(daemonEventChanBuffer))
+	swarmChannels := make([]<-chan events.Message, 0, len(swarmDaemonEventTypes))
+	swarmUnsubscribes := make([]func(), 0, len(swarmDaemonEventTypes))
+	for _, eventType := range swarmDaemonEventTypes {
+		channel, unsubscribe := eventBus.Subscribe(eventType, bus.WithSubscriberBuffer(daemonEventChanBuffer))
+		swarmChannels = append(swarmChannels, channel)
+		swarmUnsubscribes = append(swarmUnsubscribes, unsubscribe)
+	}
 	cleanup = sync.OnceFunc(func() {
 		unsubscribeContainers()
 		unsubscribeImages()
 		unsubscribeVolumes()
 		unsubscribeNetworks()
+		for _, unsubscribe := range swarmUnsubscribes {
+			unsubscribe()
+		}
 	})
 	return func(ctx context.Context) error {
-		return s.runDockerEvents(ctx, containers, images, volumes, networks)
+		swarmEvents := make(chan events.Message, daemonEventChanBuffer)
+		var forwarders sync.WaitGroup
+		for _, channel := range swarmChannels {
+			forwarders.Go(func() {
+				for msg := range channel {
+					select {
+					case swarmEvents <- msg:
+					case <-ctx.Done():
+						return
+					}
+				}
+			})
+		}
+		go func() {
+			forwarders.Wait()
+			close(swarmEvents)
+		}()
+		return s.runDockerEvents(ctx, containers, images, volumes, networks, swarmEvents)
 	}, cleanup
 }
 
-func (s *EventService) runDockerEvents(ctx context.Context, containers, images, volumes, networks <-chan events.Message) error {
+func (s *EventService) runDockerEvents(ctx context.Context, containers, images, volumes, networks, swarmEvents <-chan events.Message) error {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
-	for containers != nil || images != nil || volumes != nil || networks != nil {
+	for containers != nil || images != nil || volumes != nil || networks != nil || swarmEvents != nil {
 		var msg events.Message
 		var ok bool
 		select {
@@ -676,6 +858,11 @@ func (s *EventService) runDockerEvents(ctx context.Context, containers, images, 
 				networks = nil
 				continue
 			}
+		case msg, ok = <-swarmEvents:
+			if !ok {
+				swarmEvents = nil
+				continue
+			}
 		case <-ticker.C:
 			s.correlation.Prune()
 			continue
@@ -692,9 +879,16 @@ func (s *EventService) RecordDockerEvent(ctx context.Context, msg events.Message
 	}
 	req, ok := mapDaemonEvent(msg)
 	if !ok {
+		switch {
+		case slices.Contains(swarmDaemonEventTypes, msg.Type):
+			s.PublishChange("0", "swarm")
+		case msg.Type == events.NetworkEventType:
+			s.PublishChange("0", string(events.NetworkEventType))
+		}
 		return
 	}
 	if s.ShouldSuppressDaemonEvent(string(msg.Type), msg.Actor.ID, *req.ResourceName, msg.Actor.Attributes["com.docker.compose.project"]) {
+		s.PublishChange("0", string(msg.Type))
 		return
 	}
 	if msg.TimeNano != 0 {
@@ -774,6 +968,13 @@ func (s *EventService) Stop(ctx context.Context) error {
 	case <-ctx.Done():
 		return fmt.Errorf("failed to flush Docker daemon events: %w", ctx.Err())
 	}
+}
+
+var swarmDaemonEventTypes = []events.Type{
+	events.ServiceEventType,
+	events.NodeEventType,
+	events.SecretEventType,
+	events.ConfigEventType,
 }
 
 var daemonEventTypes = map[events.Type]map[events.Action]EventType{

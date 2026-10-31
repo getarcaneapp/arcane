@@ -1,15 +1,26 @@
 import { test, expect } from '../fixtures/test.fixture';
 
 test.describe('Swarm UI', () => {
-	test('cluster page renders correct lifecycle controls for current swarm state', async ({
+	test('cluster panel renders correct lifecycle controls for the environment swarm state', async ({
 		page
 	}) => {
-		const swarmInfoResponsePromise = page.waitForResponse('**/api/environments/*/swarm/info');
 		await page.goto('/swarm/cluster');
 		await page.waitForLoadState('load');
-		const swarmInfoResponse = await swarmInfoResponsePromise;
-
 		await expect(page.getByRole('heading', { name: 'Cluster', level: 1 })).toBeVisible();
+
+		const environmentResponse = await page.request.get('/api/environments/0');
+		expect(environmentResponse.ok()).toBeTruthy();
+		const { data: environment }: { data: { name: string } } = await environmentResponse.json();
+		await expect(page.locator('main').getByText(environment.name, { exact: true })).toBeVisible();
+
+		const swarmInfoResponsePromise = page.waitForResponse('**/api/environments/0/swarm/info');
+		await page
+			.locator('main')
+			.getByRole('button', { name: 'Inspect', exact: true })
+			.first()
+			.click();
+		const swarmInfoResponse = await swarmInfoResponsePromise;
+		await expect(page.getByRole('dialog', { name: environment.name })).toBeVisible();
 
 		const initializeCard = page
 			.locator('[data-slot="card-title"]')

@@ -8,7 +8,6 @@
 		getSwarmNavigationItems
 	} from '#lib/config/navigation-config.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { PermissionsManifest, User } from '#lib/types/auth.js';
 	import type { PodmanStatus } from '#lib/types/podman.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
@@ -38,8 +37,7 @@
 
 	const navigation = getMobileNavigation();
 	const navigationSettings = $derived(navigation.settings);
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled, currentEnvId));
+	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled));
 	const podmanItems = $derived(getPodmanNavigationItems(podmanStatuses));
 
 	const pinnedItems = $derived.by(() => {
@@ -48,7 +46,6 @@
 			swarmEnabled,
 			podmanStatuses,
 			user,
-			currentEnvId,
 			accessManifest: permissionsManifest
 		});
 		return navigationSettings.pinnedItems
@@ -132,6 +129,13 @@
 		};
 	}
 
+	const visibilityClass = $derived.by(() => {
+		if (visible && mode === 'floating') return 'translate-y-0 scale-100 opacity-100';
+		if (visible) return 'translate-y-0 opacity-100';
+		if (mode === 'floating') return 'translate-y-full scale-95 opacity-0';
+		return 'translate-y-full opacity-0';
+	});
+
 	// Mode-specific styles
 	const navClasses = $derived(
 		cn(
@@ -155,13 +159,7 @@
 						'justify-around border-t border-border/50',
 						showLabels ? 'px-4 pt-2 pb-(--safe-area-bottom)' : 'px-4 pt-2.5 pb-(--safe-area-bottom)'
 					),
-			visible
-				? mode === 'floating'
-					? 'translate-y-0 scale-100 opacity-100'
-					: 'translate-y-0 opacity-100'
-				: mode === 'floating'
-					? 'translate-y-full scale-95 opacity-0'
-					: 'translate-y-full opacity-0',
+			visibilityClass,
 			className
 		)
 	);

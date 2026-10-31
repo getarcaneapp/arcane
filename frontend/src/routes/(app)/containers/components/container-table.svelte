@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { mode } from 'mode-watcher';
 	import { PersistedState } from 'runed';
-	import { onMount } from 'svelte';
-	import { Temporal } from 'temporal-polyfill';
+	import { onMount, untrack } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
-	import type { SortState } from '#lib/components/arcane-table/arcane-table.types.svelte';
+	import type { SortState, TableViewMode } from '#lib/components/arcane-table/arcane-table.types.svelte';
 	import ActionMenuItem from '#lib/components/arcane-table/cells/action-menu-item.svelte';
 	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import type { ColumnSpec, BulkAction } from '#lib/components/arcane-table/index.js';
@@ -22,6 +22,7 @@
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { Progress } from '#lib/components/ui/progress/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import {
 		StartIcon,
@@ -41,15 +42,12 @@
 		PlayIcon,
 		ZapIcon,
 		AlertTriangleIcon,
-		InfoIcon
+		InfoIcon,
+		HealthIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import {
-		containerService,
-		type ContainerListRequestOptions,
-		type ContainersPaginatedResponse
-	} from '#lib/services/container-service.js';
+	import type { ContainersPaginatedResponse } from '#lib/services/container-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -59,25 +57,19 @@
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
 	import { COMPOSE_PROJECT_LABEL, getContainerIpAddresses, getThemedIconUrl, parseImageRef } from '#lib/utils/docker.js';
-	import {
-		environmentHref,
-		fetchAcrossEnvironments,
-		hasShownPermission,
-		listScopes,
-		rowKey,
-		type EnvironmentPage,
-		type EnvironmentRow
-	} from '#lib/utils/environments.js';
+	import { type EnvironmentPage, type EnvironmentRow, hasShownPermission, listScopes, rowKey } from '#lib/utils/environments.js';
 	import { formatDateTimeShort, truncateImageDigest } from '#lib/utils/formatting.js';
 	import { quadletUnitHref } from '#lib/utils/podman.js';
 
 	import { createContainerActions } from '../container-table.actions';
 	import {
 		containerSortValue,
+		formatUsagePercent,
 		getActionStatusMessage,
 		getContainerDisplayName,
 		getProjectName,
 		getStateBadgeVariant,
+		getUsageTone,
 		getContainerStatusLabel,
 		type ActionStatus
 	} from '../container-table.helpers';
@@ -93,12 +85,12 @@
 
 	let {
 		scope,
-		containers = $bindable(),
+		containers,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
 		groupByProject = $bindable(false),
 		withoutFilters = false,
-		onRefreshData
+		onRetry
 	}: {
 		/** Shown-environments scope the rows were loaded for. */
 		scope: string;
@@ -107,13 +99,13 @@
 		requestOptions: SearchPaginationSortRequest;
 		groupByProject?: boolean;
 		withoutFilters?: boolean;
-		onRefreshData?: (options: ContainerListRequestOptions) => Promise<ContainerPage>;
+		onRetry: () => Promise<unknown>;
 	} = $props();
 
 	// Track action status per container ID (e.g., "starting", "stopping", "updating", "")
-	let actionStatus = $state<Record<string, ActionStatus>>({});
+	const actionStatus = $state<Record<string, ActionStatus>>({});
 
-	let isBulkLoading = $state({
+	const isBulkLoading = $state({
 		start: false,
 		stop: false,
 		restart: false,
@@ -136,7 +128,6 @@
 				void queryClient.invalidateQueries({ queryKey: queryKeys.containers.environment(env.id) });
 				void queryClient.invalidateQueries({ queryKey: queryKeys.projects.environment(env.id) });
 			}
-			void refreshContainers(requestOptions);
 		}
 	);
 
@@ -154,53 +145,21 @@
 		return sort?.column === 'cpuUsage' || sort?.column === 'memoryUsage';
 	}
 
-	function buildGroupedRequest(options: SearchPaginationSortRequest, grouped = groupByProject): ContainerListRequestOptions {
-		return {
-			...options,
-			groupByProject: grouped
-		};
+	function invalidateContainers() {
+		return queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(scope) });
 	}
 
-	async function fetchContainers(request: ContainerListRequestOptions): Promise<ContainerPage> {
-		return onRefreshData
-			? onRefreshData(request)
-			: fetchAcrossEnvironments(environmentStore.shown, request, (id, request, config) =>
-					containerService.getContainersForEnvironment(id, request, config)
-				);
-	}
-
-	// Refreshes can overlap: a resource poll may still be in flight when the user changes
-	// the page or a filter, or when the parent refreshes the bound data itself. The
-	// generation orders requests started here; the identity check catches any other
-	// writer. Only a request that is newest on both counts may write table state.
-	let refreshGeneration = 0;
-
-	async function refreshContainers(options: SearchPaginationSortRequest, grouped = groupByProject) {
-		const generation = ++refreshGeneration;
-		const seen = containers;
-		const superseded = () => generation !== refreshGeneration || containers !== seen;
-		let request = buildGroupedRequest(options, grouped);
-		let result = await fetchContainers(request);
-		if (superseded()) return containers;
-
-		// Older agents cannot order by live CPU or memory and silently fall back to a name
-		// sort. Replace a persisted resource sort with the default so the request, the
-		// persisted preference, and the rendered order agree.
-		if (result.resourceSortSupported !== true && isResourceSort(request.sort)) {
-			request = { ...request, sort: defaultSort, pagination: { page: 1, limit: getCurrentLimit() } };
+	$effect(() => {
+		if (containers.resourceSortSupported === true || !isResourceSort(requestOptions?.sort)) return;
+		untrack(() => {
 			tablePreferences?.persistSort(defaultSort);
 			requestOptions = {
-				...options,
-				sort: request.sort,
-				pagination: request.pagination
+				...requestOptions,
+				sort: defaultSort,
+				pagination: { page: 1, limit: getCurrentLimit() }
 			};
-			result = await fetchContainers(request);
-			if (superseded()) return containers;
-		}
-
-		containers = result;
-		return result;
-	}
+		});
+	});
 
 	function getCurrentLimit() {
 		return requestOptions?.pagination?.limit ?? containers?.pagination?.itemsPerPage ?? 20;
@@ -217,13 +176,11 @@
 
 		customSettings = { ...customSettings, [settingsKey]: value };
 		tablePreferences?.persistCustomSettings(customSettings);
-		const nextOptions: SearchPaginationSortRequest = {
+		requestOptions = {
 			...requestOptions,
 			[requestKey]: value,
 			pagination: { page: 1, limit: getCurrentLimit() }
 		};
-		requestOptions = nextOptions;
-		refreshContainers(nextOptions);
 	}
 
 	const {
@@ -237,13 +194,10 @@
 		handleBulkRemove,
 		handleBulkUpdate
 	} = createContainerActions({
-		setContainers: (next) => {
-			containers = next;
-		},
 		setSelectedIds: (next) => {
 			selectedIds = next;
 		},
-		refreshContainers: () => refreshContainers(requestOptions),
+		refreshContainers: invalidateContainers,
 		actionStatus,
 		isBulkLoading,
 		scope: () => scope,
@@ -271,6 +225,7 @@
 	let collapsedGroupsState = $state<PersistedState<Record<string, boolean>> | null>(null);
 	let collapsedGroups = $derived(collapsedGroupsState?.current ?? {});
 	let columnVisibility = $state<Record<string, boolean>>({});
+	let viewMode = $state<TableViewMode>('list');
 	const backendGroupedRows = $derived(
 		containers.groups?.map((group) => ({
 			groupName: group.groupName,
@@ -284,7 +239,7 @@
 		}
 		const cpuVisible = columnVisibility['cpuUsage'] !== false;
 		const memoryVisible = columnVisibility['memoryUsage'] !== false;
-		const statsVisible = cpuVisible || memoryVisible;
+		const statsVisible = cpuVisible || memoryVisible || viewMode === 'grid';
 
 		if (!statsVisible) {
 			return new Set<string>();
@@ -296,11 +251,17 @@
 
 	const resourcesCurrent = $derived(scope === environmentStore.shownKey);
 
-	// Only the on/off state is tracked here. The callback reads requestOptions when
-	// it runs, so pagination or filter changes do not restart the poll cycle.
+	const activeUpdateKeys = $derived(activityStore.activeUpdateKeys);
+
+	function getRowActionStatus(item: ContainerRow): ActionStatus {
+		return actionStatus[rowKey(item)] || (activeUpdateKeys.has(`${item.environmentId}:${item.id}`) ? 'updating' : '');
+	}
+
 	$effect(() => {
 		if (!resourceSortActive || !resourcesCurrent) return;
-		resourcePoller.start(() => refreshContainers(requestOptions));
+		resourcePoller.start(() =>
+			queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(scope) }, { throwOnError: true })
+		);
 		return () => resourcePoller.stop();
 	});
 	const canUpdateContainers = $derived(hasShownPermission('containers:autoupdate'));
@@ -325,7 +286,7 @@
 		const convertible = (containers.data ?? []).filter((c) => ids.includes(rowKey(c)) && !c.labels?.[COMPOSE_PROJECT_LABEL]);
 		if (convertible.length === 0) return;
 		const fromEnv = encodeURIComponent(convertible[0]!.environmentId);
-		goto(`/projects/new?fromContainers=${convertible.map((c) => c.id).join(',')}&fromEnv=${fromEnv}`);
+		goto(resolve(`/(app)/projects/new?fromContainers=${convertible.map((c) => c.id).join(',')}&fromEnv=${fromEnv}`));
 	}
 
 	function filterUpdatableContainerIds() {
@@ -367,14 +328,12 @@
 		groupByProject = persistedGroupByProject;
 
 		if (includeFlagsChanged || persistedGroupByProject) {
-			const nextOptions: SearchPaginationSortRequest = {
+			requestOptions = {
 				...requestOptions,
 				includeInternal: persistedInternal,
 				includeHidden: persistedHidden,
 				pagination: { page: 1, limit: getCurrentLimit() }
 			};
-			requestOptions = nextOptions;
-			void refreshContainers(nextOptions, persistedGroupByProject);
 		}
 
 		return () => {
@@ -388,12 +347,10 @@
 		customSettings = { ...customSettings, groupByProject: value };
 		tablePreferences?.persistCustomSettings(customSettings);
 		groupByProject = value;
-		const nextOptions: SearchPaginationSortRequest = {
+		requestOptions = {
 			...requestOptions,
 			pagination: { page: 1, limit: getCurrentLimit() }
 		};
-		requestOptions = nextOptions;
-		void refreshContainers(nextOptions, value);
 	}
 
 	function toggleGroup(groupName: string) {
@@ -419,6 +376,7 @@
 			accessorKey: 'image',
 			title: m.common_image(),
 			sortable: !groupByProject,
+			card: 'hidden',
 			cell: ImageCell
 		},
 		{
@@ -446,6 +404,7 @@
 			accessorFn: (row) => containerSortValue(row, 'cpuUsage'),
 			title: m.cpu_usage(),
 			sortable: !groupByProject && resourceSortSupported,
+			card: 'meter',
 			cell: CPUCell
 		},
 		{
@@ -453,26 +412,32 @@
 			accessorFn: (row) => containerSortValue(row, 'memoryUsage'),
 			title: m.memory_usage(),
 			sortable: !groupByProject && resourceSortSupported,
+			card: 'meter',
 			cell: MemoryCell
 		},
-		{ accessorKey: 'status', title: m.common_status() },
+		{ accessorKey: 'status', title: m.common_status(), card: 'footerEnd', cell: StatusCell },
 		{
 			accessorKey: 'networkSettings',
 			id: 'ipAddress',
 			title: m.containers_ip_address(),
 			sortable: false,
+			card: 'footer',
+			cardIcon: NetworksIcon,
 			cell: IPAddressCell
 		},
 		{
 			accessorKey: 'ports',
 			title: m.common_ports(),
 			sortable: !groupByProject,
+			card: 'footer',
+			cardLabel: false,
 			cell: PortsCell
 		},
 		{
 			accessorKey: 'created',
 			title: m.common_created(),
 			sortable: !groupByProject,
+			card: 'hidden',
 			cell: CreatedCell
 		},
 		{
@@ -482,6 +447,13 @@
 			hidden: true
 		}
 	] satisfies ColumnSpec<ContainerRow>[]);
+
+	const HEALTH_SUFFIX = /\s*\((healthy|unhealthy|health: starting)\)$/;
+	const healthStatus = {
+		healthy: { class: 'text-success', label: m.health_status_healthy },
+		unhealthy: { class: 'text-destructive', label: m.health_status_unhealthy },
+		'health: starting': { class: 'text-warning', label: m.health_status_starting }
+	};
 
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
@@ -509,7 +481,7 @@
 							count: selectedIds?.length ?? 0
 						}),
 						action: 'start' as const,
-						onClick: handleBulkStart,
+						onclick: handleBulkStart,
 						loading: isBulkLoading.start,
 						disabled: !resourcesCurrent || isAnyLoading,
 						icon: StartIcon
@@ -524,7 +496,7 @@
 							count: filterUpdatableContainerIds()?.length ?? 0
 						}),
 						action: 'update' as const,
-						onClick: handleSelectedBulkUpdate,
+						onclick: handleSelectedBulkUpdate,
 						loading: isBulkLoading.update,
 						disabled: !resourcesCurrent || isAnyLoading,
 						icon: UpdateIcon
@@ -539,7 +511,7 @@
 							count: selectedIds?.length ?? 0
 						}),
 						action: 'stop' as const,
-						onClick: handleBulkStop,
+						onclick: handleBulkStop,
 						loading: isBulkLoading.stop,
 						disabled: !resourcesCurrent || isAnyLoading,
 						icon: StopIcon
@@ -554,7 +526,7 @@
 							count: selectedIds?.length ?? 0
 						}),
 						action: 'restart' as const,
-						onClick: handleBulkRestart,
+						onclick: handleBulkRestart,
 						loading: isBulkLoading.restart,
 						disabled: !resourcesCurrent || isAnyLoading,
 						icon: RefreshIcon
@@ -569,7 +541,7 @@
 							count: selectedIds?.length ?? 0
 						}),
 						action: 'remove' as const,
-						onClick: handleBulkRemove,
+						onclick: handleBulkRemove,
 						loading: isBulkLoading.remove,
 						disabled: !resourcesCurrent || isAnyLoading,
 						icon: TrashIcon
@@ -584,7 +556,7 @@
 							count: selectedIds?.length ?? 0
 						}),
 						action: 'base' as const,
-						onClick: handleBulkConvert,
+						onclick: handleBulkConvert,
 						disabled: !resourcesCurrent || isAnyLoading || selectedEnvironmentIds.size > 1,
 						icon: ProjectsIcon
 					}
@@ -600,15 +572,23 @@
 	function getGroupName(item: ContainerRow): string {
 		return getProjectName(item);
 	}
+
+	function getContainerIconVariant(state: string): 'emerald' | 'red' | 'amber' {
+		if (state === 'running') return 'emerald';
+		if (state === 'exited') return 'red';
+		return 'amber';
+	}
 </script>
 
 {#if resourcesCurrent}
 	<ContainerStatsSync {statsManager} targetIds={shouldConnect} />
 {/if}
 
-{#snippet IPAddressCell({ item }: { item: ContainerSummaryDto })}
+{#snippet IPAddressCell({ item, view }: { item: ContainerSummaryDto; view: TableViewMode })}
 	{@const ipAddresses = getContainerIpAddresses(item)}
-	{#if ipAddresses.length > 0}
+	{#if view === 'grid'}
+		<span class="font-mono">{ipAddresses.length > 0 ? ipAddresses.join(', ') : m.common_na()}</span>
+	{:else if ipAddresses.length > 0}
 		<div class="space-y-0.5">
 			{#each ipAddresses as ipAddress (ipAddress)}
 				<div class="font-mono text-sm leading-tight">{ipAddress}</div>
@@ -631,8 +611,39 @@
 	{/if}
 {/snippet}
 
-{#snippet CPUCell({ item }: { item: ContainerSummaryDto })}
-	{#if resourceSortActive}
+{#snippet UsageTile({
+	item,
+	title,
+	percent,
+	unavailable
+}: {
+	item: ContainerSummaryDto;
+	title: string;
+	percent: number | undefined;
+	unavailable: boolean;
+})}
+	{@const stopped = item.state !== 'running'}
+	{@const meterValue = stopped ? 0 : Math.min(100, percent ?? 0)}
+	<div class="flex min-w-0 flex-col gap-2">
+		<div class="flex items-baseline justify-between gap-2 text-xs">
+			<span class="truncate text-muted-foreground">{title}</span>
+			<span class="font-medium text-foreground tabular-nums">
+				{!stopped && unavailable && percent === undefined ? m.common_unavailable() : formatUsagePercent(percent, stopped)}
+			</span>
+		</div>
+		<Progress value={meterValue} max={100} class="h-1.5" tone={getUsageTone(meterValue)} />
+	</div>
+{/snippet}
+
+{#snippet CPUCell({ item, view }: { item: ContainerSummaryDto; view: TableViewMode })}
+	{#if view === 'grid'}
+		{@render UsageTile({
+			item,
+			title: m.cpu_usage(),
+			percent: resourceSortActive ? item.resourceSample?.cpuPercent : statsManager.getCPUPercent(rowKey(item)),
+			unavailable: resourceSortActive ? !item.resourceSample : statsManager.hasError(rowKey(item))
+		})}
+	{:else if resourceSortActive}
 		<ContainerStatsCell
 			value={item.resourceSample?.cpuPercent}
 			unavailable={!item.resourceSample}
@@ -650,8 +661,18 @@
 	{/if}
 {/snippet}
 
-{#snippet MemoryCell({ item }: { item: ContainerSummaryDto })}
-	{#if resourceSortActive}
+{#snippet MemoryCell({ item, view }: { item: ContainerSummaryDto; view: TableViewMode })}
+	{#if view === 'grid'}
+		{@const memoryData = resourceSortActive
+			? { usage: item.resourceSample?.memoryUsageBytes, limit: item.resourceSample?.memoryLimitBytes }
+			: statsManager.getMemoryUsage(rowKey(item))}
+		{@render UsageTile({
+			item,
+			title: m.memory_usage(),
+			percent: memoryData?.usage !== undefined && memoryData.limit ? (memoryData.usage / memoryData.limit) * 100 : undefined,
+			unavailable: resourceSortActive ? !item.resourceSample : statsManager.hasError(rowKey(item))
+		})}
+	{:else if resourceSortActive}
 		<ContainerStatsCell
 			value={item.resourceSample?.memoryUsageBytes}
 			limit={item.resourceSample?.memoryLimitBytes}
@@ -671,46 +692,96 @@
 	{/if}
 {/snippet}
 
-{#snippet PortsCell({ item }: { item: ContainerSummaryDto })}
-	<PortBadge ports={item.ports ?? []} hideExposed={hideExposedPorts} wrap={false} />
+{#snippet PortsCell({ item, view }: { item: ContainerRow; view: TableViewMode })}
+	{#if view === 'list' || (item.ports?.length ?? 0) > 0}
+		<PortBadge ports={item.ports ?? []} environmentId={item.environmentId} hideExposed={hideExposedPorts} wrap={false} />
+	{/if}
 {/snippet}
 
-{#snippet NameCell({ item }: { item: ContainerRow })}
+{#snippet StatusCell({ item, view }: { item: ContainerRow; view: TableViewMode })}
+	{@const healthMatch = item.status?.match(HEALTH_SUFFIX)}
+	{@const health = healthMatch ? healthStatus[healthMatch[1] as keyof typeof healthStatus] : undefined}
+	<span class="inline-flex min-w-0 items-center gap-1.5">
+		{#if view === 'grid'}
+			<ClockIcon class="size-3.5 shrink-0" />
+		{:else if health}
+			<HealthIcon class="size-4 shrink-0 {health.class}" aria-label={health.label()} />
+		{/if}
+		<span class="truncate">{item.status?.replace(HEALTH_SUFFIX, '')}</span>
+	</span>
+{/snippet}
+
+{#snippet HealthIndicator(item: ContainerRow)}
+	{@const healthMatch = item.status?.match(HEALTH_SUFFIX)}
+	{@const health = healthMatch ? healthStatus[healthMatch[1] as keyof typeof healthStatus] : undefined}
+	{#if health}
+		<span class="inline-flex items-center gap-1 text-xs font-medium {health.class}">
+			<HealthIcon class="size-4 shrink-0" />
+			{health.label()}
+		</span>
+	{/if}
+{/snippet}
+
+{#snippet NameBadges(item: ContainerRow)}
+	{@const quadletHref = quadletUnitHref(item.labels, item.environmentId)}
+	{#if item.hidden}
+		<Badge variant="gray" size="sm">{m.hidden()}</Badge>
+	{/if}
+	{#if quadletHref}
+		<Badge variant="purple" size="sm" href={quadletHref}>
+			{m.podman_managed_by_quadlet()}
+		</Badge>
+	{/if}
+{/snippet}
+
+{#snippet NameCell({ item, view }: { item: ContainerRow; view: TableViewMode })}
 	{@const displayName = getContainerDisplayName(item)}
 	{@const iconUrl = getThemedIconUrl(item, mode.current)}
-	{@const projectLabel = item.labels?.[COMPOSE_PROJECT_LABEL]}
-	{@const quadletHref = quadletUnitHref(item.labels, item.environmentId)}
-	<div class="flex items-center gap-2">
-		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8 shrink-0" />
-		<a class="min-w-0 truncate font-medium hover:underline" href={environmentHref(`/containers/${item.id}`, item.environmentId)}
-			>{displayName}</a
-		>
-		{#if item.hidden}
-			<Badge variant="gray" size="sm">{m.hidden()}</Badge>
-		{/if}
-		{#if quadletHref}
-			<Badge variant="purple" size="sm" href={quadletHref}>
-				{m.podman_managed_by_quadlet()}
-			</Badge>
-		{/if}
-		{#if projectLabel && !groupByProject}
-			<Badge variant="gray" size="sm" class="max-w-40" title={projectLabel}>
-				<span class="block min-w-0 truncate">
-					{projectLabel}
-				</span>
-			</Badge>
-		{/if}
-	</div>
+	{@const projectLabel = groupByProject ? undefined : item.labels?.[COMPOSE_PROJECT_LABEL]}
+	{@const href = resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, {
+		containerId: item.id
+	})}
+	{#if view === 'grid'}
+		<div class="flex min-w-0 items-center gap-3">
+			<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-10 shrink-0 rounded-xl" />
+			<div class="flex min-w-0 flex-col">
+				<div class="flex min-w-0 items-center gap-2">
+					<a class="min-w-0 truncate hover:underline" {href}>{displayName}</a>
+					{@render NameBadges(item)}
+				</div>
+				{#if projectLabel}
+					<span class="truncate text-xs font-normal text-muted-foreground" title={projectLabel}>
+						{projectLabel}
+					</span>
+				{/if}
+			</div>
+		</div>
+	{:else}
+		<div class="flex min-w-0 items-center gap-2">
+			<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8 shrink-0" />
+			<a class="min-w-0 truncate font-medium hover:underline" {href}>{displayName}</a>
+			{@render NameBadges(item)}
+			{#if projectLabel}
+				<Badge variant="gray" size="sm" class="max-w-40" title={projectLabel}>
+					<span class="block min-w-0 truncate">
+						{projectLabel}
+					</span>
+				</Badge>
+			{/if}
+		</div>
+	{/if}
 {/snippet}
 
 {#snippet IdCell({ item }: { item: ContainerSummaryDto })}
 	<span class="font-mono text-sm">{String(item.id)}</span>
 {/snippet}
 
-{#snippet StateCell({ item }: { item: ContainerRow })}
-	{@const status = actionStatus[rowKey(item)]}
+{#snippet StateCell({ item, view }: { item: ContainerRow; view: TableViewMode })}
+	{@const status = getRowActionStatus(item)}
 	<div class="flex items-center gap-2">
-		{#if status}
+		{#if status === 'updating'}
+			<Badge variant="primary" minWidth="20" beam>{getActionStatusMessage(status)}</Badge>
+		{:else if status}
 			<div class="flex items-center gap-1.5">
 				<Spinner class="size-3.5" />
 				<span class="text-xs font-medium text-muted-foreground">
@@ -720,44 +791,52 @@
 		{:else}
 			<Badge variant={getStateBadgeVariant(item.state)} minWidth="20">{getContainerStatusLabel(item.state)}</Badge>
 		{/if}
-		<div class="flex items-center gap-1 {stateActionsMinWidth}">
-			{#if !status && item.state !== 'running' && hasPermission('containers:start', item.environmentId)}
-				<ArcaneButton
-					action="base"
-					tone="ghost"
-					size="sm"
-					class="size-7 p-0 text-success! hover:bg-success/10 hover:text-success"
-					onclick={() => performContainerAction('start', item.id, item.environmentId)}
-					disabled={!resourcesCurrent || isAnyLoading}
-					icon={StartIcon}
-					title={m.common_start()}
-				/>
-			{:else if !status && item.state === 'running' && hasPermission('containers:stop', item.environmentId)}
-				<ArcaneButton
-					action="base"
-					tone="ghost"
-					size="sm"
-					class="size-7 p-0 text-destructive! hover:bg-destructive/10 hover:text-destructive"
-					onclick={() => performContainerAction('stop', item.id, item.environmentId)}
-					disabled={!resourcesCurrent || isAnyLoading}
-					title={m.common_stop()}
-					icon={StopIcon}
-				/>
-			{/if}
-			{#if !status && item.updateInfo?.hasUpdate && hasPermission('containers:autoupdate', item.environmentId)}
-				<ArcaneButton
-					action="base"
-					tone="ghost"
-					size="sm"
-					class="size-7 p-0"
-					onclick={() => handleUpdateContainer(item)}
-					disabled={!resourcesCurrent || isAnyLoading}
-					title={m.update_container()}
-					icon={UpdateIcon}
-				/>
-			{/if}
-		</div>
+		{#if view === 'list'}
+			<div class="flex items-center gap-1 {stateActionsMinWidth}">
+				{@render StateActions(item, status)}
+			</div>
+		{:else}
+			{@render HealthIndicator(item)}
+		{/if}
 	</div>
+{/snippet}
+
+{#snippet StateActions(item: ContainerRow, status: ActionStatus)}
+	{#if !status && item.state !== 'running' && hasPermission('containers:start', item.environmentId)}
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="sm"
+			class="size-7 p-0 text-success! hover:bg-success/10 hover:text-success"
+			onclick={() => performContainerAction('start', item.id, item.environmentId)}
+			disabled={!resourcesCurrent || isAnyLoading}
+			icon={StartIcon}
+			title={m.common_start()}
+		/>
+	{:else if !status && item.state === 'running' && hasPermission('containers:stop', item.environmentId)}
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="sm"
+			class="size-7 p-0 text-destructive! hover:bg-destructive/10 hover:text-destructive"
+			onclick={() => performContainerAction('stop', item.id, item.environmentId)}
+			disabled={!resourcesCurrent || isAnyLoading}
+			title={m.common_stop()}
+			icon={StopIcon}
+		/>
+	{/if}
+	{#if !status && item.updateInfo?.hasUpdate && hasPermission('containers:autoupdate', item.environmentId)}
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="sm"
+			class="size-7 p-0"
+			onclick={() => handleUpdateContainer(item)}
+			disabled={!resourcesCurrent || isAnyLoading}
+			title={m.update_container()}
+			icon={UpdateIcon}
+		/>
+	{/if}
 {/snippet}
 
 {#snippet ContainerUpdateItem(item: ContainerRow)}
@@ -812,16 +891,15 @@
 		{item}
 		icon={(item) => {
 			const iconUrl = getThemedIconUrl(item, mode.current);
-			const state = item.state;
 			return {
 				component: BoxIcon,
-				variant: state === 'running' ? 'emerald' : state === 'exited' ? 'red' : 'amber',
+				variant: getContainerIconVariant(item.state),
 				imageUrl: iconUrl ?? undefined,
 				alt: getContainerDisplayName(item)
 			};
 		}}
 		title={(item) => getContainerDisplayName(item)}
-		subtitle={(item) => ((mobileFieldVisibility['id'] ?? true) ? (item.id.length > 12 ? item.id : null) : null)}
+		subtitle={(item) => ((mobileFieldVisibility['id'] ?? true) && item.id.length > 12 ? item.id : null)}
 		badges={[
 			(item) =>
 				(mobileFieldVisibility['state'] ?? true)
@@ -896,7 +974,8 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={(item: ContainerRow) => goto(environmentHref(`/containers/${item.id}`, item.environmentId))}
+		onclick={(item: ContainerRow) =>
+			goto(resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, { containerId: item.id }))}
 	>
 		{#if ((mobileFieldVisibility['ports'] ?? true) && item.ports && item.ports.length > 0) || (mobileFieldVisibility['updates'] ?? true)}
 			<div class="flex flex-row gap-4 border-t pt-3">
@@ -910,7 +989,7 @@
 								{m.common_ports()}
 							</div>
 							<div class="mt-1">
-								<PortBadge ports={item.ports} hideExposed={hideExposedPorts} />
+								<PortBadge ports={item.ports} environmentId={item.environmentId} hideExposed={hideExposedPorts} />
 							</div>
 						</div>
 					</div>
@@ -932,18 +1011,29 @@
 	</UniversalMobileCard>
 {/snippet}
 
-{#snippet RowActions({ item }: { item: ContainerRow })}
+{#snippet RowActions({ item, view = 'list' }: { item: ContainerRow; view?: TableViewMode })}
 	{#if resourcesCurrent}
 		{@const status = actionStatus[rowKey(item)]}
 		{@const envId = item.environmentId}
+		{#if view === 'grid'}
+			{@render StateActions(item, getRowActionStatus(item))}
+		{/if}
 		<RowActionsMenu>
-			<DropdownMenu.Item onclick={() => goto(environmentHref(`/containers/${item.id}`, envId))} disabled={isAnyLoading}>
+			<DropdownMenu.Item
+				onclick={() =>
+					goto(resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(envId)}`, { containerId: item.id }))}
+				disabled={isAnyLoading}
+			>
 				<InspectIcon class="size-4" />
 				{m.common_inspect()}
 			</DropdownMenu.Item>
 
 			{#if hasPermission('containers:edit', envId) && !item.redeployDisabled && !item.labels?.[COMPOSE_PROJECT_LABEL]}
-				<DropdownMenu.Item onclick={() => goto(environmentHref(`/containers/${item.id}/edit`, envId))} disabled={isAnyLoading}>
+				<DropdownMenu.Item
+					onclick={() =>
+						goto(resolve(`/(app)/containers/[containerId]/edit?env=${encodeURIComponent(envId)}`, { containerId: item.id }))}
+					disabled={isAnyLoading}
+				>
 					<EditIcon class="size-4" />
 					{m.common_edit()}
 				</DropdownMenu.Item>
@@ -951,7 +1041,7 @@
 
 			{#if canConvertToCompose && hasPermission('projects:create', envId) && !item.labels?.[COMPOSE_PROJECT_LABEL]}
 				<DropdownMenu.Item
-					onclick={() => goto(`/projects/new?fromContainers=${item.id}&fromEnv=${encodeURIComponent(envId)}`)}
+					onclick={() => goto(resolve(`/(app)/projects/new?fromContainers=${item.id}&fromEnv=${encodeURIComponent(envId)}`))}
 					disabled={isAnyLoading}
 				>
 					<ProjectsIcon class="size-4" />
@@ -1083,8 +1173,9 @@
 	bind:mobileFieldVisibility
 	bind:customSettings
 	bind:columnVisibility
+	bind:viewMode
 	{withoutFilters}
-	onRefresh={refreshContainers}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	{bulkActions}
@@ -1131,8 +1222,6 @@
 		containerName={getContainerDisplayName(killTarget)}
 		environmentId={killTarget.environmentId}
 		onClose={() => (killTarget = null)}
-		onComplete={async () => {
-			await refreshContainers(requestOptions);
-		}}
+		onComplete={invalidateContainers}
 	/>
 {/if}

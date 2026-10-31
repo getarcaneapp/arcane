@@ -23,9 +23,14 @@
 	const isActive = $derived(activeCount > 0);
 	const currentUser = userStore;
 	const canReadActivities = $derived(userHasPermissionInAnyEnvironment(currentUser.current, 'activities:read'));
+	const triggerSizeClass = $derived.by(() => {
+		if (mobile) return 'w-full px-4 py-3 text-sm font-medium';
+		if (collapsed) return 'h-9 w-9 justify-center';
+		return 'h-9 w-full px-3 text-sm font-medium';
+	});
 
 	function handleOpenInternal() {
-		activityStore.openCenter();
+		activityStore.toggleCenter();
 		onOpen?.();
 	}
 </script>
@@ -34,6 +39,7 @@
 	{#if compact}
 		<button
 			type="button"
+			data-activity-center-trigger
 			onclick={handleOpenInternal}
 			title={m.activity_center_open()}
 			aria-label={m.activity_center_open()}
@@ -64,7 +70,13 @@
 						isActive ? 'bg-primary text-primary-foreground' : 'bg-sidebar-accent text-sidebar-foreground/45'
 					)}
 				>
-					{isActive ? (activeCount > 9 ? m.activity_count_many() : activeCount) : '0'}
+					{#if !isActive}
+						0
+					{:else if activeCount > 9}
+						{m.activity_count_many()}
+					{:else}
+						{activeCount}
+					{/if}
 				</span>
 			{:else if isActive}
 				<span
@@ -77,16 +89,13 @@
 	{:else}
 		<button
 			type="button"
+			data-activity-center-trigger
 			onclick={handleOpenInternal}
 			title={m.activity_center_open()}
 			aria-label={m.activity_center_open()}
 			class={cn(
 				'relative flex items-center gap-3 rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden',
-				mobile
-					? 'w-full px-4 py-3 text-sm font-medium'
-					: collapsed
-						? 'h-9 w-9 justify-center'
-						: 'h-9 w-full px-3 text-sm font-medium',
+				triggerSizeClass,
 				className
 			)}
 		>

@@ -11,37 +11,34 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/auth"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/features"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/kit/pkg/mapping"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/userctx"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
 )
 
 // Out is the huma response envelope for endpoints returning base.ApiResponse[T].
 // It replaces the per-endpoint `type XxxOutput struct { Body base.ApiResponse[T] }`
 // wrappers; outputs carrying extra fields (headers, status) keep their own type.
 type Out[T any] struct {
-	Body base.ApiResponse[T]
+	Body types.ApiResponse[T]
 }
 
 // MessageOutput is a success response carrying a message and, when an activity tracks the work, its ID.
-func MessageOutput(message, activityID string) *Out[base.MessageResponse] {
-	data := base.MessageResponse{Message: message}
+func MessageOutput(message, activityID string) *Out[types.MessageResponse] {
+	data := types.MessageResponse{Message: message}
 	if activityID = strings.TrimSpace(activityID); activityID != "" {
 		data.ActivityID = &activityID
 	}
-	return &Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: data}}
+	return &Out[types.MessageResponse]{Body: types.ApiResponse[types.MessageResponse]{Success: true, Data: data}}
 }
 
 // Page is the huma response envelope for endpoints returning base.Paginated[T].
 type Page[T any] struct {
-	Body base.Paginated[T]
+	Body types.Paginated[T]
 }
 
 // ActivityAppContext carries the app lifecycle context through handler registration.
@@ -78,18 +75,19 @@ func PaginationParams(start, limit int, sortCol, sortDir, search string) paginat
 }
 
 // PaginationResponse converts the pagination package's response into the API response shape.
-func PaginationResponse(p pagination.Response) base.PaginationResponse {
-	return base.PaginationResponse{
+func PaginationResponse(p pagination.Response) types.PaginationResponse {
+	return types.PaginationResponse{
 		TotalPages:      p.TotalPages,
 		TotalItems:      p.TotalItems,
 		CurrentPage:     p.CurrentPage,
 		ItemsPerPage:    p.ItemsPerPage,
 		GrandTotalItems: p.GrandTotalItems,
+		HasNextPage:     p.HasNextPage,
 	}
 }
 
 // RequireUser returns the authenticated user from the request context or a 401 error.
-func RequireUser(ctx context.Context) (*usertypes.Actor, error) {
+func RequireUser(ctx context.Context) (*types.Actor, error) {
 	user, exists := userctx.CurrentUserFromContext(ctx)
 	if !exists || user == nil {
 		return nil, huma.Error401Unauthorized("Not authenticated")
@@ -97,13 +95,36 @@ func RequireUser(ctx context.Context) (*usertypes.Actor, error) {
 	return user, nil
 }
 
-// Error400BadRequestWithType returns RFC 9457 problem details with a stable type.
-func Error400BadRequestWithType(detail, problemType string) huma.StatusError {
-	return &huma.ErrorModel{
-		Type:   problemType,
-		Title:  http.StatusText(http.StatusBadRequest),
-		Status: http.StatusBadRequest,
-		Detail: detail,
+// ProblemError is an RFC 9457 problem that also carries API error details such as the invalid field.
+type ProblemError struct {
+	*huma.ErrorModel
+
+	Details any `json:"details,omitempty"`
+}
+
+// APIError converts a service error into a problem response that keeps its API error details.
+func APIError(err error) huma.StatusError {
+	apiErr := common.ToAPIError(err)
+	return &ProblemError{
+		ErrorModel: &huma.ErrorModel{
+			Title:  http.StatusText(apiErr.HTTPStatus()),
+			Status: apiErr.HTTPStatus(),
+			Detail: apiErr.Message,
+		},
+		Details: apiErr.Details,
+	}
+}
+
+// Error400BadRequestWithType returns RFC 9457 problem details with a stable type and the error's API details.
+func Error400BadRequestWithType(err error, problemType string) huma.StatusError {
+	return &ProblemError{
+		ErrorModel: &huma.ErrorModel{
+			Type:   problemType,
+			Title:  http.StatusText(http.StatusBadRequest),
+			Status: http.StatusBadRequest,
+			Detail: err.Error(),
+		},
+		Details: common.ToAPIError(err).Details,
 	}
 }
 
@@ -178,21 +199,21 @@ func Operation(operationID, method, path, summary, description string, tags ...s
 	}
 }
 
-func CurrentActor(ctx context.Context) usertypes.Actor {
-	actor := usertypes.Actor{}
+func CurrentActor(ctx context.Context) types.Actor {
+	actor := types.Actor{}
 	if currentUser, exists := userctx.CurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
 	}
 	return actor
 }
 
-func MapOneAPIResponse[S, D any](source S, mappingMessage func(error) string) (base.ApiResponse[D], error) {
+func MapOneAPIResponse[S, D any](source S, mappingMessage func(error) string) (types.ApiResponse[D], error) {
 	out, err := mapping.MapOne[S, D](source)
 	if err != nil {
-		return base.ApiResponse[D]{}, huma.Error500InternalServerError(mappingMessage(err))
+		return types.ApiResponse[D]{}, huma.Error500InternalServerError(mappingMessage(err))
 	}
 
-	return base.ApiResponse[D]{
+	return types.ApiResponse[D]{
 		Success: true,
 		Data:    out,
 	}, nil
@@ -206,8 +227,8 @@ func DefaultOperationSecurity() []map[string][]string {
 }
 
 // SessionMetaFromContext builds the session metadata recorded on login.
-func SessionMetaFromContext(ctx context.Context, userAgent string) auth.SessionMeta {
-	return auth.SessionMeta{
+func SessionMetaFromContext(ctx context.Context, userAgent string) types.SessionMeta {
+	return types.SessionMeta{
 		UserAgent: userAgent,
 		IPAddress: middleware.GetRemoteAddrFromContext(ctx),
 	}
@@ -228,8 +249,8 @@ func DownloadResponse(reader io.ReadCloser, size int64, filename string) *huma.S
 }
 
 // FeatureDisabledError identifies a disabled runtime feature in problem details.
-func FeatureDisabledError(id features.ID) *features.DisabledError {
-	return &features.DisabledError{
+func FeatureDisabledError(id types.FeatureID) *types.FeatureDisabledError {
+	return &types.FeatureDisabledError{
 		Status:  http.StatusForbidden,
 		Title:   http.StatusText(http.StatusForbidden),
 		Detail:  fmt.Sprintf("feature %s is disabled", id),

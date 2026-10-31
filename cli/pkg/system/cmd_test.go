@@ -10,12 +10,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/testutil"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/testutil"
 )
 
 func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/api/environments/0/system/containers/start-all" {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/environments/0/system/containers" && r.URL.Query().Get("action") == "startall" {
 			w.WriteHeader(http.StatusForbidden)
 			_, _ = w.Write([]byte(`{"success":false,"data":{"error":"permission denied: containers:start"}}`))
 			return
@@ -28,7 +28,7 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "system", "containers", "start"},
+		[]string{"--config", configPath, "--env", "0", "system", "containers", "start"},
 	)
 
 	require.Error(t, err,
@@ -44,7 +44,7 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 		partial bool
 		cancel  bool
 	}{
-		{name: "fleet succeeds"}, {name: "fleet continues after failure", partial: true}, {name: "fleet requires consent without a terminal", cancel: true},
+		{name: "all environments succeed"}, {name: "continues after failure", partial: true}, {name: "requires consent without a terminal", cancel: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var mu sync.Mutex
@@ -56,7 +56,7 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 					return
 				}
 				mu.Lock()
-				mutations = append(mutations, r.URL.Path)
+				mutations = append(mutations, r.URL.RequestURI())
 				mu.Unlock()
 				if tc.partial && strings.Contains(r.URL.Path, "/0/") {
 					w.WriteHeader(http.StatusForbidden)
@@ -66,7 +66,7 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 				_, _ = w.Write([]byte(`{"success":true,"data":{"message":"started"}}`))
 			}))
 			defer server.Close()
-			path := testutil.WriteConfig(t, server.URL, true)
+			path := testutil.WriteConfig(t, server.URL)
 			args := []string{"--config", path, "--json"}
 			if !tc.cancel {
 				args = append(args, "--yes")
@@ -79,18 +79,19 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 				require.ErrorContains(t, runErr, "re-run with --yes")
 				require.Empty(t, paths)
 				require.Empty(t, out)
-				require.Contains(t, diagnostics, "Local, Remote")
+				require.ErrorContains(t, runErr, "in all 2 environments?")
+				require.NotContains(t, runErr.Error(), "Local")
 				return
 			}
-			require.Equal(t, []string{"/api/environments/0/system/containers/start-all", "/api/environments/remote/system/containers/start-all"}, paths)
+			require.Equal(t, []string{"/api/environments/0/system/containers?action=startall", "/api/environments/remote/system/containers?action=startall"}, paths)
 			if tc.partial {
 				require.ErrorContains(t, runErr, "start denied")
 			} else {
 				require.NoError(t, runErr, diagnostics)
 			}
 			var result struct {
-				Success      bool              `json:"success"`
 				Environments []json.RawMessage `json:"environments"`
+				Success      bool              `json:"success"`
 			}
 			require.NoError(t, json.Unmarshal([]byte(out), &result), out)
 			require.Equal(t, !tc.partial, result.Success)

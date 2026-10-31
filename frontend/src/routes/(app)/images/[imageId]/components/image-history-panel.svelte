@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { createQuery } from '@tanstack/svelte-query';
-	import { Temporal } from 'temporal-polyfill';
 
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
@@ -9,7 +8,6 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
 
@@ -18,7 +16,6 @@
 	const historyQuery = createQuery(() => {
 		const environmentId = imageEnvironmentId;
 		const requestedImageId = imageId;
-		userStore.current;
 		return {
 			queryKey: queryKeys.images.history(environmentId ?? '', requestedImageId),
 			queryFn: async () => {
@@ -41,7 +38,7 @@
 	}
 </script>
 
-<Card.Root variant="subtle">
+<Card.Root>
 	<Card.Header>
 		<Card.Title>{m.images_history_title()}</Card.Title>
 		<Card.Description>{m.images_history_description()}</Card.Description>

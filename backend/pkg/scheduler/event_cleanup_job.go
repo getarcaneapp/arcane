@@ -7,14 +7,14 @@ import (
 	"log/slog"
 	"time"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/build"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/updater"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
 )
 
 const EventCleanupJobName = "event-cleanup"
@@ -48,10 +48,10 @@ func (j *EventCleanupJob) Name() string {
 }
 
 func (j *EventCleanupJob) Schedule(ctx context.Context) string {
-	return schedule.Or(ctx, j.settingsService.GetStringSetting(ctx, "eventCleanupInterval", "0 0 */6 * * *"), "0 0 */6 * * *", EventCleanupJobName)
+	return schedule.Or(ctx, j.settingsService.GetStringSetting(ctx, "eventCleanupInterval"), "0 0 */6 * * *", EventCleanupJobName)
 }
 
-func (j *EventCleanupJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
+func (j *EventCleanupJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 	slog.InfoContext(ctx, "Running event cleanup job", "jobName", EventCleanupJobName)
 
 	var cleanupErr error
@@ -64,8 +64,8 @@ func (j *EventCleanupJob) Run(ctx context.Context) (schedulertypes.Outcome, erro
 			"olderThan", olderThan.String())
 	}
 
-	retentionDays := j.settingsService.GetIntSetting(ctx, "activityHistoryRetentionDays", 30)
-	maxEntries := j.settingsService.GetIntSetting(ctx, "activityHistoryMaxEntries", 1000)
+	retentionDays := j.settingsService.GetIntSetting(ctx, "activityHistoryRetentionDays")
+	maxEntries := j.settingsService.GetIntSetting(ctx, "activityHistoryMaxEntries")
 	if deleted, err := j.activityService.PruneHistory(ctx, retentionDays, maxEntries); err != nil {
 		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("prune activity history: %w", err))
 	} else {
@@ -76,7 +76,7 @@ func (j *EventCleanupJob) Run(ctx context.Context) (schedulertypes.Outcome, erro
 			"deleted", deleted)
 	}
 
-	buildRetentionDays := j.settingsService.GetIntSetting(ctx, "buildHistoryRetentionDays", 30)
+	buildRetentionDays := j.settingsService.GetIntSetting(ctx, "buildHistoryRetentionDays")
 	if deletedBuilds, err := j.buildService.PruneHistory(ctx, buildRetentionDays); err != nil {
 		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("prune image build history: %w", err))
 	} else {
@@ -86,7 +86,7 @@ func (j *EventCleanupJob) Run(ctx context.Context) (schedulertypes.Outcome, erro
 			"deleted", deletedBuilds)
 	}
 
-	updateRetentionDays := j.settingsService.GetIntSetting(ctx, "activityHistoryRetentionDays", 30)
+	updateRetentionDays := j.settingsService.GetIntSetting(ctx, "activityHistoryRetentionDays")
 	if deletedUpdates, err := j.updaterService.PruneHistory(ctx, updateRetentionDays); err != nil {
 		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("prune auto-update history: %w", err))
 	} else {
@@ -98,9 +98,9 @@ func (j *EventCleanupJob) Run(ctx context.Context) (schedulertypes.Outcome, erro
 
 	if cleanupErr != nil {
 		slog.ErrorContext(ctx, "Event cleanup job failed", "jobName", EventCleanupJobName, "error", cleanupErr)
-		return schedulertypes.Outcome{}, cleanupErr
+		return types.SchedulerOutcome{}, cleanupErr
 	}
-	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
+	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }
 
 func (j *EventCleanupJob) Reschedule(ctx context.Context) error {

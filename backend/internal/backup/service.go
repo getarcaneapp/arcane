@@ -23,9 +23,7 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -33,16 +31,17 @@ import (
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/rustic"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
-	s3util "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/s3"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/rustic"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
+	s3util "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/s3"
 )
 
 const (
@@ -78,8 +77,6 @@ type rusticSnapshotOutput struct {
 
 // RestoreOptions selects what a snapshot restore writes and where.
 type RestoreOptions struct {
-	// DeleteExtra removes files in the target that are absent from the snapshot.
-	DeleteExtra bool
 	// SourcePath restores only this path inside the snapshot when non-empty.
 	SourcePath string
 	// DestinationPath overrides the restore target path inside the helper
@@ -87,6 +84,8 @@ type RestoreOptions struct {
 	DestinationPath string
 	// ExtraMounts are attached alongside the target, e.g. mounts nested inside it.
 	ExtraMounts []mount.Mount
+	// DeleteExtra removes files in the target that are absent from the snapshot.
+	DeleteExtra bool
 }
 
 // CreateSnapshotInput describes what one snapshot captures: the mounts to
@@ -130,23 +129,23 @@ func snapshotCommand(label string, input CreateSnapshotInput) ([]string, error) 
 type Engine struct {
 	imageService *image.ImageService
 	admission    *runs.Admission
-	mu           sync.Mutex
 	repositories map[string]*sync.Mutex
 	// held parks admission a manual start won until the run that won it takes it over.
-	held      map[scheduler.AdmissionKey]heldLease
-	authorize func(context.Context, backup.Requester) error
+	held      map[types.SchedulerAdmissionKey]heldLease
+	authorize func(context.Context, types.BackupRequester) error
+	mu        sync.Mutex
 }
 
 // heldLease is a parked lease and the run entitled to take it.
 type heldLease struct {
-	run   string
 	lease *runs.Lease
+	run   string
 }
 
 // NewRequester captures the user, and API key if any, behind a manual backup request.
-func NewRequester(ctx context.Context, requestedBy user.Actor, environmentID, permission string) backup.Requester {
+func NewRequester(ctx context.Context, requestedBy types.Actor, environmentID, permission string) types.BackupRequester {
 	keyID, _ := ctx.Value(middleware.ContextKeyApiKeyID).(string)
-	return backup.Requester{UserID: requestedBy.ID, APIKeyID: keyID, EnvironmentID: environmentID, Permission: permission}
+	return types.BackupRequester{UserID: requestedBy.ID, APIKeyID: keyID, EnvironmentID: environmentID, Permission: permission}
 }
 
 // NewEngine builds the backup engine on the shared admission gate.
@@ -155,19 +154,19 @@ func NewEngine(admission *runs.Admission, imageService *image.ImageService) *Eng
 		imageService: imageService,
 		admission:    admission,
 		repositories: make(map[string]*sync.Mutex),
-		held:         make(map[scheduler.AdmissionKey]heldLease),
+		held:         make(map[types.SchedulerAdmissionKey]heldLease),
 	}
 }
 
 // TryAcquireRun takes the admission lease for one backup resource, reporting false while another run holds it.
 func (e *Engine) TryAcquireRun(ctx context.Context, scope, id string) (*runs.Lease, bool, error) {
-	return e.admission.TryAcquire(ctx, scheduler.AdmissionKey{Scope: scope, ID: id})
+	return e.admission.TryAcquire(ctx, types.SchedulerAdmissionKey{Scope: scope, ID: id})
 }
 
 // Hold parks a lease won by a manual start for run until that run's task takes it over with AcquireRun.
 // The returned func releases the lease if the run never took it, such as a start that failed to submit.
 func (e *Engine) Hold(scope, id, run string, lease *runs.Lease) func(context.Context) {
-	key := scheduler.AdmissionKey{Scope: scope, ID: id}
+	key := types.SchedulerAdmissionKey{Scope: scope, ID: id}
 	e.mu.Lock()
 	e.held[key] = heldLease{run: run, lease: lease}
 	e.mu.Unlock()
@@ -187,7 +186,7 @@ func (e *Engine) Hold(scope, id, run string, lease *runs.Lease) func(context.Con
 // AcquireRun takes over the lease held for run, or acquires admission otherwise, such as after a restart.
 // A lease parked for another run stays parked, so that run's task still finds its admission.
 func (e *Engine) AcquireRun(ctx context.Context, scope, id, run string) (*runs.Lease, bool, error) {
-	key := scheduler.AdmissionKey{Scope: scope, ID: id}
+	key := types.SchedulerAdmissionKey{Scope: scope, ID: id}
 	e.mu.Lock()
 	held, ok := e.held[key]
 	if ok = ok && run != "" && held.run == run; ok {
@@ -201,12 +200,12 @@ func (e *Engine) AcquireRun(ctx context.Context, scope, id, run string) (*runs.L
 }
 
 // SetAuthorize sets the check Authorize applies to manual backup requesters.
-func (e *Engine) SetAuthorize(authorize func(context.Context, backup.Requester) error) {
+func (e *Engine) SetAuthorize(authorize func(context.Context, types.BackupRequester) error) {
 	e.authorize = authorize
 }
 
 // Authorize checks that the requester may still run the backup.
-func (e *Engine) Authorize(ctx context.Context, requester backup.Requester) error {
+func (e *Engine) Authorize(ctx context.Context, requester types.BackupRequester) error {
 	if e.authorize == nil {
 		return nil
 	}
@@ -217,7 +216,7 @@ func (e *Engine) Authorize(ctx context.Context, requester backup.Requester) erro
 func (e *Engine) Stop(ctx context.Context) error {
 	e.mu.Lock()
 	held := e.held
-	e.held = make(map[scheduler.AdmissionKey]heldLease)
+	e.held = make(map[types.SchedulerAdmissionKey]heldLease)
 	e.mu.Unlock()
 	for _, held := range held {
 		held.lease.Release(ctx)
@@ -558,8 +557,8 @@ func (e *Engine) RekeyRepository(ctx context.Context, dockerClient *client.Clien
 
 func (e *Engine) RekeyRepositories(ctx context.Context, dockerClient *client.Client, repositories []Repository, newPassword string, currentPasswords ...string) error {
 	type rekeyed struct {
-		repository Repository
 		previous   string
+		repository Repository
 	}
 	changed := make([]rekeyed, 0, len(repositories))
 	for _, repository := range repositories {
@@ -637,7 +636,7 @@ func (e *Engine) run(ctx context.Context, dockerClient *client.Client, repositor
 // runContainer runs one Rustic command; callers hold the repository lock.
 func (e *Engine) runContainer(ctx context.Context, dockerClient *client.Client, repository Repository, password string, command []string, extraMounts ...mount.Mount) (string, error) {
 	if _, err := dockerClient.ImageInspect(ctx, rustic.DefaultImage); err != nil {
-		if pullErr := e.imageService.PullImage(ctx, rustic.DefaultImage, io.Discard, user.SystemUser, nil); pullErr != nil {
+		if pullErr := e.imageService.PullImage(ctx, rustic.DefaultImage, io.Discard, types.SystemUser, nil); pullErr != nil {
 			return "", fmt.Errorf("failed to pull official Rustic image: %w", pullErr)
 		}
 	}
@@ -672,7 +671,7 @@ var (
 // ValidateRecoveryKey checks that a key has the generated recovery key format.
 func ValidateRecoveryKey(key string) error {
 	if !RecoveryKeyFormat.MatchString(strings.TrimSpace(key)) {
-		return errors.New("enter the generated recovery key (8 groups of 6 characters)")
+		return common.Classify(common.ErrValidation, &types.FieldError{Field: "recoveryKey", Err: errors.New("enter the generated recovery key (8 groups of 6 characters)")})
 	}
 	return nil
 }
@@ -775,21 +774,21 @@ func (s *RecoveryKeyStore) save(ctx context.Context, id, recoveryKey string) err
 
 // AcceptedTarget is the progress a manual backup's workflow starts with, so startup recovery protects
 // its record from the moment the backup is accepted.
-func AcceptedTarget(backupID string) scheduler.TargetOutcome {
+func AcceptedTarget(backupID string) types.TargetOutcome {
 	data, _ := json.Marshal(struct {
 		BackupID string `json:"backupId"`
 	}{BackupID: backupID})
-	return scheduler.TargetOutcome{
+	return types.TargetOutcome{
 		ResourceType: "backup",
 		ID:           "accepted:" + backupID,
-		Status:       scheduler.Queued,
+		Status:       types.RunStatusQueued,
 		RecoveryData: data,
 	}
 }
 
 // AcceptedBackupID returns the backup a manual backup workflow's run owns, from its AcceptedTarget.
-func AcceptedBackupID(run scheduler.Run) string {
-	index := slices.IndexFunc(run.Outcome.Targets, func(target scheduler.TargetOutcome) bool {
+func AcceptedBackupID(run types.SchedulerRun) string {
+	index := slices.IndexFunc(run.Outcome.Targets, func(target types.TargetOutcome) bool {
 		return strings.HasPrefix(target.ID, "accepted:")
 	})
 	if index < 0 {
@@ -821,11 +820,7 @@ func (e *Engine) lockRepository(ctx context.Context, id string) (func(), error) 
 // PolicyReconciliation reconciles a full set of policy updates against the
 // existing policies of one backup domain, then swaps the scheduled jobs.
 type PolicyReconciliation[P, U any] struct {
-	// Domain names the backup flavor in validation errors ("volume", "system").
-	Domain string
-	DB     *database.DB
-	// Existing is every policy currently persisted for the reconciled scope.
-	Existing []P
+	DB       *database.DB
 	ID       func(*P) string
 	UpdateID func(U) string
 	// New returns the blank policy for created entries, pre-scoped by the
@@ -837,6 +832,10 @@ type PolicyReconciliation[P, U any] struct {
 	Persist    func(ctx context.Context, policies []P) error
 	Unregister func(ctx context.Context, policyID string)
 	Reschedule func(ctx context.Context, policy *P)
+	// Domain names the backup flavor in validation errors ("volume", "system").
+	Domain string
+	// Existing is every policy currently persisted for the reconciled scope.
+	Existing []P
 }
 
 // Run applies updates as the full policy set: it saves them, removes the rest, and reschedules their jobs.
@@ -902,10 +901,10 @@ func (r PolicyReconciliation[P, U]) Run(ctx context.Context, updates []U) error 
 }
 
 // ValidatePolicyUpdate applies the shared cron, retention, and destination rules used by backup policies.
-func ValidatePolicyUpdate(ctx context.Context, domain string, update backup.UpdateBackupPolicy, s3Service *s3.S3DestinationService) (backup.UpdateBackupPolicy, error) {
+func ValidatePolicyUpdate(ctx context.Context, domain string, update types.UpdateBackupPolicy, s3Service *s3.S3DestinationService) (types.UpdateBackupPolicy, error) {
 	normalized, err := schedule.NormalizeSixField(update.Schedule, domain+" backup")
 	if err != nil {
-		return update, err
+		return update, common.Classify(common.ErrValidation, &types.FieldError{Field: "schedule", Err: err})
 	}
 	if update.RetentionCount < 0 || update.RetentionCount > 3650 {
 		return update, errors.New("retentionCount must be between 0 and 3650")
@@ -921,7 +920,7 @@ func ValidatePolicyUpdate(ctx context.Context, domain string, update backup.Upda
 			return update, fmt.Errorf("select a valid S3 destination for %s backups", domain)
 		}
 	}
-	return backup.UpdateBackupPolicy{
+	return types.UpdateBackupPolicy{
 		ID:              update.ID,
 		Enabled:         update.Enabled,
 		Schedule:        normalized,
@@ -940,7 +939,7 @@ const RemoteDisabledMessage = "S3 backup storage is missing. Remote backups were
 // RemoteSnapshotChecker memoizes targeted checks within one response budget; each lookup names the
 // repository root that holds the snapshot. A nil result means the remote copy could not be verified.
 func RemoteSnapshotChecker(ctx context.Context, destinations *s3.S3DestinationService) func(destinationID, root, snapshotID string) *bool {
-	checked := make(map[string]*backup.RepositoryObservation)
+	checked := make(map[string]*types.BackupRepositoryObservation)
 	deadline := time.Now().Add(10 * time.Second)
 	return func(destinationID, root, snapshotID string) *bool {
 		if root == "" || destinationID == "" || snapshotID == "" {
@@ -972,10 +971,10 @@ func RemoteSnapshotChecker(ctx context.Context, destinations *s3.S3DestinationSe
 
 // CheckRemoteRepository probes the destination's repository config within a bounded budget.
 // Transport and credential failures are returned as errors so callers never forget snapshots blindly.
-func CheckRemoteRepository(ctx context.Context, destinations *s3.S3DestinationService, destinationID, root string) (backup.RepositoryObservation, error) {
+func CheckRemoteRepository(ctx context.Context, destinations *s3.S3DestinationService, destinationID, root string) (types.BackupRepositoryObservation, error) {
 	configuration, err := destinations.Configuration(ctx, destinationID)
 	if err != nil {
-		return backup.RepositoryObservation{}, err
+		return types.BackupRepositoryObservation{}, err
 	}
 	checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

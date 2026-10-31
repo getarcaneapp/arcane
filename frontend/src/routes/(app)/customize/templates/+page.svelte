@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import AddTemplateRegistrySheet from '#lib/components/sheets/add-template-registry-sheet.svelte';
@@ -9,20 +12,29 @@
 	import { RegistryIcon, TemplateIcon, FolderOpenIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { templateListQuery, templateRegistriesQuery } from '#lib/query/templates.js';
 	import { templateService } from '#lib/services/template-service.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import type { TemplateRegistry } from '#lib/types/swarm.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import type { TemplateRegistryCreate, TemplateRegistryUpdate } from '#lib/types/swarm.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import RegistryManager from './components/registry-manager.svelte';
 	import TemplateGallery from './components/template-gallery.svelte';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
-	let templates = $derived(data.templates);
-	let registries = $derived<TemplateRegistry[]>(data.registries);
-	let requestOptions = $derived<SearchPaginationSortRequest>(data.templateRequestOptions);
+	const pageState = new ResourceListPageState(untrack(() => data.templateRequestOptions));
+	const templatesQuery = createQuery(() => ({
+		...templateListQuery(pageState.requestOptions),
+		placeholderData: (previous) => previous
+	}));
+	const templates = $derived(templatesQuery.data ?? data.templates);
+	const registriesQuery = createQuery(() => templateRegistriesQuery());
+	const registries = $derived(registriesQuery.data ?? data.registries);
 	const tabItems: TabItem[] = [
 		{
 			value: 'browse',
@@ -41,128 +53,104 @@
 	});
 	const activeView = $derived(urlTab.value);
 
-	let isLoading = $state({
-		addingRegistry: false,
+	const isLoading = $state({
 		removing: {} as Record<string, boolean>,
 		updating: {} as Record<string, boolean>
 	});
 
 	let showAddRegistrySheet = $state(false);
 
-	async function updateRegistry(id: string, updates: { enabled?: boolean }) {
-		if (isLoading.updating[id]) return;
-		isLoading.updating[id] = true;
-
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const registry = registries.find((r) => r.id === id);
-					if (!registry) {
-						toast.error(m.templates_registry_not_found());
-						delete isLoading.updating[id];
-						return;
-					}
-
-					await templateService.updateRegistry(id, {
-						name: registry.name,
-						url: registry.url,
-						description: registry.description,
-						enabled: updates.enabled ?? registry.enabled
-					});
-
-					registries = await templateService.getRegistries();
-					templates = await templateService.getTemplates(requestOptions);
-					toast.success(m.common_update_success({ resource: m.resource_registry() }));
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-				console.error('Error updating registry:', error);
-				toast.error(error instanceof Error ? error.message : m.registries_save_failed());
-			}
-		} finally {
-			delete isLoading.updating[id];
-		}
+	async function invalidateTemplateData() {
+		await Promise.all([
+			queryClient.invalidateQueries({ queryKey: queryKeys.templates.all }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.templates.registries() })
+		]);
 	}
 
-	async function removeRegistry(id: string) {
-		if (isLoading.removing[id]) return;
-		isLoading.removing[id] = true;
+	const updateRegistryMutation = createMutation(() => ({
+		mutationFn: ({ id, updates }: { id: string; updates: TemplateRegistryUpdate }) => templateService.updateRegistry(id, updates),
+		onMutate: ({ id }) => {
+			isLoading.updating[id] = true;
+		},
+		onSuccess: async () => {
+			await invalidateTemplateData();
+			toast.success(m.common_update_success({ resource: m.resource_registry() }));
+		},
+		onError: (error) => {
+			toast.error(m.registries_save_failed(), { description: extractApiErrorMessage(error) });
+		},
+		onSettled: (_result, _error, { id }) => {
+			delete isLoading.updating[id];
+		}
+	}));
 
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const reg = registries.find((r) => r.id === id);
-					await templateService.deleteRegistry(id);
-					registries = registries.filter((r) => r.id !== id);
-					registries = await templateService.getRegistries();
-					templates = await templateService.getTemplates(requestOptions);
-					toast.success(
-						reg
-							? m.common_delete_success({ resource: `${m.resource_registry()} "${reg.url}"` })
-							: m.templates_registry_removed_success()
-					);
-				})()
+	const removeRegistryMutation = createMutation(() => ({
+		mutationFn: (id: string) => templateService.deleteRegistry(id),
+		onMutate: (id) => {
+			isLoading.removing[id] = true;
+		},
+		onSuccess: async (_result, id) => {
+			const reg = registries.find((r) => r.id === id);
+			await invalidateTemplateData();
+			toast.success(
+				reg
+					? m.common_delete_success({ resource: `${m.resource_registry()} "${reg.url}"` })
+					: m.templates_registry_removed_success()
 			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.error('Error removing registry:', error);
-				toast.error(error instanceof Error ? error.message : m.registries_save_failed());
-			}
-		} finally {
+		},
+		onError: (error) => {
+			toast.error(m.registries_save_failed(), { description: extractApiErrorMessage(error) });
+		},
+		onSettled: (_result, _error, id) => {
 			delete isLoading.removing[id];
 		}
+	}));
+
+	const addRegistryMutation = createMutation(() => ({
+		mutationFn: (registry: TemplateRegistryCreate) =>
+			templateService.addRegistry({
+				name: registry.name.trim(),
+				url: registry.url.trim(),
+				description: registry.description?.trim() || undefined,
+				enabled: registry.enabled
+			}),
+		onSuccess: async () => {
+			await invalidateTemplateData();
+			showAddRegistrySheet = false;
+			toast.success(m.common_create_success({ resource: m.resource_registry() }));
+		},
+		onError: (error) => {
+			toast.error(m.registries_save_failed(), { description: extractApiErrorMessage(error) });
+		}
+	}));
+
+	function updateRegistry(id: string, updates: TemplateRegistryUpdate) {
+		if (isLoading.updating[id]) return;
+		if (!registries.some((r) => r.id === id)) {
+			toast.error(m.templates_registry_not_found());
+			return;
+		}
+		updateRegistryMutation.mutate({ id, updates });
+	}
+
+	function removeRegistry(id: string) {
+		if (isLoading.removing[id]) return;
+		removeRegistryMutation.mutate(id);
 	}
 
 	async function refreshTemplates() {
-		const operationResult = await tryCatch(
-			(async () => {
-				templates = await templateService.getTemplates(requestOptions);
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(templatesQuery.refetch({ throwOnError: true })),
+			message: m.common_refresh_failed({ resource: m.templates_title() }),
+			setLoadingState: () => {},
+			onSuccess: () => {
 				toast.success(m.templates_refreshed());
-			})()
-		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
-
-			console.error('Error refreshing templates:', error);
-			toast.error(m.common_refresh_failed({ resource: m.templates_title() }));
-		}
-	}
-
-	async function handleRegistrySubmit(registry: { name: string; url: string; description?: string; enabled: boolean }) {
-		isLoading.addingRegistry = true;
-
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					await templateService.addRegistry({
-						name: registry.name.trim(),
-						url: registry.url.trim(),
-						description: registry.description?.trim() || undefined,
-						enabled: registry.enabled
-					});
-
-					registries = await templateService.getRegistries();
-					templates = await templateService.getTemplates(requestOptions);
-					showAddRegistrySheet = false;
-
-					toast.success(m.common_create_success({ resource: m.resource_registry() }));
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.error('Error adding registry:', error);
-				toast.error(error instanceof Error ? error.message : m.registries_save_failed());
 			}
-		} finally {
-			isLoading.addingRegistry = false;
-		}
+		});
 	}
 
-	const canCreateTemplate = $derived(hasPermission('templates:create'));
-	const canUpdateTemplate = $derived(hasPermission('templates:update'));
+	const canCreateTemplate = $derived(hasShownPermission('templates:create'));
+	const canUpdateTemplate = $derived(hasShownPermission('templates:update'));
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];
@@ -172,7 +160,7 @@
 				action: 'create',
 				placement: 'primary',
 				label: m.templates_create_template(),
-				onclick: () => goto('/customize/templates/create')
+				onclick: () => goto(resolve('/(app)/customize/templates/create'))
 			});
 		}
 		if (canUpdateTemplate) {
@@ -180,7 +168,7 @@
 				id: 'default',
 				action: 'edit',
 				label: m.templates_edit_default(),
-				onclick: () => goto('/customize/templates/default')
+				onclick: () => goto(resolve('/(app)/customize/templates/default'))
 			});
 		}
 		buttons.push({
@@ -230,7 +218,7 @@
 				</div>
 
 				<Tabs.Content value="browse">
-					<TemplateGallery bind:templates bind:requestOptions />
+					<TemplateGallery {templates} bind:requestOptions={pageState.requestOptions} />
 				</Tabs.Content>
 
 				<Tabs.Content value="registries">
@@ -249,8 +237,8 @@
 	{#snippet additionalContent()}
 		<AddTemplateRegistrySheet
 			bind:open={showAddRegistrySheet}
-			onSubmit={handleRegistrySubmit}
-			isLoading={isLoading.addingRegistry}
+			onSubmit={(registry) => addRegistryMutation.mutate(registry)}
+			isLoading={addRegistryMutation.isPending}
 		/>
 	{/snippet}
 </ResourcePageLayout>

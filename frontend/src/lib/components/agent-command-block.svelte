@@ -1,5 +1,7 @@
 <script lang="ts">
+	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
+	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 
 	interface Props {
 		dockerRunLabel: string;
@@ -10,24 +12,41 @@
 	}
 
 	let { dockerRunLabel, dockerRun, dockerComposeLabel, dockerCompose, preClass = '' }: Props = $props();
+
+	const dockerRunLines = useHighlightedCode(
+		() => dockerRun,
+		() => 'shell'
+	);
+	const dockerComposeLines = useHighlightedCode(
+		() => dockerCompose,
+		() => 'yaml'
+	);
 </script>
 
-<div class="space-y-2">
-	<div class="text-sm font-medium">{dockerRunLabel}</div>
-	<div class="relative">
-		<pre class="overflow-x-auto rounded-md bg-muted p-3 text-xs {preClass}"><code>{dockerRun}</code></pre>
-		<div class="absolute top-2 right-2">
+<CodeBlock.Root size="sm">
+	<CodeBlock.Header>
+		<CodeBlock.Title>{dockerRunLabel}</CodeBlock.Title>
+		<CodeBlock.Actions>
 			<CopyButton text={dockerRun} size="icon" class="size-7" />
-		</div>
-	</div>
-</div>
+		</CodeBlock.Actions>
+	</CodeBlock.Header>
+	<CodeBlock.Content class={preClass}>
+		{#each dockerRunLines.current as line, index (index)}
+			<CodeBlock.Line code={line} />
+		{/each}
+	</CodeBlock.Content>
+</CodeBlock.Root>
 
-<div class="space-y-2">
-	<div class="text-sm font-medium">{dockerComposeLabel}</div>
-	<div class="relative">
-		<pre class="overflow-x-auto rounded-md bg-muted p-3 text-xs {preClass}"><code>{dockerCompose}</code></pre>
-		<div class="absolute top-2 right-2">
+<CodeBlock.Root size="sm">
+	<CodeBlock.Header>
+		<CodeBlock.Title>{dockerComposeLabel}</CodeBlock.Title>
+		<CodeBlock.Actions>
 			<CopyButton text={dockerCompose} size="icon" class="size-7" />
-		</div>
-	</div>
-</div>
+		</CodeBlock.Actions>
+	</CodeBlock.Header>
+	<CodeBlock.Content class={preClass}>
+		{#each dockerComposeLines.current as line, index (index)}
+			<CodeBlock.Line code={line} />
+		{/each}
+	</CodeBlock.Content>
+</CodeBlock.Root>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { afterNavigate, goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createQuery, skipToken, useQueryClient } from '@tanstack/svelte-query';
 	import { PersistedState } from 'runed';
 	import { onMount, tick } from 'svelte';
@@ -44,15 +45,13 @@
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { volumeWorkspaceService } from '#lib/services/volume-workspace-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { VolumeDetailDto } from '#lib/types/docker.js';
+	import type { Volume } from '#lib/types/docker.js';
 	import type { BackupEntry } from '#lib/types/shared.js';
 	import type { VolumeWorkspaceFileChange, VolumeWorkspaceFileContent } from '#lib/types/volume-workspace.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { composeTreeSplitProps } from '#lib/utils/compose-flow.js';
-	import { environmentHref } from '#lib/utils/environments.js';
 	import { formatDateTimeShort, truncateString } from '#lib/utils/formatting.js';
 	import { bytes } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -83,7 +82,7 @@
 	const currentEnvId = $derived(data.envId);
 	// A volume opened from another environment follows that environment's settings.
 	const environmentSettings = useEnvironmentSettings(() => currentEnvId);
-	const volumeSettings = $derived(environmentSettings.current);
+	const volumeSettings = $derived(environmentSettings.current?.runtime);
 	// Until the backup volume name is known, the volume cannot be removed.
 	const backupVolumeName = $derived(volumeSettings ? volumeSettings.backupVolumeName || 'arcane-backups' : undefined);
 	const isBackupVolume = $derived(!backupVolumeName || volume?.name === backupVolumeName);
@@ -92,9 +91,9 @@
 	const canReadVolume = $derived(hasPermission('volumes:read', currentEnvId));
 	const canUploadVolume = $derived(hasPermission('volumes:upload', currentEnvId));
 	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
-	const volumeWorkspaceMaxFileSizeMb = $derived(volumeSettings?.volumeWorkspaceMaxFileSizeMb ?? 10);
+	const volumeWorkspaceMaxFileSizeMb = $derived(environmentSettings.current?.values.volumeWorkspaceMaxFileSizeMb ?? 10);
 
-	let isLoading = $state({ remove: false, save: false });
+	const isLoading = $state({ remove: false, save: false });
 	const createdDate = $derived(volume?.createdAt ? formatDateTimeShort(volume.createdAt) : m.common_unknown());
 
 	const tabItems = $derived([
@@ -412,15 +411,11 @@
 				void loadAfterUpdate();
 			}
 		});
-		const unsubscribeEnvironment = environmentStore.subscribeSelected(() => {
-			void loadAfterUpdate();
-		});
 		void loadAfterUpdate();
 		notifyWorkspaceBackupError(workspaceBackupPathQuery.error);
 		return () => {
 			active = false;
 			unsubscribe();
-			unsubscribeEnvironment();
 		};
 	});
 
@@ -670,9 +665,9 @@
 			message: m.common_save_failed(),
 			setLoadingState: (value) => (isLoading.save = value),
 			onSuccess: async (workspace) => {
-				queryClient.setQueryData(queryKeys.volumes.workspace(environmentId, volumeName), workspace);
 				clearVolumeWorkspaceDrafts();
 				toast.success(m.volumes_workspace_save_success(), activityToastOptions(workspace.activityId));
+				await queryClient.invalidateQueries({ queryKey: queryKeys.volumes.workspace(environmentId, volumeName) });
 			}
 		});
 	}
@@ -778,7 +773,7 @@
 						setLoadingState: (value) => (isLoading.remove = value),
 						onSuccess: async (data) => {
 							toast.success(m.volumes_remove_success({ name: safeName }), activityToastOptions(extractActivityId(data)));
-							goto('/volumes');
+							goto(resolve('/(app)/volumes'));
 						}
 					});
 				}
@@ -821,7 +816,7 @@
 	}
 </script>
 
-{#snippet volumeContainers(volume: VolumeDetailDto)}
+{#snippet volumeContainers(volume: Volume)}
 	<DetailSection title={m.volumes_containers_using_title()} icon={ContainersIcon}>
 		{#if containersDetailed.length > 0}
 			<div class="divide-y rounded-lg border">
@@ -829,7 +824,7 @@
 					<div class="flex flex-col p-3 sm:flex-row sm:items-center">
 						<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
 							<a
-								href={environmentHref(`/containers/${c.id}`, currentEnvId)}
+								href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(currentEnvId)}`, { containerId: c.id })}
 								class="flex items-center text-primary hover:underline"
 							>
 								<ContainersIcon class="mr-1.5 size-3.5 text-muted-foreground" />
@@ -838,7 +833,7 @@
 						</div>
 						<div class="w-full pl-0 sm:w-2/3 sm:pl-4">
 							<code
-								class="cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
+								class="cursor-pointer rounded-xl bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
 								title={m.common_click_to_select()}
 							>
 								{truncateString(c.id, 48)}
@@ -853,8 +848,9 @@
 				{#each volume.containers as id (id)}
 					<div class="flex items-center justify-between gap-3 p-3">
 						<code class="font-mono text-sm break-all">{truncateString(id, 48)}</code>
-						<a href={environmentHref(`/containers/${id}`, currentEnvId)} class="text-sm text-primary hover:underline"
-							>{m.common_view()}</a
+						<a
+							href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(currentEnvId)}`, { containerId: id })}
+							class="text-sm text-primary hover:underline">{m.common_view()}</a
 						>
 					</div>
 				{/each}
@@ -865,7 +861,7 @@
 	</DetailSection>
 {/snippet}
 
-{#snippet volumeWorkspaceFileEditor(volume: VolumeDetailDto, relativePath: string)}
+{#snippet volumeWorkspaceFileEditor(volume: Volume, relativePath: string)}
 	{#if workspaceFileLoadErrors[relativePath]}
 		<div class="flex h-full items-center justify-center px-4 text-sm text-destructive">
 			{workspaceFileLoadErrors[relativePath]}
@@ -947,7 +943,7 @@
 			<Alert.Description>{m.volumes_backup_safety_info()}</Alert.Description>
 		</Alert.Root>
 		{#if workspaceRestorePath}
-			<code class="block rounded bg-muted/40 px-2 py-1 font-mono text-xs break-all">/{workspaceRestorePath}</code>
+			<code class="block rounded-xl bg-muted/40 px-2 py-1 font-mono text-xs break-all">/{workspaceRestorePath}</code>
 		{/if}
 		{#if loadingWorkspaceBackups}
 			<div class="flex items-center gap-2 text-sm text-muted-foreground">
@@ -992,7 +988,7 @@
 	</div>
 {/snippet}
 
-{#snippet volumeWorkspace(volume: VolumeDetailDto)}
+{#snippet volumeWorkspace(volume: Volume)}
 	{#if !canReadVolume}
 		<div class="flex min-h-96 items-center justify-center rounded-lg border text-sm text-muted-foreground">
 			{m.common_access_denied()}
@@ -1055,7 +1051,7 @@
 	{/if}
 {/snippet}
 
-{#snippet volumeOverview(volume: VolumeDetailDto)}
+{#snippet volumeOverview(volume: Volume)}
 	<DetailMetaStrip
 		items={[
 			{ icon: VolumesIcon, label: m.common_driver(), value: volume.driver ?? m.common_unknown() },
@@ -1105,7 +1101,7 @@
 					{#if volume.scope}
 						<Badge variant="purple" minWidth="20">{volume.scope}</Badge>
 					{/if}
-					<EnvironmentCell value={currentEnvId} />
+					<EnvironmentCell value={currentEnvId} plain />
 				</div>
 			</div>
 		{/snippet}
@@ -1146,7 +1142,7 @@
 		<ArcaneButton
 			action="cancel"
 			customLabel={m.common_back_to({ resource: m.resource_volumes_cap() })}
-			onclick={() => goto('/volumes')}
+			onclick={() => goto(resolve('/(app)/volumes'))}
 			size="sm"
 		/>
 	</div>

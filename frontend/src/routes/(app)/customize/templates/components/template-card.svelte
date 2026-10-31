@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
@@ -10,7 +11,7 @@
 	import { InspectIcon, FolderOpenIcon, GlobeIcon, TrashIcon, DownloadIcon, MoveToFolderIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Template } from '#lib/types/swarm.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
 
 	let {
 		template,
@@ -28,8 +29,8 @@
 
 	const MAX_TAGS = 4;
 
-	const canCreateTemplate = $derived(hasPermission('templates:create'));
-	const canDeleteTemplate = $derived(hasPermission('templates:delete'));
+	const canCreateTemplate = $derived(hasShownPermission('templates:create'));
+	const canDeleteTemplate = $derived(hasShownPermission('templates:delete'));
 	const registryName = $derived(
 		template.registry?.name ?? (template.isRemote ? m.templates_unknown_registry() : m.templates_local_templates())
 	);
@@ -37,7 +38,7 @@
 </script>
 
 <div
-	class="group relative flex h-full flex-col gap-3 rounded-xl border border-border/50 bg-card/30 p-4 transition-colors hover:bg-muted/40"
+	class="group relative flex h-full flex-col gap-3 rounded-xl border border-border/70 bg-card/10 p-4 transition-colors hover:bg-muted/40"
 >
 	<div class="flex items-start gap-3">
 		<IconImage
@@ -49,7 +50,7 @@
 		/>
 		<div class="min-w-0 flex-1">
 			<a
-				href="/customize/templates/{template.id}"
+				href={resolve('/(app)/customize/templates/[id]', { id: template.id })}
 				class="block truncate font-medium after:absolute after:inset-0 hover:underline"
 			>
 				{template.name}
@@ -60,13 +61,13 @@
 		</div>
 		<div class="relative z-10 -mt-1 -mr-1 shrink-0">
 			<RowActionsMenu>
-				<DropdownMenu.Item onclick={() => goto(`/customize/templates/${template.id}`)}>
+				<DropdownMenu.Item onclick={() => goto(resolve('/(app)/customize/templates/[id]', { id: template.id }))}>
 					<InspectIcon class="size-4" />
 					{m.common_view_details()}
 				</DropdownMenu.Item>
 
 				<IfPermitted perm="projects:create">
-					<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${template.id}`)}>
+					<DropdownMenu.Item onclick={() => goto(resolve(`/(app)/projects/new?templateId=${encodeURIComponent(template.id)}`))}>
 						<MoveToFolderIcon class="size-4" />
 						{m.compose_create_project()}
 					</DropdownMenu.Item>

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as Kbd from '#lib/components/ui/kbd/index.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
+	import { withOccurrenceKeys } from '#lib/utils/formatting.js';
 	import { formatShortcutKeys, type ShortcutKey } from '#lib/utils/navigation.js';
 
 	let {
@@ -23,10 +24,9 @@
 	{#if showShortcut && shortcut?.length}
 		{@const displayKeys = formatShortcutKeys(shortcut)}
 		<Kbd.Group>
-			<!-- Shortcut sequences may repeat keys; these keycaps have no local state. -->
-			{#each displayKeys as key, index}
+			{#each withOccurrenceKeys(displayKeys) as key, index (key.key)}
 				<Kbd.Root>
-					{key}
+					{key.value}
 				</Kbd.Root>
 				{#if index < displayKeys.length - 1}
 					<span class="text-3xs text-muted-foreground/70">+</span>

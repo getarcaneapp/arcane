@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
@@ -13,11 +14,6 @@
 
 	const oidcLoginMutation = createMutation(() => ({
 		mutationFn: async () => {
-			// Carry only an explicit, same-origin redirect across the OIDC round
-			// trip. The account landing page is a per-user preference and cannot be
-			// resolved while signed out — storing the signed-out default here would
-			// make the callback treat it as an explicit target and override the
-			// user's saved page. The callback resolves the preference itself.
 			const requested = page.url.searchParams.get('redirect') ?? '';
 			const redirect = requested.startsWith('/') && !requested.startsWith('//') ? requested : '';
 
@@ -29,7 +25,6 @@
 			if (redirect) {
 				localStorage.setItem('oidc_redirect', redirect);
 			} else {
-				// Clear any target left behind by an earlier sign-in attempt.
 				localStorage.removeItem('oidc_redirect');
 			}
 			window.location.href = authUrl;
@@ -53,7 +48,7 @@
 
 			error = serverMessage || fallback;
 			if (serverMessage) sessionStorage.setItem('oidc_login_error', serverMessage);
-			setTimeout(() => goto(`/login?error=${redirectError}`), 3000);
+			setTimeout(() => goto(resolve(`/(auth)/login/[[mode]]?error=${redirectError}`, {})), 3000);
 		}
 	}));
 

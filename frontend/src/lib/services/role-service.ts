@@ -1,4 +1,4 @@
-import type { Role, CreateRole, UpdateRole, RoleAssignment, SetUserAssignments, PermissionsManifest } from '#lib/types/auth.js';
+import type { Role, RoleCreate, RoleUpdate, RoleAssignment, SetUserAssignments, PermissionsManifest } from '#lib/types/auth.js';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
@@ -24,12 +24,12 @@ class RoleAPIService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/roles/${id}`)) as Promise<Role>;
 	}
 
-	async create(role: CreateRole): Promise<Role> {
+	async create(role: RoleCreate): Promise<Role> {
 		return this.handleResponse(this.api.post('/roles', role)) as Promise<Role>;
 	}
 
-	async update(id: string, role: UpdateRole): Promise<Role> {
-		return this.handleResponse(this.api.put(`/roles/${id}`, role)) as Promise<Role>;
+	async update(id: string, role: RoleUpdate): Promise<Role> {
+		return this.handleResponse(this.api.patch(`/roles/${id}`, role)) as Promise<Role>;
 	}
 
 	async delete(id: string): Promise<void> {
@@ -37,15 +37,15 @@ class RoleAPIService extends BaseAPIService {
 	}
 
 	async getPermissionsManifest(): Promise<PermissionsManifest> {
-		return this.handleResponse(this.api.get('/roles/available-permissions')) as Promise<PermissionsManifest>;
+		return this.handleResponse(this.api.get('/roles/permissions')) as Promise<PermissionsManifest>;
 	}
 
 	async getUserAssignments(userId: string): Promise<RoleAssignment[]> {
-		return this.handleResponse(this.api.get(`/users/${userId}/role-assignments`)) as Promise<RoleAssignment[]>;
+		return this.handleResponse(this.api.get(`/users/${userId}/roles`)) as Promise<RoleAssignment[]>;
 	}
 
 	async setUserAssignments(userId: string, payload: SetUserAssignments): Promise<RoleAssignment[]> {
-		return this.handleResponse(this.api.put(`/users/${userId}/role-assignments`, payload)) as Promise<RoleAssignment[]>;
+		return this.handleResponse(this.api.put(`/users/${userId}/roles`, payload)) as Promise<RoleAssignment[]>;
 	}
 }
 

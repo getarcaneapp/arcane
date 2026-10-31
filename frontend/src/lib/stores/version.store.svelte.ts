@@ -12,6 +12,13 @@ type VersionStreamEvent = {
 
 function createVersionStoreInternal() {
 	let current = $state.raw<AppVersionInformation | undefined>();
+	let loaded = $state.raw<AppVersionInformation | undefined>();
+	const buildChanged = $derived(
+		!!loaded?.currentVersion &&
+			!!current?.currentVersion &&
+			(current.currentVersion !== loaded.currentVersion || current.revision !== loaded.revision)
+	);
+	let snapshots = $state(0);
 	let started = false;
 	let unsubscribeChannel: (() => void) | null = null;
 
@@ -19,8 +26,15 @@ function createVersionStoreInternal() {
 		get current(): AppVersionInformation | undefined {
 			return current;
 		},
+		get snapshots(): number {
+			return snapshots;
+		},
+		get buildChanged(): boolean {
+			return buildChanged;
+		},
 		seed(info: AppVersionInformation) {
-			current = info;
+			loaded ??= info;
+			if (snapshots === 0) current = info;
 		},
 		start() {
 			if (!browser || started) {
@@ -34,6 +48,7 @@ function createVersionStoreInternal() {
 						return;
 					}
 					current = toAppVersionInformation(event.info);
+					snapshots++;
 				}
 			});
 		},

@@ -7,23 +7,21 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 type NetworkHandler struct {
@@ -38,22 +36,18 @@ type ListNetworksInput struct {
 	Search        string `query:"search" doc:"Search query"`
 	Sort          string `query:"sort" doc:"Column to sort by"`
 	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+	InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
 	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-	InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
 }
 
 type ListNetworksOutput struct {
-	Body base.PaginatedWithCounts[networktypes.Summary, networktypes.UsageCounts]
-}
-
-type GetNetworkCountsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Body types.PaginatedWithCounts[types.NetworkSummary, types.NetworkUsageCounts]
 }
 
 type CreateNetworkInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          networktypes.CreateRequest
+	types.Create[types.Network]
 }
 
 type GetNetworkInput struct {
@@ -63,29 +57,24 @@ type GetNetworkInput struct {
 	Order         string `query:"order" default:"asc"`
 }
 
-type GetNetworkTopologyInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 type DeleteNetworkInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	NetworkID     string `path:"networkId" doc:"Network ID"`
 }
 
-type PruneNetworksInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type ConnectContainerInput struct {
+type NetworkActionInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	NetworkID     string `path:"networkId" doc:"Network ID"`
-	Body          networktypes.ConnectContainerRequest
+	Action        string `query:"action" required:"true" enum:"connect,disconnect" doc:"Container attachment action"`
+	Body          types.NetworkContainerRequest
 }
 
-type DisconnectContainerInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	NetworkID     string `path:"networkId" doc:"Network ID"`
-	Body          networktypes.DisconnectContainerRequest
+type networkAction struct {
+	Metadata       database.JSON
+	Run            func(context.Context, string, types.NetworkContainerRequest, types.Actor) error
+	Step           string
+	SuccessMessage string
+	ErrorPrefix    string
 }
 
 func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksInput) (*ListNetworksOutput, error) {
@@ -108,7 +97,7 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 	}
 
 	return &ListNetworksOutput{
-		Body: base.PaginatedWithCounts[networktypes.Summary, networktypes.UsageCounts]{
+		Body: types.PaginatedWithCounts[types.NetworkSummary, types.NetworkUsageCounts]{
 			Success:    true,
 			Data:       networks,
 			Counts:     counts,
@@ -117,16 +106,24 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 	}, nil
 }
 
-func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *GetNetworkCountsInput) (*handlerutil.Out[networktypes.UsageCounts], error) {
+func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.NetworkUsageCounts], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.networkService.AggregateNetworkCounts(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to get network counts: " + err.Error())
+		}
+		return &handlerutil.Out[types.NetworkUsageCounts]{Body: body}, nil
+	}
+
 	_, inuse, unused, total, err := h.dockerService.GetAllNetworks(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get network counts: " + err.Error())
 	}
 
-	return &handlerutil.Out[networktypes.UsageCounts]{
-		Body: base.ApiResponse[networktypes.UsageCounts]{
+	return &handlerutil.Out[types.NetworkUsageCounts]{
+		Body: types.ApiResponse[types.NetworkUsageCounts]{
 			Success: true,
-			Data: networktypes.UsageCounts{
+			Data: types.NetworkUsageCounts{
 				Inuse:  inuse,
 				Unused: unused,
 				Total:  total,
@@ -135,13 +132,13 @@ func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *GetNetwork
 	}, nil
 }
 
-func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetworkInput) (*handlerutil.Out[networktypes.CreateResponse], error) {
+func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetworkInput) (*handlerutil.Out[types.NetworkCreateResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	dockerOptions, err := mapping.MapOne[networktypes.CreateOptions, client.NetworkCreateOptions](input.Body.Options)
+	dockerOptions, err := mapping.MapOne[types.NetworkCreateOptions, client.NetworkCreateOptions](input.Body.Options)
 	if err != nil {
 		return nil, huma.Error400BadRequest("Invalid network options: " + err.Error())
 	}
@@ -153,7 +150,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
+		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "network",
 		ResourceID:     input.Body.Name,
 		ResourceName:   input.Body.Name,
@@ -171,31 +168,32 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		return createErr
 	})
 	if err != nil {
-		return nil, huma.NewError(common.ToAPIError(common.ClassifyDockerError(err)).HTTPStatus(), "Failed to create network: "+err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
-	out, err := mapping.MapOne[network.CreateResponse, networktypes.CreateResponse](*response)
+	out, err := mapping.MapOne[network.CreateResponse, types.NetworkCreateResponse](*response)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to map network: " + err.Error())
 	}
 	out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer() // keep: enriches the mapped DTO
 
-	return &handlerutil.Out[networktypes.CreateResponse]{
-		Body: base.ApiResponse[networktypes.CreateResponse]{
+	return &handlerutil.Out[types.NetworkCreateResponse]{
+		Body: types.ApiResponse[types.NetworkCreateResponse]{
 			Success: true,
 			Data:    out,
 		},
 	}, nil
 }
 
-func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput) (*handlerutil.Out[networktypes.Inspect], error) {
+func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput) (*handlerutil.Out[types.NetworkInspect], error) {
 	networkInspect, err := h.networkService.GetNetworkByID(ctx, input.NetworkID)
 	if err != nil {
 		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve network: "+apiErr.Message)
 	}
 
-	out, err := mapping.MapOne[network.Inspect, networktypes.Inspect](*networkInspect)
+	out, err := mapping.MapOne[network.Inspect, types.NetworkInspect](*networkInspect)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to map network: " + err.Error())
 	}
@@ -204,9 +202,9 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 	out.ID = cmp.Or(out.ID, networkInspect.ID) // keep: enriches the mapped DTO
 
 	// Populate ContainersList
-	containers := make([]networktypes.ContainerEndpoint, 0, len(out.Containers))
+	containers := make([]types.NetworkContainerEndpoint, 0, len(out.Containers))
 	for id, container := range out.Containers {
-		containers = append(containers, networktypes.ContainerEndpoint{
+		containers = append(containers, types.NetworkContainerEndpoint{
 			ID:          id,
 			Name:        container.Name,
 			EndpointID:  container.EndpointID,
@@ -217,7 +215,7 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 	}
 
 	// Sort ContainersList
-	slices.SortFunc(containers, func(a, b networktypes.ContainerEndpoint) int {
+	slices.SortFunc(containers, func(a, b types.NetworkContainerEndpoint) int {
 		if input.Sort == "ip" {
 			return kit.Ternary(input.Order == "desc", -1, 1) * kit.CompareAddresses(cmp.Or(a.IPv4Address, a.IPv6Address), cmp.Or(b.IPv4Address, b.IPv6Address))
 		}
@@ -227,30 +225,38 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 	})
 	out.ContainersList = containers // keep: enriches the mapped DTO
 
-	return &handlerutil.Out[networktypes.Inspect]{
-		Body: base.ApiResponse[networktypes.Inspect]{
+	return &handlerutil.Out[types.NetworkInspect]{
+		Body: types.ApiResponse[types.NetworkInspect]{
 			Success: true,
 			Data:    out,
 		},
 	}, nil
 }
 
-func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *GetNetworkTopologyInput) (*handlerutil.Out[networktypes.Topology], error) {
+func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.NetworkTopology], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.networkService.AggregateNetworkTopology(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to build network topology: " + err.Error())
+		}
+		return &handlerutil.Out[types.NetworkTopology]{Body: body}, nil
+	}
+
 	topology, err := h.networkService.GetNetworkTopology(ctx)
 	if err != nil {
 		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to build network topology: "+apiErr.Message)
 	}
 
-	return &handlerutil.Out[networktypes.Topology]{
-		Body: base.ApiResponse[networktypes.Topology]{
+	return &handlerutil.Out[types.NetworkTopology]{
+		Body: types.ApiResponse[types.NetworkTopology]{
 			Success: true,
 			Data:    *topology,
 		},
 	}, nil
 }
 
-func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetworkInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetworkInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -259,7 +265,7 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
+		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "network",
 		ResourceID:     input.NetworkID,
 		ResourceName:   input.NetworkID,
@@ -281,77 +287,64 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 	return handlerutil.MessageOutput("Network removed successfully", activityID), nil
 }
 
-func (h *NetworkHandler) ConnectContainer(ctx context.Context, input *ConnectContainerInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *NetworkHandler) RunNetworkAction(ctx context.Context, input *NetworkActionInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
-		ResourceType:   "network",
-		ResourceID:     input.NetworkID,
-		ResourceName:   input.NetworkID,
-		User:           user,
-		Step:           "Connecting container to network",
-		Message:        "Connecting container to network",
-		SuccessMessage: "Container connected successfully",
-		Metadata: database.JSON{
-			"action":      "connect_network",
-			"containerId": input.Body.ContainerID,
+	action := map[string]networkAction{
+		"connect": {
+			Step:           "Connecting container to network",
+			SuccessMessage: "Container connected successfully",
+			Metadata: database.JSON{
+				"action":      "connect_network",
+				"containerId": input.Body.ContainerID,
+			},
+			Run: h.networkService.ConnectContainer,
 		},
-	}, func(runtimeCtx context.Context) error {
-		return h.networkService.ConnectContainer(runtimeCtx, input.NetworkID, input.Body, *user)
-	})
-	if err != nil {
-		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
-		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
-	}
-
-	return handlerutil.MessageOutput("Container connected successfully", activityID), nil
-}
-
-func (h *NetworkHandler) DisconnectContainer(ctx context.Context, input *DisconnectContainerInput) (*handlerutil.Out[base.MessageResponse], error) {
-	user, err := handlerutil.RequireUser(ctx)
-	if err != nil {
-		return nil, err
-	}
+		"disconnect": {
+			Step:           "Disconnecting container from network",
+			SuccessMessage: "Container disconnected successfully",
+			ErrorPrefix:    "Failed to disconnect container from network: ",
+			Metadata: database.JSON{
+				"action":      "disconnect_network",
+				"containerId": input.Body.ContainerID,
+				"force":       input.Body.Force,
+			},
+			Run: h.networkService.DisconnectContainer,
+		},
+	}[input.Action]
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
+		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "network",
 		ResourceID:     input.NetworkID,
 		ResourceName:   input.NetworkID,
 		User:           user,
-		Step:           "Disconnecting container from network",
-		Message:        "Disconnecting container from network",
-		SuccessMessage: "Container disconnected successfully",
-		Metadata: database.JSON{
-			"action":      "disconnect_network",
-			"containerId": input.Body.ContainerID,
-			"force":       input.Body.Force,
-		},
+		Step:           action.Step,
+		Message:        action.Step,
+		SuccessMessage: action.SuccessMessage,
+		Metadata:       action.Metadata,
 	}, func(runtimeCtx context.Context) error {
-		return h.networkService.DisconnectContainer(runtimeCtx, input.NetworkID, input.Body, *user)
+		return action.Run(runtimeCtx, input.NetworkID, input.Body, *user)
 	})
 	if err != nil {
 		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
-		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to disconnect container from network: "+apiErr.Message)
+		return nil, huma.NewError(apiErr.HTTPStatus(), action.ErrorPrefix+apiErr.Message)
 	}
 
-	return handlerutil.MessageOutput("Container disconnected successfully", activityID), nil
+	return handlerutil.MessageOutput(action.SuccessMessage, activityID), nil
 }
 
-func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworksInput) (*handlerutil.Out[networktypes.PruneReport], error) {
+func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.NetworkPruneReport], error) {
 	var report *network.PruneReport
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
+		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "network",
 		Step:           "Pruning unused networks",
 		Message:        "Pruning unused networks",
@@ -366,14 +359,14 @@ func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworks
 		return nil, huma.Error500InternalServerError("Failed to prune networks: " + err.Error())
 	}
 
-	out, err := mapping.MapOne[network.PruneReport, networktypes.PruneReport](*report)
+	out, err := mapping.MapOne[network.PruneReport, types.NetworkPruneReport](*report)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to map network: " + err.Error())
 	}
 	out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer() // keep: enriches the mapped DTO
 
-	return &handlerutil.Out[networktypes.PruneReport]{
-		Body: base.ApiResponse[networktypes.PruneReport]{
+	return &handlerutil.Out[types.NetworkPruneReport]{
+		Body: types.ApiResponse[types.NetworkPruneReport]{
 			Success: true,
 			Data:    out,
 		},

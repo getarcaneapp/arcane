@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 
 	import ActionButtonGroup from '#lib/components/action-button-group/action-button-group.svelte';
@@ -86,7 +87,7 @@
 						destructive: true,
 						placement: 'menu',
 						label: m.common_remove(),
-						onclick: () => confirmRemovePod({ ...pod, environmentId: envId }, () => goto('/podman/pods'))
+						onclick: () => confirmRemovePod({ ...pod, environmentId: envId }, () => goto(resolve('/(app)/podman/pods')))
 					}
 				]
 			: []
@@ -120,7 +121,7 @@
 					{pod.name}
 				</h1>
 				<Badge variant={podmanStateVariant(pod.state)} minWidth="20">{pod.state}</Badge>
-				<EnvironmentCell value={envId} />
+				<EnvironmentCell value={envId} plain />
 			</div>
 		{/snippet}
 

@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 )
 
 func TestClassifyPreservesChainAndField(t *testing.T) {
 	cause := errors.New("root cause")
-	var err error = &base.FieldError{Field: "name", Err: cause}
+	var err error = &types.FieldError{Field: "name", Err: cause}
 	err = Classify(ErrInvalidEnvKey, err)
 	err = fmt.Errorf("validate input: %w", err)
 
@@ -19,7 +19,7 @@ func TestClassifyPreservesChainAndField(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidEnvKey)
 	require.ErrorIs(t, err, ErrValidation)
 	require.ErrorIs(t, err, cause)
-	fieldErr, ok := errors.AsType[*base.FieldError](err)
+	fieldErr, ok := errors.AsType[*types.FieldError](err)
 	require.True(t, ok)
 	require.Equal(t, "name", fieldErr.Field)
 }

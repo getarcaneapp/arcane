@@ -9,16 +9,14 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/container"
-	"github.com/getarcaneapp/arcane/types/v2/dockerinfo"
-	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/runtime"
+	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
 func Command() *cobra.Command {
@@ -52,16 +50,16 @@ func newPruneCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[system.PruneAllResult]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.PruneAllResult]{
 				Method:         http.MethodPost,
-				Path:           types.SystemPrune(c.EnvID()),
+				Path:           clitypes.SystemPrune(c.EnvID()),
 				FailureMessage: "failed to prune",
-				Body: system.PruneAllRequest{
-					Containers: &system.PruneContainersOptions{Mode: system.PruneContainerModeStopped},
-					Images:     &system.PruneImagesOptions{Mode: system.PruneImageModeDangling},
-					Networks:   &system.PruneNetworksOptions{Mode: system.PruneNetworkModeUnused},
+				Body: types.PruneAllRequest{
+					Containers: &types.PruneContainersOptions{Mode: types.PruneContainerModeStopped},
+					Images:     &types.PruneImagesOptions{Mode: types.PruneImageModeDangling},
+					Networks:   &types.PruneNetworksOptions{Mode: types.PruneNetworkModeUnused},
 				},
-				Render: func(data system.PruneAllResult) error {
+				Render: func(data types.PruneAllResult) error {
 					output.Header("System Prune Results")
 					output.KeyValue("Space Reclaimed", output.UnsignedBytes(data.SpaceReclaimed))
 					return nil
@@ -69,7 +67,7 @@ func newPruneCmd() *cobra.Command {
 			})
 		},
 	}
-	cmdutil.SetScope(cmdutil.ScopeFleet, cmd)
+	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	return cmd
 }
 
@@ -88,7 +86,7 @@ func newDockerInfoCmd() *cobra.Command {
 
 			// This endpoint returns dockerinfo.Info directly, not wrapped in an
 			// ApiResponse envelope.
-			body, err := c.DoRaw(cmd.Context(), http.MethodGet, types.SystemDockerInfo(c.EnvID()), nil)
+			body, err := c.DoRaw(cmd.Context(), http.MethodGet, clitypes.SystemDockerInfo(c.EnvID()), nil)
 			if err != nil {
 				return fmt.Errorf("failed to get docker info: %w", err)
 			}
@@ -96,7 +94,7 @@ func newDockerInfoCmd() *cobra.Command {
 			if cmdutil.JSONOutputEnabled(cmd) {
 				return cmdutil.PrintRawJSON(body)
 			}
-			var result dockerinfo.Info
+			var result types.DockerInfo
 			if decodeErr := json.Unmarshal(body, &result); decodeErr != nil {
 				return fmt.Errorf("failed to get docker info: failed to decode response: %w", decodeErr)
 			}
@@ -140,11 +138,11 @@ func newContainersStartCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[container.ActionResult]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ContainerActionResult]{
 				Method:         http.MethodPost,
-				Path:           kit.Ternary(opts.startStoppedOnlyFlag, types.SystemStartStopped(c.EnvID()), types.SystemContainersStartAll(c.EnvID())),
+				Path:           clitypes.SystemContainersAction(c.EnvID(), kit.Ternary(opts.startStoppedOnlyFlag, "startstopped", "startall")),
 				FailureMessage: "failed to start containers",
-				Render: func(container.ActionResult) error {
+				Render: func(types.ContainerActionResult) error {
 					output.Success("%s", kit.Ternary(opts.startStoppedOnlyFlag, "Started all stopped containers", "Started all containers"))
 					return nil
 				},
@@ -152,7 +150,7 @@ func newContainersStartCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&opts.startStoppedOnlyFlag, "stopped", false, "Only start containers that are currently stopped")
-	cmdutil.SetScope(cmdutil.ScopeFleet, cmd)
+	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	return cmd
 }
 
@@ -168,15 +166,15 @@ func newContainersStopCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[container.ActionResult]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ContainerActionResult]{
 				Method:         http.MethodPost,
-				Path:           types.SystemContainersStopAll(c.EnvID()),
+				Path:           clitypes.SystemContainersAction(c.EnvID(), "stopall"),
 				FailureMessage: "failed to stop all containers",
-				Render:         func(container.ActionResult) error { output.Success("%s", "Stopped all containers"); return nil },
+				Render:         func(types.ContainerActionResult) error { output.Success("%s", "Stopped all containers"); return nil },
 			})
 		},
 	}
-	cmdutil.SetScope(cmdutil.ScopeFleet, cmd)
+	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	return cmd
 }
 
@@ -192,7 +190,7 @@ func newConvertCmd() *cobra.Command {
 				return err
 			}
 
-			resp, err := c.Post(cmd.Context(), types.SystemConvert(c.EnvID()), system.ConvertDockerRunRequest{DockerRunCommand: args[0]})
+			resp, err := c.Post(cmd.Context(), clitypes.SystemConvert(c.EnvID()), types.ConvertDockerRunRequest{DockerRunCommand: args[0]})
 			if err != nil {
 				return fmt.Errorf("failed to convert command: %w", err)
 			}
@@ -204,7 +202,7 @@ func newConvertCmd() *cobra.Command {
 			if cmdutil.JSONOutputEnabled(cmd) {
 				return cmdutil.PrintRawJSON(body)
 			}
-			var result system.ConvertDockerRunResponse
+			var result types.ConvertDockerRunResponse
 			if decodeErr := json.Unmarshal(body, &result); decodeErr != nil {
 				return fmt.Errorf("failed to convert command: failed to decode response: %w", decodeErr)
 			}
@@ -246,7 +244,7 @@ func newUpgradeCmd() *cobra.Command {
 			switch {
 			case opts.check:
 				return cmdutil.RunEnvironments(cmd, args, runUpgradeCheck, false)
-			case app.PreviewEnabled() || opts.all:
+			case app.AllEnvironments() || opts.all:
 				return runUpgradeAll(cmd, opts.force, opts.status)
 			default:
 				confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, opts.force, "Are you sure you want to upgrade the system?")
@@ -259,7 +257,7 @@ func newUpgradeCmd() *cobra.Command {
 				}
 				return cmdutil.Run(cmd, c, cmdutil.Spec[any]{
 					Method:         http.MethodPost,
-					Path:           types.SystemUpgrade(c.EnvID()),
+					Path:           clitypes.SystemUpgrade(c.EnvID()),
 					FailureMessage: "failed to upgrade system",
 					Render:         func(any) error { output.Success("System upgrade initiated"); return nil },
 				})
@@ -268,7 +266,7 @@ func newUpgradeCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "Skip confirmation")
 	cmd.Flags().BoolVar(&opts.all, "all", false, "Update all environments with available updates")
-	cmd.Flags().BoolVar(&opts.status, "status", false, "Show the status of the latest update-all job (requires --all)")
+	cmd.Flags().BoolVar(&opts.status, "status", false, "Show the status of the latest upgrade job (requires --all)")
 	cmd.Flags().BoolVar(&opts.check, "check", false, "Only check whether an upgrade is available")
 	cmdutil.SetScope(cmdutil.ScopeGlobal, cmd)
 	return cmd
@@ -280,14 +278,14 @@ func runUpgradeCheck(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	// Upgrade checks return a direct payload rather than an API envelope.
-	body, err := c.DoRaw(cmd.Context(), http.MethodGet, types.SystemUpgradeCheck(c.EnvID()), nil)
+	body, err := c.DoRaw(cmd.Context(), http.MethodGet, clitypes.SystemUpgradeCheck(c.EnvID()), nil)
 	if err != nil {
 		return fmt.Errorf("failed to check for upgrades: %w", err)
 	}
 	if cmdutil.JSONOutputEnabled(cmd) {
 		return cmdutil.PrintRawJSON(body)
 	}
-	var result system.UpgradeCheckResult
+	var result types.UpgradeCheckResult
 	if decodeErr := json.Unmarshal(body, &result); decodeErr != nil {
 		return fmt.Errorf("failed to check for upgrades: failed to decode response: %w", decodeErr)
 	}
@@ -302,16 +300,13 @@ func runUpgradeCheck(cmd *cobra.Command, _ []string) error {
 
 func runUpgradeAll(cmd *cobra.Command, force, status bool) error {
 	app, _ := runtime.From(cmd.Context())
-	if app.PreviewEnabled() {
+	if app.AllEnvironments() {
 		environments, discoveryErr := app.Environments(cmd.Context())
 		if discoveryErr != nil {
 			return discoveryErr
 		}
 		if len(environments) == 0 {
 			return errors.New("no enabled environments available")
-		}
-		for _, env := range environments {
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Upgrade environment: %s (%s)\n", cmp.Or(env.Name, env.ID), env.ID)
 		}
 		app.SelectEnvironment("0")
 		defer app.SelectEnvironment("")
@@ -321,12 +316,12 @@ func runUpgradeAll(cmd *cobra.Command, force, status bool) error {
 		return err
 	}
 	if status {
-		return cmdutil.Run(cmd, c, cmdutil.Spec[system.EnvironmentUpdateJob]{
+		return cmdutil.Run(cmd, c, cmdutil.Spec[types.UpgradeJob]{
 			Method:         http.MethodGet,
-			Path:           types.SystemUpgradeAllStatus(c.EnvID()),
-			FailureMessage: "failed to get update-all status",
-			Render: func(data system.EnvironmentUpdateJob) error {
-				output.Header("Update-All Status")
+			Path:           clitypes.SystemUpgradeJobCurrent(c.EnvID()),
+			FailureMessage: "failed to get upgrade job status",
+			Render: func(data types.UpgradeJob) error {
+				output.Header("Upgrade Job Status")
 				return renderUpgradeResults(data)
 			},
 		})
@@ -335,18 +330,18 @@ func runUpgradeAll(cmd *cobra.Command, force, status bool) error {
 	if confirmationErr != nil || !confirmed {
 		return confirmationErr
 	}
-	return cmdutil.Run(cmd, c, cmdutil.Spec[system.EnvironmentUpdateJob]{
+	return cmdutil.Run(cmd, c, cmdutil.Spec[types.UpgradeJob]{
 		Method:         http.MethodPost,
-		Path:           types.SystemUpgradeAll(c.EnvID()),
-		FailureMessage: "failed to trigger update-all",
-		Render: func(data system.EnvironmentUpdateJob) error {
-			output.Success("Update-all started")
+		Path:           clitypes.SystemUpgradeJobs(c.EnvID()),
+		FailureMessage: "failed to start upgrade job",
+		Render: func(data types.UpgradeJob) error {
+			output.Success("Upgrade job started")
 			return renderUpgradeResults(data)
 		},
 	})
 }
 
-func renderUpgradeResults(job system.EnvironmentUpdateJob) error {
+func renderUpgradeResults(job types.UpgradeJob) error {
 	output.KeyValue("Status", job.Status)
 	if job.Username != "" {
 		output.KeyValue("Triggered By", job.Username)

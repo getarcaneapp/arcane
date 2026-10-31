@@ -126,7 +126,7 @@ test.describe('Management', () => {
 			const running = containersData.data.find((c) => c.state === 'running');
 			expect(running, 'No running container available').toBeDefined();
 
-			await page.goto(`/containers/${running!.id}`);
+			await page.goto(`/containers/${running!.id}?env=0`);
 			await page.waitForLoadState('load');
 
 			await page.getByRole('tab', { name: 'Logs' }).click();
@@ -144,7 +144,7 @@ test.describe('Management', () => {
 			expect(running, 'No running container available').toBeDefined();
 
 			await mockContainerLogsWebSocket(page);
-			await page.goto(`/containers/${running!.id}`);
+			await page.goto(`/containers/${running!.id}?env=0`);
 			await page.waitForLoadState('load');
 			await page.getByRole('tab', { name: 'Logs' }).click();
 
@@ -168,7 +168,7 @@ test.describe('Management', () => {
 			const stopped = containersData.data.find((c) => c.state !== 'running');
 			expect(stopped, 'No stopped container available').toBeDefined();
 
-			await page.goto(`/containers/${stopped!.id}`);
+			await page.goto(`/containers/${stopped!.id}?env=0`);
 			await page.waitForLoadState('load');
 
 			await page.getByRole('tab', { name: 'Logs' }).click();
@@ -183,7 +183,7 @@ test.describe('Management', () => {
 			const running = containersData.data.find((c) => c.state === 'running');
 			expect(running, 'No running container available').toBeDefined();
 
-			await page.goto(`/containers/${running!.id}`);
+			await page.goto(`/containers/${running!.id}?env=0`);
 			await page.waitForLoadState('load');
 
 			await page.getByRole('tab', { name: 'Logs' }).click();
@@ -283,7 +283,7 @@ test.describe('Management', () => {
 						data: [
 							{
 								id: 'wordpress-multi-network',
-								names: ['/wordpress'],
+								names: ['wordpress'],
 								image: 'wordpress:latest',
 								imageId: 'sha256:wordpress',
 								command: 'apache2-foreground',
@@ -447,7 +447,7 @@ test.describe('Lifecycle', () => {
 	};
 
 	async function updateExperimentalFeatures(page: Page, enabled: string) {
-		const response = await page.request.put('/api/environments/0/settings', {
+		const response = await page.request.patch('/api/environments/0/settings', {
 			data: { experimentalFeaturesEnabled: enabled }
 		});
 		if (!response.ok()) {
@@ -457,7 +457,9 @@ test.describe('Lifecycle', () => {
 		}
 		const settingsResponse = await page.request.get('/api/environments/0/settings');
 		expect(settingsResponse.ok(), 'Read back experimental feature setting').toBe(true);
-		const settings = (await settingsResponse.json()) as Array<{ key: string; value: string }>;
+		const { settings } = (await settingsResponse.json()) as {
+			settings: Array<{ key: string; value: string }>;
+		};
 		expect(settings).toContainEqual(
 			expect.objectContaining({ key: 'experimentalFeaturesEnabled', value: enabled })
 		);
@@ -544,8 +546,13 @@ test.describe('Lifecycle', () => {
 		return test.step(`${buttonName} container`, async () => {
 			const responseTimeout = pathAction === 'stop' ? 120_000 : 60_000;
 			const matchesActionRequest = (url: string, method: string) => {
-				const pathname = new URL(url).pathname.replace(/\/$/, '');
-				return method === 'POST' && pathname.endsWith(`/containers/${containerId}/${pathAction}`);
+				const parsed = new URL(url);
+				const pathname = parsed.pathname.replace(/\/$/, '');
+				return (
+					method === 'POST' &&
+					pathname.endsWith(`/containers/${containerId}`) &&
+					parsed.searchParams.get('action') === pathAction
+				);
 			};
 			const requestPromise = page.waitForRequest(
 				(request) => matchesActionRequest(request.url(), request.method()),
@@ -717,7 +724,8 @@ test.describe('Lifecycle', () => {
 			const connectResponsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					/\/api\/environments\/0\/networks\/[^/]+\/connect$/.test(new URL(response.url()).pathname)
+					/\/api\/environments\/0\/networks\/[^/]+$/.test(new URL(response.url()).pathname) &&
+					new URL(response.url()).searchParams.get('action') === 'connect'
 			);
 			await connectSection.getByRole('button', { name: 'Connect', exact: true }).click();
 			expect((await connectResponsePromise).ok()).toBe(true);
@@ -736,9 +744,8 @@ test.describe('Lifecycle', () => {
 			const disconnectResponsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					/\/api\/environments\/0\/networks\/[^/]+\/disconnect$/.test(
-						new URL(response.url()).pathname
-					)
+					/\/api\/environments\/0\/networks\/[^/]+$/.test(new URL(response.url()).pathname) &&
+					new URL(response.url()).searchParams.get('action') === 'disconnect'
 			);
 			await page
 				.getByRole('dialog')
@@ -816,7 +823,7 @@ test.describe('Lifecycle', () => {
 	) {
 		return test.step('Edit and recreate container', async () => {
 			await clickHeaderAction(page, 'Edit');
-			await expect(page).toHaveURL(`/containers/${containerId}/edit`);
+			await expect(page).toHaveURL(`/containers/${containerId}/edit?env=0`);
 			await expect(page.getByText('Applying changes recreates this container.')).toBeVisible();
 			await expect(page.getByLabel('Container Name *', { exact: true })).toHaveValue(
 				newContainerName.replace(/-edited$/, '')
@@ -837,8 +844,9 @@ test.describe('Lifecycle', () => {
 
 			const responsePromise = page.waitForResponse(
 				(response) =>
-					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname === `/api/environments/0/containers/${containerId}/edit`,
+					response.request().method() === 'PUT' &&
+					new URL(response.url()).pathname ===
+						`/api/environments/0/containers/${containerId}/config`,
 				{ timeout: 60_000 }
 			);
 			await page.getByRole('button', { name: 'Save', exact: true }).click();
@@ -896,7 +904,7 @@ test.describe('Lifecycle', () => {
 			const generateResponsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname === '/api/environments/0/containers/generate-compose'
+					new URL(response.url()).pathname === '/api/environments/0/containers/compose'
 			);
 			await clickHeaderAction(page, 'Convert to Compose');
 			const generated = await readApiData<{ composeContent: string }>(
@@ -907,7 +915,7 @@ test.describe('Lifecycle', () => {
 			await expect(page).toHaveURL(`/projects/new?fromContainers=${containerId}&fromEnv=0`);
 			await expect(page.locator('.cm-editor').first()).toContainText(containerName);
 
-			const createButton = page.locator('button[data-action="create"]');
+			const createButton = page.getByRole('button', { name: 'Create Project', exact: true });
 			await expect(createButton).toBeEnabled({ timeout: 15_000 });
 			const responsePromise = page.waitForResponse(
 				(response) =>
@@ -937,7 +945,8 @@ test.describe('Lifecycle', () => {
 			const responsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname === `/api/environments/0/containers/${containerId}/kill`
+					new URL(response.url()).pathname === `/api/environments/0/containers/${containerId}` &&
+					new URL(response.url()).searchParams.get('action') === 'kill'
 			);
 			await dialog.getByRole('button', { name: 'Kill container', exact: true }).click();
 			const result = await readApiData<ActionResult>(
@@ -993,7 +1002,7 @@ test.describe('Lifecycle', () => {
 
 		registerCleanup(async () => {
 			for (const id of projectIds)
-				await removeApiResource(page, `/api/environments/0/projects/${id}/destroy`, {
+				await removeApiResource(page, `/api/environments/0/projects/${id}`, {
 					data: { removeVolumes: false }
 				});
 			for (const id of containerIds)
@@ -1019,7 +1028,9 @@ test.describe('Lifecycle', () => {
 		if (!settingsResponse.ok()) {
 			throw new Error(`Get settings failed with ${settingsResponse.status()}`);
 		}
-		const settings = (await settingsResponse.json()) as Array<{ key: string; value: string }>;
+		const { settings } = (await settingsResponse.json()) as {
+			settings: Array<{ key: string; value: string }>;
+		};
 		const experimentalSetting = settings.find(
 			(setting) => setting.key === 'experimentalFeaturesEnabled'
 		);
@@ -1153,7 +1164,7 @@ test.describe('Lifecycle', () => {
 			(await page.request.get(`/api/environments/0/containers/${currentContainerId}`)).ok()
 		).toBe(true);
 
-		await page.goto(`/containers/${currentContainerId}`);
+		await page.goto(`/containers/${currentContainerId}?env=0`);
 		await killContainerThroughUI(page, currentContainerId, editedContainerName);
 		await expectContainerStatus(page, currentContainerId, 'exited');
 		await runSimpleContainerAction(page, currentContainerId, 'start', 'Start', 'container_start');
@@ -1202,7 +1213,7 @@ test.describe('Resource sorting', () => {
 	): MockContainer {
 		return {
 			id,
-			names: [`/${id}`],
+			names: [id],
 			image: 'misc:latest',
 			imageId: `image-${id}`,
 			command: '',
@@ -1332,7 +1343,6 @@ test.describe('Resource sorting', () => {
 
 	async function openContainers(page: Page) {
 		await page.addInitScript(() => {
-			localStorage.removeItem('selectedEnvironmentId');
 			localStorage.removeItem('arcane-container-table');
 		});
 		await page.goto('/containers');
@@ -1345,7 +1355,9 @@ test.describe('Resource sorting', () => {
 			.getByRole('row')
 			.filter({ has: page.locator('a[href^="/containers/"]') })
 			.locator('a[href^="/containers/"]')
-			.evaluateAll((els) => els.map((el) => el.getAttribute('href')?.split('/').pop() ?? ''));
+			.evaluateAll((els) =>
+				els.map((el) => el.getAttribute('href')?.split('?')[0]?.split('/').pop() ?? '')
+			);
 	}
 
 	async function setPageSize(page: Page, size: string) {
@@ -1379,8 +1391,8 @@ test.describe('Resource sorting', () => {
 		const bigBytesRow = page
 			.getByRole('row')
 			.filter({ has: page.getByRole('link', { name: 'big-bytes' }) });
-		await expect(bigBytesRow.getByText('10.0%')).toBeVisible();
-		await expect(bigBytesRow.getByText('3 GB', { exact: true })).toBeVisible();
+		await expect(bigBytesRow.getByText('10%', { exact: true })).toBeVisible();
+		await expect(bigBytesRow.getByTitle('3 GB (75%)', { exact: true })).toBeVisible();
 
 		const brokenRow = page
 			.getByRole('row')
@@ -1464,12 +1476,12 @@ test.describe('Resource sorting', () => {
 		await expect.poll(() => scenario.requests.length, { timeout: 10000 }).toBeGreaterThan(frozen);
 
 		scenario.failList = true;
-		await expect(page.getByText('Automatic refresh failed: daemon exploded')).toBeVisible({
+		await expect(page.getByText(/^Automatic refresh failed: .*daemon exploded$/)).toBeVisible({
 			timeout: 15000
 		});
 
 		scenario.failList = false;
-		await expect(page.getByText('Automatic refresh failed: daemon exploded')).toBeHidden({
+		await expect(page.getByText(/^Automatic refresh failed: .*daemon exploded$/)).toBeHidden({
 			timeout: 15000
 		});
 	});
@@ -1514,7 +1526,7 @@ test.describe('Project grouping', () => {
 	): MockContainer {
 		return {
 			id,
-			names: [`/${name}`],
+			names: [name],
 			image: `${project || 'misc'}:latest`,
 			imageId: `image-${id}`,
 			command: '',
@@ -1559,7 +1571,6 @@ test.describe('Project grouping', () => {
 		context
 	}) => {
 		await page.addInitScript(() => {
-			localStorage.removeItem('selectedEnvironmentId');
 			localStorage.removeItem('arcane-container-table');
 			localStorage.setItem('container-groups-collapsed', JSON.stringify({ immich: false }));
 			localStorage.removeItem('collapsible-cards-expanded');
@@ -1651,7 +1662,7 @@ test.describe('Project grouping', () => {
 
 		await page.setViewportSize({ width: 1440, height: 900 });
 
-		await page.getByRole('button', { name: 'View' }).click();
+		await page.getByRole('button', { name: 'View', exact: true }).click();
 		await page.getByRole('menuitemcheckbox', { name: 'Group by Project' }).click();
 		await page.keyboard.press('Escape');
 
@@ -1724,7 +1735,6 @@ test.describe('Project grouping', () => {
 
 	async function openGroupedContainers(page: Page, collapsed: Record<string, boolean>) {
 		await page.addInitScript((collapsedState) => {
-			localStorage.removeItem('selectedEnvironmentId');
 			localStorage.removeItem('arcane-container-table');
 			localStorage.setItem('container-groups-collapsed', JSON.stringify(collapsedState));
 			localStorage.removeItem('collapsible-cards-expanded');
@@ -1754,7 +1764,7 @@ test.describe('Project grouping', () => {
 		await page.setViewportSize({ width: 1440, height: 900 });
 		await page.goto('/containers');
 		await page.waitForLoadState('load');
-		await page.getByRole('button', { name: 'View' }).click();
+		await page.getByRole('button', { name: 'View', exact: true }).click();
 		await page.getByRole('menuitemcheckbox', { name: 'Group by Project' }).click();
 		await page.keyboard.press('Escape');
 		await expect(groupRow(page, 'immich')).toContainText('(4)');

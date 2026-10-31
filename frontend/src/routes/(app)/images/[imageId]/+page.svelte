@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { onMount, onDestroy, tick } from 'svelte';
+	import { resolve } from '$app/paths';
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
@@ -27,23 +27,17 @@
 	} from '#lib/icons/index.js';
 	import { ResourceDetailLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { imageDetailQuery } from '#lib/query/images.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { VulnerabilityScanResult } from '#lib/types/environment.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks, extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import {
-		startVulnerabilityScanPolling,
-		stabilizeFailedVulnerabilitySummary,
-		isVulnerabilityScanInProgress
-	} from '#lib/utils/docker.js';
+	import { stabilizeFailedVulnerabilitySummary, isVulnerabilityScanInProgress } from '#lib/utils/docker.js';
 	import { parseImageRef } from '#lib/utils/docker.js';
-	import { environmentHref } from '#lib/utils/environments.js';
 	import { bytes, formatDateTimeShort, nowInstantString } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { toastVulnerabilityScanStatus } from '#lib/utils/vulnerability.js';
@@ -53,7 +47,10 @@
 	import ImageHistoryPanel from './components/image-history-panel.svelte';
 
 	let { data } = $props();
-	let { image } = $derived(data);
+
+	const queryClient = useQueryClient();
+	const detailQuery = createQuery(() => imageDetailQuery(data.envId, data.imageId));
+	const image = $derived(detailQuery.data ?? data.image);
 
 	const currentEnvId = $derived(data.envId);
 	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', currentEnvId));
@@ -69,9 +66,6 @@
 	});
 	const activeTab = $derived(urlTab.value);
 
-	$effect(() => {
-		if (!vulnerabilityManagementEnabled) stopPolling();
-	});
 	// fallow-ignore-next-line code-duplication -- permission $derived declarations; script-level, no shared render surface
 	const canDeleteImage = $derived(hasPermission('images:delete', currentEnvId));
 	const canScanImage = $derived(vulnerabilityManagementEnabled && hasPermission('vulnerabilities:scan', currentEnvId));
@@ -79,78 +73,79 @@
 	const canTagImage = $derived(hasPermission('images:tag', currentEnvId));
 	const canReadImage = $derived(hasPermission('images:read', currentEnvId));
 
-	let isLoading = $state({
+	const isLoading = $state({
 		pulling: false,
 		removing: false,
 		exporting: false,
-		scanning: false,
 		patching: false
 	});
 	let tagDialogOpen = $state(false);
 
-	const queryClient = useQueryClient();
-	const scanQueryKey = $derived(queryKeys.vulnerabilities.scanResult(currentEnvId, image?.id ?? ''));
+	const scanScope = $derived(`${currentEnvId}:${image?.id}`);
+	let scanRequest = $state<{ scope: string; time: string } | null>(null);
+	let completionToastScope = $state<string | null>(null);
+
 	const scanQuery = createQuery(() => {
 		const environmentId = currentEnvId;
-		const imageId = image?.id;
-		userStore.current;
+		const imageId = image?.id ?? '';
+		const scope = `${environmentId}:${imageId}`;
 		return {
-			queryKey: queryKeys.vulnerabilities.scanResult(environmentId, imageId ?? ''),
+			queryKey: queryKeys.vulnerabilities.scanResult(environmentId, imageId),
 			queryFn: async ({ signal }) => {
 				await environmentStore.ready;
 				signal.throwIfAborted();
-				return vulnerabilityService.getScanResult(imageId!, environmentId);
+				const result = await vulnerabilityService.getScanResult(imageId, environmentId);
+				if (result.status !== 'failed' || scanRequest?.scope !== scope) return result;
+				const { data: summary } = await tryCatch(
+					stabilizeFailedVulnerabilitySummary(imageId, result, (id) => vulnerabilityService.getScanSummary(id, environmentId), {
+						scanRequestedAt: scanRequest.time
+					})
+				);
+				if (!summary || summary.status === 'failed') return result;
+				if (!isVulnerabilityScanInProgress(summary.status)) return vulnerabilityService.getScanResult(imageId, environmentId);
+				return {
+					...result,
+					scanTime: summary.scanTime,
+					status: summary.status,
+					scanPhase: summary.scanPhase,
+					summary: summary.summary,
+					error: summary.error
+				};
 			},
 			enabled: vulnerabilityManagementEnabled && !!imageId && hasPermission('vulnerabilities:read', environmentId),
+			refetchInterval: (query) => (isVulnerabilityScanInProgress(query.state.data?.status) ? 2000 : false),
 			retry: false
 		};
 	});
 	const vulnerabilityScan = $derived(vulnerabilityManagementEnabled ? (scanQuery.data ?? null) : null);
 	const scanInProgress = $derived(isVulnerabilityScanInProgress(vulnerabilityScan?.status));
-	let stopScanPolling: (() => void) | null = null;
-	let pollingScope = '';
-	let scanRequest = $state<{ scope: string; time: string } | null>(null);
-	const lastScanRequestedAt = $derived.by(() => {
-		if (scanRequest?.scope === `${currentEnvId}:${image?.id}`) return scanRequest.time;
-		return vulnerabilityScan?.scanTime ?? null;
+	const scanReportError = $derived(scanQuery.isError && scanQuery.data ? extractApiErrorMessage(scanQuery.error) : null);
+
+	$effect(() => {
+		if (!vulnerabilityScan || scanInProgress || completionToastScope !== scanScope) return;
+		completionToastScope = null;
+		toastVulnerabilityScanStatus(vulnerabilityScan);
 	});
-	let destroyed = false;
 
-	let scanReportError = $state<string | null>(null);
-
-	async function handleScanImage() {
-		scanReportError = null;
-		if (!canScanImage || !image?.id || isLoading.scanning) return;
-		const environmentId = currentEnvId;
-		const requestedImageId = image.id;
-		const requestedKey = scanQueryKey;
-		isLoading.scanning = true;
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					await queryClient.cancelQueries({ queryKey: requestedKey });
-					const result = await vulnerabilityService.scanImage(requestedImageId, environmentId);
-					if (destroyed || !vulnerabilityManagementEnabled || environmentId !== currentEnvId || requestedImageId !== image.id)
-						return;
-					queryClient.setQueryData(requestedKey, result);
-					scanRequest = { scope: `${environmentId}:${requestedImageId}`, time: result.scanTime || nowInstantString() };
-					if (isVulnerabilityScanInProgress(result.status)) {
-						toastVulnerabilityScanStatus(result, { includeStarted: true });
-						beginScanPolling(true);
-					} else {
-						toastVulnerabilityScanStatus(result);
-					}
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.error('Failed to scan image:', error);
-				toast.error(m.vuln_scan_failed());
-			}
-		} finally {
-			isLoading.scanning = false;
+	const scanMutation = createMutation(() => ({
+		mutationFn: ({ imageId, environmentId }: { imageId: string; environmentId: string }) =>
+			vulnerabilityService.scanImage(imageId, environmentId),
+		onSuccess: async (result, { imageId, environmentId }) => {
+			const scope = `${environmentId}:${imageId}`;
+			scanRequest = { scope, time: result.scanTime || nowInstantString() };
+			const inProgress = isVulnerabilityScanInProgress(result.status);
+			toastVulnerabilityScanStatus(result, { includeStarted: inProgress });
+			await queryClient.invalidateQueries({ queryKey: queryKeys.vulnerabilities.scanResult(environmentId, imageId) });
+			if (inProgress) completionToastScope = scope;
+		},
+		onError: (error) => {
+			toast.error(m.vuln_scan_failed(), { description: extractApiErrorMessage(error) });
 		}
+	}));
+
+	function handleScanImage() {
+		if (!canScanImage || !image?.id || scanMutation.isPending) return;
+		scanMutation.mutate({ imageId: image.id, environmentId: currentEnvId });
 	}
 
 	async function handlePatchImage() {
@@ -170,128 +165,6 @@
 			}
 		});
 	}
-
-	function stopPolling() {
-		if (stopScanPolling) {
-			stopScanPolling();
-			stopScanPolling = null;
-		}
-	}
-
-	function beginScanPolling(showToast: boolean) {
-		if (!vulnerabilityManagementEnabled || !image?.id || stopScanPolling) return;
-		const environmentId = currentEnvId;
-		const requestedImageId = image.id;
-		const requestedKey = scanQueryKey;
-		pollingScope = `${environmentId}:${requestedImageId}`;
-		const cancel = startVulnerabilityScanPolling(
-			requestedImageId,
-			(id) => vulnerabilityService.getScanSummary(id, environmentId),
-			{
-				onUpdate: (summary) => {
-					if (destroyed || !vulnerabilityManagementEnabled || environmentId !== currentEnvId || requestedImageId !== image.id)
-						return;
-					queryClient.setQueryData(requestedKey, {
-						...(vulnerabilityScan ?? {}),
-						imageId: summary.imageId,
-						scanTime: summary.scanTime,
-						status: summary.status,
-						scanPhase: summary.scanPhase,
-						summary: summary.summary,
-						error: summary.error
-					} as VulnerabilityScanResult);
-				},
-				onComplete: async (summary) => {
-					if (destroyed || !vulnerabilityManagementEnabled || environmentId !== currentEnvId || requestedImageId !== image.id)
-						return;
-					let resolvedSummary = summary;
-					const operationResult = await tryCatch(
-						(async () =>
-							stabilizeFailedVulnerabilitySummary(
-								summary.imageId,
-								summary,
-								(id) => vulnerabilityService.getScanSummary(id, environmentId),
-								{
-									scanRequestedAt: lastScanRequestedAt ?? vulnerabilityScan?.scanTime
-								}
-							))()
-					);
-					if (operationResult.error !== null) {
-						// Keep original summary when stabilization check fails.
-					} else {
-						resolvedSummary = operationResult.data;
-					}
-
-					if (destroyed || !vulnerabilityManagementEnabled || environmentId !== currentEnvId || requestedImageId !== image.id)
-						return;
-					if (isVulnerabilityScanInProgress(resolvedSummary.status)) {
-						queryClient.setQueryData(requestedKey, {
-							...(vulnerabilityScan ?? {}),
-							imageId: resolvedSummary.imageId,
-							scanTime: resolvedSummary.scanTime,
-							status: resolvedSummary.status,
-							scanPhase: resolvedSummary.scanPhase,
-							summary: resolvedSummary.summary,
-							error: resolvedSummary.error
-						} as VulnerabilityScanResult);
-						stopPolling();
-						beginScanPolling(false);
-						return;
-					}
-
-					stopPolling();
-					const operationResult2 = await tryCatch(
-						(async () => vulnerabilityService.getScanResult(resolvedSummary.imageId, environmentId))()
-					);
-					if (destroyed || !vulnerabilityManagementEnabled || environmentId !== currentEnvId || requestedImageId !== image.id)
-						return;
-					if (operationResult2.error !== null) {
-						scanReportError = extractApiErrorMessage(operationResult2.error);
-						queryClient.setQueryData(requestedKey, {
-							...(vulnerabilityScan ?? {}),
-							imageId: resolvedSummary.imageId,
-							scanTime: resolvedSummary.scanTime,
-							status: resolvedSummary.status,
-							scanPhase: resolvedSummary.scanPhase,
-							summary: resolvedSummary.summary,
-							error: resolvedSummary.error
-						} as VulnerabilityScanResult);
-					} else {
-						scanReportError = null;
-						queryClient.setQueryData(requestedKey, operationResult2.data);
-					}
-					if (showToast) {
-						toastVulnerabilityScanStatus(resolvedSummary);
-					}
-				},
-				onError: () => {}
-			}
-		);
-
-		stopScanPolling = cancel;
-	}
-
-	onMount(() => {
-		const cache = queryClient.getQueryCache();
-		function updateScanPolling() {
-			if (destroyed) return;
-			const scope = `${currentEnvId}:${image?.id}`;
-			if (scope !== pollingScope) stopPolling();
-			if (scanInProgress) beginScanPolling(false);
-			else stopPolling();
-		}
-		updateScanPolling();
-		return cache.subscribe((event) => {
-			if (event.type !== 'updated' && event.type !== 'observerResultsUpdated') return;
-			if (event.query !== cache.find({ queryKey: scanQueryKey, exact: true })) return;
-			void tick().then(updateScanPolling);
-		});
-	});
-
-	onDestroy(() => {
-		destroyed = true;
-		stopPolling();
-	});
 
 	const shortId = $derived.by(() => image?.id?.split(':')[1]?.substring(0, 12) || m.common_na());
 
@@ -341,7 +214,7 @@
 						setLoadingState: (value) => (isLoading.removing = value),
 						onSuccess: async (data) => {
 							toast.success(m.image_removed_successfully(), activityToastOptions(extractActivityId(data)));
-							goto('/images');
+							goto(resolve('/(app)/images'));
 						}
 					});
 				}
@@ -385,8 +258,8 @@
 				id: 'scan',
 				action: 'scan',
 				label: m.vuln_scan(),
-				loading: isLoading.scanning,
-				disabled: isLoading.scanning,
+				loading: scanMutation.isPending,
+				disabled: scanMutation.isPending,
 				onclick: handleScanImage
 			});
 		}
@@ -420,7 +293,7 @@
 
 <ResourceDetailLayout backUrl="/images" backLabel={m.images()} title={detailTitle} {actions}>
 	{#snippet badges()}
-		<EnvironmentCell value={currentEnvId} />
+		<EnvironmentCell value={currentEnvId} plain />
 	{/snippet}
 
 	{#if image}
@@ -521,7 +394,7 @@
 							environmentId={currentEnvId}
 							scan={vulnerabilityScan}
 							reportError={scanReportError}
-							isScanning={isLoading.scanning}
+							isScanning={scanMutation.isPending}
 							onScan={handleScanImage}
 						/>
 					</Tabs.Content>
@@ -534,7 +407,7 @@
 			<ArcaneButton
 				action="cancel"
 				customLabel={m.common_back_to({ resource: m.images() })}
-				onclick={() => goto('/images')}
+				onclick={() => goto(resolve('/(app)/images'))}
 				size="sm"
 				class="mt-4"
 			/>
@@ -549,6 +422,6 @@
 		environmentId={currentEnvId}
 		defaultRepository={image.repoTags?.[0]?.split(':')[0] ??
 			(pinnedRepository || (image.repo && image.repo !== '<none>' ? image.repo : ''))}
-		onTagged={() => goto(environmentHref(`/images/${image.id}`, currentEnvId), { refreshAll: true })}
+		onTagged={() => queryClient.invalidateQueries({ queryKey: queryKeys.images.detail(currentEnvId, data.imageId) })}
 	/>
 {/if}

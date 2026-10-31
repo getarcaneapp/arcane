@@ -5,13 +5,13 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/passkey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
 // RegisterOidc registers all OIDC authentication endpoints (plus the OIDC
@@ -92,7 +92,7 @@ func RegisterOidc(
 	huma.Register(api, huma.Operation{
 		OperationID: "list-oidc-role-mappings",
 		Method:      http.MethodGet,
-		Path:        "/oidc/role-mappings",
+		Path:        "/oidc/mappings",
 		Summary:     "List OIDC group → role mappings",
 		Description: "Returns every mapping. On each OIDC login the user's group claim is matched against ClaimValue and matching rows become source='oidc' role assignments.",
 		Tags:        []string{"OIDC"},
@@ -103,7 +103,7 @@ func RegisterOidc(
 	huma.Register(api, huma.Operation{
 		OperationID: "create-oidc-role-mapping",
 		Method:      http.MethodPost,
-		Path:        "/oidc/role-mappings",
+		Path:        "/oidc/mappings",
 		Summary:     "Create an OIDC role mapping",
 		Tags:        []string{"OIDC"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -112,8 +112,8 @@ func RegisterOidc(
 
 	huma.Register(api, huma.Operation{
 		OperationID: "update-oidc-role-mapping",
-		Method:      http.MethodPut,
-		Path:        "/oidc/role-mappings/{id}",
+		Method:      http.MethodPatch,
+		Path:        "/oidc/mappings/{id}",
 		Summary:     "Update an OIDC role mapping",
 		Tags:        []string{"OIDC"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -123,7 +123,7 @@ func RegisterOidc(
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-oidc-role-mapping",
 		Method:      http.MethodDelete,
-		Path:        "/oidc/role-mappings/{id}",
+		Path:        "/oidc/mappings/{id}",
 		Summary:     "Delete an OIDC role mapping",
 		Tags:        []string{"OIDC"},
 		Security:    handlerutil.DefaultOperationSecurity(),

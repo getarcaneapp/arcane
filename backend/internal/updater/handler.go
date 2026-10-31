@@ -6,15 +6,14 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/project"
-	"github.com/getarcaneapp/arcane/types/v2/updater"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 // UpdaterHandler provides Huma-based updater management endpoints.
@@ -24,9 +23,9 @@ type UpdaterHandler struct {
 }
 
 type RunUpdaterInput struct {
-	EnvironmentID string           `path:"id" doc:"Environment ID"`
-	Automatic     bool             `query:"automatic" doc:"Honor updater opt-out labels and excluded containers, as automatic runs do"`
-	Body          *updater.Options `doc:"Updater run options"`
+	Body          *types.UpdaterOptions `doc:"Updater run options"`
+	EnvironmentID string                `path:"id" doc:"Environment ID"`
+	Automatic     bool                  `query:"automatic" doc:"Honor updater opt-out labels and excluded containers, as automatic runs do"`
 }
 
 type UpdateContainerInput struct {
@@ -36,12 +35,8 @@ type UpdateContainerInput struct {
 }
 
 type updateContainerOutput struct {
+	Body   types.ApiResponse[any]
 	Status int
-	Body   base.ApiResponse[any]
-}
-
-type GetUpdaterStatusInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
 type GetUpdaterHistoryInput struct {
@@ -50,8 +45,8 @@ type GetUpdaterHistoryInput struct {
 }
 
 // RunUpdater applies pending container updates.
-func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput) (*handlerutil.Out[*updater.Result], error) {
-	out, err := h.updaterService.ApplyPending(utils.ActivityRuntimeContext(ctx, h.appCtx), updater.Options{
+func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput) (*handlerutil.Out[*types.UpdaterResult], error) {
+	out, err := h.updaterService.ApplyPending(utils.ActivityRuntimeContext(ctx, h.appCtx), types.UpdaterOptions{
 		Type:                     kit.FromPtr(input.Body).Type,
 		ResourceIds:              kit.FromPtr(input.Body).ResourceIds,
 		ForceUpdate:              kit.FromPtr(input.Body).ForceUpdate,
@@ -63,8 +58,8 @@ func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to run updater: "+apiErr.Message)
 	}
 
-	return &handlerutil.Out[*updater.Result]{
-		Body: base.ApiResponse[*updater.Result]{
+	return &handlerutil.Out[*types.UpdaterResult]{
+		Body: types.ApiResponse[*types.UpdaterResult]{
 			Success: true,
 			Data:    out,
 		},
@@ -72,9 +67,9 @@ func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput)
 }
 
 // GetUpdaterStatus returns the current status of the updater.
-func (h *UpdaterHandler) GetUpdaterStatus(ctx context.Context, input *GetUpdaterStatusInput) (*handlerutil.Out[updater.Status], error) {
-	return &handlerutil.Out[updater.Status]{
-		Body: base.ApiResponse[updater.Status]{
+func (h *UpdaterHandler) GetUpdaterStatus(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.UpdaterStatus], error) {
+	return &handlerutil.Out[types.UpdaterStatus]{
+		Body: types.ApiResponse[types.UpdaterStatus]{
 			Success: true,
 			Data:    h.updaterService.GetStatus(),
 		},
@@ -82,19 +77,26 @@ func (h *UpdaterHandler) GetUpdaterStatus(ctx context.Context, input *GetUpdater
 }
 
 // GetUpdaterHistory returns the history of update operations.
-func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdaterHistoryInput) (*handlerutil.Out[[]updater.AutoUpdateRecord], error) {
+func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdaterHistoryInput) (*handlerutil.Out[[]types.AutoUpdateRecord], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.updaterService.AggregateHistory(ctx, cmp.Or(max(input.Limit, 0), 50))
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to get updater history: " + err.Error())
+		}
+		return &handlerutil.Out[[]types.AutoUpdateRecord]{Body: body}, nil
+	}
 	history, err := h.updaterService.GetHistory(ctx, cmp.Or(max(input.Limit, 0), 50))
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get updater history: " + err.Error())
 	}
 
-	records, err := mapping.MapSlice[AutoUpdateRecord, updater.AutoUpdateRecord](history)
+	records, err := mapping.MapSlice[AutoUpdateRecord, types.AutoUpdateRecord](history)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get updater history: " + err.Error())
 	}
 
-	return &handlerutil.Out[[]updater.AutoUpdateRecord]{
-		Body: base.ApiResponse[[]updater.AutoUpdateRecord]{
+	return &handlerutil.Out[[]types.AutoUpdateRecord]{
+		Body: types.ApiResponse[[]types.AutoUpdateRecord]{
 			Success: true,
 			Data:    records,
 		},
@@ -110,7 +112,7 @@ func (h *UpdaterHandler) updateContainer(ctx context.Context, input *UpdateConta
 		}
 		return &updateContainerOutput{
 			Status: http.StatusAccepted,
-			Body: base.ApiResponse[any]{
+			Body: types.ApiResponse[any]{
 				Success: true,
 				Data:    acceptedActivity,
 			},
@@ -123,7 +125,7 @@ func (h *UpdaterHandler) updateContainer(ctx context.Context, input *UpdateConta
 
 	return &updateContainerOutput{
 		Status: http.StatusOK,
-		Body: base.ApiResponse[any]{
+		Body: types.ApiResponse[any]{
 			Success: true,
 			Data:    out,
 		},
@@ -131,14 +133,14 @@ func (h *UpdaterHandler) updateContainer(ctx context.Context, input *UpdateConta
 }
 
 // CheckProjectUpdates checks Compose policies through the updater service.
-func (h *UpdaterHandler) CheckProjectUpdates(ctx context.Context, input *updater.CheckProjectInput) (*handlerutil.Out[*project.UpdateInfo], error) {
+func (h *UpdaterHandler) CheckProjectUpdates(ctx context.Context, input *types.UpdaterCheckProjectInput) (*handlerutil.Out[*types.ProjectUpdateInfo], error) {
 	result, err := h.updaterService.CheckProjectUpdates(ctx, input.ProjectID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to check project updates: "+apiErr.Message)
 	}
-	return &handlerutil.Out[*project.UpdateInfo]{
-		Body: base.ApiResponse[*project.UpdateInfo]{
+	return &handlerutil.Out[*types.ProjectUpdateInfo]{
+		Body: types.ApiResponse[*types.ProjectUpdateInfo]{
 			Success: true,
 			Data:    result,
 		},

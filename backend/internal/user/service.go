@@ -13,20 +13,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/kit/normalization"
 	"go.getarcane.app/kit/pkg"
 	"golang.org/x/crypto/argon2"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/userctx"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/dbutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
 type Argon2Params struct {
@@ -66,6 +67,22 @@ var (
 	// (e.g. a delegated users:update holder trying to edit a global admin).
 	ErrInsufficientPrivilege = errors.New("insufficient privilege to modify this user")
 )
+
+const dashboardColumns = 12
+
+var dashboardWidgetSizes = map[string]struct{ minW, minH, maxH int }{
+	"healthy":          {minW: 2, minH: 2, maxH: 4},
+	"attentionCount":   {minW: 2, minH: 2, maxH: 4},
+	"updates":          {minW: 2, minH: 2, maxH: 4},
+	"risk":             {minW: 2, minH: 2, maxH: 4},
+	"reclaimableTotal": {minW: 2, minH: 2, maxH: 4},
+	"environments":     {minW: 6, minH: 3, maxH: 12},
+	"attention":        {minW: 4, minH: 4, maxH: 12},
+	"activity":         {minW: 4, minH: 4, maxH: 12},
+	"jobs":             {minW: 3, minH: 3, maxH: 12},
+	"reclaimable":      {minW: 3, minH: 3, maxH: 12},
+	"memory":           {minW: 3, minH: 3, maxH: 12},
+}
 
 func NewUserService(db *database.DB, roleService *role.RoleService, revokeSessionsExcept func(context.Context, *gorm.DB, string, string) error) *UserService {
 	return &UserService{
@@ -157,11 +174,18 @@ func (s *UserService) CreateUser(ctx context.Context, localUser *User) (*User, e
 	if err := normalization.Normalize(localUser); err != nil {
 		return nil, err
 	}
-	username, err := normalizeUsernameInternal(localUser.Username)
+	username, err := normalizeUsername(localUser.Username)
 	if err != nil {
 		return nil, err
 	}
 	localUser.Username = username
+	if localUser.OidcSubjectId == nil {
+		email, emailErr := NormalizeOptionalEmail(localUser.Email)
+		if emailErr != nil {
+			return nil, emailErr
+		}
+		localUser.Email = email
+	}
 
 	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if localUser.OidcSubjectId == nil {
@@ -170,7 +194,7 @@ func (s *UserService) CreateUser(ctx context.Context, localUser *User) (*User, e
 			}
 		}
 		if createUserErr := tx.Create(localUser).Error; createUserErr != nil {
-			if isDuplicateKeyErrorInternal(tx, createUserErr) {
+			if isDuplicateKeyError(tx, createUserErr) {
 				return ErrUsernameTaken
 			}
 			return fmt.Errorf("failed to create user: %w", createUserErr)
@@ -223,7 +247,7 @@ func (s *UserService) ResolveUserPermissions(ctx context.Context, userID string)
 	return s.roleService.ResolvePermissions(ctx, userID)
 }
 
-// checkTargetPrivilegeInternal enforces actor-vs-target privilege ordering: a
+// checkTargetPrivilege enforces actor-vs-target privilege ordering: a
 // caller may not modify a target whose effective permissions make them a global
 // admin unless the caller is itself a global admin. This prevents holders of
 // delegated users:update/users:delete from seizing or removing admin accounts.
@@ -235,7 +259,7 @@ func (s *UserService) ResolveUserPermissions(ctx context.Context, userID string)
 // writes lock the same user rows, so a concurrent promotion or demotion is
 // serialized with the mutation. The request-time actor permissions remain part
 // of the decision so revalidation can only reduce, never elevate, authority.
-func (s *UserService) checkTargetPrivilegeInternal(ctx context.Context, tx *gorm.DB, actorPerms *authz.PermissionSet, targetID string) error {
+func (s *UserService) checkTargetPrivilege(ctx context.Context, tx *gorm.DB, actorPerms *authz.PermissionSet, targetID string) error {
 	revalidateActor := actorPerms != nil && !actorPerms.Sudo && actorPerms.IsGlobalAdmin() && s.roleService != nil
 	actorID := ""
 	if revalidateActor {
@@ -296,16 +320,43 @@ func (s *UserService) UpdateUser(ctx context.Context, localUser *User, actorPerm
 	if err := normalization.Normalize(localUser); err != nil {
 		return nil, err
 	}
+	if layout := localUser.Preferences.DashboardLayout; layout != nil {
+		widgets := make([]types.DashboardWidgetLayout, 0, len(dashboardWidgetSizes))
+		for _, widget := range *layout {
+			sizes, known := dashboardWidgetSizes[widget.ID]
+			duplicate := slices.ContainsFunc(widgets, func(existing types.DashboardWidgetLayout) bool {
+				return existing.ID == widget.ID
+			})
+			if !known || duplicate {
+				continue
+			}
+			width := min(max(widget.W, sizes.minW), dashboardColumns)
+			widgets = append(widgets, types.DashboardWidgetLayout{
+				ID:     widget.ID,
+				X:      min(max(widget.X, 0), dashboardColumns-width),
+				Y:      max(widget.Y, 0),
+				W:      width,
+				H:      min(max(widget.H, sizes.minH), sizes.maxH),
+				Hidden: widget.Hidden,
+			})
+		}
+		localUser.Preferences.DashboardLayout = &widgets
+	}
 	var updated User
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		if err := s.checkTargetPrivilegeInternal(ctx, tx, actorPerms, localUser.ID); err != nil {
+		if err := s.checkTargetPrivilege(ctx, tx, actorPerms, localUser.ID); err != nil {
 			return err
 		}
 		var current User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", localUser.ID).First(&current).Error; err != nil {
 			return fmt.Errorf("failed to load user: %w", err)
 		}
-		if !strings.EqualFold(kit.FromPtr(current.Email), kit.FromPtr(localUser.Email)) {
+		if !strings.EqualFold(kit.FromPtr(current.Email), strings.TrimSpace(kit.FromPtr(localUser.Email))) {
+			email, normalizeErr := NormalizeOptionalEmail(localUser.Email)
+			if normalizeErr != nil {
+				return normalizeErr
+			}
+			localUser.Email = email
 			if err := ensureEmailAvailable(tx, localUser.ID, localUser.Email); err != nil {
 				return err
 			}
@@ -325,7 +376,7 @@ func (s *UserService) UpdateUser(ctx context.Context, localUser *User, actorPerm
 				FontSize:    localUser.FontSize,
 				Preferences: localUser.Preferences,
 			}).Error; err != nil {
-			if isDuplicateKeyErrorInternal(tx, err) {
+			if isDuplicateKeyError(tx, err) {
 				return ErrUsernameTaken
 			}
 			return fmt.Errorf("failed to update user: %w", err)
@@ -340,6 +391,17 @@ func (s *UserService) UpdateUser(ctx context.Context, localUser *User, actorPerm
 	}
 	*localUser = updated
 	return localUser, nil
+}
+
+func NormalizeOptionalEmail(email *string) (*string, error) {
+	trimmedEmail := strings.TrimSpace(kit.FromPtr(email))
+	if trimmedEmail == "" {
+		return nil, nil
+	}
+	if !validation.IsValidUserEmail(trimmedEmail) {
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "email", Err: errors.New("email must be a valid email address")})
+	}
+	return &trimmedEmail, nil
 }
 
 func ensureEmailAvailable(tx *gorm.DB, userID string, email *string) error {
@@ -370,7 +432,7 @@ func (s *UserService) TouchLastLogin(ctx context.Context, userID string, at time
 	return nil
 }
 
-func normalizeUsernameInternal(username string) (string, error) {
+func normalizeUsername(username string) (string, error) {
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return "", ErrUsernameRequired
@@ -378,7 +440,7 @@ func normalizeUsernameInternal(username string) (string, error) {
 	return username, nil
 }
 
-func isDuplicateKeyErrorInternal(db *gorm.DB, err error) bool {
+func isDuplicateKeyError(db *gorm.DB, err error) bool {
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
 		return true
 	}
@@ -446,7 +508,7 @@ func (s *UserService) SetPasswordAndRevokeSessionsExcept(ctx context.Context, lo
 
 	var updatedUser User
 	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		if privilegeErr := s.checkTargetPrivilegeInternal(ctx, tx, actorPerms, localUser.ID); privilegeErr != nil {
+		if privilegeErr := s.checkTargetPrivilege(ctx, tx, actorPerms, localUser.ID); privilegeErr != nil {
 			return privilegeErr
 		}
 		if loadPasswordResetUserErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -603,15 +665,15 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 	if adminUserID == "" || s.roleService == nil {
 		return nil
 	}
-	return s.grantDefaultAdminRoleInternal(ctx, adminUserID)
+	return s.grantDefaultAdminRole(ctx, adminUserID)
 }
 
-// grantDefaultAdminRoleInternal grants the global Admin role to the bootstrap
+// grantDefaultAdminRole grants the global Admin role to the bootstrap
 // user. Reached only on fresh bootstrap or zero-admin recovery.
 // ReplaceUserAssignments replaces manual-source rows, so carry forward only the
 // existing manual assignments — copying OIDC-sourced rows here would duplicate
 // them as manual and pin them forever.
-func (s *UserService) grantDefaultAdminRoleInternal(ctx context.Context, adminUserID string) error {
+func (s *UserService) grantDefaultAdminRole(ctx context.Context, adminUserID string) error {
 	assignments, err := s.roleService.ListUserAssignments(ctx, adminUserID)
 	if err != nil {
 		return fmt.Errorf("failed to list default admin assignments: %w", err)
@@ -647,7 +709,7 @@ func (s *UserService) DeleteUser(ctx context.Context, id string, actorPerms *aut
 		if err := s.roleService.LockGlobalAdminGuard(tx); err != nil {
 			return err
 		}
-		if err := s.checkTargetPrivilegeInternal(ctx, tx, actorPerms, id); err != nil {
+		if err := s.checkTargetPrivilege(ctx, tx, actorPerms, id); err != nil {
 			return err
 		}
 		targetPerms, err := s.roleService.ResolveUserPermissionsInDB(ctx, tx, id)
@@ -668,7 +730,7 @@ func (s *UserService) DeleteUser(ctx context.Context, id string, actorPerms *aut
 	return err
 }
 
-func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.QueryParams) ([]user.User, pagination.Response, error) {
+func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.QueryParams) ([]types.User, pagination.Response, error) {
 	var users []User
 	query := s.db.WithContext(ctx).
 		Model(&User{}).
@@ -687,29 +749,29 @@ func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate users: %w", err)
 	}
 
-	result := s.toUserResponseDtosInternal(ctx, users)
+	result := s.toUserResponseDtos(ctx, users)
 
 	return result, paginationResp, nil
 }
 
-func (s *UserService) ToUserResponseDto(ctx context.Context, u User) (user.User, error) {
-	dto := s.toUserResponseDtoInternal(ctx, u)
+func (s *UserService) ToUserResponseDto(ctx context.Context, u User) (types.User, error) {
+	dto := s.toUserResponseDto(ctx, u)
 	if dto.IsGlobalAdmin && s.roleService != nil {
 		remaining, err := s.roleService.CountGlobalAdmins(ctx, s.db.DB, u.ID)
 		if err != nil {
-			return user.User{}, fmt.Errorf("failed to check whether user can be deleted: %w", err)
+			return types.User{}, fmt.Errorf("failed to check whether user can be deleted: %w", err)
 		}
 		dto.CanDelete = remaining > 0
 	}
 	return dto, nil
 }
 
-// toUserResponseDtosInternal maps a user list. CanDelete is false on the only
+// toUserResponseDtos maps a user list. CanDelete is false on the only
 // effective global admin.
-func (s *UserService) toUserResponseDtosInternal(ctx context.Context, users []User) []user.User {
-	result := make([]user.User, len(users))
+func (s *UserService) toUserResponseDtos(ctx context.Context, users []User) []types.User {
+	result := make([]types.User, len(users))
 	for i, u := range users {
-		result[i] = s.toUserResponseDtoInternal(ctx, u)
+		result[i] = s.toUserResponseDto(ctx, u)
 	}
 	if s.roleService == nil {
 		return result
@@ -724,10 +786,10 @@ func (s *UserService) toUserResponseDtosInternal(ctx context.Context, users []Us
 	return result
 }
 
-// toUserResponseDtoInternal builds the public User DTO. RoleAssignments and
+// toUserResponseDto builds the public User DTO. RoleAssignments and
 // PermissionsByEnv come from the RBAC service. Callers apply the last-admin guard.
-func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u User) user.User {
-	dto := user.User{
+func (s *UserService) toUserResponseDto(ctx context.Context, u User) types.User {
+	dto := types.User{
 		ID:                     u.ID,
 		Username:               u.Username,
 		DisplayName:            u.DisplayName,
@@ -741,7 +803,7 @@ func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u User) use
 		RequiresPasswordChange: u.RequiresPasswordChange,
 		CreatedAt:              u.CreatedAt.Format("2006-01-02T15:04:05.999999Z"),
 		UpdatedAt:              u.UpdatedAt.Format("2006-01-02T15:04:05.999999Z"),
-		RoleAssignments:        []user.RoleAssignmentSummary{},
+		RoleAssignments:        []types.RoleAssignmentSummary{},
 		PermissionsByEnv:       map[string][]string{},
 	}
 	if u.LastLogin != nil {
@@ -757,9 +819,9 @@ func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u User) use
 		return dto
 	}
 	if rows, err := s.roleService.ListUserAssignments(ctx, u.ID); err == nil {
-		dto.RoleAssignments = make([]user.RoleAssignmentSummary, len(rows))
+		dto.RoleAssignments = make([]types.RoleAssignmentSummary, len(rows))
 		for i, r := range rows {
-			dto.RoleAssignments[i] = user.RoleAssignmentSummary{
+			dto.RoleAssignments[i] = types.RoleAssignmentSummary{
 				RoleID:        r.RoleID,
 				EnvironmentID: r.EnvironmentID,
 				Source:        r.Source,
@@ -799,10 +861,10 @@ func permissionSetToMap(ps *authz.PermissionSet) map[string][]string {
 
 func (s *UserService) GetUser(ctx context.Context, userID string) (*User, error) {
 	slog.DebugContext(ctx, "GetUser called", "userId", userID)
-	return s.getUserInternal(ctx, userID, s.db.DB)
+	return s.getUser(ctx, userID, s.db.DB)
 }
 
-func (s *UserService) getUserInternal(ctx context.Context, userID string, tx *gorm.DB) (*User, error) {
+func (s *UserService) getUser(ctx context.Context, userID string, tx *gorm.DB) (*User, error) {
 	var userRecord User
 	err := tx.WithContext(ctx).
 		Where("id = ?", userID).

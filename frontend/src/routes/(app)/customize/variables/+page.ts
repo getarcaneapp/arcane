@@ -1,6 +1,5 @@
-import { queryKeys } from '#lib/query/query-keys.js';
-import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
-import { variableService } from '#lib/services/variable-service.js';
+import { environmentListQuery } from '#lib/query/environments.js';
+import { variableListQuery } from '#lib/query/variables.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 
 import type { PageLoad } from './$types';
@@ -14,14 +13,8 @@ export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
 
 	const [variables, environmentsPage] = await Promise.all([
-		queryClient.query({
-			queryKey: queryKeys.variables.list(),
-			queryFn: () => variableService.list()
-		}),
-		queryClient.query({
-			queryKey: queryKeys.environments.list(environmentListOptions),
-			queryFn: () => environmentManagementService.getEnvironments(environmentListOptions)
-		})
+		queryClient.query(variableListQuery()),
+		queryClient.query(environmentListQuery(environmentListOptions))
 	]);
 
 	return { variables, environments: environmentsPage.data };

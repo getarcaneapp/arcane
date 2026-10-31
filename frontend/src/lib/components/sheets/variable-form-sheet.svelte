@@ -13,14 +13,16 @@
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import type { Environment } from '#lib/types/environment.js';
-	import type { GlobalVariable, GlobalVariableCreateDto, GlobalVariableUpdateDto } from '#lib/types/variable.js';
+	import type { GlobalVariable, GlobalVariableCreate, GlobalVariableUpdate } from '#lib/types/variable.js';
+	import { applyApiFieldError, extractApiErrorMessage } from '#lib/utils/api.js';
 	import { parseEnvText, normalizeVariableKeyInput } from '#lib/utils/env-file.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
 	type VariableFormPayload =
-		| { mode: 'create'; variable: GlobalVariableCreateDto }
-		| { mode: 'edit'; id: string; variable: GlobalVariableUpdateDto }
-		| { mode: 'bulk'; variables: GlobalVariableCreateDto[] };
+		| { mode: 'create'; variable: GlobalVariableCreate }
+		| { mode: 'edit'; id: string; variable: GlobalVariableUpdate }
+		| { mode: 'bulk'; variables: GlobalVariableCreate[] };
 
 	let {
 		open = $bindable(false),
@@ -35,7 +37,7 @@
 		environments: Environment[];
 		existingVariables?: GlobalVariable[];
 		isLoading?: boolean;
-		onSubmit: (payload: VariableFormPayload) => void;
+		onSubmit: (payload: VariableFormPayload) => Promise<Error | null>;
 	} = $props();
 
 	const isEditMode = $derived(!!variableToEdit);
@@ -52,8 +54,6 @@
 	let bulkText = $state('');
 	let bulkSecret = $state(false);
 	let bulkError = $state<string | null>(null);
-
-	const keyPattern = /^[A-Z_][A-Z0-9_]*$/i;
 
 	// Mirrors the backend conflict rule: a key may exist once per overlapping
 	// scope. The same key as both an all-environments variable and an
@@ -78,7 +78,6 @@
 				key: z
 					.string()
 					.min(1, m.common_field_required({ field: m.key() }))
-					.regex(keyPattern, m.invalid_key_format())
 					.refine((key) => !scopeConflicts(key), m.variables_duplicate_keys_error()),
 				value: z.string(),
 				isSecret: z.boolean()
@@ -120,13 +119,13 @@
 		return !scopeError;
 	}
 
-	function scopeDto(): Pick<GlobalVariableCreateDto, 'allEnvironments' | 'environmentIds'> {
+	function scopeDto(): Pick<GlobalVariable, 'allEnvironments' | 'environmentIds'> {
 		return scope === 'all'
 			? { allEnvironments: true, environmentIds: [] }
 			: { allEnvironments: false, environmentIds: [...selectedEnvIds] };
 	}
 
-	function handleSubmit() {
+	async function handleSubmit() {
 		const scopeValid = validateScope();
 
 		if (entryMode === 'bulk' && !isEditMode) {
@@ -138,7 +137,7 @@
 			}
 			if (bulkError || !scopeValid) return;
 
-			onSubmit({
+			const error = await onSubmit({
 				mode: 'bulk',
 				variables: parsed.entries.map((entry) => ({
 					key: entry.key,
@@ -147,20 +146,19 @@
 					...scopeDto()
 				}))
 			});
+			if (error) bulkError = extractApiErrorMessage(error);
 			return;
 		}
 
 		const data = form.validate();
 		if (!data || !scopeValid) return;
 
-		if (isEditMode && variableToEdit) {
-			const dto: GlobalVariableUpdateDto = { key: data.key, isSecret: data.isSecret, ...scopeDto() };
-			// Editing a secret with an empty value keeps the stored value.
-			if (!(variableToEdit.isSecret && data.value === '')) dto.value = data.value;
-			onSubmit({ mode: 'edit', id: variableToEdit.id, variable: dto });
-		} else {
-			onSubmit({ mode: 'create', variable: { key: data.key, value: data.value, isSecret: data.isSecret, ...scopeDto() } });
-		}
+		const variable = { key: data.key, value: data.value, isSecret: data.isSecret, ...scopeDto() };
+		const error =
+			isEditMode && variableToEdit
+				? await onSubmit({ mode: 'edit', id: variableToEdit.id, variable: changedFields(variableToEdit, variable) })
+				: await onSubmit({ mode: 'create', variable });
+		applyApiFieldError(inputs, error);
 	}
 </script>
 

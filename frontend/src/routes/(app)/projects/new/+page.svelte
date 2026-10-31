@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -20,7 +21,7 @@
 	import { WorkspaceDraftState } from '#lib/components/workspace-editor/workspace-draft-state.svelte.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
-	import { ArrowLeftIcon } from '#lib/icons/index.js';
+	import { ArrowLeftIcon, CreateFileIcon, TrashIcon } from '#lib/icons/index.js';
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -40,7 +41,7 @@
 		templateNameSlug,
 		type ProjectEditorLayoutMode
 	} from '#lib/utils/compose-flow.js';
-	import { destinationEnvironmentId, environmentHref, environmentName } from '#lib/utils/environments.js';
+	import { destinationEnvironmentId, environmentName } from '#lib/utils/environments.js';
 	import { preventDefault, createForm } from '#lib/utils/settings.svelte.js';
 	import {
 		getTemplateEditorValidationState,
@@ -68,19 +69,17 @@
 
 	let pickedEnvironmentId = $state('');
 	// Converted containers default the destination to their environment.
-	const environmentId = $derived(
-		destinationEnvironmentId(pickedEnvironmentId || (data.sourceEnvironmentId ?? ''), 'projects:create')
-	);
+	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId || data.sourceEnvironmentId, 'projects:create'));
 	const currentEnvId = $derived(environmentId);
 	const canCreateProject = $derived(hasPermission('projects:create', currentEnvId));
 	// Originals are removed from their own environment, not the destination.
-	const canDeleteContainers = $derived(hasPermission('containers:delete', data.sourceEnvironmentId ?? currentEnvId));
+	const canDeleteContainers = $derived(hasPermission('containers:delete', data.sourceEnvironmentId || currentEnvId));
 	const sourceContainerIds = $derived(data.sourceContainerIds ?? []);
 	// Files are uploaded to the destination, so its limit applies.
 	const destinationSettings = useEnvironmentSettings(() => currentEnvId);
-	const projectWorkspaceMaxFileSizeMb = $derived(destinationSettings.current?.projectWorkspaceMaxFileSizeMb ?? 10);
+	const projectWorkspaceMaxFileSizeMb = $derived(destinationSettings.current?.values.projectWorkspaceMaxFileSizeMb ?? 10);
 
-	let ui = $state({
+	const ui = $state({
 		saving: false,
 		converting: false,
 		creatingTemplate: false,
@@ -91,14 +90,16 @@
 
 	const formSchema = createComposeEditorSchema(m.compose_project_name_required());
 
+	function initialProjectName(): string {
+		if (data.selectedTemplate) return templateNameSlug(data.selectedTemplate.name);
+		if (data.sourceContainerName) return templateNameSlug(data.sourceContainerName);
+		return '';
+	}
+
 	// Initial form values intentionally come from the page load data once.
 	// svelte-ignore state_referenced_locally
 	const formData = {
-		name: data.selectedTemplate
-			? templateNameSlug(data.selectedTemplate.name)
-			: data.sourceContainerName
-				? templateNameSlug(data.sourceContainerName)
-				: '',
+		name: initialProjectName(),
 		composeContent: data.defaultTemplate || '',
 		envContent: data.envTemplate || ''
 	};
@@ -107,14 +108,16 @@
 	let inputs = $derived(form.inputs);
 
 	let composeOpen = $state(true);
-	let envOpen = $state(true);
-	let layoutMode = $state<ProjectEditorLayoutMode>(resolveProjectEditorLayout('classic'));
-	let treePaneWidth = $state(280);
+	let envOpen = $state(false);
+	let envRequested = $state(formData.envContent.trim() !== '');
+	let layoutMode = $state<ProjectEditorLayoutMode>(resolveProjectEditorLayout('tree'));
+	let treePaneWidth = $state<number | null>(null);
 	const workspaceDraft = new WorkspaceDraftState({
 		fallbackTab: 'compose',
 		initialOpenTabs: ['compose'],
 		initialSelection: 'compose',
 		isFixedTab: (key) => key === 'compose' || key === 'env',
+		isTabAvailable: (key) => key !== 'env' || envRequested,
 		planCreate: planProjectWorkspaceFileCreate,
 		planRename: planProjectWorkspaceFileRename,
 		planMove: planWorkspaceFileMove
@@ -125,7 +128,7 @@
 		queryFn: () => fetchProjectTags([{ id: currentEnvId, name: environmentName(currentEnvId) }])
 	}));
 	const availableProjectTags = $derived(projectTagsQuery.data?.tags ?? []);
-	let validation = $state({
+	const validation = $state({
 		composeHasErrors: false,
 		envHasErrors: false,
 		composeValidationReady: false,
@@ -148,21 +151,36 @@
 		return notices;
 	});
 	const newProjectWorkspaceEntries = $derived(workspaceDraft.entries);
-	const newProjectWorkspaceLeadingRows = [
+	const newProjectWorkspaceLeadingRows = $derived([
 		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-info', locked: true },
-		{ key: 'env', label: '.env', iconClass: 'text-success', locked: true }
-	];
+		envRequested
+			? {
+					key: 'env',
+					label: '.env',
+					iconClass: 'text-success',
+					menuItems: [{ id: 'remove', label: m.common_delete(), icon: TrashIcon, destructive: true, onSelect: handleRemoveEnv }]
+				}
+			: { key: 'add-env', label: m.add_env_file(), action: true, onSelect: handleAddEnv }
+	]);
 	let treeOutlineOpen = $state(false);
 	let treeDiffOpen = $state(false);
 	let treeCommandPaletteOpen = $state(false);
 	const openTabs = $derived(workspaceDraft.validOpenTabs);
 	const activeProjectTab = $derived(workspaceDraft.activeTab);
+	const fixedTabNames: Record<string, string> = {
+		compose: 'compose.yaml',
+		env: '.env'
+	};
+	const fixedTabIconClass: Record<string, string> = {
+		compose: 'text-info',
+		env: 'text-success'
+	};
 	const projectTabs = $derived(
 		openTabs.map((key) => ({
 			key,
-			label: key === 'compose' ? 'compose.yaml' : key === 'env' ? '.env' : workspaceFileBasename(key.slice(5)),
-			title: key === 'compose' ? 'compose.yaml' : key === 'env' ? '.env' : key.slice(5),
-			iconClass: key === 'compose' ? 'text-info' : key === 'env' ? 'text-success' : 'text-muted-foreground',
+			label: fixedTabNames[key] ?? workspaceFileBasename(key.slice(5)),
+			title: fixedTabNames[key] ?? key.slice(5),
+			iconClass: fixedTabIconClass[key] ?? 'text-muted-foreground',
 			pending: false
 		}))
 	);
@@ -170,9 +188,9 @@
 	const validationState = $derived(
 		getTemplateEditorValidationState(
 			validation.composeValidationReady,
-			validation.envValidationReady || inputs.envContent.value === formData.envContent,
+			!envRequested || validation.envValidationReady || inputs.envContent.value === formData.envContent,
 			validation.composeHasErrors,
-			validation.envHasErrors
+			envRequested && validation.envHasErrors
 		)
 	);
 	let hasEditorErrors = $derived(hasTemplateEditorErrors(validationState));
@@ -235,14 +253,31 @@
 					}
 				}
 				// fallow-ignore-next-line code-duplication -- create-success handler; navigation target diverges per page
-				goto(environmentHref(`/projects/${project.id}`, destination), { refreshAll: true });
+				goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(destination)}`, { projectId: project.id }), {
+					refreshAll: true
+				});
 			}
 		});
 	}
 
+	function handleAddEnv() {
+		envRequested = true;
+		envOpen = true;
+		workspaceDraft.openTab('env');
+	}
+
+	function handleRemoveEnv() {
+		envRequested = false;
+		form.setValue('envContent', '');
+		workspaceDraft.closeTab('env');
+	}
+
 	const { composeHandlers, handleCreateTemplate } = createComposeTemplateDialogFlow({
 		getInputs: () => inputs,
-		setInputValue: (key, value) => form.setValue(key, value),
+		setInputValue: (key, value) => {
+			if (key === 'envContent' && value.trim()) envRequested = true;
+			form.setValue(key, value);
+		},
 		closeTemplateDialog: () => (ui.showTemplateDialog = false),
 		validate: form.validate,
 		setLoading: (value) => (ui.creatingTemplate = value),
@@ -328,18 +363,25 @@
 {/snippet}
 
 {#snippet projectNameField(variant: 'inline' | 'block')}
-	<EditableName
-		bind:value={inputs.name.value}
-		displayValue={effectiveName}
-		bind:ref={nameInputRef}
-		{variant}
-		error={inputs.name.error ?? undefined}
-		originalValue=""
-		placeholder={m.compose_project_name_placeholder()}
-		canEdit={!ui.saving && !ui.isLoadingTemplateContent && !composeYamlName}
-		disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
-		class={variant === 'inline' ? 'hidden sm:block' : undefined}
-	/>
+	<div class="flex min-w-0 items-center">
+		<EnvironmentDestinationSelect
+			bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
+			permission="projects:create"
+			variant="prefix"
+		/>
+		<EditableName
+			bind:value={inputs.name.value}
+			displayValue={effectiveName}
+			bind:ref={nameInputRef}
+			{variant}
+			error={inputs.name.error ?? undefined}
+			originalValue=""
+			placeholder={m.compose_project_name_placeholder()}
+			canEdit={!ui.saving && !ui.isLoadingTemplateContent && !composeYamlName}
+			disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
+			class={variant === 'inline' ? 'hidden sm:block' : undefined}
+		/>
+	</div>
 {/snippet}
 
 <div class="flex h-full min-h-0 flex-col bg-background">
@@ -363,10 +405,24 @@
 			</div>
 
 			<div class="flex items-center gap-2">
-				<EnvironmentDestinationSelect
-					bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
-					permission="projects:create"
-				/>
+				<div class="mr-2 flex items-center gap-2">
+					<label
+						for="new-project-layout-mode-toggle"
+						class="cursor-pointer text-xs text-muted-foreground"
+						title={m.project_view_description()}
+					>
+						{m.workspace()}
+					</label>
+					<Switch
+						id="new-project-layout-mode-toggle"
+						checked={layoutMode === 'tree'}
+						aria-label={m.project_view_description()}
+						onCheckedChange={(checked) => {
+							layoutMode = checked ? 'tree' : 'classic';
+							workspaceDraft.openTab('compose');
+						}}
+					/>
+				</div>
 				<ComposeCreateMenu
 					tooltipOpen={!effectiveName && !createMenuBusy ? undefined : false}
 					tooltipVisible={effectiveName === ''}
@@ -390,7 +446,7 @@
 					convertLabel={m.compose_convert_from_docker_run()}
 					onConvert={() => (ui.showConverterDialog = true)}
 					fromGitLabel={m.git_from_git_repo()}
-					onFromGit={async () => goto(`/environments/${environmentId}/gitops?action=create`)}
+					onFromGit={async () => goto(resolve(`/(app)/gitops?action=create&env=${encodeURIComponent(environmentId)}`))}
 					createTemplateLabel={m.templates_create_template()}
 					createTemplateDisabled={!inputs.name.value ||
 						!inputs.composeContent.value ||
@@ -423,25 +479,6 @@
 						</Alert.Description>
 					</Alert.Root>
 				{/if}
-
-				<div class="flex shrink-0 items-center justify-end gap-2">
-					<label
-						for="new-project-layout-mode-toggle"
-						class="cursor-pointer text-xs text-muted-foreground"
-						title={m.project_view_description()}
-					>
-						{m.workspace()}
-					</label>
-					<Switch
-						id="new-project-layout-mode-toggle"
-						checked={layoutMode === 'tree'}
-						aria-label={m.project_view_description()}
-						onCheckedChange={(checked) => {
-							layoutMode = checked ? 'tree' : 'classic';
-							workspaceDraft.openTab('compose');
-						}}
-					/>
-				</div>
 
 				{#if layoutMode === 'tree'}
 					<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
@@ -511,13 +548,24 @@
 						{/snippet}
 
 						{#snippet env()}
-							<CodePanel
-								{...envPanelProps()}
-								bind:open={envOpen}
-								bind:value={inputs.envContent.value}
-								bind:hasErrors={validation.envHasErrors}
-								bind:validationReady={validation.envValidationReady}
-							/>
+							{#if envRequested}
+								<CodePanel
+									{...envPanelProps()}
+									bind:open={envOpen}
+									bind:value={inputs.envContent.value}
+									bind:hasErrors={validation.envHasErrors}
+									bind:validationReady={validation.envValidationReady}
+								/>
+							{:else}
+								<button
+									type="button"
+									class="flex shrink-0 items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+									onclick={handleAddEnv}
+								>
+									<CreateFileIcon class="size-4 shrink-0" />
+									<span>{m.add_env_file()}</span>
+								</button>
+							{/if}
 						{/snippet}
 					</ComposeEditorSplit>
 				{/if}
@@ -529,6 +577,7 @@
 
 <DockerRunConverterDialog
 	bind:open={ui.showConverterDialog}
+	{environmentId}
 	bind:converting={ui.converting}
 	onConverted={composeHandlers.handleDockerRunConverted}
 />

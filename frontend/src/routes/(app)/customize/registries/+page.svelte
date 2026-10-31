@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { createQuery } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import ContainerRegistryFormSheet from '#lib/components/sheets/container-registry-sheet.svelte';
@@ -8,27 +9,33 @@
 	import { RegistryIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { containerRegistryListQuery, containerRegistryPullUsageQuery } from '#lib/query/container-registries.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
 	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/docker.js';
-	import type { ContainerRegistryCreateDto, ContainerRegistryUpdateDto } from '#lib/types/docker.js';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import type { ContainerRegistryCreate, ContainerRegistryUpdate } from '#lib/types/docker.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import RegistryTable from './components/registry-table.svelte';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
-	let registries = $derived(data.registries);
-	let selectedIds = $state<string[]>([]);
+	const pageState = new ResourceListPageState(untrack(() => data.registryRequestOptions));
 	let isRegistryDialogOpen = $state(false);
 	let isInfoDialogOpen = $state(false);
+	let isRefreshing = $state(false);
 	let registryToEdit = $state<ContainerRegistry | null>(null);
-	let requestOptions = $derived(data.registryRequestOptions);
+	const registriesQuery = createQuery(() => ({
+		...containerRegistryListQuery(pageState.requestOptions),
+		placeholderData: (previous) => previous
+	}));
+	const registries = $derived(registriesQuery.data ?? data.registries);
 	const pullUsageQuery = createQuery(() => ({
-		queryKey: queryKeys.containerRegistries.pullUsage(),
-		queryFn: () => containerRegistryService.getPullUsage(),
+		...containerRegistryPullUsageQuery(),
 		initialData: data.pullUsage ?? undefined
 	}));
 	const pullUsageByRegistry = $derived.by<Record<string, ContainerRegistryPullUsage>>(() => {
@@ -36,21 +43,40 @@
 		return Object.fromEntries(entries.map((usage) => [usage.registryId, usage]));
 	});
 
-	let isLoading = $state({
-		create: false,
-		edit: false,
-		refresh: false
-	});
+	const saveRegistryMutation = createMutation(() => ({
+		mutationFn: ({
+			registry,
+			target
+		}: {
+			registry: ContainerRegistryCreate | ContainerRegistryUpdate;
+			target: ContainerRegistry | null;
+		}) =>
+			target
+				? containerRegistryService.updateRegistry(target.id, registry as ContainerRegistryUpdate)
+				: containerRegistryService.createRegistry(registry as ContainerRegistryCreate),
+		onSuccess: async (_result, { target }) => {
+			toast.success(
+				target
+					? m.common_update_success({ resource: m.resource_registry() })
+					: m.common_create_success({ resource: m.resource_registry() })
+			);
+			await queryClient.invalidateQueries({ queryKey: queryKeys.containerRegistries.all });
+			isRegistryDialogOpen = false;
+		},
+		onError: (error) => {
+			toast.error(m.registries_save_failed(), { description: extractApiErrorMessage(error) });
+		}
+	}));
 
 	async function refreshRegistries() {
-		isLoading.refresh = true;
+		isRefreshing = true;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(containerRegistryService.getRegistries(requestOptions)),
+			result: await tryCatch(
+				queryClient.invalidateQueries({ queryKey: queryKeys.containerRegistries.all }, { throwOnError: true })
+			),
 			message: m.common_refresh_failed({ resource: m.registries_title() }),
-			setLoadingState: (value) => (isLoading.refresh = value),
-			onSuccess: async (newRegistries) => {
-				registries = newRegistries;
-				await pullUsageQuery.refetch();
+			setLoadingState: (value) => (isRefreshing = value),
+			onSuccess: () => {
 				toast.success(m.registries_refreshed());
 			}
 		});
@@ -66,41 +92,17 @@
 		isRegistryDialogOpen = true;
 	}
 
-	async function handleRegistryDialogSubmit(detail: {
-		registry: ContainerRegistryCreateDto | ContainerRegistryUpdateDto;
+	function handleRegistryDialogSubmit({
+		registry,
+		isEditMode
+	}: {
+		registry: ContainerRegistryCreate | ContainerRegistryUpdate;
 		isEditMode: boolean;
 	}) {
-		const { registry, isEditMode } = detail;
-		const loadingKey = isEditMode ? 'edit' : 'create';
-		isLoading[loadingKey] = true;
-
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					if (isEditMode && registryToEdit?.id) {
-						await containerRegistryService.updateRegistry(registryToEdit.id, registry as ContainerRegistryUpdateDto);
-						toast.success(m.common_update_success({ resource: m.resource_registry() }));
-					} else {
-						await containerRegistryService.createRegistry(registry as ContainerRegistryCreateDto);
-						toast.success(m.common_create_success({ resource: m.resource_registry() }));
-					}
-
-					[registries] = await Promise.all([containerRegistryService.getRegistries(requestOptions), pullUsageQuery.refetch()]);
-					isRegistryDialogOpen = false;
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.error('Error saving registry:', error);
-				toast.error(error instanceof Error ? error.message : m.registries_save_failed());
-			}
-		} finally {
-			isLoading[loadingKey] = false;
-		}
+		saveRegistryMutation.mutate({ registry, target: isEditMode && registryToEdit?.id ? registryToEdit : null });
 	}
 
-	const canCreateRegistry = $derived(hasPermission('registries:create'));
+	const canCreateRegistry = $derived(hasShownPermission('registries:create'));
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [
@@ -127,8 +129,8 @@
 			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refreshRegistries,
-			loading: isLoading.refresh,
-			disabled: isLoading.refresh
+			loading: isRefreshing,
+			disabled: isRefreshing
 		});
 		return buttons;
 	});
@@ -149,21 +151,23 @@
 	{#snippet mainContent()}
 		<RegistryTable
 			emptyState={registriesEmptyState}
-			bind:registries
-			bind:selectedIds
-			bind:requestOptions
+			{registries}
+			bind:selectedIds={pageState.selectedIds}
+			bind:requestOptions={pageState.requestOptions}
 			{pullUsageByRegistry}
 			onEditRegistry={openEditRegistryDialog}
 		/>
 	{/snippet}
 
 	{#snippet additionalContent()}
-		<ContainerRegistryFormSheet
-			bind:open={isRegistryDialogOpen}
-			bind:registryToEdit
-			onSubmit={handleRegistryDialogSubmit}
-			isLoading={isLoading.create || isLoading.edit}
-		/>
+		{#key registryToEdit?.id ?? 'new'}
+			<ContainerRegistryFormSheet
+				bind:open={isRegistryDialogOpen}
+				{registryToEdit}
+				onSubmit={handleRegistryDialogSubmit}
+				isLoading={saveRegistryMutation.isPending}
+			/>
+		{/key}
 
 		<Dialog.Root bind:open={isInfoDialogOpen}>
 			<Dialog.Content class="max-w-2xl">
@@ -177,19 +181,19 @@
 						<div class="space-y-2 text-sm">
 							<div class="flex justify-between">
 								<span class="text-muted-foreground">{m.registry_docker_hub()}</span>
-								<code class="rounded bg-muted px-2 py-1 text-xs">{m.registry_docker_hub_url()}</code>
+								<code class="rounded-xl bg-muted px-2 py-1 text-xs">{m.registry_docker_hub_url()}</code>
 							</div>
 							<div class="flex justify-between">
 								<span class="text-muted-foreground">{m.registry_github_container_registry()}</span>
-								<code class="rounded bg-muted px-2 py-1 text-xs">{m.registry_github_url()}</code>
+								<code class="rounded-xl bg-muted px-2 py-1 text-xs">{m.registry_github_url()}</code>
 							</div>
 							<div class="flex justify-between">
 								<span class="text-muted-foreground">{m.registry_google_container_registry()}</span>
-								<code class="rounded bg-muted px-2 py-1 text-xs">{m.registry_google_url()}</code>
+								<code class="rounded-xl bg-muted px-2 py-1 text-xs">{m.registry_google_url()}</code>
 							</div>
 							<div class="flex justify-between">
 								<span class="text-muted-foreground">{m.registry_quay_io()}</span>
-								<code class="rounded bg-muted px-2 py-1 text-xs">{m.registry_quay_url()}</code>
+								<code class="rounded-xl bg-muted px-2 py-1 text-xs">{m.registry_quay_url()}</code>
 							</div>
 						</div>
 					</div>

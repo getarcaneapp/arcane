@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/selfupdate"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/selfupdate"
 )
 
 func TestFindChecksumMatchesNextDistPath(t *testing.T) {
@@ -82,11 +82,13 @@ func TestFetchCLIChecksumsSignatureVerification(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, tt := range []struct {
-		name                   string
-		preview                bool
-		checksums, bundle      []byte
-		status, bundleRequests int
-		wantError              string
+		name           string
+		wantError      string
+		checksums      []byte
+		bundle         []byte
+		status         int
+		bundleRequests int
+		preview        bool
 	}{
 		{name: "preview off", checksums: checksums, bundle: []byte("invalid")},
 		{name: "verified", preview: true, checksums: checksums, bundle: bundleJSON, bundleRequests: 1},

@@ -2,18 +2,17 @@ package backup
 
 import (
 	"context"
+	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
 type Handler struct {
@@ -23,51 +22,58 @@ type Handler struct {
 }
 
 type ListSystemBackupsInput struct {
-	Search string `query:"search"`
-	Sort   string `query:"sort" default:"createdAt"`
-	Order  string `query:"order" default:"desc"`
-	Start  int    `query:"start" default:"0"`
-	Limit  int    `query:"limit" default:"20"`
+	Search       string `query:"search"`
+	Sort         string `query:"sort" default:"createdAt"`
+	Order        string `query:"order" default:"desc"`
+	Start        int    `query:"start" default:"0"`
+	Limit        int    `query:"limit" default:"20"`
+	IncludeTotal bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
 }
 
 type ListBackupHistoryInput struct {
-	Search string `query:"search"`
-	Sort   string `query:"sort" default:"createdAt"`
-	Order  string `query:"order" default:"desc"`
-	Start  int    `query:"start" default:"0"`
-	Limit  int    `query:"limit" default:"20"`
-	Type   string `query:"type"`
+	Search       string `query:"search"`
+	Sort         string `query:"sort" default:"createdAt"`
+	Order        string `query:"order" default:"desc"`
+	Type         string `query:"type"`
+	Start        int    `query:"start" default:"0"`
+	Limit        int    `query:"limit" default:"20"`
+	IncludeTotal bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
 }
 
 type SystemBackupPoliciesOutput struct {
-	Body backup.SystemBackupPolicyCollection
+	Body types.SystemBackupPolicyCollection
 }
 
 type UpdateSystemBackupPoliciesInput struct {
-	Body backup.UpdateSystemBackupPolicies
+	Body types.UpdateSystemBackupPolicies
 }
 
 type SetSystemBackupRecoveryKeyInput struct {
-	Body backup.SystemBackupRecoveryKey
+	Body types.SystemBackupRecoveryKey
 }
 
 type SystemBackupRecoveryKeyOutput struct {
-	Body backup.SystemBackupRecoveryKeyStatus
+	Body types.SystemBackupRecoveryKeyStatus
+}
+
+type GenerateSystemBackupRecoveryKeyInput struct {
+	Action string `query:"action" required:"true" enum:"generate" doc:"Recovery key action"`
 }
 
 type GenerateSystemBackupRecoveryKeyOutput struct {
-	Body backup.SystemBackupRecoveryKey
+	Body types.SystemBackupRecoveryKey
 }
 
 type CreateSystemBackupInput struct {
-	Body backup.CreateSystemBackupRequest
+	Body types.CreateSystemBackupRequest
 }
 
 type (
-	SystemBackupOutput       struct{ Body backup.SystemBackupRun }
+	SystemBackupOutput       struct{ Body types.SystemBackupRun }
 	RestoreSystemBackupInput struct {
-		ID   string `path:"id"`
-		Body backup.RestoreSystemBackupRequest
+		ID     string `path:"id"`
+		Action string `query:"action" required:"true" enum:"restore,restorefiles" doc:"Restore action"`
+		Body   types.RestoreSystemBackupFilesRequest
 	}
 )
 
@@ -76,44 +82,39 @@ type BrowseSystemBackupFilesInput struct {
 	ID     string `path:"id"`
 	Path   string `query:"path" doc:"Folder path relative to the backup root"`
 	Search string `query:"search" doc:"Case-insensitive full-path search"`
-	Start  int    `query:"start" default:"0" doc:"Start index for the page"`
-	Limit  int    `query:"limit" default:"20" doc:"Requested page size"`
-	Body   backup.SystemBackupRecoveryKey
-}
-
-// RestoreSystemBackupFilesInput selects project files to restore from a system backup.
-type RestoreSystemBackupFilesInput struct {
-	ID   string `path:"id"`
-	Body backup.RestoreSystemBackupFilesRequest
+	Body   types.SystemBackupRecoveryKey
+	Start  int `query:"start" default:"0" doc:"Start index for the page"`
+	Limit  int `query:"limit" default:"20" doc:"Requested page size"`
 }
 
 type UploadSystemBackupInput struct {
 	ID   string `path:"id"`
-	Body backup.UploadSystemBackupRequest
+	Body types.UploadSystemBackupRequest
 }
 
 type DeleteSystemBackupInput struct {
 	ID   string `path:"id"`
-	Body backup.DeleteSystemBackupRequest
+	Body types.DeleteSystemBackupRequest
 }
 
 type DiscoverSystemBackupsInput struct {
-	Body backup.DiscoverSystemBackupsRequest
+	Body types.DiscoverSystemBackupsRequest
 }
 
 func NewHandler(service *Service, activityService *activity.ActivityService, appCtx context.Context) *Handler {
 	return &Handler{service: service, activity: activityService, appCtx: appCtx}
 }
 
-func (h *Handler) ListHistory(ctx context.Context, input *ListBackupHistoryInput) (*handlerutil.Page[backup.HistoryEntry], error) {
+func (h *Handler) ListHistory(ctx context.Context, input *ListBackupHistoryInput) (*handlerutil.Page[types.SystemVolumeBackupHistoryEntry], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params.SkipCount = !input.IncludeTotal
 	params.Filters["type"] = input.Type
 	history, page, err := h.service.ListBackupHistory(ctx, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &handlerutil.Page[backup.HistoryEntry]{
-		Body: base.Paginated[backup.HistoryEntry]{
+	return &handlerutil.Page[types.SystemVolumeBackupHistoryEntry]{
+		Body: types.Paginated[types.SystemVolumeBackupHistoryEntry]{
 			Success:    true,
 			Data:       history,
 			Pagination: handlerutil.PaginationResponse(page),
@@ -121,14 +122,15 @@ func (h *Handler) ListHistory(ctx context.Context, input *ListBackupHistoryInput
 	}, nil
 }
 
-func (h *Handler) List(ctx context.Context, input *ListSystemBackupsInput) (*handlerutil.Page[backup.SystemBackupRun], error) {
+func (h *Handler) List(ctx context.Context, input *ListSystemBackupsInput) (*handlerutil.Page[types.SystemBackupRun], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params.SkipCount = !input.IncludeTotal
 	runs, page, err := h.service.ListBackups(ctx, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &handlerutil.Page[backup.SystemBackupRun]{
-		Body: base.Paginated[backup.SystemBackupRun]{
+	return &handlerutil.Page[types.SystemBackupRun]{
+		Body: types.Paginated[types.SystemBackupRun]{
 			Success:    true,
 			Data:       runs,
 			Pagination: handlerutil.PaginationResponse(page),
@@ -149,9 +151,9 @@ func (h *Handler) UpdatePolicies(ctx context.Context, input *UpdateSystemBackupP
 	if err != nil {
 		return nil, err
 	}
-	var policies *backup.SystemBackupPolicyCollection
+	var policies *types.SystemBackupPolicyCollection
 	_, err = activitylib.RunHandlerActivity(utils.ActivityRuntimeContext(ctx, h.appCtx), h.activity, activitylib.HandlerOptions{
-		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup", ResourceID: "policies", ResourceName: "Arcane", User: user,
+		EnvironmentID: "0", Type: types.ActivityTypeResourceAction, ResourceType: "system_backup", ResourceID: "policies", ResourceName: "Arcane", User: user,
 		Step: "Saving system backup schedules", Message: "Saving Arcane system backup schedules", SuccessMessage: "Arcane system backup schedules saved",
 		Metadata: database.JSON{"action": "update_system_backup_policies", "policyCount": len(input.Body.Policies)},
 	}, func(activityCtx context.Context) error {
@@ -159,13 +161,16 @@ func (h *Handler) UpdatePolicies(ctx context.Context, input *UpdateSystemBackupP
 		policies, updateErr = h.service.UpdatePolicies(activityCtx, input.Body.Policies)
 		return updateErr
 	})
+	if errors.Is(err, common.ErrValidation) {
+		return nil, handlerutil.APIError(err)
+	}
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	return &SystemBackupPoliciesOutput{Body: *policies}, nil
 }
 
-func (h *Handler) GenerateRecoveryKey(_ context.Context, _ *struct{}) (*GenerateSystemBackupRecoveryKeyOutput, error) {
+func (h *Handler) GenerateRecoveryKey(_ context.Context, _ *GenerateSystemBackupRecoveryKeyInput) (*GenerateSystemBackupRecoveryKeyOutput, error) {
 	recoveryKey, err := h.service.GenerateRecoveryKey()
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -178,9 +183,9 @@ func (h *Handler) SetRecoveryKey(ctx context.Context, input *SetSystemBackupReco
 	if err != nil {
 		return nil, err
 	}
-	var status *backup.SystemBackupRecoveryKeyStatus
+	var status *types.SystemBackupRecoveryKeyStatus
 	_, err = activitylib.RunHandlerActivity(utils.ActivityRuntimeContext(ctx, h.appCtx), h.activity, activitylib.HandlerOptions{
-		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup", ResourceID: "recovery-key", ResourceName: "Arcane", User: user,
+		EnvironmentID: "0", Type: types.ActivityTypeResourceAction, ResourceType: "system_backup", ResourceID: "recovery-key", ResourceName: "Arcane", User: user,
 		Step: "Configuring recovery key", Message: "Configuring Arcane system backup recovery key", SuccessMessage: "Arcane system backup recovery key configured",
 		Metadata: database.JSON{"action": "set_system_backup_recovery_key"},
 	}, func(activityCtx context.Context) error {
@@ -188,6 +193,9 @@ func (h *Handler) SetRecoveryKey(ctx context.Context, input *SetSystemBackupReco
 		status, setErr = h.service.SetRecoveryKey(activityCtx, input.Body.RecoveryKey)
 		return setErr
 	})
+	if errors.Is(err, common.ErrValidation) {
+		return nil, handlerutil.APIError(err)
+	}
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -201,7 +209,7 @@ func (h *Handler) Discover(ctx context.Context, input *DiscoverSystemBackupsInpu
 	}
 	count := 0
 	_, err = activitylib.RunHandlerActivity(utils.ActivityRuntimeContext(ctx, h.appCtx), h.activity, activitylib.HandlerOptions{
-		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup", ResourceID: "s3", ResourceName: "Arcane", User: user,
+		EnvironmentID: "0", Type: types.ActivityTypeResourceAction, ResourceType: "system_backup", ResourceID: "s3", ResourceName: "Arcane", User: user,
 		Step: "Discovering system backups", Message: "Discovering Arcane system backups in S3", SuccessMessage: "Arcane system backup discovery completed",
 		Metadata: database.JSON{"action": "discover_system_backups", "s3DestinationId": input.Body.S3DestinationID},
 	}, func(activityCtx context.Context) error {
@@ -212,7 +220,7 @@ func (h *Handler) Discover(ctx context.Context, input *DiscoverSystemBackupsInpu
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	return &handlerutil.Out[int]{Body: base.ApiResponse[int]{Success: true, Data: count}}, nil
+	return &handlerutil.Out[int]{Body: types.ApiResponse[int]{Success: true, Data: count}}, nil
 }
 
 func (h *Handler) Create(ctx context.Context, input *CreateSystemBackupInput) (*SystemBackupOutput, error) {
@@ -228,13 +236,20 @@ func (h *Handler) Create(ctx context.Context, input *CreateSystemBackupInput) (*
 	return &SystemBackupOutput{Body: *run}, nil
 }
 
-func (h *Handler) Restore(ctx context.Context, input *RestoreSystemBackupInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) RestoreAction(ctx context.Context, input *RestoreSystemBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if input.Action == "restorefiles" {
+		return h.restoreFiles(ctx, input)
+	}
+	return h.restore(ctx, input)
+}
+
+func (h *Handler) restore(ctx context.Context, input *RestoreSystemBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 	activityID, err := activitylib.RunHandlerActivity(utils.ActivityRuntimeContext(ctx, h.appCtx), h.activity, activitylib.HandlerOptions{
-		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup", ResourceID: input.ID, ResourceName: "Arcane", User: user,
+		EnvironmentID: "0", Type: types.ActivityTypeResourceAction, ResourceType: "system_backup", ResourceID: input.ID, ResourceName: "Arcane", User: user,
 		Step: "Preparing system restore", Message: "Preparing Arcane system restore", SuccessMessage: "Arcane system restore started",
 		Metadata: database.JSON{"action": "restore_system_backup", "backupId": input.ID},
 	}, func(activityCtx context.Context) error {
@@ -247,25 +262,27 @@ func (h *Handler) Restore(ctx context.Context, input *RestoreSystemBackupInput) 
 }
 
 // BrowseFiles returns one lazy-loaded project tree page.
-func (h *Handler) BrowseFiles(ctx context.Context, input *BrowseSystemBackupFilesInput) (*handlerutil.Page[backup.BackupFileEntry], error) {
+func (h *Handler) BrowseFiles(ctx context.Context, input *BrowseSystemBackupFilesInput) (*handlerutil.Page[types.BackupFileEntry], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, "", "", input.Search)
 	items, page, err := h.service.BrowseBackupFiles(ctx, input.ID, input.Body.RecoveryKey, input.Path, params)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	return &handlerutil.Page[backup.BackupFileEntry]{Body: base.Paginated[backup.BackupFileEntry]{
+	return &handlerutil.Page[types.BackupFileEntry]{Body: types.Paginated[types.BackupFileEntry]{
 		Success: true, Data: items, Pagination: handlerutil.PaginationResponse(page),
 	}}, nil
 }
 
-// RestoreFiles restores selected project files from a system backup.
-func (h *Handler) RestoreFiles(ctx context.Context, input *RestoreSystemBackupFilesInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) restoreFiles(ctx context.Context, input *RestoreSystemBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if len(input.Body.Paths) == 0 && !input.Body.SelectAll {
+		return nil, huma.Error400BadRequest("restorefiles requires paths or selectAll")
+	}
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 	activityID, err := activitylib.RunHandlerActivity(utils.ActivityRuntimeContext(ctx, h.appCtx), h.activity, activitylib.HandlerOptions{
-		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup", ResourceID: input.ID, ResourceName: "Arcane", User: user,
+		EnvironmentID: "0", Type: types.ActivityTypeResourceAction, ResourceType: "system_backup", ResourceID: input.ID, ResourceName: "Arcane", User: user,
 		Step: "Restoring project files", Message: "Restoring project files from Arcane system backup", SuccessMessage: "Arcane project files restored successfully",
 		Metadata: database.JSON{"action": "restore_system_backup_files", "backupId": input.ID, "pathCount": len(input.Body.Paths), "selectAll": input.Body.SelectAll, "search": input.Body.Search},
 	}, func(activityCtx context.Context) error {
@@ -283,9 +300,9 @@ func (h *Handler) Upload(ctx context.Context, input *UploadSystemBackupInput) (*
 	if err != nil {
 		return nil, err
 	}
-	var run *backup.SystemBackupRun
+	var run *types.SystemBackupRun
 	_, err = activitylib.RunHandlerActivity(utils.ActivityRuntimeContext(ctx, h.appCtx), h.activity, activitylib.HandlerOptions{
-		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup", ResourceID: input.ID, ResourceName: "Arcane", User: user,
+		EnvironmentID: "0", Type: types.ActivityTypeResourceAction, ResourceType: "system_backup", ResourceID: input.ID, ResourceName: "Arcane", User: user,
 		Step: "Uploading system backup", Message: "Uploading Arcane system backup", SuccessMessage: "Arcane system backup uploaded successfully",
 		Metadata: database.JSON{"action": "upload_system_backup", "backupId": input.ID, "s3DestinationId": input.Body.S3DestinationID},
 	}, func(activityCtx context.Context) error {
@@ -299,13 +316,13 @@ func (h *Handler) Upload(ctx context.Context, input *UploadSystemBackupInput) (*
 	return &SystemBackupOutput{Body: *run}, nil
 }
 
-func (h *Handler) Delete(ctx context.Context, input *DeleteSystemBackupInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) Delete(ctx context.Context, input *DeleteSystemBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 	activityID, err := activitylib.RunHandlerActivity(utils.ActivityRuntimeContext(ctx, h.appCtx), h.activity, activitylib.HandlerOptions{
-		EnvironmentID: "0", Type: activitytypes.TypeResourceAction, ResourceType: "system_backup", ResourceID: input.ID, ResourceName: "Arcane", User: user,
+		EnvironmentID: "0", Type: types.ActivityTypeResourceAction, ResourceType: "system_backup", ResourceID: input.ID, ResourceName: "Arcane", User: user,
 		Step: "Deleting system backup", Message: "Deleting Arcane system backup", SuccessMessage: "Arcane system backup deleted successfully",
 		Metadata: database.JSON{"action": "delete_system_backup", "backupId": input.ID},
 	}, func(activityCtx context.Context) error {

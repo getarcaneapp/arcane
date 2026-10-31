@@ -13,6 +13,7 @@ import (
 	"maps"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -21,36 +22,43 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/environment"
-	"github.com/getarcaneapp/arcane/types/v2/version"
-	"github.com/samber/mo"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
 	"go.getarcane.app/streams/agg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/userctx"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
 )
 
 const (
-	// Re-applies runtime state to cached rows to cover poll-mode TTL expiry.
+	// Re-applies runtime state to cached rows so live tunnel metrics stay current.
 	environmentStreamRuntimeInterval = 5 * time.Second
 	// Safety net for writes that bypass the runtime-change signal.
 	environmentStreamReloadInterval = 60 * time.Second
 	environmentStreamRefreshFloor   = 30 * time.Second
 	environmentStreamHubKey         = "environments"
+
+	remoteChangeReconcileInterval = 30 * time.Second
+	remoteChangeMinBackoff        = time.Second
+	remoteChangeMaxBackoff        = 30 * time.Second
+	remoteChangeUnsupportedDelay  = 60 * time.Second
+	remoteChangeWaitMargin        = 5 * time.Second
 )
 
 // EnvironmentHandler handles environment management endpoints.
@@ -60,29 +68,25 @@ type EnvironmentHandler struct {
 	apiKeyService      *apikey.ApiKeyService
 	eventService       *event.EventService
 	cfg                *config.Config
-	streamHub          *agg.Hub[[]environment.Environment]
+	streamHub          *agg.Hub[[]types.Environment]
+	changeHub          *agg.Hub[struct{}]
+	changeCursors      *concurrency.StateMap[string, types.EnvironmentChanges]
 	activityService    activity.Service
 	appCtx             context.Context
-	localVersion       func(context.Context) *version.Info
+	localVersion       func(context.Context) *types.VersionInfo
 }
 
 type ListEnvironmentsInput struct {
 	Search string `query:"search" doc:"Search query for filtering by name or API URL"`
 	Sort   string `query:"sort" doc:"Column to sort by"`
 	Order  string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+	Type   string `query:"type" doc:"Filter by environment type (comma-separated: http,agent,websocket,grpc)"`
 	Start  int    `query:"start" default:"0" doc:"Start index for pagination"`
 	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
-	Type   string `query:"type" doc:"Filter by environment type (comma-separated: http,edge,websocket,grpc,polling)"`
 }
 
 type CreateEnvironmentInput struct {
-	Body environment.Create
-}
-
-type EnvironmentWithApiKey struct {
-	environment.Environment
-
-	ApiKey *string `json:"apiKey,omitempty" doc:"API key for pairing (only shown once during creation)"`
+	types.Create[types.Environment]
 }
 
 type GetEnvironmentInput struct {
@@ -90,8 +94,8 @@ type GetEnvironmentInput struct {
 }
 
 type UpdateEnvironmentInput struct {
-	ID   string `path:"id" doc:"Environment ID"`
-	Body environment.Update
+	ID string `path:"id" doc:"Environment ID"`
+	types.Update[types.Environment]
 }
 
 type DeleteEnvironmentInput struct {
@@ -99,17 +103,7 @@ type DeleteEnvironmentInput struct {
 }
 
 type TestConnectionInput struct {
-	ID   string                             `path:"id" doc:"Environment ID"`
-	Body *environment.TestConnectionRequest `json:"body,omitempty"`
-}
-
-type UpdateHeartbeatInput struct {
 	ID string `path:"id" doc:"Environment ID"`
-}
-
-type PairAgentInput struct {
-	ID   string                        `path:"id" doc:"Environment ID (must be 0 for local)"`
-	Body *environment.AgentPairRequest `json:"body,omitempty"`
 }
 
 type SyncEnvironmentInput struct {
@@ -120,12 +114,6 @@ type PairEnvironmentInput struct {
 	XAPIKey string `header:"X-API-Key" doc:"API key for environment pairing"`
 }
 
-type DeploymentSnippet struct {
-	DockerRun     string                 `json:"dockerRun" doc:"Docker run command snippet"`
-	DockerCompose string                 `json:"dockerCompose" doc:"Docker compose YAML snippet"`
-	MTLS          *DeploymentSnippetMTLS `json:"mtls,omitempty" doc:"Optional Arcane-generated mTLS deployment assets for edge agents"`
-}
-
 type GetDeploymentSnippetsInput struct {
 	ID string `path:"id" doc:"Environment ID"`
 }
@@ -134,7 +122,7 @@ type GetEnvironmentVersionInput struct {
 	ID string `path:"id" doc:"Environment ID"`
 }
 
-type DownloadEdgeMTLSCAInput struct{}
+type DownloadAgentMTLSCAInput struct{}
 
 type DownloadEnvironmentMTLSBundleInput struct {
 	ID string `path:"id" doc:"Environment ID"`
@@ -160,75 +148,50 @@ func NewHandler(
 		apiKeyService:      apiKeyService,
 		eventService:       eventService,
 		cfg:                cfg,
-		streamHub:          agg.NewHub[[]environment.Environment](),
+		streamHub:          agg.NewHub[[]types.Environment](),
+		changeHub:          agg.NewHub[struct{}](),
+		changeCursors:      concurrency.NewStateMap[string, types.EnvironmentChanges](),
 		activityService:    activityService,
 	}
 }
 
 // ListEnvironments returns a paginated list of environments.
-func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEnvironmentsInput) (*handlerutil.Page[environment.Environment], error) {
+func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEnvironmentsInput) (*handlerutil.Page[types.Environment], error) {
 	ps, ok := middleware.PermissionsFromContext(ctx)
 	if !ok {
 		return nil, huma.Error403Forbidden("permission denied")
 	}
-	accessibleEnvIDs := accessibleEnvironmentIDs(ps)
 
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.Type != "" {
 		params.Filters["type"] = input.Type
 	}
 
-	envs, paginationResp, err := h.environmentService.ListEnvironmentsPaginated(ctx, params, accessibleEnvIDs)
+	page, err := h.environmentService.ListAccessibleEnvironments(ctx, ps, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to fetch environments")
 	}
-	rows := make([]environment.Environment, 0, len(envs))
-	for _, env := range envs {
-		rows = append(rows, ApplyEnvironmentRuntimeState(env))
-	}
 
-	return &handlerutil.Page[environment.Environment]{
-		Body: base.Paginated[environment.Environment]{
-			Success:    true,
-			Data:       rows,
-			Pagination: handlerutil.PaginationResponse(paginationResp),
-		},
-	}, nil
+	return &handlerutil.Page[types.Environment]{Body: page}, nil
 }
 
-// accessibleEnvironmentIDs returns nil when the caller may list every environment,
-// otherwise the sorted IDs it holds at least one permission on.
-func accessibleEnvironmentIDs(ps *authz.PermissionSet) []string {
-	switch {
-	case ps == nil:
-		return []string{}
-	case ps.Allows(authz.PermEnvironmentsList, ""):
-		return nil
-	default:
-		// Never nil: callers treat nil as unrestricted, so a user without grants must get an empty list.
-		ids := slices.AppendSeq(make([]string, 0, len(ps.PerEnv)), maps.Keys(ps.PerEnv))
-		slices.Sort(ids)
-		return ids
-	}
-}
-
-func (h *EnvironmentHandler) RunStreamProducer(ctx context.Context, ps *authz.PermissionSet, events chan<- environment.StreamEvent) {
+func (h *EnvironmentHandler) RunStreamProducer(ctx context.Context, ps *authz.PermissionSet, events chan<- types.EnvironmentStreamEvent) {
 	var lastFingerprint uint64
 	var haveFingerprint bool
 	var lastSentAt time.Time
-	accessibleEnvIDs := accessibleEnvironmentIDs(ps)
+	accessibleEnvIDs := ps.AccessibleEnvironmentIDs()
 
-	h.streamHub.Subscribe(ctx, environmentStreamHubKey, func(ctx context.Context, publish func([]environment.Environment)) {
+	h.streamHub.Subscribe(ctx, environmentStreamHubKey, func(ctx context.Context, publish func([]types.Environment)) {
 		changes, unsubscribe := h.environmentService.SubscribeRuntimeChanges()
 		defer unsubscribe()
 
-		var rows []environment.Environment
+		var rows []types.Environment
 		loaded := false
 		publishRuntime := func() {
 			if !loaded {
 				return
 			}
-			envs := make([]environment.Environment, 0, len(rows))
+			envs := make([]types.Environment, 0, len(rows))
 			for _, row := range rows {
 				envs = append(envs, ApplyEnvironmentRuntimeState(row))
 			}
@@ -271,11 +234,11 @@ func (h *EnvironmentHandler) RunStreamProducer(ctx context.Context, ps *authz.Pe
 				publishRuntime()
 			}
 		}
-	}, func(all []environment.Environment) bool {
+	}, func(all []types.Environment) bool {
 		// all is shared across subscribers, so filter a copy.
 		envs := all
 		if accessibleEnvIDs != nil {
-			envs = slices.DeleteFunc(slices.Clone(all), func(env environment.Environment) bool { return !slices.Contains(accessibleEnvIDs, env.ID) })
+			envs = slices.DeleteFunc(slices.Clone(all), func(env types.Environment) bool { return !slices.Contains(accessibleEnvIDs, env.ID) })
 		}
 		fingerprint := kit.Fingerprint(envs)
 		// Re-send unchanged state on a floor so relative UI timestamps keep advancing.
@@ -286,7 +249,7 @@ func (h *EnvironmentHandler) RunStreamProducer(ctx context.Context, ps *authz.Pe
 		haveFingerprint = true
 		lastSentAt = time.Now()
 
-		return agg.Send(ctx, events, environment.StreamEvent{
+		return agg.Send(ctx, events, types.EnvironmentStreamEvent{
 			Type:         "snapshot",
 			Environments: envs,
 			Timestamp:    time.Now(),
@@ -294,33 +257,122 @@ func (h *EnvironmentHandler) RunStreamProducer(ctx context.Context, ps *authz.Pe
 	})
 }
 
+func (h *EnvironmentHandler) RunRemoteChangePollers(ctx context.Context, ps *authz.PermissionSet) {
+	accessible := ps.AccessibleEnvironmentIDs()
+	agg.ReconcilePollersByKey(ctx,
+		func(ctx context.Context) ([]Environment, error) {
+			environments, err := h.environmentService.ListActiveRemoteEnvironments(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if _, removeErr := h.changeCursors.RemoveWhere(ctx, "environment change cursor", func(environmentID string, _ types.EnvironmentChanges) bool {
+				return !slices.ContainsFunc(environments, func(environment Environment) bool {
+					return environment.ID == environmentID
+				})
+			}); removeErr != nil {
+				return nil, removeErr
+			}
+			return slices.DeleteFunc(environments, func(environment Environment) bool {
+				return accessible != nil && !slices.Contains(accessible, environment.ID)
+			}), nil
+		},
+		func(environment Environment) string {
+			return environment.ID
+		},
+		ConnectionKey,
+		remoteChangeReconcileInterval,
+		"environment changes",
+		func(pollCtx context.Context, environment Environment) {
+			h.changeHub.Subscribe(pollCtx, ConnectionKey(environment),
+				func(runCtx context.Context, _ func(struct{})) {
+					h.runRemoteChangePoller(runCtx, environment)
+				},
+				func(struct{}) bool {
+					return true
+				})
+		})
+}
+
+func ConnectionKey(environment Environment) string {
+	return strings.Join([]string{
+		environment.ID,
+		environment.ApiUrl,
+		kit.SHA256Hex(kit.FromPtr(environment.AccessToken)),
+		strconv.FormatBool(environment.Enabled),
+	}, "|")
+}
+
+func (h *EnvironmentHandler) runRemoteChangePoller(ctx context.Context, environment Environment) {
+	var delay time.Duration
+	for {
+		if delay > 0 {
+			wait := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				wait.Stop()
+				return
+			case <-wait.C:
+			}
+		}
+
+		previous, _ := h.changeCursors.Get(environment.ID)
+		var since uint64
+		for _, revision := range previous.Kinds {
+			since = max(since, revision)
+		}
+		var out types.ApiResponse[types.EnvironmentChanges]
+		err := h.environmentService.ProxyJSONRequestForEnvironment(ctx, environment, http.MethodGet,
+			"/api/environments/0/events/changes?"+url.Values{
+				"epoch": {previous.Epoch},
+				"since": {strconv.FormatUint(since, 10)},
+				"wait":  {strconv.Itoa(max(int((timeouts.GetDuration(h.settingsService.GetSettingsConfig().ProxyRequestTimeout.AsInt(), timeouts.DefaultProxyRequest) - remoteChangeWaitMargin).Seconds()), 1))},
+			}.Encode(), nil, &out)
+		statusError, isStatusError := errors.AsType[*remenv.StatusError](err)
+		_, isDecodeError := errors.AsType[*remenv.DecodeError](err)
+		switch {
+		case ctx.Err() != nil:
+		case err == nil:
+			h.eventService.RelayChanges(environment.ID, previous, out.Data)
+			if _, _, storeErr := h.changeCursors.Store(ctx, "environment change cursor", environment.ID, out.Data); storeErr != nil {
+				slog.WarnContext(ctx, "Failed to store environment change cursor", "environmentId", environment.ID, "error", storeErr)
+				break
+			}
+			delay = 0
+		case isDecodeError || isStatusError && statusError.StatusCode == http.StatusNotFound:
+			delay = remoteChangeUnsupportedDelay
+		default:
+			delay = min(max(delay*2, remoteChangeMinBackoff), remoteChangeMaxBackoff)
+			slog.DebugContext(ctx, "environment change poll failed", "environmentId", environment.ID, "error", err)
+		}
+		if ctx.Err() != nil {
+			return
+		}
+	}
+}
+
 // CreateEnvironment creates a new environment.
-func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *CreateEnvironmentInput) (*handlerutil.Out[EnvironmentWithApiKey], error) {
+func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *CreateEnvironmentInput) (*handlerutil.Out[types.Environment], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	submitted, err := input.SubmittedFields()
+	if err != nil {
+		return nil, huma.Error400BadRequest("Invalid environment body")
+	}
+
 	created, err := h.environmentService.CreateEnvironment(ctx, &Environment{
-		Name:        kit.FromPtr(input.Body.Name),
-		ApiUrl:      input.Body.ApiUrl,
-		Status:      kit.Ternary(kit.FromPtr(input.Body.UseApiKey), string(EnvironmentStatusPending), ""),
-		Enabled:     mo.PointerToOption(input.Body.Enabled).OrElse(true),
-		IsEdge:      kit.FromPtr(input.Body.IsEdge),
-		AccessToken: kit.Ternary(!kit.FromPtr(input.Body.UseApiKey) && kit.FromPtr(input.Body.AccessToken) != "", input.Body.AccessToken, nil),
+		Name:    input.Body.Name,
+		Status:  string(EnvironmentStatusPending),
+		Enabled: !submitted["enabled"] || input.Body.Enabled,
 	}, &user.ID, &user.Username)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to create environment: " + err.Error())
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
 	created, apiKey, err := func() (*Environment, *string, error) {
-		if !kit.FromPtr(input.Body.UseApiKey) {
-			if kit.FromPtr(created.AccessToken) != "" {
-				h.triggerEnvironmentResourceSync(ctx, created.ID, created.Name, "environment creation")
-			}
-			return created, nil, nil
-		}
-
 		apiKeyDto, keyErr := h.apiKeyService.CreateEnvironmentApiKey(ctx, created.ID)
 		if keyErr != nil {
 			slog.ErrorContext(ctx, "Failed to create environment API key", "environmentId", created.ID, "error", keyErr.Error())
@@ -347,38 +399,41 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 		return nil, err
 	}
 
-	out, mapErr := mapping.MapOne[*Environment, environment.Environment](created)
+	out, mapErr := mapping.MapOne[*Environment, types.Environment](created)
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError("Failed to map environment")
 	}
 
-	return &handlerutil.Out[EnvironmentWithApiKey]{
-		Body: base.ApiResponse[EnvironmentWithApiKey]{
+	out = ApplyEnvironmentRuntimeState(out)
+	out.ApiKey = apiKey // keep: optional field on a 22-field mapped DTO
+
+	return &handlerutil.Out[types.Environment]{
+		Body: types.ApiResponse[types.Environment]{
 			Success: true,
-			Data:    EnvironmentWithApiKey{Environment: ApplyEnvironmentRuntimeState(out), ApiKey: apiKey},
+			Data:    out,
 		},
 	}, nil
 }
 
 // GetEnvironment returns an environment by ID.
-func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvironmentInput) (*handlerutil.Out[environment.Environment], error) {
+func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvironmentInput) (*handlerutil.Out[types.Environment], error) {
 	env, err := h.environmentService.GetEnvironmentByID(ctx, input.ID)
 	if err != nil {
 		return nil, huma.Error404NotFound("Environment not found")
 	}
 
-	out, mapErr := mapping.MapOne[*Environment, environment.Environment](env)
+	out, mapErr := mapping.MapOne[*Environment, types.Environment](env)
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError("Failed to map environment")
 	}
 	out = ApplyEnvironmentRuntimeState(out)
-	if env.IsEdge {
-		out.EdgeMTLSCertificate = func() *environment.EdgeMTLSCertificate { // keep: optional field on a 22-field mapped DTO
-			edgeCfg := h.edgeMTLSConfig()
-			if edge.NormalizeEdgeMTLSMode(edgeCfg.EdgeMTLSMode) == edge.EdgeMTLSModeDisabled {
+	if env.ID != LocalEnvironmentID {
+		out.AgentMTLSCertificate = func() *types.AgentMTLSCertificate { // keep: optional field on a 22-field mapped DTO
+			agentCfg := h.agentMTLSConfig()
+			if agent.NormalizeMTLSMode(agentCfg.AgentMTLSMode) == agent.MTLSModeDisabled {
 				return nil
 			}
-			certPath, pathErr := edge.GeneratedManagerClientMTLSCertPath(edgeCfg, env.ID)
+			certPath, pathErr := agent.GeneratedManagerClientMTLSCertPath(agentCfg, env.ID)
 			if pathErr != nil {
 				return nil
 			}
@@ -398,18 +453,18 @@ func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvir
 
 			expiresAt := cert.NotAfter.UTC()
 			now := time.Now().UTC()
-			return &environment.EdgeMTLSCertificate{
+			return &types.AgentMTLSCertificate{
 				CommonName:    kit.Ternary(strings.TrimSpace(cert.Subject.CommonName) != "", new(strings.TrimSpace(cert.Subject.CommonName)), nil),
 				ExpiresAt:     &expiresAt,
 				DaysRemaining: new(int(math.Ceil(max(expiresAt.Sub(now), 0).Hours() / 24))),
 				Expired:       now.After(expiresAt),
-				ExpiringSoon:  now.Before(expiresAt) && expiresAt.Sub(now) <= edgeMTLSCertificateExpiryWarningWindow,
+				ExpiringSoon:  now.Before(expiresAt) && expiresAt.Sub(now) <= agentMTLSCertificateExpiryWarningWindow,
 			}
 		}()
 	}
 
-	return &handlerutil.Out[environment.Environment]{
-		Body: base.ApiResponse[environment.Environment]{
+	return &handlerutil.Out[types.Environment]{
+		Body: types.ApiResponse[types.Environment]{
 			Success: true,
 			Data:    out,
 		},
@@ -417,22 +472,23 @@ func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvir
 }
 
 // UpdateEnvironment updates an environment.
-func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *UpdateEnvironmentInput) (*handlerutil.Out[environment.Environment], error) {
-	updates := map[string]any{}
-	if input.ID != LocalEnvironmentID {
-		if input.Body.ApiUrl != nil {
-			updates["api_url"] = *input.Body.ApiUrl
-		}
-		if input.Body.Enabled != nil {
-			updates["enabled"] = *input.Body.Enabled
-		}
-		if input.Body.AccessToken != nil {
-			updates["access_token"] = *input.Body.AccessToken
-		}
+func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *UpdateEnvironmentInput) (*handlerutil.Out[types.Environment], error) {
+	submitted, err := input.SubmittedFields()
+	if err != nil {
+		return nil, huma.Error400BadRequest("Invalid environment update body")
 	}
-	if input.Body.Name != nil {
-		updates["name"] = *input.Body.Name
+	remote := input.ID != LocalEnvironmentID
+	writable := map[string]bool{
+		"name":    submitted["name"],
+		"enabled": remote && submitted["enabled"],
 	}
+	updates := map[string]any{
+		"name":    input.Body.Name,
+		"enabled": input.Body.Enabled,
+	}
+	maps.DeleteFunc(updates, func(column string, _ any) bool {
+		return !writable[column]
+	})
 
 	userID, username := currentUserRefs(ctx)
 	updated, updateErr := h.environmentService.UpdateEnvironment(ctx, input.ID, updates, userID, username)
@@ -446,35 +502,32 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 
 	if updated.Enabled {
 		go func(syncCtx context.Context, envID, envName string) {
-			status, err := h.environmentService.TestConnection(syncCtx, envID, nil)
-			if err != nil {
+			status, testErr := h.environmentService.TestConnection(syncCtx, envID)
+			if testErr != nil {
 				slog.WarnContext(syncCtx, "Failed to test connection after environment update",
-					"environmentId", envID, "environmentName", envName, "status", status, "error", err)
+					"environmentId", envID, "environmentName", envName, "status", status, "error", testErr)
 			}
 		}(context.WithoutCancel(ctx), input.ID, updated.Name)
 	}
-	if kit.FromPtr(updated.AccessToken) != "" && kit.FromPtr(input.Body.AccessToken) != "" {
-		h.triggerEnvironmentResourceSync(ctx, input.ID, updated.Name, "environment update")
-	}
 
 	updated, newApiKey, err := func() (*Environment, *string, error) {
-		if !kit.FromPtr(input.Body.RegenerateApiKey) {
+		if !input.Body.RegenerateApiKey {
 			return updated, nil, nil
 		}
-		localUser, err := handlerutil.RequireUser(ctx)
-		if err != nil {
-			return nil, nil, err
+		localUser, userErr := handlerutil.RequireUser(ctx)
+		if userErr != nil {
+			return nil, nil, userErr
 		}
 
-		apiKey, err := h.environmentService.RegenerateEnvironmentApiKey(ctx, updated, localUser.ID, localUser.Username)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to regenerate API key", "environmentId", input.ID, "error", err.Error())
+		apiKey, regenerateErr := h.environmentService.RegenerateEnvironmentApiKey(ctx, updated, localUser.ID, localUser.Username)
+		if regenerateErr != nil {
+			slog.ErrorContext(ctx, "Failed to regenerate API key", "environmentId", input.ID, "error", regenerateErr.Error())
 			return nil, nil, huma.Error500InternalServerError("Failed to regenerate API key")
 		}
 
-		refreshed, err := h.environmentService.GetEnvironmentByID(ctx, input.ID)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to fetch updated environment", "environmentId", input.ID, "error", err.Error())
+		refreshed, refreshErr := h.environmentService.GetEnvironmentByID(ctx, input.ID)
+		if refreshErr != nil {
+			slog.ErrorContext(ctx, "Failed to fetch updated environment", "environmentId", input.ID, "error", refreshErr.Error())
 			return nil, nil, huma.Error500InternalServerError("Failed to fetch updated environment")
 		}
 		return refreshed, new(apiKey), nil
@@ -483,15 +536,15 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 		return nil, err
 	}
 
-	out, mapErr := mapping.MapOne[*Environment, environment.Environment](updated)
+	out, mapErr := mapping.MapOne[*Environment, types.Environment](updated)
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError("Failed to map environment")
 	}
 	out = ApplyEnvironmentRuntimeState(out)
 	out.ApiKey = newApiKey // keep: optional field on a 22-field mapped DTO
 
-	return &handlerutil.Out[environment.Environment]{
-		Body: base.ApiResponse[environment.Environment]{
+	return &handlerutil.Out[types.Environment]{
+		Body: types.ApiResponse[types.Environment]{
 			Success: true,
 			Data:    out,
 		},
@@ -507,7 +560,7 @@ func currentUserRefs(ctx context.Context) (userID, username *string) {
 }
 
 // DeleteEnvironment deletes an environment.
-func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *DeleteEnvironmentInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *DeleteEnvironmentInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if input.ID == LocalEnvironmentID {
 		return nil, huma.Error400BadRequest("Cannot delete local environment")
 	}
@@ -522,82 +575,30 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 }
 
 // TestConnection tests connectivity to an environment.
-func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConnectionInput) (*handlerutil.Out[environment.Test], error) {
-	if kit.FromPtr(input.Body).ApiUrl != nil {
-		permissions, ok := middleware.PermissionsFromContext(ctx)
-		if !ok || !permissions.Allows(authz.PermEnvironmentsUpdate, "") {
-			return nil, huma.Error403Forbidden("permission denied: " + authz.PermEnvironmentsUpdate)
-		}
-	}
-
-	status, err := h.environmentService.TestConnection(ctx, input.ID, kit.FromPtr(input.Body).ApiUrl)
-	if err != nil && kit.FromPtr(input.Body).ApiUrl != nil {
-		apiErr := common.ToAPIError(err)
-		return &handlerutil.Out[environment.Test]{
-			Body: base.ApiResponse[environment.Test]{
-				Success: false,
-				Data:    environment.Test{Status: status},
-			},
-		}, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
-	}
+func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConnectionInput) (*handlerutil.Out[types.EnvironmentTest], error) {
+	status, err := h.environmentService.TestConnection(ctx, input.ID)
 	if errors.Is(err, ErrEnvironmentNotFound) {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 	if err != nil {
-		return &handlerutil.Out[environment.Test]{
-			Body: base.ApiResponse[environment.Test]{
+		return &handlerutil.Out[types.EnvironmentTest]{
+			Body: types.ApiResponse[types.EnvironmentTest]{
 				Success: false,
-				Data:    environment.Test{Status: status, Message: new(err.Error())},
+				Data:    types.EnvironmentTest{Status: status, Message: new(err.Error())},
 			},
 		}, err
 	}
 
-	return &handlerutil.Out[environment.Test]{
-		Body: base.ApiResponse[environment.Test]{
+	return &handlerutil.Out[types.EnvironmentTest]{
+		Body: types.ApiResponse[types.EnvironmentTest]{
 			Success: true,
-			Data:    environment.Test{Status: status},
-		},
-	}, nil
-}
-
-// UpdateHeartbeat updates the heartbeat for an environment.
-func (h *EnvironmentHandler) UpdateHeartbeat(ctx context.Context, input *UpdateHeartbeatInput) (*handlerutil.Out[base.MessageResponse], error) {
-	if err := h.environmentService.UpdateEnvironmentHeartbeat(ctx, input.ID); err != nil {
-		if errors.Is(err, ErrEnvironmentNotFound) {
-			return nil, huma.Error404NotFound("Environment not found")
-		}
-		return nil, huma.Error500InternalServerError("Failed to update heartbeat")
-	}
-
-	return handlerutil.MessageOutput("Heartbeat updated successfully", ""), nil
-}
-
-// PairAgent generates or rotates the local agent pairing token.
-func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInput) (*handlerutil.Out[environment.AgentPairResponse], error) {
-	if input.ID != LocalEnvironmentID {
-		return nil, huma.Error404NotFound("Not found")
-	}
-
-	if h.cfg.AgentToken == "" || kit.FromPtr(kit.FromPtr(input.Body).Rotate) {
-		h.cfg.AgentToken = kit.RandomString(48) // keep: rotates the shared runtime config in place
-	}
-
-	if err := h.settingsService.SetStringSetting(ctx, "agentToken", h.cfg.AgentToken); err != nil {
-		return nil, huma.Error500InternalServerError("Failed to persist agent token")
-	}
-
-	return &handlerutil.Out[environment.AgentPairResponse]{
-		Body: base.ApiResponse[environment.AgentPairResponse]{
-			Success: true,
-			Data: environment.AgentPairResponse{
-				Token: h.cfg.AgentToken,
-			},
+			Data:    types.EnvironmentTest{Status: status},
 		},
 	}, nil
 }
 
 // SyncEnvironment syncs manager-owned resources to an environment.
-func (h *EnvironmentHandler) SyncEnvironment(ctx context.Context, input *SyncEnvironmentInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *EnvironmentHandler) SyncEnvironment(ctx context.Context, input *SyncEnvironmentInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -618,7 +619,7 @@ func (h *EnvironmentHandler) triggerEnvironmentResourceSync(ctx context.Context,
 
 	for _, resource := range h.environmentService.resourceSyncs() {
 		go func() {
-			syncCtx, cancel := context.WithTimeout(detachedCtx, edge.DefaultProxyTimeout)
+			syncCtx, cancel := context.WithTimeout(detachedCtx, agent.DefaultProxyTimeout)
 			defer cancel()
 			if err := resource.sync(syncCtx, environmentID); err != nil {
 				slog.WarnContext(syncCtx, "Failed to sync resources to environment",
@@ -629,7 +630,7 @@ func (h *EnvironmentHandler) triggerEnvironmentResourceSync(ctx context.Context,
 }
 
 // PairEnvironment handles agent pairing callback with API key.
-func (h *EnvironmentHandler) PairEnvironment(ctx context.Context, input *PairEnvironmentInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *EnvironmentHandler) PairEnvironment(ctx context.Context, input *PairEnvironmentInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if input.XAPIKey == "" {
 		return nil, huma.Error400BadRequest("X-API-Key header is required")
 	}
@@ -670,7 +671,7 @@ func (h *EnvironmentHandler) PairEnvironment(ctx context.Context, input *PairEnv
 }
 
 // GetDeploymentSnippets returns deployment snippets for an environment.
-func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *GetDeploymentSnippetsInput) (*handlerutil.Out[DeploymentSnippet], error) {
+func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *GetDeploymentSnippetsInput) (*handlerutil.Out[types.DeploymentSnippet], error) {
 	env, err := h.environmentService.GetEnvironmentByID(ctx, input.ID)
 	if err != nil {
 		return nil, huma.Error404NotFound("Environment not found")
@@ -684,31 +685,26 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 		return nil, huma.Error400BadRequest("Environment is missing access token")
 	}
 
-	snippets, err := func() (*DeploymentSnippets, error) {
-		if env.IsEdge {
-			return h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken, h.edgeMTLSConfig())
-		}
-		return h.environmentService.GenerateDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), env.ApiUrl, *env.AccessToken)
-	}()
+	snippets, err := h.environmentService.GenerateAgentDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken, h.agentMTLSConfig())
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to generate deployment snippets", "environmentId", input.ID, "error", err.Error())
 		return nil, huma.Error500InternalServerError("Failed to generate deployment snippets")
 	}
 
-	return &handlerutil.Out[DeploymentSnippet]{
-		Body: base.ApiResponse[DeploymentSnippet]{
+	return &handlerutil.Out[types.DeploymentSnippet]{
+		Body: types.ApiResponse[types.DeploymentSnippet]{
 			Success: true,
-			Data: DeploymentSnippet{
+			Data: types.DeploymentSnippet{
 				DockerRun:     snippets.DockerRun,
 				DockerCompose: snippets.DockerCompose,
-				MTLS: func() *DeploymentSnippetMTLS {
+				MTLS: func() *types.DeploymentSnippetMTLS {
 					if snippets.MTLS == nil {
 						return nil
 					}
-					files := make([]DeploymentSnippetFile, 0, len(snippets.MTLS.Files))
+					files := make([]types.DeploymentSnippetFile, 0, len(snippets.MTLS.Files))
 					for _, file := range snippets.MTLS.Files {
 						// Secret material is only served through the download endpoint.
-						files = append(files, DeploymentSnippetFile{
+						files = append(files, types.DeploymentSnippetFile{
 							Name:          file.Name,
 							Content:       kit.Ternary(isSensitiveMTLSAssetName(file.Name), "", file.Content),
 							DownloadURL:   fmt.Sprintf("/api/environments/%s/deployment/mtls/%s", env.ID, file.Name),
@@ -717,7 +713,7 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 							Permissions:   file.Permissions,
 						})
 					}
-					return &DeploymentSnippetMTLS{
+					return &types.DeploymentSnippetMTLS{
 						DockerRun:     snippets.MTLS.DockerRun,
 						DockerCompose: snippets.MTLS.DockerCompose,
 						Files:         files,
@@ -730,7 +726,15 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 }
 
 // GetEnvironmentVersion returns the version of the local or a remote environment.
-func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *GetEnvironmentVersionInput) (*handlerutil.Out[version.Info], error) {
+func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *GetEnvironmentVersionInput) (*handlerutil.Out[types.VersionInfo], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.environmentService.AggregateVersions(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to get environment versions: " + err.Error())
+		}
+		return &handlerutil.Out[types.VersionInfo]{Body: body}, nil
+	}
+
 	env, err := h.environmentService.GetEnvironmentByID(ctx, input.ID)
 	if err != nil {
 		return nil, huma.Error404NotFound("Environment not found")
@@ -739,10 +743,10 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	var versionInfo version.Info
+	var versionInfo types.VersionInfo
 	if env.ID == LocalEnvironmentID {
 		versionInfo = *h.localVersion(reqCtx)
-	} else if proxyErr := h.environmentService.ProxyJSONRequestForEnvironment(reqCtx, *env, http.MethodGet, "/api/app-version", nil, &versionInfo); proxyErr != nil {
+	} else if proxyErr := h.environmentService.ProxyJSONRequestForEnvironment(reqCtx, *env, http.MethodGet, "/api/app/version", nil, &versionInfo); proxyErr != nil {
 		return nil, handlerutil.TranslateRemoteProxyError(proxyErr)
 	}
 
@@ -751,31 +755,31 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 		slog.WarnContext(ctx, "Failed to update environment heartbeat", "environmentId", input.ID, "error", updateErr)
 	}
 
-	return &handlerutil.Out[version.Info]{
-		Body: base.ApiResponse[version.Info]{
+	return &handlerutil.Out[types.VersionInfo]{
+		Body: types.ApiResponse[types.VersionInfo]{
 			Success: true,
 			Data:    versionInfo,
 		},
 	}, nil
 }
 
-// DownloadEdgeMTLSCA downloads the Arcane-managed edge mTLS CA certificate.
-func (h *EnvironmentHandler) DownloadEdgeMTLSCA(ctx context.Context, _ *DownloadEdgeMTLSCAInput) (*huma.StreamResponse, error) {
-	caPath, err := edge.AvailableManagerMTLSCAPath(h.edgeMTLSConfig())
+// DownloadAgentMTLSCA downloads the Arcane-managed agent mTLS CA certificate.
+func (h *EnvironmentHandler) DownloadAgentMTLSCA(ctx context.Context, _ *DownloadAgentMTLSCAInput) (*huma.StreamResponse, error) {
+	caPath, err := agent.AvailableManagerMTLSCAPath(h.agentMTLSConfig())
 	if err != nil {
-		return nil, huma.Error404NotFound("Arcane-managed edge mTLS CA is not available")
+		return nil, huma.Error404NotFound("Arcane-managed agent mTLS CA is not available")
 	}
 
 	// os rather than acfs: the CA path may be configured anywhere on the host.
 	caPEM, err := os.ReadFile(caPath)
 	if err != nil {
-		slog.ErrorContext(ctx, "Failed to read generated edge mTLS CA", "path", caPath, "error", err.Error())
-		return nil, huma.Error500InternalServerError("Failed to read Arcane-generated edge mTLS CA")
+		slog.ErrorContext(ctx, "Failed to read generated agent mTLS CA", "path", caPath, "error", err.Error())
+		return nil, huma.Error500InternalServerError("Failed to read Arcane-generated agent mTLS CA")
 	}
 
 	fileName := cmp.Or(strings.TrimSpace(filepath.Base(caPath)), "ca.crt")
 	return h.mtlsDownloadResponse(nil, "application/x-pem-file", fileName, caPEM,
-		"mTLS CA downloaded", fmt.Sprintf("Administrator downloaded edge mTLS CA %q", fileName),
+		"mTLS CA downloaded", fmt.Sprintf("Administrator downloaded agent mTLS CA %q", fileName),
 		database.JSON{"fileName": fileName, "kind": "ca"}), nil
 }
 
@@ -820,7 +824,7 @@ func (h *EnvironmentHandler) DownloadEnvironmentMTLSBundle(ctx context.Context, 
 
 	fileName := environmentMTLSDownloadBaseName(env) + "-mtls.zip"
 	return h.mtlsDownloadResponse(env, "application/zip", fileName, archive.Bytes(),
-		"mTLS bundle downloaded", fmt.Sprintf("Administrator downloaded edge mTLS bundle %q (%d files)", fileName, len(files)),
+		"mTLS bundle downloaded", fmt.Sprintf("Administrator downloaded agent mTLS bundle %q (%d files)", fileName, len(files)),
 		database.JSON{"fileName": fileName, "kind": "bundle", "fileCount": len(files)}), nil
 }
 
@@ -829,34 +833,34 @@ func (h *EnvironmentHandler) DownloadEnvironmentMTLSFile(ctx context.Context, in
 	if err != nil {
 		return nil, err
 	}
-	index := slices.IndexFunc(files, func(file DeploymentSnippetFile) bool { return file.Name == input.FileName })
+	index := slices.IndexFunc(files, func(file types.DeploymentSnippetFile) bool { return file.Name == input.FileName })
 	if index < 0 {
 		return nil, huma.Error404NotFound("Requested mTLS asset was not found")
 	}
 	file := files[index]
 
 	return h.mtlsDownloadResponse(env, "application/x-pem-file", environmentMTLSAssetDownloadName(env, file.Name), []byte(file.Content),
-		"mTLS asset downloaded", fmt.Sprintf("Administrator downloaded edge mTLS asset %q", file.Name),
+		"mTLS asset downloaded", fmt.Sprintf("Administrator downloaded agent mTLS asset %q", file.Name),
 		database.JSON{"fileName": file.Name, "kind": "file", "sensitive": isSensitiveMTLSAssetName(file.Name)}), nil
 }
 
-// edgeMTLSConfig maps the handler config to edge mTLS settings, or nil without config.
-func (h *EnvironmentHandler) edgeMTLSConfig() *edge.Config {
-	return &edge.Config{
-		EdgeMTLSMode:      h.cfg.EdgeMTLSMode,
-		EdgeMTLSCAFile:    h.cfg.EdgeMTLSCAFile,
-		EdgeMTLSAssetsDir: h.cfg.EdgeMTLSAssetsDir,
-		AppURL:            h.cfg.GetAppURL(),
+// agentMTLSConfig maps the handler config to agent mTLS settings, or nil without config.
+func (h *EnvironmentHandler) agentMTLSConfig() *agent.Config {
+	return &agent.Config{
+		AgentMTLSMode:      h.cfg.AgentMTLSMode,
+		AgentMTLSCAFile:    h.cfg.AgentMTLSCAFile,
+		AgentMTLSAssetsDir: h.cfg.AgentMTLSAssetsDir,
+		AppURL:             h.cfg.GetAppURL(),
 	}
 }
 
-func (h *EnvironmentHandler) loadEnvironmentMTLSFiles(ctx context.Context, environmentID string) (*Environment, []DeploymentSnippetFile, error) {
+func (h *EnvironmentHandler) loadEnvironmentMTLSFiles(ctx context.Context, environmentID string) (*Environment, []types.DeploymentSnippetFile, error) {
 	env, err := h.environmentService.GetEnvironmentByID(ctx, environmentID)
 	if err != nil {
 		return nil, nil, huma.Error404NotFound("Environment not found")
 	}
-	if !env.IsEdge {
-		return nil, nil, huma.Error400BadRequest("Environment is not an edge agent")
+	if env.ID == LocalEnvironmentID {
+		return nil, nil, huma.Error400BadRequest("Environment is not an agent")
 	}
 	if env.ApiKeyID == nil {
 		return nil, nil, huma.Error400BadRequest("Environment does not have an API key configured")
@@ -865,7 +869,7 @@ func (h *EnvironmentHandler) loadEnvironmentMTLSFiles(ctx context.Context, envir
 		return nil, nil, huma.Error400BadRequest("Environment is missing access token")
 	}
 
-	snippets, err := h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken, h.edgeMTLSConfig())
+	snippets, err := h.environmentService.GenerateAgentDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken, h.agentMTLSConfig())
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to generate environment mTLS assets", "environmentId", environmentID, "error", err.Error())
 		return nil, nil, huma.Error500InternalServerError("Failed to generate environment mTLS assets")
@@ -889,7 +893,7 @@ func (h *EnvironmentHandler) mtlsDownloadResponse(env *Environment, contentType,
 			humaCtx.SetHeader("Content-Length", strconv.Itoa(len(content)))
 
 			if written, writeErr := humaCtx.BodyWriter().Write(content); writeErr != nil || written != len(content) {
-				slog.WarnContext(ctx, "Failed to stream edge mTLS download", "fileName", fileName, "bytesWritten", written, "bytesExpected", len(content), "error", writeErr)
+				slog.WarnContext(ctx, "Failed to stream agent mTLS download", "fileName", fileName, "bytesWritten", written, "bytesExpected", len(content), "error", writeErr)
 				return
 			}
 
@@ -946,4 +950,4 @@ func environmentMTLSAssetDownloadName(env *Environment, fileName string) string 
 	}
 }
 
-const edgeMTLSCertificateExpiryWarningWindow = 30 * 24 * time.Hour
+const agentMTLSCertificateExpiryWarningWindow = 30 * 24 * time.Hour

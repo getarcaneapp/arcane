@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { createQuery } from '@tanstack/svelte-query';
-	import { onDestroy } from 'svelte';
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
-	import { Temporal } from 'temporal-polyfill';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import UniversalMobileCard from '#lib/components/arcane-table/cards/universal-mobile-card.svelte';
@@ -38,25 +37,15 @@
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { ImageSummaryDto, ImageUpdateInfoDto } from '#lib/types/docker.js';
+	import type { ImageSummaryDto } from '#lib/types/docker.js';
 	import type { VulnerabilityScanSummary } from '#lib/types/environment.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
-	import { handleApiResultWithCallbacks, extractApiErrorMessage } from '#lib/utils/api.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
-	import { isLikelyStaleFailedSummary, isVulnerabilityScanInProgress } from '#lib/utils/docker.js';
-	import {
-		collectAcrossEnvironments,
-		environmentHref,
-		fetchAcrossEnvironments,
-		hasShownPermission,
-		rowKey,
-		type EnvironmentPage,
-		type EnvironmentRow
-	} from '#lib/utils/environments.js';
-	import { bytes, formatDateTimeShort, nowInstantString } from '#lib/utils/formatting.js';
+	import { environmentHref, type EnvironmentPage, type EnvironmentRow, hasShownPermission } from '#lib/utils/environments.js';
+	import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { inUseBadge } from '#lib/utils/mobile-card-badges.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -65,22 +54,20 @@
 	type ImageRow = EnvironmentRow<ImageSummaryDto>;
 
 	let {
-		images = $bindable(),
+		images,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		onImageUpdated,
-		onRefreshData,
-		loading = false
+		onRetry
 	}: {
 		images: EnvironmentPage<ImagesPaginatedResponse>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
-		onImageUpdated?: () => Promise<void>;
-		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
-		loading?: boolean;
+		onRetry: () => Promise<unknown>;
 	} = $props();
 
-	let isLoading = $state({
+	const queryClient = useQueryClient();
+
+	const isLoading = $state({
 		removing: false,
 		checking: false
 	});
@@ -88,47 +75,17 @@
 	const vulnerabilityManagementEnabled = $derived(
 		environmentStore.shown.some((env) => featureStore.isEnabled('vulnerabilityManagement', env.id))
 	);
-	// Track the user store: hasPermission reads it non-reactively, so without
-	// this the deriveds would cache pre-hydration falses forever.
-	const canDeleteImage = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('images:delete');
-	});
-	const canPullImage = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('images:pull');
-	});
-	const canScanImage = $derived.by(() => {
-		userStore.current;
-		return vulnerabilityManagementEnabled && hasShownPermission('vulnerabilities:scan');
-	});
-	const canTagImage = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('images:tag');
-	});
-	const canPatchImage = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('images:patch');
-	});
-	const canReadImage = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('images:read');
-	});
+	const canDeleteImage = $derived(hasShownPermission('images:delete'));
+	const canPullImage = $derived(hasShownPermission('images:pull'));
+	const canScanImage = $derived(vulnerabilityManagementEnabled && hasShownPermission('vulnerabilities:scan'));
+	const canTagImage = $derived(hasShownPermission('images:tag'));
+	const canPatchImage = $derived(hasShownPermission('images:patch'));
+	const canReadImage = $derived(hasShownPermission('images:read'));
 
 	let tagDialogImage = $state<ImageRow | null>(null);
-	let scanRequestedAtByImage = $state<Record<string, string>>({});
-	// Set once on destroy so late async results don't touch a dead component.
-	let destroyed = false;
-	const SCAN_POLL_INTERVAL_MS = 4000;
 
-	async function refreshImages(options: SearchPaginationSortRequest = requestOptions) {
-		if (onRefreshData) {
-			await onRefreshData(options);
-			return;
-		}
-		images = await fetchAcrossEnvironments(environmentStore.shown, options, (id, request, config) =>
-			imageService.getImagesForEnvironment(id, request, config)
-		);
+	function invalidateImages() {
+		return queryClient.invalidateQueries({ queryKey: queryKeys.images.listPrefix(environmentStore.shownKey) });
 	}
 
 	function handleDeleteSelected(ids: string[]) {
@@ -139,7 +96,7 @@
 			confirmLabel: m.common_remove(),
 			destructive: true,
 			checkboxes: [{ id: 'force', label: m.images_remove_force_label(), initialState: false }],
-			run: (id, environmentId, checkboxStates) =>
+			runInEnvironment: (id, environmentId, checkboxStates) =>
 				imageService.deleteImage(id, { force: !!checkboxStates['force'] }, environmentId),
 			messages: {
 				success: (count) => (count === 1 ? m.image_removed_successfully() : m.images_remove_success_many({ count })),
@@ -148,7 +105,7 @@
 			},
 			setLoading: (loading) => (isLoading.removing = loading),
 			onComplete: async (result) => {
-				if (result.success > 0) await refreshImages();
+				if (result.success > 0) await invalidateImages();
 			},
 			clearSelection: () => (selectedIds = []),
 			sequential: true
@@ -180,7 +137,7 @@
 						setLoadingState: () => {},
 						onSuccess: async (data) => {
 							toast.success(m.image_removed_successfully(), activityToastOptions(extractActivityId(data)));
-							await refreshImages();
+							await invalidateImages();
 						}
 					});
 
@@ -202,32 +159,20 @@
 			setLoadingState: () => {},
 			onSuccess: async (data) => {
 				toast.success(m.images_pull_success({ repoTag }), activityToastOptions(extractActivityId(data)));
-				await refreshImages();
+				await invalidateImages();
 			}
 		});
 	}
 
 	async function handleInlineVulnerabilityScan(image: ImageRow) {
 		if (!canScanImage) return;
-		const requestedScope = environmentStore.shownKey;
 		const result = await tryCatch(vulnerabilityService.scanImage(image.id, image.environmentId));
-		if (destroyed || !vulnerabilityManagementEnabled || requestedScope !== environmentStore.shownKey) return;
 		await handleApiResultWithCallbacks({
 			result,
 			message: m.vuln_scan_failed(),
 			setLoadingState: () => {},
 			onSuccess: async (data) => {
-				scanRequestedAtByImage[rowKey(image)] = data.scanTime || nowInstantString();
-				const summary: VulnerabilityScanSummary = {
-					imageId: data.imageId,
-					scanTime: data.scanTime,
-					status: data.status,
-					activityId: data.activityId,
-					scanPhase: data.scanPhase,
-					summary: data.summary,
-					error: data.error
-				};
-				await handleVulnerabilityScanChanged(rowKey(image), summary);
+				await invalidateImages();
 
 				if (data.status === 'completed') {
 					toast.success(m.vuln_scan_completed(), activityToastOptions(data.activityId));
@@ -260,115 +205,11 @@
 		});
 	}
 
-	async function handleUpdateInfoChanged(key: string, newUpdateInfo: ImageUpdateInfoDto) {
-		if (destroyed) return;
-		images = {
-			...images,
-			data: images.data.map((image) => {
-				if (rowKey(image) === key) return { ...image, updateInfo: newUpdateInfo };
-				return image;
-			})
-		};
-		await onImageUpdated?.();
-	}
-
-	async function handleVulnerabilityScanChanged(key: string, newScanSummary: VulnerabilityScanSummary) {
-		if (destroyed) return;
-		images = {
-			...images,
-			data: images.data.map((image) => {
-				if (rowKey(image) === key) return { ...image, vulnerabilityScan: newScanSummary };
-				return image;
-			})
-		};
+	async function handleVulnerabilityScanChanged(newScanSummary: VulnerabilityScanSummary) {
 		if (newScanSummary.status === 'completed' || newScanSummary.status === 'failed') {
-			if (scanRequestedAtByImage[key]) {
-				delete scanRequestedAtByImage[key];
-				scanRequestedAtByImage = { ...scanRequestedAtByImage };
-			}
-		}
-		if (newScanSummary.status === 'completed' || newScanSummary.status === 'failed') {
-			await onImageUpdated?.();
+			await invalidateImages();
 		}
 	}
-
-	const scanningImages = $derived.by(() => {
-		if (!vulnerabilityManagementEnabled) return [];
-		return (images.data ?? []).filter((item) => isVulnerabilityScanInProgress(item.vulnerabilityScan?.status));
-	});
-
-	// Polls only while rows are scanning; TanStack pauses it while the tab is hidden.
-	const scanSummariesQuery = createQuery(() => {
-		const scanning = scanningImages;
-		const scope = environmentStore.shownKey;
-		return {
-			queryKey: queryKeys.vulnerabilities.scanSummaries(scope, scanning.map(rowKey)),
-			queryFn: async () => {
-				const environments = environmentStore.shown.filter((env) => scanning.some((image) => image.environmentId === env.id));
-				// A failing environment is reported; the others' summaries still apply.
-				const { values, failures } = await collectAcrossEnvironments(environments, async (environmentId) => {
-					const ids = scanning.filter((image) => image.environmentId === environmentId).map((image) => image.id);
-					const response = await vulnerabilityService.getScanSummaries(ids, environmentId);
-					return scanning
-						.filter((image) => image.environmentId === environmentId && response?.summaries?.[image.id])
-						.map((image) => [rowKey(image), response.summaries[image.id]!] as const);
-				});
-				const summaries = Object.fromEntries(values.flatMap(({ value }) => value));
-				// Rows update from the fetch itself; a scope switch mid-request discards the result.
-				if (scope === environmentStore.shownKey) await applyScanSummaries(summaries);
-				return { summaries, failures };
-			},
-			enabled: scanning.length > 0,
-			refetchInterval: SCAN_POLL_INTERVAL_MS,
-			staleTime: 0,
-			gcTime: 0
-		};
-	});
-
-	const scanPollError = $derived.by(() => {
-		if (scanSummariesQuery.error) return extractApiErrorMessage(scanSummariesQuery.error);
-		return (
-			scanSummariesQuery.data?.failures.map(({ environment, message }) => `${environment.name}: ${message}`).join('\n') || null
-		);
-	});
-
-	async function applyScanSummaries(summaries: Record<string, VulnerabilityScanSummary>) {
-		if (destroyed || Object.keys(summaries).length === 0 || !images.data?.length) return;
-		let changed = false;
-		let completed = false;
-		const nextScanRequestedAtByImage = { ...scanRequestedAtByImage };
-		const nextData = images.data.map((img) => {
-			const key = rowKey(img);
-			const summary = summaries[key];
-			if (!summary) return img;
-
-			if (
-				summary.status === 'failed' &&
-				isLikelyStaleFailedSummary(summary, nextScanRequestedAtByImage[key]) &&
-				isVulnerabilityScanInProgress(img.vulnerabilityScan?.status)
-			) {
-				return img;
-			}
-
-			changed = true;
-			if (summary.status === 'completed' || summary.status === 'failed') {
-				completed = true;
-				delete nextScanRequestedAtByImage[key];
-			}
-			return { ...img, vulnerabilityScan: summary };
-		});
-		if (changed) {
-			images = { ...images, data: nextData };
-			scanRequestedAtByImage = nextScanRequestedAtByImage;
-		}
-		if (completed) {
-			await onImageUpdated?.();
-		}
-	}
-
-	onDestroy(() => {
-		destroyed = true;
-	});
 
 	const allColumns = $derived([
 		...environmentColumns<ImageRow>(),
@@ -449,7 +290,7 @@
 			id: 'remove',
 			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
 			action: 'remove',
-			onClick: handleDeleteSelected,
+			onclick: handleDeleteSelected,
 			loading: isLoading.removing,
 			disabled: !canDeleteImage || isLoading.removing,
 			icon: TrashIcon
@@ -461,7 +302,10 @@
 
 {#snippet RepoCell({ item }: { item: ImageRow })}
 	{#if item.repo && item.repo !== '<none>'}
-		<a class="font-medium hover:underline" href={environmentHref(`/images/${item.id}`, item.environmentId)}>{item.repo}</a>
+		<a
+			class="font-medium hover:underline"
+			href={resolve(`/(app)/images/[imageId]?env=${encodeURIComponent(item.environmentId)}`, { imageId: item.id })}>{item.repo}</a
+		>
 	{:else}
 		<span class="text-muted-foreground italic">{m.images_untagged()}</span>
 	{/if}
@@ -589,7 +433,7 @@
 			repo={item.repo}
 			tag={item.tag}
 			isLocal={!item.repoDigests || item.repoDigests.length === 0}
-			onUpdated={(newInfo) => handleUpdateInfoChanged(rowKey(item), newInfo)}
+			onUpdated={invalidateImages}
 		/>
 	</div>
 {/snippet}
@@ -602,8 +446,7 @@
 				scanSummary={item.vulnerabilityScan}
 				imageId={item.id}
 				environmentId={item.environmentId}
-				pollError={scanPollError}
-				onScanned={(newSummary) => handleVulnerabilityScanChanged(rowKey(item), newSummary)}
+				onScanned={handleVulnerabilityScanChanged}
 			/>
 		</div>
 	{/if}
@@ -694,14 +537,17 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={(item: ImageRow) => goto(environmentHref(`/images/${item.id}`, item.environmentId))}
+		onclick={(item: ImageRow) =>
+			goto(resolve(`/(app)/images/[imageId]?env=${encodeURIComponent(item.environmentId)}`, { imageId: item.id }))}
 	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ImageRow })}
 	{@const envId = item.environmentId}
 	<RowActionsMenu>
-		<DropdownMenu.Item onclick={() => goto(environmentHref(`/images/${item.id}`, envId))}>
+		<DropdownMenu.Item
+			onclick={() => goto(resolve(`/(app)/images/[imageId]?env=${encodeURIComponent(envId)}`, { imageId: item.id }))}
+		>
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
@@ -772,16 +618,11 @@
 <ArcaneTable
 	persistKey="arcane-image-table"
 	items={images}
-	{loading}
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await refreshImages(options);
-		return images;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}
@@ -797,6 +638,6 @@
 		onOpenChange={(open) => {
 			if (!open) tagDialogImage = null;
 		}}
-		onTagged={async () => refreshImages()}
+		onTagged={invalidateImages}
 	/>
 {/if}

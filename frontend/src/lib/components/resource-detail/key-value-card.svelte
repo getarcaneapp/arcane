@@ -14,19 +14,9 @@
 		valueTitle?: string;
 		class?: string;
 		compact?: boolean;
-		variant?: 'default' | 'subtle' | 'outlined';
 	}
 
-	let {
-		label,
-		children,
-		valueFormat = 'code',
-		stacked = false,
-		valueTitle,
-		class: className,
-		compact = false,
-		variant = 'subtle'
-	}: Props = $props();
+	let { label, children, valueFormat = 'code', stacked = false, valueTitle, class: className, compact = false }: Props = $props();
 </script>
 
 {#snippet content()}
@@ -56,6 +46,6 @@
 	</Card.Content>
 {/snippet}
 
-<Card.Root {variant} size={compact ? 'sm' : 'default'} class={className}>
+<Card.Root size={compact ? 'sm' : 'default'} class={className}>
 	{@render content()}
 </Card.Root>

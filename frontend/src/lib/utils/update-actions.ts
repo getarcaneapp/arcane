@@ -3,12 +3,10 @@ import { toast } from 'svelte-sonner';
 import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 import { m } from '#lib/paraglide/messages.js';
 import BaseAPIService from '#lib/services/api-service.js';
-import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 import { imageService } from '#lib/services/image-service.js';
 import { userService } from '#lib/services/user-service.js';
 import type { AutoUpdateResourceType, AutoUpdateResult } from '#lib/types/automation.js';
 import { activityToastOptions } from '#lib/utils/activity-toast.js';
-import { toastUpgradeError } from '#lib/utils/api.js';
 import { acrossEnvironmentsNote, actionEnvironments, settleAcrossEnvironments } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -22,7 +20,7 @@ import { tryCatch } from '#lib/utils/try-catch.js';
 export function applyScopedUpdate(
 	type: Extract<AutoUpdateResourceType, 'container' | 'project'>,
 	id: string,
-	environmentId?: string
+	environmentId: string
 ) {
 	return imageService.runAutoUpdate({ type, resourceIds: [id] }, environmentId);
 }
@@ -98,7 +96,7 @@ const SELF_UPGRADE_MAX_WAIT_MS = 5 * 60 * 1000;
  * expired session for minutes. While the backend is down the probe throws, so
  * the flag stays armed for exactly as long as it is needed.
  *
- * The probe must be authenticated. A public endpoint (`/app-version`) answers
+ * The probe must be authenticated. A public endpoint (`/app/version`) answers
  * 200 the instant the new backend binds its port, which would disarm before
  * any authenticated request could trigger recovery. `/auth/me` instead returns
  * the version-mismatch 401 itself, and — because it is not in the API client's
@@ -160,22 +158,4 @@ export function summarizeUpdateCheckResult(result: { errorMessage?: string }) {
 	const firstError = result.errorMessage?.trim();
 	if (firstError) toast.error(firstError || m.containers_check_updates_failed());
 	else toast.success(m.images_update_check_completed());
-}
-
-export async function applyEnvironmentUpgrade(
-	environmentId: string,
-	failureMessage: () => string,
-	onRefresh?: () => Promise<unknown> | unknown,
-	useResponseMessage = false
-) {
-	try {
-		const result = await systemUpgradeService.triggerUpgrade(environmentId);
-		if (!result.success) throw new Error(result.error || (useResponseMessage && result.message) || failureMessage());
-		toast.success(m.upgrade_success());
-		await onRefresh?.();
-		return { upToDate: result.upToDate };
-	} catch (error) {
-		toastUpgradeError(error, m.upgrade_failed);
-		throw error;
-	}
 }

@@ -21,8 +21,7 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v2/env"
-	tmpl "github.com/getarcaneapp/arcane/types/v2/template"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
@@ -35,14 +34,14 @@ import (
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
 type registryFetchMeta struct {
@@ -59,22 +58,23 @@ type templateFileSnapshot struct {
 }
 
 type TemplateService struct {
+	lastFsSync      time.Time
 	db              *database.DB
 	httpClient      *http.Client
 	safeHTTPClient  *http.Client
 	lookupIP        httpx.LookupIPFunc
 	settingsService *settings.SettingsService
 
-	remoteCache      *hot.HotCache[uint64, []ComposeTemplate]
-	remoteGeneration atomic.Uint64
-
-	registryMu        sync.RWMutex
+	remoteCache       *hot.HotCache[uint64, []ComposeTemplate]
 	registryFetchMeta map[string]*registryFetchMeta
 	registryErrors    map[string]string // last fetch error per registry ID, cleared on success
 
+	remoteGeneration atomic.Uint64
+
+	registryMu sync.RWMutex
+
 	// fsMu serializes folder template writes and deletes with the filesystem sync, and guards lastFsSync.
-	fsMu       sync.Mutex
-	lastFsSync time.Time
+	fsMu sync.Mutex
 }
 
 const (
@@ -136,7 +136,7 @@ func (s *TemplateService) configuredTemplatesDirSetting(ctx context.Context) str
 	if s.settingsService == nil {
 		return ""
 	}
-	return s.settingsService.GetStringSetting(ctx, "templatesDirectory", "/app/data/templates")
+	return s.settingsService.GetStringSetting(ctx, "templatesDirectory")
 }
 
 // getTemplatesDirectory resolves the effective templates directory.
@@ -200,15 +200,15 @@ func (s *TemplateService) GetAllTemplates(ctx context.Context) ([]ComposeTemplat
 	return templates, nil
 }
 
-func (s *TemplateService) GetAllTemplatesPaginated(ctx context.Context, params pagination.QueryParams) ([]tmpl.Template, pagination.Response, error) {
+func (s *TemplateService) GetAllTemplatesPaginated(ctx context.Context, params pagination.QueryParams) ([]types.Template, pagination.Response, error) {
 	templates, err := s.GetAllTemplates(ctx)
 	if err != nil {
 		return nil, pagination.Response{}, err
 	}
 
-	items := make([]tmpl.Template, 0, len(templates))
+	items := make([]types.Template, 0, len(templates))
 	for _, t := range templates {
-		var dtoItem tmpl.Template
+		var dtoItem types.Template
 		if mapStructErr := mapping.MapStruct(&t, &dtoItem); mapStructErr != nil {
 			slog.WarnContext(ctx, "failed to map template to DTO", "error", mapStructErr, "templateId", t.ID)
 			continue
@@ -216,33 +216,33 @@ func (s *TemplateService) GetAllTemplatesPaginated(ctx context.Context, params p
 		items = append(items, dtoItem)
 	}
 
-	config := pagination.Config[tmpl.Template]{
-		SearchAccessors: []pagination.SearchAccessor[tmpl.Template]{
-			func(t tmpl.Template) (string, error) { return t.Name, nil },
-			func(t tmpl.Template) (string, error) { return t.Description, nil },
-			func(t tmpl.Template) (string, error) {
+	config := pagination.Config[types.Template]{
+		SearchAccessors: []pagination.SearchAccessor[types.Template]{
+			func(t types.Template) (string, error) { return t.Name, nil },
+			func(t types.Template) (string, error) { return t.Description, nil },
+			func(t types.Template) (string, error) {
 				if t.Metadata != nil && len(t.Metadata.Tags) > 0 {
 					return strings.Join(t.Metadata.Tags, " "), nil
 				}
 				return "", nil
 			},
 		},
-		SortBindings: []pagination.SortBinding[tmpl.Template]{
+		SortBindings: []pagination.SortBinding[types.Template]{
 			{
 				Key: "name",
-				Fn: func(a, b tmpl.Template) int {
+				Fn: func(a, b types.Template) int {
 					return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 				},
 			},
 			{
 				Key: "description",
-				Fn: func(a, b tmpl.Template) int {
+				Fn: func(a, b types.Template) int {
 					return strings.Compare(strings.ToLower(a.Description), strings.ToLower(b.Description))
 				},
 			},
 			{
 				Key: "isRemote",
-				Fn: func(a, b tmpl.Template) int {
+				Fn: func(a, b types.Template) int {
 					if a.IsRemote == b.IsRemote {
 						return 0
 					}
@@ -250,10 +250,10 @@ func (s *TemplateService) GetAllTemplatesPaginated(ctx context.Context, params p
 				},
 			},
 		},
-		FilterAccessors: []pagination.FilterAccessor[tmpl.Template]{
+		FilterAccessors: []pagination.FilterAccessor[types.Template]{
 			{
 				Key: "type",
-				Fn: func(item tmpl.Template, filterValue string) bool {
+				Fn: func(item types.Template, filterValue string) bool {
 					value, valid := kit.ParseBool(filterValue)
 					return !valid || item.IsRemote == value
 				},
@@ -310,6 +310,9 @@ func (s *TemplateService) CreateTemplate(ctx context.Context, template *ComposeT
 	if err := normalization.Normalize(template); err != nil {
 		return err
 	}
+	if template.Name == "" {
+		return common.Classify(common.ErrValidation, errors.New("template name is required"))
+	}
 	if template.ID == "" {
 		template.ID = uuid.New().String()
 	}
@@ -324,10 +327,7 @@ func (s *TemplateService) CreateTemplate(ctx context.Context, template *ComposeT
 	})
 }
 
-func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, updates *ComposeTemplate) error {
-	if err := normalization.Normalize(updates); err != nil {
-		return err
-	}
+func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, req types.Template, submitted map[string]bool) error {
 	s.fsMu.Lock()
 	defer s.fsMu.Unlock()
 
@@ -342,7 +342,20 @@ func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, updates
 		}
 
 		if existing.IsRemote {
-			return errors.New("cannot update remote template")
+			return common.Classify(common.ErrBadRequest, errors.New("cannot update remote template"))
+		}
+
+		updates := ComposeTemplate{
+			Name:        kit.Ternary(submitted["name"], req.Name, existing.Name),
+			Description: kit.Ternary(submitted["description"], req.Description, existing.Description),
+			Content:     kit.Ternary(submitted["content"], req.Content, existing.Content),
+			EnvContent:  kit.Ternary(submitted["envContent"], req.EnvContent, existing.EnvContent),
+		}
+		if err := normalization.Normalize(&updates); err != nil {
+			return err
+		}
+		if updates.Name == "" {
+			return common.Classify(common.ErrValidation, errors.New("template name is required"))
 		}
 
 		// The filesystem sync re-imports folder templates, so edits must go to the folder.
@@ -578,11 +591,11 @@ func (s *TemplateService) CreateRegistry(ctx context.Context, registry *Template
 	if err := normalization.Normalize(registry); err != nil {
 		return err
 	}
+	if registry.URL == "" {
+		return common.Classify(common.ErrValidation, errors.New("registry URL is required"))
+	}
 	// Hydrate metadata if needed
 	if registry.Name == "" || registry.Description == "" {
-		if registry.URL == "" {
-			return errors.New("registry URL is required")
-		}
 		if manifest, err := s.fetchRegistryManifest(ctx, registry.URL); err == nil {
 			registry.Name = cmp.Or(registry.Name, manifest.Name)
 			registry.Description = cmp.Or(registry.Description, manifest.Description)
@@ -612,17 +625,27 @@ func (s *TemplateService) CreateRegistry(ctx context.Context, registry *Template
 	return nil
 }
 
-func (s *TemplateService) UpdateRegistry(ctx context.Context, id string, updates *TemplateRegistry) error {
-	if err := normalization.Normalize(updates); err != nil {
+func (s *TemplateService) UpdateRegistry(ctx context.Context, id string, req types.TemplateRegistry, submitted map[string]bool) error {
+	if err := normalization.Normalize(&req); err != nil {
 		return err
 	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing TemplateRegistry
 		if err := tx.Where("id = ?", id).First(&existing).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return errors.New("registry not found")
+				return common.Classify(common.ErrNotFound, errors.New("registry not found"))
 			}
 			return fmt.Errorf("failed to find registry: %w", err)
+		}
+
+		updates := &TemplateRegistry{
+			Name:        kit.Ternary(submitted["name"], req.Name, existing.Name),
+			URL:         kit.Ternary(submitted["url"], req.URL, existing.URL),
+			Description: kit.Ternary(submitted["description"], req.Description, existing.Description),
+			Enabled:     kit.Ternary(submitted["enabled"], req.Enabled, existing.Enabled),
+		}
+		if updates.URL == "" {
+			return common.Classify(common.ErrValidation, errors.New("registry URL is required"))
 		}
 
 		// Hydrate blank fields from the manifest; a changed URL must yield them.
@@ -662,7 +685,7 @@ func (s *TemplateService) DeleteRegistry(ctx context.Context, id string) error {
 			return result.Error
 		}
 		if result.RowsAffected == 0 {
-			return errors.New("registry not found")
+			return common.Classify(common.ErrNotFound, errors.New("registry not found"))
 		}
 		return nil
 	})
@@ -836,7 +859,7 @@ func (s *TemplateService) fetchRegistryTemplates(ctx context.Context, reg *Templ
 		return nil, fmt.Errorf("registry response exceeds the %d MiB limit", maxTemplateRegistryBytes>>20)
 	}
 
-	var regDTO tmpl.RemoteRegistry
+	var regDTO types.TemplateRemoteRegistry
 	if unmarshalErr := json.Unmarshal(body, &regDTO); unmarshalErr != nil {
 		return nil, fmt.Errorf("parse registry JSON: %w", unmarshalErr)
 	}
@@ -878,12 +901,12 @@ func (s *TemplateService) fetchRegistryTemplates(ctx context.Context, reg *Templ
 	return templates, nil
 }
 
-func (s *TemplateService) fetchRegistryManifest(ctx context.Context, rawURL string) (*tmpl.RemoteRegistry, error) {
+func (s *TemplateService) fetchRegistryManifest(ctx context.Context, rawURL string) (*types.TemplateRemoteRegistry, error) {
 	body, err := s.FetchRaw(ctx, rawURL)
 	if err != nil {
 		return nil, err
 	}
-	var reg tmpl.RemoteRegistry
+	var reg types.TemplateRemoteRegistry
 	if unmarshalErr := json.Unmarshal(body, &reg); unmarshalErr != nil {
 		return nil, fmt.Errorf("failed to parse registry JSON: %w", unmarshalErr)
 	}
@@ -1247,7 +1270,7 @@ func setTemplateIconURL(template *ComposeTemplate, iconURL *string) {
 }
 
 // GetTemplateContentWithParsedData returns template content along with parsed metadata
-func (s *TemplateService) GetTemplateContentWithParsedData(ctx context.Context, id string) (*tmpl.TemplateContent, error) {
+func (s *TemplateService) GetTemplateContentWithParsedData(ctx context.Context, id string) (*types.TemplateContent, error) {
 	composeTemplate, err := s.GetTemplate(ctx, id)
 	if err != nil {
 		return nil, err
@@ -1266,7 +1289,7 @@ func (s *TemplateService) GetTemplateContentWithParsedData(ctx context.Context, 
 		setTemplateIconURL(composeTemplate, projects.ResolveTemplateIconURL(ctx, composeContent, envContent))
 	}
 
-	var outTemplate tmpl.Template
+	var outTemplate types.Template
 	if mapErr := mapping.MapStruct(composeTemplate, &outTemplate); mapErr != nil {
 		return nil, fmt.Errorf("failed to map template: %w", mapErr)
 	}
@@ -1276,12 +1299,12 @@ func (s *TemplateService) GetTemplateContentWithParsedData(ctx context.Context, 
 
 	// Parse environment variables
 	parsedEnvVars := projects.ParseEnvContent(envContent)
-	envVars := make([]env.Variable, len(parsedEnvVars))
+	envVars := make([]types.EnvVariable, len(parsedEnvVars))
 	for i, v := range parsedEnvVars {
-		envVars[i] = env.Variable{Key: v.Key, Value: v.Value}
+		envVars[i] = types.EnvVariable{Key: v.Key, Value: v.Value}
 	}
 
-	return &tmpl.TemplateContent{
+	return &types.TemplateContent{
 		Template:         outTemplate,
 		Content:          composeContent,
 		EnvContent:       envContent,

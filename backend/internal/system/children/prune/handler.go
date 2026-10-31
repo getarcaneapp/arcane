@@ -4,11 +4,11 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
 // Handler serves the system prune endpoint.
@@ -22,12 +22,26 @@ func NewHandler(service *Service, appCtx context.Context) *Handler {
 }
 
 type PruneAllInput struct {
-	EnvironmentID string                 `path:"id" doc:"Environment ID"`
-	Body          system.PruneAllRequest `doc:"Prune options"`
+	Body          types.PruneAllRequest `doc:"Prune options"`
+	EnvironmentID string                `path:"id" doc:"Environment ID"`
+}
+
+func (h *Handler) GetDiskUsage(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.SystemDiskUsage], error) {
+	usage, err := h.service.GetDiskUsage(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to get disk usage: " + err.Error())
+	}
+
+	return &handlerutil.Out[types.SystemDiskUsage]{
+		Body: types.ApiResponse[types.SystemDiskUsage]{
+			Success: true,
+			Data:    usage,
+		},
+	}, nil
 }
 
 // PruneAll removes unused Docker resources.
-func (h *Handler) PruneAll(ctx context.Context, input *PruneAllInput) (*handlerutil.Out[system.PruneAllResult], error) {
+func (h *Handler) PruneAll(ctx context.Context, input *PruneAllInput) (*handlerutil.Out[types.PruneAllResult], error) {
 	slog.InfoContext(ctx, "System prune operation initiated",
 		"containers", input.Body.Containers,
 		"images", input.Body.Images,
@@ -40,8 +54,8 @@ func (h *Handler) PruneAll(ctx context.Context, input *PruneAllInput) (*handleru
 
 	slog.InfoContext(runtimeCtx, "System prune background activity started", "activityId", result.ActivityID)
 
-	return &handlerutil.Out[system.PruneAllResult]{
-		Body: base.ApiResponse[system.PruneAllResult]{
+	return &handlerutil.Out[types.PruneAllResult]{
+		Body: types.ApiResponse[types.PruneAllResult]{
 			Success: true,
 			Data:    *result,
 		},

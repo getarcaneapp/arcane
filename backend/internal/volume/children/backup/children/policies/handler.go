@@ -9,17 +9,16 @@ import (
 	"net/url"
 
 	"github.com/danielgtaylor/huma/v2"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/userctx"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
 )
 
 type Handler struct {
@@ -35,24 +34,24 @@ type GetVolumeBackupPolicyInput struct {
 }
 
 type UpdateVolumeBackupPolicyInput struct {
-	EnvironmentID string                      `path:"id" doc:"Environment ID"`
-	VolumeName    string                      `path:"volumeName" doc:"Volume name"`
-	Body          volume.UpdateBackupPolicies `doc:"Scheduled volume backup policies"`
+	EnvironmentID string                           `path:"id" doc:"Environment ID"`
+	VolumeName    string                           `path:"volumeName" doc:"Volume name"`
+	Body          types.UpdateVolumeBackupPolicies `doc:"Scheduled volume backup policies"`
 }
 
 func NewHandler(service *Service, activityService *activity.ActivityService, environmentService *environment.EnvironmentService, appCtx context.Context) *Handler {
 	return &Handler{service: service, activityService: activityService, environmentService: environmentService, appCtx: appCtx}
 }
 
-func (h *Handler) GetBackupPolicy(ctx context.Context, input *GetVolumeBackupPolicyInput) (*handlerutil.Out[volume.BackupPolicyCollection], error) {
+func (h *Handler) GetBackupPolicy(ctx context.Context, input *GetVolumeBackupPolicyInput) (*handlerutil.Out[types.VolumeBackupPolicyCollection], error) {
 	if input.EnvironmentID != "0" {
 		if h.environmentService == nil {
 			return nil, huma.Error500InternalServerError("environment service not available")
 		}
-		remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/backup-policy", url.PathEscape(input.VolumeName))
+		remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/backups/policy", url.PathEscape(input.VolumeName))
 		response, err := handlerutil.RemoteJSONProxy(
 			h.environmentService.ProxyJSONRequest,
-		).JSON[base.ApiResponse[volume.BackupPolicyCollection]](
+		).JSON[types.ApiResponse[types.VolumeBackupPolicyCollection]](
 			ctx,
 			input.EnvironmentID,
 			http.MethodGet,
@@ -62,25 +61,25 @@ func (h *Handler) GetBackupPolicy(ctx context.Context, input *GetVolumeBackupPol
 		if err != nil {
 			return nil, err
 		}
-		return &handlerutil.Out[volume.BackupPolicyCollection]{Body: *response}, nil
+		return &handlerutil.Out[types.VolumeBackupPolicyCollection]{Body: *response}, nil
 	}
 
 	policies, err := h.service.GetBackupPolicies(ctx, input.VolumeName)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &handlerutil.Out[volume.BackupPolicyCollection]{Body: base.ApiResponse[volume.BackupPolicyCollection]{Success: true, Data: *policies}}, nil
+	return &handlerutil.Out[types.VolumeBackupPolicyCollection]{Body: types.ApiResponse[types.VolumeBackupPolicyCollection]{Success: true, Data: *policies}}, nil
 }
 
-func (h *Handler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBackupPolicyInput) (*handlerutil.Out[volume.BackupPolicyCollection], error) {
+func (h *Handler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBackupPolicyInput) (*handlerutil.Out[types.VolumeBackupPolicyCollection], error) {
 	user, _ := userctx.CurrentUserFromContext(ctx)
-	var policies *volume.BackupPolicyCollection
-	var remoteResponse *base.ApiResponse[volume.BackupPolicyCollection]
+	var policies *types.VolumeBackupPolicyCollection
+	var remoteResponse *types.ApiResponse[types.VolumeBackupPolicyCollection]
 	errorStatus := http.StatusBadRequest
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	_, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
+		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "volume_backup_policy",
 		ResourceID:     input.VolumeName,
 		ResourceName:   input.VolumeName,
@@ -116,11 +115,11 @@ func (h *Handler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBac
 				}
 				slog.WarnContext(activityCtx, "S3 destination sync failed before local-only volume backup policy write", "environmentId", input.EnvironmentID, "error", syncErr)
 			}
-			remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/backup-policy", url.PathEscape(input.VolumeName))
+			remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/backups/policy", url.PathEscape(input.VolumeName))
 			var proxyErr error
 			remoteResponse, proxyErr = handlerutil.RemoteJSONProxy(
 				h.environmentService.ProxyJSONRequest,
-			).JSON[base.ApiResponse[volume.BackupPolicyCollection]](
+			).JSON[types.ApiResponse[types.VolumeBackupPolicyCollection]](
 				activityCtx,
 				input.EnvironmentID,
 				http.MethodPut,
@@ -146,10 +145,13 @@ func (h *Handler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBac
 		if errorStatus == http.StatusBadGateway || errorStatus == http.StatusNotFound {
 			return nil, huma.NewError(errorStatus, err.Error())
 		}
+		if errors.Is(err, common.ErrValidation) {
+			return nil, handlerutil.APIError(err)
+		}
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if remoteResponse != nil {
-		return &handlerutil.Out[volume.BackupPolicyCollection]{Body: *remoteResponse}, nil
+		return &handlerutil.Out[types.VolumeBackupPolicyCollection]{Body: *remoteResponse}, nil
 	}
-	return &handlerutil.Out[volume.BackupPolicyCollection]{Body: base.ApiResponse[volume.BackupPolicyCollection]{Success: true, Data: *policies}}, nil
+	return &handlerutil.Out[types.VolumeBackupPolicyCollection]{Body: types.ApiResponse[types.VolumeBackupPolicyCollection]{Success: true, Data: *policies}}, nil
 }

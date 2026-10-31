@@ -27,12 +27,13 @@
 		TerminalIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { imageBuildListQuery } from '#lib/query/images.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ImageBuildRecord, ImageBuildStatus } from '#lib/types/docker.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import { fetchAcrossEnvironments, type EnvironmentRow } from '#lib/utils/environments.js';
+	import { type EnvironmentRow, readableEnvironments } from '#lib/utils/environments.js';
 
 	import {
 		buildHistoryStatusLabel,
@@ -70,12 +71,9 @@
 
 	const historyQuery = createQuery(() => {
 		const scope = environmentStore.shownKey;
-		const environments = environmentStore.shown;
-		const options = requestOptions;
 		return {
-			queryKey: queryKeys.images.buildsList(scope, options),
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, options, (id, request, config) => imageService.getImageBuilds(request, id, config))
+			...imageBuildListQuery(scope, readableEnvironments('images:list'), requestOptions),
+			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined)
 		};
 	});
 
@@ -177,12 +175,6 @@
 		{ id: 'durationMs', label: m.duration(), defaultVisible: false }
 	];
 
-	async function loadHistory(options: SearchPaginationSortRequest = requestOptions) {
-		requestOptions = options;
-		const result = await historyQuery.refetch();
-		return result.data ?? historyQuery.data ?? EMPTY_BUILD_HISTORY;
-	}
-
 	function openDetails(build: BuildRow) {
 		selectedId = build.id;
 		selectedOptimistic = build;
@@ -194,6 +186,12 @@
 		onApplyBuild(selectedBuild, selectedOptimistic.environmentId);
 		detailsOpen = false;
 	}
+
+	const buildIconVariant: Record<string, 'emerald' | 'red' | 'blue'> = {
+		success: 'emerald',
+		failed: 'red',
+		running: 'blue'
+	};
 </script>
 
 {#snippet BuildHistoryStatusCell({ value }: { value: unknown })}
@@ -246,8 +244,7 @@
 		{item}
 		icon={(item: ImageBuildRecord) => ({
 			component: TerminalIcon,
-			variant:
-				item.status === 'success' ? 'emerald' : item.status === 'failed' ? 'red' : item.status === 'running' ? 'blue' : 'gray'
+			variant: buildIconVariant[item.status] ?? 'gray'
 		})}
 		title={(item: ImageBuildRecord) => getBuildTitle(item)}
 		subtitle={(item: ImageBuildRecord) => ((fieldVisibility['context'] ?? true) ? item.contextDir : null)}
@@ -298,7 +295,7 @@
 		bind:requestOptions
 		bind:selectedIds
 		bind:mobileFieldVisibility
-		onRefresh={loadHistory}
+		onRetry={() => historyQuery.refetch()}
 		selectionDisabled={true}
 		{columns}
 		{mobileFields}
@@ -358,12 +355,12 @@
 			<div class="grid gap-4 lg:h-screen-70 lg:grid-cols-aside-90 lg:items-stretch">
 				<div class="min-h-0 space-y-3 lg:overflow-auto lg:overscroll-contain lg:pr-1">
 					{#each detailItems as detail (detail.label)}
-						<KeyValueCard label={detail.label} variant="outlined" compact>
+						<KeyValueCard label={detail.label} compact>
 							{detail.value}
 						</KeyValueCard>
 					{/each}
 				</div>
-				<div class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/30">
+				<div class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-card/10">
 					<div class="flex items-center justify-between border-b border-border/60 px-4 py-3">
 						<div class="text-sm font-medium">{m.build_output()}</div>
 						{#if selectedBuild?.outputTruncated}

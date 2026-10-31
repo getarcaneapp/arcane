@@ -16,6 +16,7 @@ export interface APIRequestConfig {
 	suppressAccessDeniedToast?: boolean;
 	timeout?: number | false;
 	onFailedEnvironments?: (failures: { environment: { id: string; name: string }; message: string }[]) => void;
+	onEnvironments?: (entries: { environment: { id: string; name: string }; data: unknown }[]) => void;
 }
 
 interface InternalRequestConfig extends APIRequestConfig {
@@ -148,12 +149,10 @@ async function parseResponseBody(response: Response, responseType: APIRequestCon
 }
 
 let tokenRefreshHandler: (() => Promise<string | null>) | null = null;
-// True while a manager self-update or fleet "Update All" runs; its version-mismatch 401s
+// True while a manager self-update or "Update All" runs; its version-mismatch 401s
 // are recoverable and must not bounce the user to /login.
 let upgradeInProgress = false;
-// A confirmed manager restart still needs document recovery after polling ends.
-let upgradeReloadPending = false;
-let upgradeReloadStarted = false;
+let reloadForNewBuildStarted = false;
 let unauthorizedRedirectStarted = false;
 const skipAuthPaths = [
 	'/auth/login',
@@ -162,7 +161,7 @@ const skipAuthPaths = [
 	'/auth/oidc',
 	'/auth/passkey',
 	'/auth/mfa',
-	'/auth/auto-login',
+	'/auth/autologin',
 	'/settings/public'
 ];
 
@@ -185,6 +184,17 @@ export function isAuthPagePath(pathname: string): boolean {
 }
 
 type UnauthorizedAction = 'none' | 'redirect' | 'reload' | 'retry';
+
+function reloadDocumentOnce() {
+	if (reloadForNewBuildStarted) return;
+	reloadForNewBuildStarted = true;
+	window.location.reload();
+}
+
+async function reloadForNewBuildInternal() {
+	await tokenRefreshHandler?.();
+	reloadDocumentOnce();
+}
 
 export async function handleUnauthorizedResponseInternal(
 	requestPath: string,
@@ -213,12 +223,11 @@ export async function handleUnauthorizedResponseInternal(
 
 	const operationResult = await tryCatch(
 		(async () => {
-			await tokenRefreshHandler();
-			if (!isVersionMismatch || (!upgradeInProgress && !upgradeReloadPending)) return 'retry';
-			if (!upgradeReloadStarted) {
-				upgradeReloadStarted = true;
-				window.location.reload();
+			if (!isVersionMismatch || !upgradeInProgress) {
+				await tokenRefreshHandler();
+				return 'retry';
 			}
+			await reloadForNewBuildInternal();
 			return 'reload';
 		})()
 	);
@@ -240,7 +249,7 @@ class APIClient {
 	private client;
 
 	constructor(baseURL: string) {
-		this.defaults = { baseURL };
+		this.defaults = { baseURL: baseURL.endsWith('/') ? baseURL.slice(0, -1) : baseURL };
 		this.client = ky.create({
 			credentials: 'include',
 			retry: 0,
@@ -259,7 +268,10 @@ class APIClient {
 		config: InternalRequestConfig = {}
 	): Promise<APIResponse<T>> {
 		const baseURL = config.baseURL ?? this.defaults.baseURL;
-		const requestUrl = /^[a-z]+:\/\//i.test(url) ? url : `${baseURL.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}`;
+		let requestUrl = url;
+		if (!URL.canParse(url)) {
+			requestUrl = url.startsWith('/') ? `${baseURL}${url}` : `${baseURL}/${url}`;
+		}
 		const requestConfig = { ...config, baseURL, method, url };
 		let requestPath = requestUrl;
 		try {
@@ -274,7 +286,7 @@ class APIClient {
 			!requestPath.startsWith('/auth/refresh') &&
 			(skipAuthPaths.some((prefix) => requestPath.startsWith(prefix)) ||
 				['/oidc/url', '/oidc/callback', '/oidc/status'].includes(requestPath) ||
-				requestPath.startsWith('/app-version') ||
+				requestPath.startsWith('/app/version') ||
 				requestPath.endsWith('/settings/public'));
 		const session = isSessionFree ? undefined : sessionController.signal;
 		const signal = session ? withSessionSignal(config.signal) : config.signal;
@@ -313,6 +325,7 @@ class APIClient {
 				const parsed = upperMethod === 'HEAD' ? undefined : await parseResponseBody(response.clone(), config.responseType);
 				if (session?.aborted) throw new SessionCancelledError();
 				if (Array.isArray(parsed?.failedEnvironments)) config.onFailedEnvironments?.(parsed.failedEnvironments);
+				if (Array.isArray(parsed?.environments)) config.onEnvironments?.(parsed.environments);
 				return {
 					data: parsed as T,
 					headers: response.headers,
@@ -405,10 +418,12 @@ abstract class BaseAPIService {
 	// Toggled by the update flows (Update All / local update center) so an in-progress
 	// self-update restart is treated as a recoverable reconnect, not a logout.
 	static setUpgradeInProgress(value: boolean) {
-		if (!upgradeReloadPending && (!value || !upgradeInProgress)) {
-			upgradeReloadStarted = false;
-		}
 		upgradeInProgress = value;
+	}
+
+	static async reloadForNewBuild() {
+		const result = await tryCatch(reloadForNewBuildInternal());
+		if (result.error !== null) reloadDocumentOnce();
 	}
 
 	/** Cancels the current session's work and blocks protected requests until beginSession. */
@@ -420,10 +435,6 @@ abstract class BaseAPIService {
 		if (sessionController.signal.aborted) {
 			sessionController = new AbortController();
 		}
-	}
-
-	static confirmUpgradeRestart() {
-		upgradeReloadPending = true;
 	}
 
 	protected async handleResponse<T>(promise: Promise<APIResponse>): Promise<T> {

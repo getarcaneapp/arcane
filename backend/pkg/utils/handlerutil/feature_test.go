@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/features"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +22,7 @@ func TestFeatureDisabledError(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := FeatureDisabledError(features.VulnerabilityManagement)
+			err := FeatureDisabledError(types.FeatureVulnerabilityManagement)
 			var statusError huma.StatusError = err
 			require.Equal(t, http.StatusForbidden, statusError.GetStatus())
 			require.Equal(t, "feature vulnerabilityManagement is disabled", err.Error())

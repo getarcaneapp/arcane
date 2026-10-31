@@ -8,29 +8,25 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/getarcaneapp/arcane/types/v2/gitops"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
-	"go.getarcane.app/builds/types"
+	buildtypes "go.getarcane.app/builds/types"
 	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
 type builder interface {
-	BuildImage(ctx context.Context, environmentID string, req types.BuildRequest, progressWriter io.Writer, serviceName string, user *usertypes.Actor) (*types.BuildResult, error)
-	BuildSettings() types.BuildSettings
+	BuildImage(ctx context.Context, environmentID string, req buildtypes.BuildRequest, progressWriter io.Writer, serviceName string, user *types.Actor) (*buildtypes.BuildResult, error)
+	BuildSettings() buildtypes.BuildSettings
 }
 
 // projectMetadataEnv carries the request-scoped inputs compose
 // resolution needs beyond the project itself, resolved once per list request.
 type projectMetadataEnv struct {
-	projectsDirectory string
-	autoInjectEnv     bool
 	// settings is the snapshot shared by compose loads.
 	settings *settings.Settings
 	// gitOpsComposePaths maps preloaded GitOps sync IDs to their configured
@@ -40,11 +36,14 @@ type projectMetadataEnv struct {
 	gitOpsComposePaths map[string]string
 	pathMapper         func() *projects.PathMapper
 
+	composeFiles      map[string]string
+	projectsDirectory string
+
 	// composeFiles memoizes successfully resolved compose files by project ID.
 	// Failures are not stored so a later phase in the same request retries
 	// resolution instead of replaying an error that may have been transient.
 	composeFilesMu sync.Mutex
-	composeFiles   map[string]string
+	autoInjectEnv  bool
 }
 
 func gitOpsSyncID(proj *Project) string {
@@ -77,8 +76,8 @@ func (env *projectMetadataEnv) composeFile(projectID string, resolve func() (str
 // composeNameCache maps normalized compose project names to project
 // IDs so a name lookup skips the projects table scan.
 type composeNameCache struct {
-	mu     sync.RWMutex
 	byName map[string]string
+	mu     sync.RWMutex
 }
 
 func (c *composeNameCache) projectID(normalizedName string) mo.Option[string] {
@@ -131,15 +130,15 @@ func (c *composeNameCache) replace(byName map[string]string) {
 // projectCleanupDecision records a project the reconcile pass intends to delete,
 // alongside the reason logged when the deletion is carried out.
 type projectCleanupDecision struct {
-	project Project
 	reason  string
+	project Project
 }
 
 func deleteProjectWithTags(tx *gorm.DB, projectID string) error {
 	if err := tx.Where("project_id = ?", projectID).Delete(&ProjectTag{}).Error; err != nil {
 		return fmt.Errorf("delete project tags: %w", err)
 	}
-	if err := tx.Where("mode = ? AND project_id = ?", gitops.SyncModeBackup, projectID).Delete(&GitOpsSync{}).Error; err != nil {
+	if err := tx.Where("mode = ? AND project_id = ?", types.GitOpsSyncModeBackup, projectID).Delete(&GitOpsSync{}).Error; err != nil {
 		return fmt.Errorf("delete project git backups: %w", err)
 	}
 	if err := tx.Delete(&Project{}, "id = ?", projectID).Error; err != nil {
@@ -149,8 +148,8 @@ func deleteProjectWithTags(tx *gorm.DB, projectID string) error {
 }
 
 // projectRecord exposes a stored project's state to child features.
-func projectRecord(p Project) projecttypes.Record {
-	return projecttypes.Record{
+func projectRecord(p Project) types.ProjectRecord {
+	return types.ProjectRecord{
 		ID:                 p.ID,
 		Name:               p.Name,
 		DirName:            p.DirName,
@@ -169,8 +168,8 @@ func projectRecord(p Project) projecttypes.Record {
 	}
 }
 
-func projectRecords(projectsList []Project) []projecttypes.Record {
-	records := make([]projecttypes.Record, len(projectsList))
+func projectRecords(projectsList []Project) []types.ProjectRecord {
+	records := make([]types.ProjectRecord, len(projectsList))
 	for i, p := range projectsList {
 		records[i] = projectRecord(p)
 	}
@@ -182,24 +181,24 @@ type tagStore struct {
 	tx *gorm.DB
 }
 
-func (s tagStore) CountTag(projectID, name string, source projecttypes.TagSource) (int64, error) {
+func (s tagStore) CountTag(projectID, name string, source types.ProjectTagSource) (int64, error) {
 	var count int64
 	err := s.tx.Model(&ProjectTag{}).Where("project_id = ? AND name = ? AND source = ?", projectID, name, source).Count(&count).Error
 	return count, err
 }
 
-func (s tagStore) CountSource(projectID string, source projecttypes.TagSource) (int64, error) {
+func (s tagStore) CountSource(projectID string, source types.ProjectTagSource) (int64, error) {
 	var count int64
 	err := s.tx.Model(&ProjectTag{}).Where("project_id = ? AND source = ?", projectID, source).Count(&count).Error
 	return count, err
 }
 
-func (s tagStore) StoredColor(name string) (projecttypes.TagColor, bool, error) {
+func (s tagStore) StoredColor(name string) (types.ProjectTagColor, bool, error) {
 	var row ProjectTag
 	err := s.tx.Where("name = ?", name).Order("source DESC, color").First(&row).Error
 	switch {
 	case err == nil:
-		return projecttypes.TagColor(row.Color), true, nil
+		return types.ProjectTagColor(row.Color), true, nil
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return "", false, nil
 	default:
@@ -207,7 +206,7 @@ func (s tagStore) StoredColor(name string) (projecttypes.TagColor, bool, error) 
 	}
 }
 
-func (s tagStore) Insert(rows []projecttypes.TagAssignment) error {
+func (s tagStore) Insert(rows []types.ProjectTagAssignment) error {
 	tagRows := make([]ProjectTag, 0, len(rows))
 	for _, row := range rows {
 		tagRows = append(tagRows, ProjectTag{ProjectID: row.ProjectID, Name: row.Name, Source: string(row.Source), Color: string(row.Color)})
@@ -215,15 +214,15 @@ func (s tagStore) Insert(rows []projecttypes.TagAssignment) error {
 	return s.tx.Create(tagRows).Error
 }
 
-func (s tagStore) InsertIgnoringConflict(row projecttypes.TagAssignment) error {
+func (s tagStore) InsertIgnoringConflict(row types.ProjectTagAssignment) error {
 	tagRow := ProjectTag{ProjectID: row.ProjectID, Name: row.Name, Source: string(row.Source), Color: string(row.Color)}
 	return s.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&tagRow).Error
 }
 
-func (s tagStore) DeleteTag(projectID, name string, source projecttypes.TagSource) error {
+func (s tagStore) DeleteTag(projectID, name string, source types.ProjectTagSource) error {
 	return s.tx.Where("project_id = ? AND name = ? AND source = ?", projectID, name, source).Delete(&ProjectTag{}).Error
 }
 
-func (s tagStore) DeleteSource(projectID string, source projecttypes.TagSource) error {
+func (s tagStore) DeleteSource(projectID string, source types.ProjectTagSource) error {
 	return s.tx.Where("project_id = ? AND source = ?", projectID, source).Delete(&ProjectTag{}).Error
 }

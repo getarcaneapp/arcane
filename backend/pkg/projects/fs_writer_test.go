@@ -13,7 +13,7 @@ import (
 	"go.getarcane.app/acfs"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 func TestWriteFilesPermissions(t *testing.T) {
@@ -230,14 +230,11 @@ func TestWriteProjectFiles(t *testing.T) {
 	projectsRoot := tmpDir
 	projectDir := filepath.Join(tmpDir, "test-project")
 
-	t.Run("creates new project with empty env when envContent is nil", func(t *testing.T) {
+	t.Run("creates new project without env when envContent is nil", func(t *testing.T) {
 		err := WriteProjectFiles(t.Context(), projectsRoot, projectDir, "services: {}", nil)
 		require.NoError(t, err)
 
-		envPath := filepath.Join(projectDir, ".env")
-		content, err := os.ReadFile(envPath)
-		require.NoError(t, err)
-		assert.Empty(t, string(content))
+		assert.NoFileExists(t, filepath.Join(projectDir, ".env"))
 	})
 
 	t.Run("preserves existing env when envContent is nil", func(t *testing.T) {

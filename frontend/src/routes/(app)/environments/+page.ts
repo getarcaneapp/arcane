@@ -1,9 +1,7 @@
-import { queryKeys } from '#lib/query/query-keys.js';
-import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
+import { environmentListQuery } from '#lib/query/environments.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
-import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
 
@@ -21,21 +19,9 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	let environments;
-	const operationResult = await tryCatch(
-		(async () =>
-			queryClient.query({
-				queryKey: queryKeys.environments.list(environmentRequestOptions),
-				queryFn: () => environmentManagementService.getEnvironments(environmentRequestOptions)
-			}))()
-	);
-	if (operationResult.error !== null) {
-		const err = operationResult.error;
-
-		throwPageLoadError(err, 'Failed to load environments');
-	} else {
-		environments = operationResult.data;
-	}
+	const environments = await queryClient
+		.query(environmentListQuery(environmentRequestOptions))
+		.catch((err: unknown) => throwPageLoadError(err, 'Failed to load environments'));
 
 	return { environments, environmentRequestOptions };
 };

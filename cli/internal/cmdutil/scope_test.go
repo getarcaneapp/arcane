@@ -10,27 +10,32 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/config"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/runtime"
+	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
 func TestRunScopedMerged(t *testing.T) {
 	type row struct {
-		base.EnvironmentTag
+		types.EnvironmentTag
 
 		Name string `json:"name"`
 	}
 	const tagged = `{"success":true,"data":[{"environmentId":"0","environmentName":"Alpha","name":"web"},{"environmentId":"b","environmentName":"Beta","name":"db"}],"pagination":{"totalItems":7}}`
 	for _, tt := range []struct {
-		name, environments, body, scope, wantErr, limit string
-		json                                            bool
-		wantOut                                         []string
+		name         string
+		environments string
+		body         string
+		scope        string
+		wantErr      string
+		limit        string
+		wantOut      []string
+		json         bool
 	}{
 		{
 			name: "table names rows from their tags", environments: `[{"id":"b","name":"Beta","enabled":true},{"id":"0","name":"Alpha","enabled":true}]`,
@@ -63,12 +68,12 @@ func TestRunScopedMerged(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var requests []string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == types.Environments() {
+				if r.URL.Path == clitypes.Environments() {
 					_, _ = fmt.Fprintf(w, `{"success":true,"data":%s}`, tt.environments)
 					return
 				}
-				if r.URL.Path == types.SettingsPublic("0") {
-					_, _ = fmt.Fprintf(w, `[{"key":"allEnvironmentsLimit","type":"number","value":%q}]`, cmp.Or(tt.limit, "64"))
+				if r.URL.Path == clitypes.SettingsPublic("0") {
+					_, _ = fmt.Fprintf(w, `{"settings":[{"key":"allEnvironmentsLimit","type":"number","value":%q}]}`, cmp.Or(tt.limit, "64"))
 					return
 				}
 				requests = append(requests, r.URL.Path)
@@ -79,7 +84,7 @@ func TestRunScopedMerged(t *testing.T) {
 			require.NoError(t, config.SetConfigPath(filepath.Join(t.TempDir(), "arcanecli.yml")))
 			t.Cleanup(func() { require.NoError(t, config.SetConfigPath("")) })
 			cfg := config.DefaultConfig()
-			cfg.ServerURL, cfg.APIKey, cfg.Previews.AllEnvironments = server.URL, "test-key", true
+			cfg.ServerURL, cfg.APIKey = server.URL, "test-key"
 			require.NoError(t, config.Save(t.Context(), cfg))
 			app, appErr := runtime.New(runtime.Options{})
 			require.NoError(t, appErr)
@@ -96,7 +101,7 @@ func TestRunScopedMerged(t *testing.T) {
 				c, err := ClientFromCommand(command)
 				require.NoError(t, err)
 				return RunList(command, c, ListSpec[row]{
-					Resource: "rows", Endpoint: types.Environment(c.EnvID()) + "/rows", Headers: []string{"NAME"},
+					Resource: "rows", Endpoint: clitypes.Environment(c.EnvID()) + "/rows", Headers: []string{"NAME"},
 					Row: func(item row) []string { return []string{item.Name} },
 				})
 			})
@@ -110,7 +115,51 @@ func TestRunScopedMerged(t *testing.T) {
 			for _, want := range tt.wantOut {
 				require.Contains(t, stdout.String(), want)
 			}
-			require.Equal(t, cfg.DefaultEnvironment, app.EnvID(), "selection is restored")
+			require.True(t, app.AllEnvironments(), "selection is restored")
+		})
+	}
+}
+
+func TestRunScopedRefusals(t *testing.T) {
+	for _, tt := range []struct {
+		name, scope, status, wantErr string
+	}{
+		{name: "missing scope", wantErr: "list has no environment scope"},
+		{name: "forbidden discovery", scope: ScopeRead, status: "403", wantErr: "pass --env <id>"},
+		{name: "mutation confirms without names", scope: ScopeAll, status: "200", wantErr: "(List rows in all 2 environments?)"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tt.status == "403" {
+					w.WriteHeader(http.StatusForbidden)
+					return
+				}
+				_, _ = fmt.Fprint(w, `{"success":true,"data":[{"id":"0","name":"Alpha","enabled":true},{"id":"b","name":"Beta","enabled":true}]}`)
+			}))
+			defer server.Close()
+			t.Setenv("HOME", t.TempDir())
+			require.NoError(t, config.SetConfigPath(filepath.Join(t.TempDir(), "arcanecli.yml")))
+			t.Cleanup(func() { require.NoError(t, config.SetConfigPath("")) })
+			require.NoError(t, config.Save(t.Context(), &clitypes.Config{
+				ServerURL: server.URL,
+				APIKey:    "test-key",
+			}))
+			app, appErr := runtime.New(runtime.Options{OutputMode: runtime.OutputModeJSON})
+			require.NoError(t, appErr)
+			cmd := &cobra.Command{Use: "list", Short: "List rows"}
+			if tt.scope != "" {
+				SetScope(tt.scope, cmd)
+			}
+			cmd.Flags().Bool("json", true, "")
+			cmd.SetContext(context.WithValue(t.Context(), runtime.AppContextKey, app))
+			ran := false
+			runErr := RunScoped(cmd, nil, func(*cobra.Command, []string) error {
+				ran = true
+				return nil
+			})
+			require.ErrorContains(t, runErr, tt.wantErr)
+			require.NotContains(t, runErr.Error(), "Alpha")
+			require.False(t, ran)
 		})
 	}
 }

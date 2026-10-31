@@ -9,20 +9,19 @@ import (
 	"sync/atomic"
 	"time"
 
-	imageupdatetypes "github.com/getarcaneapp/arcane/types/v2/imageupdate"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/events"
 	"go.getarcane.app/streams/bus"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 const (
@@ -32,12 +31,12 @@ const (
 )
 
 type imageUpdateScannerInternal interface {
-	RunImageCheck(ctx context.Context, request imageupdatetypes.CheckRequest) (schedulertypes.Outcome, error)
+	RunImageCheck(ctx context.Context, request types.ImageUpdateCheckRequest) (types.SchedulerOutcome, error)
 }
 
-type pollingSettingReaderInternal interface {
-	GetBoolSetting(ctx context.Context, key string, fallback bool) bool
-	GetStringSetting(ctx context.Context, key, defaultValue string) string
+type pollingSettingReader interface {
+	GetBoolSetting(ctx context.Context, key string) bool
+	GetStringSetting(ctx context.Context, key string) string
 }
 
 type dockerEventBusProviderInternal interface {
@@ -51,30 +50,30 @@ type projectImageRefsBackfillerInternal interface {
 // ImageUpdateWatcher debounces Docker events and admits durable image scans.
 type ImageUpdateWatcher struct {
 	imageUpdateService     imageUpdateScannerInternal
-	settingsService        pollingSettingReaderInternal
+	settingsService        pollingSettingReader
 	dockerService          dockerEventBusProviderInternal
 	projectService         projectImageRefsBackfillerInternal
-	dispatchMu             sync.RWMutex
 	coordinator            *runs.Coordinator
+	trigger                chan struct{}
+	scheduleRefresh        chan struct{}
+	cancel                 context.CancelFunc
+	done                   chan struct{}
+	location               *time.Location
+	metadataReady          chan struct{}
+	stopped                chan struct{}
+	triggerGeneration      atomic.Uint64
+	acknowledgedGeneration atomic.Uint64
+	triggeredAt            atomic.Int64
+	debounce               time.Duration
+	backfillRetry          time.Duration
+	dispatchMu             sync.RWMutex
+	metadataReadyOnce      sync.Once
+	stoppedOnce            sync.Once
+	runMu                  sync.Mutex
 	eventDegraded          atomic.Bool
 	running                atomic.Bool
 	scanRunning            atomic.Bool
 	stopping               atomic.Bool
-	triggerGeneration      atomic.Uint64
-	acknowledgedGeneration atomic.Uint64
-	triggeredAt            atomic.Int64
-	trigger                chan struct{}
-	scheduleRefresh        chan struct{}
-	runMu                  sync.Mutex
-	cancel                 context.CancelFunc
-	done                   chan struct{}
-	location               *time.Location
-	debounce               time.Duration
-	backfillRetry          time.Duration
-	metadataReady          chan struct{}
-	metadataReadyOnce      sync.Once
-	stopped                chan struct{}
-	stoppedOnce            sync.Once
 }
 
 func NewImageUpdateWatcher(cfg *config.Config,
@@ -147,7 +146,7 @@ func (w *ImageUpdateWatcher) runEventLoop(runCtx context.Context) error {
 	metadata := make(chan struct{}, 1)
 	submitted := make(chan error, 1)
 	submitting := false
-	workers.Go(func() { w.runMetadataBackfillInternal(runCtx, metadata) })
+	workers.Go(func() { w.runMetadataBackfill(runCtx, metadata) })
 	w.RefreshSchedule()
 	ready := false
 	for {
@@ -159,16 +158,16 @@ func (w *ImageUpdateWatcher) runEventLoop(runCtx context.Context) error {
 			w.metadataReadyOnce.Do(func() { close(w.metadataReady) })
 			w.Trigger()
 		case <-w.trigger:
-			if ready && !submitting && w.settingsService.GetBoolSetting(runCtx, "pollingEnabled", true) {
+			if ready && !submitting && w.settingsService.GetBoolSetting(runCtx, "pollingEnabled") {
 				timer.Reset(w.debounce)
 			}
 		case <-timer.C:
-			if !w.scanAdmissionReadyInternal(timer, ready, submitting) {
+			if !w.scanAdmissionReady(timer, ready, submitting) {
 				continue
 			}
 			submitting = true
 			generation := w.triggerGeneration.Load()
-			workers.Go(func() { w.submitTriggeredScanInternal(runCtx, generation, submitted) })
+			workers.Go(func() { w.submitTriggeredScan(runCtx, generation, submitted) })
 		case err := <-submitted:
 			submitting = false
 			if err != nil && runCtx.Err() == nil {
@@ -187,19 +186,19 @@ func (w *ImageUpdateWatcher) runEventLoop(runCtx context.Context) error {
 				w.eventDegraded.Store(true)
 				continue
 			}
-			if w.settingsService.GetBoolSetting(runCtx, "imageEventWatcherEnabled", false) {
+			if w.settingsService.GetBoolSetting(runCtx, "imageEventWatcherEnabled") {
 				w.Trigger()
 			}
 		}
 	}
 }
 
-func (w *ImageUpdateWatcher) runMetadataBackfillInternal(ctx context.Context, metadata chan<- struct{}) {
+func (w *ImageUpdateWatcher) runMetadataBackfill(ctx context.Context, metadata chan<- struct{}) {
 	for attempt := 1; ctx.Err() == nil; attempt++ {
 		var err error
 		func() {
 			defer utils.RecoverToError(&err, "image metadata backfill")
-			err = w.backfillProjectImageRefsInternal(ctx, attempt)
+			err = w.backfillProjectImageRefs(ctx, attempt)
 		}()
 		if err == nil {
 			select {
@@ -222,7 +221,7 @@ func (w *ImageUpdateWatcher) runMetadataBackfillInternal(ctx context.Context, me
 	}
 }
 
-func (w *ImageUpdateWatcher) scanAdmissionReadyInternal(timer *time.Timer, ready, submitting bool) bool {
+func (w *ImageUpdateWatcher) scanAdmissionReady(timer *time.Timer, ready, submitting bool) bool {
 	if !ready || submitting || w.triggerGeneration.Load() == w.acknowledgedGeneration.Load() {
 		return false
 	}
@@ -233,7 +232,7 @@ func (w *ImageUpdateWatcher) scanAdmissionReadyInternal(timer *time.Timer, ready
 	return true
 }
 
-func (w *ImageUpdateWatcher) submitTriggeredScanInternal(ctx context.Context, generation uint64, submitted chan<- error) {
+func (w *ImageUpdateWatcher) submitTriggeredScan(ctx context.Context, generation uint64, submitted chan<- error) {
 	var err error
 	func() {
 		defer utils.RecoverToError(&err, "image scan admission")
@@ -244,7 +243,7 @@ func (w *ImageUpdateWatcher) submitTriggeredScanInternal(ctx context.Context, ge
 			err = errors.New("durable job coordinator unavailable")
 			return
 		}
-		_, err = coordinator.Submit(ctx, schedulertypes.Request{JobID: w.Name(), EnvironmentID: "0", Trigger: "watcher"})
+		_, err = coordinator.Submit(ctx, types.SchedulerRequest{JobID: w.Name(), EnvironmentID: "0", Trigger: "watcher"})
 	}()
 	if err == nil {
 		w.acknowledgedGeneration.Store(generation)
@@ -306,7 +305,7 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) (err error) {
 		}
 		defer w.scanRunning.Store(false)
 		defer utils.RecoverToError(&err, "image update scan worker")
-		return w.executeScanInternal(ctx)
+		return w.executeScan(ctx)
 	}
 	if w.scanRunning.Load() {
 		return common.Classify(common.ErrImageScanInProgress, errors.New("an image update check is already in progress"))
@@ -317,7 +316,7 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) (err error) {
 	if coordinator == nil {
 		return errors.New("durable job coordinator unavailable")
 	}
-	run, err := coordinator.Submit(ctx, schedulertypes.Request{JobID: w.Name(), EnvironmentID: "0", Trigger: "manual"})
+	run, err := coordinator.Submit(ctx, types.SchedulerRequest{JobID: w.Name(), EnvironmentID: "0", Trigger: "manual"})
 	if err != nil {
 		return err
 	}
@@ -327,11 +326,11 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) (err error) {
 		if getErr != nil {
 			return getErr
 		}
-		if current.Status.Terminal() || current.Status == schedulertypes.NeedsAttention {
-			if current.Status == schedulertypes.Succeeded {
+		if current.Status.Terminal() || current.Status == types.RunStatusNeedsAttention {
+			if current.Status == types.RunStatusSucceeded {
 				return nil
 			}
-			return &schedulertypes.OutcomeError{Outcome: current.Outcome}
+			return &types.SchedulerOutcomeError{Outcome: current.Outcome}
 		}
 		select {
 		case <-ctx.Done():
@@ -343,28 +342,28 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) (err error) {
 	}
 }
 
-func (w *ImageUpdateWatcher) executeScanInternal(ctx context.Context) error {
+func (w *ImageUpdateWatcher) executeScan(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if !w.settingsService.GetBoolSetting(ctx, "pollingEnabled", true) {
+	if !w.settingsService.GetBoolSetting(ctx, "pollingEnabled") {
 		slog.DebugContext(ctx, "image update watcher disabled; skipping image scan")
 		return nil
 	}
 
 	slog.InfoContext(ctx, "image scan run started")
-	outcome, err := w.imageUpdateService.RunImageCheck(ctx, imageupdatetypes.CheckRequest{All: true})
+	outcome, err := w.imageUpdateService.RunImageCheck(ctx, types.ImageUpdateCheckRequest{All: true})
 	if err != nil {
 		return fmt.Errorf("image scan failed: %w", err)
 	}
 	slog.InfoContext(ctx, "image scan run completed", "status", outcome.Status, "message", outcome.Message)
-	if outcome.Status != schedulertypes.Succeeded {
-		return &schedulertypes.OutcomeError{Outcome: outcome}
+	if outcome.Status != types.RunStatusSucceeded {
+		return &types.SchedulerOutcomeError{Outcome: outcome}
 	}
 	return nil
 }
 
-func (w *ImageUpdateWatcher) backfillProjectImageRefsInternal(ctx context.Context, attempt int) error {
+func (w *ImageUpdateWatcher) backfillProjectImageRefs(ctx context.Context, attempt int) error {
 	started := time.Now()
 	count, err := w.projectService.BackfillProjectImageRefs(ctx)
 	if err == nil {
@@ -382,10 +381,10 @@ func (w *ImageUpdateWatcher) refreshSchedule(ctx context.Context) error {
 	if coordinator == nil {
 		return errors.New("durable job coordinator unavailable")
 	}
-	if !w.settingsService.GetBoolSetting(ctx, "pollingEnabled", true) {
+	if !w.settingsService.GetBoolSetting(ctx, "pollingEnabled") {
 		return coordinator.Checkpoint(ctx, w.Name(), "", time.Time{})
 	}
-	spec := w.settingsService.GetStringSetting(ctx, "pollingInterval", imageUpdateWatcherDefaultSchedule)
+	spec := w.settingsService.GetStringSetting(ctx, "pollingInterval")
 	schedule, err := cronScheduleParser.Parse(spec)
 	if err != nil {
 		slog.WarnContext(ctx, "invalid pollingInterval cron expression; using default schedule", "pollingInterval", spec, "error", err)

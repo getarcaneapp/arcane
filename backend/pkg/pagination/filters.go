@@ -9,8 +9,8 @@ type FilterResult[T any] struct {
 }
 
 type FilterAccessor[T any] struct {
-	Key string
 	Fn  func(item T, filterValue string) bool
+	Key string
 	// NoSplit passes the raw value through instead of treating commas as alternatives.
 	NoSplit bool
 }

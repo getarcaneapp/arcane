@@ -1,29 +1,6 @@
-<script module lang="ts">
-	import { imageService } from '#lib/services/image-service.js';
-	import type { ImagePatchTargetDto } from '#lib/types/docker.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import {
-		environmentHref,
-		fetchAcrossEnvironments,
-		type EnvironmentFailure,
-		type EnvironmentRow
-	} from '#lib/utils/environments.js';
-	import { vulnerabilityEnvironments } from '#lib/utils/vulnerability.js';
-
-	export type PatchTargetRow = EnvironmentRow<ImagePatchTargetDto> & { id: string };
-	export type PatchTargetPage = Paginated<PatchTargetRow> & { failedEnvironments?: EnvironmentFailure[] };
-
-	/** Patch targets from every shown environment with vulnerability management, keyed by environment and image. */
-	export async function fetchPatchTargets(options: SearchPaginationSortRequest): Promise<PatchTargetPage> {
-		const page = await fetchAcrossEnvironments(vulnerabilityEnvironments(), options, (id, request, config) =>
-			imageService.listPatchTargets(request, id, config)
-		);
-		// The table keys rows by environment and id, so the id is the image's own.
-		return { ...page, data: page.data.map((target) => ({ ...target, id: target.imageId })) };
-	}
-</script>
-
 <script lang="ts">
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -36,42 +13,31 @@
 	import MonoCell from '#lib/components/vulnerability/mono-cell.svelte';
 	import { ShieldCheckIcon, ImagesIcon, ClockIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import type { PatchTargetPage, PatchTargetRow } from '#lib/query/vulnerabilities.js';
+	import { imageService } from '#lib/services/image-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { activityToastOptions } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { vulnerabilityEnvironments } from '#lib/utils/vulnerability.js';
 
 	let {
-		targets = $bindable(),
-		requestOptions = $bindable()
+		targets,
+		requestOptions = $bindable(),
+		onRetry
 	}: {
 		targets: PatchTargetPage;
 		requestOptions: SearchPaginationSortRequest;
+		onRetry: () => Promise<unknown>;
 	} = $props();
 
-	// Track the user store: hasPermission reads it non-reactively, so without
-	// this the derived would cache a pre-hydration false forever.
-	const canPatchImage = $derived.by(() => {
-		userStore.current;
-		return vulnerabilityEnvironments().some((env) => hasPermission('images:patch', env.id));
-	});
+	const queryClient = useQueryClient();
 
-	// Only the latest request is applied, so a slow response for an earlier filter cannot replace newer rows.
-	let latestRequest = 0;
-	async function refreshPatchTargets(options: SearchPaginationSortRequest) {
-		if (vulnerabilityEnvironments().length === 0) return targets;
-		const requestedScope = environmentStore.shownKey;
-		const request = ++latestRequest;
-		const response = await fetchPatchTargets(options);
-		if (vulnerabilityEnvironments().length === 0 || requestedScope !== environmentStore.shownKey || request !== latestRequest) {
-			return targets;
-		}
-		targets = response;
-		return response;
-	}
+	const canPatchImage = $derived(vulnerabilityEnvironments().some((env) => hasPermission('images:patch', env.id)));
 
 	async function handlePatchImage(item: PatchTargetRow) {
 		if (!hasPermission('images:patch', item.environmentId)) return;
@@ -80,7 +46,7 @@
 				// The fixable counts come from the stored scan, so patch from that report.
 				const record = await imageService.patchImage(item.imageId, { scanId: item.imageId }, item.environmentId);
 				toast.info(m.images_patch_started({ patchedRef: record.patchedRef }), activityToastOptions(record.activityId));
-				await refreshPatchTargets(requestOptions);
+				await queryClient.invalidateQueries({ queryKey: queryKeys.images.patchTargetsPrefix(environmentStore.shownKey) });
 			})()
 		);
 		if (operationResult.error !== null) {
@@ -143,7 +109,10 @@
 {/snippet}
 
 {#snippet ImageCell({ item }: { item: PatchTargetRow })}
-	<a class="truncate text-sm font-medium hover:underline" href={environmentHref(`/images/${item.imageId}`, item.environmentId)}>
+	<a
+		class="truncate text-sm font-medium hover:underline"
+		href={resolve(`/(app)/images/[imageId]?env=${encodeURIComponent(item.environmentId)}`, { imageId: item.imageId })}
+	>
 		{item.imageRef}
 	</a>
 {/snippet}
@@ -185,12 +154,11 @@
 		{item}
 		icon={() => ({ component: ShieldCheckIcon, variant: item.fixableCount > 0 ? 'amber' : 'emerald' })}
 		title={(item) => item.imageRef}
-		subtitle={(item) =>
-			(mobileFieldVisibility['fixableCount'] ?? true)
-				? item.fixableCount > 0
-					? `${item.fixableCount} / ${item.totalCount} CVEs`
-					: m.security_no_fixable()
-				: null}
+		subtitle={(item) => {
+			if (!(mobileFieldVisibility['fixableCount'] ?? true)) return null;
+			if (item.fixableCount > 0) return `${item.fixableCount} / ${item.totalCount} CVEs`;
+			return m.security_no_fixable();
+		}}
 		badges={[
 			(item) => {
 				if (!(mobileFieldVisibility['lastPatch'] ?? true)) return null;
@@ -241,7 +209,7 @@
 	persistKey="arcane-security-patch-table"
 	items={targets}
 	bind:requestOptions
-	onRefresh={refreshPatchTargets}
+	{onRetry}
 	{columns}
 	mobileCard={PatchTargetMobileCard}
 	{mobileFields}

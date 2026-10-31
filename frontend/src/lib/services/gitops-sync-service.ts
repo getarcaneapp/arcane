@@ -1,6 +1,6 @@
 import type {
-	GitOpsSyncCreateDto,
-	GitOpsSyncUpdateDto,
+	GitOpsSyncCreate,
+	GitOpsSyncUpdate,
 	GitOpsSync,
 	GitOpsSyncCounts,
 	SyncResult,
@@ -16,61 +16,67 @@ import type {
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
-import BaseAPIService from './api-service';
+import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 class GitOpsSyncService extends BaseAPIService {
-	async getSyncs(environmentId: string, options?: SearchPaginationSortRequest): Promise<Paginated<GitOpsSync, GitOpsSyncCounts>> {
+	async getSyncs(
+		environmentId: string,
+		options?: SearchPaginationSortRequest,
+		config?: APIRequestConfig
+	): Promise<Paginated<GitOpsSync, GitOpsSyncCounts>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/gitops-syncs`, { params });
+		const res = await this.api.get(`/environments/${environmentId}/gitops/syncs`, { ...config, params });
 		return res.data;
 	}
 
 	async getSync(environmentId: string, syncId: string): Promise<GitOpsSync> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/gitops-syncs/${syncId}`));
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/gitops/syncs/${syncId}`));
 	}
 
-	async createSync(environmentId: string, sync: GitOpsSyncCreateDto): Promise<GitOpsSync> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/gitops-syncs`, sync));
+	async createSync(environmentId: string, sync: GitOpsSyncCreate): Promise<GitOpsSync> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/gitops/syncs`, sync));
 	}
 
-	async updateSync(environmentId: string, syncId: string, sync: GitOpsSyncUpdateDto): Promise<GitOpsSync> {
-		return this.handleResponse(this.api.put(`/environments/${environmentId}/gitops-syncs/${syncId}`, sync));
+	async updateSync(environmentId: string, syncId: string, sync: GitOpsSyncUpdate): Promise<GitOpsSync> {
+		return this.handleResponse(this.api.patch(`/environments/${environmentId}/gitops/syncs/${syncId}`, sync));
 	}
 
 	async deleteSync(environmentId: string, syncId: string): Promise<void> {
-		return this.handleResponse(this.api.delete(`/environments/${environmentId}/gitops-syncs/${syncId}`));
+		return this.handleResponse(this.api.delete(`/environments/${environmentId}/gitops/syncs/${syncId}`));
 	}
 
 	async performSync(environmentId: string, syncId: string): Promise<SyncResult> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/gitops-syncs/${syncId}/sync`));
+		return this.handleResponse(
+			this.api.post(`/environments/${environmentId}/gitops/syncs/${syncId}`, undefined, { params: { action: 'sync' } })
+		);
 	}
 
 	async getSyncStatus(environmentId: string, syncId: string): Promise<SyncStatus> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/gitops-syncs/${syncId}/status`));
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/gitops/syncs/${syncId}/status`));
 	}
 
 	async browseFiles(environmentId: string, syncId: string, path?: string): Promise<BrowseResponse> {
 		const params = path ? { path } : {};
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/gitops-syncs/${syncId}/files`, { params }));
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/gitops/syncs/${syncId}/files`, { params }));
 	}
 
 	async importSyncs(environmentId: string, syncs: ImportGitOpsSyncRequest[]): Promise<ImportGitOpsSyncResponse> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/gitops-syncs/import`, syncs));
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/gitops/syncs/import`, syncs));
 	}
 
 	async previewBackup(environmentId: string, syncId: string): Promise<GitOpsBackupPreview> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/gitops-syncs/${syncId}/backup/preview`));
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/gitops/syncs/${syncId}/backup/preview`));
 	}
 
 	async getBackupHistory(environmentId: string, syncId: string, limit = 20): Promise<GitOpsBackupHistoryResponse> {
 		return this.handleResponse(
-			this.api.get(`/environments/${environmentId}/gitops-syncs/${syncId}/backup/history`, { params: { limit } })
+			this.api.get(`/environments/${environmentId}/gitops/syncs/${syncId}/backup/history`, { params: { limit } })
 		);
 	}
 
 	async getBackupRevision(environmentId: string, syncId: string, commit: string): Promise<GitOpsBackupRevision> {
 		return this.handleResponse(
-			this.api.get(`/environments/${environmentId}/gitops-syncs/${syncId}/backup/history/${encodeURIComponent(commit)}`)
+			this.api.get(`/environments/${environmentId}/gitops/syncs/${syncId}/backup/history/${encodeURIComponent(commit)}`)
 		);
 	}
 
@@ -79,7 +85,7 @@ class GitOpsSyncService extends BaseAPIService {
 		syncId: string,
 		request: ResolveGitOpsBackupConflictRequest
 	): Promise<SyncResult> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/gitops-syncs/${syncId}/backup/resolve`, request));
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/gitops/syncs/${syncId}/backup/resolve`, request));
 	}
 }
 

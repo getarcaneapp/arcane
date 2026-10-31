@@ -2,7 +2,7 @@
 	import { createTable, createTableState, renderComponent, renderSnippet } from '@tanstack/svelte-table';
 	import type { ColumnFiltersState, RowSelectionState, SortingState, ColumnVisibilityState } from '@tanstack/table-core';
 	import { PersistedState } from 'runed';
-	import { onDestroy, onMount, untrack } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
 	import type { Component } from 'svelte';
 
@@ -12,6 +12,8 @@
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { AlertTriangleIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { rowKey, type EnvironmentFailure } from '#lib/utils/environments.js';
@@ -20,6 +22,7 @@
 	import ArcaneTableCell from './arcane-table-cell.svelte';
 	import TableCheckbox from './arcane-table-checkbox.svelte';
 	import ArcaneTableDesktopView from './arcane-table-desktop-view.svelte';
+	import ArcaneTableGridView from './arcane-table-grid-view.svelte';
 	import ArcaneTableHeader from './arcane-table-header.svelte';
 	import ArcaneTableMobileView from './arcane-table-mobile-view.svelte';
 	import ArcaneTablePagination from './arcane-table-pagination.svelte';
@@ -32,6 +35,7 @@
 		type GroupSelectionState,
 		type SelectionModifiers,
 		type SortState,
+		type TableViewMode,
 		encodeHidden,
 		applyHiddenPatch,
 		encodeFilters,
@@ -60,7 +64,7 @@
 		selectionDisabled = false,
 		loading = false,
 		unstyled = false,
-		onRefresh,
+		onRetry,
 		onPageSizeChangeRequest,
 		columns,
 		rowActions,
@@ -76,35 +80,30 @@
 		customSettings = $bindable<Record<string, unknown>>({}),
 		columnVisibility = $bindable<ColumnVisibilityState>({}),
 		preferencesReady = $bindable(false),
+		viewMode = $bindable<TableViewMode>('list'),
 		hiddenSortFallback,
 		groupedRows = null,
-		// Grouping props
 		groupBy,
 		groupIcon,
 		groupCollapsedState = $bindable<Record<string, boolean>>({}),
 		onGroupToggle,
 		imageNameFilterOptions,
-		// Expandable row props
 		expandedRowContent,
 		emptyState
 	}: {
-		/** Merged lists carry the environments that could not be loaded. */
-		items: Paginated<TData> & { failedEnvironments?: EnvironmentFailure[] };
+		items: Paginated<TData> & { failedEnvironments?: EnvironmentFailure[]; excludedEnvironments?: EnvironmentRef[] };
 		requestOptions: SearchPaginationSortRequest;
 		withoutSearch?: boolean;
 		withoutFilters?: boolean;
 		withoutPagination?: boolean;
-		/** Restore the default limit instead of a saved All selection when false. */
 		restoreAllPageSize?: boolean;
 		selectionDisabled?: boolean;
-		/** When true and there's no data yet, the desktop view shows skeleton rows (first-load). */
 		loading?: boolean;
 		unstyled?: boolean;
-		onRefresh: (requestOptions: SearchPaginationSortRequest) => Promise<Paginated<TData>>;
-		/** Allows a caller to confirm a page-size change before applying it. */
+		onRetry?: () => Promise<unknown>;
 		onPageSizeChangeRequest?: (limit: number, apply: () => void) => void;
 		columns: ColumnSpec<TData>[];
-		rowActions?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
+		rowActions?: Snippet<[{ row: ArcaneRow<TData>; item: TData; view: TableViewMode }]>;
 		mobileCard: Snippet<[{ row: ArcaneRow<TData>; item: TData; mobileFieldVisibility: Record<string, boolean> }]>;
 		mobileFields?: FieldSpec[];
 		mobileFieldVisibility?: Record<string, boolean>;
@@ -126,17 +125,15 @@
 		customSettings?: Record<string, unknown>;
 		columnVisibility?: ColumnVisibilityState;
 		preferencesReady?: boolean;
+		viewMode?: TableViewMode;
 		hiddenSortFallback?: SortState;
 		groupedRows?: GroupedData<TData>[] | null;
-		// Grouping props
 		groupBy?: (item: TData) => string;
 		groupIcon?: (groupName: string) => Component;
 		groupCollapsedState?: Record<string, boolean>;
 		onGroupToggle?: (groupName: string) => void;
 		imageNameFilterOptions?: string[];
-		// Expandable row props
 		expandedRowContent?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
-		/** First-use empty state, shown when the collection is empty and no search or filter is active. */
 		emptyState?: Snippet;
 	} = $props();
 
@@ -170,21 +167,24 @@
 	const getEffectiveLimit = () => requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? DEFAULT_LIMIT;
 	let prefs = $state<PersistedState<CompactTablePrefs> | null>(null);
 
-	// Expandable row state
 	let expandedRows = $state<Set<string>>(new Set());
 
-	// Wrap-text preference, shared by every table (view-options toggle).
 	const wrapTextPref = new PersistedState<boolean>('arcane-table-wrap-text', false);
 	const wrapText = $derived(wrapTextPref.current);
 	function toggleWrapText() {
 		wrapTextPref.current = !wrapTextPref.current;
 	}
 
-	// Each view owns its virtualizer and restores its own scroll position.
 	let desktopScrollEl = $state<HTMLElement>();
+	let gridScrollEl = $state<HTMLElement>();
 	let mobileScrollEl = $state<HTMLElement>();
 	const isMobile = new IsMobile();
-	const scrollPositions = { desktop: { top: 0, left: 0 }, mobile: { top: 0, left: 0 } };
+	const scrollPositions = { desktop: { top: 0, left: 0 }, grid: { top: 0, left: 0 }, mobile: { top: 0, left: 0 } };
+
+	function setViewMode(mode: TableViewMode) {
+		viewMode = mode;
+		if (enablePersist && prefs) prefs.current = { ...prefs.current, d: mode };
+	}
 	const selectedIdSet = $derived(new Set(selectedIds ?? []));
 
 	function restoreScroll(node: HTMLElement, view: keyof typeof scrollPositions) {
@@ -204,15 +204,18 @@
 		};
 	}
 
-	// Caps the shell to the viewport space below its unscrolled position so its bottom stays on screen.
 	function fitToViewport(node: HTMLElement) {
+		const ancestors: HTMLElement[] = [];
+		for (let el = node.parentElement; el; el = el.parentElement) ancestors.push(el);
+		const scrollContainer =
+			ancestors.find((el) => ['auto', 'scroll', 'overlay'].includes(getComputedStyle(el).overflowY)) ?? document.documentElement;
 		let frame = 0;
 		const update = () => {
 			cancelAnimationFrame(frame);
 			frame = requestAnimationFrame(() => {
 				let top = node.getBoundingClientRect().top;
 				let bottomGap = parseFloat(getComputedStyle(node).marginBottom);
-				for (let el = node.parentElement; el; el = el.parentElement) {
+				for (const el of ancestors) {
 					const style = getComputedStyle(el);
 					top += el.scrollTop;
 					bottomGap += parseFloat(style.paddingBottom) + parseFloat(style.borderBottomWidth) + parseFloat(style.marginBottom);
@@ -222,7 +225,7 @@
 			});
 		};
 		const observer = new ResizeObserver(update);
-		for (let el = node.parentElement; el; el = el.parentElement) observer.observe(el);
+		observer.observe(scrollContainer);
 		window.addEventListener('resize', update);
 		update();
 		return () => {
@@ -242,8 +245,6 @@
 		expandedRows = next;
 	}
 
-	// Client-sorted columns (spec.clientSort): the server can't order these values,
-	// so header clicks reorder the current page locally via the column accessor.
 	const clientSortAccessors = $derived.by(() => {
 		const accessors = new Map<string, (row: TData) => unknown>();
 		columns.forEach((spec, i) => {
@@ -275,7 +276,7 @@
 	const totalItems = $derived(items.pagination?.totalItems ?? 0);
 	const pageSize = $derived(requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? DEFAULT_LIMIT);
 	const canPrev = $derived(currentPage > 1);
-	const canNext = $derived(currentPage < totalPages);
+	const canNext = $derived(totalPages < 0 ? (items.pagination?.hasNextPage ?? false) : currentPage < totalPages);
 
 	onMount(() => {
 		// Initialize prefs first
@@ -293,6 +294,7 @@
 			return;
 		}
 		const snapshot = extractPersistedPreferences(prefs?.current, getEffectiveLimit());
+		if (snapshot.viewMode) viewMode = snapshot.viewMode;
 		if (!restoreAllPageSize && snapshot.limit === TABLE_PAGE_SIZE_ALL) {
 			snapshot.limit = DEFAULT_LIMIT;
 		}
@@ -316,7 +318,6 @@
 		const restoredOptions = restoreTableRequestOptions(requestOptions, snapshot, getEffectiveLimit());
 		if (restoredOptions !== requestOptions) {
 			requestOptions = restoredOptions;
-			onRefresh(requestOptions);
 		}
 
 		if (mobileFields.length && !Object.keys(mobileFieldVisibility).length) {
@@ -337,12 +338,13 @@
 			limit: items?.pagination?.itemsPerPage ?? 10
 		};
 		scrollPositions.desktop.top = 0;
+		scrollPositions.grid.top = 0;
 		scrollPositions.mobile.top = 0;
 		if (desktopScrollEl) desktopScrollEl.scrollTop = 0;
+		if (gridScrollEl) gridScrollEl.scrollTop = 0;
 		if (mobileScrollEl) mobileScrollEl.scrollTop = 0;
 		const next = { ...prev, ...patch };
 		requestOptions = { ...requestOptions, pagination: next };
-		onRefresh(requestOptions);
 	}
 
 	function setPage(page: number) {
@@ -375,7 +377,6 @@
 		}
 	}
 
-	// Shift-select anchor; valid only against the row order and selection array it was recorded with.
 	let rangeAnchor: { id: string; orderKey: string; selection: string[] | undefined } | null = null;
 
 	function onToggleRow(checked: boolean, id: string, modifiers?: SelectionModifiers) {
@@ -444,7 +445,10 @@
 					filterOptions: spec.filterOptions,
 					width: spec.width,
 					align: spec.align,
-					truncate: spec.truncate
+					truncate: spec.truncate,
+					card: spec.card,
+					cardIcon: spec.cardIcon,
+					cardLabel: spec.cardLabel
 				},
 				header: ({ column }) => {
 					if (spec.header) return renderSnippet(spec.header, { column, title: spec.title, class: spec.class });
@@ -457,7 +461,7 @@
 				cell: ({ row, getValue }) => {
 					const item = row.original as TData;
 					const value = accessorKey ? row.getValue(accessorKey) : getValue?.();
-					if (spec.cell) return renderSnippet(spec.cell, { row, item, value });
+					if (spec.cell) return renderSnippet(spec.cell, { row, item, value, view: viewMode });
 					if (spec.cellComponent) return renderComponent(spec.cellComponent, { value });
 					return renderComponent(ArcaneTableCell, { value });
 				},
@@ -469,18 +473,14 @@
 		if (rowActions) {
 			cols.push({
 				id: 'actions',
-				// The closure reads the live rowActions prop. When the caller flips it
-				// to undefined (e.g. a project stops and its per-row actions go away),
-				// the old column can still render once before the column set rebuilds —
-				// rendering an undefined snippet would crash the page (invalid_snippet).
-				cell: ({ row }) => (rowActions ? renderSnippet(rowActions, { row, item: row.original as TData }) : undefined)
+				cell: ({ row }) =>
+					rowActions ? renderSnippet(rowActions, { row, item: row.original as TData, view: viewMode }) : undefined
 			});
 		}
 
 		return cols;
 	}
 
-	// Compute initial hidden columns from column specs (without mutating state in derived)
 	function getInitialHiddenColumns(specs: ColumnSpec<TData>[]): Record<string, boolean> {
 		const hidden: Record<string, boolean> = {};
 		specs.forEach((spec, i) => {
@@ -496,37 +496,12 @@
 	const defaultColumnVisibility = $derived(getInitialHiddenColumns(columns));
 	const effectiveColumnVisibility = $derived({ ...defaultColumnVisibility, ...columnVisibility });
 
-	// Memoize column definitions until their structure or facet options change.
-	// Facet catalogs can arrive after the table's first render, so their metadata
-	// must participate in the key even though row data does not.
-	function getColumnsKey(specs: ColumnSpec<TData>[], hasRowActions: boolean, isSelectionDisabled: boolean): string {
-		const columnsMetadata = specs.map((spec, index) => ({
-			id: spec.id ?? spec.accessorKey ?? `col_${index}`,
-			filterOptions: spec.filterOptions?.map((option) => ({
-				value: option.value,
-				label: option.label,
-				dotClass: option.dotClass
-			}))
-		}));
-		return `${JSON.stringify(columnsMetadata)}:${hasRowActions}:${isSelectionDisabled}`;
-	}
-
-	const columnsKey = $derived(getColumnsKey(columns, !!rowActions, selectionDisabled));
-	const columnsDef = $derived.by(() => {
-		columnsKey; // structural dependency: identity-churned `columns` arrays with an unchanged key don't rebuild defs
-		return untrack(() => buildColumns(columns, selectionDisabled));
-	});
+	const columnsDef = $derived(buildColumns(columns, selectionDisabled));
 
 	const table = createTable({
 		features: arcaneTableFeatures,
-		// Manual / server-side mode: no client row models are registered, so sorting and
-		// filtering never run on the client — these flags make that explicit. Pagination is
-		// fully external (no rowPaginationFeature registered), so there is no manualPagination.
 		manualSorting: true,
 		manualFiltering: true,
-		// Stable row identity across server refreshes. Without this v9 keys rows by positional
-		// index, so every onRefresh fetch re-keys all rows and forces a full re-render; keying
-		// by the backing id lets unchanged rows (and their DOM/selection) be reused.
 		getRowId: (row) => rowKey(row),
 		get data() {
 			return sortedData;
@@ -589,7 +564,6 @@
 					limit: requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 10
 				}
 			};
-			onRefresh(requestOptions);
 		},
 		onColumnFiltersChange: (updater) => {
 			let next: ColumnFiltersState;
@@ -606,7 +580,6 @@
 					limit: requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 10
 				}
 			};
-			onRefresh(requestOptions);
 		},
 		onColumnVisibilityChange: (updater) => {
 			let nextVisibility: ColumnVisibilityState;
@@ -632,7 +605,6 @@
 				if (enablePersist && prefs) {
 					prefs.current = { ...prefs.current, s: encodeSort(hiddenSortFallback) };
 				}
-				onRefresh(requestOptions);
 			}
 		},
 		onGlobalFilterChange: (updater) => {
@@ -648,7 +620,6 @@
 			if (enablePersist && prefs) {
 				prefs.current = { ...prefs.current, g: globalFilter() };
 			}
-			onRefresh(requestOptions);
 		}
 	});
 
@@ -676,7 +647,13 @@
 		}))
 	);
 
-	const rowIndex = $derived.by(() => new Map(table.getRowModel().rows.map((row, index) => [row.id, { row, index }])));
+	let builtRowIndex: { rows: ArcaneRow<TData>[]; index: Map<string, { row: ArcaneRow<TData>; index: number }> } | undefined;
+	const rowIndex = $derived.by(() => {
+		const rows = table.getRowModel().rows;
+		if (builtRowIndex?.rows !== rows)
+			builtRowIndex = { rows, index: new Map(rows.map((row, index) => [row.id, { row, index }])) };
+		return builtRowIndex.index;
+	});
 
 	// Compute grouped rows when groupBy is provided
 	const effectiveGroupedRows = $derived.by((): GroupedData<TData>[] | null => {
@@ -835,6 +812,8 @@
 					{imageNameFilterOptions}
 					{wrapText}
 					onToggleWrapText={toggleWrapText}
+					{viewMode}
+					onViewModeChange={isMobile.current ? undefined : setViewMode}
 					{isFiltered}
 					onResetFilters={resetFilters}
 				/>
@@ -852,19 +831,63 @@
 									.join(', ')
 							})}
 						</Alert.Description>
-						<ArcaneButton
-							action="refresh"
-							size="sm"
-							customLabel={m.common_retry()}
-							onClickPromise={async () =>
-								handleApiResultWithCallbacks({ result: await tryCatch(onRefresh(requestOptions)), message: m.common_failed() })}
-						/>
+						{#if onRetry}
+							{@const retry = onRetry}
+							<ArcaneButton
+								action="refresh"
+								size="sm"
+								customLabel={m.common_retry()}
+								onClickPromise={async () =>
+									handleApiResultWithCallbacks({ result: await tryCatch(retry()), message: m.common_failed() })}
+							/>
+						{/if}
 					</div>
 				</Alert.Root>
 			</div>
 		{/if}
 
-		{#if !isMobile.current}
+		{#if items.excludedEnvironments?.length}
+			<div class="shrink-0 px-3 pt-3">
+				<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon}>
+					<Alert.Description>
+						{m.all_environments_excluded({
+							count: items.excludedEnvironments.length,
+							limit: settingsStore.current?.allEnvironmentsLimit ?? 0
+						})}
+					</Alert.Description>
+				</Alert.Root>
+			</div>
+		{/if}
+
+		{#if !isMobile.current && viewMode === 'grid'}
+			<div
+				{@attach (node) => restoreScroll(node, 'grid')}
+				bind:this={gridScrollEl}
+				data-table-scroll="grid"
+				class="isolate h-full min-h-0 flex-1 overflow-auto bg-background"
+			>
+				<ArcaneTableGridView
+					scrollElement={gridScrollEl}
+					initialScrollTop={scrollPositions.grid.top}
+					{rowIndex}
+					{table}
+					{selectedIdSet}
+					{selectionDisabled}
+					onToggleRowSelection={(id, selected, modifiers) => onToggleRow(selected, id, modifiers)}
+					groupedRows={effectiveGroupedRows}
+					{groupIcon}
+					{groupCollapsedState}
+					onGroupToggle={handleGroupToggle}
+					{getGroupSelectionState}
+					{onToggleGroupSelection}
+					{expandedRowContent}
+					{expandedRows}
+					onToggleRowExpanded={toggleRowExpanded}
+					{loading}
+					empty={EmptySnippet}
+				/>
+			</div>
+		{:else if !isMobile.current}
 			<div
 				{@attach (node) => restoreScroll(node, 'desktop')}
 				bind:this={desktopScrollEl}

@@ -5,22 +5,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	userdomain "github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	userdomain "github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 )
 
-func setupAuthServiceTestDBInternal(t *testing.T) *database.DB {
+func setupAuthServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -41,8 +41,8 @@ func setupAuthServiceTestDBInternal(t *testing.T) *database.DB {
 	require.NoError(
 		t,
 		db.Exec("CREATE TABLE IF NOT EXISTS environments (id text PRIMARY KEY, created_at datetime, updated_at dateti"+
-			"me, name text, api_url text, status text, enabled numeric, is_edge numeric, hidden numeric, last_see"+
-			"n datetime, last_edge_transport text, access_token text, api_key_id text, parent_environment_id text"+
+			"me, name text, api_url text, status text, enabled numeric, hidden numeric, last_see"+
+			"n datetime, last_agent_transport text, access_token text, api_key_id text, parent_environment_id text"+
 			", swarm_node_id text)").Error,
 	)
 	require.NoError(
@@ -58,7 +58,7 @@ func setupAuthServiceTestDBInternal(t *testing.T) *database.DB {
 // does, so the legacy-admin-guard tests exercise the real RBAC path.
 func setupUserAndRoleServices(t *testing.T) (*userdomain.UserService, *role.RoleService) {
 	t.Helper()
-	db := setupAuthServiceTestDBInternal(t)
+	db := setupAuthServiceTestDB(t)
 	localRole := role.NewRoleService(db)
 	require.NoError(t, localRole.EnsureBuiltInRoles(t.Context()))
 	userRecord := userdomain.NewUserService(db, localRole, session.RevokeAllUserSessionsExceptInDB)
@@ -279,12 +279,12 @@ func TestUpdateUserPersistsTimeFormatAndMapsToDto(t *testing.T) {
 	ctx := t.Context()
 
 	u := createTestUser(t, userSvc, "user-1", "time-format-user")
-	require.Equal(t, user.TimeFormatAuto, u.TimeFormat)
+	require.Equal(t, types.TimeFormatAuto, u.TimeFormat)
 
-	for _, timeFormat := range []user.TimeFormat{
-		user.TimeFormatAuto,
-		user.TimeFormat12Hour,
-		user.TimeFormat24Hour,
+	for _, timeFormat := range []types.TimeFormat{
+		types.TimeFormatAuto,
+		types.TimeFormat12Hour,
+		types.TimeFormat24Hour,
 	} {
 		t.Run(string(timeFormat), func(t *testing.T) {
 			u.TimeFormat = timeFormat
@@ -300,6 +300,46 @@ func TestUpdateUserPersistsTimeFormatAndMapsToDto(t *testing.T) {
 			require.Equal(t, timeFormat, dto.TimeFormat)
 		})
 	}
+}
+
+func TestUpdateUserNormalizesDashboardLayout(t *testing.T) {
+	userSvc, _ := setupUserAndRoleServices(t)
+	ctx := t.Context()
+
+	u := createTestUser(t, userSvc, "user-1", "dashboard-layout-user")
+	u.Preferences.DashboardLayout = &[]types.DashboardWidgetLayout{
+		{ID: "attention", X: 10, Y: -2, W: 20, H: 30},
+		{ID: "unknown", W: 6, H: 4},
+		{ID: "healthy", X: 11, W: 1, H: 1},
+		{ID: "attention", W: 4, H: 4},
+		{ID: "jobs"},
+		{
+			ID:     "memory",
+			X:      2,
+			Y:      3,
+			W:      5,
+			H:      6,
+			Hidden: true,
+		},
+	}
+	_, err := userSvc.UpdateUser(ctx, u, nil)
+	require.NoError(t, err)
+
+	reloaded, err := userSvc.GetUserByID(ctx, u.ID)
+	require.NoError(t, err)
+	require.Equal(t, &[]types.DashboardWidgetLayout{
+		{ID: "attention", W: 12, H: 12},
+		{ID: "healthy", X: 10, W: 2, H: 2},
+		{ID: "jobs", W: 3, H: 3},
+		{
+			ID:     "memory",
+			X:      2,
+			Y:      3,
+			W:      5,
+			H:      6,
+			Hidden: true,
+		},
+	}, reloaded.Preferences.DashboardLayout)
 }
 
 func TestUpdateUserRejectsNonAdminActorEditingAdmin(t *testing.T) {
@@ -338,7 +378,7 @@ func TestUpdateUserAllowsGlobalAdminActorEditingAdmin(t *testing.T) {
 	require.NoError(t, err)
 
 	admin.DisplayName = new("Renamed Admin")
-	actorCtx := context.WithValue(ctx, user.CurrentUserContextKey{}, other)
+	actorCtx := context.WithValue(ctx, types.CurrentUserContextKey{}, other)
 	_, err = userSvc.UpdateUser(actorCtx, admin, otherPerms)
 	require.NoError(t, err)
 }
@@ -374,7 +414,7 @@ func TestUpdateUserAllowsSelfEditByNonAdmin(t *testing.T) {
 	require.NoError(t, err)
 
 	admin.DisplayName = new("Self Rename")
-	actorCtx := context.WithValue(ctx, user.CurrentUserContextKey{}, admin)
+	actorCtx := context.WithValue(ctx, types.CurrentUserContextKey{}, admin)
 	_, err = userSvc.UpdateUser(actorCtx, admin, adminPerms)
 	require.NoError(t, err)
 }
@@ -417,7 +457,7 @@ func TestDeleteUserAllowsGlobalAdminActorDeletingAdmin(t *testing.T) {
 	otherPerms, err := roleSvc.ResolvePermissions(ctx, other.ID)
 	require.NoError(t, err)
 
-	actorCtx := context.WithValue(ctx, user.CurrentUserContextKey{}, other)
+	actorCtx := context.WithValue(ctx, types.CurrentUserContextKey{}, other)
 	require.NoError(t, userSvc.DeleteUser(actorCtx, admin.ID, otherPerms))
 }
 
@@ -452,19 +492,19 @@ func TestCreateDefaultAdminRecoversArcaneUserWhenNoGlobalAdminExists(t *testing.
 }
 
 func TestUserDisplayNameNormalization(t *testing.T) {
-	svc := userdomain.NewUserService(setupAuthServiceTestDBInternal(t), nil, session.RevokeAllUserSessionsExceptInDB)
+	svc := userdomain.NewUserService(setupAuthServiceTestDB(t), nil, session.RevokeAllUserSessionsExceptInDB)
 	ctx := t.Context()
-	created, err := svc.CreateUser(ctx, &userdomain.User{ID: "normalized", Username: " Jose\u0301 ", Email: new(" Jose\u0301@example.com "), DisplayName: new(" Jose\u0301 ")})
+	created, err := svc.CreateUser(ctx, &userdomain.User{ID: "normalized", Username: " Jose\u0301 ", Email: new("jose@exa\u0301mple.com"), DisplayName: new(" Jose\u0301 ")})
 	require.NoError(t, err)
 	require.Equal(t, "Jose\u0301", created.Username)
-	require.Equal(t, " Jose\u0301@example.com ", *created.Email)
+	require.Equal(t, "jose@exa\u0301mple.com", *created.Email)
 	require.Equal(t, "José", *created.DisplayName)
 	created.DisplayName = new(" Andre\u0301 ")
 	profile, err := svc.UpdateUser(ctx, created, nil)
 	require.NoError(t, err)
 	require.Equal(t, "André", *profile.DisplayName)
 	require.Equal(t, "Jose\u0301", profile.Username)
-	require.Equal(t, " Jose\u0301@example.com ", *profile.Email)
+	require.Equal(t, "jose@exa\u0301mple.com", *profile.Email)
 	created.Username = " Andre\u0301 "
 	created.DisplayName = nil
 	updated, err := svc.UpdateUser(ctx, created, nil)
@@ -474,7 +514,7 @@ func TestUserDisplayNameNormalization(t *testing.T) {
 	reloaded, err := svc.GetUserByID(ctx, updated.ID)
 	require.NoError(t, err)
 	require.Equal(t, " Andre\u0301 ", reloaded.Username)
-	require.Equal(t, " Jose\u0301@example.com ", *reloaded.Email)
+	require.Equal(t, "jose@exa\u0301mple.com", *reloaded.Email)
 	_, err = svc.GetUserByUsername(ctx, " Andre\u0301 ")
 	require.NoError(t, err)
 	_, err = svc.CreateUser(ctx, &userdomain.User{ID: "empty", Username: " \t "})

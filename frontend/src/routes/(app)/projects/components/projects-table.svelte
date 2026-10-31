@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { mode } from 'mode-watcher';
 	import type { Snippet } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -22,6 +24,7 @@
 	import { AlertIcon, BoxIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '#lib/icons/index.js';
 	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -35,14 +38,7 @@
 		getProjectUpdateTooltip,
 		getProjectUpdateVariant
 	} from '#lib/utils/docker.js';
-	import {
-		environmentHref,
-		fetchAcrossEnvironments,
-		hasShownPermission,
-		rowKey,
-		type EnvironmentPage,
-		type EnvironmentRow
-	} from '#lib/utils/environments.js';
+	import { type EnvironmentPage, type EnvironmentRow, hasShownPermission, rowKey } from '#lib/utils/environments.js';
 	import { capitalizeFirstLetter, formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { summarizeUpdateCheckResult } from '#lib/utils/update-actions.js';
@@ -53,13 +49,13 @@
 	type ProjectRow = EnvironmentRow<Project>;
 
 	let {
-		projects = $bindable(),
+		projects,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
 		withoutFilters = false,
 		showArchived = false,
 		onToggleArchived,
-		onRefreshData,
+		onRetry,
 		availableTags = [],
 		emptyState
 	}: {
@@ -69,30 +65,26 @@
 		withoutFilters?: boolean;
 		showArchived?: boolean;
 		onToggleArchived?: (checked: boolean) => void | Promise<void>;
-		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
+		onRetry: () => Promise<unknown>;
 		availableTags?: ProjectTagOption[];
 		emptyState?: Snippet;
 	} = $props();
 
-	let actionStatus = $state<Record<string, ActionStatus>>({});
+	const actionStatus = $state<Record<string, ActionStatus>>({});
 	let checkingProjectIds = $state<Record<string, boolean>>({});
 	let tagCatalog = $derived(availableTags);
 
-	let isBulkLoading = $state({
+	const isBulkLoading = $state({
 		up: false,
 		down: false,
 		redeploy: false,
 		archive: false
 	});
 
-	async function refreshProjects(options: SearchPaginationSortRequest = requestOptions) {
-		if (onRefreshData) {
-			await onRefreshData(options);
-			return;
-		}
-		projects = await fetchAcrossEnvironments(environmentStore.shown, options, (id, request, config) =>
-			projectService.getProjectsForEnvironment(id, request, config)
-		);
+	const queryClient = useQueryClient();
+
+	async function refreshProjects() {
+		await queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(environmentStore.shownKey) });
 	}
 
 	async function handleCheckProjectUpdates(project: ProjectRow) {
@@ -110,7 +102,7 @@
 				(async () => {
 					const result = await projectService.checkUpdates(project.id, project.environmentId);
 					summarizeUpdateCheckResult(result);
-					await refreshProjects(requestOptions);
+					await refreshProjects();
 				})()
 			);
 			if (operationResult.error !== null) {
@@ -129,10 +121,7 @@
 		if (attached && !tagCatalog.some((tag) => tag.name === name)) {
 			tagCatalog = [...tagCatalog, { name, color }].sort((a, b) => a.name.localeCompare(b.name));
 		}
-		projects = {
-			...projects,
-			data: projects.data.map((item) => (rowKey(item) === rowKey(project) ? { ...item, tags: response.tags } : item))
-		};
+		await refreshProjects();
 		return response.tags;
 	}
 
@@ -227,40 +216,48 @@
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
 	];
 
+	const selectionDisabledReason = $derived.by(() => {
+		if (hasConfigurationBlockedSelection) return m.env_file_unreadable_title();
+		if (hasArchivedSelection) return m.projects_archived_badge();
+		return undefined;
+	});
+	const redeployDisabledReason = $derived.by(() => {
+		if (selectionDisabledReason) return selectionDisabledReason;
+		if (hasRedeployDisabledSelection) return m.common_redeploy_disabled_arcane_self();
+		return undefined;
+	});
+	const archiveDisabledReason = $derived.by(() => {
+		if (hasRunningSelection) return m.projects_archive_requires_stopped();
+		if (hasArchivedSelection) return m.projects_archived_badge();
+		return undefined;
+	});
+
 	const bulkActions = $derived.by<BulkAction[]>(() => [
 		{
 			id: 'up',
 			label: m.projects_bulk_up({ count: selectedIds?.length ?? 0 }),
 			action: 'up',
-			onClick: handleBulkUp,
+			onclick: handleBulkUp,
 			loading: isBulkLoading.up,
 			disabled: !canDeployProject || isAnyLoading || hasArchivedSelection || hasConfigurationBlockedSelection,
-			disabledReason: hasConfigurationBlockedSelection
-				? m.env_file_unreadable_title()
-				: hasArchivedSelection
-					? m.projects_archived_badge()
-					: undefined,
+			disabledReason: selectionDisabledReason,
 			icon: StartIcon
 		},
 		{
 			id: 'down',
 			label: m.projects_bulk_down({ count: selectedIds?.length ?? 0 }),
 			action: 'down',
-			onClick: handleBulkDown,
+			onclick: handleBulkDown,
 			loading: isBulkLoading.down,
 			disabled: !canDownProject || isAnyLoading || hasArchivedSelection || hasConfigurationBlockedSelection,
-			disabledReason: hasConfigurationBlockedSelection
-				? m.env_file_unreadable_title()
-				: hasArchivedSelection
-					? m.projects_archived_badge()
-					: undefined,
+			disabledReason: selectionDisabledReason,
 			icon: StopIcon
 		},
 		{
 			id: 'redeploy',
 			label: m.projects_bulk_redeploy({ count: selectedIds?.length ?? 0 }),
 			action: 'redeploy',
-			onClick: handleBulkRedeploy,
+			onclick: handleBulkRedeploy,
 			loading: isBulkLoading.redeploy,
 			disabled:
 				!canDeployProject ||
@@ -268,29 +265,31 @@
 				hasRedeployDisabledSelection ||
 				hasArchivedSelection ||
 				hasConfigurationBlockedSelection,
-			disabledReason: hasConfigurationBlockedSelection
-				? m.env_file_unreadable_title()
-				: hasArchivedSelection
-					? m.projects_archived_badge()
-					: hasRedeployDisabledSelection
-						? m.common_redeploy_disabled_arcane_self()
-						: undefined,
+			disabledReason: redeployDisabledReason,
 			icon: RedeployIcon
 		},
 		{
 			id: 'archive',
 			label: m.projects_bulk_archive({ count: selectedIds?.length ?? 0 }),
 			action: 'archive',
-			onClick: handleBulkArchive,
+			onclick: handleBulkArchive,
 			loading: isBulkLoading.archive,
 			disabled: !canArchiveProject || isAnyLoading || hasArchivedSelection || hasRunningSelection,
-			disabledReason: hasRunningSelection
-				? m.projects_archive_requires_stopped()
-				: hasArchivedSelection
-					? m.projects_archived_badge()
-					: undefined
+			disabledReason: archiveDisabledReason
 		}
 	]);
+
+	function getProjectIconVariant(status: string): 'emerald' | 'red' | 'amber' {
+		if (status === 'running') return 'emerald';
+		if (status === 'exited') return 'red';
+		return 'amber';
+	}
+
+	function getRowArchivedTitle(item: ProjectRow, configurationBlocked: boolean): string | undefined {
+		if (configurationBlocked) return m.env_file_unreadable_title();
+		if (item.isArchived) return m.projects_archived_badge();
+		return undefined;
+	}
 </script>
 
 {#snippet NameCell({ item }: { item: ProjectRow })}
@@ -302,9 +301,15 @@
 			class="size-6"
 			containerClass="size-8"
 		/>
-		<a class="font-medium hover:underline" href={environmentHref(`/projects/${item.id}`, item.environmentId)}>{item.name}</a>
+		<a
+			class="font-medium hover:underline"
+			href={resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(item.environmentId)}`, { projectId: item.id })}
+			>{item.name}</a
+		>
 		{#if item.isArchived}
-			<span class="rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">{m.projects_archived_badge()}</span>
+			<span class="rounded-xl bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground"
+				>{m.projects_archived_badge()}</span
+			>
 		{/if}
 	</div>
 {/snippet}
@@ -326,7 +331,7 @@
 	<div class="flex items-center gap-2">
 		{#if item.gitOpsManagedBy}
 			<GitBranchIcon class="size-4" />
-			<a class="font-medium hover:underline" href="/environments/{item.environmentId}/gitops">
+			<a class="font-medium hover:underline" href={resolve(`/(app)/gitops?env=${encodeURIComponent(item.environmentId)}`)}>
 				{m.git()}
 			</a>
 		{:else}
@@ -346,7 +351,9 @@
 
 {#snippet StatusCell({ item }: { item: ProjectRow })}
 	{@const statusTooltip = getStatusTooltip(item)}
-	{#if statusTooltip}
+	{#if actionStatus[rowKey(item)] === 'redeploying'}
+		<Badge variant="primary" minWidth="20" beam>{m.common_action_redeploying()}</Badge>
+	{:else if statusTooltip}
 		<ArcaneTooltip.Root>
 			<ArcaneTooltip.Trigger>
 				<span class="inline-flex items-center gap-1.5">
@@ -391,7 +398,7 @@
 		{item}
 		icon={(item: ProjectRow) => ({
 			component: FolderOpenIcon,
-			variant: item.status === 'running' ? 'emerald' : item.status === 'exited' ? 'red' : 'amber',
+			variant: getProjectIconVariant(item.status),
 			imageUrl: getThemedIconUrl(item, mode.current) ?? undefined,
 			alt: item.name
 		})}
@@ -466,7 +473,8 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={() => goto(environmentHref(`/projects/${item.id}`, item.environmentId))}
+		onclick={() =>
+			goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(item.environmentId)}`, { projectId: item.id }))}
 	/>
 {/snippet}
 
@@ -475,13 +483,12 @@
 	{@const envId = item.environmentId}
 	{@const configurationBlocked = !!item.configurationError?.blocksOperations}
 	{@const lifecycleDisabled = item.isArchived || isAnyLoading || configurationBlocked}
-	{@const archivedTitle = configurationBlocked
-		? m.env_file_unreadable_title()
-		: item.isArchived
-			? m.projects_archived_badge()
-			: undefined}
+	{@const archivedTitle = getRowArchivedTitle(item, configurationBlocked)}
 	<RowActionsMenu>
-		<DropdownMenu.Item onclick={() => goto(environmentHref(`/projects/${item.id}`, envId))} disabled={isAnyLoading}>
+		<DropdownMenu.Item
+			onclick={() => goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(envId)}`, { projectId: item.id }))}
+			disabled={isAnyLoading}
+		>
 			<EditIcon class="size-4" />
 			{m.common_edit()}
 		</DropdownMenu.Item>
@@ -612,11 +619,7 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{withoutFilters}
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await refreshProjects(options);
-		return projects;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	{bulkActions}

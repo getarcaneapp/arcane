@@ -31,18 +31,6 @@ Avoid nested or chained ternary expressions unless absolutely necessary. Prefer 
 - Put public and shared Go contracts in the top-level `types/` module. Keep persistence models in their owning domain.
 - Put reusable helper utilities in the appropriate package under `backend/pkg/utils/`.
 
-## Repository layout
-
-The Go workspace contains three modules:
-
-```text
-backend/   Go application, HTTP API, domain logic, jobs, and embedded frontend
-cli/       Cobra CLI and its API client
-types/     Public domain and API contracts shared by backend and CLI
-```
-
-The frontend lives in `frontend/`. End-to-end tests live in `tests/`.
-
 ## Backend
 
 The backend is organized by domain. Each domain owns its behavior and routes.
@@ -160,6 +148,14 @@ Use `database.BaseModel` and existing database helpers where appropriate. Reuse 
 
 Keep persistence models separate from the public API contracts in `types/`.
 
+Schema migrations are Goose Go migrations in `backend/internal/database/migrations`. Version 94 is the Arcane v2.17.1 baseline, loaded from `baseline/{sqlite,postgres}.sql`; older databases must upgrade to v2.17.1 first. Add each new migration as `NNNNN_name.go`; Goose reads the version from the filename. Register it in `init()` with `goose.AddMigrationContext(run(…), run(…))`:
+
+- Use raw SQL only. Never import GORM, domain packages, or `types/`; lint enforces this.
+- Keep SQL in top-level constants. `run(sqlite, postgres)` picks the statements for the active dialect; pass the same constant twice when they match.
+- Use `goose.AddMigrationNoTxContext` only for work that cannot run in a transaction, such as SQLite table rebuilds with `PRAGMA foreign_keys=OFF`.
+- Provide a real `down` unless the change is an irreversible data cleanup.
+- Add an up/down test in `backend/internal/database/database_test.go`.
+
 ## CLI and shared types
 
 ```text
@@ -226,6 +222,7 @@ A thrown `APIError.message` already contains the server's message. Surface that 
 - Put every rendered string behind Paraglide messages.
 - Reuse a matching key from `frontend/messages/en.json` before adding one.
 - Add new keys only to `en.json`. Crowdin manages every other locale.
+- Name each key after its English text in snake_case, with no domain prefix: `"apply": "Apply"`, `"view_details": "View Details"`. Only full sentences get a short descriptive key, such as `"engine_info_description": "Detailed information about your container installation"`. Append new keys at the end of `en.json`. Existing keys keep their names until they are touched.
 - Generate Paraglide output through the existing tooling. Do not edit generated files by hand.
 
 ## Environments and authorization
@@ -248,8 +245,7 @@ Determine global admin status through `PermissionSet.IsGlobalAdmin()` or the use
 ## Runtime modes and jobs
 
 - Manager mode serves the UI and manages environments.
-- Direct agent mode uses `AGENT_MODE=true` and accepts manager connections.
-- Edge agent mode uses `EDGE_AGENT=true` with `MANAGER_API_URL` and dials the manager.
+- Edge agent mode uses `ARCANE_EDGE_AGENT=true` with `ARCANE_MANAGER_API_URL` and dials the manager.
 
 Background jobs implement the scheduler job contract. Wire them through `internal/di` and register them in `internal/bootstrap/jobs_bootstrap.go`.
 

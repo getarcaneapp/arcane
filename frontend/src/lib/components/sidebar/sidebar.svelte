@@ -1,7 +1,6 @@
 <script lang="ts" module>
 	import {
 		navigationItems,
-		getManagementItems,
 		getSwarmNavigationItems,
 		getPodmanNavigationItems,
 		filterByPermissions
@@ -12,19 +11,16 @@
 	import type { ComponentProps } from 'svelte';
 
 	import ActivityCenterTrigger from '#lib/components/activity/activity-center-trigger.svelte';
-	import EnvironmentSwitcherDialog from '#lib/components/dialogs/environment-switcher-dialog.svelte';
 	import VersionInfoDialog from '#lib/components/dialogs/version-info-dialog.svelte';
 	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
 	import { useSidebar } from '#lib/components/ui/sidebar/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { PermissionsManifest, User } from '#lib/types/auth.js';
 	import type { PodmanStatus } from '#lib/types/podman.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
 
-	import SidebarEnvSwitcher from './sidebar-env-switcher.svelte';
 	import SidebarItemGroup from './sidebar-itemgroup.svelte';
 	import SidebarLogo from './sidebar-logo.svelte';
 	import SidebarPinButton from './sidebar-pin-button.svelte';
@@ -59,25 +55,16 @@
 	const effectiveUser = $derived(storeUser.current ?? user);
 
 	const isCollapsed = $derived(sidebar.state === 'collapsed' && !(sidebar.hoverExpansionEnabled && sidebar.isHovered));
-	let envSwitcherOpen = $state(false);
-
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
-	const swarmItemsRaw = $derived(getSwarmNavigationItems(swarmEnabled, currentEnvId));
-
-	const managementItems = $derived(
-		filterByPermissions(managementItemsRaw, effectiveUser ?? null, currentEnvId, permissionsManifest)
+	const overviewItems = $derived(filterByPermissions(navigationItems.overviewItems, effectiveUser ?? null, permissionsManifest));
+	const deployItems = $derived(filterByPermissions(navigationItems.deployItems, effectiveUser ?? null, permissionsManifest));
+	const resourceItems = $derived(filterByPermissions(navigationItems.resourceItems, effectiveUser ?? null, permissionsManifest));
+	const swarmItems = $derived(
+		filterByPermissions(getSwarmNavigationItems(swarmEnabled), effectiveUser ?? null, permissionsManifest)
 	);
-	const resourceItems = $derived(
-		filterByPermissions(navigationItems.resourceItems, effectiveUser ?? null, currentEnvId, permissionsManifest)
-	);
-	const swarmItems = $derived(filterByPermissions(swarmItemsRaw, effectiveUser ?? null, currentEnvId, permissionsManifest));
 	const podmanItems = $derived(
-		filterByPermissions(getPodmanNavigationItems(podmanStatuses), effectiveUser ?? null, currentEnvId, permissionsManifest)
+		filterByPermissions(getPodmanNavigationItems(podmanStatuses), effectiveUser ?? null, permissionsManifest)
 	);
-	const settingsItems = $derived(
-		filterByPermissions(navigationItems.settingsItems, effectiveUser ?? null, currentEnvId, permissionsManifest)
-	);
+	const adminItems = $derived(filterByPermissions(navigationItems.adminItems, effectiveUser ?? null, permissionsManifest));
 </script>
 
 <VersionInfoDialog
@@ -86,8 +73,6 @@
 	versionInfo={versionInformation}
 	debugMode={false}
 />
-
-<EnvironmentSwitcherDialog bind:open={envSwitcherOpen} />
 
 <Sidebar.Root {collapsible} {variant} {...restProps}>
 	<Sidebar.Header collapsed={isCollapsed}>
@@ -105,13 +90,6 @@
 			{/if}
 		</div>
 		{#if isCollapsed}
-			<div class="flex justify-center px-1">
-				<SidebarEnvSwitcher onOpenDialog={() => (envSwitcherOpen = true)} podmanStatus={podmanStatuses[currentEnvId]} />
-			</div>
-		{:else}
-			<SidebarEnvSwitcher onOpenDialog={() => (envSwitcherOpen = true)} podmanStatus={podmanStatuses[currentEnvId]} />
-		{/if}
-		{#if isCollapsed}
 			<div class="flex justify-center px-1 pt-1">
 				<ActivityCenterTrigger collapsed compact />
 			</div>
@@ -126,8 +104,11 @@
 		{/if}
 	</Sidebar.Header>
 	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>
-		{#if managementItems.length > 0}
-			<SidebarItemGroup label={m.sidebar_management()} items={managementItems} />
+		{#if overviewItems.length > 0}
+			<SidebarItemGroup label={m.sidebar_overview()} items={overviewItems} />
+		{/if}
+		{#if deployItems.length > 0}
+			<SidebarItemGroup label={m.deploy()} items={deployItems} />
 		{/if}
 		{#if resourceItems.length > 0}
 			<SidebarItemGroup label={m.resources()} items={resourceItems} />
@@ -138,8 +119,8 @@
 		{#if podmanItems.length > 0}
 			<SidebarItemGroup label={m.podman()} items={podmanItems} />
 		{/if}
-		{#if settingsItems.length > 0}
-			<SidebarItemGroup label={m.sidebar_administration()} items={settingsItems} />
+		{#if adminItems.length > 0}
+			<SidebarItemGroup label={m.sidebar_administration()} items={adminItems} />
 		{/if}
 	</Sidebar.Content>
 	<Sidebar.Footer>

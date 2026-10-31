@@ -5,18 +5,16 @@ import (
 	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
+	"github.com/getarcaneapp/arcane/types/v3"
+	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/upload"
+	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
 type Handler struct {
@@ -27,29 +25,31 @@ type Handler struct {
 }
 
 type RestoreBackupInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	BackupID      string `path:"backupId" doc:"Backup ID"`
-}
-
-type RestoreBackupFilesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	BackupID      string `path:"backupId" doc:"Backup ID"`
-	Body          backup.RestoreSelection
+	Body          *types.BackupRestoreSelection `required:"false"`
+	EnvironmentID string                        `path:"id" doc:"Environment ID"`
+	VolumeName    string                        `path:"volumeName" doc:"Volume name"`
+	BackupID      string                        `path:"backupId" doc:"Backup ID"`
+	Action        string                        `query:"action" required:"true" enum:"restore,restorefiles" doc:"Restore action"`
 }
 
 type UploadAndRestoreInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	Body          uploadtypes.ConsumeRequest
+	Body          types.UploadConsumeRequest
 }
 
 func NewHandler(service *Service, activityService *activity.ActivityService, uploadService *upload.UploadService, appCtx context.Context) *Handler {
 	return &Handler{service: service, activityService: activityService, uploadService: uploadService, appCtx: appCtx}
 }
 
-func (h *Handler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) RestoreAction(ctx context.Context, input *RestoreBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if input.Action == "restorefiles" {
+		return h.restoreBackupFiles(ctx, input)
+	}
+	return h.restoreBackup(ctx, input)
+}
+
+func (h *Handler) restoreBackup(ctx context.Context, input *RestoreBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -58,7 +58,7 @@ func (h *Handler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
+		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "volume",
 		ResourceID:     input.VolumeName,
 		ResourceName:   input.VolumeName,
@@ -79,7 +79,11 @@ func (h *Handler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) 
 	return handlerutil.MessageOutput("Restore initiated successfully", activityID), nil
 }
 
-func (h *Handler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFilesInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) restoreBackupFiles(ctx context.Context, input *RestoreBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
+	selection := kit.FromPtr(input.Body)
+	if len(selection.Paths) == 0 && !selection.SelectAll {
+		return nil, huma.Error400BadRequest("restorefiles requires paths or selectAll")
+	}
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -88,7 +92,7 @@ func (h *Handler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFi
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
+		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "volume",
 		ResourceID:     input.VolumeName,
 		ResourceName:   input.VolumeName,
@@ -99,12 +103,12 @@ func (h *Handler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFi
 		Metadata: database.JSON{
 			"action":    "restore_volume_backup_files",
 			"backupId":  input.BackupID,
-			"paths":     input.Body.Paths,
-			"selectAll": input.Body.SelectAll,
-			"search":    input.Body.Search,
+			"paths":     selection.Paths,
+			"selectAll": selection.SelectAll,
+			"search":    selection.Search,
 		},
 	}, func(runtimeCtx context.Context) error {
-		return h.service.RestoreBackupFiles(runtimeCtx, input.VolumeName, input.BackupID, input.Body, *user)
+		return h.service.RestoreBackupFiles(runtimeCtx, input.VolumeName, input.BackupID, selection, *user)
 	})
 	if errors.Is(err, common.ErrBadRequest) {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -116,13 +120,13 @@ func (h *Handler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFi
 	return handlerutil.MessageOutput("Restore initiated successfully", activityID), nil
 }
 
-func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	file, session, cleanup, err := h.uploadService.Consume(ctx, uploadtypes.KindVolumeBackup, input.Body.UploadID)
+	file, session, cleanup, err := h.uploadService.Consume(ctx, types.UploadKindVolumeBackup, input.Body.UploadID)
 	if err != nil {
 		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
 			return nil, httpErr
@@ -134,7 +138,7 @@ func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreI
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
+		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "volume",
 		ResourceID:     input.VolumeName,
 		ResourceName:   input.VolumeName,

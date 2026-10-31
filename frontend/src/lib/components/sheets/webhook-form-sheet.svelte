@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { z } from 'zod/v4';
 
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
@@ -9,14 +10,14 @@
 	import { containerService } from '#lib/services/container-service.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { projectService } from '#lib/services/project-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { WebhookActionType, WebhookTargetType, CreateWebhook } from '#lib/types/environment.js';
+	import type { WebhookActionType, WebhookTargetType, WebhookCreate } from '#lib/types/environment.js';
+	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	type WebhookFormProps = {
 		open: boolean;
-		onSubmit: (data: CreateWebhook) => void;
+		onSubmit: (data: WebhookCreate, environmentId: string) => void;
 		isLoading: boolean;
 	};
 
@@ -80,6 +81,8 @@
 		}
 	}
 
+	let pickedEnvironmentId = $state('');
+	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'webhooks:create'));
 	let selectedTargetType = $state<WebhookTargetType>('container');
 	let selectedActionType = $state<WebhookActionType>(getDefaultActionType('container'));
 	let selectedTargetId = $state('');
@@ -87,16 +90,19 @@
 	let targetOptionsLoading = $state(false);
 	let loadGeneration = 0;
 	let actionTypeOptions = $derived(getActionTypeOptions(selectedTargetType));
+	const targetLabel = $derived.by(() => {
+		if (selectedTargetType === 'container') return m.container();
+		if (selectedTargetType === 'project') return m.project();
+		return m.webhook_target_resource_label_gitops();
+	});
 
 	const formSchema = z.object({
 		name: z.string().min(1, m.common_field_required({ field: m.common_name() }))
 	});
 
-	let formData = $derived({ name: '' });
-	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
+	const form = createForm<typeof formSchema>(formSchema, { name: '' });
 
-	async function loadTargetOptions(type: WebhookTargetType) {
+	async function loadTargetOptions(type: WebhookTargetType, envId: string) {
 		if (type === 'updater') {
 			targetOptions = [];
 			selectedTargetId = '';
@@ -108,11 +114,10 @@
 		try {
 			const operationResult1 = await tryCatch(
 				(async () => {
-					const envId = await environmentStore.getCurrentEnvironmentId();
 					let options: { label: string; value: string }[] = [];
 					if (type === 'container') {
 						const res = await containerService.getContainersForEnvironment(envId, { pagination: { page: 1, limit: 200 } });
-						options = res.data.map((c) => ({ value: c.id, label: c.names[0]?.replace(/^\//, '') ?? c.id }));
+						options = res.data.map((c) => ({ value: c.id, label: c.names[0] ?? c.id }));
 					} else if (type === 'project') {
 						const res = await projectService.getProjectsForEnvironment(envId, { pagination: { page: 1, limit: 200 } });
 						options = res.data.map((p) => ({ value: p.id, label: p.name }));
@@ -142,7 +147,13 @@
 		selectedTargetType = value as WebhookTargetType;
 		selectedActionType = getDefaultActionType(selectedTargetType);
 		selectedTargetId = '';
-		void loadTargetOptions(selectedTargetType);
+		void loadTargetOptions(selectedTargetType, environmentId);
+	}
+
+	function handleEnvironmentChange(value: string) {
+		pickedEnvironmentId = value;
+		selectedTargetId = '';
+		void loadTargetOptions(selectedTargetType, environmentId);
 	}
 
 	function handleSubmit() {
@@ -150,21 +161,25 @@
 		if (!data) return;
 		if (selectedTargetType !== 'updater' && !selectedTargetId) return;
 
-		onSubmit({
-			name: data.name,
-			targetType: selectedTargetType,
-			actionType: selectedActionType,
-			targetId: selectedTargetId
-		});
+		onSubmit(
+			{
+				name: data.name,
+				targetType: selectedTargetType,
+				actionType: selectedActionType,
+				targetId: selectedTargetId
+			},
+			environmentId
+		);
 	}
 
 	function handleOpenChange(newOpenState: boolean) {
 		open = newOpenState;
 		if (newOpenState) {
-			void loadTargetOptions(selectedTargetType);
+			void loadTargetOptions(selectedTargetType, environmentId);
 			return;
 		}
 		if (!newOpenState) {
+			pickedEnvironmentId = '';
 			selectedTargetType = 'container';
 			selectedActionType = getDefaultActionType('container');
 			selectedTargetId = '';
@@ -183,12 +198,17 @@
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+			<EnvironmentDestinationSelect
+				bind:value={() => environmentId, handleEnvironmentChange}
+				permission="webhooks:create"
+				variant="field"
+			/>
 			<FormInput
 				label={m.common_name()}
 				type="text"
 				placeholder={m.webhook_name_placeholder()}
 				description={m.webhook_name_description()}
-				bind:input={inputs.name}
+				bind:input={form.inputs.name}
 			/>
 
 			<SelectWithLabel
@@ -213,11 +233,7 @@
 			{#if selectedTargetType !== 'updater'}
 				<SelectWithLabel
 					id="webhook-target-id"
-					label={selectedTargetType === 'container'
-						? m.container()
-						: selectedTargetType === 'project'
-							? m.project()
-							: m.webhook_target_resource_label_gitops()}
+					label={targetLabel}
 					description={m.webhook_target_resource_description()}
 					bind:value={selectedTargetId}
 					options={targetOptions}

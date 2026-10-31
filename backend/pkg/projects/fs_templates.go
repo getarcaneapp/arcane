@@ -15,8 +15,8 @@ import (
 	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 // ReadFolderComposeTemplate stays on os.* for its reads: template folders are
@@ -185,8 +185,6 @@ func getDefaultComposeTemplate() string {
   nginx:
     image: nginx:alpine
     container_name: nginx_service
-    env_file:
-      - .env
     ports:
       - "${NGINX_HOST_PORT:-8080}:80"
     volumes:
@@ -267,7 +265,7 @@ STACK_RESTART_DELAY=5s
 
 func getDefaultEnvTemplate() string {
 	return `# Project variables
-# These values are interpolated into compose.yaml and passed to services via env_file.
+# These values are interpolated into compose.yaml.
 # Example syntax in compose.yaml:
 #   ports:
 #     - "${NGINX_HOST_PORT:-8080}:80"
@@ -372,6 +370,6 @@ func ResolveTemplateIconURL(ctx context.Context, composeContent, envContent stri
 		return nil
 	}
 
-	icon, _, _, _ := parseArcaneBlockInternal(ctx, project.Extensions[arcaneBlockKey])
+	icon, _, _, _ := parseArcaneBlock(ctx, project.Extensions[arcaneBlockKey])
 	return mo.EmptyableToOption(strings.TrimSpace(icon.Icon)).ToPointer()
 }

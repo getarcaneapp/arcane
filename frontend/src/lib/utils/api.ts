@@ -29,15 +29,17 @@ export function extractApiErrorMessage(error: any): string {
 	}
 }
 
-/**
- * Shows a toast for a failed upgrade, avoiding double-wrapping when the extracted
- * message is already the localized "upgrade failed" string. The localized message
- * factory is passed in so this utility stays free of paraglide imports.
- */
-export function toastUpgradeError(error: unknown, formatFailed: (args: { error: string }) => string): void {
-	const errorMessage = extractApiErrorMessage(error);
-	const wrappedPrefix = formatFailed({ error: '' });
-	toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : formatFailed({ error: errorMessage }));
+export function extractApiErrorField(error: unknown): string | undefined {
+	if (!(error instanceof APIError)) return undefined;
+	const field: unknown = error.response?.data?.details?.field;
+	return typeof field === 'string' ? field : undefined;
+}
+
+export function applyApiFieldError(inputs: Record<string, { error: string | null }>, error: unknown): boolean {
+	const input = inputs[extractApiErrorField(error) ?? ''];
+	if (!input) return false;
+	input.error = extractApiErrorMessage(error);
+	return true;
 }
 
 export async function handleApiResultWithCallbacks<T>({
@@ -78,7 +80,7 @@ export async function handleApiResultWithCallbacks<T>({
 
 // --- Page load error helpers ---
 
-function extractApiErrorStatus(err: unknown, fallbackStatus = 500): number {
+export function extractApiErrorStatus(err: unknown, fallbackStatus = 500): number {
 	if (err && typeof err === 'object') {
 		const maybeResponse = (err as { response?: { status?: unknown } }).response;
 		const responseStatus = maybeResponse?.status;
@@ -151,19 +153,4 @@ export async function parallelRefresh<T extends Record<string, RefreshTask<any>>
 			});
 		})
 	);
-}
-
-export async function simpleRefresh<T>(
-	fetch: () => Promise<T>,
-	onSuccess: (data: T) => void,
-	errorMessage: string,
-	setLoading: (loading: boolean) => void
-): Promise<void> {
-	setLoading(true);
-	await handleApiResultWithCallbacks({
-		result: await tryCatch(fetch()),
-		message: errorMessage,
-		setLoadingState: setLoading,
-		onSuccess
-	});
 }

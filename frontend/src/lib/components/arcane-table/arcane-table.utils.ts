@@ -7,7 +7,7 @@ import type { TableDisplayEntry } from '#lib/types/table-display.js';
 import type { PersistedPreferencesSnapshot } from '#lib/types/table-preferences.js';
 import { ENVIRONMENT_FILTER, environmentFilterIds, rowKey } from '#lib/utils/environments.js';
 
-import type { CompactTablePrefs, GroupedData } from './arcane-table.types.svelte';
+import type { CardSlot, CompactTablePrefs, GroupedData } from './arcane-table.types.svelte';
 import { decodeFilters, decodeSort } from './arcane-table.types.svelte';
 import type { ArcaneRow } from './table-features';
 
@@ -119,6 +119,7 @@ export function extractPersistedPreferences(
 		sort,
 		limit,
 		mobileVisibility: prefs.m,
+		viewMode: prefs.d,
 		customSettings: prefs.c
 	};
 }
@@ -165,4 +166,44 @@ export function getTableDisplayEntries<T extends RowData & { id: string }>(
 		appendRows(rows);
 	}
 	return entries;
+}
+
+const BADGE_COLUMNS = new Set([
+	'status',
+	'state',
+	'updates',
+	'update',
+	'enabled',
+	'inUse',
+	'severity',
+	'vulnSeverity',
+	'vulnerabilities',
+	'lastSyncStatus',
+	'availability',
+	'desiredState',
+	'currentState',
+	'backupState',
+	'isPublished',
+	'builtIn'
+]);
+const FOOTER_COLUMNS = new Set([
+	'createdAt',
+	'created',
+	'updatedAt',
+	'checkedAt',
+	'lastUsedAt',
+	'timestamp',
+	'scanTime',
+	'lastSyncAt',
+	'lastTriggeredAt',
+	'expiresAt'
+]);
+
+/** Where a column lands on a grid card. Titles are picked separately from the remaining fields. */
+export function getCardSlot(columnId: string, explicit?: CardSlot): CardSlot {
+	if (explicit) return explicit;
+	if (columnId === ENVIRONMENT_FILTER) return 'context';
+	if (BADGE_COLUMNS.has(columnId)) return 'badge';
+	if (FOOTER_COLUMNS.has(columnId)) return 'footer';
+	return 'field';
 }

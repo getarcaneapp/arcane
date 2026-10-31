@@ -12,13 +12,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/environment"
+	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/prompt"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/runtime"
 )
 
 // MaxPromptOptions caps how many search matches the resolver offers
@@ -28,16 +27,6 @@ const MaxPromptOptions = 20
 // ResourceRef resolves a resource from a name, ID, or prefix.
 // D is the detail shape and S is the list summary.
 type ResourceRef[D any, S any] struct {
-	EnvironmentScoped bool
-	// Singular and Plural name the resource in prompts and error messages
-	// ("container", "containers").
-	Singular string
-	Plural   string
-	// IDHint completes "use <IDHint> or run `<ListCmd>`" guidance
-	// ("the container ID", "the volume name").
-	IDHint  string
-	ListCmd string
-
 	// GetPath builds the GET-by-identifier path; ListPath the list endpoint
 	// that Resolve queries with ?search=<identifier>&limit=-1.
 	GetPath  func(envID, identifier string) string
@@ -65,14 +54,24 @@ type ResourceRef[D any, S any] struct {
 
 	// Exact identifies exact matches so a unique exact search result wins over substring matches.
 	Exact func(item S, identifierLower, original string) bool
+	// Singular and Plural name the resource in prompts and error messages
+	// ("container", "containers").
+	Singular string
+	Plural   string
+	// IDHint completes "use <IDHint> or run `<ListCmd>`" guidance
+	// ("the container ID", "the volume name").
+	IDHint  string
+	ListCmd string
+
+	EnvironmentScoped bool
 }
 
 type resourceCandidate[D any] struct {
 	details  *D
-	complete bool
-	exact    bool
 	envID    string
 	label    string
+	complete bool
+	exact    bool
 }
 
 // Fetch resolves an identifier and retrieves full detail when resolution returned only a summary.
@@ -103,9 +102,9 @@ func (ref ResourceRef[D, S]) Resolve(ctx context.Context, c *client.Client, iden
 		return nil, false, fmt.Errorf("%s identifier is required", ref.Singular)
 	}
 	app, _ := runtime.From(ctx)
-	preview := app.PreviewEnabled() && ref.EnvironmentScoped
-	environments := []environment.Environment{{ID: c.EnvID()}}
-	if preview {
+	allEnvironments := app.AllEnvironments() && ref.EnvironmentScoped
+	environments := []types.Environment{{ID: c.EnvID()}}
+	if allEnvironments {
 		var discoveryErr error
 		environments, discoveryErr = app.Environments(ctx)
 		if discoveryErr != nil {
@@ -115,7 +114,7 @@ func (ref ResourceRef[D, S]) Resolve(ctx context.Context, c *client.Client, iden
 	}
 	originalEnv := c.EnvID()
 	defer func() {
-		if preview && app.PreviewEnabled() {
+		if allEnvironments && app.AllEnvironments() {
 			c.SetEnvironment(originalEnv)
 		}
 	}()
@@ -126,16 +125,16 @@ func (ref ResourceRef[D, S]) Resolve(ctx context.Context, c *client.Client, iden
 			return nil, false, cancelErr
 		}
 		c.SetEnvironment(env.ID)
-		matches, lookupErr := ref.candidates(ctx, c, identifier, allowPrompt, preview)
+		matches, lookupErr := ref.candidates(ctx, c, identifier, allowPrompt, allEnvironments)
 		switch {
-		case lookupErr != nil && !preview:
+		case lookupErr != nil && !allEnvironments:
 			return nil, false, lookupErr
 		case lookupErr != nil:
 			failures = append(failures, fmt.Errorf("%s (%s): %w", cmp.Or(env.Name, env.ID), env.ID, lookupErr))
 		}
 		for i := range matches {
 			matches[i].envID = env.ID
-			if preview {
+			if allEnvironments {
 				matches[i].label = fmt.Sprintf("%s — %s (%s)", matches[i].label, cmp.Or(env.Name, env.ID), env.ID)
 			}
 		}
@@ -144,17 +143,17 @@ func (ref ResourceRef[D, S]) Resolve(ctx context.Context, c *client.Client, iden
 	if slices.ContainsFunc(candidates, func(item resourceCandidate[D]) bool { return item.exact }) {
 		candidates = slices.DeleteFunc(candidates, func(item resourceCandidate[D]) bool { return !item.exact })
 	}
-	for _, failure := range failures {
-		output.Warning("%v", failure)
-	}
 	if len(candidates) == 0 {
 		return nil, false, errors.Join(append(failures, fmt.Errorf("%s %q not found; use %s or run `%s`", ref.Singular, identifier, ref.IDHint, ref.ListCmd))...)
+	}
+	for _, failure := range failures {
+		output.Warning("%v", failure)
 	}
 	choice := 0
 	prompted := false
 	if len(candidates) > 1 || len(failures) > 0 {
 		if !allowPrompt {
-			if preview {
+			if allEnvironments {
 				return nil, false, fmt.Errorf("%s %q requires an environment selection; pass --env <id> or run `%s`", ref.Singular, identifier, ref.ListCmd)
 			}
 			return nil, false, fmt.Errorf("multiple %s match %q; use %s or run `%s`", ref.Plural, identifier, ref.IDHint, ref.ListCmd)
@@ -174,11 +173,11 @@ func (ref ResourceRef[D, S]) Resolve(ctx context.Context, c *client.Client, iden
 		}
 	}
 	selected := candidates[choice]
-	if preview {
+	if allEnvironments {
 		app.SelectEnvironment(selected.envID)
 		c.SetEnvironment(selected.envID)
 	}
-	if preview && !prompted {
+	if allEnvironments && !prompted {
 		_, _ = fmt.Fprintf(output.Stderr(), "Selected %s: %s\n", ref.Singular, selected.label)
 	}
 	return selected.details, selected.complete, nil
@@ -249,8 +248,8 @@ func (ref ResourceRef[D, S]) fetchByIdentifier(ctx context.Context, c *client.Cl
 
 	if resp.StatusCode == http.StatusOK {
 		var result struct {
-			base.ApiResponse[D]
-			base.ErrorResponse
+			types.ErrorResponse
+			types.ApiResponse[D]
 		}
 		if unmarshalErr := json.Unmarshal(body, &result); unmarshalErr != nil {
 			return nil, false, fmt.Errorf("failed to parse %s response: %w", ref.Singular, unmarshalErr)
@@ -321,8 +320,8 @@ func (ref ResourceRef[D, S]) listItems(ctx context.Context, c *client.Client, pa
 	}
 
 	var result struct {
-		base.ApiResponse[[]S]
-		base.ErrorResponse
+		types.ErrorResponse
+		types.ApiResponse[[]S]
 	}
 	if unmarshalErr := json.Unmarshal(body, &result); unmarshalErr != nil {
 		return nil, fmt.Errorf("failed to parse %s response: %w", ref.Plural, unmarshalErr)

@@ -14,10 +14,10 @@ type PaginationResourceConfig struct {
 
 // PaginationConfig contains global and per-resource pagination settings.
 type PaginationConfig struct {
-	// Default applies to paginated resources that do not have explicit per-resource config.
-	Default PaginationResourceConfig `yaml:"default,omitempty"`
 	// Resources contains per-resource pagination settings keyed by resource name.
 	Resources map[string]PaginationResourceConfig `yaml:"resources,omitempty"`
+	// Default applies to paginated resources that do not have explicit per-resource config.
+	Default PaginationResourceConfig `yaml:"default,omitempty"`
 }
 
 // KnownPaginatedResources is the canonical list of paginated CLI resources.
@@ -79,34 +79,30 @@ func NormalizePaginatedResource(resource string) string {
 
 // PreviewsConfig contains optional CLI preview features.
 type PreviewsConfig struct {
-	AllEnvironments bool `yaml:"allEnvironments"`
-	NewSelfUpdater  bool `yaml:"newSelfUpdater"`
+	NewSelfUpdater bool `yaml:"newSelfUpdater"`
 }
 
 // Config holds the CLI configuration for connecting to an Arcane server.
 // It is persisted to disk as YAML and loaded on each CLI invocation.
 type Config struct {
+	// Pagination contains global and per-resource pagination configuration.
+	Pagination PaginationConfig `yaml:"pagination,omitempty"`
 	// ServerURL is the base URL of the Arcane server (e.g., http://localhost:3552)
 	ServerURL string `yaml:"server_url"`
 	// APIKey is the API key for authentication (sent as X-API-KEY)
 	APIKey string `yaml:"api_key,omitempty"`
-	// JWTToken is the access token sent as Authorization: Bearer. It is saved in auth.json;
-	// the config file key is only read as a fallback until v3.
-	JWTToken string `yaml:"jwt_token,omitempty"`
+	// JWTToken is the access token sent as Authorization: Bearer. It is saved in auth.json.
+	JWTToken string `yaml:"-"`
 	// RefreshToken obtains new access tokens. Saved and read like JWTToken.
-	RefreshToken string `yaml:"refresh_token,omitempty"`
-	// Previews contains optional CLI preview features.
-	Previews PreviewsConfig `yaml:"previews"`
-	// DefaultEnvironment is the default environment ID to use
-	DefaultEnvironment string `yaml:"default_environment,omitempty"`
+	RefreshToken string `yaml:"-"`
 	// FederatedAudience is the default token audience for `arcane-cli auth federated`
 	FederatedAudience string `yaml:"federated_audience,omitempty"`
 	// LogLevel is the logging level (debug, info, warn, error, fatal, panic)
 	LogLevel string `yaml:"log_level,omitempty"`
 	// CLIUpdateChannel controls which channel self-update uses (stable or next).
 	CLIUpdateChannel string `yaml:"cli_update_channel,omitempty"`
-	// Pagination contains global and per-resource pagination configuration.
-	Pagination PaginationConfig `yaml:"pagination,omitempty"`
+	// Previews contains optional CLI preview features.
+	Previews PreviewsConfig `yaml:"previews"`
 }
 
 // HasAuth returns true if either an API key or JWT token is configured.

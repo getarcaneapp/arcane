@@ -1,15 +1,15 @@
 import type { JobRun, JobRunList } from '#lib/types/job.js';
-import type { JobSchedules, JobSchedulesUpdate, JobListResponse, JobRunResponse } from '#lib/types/settings.js';
+import type { JobScheduleConfig, JobScheduleConfigUpdate, JobListResponse, JobRunResponse } from '#lib/types/settings.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 class JobScheduleService extends BaseAPIService {
-	async getJobSchedules(environmentId: string = '0'): Promise<JobSchedules> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/job-schedules`));
+	async getJobSchedules(environmentId: string = '0'): Promise<JobScheduleConfig> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/jobs/schedules`));
 	}
 
-	async updateJobSchedules(update: JobSchedulesUpdate, environmentId: string = '0'): Promise<JobSchedules> {
-		return this.handleResponse(this.api.put(`/environments/${environmentId}/job-schedules`, update));
+	async updateJobSchedules(update: JobScheduleConfigUpdate, environmentId: string = '0'): Promise<JobScheduleConfig> {
+		return this.handleResponse(this.api.patch(`/environments/${environmentId}/jobs/schedules`, update));
 	}
 
 	async listJobs(environmentId: string = '0', config?: APIRequestConfig): Promise<JobListResponse> {
@@ -17,7 +17,9 @@ class JobScheduleService extends BaseAPIService {
 	}
 
 	async runJob(jobId: string, environmentId: string = '0'): Promise<JobRunResponse> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/jobs/${encodeURIComponent(jobId)}/run`));
+		return this.handleResponse(
+			this.api.post(`/environments/${environmentId}/jobs/${encodeURIComponent(jobId)}`, undefined, { params: { action: 'run' } })
+		);
 	}
 	async listRuns(jobId: string, environmentId: string, page = 1): Promise<JobRunList> {
 		return this.handleResponse(
@@ -32,12 +34,20 @@ class JobScheduleService extends BaseAPIService {
 	async updateRun(jobId: string, runId: string, action: 'retry' | 'cancel', environmentId: string): Promise<JobRun> {
 		return this.handleResponse(
 			this.api.post(
-				`/environments/${environmentId}/jobs/${encodeURIComponent(jobId)}/runs/${encodeURIComponent(runId)}/${action}`
+				`/environments/${environmentId}/jobs/${encodeURIComponent(jobId)}/runs/${encodeURIComponent(runId)}`,
+				undefined,
+				{
+					params: { action }
+				}
 			)
 		);
 	}
 	async restartWorker(jobId: string, environmentId: string): Promise<{ success: boolean; message: string }> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/jobs/${encodeURIComponent(jobId)}/restart`));
+		return this.handleResponse(
+			this.api.post(`/environments/${environmentId}/jobs/${encodeURIComponent(jobId)}`, undefined, {
+				params: { action: 'restart' }
+			})
+		);
 	}
 }
 

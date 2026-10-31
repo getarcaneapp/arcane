@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import type { ResolvedPathname } from '$app/types';
 	import { flushSync } from 'svelte';
 
 	import {
@@ -114,7 +115,7 @@
 		return button.icon ?? (actionConfigs[button.action] as ActionConfig).IconComponent;
 	}
 
-	function activate(target: { onclick?: () => void; href?: string }) {
+	function activate(target: { onclick?: () => void; href?: ResolvedPathname }) {
 		if (target.href) {
 			void goto(target.href);
 			return;

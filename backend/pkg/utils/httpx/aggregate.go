@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 const (
@@ -29,23 +29,23 @@ const (
 
 var errEnvironmentResponseTooLarge = errors.New("response too large")
 
-type EnvironmentResolver func(ctx context.Context, id string) (base.EnvironmentRef, error)
+type EnvironmentResolver func(ctx context.Context, id string) (types.EnvironmentRef, error)
 
 type EnvironmentScope struct {
-	IDs     []string
-	Request *http.Request // clone of the outer request captured before auth; carries no scope
 	Handler http.Handler  // the Echo instance, for in-process re-dispatch
+	Request *http.Request // clone of the outer request captured before auth; carries no scope
 	Resolve EnvironmentResolver
+	IDs     []string
 }
 
 type EnvironmentResult[R any] struct {
-	Environment base.EnvironmentRef
 	Value       R
+	Environment types.EnvironmentRef
 }
 
 type EnvironmentCollection[R any] struct {
 	Results  []EnvironmentResult[R]
-	Failures []base.EnvironmentFailure
+	Failures []types.EnvironmentFailure
 }
 
 type environmentScopeKey struct{}
@@ -64,6 +64,11 @@ func EnvironmentScopeFromContext(ctx context.Context) (*EnvironmentScope, bool) 
 	return scope, scope != nil
 }
 
+func IsEnvironmentFanOutRequest(ctx context.Context) bool {
+	_, ok := ctx.Value(environmentScopeKey{}).(*EnvironmentScope)
+	return ok
+}
+
 func CollectEnvironments[R any](ctx context.Context, overrides url.Values) (EnvironmentCollection[R], error) {
 	scope, ok := EnvironmentScopeFromContext(ctx)
 	if !ok {
@@ -76,56 +81,61 @@ func CollectEnvironments[R any](ctx context.Context, overrides url.Values) (Envi
 	var group errgroup.Group
 	group.SetLimit(environmentConcurrency)
 	for i, id := range scope.IDs {
-		group.Go(func() (workerErr error) {
-			defer func() { outcomes[i].err = workerErr }()
-			defer utils.RecoverToError(&workerErr, "environment aggregate worker", "environmentId", id)
-			outcomes[i].value, workerErr = dispatchEnvironment[R](collectCtx, scope, id, overrides)
-			return workerErr
+		group.Go(func() error {
+			value, err := dispatchEnvironment[R](collectCtx, scope, id, overrides)
+			outcomes[i] = environmentOutcome[R]{value: value, err: err}
+			return nil
 		})
 	}
 	_ = group.Wait()
 
-	collection := EnvironmentCollection[R]{Results: make([]EnvironmentResult[R], 0, len(scope.IDs))}
+	results := make([]EnvironmentResult[R], 0, len(scope.IDs))
+	var failures []types.EnvironmentFailure
 	for i, id := range scope.IDs {
-		outcome := outcomes[i]
-		if outcome.err != nil {
-			collection.Failures = append(collection.Failures, base.EnvironmentFailure{Environment: base.EnvironmentRef{ID: id, Name: id}, Message: outcome.err.Error()})
+		if outcomes[i].err != nil {
+			failures = append(failures, types.EnvironmentFailure{
+				Environment: types.EnvironmentRef{ID: id, Name: id},
+				Message:     outcomes[i].err.Error(),
+			})
 			continue
 		}
-		ref := base.EnvironmentRef{ID: id, Name: id}
-		if scope.Resolve != nil {
-			if resolved, err := scope.Resolve(ctx, id); err == nil {
-				ref = resolved
-			}
-		}
-		collection.Results = append(collection.Results, EnvironmentResult[R]{Environment: ref, Value: outcome.value})
+		resolved, err := scope.Resolve(ctx, id)
+		results = append(results, EnvironmentResult[R]{
+			Environment: kit.Ternary(err == nil, resolved, types.EnvironmentRef{ID: id, Name: id}),
+			Value:       outcomes[i].value,
+		})
 	}
-	return collection, nil
+	return EnvironmentCollection[R]{Results: results, Failures: failures}, nil
 }
 
-func dispatchEnvironment[R any](ctx context.Context, scope *EnvironmentScope, id string, overrides url.Values) (R, error) {
-	var value R
+func CollectEnvironmentData[T any](ctx context.Context, overrides url.Values, merge func([]types.EnvironmentData[T]) T) (types.ApiResponse[T], error) {
+	collection, err := CollectEnvironments[types.ApiResponse[T]](ctx, overrides)
+	if err != nil {
+		return types.ApiResponse[T]{}, err
+	}
+	environments := make([]types.EnvironmentData[T], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		environments = append(environments, types.EnvironmentData[T]{
+			Environment: result.Environment,
+			Data:        result.Value.Data,
+		})
+	}
+	return types.ApiResponse[T]{
+		Success:            true,
+		Data:               merge(environments),
+		Environments:       environments,
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
+func dispatchEnvironment[R any](ctx context.Context, scope *EnvironmentScope, id string, overrides url.Values) (value R, err error) {
+	defer utils.RecoverToError(&err, "environment aggregate worker", "environmentId", id)
 	rest, ok := strings.CutPrefix(scope.Request.URL.EscapedPath(), environmentsPathPrefix)
 	if !ok {
 		return value, errors.New("request is not environment-scoped")
 	}
 	_, suffix, hasSuffix := strings.Cut(rest, "/")
-	target, err := url.Parse(environmentsPathPrefix + url.PathEscape(id) + kit.Ternary(hasSuffix, "/"+suffix, ""))
-	if err != nil {
-		return value, fmt.Errorf("invalid environment path: %w", err)
-	}
-
-	limit := time.Now().Add(environmentRequestTimeout)
-	deadline, hasDeadline := ctx.Deadline()
-	requestCtx, cancel := context.WithDeadline(scope.Request.Context(), kit.Ternary(hasDeadline && deadline.Before(limit), deadline, limit))
-	defer cancel()
-	stop := context.AfterFunc(ctx, cancel)
-	defer stop()
-
-	request := scope.Request.Clone(WithEnvironmentScope(requestCtx, nil))
-	request.Body, request.GetBody, request.ContentLength = http.NoBody, nil, 0
-	request.URL.Path, request.URL.RawPath = target.Path, target.RawPath
-	query := request.URL.Query()
+	query := scope.Request.URL.Query()
 	for key, values := range overrides {
 		if len(values) == 0 {
 			query.Del(key)
@@ -137,15 +147,38 @@ func dispatchEnvironment[R any](ctx context.Context, scope *EnvironmentScope, id
 		query.Del("sort")
 		query.Del("order")
 	}
-	request.URL.RawQuery = query.Encode()
-	request.RequestURI = request.URL.RequestURI()
-	request.Header.Set("Accept", "application/json")
-	request.Header.Del("Accept-Encoding")
-	request.Header.Del("If-None-Match")
-	request.Header.Del("If-Modified-Since")
+	target, err := url.Parse(environmentsPathPrefix + url.PathEscape(id) + kit.Ternary(hasSuffix, "/"+suffix, "") +
+		kit.Ternary(len(query) > 0, "?", "") + query.Encode())
+	if err != nil {
+		return value, fmt.Errorf("invalid environment path: %w", err)
+	}
+
+	deadline, _ := ctx.Deadline()
+	requestCtx, cancel := context.WithDeadline(scope.Request.Context(), deadline)
+	defer cancel()
+	stop := context.AfterFunc(ctx, cancel)
+	defer stop()
+
+	header := scope.Request.Header.Clone()
+	header.Set("Accept", "application/json")
+	header.Del("Accept-Encoding")
+	header.Del("If-None-Match")
+	header.Del("If-Modified-Since")
 
 	writer := &boundedResponseWriter{header: http.Header{}}
-	scope.Handler.ServeHTTP(writer, request)
+	scope.Handler.ServeHTTP(writer, (&http.Request{
+		Method:     scope.Request.Method,
+		URL:        target,
+		Proto:      scope.Request.Proto,
+		ProtoMajor: scope.Request.ProtoMajor,
+		ProtoMinor: scope.Request.ProtoMinor,
+		Header:     header,
+		Body:       http.NoBody,
+		Host:       scope.Request.Host,
+		RemoteAddr: scope.Request.RemoteAddr,
+		RequestURI: target.RequestURI(),
+		TLS:        scope.Request.TLS,
+	}).WithContext(WithEnvironmentScope(requestCtx, nil)))
 	status := cmp.Or(writer.status, http.StatusOK)
 	switch {
 	case writer.overflow:
@@ -175,8 +208,8 @@ func dispatchEnvironment[R any](ctx context.Context, scope *EnvironmentScope, id
 
 type boundedResponseWriter struct {
 	header   http.Header
-	status   int
 	body     bytes.Buffer
+	status   int
 	overflow bool
 }
 

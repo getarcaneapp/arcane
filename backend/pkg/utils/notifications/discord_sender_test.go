@@ -10,9 +10,9 @@ import (
 
 func TestBuildDiscordURL(t *testing.T) {
 	tests := []struct {
-		name   string
-		config DiscordConfig
 		check  func(string) bool
+		config DiscordConfig
+		name   string
 	}{
 		{
 			name: "basic webhook configuration",

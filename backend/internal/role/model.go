@@ -1,6 +1,6 @@
 package role
 
-import "github.com/getarcaneapp/arcane/backend/v2/internal/database"
+import "github.com/getarcaneapp/arcane/backend/v3/internal/database"
 
 // Role is a named permission set. Built-in roles (Admin, Editor, Deployer,
 // Viewer) are seeded by migration 054 and cannot be edited or deleted.
@@ -49,9 +49,10 @@ const (
 type ApiKeyPermission struct {
 	database.BaseModel
 
-	ApiKeyID      string  `json:"apiKeyId" gorm:"column:api_key_id;not null;index"`
-	Permission    string  `json:"permission" gorm:"column:permission;not null"`
 	EnvironmentID *string `json:"environmentId,omitempty" gorm:"column:environment_id"`
+
+	ApiKeyID   string `json:"apiKeyId" gorm:"column:api_key_id;not null;index"`
+	Permission string `json:"permission" gorm:"column:permission;not null"`
 }
 
 func (ApiKeyPermission) TableName() string { return "api_key_permissions" }

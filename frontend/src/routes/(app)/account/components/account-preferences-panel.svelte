@@ -16,13 +16,15 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { getLayoutMode, layoutModeStore, type LayoutMode } from '#lib/stores/layout-mode.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { ProjectEditorLayout, UserPreferences } from '#lib/types/auth.js';
+	import type { EditorTabWidth, ProjectEditorLayout, ToastPosition, UserPreferences } from '#lib/types/auth.js';
 	import type { ApplicationTheme, IconCatalog } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
 	import { getMobileNavigation } from '#lib/utils/navigation.js';
 	import { applyAccentColor, applyGlassEffects, applyInterfaceAnimations, applyOledMode } from '#lib/utils/theme.svelte.js';
 	import { saveUserPreferences } from '#lib/utils/user-preferences.js';
 	import { debounced } from '#lib/utils/ws.js';
+
+	import AllEnvironmentsPreferences from './all-environments-preferences.svelte';
 
 	const mobileNavigation = getMobileNavigation();
 	const currentUser = $derived(userStore.current);
@@ -51,6 +53,7 @@
 			description: m.icon_catalog_dashboard_icons_description()
 		}
 	]);
+	const editorTabWidthOptions = $derived([2, 4, 8].map((count) => ({ value: String(count), label: m.spaces_count({ count }) })));
 	const projectEditorLayoutOptions = $derived([
 		{ value: 'auto', label: m.automatic(), description: m.project_editor_layout_auto_description() },
 		{ value: 'classic', label: m.classic(), description: m.project_editor_layout_classic_description() },
@@ -63,6 +66,16 @@
 		{ value: 'auto', label: m.automatic(), description: m.layout_mode_auto_description() },
 		{ value: 'mobile', label: m.layout_mode_mobile(), description: m.layout_mode_mobile_description() },
 		{ value: 'desktop', label: m.layout_mode_desktop(), description: m.layout_mode_desktop_description() }
+	]);
+	const toastPositionValue = $derived<ToastPosition>(preferences.toastPosition ?? 'auto');
+	const toastPositionOptions = $derived([
+		{ value: 'auto', label: m.automatic(), description: m.toast_position_auto_description() },
+		{ value: 'top-left', label: m.toast_position_top_left() },
+		{ value: 'top-center', label: m.toast_position_top_center() },
+		{ value: 'top-right', label: m.toast_position_top_right() },
+		{ value: 'bottom-left', label: m.toast_position_bottom_left() },
+		{ value: 'bottom-center', label: m.toast_position_bottom_center() },
+		{ value: 'bottom-right', label: m.toast_position_bottom_right() }
 	]);
 	const landingPageOptions = $derived(getLandingPageNavItems().map((item) => ({ value: item.url, label: item.title })));
 	const landingValue = $derived.by(() => {
@@ -110,6 +123,19 @@
 				/>
 			</div>
 		</SettingsRow>
+		<SettingsRow label={m.editor_tab_width()} description={m.editor_tab_width_description()} layout="switch">
+			<div class="w-52">
+				<SelectWithLabel
+					id="account-editor-tab-width"
+					label={m.editor_tab_width()}
+					hideLabel
+					triggerSize="sm"
+					value={String(preferences.editorTabWidth ?? 2)}
+					options={editorTabWidthOptions}
+					onValueChange={(value) => void saveUserPreferences({ editorTabWidth: Number(value) as EditorTabWidth })}
+				/>
+			</div>
+		</SettingsRow>
 	</SettingsSection>
 
 	<SettingsSection title={m.appearance_title()}>
@@ -129,6 +155,19 @@
 					value={layoutModeValue}
 					options={layoutModeOptions}
 					onValueChange={(value) => (layoutModeStore.current = value as LayoutMode)}
+				/>
+			</div>
+		</SettingsRow>
+		<SettingsRow label={m.toast_position()} description={m.toast_position_description()} layout="switch">
+			<div class="w-52">
+				<SelectWithLabel
+					id="account-toast-position"
+					label={m.toast_position()}
+					hideLabel
+					triggerSize="sm"
+					value={toastPositionValue}
+					options={toastPositionOptions}
+					onValueChange={(value) => void saveUserPreferences({ toastPosition: value as ToastPosition })}
 				/>
 			</div>
 		</SettingsRow>
@@ -273,4 +312,6 @@
 			/>
 		</SettingsRow>
 	</SettingsSection>
+
+	<AllEnvironmentsPreferences />
 </div>

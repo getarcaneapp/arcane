@@ -9,7 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/term"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 )
 
 // IsInteractive reports whether stdin is a terminal.
@@ -66,8 +66,8 @@ func Select(label string, options []string) (int, error) {
 }
 
 type selectItem struct {
-	index int
 	title string
+	index int
 }
 
 func (i selectItem) Title() string       { return i.title }

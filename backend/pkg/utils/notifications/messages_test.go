@@ -4,8 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
-	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +25,7 @@ func TestNtfyNotificationMessagesVisualLayout(t *testing.T) {
 					MessageFormatNtfyMarkdown,
 					"Local Docker",
 					"binwiederhier/ntfy:latest",
-					&imageupdate.Response{
+					&types.ImageUpdateResponse{
 						HasUpdate:     true,
 						UpdateType:    "digest",
 						CurrentDigest: currentDigest,
@@ -52,12 +51,13 @@ func TestNtfyNotificationMessagesVisualLayout(t *testing.T) {
 				return BuildBatchImageUpdateNotificationMessage(
 					MessageFormatNtfyMarkdown,
 					"Local Docker",
-					map[string]*imageupdate.Response{
+					map[string]*types.ImageUpdateResponse{
 						"binwiederhier/ntfy:latest": {
 							HasUpdate:     true,
 							UpdateType:    "digest",
 							CurrentDigest: currentDigest,
 							LatestDigest:  latestDigest,
+							ReleaseURL:    "https://github.com/binwiederhier/ntfy/releases",
 						},
 						"postgres:18": {
 							HasUpdate:      true,
@@ -66,6 +66,7 @@ func TestNtfyNotificationMessagesVisualLayout(t *testing.T) {
 							LatestVersion:  "18",
 						},
 					},
+					false,
 				)
 			},
 			contains: []string{
@@ -77,6 +78,39 @@ func TestNtfyNotificationMessagesVisualLayout(t *testing.T) {
 			notContains: []string{
 				"Container Image Updates Available",
 				"Type:",
+				"Release notes",
+			},
+		},
+		{
+			name: "batch image updates with release links",
+			build: func() string {
+				return BuildBatchImageUpdateNotificationMessage(
+					MessageFormatNtfyMarkdown,
+					"Local Docker",
+					map[string]*types.ImageUpdateResponse{
+						"binwiederhier/ntfy:latest": {
+							HasUpdate:     true,
+							UpdateType:    "digest",
+							CurrentDigest: currentDigest,
+							LatestDigest:  latestDigest,
+							ReleaseURL:    "https://github.com/binwiederhier/ntfy/releases",
+						},
+						"postgres:18": {
+							HasUpdate:      true,
+							UpdateType:     "tag",
+							CurrentVersion: "17",
+							LatestVersion:  "18",
+						},
+					},
+					true,
+				)
+			},
+			contains: []string{
+				"🔄 `sha256:6ef4b8...` → `sha256:4c599c...`\n   📝 [Release notes](https://github.com/binwiederhier/ntfy/releases)\n",
+				"🔄 `17` → `18`\n",
+			},
+			notContains: []string{
+				"🔄 `17` → `18`\n   📝",
 			},
 		},
 		{
@@ -218,7 +252,7 @@ func TestNtfyNotificationMessagesVisualLayout(t *testing.T) {
 				return BuildPruneReportNotificationMessage(
 					MessageFormatNtfyMarkdown,
 					"Local Docker",
-					&system.PruneAllResult{
+					&types.PruneAllResult{
 						SpaceReclaimed:           3825205248,
 						ContainerSpaceReclaimed:  503316480,
 						ImageSpaceReclaimed:      2449473536,
@@ -285,7 +319,7 @@ func TestNtfyImageUpdateTagUsesVersions(t *testing.T) {
 		MessageFormatNtfyMarkdown,
 		"Local Docker",
 		"example/app:1.2",
-		&imageupdate.Response{
+		&types.ImageUpdateResponse{
 			HasUpdate:      true,
 			UpdateType:     "tag",
 			CurrentVersion: "1.2.3",
@@ -297,4 +331,39 @@ func TestNtfyImageUpdateTagUsesVersions(t *testing.T) {
 
 	require.Contains(t, message, "🔄 `1.2.3` → `1.3.0`")
 	require.NotContains(t, message, "sha256:")
+}
+
+func TestBuildBatchImageUpdateNotificationMessage_ReleaseLinksByFormat(t *testing.T) {
+	updates := map[string]*types.ImageUpdateResponse{
+		"nginx:latest": {
+			HasUpdate:     true,
+			UpdateType:    "digest",
+			CurrentDigest: "sha256:aaa",
+			LatestDigest:  "sha256:bbb",
+			ReleaseURL:    "https://github.com/nginx/nginx/releases",
+		},
+		"postgres:18": {
+			HasUpdate:      true,
+			UpdateType:     "tag",
+			CurrentVersion: "17",
+			LatestVersion:  "18",
+		},
+	}
+	tests := []struct {
+		format MessageFormat
+		want   string
+	}{
+		{format: MessageFormatPlain, want: "• Latest: sha256:bbb\n• Release notes: https://github.com/nginx/nginx/releases\n\npostgres:18\n"},
+		{format: MessageFormatMarkdown, want: "• **Release notes:** <https://github.com/nginx/nginx/releases>\n\n**postgres:18**\n"},
+		{format: MessageFormatSlack, want: "• <https://github.com/nginx/nginx/releases|Release notes>\n\n*postgres:18*\n"},
+		{format: MessageFormatHTML, want: "• <b>Release notes:</b> <a href=\"https://github.com/nginx/nginx/releases\">https://github.com/nginx/nginx/releases</a>\n\n<b>postgres:18</b>\n"},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.format), func(t *testing.T) {
+			enabled := BuildBatchImageUpdateNotificationMessage(tt.format, "Local Docker", updates, true)
+			require.Contains(t, enabled, tt.want)
+			require.Equal(t, 1, strings.Count(enabled, "Release notes"))
+			require.NotContains(t, BuildBatchImageUpdateNotificationMessage(tt.format, "Local Docker", updates, false), "Release notes")
+		})
+	}
 }

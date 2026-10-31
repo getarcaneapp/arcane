@@ -1,25 +1,28 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
+	import { SettingLock } from '#lib/components/badges/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import { AlertTriangleIcon } from '#lib/icons/index.js';
+	import { AlertTriangleIcon, LayersIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { MixedSettingValue, SettingState } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
 
-	// One setting: label and description on the left, the control on the right.
-	// `switch` keeps a compact right-aligned control; `wide` drops the control under the label.
+	import MixedValuesPopover from './mixed-values-popover.svelte';
+
 	interface Props {
 		label: string;
 		description?: string;
 		helpText?: string | Snippet;
-		/** Caution shown as a small warning alert; use for side effects worth a second look. */
 		warningText?: string;
 		error?: string | null;
-		/** Id of the control, so the label focuses it. */
 		for?: string;
 		layout?: 'default' | 'switch' | 'wide';
 		labelExtra?: Snippet;
-		/** Extra content under the row (e.g. fields revealed by a switch), indented. */
+		lock?: SettingState;
+		mixed?: MixedSettingValue[];
 		expanded?: Snippet;
 		contentClass?: string;
 		class?: string;
@@ -35,6 +38,8 @@
 		for: htmlFor,
 		layout = 'default',
 		labelExtra,
+		lock,
+		mixed,
 		expanded,
 		contentClass,
 		class: className,
@@ -47,7 +52,9 @@
 		<p class="mt-1.5 text-xs font-medium text-destructive">{error}</p>
 	{/if}
 	{#if typeof helpText === 'function'}
-		<div class="mt-1.5 text-xs text-muted-foreground">{@render helpText()}</div>
+		<div class="mt-1.5 text-xs text-muted-foreground">
+			{@render helpText()}
+		</div>
 	{:else if helpText}
 		<p class="mt-1.5 text-xs text-muted-foreground">{helpText}</p>
 	{/if}
@@ -68,9 +75,27 @@
 		)}
 	>
 		<div class="min-w-0">
-			<Label for={htmlFor}>{label}</Label>
+			<div class="flex flex-wrap items-center gap-2">
+				<Label for={htmlFor}>{label}</Label>
+				{#if lock?.locked}
+					<SettingLock {lock} />
+				{/if}
+				{#if mixed}
+					<MixedValuesPopover
+						values={mixed}
+						class="rounded-full focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+					>
+						<Badge variant="gray">
+							<LayersIcon />
+							{m.mixed()}
+						</Badge>
+					</MixedValuesPopover>
+				{/if}
+			</div>
 			{#if description}
-				<p class="mt-0.5 text-xs text-muted-foreground">{description}</p>
+				<p class="mt-0.5 text-xs text-muted-foreground">
+					{description}
+				</p>
 			{/if}
 			{#if labelExtra}
 				{@render labelExtra()}
@@ -80,7 +105,9 @@
 			{/if}
 		</div>
 		<div class={cn('min-w-0', layout === 'switch' && 'flex justify-end', contentClass)}>
-			{@render children()}
+			<fieldset disabled={lock?.locked} class="contents">
+				{@render children()}
+			</fieldset>
 			{#if layout !== 'switch'}
 				{@render notes()}
 			{/if}

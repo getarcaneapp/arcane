@@ -5,12 +5,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/updater"
 )
 
 func TestAutoUpdateJob_ShouldSchedule_RequiresAutoUpdateAndPolling(t *testing.T) {
 	ctx := t.Context()
-	_, settingsSvc, _ := setupAnalyticsStateServicesInternal(t)
+	_, settingsSvc, _ := setupAnalyticsStateServices(t)
 	job := NewAutoUpdateJob(nil, &updater.UpdaterService{}, settingsSvc)
 
 	require.False(t, job.ShouldSchedule(ctx))

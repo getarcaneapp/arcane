@@ -12,11 +12,12 @@
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import ActionButtons from '#lib/components/action-buttons.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import CodePanel from '#lib/components/code-panel.svelte';
 	import ComposeFileEditorPanel from '#lib/components/compose-file-editor-panel.svelte';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import ProjectGitBackupSummary from '#lib/components/gitops/project-git-backup-summary.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
@@ -58,7 +59,7 @@
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 	import type { ProjectEditorLayout } from '#lib/types/auth.js';
 	import type { ProjectWorkspaceFileChange, ProjectWorkspaceFileContent } from '#lib/types/project-workspace.js';
-	import type { IncludeFile, Project, ProjectTagColor } from '#lib/types/swarm.js';
+	import type { IncludeFile, Project, ProjectTagColor, ProjectUpdate, ProjectWritable } from '#lib/types/swarm.js';
 	import { cn } from '#lib/utils.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -72,9 +73,10 @@
 	} from '#lib/utils/compose-flow.js';
 	import { getStatusVariant, getThemedIconUrl } from '#lib/utils/docker.js';
 	import { environmentName, listScopes } from '#lib/utils/environments.js';
-	import { capitalizeFirstLetter } from '#lib/utils/formatting.js';
+	import { capitalizeFirstLetter, withOccurrenceKeys } from '#lib/utils/formatting.js';
 	import { gitOpsComposeEditUrl, gitOpsFileEditUrl, gitOpsProjectUrl } from '#lib/utils/gitops.js';
 	import { toGitRouteUrl, toSafeHref } from '#lib/utils/navigation.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 	import { globalVariablesToMap } from '#lib/utils/template-load.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -108,7 +110,7 @@
 	let projectId = $derived(data.projectId);
 	const queryClient = useQueryClient();
 
-	let isLoading = $state({
+	const isLoading = $state({
 		deploying: false,
 		stopping: false,
 		restarting: false,
@@ -142,9 +144,8 @@
 	let projectWorkspaceStagedUploadedText = $state<Record<string, string>>({});
 	let projectWorkspaceFilePromises: Record<string, Promise<IncludeFile | ProjectWorkspaceFileContent> | undefined> = {};
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
-	// A project from another environment follows that environment's upload limit.
 	const projectSettings = useEnvironmentSettings(() => envId);
-	const projectWorkspaceMaxFileSizeMb = $derived(projectSettings.current?.projectWorkspaceMaxFileSizeMb ?? 10);
+	const projectWorkspaceMaxFileSizeMb = $derived(projectSettings.current?.values.projectWorkspaceMaxFileSizeMb ?? 10);
 
 	const projectDetailQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.detail(envId, projectId),
@@ -169,7 +170,10 @@
 				(current = { tags: [], failedEnvironments: [] }) =>
 					current.tags.some((tag) => tag.name === name)
 						? current
-						: { ...current, tags: [...current.tags, { name, color }].sort((a, b) => a.name.localeCompare(b.name)) }
+						: {
+								...current,
+								tags: [...current.tags, { name, color }].sort((a, b) => a.name.localeCompare(b.name))
+							}
 			);
 		}
 		return response.tags;
@@ -197,23 +201,12 @@
 		!!(lifecycleSync?.preDeployScriptPath && lifecycleSync.preDeployScriptPath.trim().length > 0)
 	);
 
-	const formSchema = z
-		.object({
-			name: z.string().min(1, m.compose_project_name_required()),
-			composeContent: z.string().min(1, m.compose_content_is_required()),
-			envContent: z.string().optional().default(''),
-			overrideContent: z.string().optional().default('')
-		})
-		.superRefine((data, ctx) => {
-			const currentServerName = project?.name ?? '';
-			if (data.name !== currentServerName && !/^[a-z0-9_-]+$/i.test(data.name)) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					path: ['name'],
-					message: m.compose_project_name_invalid_with_underscores()
-				});
-			}
-		});
+	const formSchema = z.object({
+		name: z.string().min(1, m.compose_project_name_required()),
+		composeContent: z.string().min(1, m.compose_content_is_required()),
+		envContent: z.string().optional().default(''),
+		overrideContent: z.string().optional().default('')
+	});
 
 	const initialFormData = untrack(() => ({
 		name: data.editorState.originalName,
@@ -250,7 +243,11 @@
 	const composeActionsBlocked = $derived(!!configurationError?.blocksOperations);
 	const configurationErrorMessage = $derived.by(() => {
 		if (!configurationError) return undefined;
-		const params = { path: configurationError.path, uid: configurationError.uid, gid: configurationError.gid };
+		const params = {
+			path: configurationError.path,
+			uid: configurationError.uid,
+			gid: configurationError.gid
+		};
 		return configurationError.blocksOperations ? m.env_file_unreadable_blocked(params) : m.env_file_unreadable_ignored(params);
 	});
 	const serverOverrideContent = $derived(project?.overrideContent ?? '');
@@ -286,16 +283,6 @@
 	const effectiveName = $derived(composeYamlName ?? inputs.name.value);
 	const nameHasChanges = $derived(!composeYamlName && inputs.name.value !== serverName);
 
-	let hasChanges = $derived(
-		nameHasChanges ||
-			inputs.composeContent.value !== serverComposeContent ||
-			inputs.overrideContent.value !== serverOverrideContent ||
-			(!configurationError && inputs.envContent.value !== serverEnvContent) ||
-			Object.entries(includeFilesState).some(([relativePath, content]) => content !== serverIncludeFiles[relativePath]) ||
-			projectWorkspaceChanges.length > 0 ||
-			changedProjectWorkspacePaths.length > 0
-	);
-
 	let isGitOpsManaged = $derived(!!project?.gitOpsManagedBy);
 	let hasBuildDirective = $derived(!!project?.hasBuildDirective);
 
@@ -309,42 +296,97 @@
 			project?.status !== 'partially running'
 	);
 	let canEditCompose = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged && !composeActionsBlocked);
-	// Override edits are blocked for GitOps-managed projects, mirroring canEditCompose.
 	let canEditOverride = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged && !composeActionsBlocked);
 	let canEditEnv = $derived(canUpdateProject && !project?.isArchived && !configurationError);
-	// GitOps-managed projects keep workspace editing for operator-owned files
-	// (secret env files, bind-mounted configs); the backend rejects and marks
-	// read-only the paths the sync itself owns.
 	let canEditProjectWorkspace = $derived(canUpdateProject && !project?.isArchived);
 	let composeFileName = $derived(project?.composeFileName || 'compose.yaml');
 	let composeFiles = $derived(project?.composeFiles ?? []);
-	// Set when the user opts to add an override to a project that has none yet.
 	let overrideEditorRequested = $state(false);
-	// The backend only sets overrideFileName when an override file exists on disk.
-	// The display name falls back to the default for the "add override" flow.
 	let overrideExists = $derived(!!project?.overrideFileName);
 	let overrideFileName = $derived(project?.overrideFileName || 'compose.override.yaml');
-	// The override editor surfaces only when an override exists or the user asked
-	// to add one this session; otherwise the UI shows an "add override" affordance.
 	let overrideActive = $derived(overrideExists || overrideEditorRequested);
 	const gitProjectUrl = $derived(gitOpsProjectUrl(lifecycleSync));
 	const gitComposeEditUrl = $derived(gitOpsComposeEditUrl(lifecycleSync));
 	const gitOverrideEditUrl = $derived(gitOpsFileEditUrl(lifecycleSync, overrideFileName));
-	const projectWorkspaceLeadingRows = $derived([
-		{ key: 'compose', label: composeFileName, iconClass: 'text-info', locked: true },
-		...(overrideActive
-			? [{ key: 'override', label: overrideFileName, iconClass: 'text-purple', locked: true }]
-			: canEditOverride
-				? [
+	let envEditorRequested = $state(false);
+	let envExists = $derived(!!project?.envFileExists || serverEnvContent !== '');
+	let envActive = $derived(envExists || envEditorRequested);
+	let canRemoveEnv = $derived(canEditEnv && !isGitOpsManaged);
+
+	const overrideWorkspaceRows = $derived.by(() => {
+		if (overrideActive) {
+			return [
+				{
+					key: 'override',
+					label: overrideFileName,
+					iconClass: 'text-purple',
+					locked: true,
+					menuItems: [
 						{
-							key: 'add-override',
-							label: m.compose_override_add(),
-							action: true,
-							onSelect: handleAddOverride
+							visible: canEditOverride,
+							id: 'remove',
+							label: m.compose_override_remove(),
+							icon: TrashIcon,
+							destructive: true,
+							onSelect: () => confirmRemoveFile(overrideFileName, handleRemoveOverride)
 						}
-					]
-				: []),
-		{ key: 'env', label: '.env', iconClass: 'text-success', locked: true }
+					].filter((item) => item.visible)
+				}
+			];
+		}
+		if (canEditOverride) {
+			return [
+				{
+					key: 'add-override',
+					label: m.compose_override_add(),
+					action: true,
+					onSelect: handleAddOverride
+				}
+			];
+		}
+		return [];
+	});
+	const envWorkspaceRows = $derived.by(() => {
+		if (envActive) {
+			return [
+				{
+					key: 'env',
+					label: '.env',
+					iconClass: 'text-success',
+					menuItems: [
+						{
+							visible: canRemoveEnv,
+							id: 'remove',
+							label: m.common_delete(),
+							icon: TrashIcon,
+							destructive: true,
+							onSelect: () => confirmRemoveFile('.env', handleRemoveEnv)
+						}
+					].filter((item) => item.visible)
+				}
+			];
+		}
+		if (canEditEnv) {
+			return [
+				{
+					key: 'add-env',
+					label: m.add_env_file(),
+					action: true,
+					onSelect: handleAddEnv
+				}
+			];
+		}
+		return [];
+	});
+	const projectWorkspaceLeadingRows = $derived([
+		{
+			key: 'compose',
+			label: composeFileName,
+			iconClass: 'text-info',
+			locked: true
+		},
+		...overrideWorkspaceRows,
+		...envWorkspaceRows
 	]);
 	let archiveRequiresStopped = $derived(
 		!!project &&
@@ -377,7 +419,7 @@
 	let treeCommandPaletteOpen = $state(false);
 	let layoutMode = $state<ProjectEditorLayoutMode>('classic');
 	let selectedIncludeTabPreference = $state<string | null>(null);
-	let treePaneWidth = $state(280);
+	let treePaneWidth = $state<number | null>(null);
 	let composeSplitWidth = $state<number | null>(null);
 	const minComposePaneWidth = 360;
 	const minEnvPaneWidth = 280;
@@ -402,7 +444,8 @@
 	const selectedFile = $derived.by(() => {
 		const current = selectedFilePreference;
 		if (current === 'override') return overrideActive ? 'override' : 'compose';
-		if (current === 'compose' || current === 'env') return current;
+		if (current === 'env') return envActive ? 'env' : 'compose';
+		if (current === 'compose') return current;
 		if (current.startsWith('file:')) {
 			const relativePath = current.slice(5);
 			return projectWorkspacePaths.has(relativePath) ? current : 'compose';
@@ -423,7 +466,8 @@
 	);
 	const openTabs = $derived.by(() => {
 		const valid = openTabsPreference.filter((key) => {
-			if (key === 'compose' || key === 'env') return true;
+			if (key === 'compose') return true;
+			if (key === 'env') return envActive;
 			// Drop a lingering override tab once the override is gone (e.g. deleted
 			// via a blank save) and no add is in progress.
 			if (key === 'override') return overrideActive;
@@ -435,19 +479,17 @@
 		return valid.length > 0 ? valid : ['compose'];
 	});
 	const activeTreeTab = $derived(openTabs.includes(selectedFile) ? selectedFile : (openTabs[0] ?? 'compose'));
+	const treeTabIconClass: Record<string, string> = {
+		compose: 'text-info',
+		override: 'text-purple',
+		env: 'text-success'
+	};
 	const treeTabs = $derived(
 		openTabs.map((key) => ({
 			key,
 			label: treeTabLabel(key),
 			title: treeTabTitle(key),
-			iconClass:
-				key === 'compose'
-					? 'text-info'
-					: key === 'override'
-						? 'text-purple'
-						: key === 'env'
-							? 'text-success'
-							: 'text-muted-foreground',
+			iconClass: treeTabIconClass[key] ?? 'text-muted-foreground',
 			pending: treeTabPending(key)
 		}))
 	);
@@ -467,6 +509,16 @@
 	let changedIncludeFilePaths = $derived.by(() =>
 		Object.keys(includeFilesState).filter((relativePath) => includeFilesState[relativePath] !== serverIncludeFiles[relativePath])
 	);
+	const dirtyFileKeys = $derived(
+		new Set([
+			...(composeHasChanges ? ['compose'] : []),
+			...(overrideHasChanges ? ['override'] : []),
+			...(envHasChanges ? ['env'] : []),
+			...changedIncludeFilePaths.map((relativePath) => `file:${relativePath}`),
+			...changedProjectWorkspacePaths.map((relativePath) => `file:${relativePath}`)
+		])
+	);
+	let hasChanges = $derived(nameHasChanges || dirtyFileKeys.size > 0 || projectWorkspaceChanges.length > 0);
 
 	let hasAnyErrors = $derived(
 		(composeHasChanges && (!composeValidationReady || composeHasErrors)) ||
@@ -491,7 +543,15 @@
 			label: m.common_configuration(),
 			icon: SettingsIcon
 		},
-		...(isGitOpsManaged ? [] : [{ value: 'backup', label: m.git_backup(), icon: GitBranchIcon }])
+		...(isGitOpsManaged
+			? []
+			: [
+					{
+						value: 'backup',
+						label: m.git_backup(),
+						icon: GitBranchIcon
+					}
+				])
 	]);
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
@@ -651,16 +711,20 @@
 			queryKeys.projects.detail(currentEnvId, updatedProject.id),
 			(old: Project | undefined) => ({ ...old, ...updatedProject }) as Project
 		);
-		await Promise.all([
-			...listScopes([currentEnvId]).flatMap((scope) => [
-				queryClient.invalidateQueries({ queryKey: ['projects', scope] }),
-				queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(scope) })
+		await Promise.all(
+			listScopes([currentEnvId]).flatMap((scope) => [
+				queryClient.invalidateQueries({
+					queryKey: queryKeys.projects.listPrefix(scope)
+				}),
+				queryClient.invalidateQueries({
+					queryKey: queryKeys.projects.statusCounts(scope)
+				})
 			])
-		]);
+		);
 	}
 
 	const checkProjectUpdatesMutation = createMutation(() => ({
-		mutationKey: queryKeys.projects.detailCheckUpdates(envId ?? '0', projectId),
+		mutationKey: queryKeys.projects.detailCheckUpdates(envId, projectId),
 		mutationFn: () => projectService.checkUpdates(projectId, envId),
 		onSuccess: async (result) => {
 			const currentEnvId = envId;
@@ -668,8 +732,12 @@
 			await Promise.all([
 				refreshProjectDetails(),
 				...listScopes([currentEnvId]).flatMap((scope) => [
-					queryClient.invalidateQueries({ queryKey: ['projects', scope] }),
-					queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(scope) })
+					queryClient.invalidateQueries({
+						queryKey: queryKeys.projects.listPrefix(scope)
+					}),
+					queryClient.invalidateQueries({
+						queryKey: queryKeys.projects.statusCounts(scope)
+					})
 				])
 			]);
 		},
@@ -750,14 +818,22 @@
 		if (!validated) return false;
 
 		const { composeContent, envContent, overrideContent } = validated;
-		const namePayload = isGitOpsManaged ? undefined : effectiveName;
-		// Only send the compose when the editor is dirty: an unchanged echo would
-		// be written to whatever base the retargeted COMPOSE_FILE selects.
-		const composePayload = isGitOpsManaged || !composeHasChanges ? undefined : composeContent;
-		const envPayload = envContent !== serverEnvContent ? envContent : undefined;
-		// Blank override => delete, which the backend treats as a no-op when none
-		// exists, so we can always send it (except for read-only GitOps projects).
-		const overridePayload = isGitOpsManaged ? undefined : overrideContent;
+		const projectUpdate = changedFields<ProjectUpdate, ProjectWritable>(
+			{
+				name: serverName,
+				composeContent: serverComposeContent,
+				envContent: serverEnvContent,
+				overrideContent: serverOverrideContent
+			},
+			isGitOpsManaged
+				? { envContent }
+				: {
+						name: effectiveName,
+						composeContent,
+						envContent,
+						overrideContent
+					}
+		);
 		const workspaceUpdate = buildWorkspaceMultipartUpdate(
 			projectWorkspaceChanges,
 			{ ...projectWorkspaceContents, ...includeFilesState },
@@ -783,7 +859,10 @@
 						workspaceCommitted = true;
 						queryClient.setQueryData(queryKeys.projects.workspace(envId, projectId), workspace);
 
-						loadedProjectWorkspaceContents = { ...loadedProjectWorkspaceContents, ...projectWorkspaceContents };
+						loadedProjectWorkspaceContents = {
+							...loadedProjectWorkspaceContents,
+							...projectWorkspaceContents
+						};
 						loadedIncludeFileContents = {
 							...loadedIncludeFileContents,
 							...Object.fromEntries(
@@ -798,15 +877,10 @@
 						projectWorkspaceStagedUploadedText = {};
 					}
 
-					const updatedProject = await projectService.updateProject(
-						projectId,
-						namePayload,
-						composePayload,
-						envPayload,
-						overridePayload,
-						envId
-					);
-					rebaseEditorDraft(updatedProject, { preserveProjectWorkspaceContents: true });
+					const updatedProject = await projectService.updateProject(projectId, projectUpdate, envId);
+					rebaseEditorDraft(updatedProject, {
+						preserveProjectWorkspaceContents: true
+					});
 					await syncProjectQueries(updatedProject);
 					toast.success(
 						m.common_update_success({ resource: m.project() }),
@@ -818,7 +892,13 @@
 				const error = operationResult.error;
 
 				const message = error instanceof Error ? error.message : m.common_save_failed();
-				toast.error(workspaceCommitted ? m.projects_workspace_saved_configuration_failed({ error: message }) : message);
+				toast.error(
+					workspaceCommitted
+						? m.projects_workspace_saved_configuration_failed({
+								error: message
+							})
+						: message
+				);
 				return false;
 			}
 			return true;
@@ -855,12 +935,16 @@
 					toast.success(archiving ? m.compose_archive_success() : m.compose_unarchive_success());
 					await refreshProjectDetails();
 					const currentEnvId = envId;
-					await Promise.all([
-						...listScopes([currentEnvId]).flatMap((scope) => [
-							queryClient.invalidateQueries({ queryKey: ['projects', scope] }),
-							queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(scope) })
+					await Promise.all(
+						listScopes([currentEnvId]).flatMap((scope) => [
+							queryClient.invalidateQueries({
+								queryKey: queryKeys.projects.listPrefix(scope)
+							}),
+							queryClient.invalidateQueries({
+								queryKey: queryKeys.projects.statusCounts(scope)
+							})
 						])
-					]);
+					);
 				}
 			});
 		} finally {
@@ -967,9 +1051,7 @@
 		const targetFile =
 			kind === 'include'
 				? project?.includeFiles?.find((file) => file.relativePath === relativePath)
-				: kind === 'directory'
-					? projectWorkspaceEntries.find((file) => file.relativePath === relativePath)
-					: projectWorkspaceEntries.find((file) => file.relativePath === relativePath);
+				: projectWorkspaceEntries.find((file) => file.relativePath === relativePath);
 
 		if (!targetFile) {
 			throw new Error(m.workspace_file_not_found());
@@ -1051,6 +1133,10 @@
 			overrideEditorRequested = false;
 			inputs.overrideContent.value = '';
 		}
+		if (key === 'env' && !envExists) {
+			envEditorRequested = false;
+			inputs.envContent.value = '';
+		}
 		const index = openTabs.indexOf(key);
 		const remaining = openTabs.filter((tab) => tab !== key);
 		openTabsPreference = openTabsPreference.filter((tab) => tab !== key);
@@ -1076,15 +1162,10 @@
 	}
 
 	function treeTabPending(key: string): boolean {
-		if (key === 'compose') return composeHasChanges;
-		if (key === 'override') return overrideHasChanges;
-		if (key === 'env') return envHasChanges;
+		if (dirtyFileKeys.has(key)) return true;
 		if (!key.startsWith('file:')) return false;
 		const relativePath = key.slice(5);
-		return (
-			changedProjectWorkspacePaths.includes(relativePath) ||
-			projectWorkspaceEntries.find((file) => file.relativePath === relativePath)?.pending === true
-		);
+		return projectWorkspaceEntries.find((file) => file.relativePath === relativePath)?.pending === true;
 	}
 
 	function selectProjectWorkspaceFile(key: string) {
@@ -1113,6 +1194,33 @@
 		}
 	}
 
+	function handleAddEnv() {
+		envEditorRequested = true;
+		envOpen = true;
+		openFileTab('env');
+	}
+
+	async function handleRemoveEnv() {
+		envEditorRequested = false;
+		const existed = envExists;
+		inputs.envContent.value = '';
+		if (existed) {
+			await handleSaveChanges();
+		}
+	}
+
+	function confirmRemoveFile(name: string, action: () => Promise<void>) {
+		openConfirmDialog({
+			title: m.delete_name({ name }),
+			message: m.common_remove_confirm({ resource: name }),
+			confirm: {
+				label: m.common_delete(),
+				destructive: true,
+				action
+			}
+		});
+	}
+
 	async function loadProjectWorkspaceFile(kind: 'workspace' | 'include' | 'directory', relativePath: string) {
 		const requestedProjectId = projectId;
 		const requestedEnvId = envId;
@@ -1137,7 +1245,10 @@
 						const file = await getProjectWorkspaceFileResource(kind, relativePath);
 						if (requestedProjectId !== projectId || requestedEnvId !== envId || pendingFiles !== projectWorkspaceFilePromises)
 							return;
-						projectWorkspaceFileMetadata = { ...projectWorkspaceFileMetadata, [relativePath]: file };
+						projectWorkspaceFileMetadata = {
+							...projectWorkspaceFileMetadata,
+							[relativePath]: file
+						};
 						if (file.editable) updateLoadedProjectWorkspaceFile(relativePath, file.content ?? '');
 					} else {
 						await getProjectWorkspaceFileResource(kind, relativePath);
@@ -1193,8 +1304,14 @@
 		};
 		const unsubscribe = cache.subscribe((event) => {
 			if (event.type !== 'updated' || (event.action.type !== 'success' && event.action.type !== 'error')) return;
-			const workspace = cache.find({ queryKey: queryKeys.projects.workspace(envId, projectId), exact: true });
-			const detail = cache.find({ queryKey: queryKeys.projects.detail(envId, projectId), exact: true });
+			const workspace = cache.find({
+				queryKey: queryKeys.projects.workspace(envId, projectId),
+				exact: true
+			});
+			const detail = cache.find({
+				queryKey: queryKeys.projects.detail(envId, projectId),
+				exact: true
+			});
 			if (event.query === workspace || event.query === detail) void loadAfterUpdate();
 		});
 		void loadAfterUpdate();
@@ -1253,11 +1370,23 @@
 		const relativePath = planProjectWorkspaceFileCreate(projectWorkspacePaths, parentPath, name, composeFileName);
 		if (!relativePath) return;
 		projectWorkspaceChanges = [...projectWorkspaceChanges, { operation: 'create_file', relativePath }];
-		projectWorkspaceContents = { ...projectWorkspaceContents, [relativePath]: content };
-		loadedProjectWorkspaceContents = { ...loadedProjectWorkspaceContents, [relativePath]: content };
+		projectWorkspaceContents = {
+			...projectWorkspaceContents,
+			[relativePath]: content
+		};
+		loadedProjectWorkspaceContents = {
+			...loadedProjectWorkspaceContents,
+			[relativePath]: content
+		};
 		if (stagedFile) {
-			projectWorkspaceStagedFiles = { ...projectWorkspaceStagedFiles, [relativePath]: stagedFile };
-			projectWorkspaceStagedUploadedText = { ...projectWorkspaceStagedUploadedText, [relativePath]: content };
+			projectWorkspaceStagedFiles = {
+				...projectWorkspaceStagedFiles,
+				[relativePath]: stagedFile
+			};
+			projectWorkspaceStagedUploadedText = {
+				...projectWorkspaceStagedUploadedText,
+				[relativePath]: content
+			};
 		}
 		projectWorkspaceFileMetadata = {
 			...projectWorkspaceFileMetadata,
@@ -1285,7 +1414,10 @@
 			const relativePath = planProjectWorkspaceFileCreate(projectWorkspacePaths, parentPath, file.name, composeFileName);
 			if (!relativePath) return;
 			projectWorkspaceChanges = [...projectWorkspaceChanges, { operation: 'create_file', relativePath }];
-			projectWorkspaceStagedFiles = { ...projectWorkspaceStagedFiles, [relativePath]: file };
+			projectWorkspaceStagedFiles = {
+				...projectWorkspaceStagedFiles,
+				[relativePath]: file
+			};
 			projectWorkspaceFileMetadata = {
 				...projectWorkspaceFileMetadata,
 				[relativePath]: {
@@ -1359,11 +1491,17 @@
 			(value) => value.length > 0
 		);
 	});
-	const codeEditorContext = $derived({
-		envContent: inputs.envContent.value,
-		composeContents: allComposeContents,
-		globalVariables: globalVariableMap
-	});
+	const codeEditorContext = {
+		get envContent() {
+			return inputs.envContent.value;
+		},
+		get composeContents() {
+			return allComposeContents;
+		},
+		get globalVariables() {
+			return globalVariableMap;
+		}
+	};
 
 	async function refreshProjectDetails(options: RefreshProjectDetailsOptions = {}) {
 		if (!projectId) return;
@@ -1392,7 +1530,9 @@
 					preserveEditableDrafts: true,
 					clearLoadedFileCache: true
 				});
-				await queryClient.invalidateQueries({ queryKey: queryKeys.gitOpsSyncs.all });
+				await queryClient.invalidateQueries({
+					queryKey: queryKeys.gitOpsSyncs.all
+				});
 				toast.success(m.git_sync_success());
 			}
 		});
@@ -1414,11 +1554,8 @@
 	}
 
 	const backUrl = $derived.by(() => {
-		const from = page.url.searchParams.get('from');
-		const sourceEnvironmentId = page.url.searchParams.get('environmentId');
-
-		if (from === 'gitops' && sourceEnvironmentId) {
-			return `/environments/${sourceEnvironmentId}/gitops`;
+		if (page.url.searchParams.get('from') === 'gitops') {
+			return '/gitops';
 		}
 
 		return '/projects';
@@ -1646,7 +1783,7 @@
 											<div class="flex min-h-0 flex-1 flex-col">
 												{#if configurationError}
 													{@render envUnavailable()}
-												{:else}
+												{:else if envActive}
 													<CodePanel
 														{...envPanelProps()}
 														bind:open={envOpen}
@@ -1654,6 +1791,15 @@
 														bind:hasErrors={envHasErrors}
 														bind:validationReady={envValidationReady}
 													/>
+												{:else if canEditEnv}
+													<button
+														type="button"
+														class="flex shrink-0 items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+														onclick={handleAddEnv}
+													>
+														<CreateFileIcon class="size-4 shrink-0" />
+														<span>{m.add_env_file()}</span>
+													</button>
 												{/if}
 											</div>
 										{/snippet}
@@ -1916,7 +2062,7 @@
 							{#if hasLifecycleHook && lifecycleSync?.preDeployScriptPath}
 								<div class="flex items-center gap-1.5 font-mono text-xs">
 									<span class="text-muted-foreground">{m.git_sync_pre_deploy_title()}:</span>
-									<span class="rounded bg-muted px-1.5 py-0.5">{lifecycleSync.preDeployScriptPath}</span>
+									<span class="rounded-xl bg-muted px-1.5 py-0.5">{lifecycleSync.preDeployScriptPath}</span>
 									<span class="text-muted-foreground">
 										{m.lifecycle_inline_runner_summary({
 											image: lifecycleSync.preDeployRunnerImage || 'alpine:latest',
@@ -1978,9 +2124,8 @@
 			<Alert.Description>
 				{m.compose_multiple_files_description()}
 				<div class="mt-2 flex flex-wrap gap-1.5">
-					<!-- COMPOSE_FILE preserves repeated paths; these badges render only text. -->
-					{#each composeFiles as file}
-						<span class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{file}</span>
+					{#each withOccurrenceKeys(composeFiles) as file (file.key)}
+						<span class="rounded-xl bg-muted px-1.5 py-0.5 font-mono text-xs">{file.value}</span>
 					{/each}
 				</div>
 			</Alert.Description>
@@ -2013,7 +2158,9 @@
 		{:else if activeTreeTab === 'override'}
 			<div class="flex min-h-0 flex-1 flex-col">
 				<div class="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
-					<p class="text-xs text-muted-foreground">{m.compose_override_hint()}</p>
+					<p class="text-xs text-muted-foreground">
+						{m.compose_override_hint()}
+					</p>
 					{#if canEditOverride}
 						<button
 							type="button"
@@ -2166,20 +2313,22 @@
 		/>
 		<div class="min-w-0 flex-1">
 			<div class="flex min-h-9 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-				<EditableName
-					bind:value={inputs.name.value}
-					displayValue={effectiveName}
-					bind:ref={nameInputRef}
-					variant="inline"
-					error={inputs.name.error ?? undefined}
-					originalValue={serverName}
-					canEdit={canEditName}
-					disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
-					onCommit={saveNameIfChanged}
-					class="max-w-40 min-w-0 sm:max-w-56 md:max-w-72 lg:max-w-88"
-				/>
+				<div class="flex min-w-0 items-center">
+					<EnvironmentDestinationSelect value={envId} variant="prefix" readonly />
+					<EditableName
+						bind:value={inputs.name.value}
+						displayValue={effectiveName}
+						bind:ref={nameInputRef}
+						variant="inline"
+						error={inputs.name.error ?? undefined}
+						originalValue={serverName}
+						canEdit={canEditName}
+						disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
+						onCommit={saveNameIfChanged}
+						class="max-w-40 min-w-0 sm:max-w-56 md:max-w-72 lg:max-w-88"
+					/>
+				</div>
 				{@render projectStatus(project)}
-				<EnvironmentCell value={envId} />
 				{#if project.isArchived}
 					<Badge variant="gray" minWidth="20">{m.projects_archived_badge()}</Badge>
 				{/if}
@@ -2205,7 +2354,7 @@
 							class="inline-flex h-6 max-w-40 min-w-0 items-center gap-1.5 rounded-lg border border-info/20 bg-background/70 px-2.5 text-xs font-semibold ring-offset-background transition-colors hover:border-info/40 hover:bg-info/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none sm:max-w-56 md:max-w-72 dark:bg-info/20 dark:hover:bg-info/30"
 							href={toSafeHref(url)}
 							target="_blank"
-							rel="noopener noreferrer"
+							rel="external noopener noreferrer"
 							title={url}
 						>
 							<GlobeIcon class="size-3 text-info" />
@@ -2226,6 +2375,7 @@
 							<a
 								href={commitUrl}
 								target="_blank"
+								rel="external"
 								class="font-mono transition-colors hover:text-primary sm:rounded sm:bg-muted sm:px-1.5 sm:py-0.5"
 							>
 								{project.lastSyncCommit}
@@ -2282,8 +2432,12 @@
 						void refreshProjectDetails();
 					}}
 					onRefresh={async () => {
-						await refreshProjectDetails({ clearLoadedFileCache: true });
-						await queryClient.invalidateQueries({ queryKey: queryKeys.projects.workspace(envId, projectId) });
+						await refreshProjectDetails({
+							clearLoadedFileCache: true
+						});
+						await queryClient.invalidateQueries({
+							queryKey: queryKeys.projects.workspace(envId, projectId)
+						});
 					}}
 					extraActions={projectExtraActions}
 					hasUnsavedChanges={hasChanges}
@@ -2310,7 +2464,10 @@
 				{data.error ? m.common_action_failed() : m.common_not_found_title({ resource: m.project() })}
 			</h2>
 			<p class="mb-8 max-w-md text-center text-muted-foreground">
-				{data.error || m.common_not_found_description({ resource: m.project().toLowerCase() })}
+				{data.error ||
+					m.common_not_found_description({
+						resource: m.project().toLowerCase()
+					})}
 			</p>
 			<ArcaneButton
 				action="base"

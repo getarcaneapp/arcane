@@ -1,6 +1,7 @@
 package version
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,12 +28,14 @@ import (
 	"go.getarcane.app/updater/labels"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
 func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBuild(t *testing.T) {
@@ -117,9 +120,9 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 			Request:    req,
 		}, nil
 	})}
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	svc := NewVersionService(httpClient, false, "1.2.3", "revision", nil, dockerService, imageUpdateService, nil)
+	svc := NewVersionService(httpClient, "1.2.3", "revision", nil, dockerService, imageUpdateService, newVersionSettingsService(t, true))
 
 	info := svc.GetAppVersionInfo(ctx)
 
@@ -131,7 +134,7 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 }
 
 func TestVersionService_GetAppVersionInfoDisplaysSemverNextVersion(t *testing.T) {
-	svc := NewVersionService(nil, true, "2.4.0-next.2", "2c3e44a10ddda540d7e19fc2a876c931fc33a426", nil, nil, nil, nil)
+	svc := NewVersionService(nil, "2.4.0-next.2", "2c3e44a10ddda540d7e19fc2a876c931fc33a426", nil, nil, nil, newVersionSettingsService(t, false))
 
 	info := svc.GetAppVersionInfo(t.Context())
 
@@ -141,7 +144,7 @@ func TestVersionService_GetAppVersionInfoDisplaysSemverNextVersion(t *testing.T)
 }
 
 func TestVersionService_GetAppVersionInfoPreservesDevVersion(t *testing.T) {
-	svc := NewVersionService(nil, true, "dev", "unknown", nil, nil, nil, nil)
+	svc := NewVersionService(nil, "dev", "unknown", nil, nil, nil, newVersionSettingsService(t, false))
 
 	info := svc.GetAppVersionInfo(t.Context())
 
@@ -154,6 +157,18 @@ func TestVersionService_GetAppVersionInfoPreservesDevVersion(t *testing.T) {
 // Test fixtures shared by this package's tests.
 
 // setupImageUpdateTestDB creates an in-memory SQLite database for testing
+func newVersionSettingsService(t *testing.T, updateCheckEnabled bool) *settings.SettingsService {
+	t.Helper()
+	gdb, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gdb.AutoMigrate(&settings.SettingVariable{}))
+	svc, err := settings.NewSettingsService(t.Context(), &database.DB{DB: gdb}, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
+	require.NoError(t, svc.SetBoolSetting(t.Context(), "updateCheckEnabled", updateCheckEnabled))
+	return svc
+}
+
 func setupImageUpdateTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	dsn := fmt.Sprintf("file:image-update-test-%d?mode=memory&cache=shared", time.Now().UnixNano())
@@ -188,7 +203,7 @@ func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	return cli
 }
 
-func TestVersionService_IsNextBuild(t *testing.T) {
+func TestVersionService_IsChannelBuild(t *testing.T) {
 	tests := []struct {
 		name       string
 		version    string
@@ -199,11 +214,13 @@ func TestVersionService_IsNextBuild(t *testing.T) {
 		{"stable version on next tag", "2.7.0", "next", true},
 		{"stable version on latest tag", "2.7.0", "latest", false},
 		{"stable version on version tag", "2.7.0", "v2.7.0", false},
+		{"beta prerelease version", "3.0.0-beta.2", "v3.0.0-beta.2", true},
+		{"beta version on rolling beta tag", "3.0.0-beta.2", "v3-beta", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewVersionService(nil, true, tt.version, "rev", nil, nil, nil, nil)
-			assert.Equal(t, tt.want, svc.isNextBuild(tt.currentTag))
+			svc := NewVersionService(nil, tt.version, "rev", nil, nil, nil, newVersionSettingsService(t, false))
+			assert.Equal(t, tt.want, svc.isChannelBuild(tt.currentTag))
 		})
 	}
 }
@@ -306,10 +323,10 @@ func TestVersionService_GetAppVersionInfoNextChannelUsesImageLabel(t *testing.T)
 			Request:    req,
 		}, nil
 	})}
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	registrySvc := registry.NewContainerRegistryService(nil, nil, nil, nil)
-	svc := NewVersionService(httpClient, false, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService, nil)
+	svc := NewVersionService(httpClient, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService, newVersionSettingsService(t, true))
 
 	info := svc.GetAppVersionInfo(ctx)
 
@@ -350,10 +367,10 @@ func TestVersionService_GetAppVersionInfoNextChannelLabelFailureFallsBackToDiges
 		CheckTime:      time.Now().UTC(),
 	}).Error)
 
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	registrySvc := registry.NewContainerRegistryService(nil, nil, nil, nil)
-	svc := NewVersionService(nil, false, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService, nil)
+	svc := NewVersionService(nil, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService, newVersionSettingsService(t, true))
 
 	info := svc.GetAppVersionInfo(ctx)
 
@@ -374,7 +391,7 @@ func TestVersionService_GetAppVersionInfoSuppressesOlderStableForPrerelease(t *t
 	})}
 	// An -rc. prerelease stays on the stable track; the downgrade guard must
 	// still drop the older stable tag rather than showing a backwards arrow.
-	svc := NewVersionService(httpClient, false, "2.8.0-rc.1", "revision", nil, nil, nil, nil)
+	svc := NewVersionService(httpClient, "2.8.0-rc.1", "revision", nil, nil, nil, newVersionSettingsService(t, true))
 
 	info := svc.GetAppVersionInfo(t.Context())
 
@@ -384,4 +401,117 @@ func TestVersionService_GetAppVersionInfoSuppressesOlderStableForPrerelease(t *t
 	assert.Empty(t, info.ReleaseNotes)
 	assert.Empty(t, info.ReleaseURL)
 	assert.Empty(t, info.ReleasedAt)
+}
+
+func TestVersionService_GetAppVersionInfoChannelCommitNotes(t *testing.T) {
+	const (
+		runningRevision = "1111111111111111111111111111111111111111"
+		targetRevision  = "2222222222222222222222222222222222222222"
+	)
+	tests := []struct {
+		name          string
+		imageRevision string
+		wantURL       string
+		wantNotes     []string
+		status        int
+		wantGitHubHit bool
+	}{
+		{
+			name:          "newer revision gets grouped notes",
+			imageRevision: targetRevision,
+			status:        http.StatusOK,
+			wantNotes: []string{
+				"### New features\n\n- feat: redesigned activity center ([#42](https://github.com/getarcaneapp/arcane/pull/42) by @octo)",
+				"### Bug fixes\n\n- fix: correct e2e test ([3333333](https://github.com/getarcaneapp/arcane/commit/3333333333333333333333333333333333333333))",
+				"[And 1 more commits](https://github.com/getarcaneapp/arcane/compare/" + runningRevision + "..." + targetRevision + ")",
+			},
+			wantURL:       "https://github.com/getarcaneapp/arcane/compare/" + runningRevision + "..." + targetRevision,
+			wantGitHubHit: true,
+		},
+		{
+			name:          "same revision gets no notes",
+			imageRevision: runningRevision,
+			status:        http.StatusOK,
+		},
+		{
+			name:          "compare failure keeps the diff link only",
+			imageRevision: targetRevision,
+			status:        http.StatusForbidden,
+			wantURL:       "https://github.com/getarcaneapp/arcane/compare/" + runningRevision + "..." + targetRevision,
+			wantGitHubHit: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			db := setupImageUpdateTestDB(t)
+
+			const (
+				containerID = "arcane-container-1234567890"
+				imageID     = "sha256:arcane-image"
+			)
+			repo := newLabelRegistryTestServer(t) + "/getarcaneapp/arcane"
+
+			img, err := random.Image(64, 1)
+			require.NoError(t, err)
+			cfg, err := img.ConfigFile()
+			require.NoError(t, err)
+			cfg = cfg.DeepCopy()
+			cfg.Config.Labels = map[string]string{
+				registry.OCIImageVersionLabel:  "v3.0.0-beta.45",
+				registry.OCIImageRevisionLabel: tt.imageRevision,
+			}
+			img, err = mutate.ConfigFile(img, cfg)
+			require.NoError(t, err)
+			pushRef, err := name.ParseReference(repo + ":v3-beta")
+			require.NoError(t, err)
+			require.NoError(t, remote.Write(pushRef, img))
+			imgDigest, err := img.Digest()
+			require.NoError(t, err)
+
+			currentDigest := digest.FromString("current-arcane").String()
+			server := newNextChannelDockerServer(t, containerID, imageID, repo, "v3-beta", currentDigest)
+			require.NoError(t, db.WithContext(ctx).Create(&imageupdate.ImageUpdateRecord{
+				ID:             imageID,
+				Repository:     repo,
+				Tag:            "v3-beta",
+				HasUpdate:      true,
+				UpdateType:     imageupdate.UpdateTypeDigest,
+				CurrentVersion: "v3-beta",
+				CurrentDigest:  &currentDigest,
+				LatestDigest:   new(imgDigest.String()),
+				CheckTime:      time.Now().UTC(),
+			}).Error)
+
+			githubHit := false
+			httpClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				githubHit = true
+				assert.Equal(t, "/repos/getarcaneapp/arcane/compare/"+runningRevision+"..."+targetRevision, req.URL.Path)
+				return &http.Response{
+					StatusCode: tt.status,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{"total_commits":5,"commits":[
+						{"sha":"4444444444444444444444444444444444444444","commit":{"message":"feat: redesigned activity center (#42)\n\nbody"},"author":{"login":"octo"}},
+						{"sha":"5555555555555555555555555555555555555555","commit":{"message":"chore: bump deps"},"author":null},
+						{"sha":"6666666666666666666666666666666666666666","commit":{"message":"Merge branch main"},"author":null},
+						{"sha":"3333333333333333333333333333333333333333","commit":{"message":"fix: correct e2e test"},"author":null}
+					]}`)),
+					Request: req,
+				}, nil
+			})}
+			dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
+			imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
+			registrySvc := registry.NewContainerRegistryService(nil, nil, nil, nil)
+			svc := NewVersionService(httpClient, "3.0.0-beta.44", runningRevision, registrySvc, dockerService, imageUpdateService, newVersionSettingsService(t, true))
+
+			info := svc.GetAppVersionInfo(ctx)
+
+			require.NotNil(t, info)
+			assert.Equal(t, "v3.0.0-beta.45", info.NewestVersion)
+			assert.Equal(t, tt.wantURL, info.ReleaseURL)
+			assert.Equal(t, strings.Join(tt.wantNotes, "\n\n"), info.ReleaseNotes)
+			assert.Equal(t, tt.wantGitHubHit, githubHit)
+		})
+	}
 }

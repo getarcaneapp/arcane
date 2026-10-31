@@ -1,17 +1,18 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { tick, untrack } from 'svelte';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { EmptyState } from '#lib/components/states/index.js';
 	import { TABLE_PAGE_SIZE_ALL } from '#lib/constants/table-pagination.js';
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { BoxIcon, ProjectsIcon, StartIcon, StopIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { projectListQuery, projectStatusCountsQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -22,11 +23,10 @@
 	import {
 		acrossEnvironmentsNote,
 		actionEnvironments,
-		fetchAcrossEnvironments,
 		hasShownPermission,
 		listScopes,
+		readableEnvironments,
 		settleAcrossEnvironments,
-		sumAcrossEnvironments,
 		withFailedEnvironments
 	} from '#lib/utils/environments.js';
 
@@ -36,7 +36,7 @@
 	let { data } = $props();
 
 	function withArchivedFilter(options: SearchPaginationSortRequest, show: boolean): SearchPaginationSortRequest {
-		const filters = { ...(options.filters ?? {}) };
+		const filters = { ...options.filters };
 		if (show) {
 			filters['archived'] = 'true';
 		} else {
@@ -60,20 +60,15 @@
 		runningProjects: 0,
 		stoppedProjects: 0,
 		totalProjects: 0,
-		archivedProjects: 0
+		archivedProjects: 0,
+		updatesAvailable: 0
 	};
 
 	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
 	const projectsQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = environmentStore.shown;
-		const options = projectRequestOptions;
 		return {
-			queryKey: queryKeys.projects.list(queryScope, options),
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, options, (id, request, config) =>
-					projectService.getProjectsForEnvironment(id, request, config)
-				),
+			...projectListQuery(queryScope, readableEnvironments('projects:list'), projectRequestOptions),
 			placeholderData: (previous, query) => {
 				if (query?.queryKey[1] === queryScope) return previous;
 				return undefined;
@@ -84,13 +79,10 @@
 	});
 	let projects = $derived(projectsQuery.data?.envId === scope ? projectsQuery.data.value : null);
 
-	const projectStatusCountsQuery = createQuery(() => {
+	const statusCountsQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = environmentStore.shown;
 		return {
-			queryKey: queryKeys.projects.statusCounts(queryScope),
-			queryFn: () =>
-				sumAcrossEnvironments(environments, (id, config) => projectService.getProjectStatusCountsForEnvironment(id, config)),
+			...projectStatusCountsQuery(queryScope, readableEnvironments('projects:list')),
 			initialData: data.scope === queryScope ? data.projectStatusCounts : undefined,
 			select: (value) => ({ envId: queryScope, value }),
 			refetchOnMount: false
@@ -98,7 +90,7 @@
 	});
 	const projectTagsQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('projects:list');
 		return {
 			queryKey: queryKeys.projects.tags(queryScope),
 			queryFn: () => fetchProjectTags(environments),
@@ -109,7 +101,7 @@
 	});
 	const projectTags = $derived(projectTagsQuery.data?.envId === scope ? projectTagsQuery.data.value.tags : []);
 	const relatedFailures = $derived(
-		[projectStatusCountsQuery.data, projectTagsQuery.data].flatMap((result) =>
+		[statusCountsQuery.data, projectTagsQuery.data].flatMap((result) =>
 			result?.envId === scope ? result.value.failedEnvironments : []
 		)
 	);
@@ -117,11 +109,6 @@
 	// Tags change rarely, so a refresh reloads them only after an environment failed to return them.
 	const refetchFailedTags = () =>
 		projectTagsQuery.isError || projectTagsQuery.data?.value.failedEnvironments.length ? projectTagsQuery.refetch() : undefined;
-
-	useEnvironmentRefresh(() => {
-		selectedIds = [];
-		isManualRefreshing = false;
-	});
 
 	async function updateEnvironmentProjects(requestedEnvId: string) {
 		// Refresh update info for all images, then redeploy only the projects the
@@ -179,35 +166,24 @@
 			} else {
 				toast.success(m.compose_update_success(), toastOptions);
 			}
-			// The shown list refetches itself; the affected environments' other cached lists are marked stale.
 			await Promise.all(
-				listScopes(result.environmentIds)
-					.filter((listScope) => listScope !== requestedScope)
-					.flatMap((listScope) => [
-						queryClient.invalidateQueries({ queryKey: ['projects', listScope] }),
-						queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(listScope) })
-					])
+				[...new Set([requestedScope, ...listScopes(result.environmentIds)])].map((listScope) =>
+					queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(listScope) })
+				)
 			);
-			if (requestedScope === scope) {
-				await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
-			}
 		},
 		onError: (error, requestedScope) => {
 			toast.error(error instanceof Error ? error.message : m.containers_check_updates_failed());
-			if (requestedScope === scope) {
-				void Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
-			}
+			void queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(requestedScope) });
 		}
 	}));
 
-	const projectStatusCounts = $derived(
-		projectStatusCountsQuery.data?.envId === scope ? projectStatusCountsQuery.data.value : countsFallback
-	);
+	const projectStatusCounts = $derived(statusCountsQuery.data?.envId === scope ? statusCountsQuery.data.value : countsFallback);
 	const totalCompose = $derived(projectStatusCounts.totalProjects);
 	const runningCompose = $derived(projectStatusCounts.runningProjects);
 	const stoppedCompose = $derived(projectStatusCounts.stoppedProjects);
 	const archivedCompose = $derived(projectStatusCounts.archivedProjects);
-	const isRefreshBlocked = $derived(isManualRefreshing || projectsQuery.isFetching || projectStatusCountsQuery.isFetching);
+	const isRefreshBlocked = $derived(isManualRefreshing || projectsQuery.isFetching || statusCountsQuery.isFetching);
 
 	function handleCheckForUpdates() {
 		openConfirmDialog({
@@ -227,7 +203,7 @@
 		const requestedScope = scope;
 		isManualRefreshing = true;
 		try {
-			await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch(), refetchFailedTags()]);
+			await Promise.all([projectsQuery.refetch(), statusCountsQuery.refetch(), refetchFailedTags()]);
 		} finally {
 			if (requestedScope === scope) {
 				isManualRefreshing = false;
@@ -242,7 +218,8 @@
 		} else {
 			url.searchParams.delete('archived');
 		}
-		await goto(`${url.pathname}${url.search}`, { reset: false, replace: true });
+		const href = url.searchParams.size > 0 ? resolve(`/(app)/projects?${url.searchParams}`) : resolve('/(app)/projects');
+		await goto(href, { reset: false, replace: true });
 	}
 
 	const canCreateProject = $derived(hasShownPermission('projects:create'));
@@ -256,7 +233,7 @@
 				action: 'create',
 				placement: 'primary',
 				label: m.compose_create_project(),
-				onclick: () => goto('/projects/new')
+				onclick: () => goto(resolve('/(app)/projects/new'))
 			});
 		}
 		if (canDeployProject) {
@@ -328,24 +305,13 @@
 				projects={withFailedEnvironments(projects, relatedFailures)}
 				emptyState={projectsEmptyState}
 				bind:selectedIds
-				requestOptions={projectRequestOptions}
+				bind:requestOptions={
+					() => projectRequestOptions, (options) => (baseProjectRequestOptions = withArchivedFilter(options, showArchived))
+				}
 				{showArchived}
 				availableTags={projectTags}
 				onToggleArchived={toggleArchived}
-				onRefreshData={async (options) => {
-					const requestedScope = scope;
-					baseProjectRequestOptions = withArchivedFilter(options, showArchived);
-					// Let the query switch to the new options first; the refetch then joins its fetch.
-					await tick();
-					await Promise.all([
-						projectsQuery.refetch({ cancelRefetch: false }),
-						projectStatusCountsQuery.refetch(),
-						refetchFailedTags()
-					]);
-					if (requestedScope !== scope) {
-						selectedIds = [];
-					}
-				}}
+				onRetry={() => Promise.all([projectsQuery.refetch(), statusCountsQuery.refetch(), refetchFailedTags()])}
 			/>
 		{/if}
 	{/snippet}

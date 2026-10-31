@@ -6,46 +6,46 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/gitops"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
 )
 
 type ProjectStatus string
 
 const (
-	ProjectStatusRunning          ProjectStatus = projecttypes.StatusRunning
-	ProjectStatusStopped          ProjectStatus = projecttypes.StatusStopped
-	ProjectStatusPartiallyRunning ProjectStatus = projecttypes.StatusPartiallyRunning
-	ProjectStatusUnknown          ProjectStatus = projecttypes.StatusUnknown
-	ProjectStatusDeploying        ProjectStatus = projecttypes.StatusDeploying
-	ProjectStatusStopping         ProjectStatus = projecttypes.StatusStopping
-	ProjectStatusRestarting       ProjectStatus = projecttypes.StatusRestarting
+	ProjectStatusRunning          ProjectStatus = types.ProjectStatusRunning
+	ProjectStatusStopped          ProjectStatus = types.ProjectStatusStopped
+	ProjectStatusPartiallyRunning ProjectStatus = types.ProjectStatusPartiallyRunning
+	ProjectStatusUnknown          ProjectStatus = types.ProjectStatusUnknown
+	ProjectStatusDeploying        ProjectStatus = types.ProjectStatusDeploying
+	ProjectStatusStopping         ProjectStatus = types.ProjectStatusStopping
+	ProjectStatusRestarting       ProjectStatus = types.ProjectStatusRestarting
 )
 
 type Project struct {
 	database.BaseModel
 
-	Name               string        `json:"name" sortable:"true" gorm:"index:idx_projects_name"`
-	DirName            *string       `json:"dir_name"`
-	Path               string        `json:"path" sortable:"true" gorm:"uniqueIndex"`
-	Status             ProjectStatus `json:"status" sortable:"true"`
-	StatusReason       *string       `json:"status_reason"`
-	ServiceCount       int           `json:"service_count" sortable:"true"`
-	RunningCount       int           `json:"running_count" sortable:"true"`
-	GitOpsManagedBy    *string       `json:"gitops_managed_by,omitempty" gorm:"column:gitops_managed_by"`
-	ComposeProjectName *string       `json:"compose_project_name,omitempty" gorm:"column:compose_project_name"`
-	ImageRefsJSON      string        `json:"image_refs_json,omitempty" gorm:"column:image_refs_json"`
-	BuildImageRefsJSON *string       `json:"-" gorm:"column:build_image_refs_json"`
-	IsArchived         bool          `json:"is_archived" gorm:"column:is_archived;default:false;index"`
-	ArchivedAt         *time.Time    `json:"archived_at,omitempty" gorm:"column:archived_at"`
+	DirName            *string    `json:"dir_name"`
+	StatusReason       *string    `json:"status_reason"`
+	GitOpsManagedBy    *string    `json:"gitops_managed_by,omitempty" gorm:"column:gitops_managed_by"`
+	ComposeProjectName *string    `json:"compose_project_name,omitempty" gorm:"column:compose_project_name"`
+	BuildImageRefsJSON *string    `json:"-" gorm:"column:build_image_refs_json"`
+	ArchivedAt         *time.Time `json:"archived_at,omitempty" gorm:"column:archived_at"`
+
+	Name          string        `json:"name" sortable:"true" gorm:"index:idx_projects_name"`
+	Path          string        `json:"path" sortable:"true" gorm:"uniqueIndex"`
+	Status        ProjectStatus `json:"status" sortable:"true"`
+	ImageRefsJSON string        `json:"image_refs_json,omitempty" gorm:"column:image_refs_json"`
+	ServiceCount  int           `json:"service_count" sortable:"true"`
+	RunningCount  int           `json:"running_count" sortable:"true"`
+	IsArchived    bool          `json:"is_archived" gorm:"column:is_archived;default:false;index"`
 }
 
 func (Project) TableName() string {
@@ -93,6 +93,10 @@ type GitOpsSync struct {
 	PreDeployLastRunAt     *time.Time `json:"preDeployLastRunAt,omitempty" gorm:"column:pre_deploy_last_run_at" sortable:"true"`
 	PreDeployLastRunStatus *string    `json:"preDeployLastRunStatus,omitempty" gorm:"column:pre_deploy_last_run_status" sortable:"true"` // "success" | "failed" | "timeout"
 	PreDeployLastRunOutput *string    `json:"preDeployLastRunOutput,omitempty" gorm:"column:pre_deploy_last_run_output"`                 // truncated stdout+stderr
+	BackupPendingSince     *time.Time `json:"backupPendingSince,omitempty" gorm:"column:backup_pending_since"`
+	BackupFailureReason    *string    `json:"backupFailureReason,omitempty" gorm:"column:backup_failure_reason"`
+	LastBackupAt           *time.Time `json:"lastBackupAt,omitempty" gorm:"column:last_backup_at" sortable:"true"`
+	LastBackupSnapshot     *string    `json:"-" gorm:"column:last_backup_snapshot"`
 	Name                   string     `json:"name" sortable:"true" search:"sync,gitops,automation,deploy,deployment,continuous"`
 	EnvironmentID          string     `json:"environmentId" sortable:"true"`
 	RepositoryID           string     `json:"repositoryId" sortable:"true"`
@@ -102,51 +106,48 @@ type GitOpsSync struct {
 	ProjectName            string     `json:"projectName" sortable:"true" search:"project,name,stack,application,service"` // Name of project to create/update
 	// Docker network mode for the runner: "none" denies access; "bridge", "host", or a named network enables it.
 	PreDeployNetworkMode string `json:"preDeployNetworkMode" gorm:"column:pre_deploy_network_mode;default:'none'"`
-	SyncInterval         int    `json:"syncInterval" sortable:"true" search:"interval,frequency,schedule,cron,minutes"` // in minutes
-	MaxSyncFiles         int    `json:"maxSyncFiles" gorm:"column:max_sync_files;default:500"`                          // 0 = unlimited; env var overrides take precedence
-	MaxSyncTotalSize     int64  `json:"maxSyncTotalSize" gorm:"column:max_sync_total_size;default:52428800"`            // bytes; 0 = unlimited; env var overrides take precedence
-	MaxSyncBinarySize    int64  `json:"maxSyncBinarySize" gorm:"column:max_sync_binary_size;default:10485760"`          // bytes; 0 = unlimited; env var overrides take precedence
-	PreDeployTimeoutSec  int    `json:"preDeployTimeoutSec" gorm:"column:pre_deploy_timeout_sec;default:60"`
-	AutoSync             bool   `json:"autoSync" sortable:"true" search:"auto,automatic,sync,continuous,scheduled"`
-	SyncDirectory        bool   `json:"syncDirectory" gorm:"column:sync_directory"` // Sync entire directory containing compose file
-	PullImageAfterSync   bool   `json:"pullImageAfterSync" gorm:"column:pull_image_after_sync;default:false"`
-	RedeployAfterSync    bool   `json:"redeployAfterSync" gorm:"column:redeploy_after_sync;default:false"`
 
 	// Backup mode ("backup" commits saved project files to the repository;
 	// "deploy" is the original pull direction).
 	Mode                string               `json:"mode" gorm:"column:mode;default:'deploy'" sortable:"true" search:"mode,backup,deploy,direction"`
 	BackupDirectory     string               `json:"backupDirectory" gorm:"column:backup_directory" sortable:"true" search:"backup,directory,destination,folder"`
 	BackupPaths         database.StringSlice `json:"backupPaths" gorm:"column:backup_paths;type:text"`
-	BackupOnSave        bool                 `json:"backupOnSave" gorm:"column:backup_on_save;default:true"`
-	BackupPending       bool                 `json:"backupPending" gorm:"column:backup_pending;default:false"`
-	BackupPendingSince  *time.Time           `json:"backupPendingSince,omitempty" gorm:"column:backup_pending_since"`
-	BackupConflict      bool                 `json:"backupConflict" gorm:"column:backup_conflict;default:false"`
-	BackupFailureReason *string              `json:"backupFailureReason,omitempty" gorm:"column:backup_failure_reason"`
-	LastBackupAt        *time.Time           `json:"lastBackupAt,omitempty" gorm:"column:last_backup_at" sortable:"true"`
-	LastBackupSnapshot  *string              `json:"-" gorm:"column:last_backup_snapshot"`
+	SyncInterval        int                  `json:"syncInterval" sortable:"true" search:"interval,frequency,schedule,cron,minutes"` // in minutes
+	MaxSyncFiles        int                  `json:"maxSyncFiles" gorm:"column:max_sync_files;default:500"`                          // 0 = unlimited; env var overrides take precedence
+	MaxSyncTotalSize    int64                `json:"maxSyncTotalSize" gorm:"column:max_sync_total_size;default:52428800"`            // bytes; 0 = unlimited; env var overrides take precedence
+	MaxSyncBinarySize   int64                `json:"maxSyncBinarySize" gorm:"column:max_sync_binary_size;default:10485760"`          // bytes; 0 = unlimited; env var overrides take precedence
+	PreDeployTimeoutSec int                  `json:"preDeployTimeoutSec" gorm:"column:pre_deploy_timeout_sec;default:60"`
+	AutoSync            bool                 `json:"autoSync" sortable:"true" search:"auto,automatic,sync,continuous,scheduled"`
+	SyncDirectory       bool                 `json:"syncDirectory" gorm:"column:sync_directory"` // Sync entire directory containing compose file
+	PullImageAfterSync  bool                 `json:"pullImageAfterSync" gorm:"column:pull_image_after_sync;default:false"`
+	RedeployAfterSync   bool                 `json:"redeployAfterSync" gorm:"column:redeploy_after_sync;default:false"`
+
+	BackupOnSave   bool `json:"backupOnSave" gorm:"column:backup_on_save;default:true"`
+	BackupPending  bool `json:"backupPending" gorm:"column:backup_pending;default:false"`
+	BackupConflict bool `json:"backupConflict" gorm:"column:backup_conflict;default:false"`
 }
 
 // BackupState derives the persisted backup lifecycle state.
 func (s GitOpsSync) BackupState() string {
-	if s.Mode != gitops.SyncModeBackup {
+	if s.Mode != types.GitOpsSyncModeBackup {
 		return ""
 	}
 	status := kit.FromPtr(s.LastSyncStatus)
 	switch {
 	case status == "running":
-		return gitops.BackupStateBackingUp
+		return types.GitOpsBackupStateBackingUp
 	case s.BackupConflict:
-		return gitops.BackupStateNeedsAttention
+		return types.GitOpsBackupStateNeedsAttention
 	case status == "failed":
-		return gitops.BackupStateFailed
+		return types.GitOpsBackupStateFailed
 	case !s.AutoSync:
-		return gitops.BackupStatePaused
+		return types.GitOpsBackupStatePaused
 	case s.BackupPending:
-		return gitops.BackupStatePending
+		return types.GitOpsBackupStatePending
 	case s.LastBackupAt != nil:
-		return gitops.BackupStateBackedUp
+		return types.GitOpsBackupStateBackedUp
 	default:
-		return gitops.BackupStateNever
+		return types.GitOpsBackupStateNever
 	}
 }
 

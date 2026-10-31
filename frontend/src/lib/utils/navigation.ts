@@ -1,4 +1,5 @@
 import { browser } from '$app/env';
+import type { ResolvedPathname } from '$app/types';
 import { PersistedState } from 'runed';
 import { createContext } from 'svelte';
 
@@ -31,15 +32,10 @@ export function getEffectiveNavigationSettings(): MobileNavigationSettings {
 	};
 }
 
-/**
- * Resolve the page to open after signing in from the signed-in user's account
- * preference, falling back to the built-in default. A stale value (e.g. a page
- * that no longer exists) falls back to the default rather than 404ing.
- */
-export function getEffectiveLandingPage(): string {
+export function getEffectiveLandingPage(): ResolvedPathname {
 	const candidate = userStore.current?.preferences?.defaultLandingPage ?? DEFAULT_LANDING_PAGE;
 
-	return getLandingPageNavItems().some((item) => item.url === candidate) ? candidate : DEFAULT_LANDING_PAGE;
+	return getLandingPageNavItems().find((item) => item.url === candidate)?.url ?? DEFAULT_LANDING_PAGE;
 }
 
 // --- Keyboard shortcuts ---
@@ -119,10 +115,10 @@ function formatShortcutKey(key: ShortcutKey, isMac: boolean): string {
 }
 
 function getExpectedCode(key: string): string | null {
-	if (/^[0-9]$/.test(key)) {
+	if (key.length === 1 && key >= '0' && key <= '9') {
 		return `digit${key}`;
 	}
-	if (/^[a-z]$/.test(key)) {
+	if (key.length === 1 && key >= 'a' && key <= 'z') {
 		return `key${key}`;
 	}
 	return null;
@@ -193,12 +189,12 @@ export function toGitWebUrl(raw: string): string | null {
 		}
 	}
 
-	const match = /^(?:.+@)?([^:\/]+):(.+)$/.exec(trimmed) ?? /^([^\/]+)\/(.+)$/.exec(trimmed);
+	const match = /^(?:.+@)?([^:/]+):\/*([^/].*)$/.exec(trimmed) ?? /^([^/]+)\/+([^/].*)$/.exec(trimmed);
 	if (!match) return null;
 	const host = match[1];
 	const matchedPath = match[2];
 	if (!host || !matchedPath) return null;
-	const path = stripGitSuffix(matchedPath.replace(/^\/+/, ''));
+	const path = stripGitSuffix(matchedPath);
 	return path ? `https://${host}/${path}` : null;
 }
 

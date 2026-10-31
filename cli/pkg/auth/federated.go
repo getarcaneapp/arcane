@@ -12,15 +12,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/federated"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/ci"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/ci"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/config"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
 const (
@@ -105,10 +105,10 @@ GitHub Actions example:
 				return cmdutil.PrintJSON(struct {
 					Token           string `json:"token"`
 					TokenType       string `json:"tokenType"`
-					ExpiresIn       int    `json:"expiresIn"`
 					ExpiresAt       string `json:"expiresAt"`
 					IssuedTokenType string `json:"issuedTokenType"`
 					Source          string `json:"source"`
+					ExpiresIn       int    `json:"expiresIn"`
 					Persisted       bool   `json:"persisted"`
 				}{
 					Token:           tokenResp.AccessToken,
@@ -188,18 +188,18 @@ func resolveFederatedSubjectToken(cmd *cobra.Command, provider, audience, federa
 	return ci.DetectToken(cmd.Context(), provider, audience, os.Getenv, &http.Client{Timeout: 10 * time.Second})
 }
 
-func exchangeFederatedToken(cmd *cobra.Command, c *client.Client, subjectToken, audience string) (*federated.FederatedTokenResponse, error) {
+func exchangeFederatedToken(cmd *cobra.Command, c *client.Client, subjectToken, audience string) (*types.FederatedTokenResponse, error) {
 	form := url.Values{
-		"grant_type":           {federated.TokenExchangeGrantType},
+		"grant_type":           {types.TokenExchangeGrantType},
 		"subject_token":        {subjectToken},
-		"subject_token_type":   {federated.SubjectTokenTypeJWT},
-		"requested_token_type": {federated.RequestedTokenTypeAccessJWT},
+		"subject_token_type":   {types.SubjectTokenTypeJWT},
+		"requested_token_type": {types.RequestedTokenTypeAccessJWT},
 	}
 	if strings.TrimSpace(audience) != "" {
 		form.Set("audience", strings.TrimSpace(audience))
 	}
 
-	resp, err := c.RequestRaw(cmd.Context(), http.MethodPost, types.AuthFederated(), strings.NewReader(form.Encode()), map[string]string{
+	resp, err := c.RequestRaw(cmd.Context(), http.MethodPost, clitypes.AuthFederated(), strings.NewReader(form.Encode()), map[string]string{
 		"Content-Type": "application/x-www-form-urlencoded",
 	})
 	if err != nil {
@@ -223,7 +223,7 @@ func exchangeFederatedToken(cmd *cobra.Command, c *client.Client, subjectToken, 
 		return nil, fmt.Errorf("failed to read federated token response: %w", err)
 	}
 
-	var tokenResp federated.FederatedTokenResponse
+	var tokenResp types.FederatedTokenResponse
 	if unmarshalErr := json.Unmarshal(body, &tokenResp); unmarshalErr != nil {
 		return nil, fmt.Errorf("failed to parse federated token response: %w", unmarshalErr)
 	}

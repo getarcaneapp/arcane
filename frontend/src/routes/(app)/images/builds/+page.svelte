@@ -13,13 +13,13 @@
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { isSessionCancelledError, withSessionSignal } from '#lib/services/api-service.js';
+	import { isSessionCancelledError } from '#lib/services/api-service.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
+	import { imageService } from '#lib/services/image-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
-	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { ImageBuildRecord } from '#lib/types/docker.js';
-	import type { Settings } from '#lib/types/settings.js';
+	import type { ImageBuildRecord, ImageBuildRequest } from '#lib/types/docker.js';
+	import type { ResolvedSettings } from '#lib/types/settings.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { isDepotBuildAvailable } from '#lib/utils/build-provider.js';
@@ -45,12 +45,12 @@
 		isGitBuildContextSource
 	} from './image-build-history';
 
-	// The builds directory and providers come from the destination, which may differ from the selected environment.
 	const buildSettingsOptions = (environmentId: string) => ({
 		queryKey: queryKeys.settings.byEnvironment(environmentId),
 		queryFn: () => settingsService.getReadableSettings(environmentId)
 	});
-	const buildsRootOf = (settings: Settings | undefined) => (settings?.buildsDirectory ?? '/builds').trim() || '/builds';
+	const buildsRootOf = (settings: ResolvedSettings | undefined) =>
+		(settings?.values.buildsDirectory ?? '/builds').trim() || '/builds';
 	let pickedEnvironmentId = $state('');
 	const buildEnvironmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'images:build'));
 	const queryClient = useQueryClient();
@@ -152,7 +152,7 @@
 		platforms: '',
 		noCache: false,
 		pull: false,
-		provider: (settingsStore.current?.buildProvider as 'local' | 'depot') ?? 'local',
+		provider: (buildSettingsQuery.data?.values.buildProvider as 'local' | 'depot' | undefined) ?? 'local',
 		push: false,
 		load: true
 	});
@@ -175,7 +175,6 @@
 	let rightPanelTab = $state<'config' | 'output'>('config');
 	let showAdvanced = $state(false);
 
-	const selectedEnvId = $derived(environmentStore.selected?.id || '0');
 	const resolvedProvider = $derived(depotAvailable ? inputs.provider.value : 'local');
 	const isPushMode = $derived(resolvedProvider === 'depot' ? true : inputs.push.value);
 
@@ -217,36 +216,9 @@
 
 	const fullImageReference = $derived(
 		isPushMode && selectedRegistry
-			? buildImageReference(selectedRegistry.url, inputs.repositoryName.value, inputs.pushTag.value)
+			? buildImageReference(selectedRegistry.host, selectedRegistry.namespace, inputs.repositoryName.value, inputs.pushTag.value)
 			: ''
 	);
-
-	type ImageBuildRequest = {
-		envId: string;
-		provider: 'local' | 'depot';
-	} & Pick<
-		ImageBuildRecord,
-		| 'contextDir'
-		| 'dockerfile'
-		| 'tags'
-		| 'target'
-		| 'buildArgs'
-		| 'labels'
-		| 'cacheFrom'
-		| 'cacheTo'
-		| 'noCache'
-		| 'pull'
-		| 'network'
-		| 'isolation'
-		| 'shmSize'
-		| 'ulimits'
-		| 'entitlements'
-		| 'privileged'
-		| 'extraHosts'
-		| 'platforms'
-		| 'push'
-		| 'load'
-	>;
 
 	function handleBuildLine(line: string): boolean {
 		if (line.trim() === '') return false;
@@ -280,60 +252,10 @@
 	}
 
 	const buildMutation = createMutation(() => ({
-		mutationKey: queryKeys.images.buildRun(selectedEnvId),
-		mutationFn: async (request: ImageBuildRequest) => {
+		mutationKey: queryKeys.images.buildRun(buildEnvironmentId),
+		mutationFn: async (request: ImageBuildRequest & { envId: string }) => {
 			const { envId, ...payload } = request;
-			const response = await fetch(`/api/environments/${envId}/images/build`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify(payload),
-				signal: withSessionSignal()
-			});
-
-			if (!response.ok || !response.body) {
-				const errorData = (await tryCatch(response.json()).then((result) =>
-					result.error
-						? {
-								data: { message: m.build_request_failed() }
-							}
-						: result.data
-				)) as Record<string, unknown>;
-				const errorDataPayload = errorData['data'] as Record<string, unknown> | undefined;
-				const errorMessage =
-					errorDataPayload?.['message'] ||
-					errorData['error'] ||
-					errorData['message'] ||
-					m.build_request_failed_http({ status: response.status });
-				throw new Error(String(errorMessage));
-			}
-
-			const reader = response.body.getReader();
-			const decoder = new TextDecoder();
-			let buffer = '';
-			let streamComplete = false;
-
-			while (!streamComplete) {
-				const { done, value } = await reader.read();
-				if (done) {
-					break;
-				}
-
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split('\n');
-				buffer = lines.pop() || '';
-
-				streamComplete = lines.some(handleBuildLine);
-			}
-			if (streamComplete) {
-				await tryCatch(reader.cancel()).then((result) => {
-					if (result.error) {
-						return;
-					}
-					return result.data;
-				});
-			}
+			await imageService.buildImageStream(payload, envId, handleBuildLine);
 
 			if (buildError) {
 				throw new Error(buildError);
@@ -362,6 +284,12 @@
 		if (hasReachedComplete) return m.build_completed();
 		if (isBuilding) return m.common_live();
 		return m.idle();
+	});
+	const statusDotClass = $derived.by(() => {
+		if (buildError) return 'bg-destructive shadow-lg shadow-destructive/50';
+		if (hasReachedComplete) return 'bg-success shadow-lg shadow-success/50';
+		if (isBuilding) return 'animate-pulse bg-info shadow-lg shadow-info/50';
+		return 'bg-muted-foreground';
 	});
 	const buildMobileTabItems = $derived([
 		{ value: 'workspace', label: m.build_context() },
@@ -442,7 +370,7 @@
 		if (!repositoryName) return { error: m.select_a_repository_name() };
 		if (!registry.repositoryNames?.includes(repositoryName)) return { error: m.repository_name_not_configured() };
 
-		const reference = buildImageReference(registry.url, repositoryName, data.pushTag);
+		const reference = buildImageReference(registry.host, registry.namespace, repositoryName, data.pushTag);
 		if (!reference) return { error: m.tag_required() };
 
 		return { tags: [reference] };
@@ -728,17 +656,7 @@
 					<div class="hidden h-4 w-px bg-border xl:block"></div>
 					<div class="flex items-center gap-2">
 						<div class="relative flex items-center">
-							<div
-								class={`size-2 rounded-full transition-all ${
-									buildError
-										? 'bg-destructive shadow-lg shadow-destructive/50'
-										: hasReachedComplete
-											? 'bg-success shadow-lg shadow-success/50'
-											: isBuilding
-												? 'animate-pulse bg-info shadow-lg shadow-info/50'
-												: 'bg-muted-foreground'
-								}`}
-							></div>
+							<div class={['size-2 rounded-full transition-all', statusDotClass]}></div>
 							{#if isBuilding}
 								<div class="absolute inset-0 size-2 animate-ping rounded-full bg-info opacity-75"></div>
 							{/if}

@@ -3,23 +3,22 @@ package activity
 import (
 	"context"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 )
 
 type Service interface {
-	StartActivity(ctx context.Context, req StartRequest) (*activitytypes.Activity, error)
-	CompleteActivity(ctx context.Context, activityID string, status activitytypes.Status, finalMessage string, errMessage *string, finalStep ...string) (*activitytypes.Activity, error)
+	StartActivity(ctx context.Context, req StartRequest) (*types.Activity, error)
+	CompleteActivity(ctx context.Context, activityID string, status types.ActivityStatus, finalMessage string, errMessage *string, finalStep ...string) (*types.Activity, error)
 }
 
 type MessageAppender interface {
-	AppendMessage(ctx context.Context, activityID string, req AppendMessageRequest) (*activitytypes.Message, error)
+	AppendMessage(ctx context.Context, activityID string, req AppendMessageRequest) (*types.ActivityMessage, error)
 	// AppendMessages persists a batch of messages in one transaction with a
 	// single coalesced activity update; the Writer drains its queue through
 	// this so bulk docker output does not fsync per line.
-	AppendMessages(ctx context.Context, activityID string, reqs []AppendMessageRequest) ([]activitytypes.Message, error)
+	AppendMessages(ctx context.Context, activityID string, reqs []AppendMessageRequest) ([]types.ActivityMessage, error)
 }
 
 // Tracker is an optional interface a Service may implement to make activities
@@ -40,12 +39,21 @@ type SlotWaiter interface {
 }
 
 type StartRequest struct {
+	// BatchID groups activities spawned by one logical user action. When nil,
+	// the batch ID attached to the request context (if any) is used instead.
+	BatchID      *string
+	ResourceType *string
+	ResourceID   *string
+	ResourceName *string
+	StartedBy    *types.Actor
+	Progress     *int
+	Metadata     database.JSON
 	// ID is an optional caller-chosen ID; starting an existing ID returns that row.
 	ID            string
 	EnvironmentID string
-	// BatchID groups activities spawned by one logical user action. When nil,
-	// the batch ID attached to the request context (if any) is used instead.
-	BatchID *string
+	Type          types.ActivityType
+	Step          string
+	LatestMessage string
 	// Queue routes the activity through the per-environment concurrency
 	// limiter: with a free slot it starts running as usual; otherwise it is
 	// created with status queued and the caller must block on
@@ -54,30 +62,21 @@ type StartRequest struct {
 	// DeferSlot persists a queued activity without reserving a slot until its
 	// serialized worker starts. It is used by actor-owned work submitted after
 	// activity creation so queued tasks cannot hold slots ahead of the actor.
-	DeferSlot     bool
-	Type          activitytypes.Type
-	ResourceType  *string
-	ResourceID    *string
-	ResourceName  *string
-	StartedBy     *user.Actor
-	Step          string
-	LatestMessage string
-	Progress      *int
-	Metadata      database.JSON
+	DeferSlot bool
 }
 
 type UpdateRequest struct {
-	Status        activitytypes.Status
 	ResourceName  *string
 	Progress      *int
 	Step          *string
 	LatestMessage *string
 	Error         *string
 	Metadata      database.JSON
+	Status        types.ActivityStatus
 }
 
 type AppendMessageRequest struct {
-	Level    activitytypes.MessageLevel
+	Level    types.ActivityMessageLevel
 	Message  string
 	Payload  database.JSON
 	Progress *int

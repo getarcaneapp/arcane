@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/federated"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/lestrrat-go/jwx/v4/jwt"
@@ -22,24 +22,24 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/oidcjwk"
 )
 
 type federatedTestIssuer struct {
-	IssuerURL string
 	private   *mldsa.PrivateKey
-	keyID     string
 	server    *httptest.Server
+	IssuerURL string
+	keyID     string
 }
 
 func newFederatedTestIssuer(t *testing.T) *federatedTestIssuer {
@@ -83,7 +83,7 @@ func newFederatedTestIssuer(t *testing.T) *federatedTestIssuer {
 		}
 	})
 
-	issuer.server = httptest.NewServer(mux)
+	issuer.server = httptest.NewTLSServer(mux)
 	issuer.IssuerURL = issuer.server.URL
 	t.Cleanup(issuer.server.Close)
 
@@ -148,7 +148,7 @@ func setupFederatedCredentialService(t *testing.T, issuer *federatedTestIssuer) 
 	eventSvc := event.NewEventService(db, &config.Config{}, nil)
 	signingKey, err := mldsa.GenerateKey(mldsa.MLDSA87())
 	require.NoError(t, err)
-	authSvc := auth.NewAuthService(userSvc, settingsSvc, eventSvc, sessionSvc, roleSvc, &config.Config{
+	authSvc := auth.NewAuthService(userSvc, settingsSvc, eventSvc, sessionSvc, roleSvc, nil, nil, &config.Config{
 		JWTRefreshExpiry: 24 * time.Hour,
 	}).WithSigningKey(signingKey)
 
@@ -186,7 +186,7 @@ func setupFederatedCredentialService(t *testing.T, issuer *federatedTestIssuer) 
 		Audiences:       database.StringSlice{"arcane-ci"},
 		SubjectClaim:    "sub",
 		SubjectMatch:    "repo:getarcaneapp/arcane:*",
-		MatchType:       federated.MatchTypeGlob,
+		MatchType:       types.FederatedMatchTypeGlob,
 		RoleID:          viewerRole.ID,
 		IdentityUserID:  serviceUser.ID,
 		TokenTTLSeconds: 900,
@@ -202,9 +202,9 @@ func TestFederatedCredentialServiceExchangeToken(t *testing.T) {
 	ctx := t.Context()
 
 	tests := []struct {
+		wantError func(error) bool
 		name      string
 		token     string
-		wantError func(error) bool
 	}{
 		{
 			name:  "issues an Arcane bearer token for a matching issuer audience and subject",
@@ -228,10 +228,10 @@ func TestFederatedCredentialServiceExchangeToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp, err := service.ExchangeToken(ctx, federated.TokenExchangeRequest{
-				GrantType:        federated.TokenExchangeGrantType,
+			resp, err := service.ExchangeToken(ctx, types.TokenExchangeRequest{
+				GrantType:        types.TokenExchangeGrantType,
 				SubjectToken:     tt.token,
-				SubjectTokenType: federated.SubjectTokenTypeJWT,
+				SubjectTokenType: types.SubjectTokenTypeJWT,
 				Audience:         "https://arcane.example.com",
 			})
 			if tt.wantError != nil {
@@ -244,7 +244,7 @@ func TestFederatedCredentialServiceExchangeToken(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, resp)
 			require.Equal(t, "Bearer", resp.TokenType)
-			require.Equal(t, federated.IssuedTokenTypeAccessToken, resp.IssuedTokenType)
+			require.Equal(t, types.IssuedTokenTypeAccessToken, resp.IssuedTokenType)
 			require.Positive(t, resp.ExpiresIn)
 			require.NotEmpty(t, resp.AccessToken)
 
@@ -266,10 +266,10 @@ func TestFederatedCredentialServiceExchangeTokenRejectsIssuerWithoutCredential(t
 	otherIssuer := newFederatedTestIssuer(t)
 	service, _, _ := setupFederatedCredentialService(t, issuer)
 
-	resp, err := service.ExchangeToken(t.Context(), federated.TokenExchangeRequest{
-		GrantType:        federated.TokenExchangeGrantType,
+	resp, err := service.ExchangeToken(t.Context(), types.TokenExchangeRequest{
+		GrantType:        types.TokenExchangeGrantType,
 		SubjectToken:     otherIssuer.token(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
-		SubjectTokenType: federated.SubjectTokenTypeJWT,
+		SubjectTokenType: types.SubjectTokenTypeJWT,
 		Audience:         "https://arcane.example.com",
 	})
 
@@ -283,10 +283,10 @@ func TestFederatedCredentialServiceExchangeTokenDoesNotRequireGlobalFeatureFlag(
 	service, _, _ := setupFederatedCredentialService(t, issuer)
 	service.settingsService = nil
 
-	resp, err := service.ExchangeToken(t.Context(), federated.TokenExchangeRequest{
-		GrantType:        federated.TokenExchangeGrantType,
+	resp, err := service.ExchangeToken(t.Context(), types.TokenExchangeRequest{
+		GrantType:        types.TokenExchangeGrantType,
 		SubjectToken:     issuer.token(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
-		SubjectTokenType: federated.SubjectTokenTypeJWT,
+		SubjectTokenType: types.SubjectTokenTypeJWT,
 		Audience:         "https://arcane.example.com",
 	})
 
@@ -304,10 +304,10 @@ func TestFederatedCredentialServiceExchangeTokenRejectsExpiredCredential(t *test
 		Where("id = ?", "cred-github-actions").
 		Update("expires_at", expiredAt).Error)
 
-	resp, err := service.ExchangeToken(t.Context(), federated.TokenExchangeRequest{
-		GrantType:        federated.TokenExchangeGrantType,
+	resp, err := service.ExchangeToken(t.Context(), types.TokenExchangeRequest{
+		GrantType:        types.TokenExchangeGrantType,
 		SubjectToken:     issuer.token(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
-		SubjectTokenType: federated.SubjectTokenTypeJWT,
+		SubjectTokenType: types.SubjectTokenTypeJWT,
 		Audience:         "https://arcane.example.com",
 	})
 
@@ -321,18 +321,16 @@ func TestFederatedCredentialServiceUpdateDisableRevokesIssuedSessions(t *testing
 	service, authSvc, _ := setupFederatedCredentialService(t, issuer)
 	ctx := t.Context()
 
-	resp, err := service.ExchangeToken(ctx, federated.TokenExchangeRequest{
-		GrantType:        federated.TokenExchangeGrantType,
+	resp, err := service.ExchangeToken(ctx, types.TokenExchangeRequest{
+		GrantType:        types.TokenExchangeGrantType,
 		SubjectToken:     issuer.token(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
-		SubjectTokenType: federated.SubjectTokenTypeJWT,
+		SubjectTokenType: types.SubjectTokenTypeJWT,
 		Audience:         "https://arcane.example.com",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	_, err = service.Update(ctx, "admin-user", "cred-github-actions", federated.UpdateFederatedCredential{
-		Enabled: new(false),
-	})
+	_, err = service.Update(ctx, "admin-user", "cred-github-actions", types.FederatedCredential{}, map[string]bool{"enabled": true})
 	require.NoError(t, err)
 
 	_, _, err = authSvc.VerifyToken(ctx, resp.AccessToken)
@@ -345,10 +343,10 @@ func TestFederatedCredentialServiceRejectsReplayedSubjectToken(t *testing.T) {
 	service, _, _ := setupFederatedCredentialService(t, issuer)
 	ctx := t.Context()
 	subjectToken := issuer.token(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"})
-	req := federated.TokenExchangeRequest{
-		GrantType:        federated.TokenExchangeGrantType,
+	req := types.TokenExchangeRequest{
+		GrantType:        types.TokenExchangeGrantType,
 		SubjectToken:     subjectToken,
-		SubjectTokenType: federated.SubjectTokenTypeJWT,
+		SubjectTokenType: types.SubjectTokenTypeJWT,
 		Audience:         "https://arcane.example.com",
 	}
 
@@ -366,12 +364,12 @@ func TestFederatedCredentialServiceCreateRejectsBareWildcardGlob(t *testing.T) {
 	issuer := newFederatedTestIssuer(t)
 	service, _, _ := setupFederatedCredentialService(t, issuer)
 
-	_, err := service.Create(t.Context(), "admin-user", federated.CreateFederatedCredential{
+	_, err := service.Create(t.Context(), "admin-user", types.FederatedCredential{
 		Name:            "Unsafe wildcard",
 		IssuerURL:       "https://token.actions.githubusercontent.com",
 		Audiences:       []string{"arcane-ci"},
 		SubjectMatch:    "*",
-		MatchType:       federated.MatchTypeGlob,
+		MatchType:       types.FederatedMatchTypeGlob,
 		RoleID:          "role-federated-viewer",
 		TokenTTLSeconds: 900,
 	})
@@ -382,7 +380,7 @@ func TestFederatedCredentialServiceCreateRejectsBareWildcardGlob(t *testing.T) {
 
 func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	svc, err := settings.NewSettingsService(ctx, db, &config.Config{})
+	svc, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}
