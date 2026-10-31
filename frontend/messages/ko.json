@@ -1534,6 +1534,8 @@
   "environments_config_description": "이 환경에 대한 설정",
   "environments_api_url_help": "환경 API의 기본 URL",
   "environments_warning_disabled": "이 환경은 비활성화되어 있습니다. 설정은 수정할 수 있지만, 다시 활성화하기 전까지는 리소스에 접근할 수 없습니다.",
+  "environments_warning_direct_deprecated": "에이전트와의 직접 연결은 더 이상 권장되지 않으며 v3에서 제거될 예정입니다. 이 환경을 엣지 에이전트로 전환하십시오.",
+  "environments_direct_deprecated_badge": "사용 중단됨",
   "environments_warning_no_settings": "이 환경의 설정을 불러올 수 없습니다. 오프라인이거나 비활성화되었거나 URL이 잘못되었을 수 있습니다. 기본 환경 정보는 수정할 수 있습니다.",
   "environments_local_setting_disabled": "로컬 환경에서는 이 설정을 변경할 수 없습니다.",
   "environments_use_environment": "환경 사용",
