@@ -166,7 +166,7 @@ func (s *Service) startContainersAfterBackup(ctx context.Context, stoppedContain
 	remaining := append([]container.Summary(nil), stoppedContainers...)
 	lastErrors := make(map[string]error, len(stoppedContainers))
 	for len(remaining) > 0 {
-		currentContainers, listErr := s.deps.Docker.ListContainers(recoveryCtx)
+		currentContainers, listErr := s.deps.Docker.ListContainers(recoveryCtx, false)
 		if listErr == nil {
 			currentByID := make(map[string]container.Summary, len(currentContainers))
 			currentByName := make(map[string]container.Summary, len(currentContainers))

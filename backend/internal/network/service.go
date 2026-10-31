@@ -118,7 +118,7 @@ func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*types.Network
 }
 
 func (s *NetworkService) buildTopology(ctx context.Context) (*types.NetworkTopology, error) {
-	containers, err := s.dockerService.ListContainers(ctx)
+	containers, err := s.dockerService.ListContainers(ctx, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
@@ -395,7 +395,7 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 	g.Go(func() (workerErr error) {
 		defer utils.RecoverToError(&workerErr, "network container list worker")
 		var err error
-		containers, err = s.dockerService.ListContainers(groupCtx)
+		containers, err = s.dockerService.ListContainers(groupCtx, false)
 		if err != nil {
 			return fmt.Errorf("failed to list containers: %w", err)
 		}

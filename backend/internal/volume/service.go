@@ -794,7 +794,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	}()
 
 	go func() {
-		containers, listErr := s.dockerService.ListContainers(ctx)
+		containers, listErr := s.dockerService.ListContainers(ctx, false)
 		if listErr != nil {
 			containerChan <- containerMapResult{err: fmt.Errorf("failed to list containers: %w", listErr)}
 			return
