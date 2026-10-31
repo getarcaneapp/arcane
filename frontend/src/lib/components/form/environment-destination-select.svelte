@@ -10,6 +10,7 @@
 	import { environmentColor } from '#lib/stores/environment-colors.store.svelte.js';
 	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { environmentName } from '#lib/utils/environments.js';
 
 	let {
 		value = $bindable(),
@@ -17,7 +18,8 @@
 		environments,
 		variant = 'toolbar',
 		size = 'default',
-		allOption = false
+		allOption = false,
+		readonly = false
 	}: {
 		value?: string;
 		permission?: string;
@@ -25,6 +27,7 @@
 		variant?: 'toolbar' | 'field' | 'prefix';
 		size?: 'sm' | 'default';
 		allOption?: boolean;
+		readonly?: boolean;
 	} = $props();
 
 	const permitted = $derived(
@@ -36,7 +39,7 @@
 	]);
 	const currentId = $derived(value ?? options[0]?.value ?? '');
 	const current = $derived(permitted.find((env) => env.id === currentId));
-	const hasChoice = $derived(allOption || permitted.length > 1);
+	const hasChoice = $derived(!readonly && (allOption || permitted.length > 1));
 
 	function pick(environmentId: string) {
 		value = environmentId;
@@ -118,11 +121,11 @@
 			{@render prefixSeparator()}
 		{/if}
 	</div>
-{:else if variant === 'prefix' && current}
-	<div class="flex shrink-0 items-center gap-2 pr-2 text-sm text-muted-foreground" title={current.name}>
+{:else if variant === 'prefix' && currentId}
+	<div class="flex shrink-0 items-center gap-2 pr-2 text-sm text-muted-foreground" title={environmentName(currentId)}>
 		<span class="inline-flex items-center gap-1.5">
-			{@render environmentGlyph(current.id)}
-			<span class="max-w-48 truncate">{current.name}</span>
+			{@render environmentGlyph(currentId)}
+			<span class="max-w-48 truncate">{environmentName(currentId)}</span>
 		</span>
 		{@render prefixSeparator()}
 	</div>
