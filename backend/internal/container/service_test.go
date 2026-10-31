@@ -1633,7 +1633,7 @@ func TestAggregateContainersMergesEnvironments(t *testing.T) {
 	bodies := map[string]any{
 		"a": ContainerPaginatedResponse{
 			Success:               true,
-			Data:                  []containertypes.Summary{newGroupedContainerSummary("alpha", "shop"), newGroupedContainerSummary("charlie", "web")},
+			Data:                  []containertypes.Summary{newGroupedContainerSummary("alpha", "shop"), newGroupedContainerSummary("Delta", "web")},
 			Counts:                containertypes.StatusCounts{RunningContainers: 1, StoppedContainers: 1, TotalContainers: 2},
 			Pagination:            base.PaginationResponse{TotalItems: 2, GrandTotalItems: 3},
 			ResourceSortSupported: true,
@@ -1660,7 +1660,7 @@ func TestAggregateContainersMergesEnvironments(t *testing.T) {
 		require.NoError(t, err)
 
 		require.True(t, body.Success)
-		require.Equal(t, []string{"a/charlie", "b/delta"}, rowLabels(body.Data))
+		require.Equal(t, []string{"a/Delta", "b/delta"}, rowLabels(body.Data))
 		require.Equal(t, "Env a", body.Data[0].EnvironmentName)
 		require.Empty(t, body.Groups)
 		require.Equal(t, int64(4), body.Pagination.TotalItems)
@@ -1681,11 +1681,18 @@ func TestAggregateContainersMergesEnvironments(t *testing.T) {
 		}
 	})
 
+	t.Run("sorts by name descending ignoring case", func(t *testing.T) {
+		ctx, _ := containerScopeContext(t, "/api/environments/a,b,c/containers?sort=name&order=desc", bodies)
+		body, err := svc.AggregateContainers(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortDesc}, Params: pagination.Params{Limit: 20}}, "")
+		require.NoError(t, err)
+		require.Equal(t, []string{"b/delta", "a/Delta", "b/bravo", "a/alpha"}, rowLabels(body.Data))
+	})
+
 	t.Run("sorts by environment", func(t *testing.T) {
 		ctx, _ := containerScopeContext(t, "/api/environments/a,b,c/containers?sort=environment&order=asc", bodies)
 		body, err := svc.AggregateContainers(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "environment", Order: pagination.SortAsc}, Params: pagination.Params{Limit: 20}}, "")
 		require.NoError(t, err)
-		require.Equal(t, []string{"a/alpha", "a/charlie", "b/bravo", "b/delta"}, rowLabels(body.Data))
+		require.Equal(t, []string{"a/alpha", "a/Delta", "b/bravo", "b/delta"}, rowLabels(body.Data))
 	})
 
 	t.Run("project groups merge across environments and stay whole", func(t *testing.T) {

@@ -3,6 +3,7 @@
 package stats
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
@@ -428,7 +429,11 @@ func CompareContainerNamesForSort(a, b containertypes.Summary) int {
 		}
 		return names[0]
 	}
-	return strings.Compare(firstName(a.Names), firstName(b.Names))
+	nameA, nameB := firstName(a.Names), firstName(b.Names)
+	return cmp.Or(
+		strings.Compare(strings.ToLower(nameA), strings.ToLower(nameB)),
+		strings.Compare(nameA, nameB),
+	)
 }
 
 // ContainerResourceSortPermissionDenied enforces the extra containers:read
