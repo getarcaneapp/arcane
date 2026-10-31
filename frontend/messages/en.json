@@ -4316,5 +4316,13 @@
   "deploy_to": "Deploy to",
   "editor_tab_width": "Editor tab width",
   "editor_tab_width_description": "Spaces per indentation level in code editors and when formatting documents",
-  "spaces_count": "{count} spaces"
+  "spaces_count": "{count} spaces",
+  "application_theme_abyss": "Abyss",
+  "application_theme_abyss_description": "Deep teal surfaces with bright cyan accents.",
+  "application_theme_twilight": "Twilight",
+  "application_theme_twilight_description": "Deep violet surfaces with soft lavender accents.",
+  "application_theme_obsidian": "Obsidian",
+  "application_theme_obsidian_description": "Near-black surfaces with emerald accents.",
+  "application_theme_onyx": "Onyx",
+  "application_theme_onyx_description": "Near-black warm neutrals with rose accents."
 }
