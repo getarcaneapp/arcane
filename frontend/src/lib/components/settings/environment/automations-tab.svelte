@@ -2,6 +2,7 @@
 	import { createQueries, createQuery, useQueryClient } from '@tanstack/svelte-query';
 
 	import JobScheduleDialog from '#lib/components/job-card/job-schedule-dialog.svelte';
+	import MixedValuesPopover from '#lib/components/settings/mixed-values-popover.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
@@ -17,7 +18,7 @@
 	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import type { ContainerSummaryDto } from '#lib/types/docker.js';
-	import type { JobScheduleConfig } from '#lib/types/settings.js';
+	import type { JobScheduleConfig, MixedSettingValue } from '#lib/types/settings.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import {
 		UPDATE_CHECK_LABEL,
@@ -68,7 +69,7 @@
 
 	let updateSearchTerm = $state('');
 	let autoHealSearchTerm = $state('');
-	let scheduleTarget = $state<{ key: ScheduleKey; name: string } | null>(null);
+	let scheduleTarget = $state<{ key: ScheduleKey; name: string; value?: string } | null>(null);
 	let scheduleOpen = $state(false);
 
 	const autoUpdateExcluded = $derived(parseExcludedContainerSet(formInputs.autoUpdateExcludedContainers.value));
@@ -86,8 +87,21 @@
 		return [...new Set(scheduleResults.flatMap((result) => (result.data ? [result.data[key]] : [])))];
 	}
 
-	function openSchedule(key: ScheduleKey, name: string) {
-		scheduleTarget = { key, name };
+	function mixedSchedules(key: ScheduleKey, name: string): MixedSettingValue[] {
+		const groups = new Map<string, string[]>();
+		environments.forEach((environment, index) => {
+			const value = scheduleResults[index]?.data?.[key];
+			if (value) groups.set(value, [...(groups.get(value) ?? []), environment.name]);
+		});
+		return [...groups].map(([value, names]) => ({
+			label: value,
+			environments: names,
+			apply: () => openSchedule(key, name, value)
+		}));
+	}
+
+	function openSchedule(key: ScheduleKey, name: string, value?: string) {
+		scheduleTarget = { key, name, value };
 		scheduleOpen = true;
 	}
 
@@ -101,7 +115,26 @@
 
 {#snippet scheduleControl(key: ScheduleKey, name: string)}
 	{@const values = scheduleValues(key)}
-	{#if values.length > 0}
+	{#if values.length > 1}
+		<span class="mt-1.5 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+			<ClockIcon class="size-3.5" />
+			{m.jobs_schedule()}:
+			<MixedValuesPopover
+				values={mixedSchedules(key, name)}
+				class="rounded-sm font-mono transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+			>
+				{m.mixed()}
+			</MixedValuesPopover>
+			<button
+				type="button"
+				title={m.jobs_edit_schedule()}
+				class="rounded-sm transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+				onclick={() => openSchedule(key, name)}
+			>
+				<EditIcon class="size-3" />
+			</button>
+		</span>
+	{:else if values.length > 0}
 		<button
 			type="button"
 			class="mt-1.5 inline-flex items-center gap-1.5 rounded-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
@@ -109,7 +142,7 @@
 		>
 			<ClockIcon class="size-3.5" />
 			{m.jobs_schedule()}:
-			<span class="font-mono">{values.length > 1 ? m.mixed() : values[0]}</span>
+			<span class="font-mono">{values[0]}</span>
 			<EditIcon class="size-3" />
 		</button>
 	{/if}
@@ -412,8 +445,8 @@
 		<JobScheduleDialog
 			name={scheduleTarget.name}
 			settingsKey={scheduleTarget.key}
-			schedule={values.length > 1 ? '' : (values[0] ?? '')}
-			mixed={values.length > 1}
+			schedule={scheduleTarget.value ?? (values.length > 1 ? '' : (values[0] ?? ''))}
+			mixed={!scheduleTarget.value && values.length > 1}
 			save={saveSchedule}
 			bind:open={scheduleOpen}
 			onUpdate={() => (scheduleOpen = false)}
