@@ -105,7 +105,7 @@ function isAdminOnlyRoute(path: string): boolean {
 const matchesAny = (path: string, prefixes: string[]) =>
 	prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 
-function userHasAnyAccess(user: User): boolean {
+export function userHasAnyAccess(user: User): boolean {
 	if (!user.permissionsByEnv) return false;
 	for (const perms of Object.values(user.permissionsByEnv)) {
 		if (perms.length > 0) return true;

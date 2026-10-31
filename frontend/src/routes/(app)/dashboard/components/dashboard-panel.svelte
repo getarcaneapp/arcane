@@ -20,7 +20,7 @@
 			<h2 class="truncate text-sm font-medium">{title}</h2>
 			{@render actions?.()}
 		</div>
-		<div tabindex="0" class="-mx-2 min-h-0 flex-1 overflow-y-auto px-2">
+		<div class="-mx-2 min-h-0 flex-1 overflow-y-auto px-2">
 			{@render children()}
 		</div>
 	</div>

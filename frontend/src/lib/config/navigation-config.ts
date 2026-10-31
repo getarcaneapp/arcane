@@ -43,7 +43,7 @@ import { featureStore } from '#lib/stores/features.store.svelte.js';
 import type { PermissionsManifest, User } from '#lib/types/auth.js';
 import type { FeatureID } from '#lib/types/features.js';
 import type { PodmanStatus } from '#lib/types/podman.js';
-import { canReachShownAccessSurface } from '#lib/utils/auth.js';
+import { canReachShownAccessSurface, userHasAnyAccess } from '#lib/utils/auth.js';
 import type { ShortcutKey } from '#lib/utils/navigation.js';
 
 export type NavigationItem = {
@@ -348,7 +348,7 @@ export function filterByPermissions(
 	accessManifest?: PermissionsManifest | null
 ): NavigationItem[] {
 	if (!items) return [];
-	if (!user) return [];
+	if (!user || !userHasAnyAccess(user)) return [];
 	const out: NavigationItem[] = [];
 	for (const item of items) {
 		if (!canSeeItem(item, user, accessManifest)) continue;
