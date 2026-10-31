@@ -16,6 +16,7 @@
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import CodePanel from '#lib/components/code-panel.svelte';
 	import ComposeFileEditorPanel from '#lib/components/compose-file-editor-panel.svelte';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import ProjectGitBackupSummary from '#lib/components/gitops/project-git-backup-summary.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
@@ -310,8 +311,31 @@
 	const gitProjectUrl = $derived(gitOpsProjectUrl(lifecycleSync));
 	const gitComposeEditUrl = $derived(gitOpsComposeEditUrl(lifecycleSync));
 	const gitOverrideEditUrl = $derived(gitOpsFileEditUrl(lifecycleSync, overrideFileName));
+	let envEditorRequested = $state(false);
+	let envExists = $derived(!!project?.envFileExists);
+	let envActive = $derived(envExists || envEditorRequested);
+	let canRemoveEnv = $derived(canEditEnv && !isGitOpsManaged);
 	const overrideWorkspaceRows = $derived.by(() => {
-		if (overrideActive) return [{ key: 'override', label: overrideFileName, iconClass: 'text-purple', locked: true }];
+		if (overrideActive) {
+			return [
+				{
+					key: 'override',
+					label: overrideFileName,
+					iconClass: 'text-purple',
+					locked: true,
+					menuItems: [
+						{
+							visible: canEditOverride,
+							id: 'remove',
+							label: m.compose_override_remove(),
+							icon: TrashIcon,
+							destructive: true,
+							onSelect: () => confirmRemoveFile(overrideFileName, handleRemoveOverride)
+						}
+					].filter((item) => item.visible)
+				}
+			];
+		}
 		if (canEditOverride) {
 			return [
 				{
@@ -324,10 +348,43 @@
 		}
 		return [];
 	});
+	const envWorkspaceRows = $derived.by(() => {
+		if (envActive) {
+			return [
+				{
+					key: 'env',
+					label: '.env',
+					iconClass: 'text-success',
+					locked: true,
+					menuItems: [
+						{
+							visible: canRemoveEnv,
+							id: 'remove',
+							label: m.common_delete(),
+							icon: TrashIcon,
+							destructive: true,
+							onSelect: () => confirmRemoveFile('.env', handleRemoveEnv)
+						}
+					].filter((item) => item.visible)
+				}
+			];
+		}
+		if (canEditEnv) {
+			return [
+				{
+					key: 'add-env',
+					label: m.add_env_file(),
+					action: true,
+					onSelect: handleAddEnv
+				}
+			];
+		}
+		return [];
+	});
 	const projectWorkspaceLeadingRows = $derived([
 		{ key: 'compose', label: composeFileName, iconClass: 'text-info', locked: true },
 		...overrideWorkspaceRows,
-		{ key: 'env', label: '.env', iconClass: 'text-success', locked: true }
+		...envWorkspaceRows
 	]);
 	let archiveRequiresStopped = $derived(
 		!!project &&
@@ -385,7 +442,8 @@
 	const selectedFile = $derived.by(() => {
 		const current = selectedFilePreference;
 		if (current === 'override') return overrideActive ? 'override' : 'compose';
-		if (current === 'compose' || current === 'env') return current;
+		if (current === 'env') return envActive ? 'env' : 'compose';
+		if (current === 'compose') return current;
 		if (current.startsWith('file:')) {
 			const relativePath = current.slice(5);
 			return projectWorkspacePaths.has(relativePath) ? current : 'compose';
@@ -406,7 +464,8 @@
 	);
 	const openTabs = $derived.by(() => {
 		const valid = openTabsPreference.filter((key) => {
-			if (key === 'compose' || key === 'env') return true;
+			if (key === 'compose') return true;
+			if (key === 'env') return envActive;
 			// Drop a lingering override tab once the override is gone (e.g. deleted
 			// via a blank save) and no add is in progress.
 			if (key === 'override') return overrideActive;
@@ -1034,6 +1093,10 @@
 			overrideEditorRequested = false;
 			inputs.overrideContent.value = '';
 		}
+		if (key === 'env' && !envExists) {
+			envEditorRequested = false;
+			inputs.envContent.value = '';
+		}
 		const index = openTabs.indexOf(key);
 		const remaining = openTabs.filter((tab) => tab !== key);
 		openTabsPreference = openTabsPreference.filter((tab) => tab !== key);
@@ -1089,6 +1152,33 @@
 		if (existed) {
 			await handleSaveChanges();
 		}
+	}
+
+	function handleAddEnv() {
+		envEditorRequested = true;
+		envOpen = true;
+		openFileTab('env');
+	}
+
+	async function handleRemoveEnv() {
+		envEditorRequested = false;
+		const existed = envExists;
+		inputs.envContent.value = '';
+		if (existed) {
+			await handleSaveChanges();
+		}
+	}
+
+	function confirmRemoveFile(name: string, action: () => Promise<void>) {
+		openConfirmDialog({
+			title: m.delete_name({ name }),
+			message: m.common_remove_confirm({ resource: name }),
+			confirm: {
+				label: m.common_delete(),
+				destructive: true,
+				action
+			}
+		});
 	}
 
 	async function loadProjectWorkspaceFile(kind: 'workspace' | 'include' | 'directory', relativePath: string) {
@@ -1627,7 +1717,7 @@
 											<div class="flex min-h-0 flex-1 flex-col">
 												{#if configurationError}
 													{@render envUnavailable()}
-												{:else}
+												{:else if envActive}
 													<CodePanel
 														{...envPanelProps()}
 														bind:open={envOpen}
@@ -1635,6 +1725,15 @@
 														bind:hasErrors={envHasErrors}
 														bind:validationReady={envValidationReady}
 													/>
+												{:else if canEditEnv}
+													<button
+														type="button"
+														class="flex shrink-0 items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+														onclick={handleAddEnv}
+													>
+														<CreateFileIcon class="size-4 shrink-0" />
+														<span>{m.add_env_file()}</span>
+													</button>
 												{/if}
 											</div>
 										{/snippet}

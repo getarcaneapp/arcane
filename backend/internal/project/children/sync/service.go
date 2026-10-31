@@ -124,7 +124,7 @@ func ensureEffectiveEnvFile(ctx context.Context, projectPath, projectsDirectory 
 			}
 			return projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, effectiveContent)
 		}
-		return projects.EnsureEnvFile(ctx, projectsDirectory, projectPath)
+		return nil
 	}
 
 	effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
@@ -270,7 +270,7 @@ func PersistGitSyncEnvFiles(ctx context.Context, projectPath, projectsDirectory 
 			slog.WarnContext(ctx, "skipping permission-locked .env file; leaving it untouched", "projectPath", projectPath)
 			return nil
 		}
-		return projects.EnsureEnvFile(ctx, projectsDirectory, projectPath)
+		return nil
 	}
 
 	if update.EffectiveContent == nil {

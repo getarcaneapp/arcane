@@ -39,7 +39,7 @@ export const load: PageLoad = async ({ url, parent }) => {
 
 	return {
 		composeTemplates: allTemplates,
-		envTemplate: generated ? '' : selectedTemplate?.content?.envContent || defaultTemplates.envTemplate,
+		envTemplate: generated ? '' : selectedTemplate?.content?.envContent || '',
 		defaultTemplate: generated?.composeContent || selectedTemplate?.content?.content || defaultTemplates.composeTemplate,
 		selectedTemplate: selectedTemplate?.content?.template || null,
 		selectedTemplateError: selectedTemplate?.error ?? null,

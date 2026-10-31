@@ -21,7 +21,7 @@
 	import { WorkspaceDraftState } from '#lib/components/workspace-editor/workspace-draft-state.svelte.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
-	import { ArrowLeftIcon } from '#lib/icons/index.js';
+	import { ArrowLeftIcon, CreateFileIcon, TrashIcon } from '#lib/icons/index.js';
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -108,14 +108,16 @@
 	let inputs = $derived(form.inputs);
 
 	let composeOpen = $state(true);
-	let envOpen = $state(true);
-	let layoutMode = $state<ProjectEditorLayoutMode>(resolveProjectEditorLayout('classic'));
+	let envOpen = $state(false);
+	let envRequested = $state(formData.envContent.trim() !== '');
+	let layoutMode = $state<ProjectEditorLayoutMode>(resolveProjectEditorLayout('tree'));
 	let treePaneWidth = $state(280);
 	const workspaceDraft = new WorkspaceDraftState({
 		fallbackTab: 'compose',
 		initialOpenTabs: ['compose'],
 		initialSelection: 'compose',
 		isFixedTab: (key) => key === 'compose' || key === 'env',
+		isTabAvailable: (key) => key !== 'env' || envRequested,
 		planCreate: planProjectWorkspaceFileCreate,
 		planRename: planProjectWorkspaceFileRename,
 		planMove: planWorkspaceFileMove
@@ -149,10 +151,18 @@
 		return notices;
 	});
 	const newProjectWorkspaceEntries = $derived(workspaceDraft.entries);
-	const newProjectWorkspaceLeadingRows = [
+	const newProjectWorkspaceLeadingRows = $derived([
 		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-info', locked: true },
-		{ key: 'env', label: '.env', iconClass: 'text-success', locked: true }
-	];
+		envRequested
+			? {
+					key: 'env',
+					label: '.env',
+					iconClass: 'text-success',
+					locked: true,
+					menuItems: [{ id: 'remove', label: m.common_delete(), icon: TrashIcon, destructive: true, onSelect: handleRemoveEnv }]
+				}
+			: { key: 'add-env', label: m.add_env_file(), action: true, onSelect: handleAddEnv }
+	]);
 	let treeOutlineOpen = $state(false);
 	let treeDiffOpen = $state(false);
 	let treeCommandPaletteOpen = $state(false);
@@ -179,9 +189,9 @@
 	const validationState = $derived(
 		getTemplateEditorValidationState(
 			validation.composeValidationReady,
-			validation.envValidationReady || inputs.envContent.value === formData.envContent,
+			!envRequested || validation.envValidationReady || inputs.envContent.value === formData.envContent,
 			validation.composeHasErrors,
-			validation.envHasErrors
+			envRequested && validation.envHasErrors
 		)
 	);
 	let hasEditorErrors = $derived(hasTemplateEditorErrors(validationState));
@@ -251,9 +261,24 @@
 		});
 	}
 
+	function handleAddEnv() {
+		envRequested = true;
+		envOpen = true;
+		workspaceDraft.openTab('env');
+	}
+
+	function handleRemoveEnv() {
+		envRequested = false;
+		form.setValue('envContent', '');
+		workspaceDraft.closeTab('env');
+	}
+
 	const { composeHandlers, handleCreateTemplate } = createComposeTemplateDialogFlow({
 		getInputs: () => inputs,
-		setInputValue: (key, value) => form.setValue(key, value),
+		setInputValue: (key, value) => {
+			if (key === 'envContent' && value.trim()) envRequested = true;
+			form.setValue(key, value);
+		},
 		closeTemplateDialog: () => (ui.showTemplateDialog = false),
 		validate: form.validate,
 		setLoading: (value) => (ui.creatingTemplate = value),
@@ -374,6 +399,24 @@
 			</div>
 
 			<div class="flex items-center gap-2">
+				<div class="mr-2 flex items-center gap-2">
+					<label
+						for="new-project-layout-mode-toggle"
+						class="cursor-pointer text-xs text-muted-foreground"
+						title={m.project_view_description()}
+					>
+						{m.workspace()}
+					</label>
+					<Switch
+						id="new-project-layout-mode-toggle"
+						checked={layoutMode === 'tree'}
+						aria-label={m.project_view_description()}
+						onCheckedChange={(checked) => {
+							layoutMode = checked ? 'tree' : 'classic';
+							workspaceDraft.openTab('compose');
+						}}
+					/>
+				</div>
 				<EnvironmentDestinationSelect
 					bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
 					permission="projects:create"
@@ -434,25 +477,6 @@
 						</Alert.Description>
 					</Alert.Root>
 				{/if}
-
-				<div class="flex shrink-0 items-center justify-end gap-2">
-					<label
-						for="new-project-layout-mode-toggle"
-						class="cursor-pointer text-xs text-muted-foreground"
-						title={m.project_view_description()}
-					>
-						{m.workspace()}
-					</label>
-					<Switch
-						id="new-project-layout-mode-toggle"
-						checked={layoutMode === 'tree'}
-						aria-label={m.project_view_description()}
-						onCheckedChange={(checked) => {
-							layoutMode = checked ? 'tree' : 'classic';
-							workspaceDraft.openTab('compose');
-						}}
-					/>
-				</div>
 
 				{#if layoutMode === 'tree'}
 					<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
@@ -522,13 +546,24 @@
 						{/snippet}
 
 						{#snippet env()}
-							<CodePanel
-								{...envPanelProps()}
-								bind:open={envOpen}
-								bind:value={inputs.envContent.value}
-								bind:hasErrors={validation.envHasErrors}
-								bind:validationReady={validation.envValidationReady}
-							/>
+							{#if envRequested}
+								<CodePanel
+									{...envPanelProps()}
+									bind:open={envOpen}
+									bind:value={inputs.envContent.value}
+									bind:hasErrors={validation.envHasErrors}
+									bind:validationReady={validation.envValidationReady}
+								/>
+							{:else}
+								<button
+									type="button"
+									class="flex shrink-0 items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+									onclick={handleAddEnv}
+								>
+									<CreateFileIcon class="size-4 shrink-0" />
+									<span>{m.add_env_file()}</span>
+								</button>
+							{/if}
 						{/snippet}
 					</ComposeEditorSplit>
 				{/if}

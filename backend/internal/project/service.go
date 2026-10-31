@@ -1910,15 +1910,16 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		}
 		return projectdetails.ResolveDetailsOverride(proj.Path, overrideContent, kit.Ternary(selErr == nil, composeSelection, nil))
 	}()
-	envContent, err := func() (string, error) {
+	envContent, envFileExists, err := func() (string, bool, error) {
 		if !opts.IncludeEnvState {
-			return "", nil
+			return "", false, nil
 		}
 		envState, readErr := projects.ReadProjectEnvState(proj.Path)
 		if readErr != nil {
-			return "", fmt.Errorf("failed to read project env state: %w", readErr)
+			return "", false, fmt.Errorf("failed to read project env state: %w", readErr)
 		}
-		return projectsync.ResolveStoredEffectiveEnvContent(envState)
+		content, resolveErr := projectsync.ResolveStoredEffectiveEnvContent(envState)
+		return content, envState.HasEffective, resolveErr
 	}()
 	if err != nil {
 		return types.Project{}, err
@@ -1998,6 +1999,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		EnvContent:       envContent,
 		OverrideContent:  overrideContent,
 		OverrideFileName: overrideFileName,
+		EnvFileExists:    envFileExists,
 		Name:             proj.Name,
 		GitRepositoryURL: kit.FromPtr(syncRecord.Repository).URL,
 		IconLightURL:     icon.IconLightURL,
@@ -2133,6 +2135,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfo(
 			EnvContent:         d.EnvContent,
 			OverrideContent:    d.OverrideContent,
 			OverrideFileName:   d.OverrideFileName,
+			EnvFileExists:      d.EnvFileExists,
 			Name:               d.Name,
 			GitRepositoryURL:   d.GitRepositoryURL,
 			IconLightURL:       d.IconLightURL,

@@ -698,7 +698,10 @@ func WriteManagedEnvFile(ctx context.Context, projectsDirectory, projectPath, fi
 
 	switch fileName {
 	case EffectiveEnvFileName:
-		return WriteProjectFile(ctx, projectsDirectory, projectPath, ".env", content)
+		if strings.TrimSpace(content) == "" {
+			return RemoveProjectFile(ctx, projectsDirectory, projectPath, EffectiveEnvFileName)
+		}
+		return WriteProjectFile(ctx, projectsDirectory, projectPath, EffectiveEnvFileName, content)
 	case GitSourceEnvFileName:
 		return WriteProjectFile(ctx, projectsDirectory, projectPath, GitSourceEnvFileName, content)
 	case OverrideEnvFileName:
