@@ -49,7 +49,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup git-cliff
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: git-cliff@2.14.2
 
@@ -195,7 +195,7 @@ jobs:
           cosign-release: v3.0.6
 
       - name: Setup ORAS
-        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
         with:
           version: 1.3.1
 
