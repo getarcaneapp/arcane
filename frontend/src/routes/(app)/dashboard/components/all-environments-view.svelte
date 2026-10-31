@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { createQuery, keepPreviousData } from '@tanstack/svelte-query';
+	import { createQueries, createQuery, keepPreviousData, type CreateQueryResult } from '@tanstack/svelte-query';
 	import { PersistedState } from 'runed';
 	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -23,6 +23,7 @@
 		TrashIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { containerListQuery } from '#lib/query/containers.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { apiKeyService } from '#lib/services/api-key-service.js';
 	import type { APIRequestConfig } from '#lib/services/api-service.js';
@@ -41,7 +42,7 @@
 	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { DashboardWidgetLayout } from '#lib/types/auth.js';
+	import type { DashboardWidgetId, DashboardWidgetLayout } from '#lib/types/auth.js';
 	import type { PruneType, SystemPruneRequest } from '#lib/types/automation.js';
 	import type { ContainerStatusCounts, ImageUsageCounts } from '#lib/types/docker.js';
 	import type { Environment, EnvironmentVulnerabilitySummary } from '#lib/types/environment.js';
@@ -55,8 +56,7 @@
 	import { hasAnyPermission, hasPermission } from '#lib/utils/auth.js';
 	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 	import {
-		collectAcrossEnvironments,
-		fetchAcrossEnvironments,
+		limitEnvironments,
 		readableEnvironments,
 		sumAcrossEnvironments,
 		type EnvironmentFailure
@@ -126,6 +126,17 @@
 	};
 	const CONTAINER_EVENT_TYPES = ['container.oom', 'container.die'];
 	const ALL_API_KEYS = { pagination: { page: 1, limit: -1 } };
+	const DASHBOARD_REQUEST_CONFIG: APIRequestConfig = { suppressAccessDeniedToast: true };
+	const CONTAINER_EVENTS_REQUEST = {
+		pagination: { page: 1, limit: 20 },
+		sort: { column: 'timestamp', direction: 'desc' as const },
+		filters: { type: CONTAINER_EVENT_TYPES }
+	};
+	const TOP_MEMORY_REQUEST = {
+		pagination: { page: 1, limit: 5 },
+		sort: { column: 'memoryUsage', direction: 'desc' as const }
+	};
+	const ATTENTION_WIDGETS: DashboardWidgetId[] = ['attention', 'attentionCount', 'environments'];
 	const API_KEY_EXPIRY_WINDOW_HOURS = 14 * 24;
 
 	let isRefreshing = $state(false);
@@ -143,9 +154,7 @@
 			return [];
 		}
 
-		return environmentStore.available.filter(
-			(environment) => environment.enabled && hasPermission('dashboard:read', environment.id)
-		);
+		return environmentStore.available.filter((environment) => environment.enabled);
 	});
 
 	function canPruneInEnvironment(envId: string): boolean {
@@ -163,6 +172,18 @@
 	const loadableEnvironmentCards = $derived(environmentCards.filter(({ environment }) => shouldLoadEnvironment(environment)));
 	const loadableEnvironmentIds = $derived(new Set(loadableEnvironmentCards.map(({ environment }) => environment.id)));
 
+	let editingLayout = $state(false);
+	let draftLayout = $state.raw<DashboardWidgetLayout[]>([]);
+	const savedLayout = $derived(resolveDashboardLayout(userStore.current?.preferences?.dashboardLayout, environmentCards.length));
+	const layout = $derived(editingLayout ? draftLayout : savedLayout);
+	const hiddenWidgets = $derived(layout.filter((widget) => widget.hidden));
+	const layoutHasChanges = $derived(editingLayout && JSON.stringify(draftLayout) !== JSON.stringify(savedLayout));
+	const visibleWidgets = $derived(new Set(layout.filter((widget) => !widget.hidden).map((widget) => widget.id)));
+
+	function anyWidgetVisible(ids: DashboardWidgetId[]): boolean {
+		return ids.some((id) => visibleWidgets.has(id));
+	}
+
 	function loadableEnvironments(permission: string): EnvironmentRef[] {
 		return readableEnvironments(permission).filter((environment) => loadableEnvironmentIds.has(environment.id));
 	}
@@ -179,15 +200,28 @@
 		return value?.currentVersion !== undefined;
 	}
 
-	async function collectByEnvironment<C>(
-		environments: EnvironmentRef[],
-		run: (environmentId: string, config: APIRequestConfig) => Promise<C>
+	function combineByEnvironment<C>(
+		{ included, excluded }: { included: EnvironmentRef[]; excluded: EnvironmentRef[] },
+		results: CreateQueryResult<C>[]
 	) {
-		const { values, failures } = await collectAcrossEnvironments(environments, run);
+		const settled = included.flatMap((environment, index) => {
+			const result = results[index];
+			return result ? [{ environment, result }] : [];
+		});
 		return {
-			byEnvironment: values.map(({ environment, value }) => ({ environment, data: value })),
-			failedEnvironments: failures,
-			excludedEnvironments: [] as EnvironmentRef[]
+			data: {
+				byEnvironment: settled.flatMap(({ environment, result }) =>
+					result.data === undefined ? [] : [{ environment, data: result.data }]
+				),
+				failedEnvironments: settled.flatMap(({ environment, result }): EnvironmentFailure[] =>
+					result.error ? [{ environment, message: extractApiErrorMessage(result.error) }] : []
+				),
+				excludedEnvironments: excluded
+			},
+			error: null,
+			isPending: results.length > 0 && results.every((result) => result.isPending),
+			isError: results.length > 0 && results.every((result) => result.isError),
+			refetch: () => Promise.all(results.map((result) => result.refetch()))
 		};
 	}
 
@@ -288,61 +322,59 @@
 		return {
 			queryKey: dashboardQueryKey('vulnerabilities', 'risk', environments),
 			queryFn: () => fetchRiskOverview(environments),
-			enabled: environments.length > 0,
+			enabled: environments.length > 0 && anyWidgetVisible(['risk', ...ATTENTION_WIDGETS]),
 			placeholderData: keepPreviousData
 		};
 	});
 
-	const eventsQuery = createQuery(() => {
-		const environments = loadableEnvironments('events:read');
+	const eventsQuery = createQueries(() => {
+		const environments = limitEnvironments(loadableEnvironments('events:read'));
+		const enabled = anyWidgetVisible(ATTENTION_WIDGETS);
 		return {
-			queryKey: dashboardQueryKey('events', 'container-events', environments),
-			queryFn: () =>
-				collectByEnvironment(environments, (environmentId, config) =>
-					eventService.getEnvironmentEvents(
-						environmentId,
-						{
-							pagination: { page: 1, limit: 20 },
-							sort: { column: 'timestamp', direction: 'desc' },
-							filters: { type: CONTAINER_EVENT_TYPES }
-						},
-						config
-					)
-				),
-			placeholderData: keepPreviousData
+			queries: environments.included.map((environment) => ({
+				queryKey: queryKeys.events.environmentList(environment.id, CONTAINER_EVENTS_REQUEST),
+				queryFn: () => eventService.getEnvironmentEvents(environment.id, CONTAINER_EVENTS_REQUEST, DASHBOARD_REQUEST_CONFIG),
+				enabled
+			})),
+			combine: (results) => combineByEnvironment(environments, results)
 		};
 	});
 
-	const jobsQuery = createQuery(() => {
-		const environments = loadableEnvironments('jobs:manage');
+	const jobsQuery = createQueries(() => {
+		const environments = limitEnvironments(loadableEnvironments('jobs:manage'));
+		const enabled = anyWidgetVisible(['jobs', ...ATTENTION_WIDGETS]);
 		return {
-			queryKey: dashboardQueryKey('environment-jobs', 'jobs', environments),
-			queryFn: () =>
-				collectByEnvironment(environments, (environmentId, config) => jobScheduleService.listJobs(environmentId, config)),
-			placeholderData: keepPreviousData
+			queries: environments.included.map((environment) => ({
+				queryKey: queryKeys.jobs.list(environment.id),
+				queryFn: () => jobScheduleService.listJobs(environment.id, DASHBOARD_REQUEST_CONFIG),
+				enabled
+			})),
+			combine: (results) => combineByEnvironment(environments, results)
 		};
 	});
 
-	const diskUsageQuery = createQuery(() => {
-		const environments = loadableEnvironments('system:read');
+	const diskUsageQuery = createQueries(() => {
+		const environments = limitEnvironments(loadableEnvironments('system:read'));
+		const enabled = anyWidgetVisible(['reclaimable', 'reclaimableTotal', 'environments']);
 		return {
-			queryKey: dashboardQueryKey('system', 'disk-usage', environments),
-			queryFn: () => collectByEnvironment(environments, (environmentId) => systemService.getDiskUsage(environmentId)),
-			placeholderData: keepPreviousData
+			queries: environments.included.map((environment) => ({
+				queryKey: queryKeys.system.diskUsage(environment.id),
+				queryFn: () => systemService.getDiskUsage(environment.id, DASHBOARD_REQUEST_CONFIG),
+				enabled
+			})),
+			combine: (results) => combineByEnvironment(environments, results)
 		};
 	});
 
-	const topMemoryQuery = createQuery(() => {
-		const environments = loadableEnvironments('containers:read');
+	const topMemoryQuery = createQueries(() => {
+		const environments = limitEnvironments(loadableEnvironments('containers:read'));
+		const enabled = anyWidgetVisible(['memory']);
 		return {
-			queryKey: dashboardQueryKey('containers', 'top-memory', environments),
-			queryFn: () =>
-				fetchAcrossEnvironments(
-					environments,
-					{ pagination: { page: 1, limit: 5 }, sort: { column: 'memoryUsage', direction: 'desc' } },
-					(scope, options, config) => containerService.getContainersForEnvironment(scope, options, config)
-				),
-			placeholderData: keepPreviousData
+			queries: environments.included.map((environment) => ({
+				...containerListQuery(environment.id, [environment], TOP_MEMORY_REQUEST),
+				enabled
+			})),
+			combine: (results) => combineByEnvironment(environments, results)
 		};
 	});
 
@@ -514,7 +546,7 @@
 	});
 
 	const environmentJobs = $derived(
-		(jobsQuery.data?.byEnvironment ?? []).flatMap(({ environment, data }): EnvironmentJob[] =>
+		jobsQuery.data.byEnvironment.flatMap(({ environment, data }): EnvironmentJob[] =>
 			data.jobs.flatMap((job) => [job, ...(job.children ?? [])]).map((job) => ({ environmentId: environment.id, job }))
 		)
 	);
@@ -528,22 +560,15 @@
 		)
 	);
 
-	let editingLayout = $state(false);
-	let draftLayout = $state.raw<DashboardWidgetLayout[]>([]);
-	const savedLayout = $derived(resolveDashboardLayout(userStore.current?.preferences?.dashboardLayout, environmentCards.length));
-	const layout = $derived(editingLayout ? draftLayout : savedLayout);
-	const hiddenWidgets = $derived(layout.filter((widget) => widget.hidden));
-	const layoutHasChanges = $derived(editingLayout && JSON.stringify(draftLayout) !== JSON.stringify(savedLayout));
-
 	const attentionItems = $derived(
 		buildAttentionItems({
 			environments: environmentCards.map(({ environment }) => environment),
 			containers: containersByEnvironment,
-			events: (eventsQuery.data?.byEnvironment ?? []).flatMap(({ environment, data }) =>
+			events: eventsQuery.data.byEnvironment.flatMap(({ environment, data }) =>
 				data.data.map((event) => ({ environmentId: environment.id, event }))
 			),
 			findings: riskQuery.data?.riskiestFindings ?? [],
-			stats: liveStats.statsByEnvironment,
+			disk: liveStats.diskPressureByEnvironment,
 			jobs: environmentJobs,
 			activityGroups,
 			expiringApiKeys,
@@ -607,7 +632,7 @@
 	const offlineEnvironments = $derived(
 		environmentCards.filter(({ environment }) => !isEnvironmentOnline(environment)).map(({ environment }) => environment)
 	);
-	const diskUsage = $derived(diskUsageQuery.data?.byEnvironment ?? []);
+	const diskUsage = $derived(diskUsageQuery.data.byEnvironment);
 
 	function handleAttentionAction(item: AttentionItem) {
 		if (item.target.kind === 'upgrade') {
@@ -983,7 +1008,7 @@
 				/>
 			{:else}
 				<TopMemory
-					containers={topMemoryQuery.data?.data ?? []}
+					containers={topMemoryQuery.data.byEnvironment.flatMap(({ data }) => data.data)}
 					loading={topMemoryQuery.isPending && loadableEnvironmentIds.size > 0}
 					failed={topMemoryQuery.isError}
 				/>

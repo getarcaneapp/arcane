@@ -69,11 +69,6 @@ func TestAccessSurfaceRegistryDefinesSettingsCustomizeAndLandingSemantics(t *tes
 	require.Equal(t, authz.AccessModeAnyChild, systemLanding.AccessMode)
 	require.Contains(t, systemLanding.Children, "settings.category.webhooks")
 	require.Contains(t, systemLanding.Children, "settings.category.apikeys")
-
-	dashboard := requireAccessSurface(t, "route.dashboard")
-	require.Equal(t, authz.AccessSurfaceKindRoute, dashboard.Kind)
-	require.Equal(t, "/dashboard", dashboard.URL)
-	require.Positive(t, dashboard.FallbackOrder)
 }
 
 func TestCanAccessSurfaceEvaluatesScopeModesAndLandingChildren(t *testing.T) {

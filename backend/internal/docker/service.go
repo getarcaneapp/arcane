@@ -48,6 +48,7 @@ type DockerClientService struct {
 	// because a WithClient copy talks to a different daemon.
 	imageListFlight     singleflight.Group
 	containerListFlight singleflight.Group
+	diskUsageFlight     singleflight.Group
 	*client.Client
 
 	db              *database.DB
@@ -358,6 +359,18 @@ func (s *DockerClientService) ListImages(ctx context.Context) ([]image.Summary, 
 			return nil, fmt.Errorf("failed to list Docker images: %w", err)
 		}
 		return imageList.Items, nil
+	})
+}
+
+func (s *DockerClientService) GetDiskUsage(ctx context.Context) (client.DiskUsageResult, error) {
+	return s.ListCoalesced(ctx, &s.diskUsageFlight, func(ctx context.Context, dockerClient *client.Client) (client.DiskUsageResult, error) {
+		return dockerClient.DiskUsage(ctx, client.DiskUsageOptions{
+			Containers: true,
+			Images:     true,
+			Volumes:    true,
+			BuildCache: true,
+			Verbose:    true,
+		})
 	})
 }
 

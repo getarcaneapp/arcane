@@ -13,6 +13,7 @@ import { settleAcrossEnvironments } from '#lib/utils/environments.js';
 
 export function useEnvironmentSettingsScope(permissions: () => string[]) {
 	const queryClient = useQueryClient();
+	let revision = $state(0);
 	const selectedId = $derived(page.url.searchParams.get('env') ?? '');
 	const readable = $derived(
 		environmentStore.shown.filter((env) =>
@@ -75,6 +76,7 @@ export function useEnvironmentSettingsScope(permissions: () => string[]) {
 		);
 		await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
 		await refreshAll();
+		revision++;
 	}
 
 	return {
@@ -97,7 +99,7 @@ export function useEnvironmentSettingsScope(permissions: () => string[]) {
 			return entries[0]?.environment.id ?? selectedId;
 		},
 		get version() {
-			return [selectedId, ...results.map((result) => result.dataUpdatedAt)].join(':');
+			return `${selectedId}:${revision}`;
 		},
 		get settings() {
 			return first;

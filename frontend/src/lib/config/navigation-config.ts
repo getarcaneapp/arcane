@@ -72,8 +72,7 @@ export const navigationItems: NavigationSections = {
 			title: m.dashboard_title(),
 			url: resolve('/(app)/dashboard'),
 			icon: DashboardIcon,
-			shortcut: ['mod', '1'],
-			accessSurfaceId: 'route.dashboard'
+			shortcut: ['mod', '1']
 		},
 		{
 			title: m.updates(),

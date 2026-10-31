@@ -323,7 +323,7 @@ test.describe('Activity Center', () => {
 		const onlineRemoteEnvironment = { ...remoteEnvironment, status: 'online' as const };
 		const scopedUser = user('scoped-stream-user', {
 			global: [],
-			'0': ['dashboard:read', 'containers:list'],
+			'0': ['containers:list'],
 			'remote-activity-test': ['activities:read']
 		});
 		const activityReads: string[] = [];
@@ -377,7 +377,7 @@ test.describe('Activity Center', () => {
 			resolveUser: () =>
 				user('dashboard-only-user', {
 					global: [],
-					'0': ['dashboard:read']
+					'0': ['containers:list']
 				})
 		});
 		page.on('request', (request) => {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"go.uber.org/fx"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/apns"
@@ -27,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 func newJobScheduler(
@@ -553,48 +555,54 @@ func syncTimeoutSettingsToAgents(ctx context.Context, localEnvironment timeoutSe
 
 	slog.InfoContext(ctx, "Syncing environment settings to remote environments", "count", len(envs), "keys", slices.Sorted(maps.Keys(settingsMap)))
 
+	var group errgroup.Group
+	group.SetLimit(httpx.EnvironmentConcurrency)
 	for _, env := range envs {
-		snapshotBody, statusCode, proxyRequestErr := localEnvironment.ProxyRequest(ctx, env.ID, http.MethodGet, "/api/environments/0/settings", nil)
-		if proxyRequestErr != nil {
-			slog.WarnContext(ctx, "Failed to read environment settings for timeout sync", "environmentId", env.ID, "environmentName", env.Name, "error", proxyRequestErr)
-			continue
-		}
-		if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
-			slog.WarnContext(ctx, "Environment returned non-OK status for settings read", "environmentId", env.ID, "environmentName", env.Name, "statusCode", statusCode, "response", string(snapshotBody))
-			continue
-		}
-		var snapshot types.SettingsSnapshot
-		if decodeErr := json.Unmarshal(snapshotBody, &snapshot); decodeErr != nil || snapshot.Settings == nil {
-			slog.ErrorContext(ctx, "agent version mismatch: environment did not return a settings snapshot; skipping settings sync",
-				"environmentId", env.ID, "environmentName", env.Name, "error", decodeErr)
-			continue
-		}
-
-		update := maps.Clone(settingsMap)
-		for _, setting := range snapshot.Settings {
-			if setting.Locked {
-				delete(update, setting.Key)
+		group.Go(func() error {
+			snapshotBody, statusCode, proxyRequestErr := localEnvironment.ProxyRequest(ctx, env.ID, http.MethodGet, "/api/environments/0/settings", nil)
+			if proxyRequestErr != nil {
+				slog.WarnContext(ctx, "Failed to read environment settings for timeout sync", "environmentId", env.ID, "environmentName", env.Name, "error", proxyRequestErr)
+				return nil
 			}
-		}
-		if len(update) == 0 {
-			slog.DebugContext(ctx, "All synced settings are locked on environment", "environmentId", env.ID, "environmentName", env.Name)
-			continue
-		}
+			if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
+				slog.WarnContext(ctx, "Environment returned non-OK status for settings read", "environmentId", env.ID, "environmentName", env.Name, "statusCode", statusCode, "response", string(snapshotBody))
+				return nil
+			}
+			var snapshot types.SettingsSnapshot
+			if decodeErr := json.Unmarshal(snapshotBody, &snapshot); decodeErr != nil || snapshot.Settings == nil {
+				slog.ErrorContext(ctx, "agent version mismatch: environment did not return a settings snapshot; skipping settings sync",
+					"environmentId", env.ID, "environmentName", env.Name, "error", decodeErr)
+				return nil
+			}
 
-		body, marshalErr := json.Marshal(types.SettingsUpdate(update))
-		if marshalErr != nil {
-			slog.WarnContext(ctx, "Failed to marshal timeout settings for sync", "environmentId", env.ID, "error", marshalErr)
-			continue
-		}
-		responseBody, statusCode, proxyRequestErr := localEnvironment.ProxyRequest(ctx, env.ID, http.MethodPatch, "/api/environments/0/settings", body)
-		if proxyRequestErr != nil {
-			slog.WarnContext(ctx, "Failed to sync timeout settings to environment", "environmentId", env.ID, "environmentName", env.Name, "error", proxyRequestErr)
-			continue
-		}
-		if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
-			slog.WarnContext(ctx, "Environment returned non-OK status for timeout sync", "environmentId", env.ID, "environmentName", env.Name, "statusCode", statusCode, "response", string(responseBody))
-			continue
-		}
-		slog.DebugContext(ctx, "Successfully synced timeout settings to environment", "environmentId", env.ID, "environmentName", env.Name)
+			update := maps.Clone(settingsMap)
+			for _, setting := range snapshot.Settings {
+				if setting.Locked {
+					delete(update, setting.Key)
+				}
+			}
+			if len(update) == 0 {
+				slog.DebugContext(ctx, "All synced settings are locked on environment", "environmentId", env.ID, "environmentName", env.Name)
+				return nil
+			}
+
+			body, marshalErr := json.Marshal(types.SettingsUpdate(update))
+			if marshalErr != nil {
+				slog.WarnContext(ctx, "Failed to marshal timeout settings for sync", "environmentId", env.ID, "error", marshalErr)
+				return nil
+			}
+			responseBody, statusCode, proxyRequestErr := localEnvironment.ProxyRequest(ctx, env.ID, http.MethodPatch, "/api/environments/0/settings", body)
+			if proxyRequestErr != nil {
+				slog.WarnContext(ctx, "Failed to sync timeout settings to environment", "environmentId", env.ID, "environmentName", env.Name, "error", proxyRequestErr)
+				return nil
+			}
+			if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
+				slog.WarnContext(ctx, "Environment returned non-OK status for timeout sync", "environmentId", env.ID, "environmentName", env.Name, "statusCode", statusCode, "response", string(responseBody))
+				return nil
+			}
+			slog.DebugContext(ctx, "Successfully synced timeout settings to environment", "environmentId", env.ID, "environmentName", env.Name)
+			return nil
+		})
 	}
+	_ = group.Wait()
 }

@@ -1,12 +1,5 @@
 import userStore from '#lib/stores/user-store.svelte.js';
-import type {
-	OidcStatusInfo,
-	ResolvedSettings,
-	SettingKey,
-	SettingState,
-	Settings,
-	SettingsSnapshot
-} from '#lib/types/settings.js';
+import type { ResolvedSettings, SettingKey, SettingState, Settings, SettingsSnapshot } from '#lib/types/settings.js';
 
 import BaseAPIService from './api-service';
 
@@ -75,10 +68,6 @@ class SettingsService extends BaseAPIService {
 		if (hasManagerChanges) await this.api.patch('/environments/0/settings', patches.manager);
 		if (hasEnvironmentChanges) await this.api.patch(`/environments/${environmentId}/settings`, patches.environment);
 		return this.getReadableSettings(environmentId);
-	}
-
-	async getOidcStatus(): Promise<OidcStatusInfo> {
-		return this.handleResponse(this.api.get('/oidc/status'));
 	}
 
 	private merge(main: ResolvedSettings, environment: ResolvedSettings): ResolvedSettings {

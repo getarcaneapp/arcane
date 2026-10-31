@@ -3,7 +3,7 @@ import type { DashboardLiveStatsStatus, SystemStats } from '#lib/types/shared.js
 import { hasPermission } from '#lib/utils/auth.js';
 import { createStatsWebSocket, type ReconnectingWebSocket } from '#lib/utils/ws.js';
 
-import { shouldLoadEnvironment } from './overview.helpers';
+import { diskPressure, shouldLoadEnvironment, type DiskPressure } from './overview.helpers';
 
 export type EnvironmentLiveStatsState = {
 	stats: SystemStats | null;
@@ -46,9 +46,26 @@ export class DashboardLiveStats {
 		return this.#byEnvironmentId[environmentId] ?? null;
 	}
 
-	get statsByEnvironment(): Map<string, SystemStats | null> {
-		return new Map(Object.entries(this.#byEnvironmentId).map(([environmentId, state]) => [environmentId, state.stats]));
-	}
+	#diskPressure: ReadonlyMap<string, DiskPressure> = new Map();
+
+	readonly diskPressureByEnvironment = $derived.by((): ReadonlyMap<string, DiskPressure> => {
+		const previous = this.#diskPressure;
+		const next = new Map(
+			Object.entries(this.#byEnvironmentId).flatMap(([environmentId, state]) => {
+				const pressure = diskPressure(state.stats);
+				return pressure ? [[environmentId, pressure] as const] : [];
+			})
+		);
+		const unchanged =
+			next.size === previous.size &&
+			[...next].every(
+				([environmentId, pressure]) =>
+					previous.get(environmentId)?.percent === pressure.percent && previous.get(environmentId)?.detail === pressure.detail
+			);
+		if (unchanged) return previous;
+		this.#diskPressure = next;
+		return next;
+	});
 
 	status(environment: Environment): DashboardLiveStatsStatus {
 		if (!shouldLoadEnvironment(environment)) {

@@ -142,7 +142,7 @@ function pickFallbackRoute(user: User, accessManifest: PermissionsManifest | nul
 			return isInAppPath(surface.url) ? surface.url : resolve('/(app)/no-access');
 		}
 	}
-	return resolve('/(app)/no-access');
+	return resolve('/(app)/dashboard');
 }
 
 export function getAuthRedirectPath(

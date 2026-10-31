@@ -61,7 +61,6 @@ var accessSurfaces = []AccessSurface{
 		"settings.category.diagnostics",
 	}, 125),
 
-	routeSurface("route.dashboard", "/dashboard", "Dashboard", AccessScopeModeEnvPlusGlobal, []string{PermDashboardRead}, 10),
 	routeSurface("route.projects", "/projects", "Projects", AccessScopeModeEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead}, 30),
 	routeSurface("route.projects.new", "/projects/new", "Create project", AccessScopeModeEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead, PermProjectsCreate}, 0),
 	routeSurface("route.projects.detail", "/projects/{projectId}", "Project", AccessScopeModeEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead}, 0),

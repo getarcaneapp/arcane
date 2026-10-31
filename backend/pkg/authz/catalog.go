@@ -231,9 +231,6 @@ var permissionCatalog = []PermissionCatalogResource{
 	{"notifications", "Notifications", PermissionScopeGlobal, []PermissionCatalogAction{
 		{"manage", PermNotificationsManage, "Manage", ""},
 	}},
-	{"dashboard", "Dashboard", PermissionScopeEnv, []PermissionCatalogAction{
-		{"read", PermDashboardRead, "Read", ""},
-	}},
 	{"system", "System", PermissionScopeEnv, []PermissionCatalogAction{
 		{"read", PermSystemRead, "Read", ""},
 		{"prune", PermSystemPrune, "Prune", ""},
