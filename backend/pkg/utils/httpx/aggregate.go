@@ -24,7 +24,7 @@ const (
 	environmentsPathPrefix    = "/api/environments/"
 	environmentRequestTimeout = 20 * time.Second
 	environmentResponseLimit  = 64 << 20
-	environmentConcurrency    = 8
+	EnvironmentConcurrency    = 8
 )
 
 var errEnvironmentResponseTooLarge = errors.New("response too large")
@@ -79,7 +79,7 @@ func CollectEnvironments[R any](ctx context.Context, overrides url.Values) (Envi
 	defer cancel()
 	outcomes := make([]environmentOutcome[R], len(scope.IDs))
 	var group errgroup.Group
-	group.SetLimit(environmentConcurrency)
+	group.SetLimit(EnvironmentConcurrency)
 	for i, id := range scope.IDs {
 		group.Go(func() error {
 			value, err := dispatchEnvironment[R](collectCtx, scope, id, overrides)

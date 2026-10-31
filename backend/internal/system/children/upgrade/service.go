@@ -571,12 +571,22 @@ func (s *Service) followUpgrader(ctx context.Context, upgraderID string) {
 	lines := make(chan string, progressFeedBuffer)
 	go func() {
 		defer close(lines)
-		logs, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerLogsResult, error) {
-			return cli.ContainerLogs(ctx, upgraderID, client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true, Follow: true})
-		})
-		if err == nil {
-			err = docker.StreamMultiplexedLogs(ctx, logs, lines)
-		}
+		err := func() error {
+			dockerClient, err := s.dockerService.GetClient(ctx)
+			if err != nil {
+				return err
+			}
+			logs, err := dockerClient.ContainerLogs(ctx, upgraderID, client.ContainerLogsOptions{
+				ShowStdout: true,
+				ShowStderr: true,
+				Follow:     true,
+			})
+			if err != nil {
+				return err
+			}
+			defer func() { _ = logs.Close() }()
+			return docker.StreamMultiplexedLogs(ctx, logs, lines)
+		}()
 		if err != nil {
 			slog.DebugContext(ctx, "Cannot follow upgrader logs", "upgraderId", upgraderID, "error", err)
 			s.progress.emit(types.UpgradeProgressEventLog, 0, "Upgrader logs are unavailable; waiting for the upgrade to finish")

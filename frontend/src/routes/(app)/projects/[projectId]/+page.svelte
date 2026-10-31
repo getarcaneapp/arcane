@@ -309,7 +309,7 @@
 	const gitComposeEditUrl = $derived(gitOpsComposeEditUrl(lifecycleSync));
 	const gitOverrideEditUrl = $derived(gitOpsFileEditUrl(lifecycleSync, overrideFileName));
 	let envEditorRequested = $state(false);
-	let envExists = $derived(!!project?.envFileExists || serverEnvContent !== '');
+	let envExists = $derived(!!project?.envFileExists);
 	let envActive = $derived(envExists || envEditorRequested);
 	let canRemoveEnv = $derived(canEditEnv && !isGitOpsManaged);
 

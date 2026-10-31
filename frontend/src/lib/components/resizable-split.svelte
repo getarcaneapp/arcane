@@ -68,7 +68,7 @@
 	}
 	const storedSize = persistedState?.current;
 	if (storedSize !== null && storedSize !== undefined) size = storedSize;
-	let userSized = storedSize !== null && storedSize !== undefined;
+	let userSized = $state(storedSize !== null && storedSize !== undefined);
 	const isStacked = $derived(stackBelow !== undefined && containerWidth < stackBelow);
 	let resizeStartX = 0;
 	let resizeStartWidth = 0;
@@ -175,7 +175,7 @@
 	}
 
 	function fitFirstPane(node: HTMLDivElement) {
-		if (!fitFirst) return;
+		if (!fitFirst || userSized) return;
 		const fit = () => {
 			if (userSized || isStacked || getAvailableWidth() <= 0) return;
 			const previousWidth = node.style.width;
@@ -184,12 +184,21 @@
 			node.style.width = previousWidth;
 			applySize(contentWidth);
 		};
-		fit();
-		const resizeObserver = new ResizeObserver(fit);
+		let frame = 0;
+		const scheduleFit = () => {
+			if (frame) return;
+			frame = requestAnimationFrame(() => {
+				frame = 0;
+				fit();
+			});
+		};
+		untrack(fit);
+		const resizeObserver = new ResizeObserver(scheduleFit);
 		resizeObserver.observe(node.parentElement ?? node);
-		const mutationObserver = new MutationObserver(fit);
+		const mutationObserver = new MutationObserver(scheduleFit);
 		mutationObserver.observe(node, { childList: true, subtree: true, characterData: true });
 		return () => {
+			cancelAnimationFrame(frame);
 			resizeObserver.disconnect();
 			mutationObserver.disconnect();
 		};

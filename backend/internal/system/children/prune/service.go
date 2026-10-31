@@ -559,15 +559,7 @@ func (s *Service) PruneScheduled(ctx context.Context, environmentID string, req 
 }
 
 func (s *Service) GetDiskUsage(ctx context.Context) (types.SystemDiskUsage, error) {
-	usage, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.DiskUsageResult, error) {
-		return cli.DiskUsage(ctx, client.DiskUsageOptions{
-			Containers: true,
-			Images:     true,
-			Volumes:    true,
-			BuildCache: true,
-			Verbose:    true,
-		})
-	})
+	usage, err := s.dockerService.GetDiskUsage(ctx)
 	if err != nil {
 		return types.SystemDiskUsage{}, err
 	}

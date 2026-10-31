@@ -24,12 +24,6 @@ const (
 	PermUsersUpdate = "users:update"
 	PermUsersDelete = "users:delete"
 
-	// PermRolesList and the role permissions below cover role management
-	// (Create / Update / Delete) and role assignment to users. They are reserved
-	// for global admins and intentionally not exposed as delegated permissions —
-	// see backend/internal/middleware/role.go::RequireGlobalAdmin. Likewise, managing
-	// OIDC group → role mappings is admin-only because it is effectively another
-	// path for granting role assignments.
 	PermRolesList = "roles:list"
 	PermRolesRead = "roles:read"
 
@@ -85,38 +79,23 @@ const (
 	PermGitReposTest   = "git-repositories:test"
 	PermGitReposSync   = "git-repositories:sync"
 
-	// PermS3DestinationsList and its siblings gate S3 backup destinations,
-	// which hold credentials and are manager-owned, so they are granted
-	// separately from general settings, like container registries.
-	PermS3DestinationsList   = "s3-destinations:list"
-	PermS3DestinationsRead   = "s3-destinations:read"
-	PermS3DestinationsCreate = "s3-destinations:create"
-	PermS3DestinationsUpdate = "s3-destinations:update"
-	PermS3DestinationsDelete = "s3-destinations:delete"
-	PermS3DestinationsTest   = "s3-destinations:test"
-	PermS3DestinationsSync   = "s3-destinations:sync"
-
-	// PermSystemBackupsRead and siblings gate Arcane's own system backups.
-	// Every route additionally requires a global admin; the dedicated grants
-	// exist so admin-owned scoped API keys can be limited to this surface
-	// instead of carrying settings:read/write. Restore is separate because it
-	// replaces the whole instance.
-	PermSystemBackupsRead    = "system-backups:read"
-	PermSystemBackupsManage  = "system-backups:manage"
-	PermSystemBackupsRestore = "system-backups:restore"
-	// PermSystemBackupsRecoveryKey is separate from manage: regenerating the
-	// key invalidates access to the existing repositories.
+	PermS3DestinationsList       = "s3-destinations:list"
+	PermS3DestinationsRead       = "s3-destinations:read"
+	PermS3DestinationsCreate     = "s3-destinations:create"
+	PermS3DestinationsUpdate     = "s3-destinations:update"
+	PermS3DestinationsDelete     = "s3-destinations:delete"
+	PermS3DestinationsTest       = "s3-destinations:test"
+	PermS3DestinationsSync       = "s3-destinations:sync"
+	PermSystemBackupsRead        = "system-backups:read"
+	PermSystemBackupsManage      = "system-backups:manage"
+	PermSystemBackupsRestore     = "system-backups:restore"
 	PermSystemBackupsRecoveryKey = "system-backups:recovery-key"
 
 	PermEventsRead          = "events:read"
 	PermEventsDelete        = "events:delete"
 	PermCustomizeManage     = "customize:manage"
 	PermNotificationsManage = "notifications:manage"
-
-	// PermDiagnosticsRead gates the admin-only runtime diagnostics surface
-	// (runtime/memory/GC stats, WebSocket metrics, pprof profiles, and the live
-	// backend log tail). Global-scoped; seeded only into the Admin role.
-	PermDiagnosticsRead = "diagnostics:read"
+	PermDiagnosticsRead     = "diagnostics:read"
 
 	// Env-scoped permissions (resolved against the {id} env ID in the path).
 
@@ -196,33 +175,21 @@ const (
 	PermPodmanSecrets           = "podman:secrets"
 	PermPodmanAutoUpdate        = "podman:autoupdate"
 
-	PermGitOpsList   = "gitops:list"
-	PermGitOpsRead   = "gitops:read"
-	PermGitOpsCreate = "gitops:create"
-	PermGitOpsUpdate = "gitops:update"
-	PermGitOpsDelete = "gitops:delete"
-	PermGitOpsSync   = "gitops:sync"
-	// PermGitOpsLifecycle gates configuring a sync's pre-deploy lifecycle hook
-	// (script + runner image + env + host bind mounts + network mode), which is
-	// effectively arbitrary code execution on the host. It is intentionally
-	// separate from gitops:create / gitops:update so that holding those broader
-	// permissions (e.g. the built-in Editor role) does not by itself grant the
-	// ability to author hooks; seeded only into the Admin built-in role.
+	PermGitOpsList      = "gitops:list"
+	PermGitOpsRead      = "gitops:read"
+	PermGitOpsCreate    = "gitops:create"
+	PermGitOpsUpdate    = "gitops:update"
+	PermGitOpsDelete    = "gitops:delete"
+	PermGitOpsSync      = "gitops:sync"
 	PermGitOpsLifecycle = "gitops:lifecycle"
-	// PermGitOpsBackup gates the "Back up to Git" feature. Backup-only routes
-	// (preview, history, resolve) require it alone; the shared sync routes
-	// require it in addition to the matching gitops:* permission when the sync
-	// is a backup. Backups push project files (optionally the .env) to a
-	// repository, so holding the broader gitops:* permissions alone is not enough.
-	PermGitOpsBackup = "gitops:backup"
+	PermGitOpsBackup    = "gitops:backup"
 
 	PermWebhooksList   = "webhooks:list"
 	PermWebhooksCreate = "webhooks:create"
 	PermWebhooksUpdate = "webhooks:update"
 	PermWebhooksDelete = "webhooks:delete"
 
-	PermJobsManage    = "jobs:manage"
-	PermDashboardRead = "dashboard:read"
+	PermJobsManage = "jobs:manage"
 
 	PermSystemRead    = "system:read"
 	PermSystemPrune   = "system:prune"
@@ -242,8 +209,6 @@ const (
 	PermActivitiesDelete = "activities:delete"
 )
 
-// orgLevelPermissions is derived from the authz permission catalog. Env-scoped
-// permissions are everything in the catalog that is not in this set.
 var orgLevelPermissions = buildOrgLevelPermissionsInternal()
 
 func buildOrgLevelPermissionsInternal() map[string]struct{} {
@@ -363,7 +328,7 @@ func BuiltInEditorPermissions() []string {
 		PermPodmanRead, PermPodmanPods, PermPodmanQuadlets, PermPodmanQuadletsLifecycle, PermPodmanKube, PermPodmanSecrets, PermPodmanAutoUpdate,
 		PermGitOpsList, PermGitOpsRead, PermGitOpsCreate, PermGitOpsUpdate, PermGitOpsDelete, PermGitOpsSync, PermGitOpsBackup,
 		PermWebhooksList, PermWebhooksCreate, PermWebhooksUpdate, PermWebhooksDelete,
-		PermJobsManage, PermNotificationsManage, PermDashboardRead,
+		PermJobsManage, PermNotificationsManage,
 		PermSystemRead, PermSystemPrune,
 		PermImageUpdatesRead, PermImageUpdatesCheck,
 		PermVulnsRead, PermVulnsScan, PermVulnsManage,
@@ -400,7 +365,6 @@ func BuiltInDeployerPermissions() []string {
 		PermSwarmRead, PermSwarmServicesLogs,
 		PermPodmanRead, PermPodmanQuadletsLifecycle, PermPodmanAutoUpdate,
 		PermGitOpsList, PermGitOpsRead, PermGitOpsSync,
-		PermDashboardRead,
 		PermSystemRead,
 		PermImageUpdatesRead, PermImageUpdatesCheck,
 		PermVulnsRead,
@@ -433,7 +397,6 @@ func BuiltInViewerPermissions() []string {
 		PermPodmanRead,
 		PermGitOpsList, PermGitOpsRead,
 		PermWebhooksList,
-		PermDashboardRead,
 		PermSystemRead,
 		PermImageUpdatesRead,
 		PermVulnsRead,
@@ -455,7 +418,6 @@ func BuiltInMonitorPermissions() []string {
 		PermNetworksList, PermNetworksRead,
 		PermSwarmRead, PermSwarmServicesLogs,
 		PermPodmanRead,
-		PermDashboardRead,
 		PermSystemRead,
 		PermImageUpdatesRead,
 		PermVulnsRead,

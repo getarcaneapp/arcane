@@ -1,13 +1,13 @@
 <script lang="ts">
 	// Dozzle reference: the compact structured-log summary and expandable details pattern
 	// here were informed by amir20/dozzle's ComplexLogItem.vue and LogDetails.vue.
-	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
-	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { ArrowDownIcon, ArrowRightIcon, CheckIcon, CopyIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
+
+	import StructuredLogJson from './structured-log-json.svelte';
 
 	interface Props {
 		data: Record<string, unknown>;
@@ -228,10 +228,6 @@
 	const visibleSummaryFields = $derived(summaryFields.slice(0, SUMMARY_LIMIT));
 	const hiddenSummaryCount = $derived(Math.max(summaryFields.length - visibleSummaryFields.length, 0));
 	const jsonString = $derived(rawJson ?? JSON.stringify(data, null, 2));
-	const jsonLines = useHighlightedCode(
-		() => jsonString,
-		() => 'json'
-	);
 	const hasDetails = $derived(summaryFields.length > SUMMARY_LIMIT || summaryFields.length > 0 || !!rawJson);
 
 	async function copyToClipboard() {
@@ -339,13 +335,9 @@
 				{/if}
 
 				<div class="mt-3 border-t border-border pt-3">
-					<CodeBlock.Root size="sm">
-						<CodeBlock.Content wrap>
-							{#each jsonLines.current as line, index (index)}
-								<CodeBlock.Line code={line} />
-							{/each}
-						</CodeBlock.Content>
-					</CodeBlock.Root>
+					{#if showDetails}
+						<StructuredLogJson json={jsonString} />
+					{/if}
 				</div>
 			</div>
 		</Collapsible.Content>

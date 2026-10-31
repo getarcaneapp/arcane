@@ -15,6 +15,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	projectsync "github.com/getarcaneapp/arcane/backend/v3/internal/project/children/sync"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
@@ -225,4 +226,13 @@ func (s tagStore) DeleteTag(projectID, name string, source types.ProjectTagSourc
 
 func (s tagStore) DeleteSource(projectID string, source types.ProjectTagSource) error {
 	return s.tx.Where("project_id = ? AND source = ?", projectID, source).Delete(&ProjectTag{}).Error
+}
+
+func projectEnvDetails(projectPath string) (string, bool, error) {
+	envState, err := projects.ReadProjectEnvState(projectPath)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to read project env state: %w", err)
+	}
+	content, err := projectsync.ResolveStoredEffectiveEnvContent(envState)
+	return content, envState.HasEffective || envState.HasGitSource || envState.HasOverride, err
 }

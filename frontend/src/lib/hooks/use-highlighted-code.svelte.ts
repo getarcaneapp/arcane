@@ -62,7 +62,7 @@ export function useHighlightedCode(value: () => string, language: () => string) 
 
 		let next = done;
 
-		if (next.highlighter !== highlighter || !code.startsWith(next.text)) {
+		if (next.highlighter !== highlighter || code.length < next.text.length || !code.startsWith(next.text)) {
 			next = { highlighter, text: '', lines: [] };
 		}
 
@@ -71,10 +71,14 @@ export function useHighlightedCode(value: () => string, language: () => string) 
 		if (end > next.text.length) {
 			const result = highlighter.highlight(code.slice(next.text.length, end - 1), next.state);
 
+			for (const line of result.lines) {
+				next.lines.push(line);
+			}
+
 			next = {
 				highlighter,
 				text: code.slice(0, end),
-				lines: [...next.lines, ...result.lines],
+				lines: next.lines,
 				state: result.state
 			};
 		}

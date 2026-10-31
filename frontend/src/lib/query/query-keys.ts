@@ -163,8 +163,11 @@ export const queryKeys = {
 	},
 	events: {
 		all: ['events'] as const,
+		global: ['events', 'global'] as const,
 		listGlobal: (options: SearchPaginationSortRequest) => ['events', 'global', stableSerialize(options)] as const,
-		statsGlobal: () => ['events', 'stats', 'global'] as const,
+		statsGlobal: () => ['events', 'global', 'stats'] as const,
+		environmentList: (environmentId: string, options: SearchPaginationSortRequest) =>
+			['events', environmentId, stableSerialize(options)] as const,
 		deleteSelectedGlobal: () => ['events', 'delete-selected', 'global'] as const
 	},
 	system: {
@@ -173,7 +176,8 @@ export const queryKeys = {
 		environmentUpgradeAvailable: (environmentId: string) => ['system', environmentId, 'upgrade-available'] as const,
 		upgradeHealth: (environmentId: string) => ['system', environmentId, 'upgrade-health'] as const,
 		versionInfo: (environmentId: string) => ['system', environmentId, 'version-info'] as const,
-		dockerInfo: (environmentId: string) => ['system', environmentId, 'docker-info'] as const
+		dockerInfo: (environmentId: string) => ['system', environmentId, 'docker-info'] as const,
+		diskUsage: (environmentId: string) => ['system', environmentId, 'disk-usage'] as const
 	},
 	containers: {
 		all: ['containers'] as const,

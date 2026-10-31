@@ -163,12 +163,17 @@ export interface EnvironmentEvent {
 	event: Event;
 }
 
+export interface DiskPressure {
+	percent: number;
+	detail: string;
+}
+
 export interface AttentionSources {
 	environments: Environment[];
 	containers: Map<string, ContainerStatusCounts>;
 	events: EnvironmentEvent[];
 	findings: EnvironmentRow<VulnerabilityRiskFinding>[];
-	stats: Map<string, SystemStats | null>;
+	disk: ReadonlyMap<string, DiskPressure>;
 	jobs: EnvironmentJob[];
 	activityGroups: CollapsedActivity[];
 	expiringApiKeys: ApiKey[];
@@ -332,6 +337,12 @@ function containerEventItems(events: EnvironmentEvent[], now: Temporal.Instant):
 	});
 }
 
+export function diskPressure(stats: SystemStats | null): DiskPressure | null {
+	const percent = getDiskMetric(stats);
+	if (percent === null || Math.round(percent) < DISK_WARNING_PERCENT) return null;
+	return { percent: Math.round(percent), detail: getCapacityLabel(stats?.diskUsage, stats?.diskTotal) };
+}
+
 export function buildAttentionItems(sources: AttentionSources): AttentionItem[] {
 	const offline = sources.environments.filter((environment) => !isEnvironmentOnline(environment));
 	const online = sources.environments.filter((environment) => isEnvironmentOnline(environment));
@@ -401,16 +412,15 @@ export function buildAttentionItems(sources: AttentionSources): AttentionItem[] 
 				target: { kind: 'link', href: resolve('/(app)/security') }
 			})),
 		...online.flatMap((environment): AttentionItem[] => {
-			const stats = sources.stats.get(environment.id) ?? null;
-			const percent = getDiskMetric(stats);
-			if (percent === null || percent < DISK_WARNING_PERCENT) return [];
+			const disk = sources.disk.get(environment.id);
+			if (!disk) return [];
 			return [
 				{
 					key: `disk:${environment.id}`,
-					severity: percent >= DISK_CRITICAL_PERCENT ? 'critical' : 'warning',
+					severity: disk.percent >= DISK_CRITICAL_PERCENT ? 'critical' : 'warning',
 					environmentId: environment.id,
-					title: m.disk_percent_full({ percent: Math.round(percent) }),
-					detail: getCapacityLabel(stats?.diskUsage, stats?.diskTotal),
+					title: m.disk_percent_full({ percent: disk.percent }),
+					detail: disk.detail,
 					timestamp: null,
 					actionLabel: m.common_view(),
 					target: { kind: 'link', href: environmentDetailHref(environment.id) }

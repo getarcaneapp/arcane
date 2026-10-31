@@ -1,6 +1,7 @@
 import { invalidate } from '$app/navigation';
 import type { QueryClient } from '@tanstack/svelte-query';
 
+import { queryKeys } from '#lib/query/query-keys.js';
 import { STREAM_CHANNEL_EVENTS, streamService } from '#lib/services/stream-service.js';
 import { createSSEStream } from '#lib/stores/sse-stream.svelte.js';
 import { PODMAN_STATUS_DEPENDENCY } from '#lib/types/podman.js';
@@ -57,13 +58,15 @@ export const KIND_QUERY_DOMAINS: Record<string, readonly string[]> = {
 
 const ALL_DOMAINS = [...new Set([...Object.values(KIND_QUERY_DOMAINS).flat(), ...MANAGER_GLOBAL_DOMAINS])];
 const EVENTS_DOMAIN = 'events';
+const SILENT_KINDS = new Set(['activity', 'build', 'vulnerability', 'image_update', 'swarm']);
 const ALL_KIND = 'all';
 const MIN_GAP_MS = 2_000;
 const BATCH_MS = 250;
 const KEY_SEPARATOR = '\u001f';
 
 function kindDomains(kind: string): readonly string[] {
-	return kind === ALL_KIND ? ALL_DOMAINS : (KIND_QUERY_DOMAINS[kind] ?? []);
+	const domains = kind === ALL_KIND ? ALL_DOMAINS : (KIND_QUERY_DOMAINS[kind] ?? []);
+	return SILENT_KINDS.has(kind) ? domains : [...domains, EVENTS_DOMAIN];
 }
 
 function createChangeInvalidator() {
@@ -85,6 +88,7 @@ function createChangeInvalidator() {
 		const due = new Map<string, Set<string>>();
 		const dueGlobal = new Set<string>();
 		let rediscover = false;
+		let eventsDue = false;
 		for (const [key, at] of pending) {
 			if (at > now) continue;
 			pending.delete(key);
@@ -92,6 +96,7 @@ function createChangeInvalidator() {
 			const [environmentId = '', kind = ''] = key.split(KEY_SEPARATOR);
 			rediscover ||= kind === ALL_KIND;
 			const domains = kindDomains(kind);
+			eventsDue ||= domains.includes(EVENTS_DOMAIN);
 			due.set(environmentId, new Set([...(due.get(environmentId) ?? []), ...domains]));
 			for (const domain of domains) {
 				if (MANAGER_GLOBAL_DOMAINS.has(domain)) dueGlobal.add(domain);
@@ -108,7 +113,7 @@ function createChangeInvalidator() {
 			for (const domain of dueGlobal) {
 				void queryClient.invalidateQueries({ queryKey: [domain], refetchType: 'active' });
 			}
-			void queryClient.invalidateQueries({ queryKey: [EVENTS_DOMAIN], refetchType: 'active' });
+			if (eventsDue) void queryClient.invalidateQueries({ queryKey: queryKeys.events.global, refetchType: 'active' });
 			if (rediscover) void invalidate(PODMAN_STATUS_DEPENDENCY);
 		}
 		schedule();

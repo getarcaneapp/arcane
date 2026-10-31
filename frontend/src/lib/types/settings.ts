@@ -1,4 +1,4 @@
-import type { JobRun, JobRunStatus, WorkerHealth } from './job';
+import type { JobRun, WorkerHealth } from './job';
 import type { UpdateRequest } from './shared';
 
 // --- Application settings ---
@@ -262,11 +262,4 @@ export type JobListResponse = {
 	offline?: boolean;
 	jobs: JobStatus[];
 	isAgent: boolean;
-};
-
-export type JobRunResponse = {
-	runId: string;
-	status: JobRunStatus;
-	success: boolean;
-	message: string;
 };

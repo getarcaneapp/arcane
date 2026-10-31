@@ -1910,17 +1910,9 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		}
 		return projectdetails.ResolveDetailsOverride(proj.Path, overrideContent, kit.Ternary(selErr == nil, composeSelection, nil))
 	}()
-	envContent, envFileExists, err := func() (string, bool, error) {
-		if !opts.IncludeEnvState {
-			return "", false, nil
-		}
-		envState, readErr := projects.ReadProjectEnvState(proj.Path)
-		if readErr != nil {
-			return "", false, fmt.Errorf("failed to read project env state: %w", readErr)
-		}
-		content, resolveErr := projectsync.ResolveStoredEffectiveEnvContent(envState)
-		return content, envState.HasEffective, resolveErr
-	}()
+	envContent, envFileExists, err := kit.Ternary(opts.IncludeEnvState, projectEnvDetails, func(string) (string, bool, error) {
+		return "", false, nil
+	})(proj.Path)
 	if err != nil {
 		return types.Project{}, err
 	}

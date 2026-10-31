@@ -150,14 +150,18 @@ export async function settleAcrossEnvironments<T>(
 	return values;
 }
 
+export function limitEnvironments(environments: EnvironmentRef[]): { included: EnvironmentRef[]; excluded: EnvironmentRef[] } {
+	const limit = Number(settingsStore.current?.allEnvironmentsLimit) || 64;
+	return { included: environments.slice(0, limit), excluded: environments.slice(limit) };
+}
+
 export async function readAcrossEnvironments<T>(
 	environments: EnvironmentRef[],
 	run: (scope: string, config: APIRequestConfig) => Promise<T>,
 	reportInline = true
 ): Promise<{ value: T; failures: EnvironmentFailure[]; excluded: EnvironmentRef[] }> {
 	if (environments.length === 0) throw new Error('readAcrossEnvironments needs at least one environment');
-	const limit = Number(settingsStore.current?.allEnvironmentsLimit) || 64;
-	const included = environments.slice(0, limit);
+	const { included, excluded } = limitEnvironments(environments);
 	let reported: EnvironmentFailure[] = [];
 	const result = await tryCatch(
 		run(included.map((env) => env.id).join(','), {
@@ -178,7 +182,7 @@ export async function readAcrossEnvironments<T>(
 	if (failures.length > 0 && failures.length === included.length) {
 		throw new Error(failures.map(({ environment, message }) => `${environment.name}: ${message}`).join('\n'));
 	}
-	return { value: result.data, failures, excluded: environments.slice(limit) };
+	return { value: result.data, failures, excluded };
 }
 
 export function environmentRows<T extends object>(rows: T[], environments: EnvironmentRef[]): EnvironmentRow<T>[] {

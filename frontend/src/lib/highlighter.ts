@@ -1,11 +1,4 @@
-import {
-	createCssVariablesTheme,
-	createHighlighterCore,
-	type GrammarState,
-	type HighlighterCore,
-	type ThemedToken
-} from 'shiki/core';
-import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
+import type { GrammarState, HighlighterCore, ThemedToken } from 'shiki/core';
 
 // Add the languages you need. Each one loads the first time it is used.
 const languages = {
@@ -43,64 +36,69 @@ const aliases: Record<string, keyof typeof languages> = {
 	zsh: 'bash'
 };
 
-const cssVariablesTheme = createCssVariablesTheme({
-	name: 'arcane',
-	variablePrefix: '--shiki-'
-});
+function createArcaneTheme(createCssVariablesTheme: typeof import('shiki/core').createCssVariablesTheme) {
+	const cssVariablesTheme = createCssVariablesTheme({
+		name: 'arcane',
+		variablePrefix: '--shiki-'
+	});
 
-const arcaneTheme = {
-	...cssVariablesTheme,
-	tokenColors: [
-		...(cssVariablesTheme.tokenColors ?? []),
-		{
-			scope: [
-				'entity.name.tag.yaml',
-				'support.type.property-name.json',
-				'meta.object-literal.key',
-				'variable.other.property',
-				'variable.other.key.toml',
-				'keyword.other.definition.ini'
-			],
-			settings: { foreground: 'var(--shiki-token-property)' }
-		},
-		{
-			scope: ['entity.name.type', 'support.type', 'constant.numeric', 'constant.language'],
-			settings: { foreground: 'var(--shiki-token-constant)' }
-		},
-		{
-			scope: ['keyword.operator', 'constant.character.escape'],
-			settings: { foreground: 'var(--shiki-token-operator)' }
-		},
-		{
-			scope: [
-				'punctuation.separator.key-value',
-				'punctuation.separator.key-value.mapping.yaml',
-				'punctuation.separator.dictionary.key-value.json',
-				'punctuation.separator.dictionary.pair.json',
-				'punctuation.separator.array.json',
-				'punctuation.definition.dictionary.begin.json',
-				'punctuation.definition.dictionary.end.json',
-				'punctuation.definition.array.begin.json',
-				'punctuation.definition.array.end.json',
-				'punctuation.definition.block.sequence.item.yaml'
-			],
-			settings: { foreground: 'var(--shiki-token-punctuation)' }
-		},
-		{
-			scope: ['invalid'],
-			settings: { foreground: 'var(--shiki-token-invalid)' }
-		}
-	]
-};
+	return {
+		...cssVariablesTheme,
+		tokenColors: [
+			...(cssVariablesTheme.tokenColors ?? []),
+			{
+				scope: [
+					'entity.name.tag.yaml',
+					'support.type.property-name.json',
+					'meta.object-literal.key',
+					'variable.other.property',
+					'variable.other.key.toml',
+					'keyword.other.definition.ini'
+				],
+				settings: { foreground: 'var(--shiki-token-property)' }
+			},
+			{
+				scope: ['entity.name.type', 'support.type', 'constant.numeric', 'constant.language'],
+				settings: { foreground: 'var(--shiki-token-constant)' }
+			},
+			{
+				scope: ['keyword.operator', 'constant.character.escape'],
+				settings: { foreground: 'var(--shiki-token-operator)' }
+			},
+			{
+				scope: [
+					'punctuation.separator.key-value',
+					'punctuation.separator.key-value.mapping.yaml',
+					'punctuation.separator.dictionary.key-value.json',
+					'punctuation.separator.dictionary.pair.json',
+					'punctuation.separator.array.json',
+					'punctuation.definition.dictionary.begin.json',
+					'punctuation.definition.dictionary.end.json',
+					'punctuation.definition.array.begin.json',
+					'punctuation.definition.array.end.json',
+					'punctuation.definition.block.sequence.item.yaml'
+				],
+				settings: { foreground: 'var(--shiki-token-punctuation)' }
+			},
+			{
+				scope: ['invalid'],
+				settings: { foreground: 'var(--shiki-token-invalid)' }
+			}
+		]
+	};
+}
 
 let highlighter: Promise<HighlighterCore> | undefined;
 
 function getHighlighter() {
-	highlighter ??= createHighlighterCore({
-		themes: [arcaneTheme],
-		langs: [],
-		engine: createJavaScriptRegexEngine({ forgiving: true })
-	});
+	highlighter ??= Promise.all([import('shiki/core'), import('shiki/engine/javascript')]).then(
+		([{ createCssVariablesTheme, createHighlighterCore }, { createJavaScriptRegexEngine }]) =>
+			createHighlighterCore({
+				themes: [createArcaneTheme(createCssVariablesTheme)],
+				langs: [],
+				engine: createJavaScriptRegexEngine({ forgiving: true })
+			})
+	);
 
 	return highlighter;
 }

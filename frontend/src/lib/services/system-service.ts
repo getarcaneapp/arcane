@@ -2,7 +2,7 @@ import type { SystemPruneRequest } from '#lib/types/automation.js';
 import type { DockerInfo } from '#lib/types/docker.js';
 import type { SystemDiskUsage } from '#lib/types/shared.js';
 
-import BaseAPIService from './api-service';
+import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 type ConvertedDockerRun = {
 	dockerCompose: string;
@@ -31,8 +31,8 @@ class SystemService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/system/docker/info`));
 	}
 
-	async getDiskUsage(environmentId: string): Promise<SystemDiskUsage> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/system/df`));
+	async getDiskUsage(environmentId: string, config?: APIRequestConfig): Promise<SystemDiskUsage> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/system/df`, config));
 	}
 
 	async convert(dockerRunCommand: string, environmentId: string): Promise<ConvertedDockerRun> {

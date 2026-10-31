@@ -180,6 +180,49 @@ func TestMigration096_EdgeOnlyEnvironments_ConvertsDirectAndDowngrades(t *testin
 	assert.Zero(t, columnCount)
 }
 
+func TestMigration100_RemovesDashboardReadPermission(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-dashboard-read.db")
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 99))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO roles (id, name, permissions) VALUES
+		('r1', 'Mixed', '["containers:list","dashboard:read","images:list"]'),
+		('r2', 'Dashboard only', '["dashboard:read"]'),
+		('r3', 'Untouched', '["volumes:list"]')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES ('k1', 'Key', 'hash', 'prefix')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission) VALUES
+		('p1', 'k1', 'dashboard:read'),
+		('p2', 'k1', 'containers:list')`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 100))
+	rolePermissions := map[string]string{}
+	rows, err := rawDB.QueryContext(ctx, `SELECT id, permissions FROM roles WHERE id IN ('r1', 'r2', 'r3')`)
+	require.NoError(t, err)
+	for rows.Next() {
+		var id, permissions string
+		require.NoError(t, rows.Scan(&id, &permissions))
+		rolePermissions[id] = permissions
+	}
+	require.NoError(t, rows.Err())
+	require.NoError(t, rows.Close())
+	assert.Equal(t, map[string]string{
+		"r1": `["containers:list","images:list"]`,
+		"r2": `[]`,
+		"r3": `["volumes:list"]`,
+	}, rolePermissions)
+	var apiKeyPermission string
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT group_concat(permission) FROM api_key_permissions WHERE api_key_id = 'k1'`).Scan(&apiKeyPermission))
+	assert.Equal(t, "containers:list", apiKeyPermission)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 99))
+	var r1Permissions string
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = 'r1'`).Scan(&r1Permissions))
+	assert.JSONEq(t, `["containers:list","images:list"]`, r1Permissions)
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := t.Context()
 	rawDB, dsn := newSQLiteSQLDB(t, t.TempDir(), "arcane-future.db")
