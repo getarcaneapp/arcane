@@ -1,4 +1,5 @@
 import type { ApplicationTheme } from '#lib/types/settings.js';
+import { trySync } from '#lib/utils/try-catch.js';
 
 const APPLICATION_THEME_VALUES = [
 	'default',
@@ -9,7 +10,11 @@ const APPLICATION_THEME_VALUES = [
 	'github',
 	'nord',
 	'everforest',
-	'rosepine'
+	'rosepine',
+	'abyss',
+	'twilight',
+	'obsidian',
+	'onyx'
 ] as const satisfies readonly ApplicationTheme[];
 
 export type ApplicationThemeOption = {
@@ -223,6 +228,90 @@ export const APPLICATION_THEME_OPTIONS: readonly ApplicationThemeOption[] = [
 				primary: '#c4a7e7'
 			}
 		}
+	},
+	{
+		value: 'abyss',
+		preview: {
+			light: {
+				background: '#e2f4f9',
+				sidebar: '#d3ebf3',
+				card: '#f2fafd',
+				border: '#a5cfdc',
+				foreground: '#03313a',
+				primary: '#00729d'
+			},
+			dark: {
+				background: '#0a1419',
+				sidebar: '#061d24',
+				card: '#0a232b',
+				border: '#202c31',
+				foreground: '#c4d7e0',
+				primary: '#29bfe8'
+			}
+		}
+	},
+	{
+		value: 'twilight',
+		preview: {
+			light: {
+				background: '#f1eefd',
+				sidebar: '#e7e3f8',
+				card: '#f9f8fe',
+				border: '#c8c1e5',
+				foreground: '#2b2643',
+				primary: '#6e4ba9'
+			},
+			dark: {
+				background: '#14111a',
+				sidebar: '#1b1627',
+				card: '#221c2e',
+				border: '#2b2832',
+				foreground: '#d7d0e1',
+				primary: '#b79af4'
+			}
+		}
+	},
+	{
+		value: 'obsidian',
+		preview: {
+			light: {
+				background: '#f4f4f4',
+				sidebar: '#ececec',
+				card: '#fbfbfb',
+				border: '#d4d4d8',
+				foreground: '#1c1c1e',
+				primary: '#00875d'
+			},
+			dark: {
+				background: '#050505',
+				sidebar: '#0b0b0c',
+				card: '#101013',
+				border: '#1e1e1e',
+				foreground: '#d8d8d8',
+				primary: '#4cc493'
+			}
+		}
+	},
+	{
+		value: 'onyx',
+		preview: {
+			light: {
+				background: '#f4f4f4',
+				sidebar: '#ececeb',
+				card: '#fbfbfb',
+				border: '#d6d4d3',
+				foreground: '#1d1c1b',
+				primary: '#c43e49'
+			},
+			dark: {
+				background: '#070707',
+				sidebar: '#0e0e0d',
+				card: '#151313',
+				border: '#202020',
+				foreground: '#d8d8d8',
+				primary: '#ec7a80'
+			}
+		}
 	}
 ] as const;
 
@@ -253,31 +342,25 @@ function updateAppearanceCache(partial: AppearanceCache): void {
 		return;
 	}
 
-	try {
-		const stored = JSON.parse(localStorage.getItem(APPEARANCE_CACHE_KEY) ?? '{}') as { v?: AppearanceCache };
-		const v: AppearanceCache = { ...stored.v, ...partial };
+	const stored = trySync(() => JSON.parse(localStorage.getItem(APPEARANCE_CACHE_KEY) ?? '{}') as { v?: AppearanceCache });
+	const v: AppearanceCache = { ...stored.data?.v, ...partial };
 
-		// Pre-compute the exact attribute, class list, and inline style the inline
-		// script applies, so it stays a dumb three-line replay of this cache.
-		const attr = v.appTheme ?? '';
-		const cls = [v.oled && OLED_CLASS, v.noBlur && 'no-blur', v.reduceEffects && 'reduce-effects'].filter(Boolean).join(' ');
-		const css = [
-			...(v.accent
-				? [
-						`--primary: ${v.accent.primary}`,
-						`--primary-foreground: ${v.accent.primaryForeground}`,
-						`--ring: ${v.accent.ring}`,
-						`--sidebar-ring: ${v.accent.ring}`
-					]
-				: []),
-			...(v.fontSize ? [`font-size: ${v.fontSize}px`] : [])
-		].join('; ');
+	// Pre-compute the exact attribute, class list, and inline style the inline
+	// script applies, so it stays a dumb three-line replay of this cache.
+	const attr = v.appTheme ?? '';
+	const cls = [v.oled && OLED_CLASS, v.noBlur && 'no-blur', v.reduceEffects && 'reduce-effects'].filter(Boolean).join(' ');
+	const css = Object.entries({
+		'--primary': v.accent?.primary,
+		'--primary-foreground': v.accent?.primaryForeground,
+		'--ring': v.accent?.ring,
+		'--sidebar-ring': v.accent?.ring,
+		'font-size': v.fontSize && `${v.fontSize}px`
+	})
+		.filter(([, value]) => value)
+		.map(([property, value]) => `${property}: ${value}`)
+		.join('; ');
 
-		localStorage.setItem(APPEARANCE_CACHE_KEY, JSON.stringify({ v, attr, cls, css }));
-	} catch {
-		// localStorage unavailable (private browsing) or corrupted cache — the
-		// inline script degrades to the default theme, nothing else breaks.
-	}
+	trySync(() => localStorage.setItem(APPEARANCE_CACHE_KEY, JSON.stringify({ v, attr, cls, css })));
 }
 
 const appearanceState = $state({ theme: 'default' as ApplicationTheme, accent: 'default' });

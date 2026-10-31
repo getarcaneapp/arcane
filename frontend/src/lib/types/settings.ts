@@ -12,7 +12,11 @@ export type ApplicationTheme =
 	| 'github'
 	| 'nord'
 	| 'everforest'
-	| 'rosepine';
+	| 'rosepine'
+	| 'abyss'
+	| 'twilight'
+	| 'obsidian'
+	| 'onyx';
 export type IconCatalog = 'selfhst' | 'dashboard-icons';
 
 export type UpdateCheckRegistry = 'auto' | 'ghcr.io' | 'docker.io' | 'public.ecr.aws';
