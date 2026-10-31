@@ -17,7 +17,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/vuln"
 )
 
 // Run executes one Rustic command in an ephemeral container built from
@@ -39,6 +38,14 @@ func Run(ctx context.Context, dockerClient *client.Client, password string, comm
 	)
 	allMounts := append([]mount.Mount{}, mounts...)
 	allMounts = append(allMounts, mount.Mount{Type: mount.TypeVolume, Source: CacheVolume, Target: "/cache"})
+	if bundle := trustBundle(); len(bundle) > 0 {
+		trustVolume, stageErr := stageTrustBundle(ctx, dockerClient, bundle)
+		if stageErr != nil {
+			return "", fmt.Errorf("failed to stage CA certificates for Rustic container: %w", stageErr)
+		}
+		defer removeTrustBundle(ctx, dockerClient, trustVolume)
+		allMounts = append(allMounts, mount.Mount{Type: mount.TypeVolume, Source: trustVolume, Target: trustBundleDir, ReadOnly: true})
+	}
 	hostConfig := volumehelper.HostConfig(DefaultImage, nil, allMounts)
 	hostConfig.AutoRemove = false
 	hostConfig.NetworkMode = networkMode
@@ -69,11 +76,6 @@ func Run(ctx context.Context, dockerClient *client.Client, password string, comm
 			time.Sleep(5 * time.Second)
 		}
 	}()
-	if bundle := trustBundle(); len(bundle) > 0 {
-		if copyErr := vuln.CopyFilesToContainer(ctx, dockerClient, created.ID, "/", map[string][]byte{trustBundlePath: bundle}); copyErr != nil {
-			return "", fmt.Errorf("failed to copy CA certificates into Rustic container: %w", copyErr)
-		}
-	}
 	if _, containerStartErr := dockerClient.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); containerStartErr != nil {
 		return "", fmt.Errorf("failed to start Rustic container: %w", containerStartErr)
 	}
