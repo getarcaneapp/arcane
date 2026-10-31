@@ -144,7 +144,6 @@
 	let projectWorkspaceStagedUploadedText = $state<Record<string, string>>({});
 	let projectWorkspaceFilePromises: Record<string, Promise<IncludeFile | ProjectWorkspaceFileContent> | undefined> = {};
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
-	// A project from another environment follows that environment's upload limit.
 	const projectSettings = useEnvironmentSettings(() => envId);
 	const projectWorkspaceMaxFileSizeMb = $derived(projectSettings.current?.values.projectWorkspaceMaxFileSizeMb ?? 10);
 
@@ -171,7 +170,10 @@
 				(current = { tags: [], failedEnvironments: [] }) =>
 					current.tags.some((tag) => tag.name === name)
 						? current
-						: { ...current, tags: [...current.tags, { name, color }].sort((a, b) => a.name.localeCompare(b.name)) }
+						: {
+								...current,
+								tags: [...current.tags, { name, color }].sort((a, b) => a.name.localeCompare(b.name))
+							}
 			);
 		}
 		return response.tags;
@@ -241,7 +243,11 @@
 	const composeActionsBlocked = $derived(!!configurationError?.blocksOperations);
 	const configurationErrorMessage = $derived.by(() => {
 		if (!configurationError) return undefined;
-		const params = { path: configurationError.path, uid: configurationError.uid, gid: configurationError.gid };
+		const params = {
+			path: configurationError.path,
+			uid: configurationError.uid,
+			gid: configurationError.gid
+		};
 		return configurationError.blocksOperations ? m.env_file_unreadable_blocked(params) : m.env_file_unreadable_ignored(params);
 	});
 	const serverOverrideContent = $derived(project?.overrideContent ?? '');
@@ -290,31 +296,23 @@
 			project?.status !== 'partially running'
 	);
 	let canEditCompose = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged && !composeActionsBlocked);
-	// Override edits are blocked for GitOps-managed projects, mirroring canEditCompose.
 	let canEditOverride = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged && !composeActionsBlocked);
 	let canEditEnv = $derived(canUpdateProject && !project?.isArchived && !configurationError);
-	// GitOps-managed projects keep workspace editing for operator-owned files
-	// (secret env files, bind-mounted configs); the backend rejects and marks
-	// read-only the paths the sync itself owns.
 	let canEditProjectWorkspace = $derived(canUpdateProject && !project?.isArchived);
 	let composeFileName = $derived(project?.composeFileName || 'compose.yaml');
 	let composeFiles = $derived(project?.composeFiles ?? []);
-	// Set when the user opts to add an override to a project that has none yet.
 	let overrideEditorRequested = $state(false);
-	// The backend only sets overrideFileName when an override file exists on disk.
-	// The display name falls back to the default for the "add override" flow.
 	let overrideExists = $derived(!!project?.overrideFileName);
 	let overrideFileName = $derived(project?.overrideFileName || 'compose.override.yaml');
-	// The override editor surfaces only when an override exists or the user asked
-	// to add one this session; otherwise the UI shows an "add override" affordance.
 	let overrideActive = $derived(overrideExists || overrideEditorRequested);
 	const gitProjectUrl = $derived(gitOpsProjectUrl(lifecycleSync));
 	const gitComposeEditUrl = $derived(gitOpsComposeEditUrl(lifecycleSync));
 	const gitOverrideEditUrl = $derived(gitOpsFileEditUrl(lifecycleSync, overrideFileName));
 	let envEditorRequested = $state(false);
-	let envExists = $derived(!!project?.envFileExists);
+	let envExists = $derived(!!project?.envFileExists || serverEnvContent !== '');
 	let envActive = $derived(envExists || envEditorRequested);
 	let canRemoveEnv = $derived(canEditEnv && !isGitOpsManaged);
+
 	const overrideWorkspaceRows = $derived.by(() => {
 		if (overrideActive) {
 			return [
@@ -382,7 +380,12 @@
 		return [];
 	});
 	const projectWorkspaceLeadingRows = $derived([
-		{ key: 'compose', label: composeFileName, iconClass: 'text-info', locked: true },
+		{
+			key: 'compose',
+			label: composeFileName,
+			iconClass: 'text-info',
+			locked: true
+		},
 		...overrideWorkspaceRows,
 		...envWorkspaceRows
 	]);
@@ -541,7 +544,15 @@
 			label: m.common_configuration(),
 			icon: SettingsIcon
 		},
-		...(isGitOpsManaged ? [] : [{ value: 'backup', label: m.git_backup(), icon: GitBranchIcon }])
+		...(isGitOpsManaged
+			? []
+			: [
+					{
+						value: 'backup',
+						label: m.git_backup(),
+						icon: GitBranchIcon
+					}
+				])
 	]);
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
@@ -703,8 +714,12 @@
 		);
 		await Promise.all(
 			listScopes([currentEnvId]).flatMap((scope) => [
-				queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(scope) }),
-				queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(scope) })
+				queryClient.invalidateQueries({
+					queryKey: queryKeys.projects.listPrefix(scope)
+				}),
+				queryClient.invalidateQueries({
+					queryKey: queryKeys.projects.statusCounts(scope)
+				})
 			])
 		);
 	}
@@ -718,8 +733,12 @@
 			await Promise.all([
 				refreshProjectDetails(),
 				...listScopes([currentEnvId]).flatMap((scope) => [
-					queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(scope) }),
-					queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(scope) })
+					queryClient.invalidateQueries({
+						queryKey: queryKeys.projects.listPrefix(scope)
+					}),
+					queryClient.invalidateQueries({
+						queryKey: queryKeys.projects.statusCounts(scope)
+					})
 				])
 			]);
 		},
@@ -807,7 +826,14 @@
 				envContent: serverEnvContent,
 				overrideContent: serverOverrideContent
 			},
-			isGitOpsManaged ? { envContent } : { name: effectiveName, composeContent, envContent, overrideContent }
+			isGitOpsManaged
+				? { envContent }
+				: {
+						name: effectiveName,
+						composeContent,
+						envContent,
+						overrideContent
+					}
 		);
 		const workspaceUpdate = buildWorkspaceMultipartUpdate(
 			projectWorkspaceChanges,
@@ -834,7 +860,10 @@
 						workspaceCommitted = true;
 						queryClient.setQueryData(queryKeys.projects.workspace(envId, projectId), workspace);
 
-						loadedProjectWorkspaceContents = { ...loadedProjectWorkspaceContents, ...projectWorkspaceContents };
+						loadedProjectWorkspaceContents = {
+							...loadedProjectWorkspaceContents,
+							...projectWorkspaceContents
+						};
 						loadedIncludeFileContents = {
 							...loadedIncludeFileContents,
 							...Object.fromEntries(
@@ -850,7 +879,9 @@
 					}
 
 					const updatedProject = await projectService.updateProject(projectId, projectUpdate, envId);
-					rebaseEditorDraft(updatedProject, { preserveProjectWorkspaceContents: true });
+					rebaseEditorDraft(updatedProject, {
+						preserveProjectWorkspaceContents: true
+					});
 					await syncProjectQueries(updatedProject);
 					toast.success(
 						m.common_update_success({ resource: m.project() }),
@@ -862,7 +893,13 @@
 				const error = operationResult.error;
 
 				const message = error instanceof Error ? error.message : m.common_save_failed();
-				toast.error(workspaceCommitted ? m.projects_workspace_saved_configuration_failed({ error: message }) : message);
+				toast.error(
+					workspaceCommitted
+						? m.projects_workspace_saved_configuration_failed({
+								error: message
+							})
+						: message
+				);
 				return false;
 			}
 			return true;
@@ -901,8 +938,12 @@
 					const currentEnvId = envId;
 					await Promise.all(
 						listScopes([currentEnvId]).flatMap((scope) => [
-							queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(scope) }),
-							queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(scope) })
+							queryClient.invalidateQueries({
+								queryKey: queryKeys.projects.listPrefix(scope)
+							}),
+							queryClient.invalidateQueries({
+								queryKey: queryKeys.projects.statusCounts(scope)
+							})
 						])
 					);
 				}
@@ -1205,7 +1246,10 @@
 						const file = await getProjectWorkspaceFileResource(kind, relativePath);
 						if (requestedProjectId !== projectId || requestedEnvId !== envId || pendingFiles !== projectWorkspaceFilePromises)
 							return;
-						projectWorkspaceFileMetadata = { ...projectWorkspaceFileMetadata, [relativePath]: file };
+						projectWorkspaceFileMetadata = {
+							...projectWorkspaceFileMetadata,
+							[relativePath]: file
+						};
 						if (file.editable) updateLoadedProjectWorkspaceFile(relativePath, file.content ?? '');
 					} else {
 						await getProjectWorkspaceFileResource(kind, relativePath);
@@ -1261,8 +1305,14 @@
 		};
 		const unsubscribe = cache.subscribe((event) => {
 			if (event.type !== 'updated' || (event.action.type !== 'success' && event.action.type !== 'error')) return;
-			const workspace = cache.find({ queryKey: queryKeys.projects.workspace(envId, projectId), exact: true });
-			const detail = cache.find({ queryKey: queryKeys.projects.detail(envId, projectId), exact: true });
+			const workspace = cache.find({
+				queryKey: queryKeys.projects.workspace(envId, projectId),
+				exact: true
+			});
+			const detail = cache.find({
+				queryKey: queryKeys.projects.detail(envId, projectId),
+				exact: true
+			});
 			if (event.query === workspace || event.query === detail) void loadAfterUpdate();
 		});
 		void loadAfterUpdate();
@@ -1321,11 +1371,23 @@
 		const relativePath = planProjectWorkspaceFileCreate(projectWorkspacePaths, parentPath, name, composeFileName);
 		if (!relativePath) return;
 		projectWorkspaceChanges = [...projectWorkspaceChanges, { operation: 'create_file', relativePath }];
-		projectWorkspaceContents = { ...projectWorkspaceContents, [relativePath]: content };
-		loadedProjectWorkspaceContents = { ...loadedProjectWorkspaceContents, [relativePath]: content };
+		projectWorkspaceContents = {
+			...projectWorkspaceContents,
+			[relativePath]: content
+		};
+		loadedProjectWorkspaceContents = {
+			...loadedProjectWorkspaceContents,
+			[relativePath]: content
+		};
 		if (stagedFile) {
-			projectWorkspaceStagedFiles = { ...projectWorkspaceStagedFiles, [relativePath]: stagedFile };
-			projectWorkspaceStagedUploadedText = { ...projectWorkspaceStagedUploadedText, [relativePath]: content };
+			projectWorkspaceStagedFiles = {
+				...projectWorkspaceStagedFiles,
+				[relativePath]: stagedFile
+			};
+			projectWorkspaceStagedUploadedText = {
+				...projectWorkspaceStagedUploadedText,
+				[relativePath]: content
+			};
 		}
 		projectWorkspaceFileMetadata = {
 			...projectWorkspaceFileMetadata,
@@ -1353,7 +1415,10 @@
 			const relativePath = planProjectWorkspaceFileCreate(projectWorkspacePaths, parentPath, file.name, composeFileName);
 			if (!relativePath) return;
 			projectWorkspaceChanges = [...projectWorkspaceChanges, { operation: 'create_file', relativePath }];
-			projectWorkspaceStagedFiles = { ...projectWorkspaceStagedFiles, [relativePath]: file };
+			projectWorkspaceStagedFiles = {
+				...projectWorkspaceStagedFiles,
+				[relativePath]: file
+			};
 			projectWorkspaceFileMetadata = {
 				...projectWorkspaceFileMetadata,
 				[relativePath]: {
@@ -1466,7 +1531,9 @@
 					preserveEditableDrafts: true,
 					clearLoadedFileCache: true
 				});
-				await queryClient.invalidateQueries({ queryKey: queryKeys.gitOpsSyncs.all });
+				await queryClient.invalidateQueries({
+					queryKey: queryKeys.gitOpsSyncs.all
+				});
 				toast.success(m.git_sync_success());
 			}
 		});
@@ -2092,7 +2159,9 @@
 		{:else if activeTreeTab === 'override'}
 			<div class="flex min-h-0 flex-1 flex-col">
 				<div class="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
-					<p class="text-xs text-muted-foreground">{m.compose_override_hint()}</p>
+					<p class="text-xs text-muted-foreground">
+						{m.compose_override_hint()}
+					</p>
 					{#if canEditOverride}
 						<button
 							type="button"
@@ -2364,8 +2433,12 @@
 						void refreshProjectDetails();
 					}}
 					onRefresh={async () => {
-						await refreshProjectDetails({ clearLoadedFileCache: true });
-						await queryClient.invalidateQueries({ queryKey: queryKeys.projects.workspace(envId, projectId) });
+						await refreshProjectDetails({
+							clearLoadedFileCache: true
+						});
+						await queryClient.invalidateQueries({
+							queryKey: queryKeys.projects.workspace(envId, projectId)
+						});
 					}}
 					extraActions={projectExtraActions}
 					hasUnsavedChanges={hasChanges}
@@ -2392,7 +2465,10 @@
 				{data.error ? m.common_action_failed() : m.common_not_found_title({ resource: m.project() })}
 			</h2>
 			<p class="mb-8 max-w-md text-center text-muted-foreground">
-				{data.error || m.common_not_found_description({ resource: m.project().toLowerCase() })}
+				{data.error ||
+					m.common_not_found_description({
+						resource: m.project().toLowerCase()
+					})}
 			</p>
 			<ArcaneButton
 				action="base"
