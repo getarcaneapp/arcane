@@ -2,6 +2,7 @@ package user_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -340,6 +341,121 @@ func TestUpdateUserNormalizesDashboardLayout(t *testing.T) {
 			Hidden: true,
 		},
 	}, reloaded.Preferences.DashboardLayout)
+}
+
+func themePalette(color string) types.ThemePalette {
+	return types.ThemePalette{
+		Background:               color,
+		Foreground:               color,
+		Card:                     color,
+		CardForeground:           color,
+		Popover:                  color,
+		PopoverForeground:        color,
+		Primary:                  color,
+		PrimaryForeground:        color,
+		Secondary:                color,
+		SecondaryForeground:      color,
+		Muted:                    color,
+		MutedForeground:          color,
+		Accent:                   color,
+		AccentForeground:         color,
+		Border:                   color,
+		Input:                    color,
+		Ring:                     color,
+		Sidebar:                  color,
+		SidebarForeground:        color,
+		SidebarPrimary:           color,
+		SidebarPrimaryForeground: color,
+		SidebarAccent:            color,
+		SidebarAccentForeground:  color,
+		SidebarBorder:            color,
+		SidebarRing:              color,
+		Surface:                  color,
+		GlassShadowColor:         color,
+		SyntaxComment:            color,
+		SyntaxKeyword:            color,
+		SyntaxProperty:           color,
+		SyntaxString:             color,
+		SyntaxNumber:             color,
+		SyntaxOperator:           color,
+	}
+}
+
+func customTheme(id string, dark types.ThemePalette) types.CustomTheme {
+	return types.CustomTheme{
+		ID:    id,
+		Name:  "My Theme",
+		Light: themePalette("#ffffff"),
+		Dark:  dark,
+	}
+}
+
+func TestUpdateUserAcceptsValidCustomTheme(t *testing.T) {
+	userSvc, _ := setupUserAndRoleServices(t)
+	ctx := t.Context()
+
+	u := createTestUser(t, userSvc, "user-1", "custom-theme-user")
+	themes := []types.CustomTheme{customTheme("custom-midnight", themePalette("oklch(0.2 0.05 260)"))}
+	u.Preferences.CustomThemes = &themes
+	_, err := userSvc.UpdateUser(ctx, u, nil)
+	require.NoError(t, err)
+
+	reloaded, err := userSvc.GetUserByID(ctx, u.ID)
+	require.NoError(t, err)
+	require.Equal(t, &themes, reloaded.Preferences.CustomThemes)
+}
+
+func TestUpdateUserRejectsInvalidCustomThemes(t *testing.T) {
+	userSvc, _ := setupUserAndRoleServices(t)
+	ctx := t.Context()
+
+	u := createTestUser(t, userSvc, "user-1", "custom-theme-user")
+	tooMany := make([]types.CustomTheme, 0, 21)
+	for i := range 21 {
+		tooMany = append(tooMany, customTheme(fmt.Sprintf("custom-theme-%d", i), themePalette("#000000")))
+	}
+	tests := []struct {
+		name    string
+		wantMsg string
+		themes  []types.CustomTheme
+	}{
+		{
+			name:    "css injection",
+			themes:  []types.CustomTheme{customTheme("custom-evil", themePalette("red; } body {"))},
+			wantMsg: `custom theme "custom-evil": dark token "background" is not a valid color`,
+		},
+		{
+			name:    "named color",
+			themes:  []types.CustomTheme{customTheme("custom-named", themePalette("red"))},
+			wantMsg: `custom theme "custom-named": dark token "background" is not a valid color`,
+		},
+		{
+			name:    "missing prefix",
+			themes:  []types.CustomTheme{customTheme("midnight", themePalette("#000000"))},
+			wantMsg: `custom theme "midnight": id must start with custom-`,
+		},
+		{
+			name: "duplicate ids",
+			themes: []types.CustomTheme{
+				customTheme("custom-midnight", themePalette("#000000")),
+				customTheme("custom-midnight", themePalette("#111111")),
+			},
+			wantMsg: `custom theme "custom-midnight": id is used more than once`,
+		},
+		{
+			name:    "too many themes",
+			themes:  tooMany,
+			wantMsg: "at most 20 custom themes are allowed",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			u.Preferences.CustomThemes = &tt.themes
+			_, err := userSvc.UpdateUser(ctx, u, nil)
+			require.ErrorIs(t, err, common.ErrValidation)
+			require.ErrorContains(t, err, tt.wantMsg)
+		})
+	}
 }
 
 func TestUpdateUserRejectsNonAdminActorEditingAdmin(t *testing.T) {

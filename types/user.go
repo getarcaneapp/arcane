@@ -15,7 +15,7 @@ const (
 // on the user model and as the wire DTO.
 type UserPreferences struct {
 	ThemeMode                  *string `json:"themeMode,omitempty" enum:"light,dark,system" doc:"Light/dark mode preference"`
-	ApplicationTheme           *string `json:"applicationTheme,omitempty" enum:"default,graphite,carbon,ocean,amber,github,nord,everforest,rosepine,abyss,twilight,obsidian,onyx" doc:"Theme preset"`
+	ApplicationTheme           *string `json:"applicationTheme,omitempty" pattern:"^[a-z0-9-]{1,48}$" doc:"Theme preset or custom theme ID"`
 	AccentColor                *string `json:"accentColor,omitempty" doc:"Primary accent color, or 'default'"`
 	IconCatalog                *string `json:"iconCatalog,omitempty" enum:"selfhst,dashboard-icons" doc:"Catalog used to resolve project and container icon slugs"`
 	OledMode                   *bool   `json:"oledMode,omitempty" doc:"Use true-black backgrounds in dark mode"`
@@ -33,6 +33,15 @@ type UserPreferences struct {
 	EnvironmentColors     *map[string]string       `json:"environmentColors,omitempty" doc:"Environment label color by environment ID"`
 	EnvironmentLabelStyle *string                  `json:"environmentLabelStyle,omitempty" enum:"name,dot" doc:"How resource lists label environments"`
 	DashboardLayout       *[]DashboardWidgetLayout `json:"dashboardLayout,omitempty" doc:"Dashboard widgets with their grid position, size, and visibility"`
+	CustomThemes          *[]CustomTheme           `json:"customThemes,omitempty" maxItems:"20" doc:"Imported custom color themes"`
+}
+
+type CustomTheme struct {
+	ID          string       `json:"id" doc:"Custom theme identifier, prefixed with custom-" example:"custom-solarized"`
+	Name        string       `json:"name" doc:"Display name of the custom theme" example:"Solarized"`
+	Description string       `json:"description,omitempty" doc:"Optional description of the custom theme"`
+	Light       ThemePalette `json:"light" doc:"Color tokens used in light mode"`
+	Dark        ThemePalette `json:"dark" doc:"Color tokens used in dark mode"`
 }
 
 type DashboardWidgetLayout struct {
@@ -42,6 +51,42 @@ type DashboardWidgetLayout struct {
 	W      int    `json:"w" doc:"Widget width in columns"`
 	H      int    `json:"h" doc:"Widget height in rows"`
 	Hidden bool   `json:"hidden,omitempty" doc:"Whether the widget is hidden"`
+}
+
+type ThemePalette struct {
+	Background               string `json:"background" required:"true"`
+	Foreground               string `json:"foreground" required:"true"`
+	Card                     string `json:"card" required:"true"`
+	CardForeground           string `json:"card-foreground" required:"true"`
+	Popover                  string `json:"popover" required:"true"`
+	PopoverForeground        string `json:"popover-foreground" required:"true"`
+	Primary                  string `json:"primary" required:"true"`
+	PrimaryForeground        string `json:"primary-foreground" required:"true"`
+	Secondary                string `json:"secondary" required:"true"`
+	SecondaryForeground      string `json:"secondary-foreground" required:"true"`
+	Muted                    string `json:"muted" required:"true"`
+	MutedForeground          string `json:"muted-foreground" required:"true"`
+	Accent                   string `json:"accent" required:"true"`
+	AccentForeground         string `json:"accent-foreground" required:"true"`
+	Border                   string `json:"border" required:"true"`
+	Input                    string `json:"input" required:"true"`
+	Ring                     string `json:"ring" required:"true"`
+	Sidebar                  string `json:"sidebar" required:"true"`
+	SidebarForeground        string `json:"sidebar-foreground" required:"true"`
+	SidebarPrimary           string `json:"sidebar-primary" required:"true"`
+	SidebarPrimaryForeground string `json:"sidebar-primary-foreground" required:"true"`
+	SidebarAccent            string `json:"sidebar-accent" required:"true"`
+	SidebarAccentForeground  string `json:"sidebar-accent-foreground" required:"true"`
+	SidebarBorder            string `json:"sidebar-border" required:"true"`
+	SidebarRing              string `json:"sidebar-ring" required:"true"`
+	Surface                  string `json:"surface" required:"true"`
+	GlassShadowColor         string `json:"glass-shadow-color" required:"true"`
+	SyntaxComment            string `json:"syntax-comment" required:"true"`
+	SyntaxKeyword            string `json:"syntax-keyword" required:"true"`
+	SyntaxProperty           string `json:"syntax-property" required:"true"`
+	SyntaxString             string `json:"syntax-string" required:"true"`
+	SyntaxNumber             string `json:"syntax-number" required:"true"`
+	SyntaxOperator           string `json:"syntax-operator" required:"true"`
 }
 
 // RoleAssignmentSummary is a compact form of a user's role assignment used

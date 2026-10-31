@@ -115,6 +115,8 @@ type SettingsSnapshot struct {
 // provided or the configured value fails validation.
 const DefaultAccentColor = "oklch(0.606 0.25 292.717)"
 
+var SafeThemeColor = regexp.MustCompile(`^(?:#[0-9a-fA-F]{3,8}|(?:rgb|rgba|hsl|hsla|oklch|oklab)\([0-9a-zA-Z%. ,/-]{1,64}\))$`)
+
 // SafeAccentColor accepts only safe CSS color tokens: hex, known named colors,
 // rgb()/rgba(), hsl()/hsla(), oklch()/oklab(). Values containing semicolons,
 // angle brackets, or quotes are rejected to prevent CSS/SVG injection when

@@ -3,7 +3,6 @@
 @import 'shadcn-svelte/tailwind.css';
 @import '@fontsource-variable/montserrat';
 @import '@fontsource-variable/geist-mono';
-@import './themes.css';
 
 @custom-variant dark (&:is(.dark *));
 @custom-variant desktop-layout (&:where([data-layout='desktop'], [data-layout='desktop'] *));
@@ -157,6 +156,24 @@
 	--shadow-glass-lg:
 		0 10px 24px -14px color-mix(in oklch, var(--glass-shadow-color) 70%, transparent),
 		0 24px 48px -24px color-mix(in oklch, var(--glass-shadow-color) 50%, transparent);
+}
+
+.dark.oled:not([data-app-theme]) {
+	--background: oklch(0 0 0);
+	--card: oklch(0 0 0 / 0.5);
+	--popover: oklch(0.04 0.002 285);
+	--secondary: oklch(0.1 0.004 286 / 0.55);
+	--muted: oklch(0.1 0.004 286 / 0.55);
+	--accent: oklch(0.1 0.004 286 / 0.55);
+	--border: oklch(1 0 0 / 18%);
+	--input: oklch(1 0 0 / 18%);
+	--sidebar: oklch(0.02 0.001 285 / 0.8);
+	--sidebar-border: oklch(1 0 0 / 18%);
+	--sidebar-accent: oklch(0.1 0.004 286 / 0.55);
+	--surface: oklch(0.045 0.002 285.9);
+	--bg-surface: oklch(0.02 0.001 285);
+	--glass-base: oklch(0.02 0.001 285);
+	--glass-shadow-color: oklch(0 0 0 / 0.6);
 }
 
 html.no-blur *,

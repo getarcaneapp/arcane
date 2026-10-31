@@ -5,10 +5,22 @@
 	import * as Carousel from '#lib/components/ui/carousel/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
+	import { AddIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { ApplicationTheme } from '#lib/types/settings.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
+	import type { ApplicationTheme, ThemeDefinition } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
-	import { APPLICATION_THEME_OPTIONS, applyApplicationTheme, resolveApplicationTheme } from '#lib/utils/theme.svelte.js';
+	import {
+		type ApplicationThemeOption,
+		applyApplicationTheme,
+		findApplicationTheme,
+		getApplicationThemeOptions,
+		resolveApplicationTheme
+	} from '#lib/utils/theme.svelte.js';
+	import { saveUserPreferences } from '#lib/utils/user-preferences.js';
+
+	import ApplicationThemeCardMenu from './application-theme-card-menu.svelte';
+	import ApplicationThemeImportDialog from './application-theme-import-dialog.svelte';
 
 	let {
 		selectedTheme = $bindable(),
@@ -19,11 +31,10 @@
 		selectedTheme: ApplicationTheme;
 		accentColor?: string;
 		disabled?: boolean;
-		/** Called whenever the user picks a different theme. */
 		onSelect?: (theme: ApplicationTheme) => void;
 	} = $props();
 
-	const themeCopy: Record<ApplicationTheme, { label: string; description: string }> = {
+	const themeCopy: Partial<Record<ApplicationTheme, { label: string; description: string }>> = {
 		default: {
 			label: m.application_theme_default(),
 			description: m.application_theme_default_description()
@@ -68,22 +79,48 @@
 			label: m.application_theme_twilight(),
 			description: m.application_theme_twilight_description()
 		},
-		obsidian: {
-			label: m.application_theme_obsidian(),
-			description: m.application_theme_obsidian_description()
+		neon: {
+			label: m.application_theme_neon(),
+			description: m.application_theme_neon_description()
 		},
-		onyx: {
-			label: m.application_theme_onyx(),
-			description: m.application_theme_onyx_description()
+		mono: {
+			label: m.application_theme_mono(),
+			description: m.application_theme_mono_description()
 		}
 	};
+
+	const themeOptions = $derived(getApplicationThemeOptions());
+	const customThemes = $derived(userStore.current?.preferences?.customThemes ?? []);
+	let importOpen = $state(false);
+
+	function themeDescription(theme: ApplicationThemeOption): string {
+		return themeCopy[theme.id]?.description ?? theme.description ?? '';
+	}
+
+	async function importTheme(theme: ThemeDefinition) {
+		await saveUserPreferences({
+			customThemes: [...customThemes, theme],
+			applicationTheme: theme.id
+		});
+		if (customThemes.some((item) => item.id === theme.id)) {
+			importOpen = false;
+		}
+	}
+	const selectedDescription = $derived.by(() => {
+		const selected = themeOptions.find((theme) => theme.id === selectedTheme);
+		return selected ? themeDescription(selected) : '';
+	});
+
+	function themeLabel(theme: ApplicationThemeOption): string {
+		return themeCopy[theme.id]?.label ?? theme.name ?? theme.id;
+	}
 
 	const isDarkMode = $derived(mode.current === 'dark');
 	const customAccent = $derived(accentColor.trim() === '' || accentColor.trim() === 'theme' ? null : accentColor);
 
 	function setCarouselApi(api: CarouselAPI | undefined) {
 		api?.scrollTo(
-			APPLICATION_THEME_OPTIONS.findIndex((theme) => theme.value === selectedTheme),
+			themeOptions.findIndex((theme) => theme.id === selectedTheme),
 			true
 		);
 	}
@@ -108,44 +145,72 @@
 	>
 		<Carousel.Previous class="static me-2 hidden shrink-0 translate-y-0 md:inline-flex" />
 		<Carousel.Content>
-			{#each APPLICATION_THEME_OPTIONS as theme (theme.value)}
-				{@const preview = isDarkMode ? theme.preview.dark : theme.preview.light}
+			{#each themeOptions as theme (theme.id)}
+				{@const preview = isDarkMode ? theme.dark : theme.light}
+				{@const definition = findApplicationTheme(theme.id)}
 				<Carousel.Item class="basis-32">
-					<RadioGroup.Item id={`application-theme-${theme.value}`} value={theme.value} class="sr-only" {disabled} />
-					<Label for={`application-theme-${theme.value}`} class={disabled ? 'cursor-not-allowed' : 'cursor-pointer'}>
-						<div
-							class={cn(
-								'flex w-full flex-col gap-1.5 rounded-lg border p-1.5 transition-colors',
-								selectedTheme === theme.value ? 'border-primary ring-1 ring-primary' : 'hover:border-muted-foreground/40',
-								disabled && 'opacity-60'
-							)}
-						>
+					<div class="group relative h-full">
+						<RadioGroup.Item id={`application-theme-${theme.id}`} value={theme.id} class="sr-only" {disabled} />
+						<Label for={`application-theme-${theme.id}`} class={disabled ? 'cursor-not-allowed' : 'cursor-pointer'}>
 							<div
-								class="flex h-11 gap-1 rounded-md border border-(color:--preview-border) bg-(--preview-bg) p-1.5"
-								style={`--preview-bg: ${preview.background}; --preview-border: ${preview.border}; --preview-sidebar: ${preview.sidebar}; --preview-fg: ${preview.foreground}; --preview-card: ${preview.card};`}
+								class={cn(
+									'flex w-full flex-col gap-1.5 rounded-lg border p-1.5 transition-colors',
+									selectedTheme === theme.id ? 'border-primary ring-1 ring-primary' : 'hover:border-muted-foreground/40',
+									disabled && 'opacity-60'
+								)}
 							>
-								<div class="w-1.5 rounded-xs bg-(--preview-sidebar)"></div>
-								<div class="flex min-w-0 flex-1 flex-col gap-1">
-									<div class="h-0.75 w-1/2 rounded-full bg-(--preview-fg) opacity-70"></div>
-									<div class="flex flex-1 gap-0.75">
-										<div class="flex-1 rounded-xs bg-(--preview-card)"></div>
-										<div class="flex-1 rounded-xs bg-(--preview-card)"></div>
+								<div
+									class="flex h-11 gap-1 rounded-md border border-(color:--preview-border) bg-(--preview-bg) p-1.5"
+									style={`--preview-bg: ${preview.background}; --preview-border: ${preview.border}; --preview-sidebar: ${preview.sidebar}; --preview-fg: ${preview.foreground}; --preview-card: ${preview.card};`}
+								>
+									<div class="w-1.5 rounded-xs bg-(--preview-sidebar)"></div>
+									<div class="flex min-w-0 flex-1 flex-col gap-1">
+										<div class="h-0.75 w-1/2 rounded-full bg-(--preview-fg) opacity-70"></div>
+										<div class="flex flex-1 gap-0.75">
+											<div class="flex-1 rounded-xs bg-(--preview-card)"></div>
+											<div class="flex-1 rounded-xs bg-(--preview-card)"></div>
+										</div>
 									</div>
 								</div>
+								<div class="flex items-center gap-1.5 px-0.5 text-xs font-medium">
+									<span
+										class="size-1.5 shrink-0 rounded-full bg-(--preview-accent)"
+										style={`--preview-accent: ${customAccent ?? preview.primary}`}
+									></span>
+									<span class="truncate">{themeLabel(theme)}</span>
+								</div>
 							</div>
-							<div class="flex items-center gap-1.5 px-0.5 text-xs font-medium">
-								<span
-									class="size-1.5 shrink-0 rounded-full bg-(--preview-accent)"
-									style={`--preview-accent: ${customAccent ?? preview.primary}`}
-								></span>
-								<span class="truncate">{themeCopy[theme.value].label}</span>
+						</Label>
+						{#if definition}
+							<div
+								class="absolute top-1 right-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
+							>
+								<ApplicationThemeCardMenu
+									theme={definition}
+									label={themeLabel(theme)}
+									description={themeDescription(theme)}
+									custom={customThemes.some((item) => item.id === theme.id)}
+								/>
 							</div>
-						</div>
-					</Label>
+						{/if}
+					</div>
 				</Carousel.Item>
 			{/each}
+			<Carousel.Item class="basis-32">
+				<button
+					type="button"
+					class="flex h-full w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed p-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-muted-foreground/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+					{disabled}
+					onclick={() => (importOpen = true)}
+				>
+					<AddIcon class="size-4" />
+					{m.import_theme()}
+				</button>
+			</Carousel.Item>
 		</Carousel.Content>
 		<Carousel.Next class="static ms-2 hidden shrink-0 translate-y-0 md:inline-flex" />
 	</Carousel.Root>
-	<p class="text-xs text-muted-foreground">{themeCopy[selectedTheme].description}</p>
+	<p class="text-xs text-muted-foreground">{selectedDescription}</p>
 </RadioGroup.Root>
+
+<ApplicationThemeImportDialog bind:open={importOpen} {customThemes} onSubmit={importTheme} />

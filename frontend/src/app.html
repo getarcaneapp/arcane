@@ -21,6 +21,10 @@
 				root.style.colorScheme = dark ? 'dark' : 'light';
 				const a = JSON.parse(localStorage.getItem('arcane-appearance') || '{}');
 				if (a.attr) root.setAttribute('data-app-theme', a.attr);
+				if (a.v && a.v.themeCss)
+					document.head.appendChild(
+						Object.assign(document.createElement('style'), { id: 'arcane-app-theme', textContent: a.v.themeCss })
+					);
 				if (a.cls) root.classList.add(...a.cls.split(' '));
 				if (a.css) root.style.cssText += ';' + a.css;
 			} catch (e) {}

@@ -3,20 +3,56 @@ import type { UpdateRequest } from './shared';
 
 // --- Application settings ---
 
-export type ApplicationTheme =
-	| 'default'
-	| 'graphite'
-	| 'carbon'
-	| 'ocean'
-	| 'amber'
-	| 'github'
-	| 'nord'
-	| 'everforest'
-	| 'rosepine'
-	| 'abyss'
-	| 'twilight'
-	| 'obsidian'
-	| 'onyx';
+export type ApplicationTheme = string;
+
+export const THEME_TOKENS = [
+	'background',
+	'foreground',
+	'card',
+	'card-foreground',
+	'popover',
+	'popover-foreground',
+	'primary',
+	'primary-foreground',
+	'secondary',
+	'secondary-foreground',
+	'muted',
+	'muted-foreground',
+	'accent',
+	'accent-foreground',
+	'border',
+	'input',
+	'ring',
+	'sidebar',
+	'sidebar-foreground',
+	'sidebar-primary',
+	'sidebar-primary-foreground',
+	'sidebar-accent',
+	'sidebar-accent-foreground',
+	'sidebar-border',
+	'sidebar-ring',
+	'surface',
+	'glass-shadow-color',
+	'syntax-comment',
+	'syntax-keyword',
+	'syntax-property',
+	'syntax-string',
+	'syntax-number',
+	'syntax-operator'
+] as const;
+
+export type ThemeToken = (typeof THEME_TOKENS)[number];
+
+export type ThemePalette = Record<ThemeToken, string>;
+
+export type ThemeDefinition = {
+	id: string;
+	name?: string;
+	description?: string;
+	light: ThemePalette;
+	dark: ThemePalette;
+};
+
 export type IconCatalog = 'selfhst' | 'dashboard-icons';
 
 export type UpdateCheckRegistry = 'auto' | 'ghcr.io' | 'docker.io' | 'public.ecr.aws';
