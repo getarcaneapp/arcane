@@ -2893,6 +2893,8 @@
   "update_center_step_reload": "Reload page",
   "update_center_estimated": "This usually takes under a minute.",
   "update_center_complete": "Update complete.",
+  "update_center_unconfirmed": "Zgłoszono prośbę o aktualizację, ale nie udało się jej potwierdzić. Sprawdź logi środowiska.",
+  "update_center_unconfirmed_version": "Zgłoszono prośbę o aktualizację, ale środowisko nadal korzysta z serwisu {version}. Sprawdź jego logi.",
   "auto_start": "Auto-start",
   "api_key_name_placeholder": "Enter a name for this API key",
   "api_key_save_warning": "Zapisz ten klucz teraz — nie zostanie on już ponownie wyświetlony.",

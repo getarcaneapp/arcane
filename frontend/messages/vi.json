@@ -2893,6 +2893,8 @@
   "update_center_step_reload": "Tải lại trang",
   "update_center_estimated": "Việc này thường chỉ mất chưa đầy một phút.",
   "update_center_complete": "Quá trình cập nhật đã hoàn tất.",
+  "update_center_unconfirmed": "Yêu cầu cập nhật đã được gửi nhưng không thể xác nhận. Vui lòng kiểm tra nhật ký hệ thống.",
+  "update_center_unconfirmed_version": "Đã có yêu cầu cập nhật nhưng môi trường vẫn đang chạy {version}. Hãy kiểm tra nhật ký của nó.",
   "auto_start": "Tự động bắt đầu",
   "api_key_name_placeholder": "Nhập tên cho API Key này",
   "api_key_save_warning": "Hãy lưu mã này ngay bây giờ — mã này sẽ không được hiển thị lại nữa.",

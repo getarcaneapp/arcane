@@ -2893,6 +2893,8 @@
   "update_center_step_reload": "Ladda om sidan",
   "update_center_estimated": "Detta tar vanligtvis mindre än en minut.",
   "update_center_complete": "Uppdateringen är klar.",
+  "update_center_unconfirmed": "Uppdateringen begärdes men kunde inte bekräftas. Kontrollera miljöens loggar.",
+  "update_center_unconfirmed_version": "Uppdateringen har begärts, men miljön kör fortfarande {version}. Kontrollera loggarna.",
   "auto_start": "Autostart",
   "api_key_name_placeholder": "Ange ett namn på API-nyckeln",
   "api_key_save_warning": "Spara den här nyckeln nu – den kommer inte att visas igen.",

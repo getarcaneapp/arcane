@@ -2893,6 +2893,8 @@
   "update_center_step_reload": "Obnovení stránky",
   "update_center_estimated": "Toto obvykle trvá méně než minutu.",
   "update_center_complete": "Aktualizace dokončena.",
+  "update_center_unconfirmed": "Aktualizace byla vyžádána, ale nebylo možné ji potvrdit. Zkontrolujte protokoly daného prostředí.",
+  "update_center_unconfirmed_version": "Aktualizace byla vyžádána, ale prostředí stále běží na verzi {version}. Zkontrolujte jeho protokoly.",
   "auto_start": "Automatické spuštění",
   "api_key_name_placeholder": "Zadejte název tohoto API klíče",
   "api_key_save_warning": "Uložte si tento klíč nyní – už se znovu nezobrazí.",
