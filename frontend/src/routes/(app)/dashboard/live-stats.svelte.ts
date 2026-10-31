@@ -148,7 +148,7 @@ export class DashboardLiveStats {
 			},
 			onClose: () => markLiveStatsFailed(liveStatsState)
 		});
-		liveStatsState.client.connect();
+		void liveStatsState.client.connect();
 	}
 
 	#remove(environmentId: string) {

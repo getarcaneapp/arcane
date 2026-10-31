@@ -60,7 +60,7 @@ type RunContainerLifecycleActionOptions = {
 	containerId: string;
 	environmentId: string;
 	setStatus: (status: ContainerLifecycleStatus) => void;
-	onRefresh?: () => Promise<unknown> | unknown;
+	onRefresh?: () => unknown;
 };
 
 export async function runContainerLifecycleAction({
@@ -103,7 +103,7 @@ type ConfirmAndRemoveContainerOptions = {
 	containerName: string;
 	environmentId: string;
 	setStatus: (status: ContainerRemoveStatus) => void;
-	onRefresh?: () => Promise<unknown> | unknown;
+	onRefresh?: () => unknown;
 };
 
 export function confirmAndRemoveContainer({
@@ -148,7 +148,7 @@ type ConfirmAndUpdateContainerOptions = {
 	containerName: string;
 	environmentId: string;
 	setLoading?: (loading: boolean) => void;
-	onRefresh?: () => Promise<unknown> | unknown;
+	onRefresh?: () => unknown;
 	onAccepted?: (activity: Activity, environmentId: string) => void | Promise<void>;
 };
 

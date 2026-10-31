@@ -1,5 +1,5 @@
 import { stat } from 'node:fs/promises';
-import { test, expect, type Page, type Locator, type Response } from '../fixtures/test.fixture';
+import { test, expect, type Page, type Locator } from '../fixtures/test.fixture';
 import { readApiData, removeApiResource, type Paginated } from '../utils/fetch.util';
 import { ContainerSummary } from '../types/containers.type';
 import { openRowActionsMenu } from '../utils/table-actions.util';

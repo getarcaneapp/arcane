@@ -10,13 +10,13 @@ export function stringifyForDisplay(value: unknown): string {
 	if (typeof value === 'string') {
 		return value;
 	}
-	if (typeof value === 'number' || typeof value === 'boolean') {
+	if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
 		return String(value);
 	}
 	try {
 		return JSON.stringify(value, null, 2);
 	} catch {
-		return String(value);
+		return Object.prototype.toString.call(value);
 	}
 }
 

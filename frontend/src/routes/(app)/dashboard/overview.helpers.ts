@@ -351,7 +351,7 @@ export function buildAttentionItems(sources: AttentionSources): AttentionItem[] 
 			const expiresAt = parseInstant(apiKey.expiresAt);
 			return expiresAt ? [expiresAt] : [];
 		})
-		.sort(Temporal.Instant.compare)[0];
+		.sort((a, b) => Temporal.Instant.compare(a, b))[0];
 	const apiKeyItems: AttentionItem[] =
 		sources.expiringApiKeys.length > 0
 			? [

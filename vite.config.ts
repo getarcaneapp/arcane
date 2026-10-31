@@ -46,6 +46,7 @@ export default defineConfig({
 		passWithNoTests: true
 	},
 	lint: {
+		ignorePatterns: ['backend/resources/scalar/**'],
 		jsPlugins: [{ name: 'vite-plus', specifier: 'vite-plus/oxlint-plugin' }],
 		rules: { 'vite-plus/prefer-vite-plus-imports': 'error' },
 		options: { typeAware: true, typeCheck: false }

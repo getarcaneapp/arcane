@@ -30,7 +30,6 @@
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { BackupFileProvider, BackupFileRootLoadState } from '#lib/types/backup.js';
 	import type {
 		BackupHistoryEntry,
@@ -399,7 +398,7 @@
 		mounted = true;
 	});
 	$effect(() => {
-		userStore.current;
+		if (!hasShownPermission('system-backups:manage')) return;
 		untrack(() => {
 			void discoverStoredBackups();
 		});

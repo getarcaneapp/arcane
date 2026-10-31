@@ -107,7 +107,7 @@ class AuthService extends BaseAPIService {
 
 		if (refreshTime > 0) {
 			this.refreshTimer = setTimeout(() => {
-				tryCatch(this.refreshAccessToken()).then((result) => {
+				void tryCatch(this.refreshAccessToken()).then((result) => {
 					if (result.error !== null) {
 						const err = result.error;
 
@@ -217,7 +217,7 @@ class AuthService extends BaseAPIService {
 
 		const user = await this.completeAuthentication(data);
 		await refreshAll();
-		goto(getEffectiveLandingPage());
+		void goto(getEffectiveLandingPage());
 
 		return user;
 	}
@@ -242,7 +242,7 @@ class AuthService extends BaseAPIService {
 				const response = await this.api.get('/auth/me');
 				const user = (response.data.user as User) || (response.data.data as User);
 
-				userStore.setUser(user);
+				await userStore.setUser(user);
 
 				return user;
 			})()
@@ -292,8 +292,8 @@ class AuthService extends BaseAPIService {
 		userStore.clearUser();
 
 		if (options?.restartMountedStores) {
-			if (restartActivityStore) void activityStore.start();
-			if (restartEnvironmentStatusStore) void environmentStatusStore.start();
+			if (restartActivityStore) activityStore.start();
+			if (restartEnvironmentStatusStore) environmentStatusStore.start();
 			if (restartVersionStore) versionStore.start();
 		}
 	}

@@ -40,7 +40,7 @@ export function getEffectiveLandingPage(): ResolvedPathname {
 
 // --- Keyboard shortcuts ---
 
-export type ShortcutKey = 'mod' | 'shift' | 'alt' | 'ctrl' | 'meta' | string;
+export type ShortcutKey = 'mod' | 'shift' | 'alt' | 'ctrl' | 'meta' | (string & {});
 
 const MODIFIER_KEYS = new Set(['mod', 'shift', 'alt', 'ctrl', 'meta']);
 
