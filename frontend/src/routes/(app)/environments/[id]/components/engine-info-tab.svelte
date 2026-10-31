@@ -70,7 +70,7 @@
 		<div class="grid grid-cols-label-value items-center gap-x-4 py-2">
 			<span class="text-sm text-muted-foreground">{m.docker_info_git_commit_label()}</span>
 			<div class="flex items-center justify-end gap-1.5">
-				<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">{entry.value?.slice(0, 8) ?? '-'}</code>
+				<code class="rounded-xl bg-muted px-1.5 py-0.5 font-mono text-sm">{entry.value?.slice(0, 8) ?? '-'}</code>
 				{#if entry.value}
 					<CopyButton text={entry.value} size="icon" class="size-6" title={m.docker_copy_commit_hash()} />
 				{/if}

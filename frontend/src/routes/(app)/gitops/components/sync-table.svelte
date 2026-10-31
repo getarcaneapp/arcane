@@ -302,7 +302,7 @@
 {#snippet BranchCell({ item }: { item: SyncRow })}
 	<div class="flex items-center gap-1.5">
 		<GitBranchIcon class="size-3.5 text-muted-foreground" />
-		<code class="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{item.branch}</code>
+		<code class="rounded-xl bg-muted px-2 py-0.5 text-xs text-muted-foreground">{item.branch}</code>
 	</div>
 {/snippet}
 
@@ -319,12 +319,12 @@
 				href={fileUrl}
 				target="_blank"
 				rel="external noopener noreferrer"
-				class="min-w-0 truncate rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
+				class="min-w-0 truncate rounded-xl bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
 			>
 				{path}
 			</a>
 		{:else}
-			<code class="min-w-0 truncate rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{path}</code>
+			<code class="min-w-0 truncate rounded-xl bg-muted px-2 py-0.5 text-xs text-muted-foreground">{path}</code>
 		{/if}
 	</div>
 {/snippet}
@@ -358,12 +358,12 @@
 					href={commitUrl}
 					target="_blank"
 					rel="external"
-					class="min-w-0 truncate rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
+					class="min-w-0 truncate rounded-xl bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
 				>
 					{item.lastSyncCommit}
 				</a>
 			{:else}
-				<code class="min-w-0 truncate rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
+				<code class="min-w-0 truncate rounded-xl bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
 					{item.lastSyncCommit}
 				</code>
 			{/if}

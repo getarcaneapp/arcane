@@ -312,7 +312,7 @@
 		<button
 			type="button"
 			onclick={copyToClipboard}
-			class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+			class="shrink-0 rounded-xl p-1 text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
 			title={copied ? 'Copied' : 'Copy JSON'}
 		>
 			{#if copied}

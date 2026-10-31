@@ -325,7 +325,7 @@
 					<ul class="divide-y divide-border/50">
 						{#each recentEntries as entry (entry.commit)}
 							<li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm">
-								<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{entry.commit.slice(0, 7)}</code>
+								<code class="rounded-xl bg-muted px-1.5 py-0.5 font-mono text-xs">{entry.commit.slice(0, 7)}</code>
 								<span class="min-w-0 flex-1 truncate font-medium">{firstLine(entry.message)}</span>
 								<span class="flex items-center gap-1 text-xs text-muted-foreground">
 									<FileTextIcon class="size-3.5" />

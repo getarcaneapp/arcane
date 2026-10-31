@@ -1897,7 +1897,7 @@
 							{#if hasLifecycleHook && lifecycleSync?.preDeployScriptPath}
 								<div class="flex items-center gap-1.5 font-mono text-xs">
 									<span class="text-muted-foreground">{m.git_sync_pre_deploy_title()}:</span>
-									<span class="rounded bg-muted px-1.5 py-0.5">{lifecycleSync.preDeployScriptPath}</span>
+									<span class="rounded-xl bg-muted px-1.5 py-0.5">{lifecycleSync.preDeployScriptPath}</span>
 									<span class="text-muted-foreground">
 										{m.lifecycle_inline_runner_summary({
 											image: lifecycleSync.preDeployRunnerImage || 'alpine:latest',
@@ -1960,7 +1960,7 @@
 				{m.compose_multiple_files_description()}
 				<div class="mt-2 flex flex-wrap gap-1.5">
 					{#each withOccurrenceKeys(composeFiles) as file (file.key)}
-						<span class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{file.value}</span>
+						<span class="rounded-xl bg-muted px-1.5 py-0.5 font-mono text-xs">{file.value}</span>
 					{/each}
 				</div>
 			</Alert.Description>

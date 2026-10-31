@@ -307,7 +307,9 @@
 			>{item.name}</a
 		>
 		{#if item.isArchived}
-			<span class="rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">{m.projects_archived_badge()}</span>
+			<span class="rounded-xl bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground"
+				>{m.projects_archived_badge()}</span
+			>
 		{/if}
 	</div>
 {/snippet}

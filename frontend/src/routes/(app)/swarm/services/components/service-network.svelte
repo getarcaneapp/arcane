@@ -61,7 +61,7 @@
 						<Card.Content class="flex flex-col">
 							<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.networks_service_vip_label()}</div>
 							<code
-								class="cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-sm break-all text-muted-foreground select-all"
+								class="cursor-pointer rounded-xl bg-muted px-1.5 py-0.5 font-mono text-sm break-all text-muted-foreground select-all"
 							>
 								{vip}
 							</code>
@@ -73,7 +73,7 @@
 					<Card.Content class="flex flex-col">
 						<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.common_id()}</div>
 						<code
-							class="cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
+							class="cursor-pointer rounded-xl bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
 						>
 							{networkId}
 						</code>
@@ -89,7 +89,7 @@
 							<div class="space-y-1">
 								{#each aliases as alias (alias)}
 									<code
-										class="cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
+										class="cursor-pointer rounded-xl bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
 									>
 										{alias}
 									</code>
@@ -195,7 +195,7 @@
 				<div class="flex flex-col sm:flex-row sm:items-center">
 					<span class="w-full text-sm font-medium text-muted-foreground sm:w-16">{m.common_subnet()}:</span>
 					<code
-						class="cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
+						class="cursor-pointer rounded-xl bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
 					>
 						{cfg.subnet}
 					</code>
@@ -205,7 +205,7 @@
 				<div class="flex flex-col sm:flex-row sm:items-center">
 					<span class="w-full text-sm font-medium text-muted-foreground sm:w-16">{m.common_gateway()}:</span>
 					<code
-						class="cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
+						class="cursor-pointer rounded-xl bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
 					>
 						{cfg.gateway}
 					</code>
@@ -215,7 +215,7 @@
 				<div class="flex flex-col sm:flex-row sm:items-center">
 					<span class="w-full text-sm font-medium text-muted-foreground sm:w-16">{m.networks_ipam_iprange_label()}:</span>
 					<code
-						class="cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
+						class="cursor-pointer rounded-xl bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
 					>
 						{cfg.ipRange}
 					</code>

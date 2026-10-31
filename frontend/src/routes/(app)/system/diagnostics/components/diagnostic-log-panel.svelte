@@ -133,7 +133,7 @@
 		{:else}
 			{#each filtered as item (item.id)}
 				{@const entry = item.entry}
-				<div class="flex gap-2 rounded px-1 py-0.5 hover:bg-foreground/5">
+				<div class="flex gap-2 rounded-xl px-1 py-0.5 hover:bg-foreground/5">
 					<span class="shrink-0 text-muted-foreground tabular-nums">{fmtTime(entry.time)}</span>
 					<span class={cn('w-12 shrink-0 font-semibold uppercase', levelClass(entry.level))}>{entry.level}</span>
 					<span class="min-w-0 break-words whitespace-pre-wrap">
