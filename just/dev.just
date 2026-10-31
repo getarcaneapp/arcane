@@ -10,8 +10,21 @@ frontend:
     vp -C frontend run dev
 
 # Backend with hot reload on port 3552
-backend:
+backend: reap
     cd backend && air
+
+[private]
+[script('bash')]
+reap:
+    set -euo pipefail
+
+    bin="$PWD/backend/.bin/arcane"
+    pkill -INT -xf "$bin" || exit 0
+    for _ in $(seq 20); do
+        pgrep -xf "$bin" >/dev/null || exit 0
+        sleep 0.5
+    done
+    pkill -KILL -xf "$bin" || true
 
 # Local Arcane agent against a running manager (requires ARCANE_AGENT_TOKEN)
 [script('bash')]
@@ -47,7 +60,7 @@ agent:
 
 # Backend and frontend together
 [script('bash')]
-all:
+all: reap
     set -euo pipefail
 
     shutdown() {

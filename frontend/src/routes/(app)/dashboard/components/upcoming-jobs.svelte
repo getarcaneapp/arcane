@@ -61,7 +61,9 @@
 			{#each upcomingJobs as entry (`${entry.environmentId}:${entry.job.id}`)}
 				<li>
 					<a
-						href={resolve(`/(app)/settings/automations?env=${encodeURIComponent(entry.environmentId)}`)}
+						href={resolve(`/(app)/environments/[id]?tab=history&job=${encodeURIComponent(entry.job.id)}`, {
+							id: entry.environmentId
+						})}
 						class="-mx-2 grid grid-cols-content-action items-center gap-3 rounded-md hover-glow px-2 py-2.5"
 					>
 						<span class="min-w-0 space-y-1">
