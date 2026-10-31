@@ -28,7 +28,6 @@
 	import MetricRing, { type MetricRingVariant } from '#lib/components/metric-ring.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
-	import * as Table from '#lib/components/ui/table/index.js';
 	import { UpdateIcon, VerifiedCheckIcon, type IconType } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
@@ -49,6 +48,9 @@
 	} = $props();
 	const showVulnerabilities = $derived(rows.some((row) => featureStore.isEnabled('vulnerabilityManagement', row.environment.id)));
 	const showPods = $derived(rows.some((row) => row.podCount !== null));
+	const headCell =
+		'h-9 px-3 text-left align-middle text-xs font-medium whitespace-nowrap text-muted-foreground first:pl-2 last:pr-2';
+	const bodyCell = 'px-3 py-2.5 align-middle first:pl-2 last:pr-2';
 </script>
 
 {#snippet actionCount(count: number, icon: IconType)}
@@ -111,30 +113,30 @@
 {/snippet}
 
 <div class="overflow-x-auto">
-	<Table.Root>
-		<Table.Header>
-			<Table.Row>
-				<Table.Head>{m.common_name()}</Table.Head>
-				<Table.Head>{m.common_version()}</Table.Head>
-				<Table.Head>{m.common_status()}</Table.Head>
-				<Table.Head>{m.containers()}</Table.Head>
-				<Table.Head>{m.images()}</Table.Head>
-				{#if showPods}<Table.Head>{m.podman_pods_title()}</Table.Head>{/if}
-				<Table.Head>{m.updates()}</Table.Head>
-				{#if showVulnerabilities}<Table.Head>{m.risk()}</Table.Head>{/if}
-				<Table.Head>{m.reclaimable()}</Table.Head>
-				<Table.Head class="text-right">{m.cpu_usage()}</Table.Head>
-				<Table.Head class="text-right">{m.memory_usage()}</Table.Head>
-				<Table.Head class="text-right">{m.disk()}</Table.Head>
-				<Table.Head></Table.Head>
-			</Table.Row>
-		</Table.Header>
-		<Table.Body>
+	<table class="w-full text-sm">
+		<thead>
+			<tr class="border-b border-border/40">
+				<th class={headCell}>{m.common_name()}</th>
+				<th class={headCell}>{m.common_version()}</th>
+				<th class={headCell}>{m.common_status()}</th>
+				<th class={headCell}>{m.containers()}</th>
+				<th class={headCell}>{m.images()}</th>
+				{#if showPods}<th class={headCell}>{m.podman_pods_title()}</th>{/if}
+				<th class={headCell}>{m.updates()}</th>
+				{#if showVulnerabilities}<th class={headCell}>{m.risk()}</th>{/if}
+				<th class={headCell}>{m.reclaimable()}</th>
+				<th class={cn(headCell, 'text-right')}>{m.cpu_usage()}</th>
+				<th class={cn(headCell, 'text-right')}>{m.memory_usage()}</th>
+				<th class={cn(headCell, 'text-right')}>{m.disk()}</th>
+				<th class={headCell}></th>
+			</tr>
+		</thead>
+		<tbody>
 			{#each rows as row (row.environment.id)}
 				{@const stats = getLiveStatsState(row.environment.id)?.stats ?? null}
 				{@const statsStatus = getLiveStatsStatus(row.environment)}
-				<Table.Row>
-					<Table.Cell>
+				<tr class="border-b border-border/40 transition-colors last:border-0 hover:bg-muted/30">
+					<td class={bodyCell}>
 						<div class="flex min-w-0 items-center gap-2">
 							<a
 								class="truncate font-medium hover:underline"
@@ -146,8 +148,8 @@
 								<Badge variant="purple" size="sm">{m.podman()}</Badge>
 							{/if}
 						</div>
-					</Table.Cell>
-					<Table.Cell>
+					</td>
+					<td class={bodyCell}>
 						{#if row.versionText}
 							<Badge variant="gray" size="sm" mono>
 								{row.versionText}
@@ -160,46 +162,46 @@
 						{:else}
 							<span class="text-xs text-muted-foreground">—</span>
 						{/if}
-					</Table.Cell>
-					<Table.Cell>
+					</td>
+					<td class={bodyCell}>
 						<span class="flex items-center gap-2">
 							<span class={cn('size-2 rounded-full', row.online ? 'bg-success' : 'bg-muted-foreground/40')}></span>
 							<span class="text-sm text-muted-foreground">{row.online ? m.common_online() : m.common_offline()}</span>
 						</span>
-					</Table.Cell>
+					</td>
 					{#if !row.online}
-						<Table.Cell colspan={7 + Number(showVulnerabilities) + Number(showPods)}>
+						<td class={bodyCell} colspan={7 + Number(showVulnerabilities) + Number(showPods)}>
 							<span class="text-sm text-muted-foreground">
 								{row.environment.lastSeen
 									? m.offline_last_seen({ time: formatRelativeTime(row.environment.lastSeen) })
 									: m.common_offline()}
 							</span>
-						</Table.Cell>
+						</td>
 					{:else if row.loading}
-						<Table.Cell colspan={7 + Number(showVulnerabilities) + Number(showPods)}
-							><Skeleton class="h-4 w-full max-w-md" /></Table.Cell
+						<td class={bodyCell} colspan={7 + Number(showVulnerabilities) + Number(showPods)}
+							><Skeleton class="h-4 w-full max-w-md" /></td
 						>
 					{:else}
-						<Table.Cell><span class="tabular-nums">{row.running}/{row.total}</span></Table.Cell>
-						<Table.Cell><span class="tabular-nums">{row.images}</span></Table.Cell>
+						<td class={bodyCell}><span class="tabular-nums">{row.running}/{row.total}</span></td>
+						<td class={bodyCell}><span class="tabular-nums">{row.images}</span></td>
 						{#if showPods}
-							<Table.Cell>
+							<td class={bodyCell}>
 								{#if row.podCount === null}
 									<span class="text-xs text-muted-foreground">—</span>
 								{:else}
 									<span class="tabular-nums">{row.podCount}</span>
 								{/if}
-							</Table.Cell>
+							</td>
 						{/if}
-						<Table.Cell>{@render actionCount(row.updates, UpdateIcon)}</Table.Cell>
+						<td class={bodyCell}>{@render actionCount(row.updates, UpdateIcon)}</td>
 						{#if showVulnerabilities}
-							<Table.Cell>
+							<td class={bodyCell}>
 								{#if featureStore.isEnabled('vulnerabilityManagement', row.environment.id)}
 									{@render riskScore(row.risk)}
 								{/if}
-							</Table.Cell>
+							</td>
 						{/if}
-						<Table.Cell>
+						<td class={bodyCell}>
 							{#if row.reclaimable === null}
 								<span class="text-xs text-muted-foreground">—</span>
 							{:else}
@@ -207,20 +209,20 @@
 									>{bytes.format(row.reclaimable, { unitSeparator: ' ' }) ?? '-'}</span
 								>
 							{/if}
-						</Table.Cell>
-						<Table.Cell class="text-right">{@render metric(getCpuMetric(stats), 'cpu', statsStatus)}</Table.Cell>
-						<Table.Cell class="text-right"
-							>{@render metric(getMemoryMetric(stats), 'memory', statsStatus, stats?.memoryUsage, stats?.memoryTotal)}</Table.Cell
+						</td>
+						<td class={cn(bodyCell, 'text-right')}>{@render metric(getCpuMetric(stats), 'cpu', statsStatus)}</td>
+						<td class={cn(bodyCell, 'text-right')}
+							>{@render metric(getMemoryMetric(stats), 'memory', statsStatus, stats?.memoryUsage, stats?.memoryTotal)}</td
 						>
-						<Table.Cell class="text-right">{@render metric(getDiskMetric(stats), 'disk', statsStatus)}</Table.Cell>
+						<td class={cn(bodyCell, 'text-right')}>{@render metric(getDiskMetric(stats), 'disk', statsStatus)}</td>
 					{/if}
-					<Table.Cell class="text-right">
+					<td class={cn(bodyCell, 'text-right')}>
 						<div class="flex items-center justify-end gap-1">
 							<ActionButtonGroup buttons={row.menuButtons} size="sm" />
 						</div>
-					</Table.Cell>
-				</Table.Row>
+					</td>
+				</tr>
 			{/each}
-		</Table.Body>
-	</Table.Root>
+		</tbody>
+	</table>
 </div>
