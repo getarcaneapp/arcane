@@ -3,94 +3,103 @@
 
 	interface Props {
 		active?: boolean;
-		delay?: number;
-		minDuration?: number;
 		thickness?: string;
 		class?: string;
 	}
 
-	let { active = false, delay = 80, minDuration = 350, thickness = 'h-2', class: className = '' }: Props = $props();
-
-	let visible = $state(false);
-	let startedAt = 0;
-	let showTO: ReturnType<typeof setTimeout> | undefined;
-	let hideTO: ReturnType<typeof setTimeout> | undefined;
-
-	function clearTimers() {
-		clearTimeout(showTO);
-		clearTimeout(hideTO);
-	}
-
-	$effect(() => {
-		clearTimers();
-		if (active) {
-			showTO = setTimeout(() => {
-				visible = true;
-				startedAt = performance.now();
-			}, delay);
-		} else {
-			const elapsed = performance.now() - startedAt;
-			const remaining = Math.max(0, minDuration - elapsed);
-			hideTO = setTimeout(() => (visible = false), remaining);
-		}
-		return clearTimers;
-	});
+	let { active = false, thickness = 'h-2', class: className = '' }: Props = $props();
 </script>
 
-{#if visible}
-	<div
-		class={`pointer-events-none fixed inset-x-0 top-0 z-(--arcane-z-loading) ${thickness} ${className}`}
-		role="progressbar"
-		aria-busy="true"
-		aria-label={m.common_loading()}
-	>
-		<div class="track absolute inset-0"></div>
-		<div class="packet absolute inset-y-0"></div>
+<div
+	class={`loading pointer-events-none fixed inset-x-0 top-0 z-(--arcane-z-loading) ${thickness} ${className}`}
+	class:active
+	role="progressbar"
+	aria-hidden={!active}
+	aria-busy={active}
+	aria-label={m.common_loading()}
+>
+	<div class="track absolute inset-0"></div>
+	<div class="wave absolute inset-0"></div>
+	<div class="wave absolute inset-0"></div>
+	<div class="wave absolute inset-0"></div>
+	{#if active}
 		<span class="sr-only">{m.common_loading()}</span>
-	</div>
-{/if}
+	{/if}
+</div>
 
 <style>
+	.loading {
+		opacity: 0;
+		visibility: hidden;
+		transition:
+			opacity 250ms ease-out 100ms,
+			visibility 0s linear 350ms;
+	}
+
+	.loading.active {
+		opacity: 1;
+		visibility: visible;
+		transition:
+			opacity 120ms ease-out,
+			visibility 0s;
+	}
+
 	.track {
 		background: color-mix(in oklab, var(--primary) 18%, transparent);
 		backdrop-filter: blur(6px);
 	}
 
-	.packet {
-		--packet-width: max(6rem, 22%);
-		left: 0;
-		width: var(--packet-width);
-		border-radius: 9999px;
+	.wave {
+		transform-origin: center;
+		transform: scaleX(0);
+		opacity: 0;
 		background: linear-gradient(
 			to right,
 			color-mix(in oklab, var(--primary) 0%, transparent),
-			color-mix(in oklab, var(--primary) 90%, transparent) 30%,
-			color-mix(in oklab, var(--primary) 90%, transparent) 70%,
+			color-mix(in oklab, var(--primary) 90%, transparent) 8%,
+			color-mix(in oklab, var(--primary) 0%, transparent) 26%,
+			color-mix(in oklab, var(--primary) 0%, transparent) 74%,
+			color-mix(in oklab, var(--primary) 90%, transparent) 92%,
 			color-mix(in oklab, var(--primary) 0%, transparent)
 		);
-		box-shadow:
-			0 0 10px color-mix(in oklab, var(--primary) 55%, transparent),
-			0 2px 18px color-mix(in oklab, var(--primary) 30%, transparent);
-		animation: arcane-bounce 1.8s cubic-bezier(0.15, 0.6, 0.85, 0.4) infinite alternate;
+		filter: drop-shadow(0 0 6px color-mix(in oklab, var(--primary) 55%, transparent));
+		will-change: transform, opacity;
+		animation: arcane-wave 1.8s cubic-bezier(0.2, 0.6, 0.35, 1) infinite;
+		animation-play-state: paused;
 	}
 
-	@keyframes arcane-bounce {
+	.wave:nth-of-type(3) {
+		animation-delay: 0.6s;
+	}
+
+	.wave:nth-of-type(4) {
+		animation-delay: 1.2s;
+	}
+
+	.loading.active .wave {
+		animation-play-state: running;
+	}
+
+	@keyframes arcane-wave {
 		0% {
-			left: 0;
-			transform: scaleX(0.55);
+			transform: scaleX(0);
+			opacity: 0;
 		}
-		50% {
-			transform: scaleX(1.1);
+		15% {
+			opacity: 1;
+		}
+		70% {
+			opacity: 0.85;
 		}
 		100% {
-			left: calc(100% - var(--packet-width));
-			transform: scaleX(0.55);
+			transform: scaleX(1);
+			opacity: 0;
 		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.packet {
-			animation-duration: 3s;
+		.wave {
+			animation-duration: 3.6s;
 		}
 	}
 </style>
