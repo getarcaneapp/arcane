@@ -654,6 +654,7 @@ export interface Project {
 	composeFiles?: string[];
 	overrideContent?: string;
 	overrideFileName?: string;
+	envFileExists?: boolean;
 	envContent?: string;
 	includeFiles?: IncludeFile[];
 }

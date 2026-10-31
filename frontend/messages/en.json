@@ -4307,5 +4307,10 @@
   "scheduled_prune": "Scheduled Prune",
   "scheduled_prune_description": "Removes unused containers, images, volumes, and networks on a schedule.",
   "vulnerability_scan_description": "Scans all Docker images for known vulnerabilities using Trivy.",
-  "auto_heal_description": "Automatically restarts containers that become unhealthy."
+  "auto_heal_description": "Automatically restarts containers that become unhealthy.",
+  "open": "Open",
+  "cut": "Cut",
+  "paste": "Paste",
+  "add_env_file": "Add .env file",
+  "failed_to_paste": "Failed to paste"
 }

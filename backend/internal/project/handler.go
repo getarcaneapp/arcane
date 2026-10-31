@@ -663,6 +663,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 				EnvContent:         details.EnvContent,
 				OverrideContent:    details.OverrideContent,
 				OverrideFileName:   details.OverrideFileName,
+				EnvFileExists:      details.EnvFileExists,
 				Name:               details.Name,
 				GitRepositoryURL:   details.GitRepositoryURL,
 				IconLightURL:       details.IconLightURL,

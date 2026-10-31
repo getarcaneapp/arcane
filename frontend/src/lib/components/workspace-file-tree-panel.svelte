@@ -5,6 +5,7 @@
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import FileTreeRow from '#lib/components/file-tree-row.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
+	import * as ContextMenu from '#lib/components/ui/context-menu/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -26,7 +27,8 @@
 		LockIcon,
 		RefreshIcon,
 		TrashIcon,
-		UploadIcon
+		UploadIcon,
+		type IconType
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { cn } from '#lib/utils.js';
@@ -45,6 +47,14 @@
 		depth: number;
 		hasChildren: boolean;
 	};
+	type WorkspaceTreeMenuItem = {
+		id: string;
+		label: string;
+		icon: IconType;
+		destructive?: boolean;
+		disabled?: boolean;
+		onSelect: () => void;
+	};
 	type WorkspaceTreeLeadingRow = {
 		key: string;
 		label: string;
@@ -52,6 +62,7 @@
 		locked?: boolean;
 		action?: boolean;
 		onSelect?: () => void;
+		menuItems?: WorkspaceTreeMenuItem[];
 	};
 	type FolderDestinationOption = {
 		relativePath: string;
@@ -571,6 +582,60 @@
 		return available.filter((action) => action.visible);
 	}
 
+	function workspaceRowMenuGroups(row: TreeRow): WorkspaceTreeMenuItem[][] {
+		const canCreateHere = row.isDirectory && !row.locked && !row.isSymlink;
+		const createItems = [
+			{
+				visible: canCreateHere && canCreateFile,
+				id: 'create_file',
+				label: m.workspace_new_file(),
+				icon: CreateFileIcon,
+				disabled,
+				onSelect: () => openCreateDialog('create_file', row.relativePath)
+			},
+			{
+				visible: canCreateHere && canCreateFolder,
+				id: 'create_folder',
+				label: m.new_folder(),
+				icon: CreateFolderIcon,
+				disabled,
+				onSelect: () => openCreateDialog('create_folder', row.relativePath)
+			},
+			{
+				visible: canCreateHere && canUpload,
+				id: 'upload',
+				label: m.upload_file(),
+				icon: UploadIcon,
+				disabled,
+				onSelect: () => openUploadDialog(row.relativePath)
+			}
+		].filter((item) => item.visible);
+		const actionItems = workspaceRowActions(row).map((action) => ({
+			id: action.id,
+			label: action.tooltip,
+			icon: action.icon,
+			destructive: action.destructive,
+			disabled: action.disabled,
+			onSelect: action.onclick
+		}));
+		return [createItems, actionItems].filter((group) => group.length > 0);
+	}
+
+	function selectLeadingRow(leadingRow: WorkspaceTreeLeadingRow) {
+		if (leadingRow.onSelect) leadingRow.onSelect();
+		else onSelect?.(leadingRow.key);
+	}
+
+	function leadingRowMenuGroups(leadingRow: WorkspaceTreeLeadingRow): WorkspaceTreeMenuItem[][] {
+		const primary = {
+			id: leadingRow.action ? leadingRow.key : 'open',
+			label: leadingRow.action ? leadingRow.label : m.open(),
+			icon: leadingRow.action ? CreateFileIcon : FileTextIcon,
+			onSelect: () => selectLeadingRow(leadingRow)
+		};
+		return [[primary], leadingRow.menuItems ?? []].filter((group) => group.length > 0);
+	}
+
 	function handleDelete(entry: WorkspaceDisplayEntry) {
 		if (disabled) return;
 		openConfirmDialog({
@@ -649,7 +714,41 @@
 	</div>
 {/snippet}
 
+{#snippet workspaceMenuContent(groups: WorkspaceTreeMenuItem[][])}
+	<ContextMenu.Content class="w-48">
+		{#each groups as group, index (index)}
+			{#if index > 0}
+				<ContextMenu.Separator />
+			{/if}
+			{#each group as item (item.id)}
+				<ContextMenu.Item
+					variant={item.destructive ? 'destructive' : 'default'}
+					disabled={item.disabled}
+					onSelect={item.onSelect}
+				>
+					<item.icon class="size-4" />
+					<span>{item.label}</span>
+				</ContextMenu.Item>
+			{/each}
+		{/each}
+	</ContextMenu.Content>
+{/snippet}
+
 {#snippet workspaceRow(row: TreeRow)}
+	{@const menuGroups = workspaceRowMenuGroups(row)}
+	{#if menuGroups.length > 0}
+		<ContextMenu.Root>
+			<ContextMenu.Trigger class="block select-auto">
+				{@render workspaceRowContent(row)}
+			</ContextMenu.Trigger>
+			{@render workspaceMenuContent(menuGroups)}
+		</ContextMenu.Root>
+	{:else}
+		{@render workspaceRowContent(row)}
+	{/if}
+{/snippet}
+
+{#snippet workspaceRowContent(row: TreeRow)}
 	<FileTreeRow
 		name={row.name}
 		path={row.relativePath}
@@ -706,31 +805,40 @@
 
 {#snippet workspaceLeadingRows()}
 	{#each leadingRows as leadingRow (leadingRow.key)}
-		<button
-			type="button"
-			class={cn(
-				'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs-plus hover:bg-accent',
-				selectedFile === leadingRow.key && 'bg-accent',
-				leadingRow.action && 'text-muted-foreground hover:text-foreground'
-			)}
-			onclick={() => (leadingRow.onSelect ? leadingRow.onSelect() : onSelect?.(leadingRow.key))}
-		>
-			{#if hasDirectories}
-				<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
-			{/if}
-			{#if leadingRow.action}
-				<CreateFileIcon class="size-4 shrink-0" />
-			{:else}
-				<FileTextIcon class={cn('size-4 shrink-0', leadingRow.iconClass ?? 'text-muted-foreground')} />
-			{/if}
-			<span class="min-w-0 flex-1 truncate">{leadingRow.label}</span>
-			{#if leadingRow.locked}
-				<span class="inline-flex size-6 shrink-0 items-center justify-center">
-					<LockIcon class="size-3.5 shrink-0 text-muted-foreground" aria-label={lockedLabel} />
-				</span>
-			{/if}
-		</button>
+		<ContextMenu.Root>
+			<ContextMenu.Trigger class="block select-auto">
+				{@render workspaceLeadingRow(leadingRow)}
+			</ContextMenu.Trigger>
+			{@render workspaceMenuContent(leadingRowMenuGroups(leadingRow))}
+		</ContextMenu.Root>
 	{/each}
+{/snippet}
+
+{#snippet workspaceLeadingRow(leadingRow: WorkspaceTreeLeadingRow)}
+	<button
+		type="button"
+		class={cn(
+			'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs-plus hover:bg-accent',
+			selectedFile === leadingRow.key && 'bg-accent',
+			leadingRow.action && 'text-muted-foreground hover:text-foreground'
+		)}
+		onclick={() => selectLeadingRow(leadingRow)}
+	>
+		{#if hasDirectories}
+			<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
+		{/if}
+		{#if leadingRow.action}
+			<CreateFileIcon class="size-4 shrink-0" />
+		{:else}
+			<FileTextIcon class={cn('size-4 shrink-0', leadingRow.iconClass ?? 'text-muted-foreground')} />
+		{/if}
+		<span class="min-w-0 flex-1 truncate">{leadingRow.label}</span>
+		{#if leadingRow.locked}
+			<span class="inline-flex size-6 shrink-0 items-center justify-center">
+				<LockIcon class="size-3.5 shrink-0 text-muted-foreground" aria-label={lockedLabel} />
+			</span>
+		{/if}
+	</button>
 {/snippet}
 
 {#snippet workspaceTree()}
