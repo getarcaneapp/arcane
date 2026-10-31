@@ -25,7 +25,7 @@ export const userHasPermissionInAnyEnvironment = (user: User | null | undefined,
 
 const setUser = async (user: User) => {
 	if (user.locale) {
-		await setLocale(user.locale, false);
+		setLocale(user.locale, false);
 	}
 	applyFontSize(user.fontSize ?? FONT_SIZE_DEFAULT);
 	timeFormatStore.set(user.timeFormat ?? 'auto');

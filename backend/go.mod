@@ -67,13 +67,13 @@ require (
 	github.com/subosito/gotenv v1.6.0
 	github.com/wneessen/go-mail v0.8.1
 	go.getarcane.app/acfs v0.6.3
-	go.getarcane.app/builds v0.4.7
+	go.getarcane.app/builds v0.4.8
 	go.getarcane.app/docker v0.1.3
 	go.getarcane.app/docker/compat v0.1.6
 	go.getarcane.app/docker/convert v0.3.7
-	go.getarcane.app/kit v0.4.2
+	go.getarcane.app/kit v0.4.3
 	go.getarcane.app/streams v0.4.6
-	go.getarcane.app/sys/cgroup v0.2.5
+	go.getarcane.app/sys/cgroup v0.2.6
 	go.getarcane.app/sys/crypto v0.3.3
 	go.getarcane.app/updater v0.11.13
 	go.opentelemetry.io/contrib/bridges/otelslog v0.21.0
@@ -284,7 +284,7 @@ require (
 	github.com/tinylib/msgp v1.6.5 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
-	github.com/tonistiigi/fsutil v0.0.0-20261009124904-c1c5bffae3b5 // indirect
+	github.com/tonistiigi/fsutil v0.0.0-20261027232937-ca65610c2295 // indirect
 	github.com/tonistiigi/go-csvvalue v0.0.0-20240814133006-030d3b2625d0 // indirect
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea // indirect
 	github.com/tonistiigi/vt100 v0.0.0-20240514184818-90bafcd6abab // indirect

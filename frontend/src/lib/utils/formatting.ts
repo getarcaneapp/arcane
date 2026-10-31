@@ -1,10 +1,8 @@
 import Convert from 'ansi-to-html';
 import stripAnsi from 'strip-ansi';
-import { z } from 'zod/v4';
 
 import { getLocale, setLocale as setParaglideLocale, type Locale } from '#lib/paraglide/runtime.js';
 import { timeFormatStore } from '#lib/stores/time-format.store.svelte.js';
-import { tryCatch } from '#lib/utils/try-catch.js';
 
 // --- String helpers ---
 
@@ -382,17 +380,10 @@ export function formatElapsedTime(value: InstantInput, options: RelativeTimeForm
 	return elapsedTimeFormatterInternal(relative.unit).format(elapsedValue);
 }
 
-export async function setLocale(locale: Locale, reload = true) {
-	const operationResult = await tryCatch(
-		(async () => {
-			const zodLocale = await import(`../../../node_modules/zod/v4/locales/${locale}.js`);
-			z.config(zodLocale.default());
-		})()
-	);
-	if (operationResult.error !== null) {
-		const error = operationResult.error;
-		console.warn(`Failed to load zod locale for ${locale}:`, error);
-	}
+export function setLocale(locale: Locale, reload = true) {
+	void Promise.all([import('zod/v4'), import(`../../../node_modules/zod/v4/locales/${locale}.js`)])
+		.then(([{ z }, zodLocale]) => z.config(zodLocale.default()))
+		.catch((error: unknown) => console.warn(`Failed to load zod locale for ${locale}:`, error));
 
 	void setParaglideLocale(locale, { reload });
 }

@@ -8,7 +8,6 @@
 	import { onMount } from 'svelte';
 
 	import ConfirmDialog from '#lib/components/confirm-dialog/confirm-dialog.svelte';
-	import FirstLoginPasswordDialog from '#lib/components/dialogs/first-login-password-dialog.svelte';
 	import Error from '#lib/components/error.svelte';
 	import LoadingIndicator from '#lib/components/loading-indicator.svelte';
 	import { Toaster } from '#lib/components/ui/sonner/index.js';
@@ -103,7 +102,11 @@
 		{:else}
 			<Tooltip.Provider>
 				{@render children()}
-				<FirstLoginPasswordDialog open={showPasswordChangeDialog} onSuccess={() => refreshAll()} />
+				{#if showPasswordChangeDialog}
+					{#await import('#lib/components/dialogs/first-login-password-dialog.svelte') then { default: FirstLoginPasswordDialog }}
+						<FirstLoginPasswordDialog open={showPasswordChangeDialog} onSuccess={() => refreshAll()} />
+					{/await}
+				{/if}
 				{#if dev}
 					<SvelteQueryDevtools />
 				{/if}
