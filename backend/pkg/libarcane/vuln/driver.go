@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -29,12 +30,14 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 )
 
+// DefaultNetworkMode is the network the scan container joins when nothing
+// more specific is configured or detected; Windows Docker hosts have no bridge.
+var DefaultNetworkMode = kit.Ternary(runtime.GOOS == "windows", "nat", "bridge")
+
 const (
-	// DefaultNetworkMode is the network the scan container joins when nothing
-	// more specific is configured or detected.
-	DefaultNetworkMode = "bridge"
 	// CacheMountTarget is where the shared Trivy cache volume is mounted inside
 	// the scan container.
 	CacheMountTarget = "/root/.cache"
@@ -90,7 +93,13 @@ func ResolveUnixSocketSource(
 	return socketPath, nil
 }
 
+// NewOutputPath returns where Trivy writes its report inside the scan container.
+// On Windows it is empty: the report goes to stdout, as docker cp cannot be relied
+// on to read files from a running Windows container.
 func NewOutputPath() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
 	return outputPathPrefixInternal + strconv.FormatInt(time.Now().UnixNano(), 10) + ".json"
 }
 
@@ -111,7 +120,7 @@ func BuildBatchHostConfig(
 
 	hostConfig := &containertypes.HostConfig{
 		NetworkMode: containertypes.NetworkMode(SelectDefaultNetworkMode(runtimeOptions.NetworkMode)),
-		Mounts:      mounts,
+		Mounts:      windowsMountTargetsInternal(mounts),
 	}
 
 	ApplyRuntimeSecurity(hostConfig, securityOpts, privileged)
@@ -141,12 +150,34 @@ func BuildHostConfig(
 		// Keep single-scan containers until explicit cleanup so we can reliably
 		// wait for completion and collect logs across Docker variants.
 		AutoRemove: false,
-		Mounts:     mounts,
+		Mounts:     windowsMountTargetsInternal(mounts),
 	}
 
 	ApplyRuntimeSecurity(hostConfig, securityOpts, privileged)
 	ApplyContainerResources(hostConfig, resources, cpuSet, applyLimits)
 	return hostConfig
+}
+
+// windowsMountTargetsInternal moves the Linux mount targets to the C: drive on Windows.
+func windowsMountTargetsInternal(mounts []mounttypes.Mount) []mounttypes.Mount {
+	if runtime.GOOS != "windows" {
+		return mounts
+	}
+	for i := range mounts {
+		mounts[i].Target = volumehelper.WindowsContainerPath(mounts[i].Target)
+	}
+	return mounts
+}
+
+// NamedPipeMount returns the mount that gives a helper container the Docker engine named
+// pipe of an npipe:// host (Windows), and false for any other host.
+func NamedPipeMount(dockerHost string) (mounttypes.Mount, bool) {
+	pipePath, ok := strings.CutPrefix(strings.TrimSpace(dockerHost), "npipe://")
+	if !ok {
+		return mounttypes.Mount{}, false
+	}
+	pipePath = strings.ReplaceAll(pipePath, "/", `\`)
+	return mounttypes.Mount{Type: mounttypes.TypeNamedPipe, Source: pipePath, Target: pipePath}, true
 }
 
 func SelectDefaultNetworkMode(networkMode string) string {

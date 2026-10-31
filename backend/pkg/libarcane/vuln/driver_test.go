@@ -555,3 +555,12 @@ func TestAwaitContainerWaitResponseInternal_NoStatus(t *testing.T) {
 	require.Contains(t, err.Error(), "ended without status")
 	require.Equal(t, int64(0), status)
 }
+
+func TestNamedPipeMount(t *testing.T) {
+	got, ok := NamedPipeMount("npipe:////./pipe/docker_engine")
+	require.True(t, ok)
+	require.Equal(t, mounttypes.Mount{Type: mounttypes.TypeNamedPipe, Source: `\\.\pipe\docker_engine`, Target: `\\.\pipe\docker_engine`}, got)
+
+	_, ok = NamedPipeMount("unix:///var/run/docker.sock")
+	require.False(t, ok)
+}

@@ -636,8 +636,8 @@ func (e *Engine) run(ctx context.Context, dockerClient *client.Client, repositor
 
 // runContainer runs one Rustic command; callers hold the repository lock.
 func (e *Engine) runContainer(ctx context.Context, dockerClient *client.Client, repository Repository, password string, command []string, extraMounts ...mount.Mount) (string, error) {
-	if _, err := dockerClient.ImageInspect(ctx, rustic.DefaultImage); err != nil {
-		if pullErr := e.imageService.PullImage(ctx, rustic.DefaultImage, io.Discard, user.SystemUser, nil); pullErr != nil {
+	if _, err := dockerClient.ImageInspect(ctx, rustic.Image()); err != nil {
+		if pullErr := e.imageService.PullImage(ctx, rustic.Image(), io.Discard, user.SystemUser, nil); pullErr != nil {
 			return "", fmt.Errorf("failed to pull official Rustic image: %w", pullErr)
 		}
 	}

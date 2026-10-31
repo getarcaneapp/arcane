@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
@@ -1281,10 +1280,8 @@ func stageDatabase(ctx context.Context, db *sql.DB, databasePath, stagedDatabase
 	if _, err = db.ExecContext(ctx, "VACUUM INTO ?", stagedDatabase); err != nil {
 		return fmt.Errorf("stage Arcane database: %w", err)
 	}
-	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-		if err = os.Chown(stagedDatabase, int(stat.Uid), int(stat.Gid)); err != nil {
-			return fmt.Errorf("preserve staged database ownership: %w", err)
-		}
+	if err = preserveOwnership(stagedDatabase, info); err != nil {
+		return fmt.Errorf("preserve staged database ownership: %w", err)
 	}
 	if err = os.Chmod(stagedDatabase, info.Mode()); err != nil {
 		return fmt.Errorf("preserve staged database permissions: %w", err)
