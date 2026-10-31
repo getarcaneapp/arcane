@@ -49,7 +49,8 @@ export const composeTreeSplitProps = {
 	maxSize: 480,
 	minSecondSize: 360,
 	defaultRatio: 0.22,
-	stackBelow: 1024
+	stackBelow: 1024,
+	fitFirst: true
 } as const;
 
 export type ProjectEditorLayoutMode = Exclude<ProjectEditorLayout, 'auto'>;

@@ -4312,5 +4312,9 @@
   "cut": "Cut",
   "paste": "Paste",
   "add_env_file": "Add .env file",
-  "failed_to_paste": "Failed to paste"
+  "failed_to_paste": "Failed to paste",
+  "deploy_to": "Deploy to",
+  "editor_tab_width": "Editor tab width",
+  "editor_tab_width_description": "Spaces per indentation level in code editors and when formatting documents",
+  "spaces_count": "{count} spaces"
 }

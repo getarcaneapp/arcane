@@ -22,7 +22,7 @@
 		value?: string;
 		permission?: string;
 		environments?: EnvironmentRef[];
-		variant?: 'toolbar' | 'field';
+		variant?: 'toolbar' | 'field' | 'prefix';
 		size?: 'sm' | 'default';
 		allOption?: boolean;
 	} = $props();
@@ -36,6 +36,7 @@
 	]);
 	const currentId = $derived(value ?? options[0]?.value ?? '');
 	const current = $derived(permitted.find((env) => env.id === currentId));
+	const hasChoice = $derived(allOption || permitted.length > 1);
 
 	function pick(environmentId: string) {
 		value = environmentId;
@@ -57,45 +58,74 @@
 	</span>
 {/snippet}
 
-{#if variant === 'toolbar'}
+{#snippet prefixSeparator()}
+	<span class="text-lg text-muted-foreground/60">/</span>
+{/snippet}
+
+{#if variant === 'field'}
+	{#if hasChoice}
+		<SelectWithLabel
+			id="destination-environment"
+			label={m.resource_environment_cap()}
+			bind:value={() => currentId, pick}
+			{options}
+		/>
+	{/if}
+{:else if hasChoice}
 	<Label for="page-environment" class="sr-only">{m.resource_environment_cap()}</Label>
-	<Select.Root type="single" bind:value={() => currentId, pick}>
-		<SelectPrimitive.Trigger id="page-environment">
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" {size} title={current?.name} class="shrink-0">
-					{#if current}
-						{@render environmentGlyph(current.id)}
-						<span class="hidden max-w-48 truncate sm:inline">{current.name}</span>
-					{:else if allOption}
+	<div class={variant === 'prefix' ? 'flex shrink-0 items-center gap-1 pr-2' : 'flex shrink-0 items-center'}>
+		<Select.Root type="single" bind:value={() => currentId, pick}>
+			<SelectPrimitive.Trigger id="page-environment">
+				{#snippet child({ props })}
+					<ArcaneButton
+						{...props}
+						action="base"
+						tone={variant === 'prefix' ? 'ghost' : undefined}
+						size={variant === 'prefix' ? 'sm' : size}
+						title={current?.name}
+						class="shrink-0"
+					>
+						{#if current}
+							{#if variant === 'toolbar' && !allOption}
+								<span class="hidden text-muted-foreground sm:inline">{m.deploy_to()}</span>
+							{/if}
+							{@render environmentGlyph(current.id)}
+							<span class="hidden max-w-48 truncate sm:inline">{current.name}</span>
+						{:else if allOption}
+							<EnvironmentsIcon class="size-4 text-muted-foreground" />
+							<span class="hidden max-w-48 truncate sm:inline">{m.all_environments()}</span>
+						{/if}
+						<ArrowDownIcon class="size-3.5 opacity-60" />
+					</ArcaneButton>
+				{/snippet}
+			</SelectPrimitive.Trigger>
+			<Select.Content class="w-auto max-w-72 min-w-48">
+				{#if allOption}
+					<Select.Item value="" label={m.all_environments()}>
 						<EnvironmentsIcon class="size-4 text-muted-foreground" />
-						<span class="hidden max-w-48 truncate sm:inline">{m.all_environments()}</span>
-					{/if}
-					<ArrowDownIcon class="size-3.5 opacity-60" />
-				</ArcaneButton>
-			{/snippet}
-		</SelectPrimitive.Trigger>
-		<Select.Content class="w-auto max-w-72 min-w-48">
-			{#if allOption}
-				<Select.Item value="" label={m.all_environments()}>
-					<EnvironmentsIcon class="size-4 text-muted-foreground" />
-					<span class="truncate">{m.all_environments()}</span>
-				</Select.Item>
-			{/if}
-			{#each permitted as env (env.id)}
-				<Select.Item value={env.id} label={env.name}>
-					{@render environmentGlyph(env.id)}
-					<span class="truncate">{env.name}</span>
-				</Select.Item>
-			{/each}
-		</Select.Content>
-	</Select.Root>
-{:else}
-	<SelectWithLabel
-		id="destination-environment"
-		label={m.resource_environment_cap()}
-		bind:value={() => currentId, pick}
-		{options}
-	/>
+						<span class="truncate">{m.all_environments()}</span>
+					</Select.Item>
+				{/if}
+				{#each permitted as env (env.id)}
+					<Select.Item value={env.id} label={env.name}>
+						{@render environmentGlyph(env.id)}
+						<span class="truncate">{env.name}</span>
+					</Select.Item>
+				{/each}
+			</Select.Content>
+		</Select.Root>
+		{#if variant === 'prefix'}
+			{@render prefixSeparator()}
+		{/if}
+	</div>
+{:else if variant === 'prefix' && current}
+	<div class="flex shrink-0 items-center gap-2 pr-2 text-sm text-muted-foreground" title={current.name}>
+		<span class="inline-flex items-center gap-1.5">
+			{@render environmentGlyph(current.id)}
+			<span class="max-w-48 truncate">{current.name}</span>
+		</span>
+		{@render prefixSeparator()}
+	</div>
 {/if}
 
 <style>

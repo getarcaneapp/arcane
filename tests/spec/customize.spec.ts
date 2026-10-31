@@ -281,7 +281,7 @@ test.describe('Templates', () => {
 				publicKey
 			);
 
-			const createProjectButton = page.locator('button[data-action="create"]');
+			const createProjectButton = page.getByRole('button', { name: 'Create Project', exact: true });
 			await expect(createProjectButton).toBeEnabled({ timeout: 20_000 });
 			const projectCreateResponsePromise = page.waitForResponse(
 				(response) =>

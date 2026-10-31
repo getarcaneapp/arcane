@@ -27,6 +27,7 @@ type UserPreferences struct {
 	MobileNavigationShowLabels *bool   `json:"mobileNavigationShowLabels,omitempty" doc:"Show text labels in mobile navigation"`
 	DefaultLandingPage         *string `json:"defaultLandingPage,omitempty" doc:"Route opened after signing in"`
 	DefaultProjectEditorLayout *string `json:"defaultProjectEditorLayout,omitempty" enum:"auto,classic,tree" doc:"Initial layout of the project editor; auto keeps workspace detection"`
+	EditorTabWidth             *int    `json:"editorTabWidth,omitempty" enum:"2,4,8" doc:"Spaces per indentation level in code editors and when formatting documents"`
 	ToastPosition              *string `json:"toastPosition,omitempty" enum:"auto,top-left,top-right,top-center,bottom-left,bottom-right,bottom-center" doc:"Toast notification position"`
 	// A pointer so the merge-only preferences update replaces the whole map.
 	EnvironmentColors     *map[string]string       `json:"environmentColors,omitempty" doc:"Environment label color by environment ID"`

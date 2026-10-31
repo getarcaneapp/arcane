@@ -417,7 +417,7 @@
 	let treeCommandPaletteOpen = $state(false);
 	let layoutMode = $state<ProjectEditorLayoutMode>('classic');
 	let selectedIncludeTabPreference = $state<string | null>(null);
-	let treePaneWidth = $state(280);
+	let treePaneWidth = $state<number | null>(null);
 	let composeSplitWidth = $state<number | null>(null);
 	const minComposePaneWidth = 360;
 	const minEnvPaneWidth = 280;
