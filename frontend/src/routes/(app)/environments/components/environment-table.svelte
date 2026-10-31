@@ -7,6 +7,7 @@
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import UpdateCenterDialog from '#lib/components/dialogs/update-center-dialog.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -284,7 +285,19 @@
 	{@const typeLabel = getEnvironmentTypeLabel(env)}
 	{@const transport = resolveEnvironmentTransport(env)}
 	{@const typeVariant = !env.isEdge || !transport ? 'gray' : transport === 'websocket' ? 'purple' : 'blue'}
-	<Badge variant={typeVariant} minWidth="20">{typeLabel}</Badge>
+	<div class="flex items-center gap-1.5">
+		<Badge variant={typeVariant} minWidth="20">{typeLabel}</Badge>
+		{#if env.id !== '0' && !env.isEdge}
+			<ArcaneTooltip.Root>
+				<ArcaneTooltip.Trigger>
+					<Badge variant="amber">{m.environments_direct_deprecated_badge()}</Badge>
+				</ArcaneTooltip.Trigger>
+				<ArcaneTooltip.Content>
+					<p>{m.environments_warning_direct_deprecated()}</p>
+				</ArcaneTooltip.Content>
+			</ArcaneTooltip.Root>
+		{/if}
+	</div>
 {/snippet}
 
 {#snippet VersionCell({ item }: { item: Environment })}

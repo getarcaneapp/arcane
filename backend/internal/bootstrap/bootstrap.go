@@ -239,6 +239,10 @@ func initializeStartupState(p initializeStartupStateParams) {
 		slog.WarnContext(appCtx, "Deprecated environment variable is set and no longer used; remove it from your environment", "env", envName)
 	}
 
+	if cfg.AgentMode && !cfg.EdgeAgent {
+		slog.WarnContext(appCtx, "Direct agent mode is deprecated and will be removed in v3; switch this agent to edge mode (EDGE_AGENT=true with MANAGER_API_URL)")
+	}
+
 	startup.LoadAgentToken(appCtx, runtimeCfg, p.Settings.GetStringSetting)
 	startup.EnsureEncryptionKey(appCtx, runtimeCfg, p.Settings.EnsureEncryptionKey)
 	cfg.AgentToken = runtimeCfg.AgentToken

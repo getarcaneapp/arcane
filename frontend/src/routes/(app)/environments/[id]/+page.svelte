@@ -820,6 +820,12 @@
 			</div>
 		</div>
 	{/if}
+	{#if environment.id !== '0' && !environment.isEdge}
+		<div class="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/10 p-4 text-warning">
+			<AlertIcon class="mt-0.5 size-5 shrink-0 text-warning" />
+			<p class="flex-1 text-sm font-medium">{m.environments_warning_direct_deprecated()}</p>
+		</div>
+	{/if}
 	{#if regeneratedApiKey}
 		<div class="rounded-lg border border-success/30 bg-success/10 p-4 text-success">
 			<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
