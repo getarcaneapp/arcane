@@ -2,13 +2,25 @@ package rustic
 
 import (
 	"bytes"
+	"context"
 	"encoding/pem"
+	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
+
+	cerrdefs "github.com/containerd/errdefs"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/client"
+
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/vuln"
 )
 
-// trustBundlePath is a path the Rustic binary probes for system roots.
-const trustBundlePath = "etc/ssl/certs/ca-certificates.crt"
+// trustBundleDir is the directory the Rustic binary probes for system roots.
+const trustBundleDir = "/etc/ssl/certs"
 
 // Same lookup order as Go's crypto/x509 on Linux.
 var (
@@ -71,4 +83,40 @@ func trustBundle() []byte {
 		}
 	}
 	return bundle.Bytes()
+}
+
+func stageTrustBundle(ctx context.Context, dockerClient *client.Client, bundle []byte) (string, error) {
+	created, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Labels: volumehelper.Labels()})
+	if err != nil {
+		return "", err
+	}
+	stager, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config: &container.Config{
+			Image:  DefaultImage,
+			Labels: volumehelper.Labels(),
+		},
+		HostConfig: &container.HostConfig{
+			Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: created.Volume.Name, Target: trustBundleDir}},
+		},
+	})
+	if err == nil {
+		err = vuln.CopyFilesToContainer(ctx, dockerClient, stager.ID, trustBundleDir, map[string][]byte{"ca-certificates.crt": bundle})
+		removeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerAPI)
+		_, removeErr := dockerClient.ContainerRemove(removeCtx, stager.ID, client.ContainerRemoveOptions{Force: true})
+		cancel()
+		err = errors.Join(err, removeErr)
+	}
+	if err != nil {
+		removeTrustBundle(ctx, dockerClient, created.Volume.Name)
+		return "", err
+	}
+	return created.Volume.Name, nil
+}
+
+func removeTrustBundle(ctx context.Context, dockerClient *client.Client, volumeName string) {
+	removeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerAPI)
+	defer cancel()
+	if _, err := dockerClient.VolumeRemove(removeCtx, volumeName, client.VolumeRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+		slog.WarnContext(ctx, "failed to remove Rustic CA certificate volume", "volumeName", volumeName, "error", err)
+	}
 }
