@@ -24,7 +24,7 @@ async function mockDashboardStatsWebSocket(
 	const pendingSockets: WebSocketRoute[] = [];
 	await page.routeWebSocket(/\/api\/environments\/[^/]+\/ws\/system\/stats(?:\?.*)?$/, (socket) => {
 		if (failConnections) {
-			socket.close({ code: 1011, reason: 'Stats unavailable' });
+			void socket.close({ code: 1011, reason: 'Stats unavailable' });
 			return;
 		}
 		if (delaySample) {
@@ -34,7 +34,7 @@ async function mockDashboardStatsWebSocket(
 		socket.send(JSON.stringify(mockedStats));
 		if (closeAfterMessage) {
 			failConnections = true;
-			socket.close({ code: 1011, reason: 'Stats unavailable' });
+			void socket.close({ code: 1011, reason: 'Stats unavailable' });
 		}
 	});
 	return {

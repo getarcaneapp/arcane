@@ -26,7 +26,7 @@ export function toFilterMap(filters: ColumnFiltersState): FilterMap {
 		if (Array.isArray(value)) {
 			if (value.length === 0) continue;
 			out[id] = value as FilterValue;
-		} else if (value !== undefined && value !== null && String(value).trim() !== '') {
+		} else if (typeof value === 'number' || typeof value === 'boolean' || (typeof value === 'string' && value.trim() !== '')) {
 			out[id] = value as FilterValue;
 		}
 	}
@@ -56,17 +56,17 @@ export function fromFilterMap(map?: FilterMap): ColumnFiltersState {
 	return out;
 }
 
-function filterValuesEqual(a: unknown, b: unknown): boolean {
+function filterValuesEqual(a: FilterValue | undefined, b: FilterValue | undefined): boolean {
 	if (Array.isArray(a) || Array.isArray(b)) {
 		return (
 			Array.isArray(a) &&
 			Array.isArray(b) &&
 			a.length === b.length &&
-			Array.from(a).every((value, index) => `${value}` === `${b[index]}`)
+			a.every((value, index) => String(value) === String(b[index]))
 		);
 	}
 	if (a === b) return true;
-	return a != null && b != null && `${a}` === `${b}`;
+	return a !== undefined && b !== undefined && String(a) === String(b);
 }
 
 function filterMapsEqual(a?: FilterMap, b?: FilterMap): boolean {

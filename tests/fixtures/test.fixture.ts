@@ -132,26 +132,27 @@ export const test = base.extend<TestFixtures>({
 				page.off('console', recordConsole);
 				page.off('response', recordHttpError);
 				await Promise.all(pendingConsoleDetails);
-				const unexpected = collector.errors.filter(
-					(error) => !allowed.some((matcher) => pageErrorMatches(error, matcher))
-				);
-				if (testInfo.status !== testInfo.expectedStatus || unexpected.length > 0) {
-					await testInfo.attach('browser-diagnostics', {
-						body: diagnostics.join('\n'),
-						contentType: 'text/plain'
-					});
-				}
+			}
 
-				if (unexpected.length > 0) {
-					const details = formatPageErrors(unexpected);
+			const unexpected = collector.errors.filter(
+				(error) => !allowed.some((matcher) => pageErrorMatches(error, matcher))
+			);
+			if (testInfo.status !== testInfo.expectedStatus || unexpected.length > 0) {
+				await testInfo.attach('browser-diagnostics', {
+					body: diagnostics.join('\n'),
+					contentType: 'text/plain'
+				});
+			}
 
-					await testInfo.attach('unexpected-page-errors', {
-						body: details,
-						contentType: 'text/plain'
-					});
+			if (unexpected.length > 0) {
+				const details = formatPageErrors(unexpected);
 
-					throw new Error(`Unexpected pageerror event(s):\n\n${details}`);
-				}
+				await testInfo.attach('unexpected-page-errors', {
+					body: details,
+					contentType: 'text/plain'
+				});
+
+				throw new Error(`Unexpected pageerror event(s):\n\n${details}`);
 			}
 		},
 		{ auto: true }

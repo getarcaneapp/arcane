@@ -24,7 +24,7 @@ self.addEventListener('install', (event) => {
 
 	// Activate this worker immediately rather than waiting for all tabs to close,
 	// so the API-bypass fix takes effect on the next navigation.
-	self.skipWaiting();
+	void self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -33,12 +33,12 @@ self.addEventListener('activate', (event) => {
 	async function deleteOldCaches() {
 		const keyList = await caches.keys();
 		await Promise.all(
-			keyList.map((key) => {
-				if (key !== CACHE) {
+			keyList
+				.filter((key) => key !== CACHE)
+				.map((key) => {
 					console.log('[ServiceWorker] Removing old cache', key);
 					return caches.delete(key);
-				}
-			})
+				})
 		);
 	}
 

@@ -394,7 +394,7 @@ export async function setLocale(locale: Locale, reload = true) {
 		console.warn(`Failed to load zod locale for ${locale}:`, error);
 	}
 
-	setParaglideLocale(locale, { reload });
+	void setParaglideLocale(locale, { reload });
 }
 
 // --- ANSI conversion ---

@@ -242,7 +242,7 @@ function createClientStreamInternal() {
 			return transport.hasActiveStream;
 		},
 		subscribe,
-		connect: changes.connect,
+		connect: (client: QueryClient) => changes.connect(client),
 		watchChanges(): () => void {
 			const unsubscribe = subscribe(STREAM_CHANNEL_EVENTS, {
 				onEvent: (payload) => {
@@ -255,7 +255,7 @@ function createClientStreamInternal() {
 				changes.reset();
 			};
 		},
-		invalidateEnvironment: changes.invalidateEnvironment,
+		invalidateEnvironment: (environmentId: string) => changes.invalidateEnvironment(environmentId),
 		setParams(next: Record<string, string>) {
 			const changed = JSON.stringify(next) !== JSON.stringify(params);
 			params = next;

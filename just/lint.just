@@ -11,6 +11,7 @@ all: js go proto
 
 # Frontend and Playwright tests
 js: frontend tests
+    vp lint .
 
 # Type check and lint the frontend
 frontend:

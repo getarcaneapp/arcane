@@ -314,7 +314,7 @@ test.describe('Notifications', () => {
 				if (req.method() === 'POST') {
 					saveEndpointCalled = true;
 					const saved = req.postDataJSON() as Record<string, unknown>;
-					const savedProvider = String(saved.provider ?? '');
+					const savedProvider = typeof saved.provider === 'string' ? saved.provider : '';
 					attemptedProviders.push(savedProvider);
 					savedPayloads.push(saved);
 					if (options.failProviders?.has(savedProvider)) {

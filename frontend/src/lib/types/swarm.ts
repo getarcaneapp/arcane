@@ -204,7 +204,7 @@ export interface SwarmServiceCreateSpec {
 export interface SwarmServiceUpdateOptions {
 	encodedRegistryAuth?: string;
 	registryAuthFrom?: 'spec' | 'previous-spec';
-	rollback?: 'previous' | 'none' | string;
+	rollback?: 'previous' | 'none' | (string & {});
 	queryRegistry?: boolean;
 }
 

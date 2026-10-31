@@ -913,7 +913,7 @@ test.describe('Agents', () => {
 			registerCleanup
 		}) => {
 			const environmentName = `agent-${Date.now().toString().slice(-6)}`;
-			let createdEnvironmentId: string | null = null;
+			let createdEnvironmentId = null as string | null;
 			const environmentIds = new Set<string>();
 			registerCleanup(() => removeCreatedEnvironments(page, environmentIds, environmentName));
 			const agentSettingsRequests: string[] = [];

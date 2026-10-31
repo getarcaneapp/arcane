@@ -187,8 +187,8 @@ export function createContainerActions({
 		});
 	}
 
-	async function handleBulkStart(ids: string[]) {
-		await runBulkAction(ids, {
+	function handleBulkStart(ids: string[]) {
+		runBulkAction(ids, {
 			title: (count) => m.containers_bulk_start_confirm_title({ count }),
 			message: (count) => m.containers_bulk_start_confirm_message({ count }),
 			label: m.common_start(),
@@ -200,8 +200,8 @@ export function createContainerActions({
 		});
 	}
 
-	async function handleBulkStop(ids: string[]) {
-		await runBulkAction(ids, {
+	function handleBulkStop(ids: string[]) {
+		runBulkAction(ids, {
 			title: (count) => m.containers_bulk_stop_confirm_title({ count }),
 			message: (count) => m.containers_bulk_stop_confirm_message({ count }),
 			label: m.common_stop(),
@@ -213,8 +213,8 @@ export function createContainerActions({
 		});
 	}
 
-	async function handleBulkRestart(ids: string[]) {
-		await runBulkAction(ids, {
+	function handleBulkRestart(ids: string[]) {
+		runBulkAction(ids, {
 			title: (count) => m.containers_bulk_restart_confirm_title({ count }),
 			message: (count) => m.containers_bulk_restart_confirm_message({ count }),
 			label: m.common_restart(),
