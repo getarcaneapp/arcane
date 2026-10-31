@@ -1534,6 +1534,8 @@
   "environments_config_description": "Configuration for this environment",
   "environments_api_url_help": "The base URL for the environment's API",
   "environments_warning_disabled": "This environment is disabled. You can edit its configuration, but you won't be able to access its resources until it's re-enabled.",
+  "environments_warning_direct_deprecated": "エージェントへの直接接続は非推奨となっており、v3では削除される予定です。この環境をエッジエージェントに切り替えてください。",
+  "environments_direct_deprecated_badge": "非推奨",
   "environments_warning_no_settings": "Unable to load settings for this environment. It may be offline, disabled, or have an invalid URL. You can still edit basic environment details.",
   "environments_local_setting_disabled": "This setting cannot be changed for the local environment",
   "environments_use_environment": "Use Environment",
