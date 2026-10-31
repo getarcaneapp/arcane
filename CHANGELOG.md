@@ -17,6 +17,7 @@
 - keep proxied request bodies readable while the agent answers ([\#4592](https://github.com/getarcaneapp/arcane/pull/4592) by @jmrplens)
 
 **Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.17.1...v2.17.2
+
 ## v2.17.1
 
 ### Bug fixes
