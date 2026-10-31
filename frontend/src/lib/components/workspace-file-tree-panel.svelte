@@ -582,34 +582,37 @@
 		return available.filter((action) => action.visible);
 	}
 
-	function workspaceRowMenuGroups(row: TreeRow): WorkspaceTreeMenuItem[][] {
-		const canCreateHere = row.isDirectory && !row.locked && !row.isSymlink;
-		const createItems = [
+	function createMenuItems(parentPath: string): WorkspaceTreeMenuItem[] {
+		return [
 			{
-				visible: canCreateHere && canCreateFile,
+				visible: canCreateFile,
 				id: 'create_file',
 				label: m.workspace_new_file(),
 				icon: CreateFileIcon,
 				disabled,
-				onSelect: () => openCreateDialog('create_file', row.relativePath)
+				onSelect: () => openCreateDialog('create_file', parentPath)
 			},
 			{
-				visible: canCreateHere && canCreateFolder,
+				visible: canCreateFolder,
 				id: 'create_folder',
 				label: m.new_folder(),
 				icon: CreateFolderIcon,
 				disabled,
-				onSelect: () => openCreateDialog('create_folder', row.relativePath)
+				onSelect: () => openCreateDialog('create_folder', parentPath)
 			},
 			{
-				visible: canCreateHere && canUpload,
+				visible: canUpload,
 				id: 'upload',
 				label: m.upload_file(),
 				icon: UploadIcon,
 				disabled,
-				onSelect: () => openUploadDialog(row.relativePath)
+				onSelect: () => openUploadDialog(parentPath)
 			}
 		].filter((item) => item.visible);
+	}
+
+	function workspaceRowMenuGroups(row: TreeRow): WorkspaceTreeMenuItem[][] {
+		const createItems = row.isDirectory && !row.locked && !row.isSymlink ? createMenuItems(row.relativePath) : [];
 		const actionItems = workspaceRowActions(row).map((action) => ({
 			id: action.id,
 			label: action.tooltip,
@@ -841,20 +844,34 @@
 	</button>
 {/snippet}
 
-{#snippet workspaceTree()}
-	<div bind:this={treeScrollElement} class="min-h-0 flex-1 overflow-auto">
-		<div class="min-w-max p-2">
-			<TreeView.Root class="min-w-max whitespace-nowrap">
-				{@render workspaceLeadingRows()}
+{#snippet workspaceTreeBody()}
+	<div class="min-w-max p-2">
+		<TreeView.Root class="min-w-max whitespace-nowrap">
+			{@render workspaceLeadingRows()}
 
-				{#if rows.length === 0}
-					<div class="px-7 py-3 text-xs text-muted-foreground">{emptyMessage}</div>
-				{:else}
-					<VirtualRows virtualizer={rowVirtualizer} {rows} row={workspaceRow} />
-				{/if}
-			</TreeView.Root>
-		</div>
+			{#if rows.length === 0}
+				<div class="px-7 py-3 text-xs text-muted-foreground">{emptyMessage}</div>
+			{:else}
+				<VirtualRows virtualizer={rowVirtualizer} {rows} row={workspaceRow} />
+			{/if}
+		</TreeView.Root>
 	</div>
+{/snippet}
+
+{#snippet workspaceTree()}
+	{@const rootItems = createMenuItems('')}
+	{#if rootItems.length > 0}
+		<ContextMenu.Root>
+			<ContextMenu.Trigger class="block min-h-0 flex-1 overflow-auto select-auto" bind:ref={treeScrollElement}>
+				{@render workspaceTreeBody()}
+			</ContextMenu.Trigger>
+			{@render workspaceMenuContent([rootItems])}
+		</ContextMenu.Root>
+	{:else}
+		<div bind:this={treeScrollElement} class="min-h-0 flex-1 overflow-auto">
+			{@render workspaceTreeBody()}
+		</div>
+	{/if}
 {/snippet}
 
 {#snippet workspaceDestination(option: FolderDestinationOption)}

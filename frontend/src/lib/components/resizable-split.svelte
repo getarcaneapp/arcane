@@ -26,6 +26,7 @@
 		ariaLabel?: string;
 		persistKey?: string;
 		persistStorage?: 'local' | 'session';
+		fitFirst?: boolean;
 		onResizeEnd?: () => void;
 	}
 
@@ -49,6 +50,7 @@
 		ariaLabel,
 		persistKey,
 		persistStorage = 'session',
+		fitFirst = false,
 		onResizeEnd = () => {}
 	}: Props = $props();
 
@@ -66,6 +68,7 @@
 	}
 	const storedSize = persistedState?.current;
 	if (storedSize !== null && storedSize !== undefined) size = storedSize;
+	let userSized = storedSize !== null && storedSize !== undefined;
 	const isStacked = $derived(stackBelow !== undefined && containerWidth < stackBelow);
 	let resizeStartX = 0;
 	let resizeStartWidth = 0;
@@ -99,7 +102,7 @@
 	const collapsedSide = $derived(layout.collapsedSide);
 
 	const ensureInitialSize = () => {
-		if (!containerRef || size !== null) return;
+		if (!containerRef || size !== null || fitFirst) return;
 		const available = getAvailableWidth();
 		if (available <= 0) return;
 		const maxNormal = getMaxNormalSize();
@@ -171,8 +174,30 @@
 		};
 	}
 
+	function fitFirstPane(node: HTMLDivElement) {
+		if (!fitFirst) return;
+		const fit = () => {
+			if (userSized || isStacked || getAvailableWidth() <= 0) return;
+			const previousWidth = node.style.width;
+			node.style.width = 'max-content';
+			const contentWidth = Math.ceil(node.getBoundingClientRect().width);
+			node.style.width = previousWidth;
+			applySize(contentWidth);
+		};
+		fit();
+		const resizeObserver = new ResizeObserver(fit);
+		resizeObserver.observe(node.parentElement ?? node);
+		const mutationObserver = new MutationObserver(fit);
+		mutationObserver.observe(node, { childList: true, subtree: true, characterData: true });
+		return () => {
+			resizeObserver.disconnect();
+			mutationObserver.disconnect();
+		};
+	}
+
 	function startResize(event: PointerEvent) {
 		if (!containerRef) return;
+		userSized = true;
 		ensureInitialSize();
 		resizeStartX = event.clientX;
 		resizeStartWidth = size ?? 0;
@@ -183,6 +208,7 @@
 	}
 
 	function restoreCollapsed() {
+		userSized = true;
 		const maxNormal = getMaxNormalSize();
 		const safeMin = Math.min(minSize, maxNormal);
 		const restored = clampSize(lastSize || safeMin, safeMin, maxNormal);
@@ -200,6 +226,7 @@
 	class={['flex min-h-0 min-w-0', isStacked && (variant === 'flush' ? 'flex-col' : 'flex-col gap-4'), className]}
 >
 	<div
+		{@attach fitFirstPane}
 		class={['min-h-0 min-w-0 overflow-hidden', isStacked ? 'flex-1' : 'w-(--first-size) flex-none', firstClass]}
 		style={isStacked ? undefined : `--first-size: ${layout.size}px`}
 		aria-hidden={!isStacked && collapsedSide === 'first'}

@@ -5,7 +5,7 @@
 	import { json } from '@codemirror/lang-json';
 	import { markdown } from '@codemirror/lang-markdown';
 	import { yaml } from '@codemirror/lang-yaml';
-	import { StreamLanguage, foldAll, unfoldAll, foldKeymap } from '@codemirror/language';
+	import { StreamLanguage, foldAll, unfoldAll, foldKeymap, indentUnit } from '@codemirror/language';
 	import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
 	import { properties } from '@codemirror/legacy-modes/mode/properties';
 	import { shell } from '@codemirror/legacy-modes/mode/shell';
@@ -19,7 +19,7 @@
 		type Diagnostic,
 		type LintSource
 	} from '@codemirror/lint';
-	import { type Extension } from '@codemirror/state';
+	import { EditorState, type Extension } from '@codemirror/state';
 	import { keymap, hoverTooltip, EditorView, ViewPlugin, closeHoverTooltips, hasHoverTooltips } from '@codemirror/view';
 	import { mode } from 'mode-watcher';
 	import CodeMirror from 'svelte-codemirror-editor';
@@ -116,6 +116,7 @@
 	let activeView = $state<EditorView | null>(null);
 	let schemaState = $state<ComposeSchemaContext | null>(null);
 	let shortcutsEnabled = $derived(userStore.current?.preferences?.keyboardShortcutsEnabled !== false);
+	const tabWidth = $derived(userStore.current?.preferences?.editorTabWidth ?? 2);
 	let schemaHoverSuppressedUntil = 0;
 
 	const schemaHoverSelectionSuppressionMs = 2500;
@@ -326,7 +327,7 @@
 			const { parseDocument } = await import('yaml');
 			const parsed = parseDocument(current, { strict: false, uniqueKeys: false });
 			if (parsed.errors.length === 0) {
-				formatted = parsed.toString({ indent: 2, lineWidth: 0 });
+				formatted = parsed.toString({ indent: tabWidth, lineWidth: 0 });
 			}
 		} else if (language === 'env') {
 			formatted = formatEnvContent(current);
@@ -774,7 +775,12 @@
 		() => mergeAttachmentParams
 	);
 
-	const extensions = $derived([...getLanguageExtension(language), theme]);
+	const extensions = $derived([
+		...getLanguageExtension(language),
+		theme,
+		indentUnit.of(' '.repeat(tabWidth)),
+		EditorState.tabSize.of(tabWidth)
+	]);
 
 	const styles = $derived({
 		'&': {
@@ -864,7 +870,7 @@
 				</div>
 			{/snippet}
 		</ContextMenu.Trigger>
-		<ContextMenu.Content class="w-56">
+		<ContextMenu.Content class="min-w-56 whitespace-nowrap">
 			<ContextMenu.Item disabled={readOnly} onSelect={() => void copySelection(true)}>{m.cut()}</ContextMenu.Item>
 			<ContextMenu.Item onSelect={() => void copySelection(false)}>{m.common_copy()}</ContextMenu.Item>
 			<ContextMenu.Item disabled={readOnly} onSelect={() => void pasteClipboard()}>{m.paste()}</ContextMenu.Item>
@@ -874,7 +880,7 @@
 				<ContextMenu.Item onSelect={() => executeCommand(item.id)}>
 					<span class="flex-1">{item.label}</span>
 					{#if item.shortcut}
-						<ContextMenu.Shortcut>{item.shortcut}</ContextMenu.Shortcut>
+						<ContextMenu.Shortcut class="ml-6">{item.shortcut}</ContextMenu.Shortcut>
 					{/if}
 				</ContextMenu.Item>
 			{/each}

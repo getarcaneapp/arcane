@@ -330,7 +330,15 @@
 					customLabel={m.common_back()}
 				/>
 				<div class="hidden h-4 w-px bg-border sm:block"></div>
-				<div class="hidden items-center gap-3 sm:flex">
+				<div class="hidden items-center sm:flex">
+					{#if !isEditMode}
+						<EnvironmentDestinationSelect
+							bind:value={destinationId}
+							permission="swarm:stacks"
+							environments={data.environments}
+							variant="prefix"
+						/>
+					{/if}
 					<EditableName
 						bind:value={inputs.name.value}
 						bind:ref={nameInputRef}
@@ -345,9 +353,6 @@
 			</div>
 
 			<div class="flex items-center gap-2">
-				{#if !isEditMode}
-					<EnvironmentDestinationSelect bind:value={destinationId} permission="swarm:stacks" environments={data.environments} />
-				{/if}
 				<ComposeCreateMenu
 					tooltipOpen={!inputs.name.value && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}
 					tooltipVisible={inputs.name.value === ''}
@@ -379,7 +384,15 @@
 	<div class="flex min-h-0 flex-1 overflow-hidden">
 		<div class="mx-auto h-full w-full max-w-full min-w-0">
 			<div class="flex h-full min-h-0 flex-col">
-				<div class="block flex-shrink-0 px-2 py-4 sm:hidden sm:px-6">
+				<div class="flex flex-shrink-0 items-center px-2 py-4 sm:hidden sm:px-6">
+					{#if !isEditMode}
+						<EnvironmentDestinationSelect
+							bind:value={destinationId}
+							permission="swarm:stacks"
+							environments={data.environments}
+							variant="prefix"
+						/>
+					{/if}
 					<EditableName
 						bind:value={inputs.name.value}
 						bind:ref={nameInputRef}
@@ -444,6 +457,7 @@
 							maxSize={480}
 							minSecondSize={360}
 							defaultRatio={0.2}
+							fitFirst
 							stackBelow={1024}
 							ariaLabel={m.compose_editor_resize_files_panel()}
 							persistKey="arcane.swarm.split:new"

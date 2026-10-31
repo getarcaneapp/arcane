@@ -153,6 +153,8 @@ export type DashboardWidgetLayout = {
 	hidden?: boolean;
 };
 
+export type EditorTabWidth = 2 | 4 | 8;
+
 export type ToastPosition = 'auto' | NonNullable<ToasterProps['position']>;
 
 /**
@@ -173,6 +175,7 @@ export type UserPreferences = {
 	mobileNavigationShowLabels?: boolean;
 	defaultLandingPage?: string;
 	defaultProjectEditorLayout?: ProjectEditorLayout;
+	editorTabWidth?: EditorTabWidth;
 	toastPosition?: ToastPosition;
 	environmentColors?: Record<string, string>;
 	environmentLabelStyle?: EnvironmentLabelStyle;

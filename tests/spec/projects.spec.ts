@@ -125,6 +125,21 @@ function getProjectIdFromPageUrl(url: string): string {
 	return url.split('/projects/')[1]?.split(/[?#]/)[0] ?? '';
 }
 
+function createProjectButton(page: Page) {
+	return page.getByRole('button', { name: 'Create Project', exact: true });
+}
+
+async function addEnvFile(page: Page) {
+	const addEnvButton = page
+		.getByRole('button', { name: 'Add .env file', exact: true })
+		.filter({ visible: true });
+	await addEnvButton.click();
+	await expect(addEnvButton).toHaveCount(0);
+	const envEditor = page.locator('.cm-editor').filter({ visible: true }).last();
+	await expect(envEditor).toBeVisible();
+	return envEditor;
+}
+
 async function expectProjectCreateResponse(responsePromise: Promise<Response>) {
 	const response = await responsePromise;
 	if (response.ok()) {
@@ -153,21 +168,21 @@ async function createProjectViaUI(
 	await page.getByRole('textbox', { name: 'My New Project' }).fill(projectName);
 	await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
-	const visibleEditors = page.locator('.cm-editor').filter({ visible: true });
-	const composeEditor = visibleEditors.first();
-	const envEditor = visibleEditors.nth(1);
+	const composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
 	await expect(composeEditor).toBeVisible();
-	await expect(envEditor).toBeVisible();
 
 	await setCodeMirrorValue(composeEditor, composeContent);
-	await setCodeMirrorValue(envEditor, envFile);
 	await expect
 		.poll(async () => (await getCodeMirrorValue(composeEditor)).trimEnd(), {
 			message: 'Expected compose editor to contain the exact test compose fixture before creation'
 		})
 		.toBe(composeContent.trimEnd());
 
-	const createButton = page.locator('button[data-action="create"]');
+	const envEditor = await addEnvFile(page);
+	await setCodeMirrorValue(envEditor, envFile);
+	await expect(envEditor).toContainText(containerName);
+
+	const createButton = createProjectButton(page);
 	await expect(createButton).toBeEnabled();
 	const createResponsePromise = page.waitForResponse(
 		(response) =>
@@ -480,7 +495,7 @@ test.describe('New Compose Project Page', () => {
 	});
 
 	test('should validate required fields', async ({ page }) => {
-		const createButton = page.locator('button[data-action="create"]');
+		const createButton = createProjectButton(page);
 		await expect(createButton).toBeDisabled();
 
 		await page.getByRole('button', { name: 'My New Project' }).click();
@@ -495,7 +510,7 @@ test.describe('New Compose Project Page', () => {
 			if (msg.type() === 'error') observedErrors.push(msg.text());
 		});
 
-		const createButton = page.locator('button[data-action="create"]');
+		const createButton = createProjectButton(page);
 
 		await expect(createButton).toBeVisible();
 
@@ -524,7 +539,7 @@ test.describe('New Compose Project Page', () => {
 		const composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
 		await expect(composeEditor).toBeVisible();
 
-		const createButton = page.locator('button[data-action="create"]');
+		const createButton = createProjectButton(page);
 		await setCodeMirrorValue(composeEditor, 'services:\n\tredis:\n\t\timage: redis:latest\n');
 		await expect(createButton).toBeVisible();
 		await expect(createButton).toBeDisabled();
@@ -540,14 +555,12 @@ test.describe('New Compose Project Page', () => {
 		await page.getByRole('textbox', { name: 'My New Project' }).fill('env-check-project');
 		await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
-		const visibleEditors = page.locator('.cm-editor').filter({ visible: true });
-		const composeEditor = visibleEditors.first();
-		const envEditor = visibleEditors.nth(1);
+		const composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
 		await expect(composeEditor).toBeVisible();
-		await expect(envEditor).toBeVisible();
 
 		await setCodeMirrorValue(composeEditor, TEST_COMPOSE_YAML);
-		const createButton = page.locator('button[data-action="create"]');
+		const createButton = createProjectButton(page);
+		const envEditor = await addEnvFile(page);
 		await setCodeMirrorValue(envEditor, 'NOT VALID LINE');
 		await expect(createButton).toBeVisible();
 		await expect(createButton).toBeDisabled();
@@ -581,8 +594,7 @@ test.describe('New Compose Project Page', () => {
 				})
 				.toBe(TEST_COMPOSE_YAML.trimEnd());
 
-			const envEditor = page.locator('.cm-editor').filter({ visible: true }).nth(1);
-			await expect(envEditor).toBeVisible();
+			const envEditor = await addEnvFile(page);
 			await setCodeMirrorValue(envEditor, envFile);
 			await expect(envEditor).toContainText('nginx');
 
@@ -608,7 +620,7 @@ test.describe('New Compose Project Page', () => {
 				}
 			});
 
-			const createButton = page.locator('button[data-action="create"]');
+			const createButton = createProjectButton(page);
 			const createResponsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
@@ -1088,7 +1100,9 @@ test.describe('GitOps Managed Project', () => {
 			await expect(workspaceFilesLabel).not.toBeVisible();
 		}
 
-		const envEditor = page.locator('.cm-editor').filter({ visible: true }).nth(1);
+		const envEditor = (await fetchProjectDetail(page, gitOpsProject.id)).envFileExists
+			? page.locator('.cm-editor').filter({ visible: true }).nth(1)
+			: await addEnvFile(page);
 		const marker = `ARCANE_E2E_${Date.now()}`;
 		const envContent = envEditor.locator('.cm-content');
 		await expect(envContent).toBeVisible();
@@ -1265,6 +1279,7 @@ test.describe('Project Detail Page', () => {
 		expect(realProjects.length, 'No projects available for configuration test').toBeGreaterThan(0);
 
 		const firstProject = realProjects[0];
+		const hasEnvFile = !!(await fetchProjectDetail(page, firstProject.id!)).envFileExists;
 		await page.goto(`/projects/${firstProject.id || firstProject.name}?env=0`);
 		await page.waitForLoadState('load');
 
@@ -1281,7 +1296,9 @@ test.describe('Project Detail Page', () => {
 
 		if (isTreeView) {
 			const composeFileButton = page.getByRole('button', { name: 'compose.yaml' }).first();
-			const envFileButton = page.getByRole('button', { name: '.env' }).first();
+			const envFileButton = page
+				.getByRole('button', { name: hasEnvFile ? '.env' : 'Add .env file' })
+				.first();
 
 			await expect(composeFileButton).toBeVisible();
 			await expect(envFileButton).toBeVisible();
@@ -1296,6 +1313,7 @@ test.describe('Project Detail Page', () => {
 		} else {
 			// Classic layout renders both editors at the same time.
 			await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
+			if (!hasEnvFile) await addEnvFile(page);
 			await expect(page.getByRole('heading', { name: '.env' })).toBeVisible();
 
 			// Also validate that we can switch to tree view and see the file list.

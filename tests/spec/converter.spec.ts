@@ -27,7 +27,7 @@ async function openConvertFromDockerRun(page: Page) {
 
 	const createProjectGroup = page
 		.getByRole('group')
-		.filter({ has: page.locator('button[data-action="create"]') })
+		.filter({ has: page.getByRole('button', { name: 'Create Project', exact: true }) })
 		.first();
 	const dropdownTrigger = createProjectGroup.getByRole('button').last();
 	await expect(dropdownTrigger).toBeVisible();
