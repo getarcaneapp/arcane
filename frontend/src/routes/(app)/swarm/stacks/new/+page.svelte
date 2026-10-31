@@ -331,14 +331,13 @@
 				/>
 				<div class="hidden h-4 w-px bg-border sm:block"></div>
 				<div class="hidden items-center sm:flex">
-					{#if !isEditMode}
-						<EnvironmentDestinationSelect
-							bind:value={destinationId}
-							permission="swarm:stacks"
-							environments={data.environments}
-							variant="prefix"
-						/>
-					{/if}
+					<EnvironmentDestinationSelect
+						bind:value={destinationId}
+						permission="swarm:stacks"
+						environments={data.environments}
+						variant="prefix"
+						readonly={isEditMode}
+					/>
 					<EditableName
 						bind:value={inputs.name.value}
 						bind:ref={nameInputRef}
@@ -385,14 +384,13 @@
 		<div class="mx-auto h-full w-full max-w-full min-w-0">
 			<div class="flex h-full min-h-0 flex-col">
 				<div class="flex flex-shrink-0 items-center px-2 py-4 sm:hidden sm:px-6">
-					{#if !isEditMode}
-						<EnvironmentDestinationSelect
-							bind:value={destinationId}
-							permission="swarm:stacks"
-							environments={data.environments}
-							variant="prefix"
-						/>
-					{/if}
+					<EnvironmentDestinationSelect
+						bind:value={destinationId}
+						permission="swarm:stacks"
+						environments={data.environments}
+						variant="prefix"
+						readonly={isEditMode}
+					/>
 					<EditableName
 						bind:value={inputs.name.value}
 						bind:ref={nameInputRef}
