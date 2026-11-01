@@ -109,7 +109,10 @@ func TestService_FetchSwarmNodeIdentityViaAgent_UsesEnvironmentAccessToken(t *te
 	db := setupSwarmServiceTestDB(t)
 	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
 	require.NoError(t, err)
-	envSvc := environment.NewEnvironmentService(db, nil, nil, settingsSvc, nil)
+	envSvc := environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+		DB:              db,
+		SettingsService: settingsSvc,
+	})
 
 	accessToken := "token-123"
 	agentHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -158,7 +161,9 @@ func TestService_FetchSwarmNodeIdentityViaAgent_UsesEnvironmentAccessToken(t *te
 		&accessToken,
 	)
 
-	svc := NewService(nil, nil, nil, nil, envSvc)
+	svc := NewService(ServiceParams{
+		EnvironmentService: envSvc,
+	})
 
 	identity, err := svc.fetchSwarmNodeIdentityViaAgent(ctx, "env-1")
 	require.NoError(t, err)

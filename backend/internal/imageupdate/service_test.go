@@ -392,20 +392,32 @@ func newComposeBuildImageUpdateService(t *testing.T) (*ImageUpdateService, *atom
 	t.Cleanup(dockerServer.Close)
 
 	var registryCalls atomic.Int32
-	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
-		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				registryCalls.Add(1)
-				return client.DistributionInspectResult{
-					Descriptor: v1.Descriptor{Digest: digest.Digest(remoteDigest)},
-				}, nil
-			},
-		}, nil
-	}, kv.NewKVService(db), newImageUpdateDefaultSettingsService(t))
+	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		DB: db,
+		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{
+				distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+					registryCalls.Add(1)
+					return client.DistributionInspectResult{
+						Descriptor: v1.Descriptor{Digest: digest.Digest(remoteDigest)},
+					}, nil
+				},
+			}, nil
+		},
+		KVService:       kv.NewKVService(db),
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+	})
 
 	dockerService := newImageUpdateTestDockerService(t, dockerServer)
 	eventService := event.NewEventService(db, nil, nil)
-	return NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), registryService, dockerService, eventService, newTestNotificationService(t, db), nil), &registryCalls
+	return NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     registryService,
+		DockerService:       dockerService,
+		EventService:        eventService,
+		NotificationService: newTestNotificationService(t, db),
+	}), &registryCalls
 }
 
 func TestImageUpdateService_CheckImageUpdate_ComposeBuildSkipsRegistryWithRepoDigests(t *testing.T) {
@@ -461,18 +473,30 @@ func TestImageUpdateService_CheckImages_ComposeBuildMissingLocallySkipsRegistry(
 	t.Cleanup(dockerServer.Close)
 
 	var registryCalls atomic.Int32
-	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
-		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				registryCalls.Add(1)
-				return client.DistributionInspectResult{}, nil
-			},
-		}, nil
-	}, kv.NewKVService(db), newImageUpdateDefaultSettingsService(t))
+	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		DB: db,
+		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{
+				distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+					registryCalls.Add(1)
+					return client.DistributionInspectResult{}, nil
+				},
+			}, nil
+		},
+		KVService:       kv.NewKVService(db),
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+	})
 
 	dockerService := newImageUpdateTestDockerService(t, dockerServer)
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), registryService, dockerService, eventService, newTestNotificationService(t, db), nil)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     registryService,
+		DockerService:       dockerService,
+		EventService:        eventService,
+		NotificationService: newTestNotificationService(t, db),
+	})
 
 	results, err := checkImages(t, t.Context(), svc, "test2:latest")
 	require.NoError(t, err)
@@ -512,20 +536,32 @@ func newArcaneLocalImageUpdateService(t *testing.T, imageExists bool) (*ImageUpd
 	t.Cleanup(dockerServer.Close)
 
 	var registryCalls atomic.Int32
-	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
-		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				registryCalls.Add(1)
-				return client.DistributionInspectResult{
-					Descriptor: v1.Descriptor{Digest: digest.FromString("arcane-local-remote")},
-				}, nil
-			},
-		}, nil
-	}, kv.NewKVService(db), newImageUpdateDefaultSettingsService(t))
+	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		DB: db,
+		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{
+				distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+					registryCalls.Add(1)
+					return client.DistributionInspectResult{
+						Descriptor: v1.Descriptor{Digest: digest.FromString("arcane-local-remote")},
+					}, nil
+				},
+			}, nil
+		},
+		KVService:       kv.NewKVService(db),
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+	})
 
 	dockerService := newImageUpdateTestDockerService(t, dockerServer)
 	eventService := event.NewEventService(db, nil, nil)
-	return NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), registryService, dockerService, eventService, newTestNotificationService(t, db), nil), &registryCalls
+	return NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     registryService,
+		DockerService:       dockerService,
+		EventService:        eventService,
+		NotificationService: newTestNotificationService(t, db),
+	}), &registryCalls
 }
 
 func TestImageUpdateService_CheckImageUpdate_ArcaneLocalHostSkipsRegistry(t *testing.T) {
@@ -785,7 +821,14 @@ func TestImageUpdateService_CheckImageUpdate_SkipsDigestPinnedReference(t *testi
 	imageRef := "ghcr.io/fosrl/newt@" + pinnedDigest
 	eventService := event.NewEventService(db, nil, nil)
 	dockerService := newImageUpdateNotificationDockerService(t, nil)
-	svc := NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), newImageUpdateTestRegistryService(t, db, dockerService), dockerService, eventService, newTestNotificationService(t, db), nil)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
+		DockerService:       dockerService,
+		EventService:        eventService,
+		NotificationService: newTestNotificationService(t, db),
+	})
 
 	result, err := svc.CheckImageUpdate(t.Context(), imageRef)
 	require.NoError(t, err)
@@ -801,7 +844,17 @@ func TestImageUpdateService_CheckImages_SkipsDigestPinnedReference(t *testing.T)
 	db := setupImageUpdateTestDB(t)
 	pinnedDigest := digest.FromString("batch-pinned-newt").String()
 	imageRef := "ghcr.io/fosrl/newt@" + pinnedDigest
-	svc := NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), registry.NewContainerRegistryService(db, nil, kv.NewKVService(db), newImageUpdateDefaultSettingsService(t)), newImageUpdateNotificationDockerService(t, nil), nil, newTestNotificationService(t, db), nil)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:              db,
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+		RegistryService: registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+			DB:              db,
+			KVService:       kv.NewKVService(db),
+			SettingsService: newImageUpdateDefaultSettingsService(t),
+		}),
+		DockerService:       newImageUpdateNotificationDockerService(t, nil),
+		NotificationService: newTestNotificationService(t, db),
+	})
 
 	require.Equal(t, [][]string{{imageRef}}, svc.groupImageRefs([]string{imageRef}))
 
@@ -832,7 +885,17 @@ func TestImageUpdateService_CheckImages_SkippedDigestPinnedReferenceClearsStaleE
 		LastError:      new("failed to get remote digest"),
 		CheckTime:      time.Now().Add(-time.Hour),
 	}).Error)
-	svc := NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), registry.NewContainerRegistryService(db, nil, kv.NewKVService(db), newImageUpdateDefaultSettingsService(t)), newImageUpdateNotificationDockerService(t, nil), nil, newTestNotificationService(t, db), nil)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:              db,
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+		RegistryService: registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+			DB:              db,
+			KVService:       kv.NewKVService(db),
+			SettingsService: newImageUpdateDefaultSettingsService(t),
+		}),
+		DockerService:       newImageUpdateNotificationDockerService(t, nil),
+		NotificationService: newTestNotificationService(t, db),
+	})
 
 	results, err := checkImages(t, t.Context(), svc, imageRef)
 	require.NoError(t, err)
@@ -860,7 +923,17 @@ func TestImageUpdateService_CheckImages_DigestPinnedTagPreservedWhenLocalImageHa
 	imageRef := repository + ":9@" + pinnedDigest
 
 	dockerService := newImageUpdateTestDockerService(t, server)
-	svc := NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), registry.NewContainerRegistryService(db, nil, kv.NewKVService(db), newImageUpdateDefaultSettingsService(t)), dockerService, nil, newTestNotificationService(t, db), nil)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:              db,
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+		RegistryService: registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+			DB:              db,
+			KVService:       kv.NewKVService(db),
+			SettingsService: newImageUpdateDefaultSettingsService(t),
+		}),
+		DockerService:       dockerService,
+		NotificationService: newTestNotificationService(t, db),
+	})
 
 	results, err := checkImages(t, t.Context(), svc, imageRef)
 	require.NoError(t, err)
@@ -912,17 +985,30 @@ func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) 
 	require.NoError(t, err)
 	imageRef := serverURL.Host + "/team/app:1.2.3"
 
-	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
-		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				return client.DistributionInspectResult{}, errors.New("error response from daemon: Not Found")
-			},
-		}, nil
-	}, kv.NewKVService(db), newImageUpdateDefaultSettingsService(t), server.Client())
+	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		DB: db,
+		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{
+				distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+					return client.DistributionInspectResult{}, errors.New("error response from daemon: Not Found")
+				},
+			}, nil
+		},
+		KVService:       kv.NewKVService(db),
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+		HTTPClient:      server.Client(),
+	})
 
 	dockerService := newImageUpdateTestDockerService(t, server)
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), registryService, dockerService, eventService, newTestNotificationService(t, db), nil)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     registryService,
+		DockerService:       dockerService,
+		EventService:        eventService,
+		NotificationService: newTestNotificationService(t, db),
+	})
 
 	result, err := svc.CheckImageUpdate(t.Context(), imageRef)
 	require.NoError(t, err)
@@ -951,18 +1037,31 @@ func TestImageUpdateService_CheckImages_UsesRegistryFallback(t *testing.T) {
 	require.NoError(t, err)
 	imageRef := serverURL.Host + "/team/app:1.2.3"
 
-	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
-		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				return client.DistributionInspectResult{}, errors.New("error response from daemon: <html><body><h1>403 Forbidden</h1> Request forbidden by administrative r" +
-					"ules. </body></html>")
-			},
-		}, nil
-	}, kv.NewKVService(db), newImageUpdateDefaultSettingsService(t), server.Client())
+	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		DB: db,
+		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{
+				distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+					return client.DistributionInspectResult{}, errors.New("error response from daemon: <html><body><h1>403 Forbidden</h1> Request forbidden by administrative r" +
+						"ules. </body></html>")
+				},
+			}, nil
+		},
+		KVService:       kv.NewKVService(db),
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+		HTTPClient:      server.Client(),
+	})
 
 	dockerService := newImageUpdateTestDockerService(t, server)
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), registryService, dockerService, eventService, newTestNotificationService(t, db), nil)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     registryService,
+		DockerService:       dockerService,
+		EventService:        eventService,
+		NotificationService: newTestNotificationService(t, db),
+	})
 
 	results, err := checkImages(t, t.Context(), svc, imageRef)
 	require.NoError(t, err)
@@ -987,7 +1086,13 @@ func TestImageUpdateService_CheckImagesCompletesActivityAfterRequestContextCance
 
 	settingsService := newImageUpdateDefaultSettingsService(t)
 	activityService := activity.NewActivityService(db, settingsService)
-	svc := NewImageUpdateService(db, settingsService, newImageUpdateTestRegistryService(t, db, nil), nil, nil, newTestNotificationService(t, db), activityService)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     settingsService,
+		RegistryService:     newImageUpdateTestRegistryService(t, db, nil),
+		NotificationService: newTestNotificationService(t, db),
+		ActivityService:     activityService,
+	})
 
 	for range 5 {
 		require.NoError(t, svc.registryLimiter.Acquire(t.Context(), "docker.io"))
@@ -1036,31 +1141,35 @@ func TestImageUpdateService_CheckImagesRetriesStalledRegistryCheck(t *testing.T)
 	activityService := activity.NewActivityService(db, settingsService)
 	dockerServer := newImageUpdateRegistryOnlyServer(t, "team/app:1.2.3", digest.FromString("unused").String())
 	defer dockerServer.Close()
-	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
-		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				<-ctx.Done()
-				return client.DistributionInspectResult{}, ctx.Err()
-			},
-		}, nil
-	}, kv.NewKVService(db), newImageUpdateDefaultSettingsService(t))
+	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		DB: db,
+		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{
+				distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+					<-ctx.Done()
+					return client.DistributionInspectResult{}, ctx.Err()
+				},
+			}, nil
+		},
+		KVService:       kv.NewKVService(db),
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+	})
 
 	shortenImageCheckRetryBackoff(t)
 	parentCtx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
-	svc := NewImageUpdateService(
-		db,
-		settingsService,
-		registryService,
-		docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:              db,
+		SettingsService: settingsService,
+		RegistryService: registryService,
+		DockerService: docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(
 			t,
 			dockerServer,
 		)),
-		nil,
-		newTestNotificationService(t, db),
-		activityService,
-	)
+		NotificationService: newTestNotificationService(t, db),
+		ActivityService:     activityService,
+	})
 
 	start := time.Now()
 	results, err := checkImages(t, parentCtx, svc, "registry.example.com/team/app:1.2.3")
@@ -1090,26 +1199,30 @@ func TestImageUpdateService_CheckImagesPanicFailsOnlyThatImage(t *testing.T) {
 	activityService := activity.NewActivityService(db, settingsService)
 	dockerServer := newImageUpdateRegistryOnlyServer(t, "team/app:1.2.3", digest.FromString("unused").String())
 	defer dockerServer.Close()
-	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
-		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				panic("registry check exploded")
-			},
-		}, nil
-	}, kv.NewKVService(db), newImageUpdateDefaultSettingsService(t))
+	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		DB: db,
+		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{
+				distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+					panic("registry check exploded")
+				},
+			}, nil
+		},
+		KVService:       kv.NewKVService(db),
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+	})
 
-	svc := NewImageUpdateService(
-		db,
-		settingsService,
-		registryService,
-		docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:              db,
+		SettingsService: settingsService,
+		RegistryService: registryService,
+		DockerService: docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(
 			t,
 			dockerServer,
 		)),
-		nil,
-		newTestNotificationService(t, db),
-		activityService,
-	)
+		NotificationService: newTestNotificationService(t, db),
+		ActivityService:     activityService,
+	})
 
 	results, err := checkImages(t, t.Context(), svc, "registry.example.com/team/app:1.2.3")
 	require.NoError(t, err)
@@ -1128,15 +1241,13 @@ func TestImageUpdateService_GetAllImageRefsUsesDockerAPITimeout(t *testing.T) {
 	settingsService := newImageUpdateTestSettingsService(t, "30", "1")
 	server := newBlockedDockerAPIServer(t, "/images/json")
 	dockerService := docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(t, server))
-	svc := NewImageUpdateService(
-		db,
-		settingsService,
-		newImageUpdateTestRegistryService(t, db, dockerService),
-		dockerService,
-		nil,
-		newTestNotificationService(t, db),
-		nil,
-	)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     settingsService,
+		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
+		DockerService:       dockerService,
+		NotificationService: newTestNotificationService(t, db),
+	})
 
 	parentCtx, cancel := context.WithTimeout(t.Context(), 2500*time.Millisecond)
 	defer cancel()
@@ -1155,15 +1266,13 @@ func TestImageUpdateService_InspectLocalImageSnapshotUsesDockerAPITimeout(t *tes
 	settingsService := newImageUpdateTestSettingsService(t, "30", "1")
 	server := newBlockedDockerAPIServer(t, "/images/")
 	dockerService := docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(t, server))
-	svc := NewImageUpdateService(
-		db,
-		settingsService,
-		newImageUpdateTestRegistryService(t, db, dockerService),
-		dockerService,
-		nil,
-		newTestNotificationService(t, db),
-		nil,
-	)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     settingsService,
+		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
+		DockerService:       dockerService,
+		NotificationService: newTestNotificationService(t, db),
+	})
 
 	parentCtx, cancel := context.WithTimeout(t.Context(), 2500*time.Millisecond)
 	defer cancel()
@@ -1189,29 +1298,41 @@ func TestImageUpdateService_CheckImages_UsesDockerHubCredentialsOnFirstAttempt(t
 	defer server.Close()
 
 	var calls int
-	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
-		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				calls++
-				assert.Equal(t, "docker.io/library/registry:3", imageRef)
+	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		DB: db,
+		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{
+				distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+					calls++
+					assert.Equal(t, "docker.io/library/registry:3", imageRef)
 
-				authCfg := decodeImageUpdateRegistryAuth(t, options.EncodedRegistryAuth)
-				assert.Equal(t, "docker-user", authCfg.Username)
-				assert.Equal(t, "docker-token", authCfg.Password)
-				assert.Equal(t, "https://index.docker.io/v1/", authCfg.ServerAddress)
+					authCfg := decodeImageUpdateRegistryAuth(t, options.EncodedRegistryAuth)
+					assert.Equal(t, "docker-user", authCfg.Username)
+					assert.Equal(t, "docker-token", authCfg.Password)
+					assert.Equal(t, "https://index.docker.io/v1/", authCfg.ServerAddress)
 
-				return client.DistributionInspectResult{
-					Descriptor: v1.Descriptor{
-						Digest: digest.Digest(remoteDigest),
-					},
-				}, nil
-			},
-		}, nil
-	}, kv.NewKVService(db), newImageUpdateDefaultSettingsService(t))
+					return client.DistributionInspectResult{
+						Descriptor: v1.Descriptor{
+							Digest: digest.Digest(remoteDigest),
+						},
+					}, nil
+				},
+			}, nil
+		},
+		KVService:       kv.NewKVService(db),
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+	})
 
 	dockerService := newImageUpdateTestDockerService(t, server)
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), registryService, dockerService, eventService, newTestNotificationService(t, db), nil)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     registryService,
+		DockerService:       dockerService,
+		EventService:        eventService,
+		NotificationService: newTestNotificationService(t, db),
+	})
 
 	results, err := checkImages(t, t.Context(), svc, "docker.io/library/registry:3")
 	require.NoError(t, err)
@@ -1240,17 +1361,30 @@ func TestImageUpdateService_CheckImages_ReportsNotPulledWhenLocalImageMissing(t 
 	require.NoError(t, err)
 	imageRef := serverURL.Host + "/library/nginx:alpine"
 
-	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
-		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				return client.DistributionInspectResult{}, errors.New("error response from daemon: Not Found")
-			},
-		}, nil
-	}, kv.NewKVService(db), newImageUpdateDefaultSettingsService(t), server.Client())
+	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		DB: db,
+		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{
+				distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+					return client.DistributionInspectResult{}, errors.New("error response from daemon: Not Found")
+				},
+			}, nil
+		},
+		KVService:       kv.NewKVService(db),
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+		HTTPClient:      server.Client(),
+	})
 
 	dockerService := newImageUpdateTestDockerService(t, server)
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), registryService, dockerService, eventService, newTestNotificationService(t, db), nil)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     registryService,
+		DockerService:       dockerService,
+		EventService:        eventService,
+		NotificationService: newTestNotificationService(t, db),
+	})
 
 	results, err := checkImages(t, t.Context(), svc, imageRef)
 	require.NoError(t, err)
@@ -1283,15 +1417,13 @@ func TestImageUpdateService_SaveUpdateResultWithSnapshot_PersistsRegistryOnlySuc
 	imageRef := serverURL.Host + "/library/nginx:alpine"
 
 	dockerService := newImageUpdateTestDockerService(t, server)
-	svc := NewImageUpdateService(
-		db,
-		newImageUpdateDefaultSettingsService(t),
-		newImageUpdateTestRegistryService(t, db, dockerService),
-		dockerService,
-		nil,
-		newTestNotificationService(t, db),
-		nil,
-	)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
+		DockerService:       dockerService,
+		NotificationService: newTestNotificationService(t, db),
+	})
 	result := &types.ImageUpdateResponse{
 		HasUpdate:      true,
 		UpdateType:     "digest",
@@ -1417,17 +1549,20 @@ func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsA
 
 	settingsService := newImageUpdateDefaultSettingsService(t)
 	dockerService := newImageUpdateTestDockerService(t, server)
-	svc := NewImageUpdateService(
-		db,
-		settingsService,
-		registry.NewContainerRegistryService(db, func(ctx context.Context) (registry.RegistryDaemonClient, error) {
-			return dockerService.GetClient(ctx)
-		}, kv.NewKVService(db), settingsService),
-		dockerService,
-		nil,
-		newTestNotificationService(t, db),
-		nil,
-	)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:              db,
+		SettingsService: settingsService,
+		RegistryService: registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+			DB: db,
+			DockerClient: func(ctx context.Context) (registry.RegistryDaemonClient, error) {
+				return dockerService.GetClient(ctx)
+			},
+			KVService:       kv.NewKVService(db),
+			SettingsService: settingsService,
+		}),
+		DockerService:       dockerService,
+		NotificationService: newTestNotificationService(t, db),
+	})
 
 	require.NoError(t, svc.MarkImageRefUpToDateAfterPull(t.Context(), imageRef))
 
@@ -1948,7 +2083,13 @@ func TestImageUpdateService_SendBatchNotifications_FiltersByUpdateCheckEligibili
 	}
 	notif := newTestNotificationService(t, db)
 	dockerService := newImageUpdateNotificationDockerService(t, containers)
-	svc := NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), newImageUpdateTestRegistryService(t, db, dockerService), dockerService, nil, notif, nil)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
+		DockerService:       dockerService,
+		NotificationService: notif,
+	})
 
 	records := []ImageUpdateRecord{
 		{ID: "sha256:install-excluded", Repository: "docker.io/test/install-excluded", Tag: "latest", HasUpdate: true},
@@ -2004,7 +2145,13 @@ func TestImageUpdateService_SendBatchNotifications_FiltersByUpdateCheckEligibili
 		Image:   "test/unmonitored:latest",
 	}
 	dockerService = newImageUpdateNotificationDockerService(t, resumedContainers)
-	svc = NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), newImageUpdateTestRegistryService(t, db, dockerService), dockerService, nil, notif, nil)
+	svc = NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
+		DockerService:       dockerService,
+		NotificationService: notif,
+	})
 	require.NoError(t, svc.SendBatchUpdateNotifications(t.Context()))
 	require.EqualValues(t, 2, calls.Load())
 	var resumed ImageUpdateRecord
@@ -2023,7 +2170,13 @@ func TestImageUpdateService_SendBatchNotifications_UnresolvedEligibilityLeavesUn
 	}))
 	t.Cleanup(server.Close)
 	dockerService := newImageUpdateTestDockerService(t, server)
-	svc := NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), newImageUpdateTestRegistryService(t, db, dockerService), dockerService, nil, notif, nil)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
+		DockerService:       dockerService,
+		NotificationService: notif,
+	})
 	require.NoError(t, db.Create(&ImageUpdateRecord{ID: "sha256:img", Repository: "test/repo", Tag: "latest", HasUpdate: true}).Error)
 
 	require.ErrorContains(t, svc.SendBatchUpdateNotifications(t.Context()), "list containers for update-check eligibility")
@@ -2058,7 +2211,13 @@ func TestImageUpdateService_SendBatchNotifications_DetachesCanceledContext(t *te
 
 	notif := newTestNotificationService(t, db)
 	dockerService := newImageUpdateNotificationDockerService(t, nil)
-	svc := NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), newImageUpdateTestRegistryService(t, db, dockerService), dockerService, nil, notif, nil)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
+		DockerService:       dockerService,
+		NotificationService: notif,
+	})
 
 	rec := ImageUpdateRecord{
 		ID:               "sha256:img1",
@@ -2098,7 +2257,13 @@ func TestImageUpdateService_SendBatchNotifications_NoEligibleProviders_LeavesUnn
 
 	notif := newTestNotificationService(t, db)
 	dockerService := newImageUpdateNotificationDockerService(t, nil)
-	svc := NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), newImageUpdateTestRegistryService(t, db, dockerService), dockerService, nil, notif, nil)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
+		DockerService:       dockerService,
+		NotificationService: notif,
+	})
 
 	rec := ImageUpdateRecord{
 		ID:               "sha256:img-no-provider",
@@ -2151,7 +2316,13 @@ func TestImageUpdateService_SendBatchNotifications_PartialFailureStillMarksNotif
 
 	notif := newTestNotificationService(t, db)
 	dockerService := newImageUpdateNotificationDockerService(t, nil)
-	svc := NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), newImageUpdateTestRegistryService(t, db, dockerService), dockerService, nil, notif, nil)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
+		DockerService:       dockerService,
+		NotificationService: notif,
+	})
 
 	rec := ImageUpdateRecord{
 		ID:               "sha256:img-partial",
@@ -2381,15 +2552,11 @@ func TestImageUpdateService_GetAllImageRefsHonorsExclusiveContainerOptOut(t *tes
 	t.Cleanup(server.Close)
 
 	dockerService := newImageUpdateTestDockerService(t, server)
-	svc := NewImageUpdateService(
-		nil,
-		newImageUpdateDefaultSettingsService(t),
-		newImageUpdateTestRegistryService(t, nil, dockerService),
-		dockerService,
-		nil,
-		nil,
-		nil,
-	)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+		RegistryService: newImageUpdateTestRegistryService(t, nil, dockerService),
+		DockerService:   dockerService,
+	})
 
 	got, err := svc.getAllImageRefs(t.Context(), 0)
 
@@ -2427,15 +2594,11 @@ func TestImageUpdateService_GetAllImageRefsAppliesLimitAfterOptOutFiltering(t *t
 	t.Cleanup(server.Close)
 
 	dockerService := newImageUpdateTestDockerService(t, server)
-	svc := NewImageUpdateService(
-		nil,
-		newImageUpdateDefaultSettingsService(t),
-		newImageUpdateTestRegistryService(t, nil, dockerService),
-		dockerService,
-		nil,
-		nil,
-		nil,
-	)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+		RegistryService: newImageUpdateTestRegistryService(t, nil, dockerService),
+		DockerService:   dockerService,
+	})
 
 	got, err := svc.getAllImageRefs(t.Context(), 2)
 	require.NoError(t, err)
@@ -2482,15 +2645,11 @@ func TestImageUpdateService_GetAllImageRefsExcludesAliasesOfOptedOutImage(t *tes
 	t.Cleanup(server.Close)
 
 	dockerService := newImageUpdateTestDockerService(t, server)
-	svc := NewImageUpdateService(
-		nil,
-		newImageUpdateDefaultSettingsService(t),
-		newImageUpdateTestRegistryService(t, nil, dockerService),
-		dockerService,
-		nil,
-		nil,
-		nil,
-	)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+		RegistryService: newImageUpdateTestRegistryService(t, nil, dockerService),
+		DockerService:   dockerService,
+	})
 
 	got, err := svc.getAllImageRefs(t.Context(), 0)
 
@@ -2531,15 +2690,11 @@ func TestImageUpdateService_GetAllImageRefsKeepsImageSharedByEligibleContainer(t
 	t.Cleanup(server.Close)
 
 	dockerService := newImageUpdateTestDockerService(t, server)
-	svc := NewImageUpdateService(
-		nil,
-		newImageUpdateDefaultSettingsService(t),
-		newImageUpdateTestRegistryService(t, nil, dockerService),
-		dockerService,
-		nil,
-		nil,
-		nil,
-	)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+		RegistryService: newImageUpdateTestRegistryService(t, nil, dockerService),
+		DockerService:   dockerService,
+	})
 
 	got, err := svc.getAllImageRefs(t.Context(), 0)
 
@@ -2570,15 +2725,11 @@ func TestImageUpdateService_GetAllImageRefsFallsBackToRefWhenImageIDsDiffer(t *t
 	t.Cleanup(server.Close)
 
 	dockerService := newImageUpdateTestDockerService(t, server)
-	svc := NewImageUpdateService(
-		nil,
-		newImageUpdateDefaultSettingsService(t),
-		newImageUpdateTestRegistryService(t, nil, dockerService),
-		dockerService,
-		nil,
-		nil,
-		nil,
-	)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+		RegistryService: newImageUpdateTestRegistryService(t, nil, dockerService),
+		DockerService:   dockerService,
+	})
 
 	got, err := svc.getAllImageRefs(t.Context(), 0)
 
@@ -2616,15 +2767,11 @@ func TestImageUpdateService_GetAllImageRefsMergesIDAndReferenceEligibility(t *te
 	t.Cleanup(server.Close)
 
 	dockerService := newImageUpdateTestDockerService(t, server)
-	svc := NewImageUpdateService(
-		nil,
-		newImageUpdateDefaultSettingsService(t),
-		newImageUpdateTestRegistryService(t, nil, dockerService),
-		dockerService,
-		nil,
-		nil,
-		nil,
-	)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+		RegistryService: newImageUpdateTestRegistryService(t, nil, dockerService),
+		DockerService:   dockerService,
+	})
 
 	got, err := svc.getAllImageRefs(t.Context(), 0)
 
@@ -2657,15 +2804,11 @@ func TestImageUpdateService_GetAllImageRefsFallsBackWhenContainerDiscoveryFails(
 	t.Cleanup(server.Close)
 
 	dockerService := newImageUpdateTestDockerService(t, server)
-	svc := NewImageUpdateService(
-		nil,
-		newImageUpdateDefaultSettingsService(t),
-		newImageUpdateTestRegistryService(t, nil, dockerService),
-		dockerService,
-		nil,
-		nil,
-		nil,
-	)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+		RegistryService: newImageUpdateTestRegistryService(t, nil, dockerService),
+		DockerService:   dockerService,
+	})
 
 	got, err := svc.getAllImageRefs(t.Context(), 0)
 
@@ -2795,20 +2938,25 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 		}
 	}))
 	defer dockerServer.Close()
-	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
-		return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-			return client.DistributionInspectResult{}, errors.New("manifest not found")
-		}}, nil
-	}, kv.NewKVService(db), newImageUpdateDefaultSettingsService(t), registryServer.Client())
-	svc := NewImageUpdateService(
-		db,
-		newImageUpdateDefaultSettingsService(t),
-		registryService,
-		newImageUpdateTestDockerService(t, dockerServer),
-		event.NewEventService(db, nil, nil),
-		newTestNotificationService(t, db),
-		nil,
-	)
+	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		DB: db,
+		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				return client.DistributionInspectResult{}, errors.New("manifest not found")
+			}}, nil
+		},
+		KVService:       kv.NewKVService(db),
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+		HTTPClient:      registryServer.Client(),
+	})
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     registryService,
+		DockerService:       newImageUpdateTestDockerService(t, dockerServer),
+		EventService:        event.NewEventService(db, nil, nil),
+		NotificationService: newTestNotificationService(t, db),
+	})
 	checks, err := svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil)
 	require.NoError(t, err)
 	require.Len(t, checks, 2)
@@ -2925,21 +3073,25 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 		}
 	}))
 	defer dockerServer.Close()
-	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
-		return &fakeRegistryDaemonClient{}, nil
-	}, kv.NewKVService(db), newImageUpdateDefaultSettingsService(t), registryServer.Client())
+	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		DB: db,
+		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{}, nil
+		},
+		KVService:       kv.NewKVService(db),
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+		HTTPClient:      registryServer.Client(),
+	})
 	settingsService := newImageUpdateTestSettingsService(t, "5", "5")
 	// The UI exclusion governs installation only; it must not reach the checker.
 	require.NoError(t, settingsService.SetStringSetting(t.Context(), "autoUpdateExcludedContainers", "install-excluded"))
-	svc := NewImageUpdateService(
-		db,
-		settingsService,
-		registryService,
-		docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
-		nil,
-		newTestNotificationService(t, db),
-		nil,
-	)
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     settingsService,
+		RegistryService:     registryService,
+		DockerService:       docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
+		NotificationService: newTestNotificationService(t, db),
+	})
 
 	pending := "1.1.0"
 	stale := ImageUpdateRecord{
@@ -3040,20 +3192,23 @@ func TestContainerTagChecksUseRegistryTagTimeout(t *testing.T) {
 				}
 			}))
 			defer dockerServer.Close()
-			registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
-				return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-					return client.DistributionInspectResult{}, errors.New("manifest not found")
-				}}, nil
-			}, nil, settingsService, registryServer.Client())
-			svc := NewImageUpdateService(
-				db,
-				settingsService,
-				registryService,
-				docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
-				nil,
-				newTestNotificationService(t, db),
-				nil,
-			)
+			registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+				DB: db,
+				DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+					return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+						return client.DistributionInspectResult{}, errors.New("manifest not found")
+					}}, nil
+				},
+				SettingsService: settingsService,
+				HTTPClient:      registryServer.Client(),
+			})
+			svc := NewImageUpdateService(ImageUpdateServiceParams{
+				DB:                  db,
+				SettingsService:     settingsService,
+				RegistryService:     registryService,
+				DockerService:       docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
+				NotificationService: newTestNotificationService(t, db),
+			})
 
 			start := time.Now()
 			checks, err := svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil)
@@ -3133,20 +3288,23 @@ func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadline(t *testing.T
 		}
 	}))
 	defer dockerServer.Close()
-	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
-		return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-			return client.DistributionInspectResult{}, errors.New("manifest not found")
-		}}, nil
-	}, nil, settingsService, registryServer.Client())
-	svc := NewImageUpdateService(
-		db,
-		settingsService,
-		registryService,
-		docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
-		nil,
-		newTestNotificationService(t, db),
-		nil,
-	)
+	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		DB: db,
+		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				return client.DistributionInspectResult{}, errors.New("manifest not found")
+			}}, nil
+		},
+		SettingsService: settingsService,
+		HTTPClient:      registryServer.Client(),
+	})
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     settingsService,
+		RegistryService:     registryService,
+		DockerService:       docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
+		NotificationService: newTestNotificationService(t, db),
+	})
 
 	scanCtx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
@@ -3274,15 +3432,27 @@ func newWorkflowCheckService(
 		http.Error(w, "No such image", http.StatusNotFound)
 	}))
 	t.Cleanup(server.Close)
-	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
-		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(_ context.Context, imageRef string, _ client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				return inspect(imageRef)
-			},
-		}, nil
-	}, kv.NewKVService(db), newImageUpdateDefaultSettingsService(t))
+	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		DB: db,
+		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{
+				distributionInspectFn: func(_ context.Context, imageRef string, _ client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+					return inspect(imageRef)
+				},
+			}, nil
+		},
+		KVService:       kv.NewKVService(db),
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+	})
 	dockerService := newImageUpdateTestDockerService(t, server)
-	return NewImageUpdateService(db, newImageUpdateDefaultSettingsService(t), registryService, dockerService, event.NewEventService(db, nil, nil), newTestNotificationService(t, db), nil), db
+	return NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     registryService,
+		DockerService:       dockerService,
+		EventService:        event.NewEventService(db, nil, nil),
+		NotificationService: newTestNotificationService(t, db),
+	}), db
 }
 
 func shortenImageCheckRetryBackoff(t *testing.T) {
@@ -3327,20 +3497,32 @@ func newTestNotificationService(t *testing.T, db *database.DB) *notification.Not
 	})
 	require.NoError(t, db.AutoMigrate(&environment.Environment{}, &event.Event{}))
 	eventService := event.NewEventService(db, nil, nil)
-	return notification.NewNotificationService(
-		db,
-		nil,
-		environment.NewEnvironmentService(db, nil, nil, nil, nil),
-		eventService,
-		apns.NewApnsService(t.Context(), db, &config.Config{}, settingsService, nil, eventService, nil),
-		settingsService,
-	)
+	return notification.NewNotificationService(notification.NotificationServiceParams{
+		DB: db,
+		EnvironmentSvc: environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+			DB: db,
+		}),
+		EventSvc: eventService,
+		APNSSvc: apns.NewApnsService(apns.ApnsServiceParams{
+			LifecycleCtx:    t.Context(),
+			DB:              db,
+			Config:          &config.Config{},
+			SettingsService: settingsService,
+			EventService:    eventService,
+		}),
+		SettingsService: settingsService,
+	})
 }
 
 func newImageUpdateTestRegistryService(t *testing.T, db *database.DB, dockerService *docker.DockerClientService) *registry.ContainerRegistryService {
 	t.Helper()
 
-	return registry.NewContainerRegistryService(db, func(ctx context.Context) (registry.RegistryDaemonClient, error) {
-		return dockerService.GetClient(ctx)
-	}, kv.NewKVService(db), newImageUpdateDefaultSettingsService(t))
+	return registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		DB: db,
+		DockerClient: func(ctx context.Context) (registry.RegistryDaemonClient, error) {
+			return dockerService.GetClient(ctx)
+		},
+		KVService:       kv.NewKVService(db),
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+	})
 }

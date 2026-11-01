@@ -441,6 +441,7 @@ func (s *EventService) DeleteOldEvents(ctx context.Context, olderThan time.Durat
 }
 
 type ResourceEvent struct {
+	Metadata      database.JSON
 	Type          EventType
 	ResourceType  string
 	ResourceID    string
@@ -448,7 +449,6 @@ type ResourceEvent struct {
 	UserID        string
 	Username      string
 	EnvironmentID string
-	Metadata      database.JSON
 }
 
 func (s *EventService) LogResourceEvent(ctx context.Context, e ResourceEvent) error {

@@ -35,6 +35,7 @@ import (
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/labels"
 	"go.getarcane.app/updater/pkg/utils/tagpolicy"
+	"go.uber.org/fx"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/container/children/stats"
@@ -112,28 +113,36 @@ type demuxedLogs struct {
 	logs io.ReadCloser
 }
 
-func NewContainerService(
-	eventService *event.EventService,
-	dockerService *dockerInternal.DockerClientService,
-	imageService *image.ImageService,
-	settingsService *settings.SettingsService,
-	projectService *project.ProjectService,
-	kvService *kv.KVService,
-	podmanService *podman.Service,
-) *ContainerService {
+type ContainerServiceParams struct {
+	fx.In
+
+	EventService    *event.EventService
+	DockerService   *dockerInternal.DockerClientService
+	ImageService    *image.ImageService
+	SettingsService *settings.SettingsService
+	ProjectService  *project.ProjectService
+	KVService       *kv.KVService
+	PodmanService   *podman.Service
+}
+
+func NewContainerService(p ContainerServiceParams) *ContainerService {
 	return &ContainerService{
-		eventService:    eventService,
-		dockerService:   dockerService,
-		imageService:    imageService,
-		settingsService: settingsService,
-		projectService:  projectService,
-		kvService:       kvService,
-		podmanService:   podmanService,
+		eventService:    p.EventService,
+		dockerService:   p.DockerService,
+		imageService:    p.ImageService,
+		settingsService: p.SettingsService,
+		projectService:  p.ProjectService,
+		kvService:       p.KVService,
+		podmanService:   p.PodmanService,
 		iconMetaCache: hot.NewHotCache[string, projects.ArcaneComposeMetadata](hot.LRU, 1024).
 			WithTTL(containerIconMetadataTTL).
 			WithJanitor().
 			Build(),
-		stats: stats.New(dockerService.GetClient, dockerService.DockerHost, stats.ContainerResourceSampleTTL, 0, 0),
+		stats: stats.New(stats.Params{
+			GetClient:  p.DockerService.GetClient,
+			DockerHost: p.DockerService.DockerHost,
+			CacheTTL:   stats.ContainerResourceSampleTTL,
+		}),
 	}
 }
 

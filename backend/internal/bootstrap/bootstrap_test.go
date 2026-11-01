@@ -36,6 +36,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
@@ -347,9 +348,10 @@ func TestHTTPServerStopCancelsStreamingRequestContexts(t *testing.T) {
 	}
 	lifecycle := fxtest.NewLifecycle(t)
 	srv, err := NewHTTPServer(lifecycle, HTTPServerParams{
-		AppCtx: appCtx,
-		Config: cfg,
-		Router: router,
+		AppCtx:       appCtx,
+		Config:       cfg,
+		Router:       router,
+		TunnelServer: agent.NewTunnelServer(agent.TunnelServerOptions{}),
 	})
 	require.NoError(t, err)
 	require.NoError(t, lifecycle.Start(t.Context()))
@@ -374,9 +376,10 @@ func TestNewHTTPServerRejectsInvalidTLSCertificate(t *testing.T) {
 	}
 
 	_, err := NewHTTPServer(fxtest.NewLifecycle(t), HTTPServerParams{
-		AppCtx: t.Context(),
-		Config: cfg,
-		Router: echo.New(),
+		AppCtx:       t.Context(),
+		Config:       cfg,
+		Router:       echo.New(),
+		TunnelServer: agent.NewTunnelServer(agent.TunnelServerOptions{}),
 	})
 	require.Error(t, err)
 }
@@ -404,23 +407,37 @@ func TestJobSchedulerStopCancelsItsPrivateContext(t *testing.T) {
 		OnStop:  runtime.Stop,
 	})
 	t.Cleanup(func() { lifecycle.RequireStop() })
-	jobService := job.NewJobService(
-		&database.DB{DB: db},
-		nil,
-		&config.Config{},
-		coordinator,
-		role.NewRoleService(&database.DB{DB: db}),
-		environment.NewEnvironmentService(&database.DB{DB: db}, nil, nil, nil, nil),
-		activity.NewActivityService(&database.DB{DB: db}, nil),
-	)
-	gitopsSync := gitops.NewGitOpsSyncService(&database.DB{DB: db}, nil, project.NewProjectService(&database.DB{DB: db}, nil, nil, nil, nil, nil, nil, nil, &config.Config{}, nil, nil), nil, nil, nil)
+	jobService := job.NewJobService(job.JobServiceParams{
+		DB:          &database.DB{DB: db},
+		Config:      &config.Config{},
+		Coordinator: coordinator,
+		Roles:       role.NewRoleService(&database.DB{DB: db}),
+		LocalEnvironment: environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+			DB: &database.DB{DB: db},
+		}),
+		LocalActivity: activity.NewActivityService(&database.DB{DB: db}, nil),
+	})
+	gitopsSync := gitops.NewGitOpsSyncService(gitops.GitOpsSyncServiceParams{
+		DB: &database.DB{DB: db},
+		ProjectService: project.NewProjectService(project.ProjectServiceParams{
+			DB:     &database.DB{DB: db},
+			Config: &config.Config{},
+		}),
+	})
 	require.NoError(t, db.Create(&environment.Environment{ID: "0", Name: "Local", Enabled: true}).Error)
 	require.NoError(t, db.Create(&project.GitOpsSync{ID: "overdue", EnvironmentID: "0", AutoSync: true, SyncInterval: 1}).Error)
 	jobScheduler, err := newJobScheduler(appCtx, lifecycle, &config.Config{}, coordinator, admission, nil, nil, nil, jobService, workflows, nil, gitopsSync)
 	require.NoError(t, err)
 	require.NoError(t, registerDynamicJobs(dynamicJobsParams{
-		AppCtx: appCtx, Config: &config.Config{}, Scheduler: jobScheduler,
-		GitOpsSync: gitopsSync, Admission: admission,
+		AppCtx:     appCtx,
+		Config:     &config.Config{AgentEnabled: true},
+		Scheduler:  jobScheduler,
+		GitOpsSync: gitopsSync,
+		Volume: volume.NewVolumeService(volume.VolumeServiceParams{
+			DB:     &database.DB{DB: db},
+			Config: &config.Config{},
+		}),
+		Admission: admission,
 	}))
 	executed := make(chan types.SchedulerRun, 1)
 	coordinator.SetExecutor(func(_ context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {

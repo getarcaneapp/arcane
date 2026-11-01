@@ -74,7 +74,11 @@ func TestListPatchTargets_ExcludesUntaggedImages(t *testing.T) {
 	settingsSvc, db := patchFeatureSettings(t)
 	require.NoError(t, settingsSvc.UpdateSettings(ctx, types.SettingsUpdate{"dockerHost": "unix:///nonexistent-arcane-test.sock"}))
 
-	svc := NewService(db, docker.NewDockerClientService(ctx, nil, settingsSvc, bus.Config{}), settingsSvc, nil, nil, nil)
+	svc := NewService(ServiceParams{
+		DB:              db,
+		DockerService:   docker.NewDockerClientService(ctx, nil, settingsSvc, bus.Config{}),
+		SettingsService: settingsSvc,
+	})
 
 	records := []vulnerability.VulnerabilityScanRecord{
 		{
@@ -128,14 +132,11 @@ func TestVulnerabilityFeatureBlocksReportPatchesOnly(t *testing.T) {
 	settingsSvc, db := patchFeatureSettings(t)
 	require.NoError(t, settingsSvc.SetBoolSetting(t.Context(), types.FeatureVulnerabilityManagementSettingKey, false))
 	require.NoError(t, settingsSvc.UpdateSettings(t.Context(), types.SettingsUpdate{"dockerHost": "unix:///nonexistent-arcane-feature-test.sock"}))
-	svc := NewService(
-		db,
-		docker.NewDockerClientService(t.Context(), nil, settingsSvc, bus.Config{}),
-		settingsSvc,
-		nil,
-		nil,
-		nil,
-	)
+	svc := NewService(ServiceParams{
+		DB:              db,
+		DockerService:   docker.NewDockerClientService(t.Context(), nil, settingsSvc, bus.Config{}),
+		SettingsService: settingsSvc,
+	})
 	_, err := svc.PatchImage(t.Context(), "0", "test-image", types.PatchOptions{ScanID: "test-image"}, types.Actor{})
 	require.ErrorIs(t, err, common.ErrFeatureDisabled)
 	_, _, err = svc.ListPatchTargets(t.Context(), "0", pagination.QueryParams{})
@@ -151,7 +152,10 @@ func TestVulnerabilityFeatureBlocksReportPatchesOnly(t *testing.T) {
 
 func TestQueuedReportPatchStopsWhenFeatureDisabled(t *testing.T) {
 	settingsSvc, db := patchFeatureSettings(t)
-	svc := NewService(db, nil, settingsSvc, nil, nil, nil)
+	svc := NewService(ServiceParams{
+		DB:              db,
+		SettingsService: settingsSvc,
+	})
 	record := &ImagePatchRecord{
 		EnvironmentID:   "0",
 		OriginalImageID: "test-image",
@@ -195,15 +199,11 @@ func TestDisabledFeatureSkipsPatchVerificationScan(t *testing.T) {
 	dockerClient, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.41"))
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, dockerClient.Close()) }()
-	svc := NewService(
-		nil,
-		docker.NewDockerClientService(t.Context(), nil, settingsSvc, bus.Config{}).WithClient(dockerClient),
-		settingsSvc,
-		nil,
-		nil,
-		// Any attempt to scan would access unconfigured dependencies and fail.
-		&vulnerability.VulnerabilityService{},
-	)
+	svc := NewService(ServiceParams{
+		DockerService:        docker.NewDockerClientService(t.Context(), nil, settingsSvc, bus.Config{}).WithClient(dockerClient),
+		SettingsService:      settingsSvc,
+		VulnerabilityService: &vulnerability.VulnerabilityService{},
+	})
 	require.NotPanics(t, func() {
 		svc.verifyPatchedImage(t.Context(), &ImagePatchRecord{EnvironmentID: "0", PatchedRef: "test:patched"}, "")
 	})
@@ -275,7 +275,7 @@ func TestAggregatePatchTargetsMergesEnvironments(t *testing.T) {
 		}
 		return out
 	}
-	svc := NewService(nil, nil, nil, nil, nil, nil)
+	svc := NewService(ServiceParams{})
 	merge := func(sort string, order pagination.SortOrder, start, limit int) types.Paginated[types.PatchTarget] {
 		body, err := svc.AggregatePatchTargets(ctx, pagination.QueryParams{
 			SortParams: pagination.SortParams{Sort: sort, Order: order},

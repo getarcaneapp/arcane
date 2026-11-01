@@ -41,17 +41,25 @@ const (
 	projectVolumeCopyMountPath = "/volume"
 )
 
+type MigrationConfig struct {
+	DockerClient *client.Client
+	OldProject   string
+	NewProject   string
+	ToolsImage   string
+	Entries      []types.VolumeRenameEntry
+}
+
 // NewMigration prepares generic volume copies with caller-supplied target configuration.
-func NewMigration(dockerClient *client.Client, entries []types.VolumeRenameEntry, oldProject, newProject, toolsImage string) types.VolumeMigration {
-	if len(entries) == 0 {
+func NewMigration(cfg MigrationConfig) types.VolumeMigration {
+	if len(cfg.Entries) == 0 {
 		return nil
 	}
 	return &dockerProjectVolumeRenameMigration{
-		dockerClient:   dockerClient,
-		entries:        entries,
-		oldComposeName: oldProject,
-		newComposeName: newProject,
-		toolsImage:     toolsImage,
+		dockerClient:   cfg.DockerClient,
+		entries:        cfg.Entries,
+		oldComposeName: cfg.OldProject,
+		newComposeName: cfg.NewProject,
+		toolsImage:     cfg.ToolsImage,
 	}
 }
 
@@ -93,7 +101,11 @@ func PlanRename(ctx context.Context, dockerClient *client.Client, oldName, newNa
 		},
 	}
 
-	return NewMigration(dockerClient, []types.VolumeRenameEntry{entry}, "", "", toolsImage), nil
+	return NewMigration(MigrationConfig{
+		DockerClient: dockerClient,
+		Entries:      []types.VolumeRenameEntry{entry},
+		ToolsImage:   toolsImage,
+	}), nil
 }
 
 func (m *dockerProjectVolumeRenameMigration) Apply(ctx context.Context) error {

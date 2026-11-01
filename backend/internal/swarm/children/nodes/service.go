@@ -48,19 +48,21 @@ type Service struct {
 	identityCache      *hot.HotCache[string, SwarmNodeIdentity]
 }
 
-func NewService(
-	dockerService *dockerInternal.DockerClientService,
-	ensureManager func(ctx context.Context) error,
-	listTasks func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error),
-	localJoinTokens func(ctx context.Context) (*types.SwarmJoinTokensResponse, error),
-	environmentService *environment.EnvironmentService,
-) *Service {
+type ServiceParams struct {
+	DockerService      *dockerInternal.DockerClientService
+	EnsureManager      func(ctx context.Context) error
+	ListTasks          func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
+	LocalJoinTokens    func(ctx context.Context) (*types.SwarmJoinTokensResponse, error)
+	EnvironmentService *environment.EnvironmentService
+}
+
+func NewService(p ServiceParams) *Service {
 	return &Service{
-		docker:             dockerService,
-		ensureManager:      ensureManager,
-		listTasks:          listTasks,
-		localJoinTokens:    localJoinTokens,
-		environmentService: environmentService,
+		docker:             p.DockerService,
+		ensureManager:      p.EnsureManager,
+		listTasks:          p.ListTasks,
+		localJoinTokens:    p.LocalJoinTokens,
+		environmentService: p.EnvironmentService,
 		identityCache: hot.NewHotCache[string, SwarmNodeIdentity](hot.LRU, 512).
 			WithTTL(swarmNodeIdentityCacheTTL).
 			WithJanitor().

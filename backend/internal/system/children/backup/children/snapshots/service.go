@@ -68,27 +68,29 @@ type Service struct {
 	gitWorkDirectory    string
 }
 
-func NewService(
-	engine *backup.Engine,
-	sqlDB func() (*sql.DB, error),
-	actorStore func() (*gorm.DB, error),
-	localRepository func(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error),
-	remoteRepository func(ctx context.Context, destinationID string) (backup.Repository, error),
-	databaseFile func() (string, error),
-	projectsDirectory func(ctx context.Context) string,
-	recoveryEnvironment func(ctx context.Context) map[string]string,
-	gitWorkDirectory string,
-) *Service {
+type ServiceParams struct {
+	Engine              *backup.Engine
+	SqlDB               func() (*sql.DB, error)
+	ActorStore          func() (*gorm.DB, error)
+	LocalRepository     func(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error)
+	RemoteRepository    func(ctx context.Context, destinationID string) (backup.Repository, error)
+	DatabaseFile        func() (string, error)
+	ProjectsDirectory   func(ctx context.Context) string
+	RecoveryEnvironment func(ctx context.Context) map[string]string
+	GitWorkDirectory    string
+}
+
+func NewService(p ServiceParams) *Service {
 	return &Service{
-		engine:              engine,
-		sqlDB:               sqlDB,
-		actorStore:          actorStore,
-		localRepository:     localRepository,
-		remoteRepository:    remoteRepository,
-		databaseFile:        databaseFile,
-		projectsDirectory:   projectsDirectory,
-		recoveryEnvironment: recoveryEnvironment,
-		gitWorkDirectory:    gitWorkDirectory,
+		engine:              p.Engine,
+		sqlDB:               p.SqlDB,
+		actorStore:          p.ActorStore,
+		localRepository:     p.LocalRepository,
+		remoteRepository:    p.RemoteRepository,
+		databaseFile:        p.DatabaseFile,
+		projectsDirectory:   p.ProjectsDirectory,
+		recoveryEnvironment: p.RecoveryEnvironment,
+		gitWorkDirectory:    p.GitWorkDirectory,
 	}
 }
 
@@ -207,7 +209,7 @@ func (session systemBackupSnapshotSession) inspectProjectManifest(ctx context.Co
 	if err != nil {
 		return systemBackupSnapshot{}, err
 	}
-	if !(snapshot.layout.projectsPath != "") {
+	if snapshot.layout.projectsPath == "" {
 		return systemBackupSnapshot{}, errProjectsNotInBackup
 	}
 	return snapshot, nil
@@ -780,7 +782,7 @@ type snapshotLayout struct {
 // projectsDataRelative returns the projects root relative to the data
 // root when projects live inside it.
 func (layout snapshotLayout) projectsDataRelative() (string, bool) {
-	if !(layout.projectsPath != "") {
+	if layout.projectsPath == "" {
 		return "", false
 	}
 	if layout.projectsPath == layout.dataPath {

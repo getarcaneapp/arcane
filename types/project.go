@@ -743,12 +743,12 @@ type ComposeServiceUpdate struct {
 }
 
 type ComposeUpOptions struct {
+	AuthConfigs     map[string]registry.AuthConfig
 	Services        []string
+	WaitTimeout     time.Duration
 	RemoveOrphans   bool
 	ForceRecreate   bool
 	RecreateVolumes bool
-	AuthConfigs     map[string]registry.AuthConfig
-	WaitTimeout     time.Duration
 }
 
 // ComposeCommands supplies the SDK operations used by the coordinator.

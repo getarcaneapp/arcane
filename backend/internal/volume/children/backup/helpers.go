@@ -112,9 +112,6 @@ func (s *Service) StorageMount(ctx context.Context, dockerClient *client.Client,
 }
 
 func (s *Service) stopRunningContainersForBackup(ctx context.Context, volumeName string, user types.Actor, refuseArcaneWriters bool) ([]container.Summary, error) {
-	if s.deps.StopContainer == nil || s.deps.StartContainer == nil {
-		return nil, errors.New("container service is unavailable")
-	}
 	containers, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
 		return dockerClient.ContainerList(ctx, client.ContainerListOptions{})
 	})
@@ -293,9 +290,6 @@ func (s *Service) localRusticRepository(ctx context.Context, dockerClient *clien
 
 // remoteRusticRepository addresses one instance's root on the destination; empty instanceID means this instance.
 func (s *Service) remoteRusticRepository(ctx context.Context, destinationID, instanceID string) (backup.Repository, error) {
-	if s.deps.S3Destinations == nil {
-		return backup.Repository{}, errors.New("S3 backup destinations are unavailable")
-	}
 	instanceID = cmp.Or(strings.TrimSpace(instanceID), strings.TrimSpace(s.deps.Settings.GetSettingsConfig().InstanceID.Value))
 	if instanceID == "" {
 		return backup.Repository{}, errors.New("arcane instance ID is unavailable")

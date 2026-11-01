@@ -27,14 +27,16 @@ type Handler struct {
 	cfg                *config.Config
 }
 
-func NewHandler(
-	service *Service,
-	audit func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any),
-	mapError func(err error, fallback string) error,
-	environmentService *environment.EnvironmentService,
-	cfg *config.Config,
-) *Handler {
-	return &Handler{service: service, audit: audit, mapError: mapError, environmentService: environmentService, cfg: cfg}
+type HandlerParams struct {
+	Service            *Service
+	Audit              func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
+	MapError           func(err error, fallback string) error
+	EnvironmentService *environment.EnvironmentService
+	Config             *config.Config
+}
+
+func NewHandler(p HandlerParams) *Handler {
+	return &Handler{service: p.Service, audit: p.Audit, mapError: p.MapError, environmentService: p.EnvironmentService, cfg: p.Config}
 }
 
 type ListSwarmNodesInput struct {

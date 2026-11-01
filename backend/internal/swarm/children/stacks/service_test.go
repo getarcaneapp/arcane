@@ -76,7 +76,9 @@ func TestService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager(t *t
 	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
 	require.NoError(t, err)
 
-	svc := NewService(nil, nil, nil, nil, nil, settingsSvc)
+	svc := NewService(ServiceParams{
+		SettingsService: settingsSvc,
+	})
 	deployRec := stubStackSourceUpdateDeploy(t)
 
 	updated, err := svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
@@ -149,7 +151,9 @@ func TestService_UpdateAndGetStackSource_RoundTripsOverride(t *testing.T) {
 	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
 	require.NoError(t, err)
 
-	svc := NewService(nil, nil, nil, nil, nil, settingsSvc)
+	svc := NewService(ServiceParams{
+		SettingsService: settingsSvc,
+	})
 	stubStackSourceUpdateDeploy(t)
 
 	overridePath := filepath.Join(rootDir, "0", "demo-stack", "compose.override.yaml")
@@ -195,7 +199,9 @@ func TestService_UpdateStackSource_PrunesAndRestoresOnDeployFailure(t *testing.T
 	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
 	require.NoError(t, err)
 
-	svc := NewService(nil, nil, nil, nil, nil, settingsSvc)
+	svc := NewService(ServiceParams{
+		SettingsService: settingsSvc,
+	})
 
 	original := deployStackAfterSourceUpdate
 	t.Cleanup(func() { deployStackAfterSourceUpdate = original })

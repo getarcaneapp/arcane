@@ -73,25 +73,28 @@ type VersionService struct {
 	revision                 string
 }
 
-func NewVersionService(
-	httpClient *http.Client,
-	appVersion, revision string,
-	containerRegistryService *registry.ContainerRegistryService,
-	dockerService *docker.DockerClientService,
-	imageUpdateService *imageupdate.ImageUpdateService,
-	settingsService *settings.SettingsService,
-) *VersionService {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
+type VersionServiceParams struct {
+	HTTPClient               *http.Client
+	ContainerRegistryService *registry.ContainerRegistryService
+	DockerService            *docker.DockerClientService
+	ImageUpdateService       *imageupdate.ImageUpdateService
+	SettingsService          *settings.SettingsService
+	AppVersion               string
+	Revision                 string
+}
+
+func NewVersionService(p VersionServiceParams) *VersionService {
+	if p.HTTPClient == nil {
+		p.HTTPClient = http.DefaultClient
 	}
 	service := &VersionService{
-		httpClient:               httpClient,
-		version:                  appVersion,
-		revision:                 revision,
-		containerRegistryService: containerRegistryService,
-		dockerService:            dockerService,
-		imageUpdateService:       imageUpdateService,
-		settingsService:          settingsService,
+		httpClient:               p.HTTPClient,
+		version:                  p.AppVersion,
+		revision:                 p.Revision,
+		containerRegistryService: p.ContainerRegistryService,
+		dockerService:            p.DockerService,
+		imageUpdateService:       p.ImageUpdateService,
+		settingsService:          p.SettingsService,
 		streamHub:                &agg.Hub[types.VersionStreamEvent]{},
 		currentImage:             hot.NewHotCache[struct{}, currentImageInfo](hot.LRU, 1).Build(),
 		commitNotesCache: hot.NewHotCache[string, string](hot.LRU, 16).
@@ -351,7 +354,9 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *types.VersionIn
 				NewestVersion:   kit.Ternary(next.Version != "" && semver.Compare(next.Version, ver) >= 0, next.Version, ""),
 				UpdateAvailable: digestUpdateAvailable || (next.Version != "" && s.IsNewer(next.Version, ver)),
 			}
-			if !commitSHAPattern.MatchString(strings.ToLower(strings.TrimSpace(s.revision))) || !commitSHAPattern.MatchString(strings.ToLower(strings.TrimSpace(next.Revision))) || strings.EqualFold(s.revision, next.Revision) {
+			if !commitSHAPattern.MatchString(strings.ToLower(strings.TrimSpace(s.revision))) ||
+				!commitSHAPattern.MatchString(strings.ToLower(strings.TrimSpace(next.Revision))) ||
+				strings.EqualFold(s.revision, next.Revision) {
 				return info
 			}
 			return types.VersionInfo{

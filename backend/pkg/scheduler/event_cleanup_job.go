@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
+	"go.uber.org/fx"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/build"
@@ -27,19 +28,23 @@ type EventCleanupJob struct {
 	updaterService  *updater.UpdaterService
 }
 
-func NewEventCleanupJob(
-	eventService *event.EventService,
-	activityService *activity.ActivityService,
-	buildService *build.BuildService,
-	settingsService *settings.SettingsService,
-	updaterService *updater.UpdaterService,
-) *EventCleanupJob {
+type EventCleanupJobParams struct {
+	fx.In
+
+	EventService    *event.EventService
+	ActivityService *activity.ActivityService
+	BuildService    *build.BuildService
+	SettingsService *settings.SettingsService
+	UpdaterService  *updater.UpdaterService
+}
+
+func NewEventCleanupJob(p EventCleanupJobParams) *EventCleanupJob {
 	return &EventCleanupJob{
-		eventService:    eventService,
-		activityService: activityService,
-		buildService:    buildService,
-		settingsService: settingsService,
-		updaterService:  updaterService,
+		eventService:    p.EventService,
+		activityService: p.ActivityService,
+		buildService:    p.BuildService,
+		settingsService: p.SettingsService,
+		updaterService:  p.UpdaterService,
 	}
 }
 

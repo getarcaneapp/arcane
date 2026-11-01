@@ -152,7 +152,13 @@ func TestContainerSummaryIconsAppliedAfterGrouping(t *testing.T) {
 	db := setupProjectTestDB(t)
 	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
-	service := NewContainerService(nil, nil, nil, settingsService, project.NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, nil, nil, nil), nil, nil)
+	service := NewContainerService(ContainerServiceParams{
+		SettingsService: settingsService,
+		ProjectService: project.NewProjectService(project.ProjectServiceParams{
+			DB:              db,
+			SettingsService: settingsService,
+		}),
+	})
 	dockerContainers := []container.Summary{
 		{ID: "app", Names: []string{"/app"}, Labels: map[string]string{
 			"com.docker.compose.project": "media",
@@ -325,15 +331,10 @@ func TestContainerServiceCommitContainerCallsDockerAPI(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	svc := NewContainerService(
-		event.NewEventService(db, nil, nil),
-		newSettingsDockerService(t, newTestDockerClient(t, server)),
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-	)
+	svc := NewContainerService(ContainerServiceParams{
+		EventService:  event.NewEventService(db, nil, nil),
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+	})
 
 	out, err := svc.CommitContainer(t.Context(), "container-1", types.ContainerCommitRequest{
 		Repository: "registry.example.com/team/app",
@@ -374,15 +375,10 @@ func TestContainerServiceCommitContainerOmitsReferenceWhenRepositoryEmpty(t *tes
 	}))
 	t.Cleanup(server.Close)
 
-	svc := NewContainerService(
-		event.NewEventService(db, nil, nil),
-		newSettingsDockerService(t, newTestDockerClient(t, server)),
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-	)
+	svc := NewContainerService(ContainerServiceParams{
+		EventService:  event.NewEventService(db, nil, nil),
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+	})
 
 	out, err := svc.CommitContainer(t.Context(), "container-1", types.ContainerCommitRequest{
 		Tag: "latest",
@@ -689,15 +685,10 @@ func TestContainerServiceResizeExec(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	svc := NewContainerService(
-		event.NewEventService(db, nil, nil),
-		newSettingsDockerService(t, newTestDockerClient(t, server)),
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-	)
+	svc := NewContainerService(ContainerServiceParams{
+		EventService:  event.NewEventService(db, nil, nil),
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+	})
 
 	require.NoError(t, svc.ResizeExec(t.Context(), "exec-1", 120, 40))
 	require.Equal(t, "POST /exec/exec-1/resize", gotPath)
@@ -742,7 +733,11 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	kvService := kv.NewKVService(db)
-	svc := NewContainerService(events, newSettingsDockerService(t, newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
+	svc := NewContainerService(ContainerServiceParams{
+		EventService:  events,
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+		KVService:     kvService,
+	})
 	info := container.InspectResponse{
 		ID:         "old-id",
 		Name:       "/web",
@@ -821,7 +816,11 @@ func TestRecreateContainerRollsBackAfterRequestCancellation(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	kvService := kv.NewKVService(db)
-	svc := NewContainerService(event.NewEventService(db, nil, nil), newSettingsDockerService(t, newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
+	svc := NewContainerService(ContainerServiceParams{
+		EventService:  event.NewEventService(db, nil, nil),
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+		KVService:     kvService,
+	})
 	info := container.InspectResponse{
 		ID:         "old-id",
 		Name:       "/web",
@@ -936,7 +935,10 @@ func TestRecoverInterruptedRedeploys(t *testing.T) {
 				w.WriteHeader(http.StatusNoContent)
 			}))
 			t.Cleanup(server.Close)
-			svc := NewContainerService(nil, newSettingsDockerService(t, newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
+			svc := NewContainerService(ContainerServiceParams{
+				DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+				KVService:     kvService,
+			})
 
 			require.NoError(t, svc.RecoverInterruptedRedeploys(t.Context()))
 
@@ -953,7 +955,9 @@ func TestRecoverInterruptedRedeploys(t *testing.T) {
 func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{}, settings.Env{})
 	require.NoError(t, err)
-	service := NewContainerService(nil, nil, nil, settingsService, nil, nil, nil)
+	service := NewContainerService(ContainerServiceParams{
+		SettingsService: settingsService,
+	})
 	strategyLabel := "com.getarcaneapp.arcane.updater.strategy"
 	containers := []container.Summary{
 		{ID: "first", Image: "app:3.1.0", ImageID: "shared-image"},
@@ -1065,7 +1069,10 @@ func TestContainerServiceGetContainerProcesses(t *testing.T) {
 			t.Cleanup(server.Close)
 			settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{}, settings.Env{})
 			require.NoError(t, err)
-			svc := NewContainerService(nil, newSettingsDockerService(t, newTestDockerClient(t, server)), nil, settingsService, nil, nil, nil)
+			svc := NewContainerService(ContainerServiceParams{
+				DockerService:   newSettingsDockerService(t, newTestDockerClient(t, server)),
+				SettingsService: settingsService,
+			})
 
 			processes, err := svc.GetContainerProcesses(t.Context(), "container-1")
 			wantArgs := []string{strings.Join(containerProcessesPsArgs[0], " ")}
@@ -1093,7 +1100,10 @@ func TestContainerServiceGetContainerProcessesPropagatesContext(t *testing.T) {
 	t.Cleanup(server.Close)
 	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{}, settings.Env{})
 	require.NoError(t, err)
-	svc := NewContainerService(nil, newSettingsDockerService(t, newTestDockerClient(t, server)), nil, settingsService, nil, nil, nil)
+	svc := NewContainerService(ContainerServiceParams{
+		DockerService:   newSettingsDockerService(t, newTestDockerClient(t, server)),
+		SettingsService: settingsService,
+	})
 
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
@@ -1235,15 +1245,15 @@ func newResourceSortService(t *testing.T, fixture *resourceStatsServer) *Contain
 	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
-	return NewContainerService(
-		nil,
-		dockerService,
-		imagedomain.NewImageService(db, dockerService, nil, nil, nil, nil, settingsService, nil, nil),
-		settingsService,
-		nil,
-		nil,
-		nil,
-	)
+	return NewContainerService(ContainerServiceParams{
+		DockerService: dockerService,
+		ImageService: imagedomain.NewImageService(imagedomain.ImageServiceParams{
+			DB:              db,
+			DockerService:   dockerService,
+			SettingsService: settingsService,
+		}),
+		SettingsService: settingsService,
+	})
 }
 
 func resourceSortParams(sort, order string, start, limit int) pagination.QueryParams {
@@ -1414,7 +1424,11 @@ func TestResourceSortCacheExpires(t *testing.T) {
 	fixture.addContainer("web", "web", "running")
 	fixture.setStats("web", 10, 100, 1000)
 	svc := newResourceSortService(t, fixture)
-	svc.stats = stats.New(svc.dockerService.GetClient, svc.dockerService.DockerHost, 50*time.Millisecond, 0, 0)
+	svc.stats = stats.New(stats.Params{
+		GetClient:  svc.dockerService.GetClient,
+		DockerHost: svc.dockerService.DockerHost,
+		CacheTTL:   50 * time.Millisecond,
+	})
 
 	listResourceSorted(t, svc, resourceSortParams(types.ContainerSortMemoryUsage, "desc", 0, 20))
 	time.Sleep(100 * time.Millisecond)
@@ -1466,7 +1480,12 @@ func TestResourceSortBatchTimeoutFailsRequest(t *testing.T) {
 	fixture.setStats("slow", 10, 100, 1000)
 	fixture.delay = time.Second
 	svc := newResourceSortService(t, fixture)
-	svc.stats = stats.New(svc.dockerService.GetClient, svc.dockerService.DockerHost, stats.ContainerResourceSampleTTL, 0, 50*time.Millisecond)
+	svc.stats = stats.New(stats.Params{
+		GetClient:    svc.dockerService.GetClient,
+		DockerHost:   svc.dockerService.DockerHost,
+		CacheTTL:     stats.ContainerResourceSampleTTL,
+		BatchTimeout: 50 * time.Millisecond,
+	})
 
 	_, err := svc.ListContainersPaginated(t.Context(), resourceSortParams(types.ContainerSortMemoryUsage, "desc", 0, 20), true, true, true, "")
 	require.Error(t, err, "batch timeout must fail the refresh instead of presenting a partial sort")
@@ -1480,7 +1499,12 @@ func TestResourceSortPerContainerTimeoutMarksUnavailable(t *testing.T) {
 	fixture.setStats("slow", 10, 200, 1000)
 	fixture.slowIDs["slow"] = true
 	svc := newResourceSortService(t, fixture)
-	svc.stats = stats.New(svc.dockerService.GetClient, svc.dockerService.DockerHost, stats.ContainerResourceSampleTTL, 50*time.Millisecond, 0)
+	svc.stats = stats.New(stats.Params{
+		GetClient:     svc.dockerService.GetClient,
+		DockerHost:    svc.dockerService.DockerHost,
+		CacheTTL:      stats.ContainerResourceSampleTTL,
+		SampleTimeout: 50 * time.Millisecond,
+	})
 
 	result := listResourceSorted(t, svc, resourceSortParams(types.ContainerSortMemoryUsage, "desc", 0, 20))
 	require.Equal(t, []string{"fast", "slow"}, summaryIDs(result.Items))
@@ -1580,15 +1604,10 @@ func newLogsTestService(t *testing.T, tty bool, logsBody []byte, gotQuery *url.V
 	}))
 	t.Cleanup(server.Close)
 
-	return NewContainerService(
-		event.NewEventService(setupProjectTestDB(t), nil, nil),
-		newSettingsDockerService(t, newTestDockerClient(t, server)),
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-	)
+	return NewContainerService(ContainerServiceParams{
+		EventService:  event.NewEventService(setupProjectTestDB(t), nil, nil),
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+	})
 }
 
 func TestContainerServiceDownloadLogsDemultiplexesNonTTY(t *testing.T) {
@@ -1845,14 +1864,10 @@ func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTe
 	t.Cleanup(libpodServer.Close)
 
 	systemd := &quadletTestSystemd{}
-	svc := NewContainerService(
-		event.NewEventService(setupProjectTestDB(t), nil, nil),
-		newSettingsDockerService(t, newTestDockerClient(t, dockerServer)),
-		nil,
-		nil,
-		nil,
-		nil,
-		podman.NewService(podman.Config{
+	svc := NewContainerService(ContainerServiceParams{
+		EventService:  event.NewEventService(setupProjectTestDB(t), nil, nil),
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, dockerServer)),
+		PodmanService: podman.NewService(podman.Config{
 			Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
 				return compat.EngineCompatibilityInfo{Name: "podman"}, nil
 			},
@@ -1861,7 +1876,7 @@ func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTe
 				return systemd
 			},
 		}),
-	)
+	})
 	return svc, systemd, func() []string {
 		mu.Lock()
 		defer mu.Unlock()
@@ -1924,7 +1939,9 @@ func TestPendingContainerCountUsesScopedTagRecords(t *testing.T) {
 		},
 	}
 	require.NoError(t, db.Create(&records).Error)
-	service := &ContainerService{imageService: imagedomain.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil)}
+	service := &ContainerService{imageService: imagedomain.NewImageService(imagedomain.ImageServiceParams{
+		DB: db,
+	})}
 	containers := []container.Summary{
 		{ID: "first", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{labels.LabelUpdateStrategy: "auto"}},
 		{ID: "unchecked", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{labels.LabelUpdateStrategy: "auto"}},

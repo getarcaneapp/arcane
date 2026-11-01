@@ -123,8 +123,18 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 	})}
 	settingsService := newVersionSettingsService(t, true)
 	dockerService := newVersionDockerService(t, settingsService, server)
-	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	svc := NewVersionService(httpClient, "1.2.3", "revision", nil, dockerService, imageUpdateService, settingsService)
+	imageUpdateService := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
+		DB:            db,
+		DockerService: dockerService,
+	})
+	svc := NewVersionService(VersionServiceParams{
+		HTTPClient:         httpClient,
+		AppVersion:         "1.2.3",
+		Revision:           "revision",
+		DockerService:      dockerService,
+		ImageUpdateService: imageUpdateService,
+		SettingsService:    settingsService,
+	})
 
 	info := svc.GetAppVersionInfo(ctx)
 
@@ -139,7 +149,12 @@ func TestVersionService_GetAppVersionInfoDisplaysSemverNextVersion(t *testing.T)
 	settingsService := newVersionSettingsService(t, false)
 	server := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(server.Close)
-	svc := NewVersionService(nil, "2.4.0-next.2", "2c3e44a10ddda540d7e19fc2a876c931fc33a426", nil, newVersionDockerService(t, settingsService, server), nil, settingsService)
+	svc := NewVersionService(VersionServiceParams{
+		AppVersion:      "2.4.0-next.2",
+		Revision:        "2c3e44a10ddda540d7e19fc2a876c931fc33a426",
+		DockerService:   newVersionDockerService(t, settingsService, server),
+		SettingsService: settingsService,
+	})
 
 	info := svc.GetAppVersionInfo(t.Context())
 
@@ -152,7 +167,12 @@ func TestVersionService_GetAppVersionInfoPreservesDevVersion(t *testing.T) {
 	settingsService := newVersionSettingsService(t, false)
 	server := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(server.Close)
-	svc := NewVersionService(nil, "dev", "unknown", nil, newVersionDockerService(t, settingsService, server), nil, settingsService)
+	svc := NewVersionService(VersionServiceParams{
+		AppVersion:      "dev",
+		Revision:        "unknown",
+		DockerService:   newVersionDockerService(t, settingsService, server),
+		SettingsService: settingsService,
+	})
 
 	info := svc.GetAppVersionInfo(t.Context())
 
@@ -232,7 +252,11 @@ func TestVersionService_IsChannelBuild(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewVersionService(nil, tt.version, "rev", nil, nil, nil, newVersionSettingsService(t, false))
+			svc := NewVersionService(VersionServiceParams{
+				AppVersion:      tt.version,
+				Revision:        "rev",
+				SettingsService: newVersionSettingsService(t, false),
+			})
 			assert.Equal(t, tt.want, svc.isChannelBuild(tt.currentTag))
 		})
 	}
@@ -338,9 +362,20 @@ func TestVersionService_GetAppVersionInfoNextChannelUsesImageLabel(t *testing.T)
 	})}
 	settingsService := newVersionSettingsService(t, true)
 	dockerService := newVersionDockerService(t, settingsService, server)
-	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	registrySvc := registry.NewContainerRegistryService(nil, nil, nil, nil)
-	svc := NewVersionService(httpClient, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService, settingsService)
+	imageUpdateService := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
+		DB:            db,
+		DockerService: dockerService,
+	})
+	registrySvc := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{})
+	svc := NewVersionService(VersionServiceParams{
+		HTTPClient:               httpClient,
+		AppVersion:               "2.8.0-next.65",
+		Revision:                 "revision",
+		ContainerRegistryService: registrySvc,
+		DockerService:            dockerService,
+		ImageUpdateService:       imageUpdateService,
+		SettingsService:          settingsService,
+	})
 
 	info := svc.GetAppVersionInfo(ctx)
 
@@ -383,9 +418,19 @@ func TestVersionService_GetAppVersionInfoNextChannelLabelFailureFallsBackToDiges
 
 	settingsService := newVersionSettingsService(t, true)
 	dockerService := newVersionDockerService(t, settingsService, server)
-	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	registrySvc := registry.NewContainerRegistryService(nil, nil, nil, nil)
-	svc := NewVersionService(nil, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService, settingsService)
+	imageUpdateService := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
+		DB:            db,
+		DockerService: dockerService,
+	})
+	registrySvc := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{})
+	svc := NewVersionService(VersionServiceParams{
+		AppVersion:               "2.8.0-next.65",
+		Revision:                 "revision",
+		ContainerRegistryService: registrySvc,
+		DockerService:            dockerService,
+		ImageUpdateService:       imageUpdateService,
+		SettingsService:          settingsService,
+	})
 
 	info := svc.GetAppVersionInfo(ctx)
 
@@ -409,7 +454,13 @@ func TestVersionService_GetAppVersionInfoSuppressesOlderStableForPrerelease(t *t
 	settingsService := newVersionSettingsService(t, true)
 	server := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(server.Close)
-	svc := NewVersionService(httpClient, "2.8.0-rc.1", "revision", nil, newVersionDockerService(t, settingsService, server), nil, settingsService)
+	svc := NewVersionService(VersionServiceParams{
+		HTTPClient:      httpClient,
+		AppVersion:      "2.8.0-rc.1",
+		Revision:        "revision",
+		DockerService:   newVersionDockerService(t, settingsService, server),
+		SettingsService: settingsService,
+	})
 
 	info := svc.GetAppVersionInfo(t.Context())
 
@@ -520,9 +571,20 @@ func TestVersionService_GetAppVersionInfoChannelCommitNotes(t *testing.T) {
 			})}
 			settingsService := newVersionSettingsService(t, true)
 			dockerService := newVersionDockerService(t, settingsService, server)
-			imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-			registrySvc := registry.NewContainerRegistryService(nil, nil, nil, nil)
-			svc := NewVersionService(httpClient, "3.0.0-beta.44", runningRevision, registrySvc, dockerService, imageUpdateService, settingsService)
+			imageUpdateService := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
+				DB:            db,
+				DockerService: dockerService,
+			})
+			registrySvc := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{})
+			svc := NewVersionService(VersionServiceParams{
+				HTTPClient:               httpClient,
+				AppVersion:               "3.0.0-beta.44",
+				Revision:                 runningRevision,
+				ContainerRegistryService: registrySvc,
+				DockerService:            dockerService,
+				ImageUpdateService:       imageUpdateService,
+				SettingsService:          settingsService,
+			})
 
 			info := svc.GetAppVersionInfo(ctx)
 

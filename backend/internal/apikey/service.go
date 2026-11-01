@@ -853,8 +853,8 @@ func (s *ApiKeyService) ListApiKeysByUser(ctx context.Context, userID string) ([
 }
 
 type ApiKeyUpdate struct {
-	Request   types.ApiKey
 	Submitted map[string]bool
+	Request   types.ApiKey
 }
 
 func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.PermissionSet, id string, change ApiKeyUpdate) (*types.ApiKey, error) {

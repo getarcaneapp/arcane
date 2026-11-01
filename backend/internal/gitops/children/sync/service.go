@@ -95,25 +95,27 @@ type (
 	}
 )
 
-func New(
-	db *database.DB,
-	repoService *gitrepo.GitRepositoryService,
-	projectService *projectpkg.ProjectService,
-	swarmService *swarm.SwarmService,
-	eventService *event.EventService,
-	limits func(context.Context, *projectpkg.GitOpsSync) (int, int64, int64),
-	logError func(context.Context, *projectpkg.GitOpsSync, types.Actor, string),
-	unregisterJob func(context.Context, string),
-) *Service {
+type Params struct {
+	DB             *database.DB
+	RepoService    *gitrepo.GitRepositoryService
+	ProjectService *projectpkg.ProjectService
+	SwarmService   *swarm.SwarmService
+	EventService   *event.EventService
+	Limits         func(context.Context, *projectpkg.GitOpsSync) (int, int64, int64)
+	LogError       func(context.Context, *projectpkg.GitOpsSync, types.Actor, string)
+	UnregisterJob  func(context.Context, string)
+}
+
+func New(p Params) *Service {
 	return &Service{
-		db:             db,
-		repoService:    repoService,
-		projectService: projectService,
-		swarmService:   swarmService,
-		eventService:   eventService,
-		limits:         limits,
-		logError:       logError,
-		unregisterJob:  unregisterJob,
+		db:             p.DB,
+		repoService:    p.RepoService,
+		projectService: p.ProjectService,
+		swarmService:   p.SwarmService,
+		eventService:   p.EventService,
+		limits:         p.Limits,
+		logError:       p.LogError,
+		unregisterJob:  p.UnregisterJob,
 	}
 }
 

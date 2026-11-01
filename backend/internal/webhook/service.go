@@ -21,6 +21,7 @@ import (
 	"go.getarcane.app/kit/normalization"
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
+	"go.uber.org/fx"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
@@ -84,23 +85,27 @@ type WebhookService struct {
 	tokenWriteMu sync.Mutex
 }
 
-func NewWebhookService(
-	db *database.DB,
-	containerService *container.ContainerService,
-	updaterService *updater.UpdaterService,
-	projectService *project.ProjectService,
-	gitOpsSyncService *gitops.GitOpsSyncService,
-	eventService *event.EventService,
-	environmentService *environment.EnvironmentService,
-) *WebhookService {
+type WebhookServiceParams struct {
+	fx.In
+
+	DB                 *database.DB
+	ContainerService   *container.ContainerService
+	UpdaterService     *updater.UpdaterService
+	ProjectService     *project.ProjectService
+	GitOpsSyncService  *gitops.GitOpsSyncService
+	EventService       *event.EventService
+	EnvironmentService *environment.EnvironmentService
+}
+
+func NewWebhookService(p WebhookServiceParams) *WebhookService {
 	return &WebhookService{
-		db:                 db,
-		containerService:   containerService,
-		updaterService:     updaterService,
-		projectService:     projectService,
-		gitOpsSyncService:  gitOpsSyncService,
-		eventService:       eventService,
-		environmentService: environmentService,
+		db:                 p.DB,
+		containerService:   p.ContainerService,
+		updaterService:     p.UpdaterService,
+		projectService:     p.ProjectService,
+		gitOpsSyncService:  p.GitOpsSyncService,
+		eventService:       p.EventService,
+		environmentService: p.EnvironmentService,
 	}
 }
 
@@ -293,7 +298,7 @@ func (s *WebhookService) CreateWebhook(
 
 	// Container references can only be resolved against the local Docker daemon;
 	// remote-environment webhooks keep the raw target and resolve on trigger.
-	if targetType == WebhookTargetTypeContainer && !(environmentID != "" && environmentID != types.LocalDockerEnvironmentID) {
+	if targetType == WebhookTargetTypeContainer && (environmentID == "" || environmentID == types.LocalDockerEnvironmentID) {
 		targetRef, err = s.resolveContainerWebhookTargetRef(ctx, targetID)
 		if err != nil {
 			return nil, "", err
@@ -415,7 +420,7 @@ func (s *WebhookService) AggregateWebhookSummaries(ctx context.Context) (types.A
 // remoteWebhookTargetNames fetches target names keyed by target type and ID from a remote environment.
 func (s *WebhookService) remoteWebhookTargetNames(ctx context.Context, environmentID string, webhooks []Webhook) map[string]map[string]string {
 	names := map[string]map[string]string{}
-	if !(environmentID != "" && environmentID != types.LocalDockerEnvironmentID) {
+	if environmentID == "" || environmentID == types.LocalDockerEnvironmentID {
 		return names
 	}
 

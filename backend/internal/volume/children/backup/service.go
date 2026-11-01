@@ -300,9 +300,6 @@ func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger str
 	if strings.TrimSpace(plan.S3DestinationID) == "" {
 		return backupPlan{}, errors.New("select an S3 destination for the volume backup")
 	}
-	if s.deps.S3Destinations == nil {
-		return backupPlan{}, errors.New("S3 backup destinations are unavailable")
-	}
 	if _, err := s.deps.S3Destinations.Configuration(ctx, plan.S3DestinationID); err != nil {
 		return backupPlan{}, errors.New("select a valid S3 destination for the volume backup")
 	}
@@ -627,7 +624,10 @@ func (s *Service) deleteRusticBackups(ctx context.Context, entries []*types.Volu
 			localSnapshotIDs = append(localSnapshotIDs, entry.LocalSnapshotID)
 		}
 		if includeRemote && entry.RemoteSnapshotID != "" {
-			key := remoteRepositoryKey{destinationID: entry.S3DestinationID, instanceID: cmp.Or(strings.TrimSpace(entry.RemoteInstanceID), strings.TrimSpace(s.deps.Settings.GetSettingsConfig().InstanceID.Value))}
+			key := remoteRepositoryKey{
+				destinationID: entry.S3DestinationID,
+				instanceID:    cmp.Or(strings.TrimSpace(entry.RemoteInstanceID), strings.TrimSpace(s.deps.Settings.GetSettingsConfig().InstanceID.Value)),
+			}
 			remoteGroups[key] = append(remoteGroups[key], entry)
 		}
 	}
@@ -911,18 +911,16 @@ func (s *Service) MigrateRepositoryPasswords(ctx context.Context, previousKey, n
 		return err
 	}
 	repositories := []backup.Repository{local}
-	if s.deps.S3Destinations != nil {
-		destinations, listErr := s.deps.S3Destinations.ListAllS3Destinations(ctx)
-		if listErr != nil {
-			return fmt.Errorf("failed to list S3 destinations for re-key: %w", listErr)
+	destinations, listErr := s.deps.S3Destinations.ListAllS3Destinations(ctx)
+	if listErr != nil {
+		return fmt.Errorf("failed to list S3 destinations for re-key: %w", listErr)
+	}
+	for _, destination := range destinations {
+		remote, remoteRusticRepositoryErr := s.remoteRusticRepository(ctx, destination.ID, "")
+		if remoteRusticRepositoryErr != nil {
+			return remoteRusticRepositoryErr
 		}
-		for _, destination := range destinations {
-			remote, remoteRusticRepositoryErr := s.remoteRusticRepository(ctx, destination.ID, "")
-			if remoteRusticRepositoryErr != nil {
-				return remoteRusticRepositoryErr
-			}
-			repositories = append(repositories, remote)
-		}
+		repositories = append(repositories, remote)
 	}
 	legacyPassword := kit.SHA256Hex(legacyVolumePasswordSalt + s.deps.EncryptionKey)
 	if rekeyErr := s.deps.Engine.RekeyRepositories(ctx, dockerClient, repositories, newKey, previousKey, legacyPassword); rekeyErr != nil {

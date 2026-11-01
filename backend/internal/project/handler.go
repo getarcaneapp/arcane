@@ -296,7 +296,12 @@ func (h *ProjectHandler) streamProjectOperation(environmentID, projectID string,
 			}
 			activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, environmentID)
 
-			writer := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, rawWriter, cfg.WriterStep)
+			writer := activitylib.NewWriter(runtimeCtx, activitylib.WriterOptions{
+				Service:     h.activityService,
+				ActivityID:  activityID,
+				Output:      rawWriter,
+				DefaultStep: cfg.WriterStep,
+			})
 
 			opCtx := context.WithValue(runtimeCtx, dockertypes.ProgressWriterKey{}, writer)
 			if err := cfg.Action(opCtx, writer); err != nil {
@@ -736,7 +741,12 @@ func (h *ProjectHandler) runProjectActivityAction(ctx context.Context, environme
 	if cfg.Queue {
 		activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, environmentID)
 	}
-	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, cfg.WriterStep)
+	activityWriter := activitylib.NewWriter(runtimeCtx, activitylib.WriterOptions{
+		Service:     h.activityService,
+		ActivityID:  activityID,
+		Output:      io.Discard,
+		DefaultStep: cfg.WriterStep,
+	})
 	if actionErr := cfg.Action(context.WithValue(runtimeCtx, dockertypes.ProgressWriterKey{}, activityWriter), projectID, *user); actionErr != nil {
 		activitylib.FlushWriter(activityWriter)
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.FailureMessage, actionErr)

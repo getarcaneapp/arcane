@@ -96,8 +96,8 @@ func NewOutputPath() string {
 }
 
 type ResourceLimits struct {
-	Resources containertypes.Resources
 	CPUSet    string
+	Resources containertypes.Resources
 	Apply     bool
 }
 
@@ -105,8 +105,8 @@ type HostConfigOptions struct {
 	CacheVolume  string
 	Runtime      RuntimeOptions
 	SecurityOpts []string
-	Privileged   bool
 	Limits       ResourceLimits
+	Privileged   bool
 }
 
 func BuildHostConfig(opts HostConfigOptions) *containertypes.HostConfig {

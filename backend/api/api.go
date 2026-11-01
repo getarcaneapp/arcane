@@ -178,7 +178,14 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 
 	api := humaecho.NewWithGroup(e, apiGroup, humaConfig)
 
-	api.UseMiddleware(auth.NewHumaMiddleware(api, deps.Auth.Service(), deps.ApiKey.Service(), deps.Role.Service(), deps.Environment.Service(), cfg))
+	api.UseMiddleware(auth.NewHumaMiddleware(auth.HumaMiddlewareParams{
+		API:              api,
+		AuthService:      deps.Auth.Service(),
+		APIKeyService:    deps.ApiKey.Service(),
+		PermResolver:     deps.Role.Service(),
+		EnvTokenResolver: deps.Environment.Service(),
+		Config:           cfg,
+	}))
 	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
 		if actor, ok := userctx.CurrentUserFromContext(ctx.Context()); ok {
 			middleware.RecordAuthenticatedRequest(ctx.Context(), humaecho.Unwrap(ctx).Request().Header, actor)

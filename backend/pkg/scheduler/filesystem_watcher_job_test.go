@@ -91,7 +91,12 @@ func newFilesystemWatcherTestJob(t *testing.T) *FilesystemWatcherJob {
 
 	job, err := NewFilesystemWatcherJob(
 		t.Context(),
-		project.NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, &config.Config{}, kvService, nil),
+		project.NewProjectService(project.ProjectServiceParams{
+			DB:              db,
+			SettingsService: settingsService,
+			Config:          &config.Config{},
+			KVService:       kvService,
+		}),
 		template.NewTemplateService(t.Context(), db, nil, settingsService),
 		settingsService,
 	)

@@ -35,6 +35,7 @@ import (
 	"go.getarcane.app/updater/labels"
 	"go.getarcane.app/updater/pkg/utils/tagpolicy"
 	updatertypes "go.getarcane.app/updater/types"
+	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -336,65 +337,67 @@ func (s *ProjectService) preloadGitOpsComposePaths(ctx context.Context, env *pro
 	}
 }
 
-func NewProjectService(
-	db *database.DB,
-	settingsService *settings.SettingsService,
-	eventService *event.EventService,
-	imageService *image.ImageService,
-	dockerService *dockerInternal.DockerClientService,
-	buildService builder,
-	lifecycleService *LifecycleService,
-	containerRegistryService *registry.ContainerRegistryService,
-	cfg *config.Config,
-	kvService *kv.KVService,
-	registryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error),
-) *ProjectService {
+type ProjectServiceParams struct {
+	DB                          *database.DB
+	SettingsService             *settings.SettingsService
+	EventService                *event.EventService
+	ImageService                *image.ImageService
+	DockerService               *dockerInternal.DockerClientService
+	BuildService                builder
+	LifecycleService            *LifecycleService
+	ContainerRegistryService    *registry.ContainerRegistryService
+	Config                      *config.Config
+	KVService                   *kv.KVService
+	RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
+}
+
+func NewProjectService(p ProjectServiceParams) *ProjectService {
 	var s *ProjectService
 	s = &ProjectService{
 		composeCoordinator: projects.NewCoordinator(types.ComposeCommands{Stop: composeStopProjectServices, Up: composeUpProjectServices, Create: projects.ComposeCreate}),
-		db:                 db,
-		settingsService:    settingsService,
-		eventService:       eventService,
-		imageService:       imageService,
-		dockerService:      dockerService,
-		lifecycleService:   lifecycleService,
-		workspace:          workspace.New(settingsService),
-		details:            projectdetails.New(db, dockerService, imageService, settingsService),
+		db:                 p.DB,
+		settingsService:    p.SettingsService,
+		eventService:       p.EventService,
+		imageService:       p.ImageService,
+		dockerService:      p.DockerService,
+		lifecycleService:   p.LifecycleService,
+		workspace:          workspace.New(p.SettingsService),
+		details:            projectdetails.New(p.DB, p.DockerService, p.ImageService, p.SettingsService),
 		listing: listing.New(
 			func(ctx context.Context) ([]container.Summary, error) { return s.details.ComposeContainers(ctx) },
-			imageService,
+			p.ImageService,
 			func(imageRefs []string, services []types.ProjectRuntimeService, scoped map[string]*types.ImageUpdateInfo) *types.ProjectUpdateInfo {
 				return buildUpdateInfoSummary(imageRefs, projectdetails.MergeProjectContainerUpdateInfo(nil, services, scoped), nil)
 			},
 		),
-		statuses: projectstatus.New(dockerService, func(ctx context.Context) error {
+		statuses: projectstatus.New(p.DockerService, func(ctx context.Context) error {
 			return s.reconcileProjectStatuses(ctx)
 		}),
-		deployment: deployment.New(imageService, dockerService, buildService),
+		deployment: deployment.New(p.ImageService, p.DockerService, p.BuildService),
 		// Rename recovery compares the stored name and path against its journal and rolls the row back.
-		updates: update.New(
-			kvService,
-			dockerService,
-			containerRegistryService,
-			func(ctx context.Context) ([]types.ContainerRegistryCredential, error) {
+		updates: update.New(update.Params{
+			KVService:       p.KVService,
+			DockerService:   p.DockerService,
+			RegistryService: p.ContainerRegistryService,
+			Credentials: func(ctx context.Context) ([]types.ContainerRegistryCredential, error) {
 				return s.ResolveRegistryCredentials(ctx)
 			},
-			func(ctx context.Context, projectID string) (string, string, bool, error) {
+			ProjectState: func(ctx context.Context, projectID string) (string, string, bool, error) {
 				proj, found, err := s.FindProjectByID(ctx, projectID)
 				if err != nil || !found {
 					return "", "", found, err
 				}
 				return proj.Name, proj.Path, true, nil
 			},
-			func(ctx context.Context, journal *types.ProjectRenameJournal) error {
-				return db.WithContext(ctx).Model(&Project{}).Where("id = ?", journal.ProjectID).Updates(map[string]any{
+			RestoreState: func(ctx context.Context, journal *types.ProjectRenameJournal) error {
+				return p.DB.WithContext(ctx).Model(&Project{}).Where("id = ?", journal.ProjectID).Updates(map[string]any{
 					"name": journal.OldName, "path": journal.OldPath, "dir_name": journal.OldDirName,
 				}).Error
 			},
-		),
-		containerRegistryService:    containerRegistryService,
-		config:                      cfg,
-		RegistryCredentialsProvider: registryCredentialsProvider,
+		}),
+		containerRegistryService:    p.ContainerRegistryService,
+		config:                      p.Config,
+		RegistryCredentialsProvider: p.RegistryCredentialsProvider,
 		parsedCompose:               projects.NewParsedComposeCache(),
 		metaCache:                   projects.NewComposeCache[projects.ArcaneComposeMetadata](1024, nil),
 		composeIdentities:           projects.NewComposeCache[types.ComposeIdentity](2048, nil),
@@ -713,7 +716,10 @@ func (s *ProjectService) resolveProjectComposeFile(ctx context.Context, proj *Pr
 				return preloaded, nil
 			}
 			var syncRecord GitOpsSync
-			if err := s.db.WithContext(ctx).Select("compose_path").Where("id = ?", strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy))).First(&syncRecord).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			if err := s.db.WithContext(ctx).
+				Select("compose_path").
+				Where("id = ?", strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy))).
+				First(&syncRecord).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				return "", fmt.Errorf("failed to resolve GitOps compose path for project %s: %w", proj.ID, err)
 			}
 			return syncRecord.ComposePath, nil
@@ -870,22 +876,26 @@ type LifecycleService struct {
 	hooks           *lifecycle.Service
 }
 
+type LifecycleServiceParams struct {
+	fx.In
+
+	DB              *database.DB
+	SettingsService *settings.SettingsService
+	EventService    *event.EventService
+	DockerService   *dockerInternal.DockerClientService
+	ImageService    *image.ImageService
+}
+
 // NewLifecycleService constructs a LifecycleService wired against shared
 // infrastructure. The Docker client is obtained lazily on each hook run via
 // dockerService.GetClient so reconnects are transparent. Runner image pulls go
 // through imageService so configured registry credentials apply.
-func NewLifecycleService(
-	db *database.DB,
-	settingsService *settings.SettingsService,
-	eventService *event.EventService,
-	dockerService *dockerInternal.DockerClientService,
-	imageService *image.ImageService,
-) *LifecycleService {
+func NewLifecycleService(p LifecycleServiceParams) *LifecycleService {
 	return &LifecycleService{
-		db:              db,
-		settingsService: settingsService,
-		eventService:    eventService,
-		hooks:           lifecycle.New(dockerService, imageService),
+		db:              p.DB,
+		settingsService: p.SettingsService,
+		eventService:    p.EventService,
+		hooks:           lifecycle.New(p.DockerService, p.ImageService),
 	}
 }
 
@@ -3672,8 +3682,8 @@ type ProjectTagUpdate struct {
 }
 
 // UpdateProjectTag attaches or detaches a UI-managed tag and rejects Compose-owned names.
-func (s *ProjectService) UpdateProjectTag(ctx context.Context, projectID string, update ProjectTagUpdate, user types.Actor) ([]types.ProjectTag, error) {
-	normalized, normalizedColor, err := tags.NormalizeUpdate(update.Name, update.Color, update.Attached)
+func (s *ProjectService) UpdateProjectTag(ctx context.Context, projectID string, tagUpdate ProjectTagUpdate, user types.Actor) ([]types.ProjectTag, error) {
+	normalized, normalizedColor, err := tags.NormalizeUpdate(tagUpdate.Name, tagUpdate.Color, tagUpdate.Attached)
 	if err != nil {
 		return nil, err
 	}
@@ -3686,14 +3696,14 @@ func (s *ProjectService) UpdateProjectTag(ctx context.Context, projectID string,
 		return tags.ApplyUpdate(tagStore{tx: tx}, projectID, tags.TagUpdate{
 			Name:     normalized,
 			Color:    normalizedColor,
-			Attached: update.Attached,
+			Attached: tagUpdate.Attached,
 		})
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	metadata := database.JSON{"action": "update_tags", "projectID": projectID, "projectName": projectModel.Name, "tag": normalized, "attached": update.Attached}
+	metadata := database.JSON{"action": "update_tags", "projectID": projectID, "projectName": projectModel.Name, "tag": normalized, "attached": tagUpdate.Attached}
 	s.logProjectEvent(ctx, event.EventTypeProjectUpdate, projectID, projectModel.Name, user, metadata, "could not log project tag update")
 	return s.GetProjectTags(ctx, projectID)
 }

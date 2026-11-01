@@ -83,25 +83,27 @@ type Service struct {
 	patchSlot chan struct{}
 }
 
-func NewService(
-	db *database.DB,
-	dockerService *docker.DockerClientService,
-	settingsService *settings.SettingsService,
-	activityService *activity.ActivityService,
-	registryService *registry.ContainerRegistryService,
-	vulnerabilityService *vulnerability.VulnerabilityService,
-) *Service {
+type ServiceParams struct {
+	DB                   *database.DB
+	DockerService        *docker.DockerClientService
+	SettingsService      *settings.SettingsService
+	ActivityService      *activity.ActivityService
+	RegistryService      *registry.ContainerRegistryService
+	VulnerabilityService *vulnerability.VulnerabilityService
+}
+
+func NewService(p ServiceParams) *Service {
 	// Copa logs through the global logrus logger; route it into slog so its
 	// output follows Arcane's log format.
 	logging.InstallLogrusBridge()
 
 	return &Service{
-		db:                   db,
-		dockerService:        dockerService,
-		settingsService:      settingsService,
-		activityService:      activityService,
-		registryService:      registryService,
-		vulnerabilityService: vulnerabilityService,
+		db:                   p.DB,
+		dockerService:        p.DockerService,
+		settingsService:      p.SettingsService,
+		activityService:      p.ActivityService,
+		registryService:      p.RegistryService,
+		vulnerabilityService: p.VulnerabilityService,
 		patchSlot:            make(chan struct{}, 1),
 	}
 }
@@ -357,7 +359,11 @@ func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts t
 	// Mirror copa's log output into the activity while the patch runs; BuildKit
 	// step progress stays quiet until copa exposes a progress writer upstream.
 	s.appendPatchActivity(ctx, activityID, 30, "Patching image packages via BuildKit")
-	patchOut := activitylib.NewWriter(ctx, s.activityService, activityID, nil, "Patching image")
+	patchOut := activitylib.NewWriter(ctx, activitylib.WriterOptions{
+		Service:     s.activityService,
+		ActivityID:  activityID,
+		DefaultStep: "Patching image",
+	})
 	removeMirror := logging.AddLogrusMirror(patchOut)
 	patchErr := patch.Patch(ctx, &copatypes.Options{
 		Image:  copaImageRef,

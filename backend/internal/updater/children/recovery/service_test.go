@@ -43,16 +43,15 @@ func newTestService(t *testing.T, server *httptest.Server, pending func(context.
 	dockerClient, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.41"), client.WithHTTPClient(server.Client()))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dockerClient.Close() })
-	return NewService(
-		newSettingsDockerService(t, dockerClient),
-		unresolvedDigests{},
-		pending,
-		func(context.Context) string { return "" },
-		func(ctx context.Context, _ []string) (context.Context, func(), error) {
+	return NewService(ServiceParams{
+		DockerService:  newSettingsDockerService(t, dockerClient),
+		Images:         unresolvedDigests{},
+		PendingUpdates: pending,
+		ActivityID:     func(context.Context) string { return "" },
+		AcquireUpdate: func(ctx context.Context, _ []string) (context.Context, func(), error) {
 			return ctx, func() {}, nil
 		},
-		nil,
-	)
+	})
 }
 
 func TestFrozenTargetsPreserveAllSelectedContainers(t *testing.T) {

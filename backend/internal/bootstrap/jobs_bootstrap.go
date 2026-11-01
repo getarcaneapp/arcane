@@ -324,29 +324,25 @@ func registerDynamicJobs(params dynamicJobsParams) error {
 	// Volume backups run on the environment that owns the Docker volume. This is
 	// registered on managers and agents; environment proxying persists each policy
 	// in the correct Arcane database.
-	if params.Volume != nil {
-		if err := params.Volume.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
-			return err
-		}
-		params.Volume.RegisterBackupJobsOnStartup(params.AppCtx)
+	if err := params.Volume.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
+		return err
 	}
-	if !params.Config.AgentEnabled && params.System != nil {
+	params.Volume.RegisterBackupJobsOnStartup(params.AppCtx)
+	if !params.Config.AgentEnabled {
 		if err := params.System.SetBackupScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
 			return err
 		}
 		params.System.RegisterBackupJobOnStartup(params.AppCtx)
 	}
 	// GitOps startup submissions wait for Francis in the scheduler start hook.
-	if params.GitOpsSync != nil {
-		if err := params.GitOpsSync.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
-			return err
-		}
+	if err := params.GitOpsSync.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
+		return err
 	}
 
 	// Environment health: one job per enabled environment (manager only). The Jobs
 	// UI still addresses "environment-health" by ID, so bridge its reschedule and
 	// run-now back to EnvironmentService.
-	if !params.Config.AgentEnabled && params.Environment != nil {
+	if !params.Config.AgentEnabled {
 		if err := params.Environment.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
 			return err
 		}

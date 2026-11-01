@@ -188,23 +188,23 @@ func NewService(deps Dependencies) *Service {
 		resolveRuntimeOptions: deps.ResolveRuntimeOptions,
 		jobs:                  jobs,
 		operations:            operations,
-		snapshots: snapshots.NewService(
-			deps.Engine,
-			deps.SQLDB,
-			deps.ActorStore,
-			func(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error) {
+		snapshots: snapshots.NewService(snapshots.ServiceParams{
+			Engine:     deps.Engine,
+			SqlDB:      deps.SQLDB,
+			ActorStore: deps.ActorStore,
+			LocalRepository: func(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error) {
 				return service.localRepository(ctx, dockerClient, readOnly)
 			},
-			func(ctx context.Context, destinationID string) (backup.Repository, error) {
+			RemoteRepository: func(ctx context.Context, destinationID string) (backup.Repository, error) {
 				return service.remoteRepository(ctx, destinationID)
 			},
-			func() (string, error) { return service.databaseFile() },
-			func(ctx context.Context) string {
+			DatabaseFile: func() (string, error) { return service.databaseFile() },
+			ProjectsDirectory: func(ctx context.Context) string {
 				return projects.ResolveConfiguredContainerDirectory(service.settingsService.GetStringSetting(ctx, "projectsDirectory"), "/app/data/projects")
 			},
-			func(ctx context.Context) map[string]string { return service.recoveryEnvironment(ctx) },
-			kit.FromPtr(deps.Config).GitWorkDir,
-		),
+			RecoveryEnvironment: func(ctx context.Context) map[string]string { return service.recoveryEnvironment(ctx) },
+			GitWorkDirectory:    kit.FromPtr(deps.Config).GitWorkDir,
+		}),
 		volumes: volumes.NewService(volumes.Dependencies{
 			DB:             deps.DB,
 			Engine:         deps.Engine,

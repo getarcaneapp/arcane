@@ -6,6 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
+	"go.uber.org/fx"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/build"
@@ -32,24 +33,28 @@ type Module struct {
 	attestationsHandler *attestations.Handler
 }
 
-func New(
-	service *ImageService,
-	dockerService *docker.DockerClientService,
-	imageUpdate *imageupdate.ImageUpdateService,
-	settingsService *settings.SettingsService,
-	buildService *build.BuildService,
-	activityService *activity.ActivityService,
-	uploadService *upload.UploadService,
-) *Module {
+type Params struct {
+	fx.In
+
+	Service         *ImageService
+	DockerService   *docker.DockerClientService
+	ImageUpdate     *imageupdate.ImageUpdateService
+	SettingsService *settings.SettingsService
+	BuildService    *build.BuildService
+	ActivityService *activity.ActivityService
+	UploadService   *upload.UploadService
+}
+
+func New(p Params) *Module {
 	return &Module{
-		service:             service,
-		docker:              dockerService,
-		imageUpdate:         imageUpdate,
-		settings:            settingsService,
-		build:               buildService,
-		activity:            activityService,
-		upload:              uploadService,
-		attestationsHandler: attestations.NewHandler(attestations.NewService(service.dockerService, service.registryService.GetRegistryAuthForImage)),
+		service:             p.Service,
+		docker:              p.DockerService,
+		imageUpdate:         p.ImageUpdate,
+		settings:            p.SettingsService,
+		build:               p.BuildService,
+		activity:            p.ActivityService,
+		upload:              p.UploadService,
+		attestationsHandler: attestations.NewHandler(attestations.NewService(p.Service.dockerService, p.Service.registryService.GetRegistryAuthForImage)),
 	}
 }
 

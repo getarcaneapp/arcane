@@ -24,6 +24,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/fx"
 	"golang.org/x/oauth2"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
@@ -57,26 +58,36 @@ type OidcState struct {
 	RedirectTo   string    `json:"redirect_to"`
 }
 
-func NewOidcService(authService *auth.AuthService, settingsService *settings.SettingsService, cfg *config.Config, httpClient *http.Client, keySetManager *oidcjwk.KeySetManager) *OidcService {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
+type OidcServiceParams struct {
+	fx.In
+
+	AuthService     *auth.AuthService
+	SettingsService *settings.SettingsService
+	Config          *config.Config
+	HTTPClient      *http.Client
+	KeySetManager   *oidcjwk.KeySetManager
+}
+
+func NewOidcService(p OidcServiceParams) *OidcService {
+	if p.HTTPClient == nil {
+		p.HTTPClient = http.DefaultClient
 	}
 
 	return &OidcService{
-		authService:     authService,
-		settingsService: settingsService,
-		config:          cfg,
+		authService:     p.AuthService,
+		settingsService: p.SettingsService,
+		config:          p.Config,
 		httpClient: &http.Client{
-			Transport:     otelhttp.NewTransport(httpClient.Transport),
-			CheckRedirect: httpClient.CheckRedirect,
-			Jar:           httpClient.Jar,
+			Transport:     otelhttp.NewTransport(p.HTTPClient.Transport),
+			CheckRedirect: p.HTTPClient.CheckRedirect,
+			Jar:           p.HTTPClient.Jar,
 		},
 		insecureHttpClient: &http.Client{
-			Transport:     otelhttp.NewTransport(newInsecureTransport(httpClient.Transport)),
-			CheckRedirect: httpClient.CheckRedirect,
-			Jar:           httpClient.Jar,
+			Transport:     otelhttp.NewTransport(newInsecureTransport(p.HTTPClient.Transport)),
+			CheckRedirect: p.HTTPClient.CheckRedirect,
+			Jar:           p.HTTPClient.Jar,
 		},
-		keySetManager: keySetManager,
+		keySetManager: p.KeySetManager,
 		providerCache: hot.NewHotCache[oidcProviderKey, *oidc.Provider](hot.LRU, 4).WithTTL(time.Hour).Build(),
 	}
 }
@@ -172,7 +183,7 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo, origin, m
 	}
 
 	var provider *oidc.Provider
-	if !(oidcConfig.AuthorizationEndpoint != "" || oidcConfig.TokenEndpoint != "" || oidcConfig.UserinfoEndpoint != "") {
+	if oidcConfig.AuthorizationEndpoint == "" && oidcConfig.TokenEndpoint == "" && oidcConfig.UserinfoEndpoint == "" {
 		var discoverProviderErr error
 		provider, discoverProviderErr = s.getOrDiscoverProvider(ctx, oidcConfig)
 		if discoverProviderErr != nil {
@@ -306,7 +317,7 @@ func (s *OidcService) HandleCallback(ctx context.Context, req CallbackRequest) (
 	span.SetAttributes(configAttributes(cfg)...)
 
 	var provider *oidc.Provider
-	if !(cfg.AuthorizationEndpoint != "" || cfg.TokenEndpoint != "" || cfg.UserinfoEndpoint != "") {
+	if cfg.AuthorizationEndpoint == "" && cfg.TokenEndpoint == "" && cfg.UserinfoEndpoint == "" {
 		provider, err = s.getOrDiscoverProvider(ctx, cfg)
 		if err != nil {
 			return nil, nil, err
@@ -609,7 +620,7 @@ func (s *OidcService) ExchangeDeviceToken(ctx context.Context, deviceCode string
 	span.SetAttributes(configAttributes(cfg)...)
 
 	var provider *oidc.Provider
-	if !(cfg.AuthorizationEndpoint != "" || cfg.TokenEndpoint != "" || cfg.UserinfoEndpoint != "") {
+	if cfg.AuthorizationEndpoint == "" && cfg.TokenEndpoint == "" && cfg.UserinfoEndpoint == "" {
 		if provider, err = s.getOrDiscoverProvider(ctx, cfg); err != nil {
 			return nil, nil, err
 		}

@@ -55,21 +55,23 @@ type frozenSingle struct {
 	Persist func() error
 }
 
-func NewService(
-	dockerService *docker.DockerClientService,
-	images remoteDigester,
-	pendingUpdates func(ctx context.Context) ([]updater.ImageUpdateRecord, error),
-	activityID func(ctx context.Context) string,
-	acquireUpdate func(ctx context.Context, ids []string) (context.Context, func(), error),
-	applyPending func(ctx context.Context, options types.UpdaterOptions) (*types.UpdaterResult, error),
-) *Service {
+type ServiceParams struct {
+	DockerService  *docker.DockerClientService
+	Images         remoteDigester
+	PendingUpdates func(ctx context.Context) ([]updater.ImageUpdateRecord, error)
+	ActivityID     func(ctx context.Context) string
+	AcquireUpdate  func(ctx context.Context, ids []string) (context.Context, func(), error)
+	ApplyPending   func(ctx context.Context, options types.UpdaterOptions) (*types.UpdaterResult, error)
+}
+
+func NewService(p ServiceParams) *Service {
 	return &Service{
-		dockerService:  dockerService,
-		images:         images,
-		pendingUpdates: pendingUpdates,
-		activityID:     activityID,
-		acquireUpdate:  acquireUpdate,
-		applyPending:   applyPending,
+		dockerService:  p.DockerService,
+		images:         p.Images,
+		pendingUpdates: p.PendingUpdates,
+		activityID:     p.ActivityID,
+		acquireUpdate:  p.AcquireUpdate,
+		applyPending:   p.ApplyPending,
 	}
 }
 

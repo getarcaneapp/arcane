@@ -22,6 +22,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"go.uber.org/fx"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
@@ -63,19 +64,23 @@ type FederatedCredentialService struct {
 	providerMu      sync.RWMutex
 }
 
-func NewFederatedCredentialService(
-	db *database.DB,
-	authService *auth.AuthService,
-	userService *user.UserService,
-	settingsService *settings.SettingsService,
-	eventService *event.EventService,
-	httpClient *http.Client,
-	keySetManager *oidcjwk.KeySetManager,
-	roleService *role.RoleService,
-) *FederatedCredentialService {
+type FederatedCredentialServiceParams struct {
+	fx.In
+
+	DB              *database.DB
+	AuthService     *auth.AuthService
+	UserService     *user.UserService
+	SettingsService *settings.SettingsService
+	EventService    *event.EventService
+	HTTPClient      *http.Client
+	KeySetManager   *oidcjwk.KeySetManager
+	RoleService     *role.RoleService
+}
+
+func NewFederatedCredentialService(p FederatedCredentialServiceParams) *FederatedCredentialService {
 	client := httpx.NewHTTPClient(types.HTTPClientOptions{Timeout: 15 * time.Second, TLSHandshakeTimeout: 10 * time.Second})
-	if httpClient != nil {
-		copied := *httpClient
+	if p.HTTPClient != nil {
+		copied := *p.HTTPClient
 		client = &copied
 	}
 	client.Transport = otelhttp.NewTransport(client.Transport)
@@ -87,14 +92,14 @@ func NewFederatedCredentialService(
 	}
 
 	return &FederatedCredentialService{
-		db:              db,
-		authService:     authService,
-		userService:     userService,
-		settingsService: settingsService,
-		eventService:    eventService,
+		db:              p.DB,
+		authService:     p.AuthService,
+		userService:     p.UserService,
+		settingsService: p.SettingsService,
+		eventService:    p.EventService,
 		httpClient:      client,
-		keySetManager:   keySetManager,
-		roleService:     roleService,
+		keySetManager:   p.KeySetManager,
+		roleService:     p.RoleService,
 		keySets:         make(map[string]oidc.KeySet),
 		exchanges:       exchanges,
 	}
@@ -203,8 +208,8 @@ func findCredential(query *gorm.DB, id string) (FederatedCredential, error) {
 }
 
 type CredentialUpdate struct {
-	Request   types.FederatedCredential
 	Submitted map[string]bool
+	Request   types.FederatedCredential
 }
 
 func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID, id string, change CredentialUpdate) (*types.FederatedCredential, error) {

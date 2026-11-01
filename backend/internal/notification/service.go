@@ -23,6 +23,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
@@ -125,22 +126,26 @@ func logManagerDispatchNotification(ctx context.Context, target NotificationTarg
 	)
 }
 
-func NewNotificationService(
-	db *database.DB,
-	cfg *config.Config,
-	environmentSvc *environment.EnvironmentService,
-	eventSvc *event.EventService,
-	apnsSvc *apns.ApnsService,
-	settingsService *settings.SettingsService,
-) *NotificationService {
+type NotificationServiceParams struct {
+	fx.In
+
+	DB              *database.DB
+	Config          *config.Config
+	EnvironmentSvc  *environment.EnvironmentService
+	EventSvc        *event.EventService
+	APNSSvc         *apns.ApnsService
+	SettingsService *settings.SettingsService
+}
+
+func NewNotificationService(p NotificationServiceParams) *NotificationService {
 	return &NotificationService{
-		db:              db,
-		config:          cfg,
-		environmentSvc:  environmentSvc,
-		eventSvc:        eventSvc,
-		apnsSvc:         apnsSvc,
-		settingsService: settingsService,
-		templates:       templates.NewService(cfg.GetAppURL),
+		db:              p.DB,
+		config:          p.Config,
+		environmentSvc:  p.EnvironmentSvc,
+		eventSvc:        p.EventSvc,
+		apnsSvc:         p.APNSSvc,
+		settingsService: p.SettingsService,
+		templates:       templates.NewService(p.Config.GetAppURL),
 		httpClient:      &http.Client{Timeout: 15 * time.Second},
 	}
 }

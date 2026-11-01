@@ -21,6 +21,7 @@ import (
 	"github.com/samber/hot"
 	"go.getarcane.app/kit/normalization"
 	"go.getarcane.app/kit/pkg"
+	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
@@ -107,26 +108,30 @@ func (s *AuthService) dummyPasswordHash(ctx context.Context) (string, error) {
 	return hash, nil
 }
 
-func NewAuthService(
-	userService *user.UserService,
-	settingsService *settings.SettingsService,
-	eventService *event.EventService,
-	sessionService *session.SessionService,
-	roleService *role.RoleService,
-	environmentService *environment.EnvironmentService,
-	versionService *version.VersionService,
-	cfg *config.Config,
-) *AuthService {
+type AuthServiceParams struct {
+	fx.In
+
+	UserService        *user.UserService
+	SettingsService    *settings.SettingsService
+	EventService       *event.EventService
+	SessionService     *session.SessionService
+	RoleService        *role.RoleService
+	EnvironmentService *environment.EnvironmentService
+	VersionService     *version.VersionService
+	Config             *config.Config
+}
+
+func NewAuthService(p AuthServiceParams) *AuthService {
 	return &AuthService{
-		userService:        userService,
-		settingsService:    settingsService,
-		eventService:       eventService,
-		sessionService:     sessionService,
-		roleService:        roleService,
-		environmentService: environmentService,
-		versionService:     versionService,
-		refreshExpiry:      cfg.JWTRefreshExpiry,
-		config:             cfg,
+		userService:        p.UserService,
+		settingsService:    p.SettingsService,
+		eventService:       p.EventService,
+		sessionService:     p.SessionService,
+		roleService:        p.RoleService,
+		environmentService: p.EnvironmentService,
+		versionService:     p.VersionService,
+		refreshExpiry:      p.Config.JWTRefreshExpiry,
+		config:             p.Config,
 		tokenCache: hot.NewHotCache[string, verifiedTokenEntry](hot.LRU, 4096).
 			WithTTL(60 * time.Second).
 			WithJanitor().

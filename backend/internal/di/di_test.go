@@ -194,7 +194,13 @@ func TestDockerEventLifecycle(t *testing.T) {
 			require.NoError(t, err)
 			lifecycle := fxtest.NewLifecycle(t)
 			eventService := event.NewEventService(databaseDB, cfg, nil)
-			provideDockerClientService(t.Context(), lifecycle, databaseDB, settingsService, eventService)
+			provideDockerClientService(dockerClientServiceParams{
+				Ctx:           t.Context(),
+				Lifecycle:     lifecycle,
+				DB:            databaseDB,
+				LocalSettings: settingsService,
+				EventService:  eventService,
+			})
 			t.Cleanup(func() {
 				ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 3*time.Second)
 				defer cancel()

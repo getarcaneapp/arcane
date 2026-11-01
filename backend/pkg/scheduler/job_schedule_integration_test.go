@@ -36,15 +36,17 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	jobCoordinator := runs.New(kv.NewKVService(db), jobRuntime.Service(), appConfig.GetLocation())
 	require.NoError(t, jobCoordinator.Register(jobRuntime))
 	francistest.Start(t, jobRuntime)
-	jobService := job.NewJobService(
-		db,
-		settingsService,
-		appConfig,
-		jobCoordinator,
-		role.NewRoleService(db),
-		environment.NewEnvironmentService(db, nil, nil, nil, nil),
-		activity.NewActivityService(db, settingsService),
-	)
+	jobService := job.NewJobService(job.JobServiceParams{
+		DB:            db,
+		LocalSettings: settingsService,
+		Config:        appConfig,
+		Coordinator:   jobCoordinator,
+		Roles:         role.NewRoleService(db),
+		LocalEnvironment: environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+			DB: db,
+		}),
+		LocalActivity: activity.NewActivityService(db, settingsService),
+	})
 	jobService.SetScheduler(lifecycleCtx, jobScheduler)
 	require.NoError(t, jobScheduler.StartScheduler(t.Context()))
 
@@ -87,15 +89,17 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	restartCoordinator := runs.New(kv.NewKVService(restartDB), restartRuntime.Service(), appConfig.GetLocation())
 	require.NoError(t, restartCoordinator.Register(restartRuntime))
 	francistest.Start(t, restartRuntime)
-	restartJobService := job.NewJobService(
-		restartDB,
-		restartSettingsService,
-		appConfig,
-		restartCoordinator,
-		role.NewRoleService(restartDB),
-		environment.NewEnvironmentService(restartDB, nil, nil, nil, nil),
-		activity.NewActivityService(restartDB, restartSettingsService),
-	)
+	restartJobService := job.NewJobService(job.JobServiceParams{
+		DB:            restartDB,
+		LocalSettings: restartSettingsService,
+		Config:        appConfig,
+		Coordinator:   restartCoordinator,
+		Roles:         role.NewRoleService(restartDB),
+		LocalEnvironment: environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+			DB: restartDB,
+		}),
+		LocalActivity: activity.NewActivityService(restartDB, restartSettingsService),
+	})
 	restartJobService.SetScheduler(restartLifecycleCtx, restartScheduler)
 	require.NoError(t, restartScheduler.StartScheduler(t.Context()))
 	t.Cleanup(func() {

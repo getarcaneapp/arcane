@@ -19,6 +19,7 @@ import (
 	"github.com/moby/moby/api/types/system"
 	"github.com/moby/moby/client"
 	kit "go.getarcane.app/kit/pkg"
+	"go.uber.org/fx"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
@@ -54,25 +55,37 @@ type SwarmService struct {
 	secrets  *secrets.Service
 }
 
-func NewSwarmService(
-	dockerService *docker.DockerClientService,
-	settingsService *settings.SettingsService,
-	kvService *kv.KVService,
-	registryService *registry.ContainerRegistryService,
-	environmentService *environment.EnvironmentService,
-) *SwarmService {
-	s := &SwarmService{dockerService: dockerService, kvService: kvService}
+type SwarmServiceParams struct {
+	fx.In
 
-	var registryAuth func(context.Context, string) (string, error)
-	if registryService != nil {
-		registryAuth = registryService.GetRegistryAuthForImage
-	}
+	DockerService      *docker.DockerClientService
+	SettingsService    *settings.SettingsService
+	KVService          *kv.KVService
+	RegistryService    *registry.ContainerRegistryService
+	EnvironmentService *environment.EnvironmentService
+}
 
-	s.services = services.NewService(dockerService, s.ensureSwarmManager, s.listTasksPaginatedWithFilters)
-	s.nodes = nodes.NewService(dockerService, s.ensureSwarmManager, s.listTasksPaginatedWithFilters, s.GetSwarmJoinTokens, environmentService)
-	s.stacks = stacks.NewService(dockerService, s.ensureSwarmManager, s.listTasksPaginatedWithFilters, s.services.PaginateSummaries, registryAuth, settingsService)
-	s.configs = configs.NewService(dockerService, s.ensureSwarmManager)
-	s.secrets = secrets.NewService(dockerService, s.ensureSwarmManager)
+func NewSwarmService(p SwarmServiceParams) *SwarmService {
+	s := &SwarmService{dockerService: p.DockerService, kvService: p.KVService}
+
+	s.services = services.NewService(p.DockerService, s.ensureSwarmManager, s.listTasksPaginatedWithFilters)
+	s.nodes = nodes.NewService(nodes.ServiceParams{
+		DockerService:      p.DockerService,
+		EnsureManager:      s.ensureSwarmManager,
+		ListTasks:          s.listTasksPaginatedWithFilters,
+		LocalJoinTokens:    s.GetSwarmJoinTokens,
+		EnvironmentService: p.EnvironmentService,
+	})
+	s.stacks = stacks.NewService(stacks.ServiceParams{
+		DockerService:    p.DockerService,
+		EnsureManager:    s.ensureSwarmManager,
+		ListTasks:        s.listTasksPaginatedWithFilters,
+		PaginateServices: s.services.PaginateSummaries,
+		RegistryAuth:     p.RegistryService.GetRegistryAuthForImage,
+		SettingsService:  p.SettingsService,
+	})
+	s.configs = configs.NewService(p.DockerService, s.ensureSwarmManager)
+	s.secrets = secrets.NewService(p.DockerService, s.ensureSwarmManager)
 	return s
 }
 

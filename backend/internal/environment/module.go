@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
+	"go.uber.org/fx"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
@@ -23,17 +24,28 @@ type Module struct {
 	handler *EnvironmentHandler
 }
 
-func New(
-	service *EnvironmentService,
-	settingsService *settings.SettingsService,
-	apiKey *apikey.ApiKeyService,
-	eventService *event.EventService,
-	cfg *config.Config,
-	activityService activity.Service,
-) *Module {
+type Params struct {
+	fx.In
+
+	Service         *EnvironmentService
+	SettingsService *settings.SettingsService
+	APIKey          *apikey.ApiKeyService
+	EventService    *event.EventService
+	Config          *config.Config
+	ActivityService activity.Service
+}
+
+func New(p Params) *Module {
 	return &Module{
-		service: service,
-		handler: NewHandler(service, settingsService, apiKey, eventService, cfg, activityService),
+		service: p.Service,
+		handler: NewHandler(HandlerParams{
+			EnvironmentService: p.Service,
+			SettingsService:    p.SettingsService,
+			APIKeyService:      p.APIKey,
+			EventService:       p.EventService,
+			Config:             p.Config,
+			ActivityService:    p.ActivityService,
+		}),
 	}
 }
 
@@ -54,7 +66,7 @@ func (m *Module) Handler() *EnvironmentHandler {
 // RegisterRoutes registers the environment endpoints; localVersion answers version requests for the local environment.
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext, localVersion func(context.Context) *types.VersionInfo) {
 	if m == nil {
-		RegisterEnvironments(api, NewHandler(nil, nil, nil, nil, nil, nil))
+		RegisterEnvironments(api, NewHandler(HandlerParams{}))
 		return
 	}
 	*m.handler = EnvironmentHandler{ //exhaustruct:enforce

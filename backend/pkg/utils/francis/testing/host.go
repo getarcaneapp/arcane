@@ -40,7 +40,13 @@ func New(t stdtesting.TB, databaseURLs ...string) *francis.Runtime {
 	} else {
 		options = append(options, local.WithStandaloneMemoryProvider(standalone.StandaloneMemoryOptions{}))
 	}
-	runtime, err := francis.New(databaseURL, "arcane-test-actor-key-32-characters", "test", port, options...)
+	runtime, err := francis.New(francis.Config{
+		DatabaseURL:   databaseURL,
+		EncryptionKey: "arcane-test-actor-key-32-characters",
+		InstanceID:    "test",
+		Port:          port,
+		HostOptions:   options,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

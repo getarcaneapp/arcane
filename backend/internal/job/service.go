@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/fx"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
@@ -74,15 +75,19 @@ type JobService struct {
 	activityMu                    sync.Mutex
 }
 
-func NewJobService(
-	db *database.DB,
-	localSettings *settings.SettingsService,
-	cfg *config.Config,
-	coordinator *runs.Coordinator,
-	roles *role.RoleService,
-	localEnvironment *environment.EnvironmentService,
-	localActivity *activity.ActivityService,
-) *JobService {
+type JobServiceParams struct {
+	fx.In
+
+	DB               *database.DB
+	LocalSettings    *settings.SettingsService
+	Config           *config.Config
+	Coordinator      *runs.Coordinator
+	Roles            *role.RoleService
+	LocalEnvironment *environment.EnvironmentService
+	LocalActivity    *activity.ActivityService
+}
+
+func NewJobService(p JobServiceParams) *JobService {
 	meter := otel.Meter(tracing.InstrumentationName)
 	runCount, runCountErr := meter.Int64Counter("arcane.job.runs",
 		metric.WithDescription("Executed job runs by outcome"), metric.WithUnit("{run}"))
@@ -96,21 +101,21 @@ func NewJobService(
 	}
 
 	service := &JobService{
-		activity:    localActivity,
-		runs:        coordinator,
-		remote:      remote.New(coordinator, kv.NewKVService(db), localEnvironment),
-		environment: localEnvironment,
-		roles:       roles,
-		db:          db,
-		settings:    localSettings,
-		cfg:         cfg,
-		location:    cfg.GetLocation(),
+		activity:    p.LocalActivity,
+		runs:        p.Coordinator,
+		remote:      remote.New(p.Coordinator, kv.NewKVService(p.DB), p.LocalEnvironment),
+		environment: p.LocalEnvironment,
+		roles:       p.Roles,
+		db:          p.DB,
+		settings:    p.LocalSettings,
+		cfg:         p.Config,
+		location:    p.Config.GetLocation(),
 		runCount:    runCount,
 		runDuration: runDuration,
 		activeRuns:  activeRuns,
 	}
-	coordinator.SetExecutor(service.executeRun, service.reconcileRun)
-	coordinator.SetObserver(service)
+	p.Coordinator.SetExecutor(service.executeRun, service.reconcileRun)
+	p.Coordinator.SetObserver(service)
 	return service
 }
 
@@ -511,7 +516,7 @@ func (s *JobService) validateLocalJob(ctx context.Context, jobID string) error {
 		if s.cfg.AgentEnabled && metadata.ManagerOnly {
 			return errors.New("job is manager-only")
 		}
-		if !(metadata.EnabledKey == "" || s.settings.GetBoolSetting(ctx, metadata.EnabledKey)) {
+		if metadata.EnabledKey != "" && !s.settings.GetBoolSetting(ctx, metadata.EnabledKey) {
 			return errors.New("job is disabled")
 		}
 		if slices.ContainsFunc(s.evaluatePrerequisites(ctx, metadata), func(prereq types.JobPrerequisite) bool { return !prereq.IsMet }) {

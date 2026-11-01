@@ -26,6 +26,7 @@ import (
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/pkg/utils/tagpolicy"
+	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
@@ -84,26 +85,37 @@ type imageUpdateRecordKey struct {
 	tag        string
 }
 
-func NewImageService(
-	db *database.DB,
-	dockerService *dockerInternal.DockerClientService,
-	registryService *registry.ContainerRegistryService,
-	imageUpdateService *imageupdate.ImageUpdateService,
-	vulnerabilityService *vulnerability.VulnerabilityService,
-	eventService *event.EventService,
-	settingsService *settings.SettingsService,
-	activityService *activity.ActivityService,
-	cfg *config.Config,
-) *ImageService {
+type ImageServiceParams struct {
+	fx.In
+
+	DB                   *database.DB
+	DockerService        *dockerInternal.DockerClientService
+	RegistryService      *registry.ContainerRegistryService
+	ImageUpdateService   *imageupdate.ImageUpdateService
+	VulnerabilityService *vulnerability.VulnerabilityService
+	EventService         *event.EventService
+	SettingsService      *settings.SettingsService
+	ActivityService      *activity.ActivityService
+	Config               *config.Config
+}
+
+func NewImageService(p ImageServiceParams) *ImageService {
 	return &ImageService{
-		db:                   db,
-		dockerService:        dockerService,
-		registryService:      registryService,
-		imageUpdateService:   imageUpdateService,
-		vulnerabilityService: vulnerabilityService,
-		eventService:         eventService,
-		settingsService:      settingsService,
-		patch:                patch.NewService(db, dockerService, settingsService, activityService, registryService, vulnerabilityService),
+		db:                   p.DB,
+		dockerService:        p.DockerService,
+		registryService:      p.RegistryService,
+		imageUpdateService:   p.ImageUpdateService,
+		vulnerabilityService: p.VulnerabilityService,
+		eventService:         p.EventService,
+		settingsService:      p.SettingsService,
+		patch: patch.NewService(patch.ServiceParams{
+			DB:                   p.DB,
+			DockerService:        p.DockerService,
+			SettingsService:      p.SettingsService,
+			ActivityService:      p.ActivityService,
+			RegistryService:      p.RegistryService,
+			VulnerabilityService: p.VulnerabilityService,
+		}),
 		projectIDCache: hot.NewHotCache[struct{}, map[string]string](hot.LRU, 1).
 			WithTTL(projectIDCacheTTL).
 			Build(),

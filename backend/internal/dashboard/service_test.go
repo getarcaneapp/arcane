@@ -91,7 +91,17 @@ func TestDashboardService_ReportsPodmanPods(t *testing.T) {
 	}))
 	t.Cleanup(libpodServer.Close)
 
-	svc := NewDashboardService(dockerSvc, project.NewProjectService(db, settingsSvc, nil, nil, dockerSvc, nil, nil, nil, &config.Config{}, nil, nil), volume.NewVolumeService(db, dockerSvc, nil, settingsSvc, nil, nil, nil, nil, &config.Config{}, nil), podman.NewService(podman.Config{
+	svc := NewDashboardService(dockerSvc, project.NewProjectService(project.ProjectServiceParams{
+		DB:              db,
+		SettingsService: settingsSvc,
+		DockerService:   dockerSvc,
+		Config:          &config.Config{},
+	}), volume.NewVolumeService(volume.VolumeServiceParams{
+		DB:              db,
+		DockerService:   dockerSvc,
+		SettingsService: settingsSvc,
+		Config:          &config.Config{},
+	}), podman.NewService(podman.Config{
 		Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
 			return compat.EngineCompatibilityInfo{Name: "podman"}, nil
 		},

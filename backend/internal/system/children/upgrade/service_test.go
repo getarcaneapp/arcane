@@ -42,7 +42,7 @@ func newUnreachableDockerService(t *testing.T) *dockerInternal.DockerClientServi
 
 // TestService_UpgradeFlag tests the upgrading flag behavior
 func TestService_UpgradeFlag(t *testing.T) {
-	s := NewService(nil, nil, nil, nil, nil, nil, nil, nil, false)
+	s := NewService(ServiceParams{})
 
 	// Initially should be false
 	require.False(t, s.upgrading.Load())
@@ -58,7 +58,7 @@ func TestService_UpgradeFlag(t *testing.T) {
 
 // TestService_Initialization tests proper initialization
 func TestService_Initialization(t *testing.T) {
-	s := NewService(nil, nil, nil, nil, nil, nil, nil, nil, false)
+	s := NewService(ServiceParams{})
 
 	require.NotNil(t, s)
 	require.False(t, s.upgrading.Load())
@@ -82,7 +82,7 @@ func TestService_ErrorVariables(t *testing.T) {
 
 // TestService_UpgradingFlag_ConcurrentAccess tests upgrading flag
 func TestService_UpgradingFlag_ConcurrentAccess(t *testing.T) {
-	s := NewService(nil, nil, nil, nil, nil, nil, nil, nil, false)
+	s := NewService(ServiceParams{})
 
 	// Test initial state
 	require.False(t, s.upgrading.Load(), "upgrading flag should start as false")
@@ -98,7 +98,7 @@ func TestService_UpgradingFlag_ConcurrentAccess(t *testing.T) {
 
 // TestService_CompareAndSwap tests atomic CompareAndSwap operation
 func TestService_CompareAndSwap(t *testing.T) {
-	s := NewService(nil, nil, nil, nil, nil, nil, nil, nil, false)
+	s := NewService(ServiceParams{})
 
 	// Test successful CompareAndSwap from false to true
 	swapped := s.upgrading.CompareAndSwap(false, true)
@@ -119,7 +119,7 @@ func TestService_CompareAndSwap(t *testing.T) {
 // TestService_Services tests that services are stored correctly
 func TestService_Services(t *testing.T) {
 	// Create upgrade service with nil services (valid for testing initialization)
-	s := NewService(nil, nil, nil, nil, nil, nil, nil, nil, false)
+	s := NewService(ServiceParams{})
 
 	// Verify service is created and initialized properly
 	require.NotNil(t, s)
@@ -128,7 +128,7 @@ func TestService_Services(t *testing.T) {
 
 // TestService_ConcurrentUpgradeAttempts tests that concurrent upgrade attempts are prevented
 func TestService_ConcurrentUpgradeAttempts(t *testing.T) {
-	s := NewService(nil, nil, nil, nil, nil, nil, nil, nil, false)
+	s := NewService(ServiceParams{})
 
 	// Simulate first upgrade starting
 	success := s.upgrading.CompareAndSwap(false, true)
@@ -159,7 +159,7 @@ func TestService_UpgradeInProgressError(t *testing.T) {
 
 // TestService_AtomicOperations tests atomic.Bool operations
 func TestService_AtomicOperations(t *testing.T) {
-	s := NewService(nil, nil, nil, nil, nil, nil, nil, nil, false)
+	s := NewService(ServiceParams{})
 
 	// Test Load
 	require.False(t, s.upgrading.Load())
@@ -358,7 +358,14 @@ func TestResolveSelfUpgradeTargetImage(t *testing.T) {
 				}
 				require.NoError(t, db.Create(&project.Project{ID: "project-arcane", Name: "arcane", Path: projectPath}).Error)
 			}
-			svc := NewService(db, nil, nil, nil, nil, project.NewProjectService(db, settingsSvc, nil, nil, newUnreachableDockerService(t), nil, nil, nil, nil, nil, nil), nil, nil, false)
+			svc := NewService(ServiceParams{
+				DB: db,
+				ProjectService: project.NewProjectService(project.ProjectServiceParams{
+					DB:              db,
+					SettingsService: settingsSvc,
+					DockerService:   newUnreachableDockerService(t),
+				}),
+			})
 			current := container.InspectResponse{Config: &container.Config{
 				Image:  tt.runtime,
 				Labels: map[string]string{"com.docker.compose.project": "arcane", "com.docker.compose.service": "server"},
@@ -503,7 +510,10 @@ func TestUpgradeJobFailedJobMarksUnfinishedResultsFailed(t *testing.T) {
 	db := &database.DB{DB: gormDB}
 	require.NoError(t, db.AutoMigrate(&UpgradeJob{}, &event.Event{}))
 
-	svc := NewService(db, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil, nil, false)
+	svc := NewService(ServiceParams{
+		DB:           db,
+		EventService: event.NewEventService(db, nil, nil),
+	})
 	job := &UpgradeJob{
 		Status:   UpgradeJobStatusRunning,
 		UserID:   "user-1",
@@ -552,7 +562,10 @@ func TestUpgradeJobFinalizesUpToDateManagerWithoutRestart(t *testing.T) {
 	db := &database.DB{DB: gormDB}
 	require.NoError(t, db.AutoMigrate(&UpgradeJob{}, &event.Event{}))
 
-	svc := NewService(db, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil, nil, false)
+	svc := NewService(ServiceParams{
+		DB:           db,
+		EventService: event.NewEventService(db, nil, nil),
+	})
 	job := &UpgradeJob{
 		Status:                UpgradeJobStatusPendingRestart,
 		UserID:                "user-1",
@@ -597,7 +610,9 @@ func TestUpgradeJobStageChangesPersist(t *testing.T) {
 	db := &database.DB{DB: gormDB}
 	require.NoError(t, db.AutoMigrate(&UpgradeJob{}))
 
-	svc := NewService(db, nil, nil, nil, nil, nil, nil, nil, false)
+	svc := NewService(ServiceParams{
+		DB: db,
+	})
 	job := &UpgradeJob{
 		Status: UpgradeJobStatusRunning,
 		Results: UpgradeJobResults{
@@ -699,8 +714,16 @@ func TestResumeUpgradeJobFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, versionSettings.Stop(context.WithoutCancel(t.Context()))) })
 	require.NoError(t, versionSettings.SetBoolSetting(ctx, "updateCheckEnabled", false))
 
-	versionSvc := version.NewVersionService(nil, "v9.9.9-new", "", nil, newUnreachableDockerService(t), nil, versionSettings)
-	svc := NewService(db, nil, versionSvc, event.NewEventService(db, nil, nil), nil, nil, nil, nil, false)
+	versionSvc := version.NewVersionService(version.VersionServiceParams{
+		AppVersion:      "v9.9.9-new",
+		DockerService:   newUnreachableDockerService(t),
+		SettingsService: versionSettings,
+	})
+	svc := NewService(ServiceParams{
+		DB:             db,
+		VersionService: versionSvc,
+		EventService:   event.NewEventService(db, nil, nil),
+	})
 	harness := flowtest.New(t, nil)
 	require.NoError(t, svc.RegisterWorkflows(harness.Engine, nil, nil))
 	harness.Start(t)
@@ -776,7 +799,7 @@ func TestSeedUpgradeResults(t *testing.T) {
 }
 
 func TestStreamProgressServesRetainedRunBeforeLogReplay(t *testing.T) {
-	svc := NewService(nil, nil, nil, nil, nil, nil, nil, nil, false)
+	svc := NewService(ServiceParams{})
 	svc.progress.start("v1.0.0", "v1.1.0")
 	svc.progress.emit(types.UpgradeProgressEventLog, 10, "Pulling fs layer")
 	svc.progress.finish("pull upgrader image: denied")
@@ -793,7 +816,9 @@ func TestStreamProgressServesRetainedRunBeforeLogReplay(t *testing.T) {
 }
 
 func TestFollowUpgraderKeepsFeedActiveWhenLogsFail(t *testing.T) {
-	svc := NewService(nil, newUnreachableDockerService(t), nil, nil, nil, nil, nil, nil, false)
+	svc := NewService(ServiceParams{
+		DockerService: newUnreachableDockerService(t),
+	})
 	svc.progress.start("v1.0.0", "v1.1.0")
 	_, live, _, unsubscribe := svc.progress.subscribe()
 	defer unsubscribe()
@@ -832,7 +857,9 @@ func TestProgressSinkReplaysWithoutDuplicatingLogs(t *testing.T) {
 	db := &database.DB{DB: gormDB}
 	require.NoError(t, db.AutoMigrate(&UpgradeJob{}))
 
-	svc := NewService(db, nil, nil, nil, nil, nil, nil, nil, false)
+	svc := NewService(ServiceParams{
+		DB: db,
+	})
 	job := &UpgradeJob{
 		Status: UpgradeJobStatusRunning,
 		Results: UpgradeJobResults{
@@ -869,7 +896,9 @@ func TestManagerOnlyUpgradeJobReachesManagerStep(t *testing.T) {
 	db := &database.DB{DB: gormDB}
 	require.NoError(t, db.AutoMigrate(&UpgradeJob{}))
 
-	svc := NewService(db, nil, nil, nil, nil, nil, nil, nil, false)
+	svc := NewService(ServiceParams{
+		DB: db,
+	})
 	harness := flowtest.New(t, nil)
 	require.NoError(t, svc.RegisterWorkflows(harness.Engine, nil, nil))
 	harness.Start(t)
@@ -905,7 +934,10 @@ func TestAcquireAgentSlotHonorsParallelSetting(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, settingsSvc.Stop(context.WithoutCancel(t.Context()))) })
 	require.NoError(t, settingsSvc.SetIntSetting(ctx, "upgradeMaxParallelAgents", 1))
 
-	svc := NewService(db, nil, nil, nil, settingsSvc, nil, nil, nil, false)
+	svc := NewService(ServiceParams{
+		DB:              db,
+		SettingsService: settingsSvc,
+	})
 	release := svc.acquireAgentSlot(ctx)
 
 	waitCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)

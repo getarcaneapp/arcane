@@ -339,17 +339,17 @@ func ApplyLenientLoaderOptions(ctx context.Context, opts *loader.Options, compos
 type PrepareProjectFunc func(ctx context.Context, project *composetypes.Project) error
 
 type LoadOptions struct {
-	ComposeFile       string
-	ProjectName       string
-	ProjectsDirectory string
-	AutoInjectEnv     bool
 	PathMapper        *PathMapper
 	EnvOverride       EnvMap
 	ConfigureLoader   func(*loader.Options)
-	Lenient           bool
 	Dependencies      *types.ComposeDependencies
-	Services          []string
 	Prepare           PrepareProjectFunc
+	ComposeFile       string
+	ProjectName       string
+	ProjectsDirectory string
+	Services          []string
+	AutoInjectEnv     bool
+	Lenient           bool
 }
 
 // LoadComposeProject loads a compose project from composeFile. envOverride,

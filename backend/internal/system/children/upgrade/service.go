@@ -156,34 +156,36 @@ type resumeAction struct {
 // upgraderExit is how much the watcher learned about an upgrader run.
 type upgraderExit int
 
-func NewService(
-	db *database.DB,
-	dockerService *dockerInternal.DockerClientService,
-	versionService *version.VersionService,
-	eventService *event.EventService,
-	settingsService *settings.SettingsService,
-	projectService *project.ProjectService,
-	registryService *registry.ContainerRegistryService,
-	resolveRuntimeOptions func(
+type ServiceParams struct {
+	DB                    *database.DB
+	DockerService         *dockerInternal.DockerClientService
+	VersionService        *version.VersionService
+	EventService          *event.EventService
+	SettingsService       *settings.SettingsService
+	ProjectService        *project.ProjectService
+	RegistryService       *registry.ContainerRegistryService
+	ResolveRuntimeOptions func(
 		ctx context.Context,
 		dockerHost string,
 		currentContainer *container.InspectResponse,
 		discoverHostPath func(context.Context, string) (string, error),
 		isRunningInDocker func() bool,
 		selectReachableNetwork func(context.Context, *container.InspectResponse, string) string,
-	) ([]string, []mount.Mount, container.NetworkMode, error),
-	keepUpgrader bool,
-) *Service {
+	) ([]string, []mount.Mount, container.NetworkMode, error)
+	KeepUpgrader bool
+}
+
+func NewService(p ServiceParams) *Service {
 	return &Service{
-		db:                    db,
-		dockerService:         dockerService,
-		versionService:        versionService,
-		eventService:          eventService,
-		settingsService:       settingsService,
-		projectService:        projectService,
-		registryService:       registryService,
-		resolveRuntimeOptions: resolveRuntimeOptions,
-		keepUpgrader:          keepUpgrader,
+		db:                    p.DB,
+		dockerService:         p.DockerService,
+		versionService:        p.VersionService,
+		eventService:          p.EventService,
+		settingsService:       p.SettingsService,
+		projectService:        p.ProjectService,
+		registryService:       p.RegistryService,
+		resolveRuntimeOptions: p.ResolveRuntimeOptions,
+		keepUpgrader:          p.KeepUpgrader,
 		progress:              &progressFeed{subscribers: map[chan types.UpgradeProgressEvent]struct{}{}},
 		jobHub:                &agg.Hub[types.UpgradeJob]{},
 		jobChanged:            make(chan struct{}, 1),

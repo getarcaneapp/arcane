@@ -46,21 +46,23 @@ type Service struct {
 	pruneMu            sync.Mutex
 }
 
-func NewService(
-	location *time.Location,
-	dockerService *dockerInternal.DockerClientService,
-	activityService *activity.ActivityService,
-	imageUpdateService *imageupdate.ImageUpdateService,
-	volumeService *volume.VolumeService,
-	networkService *network.NetworkService,
-) *Service {
+type ServiceParams struct {
+	Location           *time.Location
+	DockerService      *dockerInternal.DockerClientService
+	ActivityService    *activity.ActivityService
+	ImageUpdateService *imageupdate.ImageUpdateService
+	VolumeService      *volume.VolumeService
+	NetworkService     *network.NetworkService
+}
+
+func NewService(p ServiceParams) *Service {
 	return &Service{
-		location:           location,
-		dockerService:      dockerService,
-		activityService:    activityService,
-		imageUpdateService: imageUpdateService,
-		volumeService:      volumeService,
-		networkService:     networkService,
+		location:           p.Location,
+		dockerService:      p.DockerService,
+		activityService:    p.ActivityService,
+		imageUpdateService: p.ImageUpdateService,
+		volumeService:      p.VolumeService,
+		networkService:     p.NetworkService,
 		runningPrunes:      make(map[string]string),
 	}
 }

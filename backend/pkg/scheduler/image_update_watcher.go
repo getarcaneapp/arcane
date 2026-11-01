@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/events"
 	"go.getarcane.app/streams/bus"
+	"go.uber.org/fx"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
@@ -76,36 +77,30 @@ type ImageUpdateWatcher struct {
 	stopping               atomic.Bool
 }
 
-func NewImageUpdateWatcher(cfg *config.Config,
-	imageUpdateService *imageupdate.ImageUpdateService,
-	settingsService *settings.SettingsService,
-	dockerService *docker.DockerClientService,
-	projectService *project.ProjectService) (*ImageUpdateWatcher,
-	error,
-) {
-	if imageUpdateService == nil || settingsService == nil || dockerService == nil || projectService == nil {
-		return nil, errors.New("image update watcher dependencies unavailable")
-	}
-	location := time.UTC
-	if cfg != nil {
-		location = cfg.GetLocation()
-	}
+type ImageUpdateWatcherParams struct {
+	fx.In
+
+	Config             *config.Config
+	ImageUpdateService *imageupdate.ImageUpdateService
+	SettingsService    *settings.SettingsService
+	DockerService      *docker.DockerClientService
+	ProjectService     *project.ProjectService
+}
+
+func NewImageUpdateWatcher(p ImageUpdateWatcherParams) *ImageUpdateWatcher {
 	return &ImageUpdateWatcher{
-			imageUpdateService: imageUpdateService,
-			settingsService:    settingsService,
-			dockerService:      dockerService,
-			projectService:     projectService,
-			location:           location,
-			debounce:           imageUpdateWatcherDebounce,
-			backfillRetry:      imageUpdateWatcherBackfillRetry,
-			metadataReady:      make(chan struct{}),
-			stopped:            make(chan struct{}),
-			trigger: make(chan struct{},
-				1),
-			scheduleRefresh: make(chan struct{},
-				1),
-		},
-		nil
+		imageUpdateService: p.ImageUpdateService,
+		settingsService:    p.SettingsService,
+		dockerService:      p.DockerService,
+		projectService:     p.ProjectService,
+		location:           p.Config.GetLocation(),
+		debounce:           imageUpdateWatcherDebounce,
+		backfillRetry:      imageUpdateWatcherBackfillRetry,
+		metadataReady:      make(chan struct{}),
+		stopped:            make(chan struct{}),
+		trigger:            make(chan struct{}, 1),
+		scheduleRefresh:    make(chan struct{}, 1),
+	}
 }
 
 func (w *ImageUpdateWatcher) Name() string { return "image-polling" }

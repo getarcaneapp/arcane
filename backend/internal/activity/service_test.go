@@ -953,7 +953,9 @@ func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
 			}, agentHandler).StartWithErrorChan(agentCtx, nil)
 			require.True(t, agent.GetRegistry().WaitForActive(t.Context(), "remote", 5*time.Second).IsPresent())
 			require.NoError(t, db.Create(&environment.Environment{ID: "remote", Name: "Remote", ApiUrl: "agent://remote", AccessToken: new("agent-token"), Enabled: true}).Error)
-			service := environment.NewEnvironmentService(db, nil, nil, nil, nil)
+			service := environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+				DB: db,
+			})
 			activityService := NewActivityService(db, nil)
 			id, err := service.SyncResourcesToEnvironment(t.Context(), "remote", &types.Actor{ID: "operator", Username: "operator"}, activityService)
 			require.NotEmpty(t, id)

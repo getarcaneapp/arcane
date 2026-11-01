@@ -975,8 +975,8 @@ type DisableRemoteRequest struct {
 	Model         any
 	ID            string
 	DestinationID string
-	LocalEnabled  bool
 	Field         string
+	LocalEnabled  bool
 }
 
 // DisableStoredRemote is DisableMissingRemote's save for a policy table row, which it changes only while the row still

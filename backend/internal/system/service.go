@@ -23,6 +23,7 @@ import (
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/labels"
+	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
@@ -71,52 +72,73 @@ type SystemService struct {
 	backup  *systembackup.Service
 }
 
-func NewSystemService(
-	db *database.DB,
-	dockerService *dockerInternal.DockerClientService,
-	containerService *container.ContainerService,
-	imageUpdateService *imageupdate.ImageUpdateService,
-	volumeService *volume.VolumeService,
-	networkService *network.NetworkService,
-	settingsService *settings.SettingsService,
-	activityService *activity.ActivityService,
-	versionService *version.VersionService,
-	eventService *event.EventService,
-	projectService *project.ProjectService,
-	registryService *registry.ContainerRegistryService,
-	backupEngine *backup.Engine,
-	s3Destinations *s3.S3DestinationService,
-	recoveryKeys *backup.RecoveryKeyStore,
-	actors *francis.Runtime,
-	cfg *config.Config,
-	settingsEnv settings.Env,
-) *SystemService {
+type SystemServiceParams struct {
+	fx.In
+
+	DB                 *database.DB
+	DockerService      *dockerInternal.DockerClientService
+	ContainerService   *container.ContainerService
+	ImageUpdateService *imageupdate.ImageUpdateService
+	VolumeService      *volume.VolumeService
+	NetworkService     *network.NetworkService
+	SettingsService    *settings.SettingsService
+	ActivityService    *activity.ActivityService
+	VersionService     *version.VersionService
+	EventService       *event.EventService
+	ProjectService     *project.ProjectService
+	RegistryService    *registry.ContainerRegistryService
+	BackupEngine       *backup.Engine
+	S3Destinations     *s3.S3DestinationService
+	RecoveryKeys       *backup.RecoveryKeyStore
+	Actors             *francis.Runtime
+	Config             *config.Config
+	SettingsEnv        settings.Env
+}
+
+func NewSystemService(p SystemServiceParams) *SystemService {
 	s := &SystemService{
-		db:               db,
-		dockerService:    dockerService,
-		containerService: containerService,
-		settingsService:  settingsService,
-		activityService:  activityService,
+		db:               p.DB,
+		dockerService:    p.DockerService,
+		containerService: p.ContainerService,
+		settingsService:  p.SettingsService,
+		activityService:  p.ActivityService,
 		dockerHostMemoryCache: hot.NewHotCache[struct{}, dockerHostMemoryInfo](hot.LRU, 1).
 			WithTTL(dockerHostMemoryCacheTTL).
 			Build(),
-		prune:   prune.NewService(cfg.GetLocation(), dockerService, activityService, imageUpdateService, volumeService, networkService),
-		upgrade: upgrade.NewService(db, dockerService, versionService, eventService, settingsService, projectService, registryService, resolveUpgraderRuntimeOptions, cfg.UpgradeKeepContainer),
+		prune: prune.NewService(prune.ServiceParams{
+			Location:           p.Config.GetLocation(),
+			DockerService:      p.DockerService,
+			ActivityService:    p.ActivityService,
+			ImageUpdateService: p.ImageUpdateService,
+			VolumeService:      p.VolumeService,
+			NetworkService:     p.NetworkService,
+		}),
+		upgrade: upgrade.NewService(upgrade.ServiceParams{
+			DB:                    p.DB,
+			DockerService:         p.DockerService,
+			VersionService:        p.VersionService,
+			EventService:          p.EventService,
+			SettingsService:       p.SettingsService,
+			ProjectService:        p.ProjectService,
+			RegistryService:       p.RegistryService,
+			ResolveRuntimeOptions: resolveUpgraderRuntimeOptions,
+			KeepUpgrader:          p.Config.UpgradeKeepContainer,
+		}),
 	}
 	s.backup = systembackup.NewService(systembackup.Dependencies{
-		Store:                 s.backupStore(s3Destinations),
-		DB:                    db,
-		SQLDB:                 db.DB.DB,
-		ActorStore:            actors.Store,
-		Docker:                dockerService,
-		Volumes:               volumeService,
-		Engine:                backupEngine,
-		S3Destinations:        s3Destinations,
-		Activity:              activityService,
-		Settings:              settingsService,
-		Config:                cfg,
-		SettingsEnv:           settingsEnv,
-		RecoveryKeys:          recoveryKeys,
+		Store:                 s.backupStore(p.S3Destinations),
+		DB:                    p.DB,
+		SQLDB:                 p.DB.DB.DB,
+		ActorStore:            p.Actors.Store,
+		Docker:                p.DockerService,
+		Volumes:               p.VolumeService,
+		Engine:                p.BackupEngine,
+		S3Destinations:        p.S3Destinations,
+		Activity:              p.ActivityService,
+		Settings:              p.SettingsService,
+		Config:                p.Config,
+		SettingsEnv:           p.SettingsEnv,
+		RecoveryKeys:          p.RecoveryKeys,
 		ResolveRuntimeOptions: resolveUpgraderRuntimeOptions,
 	})
 	return s

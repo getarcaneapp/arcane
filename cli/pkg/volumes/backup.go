@@ -44,7 +44,10 @@ func newRenameCmd() *cobra.Command {
 				return err
 			}
 
-			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: fmt.Sprintf("Rename volume %s to %s? The volume is copied and the source is removed.", resolved.Name, args[1]), Force: opts.forceFlag})
+			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{
+				Label: fmt.Sprintf("Rename volume %s to %s? The volume is copied and the source is removed.", resolved.Name, args[1]),
+				Force: opts.forceFlag,
+			})
 			if confirmationErr != nil || !confirmed {
 				return confirmationErr
 			}

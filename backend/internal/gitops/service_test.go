@@ -110,9 +110,20 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, loadTestConfig(t), nil)
-	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, newGitOpsTestDockerService(t, settingsService), nil, nil, nil, loadTestConfig(t), nil, nil)
+	projectService := projectpkg.NewProjectService(projectpkg.ProjectServiceParams{
+		DB:              db,
+		SettingsService: settingsService,
+		EventService:    eventService,
+		DockerService:   newGitOpsTestDockerService(t, settingsService),
+		Config:          loadTestConfig(t),
+	})
 
-	return NewGitOpsSyncService(db, nil, projectService, nil, eventService, settingsService), db, projectsDir
+	return NewGitOpsSyncService(GitOpsSyncServiceParams{
+		DB:              db,
+		ProjectService:  projectService,
+		EventService:    eventService,
+		SettingsService: settingsService,
+	}), db, projectsDir
 }
 
 func TestGitOpsSyncService_OverlappingSyncPreservesSuccessShapedSkip(t *testing.T) {
@@ -171,10 +182,22 @@ func setupGitOpsSyncRemoteTestService(t *testing.T, files map[string]string) (*G
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, loadTestConfig(t), nil)
-	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, newGitOpsTestDockerService(t, settingsService), nil, nil, nil, loadTestConfig(t), nil, nil)
+	projectService := projectpkg.NewProjectService(projectpkg.ProjectServiceParams{
+		DB:              db,
+		SettingsService: settingsService,
+		EventService:    eventService,
+		DockerService:   newGitOpsTestDockerService(t, settingsService),
+		Config:          loadTestConfig(t),
+	})
 	repoService := gitrepo.NewGitRepositoryService(db, t.TempDir(), eventService, settingsService)
 
-	service := NewGitOpsSyncService(db, repoService, projectService, nil, eventService, settingsService)
+	service := NewGitOpsSyncService(GitOpsSyncServiceParams{
+		DB:              db,
+		RepoService:     repoService,
+		ProjectService:  projectService,
+		EventService:    eventService,
+		SettingsService: settingsService,
+	})
 	testScheduler := &gitOpsSyncTestScheduler{}
 	require.NoError(t, service.SetScheduler(ctx, testScheduler, newGitOpsAdmissionGateForTest(t)))
 
@@ -1142,10 +1165,22 @@ func setupGitOpsBackupTestService(t *testing.T) *backupTestEnv {
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, loadTestConfig(t), nil)
-	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, newGitOpsTestDockerService(t, settingsService), nil, nil, nil, loadTestConfig(t), nil, nil)
+	projectService := projectpkg.NewProjectService(projectpkg.ProjectServiceParams{
+		DB:              db,
+		SettingsService: settingsService,
+		EventService:    eventService,
+		DockerService:   newGitOpsTestDockerService(t, settingsService),
+		Config:          loadTestConfig(t),
+	})
 	repoService := gitrepo.NewGitRepositoryService(db, t.TempDir(), eventService, settingsService)
 
-	service := NewGitOpsSyncService(db, repoService, projectService, nil, eventService, settingsService)
+	service := NewGitOpsSyncService(GitOpsSyncServiceParams{
+		DB:              db,
+		RepoService:     repoService,
+		ProjectService:  projectService,
+		EventService:    eventService,
+		SettingsService: settingsService,
+	})
 	// The test scheduler runs submitted jobs inline, which runs the sync workflow.
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	require.NoError(t, service.RegisterWorkflows(harness.Engine))

@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -54,19 +53,6 @@ func TestBuildService_ResolveBuildRequest_PassesThroughLocalContext(t *testing.T
 	require.NotNil(t, cleanup)
 	assert.Equal(t, req, resolvedReq)
 	require.NoError(t, cleanup())
-}
-
-func TestNewBuildService_NilRegistryServiceKeepsNilBuildRegistryProvider(t *testing.T) {
-	svc, err := NewBuildService(nil, nil, nil, nil, nil, nil)
-	require.NoError(t, err)
-	require.NotNil(t, svc.builder)
-
-	builderValue := reflect.ValueOf(svc.builder)
-	require.Equal(t, reflect.Pointer, builderValue.Kind())
-
-	registryProvider := builderValue.Elem().FieldByName("registryAuthProvider")
-	require.True(t, registryProvider.IsValid())
-	require.True(t, registryProvider.IsNil())
 }
 
 func TestBuildService_ResolveBuildRequest_ClonesRemoteGitContext(t *testing.T) {

@@ -63,22 +63,11 @@ func newAdmissionTestService(t *testing.T) (*UpdaterService, *runs.Admission) {
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	admission := runs.NewAdmission(harness.Runtime.Service(), t.Name())
 	require.NoError(t, admission.Register(harness.Runtime))
-	svc, err := NewUpdaterService(
-		db,
-		nil,
-		newSettingsDockerService(t, newTestDockerClient(t, server)),
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		admission,
-		nil,
-	)
+	svc, err := NewUpdaterService(UpdaterServiceParams{
+		DB:            db,
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+		Admission:     admission,
+	})
 	require.NoError(t, err)
 	harness.Start(t)
 	return svc, admission

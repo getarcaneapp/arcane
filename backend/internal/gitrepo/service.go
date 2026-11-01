@@ -192,9 +192,9 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req types.G
 }
 
 type RepositoryUpdate struct {
-	Request   types.GitRepository
 	Submitted map[string]bool
 	Actor     types.Actor
+	Request   types.GitRepository
 }
 
 func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, change RepositoryUpdate) (*GitRepository, error) {

@@ -64,7 +64,7 @@ import (
 
 // ActorOptions provides the durable Francis runtime and admission.
 var ActorOptions = fx.Options(
-	fx.Provide(fx.Annotate(provideActorRuntime, fx.ParamTags("", "", "", "", "", `name:"encryptionKey"`)), provideRunCoordinator),
+	fx.Provide(provideActorRuntime, provideRunCoordinator),
 	fx.Provide(provideAdmissionGate),
 	fx.Provide(provideWorkflowEngine),
 	fx.Provide(provideTunnelRegistry),
@@ -108,7 +108,7 @@ var ServiceOptions = fx.Options(
 		swarm.NewSwarmService,
 		template.NewTemplateService,
 		oidc.NewOidcService,
-		provideSystemService,
+		fx.Annotate(provideSystemService, fx.As(fx.Self()), fx.As(new(updater.SelfUpgrader))),
 		diagnostics.NewDiagnosticsService,
 		provideGitOpsSyncService,
 		variable.NewVariableService,
@@ -145,7 +145,19 @@ var ServiceOptions = fx.Options(
 			localEnvironment *environment.EnvironmentService,
 			cfg *config.Config,
 		) *project.ProjectService {
-			return project.NewProjectService(db, localSettings, localEvent, localImage, localDocker, localBuild, lifecycleService, localRegistry, cfg, localKv, localEnvironment.GetEnabledRegistryCredentials)
+			return project.NewProjectService(project.ProjectServiceParams{
+				DB:                          db,
+				SettingsService:             localSettings,
+				EventService:                localEvent,
+				ImageService:                localImage,
+				DockerService:               localDocker,
+				BuildService:                localBuild,
+				LifecycleService:            lifecycleService,
+				ContainerRegistryService:    localRegistry,
+				Config:                      cfg,
+				KVService:                   localKv,
+				RegistryCredentialsProvider: localEnvironment.GetEnabledRegistryCredentials,
+			})
 		},
 		provideBackupEngine,
 		func(
@@ -156,7 +168,15 @@ var ServiceOptions = fx.Options(
 			imageUpdate *imageupdate.ImageUpdateService,
 			settingsService *settings.SettingsService,
 		) *version.VersionService {
-			return version.NewVersionService(httpClient, config.Version, config.Revision, localRegistry, localDocker, imageUpdate, settingsService)
+			return version.NewVersionService(version.VersionServiceParams{
+				HTTPClient:               httpClient,
+				AppVersion:               config.Version,
+				Revision:                 config.Revision,
+				ContainerRegistryService: localRegistry,
+				DockerService:            localDocker,
+				ImageUpdateService:       imageUpdate,
+				SettingsService:          settingsService,
+			})
 		},
 		func(db *database.DB, cfg *config.Config, eventService *event.EventService, settingsService *settings.SettingsService) *gitrepo.GitRepositoryService {
 			return gitrepo.NewGitRepositoryService(db, cfg.GitWorkDir, eventService, settingsService)
@@ -165,7 +185,12 @@ var ServiceOptions = fx.Options(
 			return s3domain.NewS3DestinationService(db, localEnvironment.CheckS3DestinationReferences)
 		},
 		func(db *database.DB, localDocker *docker.DockerClientService, kvService *kv.KVService, settingsService *settings.SettingsService) *registry.ContainerRegistryService {
-			return registry.NewContainerRegistryService(db, func(ctx context.Context) (registry.RegistryDaemonClient, error) { return localDocker.GetClient(ctx) }, kvService, settingsService)
+			return registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+				DB:              db,
+				DockerClient:    func(ctx context.Context) (registry.RegistryDaemonClient, error) { return localDocker.GetClient(ctx) },
+				KVService:       kvService,
+				SettingsService: settingsService,
+			})
 		},
 		func(localDocker *docker.DockerClientService, notificationService *notification.NotificationService) *podman.Service {
 			return podman.NewService(podman.Config{

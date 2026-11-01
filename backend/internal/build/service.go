@@ -22,6 +22,7 @@ import (
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/capture"
 	gitkit "go.getarcane.app/kit/pkg/git"
+	"go.uber.org/fx"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/build/children/workspace"
@@ -56,38 +57,34 @@ const (
 	deleteBuildsBatchSize        = 500
 )
 
-func NewBuildService(
-	db *database.DB,
-	localSettings *settings.SettingsService,
-	dockerService *dockerInternal.DockerClientService,
-	registryService *registry.ContainerRegistryService,
-	gitRepository *gitrepo.GitRepositoryService,
-	eventService *event.EventService,
-) (*BuildService, error) {
+type BuildServiceParams struct {
+	fx.In
+
+	DB              *database.DB
+	LocalSettings   *settings.SettingsService
+	DockerService   *dockerInternal.DockerClientService
+	RegistryService *registry.ContainerRegistryService
+	GitRepository   *gitrepo.GitRepositoryService
+	EventService    *event.EventService
+}
+
+func NewBuildService(p BuildServiceParams) (*BuildService, error) {
 	svc := &BuildService{
-		db:              db,
-		settings:        localSettings,
-		dockerService:   dockerService,
-		registryService: registryService,
-		gitRepository:   gitRepository,
-		eventService:    eventService,
+		db:              p.DB,
+		settings:        p.LocalSettings,
+		dockerService:   p.DockerService,
+		registryService: p.RegistryService,
+		gitRepository:   p.GitRepository,
+		eventService:    p.EventService,
 	}
-	var buildsDirectory func() string
-	if localSettings != nil {
-		buildsDirectory = func() string { return localSettings.GetSettingsConfig().BuildsDirectory.Value }
-	}
-	svc.workspace = workspace.NewService(buildsDirectory)
-	var registryAuthProvider buildtypes.RegistryAuthProvider
-	if registryService != nil {
-		registryAuthProvider = registryService
-	}
+	svc.workspace = workspace.NewService(func() string { return p.LocalSettings.GetSettingsConfig().BuildsDirectory.Value })
 
 	// registry.ContainerRegistryService already implements buildtypes.RegistryAuthProvider,
 	// so the builder consumes it directly instead of through forwarding methods on BuildService.
 	builder, err := api.NewService(api.Config{
 		SettingsProvider:     svc,
-		DockerClientProvider: dockerService,
-		RegistryAuthProvider: registryAuthProvider,
+		DockerClientProvider: p.DockerService,
+		RegistryAuthProvider: p.RegistryService,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create builder: %w", err)

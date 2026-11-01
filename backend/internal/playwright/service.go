@@ -29,19 +29,21 @@ type PlaywrightService struct {
 	projectService    *project.ProjectService
 }
 
-func NewPlaywrightService(
-	apiKeyService *apikey.ApiKeyService,
-	userService *user.UserService,
-	repositoryService *gitrepo.GitRepositoryService,
-	syncService *gitops.GitOpsSyncService,
-	projectService *project.ProjectService,
-) *PlaywrightService {
+type PlaywrightServiceParams struct {
+	APIKeyService     *apikey.ApiKeyService
+	UserService       *user.UserService
+	RepositoryService *gitrepo.GitRepositoryService
+	SyncService       *gitops.GitOpsSyncService
+	ProjectService    *project.ProjectService
+}
+
+func NewPlaywrightService(p PlaywrightServiceParams) *PlaywrightService {
 	return &PlaywrightService{
-		apiKeyService:     apiKeyService,
-		userService:       userService,
-		repositoryService: repositoryService,
-		syncService:       syncService,
-		projectService:    projectService,
+		apiKeyService:     p.APIKeyService,
+		userService:       p.UserService,
+		repositoryService: p.RepositoryService,
+		syncService:       p.SyncService,
+		projectService:    p.ProjectService,
 	}
 }
 

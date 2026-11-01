@@ -113,7 +113,7 @@ func Showing(shown int, total int64, label string) {
 // TintStatus applies semantic status coloring to a value.
 func TintStatus(value string) string {
 	trimmed := strings.TrimSpace(value)
-	if trimmed == "" || ansiRegexp.MatchString(trimmed) || !(colorsEnabled() && IsTerminal(Stdout())) {
+	if trimmed == "" || ansiRegexp.MatchString(trimmed) || !colorsEnabled() || !IsTerminal(Stdout()) {
 		return value
 	}
 	lower := strings.ToLower(trimmed)
@@ -134,7 +134,7 @@ func TintStatus(value string) string {
 // TintEnabled applies tints for enabled/disabled values.
 func TintEnabled(value string) string {
 	trimmed := strings.TrimSpace(value)
-	if trimmed == "" || ansiRegexp.MatchString(trimmed) || !(colorsEnabled() && IsTerminal(Stdout())) {
+	if trimmed == "" || ansiRegexp.MatchString(trimmed) || !colorsEnabled() || !IsTerminal(Stdout()) {
 		return value
 	}
 	lower := strings.ToLower(trimmed)
@@ -151,7 +151,7 @@ func TintEnabled(value string) string {
 // TintYesNo applies tints for yes/no style values.
 func TintYesNo(value string) string {
 	trimmed := strings.TrimSpace(value)
-	if trimmed == "" || ansiRegexp.MatchString(trimmed) || !(colorsEnabled() && IsTerminal(Stdout())) {
+	if trimmed == "" || ansiRegexp.MatchString(trimmed) || !colorsEnabled() || !IsTerminal(Stdout()) {
 		return value
 	}
 	lower := strings.ToLower(trimmed)
@@ -168,7 +168,7 @@ func TintYesNo(value string) string {
 // TintInsecure applies warning tints for insecure values.
 func TintInsecure(value string) string {
 	trimmed := strings.TrimSpace(value)
-	if trimmed == "" || ansiRegexp.MatchString(trimmed) || !(colorsEnabled() && IsTerminal(Stdout())) {
+	if trimmed == "" || ansiRegexp.MatchString(trimmed) || !colorsEnabled() || !IsTerminal(Stdout()) {
 		return value
 	}
 	lower := strings.ToLower(trimmed)

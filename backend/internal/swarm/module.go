@@ -49,7 +49,13 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	h := NewHandler(m.service, m.event)
 	RegisterSwarm(api, h)
 	services.RegisterRoutes(api, services.NewHandler(service.services, h.auditSwarmMutation, mapSwarmServiceError))
-	nodes.RegisterRoutes(api, nodes.NewHandler(service.nodes, h.auditSwarmMutation, mapSwarmServiceError, m.environment, m.config))
+	nodes.RegisterRoutes(api, nodes.NewHandler(nodes.HandlerParams{
+		Service:            service.nodes,
+		Audit:              h.auditSwarmMutation,
+		MapError:           mapSwarmServiceError,
+		EnvironmentService: m.environment,
+		Config:             m.config,
+	}))
 	stacks.RegisterRoutes(api, stacks.NewHandler(service.stacks, h.auditSwarmMutation, mapSwarmServiceError))
 	configs.RegisterRoutes(api, configs.NewHandler(service.configs, h.auditSwarmMutation, mapSwarmServiceError))
 	secrets.RegisterRoutes(api, secrets.NewHandler(service.secrets, h.auditSwarmMutation, mapSwarmServiceError))
