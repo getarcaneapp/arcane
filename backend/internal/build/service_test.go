@@ -56,7 +56,8 @@ func TestBuildService_ResolveBuildRequest_PassesThroughLocalContext(t *testing.T
 }
 
 func TestNewBuildService_NilRegistryServiceKeepsNilBuildRegistryProvider(t *testing.T) {
-	svc := NewBuildService(nil, nil, nil, nil, nil, nil)
+	svc, err := NewBuildService(nil, nil, nil, nil, nil, nil)
+	require.NoError(t, err)
 	require.NotNil(t, svc.builder)
 
 	builderValue := reflect.ValueOf(svc.builder)
@@ -183,7 +184,7 @@ func TestBuildService_ResolveBuildRequest_UsesSavedGitCredentials(t *testing.T) 
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&gitrepo.GitRepository{}))
-	crypto.InitEncryption(&crypto.Config{
+	crypto.InitEncryption(crypto.Config{
 		Environment:   string(config.AppEnvironmentTest),
 		EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
 	})

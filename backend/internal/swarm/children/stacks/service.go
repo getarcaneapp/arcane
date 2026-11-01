@@ -313,7 +313,7 @@ func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName s
 		return nil, err
 	}
 
-	composeContent, err := acfs.ReadFile(ctx, stackSourceDir, "/"+swarmStackComposeFilename)
+	composeContent, err := acfs.Root{Path: stackSourceDir}.ReadFile(ctx, "/"+swarmStackComposeFilename)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, errdefs.ErrNotFound
@@ -322,7 +322,7 @@ func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName s
 	}
 
 	overrideContent := ""
-	overrideBytes, err := acfs.ReadFile(ctx, stackSourceDir, "/"+swarmStackOverrideFilename)
+	overrideBytes, err := acfs.Root{Path: stackSourceDir}.ReadFile(ctx, "/"+swarmStackOverrideFilename)
 	if err == nil {
 		overrideContent = string(overrideBytes)
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -330,7 +330,7 @@ func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName s
 	}
 
 	envContent := ""
-	envBytes, err := acfs.ReadFile(ctx, stackSourceDir, "/"+swarmStackEnvFilename)
+	envBytes, err := acfs.Root{Path: stackSourceDir}.ReadFile(ctx, "/"+swarmStackEnvFilename)
 	if err == nil {
 		envContent = string(envBytes)
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -338,24 +338,29 @@ func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName s
 	}
 
 	var files []types.SwarmSyncFile
-	err = acfs.Walk(ctx, stackSourceDir, "/", func(entry acfstypes.Entry) error {
-		if entry.IsDirectory || entry.IsSymlink {
+	_, err = acfs.Root{Path: stackSourceDir}.Walk(
+		ctx,
+		"/",
+		acfstypes.WalkOptions{},
+		func(entry acfstypes.Entry) error {
+			if entry.IsDirectory || entry.IsSymlink {
+				return nil
+			}
+			relativePath := strings.TrimPrefix(entry.Path, "/")
+			if relativePath == swarmStackComposeFilename || relativePath == swarmStackOverrideFilename || relativePath == swarmStackEnvFilename {
+				return nil
+			}
+			content, readFileErr := acfs.Root{Path: stackSourceDir}.ReadFile(ctx, entry.Path)
+			if readFileErr != nil {
+				return readFileErr
+			}
+			files = append(files, types.SwarmSyncFile{
+				RelativePath: relativePath,
+				Content:      content,
+			})
 			return nil
-		}
-		relativePath := strings.TrimPrefix(entry.Path, "/")
-		if relativePath == swarmStackComposeFilename || relativePath == swarmStackOverrideFilename || relativePath == swarmStackEnvFilename {
-			return nil
-		}
-		content, readFileErr := acfs.ReadFile(ctx, stackSourceDir, entry.Path)
-		if readFileErr != nil {
-			return readFileErr
-		}
-		files = append(files, types.SwarmSyncFile{
-			RelativePath: relativePath,
-			Content:      content,
-		})
-		return nil
-	})
+		},
+	)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("failed to read additional swarm stack source files: %w", err)
 	}
@@ -438,7 +443,7 @@ func (s *Service) listPersistedStackSources(ctx context.Context, environmentID s
 		return nil, err
 	}
 
-	entries, err := acfs.List(ctx, environmentDir, "/")
+	entries, err := acfs.Root{Path: environmentDir}.List(ctx, "/")
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return map[string]types.SwarmStackSummary{}, nil
@@ -481,7 +486,7 @@ func (s *Service) getPersistedStackSourceSummary(ctx context.Context, environmen
 }
 
 func (s *Service) buildPersistedStackSourceSummary(ctx context.Context, stackSourceDir, stackName string) (*types.SwarmStackSummary, error) {
-	composeEntry, err := acfs.Stat(ctx, stackSourceDir, "/"+swarmStackComposeFilename, true)
+	composeEntry, err := acfs.Root{Path: stackSourceDir}.Stat(ctx, "/"+swarmStackComposeFilename, acfstypes.StatOptions{FollowFinal: true})
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, errdefs.ErrNotFound
@@ -492,7 +497,7 @@ func (s *Service) buildPersistedStackSourceSummary(ctx context.Context, stackSou
 	createdAt := composeEntry.ModTime
 	updatedAt := composeEntry.ModTime
 
-	envEntry, err := acfs.Stat(ctx, stackSourceDir, "/"+swarmStackEnvFilename, true)
+	envEntry, err := acfs.Root{Path: stackSourceDir}.Stat(ctx, "/"+swarmStackEnvFilename, acfstypes.StatOptions{FollowFinal: true})
 	if err == nil {
 		if envEntry.ModTime.Before(createdAt) {
 			createdAt = envEntry.ModTime
@@ -731,7 +736,7 @@ func (s *Service) upsertStackSource(ctx context.Context, environmentID, stackNam
 		return err
 	}
 
-	stackLogical, err := acfs.LogicalPath(rootDir, stackSourceDir)
+	stackLogical, err := acfs.Root{Path: rootDir}.LogicalPath(stackSourceDir)
 	if err != nil {
 		return fmt.Errorf("swarm stack source directory is outside its root: %w", err)
 	}
@@ -739,7 +744,7 @@ func (s *Service) upsertStackSource(ctx context.Context, environmentID, stackNam
 	if mkdirAllErr := os.MkdirAll(rootDir, utils.DirPerm); mkdirAllErr != nil {
 		return fmt.Errorf("failed to create swarm stack source root: %w", mkdirAllErr)
 	}
-	if mkdirAllErr := acfs.MkdirAll(ctx, rootDir, stackLogical, utils.DirPerm); mkdirAllErr != nil {
+	if mkdirAllErr := (acfs.Root{Path: rootDir}).MkdirAll(ctx, stackLogical, utils.DirPerm); mkdirAllErr != nil {
 		return fmt.Errorf("failed to create swarm stack source directory: %w", mkdirAllErr)
 	}
 
@@ -773,13 +778,18 @@ func (s *Service) upsertStackSource(ctx context.Context, environmentID, stackNam
 	}
 
 	existingFiles := make([]string, 0)
-	if walkErr := acfs.Walk(ctx, stackSourceDir, "/", func(entry acfstypes.Entry) error {
-		if entry.IsDirectory || entry.IsSymlink {
+	if _, walkErr := (acfs.Root{Path: stackSourceDir}).Walk(
+		ctx,
+		"/",
+		acfstypes.WalkOptions{},
+		func(entry acfstypes.Entry) error {
+			if entry.IsDirectory || entry.IsSymlink {
+				return nil
+			}
+			existingFiles = append(existingFiles, strings.TrimPrefix(entry.Path, "/"))
 			return nil
-		}
-		existingFiles = append(existingFiles, strings.TrimPrefix(entry.Path, "/"))
-		return nil
-	}); walkErr != nil {
+		},
+	); walkErr != nil {
 		return fmt.Errorf("failed to inspect existing swarm stack files: %w", walkErr)
 	}
 
@@ -804,18 +814,18 @@ func (s *Service) deleteStackSource(ctx context.Context, environmentID, stackNam
 		return err
 	}
 
-	stackLogical, err := acfs.LogicalPath(rootDir, stackSourceDir)
+	stackLogical, err := acfs.Root{Path: rootDir}.LogicalPath(stackSourceDir)
 	if err != nil {
 		return fmt.Errorf("swarm stack source directory is outside its root: %w", err)
 	}
-	if removeAllErr := acfs.RemoveAll(ctx, rootDir, stackLogical); removeAllErr != nil {
+	if removeAllErr := (acfs.Root{Path: rootDir}).RemoveAll(ctx, stackLogical); removeAllErr != nil {
 		return fmt.Errorf("failed to remove swarm stack source directory: %w", removeAllErr)
 	}
 
 	// Best-effort cleanup of now-empty environment directory.
 	environmentDir := filepath.Dir(stackSourceDir)
 	if environmentDir != rootDir {
-		if removeErr := acfs.Remove(ctx, rootDir, path.Dir(stackLogical)); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
+		if removeErr := (acfs.Root{Path: rootDir}).Remove(ctx, path.Dir(stackLogical)); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
 			slog.DebugContext(ctx, "swarm stack source environment directory cleanup skipped", "dir", environmentDir, "error", removeErr)
 		}
 	}

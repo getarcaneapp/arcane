@@ -67,11 +67,11 @@ type DockerClientService struct {
 	mu            sync.Mutex
 }
 
-func NewDockerClientService(ctx context.Context, db *database.DB, settingsService *settings.SettingsService, eventBusOptions ...bus.Option) *DockerClientService {
+func NewDockerClientService(ctx context.Context, db *database.DB, settingsService *settings.SettingsService, eventBusConfig bus.Config) *DockerClientService {
 	service := &DockerClientService{
 		db:              db,
 		settingsService: settingsService,
-		eventBus:        bus.NewDockerEventBus(eventBusOptions...),
+		eventBus:        bus.NewDockerEventBus(eventBusConfig),
 		streamConnected: concurrency.NewSignal[struct{}](),
 	}
 	context.AfterFunc(ctx, settingsService.SubscribeSettingsChanges([]string{"dockerHost"}, func([]libarcane.SettingUpdate) {
@@ -250,7 +250,7 @@ func (s *DockerClientService) EventBus() *bus.DockerEventBus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.eventBus == nil {
-		s.eventBus = bus.NewDockerEventBus()
+		s.eventBus = bus.NewDockerEventBus(bus.Config{})
 	}
 	return s.eventBus
 }

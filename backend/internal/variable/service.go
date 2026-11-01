@@ -21,6 +21,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/acfs"
+	acfstypes "go.getarcane.app/acfs/types"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
@@ -487,7 +488,7 @@ func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]types.EnvVari
 		return nil, err
 	}
 
-	content, err := acfs.ReadFile(ctx, filepath.Dir(envPath), "/"+projects.GlobalEnvFileName)
+	content, err := acfs.Root{Path: filepath.Dir(envPath)}.ReadFile(ctx, "/"+projects.GlobalEnvFileName)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			slog.DebugContext(ctx, "Global variables file does not exist yet", "path", envPath)
@@ -577,10 +578,10 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []types.En
 	}
 
 	mode := utils.FilePerm
-	if entry, statErr := acfs.Stat(ctx, projectsDirectory, "/"+projects.GlobalEnvFileName, false); statErr == nil {
+	if entry, statErr := (acfs.Root{Path: projectsDirectory}).Stat(ctx, "/"+projects.GlobalEnvFileName, acfstypes.StatOptions{}); statErr == nil {
 		mode = os.FileMode(entry.UnixMode).Perm()
 	}
-	if writeErr := acfs.Write(ctx, projectsDirectory, "/"+projects.GlobalEnvFileName, []byte(builder.String()), acfs.WriteOptions{Mode: mode, InPlace: true}); writeErr != nil {
+	if writeErr := (acfs.Root{Path: projectsDirectory}).Write(ctx, "/"+projects.GlobalEnvFileName, []byte(builder.String()), acfs.WriteOptions{Mode: mode, InPlace: true}); writeErr != nil {
 		return fmt.Errorf("failed to write global variables file: %w", writeErr)
 	}
 

@@ -148,8 +148,8 @@ func NewHandler(
 		apiKeyService:      apiKeyService,
 		eventService:       eventService,
 		cfg:                cfg,
-		streamHub:          agg.NewHub[[]types.Environment](),
-		changeHub:          agg.NewHub[struct{}](),
+		streamHub:          &agg.Hub[[]types.Environment]{},
+		changeHub:          &agg.Hub[struct{}]{},
 		changeCursors:      concurrency.NewStateMap[string, types.EnvironmentChanges](),
 		activityService:    activityService,
 	}
@@ -259,8 +259,8 @@ func (h *EnvironmentHandler) RunStreamProducer(ctx context.Context, ps *authz.Pe
 
 func (h *EnvironmentHandler) RunRemoteChangePollers(ctx context.Context, ps *authz.PermissionSet) {
 	accessible := ps.AccessibleEnvironmentIDs()
-	agg.ReconcilePollersByKey(ctx,
-		func(ctx context.Context) ([]Environment, error) {
+	agg.ReconcilePollersByKey(ctx, agg.PollerConfig[Environment]{
+		List: func(ctx context.Context) ([]Environment, error) {
 			environments, err := h.environmentService.ListActiveRemoteEnvironments(ctx)
 			if err != nil {
 				return nil, err
@@ -276,13 +276,11 @@ func (h *EnvironmentHandler) RunRemoteChangePollers(ctx context.Context, ps *aut
 				return accessible != nil && !slices.Contains(accessible, environment.ID)
 			}), nil
 		},
-		func(environment Environment) string {
+		Key: func(environment Environment) string {
 			return environment.ID
 		},
-		ConnectionKey,
-		remoteChangeReconcileInterval,
-		"environment changes",
-		func(pollCtx context.Context, environment Environment) {
+		Version: ConnectionKey,
+		Run: func(pollCtx context.Context, environment Environment) {
 			h.changeHub.Subscribe(pollCtx, ConnectionKey(environment),
 				func(runCtx context.Context, _ func(struct{})) {
 					h.runRemoteChangePoller(runCtx, environment)
@@ -290,7 +288,10 @@ func (h *EnvironmentHandler) RunRemoteChangePollers(ctx context.Context, ps *aut
 				func(struct{}) bool {
 					return true
 				})
-		})
+		},
+		Label:    "environment changes",
+		Interval: remoteChangeReconcileInterval,
+	})
 }
 
 func ConnectionKey(environment Environment) string {

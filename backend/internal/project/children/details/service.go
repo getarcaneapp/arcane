@@ -122,9 +122,14 @@ func (s *Service) ComposeServices(
 				}
 				return nil
 			}(),
-			ContainerLabels:  c.Labels,
-			RedeployDisabled: labels.ShouldDisableArcaneServerRedeploy(c.Labels, c.ID, currentContainerID, currentContainerErr),
-			ImageID:          imageIDs[c.ID],
+			ContainerLabels: c.Labels,
+			RedeployDisabled: labels.ShouldDisableArcaneServerRedeploy(labels.RedeployCheck{
+				CurrentErr:         currentContainerErr,
+				Labels:             c.Labels,
+				ContainerID:        c.ID,
+				CurrentContainerID: currentContainerID,
+			}),
+			ImageID: imageIDs[c.ID],
 		})
 		have[c.Service] = true
 	}

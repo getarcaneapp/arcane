@@ -11,6 +11,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/docker/compat"
+	"go.getarcane.app/streams/bus"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"gorm.io/gorm"
@@ -65,7 +66,7 @@ func newDashboardTestDockerService(t *testing.T, settingsSvc *settings.SettingsS
 		_ = dockerClient.Close()
 	})
 
-	return docker.NewDockerClientService(t.Context(), nil, settingsSvc).WithClient(dockerClient)
+	return docker.NewDockerClientService(t.Context(), nil, settingsSvc, bus.Config{}).WithClient(dockerClient)
 }
 
 func TestDashboardService_ReportsPodmanPods(t *testing.T) {

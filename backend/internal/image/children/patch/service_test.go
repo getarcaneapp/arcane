@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/kit/pkg"
+	"go.getarcane.app/streams/bus"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
@@ -73,7 +74,7 @@ func TestListPatchTargets_ExcludesUntaggedImages(t *testing.T) {
 	settingsSvc, db := patchFeatureSettings(t)
 	require.NoError(t, settingsSvc.UpdateSettings(ctx, types.SettingsUpdate{"dockerHost": "unix:///nonexistent-arcane-test.sock"}))
 
-	svc := NewService(db, docker.NewDockerClientService(ctx, nil, settingsSvc), settingsSvc, nil, nil, nil)
+	svc := NewService(db, docker.NewDockerClientService(ctx, nil, settingsSvc, bus.Config{}), settingsSvc, nil, nil, nil)
 
 	records := []vulnerability.VulnerabilityScanRecord{
 		{
@@ -129,7 +130,7 @@ func TestVulnerabilityFeatureBlocksReportPatchesOnly(t *testing.T) {
 	require.NoError(t, settingsSvc.UpdateSettings(t.Context(), types.SettingsUpdate{"dockerHost": "unix:///nonexistent-arcane-feature-test.sock"}))
 	svc := NewService(
 		db,
-		docker.NewDockerClientService(t.Context(), nil, settingsSvc),
+		docker.NewDockerClientService(t.Context(), nil, settingsSvc, bus.Config{}),
 		settingsSvc,
 		nil,
 		nil,

@@ -158,7 +158,7 @@ func backupScopePathInternal(ctx context.Context, projRoot, backupRoot *os.Root,
 		if mkdirAllErr := os.MkdirAll(destDir, 0o755); mkdirAllErr != nil {
 			return fmt.Errorf("create backup directory: %w", mkdirAllErr)
 		}
-		copied, copyDirErr := acfs.CopyDir(ctx, filepath.Join(projectDir, filepath.FromSlash(rel)), destDir, acfstypes.CopyOptions{TolerateUnreadable: true})
+		copied, copyDirErr := acfs.Root{Path: filepath.Join(projectDir, filepath.FromSlash(rel))}.CopyTo(ctx, acfs.Root{Path: destDir}, acfstypes.CopyOptions{TolerateUnreadable: true})
 		if copyDirErr != nil {
 			return fmt.Errorf("backup project directory %s: %w", rel, copyDirErr)
 		}
@@ -316,7 +316,7 @@ func RestoreProjectUpdateBackup(ctx context.Context, projectDir string, backup *
 		preserve := skippedUnderInternal(backup.Skipped, rel)
 		src := filepath.Join(backup.BackupDir, filepath.FromSlash(rel))
 		dest := filepath.Join(projectDir, filepath.FromSlash(rel))
-		if mirrorDirErr := acfs.MirrorDir(ctx, src, dest, acfstypes.MirrorOptions{Preserve: preserve}); mirrorDirErr != nil {
+		if mirrorDirErr := (acfs.Root{Path: src}).MirrorTo(ctx, acfs.Root{Path: dest}, acfstypes.MirrorOptions{Preserve: preserve}); mirrorDirErr != nil {
 			return fmt.Errorf("restore project directory %s: %w", rel, mirrorDirErr)
 		}
 	}
@@ -415,7 +415,7 @@ func restoreBackupFileInternal(ctx context.Context, backupRoot, projRoot *os.Roo
 	live, liveErr := projRoot.Lstat(rel)
 	if liveErr == nil && live.Mode().IsRegular() {
 		// In place: the inode survives so container bind mounts of the file stay valid.
-		if writeErr := acfs.Write(ctx, projRoot.Name(), "/"+rel, content, acfs.WriteOptions{Mode: info.Mode().Perm(), InPlace: true}); writeErr != nil {
+		if writeErr := (acfs.Root{Path: projRoot.Name()}).Write(ctx, "/"+rel, content, acfs.WriteOptions{Mode: info.Mode().Perm(), InPlace: true}); writeErr != nil {
 			return fmt.Errorf("restore project file %s: %w", rel, writeErr)
 		}
 		return nil
@@ -525,13 +525,13 @@ func BackupProjectDirectory(ctx context.Context, projectsDirectory, projectPath,
 		return nil, nil, err
 	}
 
-	backupLogical, err := acfs.MkdirTemp(ctx, rootAbs, "/", pattern)
+	backupLogical, err := acfs.Root{Path: rootAbs}.MkdirTemp(ctx, "/", pattern)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create project backup directory: %w", err)
 	}
 	backupPath := filepath.Join(rootAbs, filepath.FromSlash(strings.TrimPrefix(backupLogical, "/")))
 	cleanupCtx := context.WithoutCancel(ctx)
-	cleanup := func() { _ = acfs.RemoveAll(cleanupCtx, rootAbs, backupLogical) }
+	cleanup := func() { _ = acfs.Root{Path: rootAbs}.RemoveAll(cleanupCtx, backupLogical) }
 
 	// Tolerate files Arcane cannot read (e.g. foreign-owned secrets): skip them
 	// in the backup so an unrelated unreadable file can't block the whole save.
@@ -555,13 +555,13 @@ func RestoreProjectDirectoryBackup(ctx context.Context, projectsDirectory, proje
 		return err
 	}
 
-	projectLogical, err := acfs.LogicalPath(rootAbs, projectAbs)
+	projectLogical, err := acfs.Root{Path: rootAbs}.LogicalPath(projectAbs)
 	if err != nil {
 		return fmt.Errorf("failed to resolve project directory: %w", err)
 	}
 
 	slog.DebugContext(ctx, "restoring project directory backup", "path", projectAbs, "backup", backup.BackupDir)
-	if mkdirAllErr := acfs.MkdirAll(ctx, rootAbs, projectLogical, utils.DirPerm); mkdirAllErr != nil {
+	if mkdirAllErr := (acfs.Root{Path: rootAbs}).MkdirAll(ctx, projectLogical, utils.DirPerm); mkdirAllErr != nil {
 		return fmt.Errorf("failed to recreate project directory: %w", mkdirAllErr)
 	}
 	if restoreProjectUpdateBackupErr := RestoreProjectUpdateBackup(ctx, projectAbs, backup); restoreProjectUpdateBackupErr != nil {

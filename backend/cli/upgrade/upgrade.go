@@ -590,12 +590,15 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 
 	fmt.Println("PROGRESS:75:Creating new container")
 	slog.InfoContext(ctx, "Creating new container", "name", originalName)
-	resp, err := compat.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
-		Config:           &containerConfig,
-		HostConfig:       hostConfig,
-		NetworkingConfig: networkConfig,
-		Name:             originalName,
-	}, apiVersion)
+	resp, err := compat.ContainerCreateWithCompatibility(ctx, dockerClient, compat.CreateRequest{
+		Options: client.ContainerCreateOptions{
+			Config:           &containerConfig,
+			HostConfig:       hostConfig,
+			NetworkingConfig: networkConfig,
+			Name:             originalName,
+		},
+		APIVersion: apiVersion,
+	})
 	if err != nil {
 		// Try to restart and restore old container on failure
 		_, _ = dockerClient.ContainerStart(ctx, oldContainer.ID, client.ContainerStartOptions{})

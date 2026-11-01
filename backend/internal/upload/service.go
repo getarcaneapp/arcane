@@ -19,6 +19,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/acfs"
+	acfstypes "go.getarcane.app/acfs/types"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
@@ -94,7 +95,7 @@ func (s *UploadService) CreateSession(ctx context.Context, kind string, request 
 	if err := os.MkdirAll(s.root, 0o700); err != nil {
 		return nil, fmt.Errorf("create upload root: %w", err)
 	}
-	sessionDir, err := acfs.MkdirTemp(ctx, s.root, "/", "*")
+	sessionDir, err := acfs.Root{Path: s.root}.MkdirTemp(ctx, "/", "*")
 	if err != nil {
 		return nil, fmt.Errorf("create upload session directory: %w", err)
 	}
@@ -108,12 +109,12 @@ func (s *UploadService) CreateSession(ctx context.Context, kind string, request 
 		ReceivedChunks: []int{},
 		CreatedAt:      time.Now().UTC(),
 	}
-	if writeErr := acfs.Write(ctx, s.root, path.Join(sessionDir, sessionDataFilename), nil, acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
-		_ = acfs.RemoveAll(ctx, s.root, sessionDir)
+	if writeErr := (acfs.Root{Path: s.root}).Write(ctx, path.Join(sessionDir, sessionDataFilename), nil, acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
+		_ = acfs.Root{Path: s.root}.RemoveAll(ctx, sessionDir)
 		return nil, fmt.Errorf("create upload session data file: %w", writeErr)
 	}
 	if writeMetaErr := s.writeMeta(ctx, session); writeMetaErr != nil {
-		_ = acfs.RemoveAll(ctx, s.root, sessionDir)
+		_ = acfs.Root{Path: s.root}.RemoveAll(ctx, sessionDir)
 		return nil, writeMetaErr
 	}
 	return session, nil
@@ -131,7 +132,7 @@ func (s *UploadService) loadMeta(ctx context.Context, kind, uploadID string) (*t
 	if err != nil {
 		return nil, err
 	}
-	payload, err := acfs.ReadFile(ctx, s.root, metaPath)
+	payload, err := acfs.Root{Path: s.root}.ReadFile(ctx, metaPath)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", common.ErrUploadSessionNotFound, uploadID)
 	}
@@ -152,7 +153,7 @@ func (s *UploadService) writeMeta(ctx context.Context, session *types.UploadSess
 	if err != nil {
 		return fmt.Errorf("encode upload session metadata: %w", err)
 	}
-	if writeErr := acfs.Write(ctx, s.root, path.Join("/", session.ID, sessionMetaFilename), payload, acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
+	if writeErr := (acfs.Root{Path: s.root}).Write(ctx, path.Join("/", session.ID, sessionMetaFilename), payload, acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
 		return fmt.Errorf("write upload session metadata: %w", writeErr)
 	}
 	return nil
@@ -182,7 +183,7 @@ func (s *UploadService) WriteChunk(ctx context.Context, kind, uploadID string, i
 	if err != nil {
 		return nil, err
 	}
-	if writeAtErr := acfs.WriteAt(ctx, s.root, dataPath, int64(index)*session.ChunkSize, data); writeAtErr != nil {
+	if writeAtErr := (acfs.Root{Path: s.root}).WriteAt(ctx, dataPath, int64(index)*session.ChunkSize, data); writeAtErr != nil {
 		return nil, fmt.Errorf("write chunk %d: %w", index, writeAtErr)
 	}
 	if position, found := slices.BinarySearch(session.ReceivedChunks, index); !found {
@@ -208,7 +209,7 @@ func (s *UploadService) DeleteSession(ctx context.Context, kind, uploadID string
 	if _, err := s.loadMeta(ctx, kind, uploadID); err != nil {
 		return err
 	}
-	if err := acfs.RemoveAll(ctx, s.root, path.Join("/", uploadID)); err != nil {
+	if err := (acfs.Root{Path: s.root}).RemoveAll(ctx, path.Join("/", uploadID)); err != nil {
 		return fmt.Errorf("delete upload session: %w", err)
 	}
 	return nil
@@ -222,15 +223,15 @@ func (s *UploadService) IngestSession(ctx context.Context, kind, filename string
 	if err != nil {
 		return nil, err
 	}
-	if _, writeFromErr := acfs.WriteFrom(ctx, s.root, path.Join("/", session.ID, sessionDataFilename), source, size, 0o600); writeFromErr != nil {
-		_ = acfs.RemoveAll(ctx, s.root, path.Join("/", session.ID))
+	if _, writeFromErr := (acfs.Root{Path: s.root}).WriteFrom(ctx, path.Join("/", session.ID, sessionDataFilename), source, acfs.WriteFromOptions{Size: size, Mode: 0o600}); writeFromErr != nil {
+		_ = acfs.Root{Path: s.root}.RemoveAll(ctx, path.Join("/", session.ID))
 		return nil, fmt.Errorf("write uploaded file: %w", writeFromErr)
 	}
 	for index := range session.TotalChunks {
 		session.ReceivedChunks = append(session.ReceivedChunks, index)
 	}
 	if writeMetaErr := s.writeMeta(ctx, session); writeMetaErr != nil {
-		_ = acfs.RemoveAll(ctx, s.root, path.Join("/", session.ID))
+		_ = acfs.Root{Path: s.root}.RemoveAll(ctx, path.Join("/", session.ID))
 		return nil, writeMetaErr
 	}
 	return session, nil
@@ -255,7 +256,7 @@ func (s *UploadService) Consume(ctx context.Context, kind, uploadID string) (io.
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	file, size, err := acfs.OpenReadSeek(ctx, s.root, dataPath)
+	file, size, err := acfs.Root{Path: s.root}.OpenReadSeek(ctx, dataPath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("open upload session data: %w", err)
 	}
@@ -263,7 +264,7 @@ func (s *UploadService) Consume(ctx context.Context, kind, uploadID string) (io.
 		_ = file.Close()
 		return nil, nil, nil, fmt.Errorf("%w: assembled size %d does not match declared size %d", common.ErrUploadSessionIncomplete, size, session.Size)
 	}
-	if removeErr := acfs.Remove(ctx, s.root, path.Join("/", uploadID, sessionMetaFilename)); removeErr != nil {
+	if removeErr := (acfs.Root{Path: s.root}).Remove(ctx, path.Join("/", uploadID, sessionMetaFilename)); removeErr != nil {
 		_ = file.Close()
 		return nil, nil, nil, fmt.Errorf("mark upload session consumed: %w", removeErr)
 	}
@@ -271,7 +272,7 @@ func (s *UploadService) Consume(ctx context.Context, kind, uploadID string) (io.
 		_ = file.Close()
 		// context.WithoutCancel: the session must be removed even when the
 		// consuming request was cancelled mid-restore.
-		_ = acfs.RemoveAll(context.WithoutCancel(ctx), s.root, path.Join("/", uploadID))
+		_ = acfs.Root{Path: s.root}.RemoveAll(context.WithoutCancel(ctx), path.Join("/", uploadID))
 	}
 	return file, session, cleanup, nil
 }
@@ -286,7 +287,7 @@ func (s *UploadService) PurgeExpiredSessions(ctx context.Context, maxAge time.Du
 	if _, err := os.Stat(s.root); os.IsNotExist(err) {
 		return 0, nil
 	}
-	entries, err := acfs.List(ctx, s.root, "/")
+	entries, err := acfs.Root{Path: s.root}.List(ctx, "/")
 	if err != nil {
 		return 0, fmt.Errorf("list upload sessions: %w", err)
 	}
@@ -299,13 +300,13 @@ func (s *UploadService) PurgeExpiredSessions(ctx context.Context, maxAge time.Du
 		unlock := s.locks.Lock(entry.Name)
 		lastActivity := entry.ModTime
 		for _, filename := range []string{sessionDataFilename, sessionMetaFilename} {
-			if info, statErr := acfs.Stat(ctx, s.root, path.Join("/", entry.Name, filename), true); statErr == nil && info.ModTime.After(lastActivity) {
+			if info, statErr := (acfs.Root{Path: s.root}).Stat(ctx, path.Join("/", entry.Name, filename), acfstypes.StatOptions{FollowFinal: true}); statErr == nil && info.ModTime.After(lastActivity) {
 				lastActivity = info.ModTime
 			}
 		}
 		var removeErr error
 		if lastActivity.Before(cutoff) {
-			removeErr = acfs.RemoveAll(ctx, s.root, path.Join("/", entry.Name))
+			removeErr = acfs.Root{Path: s.root}.RemoveAll(ctx, path.Join("/", entry.Name))
 		}
 		unlock()
 		if removeErr != nil {

@@ -580,25 +580,31 @@ func (s *ContainerRegistryService) buildRegistryPullUsage(ctx context.Context, r
 			return registryRateLimitCacheEntry{RateLimit: *cached, CheckedAt: cachedAt}, nil
 		}
 
-		fetched, fetchErr := registry.FetchRegistryRateLimit(ctx, "docker.io", dockerHubRateLimitRepository, dockerHubRateLimitTag, func() *authn.AuthConfig {
-			if credential == nil {
-				return nil
-			}
-			return &authn.AuthConfig{Username: credential.Username, Password: credential.Token}
-		}(), &http.Client{
-			Transport: rateLimitRoundTripFunc(func(req *http.Request) (*http.Response, error) {
-				if req.Method == http.MethodGet &&
-					req.URL.Host == "registry-1.docker.io" &&
-					req.URL.Path == "/v2/"+dockerHubRateLimitRepository+"/manifests/"+dockerHubRateLimitTag {
-					rewritten := req.Clone(req.Context())
-					rewritten.Method = http.MethodHead // keep: http.Request is only copyable via Clone
-					return cmp.Or(s.distributionHTTPClient.Transport, http.DefaultTransport).RoundTrip(rewritten)
+		fetched, fetchErr := registry.FetchRegistryRateLimit(ctx, registry.Request{
+			Credential: func() *authn.AuthConfig {
+				if credential == nil {
+					return nil
 				}
-				return cmp.Or(s.distributionHTTPClient.Transport, http.DefaultTransport).RoundTrip(req)
-			}),
-			CheckRedirect: s.distributionHTTPClient.CheckRedirect,
-			Jar:           s.distributionHTTPClient.Jar,
-			Timeout:       s.distributionHTTPClient.Timeout,
+				return &authn.AuthConfig{Username: credential.Username, Password: credential.Token}
+			}(),
+			HTTPClient: &http.Client{
+				Transport: rateLimitRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+					if req.Method == http.MethodGet &&
+						req.URL.Host == "registry-1.docker.io" &&
+						req.URL.Path == "/v2/"+dockerHubRateLimitRepository+"/manifests/"+dockerHubRateLimitTag {
+						rewritten := req.Clone(req.Context())
+						rewritten.Method = http.MethodHead // keep: http.Request is only copyable via Clone
+						return cmp.Or(s.distributionHTTPClient.Transport, http.DefaultTransport).RoundTrip(rewritten)
+					}
+					return cmp.Or(s.distributionHTTPClient.Transport, http.DefaultTransport).RoundTrip(req)
+				}),
+				CheckRedirect: s.distributionHTTPClient.CheckRedirect,
+				Jar:           s.distributionHTTPClient.Jar,
+				Timeout:       s.distributionHTTPClient.Timeout,
+			},
+			Host:       "docker.io",
+			Repository: dockerHubRateLimitRepository,
+			Tag:        dockerHubRateLimitTag,
 		})
 		if fetchErr != nil {
 			return registryRateLimitCacheEntry{CheckedAt: time.Now().UTC()}, fetchErr
@@ -866,12 +872,18 @@ func (s *ContainerRegistryService) InspectImageDigest(
 		fallbackResult, fallbackErr := withDigest(registryOperationWithCredentials(ctx, s, parts.RegistryHost,
 			"registry manifest inspect of "+parts.RegistryHost+"/"+parts.Repository+":"+parts.Tag, externalCreds,
 			func(ctx context.Context, credential *resolvedRegistryCredential) (string, error) {
-				return registry.FetchDigest(ctx, parts.RegistryHost, parts.Repository, parts.Tag, func() *authn.AuthConfig {
-					if credential == nil {
-						return nil
-					}
-					return &authn.AuthConfig{Username: credential.Username, Password: credential.Token}
-				}(), s.distributionHTTPClient)
+				return registry.FetchDigest(ctx, registry.Request{
+					Credential: func() *authn.AuthConfig {
+						if credential == nil {
+							return nil
+						}
+						return &authn.AuthConfig{Username: credential.Username, Password: credential.Token}
+					}(),
+					HTTPClient: s.distributionHTTPClient,
+					Host:       parts.RegistryHost,
+					Repository: parts.Repository,
+					Tag:        parts.Tag,
+				})
 			}))
 		lastResult, lastErr = fallbackResult, fallbackErr
 		if fallbackErr == nil {
@@ -1206,12 +1218,17 @@ func (s *ContainerRegistryService) ListImageTags(ctx context.Context, imageRef s
 
 	tags, _, err := registryOperationWithCredentials(lookupCtx, s, parts.RegistryHost, "registry tag listing of "+parts.NormalizedRef, externalCreds,
 		func(ctx context.Context, credential *resolvedRegistryCredential) ([]string, error) {
-			return registry.FetchTags(ctx, parts.RegistryHost, parts.Repository, func() *authn.AuthConfig {
-				if credential == nil {
-					return nil
-				}
-				return &authn.AuthConfig{Username: credential.Username, Password: credential.Token}
-			}(), s.distributionHTTPClient)
+			return registry.FetchTags(ctx, registry.Request{
+				Credential: func() *authn.AuthConfig {
+					if credential == nil {
+						return nil
+					}
+					return &authn.AuthConfig{Username: credential.Username, Password: credential.Token}
+				}(),
+				HTTPClient: s.distributionHTTPClient,
+				Host:       parts.RegistryHost,
+				Repository: parts.Repository,
+			})
 		})
 	return tags, err
 }

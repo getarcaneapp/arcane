@@ -148,10 +148,10 @@ func provideDockerClientService(
 	localSettings *settings.SettingsService,
 	eventService *event.EventService,
 ) *docker.DockerClientService {
-	service := docker.NewDockerClientService(ctx, db, localSettings, bus.WithDroppedEventCallback(func(message events.Message) {
+	service := docker.NewDockerClientService(ctx, db, localSettings, bus.Config{OnDrop: func(message events.Message) {
 		// Overflow is recovered synchronously, applying backpressure instead of losing log entries.
 		eventService.RecordDockerEvent(ctx, message)
-	}))
+	}})
 	var stopStream, stopLog func(context.Context) error
 	var unsubscribe func()
 	lc.Append(fx.Hook{

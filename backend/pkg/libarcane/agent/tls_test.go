@@ -31,7 +31,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	libcrypto.InitEncryption(&libcrypto.Config{
+	libcrypto.InitEncryption(libcrypto.Config{
 		EncryptionKey: "test-encryption-key-for-agent-mtls-32bytes-min",
 		Environment:   "test",
 	})
@@ -40,7 +40,7 @@ func TestMain(m *testing.M) {
 
 func initAgentTestCrypto(t *testing.T) {
 	t.Helper()
-	libcrypto.InitEncryption(&libcrypto.Config{
+	libcrypto.InitEncryption(libcrypto.Config{
 		EncryptionKey: "test-encryption-key-for-agent-mtls-32bytes-min",
 		Environment:   "test",
 	})

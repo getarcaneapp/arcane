@@ -116,7 +116,7 @@ func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&VolumeBackupPolicy{}, &s3.S3Destination{}))
 	db := &database.DB{DB: gormDB}
-	crypto.InitEncryption(&crypto.Config{
+	crypto.InitEncryption(crypto.Config{
 		EncryptionKey: "test-encryption-key-for-volume-backups-32bytes",
 		Environment:   "test",
 	})

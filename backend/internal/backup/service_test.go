@@ -76,7 +76,7 @@ func TestRecoveryKeyStoreRoundTrip(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:recovery-key-store?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&SystemBackupRecoveryConfig{}))
-	crypto.InitEncryption(&crypto.Config{EncryptionKey: "recovery-key-store-test-key-32bytes", Environment: "test"})
+	crypto.InitEncryption(crypto.Config{EncryptionKey: "recovery-key-store-test-key-32bytes", Environment: "test"})
 	store := NewRecoveryKeyStore(&database.DB{DB: gormDB})
 
 	configured, err := store.Configured(t.Context())

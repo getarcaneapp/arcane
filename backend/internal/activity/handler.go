@@ -87,7 +87,7 @@ func NewHandler(activityService *ActivityService, localEnvironment EnvironmentDe
 	return &ActivityHandler{
 		activityService: activityService,
 		environment:     localEnvironment,
-		remoteStreamHub: agg.NewHub[types.ActivityStreamEvent](),
+		remoteStreamHub: &agg.Hub[types.ActivityStreamEvent]{},
 	}
 }
 
@@ -309,8 +309,8 @@ func (h *ActivityHandler) RunLocalStreamProducer(ctx context.Context, limit int,
 // enabled remote environment, re-listing periodically so environments added
 // or removed while the stream is open are picked up without a reconnect.
 func (h *ActivityHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.PermissionSet, limit int, events chan<- types.ActivityStreamEvent) {
-	agg.ReconcilePollersByKey(ctx,
-		func(ctx context.Context) ([]environment.Environment, error) {
+	agg.ReconcilePollersByKey(ctx, agg.PollerConfig[environment.Environment]{
+		List: func(ctx context.Context) ([]environment.Environment, error) {
 			environments, err := h.environment.ListActiveRemoteEnvironments(ctx)
 			if err != nil {
 				return nil, err
@@ -323,13 +323,11 @@ func (h *ActivityHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.
 			}
 			return allowed, nil
 		},
-		func(environment environment.Environment) string {
+		Key: func(environment environment.Environment) string {
 			return environment.ID
 		},
-		environment.ConnectionKey,
-		activityStreamEnvReconcileInterval,
-		"activity stream",
-		func(pollCtx context.Context, remoteEnvironment environment.Environment) {
+		Version: environment.ConnectionKey,
+		Run: func(pollCtx context.Context, remoteEnvironment environment.Environment) {
 			// One shared poller per environment (and snapshot limit) serves
 			// every connected client; this subscriber only forwards its
 			// events onto this client's stream.
@@ -341,7 +339,10 @@ func (h *ActivityHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.
 				func(event types.ActivityStreamEvent) bool {
 					return agg.Send(pollCtx, events, event)
 				})
-		})
+		},
+		Label:    "activity stream",
+		Interval: activityStreamEnvReconcileInterval,
+	})
 }
 
 func (h *ActivityHandler) runRemoteActivityStreamPoller(ctx context.Context, localEnvironment environment.Environment, limit int, publish func(types.ActivityStreamEvent)) {

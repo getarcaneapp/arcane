@@ -109,16 +109,16 @@ func PrepareProjectBindDirectories(projectPath string) projects.PrepareProjectFu
 				if volume.Bind != nil && !bool(volume.Bind.CreateHostPath) {
 					continue
 				}
-				logicalPath, err := acfs.LogicalPath(projectPath, volume.Source)
+				logicalPath, err := acfs.Root{Path: projectPath}.LogicalPath(volume.Source)
 				if err == nil && logicalPath != "/" {
-					exists, existsErr := acfs.Exists(ctx, projectPath, logicalPath)
+					exists, existsErr := acfs.Root{Path: projectPath}.Exists(ctx, logicalPath)
 					switch {
 					case exists || errors.Is(existsErr, acfs.ErrOutsideRoot) || errors.Is(existsErr, fs.ErrPermission):
 						// Leave existing, escaping, and uninspectable sources to the Docker daemon.
 					case existsErr != nil:
 						err = existsErr
 					default:
-						if err = acfs.MkdirAll(ctx, projectPath, logicalPath, utils.DirPerm); err == nil {
+						if err = (acfs.Root{Path: projectPath}).MkdirAll(ctx, logicalPath, utils.DirPerm); err == nil {
 							slog.InfoContext(ctx, "created missing bind directory for project deployment", "projectPath", projectPath, "source", volume.Source)
 						}
 					}

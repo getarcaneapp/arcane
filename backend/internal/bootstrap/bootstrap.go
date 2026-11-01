@@ -110,7 +110,7 @@ func Bootstrap(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("resolve encryption key: %w", err)
 	}
-	crypto.InitEncryption(&crypto.Config{
+	crypto.InitEncryption(crypto.Config{
 		EncryptionKey: encryptionKey,
 		Environment:   string(cfg.Environment),
 		AgentMode:     cfg.AgentEnabled,

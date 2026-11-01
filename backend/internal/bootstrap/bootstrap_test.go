@@ -475,7 +475,7 @@ func TestApplicationOptionsValidate(t *testing.T) {
 }
 
 func TestPrepareServerTLS_AllowsExternalMTLSTermination(t *testing.T) {
-	libcrypto.InitEncryption(&libcrypto.Config{
+	libcrypto.InitEncryption(libcrypto.Config{
 		EncryptionKey: "test-encryption-key-for-agent-mtls-32bytes-min",
 		Environment:   "test",
 	})

@@ -22,6 +22,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
+	acfstypes "go.getarcane.app/acfs/types"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/pkg/utils/tagpolicy"
@@ -287,7 +288,7 @@ func (s *Service) RollbackFailedUpdate(
 		case currentPath == originalPath:
 			return nil
 		case filepath.Dir(originalPath) == filepath.Dir(currentPath):
-			return acfs.Rename(context.WithoutCancel(ctx), filepath.Dir(originalPath), "/"+filepath.Base(currentPath), "/"+filepath.Base(originalPath))
+			return acfs.Root{Path: filepath.Dir(originalPath)}.Rename(context.WithoutCancel(ctx), "/"+filepath.Base(currentPath), "/"+filepath.Base(originalPath))
 		}
 		return os.Rename(currentPath, originalPath)
 	}()
@@ -354,21 +355,21 @@ func (s *Service) Operations() types.ProjectRenameRecoveryOperations {
 }
 
 func PersistProjectServiceImages(ctx context.Context, projectPath, logical string, original, updated []byte) error {
-	entry, err := acfs.Stat(ctx, projectPath, logical, false)
+	entry, err := acfs.Root{Path: projectPath}.Stat(ctx, logical, acfstypes.StatOptions{})
 	if err != nil {
 		return fmt.Errorf("inspect Compose source: %w", err)
 	}
 	if entry.IsSymlink {
 		return fmt.Errorf("tag updates refuse a symlinked Compose source: %s", filepath.Base(logical))
 	}
-	current, err := acfs.ReadFile(ctx, projectPath, logical)
+	current, err := acfs.Root{Path: projectPath}.ReadFile(ctx, logical)
 	if err != nil {
 		return fmt.Errorf("recheck Compose source: %w", err)
 	}
 	if !bytes.Equal(current, original) {
 		return errors.New("Compose source changed during the image update; check updates again") //nolint:staticcheck // Preserve the existing error message.
 	}
-	if writeErr := acfs.Write(ctx, projectPath, logical, updated, acfs.WriteOptions{Mode: os.FileMode(entry.UnixMode).Perm()}); writeErr != nil {
+	if writeErr := (acfs.Root{Path: projectPath}).Write(ctx, logical, updated, acfs.WriteOptions{Mode: os.FileMode(entry.UnixMode).Perm()}); writeErr != nil {
 		return fmt.Errorf("persist Compose image changes: %w", writeErr)
 	}
 	return nil
@@ -594,11 +595,11 @@ func (s *Service) ApplyImageChanges(ctx context.Context, projectPath string, eff
 	if len(effective.ComposeFiles) != 1 {
 		return nil, errors.New("tag updates require one authoritative Compose file; multi-file selections and overrides must be updated manually")
 	}
-	logical, err := acfs.LogicalPath(projectPath, effective.ComposeFiles[0])
+	logical, err := acfs.Root{Path: projectPath}.LogicalPath(effective.ComposeFiles[0])
 	if err != nil {
 		return nil, fmt.Errorf("tag update Compose file must be inside the project directory: %w", err)
 	}
-	original, err := acfs.ReadFile(ctx, projectPath, logical)
+	original, err := acfs.Root{Path: projectPath}.ReadFile(ctx, logical)
 	if err != nil {
 		return nil, fmt.Errorf("read Compose source for tag update: %w", err)
 	}

@@ -446,12 +446,17 @@ func (s *VolumeService) execInContainer(ctx context.Context, containerID, execUs
 	}
 
 	var stdout, stderr bytes.Buffer
-	exitCode, err := docker.ExecInContainer(ctx, dockerClient, containerID, client.ExecCreateOptions{
-		User:         execUser,
-		AttachStdout: true,
-		AttachStderr: true,
-		Cmd:          cmd,
-	}, &stdout, &stderr)
+	exitCode, err := docker.ExecInContainer(ctx, dockerClient, docker.ExecRequest{
+		Stdout:      &stdout,
+		Stderr:      &stderr,
+		ContainerID: containerID,
+		Options: client.ExecCreateOptions{
+			User:         execUser,
+			AttachStdout: true,
+			AttachStderr: true,
+			Cmd:          cmd,
+		},
+	})
 	if err != nil {
 		return stdout.String(), stderr.String(), err
 	}

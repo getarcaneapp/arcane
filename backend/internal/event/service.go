@@ -787,14 +787,14 @@ const daemonEventChanBuffer = 256
 // SubscribeDockerEvents prepares subscriptions before the watcher starts. The caller
 // runs the returned worker and calls cleanup after joining it, including on failed startup.
 func (s *EventService) SubscribeDockerEvents(eventBus *bus.DockerEventBus) (run func(context.Context) error, cleanup func()) {
-	containers, unsubscribeContainers := eventBus.Subscribe(events.ContainerEventType, bus.WithSubscriberBuffer(daemonEventChanBuffer))
-	images, unsubscribeImages := eventBus.Subscribe(events.ImageEventType, bus.WithSubscriberBuffer(daemonEventChanBuffer))
-	volumes, unsubscribeVolumes := eventBus.Subscribe(events.VolumeEventType, bus.WithSubscriberBuffer(daemonEventChanBuffer))
-	networks, unsubscribeNetworks := eventBus.Subscribe(events.NetworkEventType, bus.WithSubscriberBuffer(daemonEventChanBuffer))
+	containers, unsubscribeContainers := eventBus.Subscribe(events.ContainerEventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
+	images, unsubscribeImages := eventBus.Subscribe(events.ImageEventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
+	volumes, unsubscribeVolumes := eventBus.Subscribe(events.VolumeEventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
+	networks, unsubscribeNetworks := eventBus.Subscribe(events.NetworkEventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
 	swarmChannels := make([]<-chan events.Message, 0, len(swarmDaemonEventTypes))
 	swarmUnsubscribes := make([]func(), 0, len(swarmDaemonEventTypes))
 	for _, eventType := range swarmDaemonEventTypes {
-		channel, unsubscribe := eventBus.Subscribe(eventType, bus.WithSubscriberBuffer(daemonEventChanBuffer))
+		channel, unsubscribe := eventBus.Subscribe(eventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
 		swarmChannels = append(swarmChannels, channel)
 		swarmUnsubscribes = append(swarmUnsubscribes, unsubscribe)
 	}

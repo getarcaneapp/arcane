@@ -126,11 +126,16 @@ func RuntimeServiceFromContainer(catalog string, c container.Summary, meta proje
 			}
 			return nil
 		}(),
-		IconLightURL:     resolvedIcon.IconLightURL,
-		IconDarkURL:      resolvedIcon.IconDarkURL,
-		ContainerLabels:  c.Labels,
-		RedeployDisabled: labels.ShouldDisableArcaneServerRedeploy(c.Labels, c.ID, currentContainerID, currentContainerErr),
-		ImageID:          c.ImageID,
+		IconLightURL:    resolvedIcon.IconLightURL,
+		IconDarkURL:     resolvedIcon.IconDarkURL,
+		ContainerLabels: c.Labels,
+		RedeployDisabled: labels.ShouldDisableArcaneServerRedeploy(labels.RedeployCheck{
+			CurrentErr:         currentContainerErr,
+			Labels:             c.Labels,
+			ContainerID:        c.ID,
+			CurrentContainerID: currentContainerID,
+		}),
+		ImageID: c.ImageID,
 	}
 }
 

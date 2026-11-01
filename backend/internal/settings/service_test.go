@@ -35,7 +35,7 @@ func setupSettingsTestDB(t *testing.T) *database.DB {
 
 func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*SettingsService, error) {
 	t.Helper()
-	crypto.InitEncryption(&crypto.Config{Environment: "development"})
+	crypto.InitEncryption(crypto.Config{Environment: "development"})
 	env, err := LoadEnv()
 	require.NoError(t, err)
 	cfg, err := config.Load()
@@ -787,7 +787,7 @@ func TestResolveEncryptionKey(t *testing.T) {
 	var sv SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "encryptionKey").First(&sv).Error)
 	require.Equal(t, k1, sv.Value)
-	crypto.InitEncryption(&crypto.Config{EncryptionKey: k1, Environment: "development"})
+	crypto.InitEncryption(crypto.Config{EncryptionKey: k1, Environment: "development"})
 
 	browserKey1, err := svc.EnsureBrowserSessionSigningKey(ctx)
 	require.NoError(t, err)
@@ -1431,7 +1431,7 @@ func TestSettingsServiceEncryptsStoredSensitiveSettingsOnlyOnce(t *testing.T) {
 
 	otherKey, err := crypto.GenerateKey()
 	require.NoError(t, err)
-	otherEncryptor, err := crypto.New(otherKey)
+	otherEncryptor, err := crypto.New(crypto.Keys{Primary: otherKey})
 	require.NoError(t, err)
 	foreignCiphertext, err := otherEncryptor.Encrypt("secret-from-another-key")
 	require.NoError(t, err)

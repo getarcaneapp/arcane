@@ -418,7 +418,7 @@ func (session systemBackupSnapshotSession) rollback(
 				rollbackErr = errors.Join(rollbackErr, errors.New("refusing to remove the projects directory itself"))
 				continue
 			}
-			if err := acfs.RemoveAll(ctx, destination.directory, selectedEntry.Path); err != nil {
+			if err := (acfs.Root{Path: destination.directory}).RemoveAll(ctx, selectedEntry.Path); err != nil {
 				rollbackErr = errors.Join(rollbackErr, fmt.Errorf("remove newly restored project path %s: %w", selectedEntry.Path, err))
 			}
 			continue

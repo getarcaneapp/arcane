@@ -16,6 +16,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/cli"
 	"go.getarcane.app/acfs"
 	"go.getarcane.app/acfs/atomic"
+	acfstypes "go.getarcane.app/acfs/types"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
@@ -67,7 +68,7 @@ func detectExistingComposeFileInternal(ctx context.Context, projectsRoot, dir st
 // and uses the existing name if found, otherwise defaults to compose.yaml
 // projectsRoot is the allowed root directory to prevent path traversal attacks
 func WriteComposeFile(ctx context.Context, projectsRoot, dirPath, content string) error {
-	if _, err := acfs.LogicalPath(projectsRoot, dirPath); err != nil {
+	if _, err := (acfs.Root{Path: projectsRoot}).LogicalPath(dirPath); err != nil {
 		return fmt.Errorf("refusing to write compose file: path outside projects root: %w", err)
 	}
 
@@ -81,12 +82,12 @@ func WriteComposeFile(ctx context.Context, projectsRoot, dirPath, content string
 	mode := utils.FilePerm
 	if existingFile := detectExistingComposeFileInternal(ctx, projectsRoot, dirPath); existingFile != "" {
 		composeFileName = filepath.Base(existingFile)
-		if entry, statErr := acfs.Stat(ctx, dirPath, "/"+composeFileName, false); statErr == nil {
+		if entry, statErr := (acfs.Root{Path: dirPath}).Stat(ctx, "/"+composeFileName, acfstypes.StatOptions{}); statErr == nil {
 			mode = os.FileMode(entry.UnixMode).Perm()
 		}
 	}
 
-	if err := acfs.Write(ctx, dirPath, "/"+composeFileName, []byte(content), acfs.WriteOptions{Mode: mode, InPlace: true}); err != nil {
+	if err := (acfs.Root{Path: dirPath}).Write(ctx, "/"+composeFileName, []byte(content), acfs.WriteOptions{Mode: mode, InPlace: true}); err != nil {
 		return fmt.Errorf("failed to write compose file: %w", err)
 	}
 
@@ -94,7 +95,7 @@ func WriteComposeFile(ctx context.Context, projectsRoot, dirPath, content string
 }
 
 func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, content string) error {
-	if _, err := acfs.LogicalPath(projectsRoot, dirPath); err != nil {
+	if _, err := (acfs.Root{Path: projectsRoot}).LogicalPath(dirPath); err != nil {
 		return fmt.Errorf("refusing to write project file: path outside projects root: %w", err)
 	}
 
@@ -117,7 +118,7 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 	}
 
 	logicalPath := "/" + fileName
-	entry, statErr := acfs.Stat(ctx, dirPath, logicalPath, false)
+	entry, statErr := acfs.Root{Path: dirPath}.Stat(ctx, logicalPath, acfstypes.StatOptions{})
 	switch {
 	case statErr == nil && entry.IsSymlink:
 		// Only .env is written through a symlink (handled above); every other
@@ -129,7 +130,7 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 
 	mode := utils.FilePerm
 	if statErr == nil {
-		existingContent, readErr := acfs.ReadFile(ctx, dirPath, logicalPath)
+		existingContent, readErr := acfs.Root{Path: dirPath}.ReadFile(ctx, logicalPath)
 		if readErr == nil && string(existingContent) == content {
 			return nil
 		}
@@ -139,7 +140,7 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 		mode = os.FileMode(entry.UnixMode).Perm()
 	}
 
-	if err := acfs.Write(ctx, dirPath, logicalPath, []byte(content), acfs.WriteOptions{Mode: mode, InPlace: true}); err != nil {
+	if err := (acfs.Root{Path: dirPath}).Write(ctx, logicalPath, []byte(content), acfs.WriteOptions{Mode: mode, InPlace: true}); err != nil {
 		return fmt.Errorf("failed to write project file %s: %w", fileName, err)
 	}
 
@@ -200,7 +201,7 @@ func resolveEnvFileWriteTargetInternal(envPath string) (writePath string, perm o
 }
 
 func RemoveProjectFile(ctx context.Context, projectsRoot, dirPath, fileName string) error {
-	if _, err := acfs.LogicalPath(projectsRoot, dirPath); err != nil {
+	if _, err := (acfs.Root{Path: projectsRoot}).LogicalPath(dirPath); err != nil {
 		return fmt.Errorf("refusing to remove project file: path outside projects root: %w", err)
 	}
 
@@ -208,7 +209,7 @@ func RemoveProjectFile(ctx context.Context, projectsRoot, dirPath, fileName stri
 		return fmt.Errorf("invalid project file name %q", fileName)
 	}
 
-	if err := acfs.Remove(ctx, dirPath, "/"+fileName); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := (acfs.Root{Path: dirPath}).Remove(ctx, "/"+fileName); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("failed to remove project file %s: %w", fileName, err)
 	}
 
@@ -280,7 +281,7 @@ func RollbackRenamedProjectDirectory(ctx context.Context, oldPath, newPath strin
 		// case the move crosses roots and cannot be a confined rename.
 		var renameErr error
 		if parent := filepath.Dir(newPath); parent == filepath.Dir(oldPath) {
-			renameErr = acfs.Rename(ctx, parent, "/"+filepath.Base(newPath), "/"+filepath.Base(oldPath))
+			renameErr = acfs.Root{Path: parent}.Rename(ctx, "/"+filepath.Base(newPath), "/"+filepath.Base(oldPath))
 		} else {
 			renameErr = os.Rename(newPath, oldPath)
 		}
@@ -300,12 +301,12 @@ func relocateRenameConflictDirectoryInternal(ctx context.Context, localPath stri
 	now := time.Now().UTC().UnixNano()
 	for attempt := range 10 {
 		conflictName := fmt.Sprintf(".%s.rename-conflict-%d-%d", base, now, attempt)
-		if exists, err := acfs.Exists(ctx, parent, "/"+conflictName); err != nil {
+		if exists, err := (acfs.Root{Path: parent}).Exists(ctx, "/"+conflictName); err != nil {
 			return "", fmt.Errorf("check conflict path: %w", err)
 		} else if exists {
 			continue
 		}
-		if err := acfs.Rename(ctx, parent, "/"+base, "/"+conflictName); err != nil {
+		if err := (acfs.Root{Path: parent}).Rename(ctx, "/"+base, "/"+conflictName); err != nil {
 			return "", fmt.Errorf("relocate project rename target path: %w", err)
 		}
 		return filepath.Join(parent, conflictName), nil
@@ -326,7 +327,7 @@ type SyncFile struct {
 // It validates all paths are within the project directory and creates
 // subdirectories as needed. Returns the list of written file paths.
 func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string, files []SyncFile) ([]string, error) {
-	if _, err := acfs.LogicalPath(projectsRoot, projectPath); err != nil {
+	if _, err := (acfs.Root{Path: projectsRoot}).LogicalPath(projectPath); err != nil {
 		return nil, fmt.Errorf("project path is outside projects root: %w", err)
 	}
 
@@ -339,19 +340,19 @@ func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string,
 	writtenPaths := make([]string, 0, len(files))
 
 	for _, file := range files {
-		logicalPath, err := acfs.LogicalPath(projectPath, filepath.Join(projectPath, file.RelativePath))
+		logicalPath, err := acfs.Root{Path: projectPath}.LogicalPath(filepath.Join(projectPath, file.RelativePath))
 		if err != nil {
 			return nil, fmt.Errorf("file path %s would escape project directory", file.RelativePath)
 		}
 
-		if mkdirAllErr := acfs.MkdirAll(ctx, projectPath, path.Dir(logicalPath), utils.DirPerm); mkdirAllErr != nil {
+		if mkdirAllErr := (acfs.Root{Path: projectPath}).MkdirAll(ctx, path.Dir(logicalPath), utils.DirPerm); mkdirAllErr != nil {
 			return nil, fmt.Errorf("failed to create directory for %s: %w", file.RelativePath, mkdirAllErr)
 		}
 
-		entry, statErr := acfs.Stat(ctx, projectPath, logicalPath, false)
+		entry, statErr := acfs.Root{Path: projectPath}.Stat(ctx, logicalPath, acfstypes.StatOptions{})
 		switch {
 		case statErr == nil && entry.IsDirectory:
-			if removeAllErr := acfs.RemoveAll(ctx, projectPath, logicalPath); removeAllErr != nil {
+			if removeAllErr := (acfs.Root{Path: projectPath}).RemoveAll(ctx, logicalPath); removeAllErr != nil {
 				return nil, fmt.Errorf("failed to replace directory at %s: %w", file.RelativePath, removeAllErr)
 			}
 		case statErr != nil && !errors.Is(statErr, fs.ErrNotExist):
@@ -361,7 +362,7 @@ func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string,
 		// Write the file. Honor the source's executable bit so scripts arrive
 		// runnable for lifecycle hooks and similar consumers.
 		perm := kit.Ternary(file.Executable, 0o755, utils.FilePerm)
-		if writeErr := acfs.Write(ctx, projectPath, logicalPath, file.Content, acfs.WriteOptions{Mode: perm, InPlace: true}); writeErr != nil {
+		if writeErr := (acfs.Root{Path: projectPath}).Write(ctx, logicalPath, file.Content, acfs.WriteOptions{Mode: perm, InPlace: true}); writeErr != nil {
 			return nil, fmt.Errorf("failed to write file %s: %w", file.RelativePath, writeErr)
 		}
 
@@ -376,7 +377,7 @@ func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string,
 // Empty directories are removed after file deletion.
 // This is a best-effort operation - errors are logged but don't cause failure.
 func CleanupRemovedFiles(ctx context.Context, projectsRoot, projectPath string, oldFiles, newFiles []string) error {
-	if _, err := acfs.LogicalPath(projectsRoot, projectPath); err != nil {
+	if _, err := (acfs.Root{Path: projectsRoot}).LogicalPath(projectPath); err != nil {
 		return fmt.Errorf("project path is outside projects root: %w", err)
 	}
 
@@ -395,13 +396,13 @@ func CleanupRemovedFiles(ctx context.Context, projectsRoot, projectPath string, 
 			continue // File still exists in new sync
 		}
 
-		logicalPath, err := acfs.LogicalPath(projectPath, filepath.Join(projectPath, oldFile))
+		logicalPath, err := acfs.Root{Path: projectPath}.LogicalPath(filepath.Join(projectPath, oldFile))
 		if err != nil {
 			continue // Skip files that would be outside project
 		}
 
 		// Delete the file (best effort)
-		if removeErr := acfs.Remove(ctx, projectPath, logicalPath); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
+		if removeErr := (acfs.Root{Path: projectPath}).Remove(ctx, logicalPath); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
 			// Log but continue - this is best effort
 			slog.WarnContext(ctx, "Failed to remove old synced file", "file", oldFile, "error", removeErr)
 		}
@@ -426,7 +427,7 @@ func CleanupRemovedFiles(ctx context.Context, projectsRoot, projectPath string, 
 // anything else.
 func cleanupEmptyDirs(ctx context.Context, projectPath, startLogical string) {
 	for current := startLogical; current != "/"; current = path.Dir(current) {
-		if err := acfs.Remove(ctx, projectPath, current); err != nil {
+		if err := (acfs.Root{Path: projectPath}).Remove(ctx, current); err != nil {
 			return
 		}
 	}

@@ -76,7 +76,7 @@ func CollectFiles(ctx context.Context, root string, selection []string, opts Col
 			return nil, err
 		}
 		logical := "/" + selected
-		entry, err := acfs.Stat(ctx, root, logical, false)
+		entry, err := acfs.Root{Path: root}.Stat(ctx, logical, acfstypes.StatOptions{})
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				return nil, fmt.Errorf("selected path %s does not exist: %w", selected, ErrSelectionUnreadable)
@@ -92,7 +92,7 @@ func CollectFiles(ctx context.Context, root string, selection []string, opts Col
 			}
 			continue
 		}
-		err = acfs.Walk(ctx, root, logical, func(child acfstypes.Entry) error { return c.visitInternal(ctx, child) })
+		_, err = acfs.Root{Path: root}.Walk(ctx, logical, acfstypes.WalkOptions{}, func(child acfstypes.Entry) error { return c.visitInternal(ctx, child) })
 		if err != nil && !errors.Is(err, ErrSelectionUnreadable) && !errors.Is(err, ErrSelectionLimits) && !errors.Is(err, ErrSelectionInvalid) {
 			return nil, fmt.Errorf("cannot walk %s: %v: %w", selected, err.Error(), ErrSelectionUnreadable)
 		}
@@ -125,7 +125,7 @@ func (c *fileCollectorInternal) addInternal(ctx context.Context, entry acfstypes
 	if c.opts.MaxFiles > 0 && len(c.files) >= c.opts.MaxFiles {
 		return fmt.Errorf("file count limit exceeded (max %d files): %w", c.opts.MaxFiles, ErrSelectionLimits)
 	}
-	content, err := acfs.ReadFile(ctx, c.root, entry.Path)
+	content, err := acfs.Root{Path: c.root}.ReadFile(ctx, entry.Path)
 	if err != nil {
 		return fmt.Errorf("cannot read %s: %v: %w", relative, err.Error(), ErrSelectionUnreadable)
 	}
@@ -330,11 +330,11 @@ func stageCommitFilesInternal(ctx context.Context, checkout *WriteCheckout, work
 			return err
 		}
 		logical := path.Join("/", filepath.ToSlash(file.Path))
-		if err := acfs.MkdirAll(ctx, checkout.RepoPath, path.Dir(logical), 0o755); err != nil {
+		if err := (acfs.Root{Path: checkout.RepoPath}).MkdirAll(ctx, path.Dir(logical), 0o755); err != nil {
 			return fmt.Errorf("failed to create directory for %s: %w", file.Path, err)
 		}
 		mode := kit.Ternary(file.Executable, 0o755, os.FileMode(0o644))
-		if _, err := acfs.WriteFrom(ctx, checkout.RepoPath, logical, bytes.NewReader(file.Content), int64(len(file.Content)), mode); err != nil {
+		if _, err := (acfs.Root{Path: checkout.RepoPath}).WriteFrom(ctx, logical, bytes.NewReader(file.Content), acfs.WriteFromOptions{Size: int64(len(file.Content)), Mode: mode}); err != nil {
 			return fmt.Errorf("failed to write %s: %w", file.Path, err)
 		}
 		if _, err := worktree.Add(file.Path); err != nil {
@@ -345,7 +345,7 @@ func stageCommitFilesInternal(ctx context.Context, checkout *WriteCheckout, work
 		if err := ValidatePath(checkout.RepoPath, removed); err != nil {
 			return err
 		}
-		if _, err := acfs.Stat(ctx, checkout.RepoPath, path.Join("/", filepath.ToSlash(removed)), false); err != nil {
+		if _, err := (acfs.Root{Path: checkout.RepoPath}).Stat(ctx, path.Join("/", filepath.ToSlash(removed)), acfstypes.StatOptions{}); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}

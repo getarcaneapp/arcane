@@ -42,7 +42,7 @@ func setupNotificationTestDB(t *testing.T) *database.DB {
 		EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
 		Environment:   "test",
 	}
-	crypto.InitEncryption(&crypto.Config{
+	crypto.InitEncryption(crypto.Config{
 		EncryptionKey: testCfg.EncryptionKey,
 		Environment:   string(testCfg.Environment),
 		AgentMode:     testCfg.AgentEnabled,

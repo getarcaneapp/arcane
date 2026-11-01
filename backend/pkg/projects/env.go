@@ -365,7 +365,7 @@ func WithTransientValidationEnvFile(ctx context.Context, projectPath string, eff
 			case originalExists:
 				restoreErr = WriteProjectFile(ctx, projectPath, projectPath, ".env", string(originalContent))
 			default:
-				restoreErr = acfs.Remove(ctx, projectPath, "/.env")
+				restoreErr = acfs.Root{Path: projectPath}.Remove(ctx, "/.env")
 			}
 
 			if restoreErr != nil && !os.IsNotExist(restoreErr) {

@@ -293,7 +293,7 @@ func diagnosticsReadLoop(ctx context.Context, conn *websocket.Conn, onMessage fu
 	return done
 }
 
-var defaultLogBroadcaster = logs.New(1000)
+var defaultLogBroadcaster = logs.New(logs.Config{Capacity: 1000})
 
 // LogBroadcaster returns the backend-wide log broadcaster used by diagnostics.
 func LogBroadcaster() *logs.Broadcaster {

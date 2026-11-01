@@ -579,7 +579,12 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	})
 
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-	if labels.ShouldDisableArcaneServerRedeploy(containerInfo.Config.Labels, containerInfo.ID, currentContainerID, currentContainerErr) {
+	if labels.ShouldDisableArcaneServerRedeploy(labels.RedeployCheck{
+		CurrentErr:         currentContainerErr,
+		Labels:             containerInfo.Config.Labels,
+		ContainerID:        containerInfo.ID,
+		CurrentContainerID: currentContainerID,
+	}) {
 		err = errors.New("arcane cannot redeploy itself; use the system upgrade flow (Settings -> Updates) instead")
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, database.JSON{
 			"action": "redeploy",
@@ -729,12 +734,15 @@ func (s *ContainerService) recreateContainer(
 
 		defer s.eventService.BeginDockerResourceSuppressionWindow("container", "", containerName)()
 		restoreResp, restoreCreateErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
-			return compat.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
-				Config:           &originalConfig,
-				HostConfig:       &restoreHostConfig,
-				NetworkingConfig: buildCleanNetworkingConfig(containerInfo, apiVersion),
-				Name:             containerName,
-			}, apiVersion)
+			return compat.ContainerCreateWithCompatibility(ctx, dockerClient, compat.CreateRequest{
+				Options: client.ContainerCreateOptions{
+					Config:           &originalConfig,
+					HostConfig:       &restoreHostConfig,
+					NetworkingConfig: buildCleanNetworkingConfig(containerInfo, apiVersion),
+					Name:             containerName,
+				},
+				APIVersion: apiVersion,
+			})
 		})
 		if restoreCreateErr != nil {
 			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerInfo.ID, containerName, user.ID, user.Username, "0", restoreCreateErr, database.JSON{
@@ -787,12 +795,15 @@ func (s *ContainerService) recreateContainer(
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("container", "", newName)()
 	createResp, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
-		return compat.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
-			Config:           newConfig,
-			HostConfig:       &createHostConfig,
-			NetworkingConfig: networkingConfig,
-			Name:             newName,
-		}, apiVersion)
+		return compat.ContainerCreateWithCompatibility(ctx, dockerClient, compat.CreateRequest{
+			Options: client.ContainerCreateOptions{
+				Config:           newConfig,
+				HostConfig:       &createHostConfig,
+				NetworkingConfig: networkingConfig,
+				Name:             newName,
+			},
+			APIVersion: apiVersion,
+		})
 	})
 	if err != nil {
 		s.restoreContainerAfterRedeployFailure(ctx, containerInfo.ID, containerName, backupName, "create", wasRunning && !stopAfterCreate, user)
@@ -1146,7 +1157,12 @@ func (s *ContainerService) GetContainerEditConfig(ctx context.Context, container
 	return types.NewContainerEditConfigFromInspect(
 		&containerJSON.Container,
 		docker.ComposeProjectLabel(kit.FromPtr(containerJSON.Container.Config).Labels) != "",
-		labels.ShouldDisableArcaneServerRedeploy(kit.FromPtr(containerJSON.Container.Config).Labels, containerJSON.Container.ID, currentContainerID, currentContainerErr),
+		labels.ShouldDisableArcaneServerRedeploy(labels.RedeployCheck{
+			CurrentErr:         currentContainerErr,
+			Labels:             kit.FromPtr(containerJSON.Container.Config).Labels,
+			ContainerID:        containerJSON.Container.ID,
+			CurrentContainerID: currentContainerID,
+		}),
 	), nil
 }
 
@@ -1186,7 +1202,12 @@ func (s *ContainerService) EditContainer(ctx context.Context, containerID string
 	}
 
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-	if labels.ShouldDisableArcaneServerRedeploy(containerInfo.Config.Labels, containerInfo.ID, currentContainerID, currentContainerErr) {
+	if labels.ShouldDisableArcaneServerRedeploy(labels.RedeployCheck{
+		CurrentErr:         currentContainerErr,
+		Labels:             containerInfo.Config.Labels,
+		ContainerID:        containerInfo.ID,
+		CurrentContainerID: currentContainerID,
+	}) {
 		err = errors.New("arcane cannot edit itself; use the system upgrade flow (Settings -> Updates) instead")
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, database.JSON{
 			"action": "edit",
@@ -1271,22 +1292,27 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 	resolvedIcon := s.resolveContainerIcon(ctx, details.Labels, map[string]projects.ArcaneComposeMetadata{})
 
 	return types.ContainerDetails{ //exhaustruct:enforce
-		ID:               details.ID,
-		Name:             details.Name,
-		Image:            details.Image,
-		ImageID:          details.ImageID,
-		Created:          details.Created,
-		State:            details.State,
-		Config:           details.Config,
-		HostConfig:       details.HostConfig,
-		NetworkSettings:  details.NetworkSettings,
-		Ports:            details.Ports,
-		Mounts:           details.Mounts,
-		Labels:           details.Labels,
-		ComposeInfo:      details.ComposeInfo,
-		IconLightURL:     resolvedIcon.IconLightURL,
-		IconDarkURL:      resolvedIcon.IconDarkURL,
-		RedeployDisabled: labels.ShouldDisableArcaneServerRedeploy(details.Labels, details.ID, currentContainerID, currentContainerErr),
+		ID:              details.ID,
+		Name:            details.Name,
+		Image:           details.Image,
+		ImageID:         details.ImageID,
+		Created:         details.Created,
+		State:           details.State,
+		Config:          details.Config,
+		HostConfig:      details.HostConfig,
+		NetworkSettings: details.NetworkSettings,
+		Ports:           details.Ports,
+		Mounts:          details.Mounts,
+		Labels:          details.Labels,
+		ComposeInfo:     details.ComposeInfo,
+		IconLightURL:    resolvedIcon.IconLightURL,
+		IconDarkURL:     resolvedIcon.IconDarkURL,
+		RedeployDisabled: labels.ShouldDisableArcaneServerRedeploy(labels.RedeployCheck{
+			CurrentErr:         currentContainerErr,
+			Labels:             details.Labels,
+			ContainerID:        details.ID,
+			CurrentContainerID: currentContainerID,
+		}),
 		AutoUpdateEnabled: !labels.IsUpdateDisabled(details.Labels) &&
 			!docker.ContainerNameExcluded([]string{details.Name}, docker.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers"))),
 		UpdateInfo: updates[details.ID],
@@ -1478,12 +1504,12 @@ func (s *ContainerService) CreateContainer(
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("container", "", containerName)()
 	resp, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
-		return compat.ContainerCreateWithCompatibility(ctx, dockerClient, client.ContainerCreateOptions{
+		return compat.ContainerCreateWithCompatibility(ctx, dockerClient, compat.CreateRequest{Options: client.ContainerCreateOptions{
 			Config:           config,
 			HostConfig:       hostConfig,
 			NetworkingConfig: networkingConfig,
 			Name:             containerName,
-		})
+		}})
 	})
 	if err != nil {
 		s.eventService.LogErrorEvent(
@@ -1962,25 +1988,30 @@ func (s *ContainerService) BuildSummaries(
 		resolved, policyErr := tagpolicy.Resolve(dc.Image, policy)
 		hidden, _ := kit.ParseBool(dc.Labels[libarcane.HiddenResourceLabel])
 		items = append(items, types.ContainerSummary{ //exhaustruct:enforce
-			EnvironmentTag:    summary.EnvironmentTag,
-			ID:                summary.ID,
-			Names:             summary.Names,
-			Image:             summary.Image,
-			ImageID:           summary.ImageID,
-			Command:           summary.Command,
-			Created:           summary.Created,
-			Ports:             summary.Ports,
-			Labels:            summary.Labels,
-			State:             summary.State,
-			Status:            summary.Status,
-			HostConfig:        summary.HostConfig,
-			NetworkSettings:   summary.NetworkSettings,
-			Mounts:            summary.Mounts,
-			IconLightURL:      summary.IconLightURL,
-			IconDarkURL:       summary.IconDarkURL,
-			UpdateStrategy:    kit.Ternary(policyErr != nil, cmp.Or(policy.Strategy, "auto"), resolved.Strategy),
-			UpdateInfo:        updateInfoMap[dc.ID],
-			RedeployDisabled:  labels.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr),
+			EnvironmentTag:  summary.EnvironmentTag,
+			ID:              summary.ID,
+			Names:           summary.Names,
+			Image:           summary.Image,
+			ImageID:         summary.ImageID,
+			Command:         summary.Command,
+			Created:         summary.Created,
+			Ports:           summary.Ports,
+			Labels:          summary.Labels,
+			State:           summary.State,
+			Status:          summary.Status,
+			HostConfig:      summary.HostConfig,
+			NetworkSettings: summary.NetworkSettings,
+			Mounts:          summary.Mounts,
+			IconLightURL:    summary.IconLightURL,
+			IconDarkURL:     summary.IconDarkURL,
+			UpdateStrategy:  kit.Ternary(policyErr != nil, cmp.Or(policy.Strategy, "auto"), resolved.Strategy),
+			UpdateInfo:      updateInfoMap[dc.ID],
+			RedeployDisabled: labels.ShouldDisableArcaneServerRedeploy(labels.RedeployCheck{
+				CurrentErr:         currentContainerErr,
+				Labels:             summary.Labels,
+				ContainerID:        summary.ID,
+				CurrentContainerID: currentContainerID,
+			}),
 			AutoUpdateEnabled: !labels.IsUpdateDisabled(dc.Labels) && !docker.ContainerNameExcluded(dc.Names, excluded),
 			Hidden:            hidden,
 			ResourceSample:    summary.ResourceSample,
@@ -2317,7 +2348,7 @@ func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, l
 	}
 	defer func() { _ = logs.Close() }()
 
-	return docker.StreamContainerLogs(ctx, logs, logsChan, follow, kit.FromPtr(containerInspect.Container.Config).Tty)
+	return docker.StreamContainerLogs(ctx, logs, logsChan, docker.LogOptions{Follow: follow, TTY: kit.FromPtr(containerInspect.Container.Config).Tty})
 }
 
 // DownloadLogs returns every log line Docker retains for the container as a

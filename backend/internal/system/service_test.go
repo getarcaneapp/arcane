@@ -215,7 +215,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		&settings.SettingVariable{},
 		&volume.VolumeBackup{},
 	))
-	crypto.InitEncryption(&crypto.Config{EncryptionKey: "system-backup-policy-test-key-32bytes", Environment: "test"})
+	crypto.InitEncryption(crypto.Config{EncryptionKey: "system-backup-policy-test-key-32bytes", Environment: "test"})
 	db := &database.DB{DB: gormDB}
 	recoveryKeys := backup.NewRecoveryKeyStore(db)
 	s3Destinations := s3.NewS3DestinationService(db, func(context.Context, string) error { return nil })

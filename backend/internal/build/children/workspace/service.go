@@ -47,7 +47,7 @@ func (s *Service) ListDirectory(ctx context.Context, dirPath string) ([]types.Wo
 		return nil, common.Classify(common.ErrForbidden, fmt.Errorf("invalid path: %w", err))
 	}
 
-	entries, err := acfs.List(ctx, root, cleaned)
+	entries, err := acfs.Root{Path: root}.List(ctx, cleaned)
 	if err != nil {
 		return nil, classifyWorkspaceError(fmt.Errorf("failed to list directory: %w", err))
 	}
@@ -76,7 +76,7 @@ func (s *Service) GetFileContent(ctx context.Context, filePath string, maxBytes 
 		maxBytes = 1048576
 	}
 
-	file, _, err := acfs.OpenRead(ctx, root, cleaned, maxBytes)
+	file, _, err := acfs.Root{Path: root}.OpenRead(ctx, cleaned, maxBytes)
 	if err != nil {
 		return nil, "", classifyWorkspaceError(fmt.Errorf("failed to open file: %w", err))
 	}
@@ -103,7 +103,7 @@ func (s *Service) DownloadFile(ctx context.Context, filePath string) (io.ReadClo
 		return nil, 0, common.Classify(common.ErrForbidden, fmt.Errorf("invalid path: %w", err))
 	}
 
-	file, size, err := acfs.OpenRead(ctx, root, cleaned, 0)
+	file, size, err := acfs.Root{Path: root}.OpenRead(ctx, cleaned, 0)
 	if err != nil {
 		return nil, 0, classifyWorkspaceError(fmt.Errorf("failed to open file: %w", err))
 	}
@@ -128,12 +128,12 @@ func (s *Service) UploadFile(ctx context.Context, destPath string, content io.Re
 		return common.Classify(common.ErrForbidden, fmt.Errorf("invalid path: %w", err))
 	}
 
-	if mkdirAllErr := acfs.MkdirAll(ctx, root, cleaned, 0o755); mkdirAllErr != nil {
+	if mkdirAllErr := (acfs.Root{Path: root}).MkdirAll(ctx, cleaned, 0o755); mkdirAllErr != nil {
 		return classifyWorkspaceError(fmt.Errorf("failed to create directory: %w", mkdirAllErr))
 	}
 
 	targetFile := path.Join(cleaned, safeFilename)
-	if _, writeFromErr := acfs.WriteFrom(ctx, root, targetFile, content, size, 0o644); writeFromErr != nil {
+	if _, writeFromErr := (acfs.Root{Path: root}).WriteFrom(ctx, targetFile, content, acfs.WriteFromOptions{Size: size, Mode: 0o644}); writeFromErr != nil {
 		return classifyWorkspaceError(fmt.Errorf("failed to write file: %w", writeFromErr))
 	}
 
@@ -156,7 +156,7 @@ func (s *Service) CreateDirectory(ctx context.Context, dirPath string) error {
 		return nil
 	}
 
-	if mkdirAllErr := acfs.MkdirAll(ctx, root, cleaned, 0o755); mkdirAllErr != nil {
+	if mkdirAllErr := (acfs.Root{Path: root}).MkdirAll(ctx, cleaned, 0o755); mkdirAllErr != nil {
 		return classifyWorkspaceError(fmt.Errorf("failed to create directory: %w", mkdirAllErr))
 	}
 
@@ -179,7 +179,7 @@ func (s *Service) DeleteFile(ctx context.Context, filePath string) error {
 		return common.Classify(common.ErrBadRequest, errors.New("cannot delete root directory"))
 	}
 
-	if removeAllErr := acfs.RemoveAll(ctx, root, cleaned); removeAllErr != nil {
+	if removeAllErr := (acfs.Root{Path: root}).RemoveAll(ctx, cleaned); removeAllErr != nil {
 		return classifyWorkspaceError(fmt.Errorf("failed to delete path: %w", removeAllErr))
 	}
 

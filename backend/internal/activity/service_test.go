@@ -915,7 +915,7 @@ func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
 			require.NoError(t, err)
 			sqlDB.SetMaxOpenConns(1)
 			t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
-			crypto.InitEncryption(&crypto.Config{EncryptionKey: "test-encryption-key-for-testing-32bytes-min", Environment: "test"})
+			crypto.InitEncryption(crypto.Config{EncryptionKey: "test-encryption-key-for-testing-32bytes-min", Environment: "test"})
 			var mu sync.Mutex
 			var calls []string
 			agentHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

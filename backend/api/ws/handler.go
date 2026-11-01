@@ -107,8 +107,8 @@ func NewWebSocketHandler(
 		systemService:      systemService,
 		diagnosticsService: diagnosticsService,
 		logStreams:         make(map[string]*wsLogStream),
-		containersStatsHub: agg.NewHub[containersStatsResult](),
-		cgroupCache:        cgroup.NewCache(cgroupCacheTTL),
+		containersStatsHub: &agg.Hub[containersStatsResult]{},
+		cgroupCache:        cgroup.NewCache(cgroup.CacheConfig{TTL: cgroupCacheTTL}),
 		diskUsagePathCache: hot.NewHotCache[struct{}, string](hot.LRU, 1).
 			WithTTL(5 * time.Minute).
 			Build(),

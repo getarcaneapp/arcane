@@ -348,7 +348,7 @@ func (
 		request.Remove = append(request.Remove, path.Join(localSync.BackupDirectory, removed))
 	}
 	legacyManifest := path.Join(localSync.BackupDirectory, LegacyBackupManifestFileName)
-	if exists, existsErr := acfs.Exists(ctx, checkout.RepoPath, "/"+legacyManifest); existsErr == nil && exists {
+	if exists, existsErr := (acfs.Root{Path: checkout.RepoPath}).Exists(ctx, "/"+legacyManifest); existsErr == nil && exists {
 		request.Remove = append(request.Remove, legacyManifest)
 	}
 
@@ -533,7 +533,7 @@ func (s *Service) backupComposeFiles(ctx context.Context, project *projectpkg.Pr
 	composeDir := path.Dir(primary)
 	for _, candidate := range projects.ComposeOverrideFileCandidates() {
 		candidatePath := path.Join(composeDir, candidate)
-		if exists, existsErr := acfs.Exists(ctx, project.Path, "/"+candidatePath); existsErr == nil && exists {
+		if exists, existsErr := (acfs.Root{Path: project.Path}).Exists(ctx, "/"+candidatePath); existsErr == nil && exists {
 			composeFiles = append(composeFiles, candidatePath)
 		}
 	}
@@ -574,7 +574,7 @@ func (s *Service) buildBackupSnapshot(ctx context.Context, localSync *projectpkg
 
 		stable := true
 		for _, file := range files {
-			content, readFileErr := acfs.ReadFile(ctx, project.Path, "/"+file.Path)
+			content, readFileErr := acfs.Root{Path: project.Path}.ReadFile(ctx, "/"+file.Path)
 			if readFileErr != nil {
 				return nil, fmt.Errorf("cannot re-read %s: %v: %w", file.Path, readFileErr.Error(), git.ErrSelectionUnreadable)
 			}
@@ -593,7 +593,7 @@ func (s *Service) buildBackupSnapshot(ctx context.Context, localSync *projectpkg
 // analyzeBackup compares the snapshot with the checkout; baseline is the last push and the only proof the directory is ours.
 func analyzeBackup(ctx context.Context, repoPath, directory string, snapshot *backupSnapshotInternal, baseline map[string]string, adopt bool) (backupAnalysisInternal, error) {
 	analysis := backupAnalysisInternal{conflicts: []types.GitOpsBackupFileChange{}}
-	entries, err := acfs.List(ctx, repoPath, "/"+directory)
+	entries, err := acfs.Root{Path: repoPath}.List(ctx, "/"+directory)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return analysis, fmt.Errorf("failed to inspect remote backup directory: %w", err)
 	}
@@ -605,7 +605,7 @@ func analyzeBackup(ctx context.Context, repoPath, directory string, snapshot *ba
 				if _, done := remote[file]; done {
 					continue
 				}
-				content, readErr := acfs.ReadFile(ctx, repoPath, "/"+path.Join(directory, file))
+				content, readErr := acfs.Root{Path: repoPath}.ReadFile(ctx, "/"+path.Join(directory, file))
 				if readErr != nil {
 					if errors.Is(readErr, fs.ErrNotExist) {
 						continue

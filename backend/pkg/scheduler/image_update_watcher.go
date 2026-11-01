@@ -136,7 +136,7 @@ func (w *ImageUpdateWatcher) Start(ctx context.Context) error {
 }
 
 func (w *ImageUpdateWatcher) runEventLoop(runCtx context.Context) error {
-	eventCh, unsubscribe := w.dockerService.EventBus().Subscribe(events.ImageEventType, bus.WithSubscriberBuffer(16))
+	eventCh, unsubscribe := w.dockerService.EventBus().Subscribe(events.ImageEventType, bus.SubscribeOptions{Buffer: new(16)})
 	defer unsubscribe()
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()

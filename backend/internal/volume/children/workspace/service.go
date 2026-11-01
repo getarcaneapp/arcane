@@ -140,11 +140,16 @@ func (s *Service) readVolumeWorkspaceFromContainer(ctx context.Context, containe
 			"acfs", "walk", "--root", "/volume", "--path", "/",
 			"--max-depth", strconv.Itoa(s.deps.Settings.GetIntSetting(ctx, "volumeWorkspaceMaxDepth")), "--max-entries", strconv.Itoa(maxEntries),
 		}
-		exitCode, execErr := docker.ExecInContainer(workCtx, dockerClient, containerID, client.ExecCreateOptions{
-			AttachStdout: true,
-			AttachStderr: true,
-			Cmd:          cmd,
-		}, pipeWriter, &stderr)
+		exitCode, execErr := docker.ExecInContainer(workCtx, dockerClient, docker.ExecRequest{
+			Stdout:      pipeWriter,
+			Stderr:      &stderr,
+			ContainerID: containerID,
+			Options: client.ExecCreateOptions{
+				AttachStdout: true,
+				AttachStderr: true,
+				Cmd:          cmd,
+			},
+		})
 		if execErr == nil && exitCode != 0 {
 			execErr = fmt.Errorf("acfs walk exited with code %d", exitCode)
 		}
@@ -334,11 +339,16 @@ func (s *Service) startVolumeWorkspaceRead(ctx context.Context, containerID, rel
 	}
 	go func() {
 		var stderr bytes.Buffer
-		exitCode, execErr := docker.ExecInContainer(workCtx, dockerClient, containerID, client.ExecCreateOptions{
-			AttachStdout: true,
-			AttachStderr: true,
-			Cmd:          cmd,
-		}, pipeWriter, &stderr)
+		exitCode, execErr := docker.ExecInContainer(workCtx, dockerClient, docker.ExecRequest{
+			Stdout:      pipeWriter,
+			Stderr:      &stderr,
+			ContainerID: containerID,
+			Options: client.ExecCreateOptions{
+				AttachStdout: true,
+				AttachStderr: true,
+				Cmd:          cmd,
+			},
+		})
 		if execErr == nil && exitCode != 0 {
 			execErr = fmt.Errorf("acfs read exited with code %d", exitCode)
 		}

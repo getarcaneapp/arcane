@@ -778,15 +778,15 @@ func TestDockerEventSubscriptionsReadyAndStop(t *testing.T) {
 				var recovered, published atomic.Int64
 				stopChanges := svc.Changes.Subscribe(func(types.EnvironmentChanges) { published.Add(1) })
 				defer stopChanges()
-				eventBus := bus.NewDockerEventBus(bus.WithDroppedEventCallback(func(message events.Message) {
+				eventBus := bus.NewDockerEventBus(bus.Config{OnDrop: func(message events.Message) {
 					recovered.Add(1)
 					svc.RecordDockerEvent(t.Context(), message)
-				}))
+				}})
 				defer eventBus.Close()
 				run, cleanup := svc.SubscribeDockerEvents(eventBus)
 				defer cleanup()
 				// A stalled unrelated subscriber also invokes the global overflow callback.
-				_, stopStalled := eventBus.Subscribe(events.ImageEventType, bus.WithSubscriberBuffer(1))
+				_, stopStalled := eventBus.Subscribe(events.ImageEventType, bus.SubscribeOptions{Buffer: new(1)})
 				defer stopStalled()
 				const occurrences = daemonEventChanBuffer + 64
 				publishBurst := func(offset int64) {

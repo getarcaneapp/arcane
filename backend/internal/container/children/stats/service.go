@@ -129,7 +129,12 @@ func (s *Service) Stream(ctx context.Context, containerID string, statsChan chan
 		payload := stats.StatsStreamPayload{
 			StatsResponse:        statsData,
 			CurrentHistorySample: currentSample,
-			StatsHistory:         s.history.Record(containerID, currentSample, !historySent, kit.Ternary(statsData.Read.IsZero(), time.Now(), statsData.Read)),
+			StatsHistory: s.history.Record(stats.RecordRequest{
+				RecordedAt:     kit.Ternary(statsData.Read.IsZero(), time.Now(), statsData.Read),
+				ContainerID:    containerID,
+				Sample:         currentSample,
+				IncludeHistory: !historySent,
+			}),
 		}
 		if historySent && statsData.PreCPUStats.SystemUsage != 0 {
 			s.cache.Set(s.dockerHost()+"\x00"+containerID, cachedStats{stats: statsData, fetchedAt: time.Now()})
