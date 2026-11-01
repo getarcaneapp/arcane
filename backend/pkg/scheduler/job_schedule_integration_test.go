@@ -54,7 +54,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	require.False(t, ok)
 	require.Empty(t, jobScheduler.ListRegisteredJobs())
 
-	requestedSchedule := "0 0 8 * * *"
+	requestedSchedule := "0 8 * * *"
 	updatedSchedules, err := jobService.UpdateJobSchedules(ctx, types.JobScheduleConfig{
 		PollingInterval: requestedSchedule,
 	}, map[string]bool{"pollingInterval": true})
@@ -118,7 +118,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	require.Equal(t, requestedSchedule, findJobStatus(t, restartedJobs, "image-polling").Schedule)
 
 	require.NoError(t, restartSettingsService.SetBoolSetting(ctx, "pollingEnabled", false))
-	disabledSchedule := "0 0 9 * * *"
+	disabledSchedule := "0 9 * * *"
 	_, err = restartJobService.UpdateJobSchedules(ctx, types.JobScheduleConfig{PollingInterval: disabledSchedule}, map[string]bool{"pollingInterval": true})
 	require.NoError(t, err)
 

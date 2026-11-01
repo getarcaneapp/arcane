@@ -17,7 +17,7 @@ const (
 	// volumeHelperIdleTimeoutSetting is the settings key (in minutes) controlling how
 	// long a volume workspace helper container may sit idle before it is reaped.
 	volumeHelperIdleTimeoutSetting = "volumeHelperIdleTimeout"
-	volumeHelperPruningSchedule    = "0 */5 * * * *"
+	volumeHelperPruningSchedule    = "*/5 * * * *"
 )
 
 // PruningVolumeHelperJob periodically removes idle volume workspace helper

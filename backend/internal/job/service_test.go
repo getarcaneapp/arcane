@@ -138,7 +138,7 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 	nextRun := time.Date(2026, time.July, 10, 8, 0, 0, 0, time.UTC)
 	fakeScheduler := newFakeJobScheduler("auto-update")
 	fakeScheduler.runtimeStates["auto-update"] = types.JobRuntimeState{
-		Schedule:  "0 0 8 * * *",
+		Schedule:  "0 8 * * *",
 		NextRun:   &nextRun,
 		Scheduled: true,
 	}
@@ -149,7 +149,7 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 	require.NoError(t, err)
 
 	autoUpdateJob := findJobStatusByID(t, jobs.Jobs, "auto-update")
-	require.Equal(t, "0 0 8 * * *", autoUpdateJob.Schedule)
+	require.Equal(t, "0 8 * * *", autoUpdateJob.Schedule)
 	require.Equal(t, nextRun, *autoUpdateJob.NextRun)
 
 	now := time.Now().UTC()
@@ -303,7 +303,7 @@ func TestJobService_ListJobs_ImageUpdateWatcherIsContinuousAndRespectsEnabled(t 
 
 	watcher := findJobStatusByID(t, jobs.Jobs, "image-polling")
 	require.Equal(t, "Image Update Watcher", watcher.Name)
-	require.Equal(t, "0 0 * * * *", watcher.Schedule)
+	require.Equal(t, "0 * * * *", watcher.Schedule)
 	require.Equal(t, "pollingInterval", watcher.SettingsKey)
 	require.NotNil(t, watcher.NextRun)
 	require.True(t, watcher.IsContinuous)
@@ -323,7 +323,7 @@ func TestJobService_UpdateJobSchedules_ReschedulesChangedJob(t *testing.T) {
 	jobSvc.SetScheduler(ctx, fakeScheduler)
 
 	_, err = jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
-		AutoUpdateInterval: "0 */10 * * * *",
+		AutoUpdateInterval: "*/10 * * * *",
 	}, map[string]bool{"autoUpdateInterval": true})
 	require.NoError(t, err)
 
@@ -342,10 +342,10 @@ func TestJobService_UpdateJobSchedules_DeprecatedPollingIntervalDoesNotReschedul
 	jobSvc.SetScheduler(ctx, fakeScheduler)
 
 	updated, err := jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
-		PollingInterval: "0 */10 * * * *",
+		PollingInterval: "*/10 * * * *",
 	}, map[string]bool{"pollingInterval": true})
 	require.NoError(t, err)
-	require.Equal(t, "0 */10 * * * *", updated.PollingInterval)
+	require.Equal(t, "*/10 * * * *", updated.PollingInterval)
 	require.Empty(t, fakeScheduler.rescheduled)
 }
 
@@ -365,7 +365,7 @@ func TestJobService_UpdateJobSchedules_UsesLifecycleContextForReschedule(t *test
 	jobSvc.SetScheduler(lifecycleCtx, fakeScheduler)
 
 	_, err = jobSvc.UpdateJobSchedules(requestCtx, types.JobScheduleConfig{
-		AutoUpdateInterval: "0 */10 * * * *",
+		AutoUpdateInterval: "*/10 * * * *",
 	}, map[string]bool{"autoUpdateInterval": true})
 	require.NoError(t, err)
 
@@ -392,7 +392,7 @@ func TestJobService_UpdateJobSchedules_RejectsInvalidCronWithoutChangingSetting(
 		PollingInterval: "not a cron expression",
 	}, map[string]bool{"pollingInterval": true})
 	require.ErrorContains(t, err, "invalid cron expression for pollingInterval")
-	require.Equal(t, "0 0 * * * *", settingsSvc.GetStringSetting(ctx, "pollingInterval"))
+	require.Equal(t, "0 * * * *", settingsSvc.GetStringSetting(ctx, "pollingInterval"))
 	require.Empty(t, fakeScheduler.rescheduled)
 }
 
@@ -413,14 +413,14 @@ func TestJobService_UpdateJobSchedules_RestoresPreviousScheduleWhenRescheduleFai
 	jobSvc.SetScheduler(ctx, fakeScheduler)
 
 	_, err = jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
-		AutoUpdateInterval: "0 0 8 * * *",
+		AutoUpdateInterval: "0 8 * * *",
 	}, map[string]bool{"autoUpdateInterval": true})
 	require.ErrorContains(t, err, "scheduler unavailable")
-	require.Equal(t, "0 0 0 * * *", settingsSvc.GetStringSetting(ctx, "autoUpdateInterval"))
+	require.Equal(t, "0 0 * * *", settingsSvc.GetStringSetting(ctx, "autoUpdateInterval"))
 
 	var persisted settings.SettingVariable
 	require.NoError(t, db.WithContext(ctx).First(&persisted, "key = ?", "autoUpdateInterval").Error)
-	require.Equal(t, "0 0 0 * * *", persisted.Value)
+	require.Equal(t, "0 0 * * *", persisted.Value)
 }
 
 func TestJobService_UpdateJobSchedules_SkipsManagerOnlyJobsOnAgent(t *testing.T) {
@@ -435,7 +435,7 @@ func TestJobService_UpdateJobSchedules_SkipsManagerOnlyJobsOnAgent(t *testing.T)
 	jobSvc.SetScheduler(ctx, fakeScheduler)
 
 	_, err = jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
-		EnvironmentHealthInterval: "0 */5 * * * *",
+		EnvironmentHealthInterval: "*/5 * * * *",
 	}, map[string]bool{"environmentHealthInterval": true})
 	require.NoError(t, err)
 
@@ -459,7 +459,7 @@ func TestJobService_UpdateJobSchedules_DelegatesEnvironmentHealthReschedule(t *t
 	}
 
 	_, err = jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
-		EnvironmentHealthInterval: "0 */5 * * * *",
+		EnvironmentHealthInterval: "*/5 * * * *",
 	}, map[string]bool{"environmentHealthInterval": true})
 	require.NoError(t, err)
 	require.Equal(t, 1, rescheduled)
@@ -555,7 +555,7 @@ func (j fakeJob) Name() string {
 }
 
 func (j fakeJob) Schedule(context.Context) string {
-	return "0 0 0 * * *"
+	return "0 0 * * *"
 }
 
 func (j fakeJob) Run(context.Context) (types.SchedulerOutcome, error) {

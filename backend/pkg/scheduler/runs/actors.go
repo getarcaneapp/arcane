@@ -15,18 +15,14 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/host/local"
-	"github.com/robfig/cron/v3"
 	kit "kit.getarcane.app"
 
-	scheduleutil "github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
 )
 
 const (
 	coordinatorType     = "job-coordinator"
 	executorType        = "job-executor"
-	healthExecutorType  = "job-health-executor"
-	orphanedDispatchAge = 15 * time.Minute
 	outcomePersistGrace = 30 * time.Second
 	coordinatorIdleWake = 2 * time.Minute
 )
@@ -46,19 +42,11 @@ func (q *Coordinator) Register(runtime *francis.Runtime) error {
 	}); err != nil {
 		return err
 	}
-	executorFactory := func(_ string, _ *actor.Service) actor.Actor {
-		return &executorActor{q: q}
-	}
-	if err := runtime.RegisterActor(
-		executorType, executorFactory,
-		local.WithCapacityGroup("jobs", 4),
-		local.WithCompletedJobRetention(7*24*time.Hour),
-	); err != nil {
-		return err
-	}
 	return runtime.RegisterActor(
-		healthExecutorType, executorFactory,
-		local.WithCapacityGroup("jobs-health", 2),
+		executorType,
+		func(_ string, _ *actor.Service) actor.Actor {
+			return &executorActor{q: q}
+		},
 		local.WithCompletedJobRetention(7*24*time.Hour),
 	)
 }
@@ -102,6 +90,12 @@ func (a *coordinatorActor) Invoke(ctx context.Context, method string, data actor
 		return nil, a.q.service.SetState(ctx, coordinatorType, a.id, state, nil)
 	case "repair":
 		return nil, a.flush(ctx, &state)
+	case "install":
+		var command types.SchedulerScheduleCommand
+		if err := data.Decode(&command); err != nil {
+			return nil, err
+		}
+		return nil, a.install(ctx, state, command)
 	case "remove":
 		if state.Record.Schedule != "" || len(state.PendingActivitySync) > 0 || len(state.Record.Runs) > 0 || len(state.Record.Receipts) > 0 {
 			return false, nil
@@ -142,16 +136,6 @@ func (a *coordinatorActor) flush(ctx context.Context, state *types.SchedulerCoor
 		return nil
 	}
 	record := &state.Record
-	if record.Schedule != "" && !record.NextRun.IsZero() {
-		name := fmt.Sprintf("schedule-%d-%d", record.Generation, record.Sequence)
-		properties := actor.AlarmProperties{
-			DueTime: record.NextRun,
-			Data:    types.ScheduleOccurrence{Generation: record.Generation, Sequence: record.Sequence},
-		}
-		if err := a.q.service.SetAlarm(ctx, coordinatorType, a.id, name, properties); err != nil {
-			return err
-		}
-	}
 	var selected *types.SchedulerRun
 	for i := range record.Runs {
 		if record.Runs[i].Status == types.RunStatusRunning {
@@ -189,11 +173,6 @@ func (a *coordinatorActor) reconcileDispatch(ctx context.Context, state *types.S
 	if !exists {
 		return false, nil
 	}
-	actorType := kit.Ternary(
-		strings.HasPrefix(run.JobID, "environment-health") || run.JobID == "docker-client-refresh" || run.JobID == "activity-sweep",
-		healthExecutorType,
-		executorType,
-	)
 	if previous.JobID == "" {
 		command := types.SchedulerExecutionCommand{
 			EnvironmentID: run.EnvironmentID,
@@ -201,7 +180,7 @@ func (a *coordinatorActor) reconcileDispatch(ctx context.Context, state *types.S
 			RunID:         run.ID,
 			Attempt:       run.AttemptCount,
 		}
-		id, _, err := a.q.service.Dispatch(ctx, actorType, a.id, "execute", command, actor.WithIdempotencyKey(key))
+		id, _, err := a.q.service.Dispatch(ctx, executorType, a.id, "execute", command, actor.WithIdempotencyKey(key))
 		if err != nil {
 			return false, err
 		}
@@ -219,14 +198,7 @@ func (a *coordinatorActor) reconcileDispatch(ctx context.Context, state *types.S
 	if err != nil {
 		return false, err
 	}
-	if job.Status != actor.JobStatusPending || time.Since(job.DueTime) < orphanedDispatchAge {
-		return !job.Status.IsTerminal(), nil
-	}
-	slog.WarnContext(ctx, "Deleting orphaned job dispatch", "runId", run.ID, "jobId", job.JobID, "dueTime", job.DueTime)
-	if deleteErr := a.q.service.DeleteJob(ctx, actorType, a.id, job.JobID, actor.WithLiveJobsOnly()); deleteErr != nil && !errors.Is(deleteErr, actor.ErrJobNotFound) {
-		return false, deleteErr
-	}
-	return false, nil
+	return !job.Status.IsTerminal() && job.ActorType == executorType, nil
 }
 
 func (a *coordinatorActor) dispatchRun(ctx context.Context, state *types.SchedulerCoordinatorState, run types.SchedulerRun, attempt int) error {
@@ -234,22 +206,17 @@ func (a *coordinatorActor) dispatchRun(ctx context.Context, state *types.Schedul
 	if state.Dispatches == nil {
 		state.Dispatches = make(map[string]types.SchedulerDispatchIntent)
 	}
-	actorType := kit.Ternary(
-		strings.HasPrefix(run.JobID, "environment-health") || run.JobID == "docker-client-refresh" || run.JobID == "activity-sweep",
-		healthExecutorType,
-		executorType,
-	)
 	intent := state.Dispatches[key]
 	if intent.JobID != "" {
 		job, err := a.q.service.GetJob(ctx, intent.JobID)
-		if err == nil && !job.Status.IsTerminal() && (job.Status != actor.JobStatusPending || time.Since(job.DueTime) < orphanedDispatchAge) {
+		if err == nil && !job.Status.IsTerminal() && job.ActorType == executorType {
 			return nil
 		}
 		if err != nil && !errors.Is(err, actor.ErrJobNotFound) {
 			return err
 		}
 		if err == nil {
-			if deleteJobErr := a.q.service.DeleteJob(ctx, actorType, a.id, intent.JobID); deleteJobErr != nil && !errors.Is(deleteJobErr, actor.ErrJobNotFound) {
+			if deleteJobErr := a.q.service.DeleteJob(ctx, job.ActorType, a.id, intent.JobID); deleteJobErr != nil && !errors.Is(deleteJobErr, actor.ErrJobNotFound) {
 				return deleteJobErr
 			}
 		}
@@ -269,7 +236,7 @@ func (a *coordinatorActor) dispatchRun(ctx context.Context, state *types.Schedul
 		RunID:         run.ID,
 		Attempt:       attempt,
 	}
-	id, _, err := a.q.service.Dispatch(ctx, actorType, a.id, "execute", command, options...)
+	id, _, err := a.q.service.Dispatch(ctx, executorType, a.id, "execute", command, options...)
 	if err != nil {
 		return err
 	}
@@ -278,10 +245,10 @@ func (a *coordinatorActor) dispatchRun(ctx context.Context, state *types.Schedul
 		return err
 	}
 	if job.Status.IsTerminal() {
-		if deleteJobErr2 := a.q.service.DeleteJob(ctx, actorType, a.id, id); deleteJobErr2 != nil && !errors.Is(deleteJobErr2, actor.ErrJobNotFound) {
+		if deleteJobErr2 := a.q.service.DeleteJob(ctx, executorType, a.id, id); deleteJobErr2 != nil && !errors.Is(deleteJobErr2, actor.ErrJobNotFound) {
 			return deleteJobErr2
 		}
-		id, _, err = a.q.service.Dispatch(ctx, actorType, a.id, "execute", command, options...)
+		id, _, err = a.q.service.Dispatch(ctx, executorType, a.id, "execute", command, options...)
 		if err != nil {
 			return err
 		}
@@ -291,8 +258,8 @@ func (a *coordinatorActor) dispatchRun(ctx context.Context, state *types.Schedul
 	return a.q.service.SetState(ctx, coordinatorType, a.id, *state, nil)
 }
 
-func (a *coordinatorActor) Alarm(ctx context.Context, name string, data actor.Envelope) error {
-	if !a.q.enabled.Load() {
+func (a *coordinatorActor) Alarm(ctx context.Context, name string, _ actor.Envelope) error {
+	if !a.q.enabled.Load() || !strings.HasPrefix(name, "retry-") {
 		return nil
 	}
 	var state types.SchedulerCoordinatorState
@@ -300,62 +267,114 @@ func (a *coordinatorActor) Alarm(ctx context.Context, name string, data actor.En
 		return err
 	}
 	normalizeRecordTimes(&state.Record)
-	if strings.HasPrefix(name, "retry-") {
-		return a.flush(ctx, &state)
+	return a.flush(ctx, &state)
+}
+
+func (a *coordinatorActor) Job(ctx context.Context, method string, _ actor.Envelope) error {
+	if method != "tick" {
+		return errors.Join(fmt.Errorf("unknown coordinator job: %s", method), actor.ErrJobPermanentFailure)
 	}
-	var occurrence types.ScheduleOccurrence
-	if err := data.Decode(&occurrence); err != nil {
+	if !a.q.enabled.Load() {
+		return actor.ErrJobRejected
+	}
+	var state types.SchedulerCoordinatorState
+	if err := a.q.service.GetState(ctx, coordinatorType, a.id, &state); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
 		return err
 	}
-	record := &state.Record
-	if record.Schedule == "" {
+	normalizeRecordTimes(&state.Record)
+	if state.Record.Schedule == "" {
 		return nil
 	}
-	if occurrence.Generation != record.Generation || occurrence.Sequence != record.Sequence {
-		return nil
-	}
-	now := time.Now().UTC()
-	schedule, err := scheduleutil.Parser().Parse(record.Schedule)
-	if err != nil {
-		return err
-	}
-	if spec, ok := schedule.(*cron.SpecSchedule); ok {
-		spec.Location = a.q.location
-	}
-	trigger := "scheduled"
-	nextOccurrence := schedule.Next(record.NextRun.In(a.q.location))
-	if !nextOccurrence.After(now) {
-		trigger = "recovery"
-	}
-	pending := slices.ContainsFunc(record.Runs, func(run types.SchedulerRun) bool {
+	if !slices.ContainsFunc(state.Record.Runs, func(run types.SchedulerRun) bool {
 		return !separateTrigger(run.Trigger) && !run.Status.Terminal() && run.Status != types.RunStatusNeedsAttention
-	})
-	if !pending {
+	}) {
+		now := time.Now().UTC()
 		run := types.SchedulerRun{
 			ID:            uuid.New().String(),
-			EnvironmentID: record.EnvironmentID,
-			JobID:         record.JobID,
-			Trigger:       trigger,
+			EnvironmentID: state.Record.EnvironmentID,
+			JobID:         state.Record.JobID,
+			Trigger:       "scheduled",
 			Status:        types.RunStatusQueued,
 			CreatedAt:     now,
 			UpdatedAt:     now,
 		}
 		a.q.associateActivity(&run)
-		record.Runs = append(record.Runs, run)
-		markActivitySync(&state, run)
+		next := types.SchedulerCoordinatorState{
+			Dispatches:          state.Dispatches,
+			PendingActivitySync: state.PendingActivitySync,
+			ImportHash:          state.ImportHash,
+			Record: types.SchedulerQueueRecord{
+				Receipts:      state.Record.Receipts,
+				JobID:         state.Record.JobID,
+				EnvironmentID: state.Record.EnvironmentID,
+				Schedule:      state.Record.Schedule,
+				ScheduleJobID: state.Record.ScheduleJobID,
+				Runs:          append(state.Record.Runs, run),
+			},
+			Revision: state.Revision + 1,
+			Imported: state.Imported,
+		}
+		markActivitySync(&next, run)
+		if err := a.q.service.SetState(ctx, coordinatorType, a.id, next, nil); err != nil {
+			return err
+		}
+		state = next
 	}
-	record.LastEnqueuedAt = now
-	record.NextRun = schedule.Next(now.In(a.q.location))
-	record.Sequence++
-	state.Revision++
-	if setStateErr := a.q.service.SetState(ctx, coordinatorType, a.id, state, nil); setStateErr != nil {
-		return setStateErr
-	}
-	if flushErr := a.flush(ctx, &state); flushErr != nil {
-		return flushErr
+	if err := a.flush(ctx, &state); err != nil {
+		return err
 	}
 	a.q.signal()
 	return nil
+}
+
+func (a *coordinatorActor) install(ctx context.Context, state types.SchedulerCoordinatorState, command types.SchedulerScheduleCommand) error {
+	spec := kit.Ternary(command.Schedule == "", "", "CRON_TZ="+a.q.location.String()+" "+command.Schedule)
+	if state.Record.ScheduleJobID == "" && command.Schedule == "" && state.Record.Schedule == "" {
+		return nil
+	}
+	if state.Record.ScheduleJobID != "" {
+		job, err := a.q.service.GetJob(ctx, state.Record.ScheduleJobID)
+		if err != nil && !errors.Is(err, actor.ErrJobNotFound) {
+			return err
+		}
+		if err == nil && !job.Status.IsTerminal() && job.Cron == spec {
+			return nil
+		}
+		if deleteErr := a.q.service.DeleteJob(ctx, coordinatorType, a.id, state.Record.ScheduleJobID); deleteErr != nil && !errors.Is(deleteErr, actor.ErrJobNotFound) {
+			return deleteErr
+		}
+	}
+	if command.Schedule == "" && len(state.PendingActivitySync) == 0 && len(state.Record.Runs) == 0 && len(state.Record.Receipts) == 0 {
+		if err := a.q.service.DeleteState(ctx, coordinatorType, a.id); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
+			return err
+		}
+		return nil
+	}
+	scheduleJobID, err := func() (string, error) {
+		if spec == "" {
+			return "", nil
+		}
+		id, _, dispatchErr := a.q.service.Dispatch(ctx, coordinatorType, a.id, "tick", nil, actor.WithJobCron(spec), actor.WithIdempotencyKey(a.id))
+		return id, dispatchErr
+	}()
+	if err != nil {
+		return err
+	}
+	return a.q.service.SetState(ctx, coordinatorType, a.id, types.SchedulerCoordinatorState{
+		Dispatches:          state.Dispatches,
+		PendingActivitySync: state.PendingActivitySync,
+		ImportHash:          state.ImportHash,
+		Record: types.SchedulerQueueRecord{
+			Receipts:      state.Record.Receipts,
+			JobID:         cmp.Or(state.Record.JobID, command.JobID),
+			EnvironmentID: cmp.Or(state.Record.EnvironmentID, "0"),
+			Schedule:      command.Schedule,
+			ScheduleJobID: scheduleJobID,
+			Runs:          state.Record.Runs,
+		},
+		Revision: state.Revision + 1,
+		Imported: state.Imported,
+	}, nil)
 }
 
 // repair flushes coordinators so schedule alarms and dispatches are restored.

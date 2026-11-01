@@ -39,7 +39,7 @@ const (
 	systemVolumeBackupJobPrefix = "volumes:"
 	// systemVolumePlanTarget records a scheduled run's frozen selection.
 	systemVolumePlanTarget      = "system-volume-plan"
-	defaultSystemVolumeSchedule = "0 0 2 * * *"
+	defaultSystemVolumeSchedule = "0 2 * * *"
 )
 
 // Dependencies are the services and system admission volume backups run on.

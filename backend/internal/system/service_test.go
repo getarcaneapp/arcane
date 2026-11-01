@@ -257,8 +257,8 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	require.Equal(t, "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN", storedKey)
 
 	collection, err := service.backup.UpdatePolicies(t.Context(), []types.UpdateBackupPolicy{
-		{Enabled: true, Schedule: "0 0 2 * * *", RetentionCount: 5, LocalEnabled: true},
-		{Enabled: true, Schedule: "0 0 14 * * *", RetentionCount: 30, LocalEnabled: true},
+		{Enabled: true, Schedule: "0 2 * * *", RetentionCount: 5, LocalEnabled: true},
+		{Enabled: true, Schedule: "0 14 * * *", RetentionCount: 30, LocalEnabled: true},
 	})
 	require.NoError(t, err)
 	require.True(t, collection.RecoveryKeyStored)
@@ -267,7 +267,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 
 	firstID := collection.Policies[0].ID
 	collection, err = service.backup.UpdatePolicies(t.Context(), []types.UpdateBackupPolicy{{
-		ID: firstID, Enabled: true, Schedule: "0 */30 * * * *", RetentionCount: 9, LocalEnabled: true,
+		ID: firstID, Enabled: true, Schedule: "*/30 * * * *", RetentionCount: 9, LocalEnabled: true,
 	}})
 	require.NoError(t, err)
 	require.Len(t, collection.Policies, 1)
@@ -286,7 +286,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	})
 	require.NoError(t, err)
 	for _, local := range []bool{false, true} {
-		policy := &SystemBackupPolicy{Enabled: true, LocalEnabled: local, S3Enabled: true, S3DestinationID: destination.ID, Schedule: "0 0 2 * * *"}
+		policy := &SystemBackupPolicy{Enabled: true, LocalEnabled: local, S3Enabled: true, S3DestinationID: destination.ID, Schedule: "0 2 * * *"}
 		require.NoError(t, gormDB.Create(policy).Error)
 		require.NoError(t, gormDB.Model(policy).Update("local_enabled", local).Error)
 		service.RegisterBackupJobOnStartup(t.Context())
@@ -324,7 +324,7 @@ func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T
 	})
 
 	_, err = service.backup.UpdatePolicies(t.Context(), []types.UpdateBackupPolicy{{
-		Enabled: true, Schedule: "0 0 2 * * *", RetentionCount: 7, LocalEnabled: true,
+		Enabled: true, Schedule: "0 2 * * *", RetentionCount: 7, LocalEnabled: true,
 	}})
 	require.ErrorContains(t, err, "configure a recovery key")
 }

@@ -53,7 +53,7 @@ func (j *EventCleanupJob) Name() string {
 }
 
 func (j *EventCleanupJob) Schedule(ctx context.Context) string {
-	return schedule.Or(ctx, j.settingsService.GetStringSetting(ctx, "eventCleanupInterval"), "0 0 */6 * * *", EventCleanupJobName)
+	return schedule.Or(ctx, j.settingsService.GetStringSetting(ctx, "eventCleanupInterval"), "0 */6 * * *", EventCleanupJobName)
 }
 
 func (j *EventCleanupJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {

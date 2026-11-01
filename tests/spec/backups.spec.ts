@@ -1350,7 +1350,7 @@ test.describe('System and volume restore', () => {
 	const defaultPolicy: SystemVolumeBackupPolicy = {
 		id: 'volume-nightly',
 		enabled: false,
-		schedule: '0 0 2 * * *',
+		schedule: '0 2 * * *',
 		retentionCount: 7,
 		stopContainers: false,
 		localEnabled: true,
@@ -1439,7 +1439,7 @@ test.describe('System and volume restore', () => {
 						{
 							id: 'system-nightly',
 							enabled: true,
-							schedule: '0 0 3 * * *',
+							schedule: '0 3 * * *',
 							retentionCount: 7,
 							localEnabled: true,
 							s3Enabled: false
@@ -1548,7 +1548,7 @@ test.describe('System and volume restore', () => {
 			const createSchedule = page.getByRole('dialog', { name: 'Create schedule' });
 			await createSchedule.getByLabel('Backup type').click();
 			await page.getByRole('option', { name: 'Volume' }).click();
-			await createSchedule.getByLabel('Schedule', { exact: true }).fill('0 30 4 * * *');
+			await createSchedule.getByLabel('Schedule', { exact: true }).fill('30 4 * * *');
 			await createSchedule.getByRole('button', { name: 'Save' }).click();
 			await expect(createSchedule).toBeHidden();
 			expect(mock.savedCollection().policies).toHaveLength(2);
@@ -1561,7 +1561,7 @@ test.describe('System and volume restore', () => {
 			await createBackup.getByLabel('Backup type').click();
 			await page.getByRole('option', { name: 'Volume' }).click();
 			await createBackup.getByLabel('Backup configuration').click();
-			await page.getByRole('option', { name: '0 0 2 * * *' }).click();
+			await page.getByRole('option', { name: '0 2 * * *' }).click();
 			await createBackup.getByRole('button', { name: 'Create Backup' }).click();
 			await expect(createBackup).toBeHidden();
 			await expect(page.getByText('Backup started', { exact: true })).toBeVisible();

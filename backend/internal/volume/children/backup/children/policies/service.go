@@ -25,7 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 )
 
-const defaultSchedule = "0 0 2 * * *"
+const defaultSchedule = "0 2 * * *"
 
 // Dependencies are the backup operations scheduled policies run through.
 type Dependencies struct {

@@ -63,8 +63,8 @@ func TestVolumeBackupPolicy_UpdateRegistersIndependentJobsAndSettings(t *testing
 	require.NoError(t, service.SetScheduler(t.Context(), jobScheduler, gate))
 
 	collection, err := service.UpdateBackupPolicies(t.Context(), "app-data", []types.UpdateBackupPolicy{
-		{Enabled: true, Schedule: "0 */15 * * * *", RetentionCount: 5, StopContainers: true, LocalEnabled: true},
-		{Enabled: true, Schedule: "0 0 2 * * *", RetentionCount: 30, LocalEnabled: true},
+		{Enabled: true, Schedule: "*/15 * * * *", RetentionCount: 5, StopContainers: true, LocalEnabled: true},
+		{Enabled: true, Schedule: "0 2 * * *", RetentionCount: 30, LocalEnabled: true},
 	})
 	require.NoError(t, err)
 	require.Len(t, collection.Policies, 2)
@@ -75,7 +75,7 @@ func TestVolumeBackupPolicy_UpdateRegistersIndependentJobsAndSettings(t *testing
 
 	firstID := collection.Policies[0].ID
 	collection, err = service.UpdateBackupPolicies(t.Context(), "app-data", []types.UpdateBackupPolicy{{
-		ID: firstID, Schedule: "0 */30 * * * *", RetentionCount: 9, LocalEnabled: true,
+		ID: firstID, Schedule: "*/30 * * * *", RetentionCount: 9, LocalEnabled: true,
 	}})
 	require.NoError(t, err)
 	require.Len(t, collection.Policies, 1)
@@ -88,8 +88,8 @@ func TestVolumeBackupPolicy_GetReturnsLastRunForEachPolicy(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-last-runs?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&VolumeBackupPolicy{}))
-	first := &VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 0 2 * * *", LocalEnabled: true}
-	second := &VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 0 14 * * *", LocalEnabled: true}
+	first := &VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 2 * * *", LocalEnabled: true}
+	second := &VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 14 * * *", LocalEnabled: true}
 	require.NoError(t, gormDB.Create(first).Error)
 	require.NoError(t, gormDB.Create(second).Error)
 	latest := map[string]*types.VolumeBackupEntry{
@@ -137,7 +137,7 @@ func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
 		LatestRun:      noLatestRun,
 	})
 	collection, err := service.UpdateBackupPolicies(t.Context(), "app-data", []types.UpdateBackupPolicy{{
-		Schedule:        "0 0 2 * * *",
+		Schedule:        "0 2 * * *",
 		RetentionCount:  7,
 		S3Enabled:       true,
 		S3DestinationID: destination.ID,
@@ -163,7 +163,7 @@ func TestBackupPolicyDestinationLookupFailure(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&VolumeBackupPolicy{}, &s3.S3Destination{}))
-	policy := &VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 0 2 * * *", S3DestinationID: "missing"}
+	policy := &VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 2 * * *", S3DestinationID: "missing"}
 	require.NoError(t, db.Create(policy).Error)
 	service := NewService(Dependencies{DB: &database.DB{DB: db}, S3Destinations: s3.NewS3DestinationService(&database.DB{DB: db}, nil), LatestRun: noLatestRun})
 	for _, drop := range []bool{false, true} {

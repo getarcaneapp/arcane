@@ -37,24 +37,25 @@ func (q *Coordinator) mutate(ctx context.Context, environmentID, jobID string, c
 			case <-timer.C:
 			}
 		}
-		var state types.SchedulerCoordinatorState
-		err := q.service.GetState(ctx, coordinatorType, id, &state)
-		if err != nil && !errors.Is(err, actor.ErrStateNotFound) {
+		swapped, err := func() (bool, error) {
+			defer q.mutations.Lock(id)()
+			var state types.SchedulerCoordinatorState
+			if err := q.service.GetState(ctx, coordinatorType, id, &state); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
+				return false, err
+			}
+			if prepareMutationErr := q.prepareMutation(&state, environmentID, jobID, change); prepareMutationErr != nil {
+				return false, prepareMutationErr
+			}
+			result, err := q.service.Invoke(ctx, coordinatorType, id, "replace", state)
+			if err != nil {
+				return false, err
+			}
+			var swapped bool
+			decodeErr := result.Decode(&swapped)
+			return swapped, decodeErr
+		}()
+		if err != nil || swapped {
 			return err
-		}
-		if prepareMutationErr := q.prepareMutation(&state, environmentID, jobID, change); prepareMutationErr != nil {
-			return prepareMutationErr
-		}
-		result, err := q.service.Invoke(ctx, coordinatorType, id, "replace", state)
-		if err != nil {
-			return err
-		}
-		var swapped bool
-		if decodeErr := result.Decode(&swapped); decodeErr != nil {
-			return decodeErr
-		}
-		if swapped {
-			return nil
 		}
 	}
 	return common.Classify(common.ErrUnavailable, errors.New("job coordinator state is busy; retry mutation"))
@@ -337,7 +338,7 @@ func New(store *kv.KVService, service *actor.Service, location *time.Location) *
 	if location == nil {
 		location = time.UTC
 	}
-	return &Coordinator{store: store, service: service, location: location, owner: uuid.New().String(), checkpointed: make(map[string]bool), wake: make(chan struct{}, 1), done: make(chan struct{})}
+	return &Coordinator{store: store, service: service, location: location, owner: uuid.New().String(), wake: make(chan struct{}, 1), done: make(chan struct{})}
 }
 
 func (q *Coordinator) SetExecutor(execute, reconcile func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error)) {
@@ -345,11 +346,23 @@ func (q *Coordinator) SetExecutor(execute, reconcile func(context.Context, types
 	q.reconcile = reconcile
 }
 
-func (q *Coordinator) ScheduleState(ctx context.Context, jobID string) (types.SchedulerQueueRecord, error) {
+func (q *Coordinator) ScheduleState(ctx context.Context, jobID string) (types.SchedulerQueueRecord, *time.Time, error) {
 	var state types.SchedulerCoordinatorState
-	err := q.service.GetState(ctx, coordinatorType, kit.SHA256Hex("0\x00"+jobID), &state)
+	if err := q.service.GetState(ctx, coordinatorType, kit.SHA256Hex("0\x00"+jobID), &state); err != nil {
+		return state.Record, nil, err
+	}
 	normalizeRecordTimes(&state.Record)
-	return state.Record, err
+	if state.Record.ScheduleJobID == "" {
+		return state.Record, nil, nil
+	}
+	job, err := q.service.GetJob(ctx, state.Record.ScheduleJobID)
+	if errors.Is(err, actor.ErrJobNotFound) || (err == nil && job.Status.IsTerminal()) {
+		return state.Record, nil, nil
+	}
+	if err != nil {
+		return state.Record, nil, err
+	}
+	return state.Record, new(job.DueTime.UTC()), nil
 }
 
 func (q *Coordinator) Activate() { q.enabled.Store(true); q.signal() }
@@ -395,8 +408,6 @@ func markActivitySync(state *types.SchedulerCoordinatorState, run types.Schedule
 }
 
 func normalizeRecordTimes(record *types.SchedulerQueueRecord) {
-	record.LastEnqueuedAt = record.LastEnqueuedAt.UTC()
-	record.NextRun = record.NextRun.UTC()
 	for i := range record.Runs {
 		normalizeRunTimes(&record.Runs[i])
 	}

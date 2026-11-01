@@ -135,7 +135,7 @@
 		description={m.system_backups_schedule_type_description()}
 		enabledDescription={m.system_backups_enabled_description()}
 		enabledError={recoveryKeyStored ? null : m.system_backups_recovery_key_schedule_required()}
-		defaultSchedule="0 0 3 * * *"
+		defaultSchedule="0 3 * * *"
 		defaultEnabled={recoveryKeyStored}
 		{destinations}
 		beforeFields={TypeField}
@@ -157,7 +157,7 @@
 		addTitle={m.system_backups_add_schedule()}
 		description={m.system_backups_schedule_type_description()}
 		enabledDescription={m.system_volume_backups_enabled_description()}
-		defaultSchedule="0 0 2 * * *"
+		defaultSchedule="0 2 * * *"
 		showStopContainers
 		{destinations}
 		beforeFields={TypeField}

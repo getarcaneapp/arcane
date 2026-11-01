@@ -35,7 +35,7 @@ func (j *UploadSessionsCleanupJob) Name() string {
 }
 
 func (j *UploadSessionsCleanupJob) Schedule(ctx context.Context) string {
-	return "0 0 * * * *"
+	return "0 * * * *"
 }
 
 func (j *UploadSessionsCleanupJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {

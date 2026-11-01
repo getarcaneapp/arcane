@@ -23,15 +23,6 @@ import (
 
 var schedulerTestRuntimes sync.Map
 
-func newTestAdmissionGate(t *testing.T) *runs.Admission {
-	t.Helper()
-	runtime := francistest.New(t)
-	admission := runs.NewAdmission(runtime.Service(), t.Name())
-	require.NoError(t, admission.Register(runtime))
-	francistest.Start(t, runtime)
-	return admission
-}
-
 func newTestCoordinator(t testing.TB,
 	ctx context.Context,
 	location *time.Location,

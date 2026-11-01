@@ -32,7 +32,7 @@ const (
 	analyticsHeartbeatDedupeWindow   = 24 * time.Hour
 	// analyticsHeartbeatRetryDelay spaces retries of a failed send, which the hourly check then picks up.
 	analyticsHeartbeatRetryDelay    = time.Hour
-	analyticsHeartbeatCheckSchedule = "0 0 * * * *"
+	analyticsHeartbeatCheckSchedule = "0 * * * *"
 )
 
 type AnalyticsJob struct {

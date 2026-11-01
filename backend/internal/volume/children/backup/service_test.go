@@ -86,7 +86,7 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 	policy := &policies.VolumeBackupPolicy{
 		VolumeName:     "app-data",
 		Enabled:        true,
-		Schedule:       "0 0 2 * * *",
+		Schedule:       "0 2 * * *",
 		RetentionCount: 7,
 		LocalEnabled:   true,
 	}
@@ -132,7 +132,7 @@ func TestVolumeBackup_ValidationErrors(t *testing.T) {
 	_, err = service.policies.UpdateBackupPolicies(ctx, "app-data", []types.UpdateBackupPolicy{{Schedule: "not a cron", LocalEnabled: true}})
 	require.ErrorContains(t, err, "invalid volume backup schedule")
 
-	_, err = service.policies.UpdateBackupPolicies(ctx, "app-data", []types.UpdateBackupPolicy{{Schedule: "0 0 2 * * *", RetentionCount: 7}})
+	_, err = service.policies.UpdateBackupPolicies(ctx, "app-data", []types.UpdateBackupPolicy{{Schedule: "0 2 * * *", RetentionCount: 7}})
 	require.ErrorContains(t, err, "select at least one volume backup destination")
 
 	_, err = service.StartBackup(ctx, "0", "app-data", types.Actor{}, types.CreateVolumeBackupRequest{Destination: types.VolumeBackupDestination("invalid")})

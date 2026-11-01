@@ -63,7 +63,7 @@
 		}
 		if (value.startsWith('#')) {
 			return (
-				value.length >= 4 && value.length <= 9 && [...value.slice(1)].every((character) => HEX_CHARACTERS.includes(character))
+				value.length >= 4 && value.length <= 9 && [...value].slice(1).every((character) => HEX_CHARACTERS.includes(character))
 			);
 		}
 		const colorFunction = COLOR_FUNCTIONS.find((prefix) => value.startsWith(prefix));

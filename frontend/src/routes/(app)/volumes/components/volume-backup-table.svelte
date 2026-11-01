@@ -833,7 +833,7 @@
 			addTitle={m.volume_backup_add_schedule()}
 			description={m.volume_backup_policy_description()}
 			enabledDescription={m.volume_backup_policy_enabled_description()}
-			defaultSchedule="0 0 2 * * *"
+			defaultSchedule="0 2 * * *"
 			showStopContainers
 			destinations={canListS3Destinations && !s3DestinationsError ? s3Destinations : undefined}
 			updatePolicies={async (policies) => (await volumeBackupService.updatePolicies(volumeName, policies, currentEnvId)).policies}

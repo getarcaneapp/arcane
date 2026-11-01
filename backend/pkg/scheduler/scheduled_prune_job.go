@@ -38,7 +38,7 @@ func (j *ScheduledPruneJob) ShouldSchedule(ctx context.Context) bool {
 }
 
 func (j *ScheduledPruneJob) Schedule(ctx context.Context) string {
-	return scheduleutil.Or(ctx, j.settingsService.GetStringSetting(ctx, "scheduledPruneInterval"), "0 0 0 * * *", "scheduled-prune")
+	return scheduleutil.Or(ctx, j.settingsService.GetStringSetting(ctx, "scheduledPruneInterval"), "0 0 * * *", "scheduled-prune")
 }
 
 func (j *ScheduledPruneJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {

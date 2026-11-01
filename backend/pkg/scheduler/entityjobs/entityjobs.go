@@ -96,7 +96,6 @@ func (r *Registry) Unregister(ctx context.Context, entityID string) {
 	r.scheduler.RemoveJob(r.Context(ctx), r.JobName(entityID))
 }
 
-// TryAcquire admits one in-flight run per entity ID and refuses at once while one is active.
-func (r *Registry) TryAcquire(ctx context.Context, entityID string) (*runs.Lease, bool, error) {
-	return r.admissionGate.TryAcquire(ctx, types.SchedulerAdmissionKey{Scope: r.admissionScope, ID: entityID})
+func (r *Registry) Acquire(ctx context.Context, entityID string) (*runs.Lease, error) {
+	return r.admissionGate.Acquire(ctx, types.SchedulerAdmissionKey{Scope: r.admissionScope, ID: entityID})
 }

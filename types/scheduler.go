@@ -37,9 +37,9 @@ type SchedulerExecutionClaim struct {
 	Deferred  bool
 }
 
-type ScheduleOccurrence struct {
-	Generation uint64
-	Sequence   uint64
+type SchedulerScheduleCommand struct {
+	JobID    string
+	Schedule string
 }
 
 type SchedulerAdmissionKey struct {
@@ -188,15 +188,12 @@ type RunObserver interface {
 
 // SchedulerQueueRecord holds atomic admission, claims, and checkpoints for one job and target.
 type SchedulerQueueRecord struct {
-	LastEnqueuedAt time.Time               `json:"lastEnqueuedAt"`
-	NextRun        time.Time               `json:"nextRun"`
-	Receipts       map[string]SchedulerRun `json:"receipts,omitempty"`
-	JobID          string                  `json:"jobId"`
-	EnvironmentID  string                  `json:"environmentId"`
-	Schedule       string                  `json:"schedule"`
-	Runs           []SchedulerRun          `json:"runs"`
-	Generation     uint64                  `json:"-"`
-	Sequence       uint64                  `json:"-"`
+	Receipts      map[string]SchedulerRun `json:"receipts,omitempty"`
+	JobID         string                  `json:"jobId"`
+	EnvironmentID string                  `json:"environmentId"`
+	Schedule      string                  `json:"schedule"`
+	ScheduleJobID string                  `json:"scheduleJobId,omitempty"`
+	Runs          []SchedulerRun          `json:"runs"`
 }
 
 // RunStatus describes durable execution, independently of the configured schedule.

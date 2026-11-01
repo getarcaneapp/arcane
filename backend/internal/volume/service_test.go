@@ -119,7 +119,7 @@ func newVolumeBackupTestDB(t *testing.T, name string) *gorm.DB {
 
 func TestRenameVolumeMetadataPreservesPoliciesAndHistory(t *testing.T) {
 	gormDB := newVolumeBackupTestDB(t, "volume-rename-metadata")
-	require.NoError(t, gormDB.Exec("INSERT INTO volume_backup_policies (id, volume_name, schedule) VALUES (?, ?, ?)", "policy-1", "source-data", "0 0 2 * * *").Error)
+	require.NoError(t, gormDB.Exec("INSERT INTO volume_backup_policies (id, volume_name, schedule) VALUES (?, ?, ?)", "policy-1", "source-data", "0 2 * * *").Error)
 	require.NoError(t, gormDB.Create(&VolumeBackup{VolumeName: "source-data", PolicyID: "policy-1"}).Error)
 
 	service := NewVolumeService(VolumeServiceParams{
