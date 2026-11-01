@@ -20,7 +20,6 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
@@ -29,35 +28,36 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/fx"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/mapping"
 	"kit.getarcane.app/normalization"
 	"kit.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment/children/health"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment/children/proxy"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment/children/snippets"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment/children/swarm"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/entityjobs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
+	"getarcane.dev/arcane/v3/internal/apikey"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment/children/health"
+	"getarcane.dev/arcane/v3/internal/environment/children/proxy"
+	"getarcane.dev/arcane/v3/internal/environment/children/snippets"
+	"getarcane.dev/arcane/v3/internal/environment/children/swarm"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/scheduler/entityjobs"
+	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/scheduler/schedule"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -77,7 +77,7 @@ type (
 		jobs             *entityjobs.Registry
 
 		invalidateUser  func(userID string)
-		syncGate        *utils.SyncGate
+		syncGate        *concurrency.SyncGate
 		proxy           *proxy.Service
 		health          *health.Service
 		snippets        *snippets.Service
@@ -151,7 +151,7 @@ func (s *EnvironmentService) ForgetSyncState(environmentID string) {
 }
 
 func NewEnvironmentService(p EnvironmentServiceParams) *EnvironmentService {
-	syncGate := &utils.SyncGate{Expiry: SyncDeliveryExpiry}
+	syncGate := &concurrency.SyncGate{Expiry: SyncDeliveryExpiry}
 	return &EnvironmentService{
 		syncGate:        syncGate,
 		db:              p.DB,
@@ -189,7 +189,7 @@ func NewEnvironmentService(p EnvironmentServiceParams) *EnvironmentService {
 
 // RegisterMetrics reports the arcane.environments gauge; only the manager calls it.
 func (s *EnvironmentService) RegisterMetrics() {
-	meter := otel.Meter(tracing.InstrumentationName)
+	meter := otel.Meter(logging.InstrumentationName)
 	statusGauge, err := meter.Int64ObservableGauge("arcane.environments",
 		metric.WithDescription("Visible environments by persisted status"),
 		metric.WithUnit("{environment}"),
@@ -286,7 +286,7 @@ func (s *EnvironmentService) ResolveAgentEnvironmentByToken(ctx context.Context,
 
 			args := []any{
 				"token_length", len(token),
-				"token_fingerprint", remenv.RedactedTokenFingerprint(token),
+				"token_fingerprint", agent.RedactedTokenFingerprint(token),
 			}
 			if totalAgentEnvsErr == nil {
 				args = append(args, "agent_envs_total", totalAgentEnvs)
@@ -1561,7 +1561,7 @@ func (s *EnvironmentService) resolveRemoteEnvironmentTarget(ctx context.Context,
 	return proxy.NewTarget(envRecord.ID, envRecord.Name, envRecord.AccessToken)
 }
 
-func (s *EnvironmentService) ExecuteRemoteRequest(ctx context.Context, envID, method, path string, body []byte) (*remenv.Response, error) {
+func (s *EnvironmentService) ExecuteRemoteRequest(ctx context.Context, envID, method, path string, body []byte) (*agent.RemoteResponse, error) {
 	target, err := s.resolveRemoteEnvironmentTarget(ctx, envID)
 	if err != nil {
 		return nil, err

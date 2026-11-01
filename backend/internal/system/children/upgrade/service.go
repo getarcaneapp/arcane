@@ -21,7 +21,6 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -29,7 +28,8 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/mod/semver"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/docker/streams/agg"
@@ -40,25 +40,25 @@ import (
 	"kit.getarcane.app/updater/refs"
 	updatertypes "kit.getarcane.app/updater/types"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/version"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -233,7 +233,7 @@ func (s *Service) CanUpgrade(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, errors.New("docker socket is not accessible")
 	}
-	self, inspectErr := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
+	self, inspectErr := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
 	if inspectErr != nil {
 		return false, errors.New("arcane is not running in a Docker container")
 	}
@@ -262,7 +262,7 @@ func (s *Service) TriggerUpgradeAsync(ctx context.Context, user types.Actor, tar
 	}
 	localSettings := s.settingsService.GetSettingsConfig()
 	runTimeout := timeouts.GetDuration(localSettings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull) + time.Minute
-	runCtx, cancel := context.WithTimeout(utils.ActivityRuntimeContext(ctx, nil), runTimeout)
+	runCtx, cancel := context.WithTimeout(activitylib.ActivityRuntimeContext(ctx, nil), runTimeout)
 	go func() {
 		defer cancel()
 		_, runPreparedUpgradeErr := s.runPreparedUpgrade(runCtx, prepared)
@@ -309,7 +309,7 @@ func (s *Service) prepareUpgrade(ctx context.Context, user types.Actor, target u
 	}
 	runningUpgraders, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerListResult, error) {
 		return cli.ContainerList(ctx, client.ContainerListOptions{
-			Filters: make(client.Filters).Add("label", libarcane.LabelArcaneUpgrader+"=true").Add("status", "running"),
+			Filters: make(client.Filters).Add("label", selfcontainer.LabelArcaneUpgrader+"=true").Add("status", "running"),
 		})
 	})
 	if err != nil {
@@ -321,7 +321,7 @@ func (s *Service) prepareUpgrade(ctx context.Context, user types.Actor, target u
 	current, err := func() (container.InspectResponse, error) {
 		containerID := strings.TrimSpace(target.ContainerID)
 		if containerID == "" {
-			self, inspectErr := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
+			self, inspectErr := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
 			if inspectErr != nil {
 				return container.InspectResponse{}, errors.New("get current container: arcane is not running in a Docker container")
 			}
@@ -448,7 +448,7 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 	}
 
 	// Mount /app/data from the current container so upgrade logs persist.
-	appDataMount := docker.MountForDestination(prepared.current.Mounts, libarcane.UpgradeLogDirectory, libarcane.UpgradeLogDirectory)
+	appDataMount := docker.MountForDestination(prepared.current.Mounts, selfcontainer.UpgradeLogDirectory, selfcontainer.UpgradeLogDirectory)
 	if appDataMount == nil {
 		slog.WarnContext(ctx, "Could not detect /app/data mount; upgrader logs may not persist")
 	} else {
@@ -516,8 +516,8 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 				User: "0:0",
 				Env:  containerEnv,
 				Labels: map[string]string{
-					libarcane.LabelArcaneUpgrader: "true",
-					"com.getarcaneapp.arcane":     "true",
+					selfcontainer.LabelArcaneUpgrader: "true",
+					"com.getarcaneapp.arcane":         "true",
 				},
 			},
 			HostConfig: &container.HostConfig{
@@ -824,7 +824,7 @@ func (s *Service) ResumeUpgradeJobOnStartup(ctx context.Context) {
 	if manager := slices.IndexFunc(job.Results, func(r UpgradeJobResult) bool {
 		return r.EnvironmentID == environment.LocalEnvironmentID
 	}); manager >= 0 {
-		lines, replayErr := readUpgradeLog(libarcane.UpgradeLogDirectory, job.CreatedAt)
+		lines, replayErr := readUpgradeLog(selfcontainer.UpgradeLogDirectory, job.CreatedAt)
 		if replayErr != nil {
 			slog.WarnContext(ctx, "upgrade job: failed to replay manager upgrade log", "jobId", job.ID, "error", replayErr)
 		}
@@ -1025,7 +1025,7 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 	for backoff := time.Second; waitCtx.Err() == nil; backoff = min(2*backoff, upgradeJobRedialMaxBackoff) {
 		doneMessage, done, streamErr := s.followAgentProgress(waitCtx, remote.ID, sink)
 		sink.flush(ctx)
-		statusErr, _ := errors.AsType[*remenv.StatusError](streamErr)
+		statusErr, _ := errors.AsType[*agent.StatusError](streamErr)
 		legacy := slices.Contains([]int{http.StatusNotFound, http.StatusMethodNotAllowed}, kit.FromPtr(statusErr).StatusCode)
 		if done || legacy {
 			stage(UpgradeStageVerifying)
@@ -1322,7 +1322,7 @@ func upgradeJobAgentFailureStatus(err error) UpgradeResultStatus {
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return UpgradeResultStatusFailed
 	}
-	if _, ok := errors.AsType[*remenv.StatusError](err); ok {
+	if _, ok := errors.AsType[*agent.StatusError](err); ok {
 		return UpgradeResultStatusFailed
 	}
 	return UpgradeResultStatusSkippedOffline
@@ -1420,7 +1420,7 @@ func (s *Service) StreamProgress(ctx context.Context, deliver func(types.Upgrade
 	history, live, active, unsubscribe := s.progress.subscribe()
 	defer unsubscribe()
 	if !active && len(history) == 0 {
-		lines, err := readUpgradeLog(libarcane.UpgradeLogDirectory, time.Now().Add(-upgradeJobManagerWatchTimeout))
+		lines, err := readUpgradeLog(selfcontainer.UpgradeLogDirectory, time.Now().Add(-upgradeJobManagerWatchTimeout))
 		if err != nil {
 			slog.WarnContext(ctx, "Failed to replay upgrade log", "error", err)
 		}

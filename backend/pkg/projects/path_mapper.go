@@ -10,13 +10,14 @@ import (
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/getarcaneapp/arcane/types/v3"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -500,7 +501,7 @@ func GetCurrentContainerMounts(ctx context.Context, dockerCli *client.Client) ([
 	// Label-fallback detection matters here: with network_mode: service:<sidecar>
 	// the hostname identifies the sidecar, whose mounts do not include
 	// docker.sock — breaking host-path resolution for the self-upgrader (#3544).
-	inspect, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerCli)
+	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerCli)
 	if err != nil {
 		// Not running in a container or can't reach docker daemon
 		return nil, err

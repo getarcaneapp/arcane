@@ -8,20 +8,21 @@ import (
 	"slices"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
+
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -89,7 +90,7 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 
 // Submit accepts an update of the container and returns its activity ID; activity describes that activity.
 func (s *Service) Submit(ctx context.Context, containerID string, activity activitylib.StartRequest) (string, error) {
-	user, _ := userctx.CurrentUserFromContext(ctx)
+	user, _ := handlerutil.CurrentUserFromContext(ctx)
 	return s.flow.Submit(ctx, s.workflow, updateInput{
 		ContainerID: containerID,
 		UserID:      kit.FromPtr(user).ID,
@@ -186,7 +187,7 @@ func (s *Service) update(ctx context.Context, t flow.Task) (any, error) {
 	}
 	ctx = s.deps.WithFrozenTarget(ctx, &target, record)
 	result, runErr := func() (out *types.UpdaterResult, err error) {
-		defer utils.RecoverToError(&err, "single container update")
+		defer concurrency.RecoverToError(&err, "single container update")
 		return s.deps.RunUpdate(ctx, target.ContainerID, activityID)
 	}()
 	if ctx.Err() != nil {

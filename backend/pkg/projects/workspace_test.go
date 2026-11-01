@@ -7,9 +7,10 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
 )
 
 func TestReadProjectWorkspace_ExcludesProtectedFilesAndReturnsFolders(t *testing.T) {
@@ -369,7 +370,7 @@ func TestProtectedProjectFilePaths_IncludesComposeOverrideCandidates(t *testing.
 
 	protected := ProtectedProjectFilePaths("compose.yaml")
 
-	for _, candidate := range ComposeOverrideFileCandidates() {
+	for _, candidate := range ComposeOverrideFileCandidates {
 		assert.Truef(t, protected[candidate], "expected %q to be protected", candidate)
 	}
 }

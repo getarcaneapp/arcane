@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/types/v3"
 )
 
 // ApplyStatuses merges durable runs for one environment into jobs. The local

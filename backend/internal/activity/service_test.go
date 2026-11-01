@@ -10,27 +10,27 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/gitrepo"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/s3"
+	"getarcane.dev/arcane/v3/internal/settings"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
 func setupActivityServiceTestDB(t *testing.T) *database.DB {
@@ -463,8 +463,8 @@ func TestActivityServiceTrackAndRequestCancel(t *testing.T) {
 	service := NewActivityService(db, nil)
 
 	// Mirror the handler flow: work runs under an app-lifecycle runtime context.
-	appCtx := utils.WithAppLifecycleContext(t.Context())
-	runtimeCtx := utils.ActivityRuntimeContext(t.Context(), appCtx)
+	appCtx := activitylib.WithAppLifecycleContext(t.Context())
+	runtimeCtx := activitylib.ActivityRuntimeContext(t.Context(), appCtx)
 
 	created, err := service.StartActivity(runtimeCtx, StartActivityRequest{
 		EnvironmentID: "0",
@@ -480,11 +480,11 @@ func TestActivityServiceTrackAndRequestCancel(t *testing.T) {
 	require.True(t, service.RequestCancel(created.ID))
 	require.ErrorIs(t, workCtx.Err(), context.Canceled)
 	require.ErrorIs(t, context.Cause(workCtx), activitylib.ErrCanceled)
-	require.True(t, activitylib.CancelledByContext(workCtx))
+	require.ErrorIs(t, context.Cause(workCtx), activitylib.ErrCanceled)
 
 	// Completion must land even though the work context is cancelled (this is the
 	// path CompleteHandlerActivity takes after re-wrapping the work context).
-	completed, err := service.CompleteActivity(utils.ActivityRuntimeContext(workCtx, nil), created.ID, types.ActivityStatusCancelled, "Cancelled by user", nil)
+	completed, err := service.CompleteActivity(activitylib.ActivityRuntimeContext(workCtx, nil), created.ID, types.ActivityStatusCancelled, "Cancelled by user", nil)
 	require.NoError(t, err)
 	require.Equal(t, "cancelled", string(completed.Status))
 	require.NotNil(t, completed.EndedAt)

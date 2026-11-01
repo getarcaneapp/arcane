@@ -9,7 +9,7 @@ import (
 
 	"github.com/samber/mo"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/settings"
 )
 
 type (

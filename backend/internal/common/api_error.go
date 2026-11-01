@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/getarcaneapp/arcane/types/v3"
+	"getarcane.dev/types/v3"
 )
 
 type (

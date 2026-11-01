@@ -18,18 +18,19 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
-	projectpkg "github.com/getarcaneapp/arcane/backend/v3/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/gitrepo"
+	projectpkg "getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/pkg/gitutil"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -554,7 +555,7 @@ func (s *Service) backupComposeFiles(ctx context.Context, project *projectpkg.Pr
 	primary := filepath.ToSlash(relative)
 	composeFiles := []string{primary}
 	composeDir := path.Dir(primary)
-	for _, candidate := range projects.ComposeOverrideFileCandidates() {
+	for _, candidate := range projects.ComposeOverrideFileCandidates {
 		candidatePath := path.Join(composeDir, candidate)
 		if exists, existsErr := (acfs.Root{Path: project.Path}).Exists(ctx, "/"+candidatePath); existsErr == nil && exists {
 			composeFiles = append(composeFiles, candidatePath)

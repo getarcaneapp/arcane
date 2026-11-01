@@ -3,9 +3,8 @@ package kube
 import (
 	"context"
 
-	"github.com/getarcaneapp/arcane/types/v3"
-
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
+	"getarcane.dev/arcane/v3/pkg/podman"
+	"getarcane.dev/types/v3"
 )
 
 type (

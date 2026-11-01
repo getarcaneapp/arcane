@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/types"
+	"getarcane.dev/cli/v3/internal/client"
+	"getarcane.dev/cli/v3/internal/types"
 )
 
 func TestResourceRefFetch(t *testing.T) {

@@ -7,16 +7,16 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v3"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/validation"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -221,7 +221,7 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 	}
 
 	if input.Body.Password != "" {
-		caller, _ := userctx.CurrentUserFromContext(ctx)
+		caller, _ := handlerutil.CurrentUserFromContext(ctx)
 		currentSessionID, _ := middleware.GetCurrentSessionIDFromContext(ctx)
 		exceptSessionID := kit.Ternary(caller != nil && caller.ID == updatedUser.ID, currentSessionID, "")
 		if _, setPasswordErr := h.userService.SetPasswordAndRevokeSessionsExcept(ctx, updatedUser, input.Body.Password, exceptSessionID, callerPerms); setPasswordErr != nil {
@@ -252,7 +252,7 @@ func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*
 	// target. The service enforces the same check; this pre-check produces a
 	// clean 403 without entering the delete path.
 	callerPerms, _ := middleware.PermissionsFromContext(ctx)
-	caller, _ := userctx.CurrentUserFromContext(ctx)
+	caller, _ := handlerutil.CurrentUserFromContext(ctx)
 	if callerPerms != nil && !callerPerms.IsGlobalAdmin() && caller != nil && caller.ID != input.UserID {
 		targetPerms, err := h.userService.roleService.ResolvePermissions(ctx, input.UserID)
 		if err != nil {
@@ -310,7 +310,7 @@ func (h *UserHandler) GetUserAvatar(ctx context.Context, input *GetUserAvatarInp
 // re-enforces the target-admin check.
 func (h *UserHandler) checkUpdateUserPrivileges(ctx context.Context, input *UpdateUserInput, targetID string) (*authz.PermissionSet, error) {
 	callerPerms, _ := middleware.PermissionsFromContext(ctx)
-	caller, _ := userctx.CurrentUserFromContext(ctx)
+	caller, _ := handlerutil.CurrentUserFromContext(ctx)
 	if callerPerms != nil && !callerPerms.IsGlobalAdmin() {
 		if input.Body.Password != "" && caller != nil && caller.ID != targetID {
 			return nil, huma.Error403Forbidden(ErrInsufficientPrivilege.Error())

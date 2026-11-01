@@ -10,12 +10,13 @@ import (
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/getarcaneapp/arcane/types/v3"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/builds/pkg/contextsource"
 	buildtypes "kit.getarcane.app/builds/types"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/types/v3"
 )
 
 // ResolveBuildContext resolves a service build context against workingDir.

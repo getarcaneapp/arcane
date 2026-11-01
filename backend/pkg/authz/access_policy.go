@@ -1,5 +1,7 @@
 package authz
 
+import "slices"
+
 type (
 	// AccessSurface describes one frontend-visible surface whose reachability is
 	// derived from backend-owned permission metadata. This is decision metadata for
@@ -159,8 +161,10 @@ var (
 // surface in stable evaluation order.
 func AccessSurfaces() []AccessSurface {
 	out := make([]AccessSurface, len(accessSurfaces))
-	for i := range accessSurfaces {
-		out[i] = copyAccessSurface(accessSurfaces[i])
+	for i, surface := range accessSurfaces {
+		surface.Permissions = slices.Clone(surface.Permissions)
+		surface.Children = slices.Clone(surface.Children)
+		out[i] = surface
 	}
 	return out
 }
@@ -169,36 +173,32 @@ func AccessSurfaces() []AccessSurface {
 // caller. It is for advisory UX only; middleware and handlers still enforce
 // permissions on actual API requests.
 func CanAccessSurface(ps *PermissionSet, surfaceID, envID string) bool {
-	return canAccessSurface(ps, surfaceID, envID, make(map[string]struct{}))
-}
-
-func canAccessSurface(ps *PermissionSet, surfaceID, envID string, visiting map[string]struct{}) bool {
 	if ps == nil {
 		return false
 	}
-	if _, ok := visiting[surfaceID]; ok {
-		return false
-	}
-	surface, ok := accessSurfacesByID[surfaceID]
-	if !ok {
-		return false
-	}
-
-	switch surface.AccessMode {
-	case AccessModeAnyChild:
-		visiting[surfaceID] = struct{}{}
-		defer delete(visiting, surfaceID)
-		for _, childID := range surface.Children {
-			if canAccessSurface(ps, childID, envID, visiting) {
-				return true
-			}
+	visiting := make(map[string]struct{})
+	var canAccess func(id string) bool
+	canAccess = func(id string) bool {
+		if _, ok := visiting[id]; ok {
+			return false
 		}
-		return false
-	case AccessModePermissions:
-		return allowsSurfacePermissions(ps, surface, envID)
-	default:
-		return false
+		surface, ok := accessSurfacesByID[id]
+		if !ok {
+			return false
+		}
+
+		switch surface.AccessMode {
+		case AccessModeAnyChild:
+			visiting[id] = struct{}{}
+			defer delete(visiting, id)
+			return slices.ContainsFunc(surface.Children, canAccess)
+		case AccessModePermissions:
+			return allowsSurfacePermissions(ps, surface, envID)
+		default:
+			return false
+		}
 	}
+	return canAccess(surfaceID)
 }
 
 func allowsSurfacePermissions(ps *PermissionSet, surface AccessSurface, envID string) bool {
@@ -245,12 +245,6 @@ func buildAccessSurfaceIndex(surfaces []AccessSurface) map[string]AccessSurface 
 		out[surface.ID] = surface
 	}
 	return out
-}
-
-func copyAccessSurface(surface AccessSurface) AccessSurface {
-	surface.Permissions = append([]string(nil), surface.Permissions...)
-	surface.Children = append([]string(nil), surface.Children...)
-	return surface
 }
 
 func routeSurface(id, url, label, scopeMode string, permissions []string, fallbackOrder int) AccessSurface {

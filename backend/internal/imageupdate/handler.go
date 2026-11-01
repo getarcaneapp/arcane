@@ -5,12 +5,13 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v3"
+
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -47,7 +48,7 @@ func (h *ImageUpdateHandler) CheckImageUpdate(ctx context.Context, input *CheckI
 		return nil, huma.Error400BadRequest("imageRef query parameter is required")
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	runtimeCtx := activity.ActivityRuntimeContext(ctx, h.appCtx)
 	result, err := h.imageUpdateService.CheckImageUpdate(runtimeCtx, input.ImageRef)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to check image update: " + err.Error())
@@ -66,7 +67,7 @@ func (h *ImageUpdateHandler) CheckImageUpdateByID(ctx context.Context, input *Ch
 		return nil, huma.Error400BadRequest("imageId parameter is required")
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	runtimeCtx := activity.ActivityRuntimeContext(ctx, h.appCtx)
 	result, err := h.imageUpdateService.CheckImageUpdateByID(runtimeCtx, input.ImageID)
 	if err != nil {
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), "Failed to check image update: "+err.Error())
@@ -85,7 +86,7 @@ func (h *ImageUpdateHandler) CheckImages(ctx context.Context, input *CheckImages
 		return nil, huma.Error400BadRequest("imageRefs is required for action=batch")
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	runtimeCtx := activity.ActivityRuntimeContext(ctx, h.appCtx)
 	results, err := h.imageUpdateService.CheckImages(runtimeCtx, types.ImageUpdateCheckRequest{
 		All:       input.Action == "all",
 		ImageRefs: kit.FromPtr(input.Body).ImageRefs,

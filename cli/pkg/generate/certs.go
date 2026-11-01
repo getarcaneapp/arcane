@@ -20,7 +20,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/fs/atomic"
 )
 

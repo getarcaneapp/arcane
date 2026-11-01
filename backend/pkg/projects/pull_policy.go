@@ -8,7 +8,8 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	composeapi "github.com/docker/compose/v5/pkg/api"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 )
 
 type (

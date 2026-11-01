@@ -5,13 +5,13 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/kube"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/pods"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/quadlets"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/secrets"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/podman/children/kube"
+	"getarcane.dev/arcane/v3/internal/podman/children/pods"
+	"getarcane.dev/arcane/v3/internal/podman/children/quadlets"
+	"getarcane.dev/arcane/v3/internal/podman/children/secrets"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
 type (

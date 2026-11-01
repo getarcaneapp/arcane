@@ -9,6 +9,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"kit.getarcane.app/updater/labels"
 )
 

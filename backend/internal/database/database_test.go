@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database/migrations"
-	sqliteutil "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/sqlite"
+	"getarcane.dev/arcane/v3/internal/database/migrations"
+	"getarcane.dev/arcane/v3/pkg/sqlite"
 )
 
 func sqliteMigrationVersions(t *testing.T) []int64 {
@@ -333,7 +333,7 @@ func downgradeTargetVersion(t *testing.T) int64 {
 
 func newSQLiteSQLDB(t *testing.T, dirPath, fileName string) (*stdsql.DB, string) {
 	t.Helper()
-	require.NoError(t, sqliteutil.RegisterFunctions())
+	require.NoError(t, sqlite.RegisterFunctions())
 
 	dsn := "file:" + filepath.Join(dirPath, fileName)
 	db, err := stdsql.Open("sqlite", dsn)

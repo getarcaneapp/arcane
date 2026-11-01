@@ -3,9 +3,11 @@ package tags
 import (
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
+
 	"kit.getarcane.app/updater"
+
+	"getarcane.dev/types/v3"
 )
 
 func TestContainerAggregationPreservesImageResult(t *testing.T) {

@@ -4,9 +4,11 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
+
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -149,18 +151,11 @@ func pathSegments(p string) []string {
 func templateSegments(t string) []string {
 	segs := pathSegments(t)
 	for i, s := range segs {
-		if isParamSegment(s) {
+		if strings.HasPrefix(s, ":") || (strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}")) {
 			segs[i] = "*"
 		}
 	}
 	return segs
-}
-
-func isParamSegment(s string) bool {
-	if strings.HasPrefix(s, ":") {
-		return true
-	}
-	return strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}")
 }
 
 // UploadKindPermission maps an upload-session kind to the permission required

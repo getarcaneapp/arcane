@@ -9,22 +9,23 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"kit.getarcane.app/fs"
+
+	"getarcane.dev/arcane/v3/pkg/httpx"
 )
 
 func TestConfig_LoadPermissions(t *testing.T) {
 	// Save original env and global perms
 	origFilePerm := os.Getenv("ARCANE_FILE_PERM")
 	origDirPerm := os.Getenv("ARCANE_DIR_PERM")
-	origPkgFilePerm := utils.FilePerm
-	origPkgDirPerm := utils.DirPerm
+	origPkgFilePerm := fs.FilePerm
+	origPkgDirPerm := fs.DirPerm
 
 	defer func() {
 		restoreEnv("ARCANE_FILE_PERM", origFilePerm)
 		restoreEnv("ARCANE_DIR_PERM", origDirPerm)
-		utils.FilePerm = origPkgFilePerm
-		utils.DirPerm = origPkgDirPerm
+		fs.FilePerm = origPkgFilePerm
+		fs.DirPerm = origPkgDirPerm
 	}()
 
 	t.Run("Default permissions", func(t *testing.T) {
@@ -34,8 +35,8 @@ func TestConfig_LoadPermissions(t *testing.T) {
 		cfg := mustLoad(t)
 		assert.Equal(t, os.FileMode(0o644), cfg.FilePerm)
 		assert.Equal(t, os.FileMode(0o755), cfg.DirPerm)
-		assert.Equal(t, os.FileMode(0o644), utils.FilePerm)
-		assert.Equal(t, os.FileMode(0o755), utils.DirPerm)
+		assert.Equal(t, os.FileMode(0o644), fs.FilePerm)
+		assert.Equal(t, os.FileMode(0o755), fs.DirPerm)
 	})
 
 	t.Run("Custom permissions", func(t *testing.T) {
@@ -45,8 +46,8 @@ func TestConfig_LoadPermissions(t *testing.T) {
 		cfg := mustLoad(t)
 		assert.Equal(t, os.FileMode(0o664), cfg.FilePerm)
 		assert.Equal(t, os.FileMode(0o775), cfg.DirPerm)
-		assert.Equal(t, os.FileMode(0o664), utils.FilePerm)
-		assert.Equal(t, os.FileMode(0o775), utils.DirPerm)
+		assert.Equal(t, os.FileMode(0o664), fs.FilePerm)
+		assert.Equal(t, os.FileMode(0o775), fs.DirPerm)
 	})
 
 	t.Run("Restrictive permissions", func(t *testing.T) {
@@ -56,8 +57,8 @@ func TestConfig_LoadPermissions(t *testing.T) {
 		cfg := mustLoad(t)
 		assert.Equal(t, os.FileMode(0o600), cfg.FilePerm)
 		assert.Equal(t, os.FileMode(0o700), cfg.DirPerm)
-		assert.Equal(t, os.FileMode(0o600), utils.FilePerm)
-		assert.Equal(t, os.FileMode(0o700), utils.DirPerm)
+		assert.Equal(t, os.FileMode(0o600), fs.FilePerm)
+		assert.Equal(t, os.FileMode(0o700), fs.DirPerm)
 	})
 }
 

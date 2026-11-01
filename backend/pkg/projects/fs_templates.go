@@ -13,10 +13,11 @@ import (
 	composeloader "github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/samber/mo"
-	"kit.getarcane.app/acfs"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"kit.getarcane.app/acfs"
+	"kit.getarcane.app/fs"
+
+	"getarcane.dev/arcane/v3/internal/common"
 )
 
 // Previous built-in templates; unedited on-disk copies are upgraded to the current defaults.
@@ -115,7 +116,7 @@ func EnsureTemplateDir(ctx context.Context, templatesDir, base string) (dir, com
 	if err != nil {
 		return "", "", "", fmt.Errorf("template directory is outside the templates root: %w", err)
 	}
-	if mkdirAllErr := (acfs.Root{Path: baseDir}).MkdirAll(ctx, dirLogical, utils.DirPerm); mkdirAllErr != nil {
+	if mkdirAllErr := (acfs.Root{Path: baseDir}).MkdirAll(ctx, dirLogical, fs.DirPerm); mkdirAllErr != nil {
 		return "", "", "", fmt.Errorf("failed to create template directory: %w", mkdirAllErr)
 	}
 	composePath = filepath.Join(dir, "compose.yaml")
@@ -171,7 +172,7 @@ func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) 
 				continue
 			}
 		}
-		if writeErr := (acfs.Root{Path: templatesDir}).Write(ctx, tmpl.path, []byte(tmpl.content), acfs.WriteOptions{Mode: utils.FilePerm}); writeErr != nil {
+		if writeErr := (acfs.Root{Path: templatesDir}).Write(ctx, tmpl.path, []byte(tmpl.content), acfs.WriteOptions{Mode: fs.FilePerm}); writeErr != nil {
 			return fmt.Errorf("write default %s template: %w", tmpl.name, writeErr)
 		}
 	}
@@ -291,7 +292,7 @@ func ParseComposeServices(ctx context.Context, composeContent string) []string {
 
 	// Create a dummy .env file to prevent env file errors
 	envPath := filepath.Join(tmpDir, ".env")
-	if writeFileWithPermErr := WriteFileWithPerm(envPath, "", utils.FilePerm); writeFileWithPermErr != nil {
+	if writeFileWithPermErr := WriteFileWithPerm(envPath, "", fs.FilePerm); writeFileWithPermErr != nil {
 		slog.WarnContext(ctx, "Failed to create dummy env file", "error", writeFileWithPermErr)
 	}
 
@@ -335,7 +336,7 @@ func ResolveTemplateIconURL(ctx context.Context, composeContent, envContent stri
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	envPath := filepath.Join(tmpDir, ".env")
-	if writeFileWithPermErr := WriteFileWithPerm(envPath, envContent, utils.FilePerm); writeFileWithPermErr != nil {
+	if writeFileWithPermErr := WriteFileWithPerm(envPath, envContent, fs.FilePerm); writeFileWithPermErr != nil {
 		slog.WarnContext(ctx, "failed to create temp env file for template icon parsing", "error", writeFileWithPermErr)
 	}
 

@@ -1,6 +1,6 @@
 package template
 
-import "github.com/getarcaneapp/arcane/backend/v3/internal/database"
+import "getarcane.dev/arcane/v3/internal/database"
 
 type (
 	TemplateRegistry struct {

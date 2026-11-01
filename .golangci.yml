@@ -27,9 +27,11 @@ formatters:
       sections:
         - standard
         - default
-        - localmodule
+        - prefix(kit.getarcane.app)
+        - prefix(getarcane.dev)
       custom-order: true
     gofumpt:
+      module-path: getarcane.dev/arcane/v3
       extra:
         group-params: true
         clothe-returns: true
@@ -97,9 +99,9 @@ linters:
           deny:
             - pkg: gorm.io
               desc: Go migrations must use raw SQL, not GORM models.
-            - pkg: github.com/getarcaneapp/arcane/backend/v3/internal
+            - pkg: getarcane.dev/arcane/v3/internal
               desc: Go migrations must not depend on application packages that change after the migration version.
-            - pkg: github.com/getarcaneapp/arcane/types
+            - pkg: getarcane.dev/types
               desc: Go migrations must not depend on shared contracts that change after the migration version.
 
     exhaustruct_v5:
@@ -134,7 +136,7 @@ linters:
           alias: docker
         - pkg: kit.getarcane.app
           alias: kit
-        - pkg: github.com/getarcaneapp/arcane/backend/v3/internal/docker
+        - pkg: getarcane.dev/arcane/v3/internal/docker
           alias: dockerInternal
         - pkg: charm.land/log/v2
           alias: charmLog
@@ -165,6 +167,7 @@ linters:
       rules:
         - name: package-comments
           disabled: true
+        - name: redundant-import-alias
 
     sloglint:
       context: 'all' # https://github.com/go-simpler/sloglint#context-only

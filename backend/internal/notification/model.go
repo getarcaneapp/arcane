@@ -3,8 +3,8 @@ package notification
 import (
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/pkg/notifications"
 )
 
 type (

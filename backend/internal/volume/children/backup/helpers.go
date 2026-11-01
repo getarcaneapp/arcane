@@ -13,20 +13,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/docker"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/arcane/v3/pkg/volumes"
+	"getarcane.dev/types/v3"
 )
 
 const (
@@ -58,7 +59,7 @@ func resolveBackupStorageMountFromMounts(ctx context.Context, mounts []container
 // localRusticRepositoryInitialized reports whether the local repository has a Rustic config.
 // Only a /backups mount in the Arcane container can be checked without Rustic; other setups count as initialized.
 func (s *Service) localRusticRepositoryInitialized(ctx context.Context, dockerClient *client.Client) bool {
-	inspect, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
+	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
 	if err != nil || docker.MountForDestination(inspect.Mounts, "/backups", "/backups") == nil {
 		return true
 	}
@@ -77,7 +78,7 @@ func backupMountWarningFromArcaneMounts(mounts []container.MountPoint) string {
 
 func (s *Service) backupMountWarning(ctx context.Context) string {
 	// Cannot determine Arcane mount status (e.g. running outside Docker); suppress warning.
-	inspect, err := s.deps.Docker.Call(ctx, libarcane.InspectCurrentArcaneContainer)
+	inspect, err := s.deps.Docker.Call(ctx, selfcontainer.InspectCurrentArcaneContainer)
 	if err != nil {
 		return ""
 	}
@@ -88,7 +89,7 @@ func (s *Service) backupMountWarning(ctx context.Context) string {
 // It mirrors Arcane's own /backups mount and otherwise falls back to the dedicated named backup volume.
 func (s *Service) StorageMount(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error) {
 	if dockerClient != nil {
-		inspect, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
+		inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
 		if err != nil {
 			slog.WarnContext(ctx, "volume service: failed to inspect arcane container for backup mount resolution, falling back to named volume", "error", err.Error())
 		} else if mirrored := resolveBackupStorageMountFromMounts(ctx, inspect.Mounts, target, readOnly); mirrored != nil {
@@ -102,7 +103,7 @@ func (s *Service) StorageMount(ctx context.Context, dockerClient *client.Client,
 		if _, createErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
 			return dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{
 				Name:   s.deps.BackupVolumeName,
-				Labels: map[string]string{libarcane.InternalResourceLabel: "true"},
+				Labels: map[string]string{selfcontainer.InternalResourceLabel: "true"},
 			})
 		}); createErr != nil {
 			return mount.Mount{}, fmt.Errorf("failed to create backup volume: %w", createErr)
@@ -128,7 +129,7 @@ func (s *Service) stopRunningContainersForBackup(ctx context.Context, volumeName
 		}
 		// Arcane's helper containers are auto-removed when stopped, so stopping
 		// one would leave nothing for the restart pass and fail the operation.
-		if strings.EqualFold(candidate.Labels[libarcane.InternalResourceLabel], "true") {
+		if strings.EqualFold(candidate.Labels[selfcontainer.InternalResourceLabel], "true") {
 			continue
 		}
 		eligible = append(eligible, candidate)
@@ -352,8 +353,8 @@ func (s *Service) createBackupTempContainerWithMount(ctx context.Context, backup
 	}
 	resp, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
 		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-			Config:     &container.Config{Image: helperImage, Cmd: []string{"sleep", "infinity"}, NetworkDisabled: true, Labels: volumehelper.Labels()},
-			HostConfig: volumehelper.HostConfig(helperImage, nil, []mount.Mount{backupMount}),
+			Config:     &container.Config{Image: helperImage, Cmd: []string{"sleep", "infinity"}, NetworkDisabled: true, Labels: volumes.Labels()},
+			HostConfig: volumes.HostConfig(helperImage, nil, []mount.Mount{backupMount}),
 		})
 	})
 	if err != nil {
@@ -363,13 +364,13 @@ func (s *Service) createBackupTempContainerWithMount(ctx context.Context, backup
 		return dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
 	}); containerStartErr != nil {
 		_, _ = s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
+			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
 		})
 		return "", nil, fmt.Errorf("failed to start backup temp container: %w", containerStartErr)
 	}
 	return resp.ID, func() {
 		_, _ = s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
+			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
 		})
 	}, nil
 }

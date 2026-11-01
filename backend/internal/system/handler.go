@@ -6,12 +6,13 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v3"
+
 	"kit.getarcane.app/docker/convert"
 	converttypes "kit.getarcane.app/docker/convert/types"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -83,7 +84,7 @@ func (h *SystemHandler) RunContainersAction(ctx context.Context, input *Containe
 			Error: "Failed to stop containers: ",
 		},
 	}[input.Action]
-	result, err := action.Run(utils.ActivityRuntimeContext(ctx, h.appCtx), input.EnvironmentID)
+	result, err := action.Run(activity.ActivityRuntimeContext(ctx, h.appCtx), input.EnvironmentID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(action.Error + err.Error())
 	}

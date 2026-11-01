@@ -9,9 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
-
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/types/v3"
 )
 
 func TestSessionChunkRoundTrip(t *testing.T) {

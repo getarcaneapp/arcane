@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/config"
 )
 
 var versionCmd = &cobra.Command{

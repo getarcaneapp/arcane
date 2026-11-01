@@ -16,22 +16,23 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
+	kitfs "kit.getarcane.app/fs"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	libswarm "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/swarm"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"getarcane.dev/arcane/v3/internal/common"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	libswarm "getarcane.dev/arcane/v3/pkg/swarm"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -752,10 +753,10 @@ func (s *Service) upsertStackSource(ctx context.Context, environmentID, stackNam
 		return fmt.Errorf("swarm stack source directory is outside its root: %w", err)
 	}
 	// os rather than acfs: acfs can only open a root that already exists.
-	if mkdirAllErr := os.MkdirAll(rootDir, utils.DirPerm); mkdirAllErr != nil {
+	if mkdirAllErr := os.MkdirAll(rootDir, kitfs.DirPerm); mkdirAllErr != nil {
 		return fmt.Errorf("failed to create swarm stack source root: %w", mkdirAllErr)
 	}
-	if mkdirAllErr := (acfs.Root{Path: rootDir}).MkdirAll(ctx, stackLogical, utils.DirPerm); mkdirAllErr != nil {
+	if mkdirAllErr := (acfs.Root{Path: rootDir}).MkdirAll(ctx, stackLogical, kitfs.DirPerm); mkdirAllErr != nil {
 		return fmt.Errorf("failed to create swarm stack source directory: %w", mkdirAllErr)
 	}
 

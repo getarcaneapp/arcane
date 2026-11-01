@@ -9,8 +9,9 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/hot"
+
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -37,12 +38,7 @@ func NewComposeCache[T any](capacity int, clone func(T) T) types.ComposeCache[T]
 	return &composeCache[T]{entries: hot.NewHotCache[string, composeCacheEntry[T]](hot.LRU, capacity).Build(), clone: clone}
 }
 
-// NewParsedComposeCache keeps operation-local models separate from cached state.
-func NewParsedComposeCache() types.ComposeCache[*composetypes.Project] {
-	return NewComposeCache(2048, cloneComposeProject)
-}
-
-func cloneComposeProject(project *composetypes.Project) *composetypes.Project {
+func CloneComposeProject(project *composetypes.Project) *composetypes.Project {
 	if project == nil {
 		return nil
 	}
@@ -85,7 +81,7 @@ func (c *composeCache[T]) Set(projectID, fingerprint, projectPath, projectsDirec
 		dependencies = append(dependencies, filepath.Join(projectsDirectory, GlobalEnvFileName))
 	}
 	// A later standard override must invalidate a model loaded before it existed.
-	for _, name := range composeOverrideFileCandidates {
+	for _, name := range ComposeOverrideFileCandidates {
 		dependencies = append(dependencies, filepath.Join(filepath.Dir(composePath), name))
 	}
 	for _, path := range dependencies {

@@ -9,16 +9,17 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
+	"getarcane.dev/arcane/v3/pkg/logging"
 )
 
 const (
 	statementSpanKey = "arcane:otel_span"
 )
 
-var statementTracer = otel.Tracer(tracing.InstrumentationName)
+var statementTracer = otel.Tracer(logging.InstrumentationName)
 
 // startStatementSpan opens a client span only inside an existing trace, so
 // background queries do not create root traces.
@@ -55,5 +56,5 @@ func endStatementSpan(tx *gorm.DB) {
 	if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, sql.ErrNoRows) {
 		err = nil
 	}
-	tracing.End(span, err)
+	logging.EndSpan(span, err)
 }

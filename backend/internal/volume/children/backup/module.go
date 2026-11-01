@@ -5,12 +5,12 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/volume/children/backup/children/browser"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/volume/children/backup/children/policies"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/volume/children/backup/children/restore"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/volume/children/backup/children/browser"
+	"getarcane.dev/arcane/v3/internal/volume/children/backup/children/policies"
+	"getarcane.dev/arcane/v3/internal/volume/children/backup/children/restore"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
 // RegisterRoutes registers the volume backup endpoints, including policies,

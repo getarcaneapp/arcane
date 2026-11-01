@@ -15,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -24,30 +23,32 @@ import (
 	"go.uber.org/fx"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/mapping"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops/children/backup"
-	gitopssync "github.com/getarcaneapp/arcane/backend/v3/internal/gitops/children/sync"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
-	projectpkg "github.com/getarcaneapp/arcane/backend/v3/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/entityjobs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/gitops/children/backup"
+	gitopssync "getarcane.dev/arcane/v3/internal/gitops/children/sync"
+	"getarcane.dev/arcane/v3/internal/gitrepo"
+	projectpkg "getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/scheduler/entityjobs"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/swarm"
+	"getarcane.dev/arcane/v3/pkg/gitutil"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -126,7 +127,7 @@ const (
 )
 
 var syncRuns = func() metric.Int64Counter {
-	counter, err := otel.Meter(tracing.InstrumentationName).Int64Counter("arcane.gitops.syncs",
+	counter, err := otel.Meter(logging.InstrumentationName).Int64Counter("arcane.gitops.syncs",
 		metric.WithDescription("GitOps sync runs by outcome"), metric.WithUnit("{sync}"))
 	if err != nil {
 		otel.Handle(err)
@@ -857,7 +858,7 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 }
 
 func (s *GitOpsSyncService) PerformSync(ctx context.Context, req SyncRequest) (syncResult *types.GitOpsSyncResult, syncErr error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "gitops.sync", trace.WithAttributes(
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "gitops.sync", trace.WithAttributes(
 		attribute.String("arcane.gitops.sync_id", req.SyncID),
 		attribute.String("arcane.environment.id", req.EnvironmentID),
 	))
@@ -869,7 +870,7 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, req SyncRequest) (s
 			span.SetAttributes(outcome)
 			syncRuns.Add(context.WithoutCancel(ctx), 1, metric.WithAttributes(outcome))
 		}
-		tracing.End(span, syncErr)
+		logging.EndSpan(span, syncErr)
 	}()
 
 	// Overlapping runs of one sync (schedule, kick, manual, webhook) must not race the clone and redeploy.
@@ -1170,7 +1171,7 @@ func (r *backupRuntime) schedule(syncID string, run func()) {
 		timer.Stop()
 	}
 	r.timers[syncID] = time.AfterFunc(r.debounce, func() {
-		defer utils.RecoverToError(nil, "git backup debounce", "syncId", syncID)
+		defer concurrency.RecoverToError(nil, "git backup debounce", "syncId", syncID)
 		r.mu.Lock()
 		delete(r.timers, syncID)
 		r.mu.Unlock()
@@ -1232,7 +1233,7 @@ func (s *GitOpsSyncService) SubscribeProjectFileChanges(ctx context.Context) {
 					return
 				}
 				go func() {
-					defer utils.RecoverToError(nil, "git backup after save", "syncId", syncID, "projectId", projectID)
+					defer concurrency.RecoverToError(nil, "git backup after save", "syncId", syncID, "projectId", projectID)
 					if _, err := s.PerformSync(runCtx, SyncRequest{
 						EnvironmentID: environmentID,
 						SyncID:        syncID,

@@ -3,8 +3,9 @@ package authz
 import (
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
 )
 
 func TestVolumeWorkspaceRequiredPermissions(t *testing.T) {

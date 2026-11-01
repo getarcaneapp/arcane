@@ -4,9 +4,10 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
 	"kit.getarcane.app/fs/atomic"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config/schema"
+	"getarcane.dev/arcane/v3/internal/config/schema"
 )
 
 var configSchemaCmd = &cobra.Command{

@@ -16,7 +16,6 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
@@ -24,31 +23,34 @@ import (
 	"github.com/samber/hot"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
+
 	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
+	kitregistry "kit.getarcane.app/registry"
 	"kit.getarcane.app/updater"
 	"kit.getarcane.app/updater/pkg/utils/tagpolicy"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/image/children/patch"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/vulnerability"
-	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/registryauth"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/image/children/patch"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/vulnerability"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	arcaneregistry "getarcane.dev/arcane/v3/pkg/registry"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -269,7 +271,7 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.Im
 	g, gctx := errgroup.WithContext(ctx)
 
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "image worker")
+		defer concurrency.RecoverToError(&workerErr, "image worker")
 
 		inspectResult, inspectImageErr := s.dockerService.Call(gctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
 			return dockerClient.ImageInspect(ctx, id)
@@ -302,7 +304,7 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.Im
 	})
 
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "image worker")
+		defer concurrency.RecoverToError(&workerErr, "image worker")
 
 		images, imageListErr := s.dockerService.ListImages(gctx)
 		if imageListErr != nil {
@@ -318,7 +320,7 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.Im
 	})
 
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "image worker")
+		defer concurrency.RecoverToError(&workerErr, "image worker")
 
 		containerList, listContainersErr := s.dockerService.ListContainers(gctx, false)
 		if listContainersErr != nil {
@@ -835,7 +837,7 @@ func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string)
 }
 
 func (s *ImageService) PullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []types.ContainerRegistryCredential) (client.ImagePullOptions, error) {
-	registryHost := registryauth.ExtractRegistryHost(imageRef)
+	registryHost := arcaneregistry.ExtractRegistryHost(imageRef)
 
 	// Check external credentials first
 	for _, cred := range externalCreds {
@@ -843,8 +845,8 @@ func (s *ImageService) PullOptionsWithAuth(ctx context.Context, imageRef string,
 			continue
 		}
 
-		if registryauth.IsRegistryMatch(cred.URL, registryHost) {
-			authStr, err := registryauth.EncodeAuthHeader(cred.Username, cred.Token, registryauth.NormalizeRegistryURL(cred.URL))
+		if kitregistry.Normalize(cred.URL) == kitregistry.Normalize(registryHost) {
+			authStr, err := arcaneregistry.EncodeAuthHeader(cred.Username, cred.Token, arcaneregistry.NormalizeRegistryURL(cred.URL))
 			if err != nil {
 				return client.ImagePullOptions{}, fmt.Errorf("failed to create auth header: %w", err)
 			}
@@ -1104,7 +1106,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 
 	// Fetch Docker images
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "image worker")
+		defer concurrency.RecoverToError(&workerErr, "image worker")
 
 		imageList, err := s.dockerService.ListImages(groupCtx)
 		if err != nil {
@@ -1116,7 +1118,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 
 	// Fetch containers to determine usage
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "image worker")
+		defer concurrency.RecoverToError(&workerErr, "image worker")
 
 		containerList, err := s.dockerService.ListContainers(groupCtx, false)
 		if err != nil {

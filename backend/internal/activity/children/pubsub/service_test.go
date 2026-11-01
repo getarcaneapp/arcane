@@ -4,10 +4,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
+	"kit.getarcane.app/concurrency"
+
+	"getarcane.dev/types/v3"
 )
 
 func TestSubscribeMarksMissedEventsWhenBufferFull(t *testing.T) {

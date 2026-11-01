@@ -10,25 +10,26 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app/docker/streams/bus"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow/flowtest"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/version"
+	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/types/v3"
 )
 
 func newUnreachableDockerService(t *testing.T) *dockerInternal.DockerClientService {
@@ -47,7 +48,7 @@ func TestUpgradeJobAgentFailureStatus(t *testing.T) {
 	// Mirrors the real wrapping: executeRemoteRequest -> TransportError ->
 	// "tunnel request failed" -> context.DeadlineExceeded.
 	tunnelTimeout := fmt.Errorf("failed to send request to environment oracle-cloud: %w",
-		&remenv.TransportError{Err: fmt.Errorf("tunnel request failed: %w", context.DeadlineExceeded)})
+		&agent.TransportError{Err: fmt.Errorf("tunnel request failed: %w", context.DeadlineExceeded)})
 
 	tests := []struct {
 		name string
@@ -56,8 +57,8 @@ func TestUpgradeJobAgentFailureStatus(t *testing.T) {
 	}{
 		{"tunnel request timed out", tunnelTimeout, UpgradeResultStatusFailed},
 		{"request canceled mid-flight", fmt.Errorf("tunnel request failed: %w", context.Canceled), UpgradeResultStatusFailed},
-		{"non-success status from agent", &remenv.StatusError{StatusCode: 502}, UpgradeResultStatusFailed},
-		{"agent never connected", &remenv.TransportError{Err: errors.New("agent is not connected")}, UpgradeResultStatusSkippedOffline},
+		{"non-success status from agent", &agent.StatusError{StatusCode: 502}, UpgradeResultStatusFailed},
+		{"agent never connected", &agent.TransportError{Err: errors.New("agent is not connected")}, UpgradeResultStatusSkippedOffline},
 	}
 
 	for _, tt := range tests {

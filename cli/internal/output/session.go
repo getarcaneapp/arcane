@@ -12,7 +12,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/term"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 )
 
 type (

@@ -9,7 +9,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 )
 
 var secretFormats = []string{"base64", "hex", "env", "docker", "all"}

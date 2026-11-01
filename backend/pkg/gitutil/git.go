@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"net"
-	nethttp "net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -19,7 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -34,11 +32,15 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/arcane/v3/pkg/workspace"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -358,17 +360,14 @@ func RepositoryAttribute(rawURL string) attribute.KeyValue {
 // Clone clones a repository to a temporary directory. A depth of 0 fetches the
 // full history; read-only callers pass 1 to fetch only the branch tip.
 func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig, depth int) (repoPath string, err error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "gitrepo.clone", trace.WithAttributes(
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "gitrepo.clone", trace.WithAttributes(
 		attribute.String("arcane.git.branch", branch),
 		attribute.Int("arcane.git.depth", depth),
 	))
-	defer func() { tracing.End(span, err) }()
+	defer func() { logging.EndSpan(span, err) }()
 
-	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Minute)
-		defer cancel()
-	}
+	ctx, cancel := timeouts.WithDefault(ctx, timeouts.DefaultGitOperation)
+	defer cancel()
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return "", ctxErr
 	}
@@ -476,8 +475,8 @@ func (c *Client) ProbeRemote(ctx context.Context, url string, auth AuthConfig) e
 }
 
 func (c *Client) listRemoteReferences(ctx context.Context, url string, auth AuthConfig) (refs []*plumbing.Reference, err error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "gitrepo.list_remote")
-	defer func() { tracing.End(span, err) }()
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "gitrepo.list_remote")
+	defer func() { logging.EndSpan(span, err) }()
 
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, ctxErr
@@ -697,7 +696,7 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 				if closeErr != nil {
 					return fmt.Errorf("failed to close file %s after inspection: %w", relativePath, closeErr)
 				}
-				if IsBinaryContent(buf[:n]) {
+				if slices.Contains(buf[:n], 0) {
 					result.SkippedBinaries++
 					return nil
 				}
@@ -709,7 +708,7 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 			}
 
 			fileSize := int64(len(content))
-			isBinary := IsBinaryContent(content)
+			isBinary := !workspace.IsTextContent(content)
 			if isBinary && maxBinarySize > 0 && fileSize > maxBinarySize {
 				result.SkippedBinaries++
 				return nil
@@ -738,43 +737,4 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 	}
 
 	return result, nil
-}
-
-// IsBinaryContent reports whether content looks binary rather than text.
-func IsBinaryContent(content []byte) bool {
-	if len(content) == 0 {
-		return false
-	}
-
-	checkSize := min(len(content), binarySniffBytes)
-	contentType := nethttp.DetectContentType(content[:checkSize])
-
-	if strings.HasPrefix(contentType, "text/") {
-		return false
-	}
-
-	textAppTypes := []string{
-		"application/json",
-		"application/xml",
-		"application/javascript",
-		"application/x-yaml",
-		"application/yaml",
-		"application/toml",
-		"application/x-sh",
-	}
-	for _, t := range textAppTypes {
-		if strings.HasPrefix(contentType, t) {
-			return false
-		}
-	}
-
-	// Text files rarely contain null bytes, so they mark octet-stream content as binary.
-	if contentType == "application/octet-stream" {
-		return slices.Contains(content[:checkSize], 0)
-	}
-
-	return strings.HasPrefix(contentType, "application/") ||
-		strings.HasPrefix(contentType, "image/") ||
-		strings.HasPrefix(contentType, "video/") ||
-		strings.HasPrefix(contentType, "audio/")
 }

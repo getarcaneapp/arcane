@@ -152,7 +152,7 @@ func TestLoadComposeProject_MergesComposeOverrideFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(basePath, []byte("services:\n  app:\n    image: nginx:alpine\n    environment:\n      FROM_BASE: \"1\"\n"), 0o600))
 	require.NoError(t, os.WriteFile(overridePath, []byte("services:\n  app:\n    image: busybox:latest\n    environment:\n      FROM_OVERRIDE: \"1\"\n"), 0o600))
 
-	cache := NewParsedComposeCache()
+	cache := NewComposeCache(2048, CloneComposeProject)
 	project, err := LoadCachedComposeProject(t.Context(), cache, "demo-id", dir, basePath, "demo", dir, false, nil)
 	require.NoError(t, err)
 	require.NotNil(t, project)

@@ -11,15 +11,16 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/compose/v5/pkg/compose"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/docker"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
 )
 
 const (
@@ -36,7 +37,7 @@ const (
 // HTTP request timeouts and proxy deadline cancellations. A standalone timeout
 // is applied so the operation cannot run forever. See #1209.
 func detachFromHTTPContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-	if utils.IsAppLifecycleContext(parent) {
+	if activity.IsAppLifecycleContext(parent) {
 		return context.WithTimeout(parent, timeout)
 	}
 	ctx := context.WithoutCancel(parent)
@@ -47,7 +48,7 @@ func ComposeRestart(ctx context.Context, dockerHost string, proj *composetypes.P
 	restartCtx, cancel := detachFromHTTPContext(ctx, defaultComposeTimeout)
 	defer cancel()
 
-	c, err := NewClient(restartCtx, dockerHost, nil, nil)
+	c, err := NewClient(restartCtx, ClientConfig{DockerHost: dockerHost})
 	if err != nil {
 		return err
 	}
@@ -63,7 +64,7 @@ func ComposeStop(ctx context.Context, dockerHost string, proj *composetypes.Proj
 	stopCtx, cancel := detachFromHTTPContext(ctx, defaultComposeTimeout)
 	defer cancel()
 
-	c, err := NewClient(stopCtx, dockerHost, nil, nil)
+	c, err := NewClient(stopCtx, ClientConfig{DockerHost: dockerHost})
 	if err != nil {
 		return err
 	}
@@ -89,24 +90,19 @@ func ComposeUp(ctx context.Context, dockerHost string, proj *composetypes.Projec
 	composeCtx, cancel := detachFromHTTPContext(ctx, waitTimeout+defaultComposeTimeout)
 	defer cancel()
 
-	// Compose prompts before recreating a volume whose config diverged (data
-	// loss). Only answer yes when the caller explicitly opted in; otherwise the
-	// default prompt declines and logs the question.
-	var prompt compose.Prompt
-	if opts.RecreateVolumes {
-		prompt = compose.AlwaysOkPrompt()
-	}
-
 	// COMPOSE_* deployment variables ride on the loaded project's environment.
 	// Selection errors were already surfaced at load, so parse best-effort here.
 	envOpts, _ := ParseComposeEnvOptions(proj.WorkingDir, EnvMap(proj.Environment))
 
-	var clientOptions []composeClientOption
-	if envOpts.ParallelLimit > 0 {
-		clientOptions = append(clientOptions, withComposeServiceOptions(compose.WithMaxConcurrency(envOpts.ParallelLimit)))
-	}
-
-	c, err := NewClient(composeCtx, dockerHost, opts.AuthConfigs, prompt, clientOptions...)
+	// Compose prompts before recreating a volume whose config diverged (data
+	// loss). Only answer yes when the caller explicitly opted in; otherwise the
+	// default prompt declines and logs the question.
+	c, err := NewClient(composeCtx, ClientConfig{
+		AuthConfigs:    opts.AuthConfigs,
+		Prompt:         kit.Ternary(opts.RecreateVolumes, compose.AlwaysOkPrompt(), nil),
+		DockerHost:     dockerHost,
+		ServiceOptions: kit.Ternary(envOpts.ParallelLimit > 0, []compose.Option{compose.WithMaxConcurrency(envOpts.ParallelLimit)}, nil),
+	})
 	if err != nil {
 		return err
 	}
@@ -128,7 +124,7 @@ func ComposeCreate(ctx context.Context, dockerHost string, proj *composetypes.Pr
 	createCtx, cancel := detachFromHTTPContext(ctx, defaultComposeTimeout)
 	defer cancel()
 
-	c, err := NewClient(createCtx, dockerHost, authConfigs, nil)
+	c, err := NewClient(createCtx, ClientConfig{DockerHost: dockerHost, AuthConfigs: authConfigs})
 	if err != nil {
 		return err
 	}
@@ -190,7 +186,7 @@ func ComposeDown(ctx context.Context, dockerHost string, proj *composetypes.Proj
 	downCtx, cancel := detachFromHTTPContext(ctx, defaultComposeTimeout)
 	defer cancel()
 
-	c, err := NewClient(downCtx, dockerHost, nil, nil)
+	c, err := NewClient(downCtx, ClientConfig{DockerHost: dockerHost})
 	if err != nil {
 		return err
 	}
@@ -204,7 +200,7 @@ func ComposeDown(ctx context.Context, dockerHost string, proj *composetypes.Proj
 // non-TTY containers keep their stderr metadata; deploy, attach, and other
 // compose operations use plain clients.
 func ComposeLogs(ctx context.Context, dockerHost, projectName string, out io.Writer, opts types.LogStreamOptions) error {
-	c, err := NewClient(ctx, dockerHost, nil, nil, streamDemuxedLogs)
+	c, err := NewClient(ctx, ClientConfig{DockerHost: dockerHost, DemuxLogs: true})
 	if err != nil {
 		return err
 	}

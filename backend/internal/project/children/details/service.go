@@ -18,22 +18,23 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
+
 	"kit.getarcane.app"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/sys/cgroup"
 	"kit.getarcane.app/updater/labels"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/iconcatalog"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/iconcatalog"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -369,7 +370,7 @@ func ExcludeHiddenRuntimeServices(details []types.Project) ([][]types.ProjectRun
 		hiddenRefs := make(map[string]bool)
 		visibleServices := make([]types.ProjectRuntimeService, 0, len(details[i].RuntimeServices))
 		for _, service := range details[i].RuntimeServices {
-			if hidden, _ := kit.ParseBool(service.ContainerLabels[libarcane.HiddenResourceLabel]); hidden {
+			if hidden, _ := kit.ParseBool(service.ContainerLabels[selfcontainer.HiddenResourceLabel]); hidden {
 				hiddenServices[service.Name] = true
 				hiddenRefs[service.Image] = true
 				continue

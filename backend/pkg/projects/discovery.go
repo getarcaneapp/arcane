@@ -13,9 +13,10 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/loader"
 	"go.yaml.in/yaml/v4"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/common"
 )
 
 type (
@@ -260,20 +261,7 @@ func IsFilesystemSnapshotDirName(name string) bool {
 	return filesystemSnapshotDirNames[strings.ToLower(strings.TrimSpace(name))]
 }
 
-// PathContainsSnapshotDirectory reports whether any segment of relPath is a
-// filesystem snapshot/trash directory name, i.e. the path points into a
-// point-in-time copy rather than a live project directory.
-func PathContainsSnapshotDirectory(relPath string) bool {
-	return pathHasSegment(relPath, IsFilesystemSnapshotDirName)
-}
-
-// PathContainsIgnoredDirectory reports whether any segment of relPath is a
-// directory that project discovery skips (see IsIgnoredProjectDirName).
-func PathContainsIgnoredDirectory(relPath string) bool {
-	return pathHasSegment(relPath, IsIgnoredProjectDirName)
-}
-
-func pathHasSegment(relPath string, match func(string) bool) bool {
+func PathHasSegment(relPath string, match func(string) bool) bool {
 	for segment := range strings.SplitSeq(filepath.ToSlash(relPath), "/") {
 		if match(segment) {
 			return true

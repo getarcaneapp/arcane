@@ -8,24 +8,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx/fxtest"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/vulnerability"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/scheduler"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/vulnerability"
+	"getarcane.dev/types/v3"
 )
 
 type (
 	settingsSubscriptionStub struct {
-		pollingCallback  func([]libarcane.SettingUpdate)
-		timeoutCallback  func([]libarcane.SettingUpdate)
-		featureCallbacks []func([]libarcane.SettingUpdate)
+		pollingCallback  func([]types.SettingUpdate)
+		timeoutCallback  func([]types.SettingUpdate)
+		featureCallbacks []func([]types.SettingUpdate)
 	}
 
 	settingsSubscriptionSchedulerStub struct {
@@ -43,7 +42,7 @@ type (
 	}
 )
 
-func (s *settingsSubscriptionStub) SubscribeSettingsChanges(keys []string, callback func([]libarcane.SettingUpdate)) func() {
+func (s *settingsSubscriptionStub) SubscribeSettingsChanges(keys []string, callback func([]types.SettingUpdate)) func() {
 	if slices.Contains(keys, types.FeatureVulnerabilityManagementSettingKey) {
 		s.featureCallbacks = append(s.featureCallbacks, callback)
 	}
@@ -56,7 +55,7 @@ func (s *settingsSubscriptionStub) SubscribeSettingsChanges(keys []string, callb
 	return func() {}
 }
 
-func (s *settingsSubscriptionSchedulerStub) RescheduleJob(_ context.Context, job types.SchedulerJob) error {
+func (s *settingsSubscriptionSchedulerStub) AddJob(_ context.Context, job types.SchedulerJob) error {
 	if job != nil {
 		s.jobs = append(s.jobs, job.Name())
 	}
@@ -147,7 +146,7 @@ func TestSettingsTimeoutSyncDoesNotBlockOtherEffects(t *testing.T) {
 
 	timeoutCallbackDone := make(chan struct{})
 	go func() {
-		settings.timeoutCallback([]libarcane.SettingUpdate{{Key: "dockerApiTimeout", Value: "30"}})
+		settings.timeoutCallback([]types.SettingUpdate{{Key: "dockerApiTimeout", Value: "30"}})
 		close(timeoutCallbackDone)
 	}()
 
@@ -162,7 +161,7 @@ func TestSettingsTimeoutSyncDoesNotBlockOtherEffects(t *testing.T) {
 		require.FailNow(t, "timeout settings callback remained blocked by remote sync")
 	}
 
-	settings.pollingCallback([]libarcane.SettingUpdate{{Key: "pollingEnabled", Value: "true"}})
+	settings.pollingCallback([]types.SettingUpdate{{Key: "pollingEnabled", Value: "true"}})
 	select {
 	case <-localScheduler.rescheduled:
 	case <-time.After(time.Second):
@@ -190,7 +189,7 @@ func TestFeatureChangeReschedulesScanAndPatchJobs(t *testing.T) {
 	}))
 	require.Len(t, settings.featureCallbacks, 3)
 	for _, callback := range settings.featureCallbacks {
-		callback([]libarcane.SettingUpdate{{Key: types.FeatureVulnerabilityManagementSettingKey, Value: "false"}})
+		callback([]types.SettingUpdate{{Key: types.FeatureVulnerabilityManagementSettingKey, Value: "false"}})
 	}
 	require.ElementsMatch(t, []string{scheduler.VulnerabilityScanJobName, scheduler.VulnerabilityRiskJobName, scheduler.AutoPatchJobName}, schedulerStub.jobs)
 	stopCtx, cancel := context.WithTimeout(t.Context(), time.Second)

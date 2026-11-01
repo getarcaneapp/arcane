@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
+	"getarcane.dev/cli/v3/internal/cmdutil"
 )
 
 // NewCommand returns an explicit shell completion command.

@@ -1,0 +1,275 @@
+package vuln
+
+import (
+	"fmt"
+	"math"
+	"slices"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
+)
+
+func TestBuildScanInsights(t *testing.T) {
+	vulns := []types.Vulnerability{
+		{VulnerabilityID: "CVE-LOW", PkgName: "zlib", InstalledVersion: "1.0.0", Severity: types.VulnerabilitySeverityLow, CVSS: &types.CVSSInfo{V3Score: 3}},
+		{
+			VulnerabilityID:  "CVE-HIGH-1",
+			PkgName:          "openssl",
+			InstalledVersion: "3.0.0",
+			FixedVersion:     "3.0.2",
+			Severity:         types.VulnerabilitySeverityHigh,
+			CVSS:             &types.CVSSInfo{V3Score: 7.5},
+		},
+		{
+			VulnerabilityID:  "CVE-HIGH-2",
+			PkgName:          "openssl",
+			InstalledVersion: "3.0.0",
+			FixedVersion:     "3.0.10",
+			Severity:         types.VulnerabilitySeverityHigh,
+			CVSS:             &types.CVSSInfo{V2Score: 7.8},
+		},
+		{VulnerabilityID: "CVE-MED", PkgName: "curl", InstalledVersion: "8.0.0", Severity: types.VulnerabilitySeverityMedium},
+	}
+
+	insights := BuildScanInsights(vulns, nil, types.ImageExposureUnknown)
+
+	require.Equal(t, "CVE-HIGH-2", insights.HighestVulnerabilityID)
+	require.InDelta(t, 7.8, insights.HighestCVSS, 0.001)
+	require.Equal(t, 2, insights.FixableCount)
+	// Only the two fixable findings count: 0.7 x 54.6 + 0.15 x 52.5 plus a sliver for volume, with no threat data and unknown usage.
+	require.Equal(t, 46, insights.RiskScore)
+	require.Equal(t, types.RiskBandMedium, insights.RiskBand)
+	require.Equal(t, types.VulnerabilityScoreStatusComplete, insights.ScoreStatus)
+
+	require.Len(t, insights.TopPackages, 3)
+	require.Equal(
+		t,
+		types.VulnerabilityPackageInsight{
+			PkgName:          "openssl",
+			Severity:         types.VulnerabilitySeverityHigh,
+			Count:            2,
+			InstalledVersion: "3.0.0",
+			FixedVersion:     "3.0.10",
+		},
+		insights.TopPackages[0],
+	)
+	require.Equal(t, "curl", insights.TopPackages[1].PkgName)
+	require.Equal(t, "zlib", insights.TopPackages[2].PkgName)
+}
+
+func TestBuildScanInsights_VolumeSaturatesWithDiminishingReturns(t *testing.T) {
+	build := func(n int, severity types.VulnerabilitySeverity, cvss float64, knownExploited bool) ([]types.Vulnerability, map[string]ThreatIntel) {
+		vulns := make([]types.Vulnerability, 0, n)
+		intel := map[string]ThreatIntel{}
+		for i := range n {
+			id := fmt.Sprintf("CVE-%d", i)
+			vulns = append(
+				vulns,
+				types.Vulnerability{
+					VulnerabilityID: id,
+					PkgName: fmt.Sprintf(
+						"pkg-%d",
+						i,
+					),
+					FixedVersion: "1.0.1",
+					Severity:     severity,
+					CVSS:         &types.CVSSInfo{V3Score: cvss},
+				},
+			)
+			intel[id] = ThreatIntel{KnownExploited: knownExploited, EPSS: new(0.0)}
+		}
+		return vulns, intel
+	}
+
+	oneVulns, oneIntel := build(1, types.VulnerabilitySeverityCritical, 9.8, true)
+	manyVulns, manyIntel := build(8, types.VulnerabilitySeverityCritical, 9.8, true)
+	lowVulns, lowIntel := build(8, types.VulnerabilitySeverityLow, 3, false)
+	one := BuildScanInsights(oneVulns, oneIntel, types.ImageExposureRunning)
+	many := BuildScanInsights(manyVulns, manyIntel, types.ImageExposureRunning)
+	lows := BuildScanInsights(lowVulns, lowIntel, types.ImageExposureRunning)
+	// One running KEV lands at the High floor; seven more add their shrinking shares and volume, and eight lows stay Low.
+	require.Equal(t, 70, one.RiskScore)
+	require.Equal(t, types.RiskBandHigh, one.RiskBand)
+	require.Equal(t, 93, many.RiskScore)
+	require.Equal(t, types.RiskBandCritical, many.RiskBand)
+	require.Equal(t, 21, lows.RiskScore)
+	require.Equal(t, types.RiskBandLow, lows.RiskBand)
+	require.Equal(t, types.VulnerabilityScoreStatusComplete, many.ScoreStatus)
+	require.Len(t, many.TopPackages, TopPackageInsightLimit)
+}
+
+func TestRiskScore_EnvironmentScore(t *testing.T) {
+	image := func(cvss float64, intel ThreatIntel, exposure types.ImageExposure) *RiskScore {
+		var findings RiskScore
+		if cvss > 0 {
+			findings.AddFinding("CVE-1", true, cvss, intel, exposure)
+		}
+		return &findings
+	}
+	kev := ThreatIntel{KnownExploited: true}
+	overdue := ThreatIntel{KnownExploited: true, KEVOverdue: true}
+	type scanned struct {
+		intel    ThreatIntel
+		exposure types.ImageExposure
+		cvss     float64
+		count    int
+	}
+	running, stopped := types.ImageExposureRunning, types.ImageExposureStopped
+	clean := scanned{exposure: running, count: 20}
+	tests := []struct {
+		name   string
+		images []scanned
+		want   int
+	}{
+		// One critical (image score ~48) among nine clean images averages ~5; the riskiest image pulls it to 31.
+		{name: "riskiest image outweighs clean ones", images: []scanned{{cvss: 9.8, exposure: running, count: 1}, {exposure: running, count: 9}}, want: 31},
+		{name: "one running KEV holds the High floor", images: []scanned{{cvss: 5, intel: kev, exposure: running, count: 1}, clean}, want: 70},
+		{name: "each running KEV image raises the floor", images: []scanned{{cvss: 5, intel: kev, exposure: running, count: 3}, clean}, want: 78},
+		{name: "an overdue KEV bumps the floor", images: []scanned{{cvss: 5, intel: kev, exposure: running, count: 2}, {cvss: 5, intel: overdue, exposure: running, count: 1}, clean}, want: 88},
+		{name: "the floor is capped", images: []scanned{{cvss: 5, intel: overdue, exposure: running, count: 10}, clean}, want: 95},
+		{name: "a stopped KEV image does not set the floor", images: []scanned{{cvss: 5, intel: overdue, exposure: stopped, count: 1}, clean}, want: 34},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var environment RiskScore
+			n := 0
+			for _, img := range tt.images {
+				for range img.count {
+					environment.AddImage(fmt.Sprintf("sha256:%d", n), image(img.cvss, img.intel, img.exposure), img.exposure)
+					n++
+				}
+			}
+			_, priority := environment.EnvironmentScore()
+			require.Equal(t, tt.want, priority.RiskScore)
+		})
+	}
+}
+
+func TestBuildScanInsights_NoFixableFindings(t *testing.T) {
+	vulns := []types.Vulnerability{
+		{VulnerabilityID: "CVE-KEV", PkgName: "openssl", Severity: types.VulnerabilitySeverityCritical, CVSS: &types.CVSSInfo{V3Score: 9.8}},
+	}
+	intel := map[string]ThreatIntel{"CVE-KEV": {KnownExploited: true}}
+
+	insights := BuildScanInsights(vulns, intel, types.ImageExposureRunning)
+
+	// An unfixable KEV stays visible but does not set a patch priority.
+	require.Equal(t, 1, insights.KnownExploitedCount)
+	require.Zero(t, insights.RiskScore)
+	require.Equal(t, types.RiskBandNone, insights.RiskBand)
+	require.Equal(t, types.VulnerabilityScoreStatusComplete, insights.ScoreStatus)
+}
+
+func TestBuildScanInsights_DeduplicatesFixableFindings(t *testing.T) {
+	vulns := []types.Vulnerability{
+		{VulnerabilityID: "CVE-DUP", PkgName: "libssl", FixedVersion: "3.0.1", Severity: types.VulnerabilitySeverityHigh, CVSS: &types.CVSSInfo{V3Score: 8}},
+		{VulnerabilityID: "CVE-DUP", PkgName: "openssl", FixedVersion: "3.0.1", Severity: types.VulnerabilitySeverityHigh, CVSS: &types.CVSSInfo{V3Score: 8}},
+		{VulnerabilityID: "CVE-DUP", PkgName: "openssl-dev", Severity: types.VulnerabilitySeverityHigh, CVSS: &types.CVSSInfo{V3Score: 8}},
+		{VulnerabilityID: "CVE-LOW", PkgName: "zlib", FixedVersion: "1.3", Severity: types.VulnerabilitySeverityLow, CVSS: &types.CVSSInfo{V3Score: 2}},
+	}
+	intel := map[string]ThreatIntel{
+		"CVE-DUP": {EPSS: new(0.0)},
+		"CVE-LOW": {EPSS: new(0.0)},
+	}
+
+	insights := BuildScanInsights(vulns, intel, types.ImageExposureRunning)
+
+	// CVE-DUP counts once at 56 and CVE-LOW at 14 takes the second rank: the three package rows do not stack.
+	require.Equal(t, 42, insights.RiskScore)
+	require.Equal(t, 3, insights.FixableCount)
+	require.Equal(t, types.VulnerabilityScoreStatusComplete, insights.ScoreStatus)
+}
+
+func TestBuildScanInsights_UnknownSeverity(t *testing.T) {
+	unscored := []types.Vulnerability{
+		{VulnerabilityID: "CVE-UNK", PkgName: "foo", FixedVersion: "2.0", Severity: types.VulnerabilitySeverityUnknown},
+	}
+	insights := BuildScanInsights(unscored, nil, types.ImageExposureRunning)
+	require.Equal(t, types.VulnerabilityScoreStatusUnavailable, insights.ScoreStatus)
+	require.Zero(t, insights.RiskScore)
+
+	mixed := append(
+		slices.Clone(unscored),
+		types.Vulnerability{
+			VulnerabilityID: "CVE-KEV",
+			PkgName:         "bar",
+			FixedVersion:    "1.1",
+			Severity:        types.VulnerabilitySeverityMedium,
+			CVSS:            &types.CVSSInfo{V3Score: 6},
+		},
+	)
+	intel := map[string]ThreatIntel{"CVE-KEV": {KnownExploited: true}}
+	insights = BuildScanInsights(mixed, intel, types.ImageExposureRunning)
+	// The unscored finding is left out of the score.
+	require.Equal(t, 70, insights.RiskScore)
+	require.Equal(t, types.VulnerabilityScoreStatusComplete, insights.ScoreStatus)
+}
+
+func TestBuildScanInsights_NonCVEAdvisories(t *testing.T) {
+	vulns := []types.Vulnerability{
+		{VulnerabilityID: "GHSA-xxxx-yyyy-zzzz", PkgName: "lodash", FixedVersion: "4.17.21", Severity: types.VulnerabilitySeverityHigh, CVSS: &types.CVSSInfo{V3Score: 7.5}},
+		{VulnerabilityID: "DLA-2424-1", PkgName: "tzdata", FixedVersion: "2020d-0+deb9u1", Severity: types.VulnerabilitySeverityUnknown},
+		{VulnerabilityID: "CVE-KEV", PkgName: "openssl", FixedVersion: "3.0.1", Severity: types.VulnerabilitySeverityMedium, CVSS: &types.CVSSInfo{V3Score: 6}},
+	}
+	intel := map[string]ThreatIntel{"CVE-KEV": {KnownExploited: true}}
+
+	insights := BuildScanInsights(vulns, intel, types.ImageExposureRunning)
+
+	// KEV and EPSS never cover GHSA/DLA IDs: the GHSA scores with the no-data factor and the unrated DLA is skipped.
+	require.Equal(t, 3, insights.FixableCount)
+	require.Equal(t, 78, insights.RiskScore)
+	require.Equal(t, types.VulnerabilityScoreStatusComplete, insights.ScoreStatus)
+
+	unrated := BuildScanInsights(vulns[1:2], nil, types.ImageExposureRunning)
+	require.Zero(t, unrated.RiskScore)
+	require.Equal(t, types.VulnerabilityScoreStatusComplete, unrated.ScoreStatus)
+}
+
+func TestFindingPriority(t *testing.T) {
+	zeroEPSS, lowEPSS, highEPSS := 0.0, 0.01, 0.97
+	tests := []struct {
+		epss           *float64
+		name           string
+		exposure       types.ImageExposure
+		base           float64
+		want           float64
+		knownExploited bool
+	}{
+		{name: "no intel running", base: 7.5, exposure: types.ImageExposureRunning, want: 52.5},
+		{name: "epss zero", base: 7.5, epss: &zeroEPSS, exposure: types.ImageExposureRunning, want: 52.5},
+		{name: "unknown exposure counts as running", base: 7.5, epss: &zeroEPSS, exposure: types.ImageExposureUnknown, want: 52.5},
+		{name: "known exploited takes the maximum", base: 6, knownExploited: true, exposure: types.ImageExposureRunning, want: 100},
+		{name: "low epss", base: 7.5, epss: &lowEPSS, exposure: types.ImageExposureRunning, want: 54.75},
+		{name: "high epss", base: 6, epss: &highEPSS, exposure: types.ImageExposureRunning, want: 60 * (0.7 + 0.3*math.Sqrt(0.97))},
+		{name: "stopped", base: 5, knownExploited: true, exposure: types.ImageExposureStopped, want: 80},
+		{name: "unused", base: 9.8, knownExploited: true, exposure: types.ImageExposureUnused, want: 50},
+		{name: "maximum", base: 10, knownExploited: true, exposure: types.ImageExposureRunning, want: 100},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.InDelta(t, tt.want, FindingPriority(tt.base, ThreatIntel{KnownExploited: tt.knownExploited, EPSS: tt.epss}, tt.exposure), 0.001)
+		})
+	}
+}
+
+func TestBuildScanInsights_ThreatIntelAndExposure(t *testing.T) {
+	vulns := []types.Vulnerability{
+		{VulnerabilityID: "CVE-KEV", PkgName: "openssl", FixedVersion: "3.0.1", Severity: types.VulnerabilitySeverityMedium, CVSS: &types.CVSSInfo{V3Score: 6}},
+		{VulnerabilityID: "CVE-OTHER", PkgName: "zlib", FixedVersion: "1.3", Severity: types.VulnerabilitySeverityLow, CVSS: &types.CVSSInfo{V3Score: 3}},
+	}
+	intel := map[string]ThreatIntel{"CVE-KEV": {KnownExploited: true}}
+
+	running := BuildScanInsights(vulns, intel, types.ImageExposureRunning)
+	require.Equal(t, 1, running.KnownExploitedCount)
+	require.Equal(t, types.ImageExposureRunning, running.Exposure)
+	require.InDelta(t, 6.0, running.HighestCVSS, 0.001)
+	// The KEV counts at 100 and CVE-OTHER, with no threat data, at 21 takes the second rank.
+	require.Equal(t, 74, running.RiskScore)
+	require.Equal(t, types.VulnerabilityScoreStatusComplete, running.ScoreStatus)
+
+	unused := BuildScanInsights(vulns, intel, types.ImageExposureUnused)
+	require.Equal(t, 37, unused.RiskScore)
+	require.Less(t, unused.RiskScore, running.RiskScore)
+}

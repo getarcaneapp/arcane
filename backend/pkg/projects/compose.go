@@ -17,7 +17,8 @@ import (
 	"github.com/docker/compose/v5/pkg/compose"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/docker/types"
@@ -30,12 +31,13 @@ type (
 		logWriter io.WriteCloser
 	}
 
-	composeClientConfig struct {
-		serviceOptions    []compose.Option
-		isLogDemuxEnabled bool
+	ClientConfig struct {
+		AuthConfigs    map[string]registry.AuthConfig
+		Prompt         compose.Prompt
+		DockerHost     string
+		ServiceOptions []compose.Option
+		DemuxLogs      bool
 	}
-
-	composeClientOption func(*composeClientConfig)
 
 	plainComposeClientEntry struct {
 		client *Client
@@ -59,45 +61,28 @@ type (
 
 const (
 	// stderrLogLinePrefix marks stderr content so the project-log parser
-	// (pkg/libarcane/ws) can classify lines the same way container logs do.
+	// (pkg/ws) can classify lines the same way container logs do.
 	stderrLogLinePrefix = "[STDERR] "
 )
 
 var plainComposeClientCache atomic.Pointer[plainComposeClientEntry]
 
-// streamDemuxedLogs wires the log-parity wrapper so non-TTY container
-// log responses keep stderr metadata as Arcane's [STDERR] marker.
-func streamDemuxedLogs(config *composeClientConfig) {
-	config.isLogDemuxEnabled = true
-}
-
-func withComposeServiceOptions(options ...compose.Option) composeClientOption {
-	return func(config *composeClientConfig) {
-		config.serviceOptions = append(config.serviceOptions, options...)
-	}
-}
-
 // NewClient builds a compose client. dockerHost, when non-empty, pins the
 // docker CLI to that daemon endpoint instead of letting it resolve one from
 // the environment.
-func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]registry.AuthConfig, prompt compose.Prompt, options ...composeClientOption) (*Client, error) {
-	config := composeClientConfig{}
-	for _, option := range options {
-		option(&config)
-	}
-
+func NewClient(ctx context.Context, config ClientConfig) (*Client, error) {
 	cli, err := command.NewDockerCli()
 	if err != nil {
 		return nil, err
 	}
 	opts := flags.NewClientOptions()
-	if dockerHost != "" {
-		opts.Hosts = []string{dockerHost}
+	if config.DockerHost != "" {
+		opts.Hosts = []string{config.DockerHost}
 	}
 	if initializeErr := cli.Initialize(opts); initializeErr != nil {
 		return nil, initializeErr
 	}
-	if composeAuthConfigs := buildComposeAuthConfigs(authConfigs); len(composeAuthConfigs) > 0 {
+	if composeAuthConfigs := buildComposeAuthConfigs(config.AuthConfigs); len(composeAuthConfigs) > 0 {
 		configFile := cli.ConfigFile()
 		if configFile.AuthConfigs == nil {
 			configFile.AuthConfigs = map[string]clitypes.AuthConfig{}
@@ -106,7 +91,7 @@ func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]re
 	}
 
 	composeCLI := wrapDockerCLIWithInspectCompatibility(cli)
-	if config.isLogDemuxEnabled {
+	if config.DemuxLogs {
 		composeCLI = wrapDockerCLIWithLogsDemux(cli)
 	}
 
@@ -117,6 +102,7 @@ func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]re
 		logWriter = docker.NewLogLineWriter(progressWriter)
 	}
 
+	prompt := config.Prompt
 	if prompt == nil {
 		// Compose consults the prompt before destructive plan decisions (today:
 		// recreating a volume whose config diverged, which loses its data).
@@ -141,7 +127,7 @@ func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]re
 			compose.WithErrorStream(logWriter),
 		)
 	}
-	serviceOptions = append(serviceOptions, config.serviceOptions...)
+	serviceOptions = append(serviceOptions, config.ServiceOptions...)
 
 	svc, err := compose.NewComposeService(composeCLI, serviceOptions...)
 	if err != nil {
@@ -162,7 +148,7 @@ func plainComposeClient(dockerHost string) (*Client, error) {
 
 	// Built on context.Background so request-scoped values (progress
 	// writers, deadlines) do not leak into the long-lived client.
-	c, err := NewClient(context.Background(), dockerHost, nil, nil) //nolint:contextcheck,forbidigo // Cached Compose client must not retain request values or cancellation.
+	c, err := NewClient(context.Background(), ClientConfig{DockerHost: dockerHost}) //nolint:contextcheck,forbidigo // Cached Compose client must not retain request values or cancellation.
 	if err != nil {
 		return nil, err
 	}

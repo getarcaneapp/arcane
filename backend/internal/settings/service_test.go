@@ -13,16 +13,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/types/v3"
 )
 
 func setupSettingsTestDB(t *testing.T) *database.DB {
@@ -443,7 +443,7 @@ func TestSettingsService_ReadOnlyGate(t *testing.T) {
 	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"baseServerUrl": "https://changed.example"})
 	require.ErrorIs(t, err, common.ErrValidation)
 	require.ErrorContains(t, err, "UI configuration is disabled")
-	err = svc.UpdateSettingValues(ctx, []libarcane.SettingUpdate{{Key: "pollingInterval", Value: "*/10 * * * *"}})
+	err = svc.UpdateSettingValues(ctx, []types.SettingUpdate{{Key: "pollingInterval", Value: "*/10 * * * *"}})
 	require.ErrorIs(t, err, common.ErrValidation)
 
 	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"baseServerUrl": "http://localhost"})
@@ -488,7 +488,7 @@ func TestSettingsService_UpdateSettings_PruneModesDoNotTriggerScheduledPruneCall
 	require.NoError(t, err)
 
 	callbackCalls := 0
-	svc.SubscribeSettingsChanges([]string{"scheduledPruneEnabled", "scheduledPruneInterval"}, func([]libarcane.SettingUpdate) {
+	svc.SubscribeSettingsChanges([]string{"scheduledPruneEnabled", "scheduledPruneInterval"}, func([]types.SettingUpdate) {
 		callbackCalls++
 	})
 
@@ -508,7 +508,7 @@ func TestSettingsService_UpdateSettings_ScheduledPruneScheduleTriggersCallback(t
 	require.NoError(t, err)
 
 	callbackCalls := 0
-	svc.SubscribeSettingsChanges([]string{"scheduledPruneEnabled", "scheduledPruneInterval"}, func([]libarcane.SettingUpdate) {
+	svc.SubscribeSettingsChanges([]string{"scheduledPruneEnabled", "scheduledPruneInterval"}, func([]types.SettingUpdate) {
 		callbackCalls++
 	})
 
@@ -556,7 +556,7 @@ func TestSettingsServiceActorPublishesSnapshotBeforeAsynchronousNotification(t *
 
 	callbackStarted := make(chan string, 1)
 	releaseCallback := make(chan struct{})
-	svc.SubscribeSettingsChanges([]string{"baseServerUrl"}, func(_ []libarcane.SettingUpdate) {
+	svc.SubscribeSettingsChanges([]string{"baseServerUrl"}, func(_ []types.SettingUpdate) {
 		callbackStarted <- svc.GetSettingsConfig().BaseServerURL.Value
 		<-releaseCallback
 	})
@@ -596,8 +596,8 @@ func TestSettingsServiceActorNotifiesSubscriberOnceForMultipleMatchingKeys(t *te
 	require.NoError(t, err)
 
 	var calls atomic.Int32
-	notified := make(chan []libarcane.SettingUpdate, 1)
-	svc.SubscribeSettingsChanges([]string{"pollingEnabled", "pollingInterval"}, func(updates []libarcane.SettingUpdate) {
+	notified := make(chan []types.SettingUpdate, 1)
+	svc.SubscribeSettingsChanges([]string{"pollingEnabled", "pollingInterval"}, func(updates []types.SettingUpdate) {
 		calls.Add(1)
 		notified <- updates
 	})
@@ -618,7 +618,7 @@ func TestSettingsServiceActorDoesNotPublishSensitiveValues(t *testing.T) {
 	require.NoError(t, err)
 
 	var calls atomic.Int32
-	svc.SubscribeSettingsChanges([]string{"oidcClientSecret"}, func([]libarcane.SettingUpdate) {
+	svc.SubscribeSettingsChanges([]string{"oidcClientSecret"}, func([]types.SettingUpdate) {
 		calls.Add(1)
 	})
 	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"oidcClientSecret": "should-not-leave-settings-service"})
@@ -884,8 +884,8 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	var callbackPayload []libarcane.SettingUpdate
-	svc.SubscribeSettingsChanges(PropagatedKeys(), func(timeoutSettings []libarcane.SettingUpdate) {
+	var callbackPayload []types.SettingUpdate
+	svc.SubscribeSettingsChanges(PropagatedKeys(), func(timeoutSettings []types.SettingUpdate) {
 		callbackPayload = timeoutSettings
 	})
 
@@ -894,7 +894,7 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(
 	waitForSettingsNotifications(t, svc)
 
 	require.NotNil(t, callbackPayload)
-	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyScanTimeout", Value: "1200"})
+	require.Contains(t, callbackPayload, types.SettingUpdate{Key: "trivyScanTimeout", Value: "1200"})
 }
 
 func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimits(t *testing.T) {
@@ -903,8 +903,8 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimi
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	var callbackPayload []libarcane.SettingUpdate
-	svc.SubscribeSettingsChanges(PropagatedKeys(), func(timeoutSettings []libarcane.SettingUpdate) {
+	var callbackPayload []types.SettingUpdate
+	svc.SubscribeSettingsChanges(PropagatedKeys(), func(timeoutSettings []types.SettingUpdate) {
 		callbackPayload = timeoutSettings
 	})
 
@@ -917,9 +917,9 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimi
 	waitForSettingsNotifications(t, svc)
 
 	require.NotNil(t, callbackPayload)
-	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyResourceLimitsEnabled", Value: "false"})
-	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyCpuLimit", Value: "2.5"})
-	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyMemoryLimitMb", Value: "3072"})
+	require.Contains(t, callbackPayload, types.SettingUpdate{Key: "trivyResourceLimitsEnabled", Value: "false"})
+	require.Contains(t, callbackPayload, types.SettingUpdate{Key: "trivyCpuLimit", Value: "2.5"})
+	require.Contains(t, callbackPayload, types.SettingUpdate{Key: "trivyMemoryLimitMb", Value: "3072"})
 }
 
 func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyConcurrentScanContainers(t *testing.T) {
@@ -928,8 +928,8 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyConcurrentSc
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	var callbackPayload []libarcane.SettingUpdate
-	svc.SubscribeSettingsChanges(PropagatedKeys(), func(timeoutSettings []libarcane.SettingUpdate) {
+	var callbackPayload []types.SettingUpdate
+	svc.SubscribeSettingsChanges(PropagatedKeys(), func(timeoutSettings []types.SettingUpdate) {
 		callbackPayload = timeoutSettings
 	})
 
@@ -938,7 +938,7 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyConcurrentSc
 	waitForSettingsNotifications(t, svc)
 
 	require.NotNil(t, callbackPayload)
-	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyConcurrentScanContainers", Value: "4"})
+	require.Contains(t, callbackPayload, types.SettingUpdate{Key: "trivyConcurrentScanContainers", Value: "4"})
 }
 
 func TestSettingsService_UpdateSettings_TrivyNetworkTriggersVulnerabilityCallback(t *testing.T) {
@@ -948,7 +948,7 @@ func TestSettingsService_UpdateSettings_TrivyNetworkTriggersVulnerabilityCallbac
 	require.NoError(t, err)
 
 	callbackCalled := false
-	svc.SubscribeSettingsChanges([]string{"trivyNetwork"}, func(_ []libarcane.SettingUpdate) {
+	svc.SubscribeSettingsChanges([]string{"trivyNetwork"}, func(_ []types.SettingUpdate) {
 		callbackCalled = true
 	})
 
@@ -964,8 +964,8 @@ func TestSettingsService_UpdateSettings_TrivyNetworkDoesNotTriggerTimeoutCallbac
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	var callbackPayload []libarcane.SettingUpdate
-	svc.SubscribeSettingsChanges(PropagatedKeys(), func(timeoutSettings []libarcane.SettingUpdate) {
+	var callbackPayload []types.SettingUpdate
+	svc.SubscribeSettingsChanges(PropagatedKeys(), func(timeoutSettings []types.SettingUpdate) {
 		callbackPayload = timeoutSettings
 	})
 
@@ -982,7 +982,7 @@ func TestSettingsService_UpdateSettings_TrivyRuntimeSecurityTriggersVulnerabilit
 	require.NoError(t, err)
 
 	callbackCalled := false
-	svc.SubscribeSettingsChanges([]string{"trivySecurityOpts", "trivyPrivileged"}, func(_ []libarcane.SettingUpdate) {
+	svc.SubscribeSettingsChanges([]string{"trivySecurityOpts", "trivyPrivileged"}, func(_ []types.SettingUpdate) {
 		callbackCalled = true
 	})
 
@@ -1001,8 +1001,8 @@ func TestSettingsService_UpdateSettings_TrivyRuntimeSecurityDoesNotTriggerTimeou
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	var callbackPayload []libarcane.SettingUpdate
-	svc.SubscribeSettingsChanges(PropagatedKeys(), func(timeoutSettings []libarcane.SettingUpdate) {
+	var callbackPayload []types.SettingUpdate
+	svc.SubscribeSettingsChanges(PropagatedKeys(), func(timeoutSettings []types.SettingUpdate) {
 		callbackPayload = timeoutSettings
 	})
 
@@ -1146,8 +1146,8 @@ func TestSettingsService_NormalizeProjectsDirectoryPublishesChange(t *testing.T)
 	require.NoError(t, err)
 	require.NoError(t, svc.UpdateSetting(ctx, "projectsDirectory", "data/projects"))
 
-	notified := make(chan []libarcane.SettingUpdate, 1)
-	unsubscribe := svc.SubscribeSettingsChanges([]string{"projectsDirectory"}, func(updates []libarcane.SettingUpdate) {
+	notified := make(chan []types.SettingUpdate, 1)
+	unsubscribe := svc.SubscribeSettingsChanges([]string{"projectsDirectory"}, func(updates []types.SettingUpdate) {
 		notified <- updates
 	})
 	defer unsubscribe()
@@ -1217,7 +1217,7 @@ func TestSettingsService_FeaturePersistenceAndEnvironmentIsolation(t *testing.T)
 	require.NoError(t, err)
 
 	var notifications int
-	unsubscribe := svc.SubscribeSettingsChanges([]string{types.FeatureVulnerabilityManagementSettingKey}, func([]libarcane.SettingUpdate) { notifications++ })
+	unsubscribe := svc.SubscribeSettingsChanges([]string{types.FeatureVulnerabilityManagementSettingKey}, func([]types.SettingUpdate) { notifications++ })
 	defer unsubscribe()
 	scheduled := "true"
 	ignore := "CVE-2026-12345"
@@ -1276,7 +1276,7 @@ func TestSettingsService_RejectInvalidFeatureBoolean(t *testing.T) {
 			require.ErrorIs(t, err, common.ErrValidation)
 			err = svc.UpdateSetting(t.Context(), types.FeatureVulnerabilityManagementSettingKey, invalid)
 			require.ErrorIs(t, err, common.ErrValidation)
-			err = svc.UpdateSettingValues(t.Context(), []libarcane.SettingUpdate{{Key: types.FeatureVulnerabilityManagementSettingKey, Value: invalid}})
+			err = svc.UpdateSettingValues(t.Context(), []types.SettingUpdate{{Key: types.FeatureVulnerabilityManagementSettingKey, Value: invalid}})
 			require.ErrorIs(t, err, common.ErrValidation)
 			require.True(t, svc.IsFeatureEnabled(t.Context(), types.FeatureVulnerabilityManagement))
 		})

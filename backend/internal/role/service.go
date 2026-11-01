@@ -13,20 +13,21 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
 	"kit.getarcane.app"
 	"kit.getarcane.app/normalization"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/dbutil"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/sqlite"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -203,7 +204,7 @@ func (s *RoleService) ListAllRoles(ctx context.Context) ([]Role, error) {
 }
 
 func (s *RoleService) GetRole(ctx context.Context, id string) (*Role, error) {
-	return dbutil.FirstWhere[Role](ctx, s.db.DB, common.Classify(common.ErrRoleNotFound, errors.New("Role not found")), "id = ?", id)
+	return sqlite.FirstWhere[Role](ctx, s.db.DB, common.Classify(common.ErrRoleNotFound, errors.New("Role not found")), "id = ?", id)
 }
 
 func (s *RoleService) CreateRole(ctx context.Context, name string, description *string, permissions []string) (*Role, error) {
@@ -759,7 +760,7 @@ func (s *RoleService) ListOidcMappings(ctx context.Context) ([]OidcRoleMapping, 
 }
 
 func (s *RoleService) GetOidcMapping(ctx context.Context, id string) (*OidcRoleMapping, error) {
-	return dbutil.FirstWhere[OidcRoleMapping](ctx, s.db.DB, common.Classify(common.ErrOidcMappingNotFound, errors.New("OIDC role mapping not found")), "id = ?", id)
+	return sqlite.FirstWhere[OidcRoleMapping](ctx, s.db.DB, common.Classify(common.ErrOidcMappingNotFound, errors.New("OIDC role mapping not found")), "id = ?", id)
 }
 
 func (s *RoleService) CreateOidcMapping(ctx context.Context, claimValue, roleID string, environmentID *string) (*OidcRoleMapping, error) {

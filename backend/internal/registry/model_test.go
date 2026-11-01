@@ -3,9 +3,11 @@ package registry
 import (
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
+
 	"kit.getarcane.app/mapping"
+
+	"getarcane.dev/types/v3"
 )
 
 func TestContainerRegistry_MapsHostAndNamespace(t *testing.T) {

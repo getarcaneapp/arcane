@@ -1,14 +1,16 @@
-module github.com/getarcaneapp/arcane/backend/v3
+module getarcane.dev/arcane/v3
 
 go 1.27.3
 
 replace (
+	getarcane.dev/cli/v3 => ../cli
+	getarcane.dev/types/v3 => ../types
 	github.com/docker/buildx => github.com/docker/buildx v0.32.1
-	github.com/getarcaneapp/arcane/cli/v3 => ../cli
-	github.com/getarcaneapp/arcane/types/v3 => ../types
 )
 
 require (
+	getarcane.dev/cli/v3 v3.0.0
+	getarcane.dev/types/v3 v3.0.0
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/aws/aws-sdk-go-v2 v1.47.5
 	github.com/aws/aws-sdk-go-v2/config v1.33.13
@@ -28,8 +30,6 @@ require (
 	github.com/docker/cli v29.9.2+incompatible
 	github.com/docker/compose/v5 v5.6.1
 	github.com/docker/go-units v0.5.0
-	github.com/getarcaneapp/arcane/cli/v3 v3.0.0
-	github.com/getarcaneapp/arcane/types/v3 v3.0.0
 	github.com/go-git/go-billy/v5 v5.9.2
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/go-webauthn/webauthn v0.18.2
@@ -91,10 +91,10 @@ require (
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
 	gorm.io/plugin/opentelemetry v0.1.16
-	kit.getarcane.app v0.5.1
+	kit.getarcane.app v0.6.0
 	kit.getarcane.app/acfs v0.7.0
 	kit.getarcane.app/builds v0.5.0
-	kit.getarcane.app/docker v0.2.0
+	kit.getarcane.app/docker v0.3.0
 	kit.getarcane.app/docker/convert v0.4.0
 	kit.getarcane.app/sys/cgroup v0.3.0
 	kit.getarcane.app/tripwire v0.1.1

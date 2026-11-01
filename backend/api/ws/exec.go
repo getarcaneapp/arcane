@@ -15,10 +15,10 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 
-	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
+	wshub "getarcane.dev/arcane/v3/pkg/ws"
+	"getarcane.dev/types/v3"
 )
 
 // ============================================================================

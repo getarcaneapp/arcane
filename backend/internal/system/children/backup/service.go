@@ -18,7 +18,6 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -28,33 +27,35 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/sys/cgroup"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/system/children/backup/children/snapshots"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/system/children/backup/children/volumes"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/entityjobs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/backupbrowser"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/s3"
+	"getarcane.dev/arcane/v3/internal/scheduler/entityjobs"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/system/children/backup/children/snapshots"
+	"getarcane.dev/arcane/v3/internal/system/children/backup/children/volumes"
+	"getarcane.dev/arcane/v3/internal/volume"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/backupbrowser"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -169,7 +170,7 @@ const (
 var ErrSystemBackupAlreadyRunning = common.Classify(common.ErrConflict, errors.New("an Arcane system backup is already running"))
 
 func NewService(deps Dependencies) *Service {
-	operations, counterErr := otel.Meter(tracing.InstrumentationName).Int64Counter("arcane.backups",
+	operations, counterErr := otel.Meter(logging.InstrumentationName).Int64Counter("arcane.backups",
 		metric.WithDescription("Backup operations by outcome"), metric.WithUnit("{backup}"))
 	if counterErr != nil {
 		otel.Handle(counterErr)
@@ -263,10 +264,10 @@ func (s *Service) recoveryEnvironment(ctx context.Context) map[string]string {
 // startOperation opens a backup span; the returned func ends it and counts the outcome.
 func (s *Service) startOperation(ctx context.Context, operation string, attrs ...attribute.KeyValue) (context.Context, func(err error, results ...attribute.KeyValue)) {
 	attrs = append(attrs, attribute.String("arcane.environment.id", "0"), attribute.String("arcane.backup.kind", "system"))
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "backup."+operation, trace.WithAttributes(attrs...))
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "backup."+operation, trace.WithAttributes(attrs...))
 	return ctx, func(err error, results ...attribute.KeyValue) {
 		span.SetAttributes(results...)
-		tracing.End(span, err)
+		logging.EndSpan(span, err)
 		if s.operations != nil {
 			s.operations.Add(context.WithoutCancel(ctx), 1, metric.WithAttributes(
 				attribute.String("arcane.backup.operation", operation),
@@ -545,7 +546,7 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 			})
 		}
 	}()
-	defer utils.RecoverToError(&err, "system backup")
+	defer concurrency.RecoverToError(&err, "system backup")
 	progress := func(stage string, status types.RunStatus, message string) error {
 		return jobcontext.Progress(ctx, types.TargetOutcome{
 			ResourceType: "backup_destination",

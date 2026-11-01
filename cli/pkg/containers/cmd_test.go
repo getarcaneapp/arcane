@@ -11,9 +11,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/cli/v3/internal/testutil"
+	"kit.getarcane.app"
+
+	"getarcane.dev/cli/v3/internal/testutil"
 )
 
 func TestContainerStartSurfacesServerError(t *testing.T) {

@@ -9,31 +9,31 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/samber/hot"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
+
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/agg"
 	"kit.getarcane.app/sys/cgroup"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/diagnostics"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	systemlib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/system"
-	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
+	"getarcane.dev/arcane/v3/internal/auth"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/container"
+	"getarcane.dev/arcane/v3/internal/diagnostics"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/swarm"
+	"getarcane.dev/arcane/v3/internal/system"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	systemlib "getarcane.dev/arcane/v3/pkg/system"
+	wshub "getarcane.dev/arcane/v3/pkg/ws"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -122,7 +122,7 @@ func NewWebSocketHandler(
 		return systemlib.NewGPUMonitor(settingsService.GetBoolSetting(ctx, "gpuMonitoringEnabled"), settingsService.GetStringSetting(ctx, "gpuType"))
 	}
 	handler.gpuMonitor.Store(newGPUMonitor())
-	context.AfterFunc(ctx, settingsService.SubscribeSettingsChanges([]string{"gpuMonitoringEnabled", "gpuType"}, func([]libarcane.SettingUpdate) {
+	context.AfterFunc(ctx, settingsService.SubscribeSettingsChanges([]string{"gpuMonitoringEnabled", "gpuType"}, func([]types.SettingUpdate) {
 		handler.gpuMonitor.Store(newGPUMonitor())
 	}))
 	// Send the close frames before cancelling hubs, whose teardown closes connections without a handshake.
@@ -138,7 +138,7 @@ func NewWebSocketHandler(
 		cancel()
 	})
 	observeWebSocketMetricsOnce.Do(func() {
-		if err := defaultWebSocketMetrics.ObserveConnections(otel.Meter(tracing.InstrumentationName)); err != nil {
+		if err := defaultWebSocketMetrics.ObserveConnections(otel.Meter(logging.InstrumentationName)); err != nil {
 			otel.Handle(err)
 		}
 	})
@@ -171,7 +171,7 @@ func (h *WebSocketHandler) acceptWS(c *echo.Context, kind, resourceID string) (*
 	h.conns.Store(conn, struct{}{})
 	// The HTTP tracing middleware skips upgrades, so this is a root span unless the client sent a traceparent.
 	parent := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
-	_, span := otel.Tracer(tracing.InstrumentationName).Start(parent, "websocket "+kind,
+	_, span := otel.Tracer(logging.InstrumentationName).Start(parent, "websocket "+kind,
 		trace.WithSpanKind(trace.SpanKindServer),
 		trace.WithAttributes(
 			attribute.String("arcane.websocket.kind", kind),

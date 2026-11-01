@@ -21,7 +21,6 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
@@ -29,50 +28,51 @@ import (
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	dockertypes "kit.getarcane.app/docker/types"
+	"kit.getarcane.app/fs"
 	"kit.getarcane.app/sys/cgroup"
 	"kit.getarcane.app/updater"
 	"kit.getarcane.app/updater/labels"
 	"kit.getarcane.app/updater/pkg/utils/tagpolicy"
 	updatertypes "kit.getarcane.app/updater/types"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/deployment"
-	projectdetails "github.com/getarcaneapp/arcane/backend/v3/internal/project/children/details"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/lifecycle"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/listing"
-	projectstatus "github.com/getarcaneapp/arcane/backend/v3/internal/project/children/status"
-	projectsync "github.com/getarcaneapp/arcane/backend/v3/internal/project/children/sync"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/tags"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/update"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/workspace"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/dbutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/iconcatalog"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
-	workspacepkg "github.com/getarcaneapp/arcane/backend/v3/pkg/workspace"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/project/children/deployment"
+	projectdetails "getarcane.dev/arcane/v3/internal/project/children/details"
+	"getarcane.dev/arcane/v3/internal/project/children/lifecycle"
+	"getarcane.dev/arcane/v3/internal/project/children/listing"
+	projectstatus "getarcane.dev/arcane/v3/internal/project/children/status"
+	projectsync "getarcane.dev/arcane/v3/internal/project/children/sync"
+	"getarcane.dev/arcane/v3/internal/project/children/tags"
+	"getarcane.dev/arcane/v3/internal/project/children/update"
+	"getarcane.dev/arcane/v3/internal/project/children/workspace"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/iconcatalog"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/arcane/v3/pkg/sqlite"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/arcane/v3/pkg/volumes"
+	workspacepkg "getarcane.dev/arcane/v3/pkg/workspace"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -110,7 +110,7 @@ type (
 		FilesChanged *concurrency.Signal[string]
 
 		// opLock serializes mutating operations on the same project.
-		opLock utils.KeyedMutex
+		opLock concurrency.KeyedMutex
 
 		composeNames composeNameCache
 
@@ -430,7 +430,7 @@ func NewProjectService(p ProjectServiceParams) *ProjectService {
 		containerRegistryService:    p.ContainerRegistryService,
 		config:                      p.Config,
 		RegistryCredentialsProvider: p.RegistryCredentialsProvider,
-		parsedCompose:               projects.NewParsedComposeCache(),
+		parsedCompose:               projects.NewComposeCache(2048, projects.CloneComposeProject),
 		metaCache:                   projects.NewComposeCache[projects.ArcaneComposeMetadata](1024, nil),
 		composeIdentities:           projects.NewComposeCache[types.ComposeIdentity](2048, nil),
 		FilesChanged:                concurrency.NewSignal[string](),
@@ -557,7 +557,7 @@ func (s *ProjectService) GetProjectFromDatabaseByID(ctx context.Context, id stri
 		switch {
 		case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
 			return nil, common.Classify(common.ErrTimeout, fmt.Errorf("request canceled or timed out: %w", err))
-		case dbutil.IsRetryableWriteError(err):
+		case sqlite.IsRetryableWriteError(err):
 			return nil, common.Classify(common.ErrUnavailable, fmt.Errorf("failed to get project: %w", err))
 		default:
 			return nil, fmt.Errorf("failed to get project: %w", err)
@@ -1441,14 +1441,14 @@ func (s *ProjectService) CreateProject(
 	basePath := filepath.Join(projectsDirectory, projects.SanitizeProjectName(name))
 	projectPath, folderName, reused, err := kit.Ternary(allowNameSuffix, func() (string, string, bool, error) {
 		// Projects at or nested beneath an existing directory claim it.
-		return projects.CreateUniqueDir(ctx, projectsDirectory, basePath, name, utils.DirPerm, func(dir string) (bool, error) {
+		return projects.CreateUniqueDir(ctx, projectsDirectory, basePath, name, fs.DirPerm, func(dir string) (bool, error) {
 			nestedPattern := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(dir+string(filepath.Separator)) + "%"
 			var claims int64
 			countErr := s.db.WithContext(ctx).Model(&Project{}).Where("path = ? OR path LIKE ? ESCAPE '\\'", dir, nestedPattern).Count(&claims).Error
 			return claims > 0, countErr
 		})
 	}, func() (string, string, bool, error) {
-		exactPath, exactFolder, exactErr := projects.CreateExactDir(ctx, projectsDirectory, basePath, name, utils.DirPerm)
+		exactPath, exactFolder, exactErr := projects.CreateExactDir(ctx, projectsDirectory, basePath, name, fs.DirPerm)
 		return exactPath, exactFolder, false, exactErr
 	})()
 	if err != nil {
@@ -2102,7 +2102,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfo(
 			}
 			services := make([]composetypes.ServiceConfig, 0, len(composeProject.Services))
 			for _, service := range composeProject.Services {
-				hidden, _ := kit.ParseBool(service.Labels[libarcane.HiddenResourceLabel])
+				hidden, _ := kit.ParseBool(service.Labels[selfcontainer.HiddenResourceLabel])
 				if includeHidden || (!hidden && !hiddenServicesByProjectID[proj.ID][service.Name]) {
 					services = append(services, service)
 				}
@@ -2470,7 +2470,7 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	metaGroup.SetLimit(maxConcurrentComposeReads)
 	for i := range pageProjects {
 		metaGroup.Go(func() (workerErr error) {
-			defer utils.RecoverToError(&workerErr, "project metadata worker", "projectID", pageProjects[i].ID)
+			defer concurrency.RecoverToError(&workerErr, "project metadata worker", "projectID", pageProjects[i].ID)
 			metas[i] = s.ProjectMetadata(ctx, pageProjects[i], env)
 			return nil
 		})
@@ -2519,7 +2519,7 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 
 	visibleContainers := make([]container.Summary, 0, len(allContainers))
 	for _, c := range allContainers {
-		hidden, _ := kit.ParseBool(c.Labels[libarcane.HiddenResourceLabel])
+		hidden, _ := kit.ParseBool(c.Labels[selfcontainer.HiddenResourceLabel])
 		if !hidden {
 			visibleContainers = append(visibleContainers, c)
 		}
@@ -2570,7 +2570,7 @@ func (s *ProjectService) ProjectMetadata(ctx context.Context, p Project, env *pr
 // is populated from the X-Arcane-Icon-Catalog header the manager forwards.
 // Background jobs have no user attached and fall back to the default catalog.
 func IconCatalogForContext(ctx context.Context) string {
-	u, _ := userctx.CurrentUserFromContext(ctx)
+	u, _ := handlerutil.CurrentUserFromContext(ctx)
 	return cmp.Or(kit.FromPtr(kit.FromPtr(u).Preferences.IconCatalog), iconcatalog.DefaultCatalog)
 }
 
@@ -2743,7 +2743,7 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 			deletions = append(deletions, projectCleanupDecision{project: p, reason: "removed internal Arcane scratch record (project-update/gitops temp dir)"})
 			continue
 		}
-		if rel := listing.RelativePath(projectsDir, p.Path); rel != "" && projects.PathContainsSnapshotDirectory(rel) {
+		if rel := listing.RelativePath(projectsDir, p.Path); rel != "" && projects.PathHasSegment(rel, projects.IsFilesystemSnapshotDirName) {
 			deletions = append(deletions, projectCleanupDecision{project: p, reason: "removed project inside a filesystem snapshot/trash directory"})
 			continue
 		}
@@ -3354,7 +3354,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigration(
 		return nil, fmt.Errorf("failed to connect to Docker for volume rename: %w", err)
 	}
 
-	return projects.PlanVolumeMigration(ctx, dockerClient, composeProject, oldComposeName, newComposeName, volumehelper.ToolsImage(s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value))
+	return projects.PlanVolumeMigration(ctx, dockerClient, composeProject, oldComposeName, newComposeName, volumes.ToolsImage(s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value))
 }
 
 // UpdateProjectServiceImages persists selected service image tags before recreating them.

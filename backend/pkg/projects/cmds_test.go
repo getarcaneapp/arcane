@@ -11,13 +11,13 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/types/v3"
 )
 
 func TestDetachFromHTTPContext(t *testing.T) {
@@ -56,7 +56,7 @@ func TestDetachFromHTTPContext(t *testing.T) {
 	})
 
 	t.Run("app lifecycle context cancels detached work on shutdown", func(t *testing.T) {
-		appCtx, cancelApp := context.WithCancel(utils.WithAppLifecycleContext(t.Context()))
+		appCtx, cancelApp := context.WithCancel(activity.WithAppLifecycleContext(t.Context()))
 		detached, detachedCancel := detachFromHTTPContext(appCtx, defaultComposeTimeout)
 		defer detachedCancel()
 

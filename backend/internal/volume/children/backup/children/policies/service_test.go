@@ -4,16 +4,17 @@ import (
 	"context"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/s3"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	francistest "getarcane.dev/arcane/v3/pkg/francis/testing"
+	"getarcane.dev/types/v3"
 )
 
 type (

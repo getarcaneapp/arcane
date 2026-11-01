@@ -11,15 +11,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"go.uber.org/fx"
 	"google.golang.org/grpc"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	tunnelpb "getarcane.dev/arcane/v3/proto/tunnel/v1"
+	"getarcane.dev/types/v3"
 )
 
 type (

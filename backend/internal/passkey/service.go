@@ -13,26 +13,27 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/samber/mo"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
-	userdomain "github.com/getarcaneapp/arcane/backend/v3/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/resources"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/session"
+	userdomain "getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/arcane/v3/resources"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -575,7 +576,7 @@ func (s *PasskeyService) FinishPasskeyLogin(ctx context.Context, ceremonyID stri
 		slog.WarnContext(ctx, "passkey login validation failed", "stage", "parse", "error", err)
 		return nil, ErrPasskeyResponse
 	}
-	utils.NormalizePasskeyAssertionExtensions(localSession.Extensions, parsed)
+	normalizePasskeyAssertionExtensions(localSession.Extensions, parsed)
 
 	var resolved *webAuthnUser
 	user, credential, err := s.webAuthn.ValidatePasskeyLogin(func(_, userHandle []byte) (webauthn.User, error) {
@@ -1183,7 +1184,7 @@ func (s *PasskeyService) finishKnownUserAssertion(ctx context.Context, transacti
 	if err != nil {
 		return nil, ErrPasskeyResponse
 	}
-	utils.NormalizePasskeyAssertionExtensions(localSession.Extensions, parsed)
+	normalizePasskeyAssertionExtensions(localSession.Extensions, parsed)
 	credential, err := s.webAuthn.ValidateLogin(adapter, localSession, parsed)
 	if err != nil || credential == nil {
 		return nil, ErrPasskeyResponse
@@ -1518,4 +1519,20 @@ func optionalString(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+// normalizePasskeyAssertionExtensions drops an unrequested appid=false output, which Safari
+// reports even though it means the legacy AppID was not used.
+func normalizePasskeyAssertionExtensions(sessionExtensions protocol.SessionExtensions, assertion *protocol.ParsedCredentialAssertionData) {
+	if assertion == nil {
+		return
+	}
+	appID := assertion.ClientExtensionResults.AppID
+	if appID == nil || *appID {
+		return
+	}
+	if sessionExtensions.AppID != "" || slices.Contains(sessionExtensions.Requested, protocol.ExtensionAppID) {
+		return
+	}
+	assertion.ClientExtensionResults.AppID = nil
 }

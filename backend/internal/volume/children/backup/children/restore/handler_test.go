@@ -6,11 +6,11 @@ import (
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/upload"
+	"getarcane.dev/arcane/v3/internal/upload"
+	"getarcane.dev/types/v3"
 )
 
 func TestUploadAndRestoreReturnsNotFoundForUnknownSession(t *testing.T) {

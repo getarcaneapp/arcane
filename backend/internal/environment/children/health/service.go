@@ -9,8 +9,8 @@ import (
 
 	"github.com/moby/moby/client"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/pkg/agent"
 )
 
 type (

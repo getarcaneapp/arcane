@@ -13,13 +13,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -64,7 +64,7 @@ func (s *Service) Deliver(ctx context.Context, run types.SchedulerRun) (types.Sc
 	}
 	var remoteRun types.SchedulerRun
 	if err = s.environments.ProxyJSONRequest(ctx, run.EnvironmentID, http.MethodGet, runPath, nil, &remoteRun); err != nil {
-		var status *remenv.StatusError
+		var status *agent.StatusError
 		if !errors.As(err, &status) || status.StatusCode != http.StatusNotFound {
 			return remoteFailure(err)
 		}
@@ -308,7 +308,7 @@ func (s *Service) Catalog(ctx context.Context, environmentID string) (*types.Job
 		}
 		return &observed, nil
 	}
-	var status *remenv.StatusError
+	var status *agent.StatusError
 	if errors.As(remoteErr, &status) && (status.StatusCode == http.StatusUnauthorized || status.StatusCode == http.StatusForbidden) {
 		return nil, remoteErr
 	}
@@ -398,7 +398,7 @@ func (s *Service) Runs(ctx context.Context, environmentID, jobID string) ([]type
 		path := "/api/environments/0/jobs/" + url.PathEscape(jobID) + "/runs?page=" + strconv.Itoa(page) + "&limit=100"
 		var response types.SchedulerRunList
 		if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, environmentID, http.MethodGet, path, nil, &response); proxyJSONRequestErr != nil {
-			var status *remenv.StatusError
+			var status *agent.StatusError
 			if errors.As(proxyJSONRequestErr, &status) && (status.StatusCode == http.StatusForbidden || status.StatusCode == http.StatusUnauthorized) {
 				return nil, proxyJSONRequestErr
 			}
@@ -554,7 +554,7 @@ func remoteJobEligible(jobs []types.JobStatus, id string) bool {
 }
 
 func remoteFailure(err error) (types.SchedulerOutcome, error) {
-	var status *remenv.StatusError
+	var status *agent.StatusError
 	rejected := errors.As(err, &status) && status.StatusCode >= 400 && status.StatusCode < 500 &&
 		status.StatusCode != http.StatusRequestTimeout && status.StatusCode != http.StatusTooManyRequests
 	if rejected {

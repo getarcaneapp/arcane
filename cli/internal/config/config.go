@@ -15,10 +15,11 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/samber/hot"
 	"go.yaml.in/yaml/v4"
+
 	"kit.getarcane.app/fs/atomic"
 
-	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/types"
+	"getarcane.dev/cli/v3/internal/output"
+	"getarcane.dev/cli/v3/internal/types"
 )
 
 type (

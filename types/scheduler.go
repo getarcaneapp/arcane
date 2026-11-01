@@ -117,7 +117,7 @@ type (
 	JobController interface {
 		GetJob(jobID string) (SchedulerJob, bool)
 		GetJobRuntimeState(jobID string) (JobRuntimeState, bool)
-		RescheduleJob(ctx context.Context, job SchedulerJob) error
+		AddJob(ctx context.Context, job SchedulerJob) error
 		RunBusWatcherNow(ctx context.Context, watcherID string) error
 	}
 

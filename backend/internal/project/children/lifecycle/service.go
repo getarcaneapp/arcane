@@ -18,21 +18,22 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
+
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/capture"
 	"kit.getarcane.app/docker"
 
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -164,7 +165,7 @@ func (s *Service) RunScript(
 
 	// MountForSubpath mounts a volume-backed /app/data via VolumeOptions.Subpath (host binds fail on e.g. WSL2).
 	// On the host, or when the mount cannot be derived, projectPath is bound as-is.
-	inspect, inspectErr := s.dockerService.Call(ctx, libarcane.InspectCurrentArcaneContainer)
+	inspect, inspectErr := s.dockerService.Call(ctx, selfcontainer.InspectCurrentArcaneContainer)
 	if inspectErr != nil {
 		slog.WarnContext(ctx, "failed to derive workspace mount; falling back to bind on project path", "projectPath", projectPath, "error", inspectErr)
 	}
@@ -198,7 +199,7 @@ func (s *Service) RunScript(
 				AttachStdout: true,
 				AttachStderr: true,
 				Labels: map[string]string{
-					libarcane.InternalResourceLabel: "true",
+					selfcontainer.InternalResourceLabel: "true",
 				},
 			},
 			// no-new-privileges and CapDrop ALL strip setuid and root capabilities from the script and its children.

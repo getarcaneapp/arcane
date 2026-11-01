@@ -22,11 +22,12 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/go-units"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"kit.getarcane.app/concurrency"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -70,9 +71,9 @@ const (
 // ProjectFileCandidates enumerates known project files: base compose names,
 // compose override names, and .env. It is used as a membership set for
 // recognizing and skipping known files during discovery; it is NOT the
-// base-detection order (see composeFileCandidates for that).
+// base-detection order (see ComposeFileCandidates for that).
 var ProjectFileCandidates = append(
-	append(slices.Clone(composeFileCandidates), composeOverrideFileCandidates...),
+	append(slices.Clone(ComposeFileCandidates), ComposeOverrideFileCandidates...),
 	".env",
 )
 
@@ -128,7 +129,7 @@ func DetectComposeFile(ctx context.Context, projectsDir, dir string) (string, er
 	// Stays on os.*: compose files may be symlinks resolving outside any
 	// confinement root, and dir itself can be an imported project living
 	// outside the projects directory; acfs cannot follow either.
-	for _, filename := range composeFileCandidates {
+	for _, filename := range ComposeFileCandidates {
 		composePath := filepath.Join(dir, filename)
 		if info, err := os.Stat(composePath); err == nil && !info.IsDir() {
 			return composePath, envErr
@@ -427,7 +428,7 @@ func LoadComposeProject(ctx context.Context, opts LoadOptions) (project *compose
 		// compose` never auto-loads overrides for an explicit custom `-f` file, and
 		// our custom-YAML fallback scan (e.g. mystack.yaml) is that case. Listing the
 		// override after the base makes it take precedence.
-		if slices.Contains(composeFileCandidates, filepath.Base(opts.ComposeFile)) {
+		if slices.Contains(ComposeFileCandidates, filepath.Base(opts.ComposeFile)) {
 			if overrideFile := DetectComposeOverrideFile(workdir); overrideFile != "" {
 				configFiles = append(configFiles, composetypes.ConfigFile{Filename: overrideFile})
 				slog.DebugContext(ctx, "merging compose override file", "base", opts.ComposeFile, "override", overrideFile)
@@ -541,7 +542,7 @@ func finishLoadedProject(ctx context.Context,
 // reasons this cannot be fatal.
 func harvestRawSources(ctx context.Context, cfg composetypes.ConfigDetails, loaderOptions ...func(*loader.Options)) (rawSources map[string]string) {
 	defer func() {
-		if panicErr := utils.PanicToError(recover()); panicErr != nil {
+		if panicErr := concurrency.PanicToError(recover()); panicErr != nil {
 			slog.DebugContext(ctx, "panic while harvesting raw compose paths", "error", panicErr)
 			rawSources = nil
 		}
@@ -601,7 +602,7 @@ func recoverComposeLoadPanic(ctx context.Context,
 	project **composetypes.Project,
 	err *error,
 ) {
-	if panicErr := utils.PanicToError(recover()); panicErr != nil {
+	if panicErr := concurrency.PanicToError(recover()); panicErr != nil {
 		slog.WarnContext(ctx,
 			"panic while loading compose project; compose file may contain invalid syntax",
 			"path", source,
@@ -728,7 +729,7 @@ func recordComposeDependencies(project *composetypes.Project, dependencies *type
 // Missing includes are tolerated here; deployment uses strict executable loading.
 func ValidateComposeContentForUpdate(ctx context.Context, req ValidateComposeRequest) (err error) {
 	defer func() {
-		if panicErr := utils.PanicToError(recover()); panicErr != nil {
+		if panicErr := concurrency.PanicToError(recover()); panicErr != nil {
 			err = fmt.Errorf("compose file contains invalid syntax: %w", panicErr)
 		}
 	}()

@@ -2,6 +2,7 @@ package appimages
 
 import (
 	"golang.org/x/mod/semver"
+
 	"kit.getarcane.app"
 )
 

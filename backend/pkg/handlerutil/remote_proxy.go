@@ -1,0 +1,70 @@
+package handlerutil
+
+import (
+	"context"
+	"encoding/json/v2"
+	"errors"
+	"net/http"
+
+	"github.com/danielgtaylor/huma/v2"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/agent"
+)
+
+type (
+	// RemoteJSONProxy is the remote environment transport operation used by domain handlers.
+	RemoteJSONProxy func(context.Context, string, string, string, []byte, any) error
+)
+
+// JSON marshals a request, invokes the environment proxy, and translates transport errors for Huma.
+func (p RemoteJSONProxy) JSON[T any](
+	ctx context.Context,
+	environmentID string,
+	method string,
+	path string,
+	requestBody any,
+) (*T, error) {
+	body, err := marshalRemoteRequestBody(requestBody)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to marshal request body: " + err.Error())
+	}
+
+	var output T
+	if pErr := p(ctx, environmentID, method, path, body, &output); pErr != nil {
+		return nil, TranslateRemoteProxyError(pErr)
+	}
+
+	return &output, nil
+}
+
+func marshalRemoteRequestBody(requestBody any) ([]byte, error) {
+	switch value := requestBody.(type) {
+	case nil:
+		return nil, nil
+	case []byte:
+		return value, nil
+	default:
+		return json.Marshal(value)
+	}
+}
+
+// TranslateRemoteProxyError converts environment transport failures into Huma errors.
+func TranslateRemoteProxyError(err error) error {
+	if transportErr, ok := errors.AsType[*agent.TransportError](err); ok {
+		return huma.Error502BadGateway("failed to proxy request to environment: " + transportErr.Error())
+	}
+
+	if statusErr, ok := errors.AsType[*agent.StatusError](err); ok {
+		if statusErr.StatusCode == http.StatusUnauthorized {
+			return huma.Error502BadGateway("Remote environment rejected the manager's credentials")
+		}
+		return huma.NewError(statusErr.StatusCode, "environment returned error: "+string(statusErr.Body), nil)
+	}
+
+	if decodeErr, ok := errors.AsType[*agent.DecodeError](err); ok {
+		return huma.Error500InternalServerError("failed to decode environment response: " + decodeErr.Error())
+	}
+
+	return huma.NewError(common.ToAPIError(err).HTTPStatus(), "failed to proxy request to environment: "+err.Error())
+}

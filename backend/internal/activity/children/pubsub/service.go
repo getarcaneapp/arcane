@@ -10,10 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
+	"kit.getarcane.app/concurrency"
+
+	"getarcane.dev/types/v3"
 )
 
 type (

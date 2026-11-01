@@ -8,40 +8,41 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/events"
 	"go.uber.org/fx"
+
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/bus"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/template"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/updater"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/vulnerability"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/oidcjwk"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/apikey"
+	"getarcane.dev/arcane/v3/internal/auth"
+	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/gitops"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/scheduler"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/system"
+	"getarcane.dev/arcane/v3/internal/template"
+	"getarcane.dev/arcane/v3/internal/updater"
+	"getarcane.dev/arcane/v3/internal/volume"
+	"getarcane.dev/arcane/v3/internal/vulnerability"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/francis"
+	"getarcane.dev/arcane/v3/pkg/oidc"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -202,21 +203,18 @@ func provideDockerClientService(p dockerClientServiceParams) *docker.DockerClien
 		OnStart: func(startCtx context.Context) error {
 			run, cleanup := p.EventService.SubscribeDockerEvents(service.EventBus())
 			unsubscribe = cleanup
-			var err error
-			stopLog, err = concurrency.StartSupervised(p.Ctx, "Docker event log", run)
-			if err != nil {
-				cleanup()
-				return err
-			}
-			stopStream, err = concurrency.StartSupervised(p.Ctx, "Docker event watcher", func(runCtx context.Context) error {
-				service.WatchEvents(runCtx)
-				return nil
-			})
-			if err != nil {
-				err = errors.Join(err, stopLog(startCtx))
-				cleanup()
-			}
-			return err
+			stopLog = concurrency.Supervise(p.Ctx, concurrency.SuperviseConfig{
+				Run:  run,
+				Name: "Docker event log",
+			}).Stop
+			stopStream = concurrency.Supervise(p.Ctx, concurrency.SuperviseConfig{
+				Run: func(runCtx context.Context) error {
+					service.WatchEvents(runCtx)
+					return nil
+				},
+				Name: "Docker event watcher",
+			}).Stop
+			return nil
 		},
 		OnStop: func(stopCtx context.Context) error {
 			var err error
@@ -274,8 +272,8 @@ func provideUpdaterService(p updater.UpdaterServiceParams, engine *flow.Engine) 
 	return service, nil
 }
 
-func provideJWKSetManager(ctx context.Context, lc fx.Lifecycle) *oidcjwk.KeySetManager {
-	manager := oidcjwk.NewKeySetManager(ctx)
+func provideJWKSetManager(ctx context.Context, lc fx.Lifecycle) *oidc.KeySetManager {
+	manager := oidc.NewKeySetManager(ctx)
 	lc.Append(fx.Hook{OnStop: manager.Shutdown})
 	return manager
 }
@@ -298,10 +296,10 @@ func provideFilesystemWatcherJob(p filesystemWatcherJobParams) (
 	var stop func(context.Context) error
 	p.Lifecycle.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			stop, err = concurrency.StartSupervised(p.Ctx, "filesystem watcher", job.Supervise)
-			if err != nil {
-				return err
-			}
+			stop = concurrency.Supervise(p.Ctx, concurrency.SuperviseConfig{
+				Run:  job.Supervise,
+				Name: "filesystem watcher",
+			}).Stop
 			slog.InfoContext(p.Ctx, "Filesystem watcher job registered")
 			return nil
 		},

@@ -9,23 +9,22 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
+
 	"kit.getarcane.app"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/arcane/v3/pkg/volumes"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -68,27 +67,9 @@ func (s *VolumeService) requireVolumeHelperACFS(ctx context.Context, volumeName,
 	return nil
 }
 
-func isUnlabeledVolumeHelperContainer(c container.Summary) bool {
-	if internal, _ := kit.ParseBool(c.Labels[libarcane.InternalResourceLabel]); !internal {
-		return false
-	}
-
-	command := strings.ToLower(c.Command)
-	return strings.Contains(command, "sleep") && strings.Contains(command, "infinity") && slices.ContainsFunc(c.Mounts, func(mounted container.MountPoint) bool {
-		return mounted.Destination == "/volume"
-	})
-}
-
-func isVolumeHelperContainer(c container.Summary) bool {
-	if internal, _ := kit.ParseBool(c.Labels[libarcane.InternalResourceLabel]); !internal {
-		return false
-	}
-	return strings.EqualFold(c.Labels[volumehelper.ContainerLabel], "true") || isUnlabeledVolumeHelperContainer(c)
-}
-
 func (s *VolumeService) getVolumeHelperImage(ctx context.Context) (string, error) {
 	slog.DebugContext(ctx, "volume service: resolve helper image")
-	toolsImage := volumehelper.ToolsImage(s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value)
+	toolsImage := volumes.ToolsImage(s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value)
 
 	if _, imageInspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, toolsImage)
@@ -108,7 +89,7 @@ func (s *VolumeService) getVolumeHelperImage(ctx context.Context) (string, error
 	if err != nil {
 		return "", fmt.Errorf("failed to get docker client: %w", err)
 	}
-	if fallback, ok := volumehelper.ResolveArcaneRuntimeImage(ctx, dockerClient).Get(); ok {
+	if fallback, ok := volumes.ResolveArcaneRuntimeImage(ctx, dockerClient).Get(); ok {
 		slog.InfoContext(ctx, "volume service: helper image strategy selected", "strategy", "arcane-fallback", "source", fallback.Source, "image", fallback.Image)
 		return fallback.Image, nil
 	}
@@ -213,10 +194,10 @@ func (s *VolumeService) startHelperContainer(ctx context.Context, volumeName str
 		Image:           helperImage,
 		Cmd:             []string{"sleep", "infinity"},
 		NetworkDisabled: true,
-		Labels:          volumehelper.Labels(),
+		Labels:          volumes.Labels(),
 	}
 
-	hostConfig := volumehelper.HostConfig(helperImage, []string{volumeName + ":/volume"}, nil)
+	hostConfig := volumes.HostConfig(helperImage, []string{volumeName + ":/volume"}, nil)
 
 	resp, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
 		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
@@ -233,7 +214,7 @@ func (s *VolumeService) startHelperContainer(ctx context.Context, volumeName str
 	}); containerStartErr != nil {
 		startErr := fmt.Errorf("failed to start temp container: %w", containerStartErr)
 		if _, cleanupErr := s.dockerService.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
+			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
 		}); cleanupErr != nil && !errdefs.IsNotFound(cleanupErr) {
 			return "", nil, errors.Join(startErr, fmt.Errorf("failed to remove temp container after start failure: %w", cleanupErr))
 		}
@@ -242,7 +223,7 @@ func (s *VolumeService) startHelperContainer(ctx context.Context, volumeName str
 
 	cleanup := func() {
 		_, _ = s.dockerService.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
+			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
 		})
 	}
 
@@ -266,7 +247,7 @@ func (s *VolumeService) getReusableHelper(ctx context.Context, volumeName string
 	running := err == nil && kit.FromPtr(inspect.Container.State).Running
 	if err == nil && !running {
 		_, removeErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, helper.id, volumehelper.RemoveOptions())
+			return dockerClient.ContainerRemove(ctx, helper.id, volumes.RemoveOptions())
 		})
 		if removeErr != nil && !errdefs.IsNotFound(removeErr) {
 			return mo.None[string](), fmt.Errorf("failed to remove stopped volume helper container: %w", removeErr)
@@ -308,7 +289,7 @@ func (s *VolumeService) CleanupHelperContainers(ctx context.Context) {
 
 	for _, containerID := range helperIDs {
 		if _, containerRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, containerID, volumehelper.RemoveOptions())
+			return dockerClient.ContainerRemove(ctx, containerID, volumes.RemoveOptions())
 		}); containerRemoveErr != nil {
 			slog.WarnContext(ctx, "failed to remove helper container", "containerId", containerID, "error", containerRemoveErr.Error())
 		}
@@ -326,7 +307,7 @@ func (s *VolumeService) ReapIdleHelpers(ctx context.Context, idleTimeout time.Du
 	removed := 0
 	for _, containerID := range staleIDs {
 		if _, containerRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, containerID, volumehelper.RemoveOptions())
+			return dockerClient.ContainerRemove(ctx, containerID, volumes.RemoveOptions())
 		}); containerRemoveErr != nil {
 			slog.WarnContext(ctx, "failed to remove idle helper container", "containerId", containerID, "error", containerRemoveErr.Error())
 			continue
@@ -372,7 +353,7 @@ func (s *VolumeService) StopHelper(ctx context.Context, volumeName string) error
 	}
 
 	if _, containerRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-		return dockerClient.ContainerRemove(ctx, containerID, volumehelper.RemoveOptions())
+		return dockerClient.ContainerRemove(ctx, containerID, volumes.RemoveOptions())
 	}); containerRemoveErr != nil {
 		return fmt.Errorf("failed to remove helper container: %w", containerRemoveErr)
 	}
@@ -402,12 +383,12 @@ func (s *VolumeService) CleanupOrphanedVolumeHelpers(ctx context.Context) (int, 
 
 	removedCount := 0
 	for _, c := range containers {
-		if !isVolumeHelperContainer(c) {
+		if !volumes.IsHelperContainer(c) {
 			continue
 		}
 
 		if _, containerRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, c.ID, volumehelper.RemoveOptions())
+			return dockerClient.ContainerRemove(ctx, c.ID, volumes.RemoveOptions())
 		}); containerRemoveErr != nil {
 			slog.WarnContext(
 				ctx,

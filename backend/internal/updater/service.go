@@ -15,14 +15,15 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/sys/cgroup"
@@ -32,32 +33,32 @@ import (
 	"kit.getarcane.app/updater/refs"
 	updatertypes "kit.getarcane.app/updater/types"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/notification"
-	projectpkg "github.com/getarcaneapp/arcane/backend/v3/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/updater/children/execution"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/updater/children/recovery"
-	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/notification"
+	projectpkg "getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/updater/children/execution"
+	"getarcane.dev/arcane/v3/internal/updater/children/recovery"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/arcane/v3/pkg/notifications"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -677,7 +678,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	defer func() {
 		s.finishSingleContainerUpdate(workCtx, started.ID, out, err)
 	}()
-	defer utils.RecoverToError(&err, "single container update")
+	defer concurrency.RecoverToError(&err, "single container update")
 	return s.runSingleContainerUpdate(workCtx, containerID, started.ID)
 }
 
@@ -1305,9 +1306,9 @@ func (s *UpdaterService) singleContainerActivityRequest(ctx context.Context, con
 		ResourceID:    &containerID,
 		ResourceName:  &name,
 		StartedBy: func() *types.Actor {
-			initiator, ok := utils.UpdateInitiatorFromContext(ctx)
+			initiator, ok := activitylib.UpdateInitiatorFromContext(ctx)
 			if !ok {
-				user, _ := userctx.CurrentUserFromContext(ctx)
+				user, _ := handlerutil.CurrentUserFromContext(ctx)
 				return user
 			}
 			return &types.Actor{
@@ -1426,7 +1427,7 @@ func (s *UpdaterService) completeAutoUpdateActivity(ctx context.Context, activit
 		switch {
 		case failure == "":
 			return types.ActivityStatusSuccess, message, nil
-		case activitylib.CancelledByContext(ctx):
+		case errors.Is(context.Cause(ctx), activitylib.ErrCanceled):
 			return types.ActivityStatusCancelled, "Auto-update cancelled", nil
 		}
 		return types.ActivityStatusFailed, failure, &failure

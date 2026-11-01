@@ -7,23 +7,23 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/job/children/runtime"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	userdomain "github.com/getarcaneapp/arcane/backend/v3/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/job/children/runtime"
+	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	userdomain "getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	francistest "getarcane.dev/arcane/v3/pkg/francis/testing"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -532,7 +532,7 @@ func (s *fakeJobScheduler) GetJobRuntimeState(jobID string) (types.JobRuntimeSta
 	return state, ok
 }
 
-func (s *fakeJobScheduler) RescheduleJob(ctx context.Context, job types.SchedulerJob) error {
+func (s *fakeJobScheduler) AddJob(ctx context.Context, job types.SchedulerJob) error {
 	s.rescheduled = append(s.rescheduled, job.Name())
 	s.rescheduleContexts = append(s.rescheduleContexts, ctx)
 	if s.rescheduleErr != nil {

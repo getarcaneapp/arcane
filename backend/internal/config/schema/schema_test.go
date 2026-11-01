@@ -9,9 +9,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/settings"
 )
 
 var (

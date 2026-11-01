@@ -10,11 +10,12 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/apikey"
+	"getarcane.dev/types/v3"
 )
 
 type (

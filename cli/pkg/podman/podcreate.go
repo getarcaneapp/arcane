@@ -13,13 +13,14 @@ import (
 	"strings"
 
 	"github.com/docker/go-connections/nat"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
+
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
-	internaltypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
+	"getarcane.dev/cli/v3/internal/cmdutil"
+	"getarcane.dev/cli/v3/internal/output"
+	internaltypes "getarcane.dev/cli/v3/internal/types"
+	"getarcane.dev/types/v3"
 )
 
 type (

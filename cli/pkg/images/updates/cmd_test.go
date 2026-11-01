@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/cli/v3/internal/testutil"
+	"getarcane.dev/cli/v3/internal/testutil"
+	"getarcane.dev/types/v3"
 )
 
 func TestImagesUpdatesCheckEncodesImageRefAndDecodesSingleResponse(t *testing.T) {

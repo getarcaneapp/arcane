@@ -7,15 +7,16 @@ import (
 	"io"
 	"sync"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
 	buildtypes "kit.getarcane.app/builds/types"
 
-	projectsync "github.com/getarcaneapp/arcane/backend/v3/internal/project/children/sync"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	projectsync "getarcane.dev/arcane/v3/internal/project/children/sync"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
 type (

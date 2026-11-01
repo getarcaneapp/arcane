@@ -11,15 +11,16 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
+
 	"kit.getarcane.app/docker/streams/logs"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/diagnostics"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
+	"getarcane.dev/arcane/v3/internal/auth"
+	"getarcane.dev/arcane/v3/internal/diagnostics"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	wshub "getarcane.dev/arcane/v3/pkg/ws"
+	"getarcane.dev/types/v3"
 )
 
 const (
@@ -45,7 +46,7 @@ func buildDiagnostics(diag *diagnostics.DiagnosticsService) types.Diagnostics {
 	if diag != nil {
 		d.Runtime, d.Memory, d.GC = diag.Collect()
 	}
-	d.Runtime.WSWorkerGoroutines = wshub.CountWorkerGoroutines()
+	d.Runtime.WSWorkerGoroutines = int(wshub.WorkerGoroutines.Load())
 	d.WebSocket = types.WebSocketDiagnostics{
 		Snapshot:    defaultWebSocketMetrics.Snapshot(),
 		Connections: defaultWebSocketMetrics.Connections(),

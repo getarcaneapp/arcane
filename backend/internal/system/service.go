@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	mobycontainer "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -20,41 +19,44 @@ import (
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/sys/cgroup"
 	"kit.getarcane.app/updater"
 	"kit.getarcane.app/updater/labels"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/network"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	systembackup "github.com/getarcaneapp/arcane/backend/v3/internal/system/children/backup"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/system/children/prune"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/system/children/upgrade"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/vuln"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/container"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/network"
+	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/s3"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	systembackup "getarcane.dev/arcane/v3/internal/system/children/backup"
+	"getarcane.dev/arcane/v3/internal/system/children/prune"
+	"getarcane.dev/arcane/v3/internal/system/children/upgrade"
+	"getarcane.dev/arcane/v3/internal/version"
+	"getarcane.dev/arcane/v3/internal/volume"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/francis"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/arcane/v3/pkg/vuln"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -244,7 +246,7 @@ func (s *SystemService) StartAllContainers(ctx context.Context, environmentID st
 		SuccessMessage: "Started all containers",
 		ShouldStart: func(c mobycontainer.Summary) bool {
 			return (c.State == mobycontainer.StateExited || c.State == mobycontainer.StateCreated) &&
-				!strings.EqualFold(c.Labels[libarcane.InternalResourceLabel], "true")
+				!strings.EqualFold(c.Labels[selfcontainer.InternalResourceLabel], "true")
 		},
 		Action: func(ctx context.Context, id string) error {
 			return s.containerService.StartContainer(ctx, id, types.SystemUser)
@@ -260,7 +262,7 @@ func (s *SystemService) StartAllStoppedContainers(ctx context.Context, environme
 		StartMessage:   "Starting stopped containers",
 		SuccessMessage: "Started stopped containers",
 		ShouldStart: func(c mobycontainer.Summary) bool {
-			return c.State == mobycontainer.StateExited && !strings.EqualFold(c.Labels[libarcane.InternalResourceLabel], "true")
+			return c.State == mobycontainer.StateExited && !strings.EqualFold(c.Labels[selfcontainer.InternalResourceLabel], "true")
 		},
 		Action: func(ctx context.Context, id string) error {
 			return s.containerService.StartContainer(ctx, id, types.SystemUser)
@@ -276,7 +278,7 @@ func (s *SystemService) StopAllContainers(ctx context.Context, environmentID str
 		StartMessage:   "Stopping all containers",
 		SuccessMessage: "Stopped all containers",
 		ShouldStart: func(c mobycontainer.Summary) bool {
-			return !labels.IsArcaneContainer(c.Labels) && !strings.EqualFold(c.Labels[libarcane.InternalResourceLabel], "true")
+			return !labels.IsArcaneContainer(c.Labels) && !strings.EqualFold(c.Labels[selfcontainer.InternalResourceLabel], "true")
 		},
 		Action: func(ctx context.Context, id string) error {
 			return s.containerService.StopContainer(ctx, id, types.SystemUser)
@@ -314,7 +316,7 @@ func (s *SystemService) performBatchContainerAction(ctx context.Context, environ
 				continue
 			}
 			g.Go(func() (workerErr error) {
-				defer utils.RecoverToError(&workerErr, "system info worker")
+				defer concurrency.RecoverToError(&workerErr, "system info worker")
 				actionErr := opts.Action(groupCtx, c.ID)
 				mu.Lock()
 				defer mu.Unlock()
@@ -340,7 +342,7 @@ func (s *SystemService) performBatchContainerAction(ctx context.Context, environ
 	}
 	if activityID != "" {
 		_, completeErr := s.activityService.CompleteActivity(
-			utils.ActivityRuntimeContext(ctx, nil),
+			activitylib.ActivityRuntimeContext(ctx, nil),
 			activityID,
 			kit.Ternary(len(errs) > 0, types.ActivityStatusFailed, types.ActivityStatusSuccess),
 			kit.Ternary(len(errs) > 0, strings.Join(errs, "; "), opts.SuccessMessage),

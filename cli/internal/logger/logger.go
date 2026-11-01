@@ -5,9 +5,10 @@ import (
 	"io"
 
 	charmLog "charm.land/log/v2"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	"kit.getarcane.app"
+
+	"getarcane.dev/cli/v3/internal/output"
 )
 
 // Setup configures the global logger level and format, defaulting invalid levels to info.

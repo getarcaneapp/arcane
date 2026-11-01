@@ -10,24 +10,25 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/sse"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
+
 	"kit.getarcane.app/docker/streams/agg"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/system"
+	"getarcane.dev/arcane/v3/internal/version"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -70,7 +71,7 @@ func RegisterStream(
 		system:      systemService,
 	}
 
-	meter := otel.Meter(tracing.InstrumentationName)
+	meter := otel.Meter(logging.InstrumentationName)
 	connections, err := meter.Int64UpDownCounter("arcane.sse.connections",
 		metric.WithDescription("Open client SSE stream connections"), metric.WithUnit("{connection}"))
 	if err != nil {
@@ -95,7 +96,7 @@ func RegisterStream(
 				}
 			}
 			parent := otel.GetTextMapPropagator().Extract(ctx.Context(), carrier)
-			_, span := otel.Tracer(tracing.InstrumentationName).Start(parent, "sse "+ctx.Operation().Path,
+			_, span := otel.Tracer(logging.InstrumentationName).Start(parent, "sse "+ctx.Operation().Path,
 				trace.WithSpanKind(trace.SpanKindServer),
 				trace.WithAttributes(
 					attribute.String("http.route", ctx.Operation().Path),

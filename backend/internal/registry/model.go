@@ -3,8 +3,8 @@ package registry
 import (
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/registryauth"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/pkg/registry"
 )
 
 type (
@@ -35,11 +35,11 @@ func (ContainerRegistry) TableName() string {
 }
 
 func (r ContainerRegistry) Host() string {
-	host, _ := registryauth.SplitRegistryURL(r.URL)
+	host, _ := registry.SplitRegistryURL(r.URL)
 	return host
 }
 
 func (r ContainerRegistry) Namespace() string {
-	_, namespace := registryauth.SplitRegistryURL(r.URL)
+	_, namespace := registry.SplitRegistryURL(r.URL)
 	return namespace
 }

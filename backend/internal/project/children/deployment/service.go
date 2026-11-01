@@ -15,14 +15,15 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/getarcaneapp/arcane/types/v3"
+
 	"kit.getarcane.app/acfs"
 	buildtypes "kit.getarcane.app/builds/types"
+	kitfs "kit.getarcane.app/fs"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -120,7 +121,7 @@ func PrepareProjectBindDirectories(projectPath string) projects.PrepareProjectFu
 					case existsErr != nil:
 						err = existsErr
 					default:
-						if err = (acfs.Root{Path: projectPath}).MkdirAll(ctx, logicalPath, utils.DirPerm); err == nil {
+						if err = (acfs.Root{Path: projectPath}).MkdirAll(ctx, logicalPath, kitfs.DirPerm); err == nil {
 							slog.InfoContext(ctx, "created missing bind directory for project deployment", "projectPath", projectPath, "source", volume.Source)
 						}
 					}

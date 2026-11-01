@@ -9,12 +9,13 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
-	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/container"
+	wshub "getarcane.dev/arcane/v3/pkg/ws"
+	"getarcane.dev/types/v3"
 )
 
 type (

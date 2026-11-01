@@ -5,7 +5,8 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/mapping"
 )
 

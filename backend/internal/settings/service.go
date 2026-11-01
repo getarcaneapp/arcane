@@ -20,23 +20,22 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"go.yaml.in/yaml/v4"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/normalization"
 	"kit.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/search"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/search"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/validation"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -57,7 +56,7 @@ type (
 		snapshot      atomic.Pointer[snapshot]
 		effectsWake   chan struct{}
 		effectsDone   chan struct{}
-		changes       *concurrency.Signal[[]libarcane.SettingUpdate]
+		changes       *concurrency.Signal[[]types.SettingUpdate]
 		effects       []func()
 		writes        sync.Mutex
 		effectsMu     sync.Mutex
@@ -93,7 +92,7 @@ func NewSettingsService(ctx context.Context, db *database.DB, appConfig *config.
 		effectsWake:  make(chan struct{}, 1),
 		effectsDone:  make(chan struct{}),
 		lifecycleCtx: ctx,
-		changes:      concurrency.NewSignal[[]libarcane.SettingUpdate](),
+		changes:      concurrency.NewSignal[[]types.SettingUpdate](),
 	}
 	if len(env) > 0 {
 		slog.InfoContext(ctx, "Loaded environment settings", "count", len(env))
@@ -115,7 +114,7 @@ func NewSettingsService(ctx context.Context, db *database.DB, appConfig *config.
 				svc.effects[0] = nil
 				svc.effects = svc.effects[1:]
 				svc.effectsMu.Unlock()
-				func() { defer utils.RecoverToError(nil, "settings effect"); effect() }()
+				func() { defer concurrency.RecoverToError(nil, "settings effect"); effect() }()
 				continue
 			}
 			closed := svc.effectsClosed
@@ -137,7 +136,7 @@ func NewSettingsService(ctx context.Context, db *database.DB, appConfig *config.
 
 // SubscribeSettingsChanges invokes callback once with the matching values when any subscribed key
 // is present in a successful update. Callbacks run serially on the effects worker, outside the write mutex.
-func (s *SettingsService) SubscribeSettingsChanges(keys []string, callback func([]libarcane.SettingUpdate)) func() {
+func (s *SettingsService) SubscribeSettingsChanges(keys []string, callback func([]types.SettingUpdate)) func() {
 	if callback == nil || len(keys) == 0 {
 		return func() {}
 	}
@@ -145,8 +144,8 @@ func (s *SettingsService) SubscribeSettingsChanges(keys []string, callback func(
 	for _, key := range keys {
 		subscribed[key] = struct{}{}
 	}
-	return s.changes.Subscribe(func(updates []libarcane.SettingUpdate) {
-		matching := make([]libarcane.SettingUpdate, 0, len(updates))
+	return s.changes.Subscribe(func(updates []types.SettingUpdate) {
+		matching := make([]types.SettingUpdate, 0, len(updates))
 		for _, update := range updates {
 			if _, ok := subscribed[update.Key]; ok {
 				matching = append(matching, update)
@@ -168,14 +167,14 @@ func (s *SettingsService) NotifySettingsChanges(ctx context.Context, keys ...str
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	updates := make([]libarcane.SettingUpdate, 0, len(keys))
+	updates := make([]types.SettingUpdate, 0, len(keys))
 	cfg := s.GetSettingsConfig()
 	for _, key := range keys {
 		value, _, _, err := cfg.FieldByKey(key)
 		if err != nil {
 			return fmt.Errorf("load changed setting '%s': %w", key, err)
 		}
-		updates = append(updates, libarcane.SettingUpdate{Key: key, Value: value})
+		updates = append(updates, types.SettingUpdate{Key: key, Value: value})
 	}
 	s.publishSettingsChanges(updates)
 	return nil
@@ -299,7 +298,7 @@ func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) 
 
 // UpdateSettingValues persists a group of internal setting values atomically
 // and publishes the refreshed snapshot before returning.
-func (s *SettingsService) UpdateSettingValues(ctx context.Context, updates []libarcane.SettingUpdate) error {
+func (s *SettingsService) UpdateSettingValues(ctx context.Context, updates []types.SettingUpdate) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -433,9 +432,9 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates types.Sett
 		return err
 	}
 
-	submitted := make([]libarcane.SettingUpdate, 0, len(pending))
+	submitted := make([]types.SettingUpdate, 0, len(pending))
 	for _, key := range slices.Sorted(maps.Keys(pending)) {
-		submitted = append(submitted, libarcane.SettingUpdate{Key: key, Value: pending[key]})
+		submitted = append(submitted, types.SettingUpdate{Key: key, Value: pending[key]})
 	}
 	valuesToUpdate, err := s.prepareUpdateValues(submitted)
 	if err != nil {
@@ -446,16 +445,16 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates types.Sett
 		return persistSettingsErr
 	}
 
-	changes := make([]libarcane.SettingUpdate, 0, len(valuesToUpdate))
+	changes := make([]types.SettingUpdate, 0, len(valuesToUpdate))
 	for _, value := range valuesToUpdate {
-		changes = append(changes, libarcane.SettingUpdate{Key: value.Key, Value: value.Value})
+		changes = append(changes, types.SettingUpdate{Key: value.Key, Value: value.Value})
 	}
 	s.publishSettingsChanges(changes)
 	return nil
 }
 
-func (s *SettingsService) publishSettingsChanges(updates []libarcane.SettingUpdate) {
-	safe := make([]libarcane.SettingUpdate, 0, len(updates))
+func (s *SettingsService) publishSettingsChanges(updates []types.SettingUpdate) {
+	safe := make([]types.SettingUpdate, 0, len(updates))
 	cfg := s.GetSettingsConfig()
 	for _, update := range updates {
 		_, _, sensitive, err := cfg.FieldByKey(update.Key)
@@ -472,7 +471,7 @@ func (s *SettingsService) publishSettingsChanges(updates []libarcane.SettingUpda
 	}
 }
 
-func (s *SettingsService) prepareUpdateValues(updates []libarcane.SettingUpdate) ([]SettingVariable, error) {
+func (s *SettingsService) prepareUpdateValues(updates []types.SettingUpdate) ([]SettingVariable, error) {
 	cfg := s.GetSettingsConfig()
 	_, byKey := settingsFields()
 	valuesToUpdate := make([]SettingVariable, 0, len(updates))
@@ -484,7 +483,7 @@ func (s *SettingsService) prepareUpdateValues(updates []libarcane.SettingUpdate)
 		if err := validateValue(field, update.Value); err != nil {
 			return nil, err
 		}
-		if slices.Contains([]string{libarcane.DepotTokenSettingKey, "trivyServerToken"}, update.Key) && strings.TrimSpace(update.Value) == "" {
+		if slices.Contains([]string{"depotToken", "trivyServerToken"}, update.Key) && strings.TrimSpace(update.Value) == "" {
 			continue
 		}
 		value := cmp.Or(update.Value, field.defaultValue)
@@ -707,7 +706,7 @@ func (s *SettingsService) SetContainerAutoUpdateExclusion(ctx context.Context, c
 		ordered = slices.DeleteFunc(ordered, func(name string) bool { return name == containerName })
 	}
 
-	values, err := s.prepareUpdateValues([]libarcane.SettingUpdate{{Key: "autoUpdateExcludedContainers", Value: strings.Join(ordered, ",")}})
+	values, err := s.prepareUpdateValues([]types.SettingUpdate{{Key: "autoUpdateExcludedContainers", Value: strings.Join(ordered, ",")}})
 	if err != nil {
 		return err
 	}
@@ -820,7 +819,7 @@ func (s *SettingsService) normalizeDirectorySetting(ctx context.Context, key str
 		return persistSettingsErr
 	}
 	slog.InfoContext(ctx, "Successfully normalized directory setting", "key", key)
-	s.publishSettingsChanges([]libarcane.SettingUpdate{{Key: key, Value: absPath}})
+	s.publishSettingsChanges([]types.SettingUpdate{{Key: key, Value: absPath}})
 	return nil
 }
 

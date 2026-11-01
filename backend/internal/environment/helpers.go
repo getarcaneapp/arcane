@@ -6,7 +6,8 @@ import (
 	"sync"
 
 	"github.com/samber/hot"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 )
 
 type (

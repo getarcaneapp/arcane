@@ -21,10 +21,9 @@ import (
 	"github.com/cenkalti/backoff/v5"
 	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	dockerregistry "github.com/moby/moby/api/types/registry"
@@ -37,24 +36,27 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/normalization"
+	kitregistry "kit.getarcane.app/registry"
 	"kit.getarcane.app/sys/crypto"
 	"kit.getarcane.app/updater/digest"
 	"kit.getarcane.app/updater/refs"
 	"kit.getarcane.app/updater/registry"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/registry/children/browse"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/registryauth"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/registry/children/browse"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	arcaneregistry "getarcane.dev/arcane/v3/pkg/registry"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/arcane/v3/pkg/update"
+	"getarcane.dev/arcane/v3/pkg/validation"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -469,7 +471,7 @@ func (s *ContainerRegistryService) GetRegistryAuthForImage(ctx context.Context, 
 		return "", err
 	}
 	registryHost, repository := reference.Domain(named), reference.Path(named)
-	if registryauth.NormalizeRegistryForComparison(registryHost) == "" {
+	if kitregistry.Normalize(registryHost) == "" {
 		return "", nil
 	}
 
@@ -479,13 +481,13 @@ func (s *ContainerRegistryService) GetRegistryAuthForImage(ctx context.Context, 
 	}
 
 	candidates := slices.DeleteFunc(registries, func(reg ContainerRegistry) bool {
-		_, namespace := registryauth.SplitRegistryURL(reg.URL)
-		return !registryauth.IsRegistryMatch(reg.URL, registryHost) ||
+		_, namespace := arcaneregistry.SplitRegistryURL(reg.URL)
+		return kitregistry.Normalize(reg.URL) != kitregistry.Normalize(registryHost) ||
 			(namespace != "" && repository != namespace && !strings.HasPrefix(repository, namespace+"/"))
 	})
 	slices.SortStableFunc(candidates, func(a, b ContainerRegistry) int {
-		_, namespaceA := registryauth.SplitRegistryURL(a.URL)
-		_, namespaceB := registryauth.SplitRegistryURL(b.URL)
+		_, namespaceA := arcaneregistry.SplitRegistryURL(a.URL)
+		_, namespaceB := arcaneregistry.SplitRegistryURL(b.URL)
 		return cmp.Compare(len(namespaceB), len(namespaceA))
 	})
 
@@ -496,7 +498,7 @@ func (s *ContainerRegistryService) GetRegistryAuthForImage(ctx context.Context, 
 			continue
 		}
 		if credential != nil {
-			return registryauth.EncodeAuthHeader(credential.Username, credential.Token, credential.ServerAddress)
+			return arcaneregistry.EncodeAuthHeader(credential.Username, credential.Token, credential.ServerAddress)
 		}
 	}
 	return "", nil
@@ -521,7 +523,7 @@ func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context
 		if credential == nil {
 			continue
 		}
-		for _, key := range registryauth.LookupKeys(registries[i].URL) {
+		for _, key := range kitregistry.LookupKeys(registries[i].URL) {
 			authConfigs[key] = dockerregistry.AuthConfig{
 				Username:      credential.Username,
 				Password:      credential.Token,
@@ -535,15 +537,15 @@ func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context
 
 // RecordImagePull increments Arcane's observed successful pull counter for an image registry.
 func (s *ContainerRegistryService) RecordImagePull(ctx context.Context, imageRef string) error {
-	registryHost, err := registryauth.GetRegistryAddress(imageRef)
+	registryHost, err := arcaneregistry.GetRegistryAddress(imageRef)
 	if err != nil {
 		return fmt.Errorf("parse image registry for %q: %w", imageRef, err)
 	}
-	if registryauth.NormalizeRegistryForComparison(registryHost) == "" {
+	if kitregistry.Normalize(registryHost) == "" {
 		return nil
 	}
 
-	_, err = s.kvService.IncrementInt64(ctx, registryPullCountKeyPrefix+registryauth.NormalizeRegistryForComparison(registryHost), 1)
+	_, err = s.kvService.IncrementInt64(ctx, registryPullCountKeyPrefix+kitregistry.Normalize(registryHost), 1)
 	return err
 }
 
@@ -564,14 +566,14 @@ func (s *ContainerRegistryService) GetRegistryPullUsage(ctx context.Context) (ty
 
 func (s *ContainerRegistryService) buildRegistryPullUsage(ctx context.Context, reg ContainerRegistry) types.ContainerRegistryPullUsage {
 	credential, credErr := func() (*resolvedRegistryCredential, error) {
-		if registryauth.NormalizeRegistryForComparison(reg.URL) != "docker.io" || !reg.Enabled || reg.RegistryType != RegistryTypeGeneric {
+		if kitregistry.Normalize(reg.URL) != "docker.io" || !reg.Enabled || reg.RegistryType != RegistryTypeGeneric {
 			return nil, nil
 		}
 		return s.credentialForRegistry(ctx, &reg)
 	}()
 	rateLimit, rateLimitErr := func() (registryRateLimitCacheEntry, error) {
 		switch {
-		case registryauth.NormalizeRegistryForComparison(reg.URL) != "docker.io" || !reg.Enabled:
+		case kitregistry.Normalize(reg.URL) != "docker.io" || !reg.Enabled:
 			return registryRateLimitCacheEntry{CheckedAt: time.Now().UTC()}, nil
 		case credErr != nil:
 			return registryRateLimitCacheEntry{CheckedAt: time.Now().UTC()}, credErr
@@ -625,30 +627,30 @@ func (s *ContainerRegistryService) buildRegistryPullUsage(ctx context.Context, r
 			switch {
 			case reg.RegistryType == RegistryTypeECR:
 				return "ecr"
-			case registryauth.NormalizeRegistryForComparison(reg.URL) == "docker.io":
+			case kitregistry.Normalize(reg.URL) == "docker.io":
 				return "dockerhub"
 			default:
 				return "generic"
 			}
 		}(),
-		Registry: registryauth.NormalizeRegistryForComparison(reg.URL),
+		Registry: kitregistry.Normalize(reg.URL),
 		DisplayName: func() string {
 			switch {
 			case reg.RegistryType == RegistryTypeECR:
 				return "Amazon ECR"
-			case registryauth.NormalizeRegistryForComparison(reg.URL) == "" || registryauth.NormalizeRegistryForComparison(reg.URL) == "docker.io":
+			case kitregistry.Normalize(reg.URL) == "" || kitregistry.Normalize(reg.URL) == "docker.io":
 				return "Docker Hub"
-			case strings.Contains(registryauth.NormalizeRegistryForComparison(reg.URL), "ghcr.io"):
+			case strings.Contains(kitregistry.Normalize(reg.URL), "ghcr.io"):
 				return "GitHub Container Registry"
-			case strings.Contains(registryauth.NormalizeRegistryForComparison(reg.URL), "gcr.io"):
+			case strings.Contains(kitregistry.Normalize(reg.URL), "gcr.io"):
 				return "Google Container Registry"
-			case strings.Contains(registryauth.NormalizeRegistryForComparison(reg.URL), "quay.io"):
+			case strings.Contains(kitregistry.Normalize(reg.URL), "quay.io"):
 				return "Quay.io Registry"
 			default:
-				return registryauth.NormalizeRegistryForComparison(reg.URL)
+				return kitregistry.Normalize(reg.URL)
 			}
 		}(),
-		Repository: kit.Ternary(registryauth.NormalizeRegistryForComparison(reg.URL) == "docker.io" && reg.Enabled, dockerHubRateLimitRepository, ""),
+		Repository: kit.Ternary(kitregistry.Normalize(reg.URL) == "docker.io" && reg.Enabled, dockerHubRateLimitRepository, ""),
 		Limit:      rateLimit.RateLimit.Limit,
 		Remaining:  rateLimit.RateLimit.Remaining,
 		Used: cmp.Or(rateLimit.RateLimit.Used, kit.Ternary(
@@ -658,18 +660,18 @@ func (s *ContainerRegistryService) buildRegistryPullUsage(ctx context.Context, r
 		)),
 		WindowSeconds: rateLimit.RateLimit.WindowSeconds,
 		ObservedPulls: func() int64 {
-			if registryauth.NormalizeRegistryForComparison(reg.URL) == "" {
+			if kitregistry.Normalize(reg.URL) == "" {
 				return 0
 			}
-			observedPulls, pullsErr := s.kvService.GetInt64(ctx, registryPullCountKeyPrefix+registryauth.NormalizeRegistryForComparison(reg.URL), 0)
+			observedPulls, pullsErr := s.kvService.GetInt64(ctx, registryPullCountKeyPrefix+kitregistry.Normalize(reg.URL), 0)
 			if pullsErr != nil {
-				slog.WarnContext(ctx, "failed to read registry pull count", "registry", registryauth.NormalizeRegistryForComparison(reg.URL), "error", pullsErr)
+				slog.WarnContext(ctx, "failed to read registry pull count", "registry", kitregistry.Normalize(reg.URL), "error", pullsErr)
 			}
 			return observedPulls
 		}(),
 		AuthMethod: func() string {
 			switch {
-			case registryauth.NormalizeRegistryForComparison(reg.URL) != "docker.io" || !reg.Enabled:
+			case kitregistry.Normalize(reg.URL) != "docker.io" || !reg.Enabled:
 				return "unknown"
 			case credential != nil || credErr != nil:
 				return "credential"
@@ -711,10 +713,10 @@ func (s *ContainerRegistryService) getCachedRateLimit(ctx context.Context, regis
 }
 
 func (s *ContainerRegistryService) TestRegistry(ctx context.Context, registryURL, username, token string) (testErr error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "registry.test_credentials", trace.WithAttributes(
-		attribute.String("arcane.registry.host", registryauth.NormalizeRegistryForComparison(registryURL)),
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "registry.test_credentials", trace.WithAttributes(
+		attribute.String("arcane.registry.host", kitregistry.Normalize(registryURL)),
 	))
-	defer func() { tracing.End(span, testErr) }()
+	defer func() { logging.EndSpan(span, testErr) }()
 	if strings.TrimSpace(username) == "" && strings.TrimSpace(token) == "" {
 		// No credentials configured — skip the credential test.
 		return nil
@@ -786,12 +788,12 @@ func (s *ContainerRegistryService) InspectImageDigest(
 	imageRef string,
 	externalCreds []types.ContainerRegistryCredential,
 ) (inspected *types.ContainerRegistryDigestResult, digestErr error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "registry.inspect_digest", trace.WithAttributes(attribute.String("arcane.image.ref", imageRef)))
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "registry.inspect_digest", trace.WithAttributes(attribute.String("arcane.image.ref", imageRef)))
 	defer func() {
 		if inspected != nil && inspected.Digest != "" {
 			span.SetAttributes(attribute.String("arcane.image.digest", inspected.Digest))
 		}
-		tracing.End(span, digestErr)
+		logging.EndSpan(span, digestErr)
 	}()
 	parts, err := refs.NormalizeReference(imageRef)
 	if err != nil {
@@ -818,7 +820,7 @@ func (s *ContainerRegistryService) InspectImageDigest(
 					if credential == nil {
 						return "", nil
 					}
-					return registryauth.EncodeAuthHeader(credential.Username, credential.Token, credential.ServerAddress)
+					return arcaneregistry.EncodeAuthHeader(credential.Username, credential.Token, credential.ServerAddress)
 				}()
 				if encodeErr != nil {
 					return "", fmt.Errorf("encode registry auth header for %s: %w", parts.RegistryHost, encodeErr)
@@ -963,7 +965,7 @@ func registryOperationWithCredentials[T any](
 
 	var matchedCredentials []resolvedRegistryCredential
 	for _, cred := range externalCreds {
-		if cred.Enabled && strings.TrimSpace(cred.Username) != "" && strings.TrimSpace(cred.Token) != "" && registryauth.IsRegistryMatch(cred.URL, registryHost) {
+		if cred.Enabled && strings.TrimSpace(cred.Username) != "" && strings.TrimSpace(cred.Token) != "" && kitregistry.Normalize(cred.URL) == kitregistry.Normalize(registryHost) {
 			matchedCredentials = append(matchedCredentials, resolvedRegistryCredential{
 				Username:      strings.TrimSpace(cred.Username),
 				Token:         strings.TrimSpace(cred.Token),
@@ -972,7 +974,7 @@ func registryOperationWithCredentials[T any](
 		}
 	}
 	for i := range registries {
-		if !registryauth.IsRegistryMatch(registries[i].URL, registryHost) {
+		if kitregistry.Normalize(registries[i].URL) != kitregistry.Normalize(registryHost) {
 			continue
 		}
 		credential, resolveErr := s.credentialForRegistry(ctx, &registries[i])
@@ -998,7 +1000,7 @@ func registryOperationWithCredentials[T any](
 	}
 	if lastErr != nil {
 		// Docker Hub anonymous quotas are too small to be worth a retry; elsewhere a stale credential must not break public images.
-		if registryauth.NormalizeRegistryForComparison(registryHost) == "docker.io" {
+		if kitregistry.Normalize(registryHost) == "docker.io" {
 			return *new(T), lastResult, fmt.Errorf("%s failed: %w", operation, lastErr)
 		}
 		slog.DebugContext(ctx, "credentialed registry lookup failed, retrying anonymously",
@@ -1091,7 +1093,7 @@ func (s *ContainerRegistryService) SyncRegistries(ctx context.Context, syncItems
 
 		existing, exists := existingMap[item.ID]
 		credential := kit.Ternary(registryType == RegistryTypeGeneric, existing.Token, existing.AWSSecretAccessKey)
-		credentialChanged, applyErr := utils.ApplyEncrypted(&credential, kit.Ternary(registryType == RegistryTypeGeneric, item.Token, item.AWSSecretAccessKey))
+		credentialChanged, applyErr := update.ApplyEncrypted(&credential, kit.Ternary(registryType == RegistryTypeGeneric, item.Token, item.AWSSecretAccessKey))
 		if applyErr != nil {
 			return fmt.Errorf("failed to apply credential for registry %s: %w", item.ID, applyErr)
 		}
@@ -1176,9 +1178,9 @@ func normalizeRepositoryNames(raw []string) (database.StringSlice, error) {
 
 func normalizeRegistryServerAddress(registryURL string) string {
 	return kit.Ternary(
-		registryauth.NormalizeRegistryForComparison(registryURL) == "docker.io",
-		registryauth.NormalizeRegistryURL(registryURL),
-		registryauth.NormalizeRegistryForComparison(registryURL),
+		kitregistry.Normalize(registryURL) == "docker.io",
+		arcaneregistry.NormalizeRegistryURL(registryURL),
+		kitregistry.Normalize(registryURL),
 	)
 }
 
@@ -1191,10 +1193,10 @@ func IsRateLimitErrorString(msg string) bool {
 // ListImageTags discovers repository tags with the same credential precedence as
 // digest checks. External credentials replace local credentials when supplied.
 func (s *ContainerRegistryService) ListImageTags(ctx context.Context, imageRef string, externalCreds []types.ContainerRegistryCredential) (tagList []string, tagsErr error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "registry.list_tags", trace.WithAttributes(attribute.String("arcane.image.ref", imageRef)))
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "registry.list_tags", trace.WithAttributes(attribute.String("arcane.image.ref", imageRef)))
 	defer func() {
 		span.SetAttributes(attribute.Int("arcane.result.count", len(tagList)))
-		tracing.End(span, tagsErr)
+		logging.EndSpan(span, tagsErr)
 	}()
 	if refs.IsDigestPinnedReference(imageRef) || refs.IsImageIDLikeReference(imageRef) {
 		return nil, errors.New("cannot discover tags for an immutable image reference")

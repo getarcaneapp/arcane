@@ -7,9 +7,10 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/common"
 )
 
 type (

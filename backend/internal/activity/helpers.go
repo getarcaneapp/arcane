@@ -4,11 +4,11 @@ import (
 	"cmp"
 	"context"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/types/v3"
 )
 
 // Job summaries live in their target environment's environment_id column.

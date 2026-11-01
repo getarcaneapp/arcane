@@ -15,25 +15,26 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
+
 	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/mapping"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -144,7 +145,7 @@ func (s *NetworkService) buildTopology(ctx context.Context) (*types.NetworkTopol
 
 	for i, rawNetwork := range networkList.Items {
 		g.Go(func() (workerErr error) {
-			defer utils.RecoverToError(&workerErr, "network worker")
+			defer concurrency.RecoverToError(&workerErr, "network worker")
 
 			inspected, inspectErr := s.dockerService.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkInspectResult, error) {
 				return compat.NetworkInspectWithCompatibility(ctx, dockerClient, rawNetwork.ID, client.NetworkInspectOptions{})
@@ -450,7 +451,7 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 	var containers []container.Summary
 	var networkList client.NetworkListResult
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "network container list worker")
+		defer concurrency.RecoverToError(&workerErr, "network container list worker")
 		var err error
 		containers, err = s.dockerService.ListContainers(groupCtx, false)
 		if err != nil {
@@ -459,7 +460,7 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 		return nil
 	})
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "network list worker")
+		defer concurrency.RecoverToError(&workerErr, "network list worker")
 		var err error
 		networkList, err = s.dockerService.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkListResult, error) {
 			return compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})

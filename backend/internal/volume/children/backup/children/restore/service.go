@@ -14,20 +14,21 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
-	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/backupbrowser"
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
+
+	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/pkg/backupbrowser"
+	"getarcane.dev/arcane/v3/pkg/volumes"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -36,7 +37,7 @@ type (
 		Docker          *docker.DockerClientService
 		Engine          *backup.Engine
 		Events          *event.EventService
-		Locks           *utils.KeyedMutex
+		Locks           *concurrency.KeyedMutex
 		Run             func(ctx context.Context, backupID string) (*types.VolumeBackup, error)
 		Repository      func(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (backup.Repository, string, error)
 		Password        func(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error)
@@ -411,9 +412,9 @@ func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client
 				Image:           helperImage,
 				Cmd:             kit.Ternary(members == nil, fullRestoreCmd, []string{"sleep", "infinity"}),
 				NetworkDisabled: true,
-				Labels:          volumehelper.Labels(),
+				Labels:          volumes.Labels(),
 			},
-			HostConfig: volumehelper.HostConfig(helperImage, []string{volumeName + ":/volume"}, []mount.Mount{backupMount}),
+			HostConfig: volumes.HostConfig(helperImage, []string{volumeName + ":/volume"}, []mount.Mount{backupMount}),
 		})
 	})
 	if err != nil {
@@ -421,7 +422,7 @@ func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client
 	}
 	defer func() {
 		_, _ = s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
+			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
 		})
 	}()
 	if _, containerStartErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {

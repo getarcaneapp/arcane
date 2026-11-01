@@ -3,15 +3,15 @@ package admin
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/apikeys"
-	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/events"
-	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/federatedcredentials"
-	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/notifications"
-	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/oidcmappings"
-	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/roles"
-	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/users"
-	"github.com/getarcaneapp/arcane/cli/v3/pkg/backups"
+	"getarcane.dev/cli/v3/internal/cmdutil"
+	"getarcane.dev/cli/v3/pkg/admin/apikeys"
+	"getarcane.dev/cli/v3/pkg/admin/events"
+	"getarcane.dev/cli/v3/pkg/admin/federatedcredentials"
+	"getarcane.dev/cli/v3/pkg/admin/notifications"
+	"getarcane.dev/cli/v3/pkg/admin/oidcmappings"
+	"getarcane.dev/cli/v3/pkg/admin/roles"
+	"getarcane.dev/cli/v3/pkg/admin/users"
+	"getarcane.dev/cli/v3/pkg/backups"
 )
 
 // Command is the parent command for administrative operations.

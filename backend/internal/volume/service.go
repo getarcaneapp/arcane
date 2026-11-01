@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
@@ -23,35 +22,36 @@ import (
 	"go.uber.org/fx"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	containerdomain "github.com/getarcaneapp/arcane/backend/v3/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	volumebackup "github.com/getarcaneapp/arcane/backend/v3/internal/volume/children/backup"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/volume/children/workspace"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumes"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	containerdomain "getarcane.dev/arcane/v3/internal/container"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/s3"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	volumebackup "getarcane.dev/arcane/v3/internal/volume/children/backup"
+	"getarcane.dev/arcane/v3/internal/volume/children/workspace"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/arcane/v3/pkg/volumes"
+	"getarcane.dev/types/v3"
 )
 
 type (
 	VolumeService struct {
-		workspaceLocks utils.KeyedMutex
+		workspaceLocks concurrency.KeyedMutex
 		// helperGroup deduplicates concurrent read-only helper creation per volume.
 		// Without it two simultaneous browse requests each create a helper and the
 		// second overwrites the first in helperByVolume, orphaning a `sleep infinity`
@@ -92,7 +92,7 @@ type (
 )
 
 const (
-	internalVolumePruneFilterValue = libarcane.InternalResourceLabel + "=true"
+	internalVolumePruneFilterValue = selfcontainer.InternalResourceLabel + "=true"
 	legacyDefaultEncryptionKey     = "arcane-dev-key-32-characters!!!"
 )
 
@@ -779,7 +779,7 @@ func (s *VolumeService) isInternalVolume(v types.Volume) bool {
 		return true
 	}
 
-	internal, _ := kit.ParseBool(v.Labels[libarcane.InternalResourceLabel])
+	internal, _ := kit.ParseBool(v.Labels[selfcontainer.InternalResourceLabel])
 	return internal
 }
 
@@ -791,7 +791,7 @@ func (s *VolumeService) ListBackupVolumeOptions(ctx context.Context) ([]types.Sy
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Docker volumes: %w", err)
 	}
-	inspect, inspectErr := s.dockerService.Call(ctx, libarcane.InspectCurrentArcaneContainer)
+	inspect, inspectErr := s.dockerService.Call(ctx, selfcontainer.InspectCurrentArcaneContainer)
 	if inspectErr != nil {
 		slog.DebugContext(ctx, "volume service: could not identify Arcane-mounted volumes for centralized backups", "error", inspectErr)
 	}
@@ -1055,7 +1055,7 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 		slog.WarnContext(ctx, "could not stop volume browse helper before rename", "volume", oldName, "error", stopErr.Error())
 	}
 
-	migration, err := volumes.PlanRename(ctx, dockerClient, oldName, newName, volumehelper.ToolsImage(s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value))
+	migration, err := volumes.PlanRename(ctx, dockerClient, oldName, newName, volumes.ToolsImage(s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value))
 	if err != nil {
 		s.logVolumeRenameError(ctx, oldName, newName, user, "plan", err)
 		return nil, err

@@ -9,14 +9,15 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
+
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
-	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
+	"getarcane.dev/cli/v3/internal/client"
+	"getarcane.dev/cli/v3/internal/cmdutil"
+	"getarcane.dev/cli/v3/internal/output"
+	clitypes "getarcane.dev/cli/v3/internal/types"
+	"getarcane.dev/types/v3"
 )
 
 type (

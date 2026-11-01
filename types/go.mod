@@ -1,4 +1,4 @@
-module github.com/getarcaneapp/arcane/types/v3
+module getarcane.dev/types/v3
 
 go 1.27.3
 

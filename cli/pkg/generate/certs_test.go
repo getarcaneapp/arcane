@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/cli/v3/pkg/generate"
+	"getarcane.dev/cli/v3/pkg/generate"
 )
 
 func TestGenerateMTLSCommandWritesMLDSA87Assets(t *testing.T) {

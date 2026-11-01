@@ -15,17 +15,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v3/api"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/health"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
+	"getarcane.dev/arcane/v3/api"
+	"getarcane.dev/arcane/v3/internal/auth"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/container"
+	"getarcane.dev/arcane/v3/internal/health"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/swarm"
+	"getarcane.dev/arcane/v3/internal/system"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/cookie"
 )
 
 func TestNewRouter_DecodesPathParams(t *testing.T) {
@@ -189,5 +189,5 @@ func TestProxiedEnvironmentRoutesAreAgentRoutable(t *testing.T) {
 
 	slices.Sort(missing)
 	assert.Empty(t, slices.Compact(missing),
-		"proxied environment routes missing from the agent command allowlist; add them to pkg/libarcane/agent/commands.go or classify them in middleware.IsManagerLocalPath")
+		"proxied environment routes missing from the agent command allowlist; add them to pkg/agent/commands.go or classify them in middleware.IsManagerLocalPath")
 }

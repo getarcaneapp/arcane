@@ -7,13 +7,14 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/sse"
-	"github.com/getarcaneapp/arcane/types/v3"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -89,7 +90,7 @@ func (h *Handler) TriggerUpgrade(ctx context.Context, input *TriggerUpgradeInput
 	// Resolved before triggering, while the version check still describes the running container.
 	upToDate := h.service.versionService.GetAppVersionInfo(ctx).AlreadyOnNewest()
 
-	err = h.service.TriggerUpgradeAsync(utils.ActivityRuntimeContext(ctx, h.appCtx), *user, kit.FromPtr(input.Body).TargetVersion)
+	err = h.service.TriggerUpgradeAsync(activity.ActivityRuntimeContext(ctx, h.appCtx), *user, kit.FromPtr(input.Body).TargetVersion)
 	if err != nil {
 		slog.ErrorContext(ctx, "System upgrade failed", "error", err, "user", user.Username)
 		apiErr := common.ToAPIError(err)

@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
+	"getarcane.dev/arcane/v3/pkg/notifications"
+	"getarcane.dev/types/v3"
 )
 
 func TestService_RenderEmailTemplate_IncludesEnvironment(t *testing.T) {

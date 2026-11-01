@@ -11,23 +11,24 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/updater"
 	"kit.getarcane.app/updater/pkg/utils/tagpolicy"
 	"kit.getarcane.app/updater/refs"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ratelimit"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	arcaneregistry "getarcane.dev/arcane/v3/pkg/registry"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -36,7 +37,7 @@ type (
 		registry *registry.ContainerRegistryService
 		docker   *docker.DockerClientService
 		settings *settings.SettingsService
-		limiter  *ratelimit.RegistryRateLimiter
+		limiter  *arcaneregistry.RegistryRateLimiter
 	}
 
 	// tagRegistry adapts the registry service for one container tag scan.
@@ -73,7 +74,7 @@ func NewService(
 	registryService *registry.ContainerRegistryService,
 	dockerService *docker.DockerClientService,
 	settingsService *settings.SettingsService,
-	limiter *ratelimit.RegistryRateLimiter,
+	limiter *arcaneregistry.RegistryRateLimiter,
 ) *Service {
 	return &Service{
 		registry: registryService,
@@ -157,7 +158,7 @@ func (s *Service) Check(
 	g.SetLimit(tagCheckWorkers)
 	for i, cnt := range candidates {
 		g.Go(func() (workerErr error) {
-			defer utils.RecoverToError(&workerErr, "container tag check worker", "containerId", cnt.ID)
+			defer concurrency.RecoverToError(&workerErr, "container tag check worker", "containerId", cnt.ID)
 			checks[i] = s.checkContainerTag(groupCtx, engine, adapter, cnt)
 			saveMu.Lock()
 			defer saveMu.Unlock()

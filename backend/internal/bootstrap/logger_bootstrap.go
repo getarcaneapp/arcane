@@ -13,10 +13,11 @@ import (
 	slogGorm "github.com/orandin/slog-gorm"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+
 	"kit.getarcane.app/docker/streams/logs"
 
-	"github.com/getarcaneapp/arcane/backend/v3/api/ws"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"getarcane.dev/arcane/v3/api/ws"
+	"getarcane.dev/arcane/v3/internal/config"
 )
 
 type (

@@ -17,12 +17,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v3"
-	kit "kit.getarcane.app"
+	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
+	kitfs "kit.getarcane.app/fs"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	workspacepkg "github.com/getarcaneapp/arcane/backend/v3/pkg/workspace"
+	workspacepkg "getarcane.dev/arcane/v3/pkg/workspace"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -306,10 +306,10 @@ func ProtectedProjectFilePaths(composeFileName string) map[string]bool {
 		GitSourceEnvFileName: true,
 		OverrideEnvFileName:  true,
 	}
-	for _, candidate := range ComposeFileCandidates() {
+	for _, candidate := range ComposeFileCandidates {
 		protected[candidate] = true
 	}
-	for _, candidate := range ComposeOverrideFileCandidates() {
+	for _, candidate := range ComposeOverrideFileCandidates {
 		protected[candidate] = true
 	}
 	if trimmed := strings.TrimSpace(composeFileName); trimmed != "" {
@@ -361,13 +361,13 @@ func createProjectWorkspaceFile(root *os.Root, protected map[string]bool, rel st
 		return err
 	}
 
-	if err := root.MkdirAll(path.Dir(rel), utils.DirPerm); err != nil {
+	if err := root.MkdirAll(path.Dir(rel), kitfs.DirPerm); err != nil {
 		return fmt.Errorf("create parent directory: %w", err)
 	}
 
 	// O_EXCL makes the exists-check-and-create atomic; os.Root confines the
 	// path to the project directory in the kernel.
-	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, utils.FilePerm)
+	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, kitfs.FilePerm)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return fmt.Errorf("project workspace file already exists: %s: %w", rel, acfs.ErrAlreadyExists)
@@ -397,7 +397,7 @@ func createProjectWorkspaceFolder(root *os.Root, protected map[string]bool, rel 
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect project workspace folder: %w", err)
 	}
-	if err := root.MkdirAll(rel, utils.DirPerm); err != nil {
+	if err := root.MkdirAll(rel, kitfs.DirPerm); err != nil {
 		return fmt.Errorf("create project workspace folder: %w", err)
 	}
 	return nil
@@ -445,7 +445,7 @@ func updateProjectWorkspaceFile(root *os.Root, protected map[string]bool, rel st
 		}
 	}
 
-	if writeFileErr := root.WriteFile(rel, content, utils.FilePerm); writeFileErr != nil {
+	if writeFileErr := root.WriteFile(rel, content, kitfs.FilePerm); writeFileErr != nil {
 		return fmt.Errorf("update project workspace file: %w", writeFileErr)
 	}
 	return nil

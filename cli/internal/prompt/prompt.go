@@ -9,7 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/term"
 
-	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	"getarcane.dev/cli/v3/internal/output"
 )
 
 type (

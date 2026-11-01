@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	kit "kit.getarcane.app"
+	"kit.getarcane.app"
 )
 
 type (

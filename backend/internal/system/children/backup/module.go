@@ -4,11 +4,12 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/system/children/backup/children/volumes"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/system/children/backup/children/volumes"
+	"getarcane.dev/arcane/v3/pkg/authz"
 )
 
 // RegisterRoutes registers the system backup endpoints, including the

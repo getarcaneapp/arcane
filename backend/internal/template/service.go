@@ -21,7 +21,6 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.opentelemetry.io/otel"
@@ -29,20 +28,23 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/concurrency"
+	"kit.getarcane.app/fs"
 	"kit.getarcane.app/mapping"
 	"kit.getarcane.app/normalization"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -99,7 +101,6 @@ func NewTemplateService(ctx context.Context, db *database.DB, httpClient *http.C
 	service := &TemplateService{
 		db:                db,
 		httpClient:        httpClient,
-		lookupIP:          httpx.DefaultLookupIP,
 		settingsService:   settingsService,
 		registryFetchMeta: make(map[string]*registryFetchMeta),
 		registryErrors:    make(map[string]string),
@@ -468,7 +469,7 @@ func writeImportedTemplateFiles(folderPath, composePath, content, envContent str
 		if file.path == "" {
 			continue
 		}
-		prev := templateFileSnapshot{path: file.path, perm: utils.FilePerm}
+		prev := templateFileSnapshot{path: file.path, perm: fs.FilePerm}
 		info, statErr := os.Stat(file.path)
 		switch {
 		case statErr == nil:
@@ -537,7 +538,7 @@ func (s *TemplateService) SaveComposeTemplate(ctx context.Context, content strin
 	if err != nil {
 		return fmt.Errorf("failed to get templates directory: %w", err)
 	}
-	return acfs.Root{Path: baseDir}.Write(ctx, "/.compose.template", []byte(content), acfs.WriteOptions{Mode: utils.FilePerm})
+	return acfs.Root{Path: baseDir}.Write(ctx, "/.compose.template", []byte(content), acfs.WriteOptions{Mode: fs.FilePerm})
 }
 
 func (s *TemplateService) GetEnvTemplate(ctx context.Context) string {
@@ -554,7 +555,7 @@ func (s *TemplateService) SaveEnvTemplate(ctx context.Context, content string) e
 	if err != nil {
 		return fmt.Errorf("failed to get templates directory: %w", err)
 	}
-	return acfs.Root{Path: baseDir}.Write(ctx, "/.env.template", []byte(content), acfs.WriteOptions{Mode: utils.FilePerm})
+	return acfs.Root{Path: baseDir}.Write(ctx, "/.env.template", []byte(content), acfs.WriteOptions{Mode: fs.FilePerm})
 }
 
 func (s *TemplateService) GetRegistries(ctx context.Context) ([]TemplateRegistry, error) {
@@ -687,10 +688,10 @@ func (s *TemplateService) DeleteRegistry(ctx context.Context, id string) error {
 }
 
 func (s *TemplateService) loadRemoteTemplates(ctx context.Context, generation uint64) (templates []ComposeTemplate, err error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "template.sync_remote")
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "template.sync_remote")
 	defer func() {
 		span.SetAttributes(attribute.Int("arcane.result.count", len(templates)))
-		tracing.End(span, err)
+		logging.EndSpan(span, err)
 	}()
 
 	registries, err := s.GetRegistries(ctx)
@@ -715,7 +716,7 @@ func (s *TemplateService) loadRemoteTemplates(ctx context.Context, generation ui
 		enabledRegistries++
 
 		g.Go(func() (workerErr error) {
-			defer utils.RecoverToError(&workerErr, "template worker")
+			defer concurrency.RecoverToError(&workerErr, "template worker")
 
 			remoteTemplates, fetchRegistryTemplatesErr := s.fetchRegistryTemplates(groupCtx, &reg, generation)
 			if fetchRegistryTemplatesErr != nil {
@@ -798,13 +799,13 @@ func (s *TemplateService) fetchRegistryTemplates(ctx context.Context, reg *Templ
 	if parsedURL, parseErr := url.Parse(reg.URL); parseErr == nil {
 		registryHost = parsedURL.Host
 	}
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "template.fetch_registry", trace.WithAttributes(
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "template.fetch_registry", trace.WithAttributes(
 		attribute.String("arcane.template.registry_id", reg.ID),
 		attribute.String("arcane.template.registry_host", registryHost),
 	))
 	defer func() {
 		span.SetAttributes(attribute.Int("arcane.result.count", len(templates)))
-		tracing.End(span, err)
+		logging.EndSpan(span, err)
 	}()
 
 	s.registryMu.RLock()
@@ -913,11 +914,11 @@ func (s *TemplateService) FetchTemplateContent(ctx context.Context, template *Co
 		return "", "", fmt.Errorf("remote template %q is missing compose_url in registry metadata", template.ID)
 	}
 
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "template.fetch", trace.WithAttributes(
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "template.fetch", trace.WithAttributes(
 		attribute.String("arcane.template.id", template.ID),
 		attribute.String("arcane.template.registry_id", mo.PointerToOption(template.RegistryID).OrEmpty()),
 	))
-	defer func() { tracing.End(span, err) }()
+	defer func() { logging.EndSpan(span, err) }()
 
 	composeBody, err := s.FetchRaw(ctx, *template.Metadata.RemoteURL)
 	if err != nil {
@@ -1146,11 +1147,11 @@ func (s *TemplateService) SyncLocalTemplatesFromFilesystem(ctx context.Context) 
 		return nil
 	}
 
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "template.sync_filesystem")
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "template.sync_filesystem")
 	synced, failed := 0, 0
 	defer func() {
 		span.SetAttributes(attribute.Int("arcane.result.count", synced), attribute.Int("arcane.template.failed_count", failed))
-		tracing.End(span, err)
+		logging.EndSpan(span, err)
 	}()
 
 	dir, err := projects.GetTemplatesDirectory(ctx, strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "templatesDirectory")))

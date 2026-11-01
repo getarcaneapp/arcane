@@ -15,12 +15,12 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	acfsutils "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/acfs"
+	"getarcane.dev/arcane/v3/internal/common"
+	workspacepkg "getarcane.dev/arcane/v3/pkg/workspace"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -58,7 +58,7 @@ func (s *Service) ListDirectory(ctx context.Context, dirPath string) ([]types.Wo
 
 	results := make([]types.WorkspaceFileEntry, 0, len(entries))
 	for _, entry := range entries {
-		results = append(results, acfsutils.FileEntry(entry))
+		results = append(results, workspacepkg.FileEntry(entry))
 	}
 
 	return results, nil

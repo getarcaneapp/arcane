@@ -19,10 +19,10 @@ import (
 	"strconv"
 	"strings"
 
-	kit "kit.getarcane.app"
+	"kit.getarcane.app"
+	"kit.getarcane.app/normalization"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"getarcane.dev/arcane/v3/internal/settings"
 )
 
 type (
@@ -292,7 +292,7 @@ func collectSettings() []SettingEntry {
 			continue
 		}
 
-		meta := utils.ParseMetaTag(field.Tag.Get("meta"))
+		meta := normalization.ParseMetaTag(field.Tag.Get("meta"))
 		minValue, minErr := strconv.ParseFloat(meta["min"], 64)
 		maxValue, maxErr := strconv.ParseFloat(meta["max"], 64)
 		isSensitive := slices.Contains(attrs, "sensitive")

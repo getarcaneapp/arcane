@@ -11,11 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
-
-	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/config"
-	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
+	"getarcane.dev/cli/v3/internal/client"
+	"getarcane.dev/cli/v3/internal/config"
+	clitypes "getarcane.dev/cli/v3/internal/types"
+	"getarcane.dev/types/v3"
 )
 
 type (

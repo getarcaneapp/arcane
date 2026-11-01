@@ -18,14 +18,15 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/ws"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -213,9 +214,10 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	}).WithContext(ctx)
 
 	agent.CopyRequestHeaders(req.Header, proxyReq.Header)
-	agent.SetAuthHeader(proxyReq, c)
-	agent.SetAgentToken(proxyReq, accessToken)
-	agent.SetForwardedHeaders(proxyReq, c.RealIP(), req.Host)
+	agent.SetAuthHeader(proxyReq.Header, c)
+	agent.SetAgentToken(proxyReq.Header, kit.FromPtr(accessToken))
+	proxyReq.Header.Set("X-Forwarded-For", c.RealIP())
+	proxyReq.Header.Set("X-Forwarded-Host", req.Host)
 
 	if proxyReq.Body != nil {
 		if fullDuplexErr := http.NewResponseController(c.Response()).EnableFullDuplex(); fullDuplexErr != nil {

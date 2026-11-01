@@ -6,11 +6,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v3"
-
-	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
-	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
+	"getarcane.dev/cli/v3/internal/client"
+	"getarcane.dev/cli/v3/internal/cmdutil"
+	clitypes "getarcane.dev/cli/v3/internal/types"
+	"getarcane.dev/types/v3"
 )
 
 // s3DestinationRef resolves exact IDs, then case-insensitive names and substrings.

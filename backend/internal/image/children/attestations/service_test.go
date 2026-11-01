@@ -9,7 +9,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/common"
 )
 
 func TestReadAttestationLayerBytesDecompressesGzip(t *testing.T) {

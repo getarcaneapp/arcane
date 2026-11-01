@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -28,7 +27,9 @@ import (
 	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 	dockertypes "kit.getarcane.app/docker/types"
@@ -37,25 +38,25 @@ import (
 	"kit.getarcane.app/updater/labels"
 	"kit.getarcane.app/updater/pkg/utils/tagpolicy"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/container/children/stats"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/podman"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	libpodman "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/iconcatalog"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/container/children/stats"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/podman"
+	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/iconcatalog"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	libpodman "getarcane.dev/arcane/v3/pkg/podman"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -70,7 +71,7 @@ type (
 		iconMetaCache   *hot.HotCache[string, projects.ArcaneComposeMetadata]
 		stats           *stats.Service
 		// opLock serializes mutating operations on the same container.
-		opLock utils.KeyedMutex
+		opLock concurrency.KeyedMutex
 	}
 
 	ContainerListResult struct {
@@ -2213,8 +2214,8 @@ func FilterExcludedContainers(containers []container.Summary, includeInternal, i
 
 	filtered := make([]container.Summary, 0, len(containers))
 	for _, dc := range containers {
-		internal, _ := kit.ParseBool(dc.Labels[libarcane.InternalResourceLabel])
-		hidden, _ := kit.ParseBool(dc.Labels[libarcane.HiddenResourceLabel])
+		internal, _ := kit.ParseBool(dc.Labels[selfcontainer.InternalResourceLabel])
+		hidden, _ := kit.ParseBool(dc.Labels[selfcontainer.HiddenResourceLabel])
 		if (!includeInternal && internal) || (!includeHidden && hidden) {
 			continue
 		}
@@ -2236,7 +2237,7 @@ func (s *ContainerService) BuildSummaries(
 		summary := types.NewContainerSummary(dc)
 		policy := updater.DefaultLabelPolicy().TagPolicy(dc.Labels)
 		resolved, policyErr := tagpolicy.Resolve(dc.Image, policy)
-		hidden, _ := kit.ParseBool(dc.Labels[libarcane.HiddenResourceLabel])
+		hidden, _ := kit.ParseBool(dc.Labels[selfcontainer.HiddenResourceLabel])
 		items = append(items, types.ContainerSummary{ //exhaustruct:enforce
 			EnvironmentTag:  summary.EnvironmentTag,
 			ID:              summary.ID,

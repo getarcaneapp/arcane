@@ -14,25 +14,24 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
+
 	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/docker/streams/bus"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/startup"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/startup"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -80,7 +79,7 @@ func NewDockerClientService(ctx context.Context, db *database.DB, settingsServic
 		eventBus:        bus.NewDockerEventBus(eventBusConfig),
 		streamConnected: concurrency.NewSignal[struct{}](),
 	}
-	context.AfterFunc(ctx, settingsService.SubscribeSettingsChanges([]string{"dockerHost"}, func([]libarcane.SettingUpdate) {
+	context.AfterFunc(ctx, settingsService.SubscribeSettingsChanges([]string{"dockerHost"}, func([]types.SettingUpdate) {
 		service.Close()
 	}))
 	return service
@@ -423,21 +422,21 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*t
 	var volumes *client.VolumeListResult
 
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "docker snapshot worker")
+		defer concurrency.RecoverToError(&workerErr, "docker snapshot worker")
 
 		var err error
 		containers, err = s.ListContainers(groupCtx, false)
 		return err
 	})
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "docker snapshot worker")
+		defer concurrency.RecoverToError(&workerErr, "docker snapshot worker")
 
 		var err error
 		images, err = s.ListImages(groupCtx)
 		return err
 	})
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "docker snapshot worker")
+		defer concurrency.RecoverToError(&workerErr, "docker snapshot worker")
 
 		var err error
 		networks, err = s.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) ([]network.Summary, error) {
@@ -453,7 +452,7 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*t
 		return nil
 	})
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "docker snapshot worker")
+		defer concurrency.RecoverToError(&workerErr, "docker snapshot worker")
 
 		var err error
 		volumes, err = s.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) (*client.VolumeListResult, error) {
@@ -508,14 +507,14 @@ func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary
 	var containers []container.Summary
 
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "docker image list worker")
+		defer concurrency.RecoverToError(&workerErr, "docker image list worker")
 
 		var err error
 		images, err = s.ListImages(groupCtx)
 		return err
 	})
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "docker container list worker")
+		defer concurrency.RecoverToError(&workerErr, "docker container list worker")
 
 		var err error
 		containers, err = s.ListContainers(groupCtx, false)
@@ -558,13 +557,13 @@ func (s *DockerClientService) GetAllNetworks(ctx context.Context) ([]network.Sum
 	var containers []container.Summary
 	var networks []network.Summary
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "network container list worker")
+		defer concurrency.RecoverToError(&workerErr, "network container list worker")
 		var err error
 		containers, err = s.ListContainers(groupCtx, false)
 		return err
 	})
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "network list worker")
+		defer concurrency.RecoverToError(&workerErr, "network list worker")
 		var err error
 		networks, err = s.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) ([]network.Summary, error) {
 			networkList, listErr := compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})

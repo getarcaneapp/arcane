@@ -1,0 +1,142 @@
+package httpx
+
+import (
+	"cmp"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+)
+
+type (
+	HeaderSetter interface {
+		SetHeader(key, value string)
+	}
+)
+
+func SetJSONStreamHeaders(headers HeaderSetter) {
+	headers.SetHeader("Content-Type", "application/x-json-stream")
+	SetStreamHeaders(headers)
+}
+
+func SetStreamHeaders(headers HeaderSetter) {
+	// no-store keeps proxies from caching or collapsing identical concurrent
+	// stream requests (e.g. two browser tabs), which would otherwise leave only
+	// the first connection attached to the live upstream stream.
+	headers.SetHeader("Cache-Control", "no-store, no-cache, must-revalidate")
+	headers.SetHeader("Connection", "keep-alive")
+	headers.SetHeader("X-Accel-Buffering", "no")
+}
+
+// ValidateWebSocketOrigin validates the Origin header for WebSocket connections
+// to prevent CSRF attacks. It checks:
+// 1. Same-origin requests (Origin matches Host)
+// 2. Allowed origins from appURL
+// 3. Handles empty Origin headers (some clients don't send it)
+func ValidateWebSocketOrigin(appURL string) func(r *http.Request) bool {
+	return func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+
+		if origin == "" {
+			return true
+		}
+
+		originURL, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+
+		if originURL.Host == r.Host {
+			return true
+		}
+
+		appURLParsed, err := url.Parse(appURL)
+		if err != nil {
+			return false
+		}
+		if originURL.Host == appURLParsed.Host {
+			return true
+		}
+
+		return isLocalhost(originURL.Host) && isLocalhost(r.Host)
+	}
+}
+
+// IsWebSocketUpgradeRequest reports whether r is a WebSocket handshake: the
+// Connection header contains "upgrade" (it can be a list, e.g. Firefox sends
+// "keep-alive, Upgrade") and Upgrade is "websocket".
+func IsWebSocketUpgradeRequest(r *http.Request) bool {
+	connection := strings.ToLower(r.Header.Get("Connection"))
+	upgrade := strings.ToLower(r.Header.Get("Upgrade"))
+
+	switch {
+	case !strings.Contains(connection, "upgrade"):
+		return false
+	case upgrade != "websocket":
+		return false
+	default:
+		return true
+	}
+}
+
+func isLocalhost(host string) bool {
+	hostOnly := host
+	if before, _, found := strings.CutLast(host, ":"); found {
+		hostOnly = before
+	}
+
+	return hostOnly == "localhost" ||
+		hostOnly == "127.0.0.1" ||
+		hostOnly == "::1" ||
+		strings.HasPrefix(hostOnly, "127.") ||
+		hostOnly == "[::1]"
+}
+
+// GetIntQueryParam reads and parses an integer query parameter from the request URL.
+// If `required` is true and the parameter is missing, or if parsing fails, an error is returned.
+func GetIntQueryParam(r *http.Request, name string, required bool) (int, error) {
+	q := r.URL.Query()
+	if !q.Has(name) || q.Get(name) == "" {
+		if required {
+			return 0, fmt.Errorf("missing numeric query parameter %s", name)
+		}
+		return 0, nil
+	}
+	n, err := strconv.Atoi(q.Get(name))
+	if err != nil {
+		return 0, fmt.Errorf("invalid numeric query parameter %s: %w", name, err)
+	}
+	return n, nil
+}
+
+// GetClientBaseURL determines the client's base URL from request headers.
+// It checks Origin, X-Forwarded-Host/Proto, and Host headers.
+// If none provide a valid URL, it falls back to the configured appURL.
+func GetClientBaseURL(origin, forwardedHost, forwardedProto, host, appURL string) string {
+	// 1. Trust Origin if present
+	if origin != "" {
+		return strings.TrimSuffix(origin, "/")
+	}
+
+	scheme := "http"
+	// Try to get scheme from AppURL as default
+	if u, err := url.Parse(appURL); err == nil && u.Scheme != "" {
+		scheme = u.Scheme
+	}
+
+	scheme = cmp.Or(forwardedProto, scheme)
+
+	// 2. Check X-Forwarded-Host
+	if forwardedHost != "" {
+		return fmt.Sprintf("%s://%s", scheme, forwardedHost)
+	}
+
+	// 3. Check Host
+	if host != "" {
+		return fmt.Sprintf("%s://%s", scheme, host)
+	}
+
+	// 4. Fallback
+	return strings.TrimSuffix(appURL, "/")
+}
