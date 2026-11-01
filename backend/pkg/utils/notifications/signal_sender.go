@@ -61,5 +61,5 @@ func SendSignal(ctx context.Context, config SignalConfig, message string) error 
 		return fmt.Errorf("failed to build shoutrrr Signal URL: %w", err)
 	}
 
-	return sendShoutrrrInternal("Signal", shoutrrrURL, message, nil)
+	return sendShoutrrr("Signal", shoutrrrURL, message, nil)
 }

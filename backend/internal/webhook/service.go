@@ -19,7 +19,7 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/kit/normalization"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
@@ -102,12 +102,6 @@ func NewWebhookService(
 		eventService:       eventService,
 		environmentService: environmentService,
 	}
-}
-
-// isRemoteWebhookEnvironment reports whether environmentID refers to a
-// remote environment (anything but the local Docker environment).
-func isRemoteWebhookEnvironment(environmentID string) bool {
-	return environmentID != "" && environmentID != types.LocalDockerEnvironmentID
 }
 
 // generateWebhookToken creates a new random webhook token and returns the raw token
@@ -299,7 +293,7 @@ func (s *WebhookService) CreateWebhook(
 
 	// Container references can only be resolved against the local Docker daemon;
 	// remote-environment webhooks keep the raw target and resolve on trigger.
-	if targetType == WebhookTargetTypeContainer && !isRemoteWebhookEnvironment(environmentID) {
+	if targetType == WebhookTargetTypeContainer && !(environmentID != "" && environmentID != types.LocalDockerEnvironmentID) {
 		targetRef, err = s.resolveContainerWebhookTargetRef(ctx, targetID)
 		if err != nil {
 			return nil, "", err
@@ -421,7 +415,7 @@ func (s *WebhookService) AggregateWebhookSummaries(ctx context.Context) (types.A
 // remoteWebhookTargetNames fetches target names keyed by target type and ID from a remote environment.
 func (s *WebhookService) remoteWebhookTargetNames(ctx context.Context, environmentID string, webhooks []Webhook) map[string]map[string]string {
 	names := map[string]map[string]string{}
-	if !isRemoteWebhookEnvironment(environmentID) {
+	if !(environmentID != "" && environmentID != types.LocalDockerEnvironmentID) {
 		return names
 	}
 
@@ -446,7 +440,7 @@ func (s *WebhookService) resolveWebhookTargetName(ctx context.Context, wh *Webho
 	switch wh.TargetType {
 	case WebhookTargetTypeContainer:
 		// Remote containers cannot be resolved against the local Docker daemon.
-		if isRemoteWebhookEnvironment(wh.EnvironmentID) {
+		if wh.EnvironmentID != "" && wh.EnvironmentID != types.LocalDockerEnvironmentID {
 			if strings.TrimSpace(wh.TargetRef) != "" {
 				return wh.TargetRef
 			}
@@ -655,7 +649,7 @@ func (s *WebhookService) DrainActions(ctx context.Context) error {
 func (s *WebhookService) executeWebhookAction(ctx context.Context, wh *Webhook, actionType string) (*types.UpdaterResult, error) {
 	// Webhooks are stored and triggered on the manager; actions against remote
 	// environments are forwarded through the environment proxy.
-	if isRemoteWebhookEnvironment(wh.EnvironmentID) {
+	if wh.EnvironmentID != "" && wh.EnvironmentID != types.LocalDockerEnvironmentID {
 		return s.executeRemoteWebhookAction(ctx, wh, actionType)
 	}
 

@@ -142,16 +142,9 @@ func NormalizeDeployPullPolicy(policy string) string {
 	}
 }
 
-// IsAlwaysPullPolicy reports whether policy means an unconditional pull.
-// Refresh windows (daily/weekly/every_N) are not "always": they pull only
-// once their window has elapsed, matching compose v5.5.0.
-func IsAlwaysPullPolicy(policy string) bool {
-	return policy == "always"
-}
-
-// refreshWindowForPolicyInternal resolves policy as a refresh window
+// refreshWindowForPolicy resolves policy as a refresh window
 // (daily/weekly/every_N), reporting false for every other policy.
-func refreshWindowForPolicyInternal(svc composetypes.ServiceConfig, policy string) (time.Duration, bool) {
+func refreshWindowForPolicy(svc composetypes.ServiceConfig, policy string) (time.Duration, bool) {
 	normalized := svc
 	normalized.PullPolicy = policy
 	parsed, window, err := normalized.GetPullPolicy()
@@ -177,10 +170,10 @@ func DecideDeployImageAction(svc composetypes.ServiceConfig, pullPolicyOverride 
 			return DeployImageDecision{Build: true}
 		case policy == "never":
 			return DeployImageDecision{RequireLocalOnly: true}
-		case IsAlwaysPullPolicy(policy):
+		case (policy == "always"):
 			return DeployImageDecision{PullAlways: true, FallbackBuildOnPullFail: true}
 		default:
-			if window, ok := refreshWindowForPolicyInternal(svc, policy); ok {
+			if window, ok := refreshWindowForPolicy(svc, policy); ok {
 				return DeployImageDecision{
 					PullIfStale:             true,
 					StaleAfter:              window,
@@ -194,10 +187,10 @@ func DecideDeployImageAction(svc composetypes.ServiceConfig, pullPolicyOverride 
 	switch {
 	case policy == "never":
 		return DeployImageDecision{RequireLocalOnly: true}
-	case IsAlwaysPullPolicy(policy):
+	case (policy == "always"):
 		return DeployImageDecision{PullAlways: true}
 	default:
-		if window, ok := refreshWindowForPolicyInternal(svc, policy); ok {
+		if window, ok := refreshWindowForPolicy(svc, policy); ok {
 			return DeployImageDecision{PullIfStale: true, StaleAfter: window}
 		}
 		return DeployImageDecision{PullIfMissing: true}

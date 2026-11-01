@@ -46,10 +46,16 @@ func NormalizeUpdate(name string, color types.ProjectTagColor, attached bool) (s
 	return normalized, normalizedColor, nil
 }
 
+type TagUpdate struct {
+	Name     string
+	Color    types.ProjectTagColor
+	Attached bool
+}
+
 // ApplyUpdate attaches or detaches a normalized UI tag. Compose-owned names are
 // read-only, attaching is idempotent and UI tags are capped per project.
-func ApplyUpdate(store Store, projectID, name string, color types.ProjectTagColor, attached bool) error {
-	composeCount, err := store.CountTag(projectID, name, types.ProjectTagSourceCompose)
+func ApplyUpdate(store Store, projectID string, update TagUpdate) error {
+	composeCount, err := store.CountTag(projectID, update.Name, types.ProjectTagSourceCompose)
 	if err != nil {
 		return fmt.Errorf("check Compose tag source: %w", err)
 	}
@@ -57,14 +63,14 @@ func ApplyUpdate(store Store, projectID, name string, color types.ProjectTagColo
 		return ErrComposeTagReadOnly
 	}
 
-	if !attached {
-		if detachErr := store.DeleteTag(projectID, name, types.ProjectTagSourceUI); detachErr != nil {
+	if !update.Attached {
+		if detachErr := store.DeleteTag(projectID, update.Name, types.ProjectTagSourceUI); detachErr != nil {
 			return fmt.Errorf("detach UI project tag: %w", detachErr)
 		}
 		return nil
 	}
 
-	existing, err := store.CountTag(projectID, name, types.ProjectTagSourceUI)
+	existing, err := store.CountTag(projectID, update.Name, types.ProjectTagSourceUI)
 	if err != nil {
 		return fmt.Errorf("check UI tag source: %w", err)
 	}
@@ -79,15 +85,15 @@ func ApplyUpdate(store Store, projectID, name string, color types.ProjectTagColo
 		return fmt.Errorf("a project cannot have more than %d UI tags", projects.ProjectTagsPerSourceLimit)
 	}
 	// One color per tag name across projects; the normalized color only seeds new names.
-	storedColor, found, err := store.StoredColor(name)
+	storedColor, found, err := store.StoredColor(update.Name)
 	if err != nil {
 		return fmt.Errorf("resolve project tag color: %w", err)
 	}
 	if attachErr := store.InsertIgnoringConflict(types.ProjectTagAssignment{
 		ProjectID: projectID,
-		Name:      name,
+		Name:      update.Name,
 		Source:    types.ProjectTagSourceUI,
-		Color:     kit.Ternary(found, storedColor, color),
+		Color:     kit.Ternary(found, storedColor, update.Color),
 	}); attachErr != nil {
 		return fmt.Errorf("attach UI project tag: %w", attachErr)
 	}

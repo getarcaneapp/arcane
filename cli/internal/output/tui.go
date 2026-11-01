@@ -15,7 +15,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/term"
 	"github.com/docker/go-units"
-	"go.getarcane.app/kit/pkg"
+	"github.com/mattn/go-runewidth"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -119,7 +120,7 @@ func StartTracker(ctx context.Context, out io.Writer, enabled bool, labels ...st
 					} else {
 						count = fmt.Sprintf("%d/%d", current, step.total)
 					}
-					barWidth := min(24, max(width-visibleWidth(step.label)-len(count)-7, 1))
+					barWidth := min(24, max(width-runewidth.StringWidth(ansiRegexp.ReplaceAllString(step.label, ""))-len(count)-7, 1))
 					bar := progress.New(progress.WithWidth(barWidth), progress.WithColors(arcanePurple))
 					showColor := colorsEnabled()
 					bar.FullColor = kit.Ternary(showColor, bar.FullColor, nil)

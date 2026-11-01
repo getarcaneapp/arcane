@@ -16,7 +16,7 @@ import (
 )
 
 func TestConvertServiceMountsResolvesComposeResourceNames(t *testing.T) {
-	mounts, err := convertServiceMountsInternal(
+	mounts, err := convertServiceMounts(
 		[]composegotypes.ServiceVolumeConfig{
 			{Type: "volume", Source: "plain", Target: "/plain"},
 			{Type: "volume", Source: "driver", Target: "/driver"},
@@ -61,7 +61,7 @@ func TestApplyDeployConfigConvertsCPUFractionToNanoCPUs(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, applyDeployConfigInternal(spec, deploy, nil, ""))
+	require.NoError(t, applyDeployConfig(spec, deploy, nil, ""))
 	require.Equal(t, int64(500_000_000), spec.TaskTemplate.Resources.Limits.NanoCPUs)
 	require.Equal(t, int64(536870912), spec.TaskTemplate.Resources.Limits.MemoryBytes)
 	require.Equal(t, int64(250_000_000), spec.TaskTemplate.Resources.Reservations.NanoCPUs)
@@ -90,7 +90,7 @@ configs:
 	plans, err := planConfigs(project, namespace{name: "stack"})
 	require.NoError(t, err)
 	require.Empty(t, plans["app_config"].Data)
-	require.Equal(t, managedResourceNameInternal("stack_app_config", kit.SHA256Hex[[]byte](nil)), plans["app_config"].Meta.Name)
+	require.Equal(t, managedResourceName("stack_app_config", kit.SHA256Hex[[]byte](nil)), plans["app_config"].Meta.Name)
 }
 
 func TestBuildServiceSpecConformance(t *testing.T) {
@@ -187,7 +187,7 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			service := composegotypes.ServiceConfig{Name: "web", Image: "nginx:alpine"}
 			test.configure(&service)
-			spec, err := buildServiceSpecInternal(
+			spec, err := buildServiceSpec(
 				service,
 				namespace{name: "stack"},
 				map[string]string{types.SwarmStackNamespaceLabel: "stack"},
@@ -261,7 +261,7 @@ secrets:
 	stackLabels := map[string]string{types.SwarmStackNamespaceLabel: "stack"}
 
 	build := func() swarm.ServiceSpec {
-		spec, buildErr := buildServiceSpecInternal(
+		spec, buildErr := buildServiceSpec(
 			project.Services["web"],
 			ns,
 			stackLabels,
@@ -304,7 +304,7 @@ secrets:
 			require.Equal(t, uint64(1), spec.UpdateConfig.Parallelism)
 		}},
 		{aspect: "ipam options", check: func(t *testing.T) {
-			require.Equal(t, "fixture", convertIPAMInternal(project.Networks["default"].Ipam).Options["source"])
+			require.Equal(t, "fixture", convertIPAM(project.Networks["default"].Ipam).Options["source"])
 		}},
 		{aspect: "determinism", check: func(t *testing.T) {
 			require.Equal(t, spec, build())

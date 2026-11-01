@@ -121,7 +121,7 @@ func TestRequirePermission_EnvScopedDoesNotLeakAcrossEnvs(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, rec.Code)
 }
 
-func TestRequirePermissionEnvironmentGrantCannotManageGlobalNotificationsInternal(t *testing.T) {
+func TestRequirePermissionEnvironmentGrantCannotManageGlobalNotifications(t *testing.T) {
 	router := echo.New()
 	api := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
 

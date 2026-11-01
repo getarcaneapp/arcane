@@ -849,8 +849,15 @@ func (s *AuthService) verifyTokenClaims(ctx context.Context, tokenHash string, c
 	return dbUser, userSession.ID, nil
 }
 
-func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPassword, newPassword, currentSessionID string) error {
-	localUser, err := s.userService.GetUserByID(ctx, userID)
+type ChangePasswordRequest struct {
+	UserID           string
+	CurrentPassword  string
+	NewPassword      string
+	CurrentSessionID string
+}
+
+func (s *AuthService) ChangePassword(ctx context.Context, req ChangePasswordRequest) error {
+	localUser, err := s.userService.GetUserByID(ctx, req.UserID)
 	if err != nil {
 		return err
 	}
@@ -859,21 +866,21 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 		return common.Classify(common.ErrForbidden, errors.New("local passwords cannot be set for accounts managed by an identity provider"))
 	}
 	if localUser.PasswordHash != "" {
-		if validatePasswordErr := s.userService.ValidatePassword(ctx, localUser.PasswordHash, currentPassword); validatePasswordErr != nil {
+		if validatePasswordErr := s.userService.ValidatePassword(ctx, localUser.PasswordHash, req.CurrentPassword); validatePasswordErr != nil {
 			return ErrInvalidCredentials
 		}
 	}
 
 	policy := s.settingsService.GetStringSetting(ctx, "authPasswordPolicy")
-	if validatePasswordPolicyErr := validation.ValidatePasswordPolicy(newPassword, policy); validatePasswordPolicyErr != nil {
+	if validatePasswordPolicyErr := validation.ValidatePasswordPolicy(req.NewPassword, policy); validatePasswordPolicyErr != nil {
 		return common.Classify(common.ErrValidation, &types.FieldError{Field: "newPassword", Err: validatePasswordPolicyErr})
 	}
 
-	if _, err = s.userService.SetPasswordAndRevokeSessionsExcept(ctx, localUser, newPassword, currentSessionID, nil); err != nil {
+	if _, err = s.userService.SetPasswordAndRevokeSessionsExcept(ctx, localUser, req.NewPassword, req.CurrentSessionID, nil); err != nil {
 		return err
 	}
 	// The current session's cached user still carries the old password flags.
-	s.InvalidateUserTokenCache(userID)
+	s.InvalidateUserTokenCache(req.UserID)
 	return nil
 }
 

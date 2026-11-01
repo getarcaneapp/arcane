@@ -692,7 +692,13 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 			}.Run(ctx, updates)
 		},
 		DisablePolicyRemote: func(ctx context.Context, policy *types.SystemBackupPolicy, field string) (bool, error) {
-			return backup.DisableStoredRemote(ctx, s.db, &SystemBackupPolicy{}, policy.ID, policy.S3DestinationID, policy.LocalEnabled, field)
+			return backup.DisableStoredRemote(ctx, s.db, backup.DisableRemoteRequest{
+				Model:         &SystemBackupPolicy{},
+				ID:            policy.ID,
+				DestinationID: policy.S3DestinationID,
+				LocalEnabled:  policy.LocalEnabled,
+				Field:         field,
+			})
 		},
 		CheckScheduledRemote: func(ctx context.Context, destinationID string) error {
 			return backup.CheckScheduledRemote(ctx, s.db, s3Destinations, "system_backup_runs", destinationID, "arcane-system-recovery")

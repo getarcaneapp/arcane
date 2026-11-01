@@ -11,6 +11,7 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
@@ -19,10 +20,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
-func TestDetachFromHTTPContextInternal(t *testing.T) {
+func TestDetachFromHTTPContext(t *testing.T) {
 	t.Run("survives parent cancellation", func(t *testing.T) {
 		parent, parentCancel := context.WithCancel(t.Context())
-		detached, detachedCancel := detachFromHTTPContextInternal(parent, defaultComposeTimeout)
+		detached, detachedCancel := detachFromHTTPContext(parent, defaultComposeTimeout)
 		defer detachedCancel()
 
 		// Cancel the parent (simulates HTTP request ending).
@@ -39,14 +40,14 @@ func TestDetachFromHTTPContextInternal(t *testing.T) {
 	t.Run("preserves context values", func(t *testing.T) {
 		type testKey struct{}
 		parent := context.WithValue(t.Context(), testKey{}, "hello")
-		detached, cancel := detachFromHTTPContextInternal(parent, defaultComposeTimeout)
+		detached, cancel := detachFromHTTPContext(parent, defaultComposeTimeout)
 		defer cancel()
 
 		require.Equal(t, "hello", detached.Value(testKey{}))
 	})
 
 	t.Run("has its own deadline", func(t *testing.T) {
-		detached, cancel := detachFromHTTPContextInternal(t.Context(), defaultComposeTimeout)
+		detached, cancel := detachFromHTTPContext(t.Context(), defaultComposeTimeout)
 		defer cancel()
 
 		deadline, ok := detached.Deadline()
@@ -60,7 +61,7 @@ func TestDetachFromHTTPContextInternal(t *testing.T) {
 
 		time.Sleep(5 * time.Millisecond) // ensure parent deadline has passed
 
-		detached, detachedCancel := detachFromHTTPContextInternal(parent, defaultComposeTimeout)
+		detached, detachedCancel := detachFromHTTPContext(parent, defaultComposeTimeout)
 		defer detachedCancel()
 
 		require.NoError(t, detached.Err())
@@ -71,7 +72,7 @@ func TestDetachFromHTTPContextInternal(t *testing.T) {
 	})
 
 	t.Run("deadline scales with requested timeout", func(t *testing.T) {
-		detached, cancel := detachFromHTTPContextInternal(t.Context(), 2*time.Hour)
+		detached, cancel := detachFromHTTPContext(t.Context(), 2*time.Hour)
 		defer cancel()
 
 		deadline, ok := detached.Deadline()
@@ -81,7 +82,7 @@ func TestDetachFromHTTPContextInternal(t *testing.T) {
 
 	t.Run("app lifecycle context cancels detached work on shutdown", func(t *testing.T) {
 		appCtx, cancelApp := context.WithCancel(utils.WithAppLifecycleContext(t.Context()))
-		detached, detachedCancel := detachFromHTTPContextInternal(appCtx, defaultComposeTimeout)
+		detached, detachedCancel := detachFromHTTPContext(appCtx, defaultComposeTimeout)
 		defer detachedCancel()
 
 		cancelApp()
@@ -104,28 +105,28 @@ func TestComposeUpOptions_RemoveOrphans(t *testing.T) {
 	proj := &composetypes.Project{Name: "test"}
 
 	t.Run("removeOrphans true propagates to CreateOptions", func(t *testing.T) {
-		upOptions, _ := composeUpOptionsInternal(proj, nil, true, false, 0, ComposeEnvOptions{})
+		upOptions, _ := composeUpOptions(proj, types.ComposeUpOptions{RemoveOrphans: true}, 0, ComposeEnvOptions{})
 		require.True(t, upOptions.RemoveOrphans)
 	})
 
 	t.Run("removeOrphans false leaves CreateOptions disabled", func(t *testing.T) {
-		upOptions, _ := composeUpOptionsInternal(proj, nil, false, false, 0, ComposeEnvOptions{})
+		upOptions, _ := composeUpOptions(proj, types.ComposeUpOptions{}, 0, ComposeEnvOptions{})
 		require.False(t, upOptions.RemoveOrphans)
 	})
 
 	t.Run("removeOrphans is independent of forceRecreate", func(t *testing.T) {
 		// forceRecreate drives the Recreate policy, not RemoveOrphans.
-		upOptions, _ := composeUpOptionsInternal(proj, nil, true, true, 0, ComposeEnvOptions{})
+		upOptions, _ := composeUpOptions(proj, types.ComposeUpOptions{RemoveOrphans: true, ForceRecreate: true}, 0, ComposeEnvOptions{})
 		require.True(t, upOptions.RemoveOrphans)
 		require.Equal(t, api.RecreateForce, upOptions.Recreate)
 
-		upOptions, _ = composeUpOptionsInternal(proj, nil, false, true, 0, ComposeEnvOptions{})
+		upOptions, _ = composeUpOptions(proj, types.ComposeUpOptions{ForceRecreate: true}, 0, ComposeEnvOptions{})
 		require.False(t, upOptions.RemoveOrphans)
 		require.Equal(t, api.RecreateForce, upOptions.Recreate)
 	})
 
 	t.Run("COMPOSE_REMOVE_ORPHANS / COMPOSE_IGNORE_ORPHANS propagate", func(t *testing.T) {
-		upOptions, _ := composeUpOptionsInternal(proj, nil, false, false, 0, ComposeEnvOptions{RemoveOrphans: true, IgnoreOrphans: true})
+		upOptions, _ := composeUpOptions(proj, types.ComposeUpOptions{}, 0, ComposeEnvOptions{RemoveOrphans: true, IgnoreOrphans: true})
 		require.True(t, upOptions.RemoveOrphans)
 		require.True(t, upOptions.IgnoreOrphans)
 	})

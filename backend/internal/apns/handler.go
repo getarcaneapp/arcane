@@ -98,7 +98,10 @@ func (h *ApnsHandler) UpdateDevice(ctx context.Context, input *UpdateDeviceInput
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid request body")
 	}
-	device, err := h.service.UpdateDevice(ctx, user.ID, input.ID, input.Body, submitted)
+	device, err := h.service.UpdateDevice(ctx, user.ID, input.ID, DeviceUpdate{
+		Request:   input.Body,
+		Submitted: submitted,
+	})
 	if err != nil {
 		return nil, apnsHTTPError(err)
 	}

@@ -21,10 +21,10 @@ func IsValidUserEmail(email string) bool {
 		return false
 	}
 
-	return isValidLocalPartInternal(localPart) && isValidDomainPartInternal(domainPart)
+	return isValidLocalPart(localPart) && isValidDomainPart(domainPart)
 }
 
-func isValidLocalPartInternal(localPart string) bool {
+func isValidLocalPart(localPart string) bool {
 	if localPart == "" || len(localPart) > 64 {
 		return false
 	}
@@ -36,7 +36,7 @@ func isValidLocalPartInternal(localPart string) bool {
 	return localPartPattern.MatchString(localPart)
 }
 
-func isValidDomainPartInternal(domainPart string) bool {
+func isValidDomainPart(domainPart string) bool {
 	if domainPart == "" || len(domainPart) > 255 {
 		return false
 	}
@@ -46,7 +46,7 @@ func isValidDomainPartInternal(domainPart string) bool {
 	}
 
 	if strings.HasPrefix(domainPart, "[") && strings.HasSuffix(domainPart, "]") {
-		return isValidAddressLiteralInternal(domainPart)
+		return isValidAddressLiteral(domainPart)
 	}
 
 	asciiDomain, err := idna.Lookup.ToASCII(domainPart)
@@ -77,7 +77,7 @@ func isValidDomainPartInternal(domainPart string) bool {
 	return true
 }
 
-func isValidAddressLiteralInternal(domainPart string) bool {
+func isValidAddressLiteral(domainPart string) bool {
 	literal := strings.TrimSuffix(strings.TrimPrefix(domainPart, "["), "]")
 	if strings.HasPrefix(strings.ToLower(literal), "ipv6:") {
 		ip := net.ParseIP(literal[5:])

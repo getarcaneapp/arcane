@@ -23,7 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
 )
 
-type dockerProjectVolumeRenameMigrationInternal struct {
+type dockerProjectVolumeRenameMigration struct {
 	dockerClient   *client.Client
 	oldComposeName string
 	newComposeName string
@@ -33,12 +33,12 @@ type dockerProjectVolumeRenameMigrationInternal struct {
 	removedOld     []types.VolumeRenameEntry
 }
 
-type projectVolumeCopyRuntimeInternal struct {
+type projectVolumeCopyRuntime struct {
 	Image string
 }
 
 const (
-	projectVolumeCopyMountPathInternal = "/volume"
+	projectVolumeCopyMountPath = "/volume"
 )
 
 // NewMigration prepares generic volume copies with caller-supplied target configuration.
@@ -46,7 +46,7 @@ func NewMigration(dockerClient *client.Client, entries []types.VolumeRenameEntry
 	if len(entries) == 0 {
 		return nil
 	}
-	return &dockerProjectVolumeRenameMigrationInternal{
+	return &dockerProjectVolumeRenameMigration{
 		dockerClient:   dockerClient,
 		entries:        entries,
 		oldComposeName: oldProject,
@@ -96,7 +96,7 @@ func PlanRename(ctx context.Context, dockerClient *client.Client, oldName, newNa
 	return NewMigration(dockerClient, []types.VolumeRenameEntry{entry}, "", "", toolsImage), nil
 }
 
-func (m *dockerProjectVolumeRenameMigrationInternal) Apply(ctx context.Context) error {
+func (m *dockerProjectVolumeRenameMigration) Apply(ctx context.Context) error {
 	if m == nil || len(m.entries) == 0 {
 		return nil
 	}
@@ -127,7 +127,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Apply(ctx context.Context) 
 	return nil
 }
 
-func (m *dockerProjectVolumeRenameMigrationInternal) Commit(ctx context.Context) error {
+func (m *dockerProjectVolumeRenameMigration) Commit(ctx context.Context) error {
 	if m == nil || len(m.entries) == 0 {
 		return nil
 	}
@@ -153,7 +153,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Commit(ctx context.Context)
 	return nil
 }
 
-func (m *dockerProjectVolumeRenameMigrationInternal) JournalVolumes() []types.VolumeJournalVolume {
+func (m *dockerProjectVolumeRenameMigration) JournalVolumes() []types.VolumeJournalVolume {
 	if m == nil || len(m.entries) == 0 {
 		return nil
 	}
@@ -172,7 +172,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) JournalVolumes() []types.Vo
 	return volumes
 }
 
-func (m *dockerProjectVolumeRenameMigrationInternal) Rollback(ctx context.Context) error {
+func (m *dockerProjectVolumeRenameMigration) Rollback(ctx context.Context) error {
 	if m == nil || m.dockerClient == nil {
 		return nil
 	}
@@ -223,7 +223,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Rollback(ctx context.Contex
 			rollbackErr = errors.Join(rollbackErr, NewTargetPreservedDuringRollbackError(types.VolumeJournalVolume{
 				OldName: entry.OldName,
 				NewName: entry.NewName,
-			}, errProjectRenameRollbackSourceMissingInternal))
+			}, errProjectRenameRollbackSourceMissing))
 		} else {
 			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("source volume %s and target volume %s are missing during rollback", entry.OldName, entry.NewName))
 		}
@@ -236,7 +236,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Rollback(ctx context.Contex
 	return rollbackErr
 }
 
-func (m *dockerProjectVolumeRenameMigrationInternal) rollbackCreatedTargetsPreserving(ctx context.Context, dockerClient *client.Client, preservedTargets map[string]struct{}) error {
+func (m *dockerProjectVolumeRenameMigration) rollbackCreatedTargetsPreserving(ctx context.Context, dockerClient *client.Client, preservedTargets map[string]struct{}) error {
 	var rollbackErr error
 	remainingCreated := make([]types.VolumeRenameEntry, 0, len(preservedTargets))
 	for _, entry := range slices.Backward(m.createdNew) {
@@ -345,7 +345,7 @@ func removeProjectVolumeWithRetry(ctx context.Context, dockerClient *client.Clie
 	return err
 }
 
-func copyProjectVolumeData(ctx context.Context, dockerClient *client.Client, copyRuntime projectVolumeCopyRuntimeInternal, sourceVolume, targetVolume string) error {
+func copyProjectVolumeData(ctx context.Context, dockerClient *client.Client, copyRuntime projectVolumeCopyRuntime, sourceVolume, targetVolume string) error {
 	sourceID, cleanupSource, err := createProjectVolumeCopyHolderContainer(ctx, dockerClient, copyRuntime, sourceVolume, true)
 	if err != nil {
 		return err
@@ -359,7 +359,7 @@ func copyProjectVolumeData(ctx context.Context, dockerClient *client.Client, cop
 	defer cleanupTarget()
 
 	copyResult, err := dockerClient.CopyFromContainer(ctx, sourceID, client.CopyFromContainerOptions{
-		SourcePath: projectVolumeCopyMountPathInternal + "/.",
+		SourcePath: projectVolumeCopyMountPath + "/.",
 	})
 	if err != nil {
 		return fmt.Errorf("read source volume archive: %w", err)
@@ -367,7 +367,7 @@ func copyProjectVolumeData(ctx context.Context, dockerClient *client.Client, cop
 	defer func() { _ = copyResult.Content.Close() }()
 
 	_, err = dockerClient.CopyToContainer(ctx, targetID, client.CopyToContainerOptions{
-		DestinationPath: projectVolumeCopyMountPathInternal,
+		DestinationPath: projectVolumeCopyMountPath,
 		Content:         copyResult.Content,
 	})
 	if err != nil {
@@ -386,13 +386,13 @@ func copyProjectVolumeData(ctx context.Context, dockerClient *client.Client, cop
 
 func createProjectVolumeCopyHolderContainer(ctx context.Context,
 	dockerClient *client.Client,
-	copyRuntime projectVolumeCopyRuntimeInternal,
+	copyRuntime projectVolumeCopyRuntime,
 	volumeName string,
 	readOnly bool) (string,
 	func(),
 	error,
 ) {
-	bind := volumeName + ":" + projectVolumeCopyMountPathInternal
+	bind := volumeName + ":" + projectVolumeCopyMountPath
 	if readOnly {
 		bind += ":ro"
 	}
@@ -426,17 +426,17 @@ func createProjectVolumeCopyHolderContainer(ctx context.Context,
 	return resp.ID, cleanup, nil
 }
 
-func getProjectVolumeCopyRuntime(ctx context.Context, dockerClient *client.Client, toolsImage string) (projectVolumeCopyRuntimeInternal, error) {
+func getProjectVolumeCopyRuntime(ctx context.Context, dockerClient *client.Client, toolsImage string) (projectVolumeCopyRuntime, error) {
 	if dockerClient == nil {
-		return projectVolumeCopyRuntimeInternal{}, errors.New("docker service unavailable")
+		return projectVolumeCopyRuntime{}, errors.New("docker service unavailable")
 	}
 
 	image, err := volumehelper.ResolveHelperImage(ctx, dockerClient, toolsImage)
 	if err != nil {
-		return projectVolumeCopyRuntimeInternal{}, err
+		return projectVolumeCopyRuntime{}, err
 	}
 
-	return projectVolumeCopyRuntimeInternal{
+	return projectVolumeCopyRuntime{
 		Image: image,
 	}, nil
 }
@@ -531,7 +531,7 @@ func RollbackVolume(ctx context.Context, dockerClient *client.Client, vol types.
 	case oldExists && newExists:
 		return removeProjectRenameJournalTargetVolume(ctx, dockerClient, vol.NewName, oldExists, newExists)
 	case !oldExists && newExists:
-		return NewTargetPreservedDuringRollbackError(vol, errProjectRenameRollbackSourceMissingInternal)
+		return NewTargetPreservedDuringRollbackError(vol, errProjectRenameRollbackSourceMissing)
 	case !oldExists:
 		slog.WarnContext(ctx, "project rename source and target volumes are missing during rollback", "sourceVolume", vol.OldName, "targetVolume", vol.NewName)
 	}
@@ -562,7 +562,7 @@ func cleanupProjectRenameRollbackTargetVolume(ctx context.Context, dockerClient 
 	case oldExists && newExists:
 		return removeProjectRenameJournalTargetVolume(ctx, dockerClient, vol.NewName, oldExists, newExists)
 	case !oldExists && newExists:
-		return NewTargetPreservedDuringRollbackError(vol, errProjectRenameRollbackSourceMissingInternal)
+		return NewTargetPreservedDuringRollbackError(vol, errProjectRenameRollbackSourceMissing)
 	case !oldExists:
 		slog.WarnContext(ctx, "project rename source and target volumes are missing during rollback cleanup", "sourceVolume", vol.OldName, "targetVolume", vol.NewName)
 	}
@@ -601,7 +601,7 @@ func NewSourceCleanupError(sourceVolume string, err error) error {
 	}
 }
 
-var errProjectRenameRollbackSourceMissingInternal = errors.New("source volume is missing and target volume may contain the only remaining data copy")
+var errProjectRenameRollbackSourceMissing = errors.New("source volume is missing and target volume may contain the only remaining data copy")
 
 func NewTargetPreservedDuringRollbackError(vol types.VolumeJournalVolume, err error) error {
 	return &types.TargetPreservedDuringRollbackError{

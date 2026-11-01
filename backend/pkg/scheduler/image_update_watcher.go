@@ -30,7 +30,7 @@ const (
 	imageUpdateWatcherDefaultSchedule = "0 0 * * * *"
 )
 
-type imageUpdateScannerInternal interface {
+type imageUpdateScanner interface {
 	RunImageCheck(ctx context.Context, request types.ImageUpdateCheckRequest) (types.SchedulerOutcome, error)
 }
 
@@ -39,20 +39,20 @@ type pollingSettingReader interface {
 	GetStringSetting(ctx context.Context, key string) string
 }
 
-type dockerEventBusProviderInternal interface {
+type dockerEventBusProvider interface {
 	EventBus() *bus.DockerEventBus
 }
 
-type projectImageRefsBackfillerInternal interface {
+type projectImageRefsBackfiller interface {
 	BackfillProjectImageRefs(ctx context.Context) (int, error)
 }
 
 // ImageUpdateWatcher debounces Docker events and admits durable image scans.
 type ImageUpdateWatcher struct {
-	imageUpdateService     imageUpdateScannerInternal
+	imageUpdateService     imageUpdateScanner
 	settingsService        pollingSettingReader
-	dockerService          dockerEventBusProviderInternal
-	projectService         projectImageRefsBackfillerInternal
+	dockerService          dockerEventBusProvider
+	projectService         projectImageRefsBackfiller
 	coordinator            *runs.Coordinator
 	trigger                chan struct{}
 	scheduleRefresh        chan struct{}

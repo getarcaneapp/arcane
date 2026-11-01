@@ -160,7 +160,7 @@ func loadFromEnv(cfg *Config) error {
 
 		envValue := os.Getenv(envTag)
 		var fromFile bool
-		if hasOption(fieldType, "file") {
+		if slices.Contains(strings.Split(fieldType.Tag.Get("options"), ","), "file") {
 			envValue, _, fromFile = utils.LookupEnvOrFile(envTag)
 		}
 		if !fromFile {
@@ -175,11 +175,6 @@ func loadFromEnv(cfg *Config) error {
 		}
 	})
 	return errors.Join(errs...)
-}
-
-// hasOption reports whether the field's `options` tag lists option.
-func hasOption(fieldType reflect.StructField, option string) bool {
-	return slices.Contains(strings.Split(fieldType.Tag.Get("options"), ","), option)
 }
 
 // applyOptions processes special options for Config fields after initial load.

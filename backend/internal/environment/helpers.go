@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/samber/hot"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // agentTokenCache maps agent tokens to environment IDs; the reverse index drops
@@ -99,10 +99,6 @@ func (i *accessTokenIndex) sync(envID, token string) {
 	}
 }
 
-func isActiveRemoteEnvironment(env Environment) bool {
-	return env.ID != "" && env.ID != "0" && env.Enabled && !env.Hidden
-}
-
 func (c *remoteEnvSnapshotCache) put(env Environment) {
 	if env.ID == "" {
 		return
@@ -111,7 +107,7 @@ func (c *remoteEnvSnapshotCache) put(env Environment) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if isActiveRemoteEnvironment(env) {
+	if env.ID != "" && env.ID != "0" && env.Enabled && !env.Hidden {
 		c.envs[env.ID] = env
 	} else {
 		delete(c.envs, env.ID)

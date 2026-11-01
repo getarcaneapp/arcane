@@ -714,7 +714,11 @@ func TestChangePassword_RevokesAllSessions(t *testing.T) {
 	sessionA, _ := createTestSession(t, db, localUser.ID, time.Now().Add(time.Hour))
 	sessionB, _ := createTestSession(t, db, localUser.ID, time.Now().Add(time.Hour))
 
-	require.NoError(t, s.ChangePassword(t.Context(), localUser.ID, "old-password", "New-password1!", ""))
+	require.NoError(t, s.ChangePassword(t.Context(), ChangePasswordRequest{
+		UserID:          localUser.ID,
+		CurrentPassword: "old-password",
+		NewPassword:     "New-password1!",
+	}))
 
 	sessionA, err = s.sessionService.GetSessionByID(t.Context(), sessionA.ID)
 	require.NoError(t, err)
@@ -747,7 +751,12 @@ func TestChangePassword_KeepsCurrentSessionAlive(t *testing.T) {
 	current, _ := createTestSession(t, db, localUser.ID, time.Now().Add(time.Hour))
 	other, _ := createTestSession(t, db, localUser.ID, time.Now().Add(time.Hour))
 
-	require.NoError(t, s.ChangePassword(t.Context(), localUser.ID, "old-password", "New-password1!", current.ID))
+	require.NoError(t, s.ChangePassword(t.Context(), ChangePasswordRequest{
+		UserID:           localUser.ID,
+		CurrentPassword:  "old-password",
+		NewPassword:      "New-password1!",
+		CurrentSessionID: current.ID,
+	}))
 
 	current, err = s.sessionService.GetSessionByID(t.Context(), current.ID)
 	require.NoError(t, err)

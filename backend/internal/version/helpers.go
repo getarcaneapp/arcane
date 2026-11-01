@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -65,14 +65,6 @@ type commitComparison struct {
 	TotalCommits int `json:"total_commits"`
 }
 
-func isCommitSHA(revision string) bool {
-	return commitSHAPattern.MatchString(strings.ToLower(strings.TrimSpace(revision)))
-}
-
-func compareURL(base, head string) string {
-	return repoURL + "/compare/" + base + "..." + head
-}
-
 func (s *VersionService) commitNotes(ctx context.Context, base, head string) string {
 	key := base + "..." + head
 	notes, found, err := s.commitNotesCache.GetWithLoaders(key, func(_ []string) (map[string]string, error) {
@@ -82,7 +74,7 @@ func (s *VersionService) commitNotes(ctx context.Context, base, head string) str
 		if fetchErr != nil {
 			return nil, fetchErr
 		}
-		return map[string]string{key: formatCommitNotes(comparison, compareURL(base, head))}, nil
+		return map[string]string{key: formatCommitNotes(comparison, (repoURL + "/compare/" + base + "..." + head))}, nil
 	})
 	if err != nil || !found {
 		slog.WarnContext(ctx, "Failed to build commit release notes", "range", key, "error", err)

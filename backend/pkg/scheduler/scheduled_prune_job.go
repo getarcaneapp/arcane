@@ -50,7 +50,7 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) (types.SchedulerOutcome, er
 
 	req := buildScheduledPruneRequest(ctx, j.settingsService)
 
-	if !hasScheduledPruneTargets(req) {
+	if !(req.Containers != nil || req.Images != nil || req.Volumes != nil || req.Networks != nil || req.BuildCache != nil) {
 		slog.InfoContext(ctx, "scheduled prune run skipped; no resource types selected")
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
@@ -119,10 +119,6 @@ func buildScheduledPruneRequest(ctx context.Context, settingsService *settings.S
 		Networks:   buildScheduledNetworkPruneOptions(ctx, settingsService),
 		BuildCache: buildScheduledBuildCachePruneOptions(ctx, settingsService),
 	}
-}
-
-func hasScheduledPruneTargets(req types.PruneAllRequest) bool {
-	return req.Containers != nil || req.Images != nil || req.Volumes != nil || req.Networks != nil || req.BuildCache != nil
 }
 
 func buildScheduledContainerPruneOptions(ctx context.Context, settingsService *settings.SettingsService) *types.PruneContainersOptions {

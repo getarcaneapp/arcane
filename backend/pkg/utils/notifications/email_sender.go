@@ -21,11 +21,7 @@ type smtpBuildOptions struct {
 	timeout   time.Duration
 }
 
-func smtpTimeoutFromOptionsInternal(options smtpBuildOptions) time.Duration {
-	return kit.Ternary(options.timeout > 0, options.timeout, defaultSMTPTimeout)
-}
-
-func smtpBuildOptionsFromContextInternal(ctx context.Context) smtpBuildOptions {
+func smtpBuildOptionsFromContext(ctx context.Context) smtpBuildOptions {
 	options := smtpBuildOptions{}
 	if ctx == nil {
 		return options
@@ -41,7 +37,7 @@ func smtpBuildOptionsFromContextInternal(ctx context.Context) smtpBuildOptions {
 	return options
 }
 
-func smtpAuthTypeFromModeInternal(mode EmailAuthMode) mail.SMTPAuthType {
+func smtpAuthTypeFromMode(mode EmailAuthMode) mail.SMTPAuthType {
 	switch mode {
 	case EmailAuthModeNone:
 		return mail.SMTPAuthNoAuth
@@ -58,7 +54,7 @@ func smtpAuthTypeFromModeInternal(mode EmailAuthMode) mail.SMTPAuthType {
 	}
 }
 
-func buildMailClientInternal(config EmailConfig, options smtpBuildOptions) (*mail.Client, error) {
+func buildMailClient(config EmailConfig, options smtpBuildOptions) (*mail.Client, error) {
 	if config.SMTPHost == "" {
 		return nil, errors.New("SMTP host is empty")
 	}
@@ -68,7 +64,7 @@ func buildMailClientInternal(config EmailConfig, options smtpBuildOptions) (*mai
 
 	opts := []mail.Option{
 		mail.WithPort(config.SMTPPort),
-		mail.WithTimeout(smtpTimeoutFromOptionsInternal(options)),
+		mail.WithTimeout(kit.Ternary(options.timeout > 0, options.timeout, defaultSMTPTimeout)),
 		mail.WithHELO(defaultSMTPClientHost),
 	}
 
@@ -89,7 +85,7 @@ func buildMailClientInternal(config EmailConfig, options smtpBuildOptions) (*mai
 
 	if config.AuthMode != EmailAuthModeNone && config.SMTPUsername != "" && config.SMTPPassword != "" {
 		opts = append(opts,
-			mail.WithSMTPAuth(smtpAuthTypeFromModeInternal(config.AuthMode)),
+			mail.WithSMTPAuth(smtpAuthTypeFromMode(config.AuthMode)),
 			mail.WithUsername(config.SMTPUsername),
 			mail.WithPassword(config.SMTPPassword),
 		)
@@ -107,10 +103,10 @@ func buildMailClientInternal(config EmailConfig, options smtpBuildOptions) (*mai
 
 // SendEmail sends pre-rendered HTML via go-mail.
 func SendEmail(ctx context.Context, config EmailConfig, subject, htmlBody, textBody string) error {
-	return sendEmailInternal(ctx, config, subject, htmlBody, textBody, smtpBuildOptionsFromContextInternal(ctx))
+	return sendEmail(ctx, config, subject, htmlBody, textBody, smtpBuildOptionsFromContext(ctx))
 }
 
-func sendEmailInternal(ctx context.Context, config EmailConfig, subject, htmlBody, textBody string, options smtpBuildOptions) error {
+func sendEmail(ctx context.Context, config EmailConfig, subject, htmlBody, textBody string, options smtpBuildOptions) error {
 	if ctx == nil {
 		return errors.New("email send context is required")
 	}
@@ -125,7 +121,7 @@ func sendEmailInternal(ctx context.Context, config EmailConfig, subject, htmlBod
 		return errors.New("at least one recipient is required")
 	}
 
-	client, err := buildMailClientInternal(config, options)
+	client, err := buildMailClient(config, options)
 	if err != nil {
 		return fmt.Errorf("failed to build SMTP client: %w", err)
 	}

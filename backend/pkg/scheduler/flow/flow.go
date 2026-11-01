@@ -632,8 +632,3 @@ func (w *Workflow) activityFor(instanceID string) string {
 	}
 	return instanceID
 }
-
-// stepLabel names a step for the activity.
-func (w *Workflow) stepLabel(name string) string {
-	return cmp.Or(w.def.Labels[name], name)
-}

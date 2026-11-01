@@ -12,8 +12,8 @@ import (
 type appLifecycleContextKey struct{}
 
 type (
-	activityBatchIDContextKey         struct{}
-	updateInitiatorContextKeyInternal struct{}
+	activityBatchIDContextKey struct{}
+	updateInitiatorContextKey struct{}
 )
 
 // WithUpdateInitiator carries manager-authenticated attribution through an
@@ -24,21 +24,16 @@ func WithUpdateInitiator(ctx context.Context, initiator types.ActivityStartedBy)
 	if initiator.UserID == "" || initiator.Username == "" {
 		return ctx
 	}
-	return context.WithValue(ctx, updateInitiatorContextKeyInternal{}, initiator)
+	return context.WithValue(ctx, updateInitiatorContextKey{}, initiator)
 }
 
 // UpdateInitiatorFromContext returns trusted proxied update attribution.
 func UpdateInitiatorFromContext(ctx context.Context) (types.ActivityStartedBy, bool) {
-	initiator, ok := ctx.Value(updateInitiatorContextKeyInternal{}).(types.ActivityStartedBy)
+	initiator, ok := ctx.Value(updateInitiatorContextKey{}).(types.ActivityStartedBy)
 	return initiator, ok
 }
 
 var activityBatchIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
-
-// ValidActivityBatchID reports whether id is safe to persist as a batch ID.
-func ValidActivityBatchID(id string) bool {
-	return activityBatchIDPattern.MatchString(id)
-}
 
 // WithActivityBatchID attaches a client-supplied batch ID that groups the
 // activities spawned by one logical user action (e.g. a bulk container
@@ -47,7 +42,7 @@ func WithActivityBatchID(ctx context.Context, batchID string) context.Context {
 	if ctx == nil {
 		ctx = context.Background() //nolint:forbidigo // Fallback preserves the existing nil-context contract when no parent is available.
 	}
-	if !ValidActivityBatchID(batchID) {
+	if !activityBatchIDPattern.MatchString(batchID) {
 		return ctx
 	}
 	return context.WithValue(ctx, activityBatchIDContextKey{}, batchID)

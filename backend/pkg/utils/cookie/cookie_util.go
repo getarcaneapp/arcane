@@ -26,7 +26,7 @@ const (
 	tokenCookieMaxChunks = 4
 )
 
-func tokenCookieChunkNameInternal(base string, index int) string {
+func tokenCookieChunkName(base string, index int) string {
 	if index == 0 {
 		return base
 	}
@@ -73,13 +73,13 @@ func BuildClearRefreshCookieStringsFor(secure bool) []string {
 }
 
 func GetTokenCookie(r *http.Request) (string, error) {
-	if value, err := readTokenCookieInternal(r, TokenCookieName); err == nil {
+	if value, err := readTokenCookie(r, TokenCookieName); err == nil {
 		return value, nil
 	}
-	return readTokenCookieInternal(r, InsecureTokenCookieName)
+	return readTokenCookie(r, InsecureTokenCookieName)
 }
 
-func readTokenCookieInternal(r *http.Request, base string) (string, error) {
+func readTokenCookie(r *http.Request, base string) (string, error) {
 	byName := make(map[string]string, len(r.Cookies()))
 	for _, c := range r.Cookies() {
 		byName[c.Name] = c.Value
@@ -91,7 +91,7 @@ func readTokenCookieInternal(r *http.Request, base string) (string, error) {
 	var value strings.Builder
 	value.WriteString(first)
 	for i := 1; ; i++ {
-		chunk, localOk := byName[tokenCookieChunkNameInternal(base, i)]
+		chunk, localOk := byName[tokenCookieChunkName(base, i)]
 		if !localOk {
 			break
 		}
@@ -123,7 +123,7 @@ func BuildTokenCookieStringFor(maxAgeInSeconds int, token string, secure bool) [
 	var headers []string
 	for i, chunk := range chunks {
 		cookie := &http.Cookie{ // #nosec G124: Secure mirrors the trusted request context so the cookie can round-trip through HTTPS reverse proxies.
-			Name:     tokenCookieChunkNameInternal(base, i),
+			Name:     tokenCookieChunkName(base, i),
 			Value:    chunk,
 			Path:     "/",
 			MaxAge:   maxAgeInSeconds,
@@ -134,7 +134,7 @@ func BuildTokenCookieStringFor(maxAgeInSeconds int, token string, secure bool) [
 		headers = append(headers, cookie.String())
 	}
 	for i := len(chunks); i < tokenCookieMaxChunks; i++ {
-		headers = append(headers, buildCookieString(tokenCookieChunkNameInternal(base, i), "/", "", -1, secure, http.SameSiteLaxMode))
+		headers = append(headers, buildCookieString(tokenCookieChunkName(base, i), "/", "", -1, secure, http.SameSiteLaxMode))
 	}
 	return headers
 }
@@ -146,9 +146,9 @@ func BuildTokenCookieStringFor(maxAgeInSeconds int, token string, secure bool) [
 func BuildClearTokenCookieStringsFor(secure bool) []string {
 	var headers []string
 	for i := range tokenCookieMaxChunks {
-		headers = append(headers, buildCookieString(tokenCookieChunkNameInternal(InsecureTokenCookieName, i), "/", "", -1, false, http.SameSiteLaxMode))
+		headers = append(headers, buildCookieString(tokenCookieChunkName(InsecureTokenCookieName, i), "/", "", -1, false, http.SameSiteLaxMode))
 		if secure {
-			headers = append(headers, buildCookieString(tokenCookieChunkNameInternal(TokenCookieName, i), "/", "", -1, true, http.SameSiteLaxMode))
+			headers = append(headers, buildCookieString(tokenCookieChunkName(TokenCookieName, i), "/", "", -1, true, http.SameSiteLaxMode))
 		}
 	}
 	return headers

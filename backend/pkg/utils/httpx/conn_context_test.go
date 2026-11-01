@@ -28,7 +28,7 @@ func newConnContextForTest(t *testing.T) context.Context {
 // other.
 func TestAcquireDeadPeerTimeoutHoldsUntilLastRelease(t *testing.T) {
 	ctx := newConnContextForTest(t)
-	state, _ := ctx.Value(connContextKeyInternal{}).(*connStateInternal)
+	state, _ := ctx.Value(connContextKey{}).(*connState)
 	require.NotNil(t, state)
 
 	releaseFirst, err := AcquireDeadPeerTimeout(ctx, 45*time.Second)

@@ -155,7 +155,7 @@ func GenerateManagerClientMTLSAssetsWithContext(ctx context.Context, cfg *Config
 	if !usesGeneratedManagerCA(cfg) {
 		return nil, nil
 	}
-	safeEnvID := sanitizedEnvID(envID)
+	safeEnvID := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(envID), "_")
 	if safeEnvID == "" {
 		return nil, errors.New("environment ID is required")
 	}
@@ -273,7 +273,7 @@ func GeneratedManagerClientMTLSCertPath(cfg *Config, envID string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	safeEnvID := sanitizedEnvID(envID)
+	safeEnvID := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(envID), "_")
 	if safeEnvID == "" {
 		return "", errors.New("environment ID is required")
 	}
@@ -340,7 +340,7 @@ func enrollAgentMTLSAssets(ctx context.Context, cfg *Config, assetsDir, certPath
 	if managerBaseURL == "" {
 		return errors.New("ARCANE_MANAGER_API_URL is required to enroll agent mTLS assets")
 	}
-	if !managerUsesTLS(cfg) {
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl))), "https://") {
 		return errors.New("ARCANE_AGENT_MTLS_MODE requires ARCANE_MANAGER_API_URL to use https for certificate enrollment")
 	}
 
@@ -403,7 +403,7 @@ func enrollAgentMTLSAssets(ctx context.Context, cfg *Config, assetsDir, certPath
 // buildManagerClientTLSConfig returns the agent's TLS config for an https manager URL, adding the
 // configured CA to the system roots and the configured client certificate.
 func buildManagerClientTLSConfig(cfg *Config) (*tls.Config, error) {
-	if cfg == nil || !managerUsesTLS(cfg) {
+	if cfg == nil || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl))), "https://") {
 		return nil, nil
 	}
 	ctx := context.Background() //nolint:forbidigo // TLS configuration is built at startup without a request context.
@@ -447,7 +447,7 @@ func ValidateAgentMTLSConfig(cfg *Config) error {
 	if cfg == nil || NormalizeMTLSMode(cfg.AgentMTLSMode) == MTLSModeDisabled {
 		return nil
 	}
-	if !managerUsesTLS(cfg) {
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl))), "https://") {
 		return errors.New("ARCANE_AGENT_MTLS_MODE requires ARCANE_MANAGER_API_URL to use https")
 	}
 	_, err := buildManagerClientTLSConfig(cfg)
@@ -481,10 +481,6 @@ func appendCAFile(pool *x509.CertPool, caFile string) error {
 	return nil
 }
 
-func managerUsesTLS(cfg *Config) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl))), "https://")
-}
-
 // usesGeneratedManagerCA reports whether agent mTLS runs on the Arcane-generated CA. The configured
 // CA also counts once PrepareManagerMTLSAssetsWithContext has pointed it at the generated file.
 func usesGeneratedManagerCA(cfg *Config) bool {
@@ -509,11 +505,6 @@ func certificateHasURISAN(cert *x509.Certificate, expected *url.URL) bool {
 		return uri != nil && strings.EqualFold(uri.Scheme, expected.Scheme) && uri.Path == expected.Path &&
 			strings.EqualFold(strings.TrimSuffix(uri.Host, "."), strings.TrimSuffix(expected.Host, "."))
 	})
-}
-
-// sanitizedEnvID makes an environment ID safe for asset paths and certificate identities.
-func sanitizedEnvID(envID string) string {
-	return generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(envID), "_")
 }
 
 // agentMTLSAssetsDir returns the configured assets dir, else data/<name> under /app when it exists.

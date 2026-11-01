@@ -35,7 +35,7 @@ func DecryptStringCredential(value *string) error {
 
 	decrypted, err := crypto.Decrypt(*value)
 	if err != nil {
-		if isPlausibleEncryptedCredentialInternal(*value) {
+		if isPlausibleEncryptedCredential(*value) {
 			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
 		slog.WarnContext(context.Background(), "Failed to decrypt notification credential, using raw legacy value", //nolint:forbidigo // Credential decryption is a pure helper without a request context.
@@ -46,7 +46,7 @@ func DecryptStringCredential(value *string) error {
 	return nil
 }
 
-func isPlausibleEncryptedCredentialInternal(value string) bool {
+func isPlausibleEncryptedCredential(value string) bool {
 	data, err := base64.StdEncoding.DecodeString(value)
 	if err != nil {
 		return false
@@ -56,12 +56,12 @@ func isPlausibleEncryptedCredentialInternal(value string) bool {
 }
 
 // PrepareSlackConfig decodes and decrypts a Slack provider config.
-func PrepareSlackConfig(config database.JSON, providerName string, requireToken bool) (SlackConfig, error) {
+func PrepareSlackConfig(config database.JSON, providerName string) (SlackConfig, error) {
 	slackConfig, err := DecodeConfig[SlackConfig](config, providerName)
 	if err != nil {
 		return SlackConfig{}, err
 	}
-	if requireToken && slackConfig.Token == "" {
+	if slackConfig.Token == "" {
 		return SlackConfig{}, errors.New("slack token not configured")
 	}
 	if decryptStringCredentialErr := DecryptStringCredential(&slackConfig.Token); decryptStringCredentialErr != nil {
@@ -71,13 +71,10 @@ func PrepareSlackConfig(config database.JSON, providerName string, requireToken 
 }
 
 // PrepareNtfyConfig decodes and decrypts an ntfy provider config.
-func PrepareNtfyConfig(config database.JSON, providerName string, requireTopic bool) (NtfyConfig, error) {
+func PrepareNtfyConfig(config database.JSON, providerName string) (NtfyConfig, error) {
 	ntfyConfig, err := DecodeConfig[NtfyConfig](config, providerName)
 	if err != nil {
 		return NtfyConfig{}, err
-	}
-	if requireTopic && ntfyConfig.Topic == "" {
-		return NtfyConfig{}, errors.New("ntfy topic is required")
 	}
 	if _, ok := config["cache"]; !ok {
 		ntfyConfig.Cache = true

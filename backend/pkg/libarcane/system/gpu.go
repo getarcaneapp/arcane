@@ -45,7 +45,7 @@ type GPUMonitor struct {
 	// statsCache holds the last vendor-tool result (success or failure) for
 	// gpuStatsTTL so concurrent consumers and fast sampler ticks share one
 	// process fork instead of each launching their own.
-	statsCache     atomic.Pointer[gpuStatsSnapshotInternal]
+	statsCache     atomic.Pointer[gpuStatsSnapshot]
 	configuredType string
 
 	announcedType string
@@ -56,7 +56,7 @@ type GPUMonitor struct {
 	enabled bool
 }
 
-type gpuStatsSnapshotInternal struct {
+type gpuStatsSnapshot struct {
 	sampledAt time.Time
 	err       error
 	stats     []types.GPUStats
@@ -106,7 +106,7 @@ func (m *GPUMonitor) Stats(ctx context.Context) ([]types.GPUStats, error) {
 		if previousErr := kit.FromPtr(previous).err; statsErr != nil && (previousErr == nil || previousErr.Error() != statsErr.Error()) {
 			slog.WarnContext(ctx, "GPU stats unavailable", "error", statsErr)
 		}
-		m.statsCache.Store(&gpuStatsSnapshotInternal{stats: stats, err: statsErr, sampledAt: time.Now()})
+		m.statsCache.Store(&gpuStatsSnapshot{stats: stats, err: statsErr, sampledAt: time.Now()})
 		return stats, statsErr
 	})
 	stats, _ := result.([]types.GPUStats)

@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -783,15 +783,22 @@ func (s *NotificationService) sendImageUpdateNotificationForTarget(
 	return s.notifyEnabledProviders(ctx, target, eventType, imageRef, metadata, content)
 }
 
-func (s *NotificationService) SendContainerUpdateNotification(ctx context.Context, containerName, imageRef, oldDigest, newDigest string) error {
+type ContainerUpdateEvent struct {
+	ContainerName string
+	ImageRef      string
+	OldDigest     string
+	NewDigest     string
+}
+
+func (s *NotificationService) SendContainerUpdateNotification(ctx context.Context, update ContainerUpdateEvent) error {
 	if s.config != nil && s.config.AgentEnabled {
 		_, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
 			Kind: types.NotificationDispatchKindContainerUpdate,
 			ContainerUpdate: &types.NotificationDispatchContainerUpdate{
-				ContainerName: containerName,
-				ImageRef:      imageRef,
-				OldDigest:     oldDigest,
-				NewDigest:     newDigest,
+				ContainerName: update.ContainerName,
+				ImageRef:      update.ImageRef,
+				OldDigest:     update.OldDigest,
+				NewDigest:     update.NewDigest,
 			},
 		})
 		return err
@@ -802,7 +809,7 @@ func (s *NotificationService) SendContainerUpdateNotification(ctx context.Contex
 		return err
 	}
 
-	_, err = s.sendContainerUpdateNotificationForTarget(ctx, target, containerName, imageRef, oldDigest, newDigest)
+	_, err = s.sendContainerUpdateNotificationForTarget(ctx, target, update.ContainerName, update.ImageRef, update.OldDigest, update.NewDigest)
 	return err
 }
 
@@ -911,13 +918,7 @@ func (s *NotificationService) sendBatchImageUpdateNotificationForTarget(ctx cont
 		s.settingsService.GetSettingsConfig().NotificationsIncludeReleaseLinks.IsTrue(),
 	)
 	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, notifications.NotificationEventImageUpdate)
-	return s.notifyEnabledProviders(ctx, target, notifications.NotificationEventImageUpdate, batchImageUpdateLogRef(updatesWithChanges), metadata, content)
-}
-
-// batchImageUpdateLogRef lists the image refs in sorted order. The push body is built
-// from it, and the relay dedupes on that body, so a repeat of the same set must read the same.
-func batchImageUpdateLogRef(updates map[string]*types.ImageUpdateResponse) string {
-	return strings.Join(slices.Sorted(maps.Keys(updates)), ", ")
+	return s.notifyEnabledProviders(ctx, target, notifications.NotificationEventImageUpdate, strings.Join(slices.Sorted(maps.Keys(updatesWithChanges)), ", "), metadata, content)
 }
 
 func (s *NotificationService) SendPruneReportNotification(ctx context.Context, result *types.PruneAllResult) error {

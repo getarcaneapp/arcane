@@ -245,7 +245,7 @@ func TestSyncEnvironment_LocalWritesEnvGlobalFile(t *testing.T) {
 	require.Equal(t, "synced", statuses[0].Status)
 }
 
-type capturedVariableSyncRequestInternal struct {
+type capturedVariableSyncRequest struct {
 	Method  string
 	Path    string
 	Headers map[string]string
@@ -265,11 +265,11 @@ func TestSyncEnvironment_AgentMaterializesSecretsThroughAgentRoute(t *testing.T)
 	}).Error)
 
 	var requestMu sync.Mutex
-	requests := make([]capturedVariableSyncRequestInternal, 0, 2)
+	requests := make([]capturedVariableSyncRequest, 0, 2)
 	service.proxyEnvironmentJSON = func(_ context.Context, environmentID, method, path string, body []byte, response any) error {
 		require.Equal(t, "env-agent", environmentID)
 		requestMu.Lock()
-		requests = append(requests, capturedVariableSyncRequestInternal{
+		requests = append(requests, capturedVariableSyncRequest{
 			Method: method,
 			Path:   path,
 			Headers: map[string]string{
@@ -288,7 +288,7 @@ func TestSyncEnvironment_AgentMaterializesSecretsThroughAgentRoute(t *testing.T)
 
 	require.NoError(t, service.SyncEnvironment(t.Context(), "env-agent"))
 	requestMu.Lock()
-	captured := append([]capturedVariableSyncRequestInternal(nil), requests...)
+	captured := append([]capturedVariableSyncRequest(nil), requests...)
 	requestMu.Unlock()
 	requireMaterializationRequests(t, captured, token)
 }
@@ -305,7 +305,7 @@ func createMaterializedSecretVariable(t *testing.T, service *VariableService) *t
 	return created
 }
 
-func requireMaterializationRequests(t *testing.T, requests []capturedVariableSyncRequestInternal, token string) {
+func requireMaterializationRequests(t *testing.T, requests []capturedVariableSyncRequest, token string) {
 	t.Helper()
 	require.Len(t, requests, 2)
 

@@ -43,11 +43,11 @@ var HealthCmd = &cobra.Command{
 			timeout = defaultHealthTimeout
 		}
 
-		return runHealthCommandInternal(cmd.Context(), cfg, timeout)
+		return runHealthCommand(cmd.Context(), cfg, timeout)
 	},
 }
 
-func buildHealthURLInternal(cfg *config.Config) (string, error) {
+func buildHealthURL(cfg *config.Config) (string, error) {
 	if cfg == nil {
 		return "", errors.New("health config is nil")
 	}
@@ -68,12 +68,12 @@ func buildHealthURLInternal(cfg *config.Config) (string, error) {
 	return u.String(), nil
 }
 
-func runHealthCommandInternal(ctx context.Context, cfg *config.Config, timeout time.Duration) error {
+func runHealthCommand(ctx context.Context, cfg *config.Config, timeout time.Duration) error {
 	if timeout <= 0 {
 		timeout = defaultHealthTimeout
 	}
 
-	healthURL, err := buildHealthURLInternal(cfg)
+	healthURL, err := buildHealthURL(cfg)
 	if err != nil {
 		return err
 	}

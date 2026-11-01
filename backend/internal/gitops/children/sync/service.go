@@ -696,7 +696,11 @@ func (s *Service) recoverProject(ctx context.Context, sync *projectpkg.GitOpsSyn
 	if project.ServiceCount, err = s.projectService.CountServicesFromCompose(ctx, project); err != nil {
 		slog.WarnContext(ctx, "Failed to count services while recovering GitOps project", "syncId", sync.ID, "path", matches[0], "error", err)
 	}
-	if createErr := s.projectService.CreateGitOpsManagedProject(ctx, sync, &project, types.Actor{}, false); createErr != nil {
+	if createErr := s.projectService.CreateGitOpsManagedProject(ctx, projectpkg.GitOpsProjectRequest{
+		Sync:      sync,
+		Project:   &project,
+		SkipEvent: true,
+	}); createErr != nil {
 		return nil, createErr
 	}
 	return &project, nil
@@ -830,7 +834,11 @@ func (s *Service) createDirectorySyncProject(ctx context.Context, sync *projectp
 		RunningCount: 0,
 	}
 
-	if createGitOpsManagedProjectErr := s.projectService.CreateGitOpsManagedProject(ctx, sync, project, actor); createGitOpsManagedProjectErr != nil {
+	if createGitOpsManagedProjectErr := s.projectService.CreateGitOpsManagedProject(ctx, projectpkg.GitOpsProjectRequest{
+		Sync:    sync,
+		Project: project,
+		Actor:   actor,
+	}); createGitOpsManagedProjectErr != nil {
 		_ = acfs.Root{Path: projectsDir}.RemoveAll(ctx, projectLogical)
 		return nil, createGitOpsManagedProjectErr
 	}

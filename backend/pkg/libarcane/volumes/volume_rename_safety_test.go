@@ -145,7 +145,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenS
 	}))
 	t.Cleanup(server.Close)
 
-	migration := &dockerProjectVolumeRenameMigrationInternal{
+	migration := &dockerProjectVolumeRenameMigration{
 		dockerClient: newTestDockerClient(t, server),
 		createdNew: []types.VolumeRenameEntry{
 			{OldName: "nginx_data", NewName: "web_data"},
@@ -202,7 +202,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackCleansSafeTargetsWhe
 	}))
 	t.Cleanup(server.Close)
 
-	migration := &dockerProjectVolumeRenameMigrationInternal{
+	migration := &dockerProjectVolumeRenameMigration{
 		dockerClient: newTestDockerClient(t, server),
 		createdNew: []types.VolumeRenameEntry{
 			{OldName: "nginx_data", NewName: "web_data"},
@@ -256,7 +256,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenS
 	}))
 	t.Cleanup(server.Close)
 
-	migration := &dockerProjectVolumeRenameMigrationInternal{
+	migration := &dockerProjectVolumeRenameMigration{
 		dockerClient: newTestDockerClient(t, server),
 		createdNew: []types.VolumeRenameEntry{
 			{OldName: "nginx_data", NewName: "web_data"},
@@ -306,7 +306,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenT
 	}))
 	t.Cleanup(server.Close)
 
-	migration := &dockerProjectVolumeRenameMigrationInternal{
+	migration := &dockerProjectVolumeRenameMigration{
 		dockerClient: newTestDockerClient(t, server),
 		createdNew: []types.VolumeRenameEntry{
 			{OldName: "nginx_data", NewName: "web_data"},
@@ -350,7 +350,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackRemovesTargetsWhenSo
 	}))
 	t.Cleanup(server.Close)
 
-	migration := &dockerProjectVolumeRenameMigrationInternal{
+	migration := &dockerProjectVolumeRenameMigration{
 		dockerClient: newTestDockerClient(t, server),
 		createdNew: []types.VolumeRenameEntry{
 			{
@@ -381,7 +381,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesRemovedOldT
 	}))
 	t.Cleanup(server.Close)
 
-	migration := &dockerProjectVolumeRenameMigrationInternal{
+	migration := &dockerProjectVolumeRenameMigration{
 		dockerClient: newTestDockerClient(t, server),
 		createdNew: []types.VolumeRenameEntry{
 			{NewName: "web_data"},
@@ -454,7 +454,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackAfterPartialCommitCl
 		{OldName: "nginx_data", NewName: "web_data"},
 		{OldName: "nginx_cache", NewName: "web_cache"},
 	}
-	migration := &dockerProjectVolumeRenameMigrationInternal{
+	migration := &dockerProjectVolumeRenameMigration{
 		dockerClient: newTestDockerClient(t, server),
 		entries:      entries,
 		createdNew:   append([]types.VolumeRenameEntry(nil), entries...),
@@ -509,7 +509,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_CommitPreflightsAllTargetsBe
 	}))
 	t.Cleanup(server.Close)
 
-	migration := &dockerProjectVolumeRenameMigrationInternal{
+	migration := &dockerProjectVolumeRenameMigration{
 		dockerClient: newTestDockerClient(t, server),
 		entries: []types.VolumeRenameEntry{
 			{

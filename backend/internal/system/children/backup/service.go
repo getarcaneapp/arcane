@@ -200,7 +200,7 @@ func NewService(deps Dependencies) *Service {
 			},
 			func() (string, error) { return service.databaseFile() },
 			func(ctx context.Context) string {
-				return projects.ResolveConfiguredContainerDirectory(service.projectsSetting(ctx), "/app/data/projects")
+				return projects.ResolveConfiguredContainerDirectory(service.settingsService.GetStringSetting(ctx, "projectsDirectory"), "/app/data/projects")
 			},
 			func(ctx context.Context) map[string]string { return service.recoveryEnvironment(ctx) },
 			kit.FromPtr(deps.Config).GitWorkDir,
@@ -252,7 +252,7 @@ func (s *Service) recoveryEnvironment(ctx context.Context) map[string]string {
 	}
 	visit(reflect.ValueOf(s.config))
 	maps.Copy(result, s.settingsEnv.Variables())
-	if value := s.projectsSetting(ctx); value != "" {
+	if value := s.settingsService.GetStringSetting(ctx, "projectsDirectory"); value != "" {
 		result[settings.EnvName("projectsDirectory", "")] = value
 	}
 	return result
@@ -344,12 +344,6 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 	return s.volumes.RegisterWorkflows(engine)
 }
 
-// SupportedDatabaseProvider reports whether system recovery works on the
-// configured database. Recovery is currently SQLite-only.
-func (s *Service) SupportedDatabaseProvider() bool {
-	return strings.HasPrefix(s.config.DatabaseURL, "file:")
-}
-
 // databaseFile resolves the SQLite database file: under /app/data in
 // the container, the local data directory in host development.
 func (s *Service) databaseFile() (string, error) {
@@ -422,7 +416,7 @@ func (s *Service) CreateBackup(ctx context.Context, user types.Actor, trigger st
 
 // prepareBackup resolves the run's destinations from its policy or destination enum, creates the run row, and records its checkpoint.
 func (s *Service) prepareBackup(ctx context.Context, trigger string, request types.CreateSystemBackupRequest) (*preparedSystemBackup, error) {
-	if !s.SupportedDatabaseProvider() {
+	if !strings.HasPrefix(s.config.DatabaseURL, "file:") {
 		return nil, errors.New("arcane system recovery currently requires the SQLite database provider")
 	}
 	recoveryKey, err := s.recoveryKey(ctx, request.RecoveryKey)
@@ -1076,7 +1070,7 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 		return err
 	}
 	dataDirectory := filepath.Dir(databaseFile)
-	projectsDirectory := projects.ResolveConfiguredContainerDirectory(s.projectsSetting(ctx), "/app/data/projects")
+	projectsDirectory := projects.ResolveConfiguredContainerDirectory(s.settingsService.GetStringSetting(ctx, "projectsDirectory"), "/app/data/projects")
 	plan, err := s.snapshots.PlanRestore(ctx, dockerClient, key, *run, current.Mounts, dataDirectory, projectsDirectory)
 	if err != nil {
 		return err
@@ -1121,7 +1115,7 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 			Size:            safetyBackup.Size,
 			CreatedAt:       safetyBackup.CreatedAt,
 		},
-		ProjectsSetting:  s.projectsSetting(ctx),
+		ProjectsSetting:  s.settingsService.GetStringSetting(ctx, "projectsDirectory"),
 		ProjectsIncluded: plan.ProjectsIncluded,
 		Stages:           plan.Stages,
 		RollbackStages:   rollbackStages,
@@ -1387,7 +1381,7 @@ func (s *Service) UpdatePolicies(ctx context.Context, updates []types.UpdateBack
 		if normalized.Enabled && !configured {
 			return errors.New("configure a recovery key before enabling scheduled system backups")
 		}
-		if normalized.Enabled && !s.SupportedDatabaseProvider() {
+		if normalized.Enabled && !strings.HasPrefix(s.config.DatabaseURL, "file:") {
 			return errors.New("scheduled system backups require the SQLite database provider")
 		}
 		*policy = types.SystemBackupPolicy{ //exhaustruct:enforce
@@ -1565,11 +1559,6 @@ func (s *Service) applyRetention(ctx context.Context, policyID string, keep int,
 		return err
 	}
 	return s.deleteRuns(ctx, expiredRuns, "", includeRemote)
-}
-
-// projectsSetting returns the effective projectsDirectory setting.
-func (s *Service) projectsSetting(ctx context.Context) string {
-	return s.settingsService.GetStringSetting(ctx, "projectsDirectory")
 }
 
 // StartBackup prepares a manual backup, then submits its workflow.

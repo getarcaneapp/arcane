@@ -23,7 +23,7 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/samber/mo"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -186,11 +186,6 @@ func NewPasskeyService(db *database.DB, cfg *config.Config) *PasskeyService {
 	return s
 }
 
-// ready reports whether WebAuthn initialised; every constructor failure sets initErr.
-func (s *PasskeyService) ready() error {
-	return kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil)
-}
-
 type webAuthnUser struct {
 	model              userdomain.User
 	credentialModelIDs map[string]string
@@ -281,7 +276,7 @@ func credentialFromModel(row Passkey) webauthn.Credential {
 
 // LoginAvailable reports whether a registered passkey can be used on this instance.
 func (s *PasskeyService) LoginAvailable(ctx context.Context) (bool, error) {
-	if errors.Is(s.ready(), ErrPasskeyServiceUnavailable) {
+	if errors.Is(kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil), ErrPasskeyServiceUnavailable) {
 		return false, nil
 	}
 
@@ -296,7 +291,7 @@ func (s *PasskeyService) LoginAvailable(ctx context.Context) (bool, error) {
 }
 
 func (s *PasskeyService) BeginPasskeyLogin(ctx context.Context) (*PasskeyChallenge, error) {
-	if err := s.ready(); err != nil {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
 	}
 	if err := s.sweepCeremonies(ctx); err != nil {
@@ -321,7 +316,7 @@ func (s *PasskeyService) BeginPasskeyLogin(ctx context.Context) (*PasskeyChallen
 }
 
 func (s *PasskeyService) BeginMFAAuthentication(ctx context.Context, userID string, meta types.SessionMeta, source string) (*types.MFAChallenge, error) {
-	if err := s.ready(); err != nil {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
 	}
 	if err := s.sweepCeremonies(ctx); err != nil {
@@ -351,7 +346,7 @@ func (s *PasskeyService) BeginMFAAuthentication(ctx context.Context, userID stri
 // pending MFA transaction. This is useful to clients that separate primary
 // authentication from challenge retrieval.
 func (s *PasskeyService) BeginMFAForTransaction(ctx context.Context, transactionID string) (*types.MFAChallenge, error) {
-	if err := s.ready(); err != nil {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
 	}
 	if err := s.sweepCeremonies(ctx); err != nil {
@@ -404,7 +399,7 @@ func (s *PasskeyService) beginMFAForTransaction(ctx context.Context, transaction
 }
 
 func (s *PasskeyService) BeginStepUp(ctx context.Context, userID, sessionID string, meta types.SessionMeta) (*PasskeyChallenge, error) {
-	if err := s.ready(); err != nil {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
 	}
 	if err := s.sweepCeremonies(ctx); err != nil {
@@ -450,7 +445,7 @@ func (s *PasskeyService) BeginStepUp(ctx context.Context, userID, sessionID stri
 }
 
 func (s *PasskeyService) BeginRegistration(ctx context.Context, userID, sessionID, stepUpToken string) (*PasskeyChallenge, error) {
-	if err := s.ready(); err != nil {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
 	}
 	if err := s.sweepCeremonies(ctx); err != nil {
@@ -485,22 +480,30 @@ func (s *PasskeyService) BeginRegistration(ctx context.Context, userID, sessionI
 	return &PasskeyChallenge{CeremonyID: ceremony.ID, Options: creation.Response, ExpiresAt: ceremony.ExpiresAt}, nil
 }
 
-func (s *PasskeyService) FinishRegistration(ctx context.Context, userID, sessionID, ceremonyID string, payload []byte, name string) (*PasskeySummary, error) {
-	if err := s.ready(); err != nil {
+type FinishRegistrationRequest struct {
+	UserID     string
+	SessionID  string
+	CeremonyID string
+	Payload    []byte
+	Name       string
+}
+
+func (s *PasskeyService) FinishRegistration(ctx context.Context, req FinishRegistrationRequest) (*PasskeySummary, error) {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
 	}
-	if err := s.ensureActiveSession(ctx, userID, sessionID); err != nil {
+	if err := s.ensureActiveSession(ctx, req.UserID, req.SessionID); err != nil {
 		return nil, err
 	}
-	if len(payload) == 0 || len(payload) > maxPasskeyPayloadBytes {
+	if len(req.Payload) == 0 || len(req.Payload) > maxPasskeyPayloadBytes {
 		return nil, ErrPasskeyResponse
 	}
 
-	ceremony, err := s.consumeCeremony(ctx, ceremonyID, passkeyCeremonyPurposeRegistration)
+	ceremony, err := s.consumeCeremony(ctx, req.CeremonyID, passkeyCeremonyPurposeRegistration)
 	if err != nil {
 		return nil, err
 	}
-	if mo.PointerToOption(ceremony.UserID) != mo.Some(userID) || mo.PointerToOption(ceremony.SessionID) != mo.Some(sessionID) {
+	if mo.PointerToOption(ceremony.UserID) != mo.Some(req.UserID) || mo.PointerToOption(ceremony.SessionID) != mo.Some(req.SessionID) {
 		return nil, ErrPasskeyCeremony
 	}
 
@@ -508,11 +511,11 @@ func (s *PasskeyService) FinishRegistration(ctx context.Context, userID, session
 	if unmarshalErr := json.Unmarshal([]byte(ceremony.SessionData), &localSession); unmarshalErr != nil {
 		return nil, ErrPasskeyCeremony
 	}
-	adapter, err := s.loadWebAuthnUser(ctx, userID)
+	adapter, err := s.loadWebAuthnUser(ctx, req.UserID)
 	if err != nil {
 		return nil, err
 	}
-	parsed, err := protocol.ParseCredentialCreationResponseBytes(payload)
+	parsed, err := protocol.ParseCredentialCreationResponseBytes(req.Payload)
 	if err != nil {
 		return nil, ErrPasskeyResponse
 	}
@@ -521,14 +524,14 @@ func (s *PasskeyService) FinishRegistration(ctx context.Context, userID, session
 		return nil, ErrPasskeyResponse
 	}
 
-	if strings.TrimSpace(name) == "" {
-		name = defaultPasskeyName(credential.Authenticator.AAGUID)
+	if strings.TrimSpace(req.Name) == "" {
+		req.Name = defaultPasskeyName(credential.Authenticator.AAGUID)
 	}
-	name, err = normalizePasskeyName(name)
+	req.Name, err = normalizePasskeyName(req.Name)
 	if err != nil {
 		return nil, err
 	}
-	row, err := s.persistCredential(ctx, userID, credential, name)
+	row, err := s.persistCredential(ctx, req.UserID, credential, req.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -537,7 +540,7 @@ func (s *PasskeyService) FinishRegistration(ctx context.Context, userID, session
 }
 
 func (s *PasskeyService) FinishPasskeyLogin(ctx context.Context, ceremonyID string, payload []byte) (*userdomain.User, error) {
-	if err := s.ready(); err != nil {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
 	}
 	if len(payload) == 0 || len(payload) > maxPasskeyPayloadBytes {
@@ -598,7 +601,7 @@ func (s *PasskeyService) FinishMobilePasskeyLogin(ctx context.Context, ceremonyI
 }
 
 func (s *PasskeyService) ExchangeMobilePasskeyLogin(ctx context.Context, transactionID, codeVerifier string) (*userdomain.User, error) {
-	if err := s.ready(); err != nil {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
 	}
 	codeChallenge, err := mobilePasskeyCodeChallenge(codeVerifier)
@@ -661,7 +664,7 @@ func (s *PasskeyService) FinishMFA(ctx context.Context, transactionID string, pa
 }
 
 func (s *PasskeyService) FinishRecoveryCode(ctx context.Context, transactionID, code string) (*AuthenticationCompletion, error) {
-	if err := s.ready(); err != nil {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
 	}
 	normalized := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(code), "-", ""))
@@ -757,7 +760,7 @@ func (s *PasskeyService) FinishStepUp(ctx context.Context, transactionID, sessio
 }
 
 func (s *PasskeyService) CreatePasswordStepUpGrant(ctx context.Context, userID, sessionID string) (*StepUpGrant, error) {
-	if err := s.ready(); err != nil {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
 	}
 	if err := s.ensureActiveSession(ctx, userID, sessionID); err != nil {
@@ -774,7 +777,7 @@ func (s *PasskeyService) CreatePasswordStepUpGrant(ctx context.Context, userID, 
 // re-authentication covers a short run of management actions instead of one.
 // The grant stays bound to the issuing user and session.
 func (s *PasskeyService) VerifyStepUpToken(ctx context.Context, userID, sessionID, token string) error {
-	if err := s.ready(); err != nil {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return err
 	}
 	token = strings.TrimSpace(token)
@@ -795,7 +798,7 @@ func (s *PasskeyService) VerifyStepUpToken(ctx context.Context, userID, sessionI
 }
 
 func (s *PasskeyService) ListPasskeys(ctx context.Context, userID string) ([]PasskeySummary, error) {
-	if err := s.ready(); err != nil {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
 	}
 	var rows []Passkey
@@ -810,7 +813,7 @@ func (s *PasskeyService) ListPasskeys(ctx context.Context, userID string) ([]Pas
 }
 
 func (s *PasskeyService) GetCapabilities(ctx context.Context, userID string, oidcEnabled bool) (*PasskeyCapabilities, error) {
-	if err := s.ready(); err != nil {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
 	}
 	user, err := s.loadUserModel(ctx, userID)
@@ -834,19 +837,27 @@ func (s *PasskeyService) GetCapabilities(ctx context.Context, userID string, oid
 	}, nil
 }
 
-func (s *PasskeyService) RenamePasskey(ctx context.Context, userID, passkeyID, name, sessionID, stepUpToken string) (*PasskeySummary, error) {
-	if err := s.ready(); err != nil {
+type RenamePasskeyRequest struct {
+	UserID      string
+	PasskeyID   string
+	Name        string
+	SessionID   string
+	StepUpToken string
+}
+
+func (s *PasskeyService) RenamePasskey(ctx context.Context, req RenamePasskeyRequest) (*PasskeySummary, error) {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
 	}
-	if err := s.authorizeManagement(ctx, userID, sessionID, stepUpToken, false); err != nil {
+	if err := s.authorizeManagement(ctx, req.UserID, req.SessionID, req.StepUpToken, false); err != nil {
 		return nil, err
 	}
-	name, err := normalizePasskeyName(name)
+	name, err := normalizePasskeyName(req.Name)
 	if err != nil {
 		return nil, err
 	}
 	var row Passkey
-	result := s.db.WithContext(ctx).Where("id = ? AND user_id = ? AND rp_id = ?", passkeyID, userID, s.rpID).First(&row)
+	result := s.db.WithContext(ctx).Where("id = ? AND user_id = ? AND rp_id = ?", req.PasskeyID, req.UserID, s.rpID).First(&row)
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		return nil, ErrPasskeyNotFound
 	}
@@ -863,20 +874,28 @@ func (s *PasskeyService) RenamePasskey(ctx context.Context, userID, passkeyID, n
 	return &summary, nil
 }
 
-func (s *PasskeyService) DeletePasskey(ctx context.Context, userID, passkeyID, sessionID, stepUpToken string, oidcFallbackAllowed bool) error {
-	if err := s.ready(); err != nil {
+type DeletePasskeyRequest struct {
+	UserID              string
+	PasskeyID           string
+	SessionID           string
+	StepUpToken         string
+	OidcFallbackAllowed bool
+}
+
+func (s *PasskeyService) DeletePasskey(ctx context.Context, req DeletePasskeyRequest) error {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return err
 	}
-	if err := s.authorizeManagement(ctx, userID, sessionID, stepUpToken, false); err != nil {
+	if err := s.authorizeManagement(ctx, req.UserID, req.SessionID, req.StepUpToken, false); err != nil {
 		return err
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user userdomain.User
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", userID).First(&user).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", req.UserID).First(&user).Error; err != nil {
 			return fmt.Errorf("failed to lock user for passkey deletion: %w", err)
 		}
 		var count int64
-		if err := tx.Model(&Passkey{}).Where("user_id = ? AND rp_id = ?", userID, s.rpID).Count(&count).Error; err != nil {
+		if err := tx.Model(&Passkey{}).Where("user_id = ? AND rp_id = ?", req.UserID, s.rpID).Count(&count).Error; err != nil {
 			return fmt.Errorf("failed to count passkeys: %w", err)
 		}
 		if user.PasskeyMFAEnabled && count <= 1 {
@@ -884,12 +903,12 @@ func (s *PasskeyService) DeletePasskey(ctx context.Context, userID, passkeyID, s
 		}
 		if count <= 1 {
 			hasPassword := strings.TrimSpace(user.PasswordHash) != ""
-			hasOIDC := oidcFallbackAllowed && user.OidcSubjectId != nil && strings.TrimSpace(*user.OidcSubjectId) != ""
+			hasOIDC := req.OidcFallbackAllowed && user.OidcSubjectId != nil && strings.TrimSpace(*user.OidcSubjectId) != ""
 			if !hasPassword && !hasOIDC {
 				return ErrPasskeyLastCredential
 			}
 		}
-		result := tx.Where("id = ? AND user_id = ? AND rp_id = ?", passkeyID, userID, s.rpID).Delete(&Passkey{})
+		result := tx.Where("id = ? AND user_id = ? AND rp_id = ?", req.PasskeyID, req.UserID, s.rpID).Delete(&Passkey{})
 		if result.Error != nil {
 			return fmt.Errorf("failed to delete passkey: %w", result.Error)
 		}
@@ -898,7 +917,7 @@ func (s *PasskeyService) DeletePasskey(ctx context.Context, userID, passkeyID, s
 }
 
 func (s *PasskeyService) GetMFAStatus(ctx context.Context, userID string) (*MFAStatus, error) {
-	if err := s.ready(); err != nil {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
 	}
 	user, err := s.loadUserModel(ctx, userID)
@@ -917,7 +936,7 @@ func (s *PasskeyService) GetMFAStatus(ctx context.Context, userID string) (*MFAS
 }
 
 func (s *PasskeyService) EnableMFA(ctx context.Context, userID, sessionID, stepUpToken string) ([]string, error) {
-	if err := s.ready(); err != nil {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
 	}
 	if err := s.VerifyStepUpToken(ctx, userID, sessionID, stepUpToken); err != nil {
@@ -960,7 +979,7 @@ func (s *PasskeyService) EnableMFA(ctx context.Context, userID, sessionID, stepU
 }
 
 func (s *PasskeyService) DisableMFA(ctx context.Context, userID, sessionID, stepUpToken string) error {
-	if err := s.ready(); err != nil {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return err
 	}
 	if err := s.VerifyStepUpToken(ctx, userID, sessionID, stepUpToken); err != nil {
@@ -994,7 +1013,7 @@ func (s *PasskeyService) DisableMFA(ctx context.Context, userID, sessionID, step
 }
 
 func (s *PasskeyService) RegenerateRecoveryCodes(ctx context.Context, userID, sessionID, stepUpToken string) ([]string, error) {
-	if err := s.ready(); err != nil {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
 	}
 	if err := s.VerifyStepUpToken(ctx, userID, sessionID, stepUpToken); err != nil {
@@ -1029,7 +1048,7 @@ func (s *PasskeyService) RegenerateRecoveryCodes(ctx context.Context, userID, se
 // ResetMFAForUser is intentionally separate from self-service operations. It
 // is used only by the explicitly gated embedded admin recovery command.
 func (s *PasskeyService) ResetMFAForUser(ctx context.Context, userID string) error {
-	if err := s.ready(); err != nil {
+	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return err
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

@@ -38,11 +38,6 @@ func (t *AgentTunnel) UpdateHeartbeat() {
 	t.mu.Unlock()
 }
 
-// connected reports whether the tunnel has a live, open connection.
-func (t *AgentTunnel) connected() bool {
-	return t != nil && t.Conn != nil && !t.Conn.IsClosed()
-}
-
 // openStreams counts open mux streams.
 func (t *AgentTunnel) openStreams() int {
 	t.mux.mu.Lock()
@@ -118,7 +113,7 @@ func (t *AgentTunnel) CloseWithReason(reason string) error {
 
 // Active returns the environment's tunnel when its connection is still open.
 func (r *TunnelRegistry) Active(envID string) mo.Option[*AgentTunnel] {
-	if tunnel, _ := r.Get(envID).Get(); tunnel.connected() {
+	if tunnel, _ := r.Get(envID).Get(); tunnel != nil && tunnel.Conn != nil && !tunnel.Conn.IsClosed() {
 		return mo.Some(tunnel)
 	}
 	return mo.None[*AgentTunnel]()
@@ -198,7 +193,7 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 	if envID == "" {
 		return false, false, "environment ID is required", nil
 	}
-	if existing, ok := r.Get(envID).Get(); ok && existing != tunnel && existing.connected() && !existing.mux.alive(ctx, muxRegistrationPingTimeout) {
+	if existing, ok := r.Get(envID).Get(); ok && existing != tunnel && (existing != nil && existing.Conn != nil && !existing.Conn.IsClosed()) && !existing.mux.alive(ctx, muxRegistrationPingTimeout) {
 		slog.InfoContext(ctx, "Existing agent tunnel session failed a liveness ping; replacing it", "environmentId", envID)
 		_ = existing.CloseWithReason("agent tunnel liveness ping failed")
 	}
@@ -218,7 +213,7 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 			tunnelMetadata := tunnel.MetadataSnapshot()
 			existingStale := staleAfter > 0 && time.Since(existingMetadata.LastHeartbeat) > staleAfter
 			sameAgentInstance := existingMetadata.AgentInstance != "" && tunnelMetadata.AgentInstance != "" && existingMetadata.AgentInstance == tunnelMetadata.AgentInstance
-			if existing.connected() && !existingStale && !sameAgentInstance {
+			if (existing != nil && existing.Conn != nil && !existing.Conn.IsClosed()) && !existingStale && !sameAgentInstance {
 				result.reason = "another agent session is already active"
 				return result, false, nil
 			}
@@ -270,7 +265,7 @@ func (r *TunnelRegistry) UnregisterCurrent(ctx context.Context, envID string, cu
 		var result unregisterResult
 		existing := tunnels[envID]
 		if existing != current {
-			result.activeReplacement = existing.connected()
+			result.activeReplacement = (existing != nil && existing.Conn != nil && !existing.Conn.IsClosed())
 			return result, false, nil
 		}
 		delete(tunnels, envID)
@@ -342,7 +337,7 @@ func (r *TunnelRegistry) ObserveAgents(meter metric.Meter) (metric.Registration,
 	return meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
 		counts := map[string]int64{TransportWebSocket: 0, TransportGRPC: 0}
 		for _, tunnel := range r.tunnels.Values() {
-			if tunnel.connected() {
+			if tunnel != nil && tunnel.Conn != nil && !tunnel.Conn.IsClosed() {
 				counts[tunnel.Conn.Transport()]++
 			}
 		}

@@ -68,5 +68,5 @@ func SendGotify(ctx context.Context, config GotifyConfig, message string) error 
 		return fmt.Errorf("failed to build shoutrrr Gotify URL: %w", err)
 	}
 
-	return sendShoutrrrInternal("Gotify", shoutrrrURL, message, &shoutrrrTypes.Params{})
+	return sendShoutrrr("Gotify", shoutrrrURL, message, &shoutrrrTypes.Params{})
 }

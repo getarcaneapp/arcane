@@ -65,7 +65,7 @@ func TestPlanRenamePreservesStandaloneVolumeConfiguration(t *testing.T) {
 	migration, err := PlanRename(t.Context(), newTestDockerClient(t, server), "source-data", "renamed-data", volumehelper.ToolsImage(""))
 	require.NoError(t, err)
 
-	planned, ok := migration.(*dockerProjectVolumeRenameMigrationInternal)
+	planned, ok := migration.(*dockerProjectVolumeRenameMigration)
 	require.True(t, ok)
 	require.Len(t, planned.entries, 1)
 	entry := planned.entries[0]

@@ -104,5 +104,11 @@ func TestValidateComposeContentForUpdate_EnvDirectory(t *testing.T) {
 
 	compose := "services:\n  app:\n    image: nginx:alpine\n"
 	content := "FOO=bar\n"
-	require.NoError(t, ValidateComposeContentForUpdate(t.Context(), projectsDir, projectDir, "envdir", compose, &content, nil, "", false))
+	require.NoError(t, ValidateComposeContentForUpdate(t.Context(), ValidateComposeRequest{
+		ProjectsDirectory: projectsDir,
+		ProjectPath:       projectDir,
+		ProjectName:       "envdir",
+		ComposeContent:    compose,
+		EnvContent:        &content,
+	}))
 }

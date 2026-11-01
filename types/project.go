@@ -742,10 +742,19 @@ type ComposeServiceUpdate struct {
 	WaitTimeout       time.Duration
 }
 
+type ComposeUpOptions struct {
+	Services        []string
+	RemoveOrphans   bool
+	ForceRecreate   bool
+	RecreateVolumes bool
+	AuthConfigs     map[string]registry.AuthConfig
+	WaitTimeout     time.Duration
+}
+
 // ComposeCommands supplies the SDK operations used by the coordinator.
 type ComposeCommands struct {
 	Stop   func(context.Context, string, *composetypes.Project, []string) error
-	Up     func(context.Context, string, *composetypes.Project, []string, bool, bool, bool, map[string]registry.AuthConfig, time.Duration) error
+	Up     func(context.Context, string, *composetypes.Project, ComposeUpOptions) error
 	Create func(context.Context, string, *composetypes.Project, []string, map[string]registry.AuthConfig) error
 }
 

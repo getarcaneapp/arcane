@@ -200,7 +200,11 @@ func newExportCmd() *cobra.Command {
 				return fmt.Errorf("failed to create output file: %w", err)
 			}
 
-			written, err := output.Copy(cmd.Context(), file, resp.Body, resp.ContentLength, "Exporting image", !cmdutil.JSONOutputEnabled(cmd))
+			written, err := output.Copy(cmd.Context(), file, resp.Body, output.TransferOptions{
+				Total:        resp.ContentLength,
+				Label:        "Exporting image",
+				ShowProgress: !cmdutil.JSONOutputEnabled(cmd),
+			})
 			if closeErr := file.Close(); closeErr != nil && err == nil {
 				err = closeErr
 			}

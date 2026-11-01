@@ -9,16 +9,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 const (
-	composeLogsTestProjectInternal         = "projlogdemo"
-	composeLogsTestNonTTYContainerInternal = "11112222333344445555666677778888"
-	composeLogsTestTTYContainerInternal    = "9999aaaabbbbccccddddeeeeffff0000"
-	composeLogsTestTimestampInternal       = "2024-08-26T10:00:00.000000000Z "
+	composeLogsTestProject         = "projlogdemo"
+	composeLogsTestNonTTYContainer = "11112222333344445555666677778888"
+	composeLogsTestTTYContainer    = "9999aaaabbbbccccddddeeeeffff0000"
+	composeLogsTestTimestamp       = "2024-08-26T10:00:00.000000000Z "
 )
 
 func TestComposeLogsMarksStderrWithoutChangingComposeOptions(t *testing.T) {
@@ -27,12 +28,12 @@ func TestComposeLogsMarksStderrWithoutChangingComposeOptions(t *testing.T) {
 	summary := func(id, service, image string) map[string]any {
 		return map[string]any{
 			"Id":     id,
-			"Names":  []string{"/" + composeLogsTestProjectInternal + "-" + service + "-1"},
+			"Names":  []string{"/" + composeLogsTestProject + "-" + service + "-1"},
 			"Image":  image,
 			"State":  "running",
 			"Status": "Up",
 			"Labels": map[string]string{
-				"com.docker.compose.project":          composeLogsTestProjectInternal,
+				"com.docker.compose.project":          composeLogsTestProject,
 				"com.docker.compose.service":          service,
 				"com.docker.compose.container-number": "1",
 				"com.docker.compose.oneoff":           "False",
@@ -50,28 +51,28 @@ func TestComposeLogsMarksStderrWithoutChangingComposeOptions(t *testing.T) {
 		case "/containers/json":
 			w.Header().Set("Content-Type", "application/json")
 			if !assert.NoError(t, json.NewEncoder(w).Encode([]map[string]any{
-				summary(composeLogsTestNonTTYContainerInternal, "web", "nginx"),
-				summary(composeLogsTestTTYContainerInternal, "ttyd", "ttyd"),
+				summary(composeLogsTestNonTTYContainer, "web", "nginx"),
+				summary(composeLogsTestTTYContainer, "ttyd", "ttyd"),
 			})) {
 				return
 			}
-		case "/containers/" + composeLogsTestNonTTYContainerInternal + "/json":
-			writeComposeInspectJSONInternal(t, w, composeLogsTestNonTTYContainerInternal, "web", false)
-		case "/containers/" + composeLogsTestTTYContainerInternal + "/json":
-			writeComposeInspectJSONInternal(t, w, composeLogsTestTTYContainerInternal, "ttyd", true)
-		case "/containers/" + composeLogsTestNonTTYContainerInternal + "/logs":
+		case "/containers/" + composeLogsTestNonTTYContainer + "/json":
+			writeComposeInspectJSON(t, w, composeLogsTestNonTTYContainer, "web", false)
+		case "/containers/" + composeLogsTestTTYContainer + "/json":
+			writeComposeInspectJSON(t, w, composeLogsTestTTYContainer, "ttyd", true)
+		case "/containers/" + composeLogsTestNonTTYContainer + "/logs":
 			logsQueries <- r.URL.RawQuery
 			w.Header().Set("Content-Type", "application/vnd.docker.multiplexed-stream")
 			_, err := w.Write(bytes.Join([][]byte{
-				frameLogEntryInternal(stdcopy.Stdout, []byte(composeLogsTestTimestampInternal+"hello stdout\n")),
-				frameLogEntryInternal(stdcopy.Stderr, []byte(composeLogsTestTimestampInternal+"hello stderr\n")),
+				frameLogEntry(stdcopy.Stdout, []byte(composeLogsTestTimestamp+"hello stdout\n")),
+				frameLogEntry(stdcopy.Stderr, []byte(composeLogsTestTimestamp+"hello stderr\n")),
 			}, nil))
 			if !assert.NoError(t, err) {
 				return
 			}
-		case "/containers/" + composeLogsTestTTYContainerInternal + "/logs":
+		case "/containers/" + composeLogsTestTTYContainer + "/logs":
 			w.Header().Set("Content-Type", "application/vnd.docker.raw-stream")
-			_, err := w.Write([]byte(composeLogsTestTimestampInternal + "raw tty output\n"))
+			_, err := w.Write([]byte(composeLogsTestTimestamp + "raw tty output\n"))
 			if !assert.NoError(t, err) {
 				return
 			}
@@ -84,7 +85,7 @@ func TestComposeLogsMarksStderrWithoutChangingComposeOptions(t *testing.T) {
 	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:1")
 
 	out := &bytes.Buffer{}
-	err := ComposeLogs(t.Context(), "tcp://"+strings.TrimPrefix(server.URL, "http://"), composeLogsTestProjectInternal, out, false, "all", "", true)
+	err := ComposeLogs(t.Context(), "tcp://"+strings.TrimPrefix(server.URL, "http://"), composeLogsTestProject, out, types.LogStreamOptions{Tail: "all", Timestamps: true})
 	require.NoError(t, err)
 
 	body := out.String()
@@ -102,13 +103,13 @@ func TestComposeLogsMarksStderrWithoutChangingComposeOptions(t *testing.T) {
 	assert.NotContains(t, query, "tail=")
 }
 
-func writeComposeInspectJSONInternal(t *testing.T, w http.ResponseWriter, containerID, serviceName string, tty bool) {
+func writeComposeInspectJSON(t *testing.T, w http.ResponseWriter, containerID, serviceName string, tty bool) {
 	t.Helper()
 
 	w.Header().Set("Content-Type", "application/json")
 	require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 		"Id":      containerID,
-		"Name":    "/" + composeLogsTestProjectInternal + "-" + serviceName + "-1",
+		"Name":    "/" + composeLogsTestProject + "-" + serviceName + "-1",
 		"Created": "2024-08-26T09:00:00Z",
 		"Path":    "/bin/sh",
 		"State": map[string]any{

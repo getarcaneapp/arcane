@@ -111,11 +111,21 @@ func (s *Service) SyncState(ctx context.Context) SyncState {
 	return state
 }
 
+type RenameRequest struct {
+	ProjectID         string
+	OldName           string
+	OldPath           string
+	OldDirName        *string
+	Name              *string
+	ProjectsDirectory string
+	Migration         types.VolumeMigration
+}
+
 // Prepare builds the journal for renaming a project, or nil when the name
 // does not change.
-func (s *Service) Prepare(projectID, oldName, oldPath string, oldDirName, name *string, projectsDirectory string, migration types.VolumeMigration) *types.ProjectRenameJournal {
-	newName := strings.TrimSpace(kit.FromPtr(name))
-	if newName == "" || oldName == newName {
+func (s *Service) Prepare(req RenameRequest) *types.ProjectRenameJournal {
+	newName := strings.TrimSpace(kit.FromPtr(req.Name))
+	if newName == "" || req.OldName == newName {
 		return nil
 	}
 
@@ -125,16 +135,16 @@ func (s *Service) Prepare(projectID, oldName, oldPath string, oldDirName, name *
 	}
 
 	return &types.ProjectRenameJournal{
-		ProjectID:  projectID,
-		OldName:    oldName,
+		ProjectID:  req.ProjectID,
+		OldName:    req.OldName,
 		NewName:    newName,
-		OldPath:    filepath.Clean(oldPath),
-		NewPath:    filepath.Clean(filepath.Join(projectsDirectory, newDirName)),
-		OldDirName: mo.PointerToOption(oldDirName).ToPointer(),
+		OldPath:    filepath.Clean(req.OldPath),
+		NewPath:    filepath.Clean(filepath.Join(req.ProjectsDirectory, newDirName)),
+		OldDirName: mo.PointerToOption(req.OldDirName).ToPointer(),
 		NewDirName: newDirName,
 		Phase:      types.ProjectRenameJournalPhaseStarted,
 		Volumes: func() []types.VolumeJournalVolume {
-			if source, ok := migration.(types.VolumeJournalSource); ok {
+			if source, ok := req.Migration.(types.VolumeJournalSource); ok {
 				return source.JournalVolumes()
 			}
 			return nil

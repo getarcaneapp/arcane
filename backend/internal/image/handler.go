@@ -325,20 +325,17 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 
 			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()
-			activityID, runtimeCtx := activitylib.StartHandlerActivity(
-				runtimeCtx,
-				h.activityService,
-				input.EnvironmentID,
-				types.ActivityTypeImagePull,
-				"image",
-				"",
-				fullImageName,
-				user,
-				"Pulling image",
-				"Image pull started",
-				database.JSON{"imageName": fullImageName},
-				true,
-			)
+			activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+				EnvironmentID: input.EnvironmentID,
+				Type:          types.ActivityTypeImagePull,
+				ResourceType:  "image",
+				ResourceName:  fullImageName,
+				User:          user,
+				Step:          "Pulling image",
+				Message:       "Image pull started",
+				Metadata:      database.JSON{"imageName": fullImageName},
+				Queue:         true,
+			})
 			activitylib.WriteStartedLine(rawWriter, activityID)
 			if f, ok := rawWriter.(http.Flusher); ok {
 				f.Flush()
@@ -381,20 +378,17 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 
 			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()
-			activityID, runtimeCtx := activitylib.StartHandlerActivity(
-				runtimeCtx,
-				h.activityService,
-				input.EnvironmentID,
-				types.ActivityTypeImageBuild,
-				"image",
-				"",
-				kit.Ternary(strings.TrimSpace(strings.Join(input.Body.Tags, ", ")) == "", input.Body.ContextDir, strings.Join(input.Body.Tags, ", ")),
-				user,
-				"Building image",
-				"Image build started",
-				database.JSON{"contextDir": input.Body.ContextDir, "tags": input.Body.Tags},
-				true,
-			)
+			activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+				EnvironmentID: input.EnvironmentID,
+				Type:          types.ActivityTypeImageBuild,
+				ResourceType:  "image",
+				ResourceName:  kit.Ternary(strings.TrimSpace(strings.Join(input.Body.Tags, ", ")) == "", input.Body.ContextDir, strings.Join(input.Body.Tags, ", ")),
+				User:          user,
+				Step:          "Building image",
+				Message:       "Image build started",
+				Metadata:      database.JSON{"contextDir": input.Body.ContextDir, "tags": input.Body.Tags},
+				Queue:         true,
+			})
 			activitylib.WriteStartedLine(rawWriter, activityID)
 			if f, ok := rawWriter.(http.Flusher); ok {
 				f.Flush()

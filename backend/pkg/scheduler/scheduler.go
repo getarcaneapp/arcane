@@ -15,11 +15,11 @@ import (
 )
 
 var (
-	cronScheduleParser             = scheduleutil.Parser()
-	errJobSchedulerStoppedInternal = errors.New("job scheduler stopped")
+	cronScheduleParser     = scheduleutil.Parser()
+	errJobSchedulerStopped = errors.New("job scheduler stopped")
 )
 
-type watcherRegistrationInternal struct {
+type watcherRegistration struct {
 	watcher types.BusWatcher
 	done    chan struct{}
 }
@@ -27,8 +27,8 @@ type jobSchedulerInternal struct {
 	context     context.Context
 	jobsByID    map[string]types.SchedulerJob
 	watchers    map[string]types.BusWatcher
-	allWatchers map[string]watcherRegistrationInternal
-	supervisors map[string]*watcherSupervisorInternal
+	allWatchers map[string]watcherRegistration
+	supervisors map[string]*watcherSupervisor
 	cancel      context.CancelFunc
 	location    *time.Location
 	coordinator *runs.Coordinator
@@ -52,8 +52,8 @@ func NewJobScheduler(ctx context.Context, coordinator *runs.Coordinator, locatio
 			coordinator: coordinator,
 			jobsByID:    map[string]types.SchedulerJob{},
 			watchers:    map[string]types.BusWatcher{},
-			allWatchers: map[string]watcherRegistrationInternal{},
-			supervisors: map[string]*watcherSupervisorInternal{},
+			allWatchers: map[string]watcherRegistration{},
+			supervisors: map[string]*watcherSupervisor{},
 		},
 		nil
 }
@@ -65,7 +65,7 @@ func (js *jobSchedulerInternal) RegisterJob(job types.SchedulerJob) error {
 	js.mu.Lock()
 	defer js.mu.Unlock()
 	if js.stopping {
-		return errJobSchedulerStoppedInternal
+		return errJobSchedulerStopped
 	}
 	js.jobsByID[job.Name()] = job
 	return nil
@@ -75,15 +75,15 @@ func (js *jobSchedulerInternal) RegisterBusWatcher(watcher types.BusWatcher, man
 	js.mu.Lock()
 	defer js.mu.Unlock()
 	if js.stopping {
-		return errJobSchedulerStoppedInternal
+		return errJobSchedulerStopped
 	}
 	if _, found := js.allWatchers[watcher.Name()]; found {
 		return errors.New("watcher already registered")
 	}
-	supervisor := newWatcherSupervisor(watcher)
+	supervisor := &watcherSupervisor{watcher: watcher, restart: make(chan struct{}, 1), health: types.SchedulerWorkerHealth{Status: "starting", UpdatedAt: time.Now()}}
 	done := make(chan struct{})
 	js.supervisors[watcher.Name()] = supervisor
-	js.allWatchers[watcher.Name()] = watcherRegistrationInternal{watcher: watcher, done: done}
+	js.allWatchers[watcher.Name()] = watcherRegistration{watcher: watcher, done: done}
 	if manual {
 		js.watchers[watcher.Name()] = watcher
 	}
@@ -132,7 +132,7 @@ func (js *jobSchedulerInternal) StartScheduler(ctx context.Context) error {
 	js.mu.Lock()
 	if js.stopping {
 		js.mu.Unlock()
-		return errJobSchedulerStoppedInternal
+		return errJobSchedulerStopped
 	}
 	js.started = true
 	js.mu.Unlock()
@@ -212,7 +212,7 @@ func (js *jobSchedulerInternal) Stop(ctx context.Context) error {
 	js.mu.Lock()
 	js.stopping = true
 	js.cancel()
-	watchers := make([]watcherRegistrationInternal, 0, len(js.allWatchers))
+	watchers := make([]watcherRegistration, 0, len(js.allWatchers))
 	for _, w := range js.allWatchers {
 		watchers = append(watchers, w)
 	}

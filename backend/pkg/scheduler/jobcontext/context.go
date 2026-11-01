@@ -9,22 +9,22 @@ import (
 )
 
 type (
-	progressKeyInternal struct{}
-	runKeyInternal      struct{}
+	progressKey struct{}
+	runKey      struct{}
 )
 
 // WithExecution binds the run a job executes and, when persist is set, how its target progress is saved.
 func WithExecution(ctx context.Context, run types.SchedulerRun, persist func(types.TargetOutcome) error) context.Context {
-	ctx = context.WithValue(ctx, runKeyInternal{}, run)
+	ctx = context.WithValue(ctx, runKey{}, run)
 	if persist != nil {
-		ctx = context.WithValue(ctx, progressKeyInternal{}, persist)
+		ctx = context.WithValue(ctx, progressKey{}, persist)
 	}
 	return ctx
 }
 
 // Progress saves target progress for the executing run; it is a no-op outside one.
 func Progress(ctx context.Context, target types.TargetOutcome) error {
-	if persist, ok := ctx.Value(progressKeyInternal{}).(func(types.TargetOutcome) error); ok {
+	if persist, ok := ctx.Value(progressKey{}).(func(types.TargetOutcome) error); ok {
 		return persist(target)
 	}
 	return nil
@@ -45,7 +45,7 @@ func Merge(targets []types.TargetOutcome, target types.TargetOutcome) []types.Ta
 
 // Run returns the run being executed, as of when its execution started.
 func Run(ctx context.Context) (types.SchedulerRun, bool) {
-	run, ok := ctx.Value(runKeyInternal{}).(types.SchedulerRun)
+	run, ok := ctx.Value(runKey{}).(types.SchedulerRun)
 	return run, ok
 }
 

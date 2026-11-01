@@ -1,6 +1,7 @@
 package flow
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -280,12 +281,12 @@ func (e *Engine) projectActivity(ctx context.Context, wf *Workflow, activityID s
 		if step.Status != types.RunStatusQueued && (!seen || previous != step.Status) {
 			projection.statuses[step.Name] = step.Status
 			if step.Status != types.RunStatusRunning {
-				e.appendStepMessage(ctx, activityID, wf.stepLabel(step.Name), step)
+				e.appendStepMessage(ctx, activityID, cmp.Or(wf.def.Labels[step.Name], step.Name), step)
 			}
 		}
 		switch {
 		case step.Status == types.RunStatusRunning:
-			current = wf.stepLabel(step.Name)
+			current = cmp.Or(wf.def.Labels[step.Name], step.Name)
 			if step.Total > 0 {
 				done += float64(step.Completed+step.Failed) / float64(step.Total)
 			}

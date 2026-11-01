@@ -45,5 +45,5 @@ func SendSlack(ctx context.Context, config SlackConfig, message string) error {
 		return fmt.Errorf("failed to build shoutrrr Slack URL: %w", err)
 	}
 
-	return sendShoutrrrInternal("Slack", shoutrrrURL, message, nil)
+	return sendShoutrrr("Slack", shoutrrrURL, message, nil)
 }

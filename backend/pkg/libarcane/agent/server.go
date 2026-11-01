@@ -250,7 +250,7 @@ func (s *TunnelServer) HandleMTLSEnroll(c *echo.Context) error {
 	if err != nil {
 		return failState(err)
 	}
-	safeEnvID := sanitizedEnvID(envID)
+	safeEnvID := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(envID), "_")
 	if safeEnvID == "" {
 		return failState(errors.New("environment ID is required"))
 	}
@@ -472,7 +472,7 @@ func (s *TunnelServer) updateConnectionStatus(ctx context.Context, tunnel *Agent
 	s.statusMu.Lock()
 	defer s.statusMu.Unlock()
 	if !connected {
-		if active, _ := s.registry.Get(tunnel.EnvironmentID).Get(); active != tunnel && active.connected() {
+		if active, _ := s.registry.Get(tunnel.EnvironmentID).Get(); active != tunnel && (active != nil && active.Conn != nil && !active.Conn.IsClosed()) {
 			return
 		}
 	}
@@ -505,7 +505,7 @@ func (s *TunnelServer) requireCertificateIdentity(state *tls.ConnectionState, en
 		return nil
 	}
 
-	safeEnvID := sanitizedEnvID(envID)
+	safeEnvID := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(envID), "_")
 	if safeEnvID == "" {
 		return errors.New("environment ID is required for agent mTLS certificate identity check")
 	}

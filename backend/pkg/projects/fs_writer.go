@@ -57,8 +57,8 @@ func ComposeFileCandidates() []string {
 	return slices.Clone(composeFileCandidates)
 }
 
-// detectExistingComposeFileInternal finds an existing compose file in the directory
-func detectExistingComposeFileInternal(ctx context.Context, projectsRoot, dir string) string {
+// detectExistingComposeFile finds an existing compose file in the directory
+func detectExistingComposeFile(ctx context.Context, projectsRoot, dir string) string {
 	composePath, err := DetectComposeFile(ctx, projectsRoot, dir)
 	return kit.Ternary(err == nil, composePath, "")
 }
@@ -80,7 +80,7 @@ func WriteComposeFile(ctx context.Context, projectsRoot, dirPath, content string
 
 	composeFileName := DefaultComposeFileName
 	mode := utils.FilePerm
-	if existingFile := detectExistingComposeFileInternal(ctx, projectsRoot, dirPath); existingFile != "" {
+	if existingFile := detectExistingComposeFile(ctx, projectsRoot, dirPath); existingFile != "" {
 		composeFileName = filepath.Base(existingFile)
 		if entry, statErr := (acfs.Root{Path: dirPath}).Stat(ctx, "/"+composeFileName, acfstypes.StatOptions{}); statErr == nil {
 			mode = os.FileMode(entry.UnixMode).Perm()
@@ -108,7 +108,7 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 	}
 
 	if fileName == EffectiveEnvFileName {
-		written, err := writeEnvThroughSymlinkInternal(filepath.Join(dirPath, fileName), content)
+		written, err := writeEnvThroughSymlink(filepath.Join(dirPath, fileName), content)
 		if err != nil {
 			return fmt.Errorf("failed to write project file %s: %w", fileName, err)
 		}
@@ -147,15 +147,15 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 	return nil
 }
 
-// writeEnvThroughSymlinkInternal writes content through a project .env that is
+// writeEnvThroughSymlink writes content through a project .env that is
 // a symbolic link and reports whether it did.
 //
 // The link target is allowed to live outside the projects root by design, so
 // the write goes to the resolved absolute path rather than through the
 // root-confined API; tightening that is the same class of regression as the
 // includes handling in #3556. The resolved target is always a regular file.
-func writeEnvThroughSymlinkInternal(envPath, content string) (bool, error) {
-	resolvedPath, resolvedPerm, isSymlink, err := resolveEnvFileWriteTargetInternal(envPath)
+func writeEnvThroughSymlink(envPath, content string) (bool, error) {
+	resolvedPath, resolvedPerm, isSymlink, err := resolveEnvFileWriteTarget(envPath)
 	if err != nil {
 		return false, fmt.Errorf("resolve write target: %w", err)
 	}
@@ -173,7 +173,7 @@ func writeEnvThroughSymlinkInternal(envPath, content string) (bool, error) {
 	return true, atomic.WriteFile(resolvedPath, []byte(content), resolvedPerm)
 }
 
-func resolveEnvFileWriteTargetInternal(envPath string) (writePath string, perm os.FileMode, isSymlink bool, err error) {
+func resolveEnvFileWriteTarget(envPath string) (writePath string, perm os.FileMode, isSymlink bool, err error) {
 	info, err := os.Lstat(envPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -264,11 +264,11 @@ func RollbackRenamedProjectDirectory(ctx context.Context, oldPath, newPath strin
 		return false, nil
 	}
 
-	oldExists, _ := pathExistsInternal(oldPath)
-	newExists, _ := pathExistsInternal(newPath)
+	oldExists, _ := pathExists(oldPath)
+	newExists, _ := pathExists(newPath)
 	switch {
 	case oldExists && newExists:
-		conflictPath, relocateRenameConflictDirectoryErr := relocateRenameConflictDirectoryInternal(ctx, newPath)
+		conflictPath, relocateRenameConflictDirectoryErr := relocateRenameConflictDirectory(ctx, newPath)
 		if relocateRenameConflictDirectoryErr != nil {
 			slog.WarnContext(ctx, "project rename directory rollback found both paths and failed to relocate target path; keeping old path and clearing journal",
 				"oldPath", oldPath, "newPath", newPath, "error", relocateRenameConflictDirectoryErr)
@@ -295,7 +295,7 @@ func RollbackRenamedProjectDirectory(ctx context.Context, oldPath, newPath strin
 	return pathsMissing, nil
 }
 
-func relocateRenameConflictDirectoryInternal(ctx context.Context, localPath string) (string, error) {
+func relocateRenameConflictDirectory(ctx context.Context, localPath string) (string, error) {
 	parent := filepath.Dir(localPath)
 	base := filepath.Base(localPath)
 	now := time.Now().UTC().UnixNano()
@@ -443,12 +443,12 @@ func ComposeOverrideFileCandidates() []string {
 	return slices.Clone(composeOverrideFileCandidates)
 }
 
-// findComposeOverrideCandidatesInternal returns every supported override
+// findComposeOverrideCandidates returns every supported override
 // candidate name for which exists reports true, in compose-go preference order.
 // It is the single primitive behind both filesystem discovery
 // (DetectComposeOverrideFile) and non-filesystem discovery
 // (ResolveComposeOverride), so the two can never drift in preference order.
-func findComposeOverrideCandidatesInternal(exists func(name string) bool) []string {
+func findComposeOverrideCandidates(exists func(name string) bool) []string {
 	found := make([]string, 0, 1)
 	for _, name := range composeOverrideFileCandidates {
 		if exists(name) {
@@ -458,10 +458,10 @@ func findComposeOverrideCandidatesInternal(exists func(name string) bool) []stri
 	return found
 }
 
-// warnOnMultipleComposeOverridesInternal mirrors compose-go: when more than one
+// warnOnMultipleComposeOverrides mirrors compose-go: when more than one
 // override candidate is present it logs which candidates were found and which
 // highest-preference match will be used.
-func warnOnMultipleComposeOverridesInternal(found []string) {
+func warnOnMultipleComposeOverrides(found []string) {
 	if len(found) > 1 {
 		ctx := context.Background() //nolint:forbidigo // Compose file discovery is a pure helper without a request context.
 		slog.WarnContext(ctx, "multiple compose override files found; using highest-preference match",
@@ -476,14 +476,14 @@ func warnOnMultipleComposeOverridesInternal(found []string) {
 func DetectComposeOverrideFile(dir string) string {
 	// Stays on os.*: override files may be symlinks resolving outside any
 	// confinement root (same class as #3556 includes), which acfs cannot follow.
-	found := findComposeOverrideCandidatesInternal(func(name string) bool {
+	found := findComposeOverrideCandidates(func(name string) bool {
 		info, err := os.Stat(filepath.Join(dir, name))
 		return err == nil && !info.IsDir()
 	})
 	if len(found) == 0 {
 		return ""
 	}
-	warnOnMultipleComposeOverridesInternal(found)
+	warnOnMultipleComposeOverrides(found)
 	return filepath.Join(dir, found[0])
 }
 
@@ -507,11 +507,11 @@ func ReadComposeOverrideContent(dir string) string {
 // mirroring DetectComposeOverrideFile. found is false (with empty name/content)
 // when no candidate exists.
 func ResolveComposeOverride(exists func(name string) bool, read func(name string) (string, error)) (fileName, content string, found bool, err error) {
-	matches := findComposeOverrideCandidatesInternal(exists)
+	matches := findComposeOverrideCandidates(exists)
 	if len(matches) == 0 {
 		return "", "", false, nil
 	}
-	warnOnMultipleComposeOverridesInternal(matches)
+	warnOnMultipleComposeOverrides(matches)
 	name := matches[0]
 	c, readErr := read(name)
 	if readErr != nil {

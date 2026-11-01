@@ -59,7 +59,7 @@ func TestCreateProjectVolumeCopyHolderContainerInternal_UsesPassiveHolderCommand
 	_, cleanup, err := createProjectVolumeCopyHolderContainer(
 		t.Context(),
 		newTestDockerClient(t, server),
-		projectVolumeCopyRuntimeInternal{Image: "arcane:local"},
+		projectVolumeCopyRuntime{Image: "arcane:local"},
 		"nginx_data",
 		true,
 	)

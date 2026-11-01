@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSignalPublishesOnceAndUnsubscribesInternal(t *testing.T) {
+func TestSignalPublishesOnceAndUnsubscribes(t *testing.T) {
 	signal := NewSignal[int]()
 	firstCalls := 0
 	secondCalls := 0
@@ -26,7 +26,7 @@ func TestSignalPublishesOnceAndUnsubscribesInternal(t *testing.T) {
 	require.Equal(t, 3, secondCalls)
 }
 
-func TestSignalContainsSubscriberPanicInternal(t *testing.T) {
+func TestSignalContainsSubscriberPanic(t *testing.T) {
 	signal := NewSignal[int]()
 	called := false
 	signal.Subscribe(func(int) { panic("deliberate signal panic") })

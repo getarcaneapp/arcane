@@ -852,7 +852,12 @@ func (s *ApiKeyService) ListApiKeysByUser(ctx context.Context, userID string) ([
 	return result, nil
 }
 
-func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.PermissionSet, id string, req types.ApiKey, submitted map[string]bool) (*types.ApiKey, error) {
+type ApiKeyUpdate struct {
+	Request   types.ApiKey
+	Submitted map[string]bool
+}
+
+func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.PermissionSet, id string, change ApiKeyUpdate) (*types.ApiKey, error) {
 	var ak ApiKey
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&ak).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -869,17 +874,17 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 		return nil, ErrApiKeyProtected
 	}
 
-	req = types.ApiKey{
-		Name:        kit.Ternary(submitted["name"], req.Name, ak.Name),
-		Description: kit.Ternary(submitted["description"], req.Description, ak.Description),
-		ExpiresAt:   kit.Ternary(submitted["expiresAt"], req.ExpiresAt, ak.ExpiresAt),
-		Permissions: req.Permissions,
+	change.Request = types.ApiKey{
+		Name:        kit.Ternary(change.Submitted["name"], change.Request.Name, ak.Name),
+		Description: kit.Ternary(change.Submitted["description"], change.Request.Description, ak.Description),
+		ExpiresAt:   kit.Ternary(change.Submitted["expiresAt"], change.Request.ExpiresAt, ak.ExpiresAt),
+		Permissions: change.Request.Permissions,
 	}
-	if err := normalization.Normalize(&req); err != nil {
+	if err := normalization.Normalize(&change.Request); err != nil {
 		return nil, err
 	}
 
-	if submitted["permissions"] {
+	if change.Submitted["permissions"] {
 		if ak.Kind == ApiKeyKindPersonal {
 			return nil, ErrApiKeyPersonalNoGrants
 		}
@@ -888,7 +893,7 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 		// credential itself cannot do right now) AND by the key owner's role
 		// permissions (no caller can push another user's key above what that
 		// user's own roles allow).
-		if err := validateGrantsAgainstPermissionSet(callerPerms, req.Permissions); err != nil {
+		if err := validateGrantsAgainstPermissionSet(callerPerms, change.Request.Permissions); err != nil {
 			return nil, err
 		}
 		if ak.UserID == nil {
@@ -898,7 +903,7 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 			// caller-only check.
 			return nil, ErrApiKeyProtected
 		}
-		if err := s.validateGrantsAgainstOwner(ctx, *ak.UserID, req.Permissions); err != nil {
+		if err := s.validateGrantsAgainstOwner(ctx, *ak.UserID, change.Request.Permissions); err != nil {
 			return nil, err
 		}
 	}
@@ -907,9 +912,9 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 		BaseModel: database.BaseModel{
 			UpdatedAt: new(time.Now()),
 		},
-		Name:        req.Name,
-		Description: req.Description,
-		ExpiresAt:   req.ExpiresAt,
+		Name:        change.Request.Name,
+		Description: change.Request.Description,
+		ExpiresAt:   change.Request.ExpiresAt,
 	}
 
 	permissionsUpdated := false
@@ -920,8 +925,8 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 			Updates(&changes).Error; err != nil {
 			return fmt.Errorf("failed to update API key: %w", err)
 		}
-		if submitted["permissions"] {
-			if err := s.roleService.SetApiKeyPermissionsInDB(ctx, tx, ak.ID, toApiKeyPermissionRows(ak.ID, req.Permissions)); err != nil {
+		if change.Submitted["permissions"] {
+			if err := s.roleService.SetApiKeyPermissionsInDB(ctx, tx, ak.ID, toApiKeyPermissionRows(ak.ID, change.Request.Permissions)); err != nil {
 				return fmt.Errorf("failed to update api key permissions: %w", err)
 			}
 			permissionsUpdated = true

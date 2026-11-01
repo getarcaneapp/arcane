@@ -16,21 +16,21 @@ func TestCleanupStaleManagedResourcesMatchesCurrentAndLegacyLabels(t *testing.T)
 
 	listCalls := 0
 	removedIDs := make([]string, 0, 2)
-	adapter := fileResourceAdapterInternal{
+	adapter := fileResourceAdapter{
 		ResourceType: "config",
-		List: func(_ context.Context, filters dockerclient.Filters) ([]staleManagedResourceInternal, error) {
+		List: func(_ context.Context, filters dockerclient.Filters) ([]staleManagedResource, error) {
 			listCalls++
 			labels := filters["label"]
 			require.True(t, labels[types.SwarmStackNamespaceLabel+"=stack"])
 
 			switch {
 			case labels[resourceTypeLabel+"=config"]:
-				return []staleManagedResourceInternal{
+				return []staleManagedResource{
 					{ID: "current", Name: "desired"},
 					{ID: "both", Name: "stale-both"},
 				}, nil
 			case labels[legacyResourceTypeLabel+"=config"]:
-				return []staleManagedResourceInternal{
+				return []staleManagedResource{
 					{ID: "legacy", Name: "stale-legacy"},
 					{ID: "both", Name: "stale-both"},
 				}, nil
@@ -59,15 +59,15 @@ func TestCleanupStaleManagedResourcesMatchesCurrentAndLegacyLabels(t *testing.T)
 }
 
 func TestCleanupStaleManagedResourcesFailsWhenResourceStaysInUse(t *testing.T) {
-	previousBackoff := staleSwarmResourceRemoveBackoffInternal
-	staleSwarmResourceRemoveBackoffInternal = time.Millisecond
-	t.Cleanup(func() { staleSwarmResourceRemoveBackoffInternal = previousBackoff })
+	previousBackoff := staleSwarmResourceRemoveBackoff
+	staleSwarmResourceRemoveBackoff = time.Millisecond
+	t.Cleanup(func() { staleSwarmResourceRemoveBackoff = previousBackoff })
 
 	removeCalls := 0
-	adapter := fileResourceAdapterInternal{
+	adapter := fileResourceAdapter{
 		ResourceType: "config",
-		List: func(_ context.Context, _ dockerclient.Filters) ([]staleManagedResourceInternal, error) {
-			return []staleManagedResourceInternal{{ID: "stale", Name: "stale"}}, nil
+		List: func(_ context.Context, _ dockerclient.Filters) ([]staleManagedResource, error) {
+			return []staleManagedResource{{ID: "stale", Name: "stale"}}, nil
 		},
 		Remove: func(_ context.Context, _ string) error {
 			removeCalls++
@@ -77,7 +77,7 @@ func TestCleanupStaleManagedResourcesFailsWhenResourceStaysInUse(t *testing.T) {
 
 	err := cleanupStaleManagedResources(t.Context(), "stack", map[string]struct{}{}, adapter, false, false)
 	require.Error(t, err)
-	require.Equal(t, staleSwarmResourceRemoveAttemptsInternal, removeCalls)
+	require.Equal(t, staleSwarmResourceRemoveAttempts, removeCalls)
 
 	removeCalls = 0
 	err = cleanupStaleManagedResources(t.Context(), "stack", map[string]struct{}{}, adapter, false, true)

@@ -384,8 +384,13 @@ func (s *ApnsService) device(ctx context.Context, userID, id string) (*Device, e
 	return &device, nil
 }
 
-func (s *ApnsService) UpdateDevice(ctx context.Context, userID, id string, req types.ApnsDevice, submitted map[string]bool) (types.ApnsDevice, error) {
-	if err := normalization.Normalize(&req); err != nil {
+type DeviceUpdate struct {
+	Request   types.ApnsDevice
+	Submitted map[string]bool
+}
+
+func (s *ApnsService) UpdateDevice(ctx context.Context, userID, id string, change DeviceUpdate) (types.ApnsDevice, error) {
+	if err := normalization.Normalize(&change.Request); err != nil {
 		return types.ApnsDevice{}, err
 	}
 	device, err := s.device(ctx, userID, id)
@@ -396,9 +401,9 @@ func (s *ApnsService) UpdateDevice(ctx context.Context, userID, id string, req t
 		BaseModel:      device.BaseModel,
 		UserID:         device.UserID,
 		RecipientID:    device.RecipientID,
-		Label:          kit.Ternary(submitted["label"], req.Label, device.Label),
-		Events:         kit.Ternary(submitted["events"], req.Events, device.Events),
-		EnvironmentIDs: append(database.StringSlice{}, kit.Ternary(submitted["environmentIds"], req.EnvironmentIDs, []string(device.EnvironmentIDs))...),
+		Label:          kit.Ternary(change.Submitted["label"], change.Request.Label, device.Label),
+		Events:         kit.Ternary(change.Submitted["events"], change.Request.Events, device.Events),
+		EnvironmentIDs: append(database.StringSlice{}, kit.Ternary(change.Submitted["environmentIds"], change.Request.EnvironmentIDs, []string(device.EnvironmentIDs))...),
 		LastSeenAt:     new(time.Now()),
 	}
 	if saveDeviceErr := s.db.WithContext(ctx).Save(&updated).Error; saveDeviceErr != nil {

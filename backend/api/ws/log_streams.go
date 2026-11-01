@@ -79,22 +79,21 @@ func (h *WebSocketHandler) releaseLogStream(key string, stream *wsLogStream, don
 
 // logStreamParams holds the standard query parameters shared by every WS log endpoint.
 type logStreamParams struct {
-	tail       string
-	since      string
-	format     string
-	follow     bool
-	timestamps bool
-	batched    bool
+	stream  types.LogStreamOptions
+	format  string
+	batched bool
 }
 
 func parseLogStreamParams(c *echo.Context) logStreamParams {
 	return logStreamParams{
-		follow:     cmp.Or(c.QueryParam("follow"), "true") == "true",
-		tail:       cmp.Or(c.QueryParam("tail"), "100"),
-		since:      c.QueryParam("since"),
-		timestamps: c.QueryParam("timestamps") == "true",
-		format:     cmp.Or(c.QueryParam("format"), "text"),
-		batched:    c.QueryParam("batched") == "true",
+		stream: types.LogStreamOptions{
+			Tail:       cmp.Or(c.QueryParam("tail"), "100"),
+			Since:      c.QueryParam("since"),
+			Follow:     cmp.Or(c.QueryParam("follow"), "true") == "true",
+			Timestamps: c.QueryParam("timestamps") == "true",
+		},
+		format:  cmp.Or(c.QueryParam("format"), "text"),
+		batched: c.QueryParam("batched") == "true",
 	}
 }
 
@@ -119,10 +118,10 @@ func (h *WebSocketHandler) serveLogStream(
 		resourceID,
 		params.format,
 		strconv.FormatBool(params.batched),
-		strconv.FormatBool(params.follow),
-		params.tail,
-		params.since,
-		strconv.FormatBool(params.timestamps),
+		strconv.FormatBool(params.stream.Follow),
+		params.stream.Tail,
+		params.stream.Since,
+		strconv.FormatBool(params.stream.Timestamps),
 	}, "|")
 	stream := h.getOrCreateLogStream(streamKey, func(onEmpty func(*wsLogStream)) *wsLogStream {
 		return hubBuilder(streamKey, onEmpty)
@@ -233,7 +232,7 @@ func normalizeContainerLogMessage(line string) wshub.LogMessage {
 func (h *WebSocketHandler) startLogHub(
 	key, resourceID, label string,
 	params logStreamParams,
-	stream func(context.Context, string, chan<- string, bool, string, string, bool) error,
+	stream func(context.Context, string, chan<- string, types.LogStreamOptions) error,
 	normalizeJSON func(string) wshub.LogMessage,
 	normalizeText func(string) string,
 	onEmptyHook func(*wsLogStream),
@@ -269,7 +268,7 @@ func (h *WebSocketHandler) startLogSource(
 	cancel context.CancelFunc,
 	key, resourceID, label string,
 	params logStreamParams,
-	stream func(context.Context, string, chan<- string, bool, string, string, bool) error,
+	stream func(context.Context, string, chan<- string, types.LogStreamOptions) error,
 	ls *wsLogStream,
 ) <-chan string {
 	lines := make(chan string, 256)
@@ -282,7 +281,7 @@ func (h *WebSocketHandler) startLogSource(
 		case <-ls.firstSubscriber:
 		}
 
-		if err := stream(ctx, resourceID, lines, params.follow, params.tail, params.since, params.timestamps); err != nil {
+		if err := stream(ctx, resourceID, lines, params.stream); err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return
 			}

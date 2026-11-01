@@ -108,7 +108,10 @@ func (h *FederatedCredentialHandler) UpdateFederatedCredential(ctx context.Conte
 		return nil, huma.Error400BadRequest("invalid request body")
 	}
 
-	credential, err := h.federatedCredentialService.Update(ctx, user.ID, input.ID, input.Body, submitted)
+	credential, err := h.federatedCredentialService.Update(ctx, user.ID, input.ID, CredentialUpdate{
+		Request:   input.Body,
+		Submitted: submitted,
+	})
 	if err != nil {
 		return nil, federatedCredentialManagementError(err)
 	}

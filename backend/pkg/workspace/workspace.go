@@ -18,12 +18,8 @@ type UploadReference struct {
 	Operation     string
 }
 
-func EffectiveMaxFileSizeMB(configured int) int {
-	return kit.Ternary(configured <= 0, DefaultMaxFileSizeMB, configured)
-}
-
 func MaxFileSizeBytes(configuredMB int) int64 {
-	return int64(EffectiveMaxFileSizeMB(configuredMB)) * 1024 * 1024
+	return int64(kit.Ternary(configuredMB <= 0, DefaultMaxFileSizeMB, configuredMB)) * 1024 * 1024
 }
 
 func ValidateUpdateManifest(fileTreeRevision string, fileChangeCount, maxFileChanges int) error {

@@ -21,7 +21,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/events"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
 	"go.getarcane.app/streams/agg"
 	"go.getarcane.app/streams/bus"
@@ -321,10 +321,6 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 
 func (s *EventService) ListEventsPaginated(ctx context.Context, params pagination.QueryParams) ([]types.Event, pagination.Response, error) {
 	return paginateEvents(pagination.ApplyFilter(s.db.WithContext(ctx).Model(&Event{}), "environment_id", params.Filters["environmentId"]), params)
-}
-
-func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.Event, pagination.Response, error) {
-	return paginateEvents(s.db.WithContext(ctx).Model(&Event{}).Where("environment_id = ?", environmentID), params)
 }
 
 // paginateEvents applies the shared search and filters to q, then pages and maps the rows.

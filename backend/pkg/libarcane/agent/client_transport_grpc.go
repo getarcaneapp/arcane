@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
@@ -55,7 +56,7 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 		}),
 	}
 
-	if managerUsesTLS(c.cfg) {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL(c.cfg.ManagerApiUrl))), "https://") {
 		tlsConfig, err := buildManagerClientTLSConfig(c.cfg)
 		if err != nil {
 			return fmt.Errorf("failed to configure agent gRPC TLS: %w", err)

@@ -38,10 +38,6 @@ type progressFeed struct {
 	active      bool
 }
 
-func newProgressFeed() *progressFeed {
-	return &progressFeed{subscribers: map[chan types.UpgradeProgressEvent]struct{}{}}
-}
-
 func (f *progressFeed) start(fromVersion, toVersion string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

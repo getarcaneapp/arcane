@@ -5,13 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	buildtypes "go.getarcane.app/builds/types"
-	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -45,10 +43,6 @@ type projectMetadataEnv struct {
 	// resolution instead of replaying an error that may have been transient.
 	composeFilesMu sync.Mutex
 	autoInjectEnv  bool
-}
-
-func gitOpsSyncID(proj *Project) string {
-	return strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy))
 }
 
 // composeFile memoizes successful compose file resolutions for the request.

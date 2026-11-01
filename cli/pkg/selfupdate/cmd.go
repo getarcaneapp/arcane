@@ -618,7 +618,11 @@ func (opts cliUpdateOptions) downloadFile(ctx context.Context, url, outputPath s
 		return fmt.Errorf("failed to create download file: %w", err)
 	}
 	limitedBody := &io.LimitedReader{R: resp.Body, N: maxCLIDownloadSize + 1}
-	written, err := output.Copy(ctx, out, limitedBody, resp.ContentLength, "Downloading artifact", !jsonMode)
+	written, err := output.Copy(ctx, out, limitedBody, output.TransferOptions{
+		Total:        resp.ContentLength,
+		Label:        "Downloading artifact",
+		ShowProgress: !jsonMode,
+	})
 	if err != nil {
 		_ = out.Close()
 		return fmt.Errorf("failed to write download file: %w", err)

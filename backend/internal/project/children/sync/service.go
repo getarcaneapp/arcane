@@ -160,9 +160,15 @@ func PersistUpdatedProjectFiles(ctx context.Context, projectPath, projectName, p
 		return fmt.Errorf("invalid compose file: %w", err)
 	}
 	valOverride, valOverrideName := projects.ResolveEffectiveOverrideForValidation(projectPath, overrideContent)
-	if validateErr := projects.ValidateComposeContentForUpdate(
-		ctx, projectsDirectory, projectPath, projectName, baseContent, effectiveEnvContent, valOverride, valOverrideName, false,
-	); validateErr != nil {
+	if validateErr := projects.ValidateComposeContentForUpdate(ctx, projects.ValidateComposeRequest{
+		ProjectsDirectory: projectsDirectory,
+		ProjectPath:       projectPath,
+		ProjectName:       projectName,
+		ComposeContent:    baseContent,
+		EnvContent:        effectiveEnvContent,
+		OverrideContent:   valOverride,
+		OverrideFileName:  valOverrideName,
+	}); validateErr != nil {
 		return fmt.Errorf("invalid compose file: %w", validateErr)
 	}
 
@@ -322,10 +328,23 @@ func LoadComposeMetadata(
 	// the normalized directory name when that fails.
 	dependencies := types.ComposeDependencies{}
 	loadedAt := time.Now()
-	proj, loadErr := projects.LoadComposeProject(ctx, composeFile, "", projectsDirectory, autoInjectEnv, pathMapper, nil, nil, false, &dependencies, nil, nil)
+	proj, loadErr := projects.LoadComposeProject(ctx, projects.LoadOptions{
+		ComposeFile:       composeFile,
+		ProjectsDirectory: projectsDirectory,
+		AutoInjectEnv:     autoInjectEnv,
+		PathMapper:        pathMapper,
+		Dependencies:      &dependencies,
+	})
 	if loadErr != nil {
 		dependencies = types.ComposeDependencies{}
-		proj, err = projects.LoadComposeProject(ctx, composeFile, normName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil, false, &dependencies, nil, nil)
+		proj, err = projects.LoadComposeProject(ctx, projects.LoadOptions{
+			ComposeFile:       composeFile,
+			ProjectName:       normName,
+			ProjectsDirectory: projectsDirectory,
+			AutoInjectEnv:     autoInjectEnv,
+			PathMapper:        pathMapper,
+			Dependencies:      &dependencies,
+		})
 		if err != nil {
 			return types.ComposeIdentity{ResolvedProjectName: normName}, err
 		}

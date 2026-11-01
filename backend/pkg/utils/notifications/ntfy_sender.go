@@ -99,5 +99,5 @@ func SendNtfy(ctx context.Context, config NtfyConfig, message string) error {
 		return fmt.Errorf("failed to build shoutrrr Ntfy URL: %w", err)
 	}
 
-	return sendShoutrrrInternal("Ntfy", shoutrrrURL, message, &shoutrrrTypes.Params{})
+	return sendShoutrrr("Ntfy", shoutrrrURL, message, &shoutrrrTypes.Params{})
 }

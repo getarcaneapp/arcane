@@ -437,7 +437,7 @@ func EnvContentChanged(oldContent, newContent string) bool {
 	return !maps.Equal(oldEnv, newEnv)
 }
 
-var envKeyLineRegexInternal = regexp.MustCompile(`^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_.-]*)(\s*=)(.*)$`)
+var envKeyLineRegex = regexp.MustCompile(`^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_.-]*)(\s*=)(.*)$`)
 
 // mergeEnvOverridesInPlace rewrites the value of every gitContent line
 // whose key has an override — keeping line order and trailing inline comments —
@@ -450,7 +450,7 @@ func mergeEnvOverridesInPlace(gitContent, overrideContent string, overrideEnv En
 
 	for i, line := range gitLines {
 		body, hadCR := strings.CutSuffix(line, "\r")
-		match := envKeyLineRegexInternal.FindStringSubmatch(body)
+		match := envKeyLineRegex.FindStringSubmatch(body)
 		if match == nil {
 			continue
 		}
@@ -479,7 +479,7 @@ func mergeEnvOverridesInPlace(gitContent, overrideContent string, overrideEnv En
 
 	remainderLines := make([]string, 0)
 	for line := range strings.SplitSeq(overrideContent, "\n") {
-		if match := envKeyLineRegexInternal.FindStringSubmatch(strings.TrimSuffix(line, "\r")); match != nil {
+		if match := envKeyLineRegex.FindStringSubmatch(strings.TrimSuffix(line, "\r")); match != nil {
 			if _, drop := rewritten[match[2]]; drop {
 				continue
 			}

@@ -24,10 +24,10 @@ type actorLogHandler struct {
 	slog.Handler
 
 	names *sync.Map
-	steps []actorLogStepInternal
+	steps []actorLogStep
 }
 
-type actorLogStepInternal struct {
+type actorLogStep struct {
 	group string
 	attrs []slog.Attr
 }
@@ -42,13 +42,13 @@ func (h *actorLogHandler) Handle(ctx context.Context, record slog.Record) error 
 		}
 		attrs := make([]slog.Attr, len(step.attrs))
 		for i, attr := range step.attrs {
-			attrs[i] = h.nameAttrInternal(attr)
+			attrs[i] = h.nameAttr(attr)
 		}
 		handler = handler.WithAttrs(attrs)
 	}
 	named := slog.NewRecord(record.Time, record.Level, record.Message, record.PC)
 	record.Attrs(func(attr slog.Attr) bool {
-		named.AddAttrs(h.nameAttrInternal(attr))
+		named.AddAttrs(h.nameAttr(attr))
 		return true
 	})
 	return handler.Handle(ctx, named)
@@ -56,7 +56,7 @@ func (h *actorLogHandler) Handle(ctx context.Context, record slog.Record) error 
 
 func (h *actorLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	clone := *h
-	clone.steps = append(slices.Clone(h.steps), actorLogStepInternal{attrs: slices.Clone(attrs)})
+	clone.steps = append(slices.Clone(h.steps), actorLogStep{attrs: slices.Clone(attrs)})
 	return &clone
 }
 
@@ -65,16 +65,16 @@ func (h *actorLogHandler) WithGroup(name string) slog.Handler {
 		return h
 	}
 	clone := *h
-	clone.steps = append(slices.Clone(h.steps), actorLogStepInternal{group: name})
+	clone.steps = append(slices.Clone(h.steps), actorLogStep{group: name})
 	return &clone
 }
 
-func (h *actorLogHandler) nameAttrInternal(attr slog.Attr) slog.Attr {
+func (h *actorLogHandler) nameAttr(attr slog.Attr) slog.Attr {
 	attr.Value = attr.Value.Resolve()
 	if attr.Value.Kind() == slog.KindGroup {
 		attrs := slices.Clone(attr.Value.Group())
 		for i := range attrs {
-			attrs[i] = h.nameAttrInternal(attrs[i])
+			attrs[i] = h.nameAttr(attrs[i])
 		}
 		attr.Value = slog.GroupValue(attrs...)
 		return attr

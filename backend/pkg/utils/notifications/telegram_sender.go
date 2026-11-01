@@ -67,5 +67,5 @@ func SendTelegram(ctx context.Context, config TelegramConfig, message string) er
 		return fmt.Errorf("failed to build shoutrrr Telegram URL: %w", err)
 	}
 
-	return sendShoutrrrInternal("Telegram", shoutrrrURL, message, nil)
+	return sendShoutrrr("Telegram", shoutrrrURL, message, nil)
 }

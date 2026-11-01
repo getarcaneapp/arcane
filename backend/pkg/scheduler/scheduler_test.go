@@ -34,35 +34,35 @@ type conditionalTestSchedulerJob struct {
 	shouldSchedule func(context.Context) bool
 }
 
-type testBusWatcherInternal struct {
+type testBusWatcher struct {
 	started chan struct{}
 	stopped chan struct{}
 	ranNow  chan context.Context
 	name    string
 }
 
-type orderedStopBusWatcherInternal struct {
+type orderedStopBusWatcher struct {
 	started      chan struct{}
 	runnerExited chan struct{}
 	name         string
 }
 
-func (w *orderedStopBusWatcherInternal) Name() string {
+func (w *orderedStopBusWatcher) Name() string {
 	return w.name
 }
 
-func (w *orderedStopBusWatcherInternal) Start(ctx context.Context) error {
+func (w *orderedStopBusWatcher) Start(ctx context.Context) error {
 	close(w.started)
 	<-ctx.Done()
 	close(w.runnerExited)
 	return nil
 }
 
-func (*orderedStopBusWatcherInternal) RunNow(context.Context) error {
+func (*orderedStopBusWatcher) RunNow(context.Context) error {
 	return nil
 }
 
-func (w *orderedStopBusWatcherInternal) Stop(context.Context) error {
+func (w *orderedStopBusWatcher) Stop(context.Context) error {
 	select {
 	case <-w.runnerExited:
 		return nil
@@ -71,16 +71,16 @@ func (w *orderedStopBusWatcherInternal) Stop(context.Context) error {
 	}
 }
 
-func (w *testBusWatcherInternal) RunNow(ctx context.Context) error {
+func (w *testBusWatcher) RunNow(ctx context.Context) error {
 	if w.ranNow != nil {
 		w.ranNow <- ctx
 	}
 	return nil
 }
 
-func (w *testBusWatcherInternal) Name() string { return w.name }
+func (w *testBusWatcher) Name() string { return w.name }
 
-func (w *testBusWatcherInternal) Start(ctx context.Context) error {
+func (w *testBusWatcher) Start(ctx context.Context) error {
 	close(w.started)
 	<-ctx.Done()
 	close(w.stopped)
@@ -138,7 +138,7 @@ func TestJobScheduler_StartScheduler_ReportsInvalidJobSchedule(t *testing.T) {
 func TestJobScheduler_StopWaitsForBusWatchers(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	js := newJobSchedulerForTest(t, ctx, nil)
-	watcher := &testBusWatcherInternal{
+	watcher := &testBusWatcher{
 		name:    "test-bus-watcher",
 		started: make(chan struct{}),
 		stopped: make(chan struct{}),
@@ -173,7 +173,7 @@ func TestJobScheduler_StopWaitsForBusWatchers(t *testing.T) {
 
 func TestJobScheduler_StopJoinsRunnerBeforeStoppingWatcher(t *testing.T) {
 	js := newJobSchedulerForTest(t, t.Context(), nil)
-	watcher := &orderedStopBusWatcherInternal{
+	watcher := &orderedStopBusWatcher{
 		name:         "ordered-stop-watcher",
 		started:      make(chan struct{}),
 		runnerExited: make(chan struct{}),
@@ -192,13 +192,13 @@ func TestJobScheduler_RegisterBusWatcherManualRunOption(t *testing.T) {
 	ctx := t.Context()
 
 	js := newJobSchedulerForTest(t, ctx, nil)
-	manualWatcher := &testBusWatcherInternal{
+	manualWatcher := &testBusWatcher{
 		name:    "manual-bus-watcher",
 		started: make(chan struct{}),
 		stopped: make(chan struct{}),
 		ranNow:  make(chan context.Context, 1),
 	}
-	automaticOnlyWatcher := &testBusWatcherInternal{
+	automaticOnlyWatcher := &testBusWatcher{
 		name:    "automatic-only-bus-watcher",
 		started: make(chan struct{}),
 		stopped: make(chan struct{}),
@@ -271,7 +271,7 @@ func TestJobScheduler_RescheduleJob_AddsEntryWhenEnabled(t *testing.T) {
 
 func TestJobScheduler_StartScheduler_SchedulesNonConditionalJobs(t *testing.T) {
 	js := newJobSchedulerForTest(t, t.Context(), nil)
-	watcher := &testBusWatcherInternal{
+	watcher := &testBusWatcher{
 		name:    "image-polling",
 		started: make(chan struct{}),
 		stopped: make(chan struct{}),

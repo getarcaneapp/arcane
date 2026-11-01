@@ -355,7 +355,7 @@ func StartTunnelClient(ctx context.Context, cfg *Config, handler http.Handler) (
 	if parsed, err := url.Parse(httpx.ManagerBaseURL(cfg.ManagerApiUrl)); NormalizeTransport(cfg.AgentTransport) == TransportGRPC && err == nil && strings.Trim(parsed.Path, "/") != "" {
 		return nil, errors.New("gRPC transport cannot use an ARCANE_MANAGER_API_URL with a path prefix; use ARCANE_AGENT_TRANSPORT=websocket or auto")
 	}
-	if NormalizeMTLSMode(cfg.AgentMTLSMode) != MTLSModeDisabled && !managerUsesTLS(cfg) {
+	if NormalizeMTLSMode(cfg.AgentMTLSMode) != MTLSModeDisabled && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl))), "https://") {
 		return nil, errors.New("ARCANE_AGENT_MTLS_MODE requires ARCANE_MANAGER_API_URL to use https")
 	}
 

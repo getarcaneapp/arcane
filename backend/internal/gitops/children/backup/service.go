@@ -83,8 +83,8 @@ func (s *Service) ApplyCreate(ctx context.Context, tx *gorm.DB, req types.GitOps
 	return nil
 }
 
-// backupCreateConfigInternal is the validated backup configuration for a new sync.
-type backupCreateConfigInternal struct {
+// backupCreateConfig is the validated backup configuration for a new sync.
+type backupCreateConfig struct {
 	project     *projectpkg.Project
 	directory   string
 	composeFile string
@@ -92,7 +92,7 @@ type backupCreateConfigInternal struct {
 }
 
 // prepareBackupCreate validates a backup create request against the project and other backups on the branch.
-func (s *Service) prepareBackupCreate(ctx context.Context, tx *gorm.DB, req types.GitOpsSync) (*backupCreateConfigInternal, error) {
+func (s *Service) prepareBackupCreate(ctx context.Context, tx *gorm.DB, req types.GitOpsSync) (*backupCreateConfig, error) {
 	if strings.TrimSpace(kit.FromPtr(req.ProjectID)) == "" {
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "projectId", Err: errors.New("a project is required for a backup sync")})
 	}
@@ -137,7 +137,7 @@ func (s *Service) prepareBackupCreate(ctx context.Context, tx *gorm.DB, req type
 	if err != nil {
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "backupPaths", Err: err})
 	}
-	return &backupCreateConfigInternal{
+	return &backupCreateConfig{
 		project:     project,
 		directory:   directory,
 		paths:       paths,
@@ -253,7 +253,7 @@ func (
 	result *types.GitOpsSyncResult,
 	authConfig git.AuthConfig,
 	identity git.CommitIdentity,
-	snapshot *backupSnapshotInternal,
+	snapshot *backupSnapshot,
 	baseline map[string]string,
 	adopt bool,
 	startedAt time.Time,
@@ -386,7 +386,7 @@ func (
 func (s *Service) recordBackupSuccess(
 	ctx context.Context,
 	localSync *projectpkg.GitOpsSync,
-	snapshot *backupSnapshotInternal,
+	snapshot *backupSnapshot,
 	commit string,
 	committed bool,
 	startedAt time.Time,
@@ -504,14 +504,14 @@ func (s *Service) Preview(previewCtx context.Context, syncRecord *projectpkg.Git
 	}, nil
 }
 
-// backupSnapshotInternal is the set of project files a backup run commits.
-type backupSnapshotInternal struct {
+// backupSnapshot is the set of project files a backup run commits.
+type backupSnapshot struct {
 	hashes map[string]string
 	files  []git.CommitFile
 }
 
-// backupAnalysisInternal is the decision for one backup run.
-type backupAnalysisInternal struct {
+// backupAnalysis is the decision for one backup run.
+type backupAnalysis struct {
 	state     string
 	changes   []types.GitOpsBackupFileChange
 	conflicts []types.GitOpsBackupFileChange
@@ -541,7 +541,7 @@ func (s *Service) backupComposeFiles(ctx context.Context, project *projectpkg.Pr
 }
 
 // buildBackupSnapshot reads the selected project files, retrying when they change mid-read.
-func (s *Service) buildBackupSnapshot(ctx context.Context, localSync *projectpkg.GitOpsSync, project *projectpkg.Project) (*backupSnapshotInternal, error) {
+func (s *Service) buildBackupSnapshot(ctx context.Context, localSync *projectpkg.GitOpsSync, project *projectpkg.Project) (*backupSnapshot, error) {
 	_, composeFiles, err := s.backupComposeFiles(ctx, project)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", err.Error(), git.ErrSelectionInvalid)
@@ -567,7 +567,7 @@ func (s *Service) buildBackupSnapshot(ctx context.Context, localSync *projectpkg
 		if collectFilesErr != nil {
 			return nil, collectFilesErr
 		}
-		snapshot := &backupSnapshotInternal{files: files, hashes: make(map[string]string, len(files))}
+		snapshot := &backupSnapshot{files: files, hashes: make(map[string]string, len(files))}
 		for _, file := range files {
 			snapshot.hashes[file.Path] = kit.SHA256Hex(file.Content)
 		}
@@ -591,8 +591,8 @@ func (s *Service) buildBackupSnapshot(ctx context.Context, localSync *projectpkg
 }
 
 // analyzeBackup compares the snapshot with the checkout; baseline is the last push and the only proof the directory is ours.
-func analyzeBackup(ctx context.Context, repoPath, directory string, snapshot *backupSnapshotInternal, baseline map[string]string, adopt bool) (backupAnalysisInternal, error) {
-	analysis := backupAnalysisInternal{conflicts: []types.GitOpsBackupFileChange{}}
+func analyzeBackup(ctx context.Context, repoPath, directory string, snapshot *backupSnapshot, baseline map[string]string, adopt bool) (backupAnalysis, error) {
+	analysis := backupAnalysis{conflicts: []types.GitOpsBackupFileChange{}}
 	entries, err := acfs.Root{Path: repoPath}.List(ctx, "/"+directory)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return analysis, fmt.Errorf("failed to inspect remote backup directory: %w", err)

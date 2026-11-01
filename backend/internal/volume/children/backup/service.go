@@ -258,7 +258,7 @@ func (s *Service) List(ctx context.Context, volumeName string, params pagination
 	for i := range backups {
 		// Discovered backups live under the instance that wrote them, not necessarily this one.
 		root := ""
-		root = path.Join(backup.VolumeRoot, s.remoteInstanceID(backups[i].RemoteInstanceID))
+		root = path.Join(backup.VolumeRoot, cmp.Or(strings.TrimSpace(backups[i].RemoteInstanceID), strings.TrimSpace(s.deps.Settings.GetSettingsConfig().InstanceID.Value)))
 		backups[i].RemoteAvailable = remoteAvailable(backups[i].S3DestinationID, root, backups[i].RemoteSnapshotID)
 	}
 
@@ -627,7 +627,7 @@ func (s *Service) deleteRusticBackups(ctx context.Context, entries []*types.Volu
 			localSnapshotIDs = append(localSnapshotIDs, entry.LocalSnapshotID)
 		}
 		if includeRemote && entry.RemoteSnapshotID != "" {
-			key := remoteRepositoryKey{destinationID: entry.S3DestinationID, instanceID: s.remoteInstanceID(entry.RemoteInstanceID)}
+			key := remoteRepositoryKey{destinationID: entry.S3DestinationID, instanceID: cmp.Or(strings.TrimSpace(entry.RemoteInstanceID), strings.TrimSpace(s.deps.Settings.GetSettingsConfig().InstanceID.Value))}
 			remoteGroups[key] = append(remoteGroups[key], entry)
 		}
 	}

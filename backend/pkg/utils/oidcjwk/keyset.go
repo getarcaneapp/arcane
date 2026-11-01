@@ -27,11 +27,11 @@ type keySet struct {
 }
 
 func (k *keySet) VerifySignature(ctx context.Context, rawToken string) ([]byte, error) {
-	if err := validateTokenAlgorithmInternal(rawToken); err != nil {
+	if err := validateTokenAlgorithm(rawToken); err != nil {
 		return nil, err
 	}
 
-	payload, verifyErr := k.verifyInternal(ctx, rawToken)
+	payload, verifyErr := k.verify(ctx, rawToken)
 	if verifyErr == nil {
 		return payload, nil
 	}
@@ -39,7 +39,7 @@ func (k *keySet) VerifySignature(ctx context.Context, rawToken string) ([]byte, 
 	// Providers may rotate key material without changing kid, so every failure earns
 	// one throttled refresh before the token is rejected.
 	refreshResult := k.group.DoChan("refresh", func() (any, error) {
-		if !k.reserveForcedRefreshInternal(time.Now()) {
+		if !k.reserveForcedRefresh(time.Now()) {
 			return nil, errForcedRefreshThrottled
 		}
 		refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), initialReadyTimeout)
@@ -59,14 +59,14 @@ func (k *keySet) VerifySignature(ctx context.Context, rawToken string) ([]byte, 
 	}
 	if refreshErr != nil {
 		if errors.Is(refreshErr, errForcedRefreshThrottled) {
-			return k.verifyInternal(ctx, rawToken)
+			return k.verify(ctx, rawToken)
 		}
 		return nil, refreshErr
 	}
-	return k.verifyInternal(ctx, rawToken)
+	return k.verify(ctx, rawToken)
 }
 
-func (k *keySet) verifyInternal(ctx context.Context, rawToken string) ([]byte, error) {
+func (k *keySet) verify(ctx context.Context, rawToken string) ([]byte, error) {
 	return jws.Verify([]byte(rawToken),
 		jws.WithCompact(),
 		jws.WithContext(ctx),
@@ -77,7 +77,7 @@ func (k *keySet) verifyInternal(ctx context.Context, rawToken string) ([]byte, e
 	)
 }
 
-func (k *keySet) reserveForcedRefreshInternal(now time.Time) bool {
+func (k *keySet) reserveForcedRefresh(now time.Time) bool {
 	nowUnixNano := now.UnixNano()
 	for {
 		nextRefresh := k.nextRefresh.Load()
@@ -90,7 +90,7 @@ func (k *keySet) reserveForcedRefreshInternal(now time.Time) bool {
 	}
 }
 
-func validateTokenAlgorithmInternal(rawToken string) error {
+func validateTokenAlgorithm(rawToken string) error {
 	message, err := jws.Parse([]byte(rawToken), jws.WithCompact())
 	if err != nil {
 		return fmt.Errorf("malformed JWT: %w", err)

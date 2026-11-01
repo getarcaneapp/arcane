@@ -36,7 +36,7 @@ func (s IconSet) IsEmpty() bool {
 func Resolve(catalog string, set IconSet) ResolvedIconSet {
 	selectedCatalog := Normalize(catalog)
 	if strings.TrimSpace(set.Light) == "" && strings.TrimSpace(set.Dark) == "" {
-		generic := resolveValueInternal(selectedCatalog, set.Icon, "")
+		generic := resolveValue(selectedCatalog, set.Icon, "")
 		return ResolvedIconSet{
 			IconLightURL: generic,
 			IconDarkURL:  generic,
@@ -47,8 +47,8 @@ func Resolve(catalog string, set IconSet) ResolvedIconSet {
 	dark := cmp.Or(kit.TrimNonEmpty([]string{set.Dark, set.Icon, set.Light})...)
 
 	return ResolvedIconSet{
-		IconLightURL: resolveValueInternal(selectedCatalog, light, "light"),
-		IconDarkURL:  resolveValueInternal(selectedCatalog, dark, "dark"),
+		IconLightURL: resolveValue(selectedCatalog, light, "light"),
+		IconDarkURL:  resolveValue(selectedCatalog, dark, "dark"),
 	}
 }
 
@@ -63,12 +63,12 @@ func Normalize(catalog string) string {
 	}
 }
 
-func resolveValueInternal(catalog, raw, variant string) string {
+func resolveValue(catalog, raw, variant string) string {
 	value := strings.TrimSpace(raw)
 	if value == "" || strings.HasPrefix(strings.ToLower(value), "data:") {
 		return ""
 	}
-	if isAbsoluteHTTPURLInternal(value) {
+	if isAbsoluteHTTPURL(value) {
 		return value
 	}
 
@@ -84,7 +84,7 @@ func resolveValueInternal(catalog, raw, variant string) string {
 	}
 }
 
-func isAbsoluteHTTPURLInternal(raw string) bool {
+func isAbsoluteHTTPURL(raw string) bool {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return false

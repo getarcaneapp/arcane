@@ -11,7 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 )
 
-func newCSRFTestRouterInternal() *echo.Echo {
+func newCSRFTestRouter() *echo.Echo {
 	cfg := &config.Config{Environment: "production", AppUrl: "https://arcane.example.com"}
 	router := echo.New()
 	router.Use(NewCSRFMiddleware(cfg).Add())
@@ -21,7 +21,7 @@ func newCSRFTestRouterInternal() *echo.Echo {
 }
 
 func TestCSRF_BlocksCrossSiteStateChange(t *testing.T) {
-	router := newCSRFTestRouterInternal()
+	router := newCSRFTestRouter()
 	req := httptest.NewRequest(http.MethodPost, "/api/test", http.NoBody)
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	req.Header.Set("Origin", "https://evil.example.com")
@@ -31,7 +31,7 @@ func TestCSRF_BlocksCrossSiteStateChange(t *testing.T) {
 }
 
 func TestCSRF_AllowsSameOrigin(t *testing.T) {
-	router := newCSRFTestRouterInternal()
+	router := newCSRFTestRouter()
 	req := httptest.NewRequest(http.MethodPost, "/api/test", http.NoBody)
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	rec := httptest.NewRecorder()
@@ -42,7 +42,7 @@ func TestCSRF_AllowsSameOrigin(t *testing.T) {
 // Non-browser clients (curl, CLI, CI, the report's Python PoC) send no Origin or
 // Sec-Fetch-Site header and must not be blocked.
 func TestCSRF_AllowsNonBrowserClient(t *testing.T) {
-	router := newCSRFTestRouterInternal()
+	router := newCSRFTestRouter()
 	req := httptest.NewRequest(http.MethodPost, "/api/test", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -52,7 +52,7 @@ func TestCSRF_AllowsNonBrowserClient(t *testing.T) {
 // A header credential cannot be forged cross-origin by a browser, so even a
 // cross-site Origin must not block such a request.
 func TestCSRF_SkipsHeaderCredentialedRequests(t *testing.T) {
-	router := newCSRFTestRouterInternal()
+	router := newCSRFTestRouter()
 	req := httptest.NewRequest(http.MethodPost, "/api/test", http.NoBody)
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	req.Header.Set("Origin", "https://evil.example.com")
@@ -65,7 +65,7 @@ func TestCSRF_SkipsHeaderCredentialedRequests(t *testing.T) {
 // Public webhook trigger authenticates via its path token, not the session cookie,
 // and may receive an Origin header from an external caller; it must be bypassed.
 func TestCSRF_AllowsPublicBypassPaths(t *testing.T) {
-	router := newCSRFTestRouterInternal()
+	router := newCSRFTestRouter()
 	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/trigger/abc", http.NoBody)
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	req.Header.Set("Origin", "https://ci.example.com")

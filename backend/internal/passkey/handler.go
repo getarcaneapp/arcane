@@ -341,7 +341,13 @@ func (h *PasskeyHandler) FinishRegistration(ctx context.Context, input *FinishPa
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid passkey response")
 	}
-	row, err := h.passkeyService.FinishRegistration(ctx, userModel.ID, sessionID, input.Body.CeremonyID, payload, input.Body.Name)
+	row, err := h.passkeyService.FinishRegistration(ctx, FinishRegistrationRequest{
+		UserID:     userModel.ID,
+		SessionID:  sessionID,
+		CeremonyID: input.Body.CeremonyID,
+		Payload:    payload,
+		Name:       input.Body.Name,
+	})
 	if err != nil {
 		return nil, passkeyHTTPError(err)
 	}
@@ -353,7 +359,13 @@ func (h *PasskeyHandler) RenamePasskey(ctx context.Context, input *RenamePasskey
 	if err != nil {
 		return nil, err
 	}
-	row, err := h.passkeyService.RenamePasskey(ctx, userModel.ID, input.ID, input.Body.Name, sessionID, input.StepUpToken)
+	row, err := h.passkeyService.RenamePasskey(ctx, RenamePasskeyRequest{
+		UserID:      userModel.ID,
+		PasskeyID:   input.ID,
+		Name:        input.Body.Name,
+		SessionID:   sessionID,
+		StepUpToken: input.StepUpToken,
+	})
 	if err != nil {
 		return nil, passkeyHTTPError(err)
 	}
@@ -369,7 +381,13 @@ func (h *PasskeyHandler) DeletePasskey(ctx context.Context, input *DeletePasskey
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to check OIDC status")
 	}
-	if deletePasskeyErr := h.passkeyService.DeletePasskey(ctx, userModel.ID, input.ID, sessionID, input.StepUpToken, oidcEnabled); deletePasskeyErr != nil {
+	if deletePasskeyErr := h.passkeyService.DeletePasskey(ctx, DeletePasskeyRequest{
+		UserID:              userModel.ID,
+		PasskeyID:           input.ID,
+		SessionID:           sessionID,
+		StepUpToken:         input.StepUpToken,
+		OidcFallbackAllowed: oidcEnabled,
+	}); deletePasskeyErr != nil {
 		return nil, passkeyHTTPError(deletePasskeyErr)
 	}
 	return handlerutil.MessageOutput("Passkey deleted", ""), nil

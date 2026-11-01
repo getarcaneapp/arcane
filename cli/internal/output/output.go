@@ -57,14 +57,6 @@ var tableWhitespaceReplacer = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", 
 
 var colorEnabled = true
 
-func shouldColor() bool {
-	return colorsEnabled() && IsTerminal(Stdout())
-}
-
-func render(style lipgloss.Style, value string) string {
-	return renderFor(humanWriter(), style, value)
-}
-
 // Success prints a success message in green.
 // Format specifiers work like fmt.Printf; a leading newline separates messages.
 //
@@ -72,7 +64,7 @@ func render(style lipgloss.Style, value string) string {
 func Success(format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
 	defer SuspendProgress()()
-	_, _ = fmt.Fprintf(humanWriter(), "\n  %s\n", render(successStyle, "✓ "+msg))
+	_, _ = fmt.Fprintf(humanWriter(), "\n  %s\n", renderFor(humanWriter(), successStyle, ("✓ "+msg)))
 }
 
 // Warning prints a warning message in yellow.
@@ -92,7 +84,7 @@ func Warning(format string, a ...any) {
 func Info(format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
 	defer SuspendProgress()()
-	_, _ = fmt.Fprintf(humanWriter(), "\n  %s\n", render(infoStyle, msg))
+	_, _ = fmt.Fprintf(humanWriter(), "\n  %s\n", renderFor(humanWriter(), infoStyle, msg))
 }
 
 // Header prints a purple section heading.
@@ -102,14 +94,14 @@ func Info(format string, a ...any) {
 func Header(format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
 	defer SuspendProgress()()
-	_, _ = fmt.Fprintf(humanWriter(), "\n  %s\n", render(headerStyle, msg))
+	_, _ = fmt.Fprintf(humanWriter(), "\n  %s\n", renderFor(humanWriter(), headerStyle, msg))
 }
 
 // KeyValue prints a key-value pair with the muted aligned labels and neutral values.
 // Use it for structured details and configuration values.
 func KeyValue(key string, value any) {
 	defer SuspendProgress()()
-	_, _ = fmt.Fprintf(humanWriter(), "  %s %s\n", render(keyStyle, fmt.Sprintf("%-18s", key)), render(valueStyle, fmt.Sprint(value)))
+	_, _ = fmt.Fprintf(humanWriter(), "  %s %s\n", renderFor(humanWriter(), keyStyle, fmt.Sprintf("%-18s", key)), renderFor(humanWriter(), valueStyle, fmt.Sprint(value)))
 }
 
 // Showing prints a pagination summary in the form "Showing: shown/total label".
@@ -118,14 +110,10 @@ func Showing(shown int, total int64, label string) {
 	_, _ = fmt.Fprintf(humanWriter(), "\n  Showing: %d/%d %s\n", shown, total, label)
 }
 
-func hasAnsi(s string) bool {
-	return ansiRegexp.MatchString(s)
-}
-
 // TintStatus applies semantic status coloring to a value.
 func TintStatus(value string) string {
 	trimmed := strings.TrimSpace(value)
-	if trimmed == "" || hasAnsi(trimmed) || !shouldColor() {
+	if trimmed == "" || ansiRegexp.MatchString(trimmed) || !(colorsEnabled() && IsTerminal(Stdout())) {
 		return value
 	}
 	lower := strings.ToLower(trimmed)
@@ -146,7 +134,7 @@ func TintStatus(value string) string {
 // TintEnabled applies tints for enabled/disabled values.
 func TintEnabled(value string) string {
 	trimmed := strings.TrimSpace(value)
-	if trimmed == "" || hasAnsi(trimmed) || !shouldColor() {
+	if trimmed == "" || ansiRegexp.MatchString(trimmed) || !(colorsEnabled() && IsTerminal(Stdout())) {
 		return value
 	}
 	lower := strings.ToLower(trimmed)
@@ -163,7 +151,7 @@ func TintEnabled(value string) string {
 // TintYesNo applies tints for yes/no style values.
 func TintYesNo(value string) string {
 	trimmed := strings.TrimSpace(value)
-	if trimmed == "" || hasAnsi(trimmed) || !shouldColor() {
+	if trimmed == "" || ansiRegexp.MatchString(trimmed) || !(colorsEnabled() && IsTerminal(Stdout())) {
 		return value
 	}
 	lower := strings.ToLower(trimmed)
@@ -180,7 +168,7 @@ func TintYesNo(value string) string {
 // TintInsecure applies warning tints for insecure values.
 func TintInsecure(value string) string {
 	trimmed := strings.TrimSpace(value)
-	if trimmed == "" || hasAnsi(trimmed) || !shouldColor() {
+	if trimmed == "" || ansiRegexp.MatchString(trimmed) || !(colorsEnabled() && IsTerminal(Stdout())) {
 		return value
 	}
 	lower := strings.ToLower(trimmed)
@@ -213,7 +201,7 @@ func Table(headers []string, rows [][]string) error {
 		copy(displayRows[i], row)
 	}
 	rows = displayRows
-	if shouldColor() {
+	if colorsEnabled() && IsTerminal(Stdout()) {
 		for _, row := range rows {
 			for col, header := range headers {
 				switch strings.ToUpper(strings.TrimSpace(header)) {
@@ -233,7 +221,7 @@ func Table(headers []string, rows [][]string) error {
 
 	t := table.New().Border(lipgloss.NormalBorder()).Headers(headers...)
 
-	if shouldColor() {
+	if colorsEnabled() && IsTerminal(Stdout()) {
 		t = t.BorderStyle(tableBorder).
 			StyleFunc(func(row, col int) lipgloss.Style {
 				switch {
@@ -291,12 +279,12 @@ func fitTableToTerminal(headers []string, rows [][]string) ([]string, [][]string
 
 	columnWidths := make([]int, columnCount)
 	for i, header := range displayHeaders {
-		columnWidths[i] = max(1, visibleWidth(header))
+		columnWidths[i] = max(1, runewidth.StringWidth(ansiRegexp.ReplaceAllString(header, "")))
 	}
 
 	for _, row := range displayRows {
 		for col := range columnCount {
-			columnWidths[col] = max(columnWidths[col], visibleWidth(row[col]))
+			columnWidths[col] = max(columnWidths[col], runewidth.StringWidth(ansiRegexp.ReplaceAllString(row[col], "")))
 		}
 	}
 
@@ -319,15 +307,11 @@ func fitTableToTerminal(headers []string, rows [][]string) ([]string, [][]string
 	return displayHeaders, displayRows
 }
 
-func visibleWidth(value string) int {
-	return runewidth.StringWidth(ansiRegexp.ReplaceAllString(value, ""))
-}
-
 func truncateVisible(value string, maxWidth int) string {
 	if maxWidth <= 0 {
 		return ""
 	}
-	if visibleWidth(value) <= maxWidth {
+	if runewidth.StringWidth(ansiRegexp.ReplaceAllString(value, "")) <= maxWidth {
 		return value
 	}
 

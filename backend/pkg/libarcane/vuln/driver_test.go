@@ -201,15 +201,13 @@ func TestBuildTrivyHostConfig_ExcludesResourcesWhenLimitsDisabled(t *testing.T) 
 		MemorySwap: int64(1_073_741_824),
 	}
 
-	hostConfig := BuildHostConfig(
-		"cache-volume",
-		resources,
-		"",
-		false,
-		RuntimeOptions{NetworkMode: "bridge"},
-		nil,
-		false,
-	)
+	hostConfig := BuildHostConfig(HostConfigOptions{
+		CacheVolume: "cache-volume",
+		Runtime:     RuntimeOptions{NetworkMode: "bridge"},
+		Limits: ResourceLimits{
+			Resources: resources,
+		},
+	})
 	require.Equal(t, containertypes.NetworkMode("bridge"), hostConfig.NetworkMode)
 	require.Equal(t, int64(0), hostConfig.NanoCPUs)
 	require.Equal(t, int64(0), hostConfig.Memory)
@@ -225,15 +223,14 @@ func TestBuildTrivyHostConfig_IncludesResourcesWhenLimitsEnabled(t *testing.T) {
 		MemorySwap: int64(1_073_741_824),
 	}
 
-	hostConfig := BuildHostConfig(
-		"cache-volume",
-		resources,
-		"",
-		true,
-		RuntimeOptions{NetworkMode: "arcane-external"},
-		nil,
-		false,
-	)
+	hostConfig := BuildHostConfig(HostConfigOptions{
+		CacheVolume: "cache-volume",
+		Runtime:     RuntimeOptions{NetworkMode: "arcane-external"},
+		Limits: ResourceLimits{
+			Resources: resources,
+			Apply:     true,
+		},
+	})
 	require.Equal(t, containertypes.NetworkMode("arcane-external"), hostConfig.NetworkMode)
 	require.Equal(t, resources.NanoCPUs, hostConfig.NanoCPUs)
 	require.Equal(t, resources.Memory, hostConfig.Memory)
@@ -247,15 +244,15 @@ func TestBuildTrivyHostConfig_UsesCPUSetAndClearsNanoCPUs(t *testing.T) {
 		MemorySwap: int64(1_073_741_824),
 	}
 
-	hostConfig := BuildHostConfig(
-		"cache-volume",
-		resources,
-		"0-1",
-		true,
-		RuntimeOptions{NetworkMode: "bridge"},
-		nil,
-		false,
-	)
+	hostConfig := BuildHostConfig(HostConfigOptions{
+		CacheVolume: "cache-volume",
+		Runtime:     RuntimeOptions{NetworkMode: "bridge"},
+		Limits: ResourceLimits{
+			Resources: resources,
+			CPUSet:    "0-1",
+			Apply:     true,
+		},
+	})
 	require.Equal(t, containertypes.NetworkMode("bridge"), hostConfig.NetworkMode)
 	require.Equal(t, int64(0), hostConfig.NanoCPUs)
 	require.Equal(t, "0-1", hostConfig.CpusetCpus)
@@ -264,30 +261,21 @@ func TestBuildTrivyHostConfig_UsesCPUSetAndClearsNanoCPUs(t *testing.T) {
 }
 
 func TestBuildTrivyHostConfig_AppliesRuntimeSecurity(t *testing.T) {
-	hostConfig := BuildHostConfig(
-		"cache-volume",
-		containertypes.Resources{},
-		"",
-		false,
-		RuntimeOptions{NetworkMode: "bridge"},
-		[]string{"label=disable", "label=type:container_runtime_t"},
-		true,
-	)
+	hostConfig := BuildHostConfig(HostConfigOptions{
+		CacheVolume:  "cache-volume",
+		Runtime:      RuntimeOptions{NetworkMode: "bridge"},
+		SecurityOpts: []string{"label=disable", "label=type:container_runtime_t"},
+		Privileged:   true,
+	})
 
 	require.Equal(t, []string{"label=disable", "label=type:container_runtime_t"}, hostConfig.SecurityOpt)
 	require.True(t, hostConfig.Privileged)
 }
 
 func TestBuildTrivyHostConfig_SkipsCacheMountWhenVolumeEmpty(t *testing.T) {
-	hostConfig := BuildHostConfig(
-		"",
-		containertypes.Resources{},
-		"",
-		false,
-		RuntimeOptions{NetworkMode: "bridge"},
-		nil,
-		false,
-	)
+	hostConfig := BuildHostConfig(HostConfigOptions{
+		Runtime: RuntimeOptions{NetworkMode: "bridge"},
+	})
 
 	require.Empty(t, hostConfig.Mounts)
 
@@ -296,56 +284,21 @@ func TestBuildTrivyHostConfig_SkipsCacheMountWhenVolumeEmpty(t *testing.T) {
 		Source: "/run/user/1000/podman/podman.sock",
 		Target: "/run/user/1000/podman/podman.sock",
 	}
-	hostConfig = BuildHostConfig(
-		"",
-		containertypes.Resources{},
-		"",
-		false,
-		RuntimeOptions{
+	hostConfig = BuildHostConfig(HostConfigOptions{
+		Runtime: RuntimeOptions{
 			NetworkMode: "bridge",
 			Mounts:      []mounttypes.Mount{socketMount},
 		},
-		nil,
-		false,
-	)
+	})
 
 	require.Len(t, hostConfig.Mounts, 1)
 	require.Equal(t, socketMount.Source, hostConfig.Mounts[0].Source)
 }
 
-func TestBuildTrivyBatchHostConfig_AppliesRuntimeSecurity(t *testing.T) {
-	hostConfig := BuildBatchHostConfig(
-		"cache-volume",
-		RuntimeOptions{NetworkMode: "arcane-external"},
-		[]string{"label=disable"},
-		true,
-	)
-
-	require.Equal(t, containertypes.NetworkMode("arcane-external"), hostConfig.NetworkMode)
-	require.Equal(t, []string{"label=disable"}, hostConfig.SecurityOpt)
-	require.True(t, hostConfig.Privileged)
-	require.Len(t, hostConfig.Mounts, 1)
-	require.Equal(t, "cache-volume", hostConfig.Mounts[0].Source)
-}
-
-func TestBuildTrivyBatchHostConfig_SkipsCacheMountWhenVolumeEmpty(t *testing.T) {
-	hostConfig := BuildBatchHostConfig(
-		"",
-		RuntimeOptions{NetworkMode: "arcane-external"},
-		nil,
-		false,
-	)
-
-	require.Empty(t, hostConfig.Mounts)
-}
-
 func TestBuildTrivyHostConfig_IncludesInheritedSocketMount(t *testing.T) {
-	hostConfig := BuildHostConfig(
-		"cache-volume",
-		containertypes.Resources{},
-		"",
-		false,
-		RuntimeOptions{
+	hostConfig := BuildHostConfig(HostConfigOptions{
+		CacheVolume: "cache-volume",
+		Runtime: RuntimeOptions{
 			NetworkMode: "bridge",
 			Mounts: []mounttypes.Mount{
 				{
@@ -355,29 +308,12 @@ func TestBuildTrivyHostConfig_IncludesInheritedSocketMount(t *testing.T) {
 				},
 			},
 		},
-		nil,
-		false,
-	)
+	})
 
 	require.Len(t, hostConfig.Mounts, 2)
 	require.Equal(t, "/run/user/1000/podman/podman.sock", hostConfig.Mounts[0].Source)
 	require.Equal(t, "/run/user/1000/podman/podman.sock", hostConfig.Mounts[0].Target)
 	require.Equal(t, "cache-volume", hostConfig.Mounts[1].Source)
-}
-
-func TestApplyTrivyRuntimeSecurity(t *testing.T) {
-	hostConfig := &containertypes.HostConfig{}
-
-	ApplyRuntimeSecurity(hostConfig, []string{"label=disable"}, true)
-
-	require.Equal(t, []string{"label=disable"}, hostConfig.SecurityOpt)
-	require.True(t, hostConfig.Privileged)
-}
-
-func TestSelectDefaultTrivyNetworkMode(t *testing.T) {
-	require.Equal(t, DefaultNetworkMode, SelectDefaultNetworkMode(""))
-	require.Equal(t, DefaultNetworkMode, SelectDefaultNetworkMode(" \t\n "))
-	require.Equal(t, "arcane-external", SelectDefaultNetworkMode("arcane-external"))
 }
 
 func TestResolveTrivyUnixSocketSource(t *testing.T) {

@@ -96,38 +96,25 @@ func AwaitHandlerActivitySlot(ctx context.Context, activityService Service, acti
 // write their started line in between, so the client learns the activity ID
 // before the queue wait begins). Quick actions (start/stop/delete) must pass
 // false.
-func StartHandlerActivity(
-	ctx context.Context,
-	activityService Service,
-	environmentID string,
-	activityType types.ActivityType,
-	resourceType string,
-	resourceID string,
-	resourceName string,
-	user *types.Actor,
-	step string,
-	message string,
-	metadata database.JSON,
-	queue bool,
-) (string, context.Context) {
+func StartHandlerActivity(ctx context.Context, activityService Service, opts HandlerOptions) (string, context.Context) {
 	if activityService == nil {
 		return "", ctx
 	}
 
 	activity, err := activityService.StartActivity(ctx, StartRequest{
-		EnvironmentID: environmentID,
-		Type:          activityType,
-		Queue:         queue,
-		ResourceType:  mo.EmptyableToOption(strings.TrimSpace(resourceType)).ToPointer(),
-		ResourceID:    mo.EmptyableToOption(strings.TrimSpace(resourceID)).ToPointer(),
-		ResourceName:  mo.EmptyableToOption(strings.TrimSpace(resourceName)).ToPointer(),
-		StartedBy:     user,
-		Step:          step,
-		LatestMessage: message,
-		Metadata:      metadata,
+		EnvironmentID: opts.EnvironmentID,
+		Type:          opts.Type,
+		Queue:         opts.Queue,
+		ResourceType:  mo.EmptyableToOption(strings.TrimSpace(opts.ResourceType)).ToPointer(),
+		ResourceID:    mo.EmptyableToOption(strings.TrimSpace(opts.ResourceID)).ToPointer(),
+		ResourceName:  mo.EmptyableToOption(strings.TrimSpace(opts.ResourceName)).ToPointer(),
+		StartedBy:     opts.User,
+		Step:          opts.Step,
+		LatestMessage: opts.Message,
+		Metadata:      opts.Metadata,
 	})
 	if err != nil {
-		slog.DebugContext(ctx, "failed to start background activity", "type", activityType, "error", err)
+		slog.DebugContext(ctx, "failed to start background activity", "type", opts.Type, "error", err)
 		return "", ctx
 	}
 
@@ -172,20 +159,7 @@ func CompleteHandlerActivity(ctx context.Context, activityService Service, activ
 // The action MUST use the provided context for its operation so cancellation
 // propagates.
 func RunHandlerActivity(ctx context.Context, activityService Service, opts HandlerOptions, action func(ctx context.Context) error) (string, error) {
-	activityID, workCtx := StartHandlerActivity(
-		ctx,
-		activityService,
-		opts.EnvironmentID,
-		opts.Type,
-		opts.ResourceType,
-		opts.ResourceID,
-		opts.ResourceName,
-		opts.User,
-		opts.Step,
-		opts.Message,
-		opts.Metadata,
-		opts.Queue,
-	)
+	activityID, workCtx := StartHandlerActivity(ctx, activityService, opts)
 	if opts.Queue {
 		AwaitHandlerActivitySlot(workCtx, activityService, activityID, opts.EnvironmentID)
 	}

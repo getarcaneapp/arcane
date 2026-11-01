@@ -19,7 +19,7 @@ func SanitizeForEmail(text string) string {
 	return strings.TrimSpace(text)
 }
 
-func sendShoutrrrInternal(provider, destinationURL, message string, params *shoutrrrTypes.Params) error {
+func sendShoutrrr(provider, destinationURL, message string, params *shoutrrrTypes.Params) error {
 	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, destinationURL)
 	if err != nil {
 		return fmt.Errorf("failed to create shoutrrr %s sender: %w", provider, err)

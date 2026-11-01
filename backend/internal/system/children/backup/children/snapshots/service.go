@@ -24,7 +24,7 @@ import (
 	"go.getarcane.app/acfs"
 	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 	"gorm.io/gorm"
 
@@ -33,7 +33,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config/schema"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
+	git "github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
@@ -123,10 +123,6 @@ type systemBackupSnapshotSession struct {
 	recoveryKey  string
 }
 
-func (s *Service) snapshotSession(dockerClient *client.Client, recoveryKey string) systemBackupSnapshotSession {
-	return systemBackupSnapshotSession{service: s, dockerClient: dockerClient, recoveryKey: recoveryKey}
-}
-
 func (s *Service) backupSnapshotLocations(ctx context.Context, dockerClient *client.Client, run types.SystemBackupRun) ([]systemBackupSnapshotLocation, error) {
 	locations := make([]systemBackupSnapshotLocation, 0, 2)
 	var setupErr error
@@ -211,7 +207,7 @@ func (session systemBackupSnapshotSession) inspectProjectManifest(ctx context.Co
 	if err != nil {
 		return systemBackupSnapshot{}, err
 	}
-	if !snapshot.layout.projectsIncluded() {
+	if !(snapshot.layout.projectsPath != "") {
 		return systemBackupSnapshot{}, errProjectsNotInBackup
 	}
 	return snapshot, nil
@@ -295,7 +291,7 @@ func (s *Service) Browse(
 	recursive bool,
 	params pagination.QueryParams,
 ) ([]types.BackupFileEntry, pagination.Response, error) {
-	session := s.snapshotSession(dockerClient, key)
+	session := systemBackupSnapshotSession{service: s, dockerClient: dockerClient, recoveryKey: key}
 	locations, setupErr := s.backupSnapshotLocations(ctx, dockerClient, run)
 	browseErr := setupErr
 	for _, location := range locations {
@@ -471,7 +467,7 @@ func (s *Service) RestoreFiles(
 	selection types.BackupRestoreSelection,
 	createSafety func(context.Context, types.CreateSystemBackupRequest) (*types.SystemBackupRun, error),
 ) error {
-	session := s.snapshotSession(dockerClient, key)
+	session := systemBackupSnapshotSession{service: s, dockerClient: dockerClient, recoveryKey: key}
 	locations, setupErr := s.backupSnapshotLocations(ctx, dockerClient, run)
 	snapshots, err := session.availableProjectSnapshots(ctx, locations, setupErr, false)
 	if err != nil {
@@ -534,7 +530,7 @@ func (s *Service) PlanRestore(
 	mounts []container.MountPoint,
 	dataDirectory, projectsDirectory string,
 ) (RestorePlan, error) {
-	session := s.snapshotSession(dockerClient, key)
+	session := systemBackupSnapshotSession{service: s, dockerClient: dockerClient, recoveryKey: key}
 	locations, setupErr := s.backupSnapshotLocations(ctx, dockerClient, run)
 	snapshot, err := session.firstReadableSnapshot(ctx, locations, setupErr)
 	if err != nil {
@@ -545,7 +541,7 @@ func (s *Service) PlanRestore(
 	if err != nil {
 		return RestorePlan{}, fmt.Errorf("plan system restore: %w", err)
 	}
-	return RestorePlan{SnapshotID: snapshot.snapshotID, ProjectsIncluded: snapshot.layout.projectsIncluded(), Stages: stages}, nil
+	return RestorePlan{SnapshotID: snapshot.snapshotID, ProjectsIncluded: (snapshot.layout.projectsPath != ""), Stages: stages}, nil
 }
 
 // PlanRollback plans the stages that restore the local safety snapshot if a full restore fails.
@@ -560,7 +556,7 @@ func (s *Service) PlanRollback(
 	if err != nil {
 		return nil, err
 	}
-	session := s.snapshotSession(dockerClient, key)
+	session := systemBackupSnapshotSession{service: s, dockerClient: dockerClient, recoveryKey: key}
 	safetyLocation := systemBackupSnapshotLocation{
 		name:        "safety",
 		destination: types.SystemBackupDestinationLocal,
@@ -781,14 +777,10 @@ type snapshotLayout struct {
 	databaseName string
 }
 
-func (layout snapshotLayout) projectsIncluded() bool {
-	return layout.projectsPath != ""
-}
-
 // projectsDataRelative returns the projects root relative to the data
 // root when projects live inside it.
 func (layout snapshotLayout) projectsDataRelative() (string, bool) {
-	if !layout.projectsIncluded() {
+	if !(layout.projectsPath != "") {
 		return "", false
 	}
 	if layout.projectsPath == layout.dataPath {
@@ -1043,7 +1035,7 @@ func restoreStages(
 	[]types.RecoveryRestoreStage,
 	error,
 ) {
-	separate := layout.projectsIncluded() && !layout.projectsCoveredByData(dataDirectory, projectsDirectory)
+	separate := (layout.projectsPath != "") && !layout.projectsCoveredByData(dataDirectory, projectsDirectory)
 	if separate && layout.projectsPath == layout.dataPath {
 		return nil, fmt.Errorf("the backup keeps projects in Arcane's data directory; set the projects directory to %s before a full restore, or restore individual project files instead", dataDirectory)
 	}

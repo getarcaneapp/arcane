@@ -29,21 +29,21 @@ type Client struct {
 	logWriter io.WriteCloser
 }
 
-type composeClientConfigInternal struct {
+type composeClientConfig struct {
 	serviceOptions    []compose.Option
 	isLogDemuxEnabled bool
 }
 
-type composeClientOptionInternal func(*composeClientConfigInternal)
+type composeClientOption func(*composeClientConfig)
 
-// streamDemuxedLogsInternal wires the log-parity wrapper so non-TTY container
+// streamDemuxedLogs wires the log-parity wrapper so non-TTY container
 // log responses keep stderr metadata as Arcane's [STDERR] marker.
-func streamDemuxedLogsInternal(config *composeClientConfigInternal) {
+func streamDemuxedLogs(config *composeClientConfig) {
 	config.isLogDemuxEnabled = true
 }
 
-func withComposeServiceOptionsInternal(options ...compose.Option) composeClientOptionInternal {
-	return func(config *composeClientConfigInternal) {
+func withComposeServiceOptions(options ...compose.Option) composeClientOption {
+	return func(config *composeClientConfig) {
 		config.serviceOptions = append(config.serviceOptions, options...)
 	}
 }
@@ -51,8 +51,8 @@ func withComposeServiceOptionsInternal(options ...compose.Option) composeClientO
 // NewClient builds a compose client. dockerHost, when non-empty, pins the
 // docker CLI to that daemon endpoint instead of letting it resolve one from
 // the environment.
-func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]registry.AuthConfig, prompt compose.Prompt, options ...composeClientOptionInternal) (*Client, error) {
-	config := composeClientConfigInternal{}
+func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]registry.AuthConfig, prompt compose.Prompt, options ...composeClientOption) (*Client, error) {
+	config := composeClientConfig{}
 	for _, option := range options {
 		option(&config)
 	}
@@ -68,7 +68,7 @@ func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]re
 	if initializeErr := cli.Initialize(opts); initializeErr != nil {
 		return nil, initializeErr
 	}
-	if composeAuthConfigs := buildComposeAuthConfigsInternal(authConfigs); len(composeAuthConfigs) > 0 {
+	if composeAuthConfigs := buildComposeAuthConfigs(authConfigs); len(composeAuthConfigs) > 0 {
 		configFile := cli.ConfigFile()
 		if configFile.AuthConfigs == nil {
 			configFile.AuthConfigs = map[string]clitypes.AuthConfig{}
@@ -76,9 +76,9 @@ func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]re
 		maps.Copy(configFile.AuthConfigs, composeAuthConfigs)
 	}
 
-	composeCLI := wrapDockerCLIWithInspectCompatibilityInternal(cli)
+	composeCLI := wrapDockerCLIWithInspectCompatibility(cli)
 	if config.isLogDemuxEnabled {
-		composeCLI = wrapDockerCLIWithLogsDemuxInternal(cli)
+		composeCLI = wrapDockerCLIWithLogsDemux(cli)
 	}
 
 	// When the caller streams operation output, render compose's own progress
@@ -125,12 +125,12 @@ func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]re
 	return &Client{svc: svc, dockerCli: composeCLI, logWriter: logWriter}, nil
 }
 
-type plainComposeClientEntryInternal struct {
+type plainComposeClientEntry struct {
 	client *Client
 	host   string
 }
 
-var plainComposeClient atomic.Pointer[plainComposeClientEntryInternal]
+var plainComposeClient atomic.Pointer[plainComposeClientEntry]
 
 func plainComposeClientInternal(dockerHost string) (*Client, error) {
 	current := plainComposeClient.Load()
@@ -144,7 +144,7 @@ func plainComposeClientInternal(dockerHost string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !plainComposeClient.CompareAndSwap(current, &plainComposeClientEntryInternal{host: dockerHost, client: c}) {
+	if !plainComposeClient.CompareAndSwap(current, &plainComposeClientEntry{host: dockerHost, client: c}) {
 		_ = c.Close()
 		return plainComposeClientInternal(dockerHost)
 	}
@@ -154,7 +154,7 @@ func plainComposeClientInternal(dockerHost string) (*Client, error) {
 	return c, nil
 }
 
-func buildComposeAuthConfigsInternal(authConfigs map[string]registry.AuthConfig) map[string]clitypes.AuthConfig {
+func buildComposeAuthConfigs(authConfigs map[string]registry.AuthConfig) map[string]clitypes.AuthConfig {
 	if len(authConfigs) == 0 {
 		return nil
 	}
@@ -191,7 +191,7 @@ func (c *inspectCompatibleDockerCli) Client() client.APIClient {
 	return c.apiClient
 }
 
-func wrapDockerCLIWithInspectCompatibilityInternal(cli command.Cli) command.Cli {
+func wrapDockerCLIWithInspectCompatibility(cli command.Cli) command.Cli {
 	if cli == nil {
 		return nil
 	}
@@ -226,9 +226,9 @@ type writerConsumer struct {
 	writeErrLogged bool
 }
 
-// stderrLogLinePrefixInternal marks stderr content so the project-log parser
+// stderrLogLinePrefix marks stderr content so the project-log parser
 // (pkg/libarcane/ws) can classify lines the same way container logs do.
-const stderrLogLinePrefixInternal = "[STDERR] "
+const stderrLogLinePrefix = "[STDERR] "
 
 func (w *writerConsumer) Register(container string)    {}
 func (w *writerConsumer) Start(container string)       {}
@@ -239,11 +239,11 @@ func (w *writerConsumer) Log(container, msg string) {
 }
 
 func (w *writerConsumer) Err(container, msg string) {
-	if msg == "" || strings.HasPrefix(msg, stderrLogLinePrefixInternal) {
+	if msg == "" || strings.HasPrefix(msg, stderrLogLinePrefix) {
 		w.write(container, msg)
 		return
 	}
-	w.write(container, stderrLogLinePrefixInternal+msg)
+	w.write(container, stderrLogLinePrefix+msg)
 }
 
 func (w *writerConsumer) write(container, msg string) {

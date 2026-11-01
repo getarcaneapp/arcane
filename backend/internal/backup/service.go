@@ -971,12 +971,20 @@ func DisableMissingRemote(remoteErr error, localEnabled bool, s3Enabled, enabled
 	return true, nil
 }
 
+type DisableRemoteRequest struct {
+	Model         any
+	ID            string
+	DestinationID string
+	LocalEnabled  bool
+	Field         string
+}
+
 // DisableStoredRemote is DisableMissingRemote's save for a policy table row, which it changes only while the row still
 // matches the loaded policy.
-func DisableStoredRemote(ctx context.Context, db *database.DB, model any, id, destinationID string, localEnabled bool, field string) (bool, error) {
-	result := db.WithContext(ctx).Model(model).
-		Where("id = ? AND s3_destination_id = ? AND enabled = ? AND s3_enabled = ? AND local_enabled = ?", id, destinationID, true, true, localEnabled).
-		Update(field, false)
+func DisableStoredRemote(ctx context.Context, db *database.DB, req DisableRemoteRequest) (bool, error) {
+	result := db.WithContext(ctx).Model(req.Model).
+		Where("id = ? AND s3_destination_id = ? AND enabled = ? AND s3_enabled = ? AND local_enabled = ?", req.ID, req.DestinationID, true, true, req.LocalEnabled).
+		Update(req.Field, false)
 	return result.Error == nil && result.RowsAffected > 0, result.Error
 }
 

@@ -201,7 +201,7 @@ func deliverSignal(ctx context.Context, config database.JSON, c Content) error {
 }
 
 func deliverSlack(ctx context.Context, config database.JSON, c Content) error {
-	slackConfig, err := PrepareSlackConfig(config, "Slack", true)
+	slackConfig, err := PrepareSlackConfig(config, "Slack")
 	if err != nil {
 		return err
 	}
@@ -212,9 +212,12 @@ func deliverSlack(ctx context.Context, config database.JSON, c Content) error {
 }
 
 func deliverNtfy(ctx context.Context, config database.JSON, c Content) error {
-	ntfyConfig, err := PrepareNtfyConfig(config, "Ntfy", c.RequireNtfyTopic)
+	ntfyConfig, err := PrepareNtfyConfig(config, "Ntfy")
 	if err != nil {
 		return err
+	}
+	if c.RequireNtfyTopic && ntfyConfig.Topic == "" {
+		return errors.New("ntfy topic is required")
 	}
 	if ntfyConfig.Title == "" {
 		ntfyConfig.Title = c.NtfyTitle

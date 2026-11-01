@@ -164,9 +164,9 @@ func TestPerIPRateLimitForPaths_RouteParamsDoNotEscapeFilter(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, doReq("token-bbb"))
 }
 
-// newTokenRateLimitTestRouterInternal wires PerTokenRateLimitForPaths ahead
+// newTokenRateLimitTestRouter wires PerTokenRateLimitForPaths ahead
 // of handler and returns a doReq helper posting from a fixed source IP.
-func newTokenRateLimitTestRouterInternal(
+func newTokenRateLimitTestRouter(
 	t *testing.T,
 	perMinute, burst int,
 	isAuthentic func(string) bool,
@@ -188,13 +188,13 @@ func newTokenRateLimitTestRouterInternal(
 	}
 }
 
-func okHandlerInternal(c *echo.Context) error {
+func okHandler(c *echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
 func TestPerTokenRateLimitForPaths_TracksDistinctTokensNotIP(t *testing.T) {
 	acceptAll := func(string) bool { return true }
-	doReq := newTokenRateLimitTestRouterInternal(t, 60, 1, acceptAll, okHandlerInternal)
+	doReq := newTokenRateLimitTestRouter(t, 60, 1, acceptAll, okHandler)
 
 	require.Equal(t, http.StatusOK, doReq("token-a"))
 	require.Equal(t, http.StatusOK, doReq("token-b"))
@@ -206,7 +206,7 @@ func TestPerTokenRateLimitForPaths_TracksDistinctTokensNotIP(t *testing.T) {
 // a nil isAuthentic does not hand out independent per-token buckets: all nonempty
 // tokens contend for one shared IP bucket and trip 429 together.
 func TestPerTokenRateLimitForPaths_NilAuthenticatorFailsClosedToSharedIPBucket(t *testing.T) {
-	doReq := newTokenRateLimitTestRouterInternal(t, 60, 1, nil, okHandlerInternal)
+	doReq := newTokenRateLimitTestRouter(t, 60, 1, nil, okHandler)
 
 	require.Equal(t, http.StatusOK, doReq("token-a"))
 	require.Equal(t, http.StatusTooManyRequests, doReq("token-b"),
@@ -218,7 +218,7 @@ func TestPerTokenRateLimitForPaths_IPCeilingBoundsUnauthenticTokenCycling(t *tes
 	rejectAll := func(string) bool { return false }
 	const perMinute, burst = 1, 3
 	handlerHits := 0
-	doReq := newTokenRateLimitTestRouterInternal(t, perMinute, burst, rejectAll, func(c *echo.Context) error {
+	doReq := newTokenRateLimitTestRouter(t, perMinute, burst, rejectAll, func(c *echo.Context) error {
 		handlerHits++
 		return c.NoContent(http.StatusNotFound)
 	})
@@ -241,7 +241,7 @@ func TestPerTokenRateLimitForPaths_MalformedTokensGetNoBucketButStillHitIPCeilin
 	}
 	const perMinute, burst = 2, 2
 
-	doReq := newTokenRateLimitTestRouterInternal(t, perMinute, burst, isAuthentic, okHandlerInternal)
+	doReq := newTokenRateLimitTestRouter(t, perMinute, burst, isAuthentic, okHandler)
 
 	successes := 0
 	for i := range burst + 10 {
@@ -258,7 +258,7 @@ func TestPerTokenRateLimitForPaths_AuthenticTokenNotStarvedByGarbageFromSameIP(t
 	isAuthentic := func(token string) bool {
 		return token == "authentic"
 	}
-	doReq := newTokenRateLimitTestRouterInternal(t, 2, 2, isAuthentic, okHandlerInternal)
+	doReq := newTokenRateLimitTestRouter(t, 2, 2, isAuthentic, okHandler)
 
 	for i := range 100 {
 		doReq("garbage-" + strconv.Itoa(i))
@@ -296,7 +296,7 @@ func TestPerTokenRateLimitForPaths_AppliesOnlyToConfiguredPaths(t *testing.T) {
 }
 
 func TestIPRateLimiter_EnforcesMaxEntriesForRecentClients(t *testing.T) {
-	limiter := newIPRateLimiterInternal(1, 1)
+	limiter := newIPRateLimiter(1, 1)
 	limiter.maxEntries = 3
 
 	require.True(t, limiter.allow("client-1"))
@@ -309,7 +309,7 @@ func TestIPRateLimiter_EnforcesMaxEntriesForRecentClients(t *testing.T) {
 }
 
 func TestIPRateLimiter_ProtectsCurrentKeyDuringSweep(t *testing.T) {
-	limiter := newIPRateLimiterInternal(rate.Every(time.Hour), 1)
+	limiter := newIPRateLimiter(rate.Every(time.Hour), 1)
 	limiter.maxEntries = 1
 
 	exhausted := rate.NewLimiter(rate.Every(time.Hour), 1)
@@ -338,7 +338,7 @@ func TestPerTokenRateLimitForPaths_KeysByAgentTokenHeader(t *testing.T) {
 		func(c *echo.Context) string { return c.Request().Header.Get(HeaderAgentToken) },
 		func(token string) bool { return strings.HasPrefix(token, "known-") },
 	))
-	router.POST("/events", okHandlerInternal)
+	router.POST("/events", okHandler)
 	doReq := func(token string) int {
 		req := httptest.NewRequest(http.MethodPost, "/events", http.NoBody)
 		req.RemoteAddr = "192.0.2.10:4000"

@@ -48,8 +48,8 @@ func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
 	}
 
 	cop := http.NewCrossOriginProtection()
-	for _, origin := range deriveAllowedOriginsInternal(m.cfg, nil) {
-		// AddTrustedOrigin expects scheme://host[:port]; deriveAllowedOriginsInternal
+	for _, origin := range deriveAllowedOrigins(m.cfg, nil) {
+		// AddTrustedOrigin expects scheme://host[:port]; deriveAllowedOrigins
 		// already produces that form (shared with CORS). Skip anything malformed.
 		if err := cop.AddTrustedOrigin(origin); err != nil {
 			slog.WarnContext(context.Background(), "CSRF: ignoring invalid trusted origin", //nolint:forbidigo // Middleware configuration is derived at startup without a request context.
@@ -63,7 +63,7 @@ func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			req := c.Request()
-			if hasHeaderCredentialInternal(req) {
+			if hasHeaderCredential(req) {
 				return next(c)
 			}
 			if err := cop.Check(req); err != nil {
@@ -83,10 +83,10 @@ func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
 	}
 }
 
-// hasHeaderCredentialInternal reports whether the request carries a credential in a
+// hasHeaderCredential reports whether the request carries a credential in a
 // header that a browser cannot forge on a cross-origin request, meaning it is not
 // susceptible to CSRF and should bypass the cross-origin check.
-func hasHeaderCredentialInternal(req *http.Request) bool {
+func hasHeaderCredential(req *http.Request) bool {
 	return strings.HasPrefix(req.Header.Get("Authorization"), "Bearer ") ||
 		req.Header.Get(HeaderApiKey) != "" ||
 		req.Header.Get(HeaderAgentToken) != ""

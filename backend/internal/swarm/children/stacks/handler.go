@@ -194,7 +194,10 @@ func (h *Handler) UpdateStackSource(ctx context.Context, input *UpdateSwarmStack
 		return nil, huma.Error400BadRequest("invalid request body")
 	}
 
-	source, err := h.service.UpdateStackSource(ctx, input.EnvironmentID, input.Name, input.Body, submitted)
+	source, err := h.service.UpdateStackSource(ctx, input.EnvironmentID, input.Name, StackSourceUpdate{
+		Source:    input.Body,
+		Submitted: submitted,
+	})
 	if err != nil {
 		return nil, h.mapError(err, "Failed to update swarm stack source")
 	}

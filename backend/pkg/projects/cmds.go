@@ -11,6 +11,7 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/compose/v5/pkg/compose"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
@@ -26,13 +27,13 @@ import (
 // cover large image pulls + health-check waits.
 const defaultComposeTimeout = 30 * time.Minute
 
-// detachFromHTTPContextInternal creates a new context derived from
+// detachFromHTTPContext creates a new context derived from
 // context.WithoutCancel(parent) that carries any values from the parent
 // (such as types.ProgressWriterKey) but is **not** cancelled or
 // deadline-bounded by the parent. This allows compose operations to survive
 // HTTP request timeouts and proxy deadline cancellations. A standalone timeout
 // is applied so the operation cannot run forever. See #1209.
-func detachFromHTTPContextInternal(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+func detachFromHTTPContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	if utils.IsAppLifecycleContext(parent) {
 		return context.WithTimeout(parent, timeout)
 	}
@@ -41,7 +42,7 @@ func detachFromHTTPContextInternal(parent context.Context, timeout time.Duration
 }
 
 func ComposeRestart(ctx context.Context, dockerHost string, proj *composetypes.Project, services []string) error {
-	restartCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
+	restartCtx, cancel := detachFromHTTPContext(ctx, defaultComposeTimeout)
 	defer cancel()
 
 	c, err := NewClient(restartCtx, dockerHost, nil, nil)
@@ -57,7 +58,7 @@ func ComposeStop(ctx context.Context, dockerHost string, proj *composetypes.Proj
 	if len(services) == 0 {
 		return nil
 	}
-	stopCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
+	stopCtx, cancel := detachFromHTTPContext(ctx, defaultComposeTimeout)
 	defer cancel()
 
 	c, err := NewClient(stopCtx, dockerHost, nil, nil)
@@ -69,24 +70,13 @@ func ComposeStop(ctx context.Context, dockerHost string, proj *composetypes.Proj
 	return c.svc.Stop(stopCtx, proj.Name, api.StopOptions{Services: services})
 }
 
-func ComposeUp(ctx context.Context,
-	dockerHost string,
-	proj *composetypes.Project,
-	services []string,
-	removeOrphans,
-	forceRecreate,
-	recreateVolumes bool,
-	authConfigs map[string]registry.AuthConfig,
-	waitTimeout time.Duration,
-) error {
-	selected, err := SelectServices(proj, services)
+func ComposeUp(ctx context.Context, dockerHost string, proj *composetypes.Project, opts types.ComposeUpOptions) error {
+	selected, err := SelectServices(proj, opts.Services)
 	if err != nil {
 		return err
 	}
 	proj = selected
-	if waitTimeout <= 0 {
-		waitTimeout = timeouts.DefaultDeployWait
-	}
+	waitTimeout := kit.Ternary(opts.WaitTimeout > 0, opts.WaitTimeout, timeouts.DefaultDeployWait)
 
 	// Detach from the HTTP request context so that proxy timeouts and client
 	// disconnects do not cancel a long-running compose up. See #1209. The
@@ -94,14 +84,14 @@ func ComposeUp(ctx context.Context,
 	// Wait Timeout above defaultComposeTimeout would be cut short; the extra
 	// defaultComposeTimeout leaves room for image pulls and container creation
 	// that happen before the wait starts.
-	composeCtx, cancel := detachFromHTTPContextInternal(ctx, waitTimeout+defaultComposeTimeout)
+	composeCtx, cancel := detachFromHTTPContext(ctx, waitTimeout+defaultComposeTimeout)
 	defer cancel()
 
 	// Compose prompts before recreating a volume whose config diverged (data
 	// loss). Only answer yes when the caller explicitly opted in; otherwise the
 	// default prompt declines and logs the question.
 	var prompt compose.Prompt
-	if recreateVolumes {
+	if opts.RecreateVolumes {
 		prompt = compose.AlwaysOkPrompt()
 	}
 
@@ -109,18 +99,18 @@ func ComposeUp(ctx context.Context,
 	// Selection errors were already surfaced at load, so parse best-effort here.
 	envOpts, _ := ParseComposeEnvOptions(proj.WorkingDir, EnvMap(proj.Environment))
 
-	var clientOptions []composeClientOptionInternal
+	var clientOptions []composeClientOption
 	if envOpts.ParallelLimit > 0 {
-		clientOptions = append(clientOptions, withComposeServiceOptionsInternal(compose.WithMaxConcurrency(envOpts.ParallelLimit)))
+		clientOptions = append(clientOptions, withComposeServiceOptions(compose.WithMaxConcurrency(envOpts.ParallelLimit)))
 	}
 
-	c, err := NewClient(composeCtx, dockerHost, authConfigs, prompt, clientOptions...)
+	c, err := NewClient(composeCtx, dockerHost, opts.AuthConfigs, prompt, clientOptions...)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = c.Close() }()
 
-	upOptions, startOptions := composeUpOptionsInternal(proj, services, removeOrphans, forceRecreate, waitTimeout, envOpts)
+	upOptions, startOptions := composeUpOptions(proj, opts, waitTimeout, envOpts)
 
 	return c.svc.Up(composeCtx, proj, api.UpOptions{Create: upOptions, Start: startOptions})
 }
@@ -133,7 +123,7 @@ func ComposeCreate(ctx context.Context, dockerHost string, proj *composetypes.Pr
 	if err != nil {
 		return err
 	}
-	createCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
+	createCtx, cancel := detachFromHTTPContext(ctx, defaultComposeTimeout)
 	defer cancel()
 
 	c, err := NewClient(createCtx, dockerHost, authConfigs, nil)
@@ -145,28 +135,19 @@ func ComposeCreate(ctx context.Context, dockerHost string, proj *composetypes.Pr
 	return c.svc.Create(createCtx, selected, api.CreateOptions{Services: services, Recreate: api.RecreateForce, RecreateDependencies: api.RecreateDiverged})
 }
 
-func composeUpOptionsInternal(proj *composetypes.Project,
-	services []string,
-	removeOrphans,
-	forceRecreate bool,
-	waitTimeout time.Duration,
-	envOpts ComposeEnvOptions) (api.CreateOptions,
-	api.StartOptions,
-) {
-	recreatePolicy := kit.Ternary(forceRecreate, api.RecreateForce, api.RecreateDiverged)
-
+func composeUpOptions(proj *composetypes.Project, opts types.ComposeUpOptions, waitTimeout time.Duration, envOpts ComposeEnvOptions) (api.CreateOptions, api.StartOptions) {
 	upOptions := api.CreateOptions{
-		Services:             services,
-		Recreate:             recreatePolicy,
+		Services:             opts.Services,
+		Recreate:             kit.Ternary(opts.ForceRecreate, api.RecreateForce, api.RecreateDiverged),
 		RecreateDependencies: api.RecreateDiverged,
 		// A caller opt-in (or GitOps-forced true) still wins over COMPOSE_REMOVE_ORPHANS.
-		RemoveOrphans: removeOrphans || envOpts.RemoveOrphans,
+		RemoveOrphans: opts.RemoveOrphans || envOpts.RemoveOrphans,
 		IgnoreOrphans: envOpts.IgnoreOrphans,
 	}
 
 	startOptions := api.StartOptions{
 		Project:     proj,
-		Services:    services,
+		Services:    opts.Services,
 		Wait:        true,
 		WaitTimeout: waitTimeout,
 		// CascadeFail ensures that if a dependency fails its health check,
@@ -204,7 +185,7 @@ func ComposeGenerate(ctx context.Context, dockerHost, projectName string, contai
 }
 
 func ComposeDown(ctx context.Context, dockerHost string, proj *composetypes.Project, removeVolumes bool) error {
-	downCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
+	downCtx, cancel := detachFromHTTPContext(ctx, defaultComposeTimeout)
 	defer cancel()
 
 	c, err := NewClient(downCtx, dockerHost, nil, nil)
@@ -220,14 +201,19 @@ func ComposeDown(ctx context.Context, dockerHost string, proj *composetypes.Proj
 // one-shot client for this call is built with the log-parity wrapper so
 // non-TTY containers keep their stderr metadata; deploy, attach, and other
 // compose operations use plain clients.
-func ComposeLogs(ctx context.Context, dockerHost, projectName string, out io.Writer, follow bool, tail, since string, timestamps bool) error {
-	c, err := NewClient(ctx, dockerHost, nil, nil, streamDemuxedLogsInternal)
+func ComposeLogs(ctx context.Context, dockerHost, projectName string, out io.Writer, opts types.LogStreamOptions) error {
+	c, err := NewClient(ctx, dockerHost, nil, nil, streamDemuxedLogs)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = c.Close() }()
 
-	return c.svc.Logs(ctx, projectName, &writerConsumer{out: out}, api.LogOptions{Follow: follow, Tail: tail, Since: since, Timestamps: timestamps})
+	return c.svc.Logs(ctx, projectName, &writerConsumer{out: out}, api.LogOptions{
+		Follow:     opts.Follow,
+		Tail:       opts.Tail,
+		Since:      opts.Since,
+		Timestamps: opts.Timestamps,
+	})
 }
 
 // ListGlobalComposeContainers lists every container carrying a compose

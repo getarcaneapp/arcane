@@ -330,7 +330,10 @@ func TestFederatedCredentialServiceUpdateDisableRevokesIssuedSessions(t *testing
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	_, err = service.Update(ctx, "admin-user", "cred-github-actions", types.FederatedCredential{}, map[string]bool{"enabled": true})
+	_, err = service.Update(ctx, "admin-user", "cred-github-actions", CredentialUpdate{
+		Request:   types.FederatedCredential{},
+		Submitted: map[string]bool{"enabled": true},
+	})
 	require.NoError(t, err)
 
 	_, _, err = authSvc.VerifyToken(ctx, resp.AccessToken)

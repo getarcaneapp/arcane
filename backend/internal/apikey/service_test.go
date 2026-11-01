@@ -258,10 +258,13 @@ func TestUpdateApiKeyRejectsStaticKey(t *testing.T) {
 	created, err := service.CreateDefaultAdminAPIKey(ctx, adminUser.ID, "arc_bootstrapupdateprotected1234567890")
 	require.NoError(t, err)
 
-	updated, err := service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, types.ApiKey{
-		Name:        "renamed",
-		Description: new("updated description"),
-	}, map[string]bool{"name": true, "description": true})
+	updated, err := service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, ApiKeyUpdate{
+		Request: types.ApiKey{
+			Name:        "renamed",
+			Description: new("updated description"),
+		},
+		Submitted: map[string]bool{"name": true, "description": true},
+	})
 	require.Nil(t, updated)
 	require.ErrorIs(t, err, ErrApiKeyProtected)
 
@@ -292,13 +295,16 @@ func TestUpdateApiKeyRollsBackMetadataWhenPermissionUpdateFails(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	updated, err := service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, types.ApiKey{
-		Name: "renamed",
-		Permissions: []types.ApiKeyPermissionGrant{
-			{Permission: authz.PermContainersList},
-			{Permission: authz.PermContainersList},
+	updated, err := service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, ApiKeyUpdate{
+		Request: types.ApiKey{
+			Name: "renamed",
+			Permissions: []types.ApiKeyPermissionGrant{
+				{Permission: authz.PermContainersList},
+				{Permission: authz.PermContainersList},
+			},
 		},
-	}, map[string]bool{"name": true, "permissions": true})
+		Submitted: map[string]bool{"name": true, "permissions": true},
+	})
 	require.Nil(t, updated)
 	require.Error(t, err)
 
@@ -358,9 +364,12 @@ func TestApiKeyGrantsAreCappedByOwnerRoles(t *testing.T) {
 	}).Error)
 	var grantless ApiKey
 	require.NoError(t, db.WithContext(ctx).Where("key_prefix = ?", "arc_gless").First(&grantless).Error)
-	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), grantless.ID, types.ApiKey{
-		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
-	}, map[string]bool{"permissions": true})
+	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), grantless.ID, ApiKeyUpdate{
+		Request: types.ApiKey{
+			Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
+		},
+		Submitted: map[string]bool{"permissions": true},
+	})
 	require.ErrorIs(t, err, ErrApiKeyPermissionEscalation)
 
 	// Ownerless rows (not env-bootstrap; no production path creates these)
@@ -372,9 +381,12 @@ func TestApiKeyGrantsAreCappedByOwnerRoles(t *testing.T) {
 	}).Error)
 	var orphan ApiKey
 	require.NoError(t, db.WithContext(ctx).Where("key_prefix = ?", "arc_orph").First(&orphan).Error)
-	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), orphan.ID, types.ApiKey{
-		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
-	}, map[string]bool{"permissions": true})
+	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), orphan.ID, ApiKeyUpdate{
+		Request: types.ApiKey{
+			Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
+		},
+		Submitted: map[string]bool{"permissions": true},
+	})
 	require.ErrorIs(t, err, ErrApiKeyProtected)
 }
 
@@ -393,9 +405,12 @@ func TestCreatePersonalApiKeyHasNoGrantsAndCannotGainAny(t *testing.T) {
 	require.Equal(t, ApiKeyKindPersonal, fetchAPIKey(t, db, created.ID).Kind)
 
 	// Attaching grants to a personal key is rejected even for sudo callers.
-	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, types.ApiKey{
-		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
-	}, map[string]bool{"permissions": true})
+	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, ApiKeyUpdate{
+		Request: types.ApiKey{
+			Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
+		},
+		Submitted: map[string]bool{"permissions": true},
+	})
 	require.ErrorIs(t, err, ErrApiKeyPersonalNoGrants)
 }
 
@@ -853,7 +868,10 @@ func TestApiKeyProtectedWhileEnvironmentReferenced(t *testing.T) {
 
 	// Referenced by the environment: protected from update and delete.
 	require.ErrorIs(t, service.DeleteApiKey(ctx, created.ID), ErrApiKeyProtected)
-	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, types.ApiKey{Name: "renamed"}, map[string]bool{"name": true})
+	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, ApiKeyUpdate{
+		Request:   types.ApiKey{Name: "renamed"},
+		Submitted: map[string]bool{"name": true},
+	})
 	require.ErrorIs(t, err, ErrApiKeyProtected)
 
 	// Legacy pre-046 bootstrap rows carry an owner; the reference alone must

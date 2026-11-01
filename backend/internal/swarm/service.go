@@ -82,8 +82,8 @@ func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, re
 }
 
 // StreamServiceLogs streams swarm service logs for the WebSocket log endpoint.
-func (s *SwarmService) StreamServiceLogs(ctx context.Context, serviceID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
-	return s.services.StreamServiceLogs(ctx, serviceID, logsChan, follow, tail, since, timestamps)
+func (s *SwarmService) StreamServiceLogs(ctx context.Context, serviceID string, logsChan chan<- string, opts types.LogStreamOptions) error {
+	return s.services.StreamServiceLogs(ctx, serviceID, logsChan, opts)
 }
 
 func (s *SwarmService) IsEnabled(ctx context.Context) (bool, error) {

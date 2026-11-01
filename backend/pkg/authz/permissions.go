@@ -209,9 +209,9 @@ const (
 	PermActivitiesDelete = "activities:delete"
 )
 
-var orgLevelPermissions = buildOrgLevelPermissionsInternal()
+var orgLevelPermissions = buildOrgLevelPermissions()
 
-func buildOrgLevelPermissionsInternal() map[string]struct{} {
+func buildOrgLevelPermissions() map[string]struct{} {
 	out := make(map[string]struct{})
 	for _, resource := range permissionCatalog {
 		if resource.Scope != PermissionScopeGlobal {

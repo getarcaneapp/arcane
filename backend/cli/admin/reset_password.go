@@ -57,7 +57,7 @@ func runResetPasswordCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	if enabledErr := ensurePasswordResetEnabledInternal(cfg); enabledErr != nil {
+	if enabledErr := ensurePasswordResetEnabled(cfg); enabledErr != nil {
 		return enabledErr
 	}
 
@@ -78,14 +78,14 @@ func runResetPasswordCommand(cmd *cobra.Command, _ []string) error {
 		}
 	}()
 
-	policy := passwordPolicyFromDBInternal(cmd.Context(), db)
+	policy := passwordPolicyFromDB(cmd.Context(), db)
 
-	password, err := readNewPasswordInternal(cmd.OutOrStdout(), policy)
+	password, err := readNewPassword(cmd.OutOrStdout(), policy)
 	if err != nil {
 		return err
 	}
 
-	if resetPasswordErr := resetPasswordInternal(cmd.Context(), db, username, password, policy); resetPasswordErr != nil {
+	if resetPasswordErr := resetPassword(cmd.Context(), db, username, password, policy); resetPasswordErr != nil {
 		return resetPasswordErr
 	}
 
@@ -95,7 +95,7 @@ func runResetPasswordCommand(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func ensurePasswordResetEnabledInternal(cfg *config.Config) error {
+func ensurePasswordResetEnabled(cfg *config.Config) error {
 	if cfg == nil {
 		return errors.New("password reset config is nil")
 	}
@@ -105,24 +105,24 @@ func ensurePasswordResetEnabledInternal(cfg *config.Config) error {
 	return nil
 }
 
-func readNewPasswordInternal(out io.Writer, policy string) (string, error) {
-	password, err := readPasswordInternal(out, "New password: ")
+func readNewPassword(out io.Writer, policy string) (string, error) {
+	password, err := readPassword(out, "New password: ")
 	if err != nil {
 		return "", fmt.Errorf("failed to read new password: %w", err)
 	}
 
-	confirmation, err := readPasswordInternal(out, "Confirm new password: ")
+	confirmation, err := readPassword(out, "Confirm new password: ")
 	if err != nil {
 		return "", fmt.Errorf("failed to read password confirmation: %w", err)
 	}
 
-	if validatePasswordPairErr := validatePasswordPairInternal(password, confirmation, policy); validatePasswordPairErr != nil {
+	if validatePasswordPairErr := validatePasswordPair(password, confirmation, policy); validatePasswordPairErr != nil {
 		return "", validatePasswordPairErr
 	}
 	return password, nil
 }
 
-func readPasswordInternal(out io.Writer, prompt string) (string, error) {
+func readPassword(out io.Writer, prompt string) (string, error) {
 	if _, err := fmt.Fprint(out, prompt); err != nil {
 		return "", err
 	}
@@ -136,7 +136,7 @@ func readPasswordInternal(out io.Writer, prompt string) (string, error) {
 	return string(password), nil
 }
 
-func validatePasswordPairInternal(password, confirmation, policy string) error {
+func validatePasswordPair(password, confirmation, policy string) error {
 	if err := validation.ValidatePasswordPolicy(password, policy); err != nil {
 		return err
 	}
@@ -146,13 +146,13 @@ func validatePasswordPairInternal(password, confirmation, policy string) error {
 	return nil
 }
 
-func passwordPolicyFromDBInternal(ctx context.Context, db *database.DB) string {
+func passwordPolicyFromDB(ctx context.Context, db *database.DB) string {
 	var setting settings.SettingVariable
 	err := db.WithContext(ctx).First(&setting, "key = ?", "authPasswordPolicy").Error
 	return kit.Ternary(err != nil || strings.TrimSpace(setting.Value) == "", validation.PasswordPolicyStrong, setting.Value)
 }
 
-func resetPasswordInternal(ctx context.Context, db *database.DB, username, password, policy string) error {
+func resetPassword(ctx context.Context, db *database.DB, username, password, policy string) error {
 	if db == nil {
 		return errors.New("database is nil")
 	}

@@ -373,7 +373,7 @@ func (s *Service) RemoveService(ctx context.Context, serviceID string) error {
 	return nil
 }
 
-func (s *Service) StreamServiceLogs(ctx context.Context, serviceID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
+func (s *Service) StreamServiceLogs(ctx context.Context, serviceID string, logsChan chan<- string, opts types.LogStreamOptions) error {
 	if err := s.ensureManager(ctx); err != nil {
 		return err
 	}
@@ -386,10 +386,10 @@ func (s *Service) StreamServiceLogs(ctx context.Context, serviceID string, logsC
 	options := client.ServiceLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
-		Follow:     follow,
-		Tail:       tail,
-		Since:      since,
-		Timestamps: timestamps,
+		Follow:     opts.Follow,
+		Tail:       opts.Tail,
+		Since:      opts.Since,
+		Timestamps: opts.Timestamps,
 		Details:    true,
 	}
 
@@ -399,7 +399,7 @@ func (s *Service) StreamServiceLogs(ctx context.Context, serviceID string, logsC
 	}
 	defer func() { _ = logs.Close() }()
 
-	if follow {
+	if opts.Follow {
 		return docker.StreamMultiplexedLogs(ctx, logs, logsChan)
 	}
 

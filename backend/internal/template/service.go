@@ -27,7 +27,7 @@ import (
 	"go.getarcane.app/acfs"
 	acfstypes "go.getarcane.app/acfs/types"
 	"go.getarcane.app/kit/normalization"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -130,11 +130,6 @@ func NewTemplateService(ctx context.Context, db *database.DB, httpClient *http.C
 	}
 
 	return service
-}
-
-// getTemplatesDirectory resolves the effective templates directory.
-func (s *TemplateService) getTemplatesDirectory(ctx context.Context) (string, error) {
-	return projects.GetTemplatesDirectory(ctx, strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "templatesDirectory")))
 }
 
 func (s *TemplateService) remoteTemplates(ctx context.Context, refresh bool) ([]ComposeTemplate, error) {
@@ -423,7 +418,7 @@ func (s *TemplateService) DeleteTemplate(ctx context.Context, id string) error {
 // importedTemplateFolder returns the folder tpl was imported from, as a path logical to baseDir, and its compose file.
 // composePath is empty when no folder belongs to tpl, including a folder that only shares its name.
 func (s *TemplateService) importedTemplateFolder(ctx context.Context, tpl *ComposeTemplate) (baseDir, folder, composePath string, err error) {
-	baseDir, err = s.getTemplatesDirectory(ctx)
+	baseDir, err = projects.GetTemplatesDirectory(ctx, strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "templatesDirectory")))
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to get templates directory: %w", err)
 	}
@@ -499,7 +494,7 @@ func writeImportedTemplateFiles(folderPath, composePath, content, envContent str
 
 // readDefaultTemplate reads one of the default template files from the configured templates directory.
 func (s *TemplateService) readDefaultTemplate(ctx context.Context, fileName string) (string, error) {
-	baseDir, err := s.getTemplatesDirectory(ctx)
+	baseDir, err := projects.GetTemplatesDirectory(ctx, strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "templatesDirectory")))
 	if err != nil {
 		return "", fmt.Errorf("failed to get templates directory: %w", err)
 	}
@@ -538,7 +533,7 @@ func (s *TemplateService) GetSwarmStackEnvTemplate(ctx context.Context) string {
 }
 
 func (s *TemplateService) SaveComposeTemplate(ctx context.Context, content string) error {
-	baseDir, err := s.getTemplatesDirectory(ctx)
+	baseDir, err := projects.GetTemplatesDirectory(ctx, strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "templatesDirectory")))
 	if err != nil {
 		return fmt.Errorf("failed to get templates directory: %w", err)
 	}
@@ -555,7 +550,7 @@ func (s *TemplateService) GetEnvTemplate(ctx context.Context) string {
 }
 
 func (s *TemplateService) SaveEnvTemplate(ctx context.Context, content string) error {
-	baseDir, err := s.getTemplatesDirectory(ctx)
+	baseDir, err := projects.GetTemplatesDirectory(ctx, strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "templatesDirectory")))
 	if err != nil {
 		return fmt.Errorf("failed to get templates directory: %w", err)
 	}
@@ -983,7 +978,7 @@ func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *
 
 	base := cmp.Or(projects.Slugify(remoteTemplate.Name), projects.Slugify(remoteTemplate.ID[strings.LastIndex(remoteTemplate.ID, ":")+1:]), "template-"+uuid.New().String())
 
-	templatesDir, err := s.getTemplatesDirectory(ctx)
+	templatesDir, err := projects.GetTemplatesDirectory(ctx, strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "templatesDirectory")))
 	if err != nil {
 		return nil, fmt.Errorf("ensure templates dir: %w", err)
 	}
@@ -1158,7 +1153,7 @@ func (s *TemplateService) SyncLocalTemplatesFromFilesystem(ctx context.Context) 
 		tracing.End(span, err)
 	}()
 
-	dir, err := s.getTemplatesDirectory(ctx)
+	dir, err := projects.GetTemplatesDirectory(ctx, strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "templatesDirectory")))
 	if err != nil {
 		return fmt.Errorf("ensure templates dir: %w", err)
 	}

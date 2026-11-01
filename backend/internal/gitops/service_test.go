@@ -1206,7 +1206,10 @@ func (e *backupTestEnv) createBackup(t *testing.T, req types.GitOpsSync) *projec
 	req.Mode = cmp.Or(req.Mode, types.GitOpsSyncModeBackup)
 	req.ProjectID = cmp.Or(req.ProjectID, &e.project.ID)
 	req.BackupDirectory = cmp.Or(req.BackupDirectory, "backups/demo")
-	syncRecord, err := e.service.CreateSync(t.Context(), "0", req, nil, types.SystemUser)
+	syncRecord, err := e.service.CreateSync(t.Context(), "0", SyncUpdate{
+		Request: req,
+		Actor:   types.SystemUser,
+	})
 	require.NoError(t, err)
 	return syncRecord
 }
@@ -1317,9 +1320,13 @@ func TestGitOpsBackup_AddsAndRemovesFilesAndKeepsUnrelatedRemoteFiles(t *testing
 	require.NoError(t, os.Remove(filepath.Join(env.projectPath, "config", "extra.conf")))
 	writeBackupProjectFile(t, env.projectPath, "scripts/run.sh", "#!/bin/sh\necho hi\n")
 
-	_, err := env.service.UpdateSync(t.Context(), "0", syncRecord.ID, types.GitOpsSync{
-		BackupPaths: []string{"compose.yaml", "config", "scripts"},
-	}, map[string]bool{"backupPaths": true}, types.SystemUser)
+	_, err := env.service.UpdateSync(t.Context(), "0", syncRecord.ID, SyncUpdate{
+		Request: types.GitOpsSync{
+			BackupPaths: []string{"compose.yaml", "config", "scripts"},
+		},
+		Submitted: map[string]bool{"backupPaths": true},
+		Actor:     types.SystemUser,
+	})
 	require.NoError(t, err)
 
 	result, err := env.service.PerformSync(t.Context(), SyncRequest{
@@ -1551,7 +1558,11 @@ func TestGitOpsBackup_CreateValidation(t *testing.T) {
 			request.ProjectID = &env.project.ID
 			request.BackupDirectory = cmp.Or(request.BackupDirectory, "backups/demo")
 
-			_, err := env.service.CreateSync(t.Context(), "0", request, test.submitted, types.SystemUser)
+			_, err := env.service.CreateSync(t.Context(), "0", SyncUpdate{
+				Request:   request,
+				Submitted: test.submitted,
+				Actor:     types.SystemUser,
+			})
 			require.Error(t, err)
 			assert.ErrorIs(t, err, test.wantErr)
 		})
@@ -1561,13 +1572,16 @@ func TestGitOpsBackup_CreateValidation(t *testing.T) {
 func TestGitOpsBackup_CreateWithoutProjectIsRejected(t *testing.T) {
 	env := setupGitOpsBackupTestService(t)
 
-	_, err := env.service.CreateSync(t.Context(), "0", types.GitOpsSync{
-		Name:            "demo-backup",
-		RepositoryID:    "repo-backup",
-		Branch:          "main",
-		Mode:            types.GitOpsSyncModeBackup,
-		BackupDirectory: "backups/demo",
-	}, nil, types.SystemUser)
+	_, err := env.service.CreateSync(t.Context(), "0", SyncUpdate{
+		Request: types.GitOpsSync{
+			Name:            "demo-backup",
+			RepositoryID:    "repo-backup",
+			Branch:          "main",
+			Mode:            types.GitOpsSyncModeBackup,
+			BackupDirectory: "backups/demo",
+		},
+		Actor: types.SystemUser,
+	})
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, common.ErrValidation)
@@ -1607,7 +1621,11 @@ func TestGitOpsBackup_SaveSignalOnlyMarksPendingWhenAutoSyncIsOff(t *testing.T) 
 	syncRecord := env.createBackup(t, types.GitOpsSync{})
 	head := env.remoteHead(t)
 
-	_, err := env.service.UpdateSync(t.Context(), "0", syncRecord.ID, types.GitOpsSync{AutoSync: false}, map[string]bool{"autoSync": true}, types.SystemUser)
+	_, err := env.service.UpdateSync(t.Context(), "0", syncRecord.ID, SyncUpdate{
+		Request:   types.GitOpsSync{AutoSync: false},
+		Submitted: map[string]bool{"autoSync": true},
+		Actor:     types.SystemUser,
+	})
 	require.NoError(t, err)
 
 	env.service.backups.debounce = 50 * time.Millisecond
@@ -1650,7 +1668,9 @@ func TestGitOpsBackup_DeletingProjectRemovesBackupSync(t *testing.T) {
 	syncRecord := env.createBackup(t, types.GitOpsSync{})
 	require.NoError(t, os.Remove(filepath.Join(env.projectPath, "compose.yaml")))
 
-	require.NoError(t, env.service.projectService.DestroyProject(t.Context(), env.project.ID, true, false, types.SystemUser))
+	require.NoError(t, env.service.projectService.DestroyProject(t.Context(), env.project.ID, projectpkg.DestroyOptions{
+		RemoveFiles: true,
+	}, types.SystemUser))
 
 	var remaining int64
 	require.NoError(t, env.db.Model(&projectpkg.GitOpsSync{}).Where("id = ?", syncRecord.ID).Count(&remaining).Error)
@@ -1664,13 +1684,16 @@ func TestGitOpsDeploy_LinksExistingProject(t *testing.T) {
 	pushRemoteCommit(t, env.remote, env.repoURL, "seed", map[string]string{"apps/demo/compose.yaml": remoteCompose})
 	writeBackupProjectFile(t, env.projectPath, ".env", "TOKEN=keep-me\n")
 
-	created, err := env.service.CreateSync(ctx, "0", types.GitOpsSync{
-		Name:         "deploy-existing",
-		RepositoryID: "repo-backup",
-		Branch:       "main",
-		ComposePath:  "apps/demo/compose.yaml",
-		ProjectID:    &env.project.ID,
-	}, nil, types.Actor{ID: "user-1", Username: "tester"})
+	created, err := env.service.CreateSync(ctx, "0", SyncUpdate{
+		Request: types.GitOpsSync{
+			Name:         "deploy-existing",
+			RepositoryID: "repo-backup",
+			Branch:       "main",
+			ComposePath:  "apps/demo/compose.yaml",
+			ProjectID:    &env.project.ID,
+		},
+		Actor: types.Actor{ID: "user-1", Username: "tester"},
+	})
 	require.NoError(t, err)
 	require.NotNil(t, created.ProjectID)
 	require.Equal(t, env.project.ID, *created.ProjectID)
@@ -1688,13 +1711,16 @@ func TestGitOpsDeploy_LinksExistingProject(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(envFile), "TOKEN=keep-me")
 
-	_, err = env.service.CreateSync(ctx, "0", types.GitOpsSync{
-		Name:         "deploy-again",
-		RepositoryID: "repo-backup",
-		Branch:       "main",
-		ComposePath:  "apps/demo/compose.yaml",
-		ProjectID:    &env.project.ID,
-	}, nil, types.Actor{ID: "user-1", Username: "tester"})
+	_, err = env.service.CreateSync(ctx, "0", SyncUpdate{
+		Request: types.GitOpsSync{
+			Name:         "deploy-again",
+			RepositoryID: "repo-backup",
+			Branch:       "main",
+			ComposePath:  "apps/demo/compose.yaml",
+			ProjectID:    &env.project.ID,
+		},
+		Actor: types.Actor{ID: "user-1", Username: "tester"},
+	})
 	require.ErrorIs(t, err, common.ErrConflict)
 }
 

@@ -25,7 +25,7 @@ import (
 	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.getarcane.app/kit/normalization"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
 	"go.getarcane.app/sys/crypto"
 	"go.opentelemetry.io/otel"
@@ -797,7 +797,7 @@ func (s *EnvironmentService) GetActiveRemoteEnvironmentSnapshot(environmentID st
 	s.remoteEnvs.mu.RLock()
 	envRecord, ok := s.remoteEnvs.envs[environmentID]
 	s.remoteEnvs.mu.RUnlock()
-	if !ok || !isActiveRemoteEnvironment(envRecord) {
+	if !ok || !(envRecord.ID != "" && envRecord.ID != "0" && envRecord.Enabled && !envRecord.Hidden) {
 		return mo.None[Environment]()
 	}
 	return mo.Some(envRecord)

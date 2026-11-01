@@ -74,7 +74,7 @@ func TestPathMapper_FromMounts_NestedIndependentMount(t *testing.T) {
 		{Destination: "/app/data", Source: "/home/user/.arcane/data"},
 		{Destination: "/app/data/projects/homeassistant", Source: "/home/user/homeassistant"},
 	})
-	require.True(t, pm.IsNonMatchingMount())
+	require.True(t, pm.isNonMatching)
 
 	// Independently-mounted project resolves to its own host path (longest-prefix wins).
 	got, _, err := pm.ContainerToHost("/app/data/projects/homeassistant/service_postgresql/postgres_data")
@@ -102,7 +102,7 @@ func TestPathMapper_FromMounts_NoMatchAndMatchingMounts(t *testing.T) {
 	matching := NewPathMapperFromMounts([]HostMount{
 		{Destination: "/var/run/docker.sock", Source: "/var/run/docker.sock"},
 	})
-	assert.False(t, matching.IsNonMatchingMount())
+	assert.False(t, matching.isNonMatching)
 }
 
 func TestPathMapper_TranslateVolumeSources(t *testing.T) {
@@ -212,7 +212,7 @@ func TestRemapEscapedRelativeSources_MountTableTakesPrecedence(t *testing.T) {
 		{Destination: "/app/data", Source: "/docker/112/arcane/arcane-data"},
 		{Destination: "/app/data/projects/goclaw/media", Source: "/mnt/media"},
 	})
-	require.True(t, pm.IsNonMatchingMount())
+	require.True(t, pm.isNonMatching)
 
 	containerWorkingDir := "/app/data/projects/goclaw"
 	project := &composetypes.Project{
@@ -227,8 +227,8 @@ func TestRemapEscapedRelativeSources_MountTableTakesPrecedence(t *testing.T) {
 		},
 	}
 	rawSources := map[string]string{
-		VolumeSourceKey("goclaw", "/media"):    "./media",
-		VolumeSourceKey("goclaw", "/app/data"): "../../../../goclaw/data",
+		("volume:" + "goclaw" + "\x00" + filepath.Clean("/media")):    "./media",
+		("volume:" + "goclaw" + "\x00" + filepath.Clean("/app/data")): "../../../../goclaw/data",
 	}
 
 	require.NoError(t, pm.TranslateVolumeSources(project, true))

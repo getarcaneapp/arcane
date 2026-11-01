@@ -77,13 +77,9 @@ func SetupMessageOnlyLogFile(dataDir, filePrefix string, minLevel slog.Level) (*
 	}
 
 	stdoutHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: minLevel, AddSource: true})
-	fileHandler := newMessageOnlyHandler(logFile, minLevel)
+	fileHandler := &messageOnlyHandler{mu: &sync.Mutex{}, w: logFile, minLevel: minLevel}
 	slog.SetDefault(slog.New(slog.NewMultiHandler(stdoutHandler, fileHandler)))
 	return logFile, nil
-}
-
-func newMessageOnlyHandler(w io.Writer, minLevel slog.Level) *messageOnlyHandler {
-	return &messageOnlyHandler{mu: &sync.Mutex{}, w: w, minLevel: minLevel}
 }
 
 func (h *messageOnlyHandler) Enabled(_ context.Context, level slog.Level) bool {
