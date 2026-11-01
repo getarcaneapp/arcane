@@ -10,13 +10,19 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/types/v3"
+	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/api/types/system"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/streams/bus"
+	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
@@ -126,7 +132,7 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			dockerService := (&docker.DockerClientService{}).WithClient(newSwarmTestDockerClient(t, server))
+			dockerService := newSettingsDockerService(t, newSwarmTestDockerClient(t, server))
 			svc := NewService(dockerService, func(context.Context) error { return nil }, nil)
 
 			resp, err := svc.ScaleService(ctx, "service-1", replicas)
@@ -186,4 +192,17 @@ func TestAggregateMergesEnvironments(t *testing.T) {
 	require.EqualValues(t, 2, body.Pagination.TotalItems)
 	require.Len(t, body.FailedEnvironments, 1)
 	require.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
+}
+
+func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }

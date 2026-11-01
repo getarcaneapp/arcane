@@ -674,7 +674,7 @@ func (s *ApnsService) finishOutbox(ctx context.Context, entry OutboxEntry, envel
 	if err := s.db.WithContext(ctx).Delete(&entry).Error; err != nil {
 		slog.WarnContext(ctx, "Failed to delete push outbox entry", "error", err)
 	}
-	if failure == "" || s.events == nil {
+	if failure == "" {
 		return
 	}
 	if _, err := s.events.CreateEvent(ctx, event.CreateEventRequest{

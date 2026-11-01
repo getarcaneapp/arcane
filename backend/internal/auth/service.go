@@ -344,9 +344,6 @@ func (s *AuthService) CompleteLogin(ctx context.Context, localUser *user.User, m
 		meta.MFAVerifiedAt = &now
 	}
 
-	if s.sessionService == nil {
-		return nil, common.Classify(common.ErrUnavailable, errors.New("Session service is not configured")) //nolint:staticcheck // Preserve the existing error message.
-	}
 	localSession, refreshJTI, err := s.sessionService.CreateSession(ctx, localUser.ID, time.Now().Add(s.refreshExpiry), meta)
 	if err != nil {
 		return nil, err
@@ -363,13 +360,11 @@ func (s *AuthService) CompleteLogin(ctx context.Context, localUser *user.User, m
 	if meta.MFAMethod != "" {
 		metadata["mfa"] = meta.MFAMethod
 	}
-	if s.eventService != nil {
-		logUserID := localUser.ID
-		logUsername := localUser.Username
-		s.runInBackground(ctx, "log_user_login", func(ctx context.Context) error {
-			return s.eventService.LogUserEvent(ctx, event.EventTypeUserLogin, logUserID, logUsername, metadata)
-		})
-	}
+	logUserID := localUser.ID
+	logUsername := localUser.Username
+	s.runInBackground(ctx, "log_user_login", func(ctx context.Context) error {
+		return s.eventService.LogUserEvent(ctx, event.EventTypeUserLogin, logUserID, logUsername, metadata)
+	})
 
 	return tokenPair, nil
 }
@@ -408,7 +403,7 @@ func (s *AuthService) OidcLogin(ctx context.Context, userInfo types.OidcUserInfo
 }
 
 func (s *AuthService) LogLogout(ctx context.Context, localUser *user.User) {
-	if s.eventService == nil || localUser == nil {
+	if localUser == nil {
 		return
 	}
 
@@ -592,7 +587,7 @@ func (s *AuthService) updateOidcUser(ctx context.Context, localUser *user.User, 
 // based on the OIDC group claim and the configured OidcRoleMapping rows.
 // Manual assignments are untouched.
 func (s *AuthService) syncOidcRoleAssignments(ctx context.Context, localUser *user.User, userInfo types.OidcUserInfo, tokenResp *types.OidcTokenResponse) error {
-	if s.roleService == nil || localUser == nil {
+	if localUser == nil {
 		return nil
 	}
 
@@ -689,9 +684,6 @@ func (s *AuthService) loadSigningKey(ctx context.Context) (*mldsa.PrivateKey, er
 	if s.signingKey != nil {
 		return s.signingKey, nil
 	}
-	if s.settingsService == nil {
-		return nil, common.Classify(common.ErrUnavailable, errors.New("JWT signing key is not configured"))
-	}
 	key, err := s.settingsService.EnsureJwtSigningKey(ctx)
 	if err != nil {
 		return nil, err
@@ -705,9 +697,6 @@ func (s *AuthService) loadBrowserSigningKey(ctx context.Context) ([]byte, error)
 	defer s.signingKeyMu.Unlock()
 	if len(s.browserSigningKey) == browserSessionSigningKeySize {
 		return s.browserSigningKey, nil
-	}
-	if s.settingsService == nil {
-		return nil, common.Classify(common.ErrUnavailable, errors.New("browser session signing key is not configured"))
 	}
 	key, err := s.settingsService.EnsureBrowserSessionSigningKey(ctx)
 	if err != nil {
@@ -743,10 +732,6 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string, met
 
 	if claims.AppVersion != "" && claims.AppVersion != config.Version {
 		slog.InfoContext(ctx, "Refresh token version mismatch — rotating to current version", "tokenVersion", claims.AppVersion, "currentVersion", config.Version)
-	}
-
-	if s.sessionService == nil {
-		return nil, common.Classify(common.ErrUnavailable, errors.New("Session service is not configured")) //nolint:staticcheck // Preserve the existing error message.
 	}
 
 	userSession, err := s.sessionService.GetSessionByID(ctx, claims.SessionID)
@@ -835,9 +820,6 @@ func (s *AuthService) verifyTokenClaims(ctx context.Context, tokenHash string, c
 		slog.InfoContext(ctx, "Token version mismatch detected", "tokenVersion", claims.AppVersion, "currentVersion", config.Version, "user", claims.Username)
 		return nil, "", common.ErrTokenVersionMismatch
 	}
-	if s.sessionService == nil {
-		return nil, "", common.Classify(common.ErrUnavailable, errors.New("Session service is not configured")) //nolint:staticcheck // Preserve the existing error message.
-	}
 
 	// Verify user exists in DB
 	// This ensures that if the database is wiped or user is deleted, the token becomes invalid
@@ -868,10 +850,6 @@ func (s *AuthService) verifyTokenClaims(ctx context.Context, tokenHash string, c
 }
 
 func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPassword, newPassword, currentSessionID string) error {
-	if s.sessionService == nil {
-		return common.Classify(common.ErrUnavailable, errors.New("Session service is not configured")) //nolint:staticcheck // Preserve the existing error message.
-	}
-
 	localUser, err := s.userService.GetUserByID(ctx, userID)
 	if err != nil {
 		return err
@@ -886,7 +864,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 		}
 	}
 
-	policy := s.passwordPolicy(ctx)
+	policy := s.settingsService.GetStringSetting(ctx, "authPasswordPolicy")
 	if validatePasswordPolicyErr := validation.ValidatePasswordPolicy(newPassword, policy); validatePasswordPolicyErr != nil {
 		return common.Classify(common.ErrValidation, &types.FieldError{Field: "newPassword", Err: validatePasswordPolicyErr})
 	}
@@ -897,13 +875,6 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 	// The current session's cached user still carries the old password flags.
 	s.InvalidateUserTokenCache(userID)
 	return nil
-}
-
-func (s *AuthService) passwordPolicy(ctx context.Context) string {
-	if s.settingsService == nil {
-		return validation.PasswordPolicyStrong
-	}
-	return s.settingsService.GetStringSetting(ctx, "authPasswordPolicy")
 }
 
 // InvalidateUserTokenCache purges all cached token verifications for a user.
@@ -931,9 +902,6 @@ func (s *AuthService) invalidateTokenCache(matches func(verifiedTokenEntry) bool
 }
 
 func (s *AuthService) RevokeSession(ctx context.Context, sessionID string) error {
-	if s.sessionService == nil {
-		return nil
-	}
 	if err := s.sessionService.RevokeSession(ctx, sessionID); err != nil {
 		return err
 	}
@@ -956,9 +924,6 @@ func (s *AuthService) RevokeSessionByRefreshToken(ctx context.Context, refreshTo
 // LogoutAllOtherSessions revokes every active session for userID except
 // currentSessionID, so the caller stays signed in on their current device.
 func (s *AuthService) LogoutAllOtherSessions(ctx context.Context, userID, currentSessionID string) error {
-	if s.sessionService == nil {
-		return nil
-	}
 	if err := s.sessionService.RevokeAllUserSessionsExcept(ctx, userID, currentSessionID); err != nil {
 		return err
 	}
@@ -1078,9 +1043,6 @@ func (s *AuthService) buildTokenPair(ctx context.Context, localUser *user.User, 
 }
 
 func (s *AuthService) IssueFederatedToken(ctx context.Context, localUser *user.User, credentialID string, ttlSeconds int) (*TokenPair, error) {
-	if s.sessionService == nil {
-		return nil, common.Classify(common.ErrUnavailable, errors.New("Session service is not configured")) //nolint:staticcheck // Preserve the existing error message.
-	}
 	if localUser == nil {
 		return nil, common.ErrUserNotFound
 	}

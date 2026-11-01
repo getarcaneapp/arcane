@@ -23,7 +23,9 @@ import (
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
@@ -37,7 +39,7 @@ func setupWebhookServiceTestDB(t *testing.T) *database.DB {
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&Webhook{}))
+	require.NoError(t, db.AutoMigrate(&Webhook{}, &event.Event{}))
 
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
@@ -54,11 +56,11 @@ func initWebhookTokenCryptoForTests() {
 	})
 }
 
-// newTestWebhookService returns a WebhookService with nil updater/project/gitops services,
-// sufficient for all tests that exercise lookup, hashing, and CRUD logic.
-// Tests that exercise the dispatch path use an unknown target type to avoid a nil dereference.
 func newTestWebhookService(db *database.DB) *WebhookService {
-	return &WebhookService{db: db}
+	return &WebhookService{
+		db:           db,
+		eventService: event.NewEventService(db, &config.Config{}, nil),
+	}
 }
 
 // fetchWebhook loads a webhook directly from the DB to inspect stored fields.

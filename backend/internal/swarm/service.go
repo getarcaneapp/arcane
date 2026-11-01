@@ -87,10 +87,6 @@ func (s *SwarmService) StreamServiceLogs(ctx context.Context, serviceID string, 
 }
 
 func (s *SwarmService) IsEnabled(ctx context.Context) (bool, error) {
-	if s.kvService == nil {
-		return false, nil
-	}
-
 	enabled, err := s.kvService.GetBool(ctx, KVKeySwarmEnabled, false)
 	if err != nil {
 		return false, fmt.Errorf("failed to read swarm enabled state: %w", err)
@@ -508,9 +504,6 @@ func (s *SwarmService) SyncSwarmEnabledState(ctx context.Context) error {
 	}
 
 	enabled := info.Swarm.LocalNodeState == swarm.LocalNodeStateActive && strings.TrimSpace(info.Swarm.NodeID) != ""
-	if s.kvService == nil {
-		return nil
-	}
 
 	if setBoolErr := s.kvService.SetBool(ctx, KVKeySwarmEnabled, enabled); setBoolErr != nil {
 		return fmt.Errorf("persist swarm enabled state: %w", setBoolErr)
@@ -520,10 +513,6 @@ func (s *SwarmService) SyncSwarmEnabledState(ctx context.Context) error {
 }
 
 func (s *SwarmService) persistSwarmEnabledState(ctx context.Context, enabled bool) {
-	if s.kvService == nil {
-		return
-	}
-
 	if err := s.kvService.SetBool(ctx, KVKeySwarmEnabled, enabled); err != nil {
 		slog.WarnContext(ctx, "Failed to persist swarm enabled state", "enabled", enabled, "error", err)
 	}

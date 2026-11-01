@@ -54,8 +54,10 @@ func setupAPIKeyService(t *testing.T) (*ApiKeyService, *database.DB, *user.UserS
 	t.Helper()
 
 	db := setupAPIKeyServiceTestDB(t)
-	userService := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
-	return NewApiKeyService(db, userService, nil), db, userService
+	roleService := role.NewRoleService(db)
+	require.NoError(t, roleService.EnsureBuiltInRoles(t.Context()))
+	userService := user.NewUserService(db, roleService, session.RevokeAllUserSessionsExceptInDB)
+	return NewApiKeyService(db, userService, roleService), db, userService
 }
 
 func createTestAPIKeyUser(t *testing.T, ctx context.Context, userService *user.UserService, id string, usernames ...string) *user.User {
@@ -105,7 +107,7 @@ func invalidateAPIKey(rawKey string) string {
 	return rawKey[:len(rawKey)-1] + "0"
 }
 
-func createDefaultAdminUser(t *testing.T, ctx context.Context, userService *user.UserService) *user.User {
+func createDefaultAdminUser(t *testing.T, ctx context.Context, service *ApiKeyService, userService *user.UserService) *user.User {
 	t.Helper()
 
 	localUser := &user.User{
@@ -115,7 +117,15 @@ func createDefaultAdminUser(t *testing.T, ctx context.Context, userService *user
 
 	created, err := userService.CreateUser(ctx, localUser)
 	require.NoError(t, err)
+	grantAPIKeyTestAdmin(t, ctx, service, created.ID)
 	return created
+}
+
+func grantAPIKeyTestAdmin(t *testing.T, ctx context.Context, service *ApiKeyService, userID string) {
+	t.Helper()
+	require.NoError(t, service.roleService.ReplaceUserAssignments(ctx, userID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
+		{RoleID: authz.BuiltInRoleAdmin},
+	}))
 }
 
 func TestListApiKeysPermissionQueryCountIsConstant(t *testing.T) {
@@ -205,7 +215,7 @@ func TestCreateDefaultAdminAPIKeyUsesProvidedRawKey(t *testing.T) {
 func TestReconcileDefaultAdminAPIKeyCreatesManagedKey(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
-	adminUser := createDefaultAdminUser(t, ctx, userService)
+	adminUser := createDefaultAdminUser(t, ctx, service, userService)
 
 	rawKey := "arc_bootstrapcreate1234567890"
 	err := service.ReconcileDefaultAdminAPIKey(ctx, rawKey)
@@ -227,7 +237,7 @@ func TestReconcileDefaultAdminAPIKeyCreatesManagedKey(t *testing.T) {
 func TestDeleteApiKeyRejectsStaticKey(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
-	adminUser := createDefaultAdminUser(t, ctx, userService)
+	adminUser := createDefaultAdminUser(t, ctx, service, userService)
 
 	created, err := service.CreateDefaultAdminAPIKey(ctx, adminUser.ID, "arc_bootstrapprotected1234567890")
 	require.NoError(t, err)
@@ -243,7 +253,7 @@ func TestDeleteApiKeyRejectsStaticKey(t *testing.T) {
 func TestUpdateApiKeyRejectsStaticKey(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
-	adminUser := createDefaultAdminUser(t, ctx, userService)
+	adminUser := createDefaultAdminUser(t, ctx, service, userService)
 
 	created, err := service.CreateDefaultAdminAPIKey(ctx, adminUser.ID, "arc_bootstrapupdateprotected1234567890")
 	require.NoError(t, err)
@@ -300,6 +310,7 @@ func TestCreateApiKeyRejectsGrantsBeyondCallerPermissions(t *testing.T) {
 	ctx := t.Context()
 	service, _, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-escalation")
+	grantAPIKeyTestAdmin(t, ctx, service, localUser.ID)
 
 	callerPerms := authz.NewPermissionSet()
 	callerPerms.AddGlobal(authz.PermContainersList)
@@ -391,7 +402,7 @@ func TestCreatePersonalApiKeyHasNoGrantsAndCannotGainAny(t *testing.T) {
 func TestReconcileDefaultAdminAPIKeyNoOpWhenUnchanged(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
-	adminUser := createDefaultAdminUser(t, ctx, userService)
+	adminUser := createDefaultAdminUser(t, ctx, service, userService)
 
 	rawKey := "arc_bootstrapstable1234567890"
 	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, rawKey))
@@ -407,7 +418,7 @@ func TestReconcileDefaultAdminAPIKeyNoOpWhenUnchanged(t *testing.T) {
 func TestReconcileDefaultAdminAPIKeyReplacesManagedKeyOnRotation(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
-	adminUser := createDefaultAdminUser(t, ctx, userService)
+	adminUser := createDefaultAdminUser(t, ctx, service, userService)
 
 	oldKey := "arc_bootstrapoldvalue1234567890"
 	newKey := "arc_bootstrapnewvalue1234567890"
@@ -431,7 +442,7 @@ func TestReconcileDefaultAdminAPIKeyReplacesManagedKeyOnRotation(t *testing.T) {
 func TestReconcileDefaultAdminAPIKeyRotationEvictsRacingCacheFill(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
-	adminUser := createDefaultAdminUser(t, ctx, userService)
+	adminUser := createDefaultAdminUser(t, ctx, service, userService)
 
 	oldKey := "arc_bootstraprotateold1234567890"
 	newKey := "arc_bootstraprotatenew1234567890"
@@ -466,7 +477,7 @@ func TestReconcileDefaultAdminAPIKeyRotationEvictsRacingCacheFill(t *testing.T) 
 func TestReconcileDefaultAdminAPIKeyDeletesManagedKeyWhenUnset(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
-	adminUser := createDefaultAdminUser(t, ctx, userService)
+	adminUser := createDefaultAdminUser(t, ctx, service, userService)
 
 	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, "arc_bootstrapdelete1234567890"))
 	require.Len(t, listAPIKeysForUser(t, db, adminUser.ID), 1)
@@ -478,7 +489,7 @@ func TestReconcileDefaultAdminAPIKeyDeletesManagedKeyWhenUnset(t *testing.T) {
 func TestReconcileDefaultAdminAPIKeyPreservesUserManagedKeys(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
-	adminUser := createDefaultAdminUser(t, ctx, userService)
+	adminUser := createDefaultAdminUser(t, ctx, service, userService)
 
 	userCreated, err := service.CreateApiKey(ctx, adminUser.ID, authz.SudoPermissionSet(), types.ApiKey{
 		Name:        "manual-key",
@@ -511,7 +522,7 @@ func TestReconcileDefaultAdminAPIKeyPreservesUserManagedKeys(t *testing.T) {
 func TestReconcileDefaultAdminAPIKeyDeletesDuplicateManagedKeys(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
-	adminUser := createDefaultAdminUser(t, ctx, userService)
+	adminUser := createDefaultAdminUser(t, ctx, service, userService)
 
 	rawKey := "arc_bootstrapduplicate1234567890"
 	first, err := service.CreateDefaultAdminAPIKey(ctx, adminUser.ID, rawKey)
@@ -542,7 +553,7 @@ func TestReconcileDefaultAdminAPIKeySkipsWhenDefaultAdminMissing(t *testing.T) {
 func TestReconcileDefaultAdminAPIKeyRejectsInvalidKey(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
-	adminUser := createDefaultAdminUser(t, ctx, userService)
+	adminUser := createDefaultAdminUser(t, ctx, service, userService)
 
 	err := service.ReconcileDefaultAdminAPIKey(ctx, "invalid-key")
 	require.ErrorIs(t, err, ErrApiKeyInvalid)
@@ -553,6 +564,7 @@ func TestValidateAPIKeyUpdatesLastUsedAt(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-validate")
+	grantAPIKeyTestAdmin(t, ctx, service, localUser.ID)
 
 	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
 		Name:        "validate-key",
@@ -573,6 +585,7 @@ func TestAPIKeyHashingUsesSHA256AndUpgradesLegacyArgon2(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-hash-upgrade")
+	grantAPIKeyTestAdmin(t, ctx, service, localUser.ID)
 
 	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
 		Name:        "sha-key",
@@ -601,6 +614,7 @@ func TestValidateAPIKeyCacheSkipsHashValidationAndInvalidatesOnRevoke(t *testing
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-cached")
+	grantAPIKeyTestAdmin(t, ctx, service, localUser.ID)
 
 	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
 		Name:        "cached-key",
@@ -629,6 +643,7 @@ func TestValidateAPIKeyCacheFillDroppedWhenRevocationRacesValidation(t *testing.
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-fill-race")
+	grantAPIKeyTestAdmin(t, ctx, service, localUser.ID)
 
 	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
 		Name:        "fill-race-key",
@@ -652,6 +667,7 @@ func TestValidateAPIKeyDebouncesLastUsedWrites(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-debounce")
+	grantAPIKeyTestAdmin(t, ctx, service, localUser.ID)
 
 	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
 		Name:        "debounce-key",
@@ -676,6 +692,7 @@ func TestValidateAPIKeyDebounceReleasedOnWriteFailure(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-debounce-retry")
+	grantAPIKeyTestAdmin(t, ctx, service, localUser.ID)
 
 	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
 		Name:        "debounce-retry-key",
@@ -698,6 +715,7 @@ func TestValidateAPIKeyLastUsedUpdateIsRequestScoped(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-request-scoped")
+	grantAPIKeyTestAdmin(t, ctx, service, localUser.ID)
 
 	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
 		Name:        "request-scoped-key",
@@ -741,6 +759,7 @@ func TestMarkAPIKeyUsedHonorsRequestCancellation(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-canceled-usage")
+	grantAPIKeyTestAdmin(t, ctx, service, localUser.ID)
 
 	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
 		Name:        "canceled-usage-key",
@@ -759,6 +778,7 @@ func TestMarkAPIKeyUsedReturnsDatabaseErrors(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-usage-error")
+	grantAPIKeyTestAdmin(t, ctx, service, localUser.ID)
 
 	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
 		Name:        "usage-error-key",
@@ -779,6 +799,7 @@ func TestValidateAPIKeyRepeatedAuthenticationDoesNotGrowGoroutines(t *testing.T)
 	ctx := t.Context()
 	service, _, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-repeated-auth")
+	grantAPIKeyTestAdmin(t, ctx, service, localUser.ID)
 
 	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
 		Name:        "repeated-auth-key",
@@ -861,6 +882,7 @@ func TestValidateAPIKeyInvalidDoesNotUpdateLastUsedAt(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-invalid")
+	grantAPIKeyTestAdmin(t, ctx, service, localUser.ID)
 
 	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
 		Name:        "invalid-key",

@@ -863,9 +863,7 @@ func (s *Service) resolveSwarmStackSourceEnvironmentDir(ctx context.Context, env
 	}
 
 	configuredRootDir := defaultSwarmStackSourceRootDir
-	if s.settingsService != nil {
-		configuredRootDir = s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory")
-	}
+	configuredRootDir = s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory")
 	rootDir := projects.ResolveConfiguredContainerDirectory(configuredRootDir, defaultSwarmStackSourceRootDir)
 
 	environmentDir := filepath.Clean(filepath.Join(rootDir, normalizedEnvironmentID))

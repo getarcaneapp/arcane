@@ -162,9 +162,6 @@ func (s *Service) Run(ctx context.Context, sourceTimeout time.Duration, sync *pr
 	changed := false
 	switch {
 	case sync.TargetType == "swarm_stack":
-		if s.swarmService == nil {
-			return result, s.failSync(ctx, result, sync, actor, "Swarm service is unavailable", errors.New("swarm service is unavailable"))
-		}
 		swarmFiles := make([]types.SwarmSyncFile, len(syncFiles))
 		for i, file := range syncFiles {
 			swarmFiles[i] = types.SwarmSyncFile{RelativePath: file.RelativePath, Content: file.Content}

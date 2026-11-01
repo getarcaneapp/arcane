@@ -212,11 +212,7 @@ func (h *WebSocketHandler) collectSystemStats(ctx context.Context) types.SystemS
 	cpuCount, memUsed, memTotal := h.applyCgroupLimits(ctx, h.systemStaticInfo.cpuCount, memUsed, memTotal)
 
 	diskUsagePath, found, err := h.diskUsagePathCache.GetWithLoaders(struct{}{}, func(_ []struct{}) (map[struct{}]string, error) {
-		path := "/"
-		if h.systemService != nil {
-			path = h.systemService.GetDiskUsagePath(ctx)
-		}
-		return map[struct{}]string{{}: path}, nil
+		return map[struct{}]string{{}: h.systemService.GetDiskUsagePath(ctx)}, nil
 	})
 	diskUsagePath = kit.Ternary(err != nil || !found, "/", diskUsagePath)
 	diskInfo, err := disk.Usage(diskUsagePath)
@@ -250,10 +246,8 @@ func (h *WebSocketHandler) collectSystemStats(ctx context.Context) types.SystemS
 // per-container limits to host statistics.
 func (h *WebSocketHandler) applyCgroupLimits(ctx context.Context, cpuCount int, memUsed, memTotal uint64) (int, uint64, uint64) {
 	if cgroup.IsDockerContainer() {
-		if h.systemService != nil {
-			if used, total, ok := h.systemService.GetDockerHostMemory(ctx); ok {
-				return cpuCount, used, total
-			}
+		if used, total, ok := h.systemService.GetDockerHostMemory(ctx); ok {
+			return cpuCount, used, total
 		}
 		return cpuCount, memUsed, memTotal
 	}

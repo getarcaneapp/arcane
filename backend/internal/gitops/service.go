@@ -944,10 +944,6 @@ func (s *GitOpsSyncService) CleanupLeakedScratchDirsOnStartup(ctx context.Contex
 // CleanupLeakedCloneDirsOnStartup removes leaked git clone scratch dirs
 // ("gitops-*") under the git work dir; safe because no sync holds a clone yet.
 func (s *GitOpsSyncService) CleanupLeakedCloneDirsOnStartup(ctx context.Context) error {
-	if s.repoService == nil || s.repoService.Client == nil {
-		return nil
-	}
-
 	removed, err := s.repoService.PurgeScratchDirs(ctx, 0)
 	if err != nil {
 		return fmt.Errorf("failed to purge leaked git clone scratch directories: %w", err)
@@ -1170,9 +1166,6 @@ func (s *GitOpsSyncService) ResolveBackupConflict(ctx context.Context, environme
 
 // SubscribeProjectFileChanges marks backups pending on save and runs them after a debounce when auto backup is on.
 func (s *GitOpsSyncService) SubscribeProjectFileChanges(ctx context.Context) {
-	if s.projectService == nil {
-		return
-	}
 	runCtx := s.jobs.Context(ctx)
 	s.projectService.FilesChanged.Subscribe(func(projectID string) {
 		var syncs []projectpkg.GitOpsSync

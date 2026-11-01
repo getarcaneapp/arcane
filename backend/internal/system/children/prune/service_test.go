@@ -16,11 +16,14 @@ import (
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/streams/bus"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
 )
 
@@ -68,7 +71,7 @@ func TestPruneVolumesSkipsBackupVolume(t *testing.T) {
 	require.NoError(t, gormDB.AutoMigrate(&event.Event{}))
 	db := &database.DB{DB: gormDB}
 
-	dockerService := (&docker.DockerClientService{}).WithClient(dockerClient)
+	dockerService := newSettingsDockerService(t, dockerClient)
 	volumeService := volume.NewVolumeService(db, dockerService, event.NewEventService(db, nil, nil), nil, nil, nil, nil, nil, nil, nil)
 	service := NewService(time.UTC, dockerService, nil, nil, volumeService, nil)
 
@@ -122,7 +125,7 @@ func TestGetDiskUsageSumsReclaimableResources(t *testing.T) {
 	require.NoError(t, gormDB.AutoMigrate(&event.Event{}))
 	db := &database.DB{DB: gormDB}
 
-	dockerService := (&docker.DockerClientService{}).WithClient(dockerClient)
+	dockerService := newSettingsDockerService(t, dockerClient)
 	volumeService := volume.NewVolumeService(db, dockerService, event.NewEventService(db, nil, nil), nil, nil, nil, nil, nil, nil, nil)
 	service := NewService(time.UTC, dockerService, nil, nil, volumeService, nil)
 
@@ -134,4 +137,17 @@ func TestGetDiskUsageSumsReclaimableResources(t *testing.T) {
 		UnusedVolumesBytes:     100,
 		StoppedContainersBytes: 30,
 	}, usage)
+}
+
+func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }

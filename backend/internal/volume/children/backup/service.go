@@ -258,9 +258,7 @@ func (s *Service) List(ctx context.Context, volumeName string, params pagination
 	for i := range backups {
 		// Discovered backups live under the instance that wrote them, not necessarily this one.
 		root := ""
-		if s.deps.Settings != nil {
-			root = path.Join(backup.VolumeRoot, s.remoteInstanceID(backups[i].RemoteInstanceID))
-		}
+		root = path.Join(backup.VolumeRoot, s.remoteInstanceID(backups[i].RemoteInstanceID))
 		backups[i].RemoteAvailable = remoteAvailable(backups[i].S3DestinationID, root, backups[i].RemoteSnapshotID)
 	}
 
@@ -822,9 +820,6 @@ func (s *Service) RestoreArchiveMembers(ctx context.Context, containerID, filena
 
 // DiscoverRemoteBackups imports snapshots from every instance root on the destination; per-root failures are returned without blocking the others.
 func (s *Service) DiscoverRemoteBackups(ctx context.Context, destinationID string) (int, []string, error) {
-	if s.deps.Engine == nil || s.deps.S3Destinations == nil || s.deps.RecoveryKeys == nil {
-		return 0, nil, errors.New("volume backup discovery is unavailable")
-	}
 	key, err := s.deps.RecoveryKeys.Get(ctx)
 	if errors.Is(err, backup.ErrRecoveryKeyNotConfigured) {
 		return 0, nil, errors.New("configure a recovery key in system backups before discovering volume backups")
@@ -907,9 +902,6 @@ func discoveredVolumeBackup(destinationID, root string, snapshot backup.Discover
 
 // MigrateRepositoryPasswords re-keys this instance's own volume backup repositories to the recovery key; other instances re-key their own roots.
 func (s *Service) MigrateRepositoryPasswords(ctx context.Context, previousKey, newKey string) error {
-	if s.deps.Engine == nil {
-		return nil
-	}
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return err

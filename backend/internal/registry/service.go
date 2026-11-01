@@ -531,10 +531,6 @@ func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context
 
 // RecordImagePull increments Arcane's observed successful pull counter for an image registry.
 func (s *ContainerRegistryService) RecordImagePull(ctx context.Context, imageRef string) error {
-	if s.kvService == nil {
-		return nil
-	}
-
 	registryHost, err := registryauth.GetRegistryAddress(imageRef)
 	if err != nil {
 		return fmt.Errorf("parse image registry for %q: %w", imageRef, err)
@@ -609,9 +605,6 @@ func (s *ContainerRegistryService) buildRegistryPullUsage(ctx context.Context, r
 		if fetchErr != nil {
 			return registryRateLimitCacheEntry{CheckedAt: time.Now().UTC()}, fetchErr
 		}
-		if s.kvService == nil {
-			return registryRateLimitCacheEntry{RateLimit: *fetched, CheckedAt: time.Now().UTC()}, nil
-		}
 		payload, encodeErr := json.Marshal(registryRateLimitCacheEntry{RateLimit: *fetched, CheckedAt: time.Now().UTC()})
 		if encodeErr == nil {
 			encodeErr = s.kvService.Set(ctx, registryRateLimitKeyPrefix+reg.ID, string(payload))
@@ -661,7 +654,7 @@ func (s *ContainerRegistryService) buildRegistryPullUsage(ctx context.Context, r
 		)),
 		WindowSeconds: rateLimit.RateLimit.WindowSeconds,
 		ObservedPulls: func() int64 {
-			if s.kvService == nil || registryauth.NormalizeRegistryForComparison(reg.URL) == "" {
+			if registryauth.NormalizeRegistryForComparison(reg.URL) == "" {
 				return 0
 			}
 			observedPulls, pullsErr := s.kvService.GetInt64(ctx, registryPullCountKeyPrefix+registryauth.NormalizeRegistryForComparison(reg.URL), 0)
@@ -688,7 +681,7 @@ func (s *ContainerRegistryService) buildRegistryPullUsage(ctx context.Context, r
 }
 
 func (s *ContainerRegistryService) getCachedRateLimit(ctx context.Context, registryID string) (*registry.RateLimitInfo, time.Time, bool) {
-	if s.kvService == nil || registryID == "" {
+	if registryID == "" {
 		return nil, time.Time{}, false
 	}
 
@@ -1023,9 +1016,6 @@ func registryOperationWithCredentials[T any](
 }
 
 func (s *ContainerRegistryService) getDockerClient(ctx context.Context) (RegistryDaemonClient, error) {
-	if s.dockerClient == nil {
-		return nil, errors.New("docker client unavailable")
-	}
 	dockerClient, err := s.dockerClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get docker client: %w", err)
@@ -1235,9 +1225,6 @@ func (s *ContainerRegistryService) ListImageTags(ctx context.Context, imageRef s
 
 // tagLookupContext bounds tag and manifest walks by the configured registry tag timeout.
 func (s *ContainerRegistryService) tagLookupContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	if s.settingsService == nil {
-		return context.WithTimeout(ctx, timeouts.DefaultRegistryTags)
-	}
 	return context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTagTimeout.AsInt(), timeouts.DefaultRegistryTags))
 }
 

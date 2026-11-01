@@ -8,6 +8,7 @@ import (
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/streams/bus"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
@@ -124,7 +125,7 @@ func TestSetRecoveryKeyKeepsCurrentKeyWhenRekeyFails(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
 	dockerClient, err := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
 	require.NoError(t, err)
-	dockerService := (&docker.DockerClientService{}).WithClient(dockerClient)
+	dockerService := newSettingsDockerService(t, dockerClient)
 	service := NewService(Dependencies{
 		Store: Store{
 			CountRuns:                 func(context.Context) (int64, error) { return 1, nil },
@@ -144,4 +145,17 @@ func TestSetRecoveryKeyKeepsCurrentKeyWhenRekeyFails(t *testing.T) {
 	storedKey, err := recoveryKeys.Get(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, oldKey, storedKey)
+}
+
+func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }

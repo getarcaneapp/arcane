@@ -45,9 +45,6 @@ func NewHandler(service *Service, activityService *activity.ActivityService, env
 
 func (h *Handler) GetBackupPolicy(ctx context.Context, input *GetVolumeBackupPolicyInput) (*handlerutil.Out[types.VolumeBackupPolicyCollection], error) {
 	if input.EnvironmentID != "0" {
-		if h.environmentService == nil {
-			return nil, huma.Error500InternalServerError("environment service not available")
-		}
 		remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/backups/policy", url.PathEscape(input.VolumeName))
 		response, err := handlerutil.RemoteJSONProxy(
 			h.environmentService.ProxyJSONRequest,
@@ -93,10 +90,6 @@ func (h *Handler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBac
 		},
 	}, func(activityCtx context.Context) error {
 		if input.EnvironmentID != "0" {
-			if h.environmentService == nil {
-				errorStatus = http.StatusInternalServerError
-				return errors.New("environment service not available")
-			}
 			hasS3 := false
 			for _, policy := range input.Body.Policies {
 				if policy.S3Enabled {

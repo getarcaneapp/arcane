@@ -148,23 +148,21 @@ func NewNotificationService(
 func (s *NotificationService) ResolveNotificationTarget(ctx context.Context, environmentID string) (NotificationTarget, error) {
 	trimmedEnvironmentID := cmp.Or(strings.TrimSpace(environmentID), "0")
 
-	if s.environmentSvc != nil {
-		env, err := s.environmentSvc.GetEnvironmentByID(ctx, trimmedEnvironmentID)
-		if err == nil && env != nil {
-			return NotificationTarget{
-				EnvironmentID:   env.ID,
-				EnvironmentName: cmp.Or(strings.TrimSpace(env.Name), kit.Ternary(env.ID == "0", "Local Docker", "")),
-			}, nil
-		}
-		if trimmedEnvironmentID != "0" {
-			if err != nil {
-				return NotificationTarget{}, fmt.Errorf("failed to resolve notification environment: %w", err)
-			}
-			return NotificationTarget{}, nil
-		}
+	env, err := s.environmentSvc.GetEnvironmentByID(ctx, trimmedEnvironmentID)
+	if err == nil && env != nil {
+		return NotificationTarget{
+			EnvironmentID:   env.ID,
+			EnvironmentName: cmp.Or(strings.TrimSpace(env.Name), kit.Ternary(env.ID == "0", "Local Docker", "")),
+		}, nil
+	}
+	if trimmedEnvironmentID != "0" {
 		if err != nil {
-			slog.WarnContext(ctx, "Failed to resolve local environment, falling back to 'Local Docker'", "error", err)
+			return NotificationTarget{}, fmt.Errorf("failed to resolve notification environment: %w", err)
 		}
+		return NotificationTarget{}, nil
+	}
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to resolve local environment, falling back to 'Local Docker'", "error", err)
 	}
 
 	return NotificationTarget{
@@ -231,9 +229,6 @@ func (s *NotificationService) dispatchNotificationToManager(ctx context.Context,
 func (s *NotificationService) DispatchNotification(ctx context.Context, accessToken string, payload types.NotificationDispatchRequest) (types.NotificationDispatchResponse, error) {
 	if s.config != nil && s.config.AgentEnabled {
 		return types.NotificationDispatchResponse{}, errors.New("notification dispatch is manager-only")
-	}
-	if s.environmentSvc == nil {
-		return types.NotificationDispatchResponse{}, errors.New("environment service not initialized")
 	}
 
 	env, err := s.environmentSvc.ResolveEnvironmentByAccessToken(ctx, accessToken)
@@ -643,9 +638,6 @@ func (s *NotificationService) notifyEnabledProviders(
 			req.Metadata["status"] = "failed"
 		}
 
-		if s.eventSvc == nil {
-			continue
-		}
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
@@ -663,16 +655,14 @@ func (s *NotificationService) notifyEnabledProviders(
 		}
 	}
 
-	if s.apnsSvc != nil {
-		// A queued push counts as a delivery, so push-only setups still mark
-		// updates notified instead of re-sending them on every poll.
-		enqueued, enqueueErr := s.apnsSvc.Enqueue(ctx, target.EnvironmentID, target.EnvironmentName, eventType, logRef, metadata)
-		if enqueueErr != nil {
-			slog.WarnContext(ctx, "Failed to enqueue mobile push notification", "error", enqueueErr)
-		}
-		if enqueued {
-			delivered++
-		}
+	// A queued push counts as a delivery, so push-only setups still mark
+	// updates notified instead of re-sending them on every poll.
+	enqueued, enqueueErr := s.apnsSvc.Enqueue(ctx, target.EnvironmentID, target.EnvironmentName, eventType, logRef, metadata)
+	if enqueueErr != nil {
+		slog.WarnContext(ctx, "Failed to enqueue mobile push notification", "error", enqueueErr)
+	}
+	if enqueued {
+		delivered++
 	}
 
 	if len(errs) > 0 {

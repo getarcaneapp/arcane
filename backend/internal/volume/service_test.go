@@ -30,7 +30,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
@@ -243,7 +242,7 @@ func TestVolumeWorkspaceReadsWaitForMutationLock(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			dockerService := (&docker.DockerClientService{}).WithClient(newVolumeWorkspaceTestDockerClient(t, server))
+			dockerService := newVolumeTestDockerService(t, newVolumeWorkspaceTestDockerClient(t, server))
 			service := NewVolumeService(nil, dockerService, nil, nil, nil, nil, nil, nil, nil, nil)
 			unlockMutation := service.workspaceLocks.Lock("workspace-volume")
 			readStarted := make(chan struct{})
@@ -323,7 +322,7 @@ func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	dockerService := (&docker.DockerClientService{}).WithClient(newVolumeWorkspaceTestDockerClient(t, server))
+	dockerService := newVolumeTestDockerService(t, newVolumeWorkspaceTestDockerClient(t, server))
 	service := NewVolumeService(nil, dockerService, nil, nil, nil, nil, nil, nil, nil, nil)
 	service.helperByVolume["workspace-volume"] = &volumeHelper{id: "helper", lastUsedAt: time.Now(), protocol: acfstypes.ProtocolVersion}
 	reader, size, err := service.workspace.DownloadVolumeWorkspaceFile(t.Context(), "workspace-volume", "file.txt")
@@ -399,7 +398,7 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 	})
 
 	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
-	service := NewVolumeService(nil, (&docker.DockerClientService{}).WithClient(dockerClient), nil, settingsService, nil, nil, nil, nil, nil, nil)
+	service := NewVolumeService(nil, newVolumeTestDockerService(t, dockerClient), nil, settingsService, nil, nil, nil, nil, nil, nil)
 	uploadIndex := 0
 	workspace, err := service.workspace.UpdateVolumeWorkspace(t.Context(), "workspace-volume", types.VolumeWorkspaceUpdateManifest{
 		FileTreeRevision: "stale",
@@ -439,7 +438,7 @@ func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {
 		S3DestinationID: destination.ID,
 	}).Error)
 
-	service := NewVolumeService(db, nil, nil, nil, nil, nil, nil, s3.NewS3DestinationService(db, nil), nil, nil)
+	service := NewVolumeService(db, nil, nil, newVolumeTestSettingsService(t), nil, nil, nil, s3.NewS3DestinationService(db, nil), nil, nil)
 	backups, _, err := service.backup.List(t.Context(), "app-data", pagination.QueryParams{})
 	require.NoError(t, err)
 	require.Len(t, backups, 1)

@@ -113,7 +113,7 @@ func (j *FilesystemWatcherJob) handleFilesystemChangeInternal(ctx context.Contex
 }
 
 func (j *FilesystemWatcherJob) handleProjectFilePathsChangedInternal(ctx context.Context, paths []string) {
-	if len(paths) == 0 || j.projectService == nil {
+	if len(paths) == 0 {
 		return
 	}
 	j.mu.Lock()
@@ -128,7 +128,7 @@ func (j *FilesystemWatcherJob) handleProjectFilePathsChangedInternal(ctx context
 func (j *FilesystemWatcherJob) handleTemplatesChangeInternal(ctx context.Context) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	if j.stopped || ctx.Err() != nil || j.templateService == nil {
+	if j.stopped || ctx.Err() != nil {
 		return
 	}
 	if err := j.templateService.SyncLocalTemplatesFromFilesystem(ctx); err != nil {
@@ -148,9 +148,6 @@ func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error
 		return err
 	}
 	return j.replaceWatcher(ctx, &j.projectsWatcher, watcher, func(syncCtx context.Context) {
-		if j.projectService == nil {
-			return
-		}
 		if syncErr := j.projectService.SyncProjectsFromFileSystem(syncCtx); syncErr != nil {
 			slog.ErrorContext(syncCtx, "Initial project sync after watcher start failed", "error", syncErr)
 		}
@@ -238,9 +235,6 @@ func (j *FilesystemWatcherJob) RestartTemplatesWatcher(ctx context.Context) erro
 		return err
 	}
 	return j.replaceWatcher(ctx, &j.templatesWatcher, watcher, func(syncCtx context.Context) {
-		if j.templateService == nil {
-			return
-		}
 		if syncErr := j.templateService.SyncLocalTemplatesFromFilesystem(syncCtx); syncErr != nil {
 			slog.ErrorContext(syncCtx, "Initial template sync failed", "error", syncErr)
 		}
@@ -248,10 +242,6 @@ func (j *FilesystemWatcherJob) RestartTemplatesWatcher(ctx context.Context) erro
 }
 
 func (j *FilesystemWatcherJob) startTemplatesWatcher(ctx context.Context) (*fswatch.Watcher, error) {
-	if j.templateService == nil {
-		return nil, nil
-	}
-
 	localSettings, err := j.settingsService.GetSettings(ctx)
 	if err != nil {
 		return nil, err

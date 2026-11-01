@@ -17,15 +17,21 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/types/v3"
+	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	acfstypes "go.getarcane.app/acfs/types"
+	"go.getarcane.app/streams/bus"
+	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
 )
 
@@ -57,7 +63,7 @@ func TestValidateVolumeHelperSupport(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	dockerService := (&docker.DockerClientService{}).WithClient(newVolumeWorkspaceTestDockerClient(t, server))
+	dockerService := newVolumeTestDockerService(t, newVolumeWorkspaceTestDockerClient(t, server))
 	service := NewService(Dependencies{Docker: dockerService})
 
 	require.NoError(t, service.validateVolumeHelperSupport(t.Context(), "workspace-volume"))
@@ -262,7 +268,7 @@ func TestStageVolumeWorkspaceChangesClearsAndCopiesContentsInOneArchive(t *testi
 
 	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
 	service := NewService(Dependencies{
-		Docker: (&docker.DockerClientService{}).WithClient(dockerClient),
+		Docker: newVolumeTestDockerService(t, dockerClient),
 		Exec: func(_ context.Context, containerID, _ string, cmd []string) (string, string, error) {
 			require.Equal(t, "helper", containerID)
 			execCommands = append(execCommands, cmd)
@@ -358,7 +364,7 @@ func TestVolumeWorkspaceWritesUseRuntimeIdentity(t *testing.T) {
 	applyResponse, err := json.Marshal(acfstypes.ApplyResponse{Version: acfstypes.ProtocolVersion, Applied: 1})
 	require.NoError(t, err)
 	service := NewService(Dependencies{
-		Docker: (&docker.DockerClientService{}).WithClient(dockerClient),
+		Docker: newVolumeTestDockerService(t, dockerClient),
 		Exec: func(_ context.Context, _, execUser string, cmd []string) (string, string, error) {
 			execRequests = append(execRequests, execRequest{user: execUser, cmd: cmd})
 			return string(applyResponse), "", nil
@@ -413,7 +419,7 @@ func TestCreateVolumeWorkspaceMutationContainerUsesDedicatedBackupHelper(t *test
 	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
 	acquireCalls := 0
 	service := NewService(Dependencies{
-		Docker: (&docker.DockerClientService{}).WithClient(dockerClient),
+		Docker: newVolumeTestDockerService(t, dockerClient),
 		AcquireHelper: func(context.Context, string) (string, func(), error) {
 			acquireCalls++
 			return "cached-helper", func() {}, nil
@@ -522,4 +528,17 @@ if stat -c '%A' -- /tmp/missing-backup.tar >/dev/null 2>&1; then exit 1; fi`, vo
 sh -c "$1" sh "New Folder/test.txt" /tmp/missing-nested-backup.tar
 if stat -c '%A' -- /tmp/missing-nested-backup.tar >/dev/null 2>&1; then exit 1; fi`, volumeWorkspaceBackupCreateScript)
 	require.Equal(t, "absent\x00New Folder\x00", missingNested)
+}
+
+func newVolumeTestDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }

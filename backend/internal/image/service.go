@@ -447,10 +447,8 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log image pull action", "err", logErr, "image", imageName)
 	}
-	if s.registryService != nil {
-		if recordImagePullErr := s.registryService.RecordImagePull(ctx, imageName); recordImagePullErr != nil {
-			slog.WarnContext(ctx, "failed to record registry pull count", "image", imageName, "error", recordImagePullErr)
-		}
+	if recordImagePullErr := s.registryService.RecordImagePull(ctx, imageName); recordImagePullErr != nil {
+		slog.WarnContext(ctx, "failed to record registry pull count", "image", imageName, "error", recordImagePullErr)
 	}
 
 	return nil

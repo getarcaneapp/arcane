@@ -134,9 +134,6 @@ func NewTemplateService(ctx context.Context, db *database.DB, httpClient *http.C
 
 // configuredTemplatesDirSetting returns the raw templates directory setting; callers resolve it.
 func (s *TemplateService) configuredTemplatesDirSetting(ctx context.Context) string {
-	if s.settingsService == nil {
-		return ""
-	}
 	return s.settingsService.GetStringSetting(ctx, "templatesDirectory")
 }
 

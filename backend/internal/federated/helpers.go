@@ -67,7 +67,7 @@ func validateSubjectMatch(matchType, subjectMatch string) error {
 }
 
 func (s *FederatedCredentialService) validateRoleGrantAgainstUser(ctx context.Context, userID, roleID string, environmentID *string) error {
-	if s.roleService == nil || strings.TrimSpace(userID) == "" {
+	if strings.TrimSpace(userID) == "" {
 		return nil
 	}
 

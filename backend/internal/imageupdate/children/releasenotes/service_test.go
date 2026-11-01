@@ -10,12 +10,18 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/streams/bus"
+	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
 const testDigest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -48,7 +54,7 @@ func newTestDockerService(t *testing.T, labels map[string]string) *docker.Docker
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = cli.Close() })
-	return (&docker.DockerClientService{}).WithClient(cli)
+	return newSettingsDockerService(t, cli)
 }
 
 func newTestService(t *testing.T, labels map[string]string, remoteLabels func(context.Context, string) (map[string]string, error), github testGitHub) (*Service, *atomic.Int32) {
@@ -259,4 +265,17 @@ func TestService_ReleaseLink(t *testing.T) {
 
 func noRemoteLabels(context.Context, string) (map[string]string, error) {
 	return nil, nil
+}
+
+func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }

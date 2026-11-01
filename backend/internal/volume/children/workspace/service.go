@@ -617,11 +617,9 @@ for rel do rm -rf -- "/volume/$rel"; done`, "sh"}, volumeWorkspaceRollbackPaths(
 		),
 	)
 
-	if s.deps.Events != nil {
-		metadata := database.JSON{"action": "workspace_update", "fileChangeCount": len(manifest.FileChanges)}
-		if logErr := s.deps.Events.LogVolumeEvent(ctx, event.EventTypeVolumeWorkspaceUpdate, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
-			slog.WarnContext(ctx, "could not log volume workspace update event", "volume", volumeName, "error", logErr.Error())
-		}
+	metadata := database.JSON{"action": "workspace_update", "fileChangeCount": len(manifest.FileChanges)}
+	if logErr := s.deps.Events.LogVolumeEvent(ctx, event.EventTypeVolumeWorkspaceUpdate, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.WarnContext(ctx, "could not log volume workspace update event", "volume", volumeName, "error", logErr.Error())
 	}
 	return tree, nil
 }

@@ -158,20 +158,18 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 
 // Logout clears the authentication session.
 func (h *AuthHandler) Logout(ctx context.Context, input *LogoutInput) (*LogoutOutput, error) {
-	if h.authService != nil {
-		if sessionID, exists := middleware.GetCurrentSessionIDFromContext(ctx); exists {
-			if err := h.authService.RevokeSession(ctx, sessionID); err != nil {
-				slog.ErrorContext(ctx, "Failed to revoke session on logout; clearing cookie anyway", "sessionId", sessionID, "error", err)
-			}
+	if sessionID, exists := middleware.GetCurrentSessionIDFromContext(ctx); exists {
+		if err := h.authService.RevokeSession(ctx, sessionID); err != nil {
+			slog.ErrorContext(ctx, "Failed to revoke session on logout; clearing cookie anyway", "sessionId", sessionID, "error", err)
 		}
-		if refreshToken := cmp.Or(kit.FromPtr(input.Body).RefreshToken, input.SecureRefreshCookie, input.InsecureRefreshCookie); refreshToken != "" {
-			if err := h.authService.RevokeSessionByRefreshToken(ctx, refreshToken); err != nil {
-				slog.WarnContext(ctx, "Failed to revoke refresh token session on logout", "error", err)
-			}
+	}
+	if refreshToken := cmp.Or(kit.FromPtr(input.Body).RefreshToken, input.SecureRefreshCookie, input.InsecureRefreshCookie); refreshToken != "" {
+		if err := h.authService.RevokeSessionByRefreshToken(ctx, refreshToken); err != nil {
+			slog.WarnContext(ctx, "Failed to revoke refresh token session on logout", "error", err)
 		}
-		if userModel, exists := userdomain.CurrentUserFromContext(ctx); exists {
-			h.authService.LogLogout(ctx, userModel)
-		}
+	}
+	if userModel, exists := userdomain.CurrentUserFromContext(ctx); exists {
+		h.authService.LogLogout(ctx, userModel)
 	}
 
 	return &LogoutOutput{
@@ -287,7 +285,7 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 		case errors.Is(err, common.ErrForbidden):
 			return nil, huma.Error403Forbidden(err.Error())
 		case errors.Is(err, common.ErrValidation):
-			passwordPolicy := h.authService.passwordPolicy(ctx)
+			passwordPolicy := h.settingsService.GetStringSetting(ctx, "authPasswordPolicy")
 			return nil, handlerutil.Error400BadRequestWithType(err, validation.PasswordPolicyProblemType(passwordPolicy))
 		default:
 			return nil, huma.Error500InternalServerError("Failed to change password")
@@ -434,11 +432,8 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 	defer func() { _ = f.Close() }()
 
 	const defaultAvatarMaxUploadSizeMb = 2
-	maxSizeMb := defaultAvatarMaxUploadSizeMb
-	if h.settingsService != nil {
-		maxSizeMb = h.settingsService.GetIntSetting(ctx, "avatarMaxUploadSizeMb")
-		maxSizeMb = kit.Ternary(maxSizeMb <= 0, defaultAvatarMaxUploadSizeMb, maxSizeMb)
-	}
+	configuredMb := h.settingsService.GetIntSetting(ctx, "avatarMaxUploadSizeMb")
+	maxSizeMb := kit.Ternary(configuredMb <= 0, defaultAvatarMaxUploadSizeMb, configuredMb)
 	maxSizeBytes := int64(maxSizeMb) * 1024 * 1024
 
 	// Read one byte past the configured ceiling so oversized files are rejected

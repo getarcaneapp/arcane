@@ -47,14 +47,8 @@ func (j *PruningVolumeHelperJob) Schedule(ctx context.Context) string {
 }
 
 func (j *PruningVolumeHelperJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
-	if j.volumeService == nil {
-		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
-	}
-
 	minutes := defaultVolumeHelperIdleTimeoutMinutes
-	if j.settingsService != nil {
-		minutes = j.settingsService.GetIntSetting(ctx, volumeHelperIdleTimeoutSetting)
-	}
+	minutes = j.settingsService.GetIntSetting(ctx, volumeHelperIdleTimeoutSetting)
 	if minutes <= 0 {
 		// 0 (or negative) disables idle pruning.
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil

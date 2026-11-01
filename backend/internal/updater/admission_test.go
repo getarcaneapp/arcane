@@ -10,12 +10,19 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
+	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/streams/bus"
+	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow/flowtest"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 )
@@ -59,7 +66,7 @@ func newAdmissionTestService(t *testing.T) (*UpdaterService, *runs.Admission) {
 	svc, err := NewUpdaterService(
 		db,
 		nil,
-		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
+		newSettingsDockerService(t, newTestDockerClient(t, server)),
 		nil,
 		nil,
 		nil,
@@ -185,4 +192,17 @@ func TestUpdaterService_AcquireUpdateFailureReleasesHeldKeys(t *testing.T) {
 		require.True(t, free, id)
 		lease.Release(t.Context())
 	}
+}
+
+func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }

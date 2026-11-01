@@ -20,10 +20,10 @@ func TestGitCloneCleanupJob_NameAndSchedule(t *testing.T) {
 	assert.Equal(t, "0 30 * * * *", job.Schedule(t.Context()))
 }
 
-// TestGitCloneCleanupJob_RunPurgesStaleCloneDirs pins the nil-settings guard.
 func TestGitCloneCleanupJob_RunPurgesStaleCloneDirs(t *testing.T) {
 	workDir := t.TempDir()
-	job := NewGitCloneCleanupJob(&gitrepo.GitRepositoryService{Client: git.NewClient(workDir)}, nil)
+	_, settingsService, _ := setupAnalyticsStateServices(t)
+	job := NewGitCloneCleanupJob(&gitrepo.GitRepositoryService{Client: git.NewClient(workDir)}, settingsService)
 
 	stale := filepath.Join(workDir, "gitops-stale")
 	fresh := filepath.Join(workDir, "gitops-fresh")
@@ -39,13 +39,4 @@ func TestGitCloneCleanupJob_RunPurgesStaleCloneDirs(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist, "stale clone dir should be removed")
 	_, err = os.Stat(fresh)
 	assert.NoError(t, err, "fresh clone dir must be kept")
-}
-
-func TestGitCloneCleanupJob_RunNilRepoServiceIsNoop(t *testing.T) {
-	job := NewGitCloneCleanupJob(nil, nil)
-
-	assert.NotPanics(t, func() {
-		_, runErr2 := job.Run(t.Context())
-		require.NoError(t, runErr2)
-	})
 }

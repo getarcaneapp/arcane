@@ -112,7 +112,7 @@ func (s *DashboardService) ObserveInventory(meter metric.Meter) error {
 		o.ObserveInt64(g.images, int64(images.Unused), metric.WithAttributes(attribute.String("usage", "unused")))
 		o.ObserveInt64(g.imageSize, images.TotalSize)
 
-		if s.volumeService != nil && snapshot.Volumes != nil {
+		if snapshot.Volumes != nil {
 			volumes := s.volumeService.CountUsageFromSnapshot(snapshot.Volumes.Items, snapshot.Containers)
 			o.ObserveInt64(g.volumes, int64(volumes.Inuse), metric.WithAttributes(attribute.String("usage", "in_use")))
 			o.ObserveInt64(g.volumes, int64(volumes.Unused), metric.WithAttributes(attribute.String("usage", "unused")))
@@ -125,14 +125,12 @@ func (s *DashboardService) ObserveInventory(meter metric.Meter) error {
 			o.ObserveInt64(g.networks, int64(total-inuse-unused), metric.WithAttributes(attribute.String("usage", "default")))
 		}
 
-		if s.projectService != nil {
-			if counts, countErr := s.projectService.GetProjectStatusCounts(ctx); countErr != nil {
-				slog.DebugContext(ctx, "Skipping project inventory metrics", "error", countErr)
-			} else {
-				other := counts.TotalProjects - counts.RunningProjects - counts.StoppedProjects - counts.ArchivedProjects
-				for status, n := range map[string]int{"running": counts.RunningProjects, "stopped": counts.StoppedProjects, "archived": counts.ArchivedProjects, "unknown": other} {
-					o.ObserveInt64(g.projects, int64(n), metric.WithAttributes(attribute.String("project.status", status)))
-				}
+		if counts, countErr := s.projectService.GetProjectStatusCounts(ctx); countErr != nil {
+			slog.DebugContext(ctx, "Skipping project inventory metrics", "error", countErr)
+		} else {
+			other := counts.TotalProjects - counts.RunningProjects - counts.StoppedProjects - counts.ArchivedProjects
+			for status, n := range map[string]int{"running": counts.RunningProjects, "stopped": counts.StoppedProjects, "archived": counts.ArchivedProjects, "unknown": other} {
+				o.ObserveInt64(g.projects, int64(n), metric.WithAttributes(attribute.String("project.status", status)))
 			}
 		}
 

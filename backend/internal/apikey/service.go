@@ -42,14 +42,6 @@ const (
 	managedByAdminBootstrap = "admin_account_default_api_key"
 	defaultAdminUsername    = "arcane"
 	defaultAdminAPIKeyName  = "Static Admin API Key"
-
-	// ErrApiKeyPermissionEscalation is returned when a caller attempts to grant an
-	// API key permissions they themselves do not hold.
-
-	// ErrApiKeyPersonalNoGrants is returned when a caller attempts to attach
-	// permission grants to a personal key, which has none of its own — it inherits
-	// the owner's role permissions at authentication time.
-
 )
 
 var (
@@ -389,7 +381,7 @@ func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, callerP
 // one re-resolves the owner's roles from the DB. Skipped when role.RoleService is
 // unavailable (bootstrap path only, where no human caller exists).
 func (s *ApiKeyService) validateGrantsAgainstOwner(ctx context.Context, ownerID string, grants []types.ApiKeyPermissionGrant) error {
-	if s.roleService == nil || len(grants) == 0 {
+	if len(grants) == 0 {
 		return nil
 	}
 	localUser, err := s.userService.GetUserByID(ctx, ownerID)
@@ -583,15 +575,13 @@ func (s *ApiKeyService) getDefaultAdminUser(ctx context.Context) (*user.User, er
 
 	// The username is mutable and not proof of provenance — never mint the
 	// managed full-permission key onto an account that isn't a global admin.
-	if s.roleService != nil {
-		perms, resolvePermissionsErr := s.roleService.ResolvePermissions(ctx, adminUser.ID)
-		if resolvePermissionsErr != nil {
-			return nil, fmt.Errorf("failed to resolve default admin permissions: %w", resolvePermissionsErr)
-		}
-		if !perms.IsGlobalAdmin() {
-			slog.WarnContext(ctx, "User is not a global admin, skipping default admin API key reconciliation", "username", defaultAdminUsername)
-			return nil, nil
-		}
+	perms, resolvePermissionsErr := s.roleService.ResolvePermissions(ctx, adminUser.ID)
+	if resolvePermissionsErr != nil {
+		return nil, fmt.Errorf("failed to resolve default admin permissions: %w", resolvePermissionsErr)
+	}
+	if !perms.IsGlobalAdmin() {
+		slog.WarnContext(ctx, "User is not a global admin, skipping default admin API key reconciliation", "username", defaultAdminUsername)
+		return nil, nil
 	}
 
 	return adminUser, nil
@@ -762,32 +752,28 @@ func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environment
 	// environment. Without this seed, the per-key permission resolver returns
 	// an empty set on any request authenticated by this key and every
 	// downstream RequirePermission check fails with 403.
-	if s.roleService != nil {
-		all := authz.AllPermissions()
-		grants := make([]role.ApiKeyPermission, len(all))
-		for i, p := range all {
-			grants[i] = role.ApiKeyPermission{
-				ApiKeyID:      created.ID,
-				Permission:    p,
-				EnvironmentID: &environmentID,
-			}
+	all := authz.AllPermissions()
+	grants := make([]role.ApiKeyPermission, len(all))
+	for i, p := range all {
+		grants[i] = role.ApiKeyPermission{
+			ApiKeyID:      created.ID,
+			Permission:    p,
+			EnvironmentID: &environmentID,
 		}
-		if setApiKeyPermissionsErr := s.roleService.SetApiKeyPermissions(ctx, created.ID, grants); setApiKeyPermissionsErr != nil {
-			return nil, fmt.Errorf("failed to persist environment bootstrap key permissions: %w", setApiKeyPermissionsErr)
-		}
-		// Re-load grants into the response DTO so callers see the seeded
-		// permissions immediately, not null.
-		created.Permissions = s.loadKeyGrants(ctx, created.ID)
 	}
+	if setApiKeyPermissionsErr := s.roleService.SetApiKeyPermissions(ctx, created.ID, grants); setApiKeyPermissionsErr != nil {
+		return nil, fmt.Errorf("failed to persist environment bootstrap key permissions: %w", setApiKeyPermissionsErr)
+	}
+	// Re-load grants into the response DTO so callers see the seeded
+	// permissions immediately, not null.
+	created.Permissions = s.loadKeyGrants(ctx, created.ID)
 	return created, nil
 }
 
 func (s *ApiKeyService) GetApiKey(ctx context.Context, id string) (*types.ApiKey, error) {
 	var ak ApiKey
 	query := s.db.WithContext(ctx)
-	if s.roleService != nil {
-		query = query.Preload("PermissionGrants")
-	}
+	query = query.Preload("PermissionGrants")
 	if err := query.Where("id = ?", id).First(&ak).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrApiKeyNotFound
@@ -804,9 +790,7 @@ func (s *ApiKeyService) GetApiKey(ctx context.Context, id string) (*types.ApiKey
 func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.QueryParams) ([]types.ApiKey, pagination.Response, error) {
 	var apiKeys []ApiKey
 	query := s.db.WithContext(ctx).Model(&ApiKey{})
-	if s.roleService != nil {
-		query = query.Preload("PermissionGrants")
-	}
+	query = query.Preload("PermissionGrants")
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
@@ -846,9 +830,7 @@ func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.Query
 func (s *ApiKeyService) ListApiKeysByUser(ctx context.Context, userID string) ([]types.ApiKey, error) {
 	var apiKeys []ApiKey
 	query := s.db.WithContext(ctx)
-	if s.roleService != nil {
-		query = query.Preload("PermissionGrants")
-	}
+	query = query.Preload("PermissionGrants")
 	if err := query.Where("user_id = ?", userID).
 		Order("created_at DESC").
 		Find(&apiKeys).Error; err != nil {
@@ -938,7 +920,7 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 			Updates(&changes).Error; err != nil {
 			return fmt.Errorf("failed to update API key: %w", err)
 		}
-		if submitted["permissions"] && s.roleService != nil {
+		if submitted["permissions"] {
 			if err := s.roleService.SetApiKeyPermissionsInDB(ctx, tx, ak.ID, toApiKeyPermissionRows(ak.ID, req.Permissions)); err != nil {
 				return fmt.Errorf("failed to update api key permissions: %w", err)
 			}
@@ -977,9 +959,6 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 // DB errors are logged and yield an empty slice — the caller never sees nil.
 func (s *ApiKeyService) loadKeyGrants(ctx context.Context, apiKeyID string) []types.ApiKeyPermissionGrant {
 	empty := []types.ApiKeyPermissionGrant{}
-	if s.roleService == nil {
-		return empty
-	}
 	var rows []role.ApiKeyPermission
 	if err := s.db.WithContext(ctx).Where("api_key_id = ?", apiKeyID).Find(&rows).Error; err != nil {
 		slog.WarnContext(ctx, "failed to load api key permission grants", "apiKeyId", apiKeyID, "error", err)

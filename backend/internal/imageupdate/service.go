@@ -169,9 +169,6 @@ func NewImageUpdateService(
 }
 
 func (s *ImageUpdateService) registryContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	if s.settingsService == nil {
-		return context.WithTimeout(ctx, timeouts.DefaultRegistry)
-	}
 	return context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
 }
 
@@ -884,15 +881,13 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 		// Digests have no ordering. Confirm a moved tag without using the digest cache.
 		// A registry failure leaves the differing previews untouched rather than
 		// blocking the reconciliation of the pulled image state.
-		if s.registryService != nil {
-			registryCtx, cancel := s.registryContext(ctx)
-			defer cancel()
-			latest, inspectErr := s.registryService.InspectImageDigest(registryCtx, imageRef, nil)
-			if inspectErr != nil {
-				slog.WarnContext(ctx, "Failed to verify pulled image against project previews", "imageRef", imageRef, "error", inspectErr.Error())
-			} else if slices.Contains(snapshot.RepositoryDigests, kit.FromPtr(latest).Digest) {
-				return records, latest.Digest, nil
-			}
+		registryCtx, cancel := s.registryContext(ctx)
+		defer cancel()
+		latest, inspectErr := s.registryService.InspectImageDigest(registryCtx, imageRef, nil)
+		if inspectErr != nil {
+			slog.WarnContext(ctx, "Failed to verify pulled image against project previews", "imageRef", imageRef, "error", inspectErr.Error())
+		} else if slices.Contains(snapshot.RepositoryDigests, kit.FromPtr(latest).Digest) {
+			return records, latest.Digest, nil
 		}
 		return slices.DeleteFunc(records, digestMismatch), "", nil
 	}()
@@ -1151,9 +1146,6 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 func (s *ImageUpdateService) resolveBatchCredentials(ctx context.Context, t flow.Task, input imageCheckInput) []types.ContainerRegistryCredential {
 	if supplied, ok, _ := s.requestCredentials.Get(input.CredentialsKey); ok && input.CredentialsKey != "" {
 		return supplied
-	}
-	if s.registryService == nil {
-		return nil
 	}
 	credentials, _, err := s.credentials.GetWithLoaders(t.ActivityID(), func([]string) (map[string][]types.ContainerRegistryCredential, error) {
 		// Decrypt the enabled stored registry credentials.

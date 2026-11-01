@@ -9,6 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/template"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/fswatch"
 )
 
@@ -22,12 +25,7 @@ func TestFilesystemWatcherJob_ProjectWatcherOptions_UsesConfiguredMaxDepth(t *te
 }
 
 func TestFilesystemWatcherJob_ConcurrentProjectRestartsAreSerialized(t *testing.T) {
-	_, settingsService, _ := setupAnalyticsStateServices(t)
-	require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", t.TempDir()))
-	require.NoError(t, settingsService.SetStringSetting(t.Context(), "templatesDirectory", t.TempDir()))
-
-	job, err := NewFilesystemWatcherJob(t.Context(), nil, nil, settingsService)
-	require.NoError(t, err)
+	job := newFilesystemWatcherTestJob(t)
 
 	restartErrors := make(chan error, 2)
 	var callers sync.WaitGroup
@@ -59,12 +57,7 @@ func TestFilesystemWatcherJob_ConcurrentProjectRestartsAreSerialized(t *testing.
 }
 
 func TestFilesystemWatcherJob_RequestRestartRearmsSupervisor(t *testing.T) {
-	_, settingsService, _ := setupAnalyticsStateServices(t)
-	require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", t.TempDir()))
-	require.NoError(t, settingsService.SetStringSetting(t.Context(), "templatesDirectory", t.TempDir()))
-
-	job, err := NewFilesystemWatcherJob(t.Context(), nil, nil, settingsService)
-	require.NoError(t, err)
+	job := newFilesystemWatcherTestJob(t)
 
 	superviseCtx, cancelSupervise := context.WithCancel(t.Context())
 	done := make(chan error, 1)
@@ -86,4 +79,22 @@ func TestFilesystemWatcherJob_RequestRestartRearmsSupervisor(t *testing.T) {
 	stopCtx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	require.NoError(t, job.Stop(stopCtx))
+}
+
+func newFilesystemWatcherTestJob(t *testing.T) *FilesystemWatcherJob {
+	t.Helper()
+
+	db, settingsService, kvService := setupAnalyticsStateServices(t)
+	require.NoError(t, db.AutoMigrate(&project.Project{}, &project.ProjectTag{}, &template.TemplateRegistry{}, &template.ComposeTemplate{}))
+	require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", t.TempDir()))
+	require.NoError(t, settingsService.SetStringSetting(t.Context(), "templatesDirectory", t.TempDir()))
+
+	job, err := NewFilesystemWatcherJob(
+		t.Context(),
+		project.NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, &config.Config{}, kvService, nil),
+		template.NewTemplateService(t.Context(), db, nil, settingsService),
+		settingsService,
+	)
+	require.NoError(t, err)
+	return job
 }

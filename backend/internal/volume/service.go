@@ -38,6 +38,7 @@ import (
 	volumebackup "github.com/getarcaneapp/arcane/backend/v3/internal/volume/children/backup"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/volume/children/workspace"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
@@ -996,7 +997,7 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 		slog.WarnContext(ctx, "could not stop volume browse helper before rename", "volume", oldName, "error", stopErr.Error())
 	}
 
-	migration, err := volumes.PlanRename(ctx, dockerClient, oldName, newName, s.toolsImage())
+	migration, err := volumes.PlanRename(ctx, dockerClient, oldName, newName, volumehelper.ToolsImage(s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value))
 	if err != nil {
 		s.logVolumeRenameError(ctx, oldName, newName, user, "plan", err)
 		return nil, err

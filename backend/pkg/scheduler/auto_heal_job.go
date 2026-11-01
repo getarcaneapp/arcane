@@ -310,25 +310,21 @@ func (j *AutoHealJob) processCandidate(
 }
 
 func (j *AutoHealJob) postRestartActions(ctx context.Context, containerID, containerName string) {
-	if j.eventService != nil {
-		if err := j.eventService.LogContainerEvent(
-			ctx,
-			event.EventTypeContainerRestart,
-			containerID,
-			containerName,
-			"", // no user - system action
-			"system",
-			"",
-			database.JSON{"action": "auto-heal", "reason": "unhealthy"},
-		); err != nil {
-			slog.WarnContext(ctx, "auto-heal failed to log event", "container", containerName, "error", err)
-		}
+	if err := j.eventService.LogContainerEvent(
+		ctx,
+		event.EventTypeContainerRestart,
+		containerID,
+		containerName,
+		"", // no user - system action
+		"system",
+		"",
+		database.JSON{"action": "auto-heal", "reason": "unhealthy"},
+	); err != nil {
+		slog.WarnContext(ctx, "auto-heal failed to log event", "container", containerName, "error", err)
 	}
 
-	if j.notificationService != nil {
-		if err := j.notificationService.SendAutoHealNotification(ctx, containerName, containerID); err != nil {
-			slog.WarnContext(ctx, "auto-heal failed to send notification", "container", containerName, "error", err)
-		}
+	if err := j.notificationService.SendAutoHealNotification(ctx, containerName, containerID); err != nil {
+		slog.WarnContext(ctx, "auto-heal failed to send notification", "container", containerName, "error", err)
 	}
 }
 

@@ -66,14 +66,6 @@ func (s *VolumeService) requireVolumeHelperACFS(ctx context.Context, volumeName,
 	return nil
 }
 
-func (s *VolumeService) toolsImage() string {
-	registry := ""
-	if s.settingsService != nil {
-		registry = s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value
-	}
-	return volumehelper.ToolsImage(registry)
-}
-
 func isUnlabeledVolumeHelperContainer(c container.Summary) bool {
 	if internal, _ := kit.ParseBool(c.Labels[libarcane.InternalResourceLabel]); !internal {
 		return false
@@ -94,7 +86,7 @@ func isVolumeHelperContainer(c container.Summary) bool {
 
 func (s *VolumeService) getVolumeHelperImage(ctx context.Context) (string, error) {
 	slog.DebugContext(ctx, "volume service: resolve helper image")
-	toolsImage := s.toolsImage()
+	toolsImage := volumehelper.ToolsImage(s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value)
 
 	if _, imageInspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, toolsImage)
@@ -103,19 +95,12 @@ func (s *VolumeService) getVolumeHelperImage(ctx context.Context) (string, error
 		return toolsImage, nil
 	}
 
-	var pullErr error
-	if s.imageService != nil {
-		pullImageErr := s.imageService.PullImage(ctx, toolsImage, io.Discard, types.SystemUser, nil)
-		if pullImageErr == nil {
-			slog.InfoContext(ctx, "volume service: helper image strategy selected", "strategy", "tools-pulled", "image", toolsImage)
-			return toolsImage, nil
-		}
-		pullErr = pullImageErr
-		slog.WarnContext(ctx, "volume service: failed to pull tools helper image, attempting arcane fallback", "error", pullImageErr.Error())
-	} else {
-		pullErr = errors.New("image service unavailable")
-		slog.WarnContext(ctx, "volume service: image service unavailable, attempting arcane fallback")
+	pullErr := s.imageService.PullImage(ctx, toolsImage, io.Discard, types.SystemUser, nil)
+	if pullErr == nil {
+		slog.InfoContext(ctx, "volume service: helper image strategy selected", "strategy", "tools-pulled", "image", toolsImage)
+		return toolsImage, nil
 	}
+	slog.WarnContext(ctx, "volume service: failed to pull tools helper image, attempting arcane fallback", "error", pullErr.Error())
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {

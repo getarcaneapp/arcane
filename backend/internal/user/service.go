@@ -241,9 +241,6 @@ func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*User, 
 // ResolveUserPermissions returns the effective PermissionSet for the given
 // user ID, or nil when no role.RoleService is wired (RBAC disabled paths).
 func (s *UserService) ResolveUserPermissions(ctx context.Context, userID string) (*authz.PermissionSet, error) {
-	if s.roleService == nil {
-		return nil, nil
-	}
 	return s.roleService.ResolvePermissions(ctx, userID)
 }
 
@@ -260,7 +257,7 @@ func (s *UserService) ResolveUserPermissions(ctx context.Context, userID string)
 // serialized with the mutation. The request-time actor permissions remain part
 // of the decision so revalidation can only reduce, never elevate, authority.
 func (s *UserService) checkTargetPrivilege(ctx context.Context, tx *gorm.DB, actorPerms *authz.PermissionSet, targetID string) error {
-	revalidateActor := actorPerms != nil && !actorPerms.Sudo && actorPerms.IsGlobalAdmin() && s.roleService != nil
+	revalidateActor := actorPerms != nil && !actorPerms.Sudo && actorPerms.IsGlobalAdmin()
 	actorID := ""
 	if revalidateActor {
 		actor, ok := userctx.CurrentUserFromContext(ctx)
@@ -294,7 +291,7 @@ func (s *UserService) checkTargetPrivilege(ctx context.Context, tx *gorm.DB, act
 		return ErrInsufficientPrivilege
 	}
 
-	if actorPerms == nil || actorPerms.Sudo || s.roleService == nil {
+	if actorPerms == nil || actorPerms.Sudo {
 		return nil
 	}
 	if revalidateActor {
@@ -596,19 +593,17 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 	// `arcane` username at all. The username is mutable, so treating it as a
 	// provenance marker would let anyone with users:create/users:update rename
 	// an account to `arcane` and get promoted on the next restart.
-	if s.roleService != nil {
-		var count int64
-		if err := s.db.WithContext(ctx).Model(&User{}).Count(&count).Error; err != nil {
-			return fmt.Errorf("failed to count users: %w", err)
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&User{}).Count(&count).Error; err != nil {
+		return fmt.Errorf("failed to count users: %w", err)
+	}
+	if count > 0 {
+		admins, err := s.roleService.CountGlobalAdmins(ctx, s.db.DB, "")
+		if err != nil {
+			return fmt.Errorf("failed to count global admins: %w", err)
 		}
-		if count > 0 {
-			admins, err := s.roleService.CountGlobalAdmins(ctx, s.db.DB, "")
-			if err != nil {
-				return fmt.Errorf("failed to count global admins: %w", err)
-			}
-			if admins > 0 {
-				return nil
-			}
+		if admins > 0 {
+			return nil
 		}
 	}
 
@@ -665,7 +660,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 		return err
 	}
 
-	if adminUserID == "" || s.roleService == nil {
+	if adminUserID == "" {
 		return nil
 	}
 	return s.grantDefaultAdminRole(ctx, adminUserID)
@@ -759,7 +754,7 @@ func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.
 
 func (s *UserService) ToUserResponseDto(ctx context.Context, u User) (types.User, error) {
 	dto := s.toUserResponseDto(ctx, u)
-	if dto.IsGlobalAdmin && s.roleService != nil {
+	if dto.IsGlobalAdmin {
 		remaining, err := s.roleService.CountGlobalAdmins(ctx, s.db.DB, u.ID)
 		if err != nil {
 			return types.User{}, fmt.Errorf("failed to check whether user can be deleted: %w", err)
@@ -775,9 +770,6 @@ func (s *UserService) toUserResponseDtos(ctx context.Context, users []User) []ty
 	result := make([]types.User, len(users))
 	for i, u := range users {
 		result[i] = s.toUserResponseDto(ctx, u)
-	}
-	if s.roleService == nil {
-		return result
 	}
 	if total, err := s.roleService.CountGlobalAdmins(ctx, s.db.DB, ""); err == nil && total == 1 {
 		for i := range result {
@@ -817,9 +809,6 @@ func (s *UserService) toUserResponseDto(ctx context.Context, u User) types.User 
 	if u.HasAvatar {
 		avatarURL := fmt.Sprintf("/api/users/%s/avatar", u.ID)
 		dto.AvatarURL = &avatarURL
-	}
-	if s.roleService == nil {
-		return dto
 	}
 	if rows, err := s.roleService.ListUserAssignments(ctx, u.ID); err == nil {
 		dto.RoleAssignments = make([]types.RoleAssignmentSummary, len(rows))

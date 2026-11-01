@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/streams/bus"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
@@ -23,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/podman"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
 func TestResolveBackupStorageMountFromMounts(t *testing.T) {
@@ -179,7 +182,7 @@ func setupVolumeBackupLifecycleTest(t *testing.T, handler http.Handler) *Service
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&event.Event{}))
 	db := &database.DB{DB: gormDB}
-	dockerService := (&docker.DockerClientService{}).WithClient(dockerClient)
+	dockerService := newVolumeTestDockerService(t, dockerClient)
 	eventService := event.NewEventService(db, &config.Config{}, nil)
 	containerService := containerdomain.NewContainerService(eventService, dockerService, nil, nil, nil, nil, podman.NewService(podman.Config{Engine: dockerService.Engine}))
 	return NewService(Dependencies{
@@ -331,4 +334,17 @@ func TestVolumeBackupContainerLifecycleWaitsForRunningComposeReplacement(t *test
 	require.NoError(t, err)
 	require.Empty(t, remaining)
 	require.Equal(t, []string{"stop:old-id"}, operations)
+}
+
+func newVolumeTestDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }

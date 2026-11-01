@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/kit/pkg"
+	"go.getarcane.app/streams/bus"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
@@ -50,10 +51,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-var testDockerService = (&dockerInternal.DockerClientService{}).WithClient(func() *mobyclient.Client {
-	cli, _ := mobyclient.New(mobyclient.WithHost("tcp://127.0.0.1:1"), mobyclient.WithAPIVersion("1.41"))
-	return cli
-}())
+func newGitOpsTestDockerService(t *testing.T, settingsService *settings.SettingsService) *dockerInternal.DockerClientService {
+	t.Helper()
+	cli, err := mobyclient.New(mobyclient.WithHost("tcp://127.0.0.1:1"), mobyclient.WithAPIVersion("1.41"))
+	require.NoError(t, err)
+	return dockerInternal.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(cli)
+}
 
 func loadTestConfig(t testing.TB) *config.Config {
 	t.Helper()
@@ -107,7 +110,7 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, loadTestConfig(t), nil)
-	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, testDockerService, nil, nil, nil, loadTestConfig(t), nil, nil)
+	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, newGitOpsTestDockerService(t, settingsService), nil, nil, nil, loadTestConfig(t), nil, nil)
 
 	return NewGitOpsSyncService(db, nil, projectService, nil, eventService, settingsService), db, projectsDir
 }
@@ -164,7 +167,7 @@ func setupGitOpsSyncRemoteTestService(t *testing.T, files map[string]string) (*G
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, loadTestConfig(t), nil)
-	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, testDockerService, nil, nil, nil, loadTestConfig(t), nil, nil)
+	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, newGitOpsTestDockerService(t, settingsService), nil, nil, nil, loadTestConfig(t), nil, nil)
 	repoService := gitrepo.NewGitRepositoryService(db, t.TempDir(), eventService, settingsService)
 
 	service := NewGitOpsSyncService(db, repoService, projectService, nil, eventService, settingsService)
@@ -603,15 +606,6 @@ func TestGitOpsSyncService_CleanupLeakedCloneDirsOnStartup_RemovesAll(t *testing
 	}
 	_, err := os.Stat(unrelated)
 	assert.NoError(t, err, "unrelated dir must be kept")
-}
-
-// TestGitOpsSyncService_CleanupLeakedCloneDirsOnStartup_NilRepoServiceIsNoop
-// verifies the sweep tolerates a service built without a repo service.
-func TestGitOpsSyncService_CleanupLeakedCloneDirsOnStartup_NilRepoServiceIsNoop(t *testing.T) {
-	svc, _, _ := setupGitOpsSyncDirectoryTestService(t)
-	svc.repoService = nil
-
-	require.NoError(t, svc.CleanupLeakedCloneDirsOnStartup(t.Context()))
 }
 
 func TestProjectsRemoveStaleComposeFiles_RemovesStaleCustomComposeFiles(t *testing.T) {
@@ -1128,7 +1122,7 @@ func setupGitOpsBackupTestService(t *testing.T) *backupTestEnv {
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, loadTestConfig(t), nil)
-	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, testDockerService, nil, nil, nil, loadTestConfig(t), nil, nil)
+	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, newGitOpsTestDockerService(t, settingsService), nil, nil, nil, loadTestConfig(t), nil, nil)
 	repoService := gitrepo.NewGitRepositoryService(db, t.TempDir(), eventService, settingsService)
 
 	service := NewGitOpsSyncService(db, repoService, projectService, nil, eventService, settingsService)

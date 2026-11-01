@@ -14,10 +14,7 @@ import (
 
 const (
 	maxConcurrentActivitiesSettingKey = "maxConcurrentActivities"
-	defaultMaxConcurrentActivities    = 5
-	// slotWaitRecheckInterval bounds how long a queued waiter can miss a limit
-	// increase made while no slots were being released.
-	slotWaitRecheckInterval = 2 * time.Second
+	slotWaitRecheckInterval           = 2 * time.Second
 )
 
 // Service reads the limit from settings on every acquisition attempt, while
@@ -68,9 +65,6 @@ func (s *Service) stateLocked(environmentID string) *environmentSlots {
 // queue and block via Await. Held slots are counted even while the limit is
 // unlimited, so enabling a limit later still sees the work already running.
 func (s *Service) TryAcquire(ctx context.Context, environmentID string) mo.Option[func()] {
-	if s.settings == nil {
-		return mo.Some(func() {})
-	}
 	limit := s.settings.GetIntSetting(ctx, maxConcurrentActivitiesSettingKey)
 
 	s.mu.Lock()
@@ -94,7 +88,7 @@ func (s *Service) Await(ctx context.Context, activityID, environmentID string) (
 		return false, nil
 	}
 
-	for s.settings != nil {
+	for {
 		limit := s.settings.GetIntSetting(ctx, maxConcurrentActivitiesSettingKey)
 		s.mu.Lock()
 		slots := s.stateLocked(environmentID)
@@ -117,8 +111,6 @@ func (s *Service) Await(ctx context.Context, activityID, environmentID string) (
 		}
 		timer.Stop()
 	}
-	s.Register(activityID, func() {})
-	return true, nil
 }
 
 // Register records release as the slot held by activityID, freeing any slot
