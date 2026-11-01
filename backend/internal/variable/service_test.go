@@ -339,18 +339,24 @@ func TestSyncEnvironment_LocalSkipsInjectionForInterpolationOnlyVariables(t *tes
 
 	require.NoError(t, service.SyncEnvironment(ctx, "0"))
 
-	content, err := os.ReadFile(filepath.Join(projectsDir, ".env.global"))
-	require.NoError(t, err)
-	markIndex := strings.Index(string(content), "# arcane:noinject DB_PASSWORD\n")
-	require.GreaterOrEqual(t, markIndex, 0)
-	require.Less(t, markIndex, strings.Index(string(content), "DB_PASSWORD=hunter2"), "the mark must precede the value")
-
 	workdir := filepath.Join(projectsDir, "app")
 	require.NoError(t, os.MkdirAll(workdir, utils.DirPerm))
 	envMap, injectionVars, err := projects.NewEnvLoader(projectsDir, workdir, false).LoadEnvironment(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hunter2", envMap["DB_PASSWORD"], "interpolation-only variables stay available for ${VAR}")
 	require.Equal(t, projects.EnvMap{"TZ": "UTC"}, injectionVars)
+
+	// The in-place rewrite truncates then writes, so a concurrent reader can see
+	// any prefix of the new file: none of them may inject the marked secret.
+	content, err := os.ReadFile(filepath.Join(projectsDir, ".env.global"))
+	require.NoError(t, err)
+	partialDir := t.TempDir()
+	for size := range len(content) + 1 {
+		require.NoError(t, os.WriteFile(filepath.Join(partialDir, ".env.global"), content[:size], utils.FilePerm))
+		_, partialInjection, loadErr := projects.NewEnvLoader(partialDir, filepath.Join(partialDir, "app"), false).LoadEnvironment(ctx)
+		require.NoError(t, loadErr)
+		require.NotContains(t, partialInjection, "DB_PASSWORD", "a %d-byte prefix injected the interpolation-only secret", size)
+	}
 }
 
 func TestSyncEnvironment_RemotePayloadOmitsNoInjectKeysWhenAllInjected(t *testing.T) {
