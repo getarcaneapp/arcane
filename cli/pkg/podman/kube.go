@@ -118,7 +118,7 @@ func newKubeDownCmd() *cobra.Command {
 				return fmt.Errorf("failed to read kube YAML: %w", err)
 			}
 
-			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, opts.force, fmt.Sprintf("Are you sure you want to tear down the pods in %s?", args[0]))
+			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: fmt.Sprintf("Are you sure you want to tear down the pods in %s?", args[0]), Force: opts.force})
 			if confirmationErr != nil || !confirmed {
 				return confirmationErr
 			}

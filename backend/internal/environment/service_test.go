@@ -507,7 +507,7 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SyncsEligibleRemo
 	createTestEnvironment(t, db, "env-1", startTestAgent(t, "env-1", env1Agent), &env1Token)
 	createTestEnvironment(t, db, "env-2", startTestAgent(t, "env-2", env2Agent), &env2Token)
 
-	err := svc.SyncRegistriesToRemoteEnvironments(ctx)
+	err := svc.SyncToRemoteEnvironments(ctx, "registries", svc.SyncRegistriesToEnvironment)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, env1Calls.Load())
 	require.EqualValues(t, 1, env2Calls.Load())
@@ -702,7 +702,7 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SkipsRemoteWithou
 	createTestEnvironment(t, db, "env-auth", startTestAgent(t, "env-auth", agentHandler), new("token-with-auth"))
 	createTestEnvironment(t, db, "env-no-token", "agent://env-no-token", nil)
 
-	err := svc.SyncRegistriesToRemoteEnvironments(ctx)
+	err := svc.SyncToRemoteEnvironments(ctx, "registries", svc.SyncRegistriesToEnvironment)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, syncCalls.Load())
 }
@@ -727,7 +727,7 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_ReportsFailuresBu
 	createTestEnvironment(t, db, "env-success", startTestAgent(t, "env-success", successAgent), new("token-success"))
 	createTestEnvironment(t, db, "env-fail", startTestAgent(t, "env-fail", failingAgent), new("token-fail"))
 
-	err := svc.SyncRegistriesToRemoteEnvironments(ctx)
+	err := svc.SyncToRemoteEnvironments(ctx, "registries", svc.SyncRegistriesToEnvironment)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to sync registries to 1 remote environment")
 	require.EqualValues(t, 1, successCalls.Load())

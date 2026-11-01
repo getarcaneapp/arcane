@@ -116,7 +116,7 @@ func TestSetRecoveryKeyKeepsCurrentKeyWhenRekeyFails(t *testing.T) {
 	db := &database.DB{DB: gormDB}
 	recoveryKeys := backupengine.NewRecoveryKeyStore(db)
 	oldKey := "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN"
-	require.NoError(t, recoveryKeys.Set(t.Context(), oldKey))
+	require.NoError(t, recoveryKeys.Set(t.Context(), backupengine.RecoveryKeyConfigID, oldKey))
 	runtime := francistest.New(t)
 	gate := runs.NewAdmission(runtime.Service(), t.Name())
 	require.NoError(t, gate.Register(runtime))
@@ -142,7 +142,7 @@ func TestSetRecoveryKeyKeepsCurrentKeyWhenRekeyFails(t *testing.T) {
 
 	_, err = service.SetRecoveryKey(t.Context(), "ASDFGH-QWERTY-765432-LKJHGF-RQPONM-XWVUTS-5432ZY-NBVCXZ")
 	require.Error(t, err)
-	storedKey, err := recoveryKeys.Get(t.Context())
+	storedKey, err := recoveryKeys.Get(t.Context(), backupengine.RecoveryKeyConfigID)
 	require.NoError(t, err)
 	require.Equal(t, oldKey, storedKey)
 }

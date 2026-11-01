@@ -89,14 +89,14 @@ func TestAutoHeal_CanRestart_UnderLimit(t *testing.T) {
 	job := newTestAutoHealJob()
 
 	// No restarts recorded yet — should be allowed
-	require.True(t, job.CanRestartExported("container-1", 5, 30*time.Minute))
+	require.True(t, job.canRestart("container-1", 5, 30*time.Minute))
 
 	// Record 4 restarts (under limit of 5)
 	for range 4 {
-		job.RecordRestartExported("container-1")
+		job.recordRestart("container-1")
 	}
 
-	require.True(t, job.CanRestartExported("container-1", 5, 30*time.Minute))
+	require.True(t, job.canRestart("container-1", 5, 30*time.Minute))
 }
 
 func TestAutoHeal_CanRestart_AtLimit(t *testing.T) {
@@ -104,10 +104,10 @@ func TestAutoHeal_CanRestart_AtLimit(t *testing.T) {
 
 	// Record exactly 5 restarts (at limit)
 	for range 5 {
-		job.RecordRestartExported("container-1")
+		job.recordRestart("container-1")
 	}
 
-	require.False(t, job.CanRestartExported("container-1", 5, 30*time.Minute))
+	require.False(t, job.canRestart("container-1", 5, 30*time.Minute))
 }
 
 func TestAutoHeal_CanRestart_WindowExpiry(t *testing.T) {
@@ -120,7 +120,7 @@ func TestAutoHeal_CanRestart_WindowExpiry(t *testing.T) {
 	}
 
 	// Should be allowed because all timestamps are outside the 30-minute window
-	require.True(t, job.CanRestartExported("container-1", 5, 30*time.Minute))
+	require.True(t, job.canRestart("container-1", 5, 30*time.Minute))
 }
 
 func TestAutoHeal_CanRestart_MixedTimestamps(t *testing.T) {
@@ -134,17 +134,17 @@ func TestAutoHeal_CanRestart_MixedTimestamps(t *testing.T) {
 
 	// Record 4 recent restarts (inside window)
 	for range 4 {
-		job.RecordRestartExported("container-1")
+		job.recordRestart("container-1")
 	}
 
 	// Should still be allowed (only 4 recent, limit is 5)
-	require.True(t, job.CanRestartExported("container-1", 5, 30*time.Minute))
+	require.True(t, job.canRestart("container-1", 5, 30*time.Minute))
 
 	// Add one more recent restart
-	job.RecordRestartExported("container-1")
+	job.recordRestart("container-1")
 
 	// Now should be blocked (5 recent)
-	require.False(t, job.CanRestartExported("container-1", 5, 30*time.Minute))
+	require.False(t, job.canRestart("container-1", 5, 30*time.Minute))
 }
 
 func TestAutoHeal_CanRestart_DifferentContainers(t *testing.T) {
@@ -152,14 +152,14 @@ func TestAutoHeal_CanRestart_DifferentContainers(t *testing.T) {
 
 	// Fill up container-1
 	for range 5 {
-		job.RecordRestartExported("container-1")
+		job.recordRestart("container-1")
 	}
 
 	// container-1 should be blocked
-	require.False(t, job.CanRestartExported("container-1", 5, 30*time.Minute))
+	require.False(t, job.canRestart("container-1", 5, 30*time.Minute))
 
 	// container-2 should still be allowed
-	require.True(t, job.CanRestartExported("container-2", 5, 30*time.Minute))
+	require.True(t, job.canRestart("container-2", 5, 30*time.Minute))
 }
 
 func TestAutoHeal_Schedule_Default(t *testing.T) {
@@ -186,15 +186,15 @@ func TestAutoHeal_ResetRestartTracking(t *testing.T) {
 
 	// Fill up container-1
 	for range 5 {
-		job.RecordRestartExported("container-1")
+		job.recordRestart("container-1")
 	}
-	require.False(t, job.CanRestartExported("container-1", 5, 30*time.Minute))
+	require.False(t, job.canRestart("container-1", 5, 30*time.Minute))
 
 	// Reset tracking
 	job.ResetRestartTracking()
 
 	// Should be allowed again
-	require.True(t, job.CanRestartExported("container-1", 5, 30*time.Minute))
+	require.True(t, job.canRestart("container-1", 5, 30*time.Minute))
 }
 
 func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {

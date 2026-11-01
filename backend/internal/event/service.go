@@ -444,33 +444,31 @@ func (s *EventService) DeleteOldEvents(ctx context.Context, olderThan time.Durat
 	return err
 }
 
-func (s *EventService) LogContainerEvent(ctx context.Context, eventType EventType, containerID, containerName, userID, username, environmentID string, metadata database.JSON) error {
-	return s.logResourceEvent(ctx, eventType, "container", containerID, containerName, userID, username, environmentID, metadata)
+type ResourceEvent struct {
+	Type          EventType
+	ResourceType  string
+	ResourceID    string
+	ResourceName  string
+	UserID        string
+	Username      string
+	EnvironmentID string
+	Metadata      database.JSON
 }
 
-func (s *EventService) LogImageEvent(ctx context.Context, eventType EventType, imageID, imageName, userID, username, environmentID string, metadata database.JSON) error {
-	return s.logResourceEvent(ctx, eventType, "image", imageID, imageName, userID, username, environmentID, metadata)
-}
-
-func (s *EventService) LogProjectEvent(ctx context.Context, eventType EventType, projectID, projectName, userID, username, environmentID string, metadata database.JSON) error {
-	return s.logResourceEvent(ctx, eventType, "project", projectID, projectName, userID, username, environmentID, metadata)
-}
-
-// logResourceEvent records a successful operation on a resource using its eventDefinitions entry.
-func (s *EventService) logResourceEvent(ctx context.Context, eventType EventType, resourceType, resourceID, resourceName, userID, username, environmentID string, metadata database.JSON) error {
-	title, description, severity := describeEvent(eventType, resourceType, resourceName)
+func (s *EventService) LogResourceEvent(ctx context.Context, e ResourceEvent) error {
+	title, description, severity := describeEvent(e.Type, e.ResourceType, e.ResourceName)
 	_, err := s.CreateEvent(ctx, CreateEventRequest{
-		Type:          eventType,
+		Type:          e.Type,
 		Severity:      severity,
 		Title:         title,
 		Description:   description,
-		ResourceType:  new(resourceType),
-		ResourceID:    new(resourceID),
-		ResourceName:  new(resourceName),
-		UserID:        new(userID),
-		Username:      new(username),
-		EnvironmentID: new(environmentID),
-		Metadata:      metadata,
+		ResourceType:  new(e.ResourceType),
+		ResourceID:    new(e.ResourceID),
+		ResourceName:  new(e.ResourceName),
+		UserID:        new(e.UserID),
+		Username:      new(e.Username),
+		EnvironmentID: new(e.EnvironmentID),
+		Metadata:      e.Metadata,
 	})
 	return err
 }
@@ -489,15 +487,7 @@ func (s *EventService) LogUserEvent(ctx context.Context, eventType EventType, us
 	return err
 }
 
-func (s *EventService) LogVolumeEvent(ctx context.Context, eventType EventType, volumeID, volumeName, userID, username, environmentID string, metadata database.JSON) error {
-	return s.logResourceEvent(ctx, eventType, "volume", volumeID, volumeName, userID, username, environmentID, metadata)
-}
-
-func (s *EventService) LogNetworkEvent(ctx context.Context, eventType EventType, networkID, networkName, userID, username, environmentID string, metadata database.JSON) error {
-	return s.logResourceEvent(ctx, eventType, "network", networkID, networkName, userID, username, environmentID, metadata)
-}
-
-func (s *EventService) LogErrorEvent(ctx context.Context, eventType EventType, resourceType, resourceID, resourceName, userID, username, environmentID string, err error, metadata database.JSON) {
+func (s *EventService) LogErrorEvent(ctx context.Context, e ResourceEvent, err error) {
 	if err == nil {
 		return
 	}
@@ -506,28 +496,28 @@ func (s *EventService) LogErrorEvent(ctx context.Context, eventType EventType, r
 	logCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 
-	eventMetadata := cloneEventMetadata(metadata)
+	eventMetadata := cloneEventMetadata(e.Metadata)
 	eventMetadata["error"] = err.Error()
 
 	titleCaser := cases.Title(language.English)
-	title := titleCaser.String(resourceType) + " error"
-	if resourceName != "" {
-		title = fmt.Sprintf("%s error: %s", titleCaser.String(resourceType), resourceName)
+	title := titleCaser.String(e.ResourceType) + " error"
+	if e.ResourceName != "" {
+		title = fmt.Sprintf("%s error: %s", titleCaser.String(e.ResourceType), e.ResourceName)
 	}
 
-	description := fmt.Sprintf("Failed to perform operation on %s: %s", resourceType, err.Error())
+	description := fmt.Sprintf("Failed to perform operation on %s: %s", e.ResourceType, err.Error())
 
 	_, logErr := s.CreateEvent(logCtx, CreateEventRequest{
-		Type:          eventType,
+		Type:          e.Type,
 		Severity:      EventSeverityError,
 		Title:         title,
 		Description:   description,
-		ResourceType:  new(resourceType),
-		ResourceID:    new(resourceID),
-		ResourceName:  new(resourceName),
-		UserID:        new(userID),
-		Username:      new(username),
-		EnvironmentID: new(environmentID),
+		ResourceType:  new(e.ResourceType),
+		ResourceID:    new(e.ResourceID),
+		ResourceName:  new(e.ResourceName),
+		UserID:        new(e.UserID),
+		Username:      new(e.Username),
+		EnvironmentID: new(e.EnvironmentID),
 		Metadata:      eventMetadata,
 	})
 	if logErr != nil {

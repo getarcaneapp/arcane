@@ -249,7 +249,11 @@ func (s *GitOpsSyncService) RegisterWorkflows(engine *flow.Engine) error {
 				if runningErr := jobcontext.Progress(ctx, types.TargetOutcome{ID: target.SyncID, Status: types.RunStatusRunning}); runningErr != nil {
 					return nil, runningErr
 				}
-				result, err := s.PerformSync(ctx, target.EnvironmentID, target.SyncID, types.SystemUser)
+				result, err := s.PerformSync(ctx, SyncRequest{
+					EnvironmentID: target.EnvironmentID,
+					SyncID:        target.SyncID,
+					Actor:         types.SystemUser,
+				})
 				if err != nil {
 					slog.ErrorContext(ctx, "gitops auto-sync run failed", "syncId", target.SyncID, "error", err)
 					return nil, err
@@ -569,7 +573,11 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 	})
 
 	// The sync exists even when its first run fails, so that failure can be retried rather than failing creation.
-	if _, syncErr := s.PerformSync(ctx, syncRecord.EnvironmentID, syncRecord.ID, actor); syncErr != nil {
+	if _, syncErr := s.PerformSync(ctx, SyncRequest{
+		EnvironmentID: syncRecord.EnvironmentID,
+		SyncID:        syncRecord.ID,
+		Actor:         actor,
+	}); syncErr != nil {
 		slog.ErrorContext(ctx, "Failed to perform initial sync after creation", "syncId", syncRecord.ID, "error", syncErr)
 	}
 	// The initial sync above already ran, so the job needs no kick.
@@ -816,16 +824,17 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 	return nil
 }
 
-func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id string, actor types.Actor) (*types.GitOpsSyncResult, error) {
-	return s.performSyncAdmitted(ctx, environmentID, id, actor, false)
+type SyncRequest struct {
+	EnvironmentID string
+	SyncID        string
+	Actor         types.Actor
+	BackupAdopt   bool
 }
 
-// performSyncAdmitted runs one sync under its admission lease and dispatches by mode. backupAdopt makes a
-// backup replace whatever the remote holds in its backup directory.
-func (s *GitOpsSyncService) performSyncAdmitted(ctx context.Context, environmentID, id string, actor types.Actor, backupAdopt bool) (syncResult *types.GitOpsSyncResult, syncErr error) {
+func (s *GitOpsSyncService) PerformSync(ctx context.Context, req SyncRequest) (syncResult *types.GitOpsSyncResult, syncErr error) {
 	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "gitops.sync", trace.WithAttributes(
-		attribute.String("arcane.gitops.sync_id", id),
-		attribute.String("arcane.environment.id", environmentID),
+		attribute.String("arcane.gitops.sync_id", req.SyncID),
+		attribute.String("arcane.environment.id", req.EnvironmentID),
 	))
 	counted := false
 	defer func() {
@@ -839,12 +848,12 @@ func (s *GitOpsSyncService) performSyncAdmitted(ctx context.Context, environment
 	}()
 
 	// Overlapping runs of one sync (schedule, kick, manual, webhook) must not race the clone and redeploy.
-	lease, admitted, err := s.jobs.TryAcquire(ctx, id)
+	lease, admitted, err := s.jobs.TryAcquire(ctx, req.SyncID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to admit GitOps sync: %w", err)
 	}
 	if !admitted {
-		slog.InfoContext(ctx, "GitOps sync already in progress; skipping", "syncId", id)
+		slog.InfoContext(ctx, "GitOps sync already in progress; skipping", "syncId", req.SyncID)
 		span.SetAttributes(attribute.Bool("arcane.gitops.skipped", true))
 		return &types.GitOpsSyncResult{Success: false, Message: "sync already in progress", SyncedAt: time.Now()}, nil
 	}
@@ -854,7 +863,7 @@ func (s *GitOpsSyncService) performSyncAdmitted(ctx context.Context, environment
 	syncCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
 	defer cancel()
 
-	syncRecord, err := s.GetSyncByID(syncCtx, environmentID, id)
+	syncRecord, err := s.GetSyncByID(syncCtx, req.EnvironmentID, req.SyncID)
 	if err != nil {
 		return nil, err
 	}
@@ -873,10 +882,10 @@ func (s *GitOpsSyncService) performSyncAdmitted(ctx context.Context, environment
 	}
 
 	if syncRecord.Mode == types.GitOpsSyncModeBackup {
-		return s.backup.Perform(syncCtx, syncRecord, actor, result, backupAdopt)
+		return s.backup.Perform(syncCtx, syncRecord, req.Actor, result, req.BackupAdopt)
 	}
 
-	return s.sync.Run(ctx, defaultGitSyncTimeout, syncRecord, actor, result)
+	return s.sync.Run(ctx, defaultGitSyncTimeout, syncRecord, req.Actor, result)
 }
 
 func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id string) (*types.GitOpsSyncStatus, error) {
@@ -1161,7 +1170,12 @@ func (s *GitOpsSyncService) ResolveBackupConflict(ctx context.Context, environme
 	if err != nil {
 		return nil, err
 	}
-	return s.performSyncAdmitted(ctx, syncRecord.EnvironmentID, syncRecord.ID, actor, true)
+	return s.PerformSync(ctx, SyncRequest{
+		EnvironmentID: syncRecord.EnvironmentID,
+		SyncID:        syncRecord.ID,
+		Actor:         actor,
+		BackupAdopt:   true,
+	})
 }
 
 // SubscribeProjectFileChanges marks backups pending on save and runs them after a debounce when auto backup is on.
@@ -1193,7 +1207,11 @@ func (s *GitOpsSyncService) SubscribeProjectFileChanges(ctx context.Context) {
 				}
 				go func() {
 					defer utils.RecoverToError(nil, "git backup after save", "syncId", syncID, "projectId", projectID)
-					if _, err := s.PerformSync(runCtx, environmentID, syncID, types.SystemUser); err != nil {
+					if _, err := s.PerformSync(runCtx, SyncRequest{
+						EnvironmentID: environmentID,
+						SyncID:        syncID,
+						Actor:         types.SystemUser,
+					}); err != nil {
 						slog.ErrorContext(runCtx, "git backup after save failed", "syncId", syncID, "error", err)
 					}
 				}()

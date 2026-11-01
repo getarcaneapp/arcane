@@ -88,7 +88,7 @@ func newAutoUpdateCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, opts.force || opts.dryRun, "Are you sure you want to auto-update Podman containers?")
+			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: "Are you sure you want to auto-update Podman containers?", Force: opts.force || opts.dryRun})
 			if confirmationErr != nil || !confirmed {
 				return confirmationErr
 			}

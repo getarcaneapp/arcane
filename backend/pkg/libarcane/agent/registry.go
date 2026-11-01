@@ -316,7 +316,9 @@ func (r *TunnelRegistry) CleanupStale(ctx context.Context, maxAge time.Duration)
 func (r *TunnelRegistry) Stop(ctx context.Context) error {
 	r.stopped.Store(true)
 	fallback := r.tunnels.Values()
-	removed, err := r.tunnels.Drain(ctx, "stop agent tunnel registry")
+	removed, err := r.tunnels.RemoveWhere(ctx, "stop agent tunnel registry", func(string, *AgentTunnel) bool {
+		return true
+	})
 	if err != nil {
 		removed = fallback
 	}

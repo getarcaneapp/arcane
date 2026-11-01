@@ -228,15 +228,32 @@ func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options
 		return dockerClient.NetworkCreate(ctx, name, options)
 	})
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeNetworkError,
+			ResourceType:  "network",
+			ResourceName:  name,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "create", "driver": options.Driver},
+		}, err)
 		return nil, fmt.Errorf("failed to create network: %w", err)
 	}
 	s.topologyGen.Add(1)
 
-	if logErr := s.eventService.LogNetworkEvent(ctx, event.EventTypeNetworkCreate, response.ID, name, user.ID, user.Username, "0", database.JSON{
-		"action": "create",
-		"driver": options.Driver,
-		"name":   name,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeNetworkCreate,
+		ResourceType:  "network",
+		ResourceID:    response.ID,
+		ResourceName:  name,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action": "create",
+			"driver": options.Driver,
+			"name":   name,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log network creation action", "error", logErr)
 	}
@@ -257,14 +274,32 @@ func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user type
 	if _, networkRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkRemoveResult, error) {
 		return dockerClient.NetworkRemove(ctx, id, client.NetworkRemoveOptions{})
 	}); networkRemoveErr != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", id, networkName, user.ID, user.Username, "0", networkRemoveErr, database.JSON{"action": "delete"})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeNetworkError,
+			ResourceType:  "network",
+			ResourceID:    id,
+			ResourceName:  networkName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "delete"},
+		}, networkRemoveErr)
 		return fmt.Errorf("failed to remove network: %w", networkRemoveErr)
 	}
 	s.topologyGen.Add(1)
 
-	if logErr := s.eventService.LogNetworkEvent(ctx, event.EventTypeNetworkDelete, id, networkName, user.ID, user.Username, "0", database.JSON{
-		"action":    "delete",
-		"networkId": id,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeNetworkDelete,
+		ResourceType:  "network",
+		ResourceID:    id,
+		ResourceName:  networkName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":    "delete",
+			"networkId": id,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log network delete action", "error", logErr)
 	}
@@ -300,29 +335,35 @@ func (s *NetworkService) ConnectContainer(ctx context.Context, networkID string,
 			},
 		})
 	}); networkConnectErr != nil {
-		s.eventService.LogErrorEvent(
-			ctx,
-			event.EventTypeNetworkError,
-			"network",
-			networkID,
-			"",
-			user.ID,
-			user.Username,
-			"0",
-			networkConnectErr,
-			database.JSON{
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeNetworkError,
+			ResourceType:  "network",
+			ResourceID:    networkID,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
 				"action":      "connect",
 				"containerId": req.ContainerID,
 			},
-		)
+		}, networkConnectErr)
 		return fmt.Errorf("failed to connect container to network: %w", networkConnectErr)
 	}
 	s.topologyGen.Add(1)
 
-	if logErr := s.eventService.LogNetworkEvent(ctx, event.EventTypeNetworkConnect, networkID, networkID, user.ID, user.Username, "0", database.JSON{
-		"action":      "connect",
-		"networkId":   networkID,
-		"containerId": req.ContainerID,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeNetworkConnect,
+		ResourceType:  "network",
+		ResourceID:    networkID,
+		ResourceName:  networkID,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":      "connect",
+			"networkId":   networkID,
+			"containerId": req.ContainerID,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log network connect action", "error", logErr)
 	}
@@ -338,30 +379,36 @@ func (s *NetworkService) DisconnectContainer(ctx context.Context, networkID stri
 			Force:     req.Force,
 		})
 	}); networkDisconnectErr != nil {
-		s.eventService.LogErrorEvent(
-			ctx,
-			event.EventTypeNetworkError,
-			"network",
-			networkID,
-			"",
-			user.ID,
-			user.Username,
-			"0",
-			networkDisconnectErr,
-			database.JSON{
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeNetworkError,
+			ResourceType:  "network",
+			ResourceID:    networkID,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
 				"action":      "disconnect",
 				"containerId": req.ContainerID,
 			},
-		)
+		}, networkDisconnectErr)
 		return fmt.Errorf("failed to disconnect container from network: %w", networkDisconnectErr)
 	}
 	s.topologyGen.Add(1)
 
-	if logErr := s.eventService.LogNetworkEvent(ctx, event.EventTypeNetworkDisconnect, networkID, networkID, user.ID, user.Username, "0", database.JSON{
-		"action":      "disconnect",
-		"networkId":   networkID,
-		"containerId": req.ContainerID,
-		"force":       req.Force,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeNetworkDisconnect,
+		ResourceType:  "network",
+		ResourceID:    networkID,
+		ResourceName:  networkID,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":      "disconnect",
+			"networkId":   networkID,
+			"containerId": req.ContainerID,
+			"force":       req.Force,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log network disconnect action", "error", logErr)
 	}
@@ -378,9 +425,17 @@ func (s *NetworkService) PruneNetworks(ctx context.Context) (*network.PruneRepor
 	}
 	s.topologyGen.Add(1)
 
-	if logErr := s.eventService.LogNetworkEvent(ctx, event.EventTypeNetworkDelete, "", "bulk_prune", types.SystemUser.ID, types.SystemUser.Username, "0", database.JSON{
-		"action":          "prune",
-		"networksDeleted": len(report.Report.NetworksDeleted),
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeNetworkDelete,
+		ResourceType:  "network",
+		ResourceName:  "bulk_prune",
+		UserID:        types.SystemUser.ID,
+		Username:      types.SystemUser.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":          "prune",
+			"networksDeleted": len(report.Report.NetworksDeleted),
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log network prune action", "error", logErr)
 	}

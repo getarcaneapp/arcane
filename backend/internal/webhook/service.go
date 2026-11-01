@@ -459,7 +459,7 @@ func (s *WebhookService) resolveWebhookTargetName(ctx context.Context, wh *Webho
 			}
 			return wh.TargetRef
 		}
-		name, err := s.containerService.GetContainerNameByID(ctx, wh.TargetID)
+		name, err := s.containerService.GetContainerNameByReference(ctx, wh.TargetID)
 		return kit.Ternary(err != nil, "", name)
 	case WebhookTargetTypeProject:
 		var localProject project.Project
@@ -887,7 +887,11 @@ func (s *WebhookService) executeGitOpsWebhookAction(ctx context.Context, wh *Web
 		return nil, ErrWebhookInvalidAction
 	}
 
-	if _, err := s.gitOpsSyncService.PerformSync(ctx, wh.EnvironmentID, wh.TargetID, types.SystemUser); err != nil {
+	if _, err := s.gitOpsSyncService.PerformSync(ctx, gitops.SyncRequest{
+		EnvironmentID: wh.EnvironmentID,
+		SyncID:        wh.TargetID,
+		Actor:         types.SystemUser,
+	}); err != nil {
 		return nil, s.wrapWebhookActionError(ctx, wh, "gitops", actionType, err)
 	}
 

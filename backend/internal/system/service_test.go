@@ -257,7 +257,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	status, err := service.backup.SetRecoveryKey(t.Context(), "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN")
 	require.NoError(t, err)
 	require.True(t, status.Configured)
-	storedKey, err := recoveryKeys.Get(t.Context())
+	storedKey, err := recoveryKeys.Get(t.Context(), backup.RecoveryKeyConfigID)
 	require.NoError(t, err)
 	require.Equal(t, "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN", storedKey)
 

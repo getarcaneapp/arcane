@@ -50,6 +50,7 @@ const (
 	// SystemAdmissionID is the one admission key system and system-managed volume backups share.
 	SystemAdmissionID   = "system"
 	RecoveryKeyConfigID = "system-recovery"
+	RunKeyPrefix        = "run:"
 	// VolumeRoot is the S3 prefix under which each instance keeps its volume backup repository.
 	VolumeRoot = "arcane-volume-backups"
 
@@ -710,40 +711,14 @@ func (s *RecoveryKeyStore) Configured(ctx context.Context) (bool, error) {
 	return count > 0, nil
 }
 
-// Get returns the decrypted recovery key or ErrRecoveryKeyNotConfigured.
-func (s *RecoveryKeyStore) Get(ctx context.Context) (string, error) {
-	return s.load(ctx, RecoveryKeyConfigID)
-}
-
-// Set validates and stores the recovery key, encrypted.
-func (s *RecoveryKeyStore) Set(ctx context.Context, recoveryKey string) error {
-	return s.save(ctx, RecoveryKeyConfigID, recoveryKey)
-}
-
-// HoldRunKey keeps a recovery key entered for one backup run, encrypted, until ReleaseRunKey, so the run can
-// resume after a restart without it ever entering the run's workflow payload.
-func (s *RecoveryKeyStore) HoldRunKey(ctx context.Context, runID, recoveryKey string) error {
-	return s.save(ctx, "run:"+runID, recoveryKey)
-}
-
-// RunKey returns the key held for a run, or "" when none is.
-func (s *RecoveryKeyStore) RunKey(ctx context.Context, runID string) (string, error) {
-	key, err := s.load(ctx, "run:"+runID)
-	if errors.Is(err, ErrRecoveryKeyNotConfigured) {
-		return "", nil
-	}
-	return key, err
-}
-
-// ReleaseRunKey forgets the key held for a run.
-func (s *RecoveryKeyStore) ReleaseRunKey(ctx context.Context, runID string) error {
-	if err := s.db.WithContext(ctx).Where("id = ?", "run:"+runID).Delete(&SystemBackupRecoveryConfig{}).Error; err != nil {
-		return fmt.Errorf("failed to release backup run recovery key: %w", err)
+func (s *RecoveryKeyStore) Delete(ctx context.Context, id string) error {
+	if err := s.db.WithContext(ctx).Where("id = ?", id).Delete(&SystemBackupRecoveryConfig{}).Error; err != nil {
+		return fmt.Errorf("failed to delete recovery key: %w", err)
 	}
 	return nil
 }
 
-func (s *RecoveryKeyStore) load(ctx context.Context, id string) (string, error) {
+func (s *RecoveryKeyStore) Get(ctx context.Context, id string) (string, error) {
 	var config SystemBackupRecoveryConfig
 	if err := s.db.WithContext(ctx).Where("id = ? AND encrypted_recovery_key <> ''", id).First(&config).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -758,7 +733,7 @@ func (s *RecoveryKeyStore) load(ctx context.Context, id string) (string, error) 
 	return key, nil
 }
 
-func (s *RecoveryKeyStore) save(ctx context.Context, id, recoveryKey string) error {
+func (s *RecoveryKeyStore) Set(ctx context.Context, id, recoveryKey string) error {
 	if err := ValidateRecoveryKey(recoveryKey); err != nil {
 		return err
 	}

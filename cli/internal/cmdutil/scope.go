@@ -217,7 +217,7 @@ func RunEnvironments(cmd *cobra.Command, args []string, run func(*cobra.Command,
 	}
 	skip, _ := cmd.Flags().GetBool("force")
 	if mutation && !skip {
-		confirmed, confirmErr := Confirm(cmd, fmt.Sprintf("%s in all %d environments?", cmd.Short, len(environments)))
+		confirmed, confirmErr := ConfirmOrCancel(cmd, ConfirmOptions{Label: fmt.Sprintf("%s in all %d environments?", cmd.Short, len(environments))})
 		if confirmErr != nil {
 			return confirmErr
 		}

@@ -377,10 +377,6 @@ func (s *SystemService) GetDockerInfo(ctx context.Context) (types.DockerInfo, er
 	}, nil
 }
 
-func (s *SystemService) GetDiskUsagePath(ctx context.Context) string {
-	return cmp.Or(s.settingsService.GetSettingsConfig().DiskUsagePath.Value, "/")
-}
-
 const dockerHostMemoryCacheTTL = 30 * time.Second
 
 type dockerHostMemoryInfo struct {

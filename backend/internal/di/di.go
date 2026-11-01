@@ -224,12 +224,12 @@ var ServiceOptions = fx.Options(
 		},
 		func(service *s3domain.S3DestinationService, localEnvironment *environment.EnvironmentService) *s3domain.Module {
 			return s3domain.New(service, func(ctx context.Context) {
-				localEnvironment.QueueRemoteSync(ctx, "S3 destinations", localEnvironment.SyncS3DestinationsToRemoteEnvironments)
+				localEnvironment.QueueRemoteSync(ctx, "S3 destinations", localEnvironment.SyncS3DestinationsToEnvironment)
 			})
 		},
 		func(service *registry.ContainerRegistryService, localEnvironment *environment.EnvironmentService) *registry.Module {
 			return registry.New(service, func(ctx context.Context) {
-				localEnvironment.QueueRemoteSync(ctx, "registries", localEnvironment.SyncRegistriesToRemoteEnvironments)
+				localEnvironment.QueueRemoteSync(ctx, "registries", localEnvironment.SyncRegistriesToEnvironment)
 			})
 		},
 		func(service *auth.AuthService, userService *user.UserService, settingsService *settings.SettingsService, passkeyService *passkey.PasskeyService) *auth.Module {

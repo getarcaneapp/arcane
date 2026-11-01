@@ -66,22 +66,22 @@ func AllowPrompt(cmd *cobra.Command) bool {
 }
 
 // Declining prints Cancelled to stderr and returns false without an error.
-func ConfirmOrCancel(cmd *cobra.Command, force bool, label string) (bool, error) {
+type ConfirmOptions struct {
+	Label string
+	Force bool
+}
+
+func ConfirmOrCancel(cmd *cobra.Command, opts ConfirmOptions) (bool, error) {
 	app, _ := runtime.From(cmd.Context())
-	if force || AssumeYes(cmd) || app != nil && app.AllConfirmed {
+	if opts.Force || AssumeYes(cmd) || app != nil && app.AllConfirmed {
 		return true, nil
 	}
 	if JSONOutputEnabled(cmd) {
-		return false, fmt.Errorf("confirmation required: re-run with --yes (%s)", label)
+		return false, fmt.Errorf("confirmation required: re-run with --yes (%s)", opts.Label)
 	}
-	confirmed, err := output.Confirm(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr(), label)
+	confirmed, err := output.Confirm(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr(), opts.Label)
 	if err == nil && !confirmed {
 		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled")
 	}
 	return confirmed, err
-}
-
-// Confirm prompts through ConfirmOrCancel unless invocation consent is already present.
-func Confirm(cmd *cobra.Command, label string) (bool, error) {
-	return ConfirmOrCancel(cmd, false, label)
 }

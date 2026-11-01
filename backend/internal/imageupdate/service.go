@@ -275,15 +275,23 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 
 	if result, ok := digestPinnedImageUpdateResult(imageRef, activityID, int(time.Since(startTime).Milliseconds())).Get(); ok {
 		s.recordDigestPinnedSkip(ctx, activityID, imageRef, result, new(100))
-		if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageScan, "", imageRef, types.SystemUser.ID, types.SystemUser.Username, "0", database.JSON{
-			"action":         "check_update",
-			"imageRef":       imageRef,
-			"hasUpdate":      false,
-			"updateType":     UpdateTypeDigest,
-			"currentDigest":  result.CurrentDigest,
-			"latestDigest":   result.LatestDigest,
-			"responseTimeMs": result.ResponseTimeMs,
-			"skippedReason":  "digest_pinned",
+		if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageScan,
+			ResourceType:  "image",
+			ResourceName:  imageRef,
+			UserID:        types.SystemUser.ID,
+			Username:      types.SystemUser.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
+				"action":         "check_update",
+				"imageRef":       imageRef,
+				"hasUpdate":      false,
+				"updateType":     UpdateTypeDigest,
+				"currentDigest":  result.CurrentDigest,
+				"latestDigest":   result.LatestDigest,
+				"responseTimeMs": result.ResponseTimeMs,
+				"skippedReason":  "digest_pinned",
+			},
 		}); logErr != nil {
 			slog.WarnContext(ctx, "Failed to log digest-pinned image update check event", "imageRef", imageRef, "error", logErr.Error())
 		}
@@ -329,11 +337,19 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 			ResponseTimeMs: int(time.Since(startTime).Milliseconds()),
 			ActivityID:     mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 		}
-		if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageScan, "", imageRef, types.SystemUser.ID, types.SystemUser.Username, "0", database.JSON{
-			"action":    "check_update",
-			"imageRef":  imageRef,
-			"error":     err.Error(),
-			"checkType": "digest",
+		if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageScan,
+			ResourceType:  "image",
+			ResourceName:  imageRef,
+			UserID:        types.SystemUser.ID,
+			Username:      types.SystemUser.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
+				"action":    "check_update",
+				"imageRef":  imageRef,
+				"error":     err.Error(),
+				"checkType": "digest",
+			},
 		}); logErr != nil {
 			slog.WarnContext(ctx, "Failed to log image update check error event", "imageRef", imageRef, "error", logErr.Error())
 		}
@@ -353,14 +369,22 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	if digestResult.UpdateType == UpdateTypeLocal {
 		s.appendImageUpdateActivityMessage(ctx, activityID, types.ActivityMessageLevelInfo, imageRef+" — local build, registry check skipped", new(100), "Skipping image update check")
 	}
-	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageScan, "", imageRef, types.SystemUser.ID, types.SystemUser.Username, "0", database.JSON{
-		"action":         "check_update",
-		"imageRef":       imageRef,
-		"hasUpdate":      digestResult.HasUpdate,
-		"updateType":     digestResult.UpdateType,
-		"currentDigest":  digestResult.CurrentDigest,
-		"latestDigest":   digestResult.LatestDigest,
-		"responseTimeMs": digestResult.ResponseTimeMs,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeImageScan,
+		ResourceType:  "image",
+		ResourceName:  imageRef,
+		UserID:        types.SystemUser.ID,
+		Username:      types.SystemUser.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":         "check_update",
+			"imageRef":       imageRef,
+			"hasUpdate":      digestResult.HasUpdate,
+			"updateType":     digestResult.UpdateType,
+			"currentDigest":  digestResult.CurrentDigest,
+			"latestDigest":   digestResult.LatestDigest,
+			"responseTimeMs": digestResult.ResponseTimeMs,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "Failed to log image update check event", "imageRef", imageRef, "error", logErr.Error())
 	}
@@ -668,10 +692,18 @@ func (s *ImageUpdateService) inspectLocalImageSnapshot(ctx context.Context, imag
 func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID string) (*types.ImageUpdateResponse, error) {
 	imageRef, err := s.getImageRefByID(ctx, imageID)
 	if err != nil {
-		if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageScan, imageID, "", types.SystemUser.ID, types.SystemUser.Username, "0", database.JSON{
-			"action":  "check_update_by_id",
-			"imageID": imageID,
-			"error":   err.Error(),
+		if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageScan,
+			ResourceType:  "image",
+			ResourceID:    imageID,
+			UserID:        types.SystemUser.ID,
+			Username:      types.SystemUser.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
+				"action":  "check_update_by_id",
+				"imageID": imageID,
+				"error":   err.Error(),
+			},
 		}); logErr != nil {
 			slog.WarnContext(ctx, "Failed to log image update check by ID error event", "imageId", imageID, "error", logErr.Error())
 		}

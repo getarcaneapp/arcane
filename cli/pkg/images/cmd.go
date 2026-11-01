@@ -236,7 +236,7 @@ func newRemoveCmd() *cobra.Command {
 
 			log.Debugf("Removing image from: %s", path)
 
-			confirmed, confirmErr := cmdutil.ConfirmOrCancel(cmd, opts.force, fmt.Sprintf("Are you sure you want to remove image %s?", args[0]))
+			confirmed, confirmErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: fmt.Sprintf("Are you sure you want to remove image %s?", args[0]), Force: opts.force})
 			if confirmErr != nil || !confirmed {
 				return confirmErr
 			}
@@ -277,7 +277,7 @@ func newPullCmd() *cobra.Command {
 
 			requestBody := types.ImagePullOptions{ImageName: imageName}
 
-			resp, err := c.Post(cmd.Context(), path, requestBody)
+			resp, err := c.Request(cmd.Context(), http.MethodPost, path, requestBody)
 			if err != nil {
 				return fmt.Errorf("failed to pull image: %w", err)
 			}
@@ -319,7 +319,7 @@ func newPruneCmd() *cobra.Command {
 				"dangling": opts.dangling,
 			}
 
-			confirmed, confirmErr := cmdutil.ConfirmOrCancel(cmd, false, "Are you sure you want to remove unused images?")
+			confirmed, confirmErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: "Are you sure you want to remove unused images?"})
 			if confirmErr != nil || !confirmed {
 				return confirmErr
 			}

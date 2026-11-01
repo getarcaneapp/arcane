@@ -161,17 +161,12 @@ func configAttributes(cfg *settings.OidcConfig) []attribute.KeyValue {
 	}
 }
 
-// GetMobileRedirectAllowlist returns the configured list of acceptable mobile OAuth redirect URIs.
-func (s *OidcService) GetMobileRedirectAllowlist(ctx context.Context) []string {
-	return kit.TrimNonEmpty(strings.Split(s.settingsService.GetStringSetting(ctx, "oidcMobileRedirectUris"), ","))
-}
-
 // ValidateMobileRedirectURI requires an exact allowlist match; partial matches would allow open redirects.
 func (s *OidcService) ValidateMobileRedirectURI(ctx context.Context, uri string) error {
 	if uri == "" {
 		return errors.New("mobile redirect URI is empty")
 	}
-	if slices.Contains(s.GetMobileRedirectAllowlist(ctx), uri) {
+	if slices.Contains(kit.TrimNonEmpty(strings.Split(s.settingsService.GetStringSetting(ctx, "oidcMobileRedirectUris"), ",")), uri) {
 		return nil
 	}
 	return fmt.Errorf("mobile redirect URI %q is not in the configured allowlist", uri)

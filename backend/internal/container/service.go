@@ -191,11 +191,20 @@ func (s *ContainerService) pullRedeployImage(
 		Credentials: credentials,
 	})
 	if pullErr != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", pullErr, database.JSON{
-			"action": action,
-			"step":   kit.Ternary(errors.Is(pullErr, context.DeadlineExceeded), "pull_image_timeout", "pull_image"),
-			"image":  imageName,
-		})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeContainerError,
+			ResourceType:  "container",
+			ResourceID:    containerID,
+			ResourceName:  containerName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
+				"action": action,
+				"step":   kit.Ternary(errors.Is(pullErr, context.DeadlineExceeded), "pull_image_timeout", "pull_image"),
+				"image":  imageName,
+			},
+		}, pullErr)
 	}
 	return pullErr
 }
@@ -306,11 +315,20 @@ func (s *ContainerService) restoreContainerAfterRedeployFailure(
 		if _, startErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
 			return dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
 		}); startErr != nil {
-			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", startErr, database.JSON{
-				"action":     "redeploy",
-				"step":       "restore_start_original",
-				"failedStep": failedStep,
-			})
+			s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+				Type:          event.EventTypeContainerError,
+				ResourceType:  "container",
+				ResourceID:    containerID,
+				ResourceName:  containerName,
+				UserID:        user.ID,
+				Username:      user.Username,
+				EnvironmentID: "0",
+				Metadata: database.JSON{
+					"action":     "redeploy",
+					"step":       "restore_start_original",
+					"failedStep": failedStep,
+				},
+			}, startErr)
 		}
 	}
 
@@ -321,11 +339,20 @@ func (s *ContainerService) restoreContainerAfterRedeployFailure(
 	if _, renameErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRenameResult, error) {
 		return dockerClient.ContainerRename(ctx, containerID, client.ContainerRenameOptions{NewName: containerName})
 	}); renameErr != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, backupName, user.ID, user.Username, "0", renameErr, database.JSON{
-			"action":     "redeploy",
-			"step":       "restore_name",
-			"failedStep": failedStep,
-		})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeContainerError,
+			ResourceType:  "container",
+			ResourceID:    containerID,
+			ResourceName:  backupName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
+				"action":     "redeploy",
+				"step":       "restore_name",
+				"failedStep": failedStep,
+			},
+		}, renameErr)
 		return
 	}
 	s.clearRedeployJournal(ctx, containerID)
@@ -351,11 +378,20 @@ func (s *ContainerService) renameToRedeployBackup(ctx context.Context, container
 	if _, renameErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRenameResult, error) {
 		return dockerClient.ContainerRename(ctx, containerID, client.ContainerRenameOptions{NewName: backupName})
 	}); renameErr != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", renameErr, database.JSON{
-			"action":     "redeploy",
-			"step":       "rename_old",
-			"backupName": backupName,
-		})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeContainerError,
+			ResourceType:  "container",
+			ResourceID:    containerID,
+			ResourceName:  containerName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
+				"action":     "redeploy",
+				"step":       "rename_old",
+				"backupName": backupName,
+			},
+		}, renameErr)
 		s.clearRedeployJournal(context.WithoutCancel(ctx), containerID)
 		return fmt.Errorf("failed to rename existing container: %w", renameErr)
 	}
@@ -395,14 +431,31 @@ func (s *ContainerService) runContainerLifecycleAction(ctx context.Context, cont
 	}
 	maps.Copy(metadata, cfg.metadata)
 
-	if logErr := s.eventService.LogContainerEvent(ctx, cfg.eventType, containerID, "name", user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          cfg.eventType,
+		ResourceType:  "container",
+		ResourceID:    containerID,
+		ResourceName:  "name",
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log container action", "action", cfg.action, "error", logErr)
 	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("container", containerID, "")()
 	err = cfg.runContainerAction(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{"action": cfg.action})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeContainerError,
+			ResourceType:  "container",
+			ResourceID:    containerID,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": cfg.action},
+		}, err)
 	}
 	return err
 }
@@ -507,7 +560,15 @@ func (s *ContainerService) CommitContainer(ctx context.Context, containerID stri
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{"action": "commit"})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "container",
+			ResourceID:    containerID,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "commit"},
+		}, err)
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
@@ -523,18 +584,36 @@ func (s *ContainerService) CommitContainer(ctx context.Context, containerID stri
 		NoPause:   req.NoPause,
 	})
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "container", containerID, reference, user.ID, user.Username, "0", err, database.JSON{"action": "commit", "reference": reference})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "container",
+			ResourceID:    containerID,
+			ResourceName:  reference,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "commit", "reference": reference},
+		}, err)
 		return nil, fmt.Errorf("failed to commit container: %w", err)
 	}
 
-	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageCommit, containerID, reference, user.ID, user.Username, "0", database.JSON{
-		"action":      "commit",
-		"containerId": containerID,
-		"imageId":     result.ID,
-		"repository":  repository,
-		"tag":         tag,
-		"reference":   reference,
-		"noPause":     req.NoPause,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeImageCommit,
+		ResourceType:  "image",
+		ResourceID:    containerID,
+		ResourceName:  reference,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":      "commit",
+			"containerId": containerID,
+			"imageId":     result.ID,
+			"repository":  repository,
+			"tag":         tag,
+			"reference":   reference,
+			"noPause":     req.NoPause,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log container commit action", "container", containerID, "image", result.ID, "error", logErr)
 	}
@@ -553,20 +632,36 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 	})
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{
-			"action": "redeploy",
-			"step":   "inspect",
-		})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeContainerError,
+			ResourceType:  "container",
+			ResourceID:    containerID,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
+				"action": "redeploy",
+				"step":   "inspect",
+			},
+		}, err)
 		return "", fmt.Errorf("failed to inspect container: %w", err)
 	}
 
 	containerInfo := containerJSON.Container
 	if containerInfo.Config == nil {
 		err = errors.New("container config is nil")
-		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{
-			"action": "redeploy",
-			"step":   "validate_config",
-		})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeContainerError,
+			ResourceType:  "container",
+			ResourceID:    containerID,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
+				"action": "redeploy",
+				"step":   "validate_config",
+			},
+		}, err)
 		return "", fmt.Errorf("failed to redeploy container: %w", err)
 	}
 	if guardErr := s.podmanService.GuardQuadletManaged(ctx, containerInfo.Config.Labels); guardErr != nil {
@@ -586,10 +681,19 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		CurrentContainerID: currentContainerID,
 	}) {
 		err = errors.New("arcane cannot redeploy itself; use the system upgrade flow (Settings -> Updates) instead")
-		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, database.JSON{
-			"action": "redeploy",
-			"step":   "self_redeploy_blocked",
-		})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeContainerError,
+			ResourceType:  "container",
+			ResourceID:    containerID,
+			ResourceName:  containerName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
+				"action": "redeploy",
+				"step":   "self_redeploy_blocked",
+			},
+		}, err)
 		return "", err
 	}
 
@@ -610,14 +714,23 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 			)
 
 			if updateProjectServicesErr := s.projectService.UpdateProjectServices(ctx, proj.ID, []string{serviceName}, user, false); updateProjectServicesErr != nil {
-				s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", updateProjectServicesErr, database.JSON{
-					"action":      "redeploy",
-					"step":        "compose_update_services",
-					"project":     projectName,
-					"service":     serviceName,
-					"projectId":   proj.ID,
-					"projectName": proj.Name,
-				})
+				s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+					Type:          event.EventTypeContainerError,
+					ResourceType:  "container",
+					ResourceID:    containerID,
+					ResourceName:  containerName,
+					UserID:        user.ID,
+					Username:      user.Username,
+					EnvironmentID: "0",
+					Metadata: database.JSON{
+						"action":      "redeploy",
+						"step":        "compose_update_services",
+						"project":     projectName,
+						"service":     serviceName,
+						"projectId":   proj.ID,
+						"projectName": proj.Name,
+					},
+				}, updateProjectServicesErr)
 				return "", fmt.Errorf("compose redeploy failed for %s/%s: %w", projectName, serviceName, updateProjectServicesErr)
 			}
 
@@ -627,14 +740,23 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 			}
 
 			// An unlocated replacement falls back to the original ID so the handler can degrade gracefully.
-			if logErr := s.eventService.LogContainerEvent(ctx, event.EventTypeContainerDeploy, cmp.Or(newID, containerID), containerName, user.ID, user.Username, "0", database.JSON{
-				"action":        "redeploy",
-				"containerId":   cmp.Or(newID, containerID),
-				"containerName": containerName,
-				"project":       projectName,
-				"service":       serviceName,
-				"projectId":     proj.ID,
-				"via":           "compose",
+			if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+				Type:          event.EventTypeContainerDeploy,
+				ResourceType:  "container",
+				ResourceID:    cmp.Or(newID, containerID),
+				ResourceName:  containerName,
+				UserID:        user.ID,
+				Username:      user.Username,
+				EnvironmentID: "0",
+				Metadata: database.JSON{
+					"action":        "redeploy",
+					"containerId":   cmp.Or(newID, containerID),
+					"containerName": containerName,
+					"project":       projectName,
+					"service":       serviceName,
+					"projectId":     proj.ID,
+					"via":           "compose",
+				},
 			}); logErr != nil {
 				slog.WarnContext(ctx, "failed to log compose redeploy event", "err", logErr)
 			}
@@ -745,10 +867,19 @@ func (s *ContainerService) recreateContainer(
 			})
 		})
 		if restoreCreateErr != nil {
-			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerInfo.ID, containerName, user.ID, user.Username, "0", restoreCreateErr, database.JSON{
-				"action": "redeploy",
-				"step":   "restore_create_original",
-			})
+			s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+				Type:          event.EventTypeContainerError,
+				ResourceType:  "container",
+				ResourceID:    containerInfo.ID,
+				ResourceName:  containerName,
+				UserID:        user.ID,
+				Username:      user.Username,
+				EnvironmentID: "0",
+				Metadata: database.JSON{
+					"action": "redeploy",
+					"step":   "restore_create_original",
+				},
+			}, restoreCreateErr)
 			return fmt.Errorf("failed to recreate original auto-remove container: %w", restoreCreateErr)
 		}
 
@@ -756,10 +887,19 @@ func (s *ContainerService) recreateContainer(
 		if _, restoreStartErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
 			return dockerClient.ContainerStart(ctx, restoreResp.ID, client.ContainerStartOptions{})
 		}); restoreStartErr != nil {
-			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", restoreResp.ID, containerName, user.ID, user.Username, "0", restoreStartErr, database.JSON{
-				"action": "redeploy",
-				"step":   "restore_start_original",
-			})
+			s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+				Type:          event.EventTypeContainerError,
+				ResourceType:  "container",
+				ResourceID:    restoreResp.ID,
+				ResourceName:  containerName,
+				UserID:        user.ID,
+				Username:      user.Username,
+				EnvironmentID: "0",
+				Metadata: database.JSON{
+					"action": "redeploy",
+					"step":   "restore_start_original",
+				},
+			}, restoreStartErr)
 			return fmt.Errorf("failed to restart original auto-remove container: %w", restoreStartErr)
 		}
 
@@ -781,10 +921,19 @@ func (s *ContainerService) recreateContainer(
 	if wasRunning && !stopAfterCreate {
 		if stopErr := s.stopContainer(ctx, containerInfo.ID); stopErr != nil {
 			s.restoreContainerAfterRedeployFailure(ctx, containerInfo.ID, containerName, backupName, "stop", false, user)
-			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerInfo.ID, containerName, user.ID, user.Username, "0", stopErr, database.JSON{
-				"action": "redeploy",
-				"step":   "stop",
-			})
+			s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+				Type:          event.EventTypeContainerError,
+				ResourceType:  "container",
+				ResourceID:    containerInfo.ID,
+				ResourceName:  containerName,
+				UserID:        user.ID,
+				Username:      user.Username,
+				EnvironmentID: "0",
+				Metadata: database.JSON{
+					"action": "redeploy",
+					"step":   "stop",
+				},
+			}, stopErr)
 			return "", fmt.Errorf("failed to stop container: %w", stopErr)
 		}
 	}
@@ -807,11 +956,20 @@ func (s *ContainerService) recreateContainer(
 	})
 	if err != nil {
 		s.restoreContainerAfterRedeployFailure(ctx, containerInfo.ID, containerName, backupName, "create", wasRunning && !stopAfterCreate, user)
-		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerInfo.ID, containerName, user.ID, user.Username, "0", err, database.JSON{
-			"action": action,
-			"step":   "create",
-			"image":  newConfig.Image,
-		})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeContainerError,
+			ResourceType:  "container",
+			ResourceID:    containerInfo.ID,
+			ResourceName:  containerName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
+				"action": action,
+				"step":   "create",
+				"image":  newConfig.Image,
+			},
+		}, err)
 		return "", fmt.Errorf("failed to recreate container: %w", err)
 	}
 
@@ -822,16 +980,34 @@ func (s *ContainerService) recreateContainer(
 			if _, removeErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
 				return dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true})
 			}); removeErr != nil {
-				s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", createResp.ID, containerName, user.ID, user.Username, "0", removeErr, database.JSON{
-					"action": action,
-					"step":   "cleanup_failed_stop",
-				})
+				s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+					Type:          event.EventTypeContainerError,
+					ResourceType:  "container",
+					ResourceID:    createResp.ID,
+					ResourceName:  containerName,
+					UserID:        user.ID,
+					Username:      user.Username,
+					EnvironmentID: "0",
+					Metadata: database.JSON{
+						"action": action,
+						"step":   "cleanup_failed_stop",
+					},
+				}, removeErr)
 			}
 			s.restoreContainerAfterRedeployFailure(ctx, containerInfo.ID, containerName, backupName, "stop", false, user)
-			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerInfo.ID, containerName, user.ID, user.Username, "0", containerStopErr, database.JSON{
-				"action": action,
-				"step":   "stop",
-			})
+			s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+				Type:          event.EventTypeContainerError,
+				ResourceType:  "container",
+				ResourceID:    containerInfo.ID,
+				ResourceName:  containerName,
+				UserID:        user.ID,
+				Username:      user.Username,
+				EnvironmentID: "0",
+				Metadata: database.JSON{
+					"action": action,
+					"step":   "stop",
+				},
+			}, containerStopErr)
 			return "", fmt.Errorf("failed to stop container: %w", containerStopErr)
 		}
 	}
@@ -849,10 +1025,19 @@ func (s *ContainerService) recreateContainer(
 				return dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true})
 			})
 			if removeErr != nil {
-				s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", createResp.ID, containerName, user.ID, user.Username, "0", removeErr, database.JSON{
-					"action": action,
-					"step":   "cleanup_failed_start",
-				})
+				s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+					Type:          event.EventTypeContainerError,
+					ResourceType:  "container",
+					ResourceID:    createResp.ID,
+					ResourceName:  containerName,
+					UserID:        user.ID,
+					Username:      user.Username,
+					EnvironmentID: "0",
+					Metadata: database.JSON{
+						"action": action,
+						"step":   "cleanup_failed_start",
+					},
+				}, removeErr)
 			}
 			if stopAfterCreate {
 				if restoreErr := restoreAutoRemoveOriginal(rollbackCtx); restoreErr != nil {
@@ -862,11 +1047,20 @@ func (s *ContainerService) recreateContainer(
 			} else {
 				s.restoreContainerAfterRedeployFailure(rollbackCtx, containerInfo.ID, containerName, backupName, "start", wasRunning, user)
 			}
-			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", createResp.ID, containerName, user.ID, user.Username, "0", err, database.JSON{
-				"action": action,
-				"step":   "start",
-				"image":  newConfig.Image,
-			})
+			s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+				Type:          event.EventTypeContainerError,
+				ResourceType:  "container",
+				ResourceID:    createResp.ID,
+				ResourceName:  containerName,
+				UserID:        user.ID,
+				Username:      user.Username,
+				EnvironmentID: "0",
+				Metadata: database.JSON{
+					"action": action,
+					"step":   "start",
+					"image":  newConfig.Image,
+				},
+			}, err)
 			return "", fmt.Errorf("failed to start new container: %w", err)
 		}
 	}
@@ -901,11 +1095,20 @@ func (s *ContainerService) recreateContainer(
 		s.clearRedeployJournal(ctx, containerInfo.ID)
 	}
 
-	if logErr := s.eventService.LogContainerEvent(ctx, eventType, createResp.ID, newName, user.ID, user.Username, "0", database.JSON{
-		"action":        action,
-		"containerId":   containerInfo.ID,
-		"containerName": newName,
-		"image":         newConfig.Image,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          eventType,
+		ResourceType:  "container",
+		ResourceID:    createResp.ID,
+		ResourceName:  newName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":        action,
+			"containerId":   containerInfo.ID,
+			"containerName": newName,
+			"image":         newConfig.Image,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "failed to log recreate event", "err", logErr)
 	}
@@ -1180,10 +1383,18 @@ func (s *ContainerService) EditContainer(ctx context.Context, containerID string
 		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 	})
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{
-			"action": "edit",
-			"step":   "inspect",
-		})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeContainerError,
+			ResourceType:  "container",
+			ResourceID:    containerID,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
+				"action": "edit",
+				"step":   "inspect",
+			},
+		}, err)
 		return "", fmt.Errorf("failed to inspect container: %w", err)
 	}
 
@@ -1209,10 +1420,19 @@ func (s *ContainerService) EditContainer(ctx context.Context, containerID string
 		CurrentContainerID: currentContainerID,
 	}) {
 		err = errors.New("arcane cannot edit itself; use the system upgrade flow (Settings -> Updates) instead")
-		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, database.JSON{
-			"action": "edit",
-			"step":   "self_edit_blocked",
-		})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeContainerError,
+			ResourceType:  "container",
+			ResourceID:    containerID,
+			ResourceName:  containerName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
+				"action": "edit",
+				"step":   "self_edit_blocked",
+			},
+		}, err)
 		return "", err
 	}
 
@@ -1268,12 +1488,8 @@ func (s *ContainerService) GetContainerByReference(ctx context.Context, ref stri
 	return new(containerInspect.Container), nil
 }
 
-func (s *ContainerService) GetContainerByID(ctx context.Context, id string) (*container.InspectResponse, error) {
-	return s.GetContainerByReference(ctx, id)
-}
-
 func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (types.ContainerDetails, error) {
-	containerInspect, err := s.GetContainerByID(ctx, id)
+	containerInspect, err := s.GetContainerByReference(ctx, id)
 	if err != nil {
 		return types.ContainerDetails{}, err
 	}
@@ -1358,11 +1574,6 @@ func (s *ContainerService) GetContainerNameByReference(ctx context.Context, ref 
 	return strings.TrimPrefix(info.Name, "/"), nil
 }
 
-// GetContainerNameByID resolves a container's clean name from its Docker ID.
-func (s *ContainerService) GetContainerNameByID(ctx context.Context, id string) (string, error) {
-	return s.GetContainerNameByReference(ctx, id)
-}
-
 func (s *ContainerService) DeleteContainer(ctx context.Context, containerID string, force, removeVolumes bool, user types.Actor) error {
 	unlock, err := s.lockContainer(ctx, "delete container", containerID)
 	if err != nil {
@@ -1409,22 +1620,19 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 		})
 	})
 	if err != nil {
-		s.eventService.LogErrorEvent(
-			ctx,
-			event.EventTypeContainerError,
-			"container",
-			containerID,
-			"",
-			user.ID,
-			user.Username,
-			"0",
-			err,
-			database.JSON{
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeContainerError,
+			ResourceType:  "container",
+			ResourceID:    containerID,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
 				"action":        "delete",
 				"force":         force,
 				"removeVolumes": removeVolumes,
 			},
-		)
+		}, err)
 		return fmt.Errorf("failed to delete container: %w", err)
 	}
 
@@ -1434,13 +1642,30 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 			return dockerClient.VolumeRemove(ctx, volumeName, client.VolumeRemoveOptions{Force: false})
 		}); removeErr != nil {
 			// Log but don't fail if volume removal fails (might be in use by another container)
-			s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", volumeName, "", user.ID, user.Username, "0", removeErr, database.JSON{"action": "delete", "container": containerID})
+			s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+				Type:          event.EventTypeVolumeError,
+				ResourceType:  "volume",
+				ResourceID:    volumeName,
+				UserID:        user.ID,
+				Username:      user.Username,
+				EnvironmentID: "0",
+				Metadata:      database.JSON{"action": "delete", "container": containerID},
+			}, removeErr)
 		}
 	}
 
-	if logErr := s.eventService.LogContainerEvent(ctx, event.EventTypeContainerDelete, containerID, "name", user.ID, user.Username, "0", database.JSON{
-		"action":      "delete",
-		"containerId": containerID,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeContainerDelete,
+		ResourceType:  "container",
+		ResourceID:    containerID,
+		ResourceName:  "name",
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":      "delete",
+			"containerId": containerID,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log container action", "action", "delete", "error", logErr)
 	}
@@ -1512,29 +1737,35 @@ func (s *ContainerService) CreateContainer(
 		}})
 	})
 	if err != nil {
-		s.eventService.LogErrorEvent(
-			ctx,
-			event.EventTypeContainerError,
-			"container",
-			"",
-			containerName,
-			user.ID,
-			user.Username,
-			"0",
-			err,
-			database.JSON{
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeContainerError,
+			ResourceType:  "container",
+			ResourceName:  containerName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
 				"action": "create",
 				"image":  config.Image,
 				"step":   "create",
 			},
-		)
+		}, err)
 		return nil, fmt.Errorf("failed to create container: %w", err)
 	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("container", resp.ID, containerName)()
-	if logErr := s.eventService.LogContainerEvent(ctx, event.EventTypeContainerCreate, resp.ID, "name", user.ID, user.Username, "0", database.JSON{
-		"action":      "create",
-		"containerId": resp.ID,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeContainerCreate,
+		ResourceType:  "container",
+		ResourceID:    resp.ID,
+		ResourceName:  "name",
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":      "create",
+			"containerId": resp.ID,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log container stop action", "error", logErr)
 	}
@@ -1545,22 +1776,20 @@ func (s *ContainerService) CreateContainer(
 		_, _ = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
 			return dockerClient.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true})
 		})
-		s.eventService.LogErrorEvent(
-			ctx,
-			event.EventTypeContainerError,
-			"container",
-			resp.ID,
-			containerName,
-			user.ID,
-			user.Username,
-			"0",
-			containerStartErr,
-			database.JSON{
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeContainerError,
+			ResourceType:  "container",
+			ResourceID:    resp.ID,
+			ResourceName:  containerName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
 				"action": "create",
 				"image":  config.Image,
 				"step":   "start",
 			},
-		)
+		}, containerStartErr)
 		return nil, fmt.Errorf("failed to start container: %w", containerStartErr)
 	}
 
@@ -1568,22 +1797,20 @@ func (s *ContainerService) CreateContainer(
 		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, resp.ID, client.ContainerInspectOptions{})
 	})
 	if err != nil {
-		s.eventService.LogErrorEvent(
-			ctx,
-			event.EventTypeContainerError,
-			"container",
-			resp.ID,
-			containerName,
-			user.ID,
-			user.Username,
-			"0",
-			err,
-			database.JSON{
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeContainerError,
+			ResourceType:  "container",
+			ResourceID:    resp.ID,
+			ResourceName:  containerName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
 				"action": "create",
 				"image":  config.Image,
 				"step":   "inspect",
 			},
-		)
+		}, err)
 		return nil, fmt.Errorf("failed to inspect created container: %w", err)
 	}
 

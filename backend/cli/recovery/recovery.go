@@ -186,7 +186,7 @@ func finalizeRestoredBackup(ctx context.Context, environment map[string]string, 
 		return finalizeRestoredRunErr
 	}
 	if strings.TrimSpace(request.RecoveryKey) != "" {
-		if setRecoveryKeyErr := backup.NewRecoveryKeyStore(&database.DB{DB: db}).Set(ctx, request.RecoveryKey); setRecoveryKeyErr != nil {
+		if setRecoveryKeyErr := backup.NewRecoveryKeyStore(&database.DB{DB: db}).Set(ctx, backup.RecoveryKeyConfigID, request.RecoveryKey); setRecoveryKeyErr != nil {
 			return setRecoveryKeyErr
 		}
 	}

@@ -374,7 +374,7 @@ func newBuildCmd() *cobra.Command {
 
 			log.Debugf("Building image via: %s", path)
 
-			resp, err := c.Post(cmd.Context(), path, jsontext.Value(payload))
+			resp, err := c.Request(cmd.Context(), http.MethodPost, path, jsontext.Value(payload))
 			if err != nil {
 				return fmt.Errorf("failed to build image: %w", err)
 			}

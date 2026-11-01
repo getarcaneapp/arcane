@@ -440,7 +440,7 @@ func (h *ContainerHandler) RunContainerAction(ctx context.Context, input *Contai
 
 // containerActivityName returns the container's name for activity records, falling back to its ID.
 func (h *ContainerHandler) containerActivityName(ctx context.Context, containerID string) string {
-	name, err := h.containerService.GetContainerNameByID(ctx, containerID)
+	name, err := h.containerService.GetContainerNameByReference(ctx, containerID)
 	if err != nil || name == "" {
 		return containerID
 	}
@@ -726,7 +726,7 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 
 func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpdateInput) (*handlerutil.Out[types.MessageResponse], error) {
 	// Resolve container name from ID
-	containerName, err := h.containerService.GetContainerNameByID(ctx, input.ContainerID)
+	containerName, err := h.containerService.GetContainerNameByReference(ctx, input.ContainerID)
 	if err != nil {
 		return nil, huma.Error404NotFound("container not found")
 	}

@@ -1482,17 +1482,7 @@ func (s *EnvironmentService) ReconcileAgentStatusesOnStartup(ctx context.Context
 	return nil
 }
 
-// SyncRegistriesToRemoteEnvironments syncs container registries to every remote environment with an access token.
-func (s *EnvironmentService) SyncRegistriesToRemoteEnvironments(ctx context.Context) error {
-	return s.syncToRemoteEnvironments(ctx, "registries", s.SyncRegistriesToEnvironment)
-}
-
-// SyncS3DestinationsToRemoteEnvironments refreshes the destination cache on every remote environment with an access token.
-func (s *EnvironmentService) SyncS3DestinationsToRemoteEnvironments(ctx context.Context) error {
-	return s.syncToRemoteEnvironments(ctx, "S3 destinations", s.SyncS3DestinationsToEnvironment)
-}
-
-func (s *EnvironmentService) QueueRemoteSync(ctx context.Context, kind string, syncAll func(context.Context) error) {
+func (s *EnvironmentService) QueueRemoteSync(ctx context.Context, kind string, syncEnvironment func(context.Context, string) error) {
 	s.remoteSyncs.mu.Lock()
 	defer s.remoteSyncs.mu.Unlock()
 	if s.remoteSyncs.running[kind] {
@@ -1503,7 +1493,7 @@ func (s *EnvironmentService) QueueRemoteSync(ctx context.Context, kind string, s
 
 	go func(runCtx context.Context) {
 		for {
-			if err := syncAll(runCtx); err != nil {
+			if err := s.SyncToRemoteEnvironments(runCtx, kind, syncEnvironment); err != nil {
 				slog.WarnContext(runCtx, "Failed to fan out sync to remote environments", "kind", kind, "error", err)
 			}
 			s.remoteSyncs.mu.Lock()
@@ -1519,7 +1509,7 @@ func (s *EnvironmentService) QueueRemoteSync(ctx context.Context, kind string, s
 	}(s.jobs.Context(ctx))
 }
 
-func (s *EnvironmentService) syncToRemoteEnvironments(ctx context.Context, kind string, syncEnvironment func(context.Context, string) error) error {
+func (s *EnvironmentService) SyncToRemoteEnvironments(ctx context.Context, kind string, syncEnvironment func(context.Context, string) error) error {
 	envs, err := s.ListRemoteEnvironments(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list remote environments for %s sync: %w", kind, err)

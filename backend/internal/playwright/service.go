@@ -137,7 +137,11 @@ func (ps *PlaywrightService) CreateTestGitOpsProject(ctx context.Context) error 
 	}
 	// CreateSync already ran the initial sync; retry only if it failed.
 	if !created || kit.FromPtr(sync.LastSyncStatus) != "success" || sync.LastSyncError != nil {
-		result, performSyncErr := ps.syncService.PerformSync(ctx, "0", sync.ID, actor)
+		result, performSyncErr := ps.syncService.PerformSync(ctx, gitops.SyncRequest{
+			EnvironmentID: "0",
+			SyncID:        sync.ID,
+			Actor:         actor,
+		})
 		if performSyncErr != nil {
 			return fmt.Errorf("failed to sync GitOps test project: %w", performSyncErr)
 		}

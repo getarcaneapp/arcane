@@ -108,7 +108,7 @@ func (fw *Watcher) Start(ctx context.Context) error {
 		return err
 	}
 
-	if err := fw.addExistingDirectories(ctx, fw.watchedPath); err != nil {
+	if err := fw.addExistingDirectoriesRecursiveInternal(ctx, fw.watchedPath, fw.watchedPath, map[string]struct{}{}); err != nil {
 		slog.WarnContext(ctx, "Failed to add some existing directories to watcher",
 			"path", fw.watchedPath,
 			"error", err)
@@ -338,10 +338,6 @@ func (fw *Watcher) shouldHandleEvent(event fsnotify.Event) bool {
 	return err != nil || !projects.PathContainsIgnoredDirectory(rel)
 }
 
-func (fw *Watcher) addExistingDirectories(ctx context.Context, root string) error {
-	return fw.addExistingDirectoriesRecursiveInternal(ctx, root, root, map[string]struct{}{})
-}
-
 func (fw *Watcher) addExistingDirectoriesRecursiveInternal(ctx context.Context, path, logicalPath string, ancestors map[string]struct{}) error {
 	identity, err := projects.ResolveDirectoryIdentityInternal(path)
 	if err != nil {
@@ -521,7 +517,7 @@ func (fw *Watcher) reconnect(ctx context.Context) bool {
 			if err == nil {
 				fw.watcher = watcher
 				fw.watchAliases = make(map[string]string)
-				if addExistingDirectoriesErr := fw.addExistingDirectories(ctx, fw.watchedPath); addExistingDirectoriesErr != nil {
+				if addExistingDirectoriesErr := fw.addExistingDirectoriesRecursiveInternal(ctx, fw.watchedPath, fw.watchedPath, map[string]struct{}{}); addExistingDirectoriesErr != nil {
 					slog.WarnContext(ctx, "Some filesystem subscriptions could not be restored", "error", addExistingDirectoriesErr)
 				}
 				// Changes while disconnected need a full reconciliation.

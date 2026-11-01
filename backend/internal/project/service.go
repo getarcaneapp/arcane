@@ -489,7 +489,16 @@ func (s *ProjectService) lockProject(ctx context.Context, op, projectID string) 
 }
 
 func (s *ProjectService) logProjectEvent(ctx context.Context, eventType event.EventType, projectID, projectName string, user types.Actor, metadata database.JSON, action string) {
-	if logErr := s.eventService.LogProjectEvent(ctx, eventType, projectID, projectName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          eventType,
+		ResourceType:  "project",
+		ResourceID:    projectID,
+		ResourceName:  projectName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}); logErr != nil {
 		slog.ErrorContext(ctx, "could not log project event", "action", action, "error", logErr)
 	}
 }

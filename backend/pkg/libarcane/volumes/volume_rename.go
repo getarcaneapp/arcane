@@ -113,12 +113,12 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Apply(ctx context.Context) 
 
 	for _, entry := range m.entries {
 		if createProjectRenamedVolumeErr := createProjectRenamedVolume(ctx, dockerClient, entry); createProjectRenamedVolumeErr != nil {
-			return errors.Join(createProjectRenamedVolumeErr, m.rollbackCreatedTargets(ctx, dockerClient))
+			return errors.Join(createProjectRenamedVolumeErr, m.rollbackCreatedTargetsPreserving(ctx, dockerClient, nil))
 		}
 		m.createdNew = append(m.createdNew, entry)
 
 		if copyProjectVolumeDataErr := copyProjectVolumeData(ctx, dockerClient, copyRuntime, entry.OldName, entry.NewName); copyProjectVolumeDataErr != nil {
-			return errors.Join(fmt.Errorf("copy volume data from %s to %s: %w", entry.OldName, entry.NewName, copyProjectVolumeDataErr), m.rollbackCreatedTargets(ctx, dockerClient))
+			return errors.Join(fmt.Errorf("copy volume data from %s to %s: %w", entry.OldName, entry.NewName, copyProjectVolumeDataErr), m.rollbackCreatedTargetsPreserving(ctx, dockerClient, nil))
 		}
 	}
 
@@ -234,10 +234,6 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Rollback(ctx context.Contex
 		docker.InvalidateVolumeUsageCache(dockerClient)
 	}
 	return rollbackErr
-}
-
-func (m *dockerProjectVolumeRenameMigrationInternal) rollbackCreatedTargets(ctx context.Context, dockerClient *client.Client) error {
-	return m.rollbackCreatedTargetsPreserving(ctx, dockerClient, nil)
 }
 
 func (m *dockerProjectVolumeRenameMigrationInternal) rollbackCreatedTargetsPreserving(ctx context.Context, dockerClient *client.Client, preservedTargets map[string]struct{}) error {

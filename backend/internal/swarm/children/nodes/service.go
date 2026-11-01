@@ -665,14 +665,6 @@ func (s *Service) RemoveNode(ctx context.Context, nodeID string, force bool) err
 	return nil
 }
 
-func (s *Service) PromoteNode(ctx context.Context, nodeID string) error {
-	return s.UpdateNode(ctx, nodeID, types.SwarmNode{Role: string(swarm.NodeRoleManager)}, map[string]bool{"role": true})
-}
-
-func (s *Service) DemoteNode(ctx context.Context, nodeID string) error {
-	return s.UpdateNode(ctx, nodeID, types.SwarmNode{Role: string(swarm.NodeRoleWorker)}, map[string]bool{"role": true})
-}
-
 func (s *Service) ListNodeTasksPaginated(ctx context.Context, nodeID string, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, pagination.Response{}, err

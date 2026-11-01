@@ -246,7 +246,7 @@ func backupArchiveFilename(backupID string) (string, error) {
 // volumeBackupPassword returns the recovery key once one is stored, re-keying the given repositories off the legacy derivation first.
 func (s *Service) volumeBackupPassword(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error) {
 	legacyPassword := kit.SHA256Hex(legacyVolumePasswordSalt + s.deps.EncryptionKey)
-	key, err := s.deps.RecoveryKeys.Get(ctx)
+	key, err := s.deps.RecoveryKeys.Get(ctx, backup.RecoveryKeyConfigID)
 	if errors.Is(err, backup.ErrRecoveryKeyNotConfigured) {
 		return legacyPassword, nil
 	}
@@ -342,7 +342,16 @@ func backupDestination(local, remote bool) types.VolumeBackupDestination {
 // logBackupEvent records a volume backup event; a nil user logs as the system user.
 func (s *Service) logBackupEvent(ctx context.Context, eventType event.EventType, volumeName string, user *types.Actor, metadata database.JSON) {
 	actor := cmp.Or(user, &types.SystemUser)
-	if err := s.deps.Events.LogVolumeEvent(ctx, eventType, volumeName, volumeName, actor.ID, actor.Username, "0", metadata); err != nil {
+	if err := s.deps.Events.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          eventType,
+		ResourceType:  "volume",
+		ResourceID:    volumeName,
+		ResourceName:  volumeName,
+		UserID:        actor.ID,
+		Username:      actor.Username,
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}); err != nil {
 		slog.WarnContext(ctx, "could not log volume backup event", "volume", volumeName, "action", metadata["action"], "error", err)
 	}
 }

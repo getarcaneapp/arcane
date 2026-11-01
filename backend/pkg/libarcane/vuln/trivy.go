@@ -127,11 +127,6 @@ func ScanCacheBackendArgsForArch(arch string) []string {
 	}
 }
 
-// ScanCacheBackendArgs returns the cache-backend flags for the running architecture.
-func ScanCacheBackendArgs() []string {
-	return ScanCacheBackendArgsForArch(runtime.GOARCH)
-}
-
 // RepositoryArgs returns the Trivy DB repository flags pointing at the Arcane-mirrored databases on the given registry.
 func RepositoryArgs(registry string) []string {
 	host := libarcane.ArcaneRegistryHost(registry)
@@ -152,7 +147,7 @@ func RepositoryArgs(registry string) []string {
 func ScanSourceArgs(serverURL, registry string) []string {
 	serverURL = strings.TrimSpace(serverURL)
 	if serverURL == "" {
-		return append(ScanCacheBackendArgs(), RepositoryArgs(registry)...)
+		return append(ScanCacheBackendArgsForArch(runtime.GOARCH), RepositoryArgs(registry)...)
 	}
 
 	return []string{"--server", serverURL}

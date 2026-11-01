@@ -217,7 +217,7 @@ func newRestoreCmd() *cobra.Command {
 			if !opts.force {
 				output.Warning("Restoring backup %s will OVERWRITE the current Arcane database and configuration, then restart Arcane. This cannot be undone.", args[0])
 			}
-			confirmed, confirmErr := cmdutil.ConfirmOrCancel(cmd, opts.force, "Are you absolutely sure you want to restore this backup?")
+			confirmed, confirmErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: "Are you absolutely sure you want to restore this backup?", Force: opts.force})
 			if confirmErr != nil || !confirmed {
 				return confirmErr
 			}
@@ -478,7 +478,7 @@ func newRecoveryKeyGenerateCmd() *cobra.Command {
 
 			save := opts.save
 			if !save && cmdutil.AllowPrompt(cmd) {
-				save, err = cmdutil.Confirm(cmd, "Store this recovery key on the server now?")
+				save, err = cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: "Store this recovery key on the server now?"})
 				if err != nil {
 					return err
 				}

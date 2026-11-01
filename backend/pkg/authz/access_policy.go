@@ -171,17 +171,6 @@ func CanAccessSurface(ps *PermissionSet, surfaceID, envID string) bool {
 	return canAccessSurface(ps, surfaceID, envID, make(map[string]struct{}))
 }
 
-// CanAccessSettingsCategory reports whether a settings category is reachable
-// for the selected environment.
-func CanAccessSettingsCategory(ps *PermissionSet, categoryID, envID string) bool {
-	return CanAccessSurface(ps, "settings.category."+categoryID, envID)
-}
-
-// CanAccessCustomizeCategory reports whether a customize category is reachable.
-func CanAccessCustomizeCategory(ps *PermissionSet, categoryID, envID string) bool {
-	return CanAccessSurface(ps, "customize.category."+categoryID, envID)
-}
-
 func canAccessSurface(ps *PermissionSet, surfaceID, envID string, visiting map[string]struct{}) bool {
 	if ps == nil {
 		return false

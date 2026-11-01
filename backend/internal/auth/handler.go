@@ -861,7 +861,7 @@ func extractBearerToken(ctx huma.Context) (string, bool) {
 
 	// Try cookie as fallback
 	if cookieHeader := ctx.Header("Cookie"); cookieHeader != "" {
-		if token, err := cookie.GetTokenCookieFromHeader(cookieHeader); err == nil {
+		if token, err := cookie.GetTokenCookie(&http.Request{Header: http.Header{"Cookie": []string{cookieHeader}}}); err == nil {
 			return token, true
 		}
 	}

@@ -1255,16 +1255,16 @@ func (s *UpdaterService) Notify(ctx context.Context, localNotification updater.N
 // RecordEvent records updater lifecycle events in Arcane's event stream.
 func (s *UpdaterService) RecordEvent(ctx context.Context, evt updater.Event) error {
 	if eventType, ok := containerEventTypes[evt.Phase]; ok {
-		return s.deps.Events.LogContainerEvent(
-			ctx,
-			eventType,
-			evt.ResourceID,
-			evt.ResourceName,
-			s.deps.SystemUser.ID,
-			s.deps.SystemUser.Username,
-			"0",
-			evt.Metadata,
-		)
+		return s.deps.Events.LogResourceEvent(ctx, event.ResourceEvent{
+			Type:          eventType,
+			ResourceType:  "container",
+			ResourceID:    evt.ResourceID,
+			ResourceName:  evt.ResourceName,
+			UserID:        s.deps.SystemUser.ID,
+			Username:      s.deps.SystemUser.Username,
+			EnvironmentID: "0",
+			Metadata:      evt.Metadata,
+		})
 	}
 
 	severity := kit.Ternary(strings.EqualFold(evt.Severity, "error"), event.EventSeverityError, event.EventSeverityInfo)

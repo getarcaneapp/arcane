@@ -165,7 +165,7 @@ func newWorkspaceDownloadCmd() *cobra.Command {
 				clitypes.VolumeWorkspaceFileDownload(c.EnvID(), resolved.Name),
 				url.Values{"relativePath": []string{args[1]}},
 			)
-			resp, err := c.Get(cmd.Context(), downloadPath)
+			resp, err := c.Request(cmd.Context(), http.MethodGet, downloadPath, nil)
 			if err != nil {
 				return fmt.Errorf("failed to download workspace file: %w", err)
 			}
@@ -241,7 +241,7 @@ func newWorkspacePutCmd() *cobra.Command {
 				return errors.New("destination path is required")
 			}
 
-			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, opts.forceFlag, fmt.Sprintf("Write %s to %s in volume %s?", args[1], relativePath, resolved.Name))
+			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: fmt.Sprintf("Write %s to %s in volume %s?", args[1], relativePath, resolved.Name), Force: opts.forceFlag})
 			if confirmationErr != nil || !confirmed {
 				return confirmationErr
 			}
