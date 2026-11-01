@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"kit.getarcane.app/tripwire"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/template"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/fswatch"
 )
 
 func TestFilesystemWatcherJob_ConcurrentProjectRestartsAreSerialized(t *testing.T) {
@@ -53,7 +53,7 @@ func TestFilesystemWatcherJob_RequestRestartRearmsSupervisor(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- job.Supervise(superviseCtx) }()
 
-	currentWatcher := func() *fswatch.Watcher {
+	currentWatcher := func() *tripwire.Watcher[string] {
 		job.mu.Lock()
 		defer job.mu.Unlock()
 		return job.projectsWatcher
