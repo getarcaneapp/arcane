@@ -158,10 +158,6 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 		return nil, huma.Error500InternalServerError("Failed to list images: " + err.Error())
 	}
 
-	if images == nil {
-		images = []types.ImageSummary{}
-	}
-
 	return &ListImagesOutput{
 		Body: types.ImageListResponse{
 			Success:            true,
@@ -223,9 +219,6 @@ func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHisto
 	if err != nil {
 		return nil, huma.NewError(common.ToAPIError(common.ClassifyDockerError(err)).HTTPStatus(), fmt.Sprintf("failed to get image history: %v", err))
 	}
-	if history == nil {
-		history = []types.ImageHistoryItem{}
-	}
 
 	return &handlerutil.Out[[]types.ImageHistoryItem]{
 		Body: types.ApiResponse[[]types.ImageHistoryItem]{
@@ -243,9 +236,6 @@ func (h *ImageHandler) SearchImages(ctx context.Context, input *SearchImagesInpu
 			return nil, huma.Error400BadRequest(err.Error())
 		}
 		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to search images: %v", err))
-	}
-	if results == nil {
-		results = []types.ImageSearchResult{}
 	}
 
 	return &handlerutil.Out[[]types.ImageSearchResult]{
@@ -451,10 +441,6 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 	builds, paginationResp, err := h.buildService.ListImageBuildsByEnvironmentPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to list build history: " + err.Error())
-	}
-
-	if builds == nil {
-		builds = []types.ImageBuildRecord{}
 	}
 
 	return &handlerutil.Page[types.ImageBuildRecord]{

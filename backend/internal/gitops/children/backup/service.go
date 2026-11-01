@@ -730,9 +730,6 @@ func diffBackupHashes(local, remote map[string]string) []types.GitOpsBackupFileC
 		}
 	}
 	sort.Slice(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
-	if changes == nil {
-		changes = []types.GitOpsBackupFileChange{}
-	}
 	return changes
 }
 

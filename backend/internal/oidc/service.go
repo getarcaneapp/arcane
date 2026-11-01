@@ -62,45 +62,22 @@ func NewOidcService(authService *auth.AuthService, settingsService *settings.Set
 		httpClient = http.DefaultClient
 	}
 
-	// Copy the shared client and drop its timeout so requests are bounded by context.
-	oidcClient := *httpClient
-	oidcClient.Timeout = 0
-	insecureClient := oidcClient
-
-	// Derive the insecure transport from the caller's raw transport, before either client is instrumented.
-	insecureTransport := &http.Transport{}
-	if transport, ok := httpClient.Transport.(*http.Transport); ok {
-		insecureTransport = transport.Clone()
-	} else if defaultTransport, isTransport := http.DefaultTransport.(*http.Transport); isTransport {
-		insecureTransport = defaultTransport.Clone()
-	}
-	if insecureTransport.TLSClientConfig == nil {
-		// #nosec G402 - This is explicitly an insecure client for OIDC discovery when TLS verification is skipped
-		insecureTransport.TLSClientConfig = &tls.Config{
-			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: true,
-		}
-	} else {
-		insecureTransport.TLSClientConfig.InsecureSkipVerify = true
-	}
-	// Enable HTTP/2 even with a custom TLS configuration.
-	if insecureTransport.Protocols == nil {
-		insecureTransport.Protocols = new(http.Protocols)
-		insecureTransport.Protocols.SetHTTP1(true)
-	}
-	insecureTransport.Protocols.SetHTTP2(true)
-
-	oidcClient.Transport = otelhttp.NewTransport(httpClient.Transport)
-	insecureClient.Transport = otelhttp.NewTransport(insecureTransport)
-
 	return &OidcService{
-		authService:        authService,
-		settingsService:    settingsService,
-		config:             cfg,
-		httpClient:         &oidcClient,
-		insecureHttpClient: &insecureClient,
-		keySetManager:      keySetManager,
-		providerCache:      hot.NewHotCache[oidcProviderKey, *oidc.Provider](hot.LRU, 4).WithTTL(time.Hour).Build(),
+		authService:     authService,
+		settingsService: settingsService,
+		config:          cfg,
+		httpClient: &http.Client{
+			Transport:     otelhttp.NewTransport(httpClient.Transport),
+			CheckRedirect: httpClient.CheckRedirect,
+			Jar:           httpClient.Jar,
+		},
+		insecureHttpClient: &http.Client{
+			Transport:     otelhttp.NewTransport(newInsecureTransport(httpClient.Transport)),
+			CheckRedirect: httpClient.CheckRedirect,
+			Jar:           httpClient.Jar,
+		},
+		keySetManager: keySetManager,
+		providerCache: hot.NewHotCache[oidcProviderKey, *oidc.Provider](hot.LRU, 4).WithTTL(time.Hour).Build(),
 	}
 }
 
@@ -113,6 +90,27 @@ func (s *OidcService) effectiveConfig(ctx context.Context) (*settings.OidcConfig
 		return nil, errors.New("issuer URL must be configured")
 	}
 	return oidcConfig, nil
+}
+
+func newInsecureTransport(base http.RoundTripper) *http.Transport {
+	source, ok := base.(*http.Transport)
+	if !ok {
+		source, ok = http.DefaultTransport.(*http.Transport)
+	}
+	if !ok {
+		source = &http.Transport{}
+	}
+	transport := source.Clone()
+	if transport.TLSClientConfig == nil {
+		transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+	transport.TLSClientConfig.InsecureSkipVerify = true
+	if transport.Protocols == nil {
+		transport.Protocols = new(http.Protocols)
+		transport.Protocols.SetHTTP1(true)
+	}
+	transport.Protocols.SetHTTP2(true)
+	return transport
 }
 
 func (s *OidcService) httpClientFor(skipTLSVerify bool) *http.Client {
@@ -144,10 +142,7 @@ func (s *OidcService) buildOAuth2Config(cfg *settings.OidcConfig, provider *oidc
 		return oauth2.Config{}, errors.New("authorization and token endpoints must be configured")
 	}
 
-	redirectURL := mobileRedirectURI
-	if redirectURL == "" {
-		redirectURL = s.GetOidcRedirectURL(origin)
-	}
+	redirectURL := cmp.Or(mobileRedirectURI, s.GetOidcRedirectURL(origin))
 
 	return oauth2.Config{
 		ClientID:     cfg.ClientID,
@@ -231,11 +226,7 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo, origin, m
 }
 
 func (s *OidcService) GetOidcRedirectURL(origin string) string {
-	baseUrl := origin
-	if baseUrl == "" {
-		baseUrl = strings.TrimSuffix(s.config.GetAppURL(), "/")
-	}
-	return baseUrl + "/auth/oidc/callback"
+	return cmp.Or(origin, strings.TrimSuffix(s.config.GetAppURL(), "/")) + "/auth/oidc/callback"
 }
 
 func (s *OidcService) getOrDiscoverProvider(ctx context.Context, cfg *settings.OidcConfig) (*oidc.Provider, error) {

@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"net"
@@ -51,10 +52,7 @@ func ManagerGRPCAddr(rawURL string) string {
 		return ""
 	}
 
-	port := parsed.Port()
-	if port == "" {
-		port = kit.Ternary(strings.EqualFold(parsed.Scheme, "https"), "443", "80")
-	}
+	port := cmp.Or(parsed.Port(), kit.Ternary(strings.EqualFold(parsed.Scheme, "https"), "443", "80"))
 
 	return net.JoinHostPort(host, port)
 }

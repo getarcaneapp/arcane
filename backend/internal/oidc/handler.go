@@ -375,13 +375,16 @@ func (h *OidcHandler) ListOidcRoleMappings(ctx context.Context, _ *ListOidcRoleM
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list mappings: " + err.Error())
 	}
-	out := &handlerutil.Out[[]types.OidcRoleMapping]{}
-	out.Body.Success = true
-	out.Body.Data = make([]types.OidcRoleMapping, len(rows))
+	data := make([]types.OidcRoleMapping, len(rows))
 	for i := range rows {
-		out.Body.Data[i] = toOidcMappingDTO(&rows[i])
+		data[i] = toOidcMappingDTO(&rows[i])
 	}
-	return out, nil
+	return &handlerutil.Out[[]types.OidcRoleMapping]{
+		Body: types.ApiResponse[[]types.OidcRoleMapping]{
+			Success: true,
+			Data:    data,
+		},
+	}, nil
 }
 
 func (h *OidcHandler) CreateOidcRoleMapping(ctx context.Context, input *CreateOidcRoleMappingInput) (*handlerutil.Out[types.OidcRoleMapping], error) {
@@ -390,10 +393,12 @@ func (h *OidcHandler) CreateOidcRoleMapping(ctx context.Context, input *CreateOi
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
-	out := &handlerutil.Out[types.OidcRoleMapping]{}
-	out.Body.Success = true
-	out.Body.Data = toOidcMappingDTO(mapping)
-	return out, nil
+	return &handlerutil.Out[types.OidcRoleMapping]{
+		Body: types.ApiResponse[types.OidcRoleMapping]{
+			Success: true,
+			Data:    toOidcMappingDTO(mapping),
+		},
+	}, nil
 }
 
 func (h *OidcHandler) UpdateOidcRoleMapping(ctx context.Context, input *UpdateOidcRoleMappingInput) (*handlerutil.Out[types.OidcRoleMapping], error) {
@@ -417,10 +422,12 @@ func (h *OidcHandler) UpdateOidcRoleMapping(ctx context.Context, input *UpdateOi
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
-	out := &handlerutil.Out[types.OidcRoleMapping]{}
-	out.Body.Success = true
-	out.Body.Data = toOidcMappingDTO(mapping)
-	return out, nil
+	return &handlerutil.Out[types.OidcRoleMapping]{
+		Body: types.ApiResponse[types.OidcRoleMapping]{
+			Success: true,
+			Data:    toOidcMappingDTO(mapping),
+		},
+	}, nil
 }
 
 func (h *OidcHandler) DeleteOidcRoleMapping(ctx context.Context, input *DeleteOidcRoleMappingInput) (*DeleteOidcRoleMappingOutput, error) {

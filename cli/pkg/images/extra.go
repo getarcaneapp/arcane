@@ -502,7 +502,7 @@ func newBuildsGetCmd() *cobra.Command {
 					if len(record.Platforms) > 0 {
 						output.KeyValue("Platforms", strings.Join(record.Platforms, ", "))
 					}
-					if record.Username != nil && *record.Username != "" {
+					if kit.FromPtr(record.Username) != "" {
 						output.KeyValue("User", *record.Username)
 					}
 					output.KeyValue("Started", record.CreatedAt.Format(time.RFC3339))
@@ -514,14 +514,14 @@ func newBuildsGetCmd() *cobra.Command {
 						duration = (time.Duration(*record.DurationMs) * time.Millisecond).Round(time.Second).String()
 					}
 					output.KeyValue("Duration", duration)
-					if record.Digest != nil && *record.Digest != "" {
+					if kit.FromPtr(record.Digest) != "" {
 						output.KeyValue("Digest", *record.Digest)
 					}
-					if record.ErrorMessage != nil && *record.ErrorMessage != "" {
+					if kit.FromPtr(record.ErrorMessage) != "" {
 						output.KeyValue("Error", *record.ErrorMessage)
 					}
 
-					if record.Output != nil && *record.Output != "" {
+					if kit.FromPtr(record.Output) != "" {
 						output.Header("Output")
 						_, _ = fmt.Fprintln(output.Stdout(), *record.Output)
 						if record.OutputTruncated {

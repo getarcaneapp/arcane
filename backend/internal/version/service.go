@@ -1,6 +1,7 @@
 package version
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -240,10 +241,7 @@ func (s *VersionService) ReleaseURL(localVersion string) string {
 }
 
 func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersion string) (*types.VersionCheck, error) {
-	if currentVersion == "" {
-		currentVersion = s.version
-	}
-	cur := s.normalizeVersion(currentVersion)
+	cur := s.normalizeVersion(cmp.Or(currentVersion, s.version))
 
 	latest, err := func() (string, error) {
 		if !s.settingsService.GetBoolSetting(ctx, "updateCheckEnabled") {

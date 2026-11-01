@@ -501,10 +501,6 @@ func (s *ApiKeyService) createAPIKeyWithRawKey(
 	}, nil
 }
 
-func isStaticAPIKey(ak ApiKey) bool {
-	return ak.ManagedBy != nil && *ak.ManagedBy == managedByAdminBootstrap
-}
-
 // isEnvironmentReferencedApiKey reports whether an environment
 // currently references keyID as its pairing key (environments.api_key_id).
 // Referenced keys are the live environment bootstrap credentials: editing or
@@ -545,7 +541,7 @@ func toAPIKeyDTO(ak *ApiKey, isBootstrap bool) types.ApiKey {
 		KeyPrefix:   ak.KeyPrefix,
 		UserID:      ak.UserID,
 		Kind:        ak.Kind,
-		IsStatic:    isStaticAPIKey(*ak),
+		IsStatic:    kit.FromPtr(ak.ManagedBy) == managedByAdminBootstrap,
 		IsBootstrap: isBootstrap,
 		ExpiresAt:   ak.ExpiresAt,
 		LastUsedAt:  ak.LastUsedAt,
@@ -866,7 +862,7 @@ func (s *ApiKeyService) ListApiKeysByUser(ctx context.Context, userID string) ([
 
 	result := make([]types.ApiKey, 0, len(apiKeys))
 	for i := range apiKeys {
-		if _, isBootstrap := referenced[apiKeys[i].ID]; isBootstrap || isStaticAPIKey(apiKeys[i]) {
+		if _, isBootstrap := referenced[apiKeys[i].ID]; isBootstrap || kit.FromPtr(apiKeys[i].ManagedBy) == managedByAdminBootstrap {
 			continue
 		}
 		result = append(result, toAPIKeyDTOWithPermissions(&apiKeys[i], false))
@@ -882,7 +878,7 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 		}
 		return nil, fmt.Errorf("failed to get API key: %w", err)
 	}
-	if isStaticAPIKey(ak) {
+	if kit.FromPtr(ak.ManagedBy) == managedByAdminBootstrap {
 		return nil, ErrApiKeyProtected
 	}
 	if referenced, err := s.isEnvironmentReferencedApiKey(ctx, ak.ID); err != nil {
@@ -964,7 +960,7 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 		KeyPrefix:   ak.KeyPrefix,
 		UserID:      ak.UserID,
 		Kind:        ak.Kind,
-		IsStatic:    isStaticAPIKey(ak),
+		IsStatic:    kit.FromPtr(ak.ManagedBy) == managedByAdminBootstrap,
 		IsBootstrap: false, // an environment-referenced key can't reach this return
 		ExpiresAt:   changes.ExpiresAt,
 		LastUsedAt:  ak.LastUsedAt,
@@ -1004,7 +1000,7 @@ func (s *ApiKeyService) DeleteApiKey(ctx context.Context, id string) error {
 		}
 		return fmt.Errorf("failed to load API key: %w", err)
 	}
-	if isStaticAPIKey(apiKey) {
+	if kit.FromPtr(apiKey.ManagedBy) == managedByAdminBootstrap {
 		return ErrApiKeyProtected
 	}
 	if referenced, err := s.isEnvironmentReferencedApiKey(ctx, apiKey.ID); err != nil {

@@ -295,7 +295,7 @@ func newDeleteCmd() *cobra.Command {
 func printCredential(cred types.FederatedCredential) {
 	output.KeyValue("ID", cred.ID)
 	output.KeyValue("Name", cred.Name)
-	if cred.Description != nil && *cred.Description != "" {
+	if kit.FromPtr(cred.Description) != "" {
 		output.KeyValue("Description", *cred.Description)
 	}
 	output.KeyValue("Enabled", strconv.FormatBool(cred.Enabled))

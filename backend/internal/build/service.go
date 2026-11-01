@@ -228,21 +228,6 @@ func (s *BuildService) logBuildFailureEvent(ctx context.Context, environmentID s
 		return
 	}
 
-	resourceName := cmp.Or(kit.TrimNonEmpty(req.Tags)...)
-	if resourceName == "" {
-		resourceName = strings.TrimSpace(serviceName)
-	}
-	if resourceName == "" {
-		resourceName = sanitizeBuildContextForEvent(req.ContextDir)
-	}
-
-	userID := ""
-	username := ""
-	if user != nil {
-		userID = user.ID
-		username = user.Username
-	}
-
 	metadata := database.JSON{
 		"action":     "build",
 		"provider":   s.effectiveBuildProvider(req.Provider),
@@ -257,7 +242,7 @@ func (s *BuildService) logBuildFailureEvent(ctx context.Context, environmentID s
 		metadata["buildRecordId"] = buildRecordID
 	}
 
-	s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", resourceName, userID, username, environmentID, err, metadata)
+	s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", cmp.Or(cmp.Or(kit.TrimNonEmpty(req.Tags)...), strings.TrimSpace(serviceName), sanitizeBuildContextForEvent(req.ContextDir)), kit.FromPtr(user).ID, kit.FromPtr(user).Username, environmentID, err, metadata)
 }
 
 func sanitizeBuildContextForEvent(raw string) string {

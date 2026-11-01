@@ -22,6 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/samber/mo"
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -499,7 +500,7 @@ func (s *PasskeyService) FinishRegistration(ctx context.Context, userID, session
 	if err != nil {
 		return nil, err
 	}
-	if ceremony.UserID == nil || *ceremony.UserID != userID || ceremony.SessionID == nil || *ceremony.SessionID != sessionID {
+	if mo.PointerToOption(ceremony.UserID) != mo.Some(userID) || mo.PointerToOption(ceremony.SessionID) != mo.Some(sessionID) {
 		return nil, ErrPasskeyCeremony
 	}
 
@@ -743,7 +744,7 @@ func (s *PasskeyService) FinishStepUp(ctx context.Context, transactionID, sessio
 	if err != nil {
 		return nil, err
 	}
-	if transaction.SessionID == nil || *transaction.SessionID != sessionID {
+	if mo.PointerToOption(transaction.SessionID) != mo.Some(sessionID) {
 		return nil, ErrPasskeyTransaction
 	}
 	if ensureActiveSessionErr := s.ensureActiveSession(ctx, transaction.UserID, sessionID); ensureActiveSessionErr != nil {
@@ -1149,7 +1150,7 @@ func (s *PasskeyService) finishKnownUserAssertion(ctx context.Context, transacti
 	if err != nil {
 		return nil, err
 	}
-	if ceremony.AuthTransactionID == nil || *ceremony.AuthTransactionID != transaction.ID || ceremony.UserID == nil || *ceremony.UserID != transaction.UserID {
+	if kit.FromPtr(ceremony.AuthTransactionID) != transaction.ID || mo.PointerToOption(ceremony.UserID) != mo.Some(transaction.UserID) {
 		return nil, ErrPasskeyCeremony
 	}
 	var localSession webauthn.SessionData

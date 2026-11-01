@@ -88,9 +88,6 @@ func (h *ImagePatchHandler) ListPatchTargets(ctx context.Context, input *ListPat
 		}
 		return nil, huma.Error500InternalServerError("Failed to list image patch targets: " + err.Error())
 	}
-	if targets == nil {
-		targets = []types.PatchTarget{}
-	}
 
 	return &handlerutil.Page[types.PatchTarget]{
 		Body: types.Paginated[types.PatchTarget]{
@@ -112,9 +109,6 @@ func (h *ImagePatchHandler) ListImagePatches(ctx context.Context, input *ListIma
 	records, paginationResp, err := h.imagePatchService.ListPatches(ctx, input.EnvironmentID, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to list image patches: " + err.Error())
-	}
-	if records == nil {
-		records = []types.PatchRecord{}
 	}
 
 	return &handlerutil.Page[types.PatchRecord]{

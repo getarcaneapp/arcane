@@ -406,21 +406,15 @@ func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provid
 		}
 	}
 
-	if err != nil {
-		setting = NotificationSettings{
-			Provider: provider,
-			Enabled:  enabled,
-			Config:   localConfig,
-		}
-		if createSettingsErr := s.db.WithContext(ctx).Create(&setting).Error; createSettingsErr != nil {
-			return nil, fmt.Errorf("failed to create notification settings: %w", createSettingsErr)
-		}
-	} else {
-		setting.Enabled = enabled
-		setting.Config = localConfig
-		if updateSettingsErr := s.db.WithContext(ctx).Save(&setting).Error; updateSettingsErr != nil {
-			return nil, fmt.Errorf("failed to update notification settings: %w", updateSettingsErr)
-		}
+	setting = NotificationSettings{
+		CreatedAt: setting.CreatedAt,
+		Config:    localConfig,
+		Provider:  provider,
+		ID:        setting.ID,
+		Enabled:   enabled,
+	}
+	if saveErr := s.db.WithContext(ctx).Save(&setting).Error; saveErr != nil {
+		return nil, fmt.Errorf("failed to save notification settings: %w", saveErr)
 	}
 
 	return &setting, nil

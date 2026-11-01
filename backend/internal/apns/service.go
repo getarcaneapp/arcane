@@ -299,15 +299,14 @@ func (s *ApnsService) IssuePairingToken(ctx context.Context) (types.ApnsPairingT
 }
 
 func deviceDTO(d Device) types.ApnsDevice {
-	events := d.Events
-	if events == nil {
-		events = map[string]bool{}
+	return types.ApnsDevice{
+		ID:             d.ID,
+		Label:          d.Label,
+		Events:         d.Events,
+		EnvironmentIDs: []string(d.EnvironmentIDs),
+		CreatedAt:      d.CreatedAt,
+		LastSeenAt:     d.LastSeenAt,
 	}
-	envs := []string(d.EnvironmentIDs)
-	if envs == nil {
-		envs = []string{}
-	}
-	return types.ApnsDevice{ID: d.ID, Label: d.Label, Events: events, EnvironmentIDs: envs, CreatedAt: d.CreatedAt, LastSeenAt: d.LastSeenAt}
 }
 
 func (s *ApnsService) Status(ctx context.Context, userID string) (types.ApnsStatus, error) {
@@ -678,16 +677,14 @@ func (s *ApnsService) finishOutbox(ctx context.Context, entry OutboxEntry, envel
 	if failure == "" || s.events == nil {
 		return
 	}
-	resourceType, resourceName := "notification", "mobile-push"
-	envID := envelope.EnvironmentID
 	if _, err := s.events.CreateEvent(ctx, event.CreateEventRequest{
 		Type:          event.EventTypeNotificationSend,
 		Severity:      event.EventSeverityError,
 		Title:         "Notification failed via mobile push",
 		Description:   fmt.Sprintf("%s: %s", envelope.Title, failure),
-		ResourceType:  &resourceType,
-		ResourceName:  &resourceName,
-		EnvironmentID: &envID,
+		ResourceType:  new("notification"),
+		ResourceName:  new("mobile-push"),
+		EnvironmentID: new(envelope.EnvironmentID),
 		Metadata:      database.JSON{"provider": "mobile-push", "status": "failed", "eventType": envelope.Type},
 	}); err != nil {
 		slog.WarnContext(ctx, "Failed to log push failure event", "error", err)

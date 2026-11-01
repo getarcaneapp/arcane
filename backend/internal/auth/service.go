@@ -988,10 +988,10 @@ func (s *AuthService) buildTokenPair(ctx context.Context, localUser *user.User, 
 	if localUser.Username != "" {
 		accessBuilder.Claim(claimUsername, localUser.Username)
 	}
-	if localUser.Email != nil && *localUser.Email != "" {
+	if kit.FromPtr(localUser.Email) != "" {
 		accessBuilder.Claim(claimEmail, *localUser.Email)
 	}
-	if localUser.DisplayName != nil && *localUser.DisplayName != "" {
+	if kit.FromPtr(localUser.DisplayName) != "" {
 		accessBuilder.Claim(claimDisplayName, *localUser.DisplayName)
 	}
 	if config.Version != "" {
@@ -1110,10 +1110,10 @@ func (s *AuthService) IssueFederatedToken(ctx context.Context, localUser *user.U
 	if localUser.Username != "" {
 		builder.Claim(claimUsername, localUser.Username)
 	}
-	if localUser.Email != nil && *localUser.Email != "" {
+	if kit.FromPtr(localUser.Email) != "" {
 		builder.Claim(claimEmail, *localUser.Email)
 	}
-	if localUser.DisplayName != nil && *localUser.DisplayName != "" {
+	if kit.FromPtr(localUser.DisplayName) != "" {
 		builder.Claim(claimDisplayName, *localUser.DisplayName)
 	}
 	if config.Version != "" {

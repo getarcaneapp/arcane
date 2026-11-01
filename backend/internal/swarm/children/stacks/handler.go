@@ -109,9 +109,6 @@ func (h *Handler) ListStacks(ctx context.Context, input *ListSwarmStacksInput) (
 	if err != nil {
 		return nil, h.mapError(err, "Failed to list swarm stacks: "+err.Error())
 	}
-	if items == nil {
-		items = []types.SwarmStackSummary{}
-	}
 
 	return &handlerutil.Page[types.SwarmStackSummary]{Body: types.Paginated[types.SwarmStackSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
@@ -252,9 +249,6 @@ func (h *Handler) ListStackServices(ctx context.Context, input *ListSwarmStackSe
 		}
 		return nil, h.mapError(err, "Failed to list swarm stack services")
 	}
-	if items == nil {
-		items = []types.SwarmServiceSummary{}
-	}
 
 	return &handlerutil.Page[types.SwarmServiceSummary]{Body: types.Paginated[types.SwarmServiceSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
@@ -278,9 +272,6 @@ func (h *Handler) ListStackTasks(ctx context.Context, input *ListSwarmStackTasks
 			return nil, huma.Error404NotFound("Swarm stack not found")
 		}
 		return nil, h.mapError(err, "Failed to list swarm stack tasks")
-	}
-	if items == nil {
-		items = []types.SwarmTaskSummary{}
 	}
 
 	return &handlerutil.Page[types.SwarmTaskSummary]{Body: types.Paginated[types.SwarmTaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
