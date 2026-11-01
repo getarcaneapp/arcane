@@ -209,6 +209,30 @@ func TestMigration066_GlobalVariables_UpAndDown(t *testing.T) {
 	assert.Zero(t, rowCount)
 }
 
+func TestMigration095_GlobalVariableInjectIntoContainers_BackfillsExistingAndDowngrades(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-global-variable-inject.db")
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 94))
+	_, err := rawDB.Exec(`INSERT INTO global_variables (id, created_at, key, value) VALUES ('var-existing', CURRENT_TIMESTAMP, 'PUID', '1000')`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 95))
+	_, err = rawDB.Exec(`INSERT INTO global_variables (id, created_at, key, value) VALUES ('var-new', CURRENT_TIMESTAMP, 'DB_PASSWORD', 'secret')`)
+	require.NoError(t, err)
+
+	var existingInjected, newInjected bool
+	require.NoError(t, rawDB.QueryRow(`SELECT inject_into_containers FROM global_variables WHERE id = 'var-existing'`).Scan(&existingInjected))
+	require.NoError(t, rawDB.QueryRow(`SELECT inject_into_containers FROM global_variables WHERE id = 'var-new'`).Scan(&newInjected))
+	assert.True(t, existingInjected, "variables that existed before the migration keep being injected")
+	assert.False(t, newInjected)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 94))
+	var columnCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('global_variables') WHERE name = 'inject_into_containers'`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+}
+
 func TestMigration088_VulnerabilityRisk_BackfillsCVSSAndDowngrades(t *testing.T) {
 	ctx := t.Context()
 	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-vulnerability-risk.db")

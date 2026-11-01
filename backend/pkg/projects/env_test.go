@@ -72,6 +72,27 @@ func TestLoadEnvironment(t *testing.T) {
 	})
 }
 
+func TestLoadEnvironment_SkipsInjectionForNoInjectGlobalKeys(t *testing.T) {
+	tmpDir := t.TempDir()
+	projectsDir := filepath.Join(tmpDir, "projects")
+	workdir := filepath.Join(projectsDir, "myproject")
+	require.NoError(t, os.MkdirAll(workdir, utils.DirPerm))
+	require.NoError(t, os.WriteFile(filepath.Join(projectsDir, GlobalEnvFileName), []byte("PUID=1000\nDB_PASSWORD=secret\n"), utils.FilePerm))
+	noInjectPath := filepath.Join(projectsDir, GlobalEnvNoInjectFileName)
+	require.NoError(t, os.WriteFile(noInjectPath, []byte("# interpolation only\n\nDB_PASSWORD\n"), utils.FilePerm))
+
+	envMap, injectionVars, err := NewEnvLoader(projectsDir, workdir, false).LoadEnvironment(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "secret", envMap["DB_PASSWORD"])
+	assert.Equal(t, EnvMap{"PUID": "1000"}, injectionVars)
+
+	// An emptied list injects every global key again.
+	require.NoError(t, os.WriteFile(noInjectPath, nil, utils.FilePerm))
+	_, injectionVars, err = NewEnvLoader(projectsDir, workdir, false).LoadEnvironment(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, EnvMap{"PUID": "1000", "DB_PASSWORD": "secret"}, injectionVars)
+}
+
 func TestLoadEnvironment_DoesNotCreateMissingGlobalEnvFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	projectsDir := filepath.Join(tmpDir, "projects")

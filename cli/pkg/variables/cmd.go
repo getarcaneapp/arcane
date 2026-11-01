@@ -42,6 +42,7 @@ func printMutationResult(result env.GlobalVariableMutationResponse, message stri
 		output.KeyValue("ID", result.Variable.ID)
 		output.KeyValue("Key", result.Variable.Key)
 		output.KeyValue("Secret", strconv.FormatBool(result.Variable.IsSecret))
+		output.KeyValue("Inject", strconv.FormatBool(result.Variable.InjectIntoContainers))
 		scope := "-"
 		switch {
 		case result.Variable.AllEnvironments:
@@ -72,7 +73,7 @@ func newListCmd() *cobra.Command {
 				Path:           types.Variables(),
 				FailureMessage: "failed to list variables",
 				Render: func(data []env.GlobalVariable) error {
-					headers := []string{"ID", "KEY", "SCOPE", "SECRET", "VALUE"}
+					headers := []string{"ID", "KEY", "SCOPE", "SECRET", "INJECT", "VALUE"}
 					rows := make([][]string, len(data))
 					for i, variable := range data {
 						value := variable.Value
@@ -91,6 +92,7 @@ func newListCmd() *cobra.Command {
 							variable.Key,
 							scope,
 							strconv.FormatBool(variable.IsSecret),
+							strconv.FormatBool(variable.InjectIntoContainers),
 							value,
 						}
 					}
@@ -111,6 +113,7 @@ func newCreateCmd() *cobra.Command {
 		key     string
 		value   string
 		secret  bool
+		inject  bool
 		allEnvs bool
 		envIDs  []string
 	}
@@ -126,11 +129,12 @@ func newCreateCmd() *cobra.Command {
 			}
 
 			req := env.CreateGlobalVariableRequest{
-				Key:             opts.key,
-				Value:           opts.value,
-				IsSecret:        opts.secret,
-				AllEnvironments: opts.allEnvs,
-				EnvironmentIDs:  opts.envIDs,
+				Key:                  opts.key,
+				Value:                opts.value,
+				IsSecret:             opts.secret,
+				AllEnvironments:      opts.allEnvs,
+				InjectIntoContainers: opts.inject,
+				EnvironmentIDs:       opts.envIDs,
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[env.GlobalVariableMutationResponse]{
@@ -147,6 +151,7 @@ func newCreateCmd() *cobra.Command {
 	command.Flags().StringVar(&opts.key, "key", "", "Variable key")
 	command.Flags().StringVar(&opts.value, "value", "", "Variable value")
 	command.Flags().BoolVar(&opts.secret, "secret", false, "Store the value as a secret")
+	command.Flags().BoolVar(&opts.inject, "inject", false, "Inject the variable into every container's environment (otherwise it is only available for ${VAR} interpolation)")
 	command.Flags().BoolVar(&opts.allEnvs, "all-environments", false, "Scope the variable to all environments")
 	command.Flags().StringArrayVar(&opts.envIDs, "environment", nil, "Environment ID to scope the variable to (repeatable)")
 	_ = command.MarkFlagRequired("key")
@@ -158,6 +163,7 @@ func newUpdateCmd() *cobra.Command {
 		key     string
 		value   string
 		secret  bool
+		inject  bool
 		allEnvs bool
 		envIDs  []string
 	}
@@ -167,7 +173,7 @@ func newUpdateCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !slices.ContainsFunc([]string{"key", "value", "secret", "all-environments", "environment"}, cmd.Flags().Changed) {
+			if !slices.ContainsFunc([]string{"key", "value", "secret", "inject", "all-environments", "environment"}, cmd.Flags().Changed) {
 				return errors.New("no updates provided (set at least one flag)")
 			}
 			c, err := cmdutil.ClientFromCommand(cmd)
@@ -176,11 +182,12 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			req := env.UpdateGlobalVariableRequest{
-				Key:             kit.Ternary(cmd.Flags().Changed("key"), &opts.key, nil),
-				Value:           kit.Ternary(cmd.Flags().Changed("value"), &opts.value, nil),
-				IsSecret:        kit.Ternary(cmd.Flags().Changed("secret"), &opts.secret, nil),
-				AllEnvironments: kit.Ternary(cmd.Flags().Changed("all-environments"), &opts.allEnvs, nil),
-				EnvironmentIDs:  kit.Ternary(cmd.Flags().Changed("environment"), &opts.envIDs, nil),
+				Key:                  kit.Ternary(cmd.Flags().Changed("key"), &opts.key, nil),
+				Value:                kit.Ternary(cmd.Flags().Changed("value"), &opts.value, nil),
+				IsSecret:             kit.Ternary(cmd.Flags().Changed("secret"), &opts.secret, nil),
+				AllEnvironments:      kit.Ternary(cmd.Flags().Changed("all-environments"), &opts.allEnvs, nil),
+				InjectIntoContainers: kit.Ternary(cmd.Flags().Changed("inject"), &opts.inject, nil),
+				EnvironmentIDs:       kit.Ternary(cmd.Flags().Changed("environment"), &opts.envIDs, nil),
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[env.GlobalVariableMutationResponse]{
@@ -197,6 +204,7 @@ func newUpdateCmd() *cobra.Command {
 	command.Flags().StringVar(&opts.key, "key", "", "Variable key")
 	command.Flags().StringVar(&opts.value, "value", "", "Variable value")
 	command.Flags().BoolVar(&opts.secret, "secret", false, "Store the value as a secret")
+	command.Flags().BoolVar(&opts.inject, "inject", false, "Inject the variable into every container's environment (otherwise it is only available for ${VAR} interpolation)")
 	command.Flags().BoolVar(&opts.allEnvs, "all-environments", false, "Scope the variable to all environments")
 	command.Flags().StringArrayVar(&opts.envIDs, "environment", nil, "Environment ID to scope the variable to (repeatable)")
 	return command

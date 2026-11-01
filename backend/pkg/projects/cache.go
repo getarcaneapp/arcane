@@ -80,7 +80,7 @@ func (c *composeCacheInternal[T]) Set(projectID, fingerprint, projectPath, proje
 	}
 	dependencies := append([]string{filepath.Join(projectPath, EffectiveEnvFileName)}, envFiles...)
 	if projectsDirectory != "" {
-		dependencies = append(dependencies, filepath.Join(projectsDirectory, GlobalEnvFileName))
+		dependencies = append(dependencies, filepath.Join(projectsDirectory, GlobalEnvFileName), filepath.Join(projectsDirectory, GlobalEnvNoInjectFileName))
 	}
 	// A later standard override must invalidate a model loaded before it existed.
 	for _, name := range composeOverrideFileCandidates {

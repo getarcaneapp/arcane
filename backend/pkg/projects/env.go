@@ -33,6 +33,11 @@ const (
 	ProjectEnvModeDirect   ProjectEnvMode = "direct"
 	ProjectEnvModeOverride ProjectEnvMode = "override"
 
+	// GlobalEnvNoInjectFileName lists, one per line, the .env.global keys that
+	// are only available for ${VAR} interpolation. Every other global key is
+	// injected into each service; a missing file means every key is injected.
+	GlobalEnvNoInjectFileName = ".env.global.noinject"
+
 	// Docker Compose pre-defined variable names that compose-go's consts package
 	// does not export. See https://docs.docker.com/compose/how-tos/environment-variables/envvars.
 	composeEnvFilesKey      = "COMPOSE_ENV_FILES"
@@ -169,7 +174,7 @@ func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap, injectionVars 
 func (l *EnvLoader) mergeComposeEnvFilesInternal(ctx context.Context, envMap, injectionVars EnvMap) {
 	parse := func(path string, contextEnv EnvMap) (EnvMap, error) {
 		key := strings.Join([]string{path, l.projectsDir, strconv.FormatBool(l.autoInjectEnv), strconv.FormatUint(kit.Fingerprint(contextEnv), 16)}, "\x00")
-		entry, err := loadCachedEnvFileInternal(ctx, projectEnvFileCache, key, path, contextEnv)
+		entry, err := loadCachedEnvFileInternal(ctx, projectEnvFileCache, key, path, envFileParserInternal(contextEnv))
 		if err != nil {
 			return nil, err
 		}
@@ -184,7 +189,7 @@ func (l *EnvLoader) mergeComposeEnvFilesInternal(ctx context.Context, envMap, in
 }
 
 func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envMap, injectionVars EnvMap) error {
-	entry, err := loadCachedEnvFileInternal(ctx, globalEnvFileCache, path, path, envMap)
+	entry, err := loadCachedEnvFileInternal(ctx, globalEnvFileCache, path, path, envFileParserInternal(envMap))
 	if err != nil {
 		return err
 	}
@@ -192,9 +197,18 @@ func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envM
 		return os.ErrNotExist
 	}
 
+	noInjectPath := filepath.Join(filepath.Dir(path), GlobalEnvNoInjectFileName)
+	noInject, noInjectErr := loadCachedEnvFileInternal(ctx, globalEnvFileCache, noInjectPath, noInjectPath, parseEnvKeyListFileInternal)
+	if noInjectErr != nil {
+		// Fail closed: without the list, injecting could leak an interpolation-only secret.
+		slog.WarnContext(ctx, "Failed to read global env no-inject list; global variables will not be injected", "path", noInjectPath, "error", noInjectErr)
+	}
+
 	for k, v := range entry.values {
 		envMap[k] = v
-		injectionVars[k] = v
+		if _, skip := noInject.values[k]; noInjectErr == nil && !skip {
+			injectionVars[k] = v
+		}
 	}
 
 	slog.DebugContext(ctx, "Merged global env into environment map", "totalEnvCount", len(envMap))
@@ -203,7 +217,7 @@ func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envM
 
 func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, envMap, injectionVars EnvMap) error {
 	key := strings.Join([]string{path, l.projectsDir, strconv.FormatBool(l.autoInjectEnv), strconv.FormatUint(kit.Fingerprint(envMap), 16)}, "\x00")
-	entry, err := loadCachedEnvFileInternal(ctx, projectEnvFileCache, key, path, envMap)
+	entry, err := loadCachedEnvFileInternal(ctx, projectEnvFileCache, key, path, envFileParserInternal(envMap))
 	if err != nil {
 		return err
 	}
@@ -222,7 +236,7 @@ func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, env
 	return nil
 }
 
-func loadCachedEnvFileInternal(_ context.Context, envCache *hot.HotCache[string, envFileCacheEntry], key, path string, contextEnv EnvMap) (envFileCacheEntry, error) {
+func loadCachedEnvFileInternal(_ context.Context, envCache *hot.HotCache[string, envFileCacheEntry], key, path string, parse func(path string) (EnvMap, error)) (envFileCacheEntry, error) {
 	if cached, ok := envCache.Peek(key); ok {
 		if validEnvFileCacheEntryInternal(cached) {
 			return cached, nil
@@ -244,7 +258,7 @@ func loadCachedEnvFileInternal(_ context.Context, envCache *hot.HotCache[string,
 			return nil, fmt.Errorf("path is a directory: %s", path)
 		}
 
-		parsed, err := parseProjectEnvFileExistingInternal(path, contextEnv)
+		parsed, err := parse(path)
 		if err != nil {
 			return nil, fmt.Errorf("parse env file: %w", err)
 		}
@@ -292,6 +306,29 @@ func parseProjectEnvFileExistingInternal(path string, contextEnv EnvMap) (EnvMap
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 	return ParseProjectEnvContent(string(content), contextEnv)
+}
+
+func envFileParserInternal(contextEnv EnvMap) func(path string) (EnvMap, error) {
+	return func(path string) (EnvMap, error) {
+		return parseProjectEnvFileExistingInternal(path, contextEnv)
+	}
+}
+
+// parseEnvKeyListFileInternal reads a file of one key per line, skipping blank
+// lines and # comments. The keys are returned with empty values.
+func parseEnvKeyListFileInternal(path string) (EnvMap, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read file: %w", err)
+	}
+	keys := make(EnvMap)
+	for line := range strings.Lines(string(content)) {
+		key := strings.TrimSpace(line)
+		if key != "" && !strings.HasPrefix(key, "#") {
+			keys[key] = ""
+		}
+	}
+	return keys, nil
 }
 
 // ParseProjectEnvFile parses a project .env file with variable expansion using the provided
@@ -850,7 +887,7 @@ func ComposeFileEnvSelection(ctx context.Context, projectsDir, dir string) ([]st
 	envMap := make(EnvMap)
 	if strings.TrimSpace(projectsDir) != "" {
 		globalEnvPath := filepath.Join(projectsDir, GlobalEnvFileName)
-		globalEnv, err := loadCachedEnvFileInternal(ctx, globalEnvFileCache, globalEnvPath+"\x00compose-file-selection", globalEnvPath, envMap)
+		globalEnv, err := loadCachedEnvFileInternal(ctx, globalEnvFileCache, globalEnvPath+"\x00compose-file-selection", globalEnvPath, envFileParserInternal(envMap))
 		if err != nil {
 			return nil, err
 		}
