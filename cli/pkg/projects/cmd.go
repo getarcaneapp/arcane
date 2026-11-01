@@ -307,7 +307,7 @@ func runProjectStreamAction(cmd *cobra.Command, identifier string, cfg projectSt
 	// Streamed actions can take a long time as they may pull images.
 	c.SetTimeout(30 * time.Minute)
 
-	resp, err := c.Post(cmd.Context(), cfg.endpoint(c.EnvID(), resolved.ID), cfg.body)
+	resp, err := c.Request(cmd.Context(), http.MethodPost, cfg.endpoint(c.EnvID(), resolved.ID), cfg.body)
 	if err != nil {
 		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
 	}

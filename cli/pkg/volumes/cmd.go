@@ -216,7 +216,7 @@ func newPruneCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, opts.forceFlag, "Are you sure you want to prune unused volumes?")
+			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: "Are you sure you want to prune unused volumes?", Force: opts.forceFlag})
 			if confirmationErr != nil || !confirmed {
 				return confirmationErr
 			}

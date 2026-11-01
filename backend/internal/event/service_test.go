@@ -94,7 +94,16 @@ func TestEventService_LogEventsPersistOptionalPointers(t *testing.T) {
 	svc := NewEventService(db, nil, nil)
 
 	metadata := database.JSON{"source": "test"}
-	err := svc.LogContainerEvent(ctx, EventTypeContainerStart, "container-1", "web", "user-1", "arcane", "0", metadata)
+	err := svc.LogResourceEvent(ctx, ResourceEvent{
+		Type:          EventTypeContainerStart,
+		ResourceType:  "container",
+		ResourceID:    "container-1",
+		ResourceName:  "web",
+		UserID:        "user-1",
+		Username:      "arcane",
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	})
 	require.NoError(t, err)
 
 	var containerEvent Event
@@ -168,18 +177,16 @@ func TestEventService_LogErrorEvent_DoesNotMutateInputMetadata(t *testing.T) {
 	svc := NewEventService(db, nil, nil)
 
 	metadata := database.JSON{"phase": "pull"}
-	svc.LogErrorEvent(
-		ctx,
-		EventTypeImageScan,
-		"image",
-		"img-1",
-		"nginx:latest",
-		"user-1",
-		"arcane",
-		"0",
-		errors.New("pull failed"),
-		metadata,
-	)
+	svc.LogErrorEvent(ctx, ResourceEvent{
+		Type:          EventTypeImageScan,
+		ResourceType:  "image",
+		ResourceID:    "img-1",
+		ResourceName:  "nginx:latest",
+		UserID:        "user-1",
+		Username:      "arcane",
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}, errors.New("pull failed"))
 
 	_, mutated := metadata["error"]
 	require.False(t, mutated, "input metadata should not be mutated by LogErrorEvent")

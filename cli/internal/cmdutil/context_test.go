@@ -65,7 +65,7 @@ func TestConfirmOrCancel(t *testing.T) {
 				t.Setenv("TERM", "xterm")
 				cmd.SetIn(confirmationInput{Reader: input, terminal: terminal})
 			}
-			confirmed, confirmErr := ConfirmOrCancel(cmd, tt.force, "Delete record?")
+			confirmed, confirmErr := ConfirmOrCancel(cmd, ConfirmOptions{Label: "Delete record?", Force: tt.force})
 			require.Equal(t, tt.confirmed, confirmed)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, confirmErr, tt.wantErr)

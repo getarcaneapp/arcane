@@ -159,7 +159,7 @@ func TestVolumeBackupPasswordPrefersRecoveryKey(t *testing.T) {
 	require.Equal(t, kit.SHA256Hex(legacyVolumePasswordSalt+service.deps.EncryptionKey), password)
 
 	recoveryKey := "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN"
-	require.NoError(t, recoveryKeys.Set(t.Context(), recoveryKey))
+	require.NoError(t, recoveryKeys.Set(t.Context(), backup.RecoveryKeyConfigID, recoveryKey))
 	password, err = service.volumeBackupPassword(t.Context(), nil)
 	require.NoError(t, err)
 	require.Equal(t, recoveryKey, password)

@@ -125,21 +125,16 @@ func NewTemplateService(ctx context.Context, db *database.DB, httpClient *http.C
 		WithRevalidationErrorPolicy(hot.KeepOnError).
 		Build()
 
-	if err := projects.EnsureDefaultTemplates(ctx, service.configuredTemplatesDirSetting(ctx)); err != nil {
+	if err := projects.EnsureDefaultTemplates(ctx, service.settingsService.GetStringSetting(ctx, "templatesDirectory")); err != nil {
 		slog.WarnContext(ctx, "failed to ensure default templates", "error", err)
 	}
 
 	return service
 }
 
-// configuredTemplatesDirSetting returns the raw templates directory setting; callers resolve it.
-func (s *TemplateService) configuredTemplatesDirSetting(ctx context.Context) string {
-	return s.settingsService.GetStringSetting(ctx, "templatesDirectory")
-}
-
 // getTemplatesDirectory resolves the effective templates directory.
 func (s *TemplateService) getTemplatesDirectory(ctx context.Context) (string, error) {
-	return projects.GetTemplatesDirectory(ctx, strings.TrimSpace(s.configuredTemplatesDirSetting(ctx)))
+	return projects.GetTemplatesDirectory(ctx, strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "templatesDirectory")))
 }
 
 func (s *TemplateService) remoteTemplates(ctx context.Context, refresh bool) ([]ComposeTemplate, error) {
@@ -1008,7 +1003,7 @@ func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *
 			return targetErr
 		}
 
-		dir, composePath, envPath, ensureErr := projects.EnsureTemplateDir(ctx, s.configuredTemplatesDirSetting(ctx), slug)
+		dir, composePath, envPath, ensureErr := projects.EnsureTemplateDir(ctx, s.settingsService.GetStringSetting(ctx, "templatesDirectory"), slug)
 		if ensureErr != nil {
 			return ensureErr
 		}

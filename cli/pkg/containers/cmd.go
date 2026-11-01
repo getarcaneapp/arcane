@@ -32,8 +32,8 @@ func Command() *cobra.Command {
 		Short:       "Manage containers",
 	}
 	command.AddCommand(
-		newListCmd(),
-		newUpdatesCmd(),
+		newContainerListCmd(false),
+		newContainerListCmd(true),
 		newGetCmd(),
 		newStartCmd(),
 		newStopCmd(),
@@ -51,10 +51,6 @@ func Command() *cobra.Command {
 		newAutoUpdateCmd(),
 	)
 	return command
-}
-
-func newListCmd() *cobra.Command {
-	return newContainerListCmd(false)
 }
 
 func newContainerListCmd(updatesOnly bool) *cobra.Command {
@@ -160,10 +156,6 @@ func newContainerListCmd(updatesOnly bool) *cobra.Command {
 	}
 
 	return command
-}
-
-func newUpdatesCmd() *cobra.Command {
-	return newContainerListCmd(true)
 }
 
 func newGetCmd() *cobra.Command {

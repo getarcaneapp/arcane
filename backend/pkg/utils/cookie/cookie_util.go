@@ -60,10 +60,6 @@ func ClearTokenCookie(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func GetTokenCookieFromHeader(cookieHeader string) (string, error) {
-	return GetTokenCookie(&http.Request{Header: http.Header{"Cookie": []string{cookieHeader}}})
-}
-
 func BuildRefreshCookieStringFor(maxAgeInSeconds int, value string, secure bool) string {
 	return buildCookieString(kit.Ternary(secure, RefreshCookieName, InsecureRefreshCookieName), RefreshCookiePath, value, max(maxAgeInSeconds, 0), secure, http.SameSiteStrictMode)
 }

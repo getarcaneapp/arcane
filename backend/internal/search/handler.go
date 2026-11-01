@@ -36,7 +36,7 @@ func filterCustomizeCategories(ps *authz.PermissionSet, categories []types.Categ
 	}
 	filtered := make([]types.Category, 0, len(categories))
 	for _, cat := range categories {
-		if authz.CanAccessCustomizeCategory(ps, cat.ID, "") {
+		if authz.CanAccessSurface(ps, "customize.category."+cat.ID, "") {
 			filtered = append(filtered, cat)
 		}
 	}

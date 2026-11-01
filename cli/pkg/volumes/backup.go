@@ -44,7 +44,7 @@ func newRenameCmd() *cobra.Command {
 				return err
 			}
 
-			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, opts.forceFlag, fmt.Sprintf("Rename volume %s to %s? The volume is copied and the source is removed.", resolved.Name, args[1]))
+			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: fmt.Sprintf("Rename volume %s to %s? The volume is copied and the source is removed.", resolved.Name, args[1]), Force: opts.forceFlag})
 			if confirmationErr != nil || !confirmed {
 				return confirmationErr
 			}
@@ -283,7 +283,7 @@ and restored instead (no backup ID).`,
 					confirmation = fmt.Sprintf("Restore %d path(s) into volume %s from backup %s?", len(opts.restorePaths), resolved.Name, backupID)
 				}
 			}
-			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, opts.forceFlag, confirmation)
+			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: confirmation, Force: opts.forceFlag})
 			if confirmationErr != nil || !confirmed {
 				return confirmationErr
 			}
@@ -417,7 +417,7 @@ func newBackupsDownloadCmd() *cobra.Command {
 			// Downloading large backups can take a long time
 			c.SetTimeout(30 * time.Minute)
 
-			resp, err := c.Get(cmd.Context(), clitypes.VolumeBackupDownload(c.EnvID(), args[0]))
+			resp, err := c.Request(cmd.Context(), http.MethodGet, clitypes.VolumeBackupDownload(c.EnvID(), args[0]), nil)
 			if err != nil {
 				return fmt.Errorf("failed to download backup: %w", err)
 			}
@@ -545,7 +545,7 @@ func runBackupList(cmd *cobra.Command, args []string, opts backupListOptions) er
 		return fmt.Errorf("failed to build pagination query: %w", err)
 	}
 
-	resp, err := c.Get(cmd.Context(), path)
+	resp, err := c.Request(cmd.Context(), http.MethodGet, path, nil)
 	if err != nil {
 		return fmt.Errorf("failed to list backups: %w", err)
 	}

@@ -184,7 +184,7 @@ func (h *SettingsHandler) GetCategories(ctx context.Context, input *struct{}) (*
 	}
 	scopes := append([]string{""}, slices.Collect(maps.Keys(ps.PerEnv))...)
 	for _, cat := range h.settingsSearchService.GetSettingsCategories() {
-		if slices.ContainsFunc(scopes, func(envID string) bool { return authz.CanAccessSettingsCategory(ps, cat.ID, envID) }) {
+		if slices.ContainsFunc(scopes, func(envID string) bool { return authz.CanAccessSurface(ps, "settings.category."+cat.ID, envID) }) {
 			categories = append(categories, cat)
 		}
 	}

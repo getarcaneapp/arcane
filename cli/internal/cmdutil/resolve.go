@@ -235,7 +235,7 @@ func (ref ResourceRef[D, S]) fetchByIdentifier(ctx context.Context, c *client.Cl
 	if ref.GetPath == nil {
 		return nil, false, nil
 	}
-	resp, err := c.Get(ctx, ref.GetPath(c.EnvID(), identifier))
+	resp, err := c.Request(ctx, http.MethodGet, ref.GetPath(c.EnvID(), identifier), nil)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to resolve %s %q: %w", ref.Singular, identifier, err)
 	}
@@ -304,7 +304,7 @@ func (ref ResourceRef[D, S]) fallbackByIDPrefix(ctx context.Context, c *client.C
 }
 
 func (ref ResourceRef[D, S]) listItems(ctx context.Context, c *client.Client, path string) ([]S, error) {
-	resp, err := c.Get(ctx, path)
+	resp, err := c.Request(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search %s: %w", ref.Plural, err)
 	}

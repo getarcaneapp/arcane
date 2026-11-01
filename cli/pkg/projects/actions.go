@@ -295,7 +295,7 @@ func newWorkspaceDownloadCmd() *cobra.Command {
 			}
 
 			reqPath := clitypes.ProjectWorkspaceFileDownload(c.EnvID(), resolved.ID) + "?relativePath=" + url.QueryEscape(args[1])
-			resp, err := c.Get(cmd.Context(), reqPath)
+			resp, err := c.Request(cmd.Context(), http.MethodGet, reqPath, nil)
 			if err != nil {
 				return fmt.Errorf("failed to download workspace file: %w", err)
 			}

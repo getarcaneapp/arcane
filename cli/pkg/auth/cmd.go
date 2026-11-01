@@ -50,7 +50,7 @@ func newLoginCmd() *cobra.Command {
 				return fmt.Errorf("failed to marshal request: %w", err)
 			}
 
-			resp, err := c.Post(cmd.Context(), clitypes.OIDCDeviceCode(), reqBody)
+			resp, err := c.Request(cmd.Context(), http.MethodPost, clitypes.OIDCDeviceCode(), reqBody)
 			if err != nil {
 				return fmt.Errorf("device authorization failed: %w", err)
 			}
@@ -335,7 +335,7 @@ func pollDeviceToken(cmd *cobra.Command, c *client.Client, deviceAuth types.Oidc
 			return types.AuthenticationResponse{}, cmd.Context().Err()
 		}
 
-		tokenResp, postErr := c.Post(cmd.Context(), clitypes.OIDCDeviceToken(), tokenReqBody)
+		tokenResp, postErr := c.Request(cmd.Context(), http.MethodPost, clitypes.OIDCDeviceToken(), tokenReqBody)
 		if postErr != nil {
 			return types.AuthenticationResponse{}, fmt.Errorf("device token exchange failed: %w", postErr)
 		}

@@ -144,11 +144,6 @@ func (s *StateMap[K, V]) RemoveWhere(ctx context.Context, label string, predicat
 	})
 }
 
-// Drain atomically removes and returns every value.
-func (s *StateMap[K, V]) Drain(ctx context.Context, label string) ([]V, error) {
-	return s.RemoveWhere(ctx, label, func(K, V) bool { return true })
-}
-
 func (s *StateMap[K, V]) publishInternal() {
 	snapshot := make(map[K]V, len(s.values))
 	maps.Copy(snapshot, s.values)

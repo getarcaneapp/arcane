@@ -303,7 +303,11 @@ func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *GitOpsSyncAc
 	}
 	actor := handlerutil.CurrentActor(ctx)
 
-	result, err := h.syncService.PerformSync(ctx, input.EnvironmentID, input.SyncID, actor)
+	result, err := h.syncService.PerformSync(ctx, SyncRequest{
+		EnvironmentID: input.EnvironmentID,
+		SyncID:        input.SyncID,
+		Actor:         actor,
+	})
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to perform GitOps sync")

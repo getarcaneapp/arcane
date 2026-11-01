@@ -186,7 +186,7 @@ func newCancelCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			confirmed, confirmErr := cmdutil.ConfirmOrCancel(cmd, opts.force, fmt.Sprintf("Are you sure you want to cancel activity %s?", args[0]))
+			confirmed, confirmErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: fmt.Sprintf("Are you sure you want to cancel activity %s?", args[0]), Force: opts.force})
 			if confirmErr != nil || !confirmed {
 				return confirmErr
 			}
@@ -222,7 +222,7 @@ func newClearCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			confirmed, confirmErr := cmdutil.ConfirmOrCancel(cmd, opts.force, "Are you sure you want to clear the finished activity history?")
+			confirmed, confirmErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: "Are you sure you want to clear the finished activity history?", Force: opts.force})
 			if confirmErr != nil || !confirmed {
 				return confirmErr
 			}

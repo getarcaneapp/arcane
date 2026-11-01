@@ -397,7 +397,7 @@ func (s *Service) recoveryKey(ctx context.Context, supplied string) (string, err
 		}
 		return supplied, nil
 	}
-	key, err := s.recoveryKeys.Get(ctx)
+	key, err := s.recoveryKeys.Get(ctx, backup.RecoveryKeyConfigID)
 	if errors.Is(err, backup.ErrRecoveryKeyNotConfigured) {
 		return "", common.Classify(common.ErrValidation, errors.New("enter the recovery key or configure one in system backups"))
 	}
@@ -908,7 +908,7 @@ func (s *Service) PruneLocalRepository(ctx context.Context) error {
 	if err != nil || localBackups == 0 {
 		return err
 	}
-	key, err := s.recoveryKeys.Get(ctx)
+	key, err := s.recoveryKeys.Get(ctx, backup.RecoveryKeyConfigID)
 	if errors.Is(err, backup.ErrRecoveryKeyNotConfigured) {
 		return nil
 	}
@@ -1228,7 +1228,7 @@ func (s *Service) SetRecoveryKey(ctx context.Context, recoveryKey string) (*type
 		return nil, err
 	}
 	defer lease.Release(ctx)
-	previous, err := s.recoveryKeys.Get(ctx)
+	previous, err := s.recoveryKeys.Get(ctx, backup.RecoveryKeyConfigID)
 	if err != nil {
 		if !errors.Is(err, backup.ErrRecoveryKeyNotConfigured) {
 			slog.WarnContext(ctx, "could not read the current recovery key; existing backups must already open with the new key", "error", err.Error())
@@ -1236,7 +1236,7 @@ func (s *Service) SetRecoveryKey(ctx context.Context, recoveryKey string) (*type
 		previous = ""
 	}
 	if previous == recoveryKey {
-		if setErr := s.recoveryKeys.Set(ctx, recoveryKey); setErr != nil {
+		if setErr := s.recoveryKeys.Set(ctx, backup.RecoveryKeyConfigID, recoveryKey); setErr != nil {
 			return nil, setErr
 		}
 		return &types.SystemBackupRecoveryKeyStatus{Configured: true}, nil
@@ -1265,7 +1265,7 @@ func (s *Service) SetRecoveryKey(ctx context.Context, recoveryKey string) (*type
 	if runningVolumeBackups > 0 {
 		return nil, rollback(runningVolumeBackupsErr)
 	}
-	if setErr := s.recoveryKeys.Set(ctx, recoveryKey); setErr != nil {
+	if setErr := s.recoveryKeys.Set(ctx, backup.RecoveryKeyConfigID, recoveryKey); setErr != nil {
 		return nil, rollback(setErr)
 	}
 	return &types.SystemBackupRecoveryKeyStatus{Configured: true}, nil
@@ -1591,7 +1591,7 @@ func (s *Service) StartBackup(ctx context.Context, user types.Actor, request typ
 	release := s.engine.Hold(backup.SystemAdmissionScope, backup.SystemAdmissionID, run.ID, lease)
 	// An entered key is held encrypted, outside the workflow payload, so a restart can still resume the backup.
 	if request.RecoveryKey != "" {
-		if holdErr := s.recoveryKeys.HoldRunKey(ctx, run.ID, prepared.recoveryKey); holdErr != nil {
+		if holdErr := s.recoveryKeys.Set(ctx, backup.RunKeyPrefix+run.ID, prepared.recoveryKey); holdErr != nil {
 			release(ctx)
 			return nil, errors.Join(holdErr, s.store.FailRun(context.WithoutCancel(ctx), run.ID, holdErr.Error()))
 		}
@@ -1614,7 +1614,7 @@ func (s *Service) StartBackup(ctx context.Context, user types.Actor, request typ
 	}, backup.AcceptedTarget(run.ID))
 	if err != nil {
 		release(ctx)
-		return nil, errors.Join(err, s.recoveryKeys.ReleaseRunKey(context.WithoutCancel(ctx), run.ID), s.store.FailRun(context.WithoutCancel(ctx), run.ID, err.Error()))
+		return nil, errors.Join(err, s.recoveryKeys.Delete(context.WithoutCancel(ctx), backup.RunKeyPrefix+run.ID), s.store.FailRun(context.WithoutCancel(ctx), run.ID, err.Error()))
 	}
 	// A backup canceled before its task runs never takes the parked lease or uses the held key.
 	go func() {
@@ -1661,7 +1661,7 @@ func (s *Service) watchBackup(ctx context.Context, runID, instanceID string) {
 	if err != nil {
 		return
 	}
-	if releaseErr := s.recoveryKeys.ReleaseRunKey(ctx, runID); releaseErr != nil {
+	if releaseErr := s.recoveryKeys.Delete(ctx, backup.RunKeyPrefix+runID); releaseErr != nil {
 		slog.WarnContext(ctx, "Failed to release system backup recovery key", "runId", runID, "error", releaseErr)
 	}
 	if outcome.Status == types.RunStatusSucceeded {
@@ -1871,7 +1871,7 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 		if err != nil {
 			err = errors.Join(err, s.store.FailRun(ctx, runID, err.Error()))
 		}
-		err = errors.Join(err, s.recoveryKeys.ReleaseRunKey(ctx, runID))
+		err = errors.Join(err, s.recoveryKeys.Delete(ctx, backup.RunKeyPrefix+runID))
 	}()
 	previous, _ := jobcontext.Run(ctx)
 	resuming := slices.ContainsFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
@@ -1898,8 +1898,8 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 	if run.Status == types.SystemBackupStatusSucceeded {
 		return succeeded, nil
 	}
-	supplied, err := s.recoveryKeys.RunKey(ctx, runID)
-	if err != nil {
+	supplied, err := s.recoveryKeys.Get(ctx, backup.RunKeyPrefix+runID)
+	if err != nil && !errors.Is(err, backup.ErrRecoveryKeyNotConfigured) {
 		return nil, err
 	}
 	key, err := s.recoveryKey(ctx, supplied)

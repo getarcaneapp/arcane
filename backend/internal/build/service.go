@@ -239,7 +239,15 @@ func (s *BuildService) logBuildFailureEvent(ctx context.Context, environmentID s
 		metadata["buildRecordId"] = buildRecordID
 	}
 
-	s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", cmp.Or(cmp.Or(kit.TrimNonEmpty(req.Tags)...), strings.TrimSpace(serviceName), sanitizeBuildContextForEvent(req.ContextDir)), kit.FromPtr(user).ID, kit.FromPtr(user).Username, environmentID, err, metadata)
+	s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeImageError,
+		ResourceType:  "image",
+		ResourceName:  cmp.Or(cmp.Or(kit.TrimNonEmpty(req.Tags)...), strings.TrimSpace(serviceName), sanitizeBuildContextForEvent(req.ContextDir)),
+		UserID:        kit.FromPtr(user).ID,
+		Username:      kit.FromPtr(user).Username,
+		EnvironmentID: environmentID,
+		Metadata:      metadata,
+	}, err)
 }
 
 func sanitizeBuildContextForEvent(raw string) string {

@@ -467,35 +467,6 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 	return nil
 }
 
-// Get makes a GET request to the specified path.
-// It is a convenience wrapper around Request for retrieving resources.
-func (c *Client) Get(ctx context.Context, path string) (*http.Response, error) {
-	return c.Request(ctx, http.MethodGet, path, nil)
-}
-
-// Post makes a POST request to the specified path with a JSON body.
-// It is a convenience wrapper around Request for creating resources.
-func (c *Client) Post(ctx context.Context, path string, body any) (*http.Response, error) {
-	return c.Request(ctx, http.MethodPost, path, body)
-}
-
-// Put makes a PUT request to the specified path with a JSON body.
-// It is a convenience wrapper around Request for updating resources.
-func (c *Client) Put(ctx context.Context, path string, body any) (*http.Response, error) {
-	return c.Request(ctx, http.MethodPut, path, body)
-}
-
-// Delete makes a DELETE request to the specified path.
-// It is a convenience wrapper around Request for removing resources.
-func (c *Client) Delete(ctx context.Context, path string) (*http.Response, error) {
-	return c.Request(ctx, http.MethodDelete, path, nil)
-}
-
-// DeleteWithBody sends a DELETE request with a JSON options body.
-func (c *Client) DeleteWithBody(ctx context.Context, path string, body any) (*http.Response, error) {
-	return c.Request(ctx, http.MethodDelete, path, body)
-}
-
 // DoJSON enforces HTTP success and decodes a response without requiring the standard API envelope.
 func (c *Client) DoJSON[T any](ctx context.Context, method, path string, body any, headers ...http.Header) (T, error) {
 	loading := output.StartLoading(ctx)
@@ -608,7 +579,7 @@ func decodeResponseStrict[T any](resp *http.Response) (*types.ApiResponse[T], er
 
 // TestConnection checks the API version endpoint and returns transport or status failures.
 func (c *Client) TestConnection(ctx context.Context) error {
-	resp, err := c.Get(ctx, "/api/version")
+	resp, err := c.Request(ctx, http.MethodGet, "/api/version", nil)
 	if err != nil {
 		return err
 	}

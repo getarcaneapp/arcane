@@ -712,7 +712,7 @@ func (s *Service) StartUpgradeJob(ctx context.Context, user types.Actor, environ
 	}
 	defer s.startingJob.Store(false)
 
-	active, err := s.findUpgradeJob(ctx, "status IN ?", activeUpgradeJobStatuses)
+	active, err := s.FindUpgradeJob(ctx, "status IN ?", activeUpgradeJobStatuses)
 	if err != nil {
 		return nil, fmt.Errorf("check for active upgrade job: %w", err)
 	}
@@ -783,7 +783,7 @@ func (s *Service) watchUpgradeJob(ctx context.Context, jobID, instanceID string)
 // ResumeUpgradeJobOnStartup finalizes a job the manager left pending_restart by self-upgrading,
 // and fails a running job whose workflow is gone or whose manager was upgraded outside it. It is a no-op when nothing is pending.
 func (s *Service) ResumeUpgradeJobOnStartup(ctx context.Context) {
-	job, err := s.findUpgradeJob(ctx, "status IN ?", activeUpgradeJobStatuses)
+	job, err := s.FindUpgradeJob(ctx, "status IN ?", activeUpgradeJobStatuses)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to load pending upgrade job on startup", "error", err)
 		return
@@ -1362,11 +1362,6 @@ func (s *Service) saveResult(ctx context.Context, job *UpgradeJob, index int) er
 	return s.saveJob(ctx, latest)
 }
 
-// GetCurrentUpgradeJob returns the most recently created upgrade job, or nil.
-func (s *Service) GetCurrentUpgradeJob(ctx context.Context) (*UpgradeJob, error) {
-	return s.findUpgradeJob(ctx)
-}
-
 func (s *Service) saveJob(ctx context.Context, job *UpgradeJob) error {
 	if err := s.db.WithContext(ctx).Save(job).Error; err != nil {
 		return err
@@ -1387,7 +1382,7 @@ func (s *Service) saveJob(ctx context.Context, job *UpgradeJob) error {
 func (s *Service) RunStreamProducer(ctx context.Context, events chan<- types.UpgradeJob) {
 	s.jobHub.Subscribe(ctx, "current",
 		func(runCtx context.Context, publish func(types.UpgradeJob)) {
-			job, err := s.GetCurrentUpgradeJob(runCtx)
+			job, err := s.FindUpgradeJob(runCtx)
 			switch {
 			case err != nil:
 				slog.WarnContext(runCtx, "upgrade job: failed to load current job for the stream", "error", err)
@@ -1548,7 +1543,7 @@ func (p *progressSink) follow(ctx context.Context, events <-chan types.UpgradePr
 }
 
 // findUpgradeJob returns the newest job matching the inline GORM conditions, or nil when none does.
-func (s *Service) findUpgradeJob(ctx context.Context, conds ...any) (*UpgradeJob, error) {
+func (s *Service) FindUpgradeJob(ctx context.Context, conds ...any) (*UpgradeJob, error) {
 	var jobs []UpgradeJob
 	if err := s.db.WithContext(ctx).Order("created_at DESC").Limit(1).Find(&jobs, conds...).Error; err != nil {
 		return nil, err
@@ -1561,7 +1556,7 @@ func (s *Service) findUpgradeJob(ctx context.Context, conds ...any) (*UpgradeJob
 
 // loadUpgradeJob loads a job by ID, failing when it no longer exists.
 func (s *Service) loadUpgradeJob(ctx context.Context, id string) (*UpgradeJob, error) {
-	job, err := s.findUpgradeJob(ctx, "id = ?", id)
+	job, err := s.FindUpgradeJob(ctx, "id = ?", id)
 	if err == nil && job == nil {
 		err = fmt.Errorf("upgrade job %s not found", id)
 	}

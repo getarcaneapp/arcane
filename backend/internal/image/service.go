@@ -340,16 +340,34 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 		})
 	})
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", id, imageName, user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "image",
+			ResourceID:    id,
+			ResourceName:  imageName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "delete", "force": force},
+		}, err)
 		return fmt.Errorf("failed to remove image: %w", err)
 	}
 
 	s.cleanupRemovedImages(ctx, removed.Items, id)
 
-	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageDelete, id, imageName, user.ID, user.Username, "0", database.JSON{
-		"action":  "delete",
-		"imageId": id,
-		"force":   force,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeImageDelete,
+		ResourceType:  "image",
+		ResourceID:    id,
+		ResourceName:  imageName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":  "delete",
+			"imageId": id,
+			"force":   force,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log image deletion action", "err", logErr, "image", imageName, "imageId", id)
 	}
@@ -383,7 +401,15 @@ func (s *ImageService) cleanupRemovedImages(ctx context.Context, deleted []image
 func (s *ImageService) PullImage(ctx context.Context, imageName string, progressWriter io.Writer, user types.Actor, externalCreds []types.ContainerRegistryCredential) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, database.JSON{"action": "pull"})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "image",
+			ResourceName:  imageName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "pull"},
+		}, err)
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
@@ -421,7 +447,15 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 			"error",
 			err.Error(),
 		)
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, database.JSON{"action": "pull"})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "image",
+			ResourceName:  imageName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "pull"},
+		}, err)
 		return fmt.Errorf("failed to initiate image pull for %s: %w", imageName, err)
 	}
 	defer func() { _ = reader.Close() }()
@@ -432,18 +466,42 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	if streamErr != nil {
 		if errors.Is(streamErr, context.Canceled) || strings.Contains(streamErr.Error(), "context canceled") {
 			slog.DebugContext(ctx, "image pull stream canceled", "image", imageName, "err", streamErr)
-			s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, database.JSON{"action": "pull", "step": "canceled"})
+			s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+				Type:          event.EventTypeImageError,
+				ResourceType:  "image",
+				ResourceName:  imageName,
+				UserID:        user.ID,
+				Username:      user.Username,
+				EnvironmentID: "0",
+				Metadata:      database.JSON{"action": "pull", "step": "canceled"},
+			}, streamErr)
 			return fmt.Errorf("image pull stream canceled for %s: %w", imageName, streamErr)
 		}
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, database.JSON{"action": "pull", "step": "read_stream"})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "image",
+			ResourceName:  imageName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "pull", "step": "read_stream"},
+		}, streamErr)
 		return fmt.Errorf("error reading image pull stream for %s: %w", imageName, streamErr)
 	}
 
 	slog.DebugContext(ctx, "image pull stream completed", "image", imageName)
 
-	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImagePull, "", imageName, user.ID, user.Username, "0", database.JSON{
-		"action":    "pull",
-		"imageName": imageName,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeImagePull,
+		ResourceType:  "image",
+		ResourceName:  imageName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":    "pull",
+			"imageName": imageName,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log image pull action", "err", logErr, "image", imageName)
 	}
@@ -542,16 +600,32 @@ func (s *ImageService) TagImage(ctx context.Context, source string, req types.Im
 		return dockerClient.ImageTag(ctx, client.ImageTagOptions{Source: source, Target: target})
 	})
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", source, user.ID, user.Username, "0", err, database.JSON{"action": "tag", "target": target})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "image",
+			ResourceName:  source,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "tag", "target": target},
+		}, err)
 		return fmt.Errorf("failed to tag image: %w", err)
 	}
 
-	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageTag, "", source, user.ID, user.Username, "0", database.JSON{
-		"action":     "tag",
-		"imageName":  source,
-		"repository": repository,
-		"tag":        tag,
-		"target":     target,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeImageTag,
+		ResourceType:  "image",
+		ResourceName:  source,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":     "tag",
+			"imageName":  source,
+			"repository": repository,
+			"tag":        tag,
+			"target":     target,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log image tag action", "err", logErr, "image", source, "target", target)
 	}
@@ -637,7 +711,15 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, database.JSON{"action": "load"})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "image",
+			ResourceName:  fileName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "load"},
+		}, err)
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
@@ -647,7 +729,15 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 		if limitedReader.exceeded.Load() {
 			return nil, common.Classify(common.ErrBadRequest, fmt.Errorf("file size exceeds maximum allowed size of %d MB", maxSizeBytes/(1024*1024)))
 		}
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, database.JSON{"action": "load", "file": fileName})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "image",
+			ResourceName:  fileName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "load", "file": fileName},
+		}, err)
 		return nil, fmt.Errorf("failed to load image from tar: %w", err)
 	}
 	defer func() { _ = loadResp.Close() }()
@@ -658,28 +748,33 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 		return nil, common.Classify(common.ErrBadRequest, fmt.Errorf("file size exceeds maximum allowed size of %d MB", maxSizeBytes/(1024*1024)))
 	}
 	if streamErr != nil {
-		s.eventService.LogErrorEvent(
-			ctx,
-			event.EventTypeImageError,
-			"image",
-			"",
-			fileName,
-			user.ID,
-			user.Username,
-			"0",
-			streamErr,
-			database.JSON{
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "image",
+			ResourceName:  fileName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
 				"action": "load",
 				"file":   fileName,
 				"step":   "read_response",
 			},
-		)
+		}, streamErr)
 		return nil, fmt.Errorf("failed to read load response: %w", streamErr)
 	}
 
-	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageLoad, "", fileName, user.ID, user.Username, "0", database.JSON{
-		"action":   "load",
-		"fileName": fileName,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeImageLoad,
+		ResourceType:  "image",
+		ResourceName:  fileName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":   "load",
+			"fileName": fileName,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log image load action", "err", logErr, "file", fileName)
 	}
@@ -800,12 +895,20 @@ func (s *ImageService) PruneImages(ctx context.Context, options types.PruneImage
 
 	s.cleanupRemovedImages(ctx, report.Report.ImagesDeleted)
 
-	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageDelete, "", "bulk_prune", types.SystemUser.ID, types.SystemUser.Username, "0", database.JSON{
-		"action":         "prune",
-		"mode":           options.Mode,
-		"until":          options.Until,
-		"imagesDeleted":  len(report.Report.ImagesDeleted),
-		"spaceReclaimed": report.Report.SpaceReclaimed,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeImageDelete,
+		ResourceType:  "image",
+		ResourceName:  "bulk_prune",
+		UserID:        types.SystemUser.ID,
+		Username:      types.SystemUser.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":         "prune",
+			"mode":           options.Mode,
+			"until":          options.Until,
+			"imagesDeleted":  len(report.Report.ImagesDeleted),
+			"spaceReclaimed": report.Report.SpaceReclaimed,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log image prune action", "err", logErr)
 	}

@@ -43,23 +43,17 @@ func TestValidateMobileRedirectURI(t *testing.T) {
 	}
 }
 
-func TestGetMobileRedirectAllowlistTrimsWhitespace(t *testing.T) {
+func TestValidateMobileRedirectURITrimsAllowlistWhitespace(t *testing.T) {
 	ctx := t.Context()
 	settingsService, err := newSettingsServiceForTest(t, ctx, setupSettingsTestDB(t))
 	require.NoError(t, err)
 	require.NoError(t, settingsService.UpdateSetting(ctx, "oidcMobileRedirectUris", "  arcane-mobile://a  ,arcane-mobile://b ,, arcane-mobile://c"))
 	s := &OidcService{settingsService: settingsService}
 
-	got := s.GetMobileRedirectAllowlist(ctx)
-	want := []string{"arcane-mobile://a", "arcane-mobile://b", "arcane-mobile://c"}
-	if len(got) != len(want) {
-		require.Len(t, got, len(want),
-			"got %d entries (%v), want %d (%v)", len(got), got, len(want), want)
+	for _, uri := range []string{"arcane-mobile://a", "arcane-mobile://b", "arcane-mobile://c"} {
+		require.NoError(t, s.ValidateMobileRedirectURI(ctx, uri))
 	}
-	for i, w := range want {
-		require.Equal(t, w, got[i],
-			"entry %d: got %q, want %q", i, got[i], w)
-	}
+	require.Error(t, s.ValidateMobileRedirectURI(ctx, "  arcane-mobile://a  "))
 }
 
 func TestGetMobileRedirectAllowlistUsesSettings(t *testing.T) {

@@ -820,7 +820,7 @@ func (s *Service) RestoreArchiveMembers(ctx context.Context, containerID, filena
 
 // DiscoverRemoteBackups imports snapshots from every instance root on the destination; per-root failures are returned without blocking the others.
 func (s *Service) DiscoverRemoteBackups(ctx context.Context, destinationID string) (int, []string, error) {
-	key, err := s.deps.RecoveryKeys.Get(ctx)
+	key, err := s.deps.RecoveryKeys.Get(ctx, backup.RecoveryKeyConfigID)
 	if errors.Is(err, backup.ErrRecoveryKeyNotConfigured) {
 		return 0, nil, errors.New("configure a recovery key in system backups before discovering volume backups")
 	}

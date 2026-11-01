@@ -177,7 +177,16 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 	if preBackupID != "" {
 		metadata["pre_restore_backupId"] = preBackupID
 	}
-	if logErr := s.deps.Events.LogVolumeEvent(ctx, event.EventTypeVolumeBackupRestore, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.deps.Events.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeVolumeBackupRestore,
+		ResourceType:  "volume",
+		ResourceID:    volumeName,
+		ResourceName:  volumeName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume backup restore event", "volume", volumeName, "error", logErr)
 	}
 	return nil
@@ -355,7 +364,16 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID s
 		"select_all": selection.SelectAll,
 		"search":     selection.Search,
 	}
-	if logErr := s.deps.Events.LogVolumeEvent(ctx, event.EventTypeVolumeBackupRestoreFiles, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.deps.Events.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeVolumeBackupRestoreFiles,
+		ResourceType:  "volume",
+		ResourceID:    volumeName,
+		ResourceName:  volumeName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume backup restore files event", "volume", volumeName, "error", logErr)
 	}
 	return nil
@@ -546,7 +564,16 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 		"filename":             filename,
 		"pre_restore_backupId": preBackupID,
 	}
-	if logErr := s.deps.Events.LogVolumeEvent(ctx, event.EventTypeVolumeBackupRestore, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.deps.Events.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeVolumeBackupRestore,
+		ResourceType:  "volume",
+		ResourceID:    volumeName,
+		ResourceName:  volumeName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume backup upload restore event", "volume", volumeName, "error", logErr.Error())
 	}
 

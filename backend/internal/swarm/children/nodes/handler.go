@@ -7,6 +7,7 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
+	"github.com/moby/moby/api/types/swarm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
@@ -381,19 +382,19 @@ func (h *Handler) DeleteNode(ctx context.Context, input *DeleteSwarmNodeInput) (
 
 func (h *Handler) RunNodeAction(ctx context.Context, input *SwarmNodeActionInput) (*handlerutil.Out[types.MessageResponse], error) {
 	action := map[string]struct {
-		Run            func(context.Context, string) error
+		Role           swarm.NodeRole
 		SuccessMessage string
 	}{
 		"promote": {
-			Run:            h.service.PromoteNode,
+			Role:           swarm.NodeRoleManager,
 			SuccessMessage: "Swarm node promoted successfully",
 		},
 		"demote": {
-			Run:            h.service.DemoteNode,
+			Role:           swarm.NodeRoleWorker,
 			SuccessMessage: "Swarm node demoted successfully",
 		},
 	}[input.Action]
-	if err := action.Run(ctx, input.NodeID); err != nil {
+	if err := h.service.UpdateNode(ctx, input.NodeID, types.SwarmNode{Role: string(action.Role)}, map[string]bool{"role": true}); err != nil {
 		return nil, h.mapError(err, "Swarm node not found: "+err.Error())
 	}
 

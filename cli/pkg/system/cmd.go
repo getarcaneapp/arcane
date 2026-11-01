@@ -42,7 +42,7 @@ func newPruneCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, false, "Are you sure you want to prune all unused resources?")
+			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: "Are you sure you want to prune all unused resources?"})
 			if confirmationErr != nil || !confirmed {
 				return confirmationErr
 			}
@@ -190,7 +190,7 @@ func newConvertCmd() *cobra.Command {
 				return err
 			}
 
-			resp, err := c.Post(cmd.Context(), clitypes.SystemConvert(c.EnvID()), types.ConvertDockerRunRequest{DockerRunCommand: args[0]})
+			resp, err := c.Request(cmd.Context(), http.MethodPost, clitypes.SystemConvert(c.EnvID()), types.ConvertDockerRunRequest{DockerRunCommand: args[0]})
 			if err != nil {
 				return fmt.Errorf("failed to convert command: %w", err)
 			}
@@ -247,7 +247,7 @@ func newUpgradeCmd() *cobra.Command {
 			case app.AllEnvironments() || opts.all:
 				return runUpgradeAll(cmd, opts.force, opts.status)
 			default:
-				confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, opts.force, "Are you sure you want to upgrade the system?")
+				confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: "Are you sure you want to upgrade the system?", Force: opts.force})
 				if confirmationErr != nil || !confirmed {
 					return confirmationErr
 				}
@@ -326,7 +326,7 @@ func runUpgradeAll(cmd *cobra.Command, force, status bool) error {
 			},
 		})
 	}
-	confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, force, "Are you sure you want to update all environments?")
+	confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: "Are you sure you want to update all environments?", Force: force})
 	if confirmationErr != nil || !confirmed {
 		return confirmationErr
 	}

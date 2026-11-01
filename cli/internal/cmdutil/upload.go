@@ -93,7 +93,7 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 // AbortUploadSession deletes a chunked upload session, ignoring errors. Use it
 // when the consume step after a completed upload fails.
 func AbortUploadSession(ctx context.Context, c *client.Client, kind, sessionID string) {
-	if resp, err := c.Delete(context.WithoutCancel(ctx), clitypes.UploadSession(c.EnvID(), kind, sessionID)); err == nil {
+	if resp, err := c.Request(context.WithoutCancel(ctx), http.MethodDelete, clitypes.UploadSession(c.EnvID(), kind, sessionID), nil); err == nil {
 		_ = resp.Body.Close()
 	}
 }

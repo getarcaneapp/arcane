@@ -392,7 +392,15 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeVolumeError,
+			ResourceType:  "volume",
+			ResourceName:  options.Name,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "create", "driver": options.Driver},
+		}, err)
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
@@ -401,7 +409,15 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 		return dockerClient.VolumeCreate(ctx, options)
 	})
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeVolumeError,
+			ResourceType:  "volume",
+			ResourceName:  options.Name,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "create", "driver": options.Driver},
+		}, err)
 		return nil, fmt.Errorf("failed to create volume: %w", err)
 	}
 
@@ -410,22 +426,20 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 		return dockerClient.VolumeInspect(ctx, created.Volume.Name, client.VolumeInspectOptions{})
 	})
 	if err != nil {
-		s.eventService.LogErrorEvent(
-			ctx,
-			event.EventTypeVolumeError,
-			"volume",
-			created.Volume.Name,
-			created.Volume.Name,
-			user.ID,
-			user.Username,
-			"0",
-			err,
-			database.JSON{
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeVolumeError,
+			ResourceType:  "volume",
+			ResourceID:    created.Volume.Name,
+			ResourceName:  created.Volume.Name,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
 				"action": "create",
 				"driver": options.Driver,
 				"step":   "inspect",
 			},
-		)
+		}, err)
 		return nil, fmt.Errorf("failed to inspect created volume: %w", err)
 	}
 
@@ -434,7 +448,16 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 		"driver": vol.Volume.Driver,
 		"name":   vol.Volume.Name,
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeCreate, vol.Volume.Name, vol.Volume.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeVolumeCreate,
+		ResourceType:  "volume",
+		ResourceID:    vol.Volume.Name,
+		ResourceName:  vol.Volume.Name,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume creation action", "volume", vol.Volume.Name, "error", logErr.Error())
 	}
 
@@ -451,7 +474,16 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeVolumeError,
+			ResourceType:  "volume",
+			ResourceID:    name,
+			ResourceName:  name,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "delete", "force": force},
+		}, err)
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
@@ -465,7 +497,16 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 	if _, volumeRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeRemoveResult, error) {
 		return dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{Force: force})
 	}); volumeRemoveErr != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", volumeRemoveErr, database.JSON{"action": "delete", "force": force})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeVolumeError,
+			ResourceType:  "volume",
+			ResourceID:    name,
+			ResourceName:  name,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "delete", "force": force},
+		}, volumeRemoveErr)
 		return fmt.Errorf("failed to remove volume: %w", volumeRemoveErr)
 	}
 
@@ -473,7 +514,16 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 		"action": "delete",
 		"name":   name,
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeDelete, name, name, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeVolumeDelete,
+		ResourceType:  "volume",
+		ResourceID:    name,
+		ResourceName:  name,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume deletion action", "volume", name, "error", logErr.Error())
 	}
 
@@ -515,7 +565,15 @@ func (s *VolumeService) PruneVolumes(ctx context.Context) (*types.VolumePruneRep
 		"spaceReclaimed":            volumePruneResult.Report.SpaceReclaimed,
 		"internalVolumeFilterLabel": internalVolumePruneFilterValue,
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeDelete, "", "bulk_prune", types.SystemUser.ID, types.SystemUser.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeVolumeDelete,
+		ResourceType:  "volume",
+		ResourceName:  "bulk_prune",
+		UserID:        types.SystemUser.ID,
+		Username:      types.SystemUser.Username,
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume prune action", "error", logErr.Error())
 	}
 
@@ -1043,7 +1101,16 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 	}
 
 	metadata := database.JSON{"action": "rename", "oldName": oldName, "newName": newName}
-	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeRename, newName, newName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeVolumeRename,
+		ResourceType:  "volume",
+		ResourceID:    newName,
+		ResourceName:  newName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume rename action", "oldVolume", oldName, "newVolume", newName, "error", logErr)
 	}
 
@@ -1069,10 +1136,19 @@ func (s *VolumeService) renameVolumeMetadata(ctx context.Context, oldName, newNa
 }
 
 func (s *VolumeService) logVolumeRenameError(ctx context.Context, oldName, newName string, user types.Actor, step string, err error) {
-	s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", oldName, oldName, user.ID, user.Username, "0", err, database.JSON{
-		"action":  "rename",
-		"step":    step,
-		"oldName": oldName,
-		"newName": newName,
-	})
+	s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeVolumeError,
+		ResourceType:  "volume",
+		ResourceID:    oldName,
+		ResourceName:  oldName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":  "rename",
+			"step":    step,
+			"oldName": oldName,
+			"newName": newName,
+		},
+	}, err)
 }

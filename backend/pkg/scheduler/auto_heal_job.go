@@ -310,16 +310,14 @@ func (j *AutoHealJob) processCandidate(
 }
 
 func (j *AutoHealJob) postRestartActions(ctx context.Context, containerID, containerName string) {
-	if err := j.eventService.LogContainerEvent(
-		ctx,
-		event.EventTypeContainerRestart,
-		containerID,
-		containerName,
-		"", // no user - system action
-		"system",
-		"",
-		database.JSON{"action": "auto-heal", "reason": "unhealthy"},
-	); err != nil {
+	if err := j.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:         event.EventTypeContainerRestart,
+		ResourceType: "container",
+		ResourceID:   containerID,
+		ResourceName: containerName,
+		Username:     "system",
+		Metadata:     database.JSON{"action": "auto-heal", "reason": "unhealthy"},
+	}); err != nil {
 		slog.WarnContext(ctx, "auto-heal failed to log event", "container", containerName, "error", err)
 	}
 
@@ -510,16 +508,6 @@ func (j *AutoHealJob) ResetRestartTracking() {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.restarts = make(map[string]*restartRecord)
-}
-
-// CanRestartExported exposes canRestart for testing.
-func (j *AutoHealJob) CanRestartExported(containerID string, maxRestarts int, window time.Duration) bool {
-	return j.canRestart(containerID, maxRestarts, window)
-}
-
-// RecordRestartExported exposes recordRestart for testing.
-func (j *AutoHealJob) RecordRestartExported(containerID string) {
-	j.recordRestart(containerID)
 }
 
 // RecordRestartAtExported records a restart at a specific time for testing.

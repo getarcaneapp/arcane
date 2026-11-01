@@ -84,7 +84,7 @@ func TestFinalizeRestoredBackup(t *testing.T) {
 	var projectsSetting settings.SettingVariable
 	require.NoError(t, db.First(&projectsSetting, "key = ?", "projectsDirectory").Error)
 	require.Equal(t, "/srv/projects", projectsSetting.Value)
-	storedKey, err := backup.NewRecoveryKeyStore(&database.DB{DB: db}).Get(t.Context())
+	storedKey, err := backup.NewRecoveryKeyStore(&database.DB{DB: db}).Get(t.Context(), backup.RecoveryKeyConfigID)
 	require.NoError(t, err)
 	require.Equal(t, recoveryKey, storedKey)
 }

@@ -147,7 +147,7 @@ func (h *Handler) GetCurrentUpgradeJob(ctx context.Context, input *types.Environ
 		return nil, huma.Error400BadRequest("upgrade jobs are managed on the Arcane manager")
 	}
 
-	job, err := h.service.GetCurrentUpgradeJob(ctx)
+	job, err := h.service.FindUpgradeJob(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}

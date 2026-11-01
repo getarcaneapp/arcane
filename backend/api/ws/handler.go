@@ -50,6 +50,7 @@ type WebSocketHandler struct {
 	containerService   *container.ContainerService
 	swarmService       *swarm.SwarmService
 	systemService      *system.SystemService
+	settingsService    *settings.SettingsService
 	diagnosticsService *diagnostics.DiagnosticsService
 	checkWSOrigin      func(*http.Request) bool
 	activeConnections  map[string]int
@@ -105,6 +106,7 @@ func NewWebSocketHandler(
 		containerService:   containerService,
 		swarmService:       swarmService,
 		systemService:      systemService,
+		settingsService:    settingsService,
 		diagnosticsService: diagnosticsService,
 		logStreams:         make(map[string]*wsLogStream),
 		containersStatsHub: &agg.Hub[containersStatsResult]{},

@@ -83,18 +83,18 @@ func TestRecoveryKeyStoreRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, configured)
 
-	_, err = store.Get(t.Context())
+	_, err = store.Get(t.Context(), RecoveryKeyConfigID)
 	require.ErrorIs(t, err, ErrRecoveryKeyNotConfigured)
 
 	key, err := GenerateRecoveryKey()
 	require.NoError(t, err)
-	require.NoError(t, store.Set(t.Context(), key))
+	require.NoError(t, store.Set(t.Context(), RecoveryKeyConfigID, key))
 
 	configured, err = store.Configured(t.Context())
 	require.NoError(t, err)
 	require.True(t, configured)
 
-	stored, err := store.Get(t.Context())
+	stored, err := store.Get(t.Context(), RecoveryKeyConfigID)
 	require.NoError(t, err)
 	require.Equal(t, key, stored)
 }

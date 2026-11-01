@@ -124,7 +124,11 @@ func TestGitOpsSyncService_OverlappingSyncPreservesSuccessShapedSkip(t *testing.
 
 	service := &GitOpsSyncService{jobs: entityjobs.New(entityjobs.GitOpsSyncJobPrefix, gitOpsSyncAdmissionScope)}
 	require.NoError(t, service.SetScheduler(t.Context(), &gitOpsSyncTestScheduler{}, gate))
-	result, err := service.PerformSync(t.Context(), "0", "sync-id", types.Actor{})
+	result, err := service.PerformSync(t.Context(), SyncRequest{
+		EnvironmentID: "0",
+		SyncID:        "sync-id",
+		Actor:         types.Actor{},
+	})
 	require.NoError(t, err)
 	require.False(t, result.Success)
 	require.Equal(t, "sync already in progress", result.Message)
@@ -205,7 +209,11 @@ func TestGitOpsSyncService_GetOrCreateProject_RefusesDuplicateOnNameCollision(t 
 	}
 	require.NoError(t, db.Create(syncRecord).Error)
 
-	_, err := svc.PerformSync(ctx, "0", syncRecord.ID, types.Actor{})
+	_, err := svc.PerformSync(ctx, SyncRequest{
+		EnvironmentID: "0",
+		SyncID:        syncRecord.ID,
+		Actor:         types.Actor{},
+	})
 	require.ErrorIs(t, err, common.ErrGitOpsSyncProjectBindingBroken)
 
 	_, statErr := os.Stat(filepath.Join(projectsDir, "Dozzle-1"))
@@ -235,7 +243,11 @@ func TestGitOpsSyncService_SyncProjectDirectory_FailsWhenBoundProjectMissing(t *
 	}
 	require.NoError(t, db.Create(syncRecord).Error)
 
-	result, err := svc.PerformSync(ctx, "0", syncRecord.ID, types.Actor{})
+	result, err := svc.PerformSync(ctx, SyncRequest{
+		EnvironmentID: "0",
+		SyncID:        syncRecord.ID,
+		Actor:         types.Actor{},
+	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, common.ErrGitOpsSyncProjectBindingBroken)
 	require.NotNil(t, result)
@@ -284,7 +296,11 @@ func TestGitOpsSyncService_SyncProjectDirectory_DisablesAutoSyncWhenBoundProject
 	}
 	require.NoError(t, db.Create(syncRecord).Error)
 
-	result, err := svc.PerformSync(ctx, "0", syncRecord.ID, types.Actor{})
+	result, err := svc.PerformSync(ctx, SyncRequest{
+		EnvironmentID: "0",
+		SyncID:        syncRecord.ID,
+		Actor:         types.Actor{},
+	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, common.ErrGitOpsSyncProjectBindingBroken)
 	require.NotNil(t, result)
@@ -323,7 +339,11 @@ func TestGitOpsSyncService_GetOrCreateProject_FailsWhenBoundProjectMissing(t *te
 	}
 	require.NoError(t, db.Create(syncRecord).Error)
 
-	result, err := svc.PerformSync(ctx, "0", syncRecord.ID, types.Actor{})
+	result, err := svc.PerformSync(ctx, SyncRequest{
+		EnvironmentID: "0",
+		SyncID:        syncRecord.ID,
+		Actor:         types.Actor{},
+	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, common.ErrGitOpsSyncProjectBindingBroken)
 	require.NotNil(t, result)
@@ -1270,7 +1290,11 @@ func TestGitOpsBackup_UnchangedContentMakesNoNewCommit(t *testing.T) {
 	syncRecord := env.createBackup(t, types.GitOpsSync{})
 	firstHead := env.remoteHead(t)
 
-	result, err := env.service.PerformSync(t.Context(), "0", syncRecord.ID, types.SystemUser)
+	result, err := env.service.PerformSync(t.Context(), SyncRequest{
+		EnvironmentID: "0",
+		SyncID:        syncRecord.ID,
+		Actor:         types.SystemUser,
+	})
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Contains(t, result.Message, "already contains")
@@ -1298,7 +1322,11 @@ func TestGitOpsBackup_AddsAndRemovesFilesAndKeepsUnrelatedRemoteFiles(t *testing
 	}, map[string]bool{"backupPaths": true}, types.SystemUser)
 	require.NoError(t, err)
 
-	result, err := env.service.PerformSync(t.Context(), "0", syncRecord.ID, types.SystemUser)
+	result, err := env.service.PerformSync(t.Context(), SyncRequest{
+		EnvironmentID: "0",
+		SyncID:        syncRecord.ID,
+		Actor:         types.SystemUser,
+	})
 	require.NoError(t, err)
 	require.True(t, result.Success)
 
@@ -1351,7 +1379,11 @@ func TestGitOpsBackup_RemoteEditConflictsThenResolvesWithArcane(t *testing.T) {
 	})
 	writeBackupProjectFile(t, env.projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.28-alpine\n")
 
-	_, err := env.service.PerformSync(t.Context(), "0", syncRecord.ID, types.SystemUser)
+	_, err := env.service.PerformSync(t.Context(), SyncRequest{
+		EnvironmentID: "0",
+		SyncID:        syncRecord.ID,
+		Actor:         types.SystemUser,
+	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, common.ErrConflict)
 
@@ -1407,7 +1439,11 @@ func TestGitOpsBackup_AdoptsMatchingRemoteWithoutSnapshot(t *testing.T) {
 	require.NoError(t, env.db.Model(&projectpkg.GitOpsSync{}).Where("id = ?", syncRecord.ID).
 		Update("last_backup_snapshot", nil).Error)
 
-	result, err := env.service.PerformSync(t.Context(), "0", syncRecord.ID, types.SystemUser)
+	result, err := env.service.PerformSync(t.Context(), SyncRequest{
+		EnvironmentID: "0",
+		SyncID:        syncRecord.ID,
+		Actor:         types.SystemUser,
+	})
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Equal(t, head, env.remoteHead(t))
@@ -1424,7 +1460,11 @@ func TestGitOpsBackup_SucceedsOnTopOfAnotherWritersCommit(t *testing.T) {
 	pushRemoteCommit(t, env.remote, env.repoURL, "other writer", map[string]string{"other/notes.txt": "notes\n"})
 	writeBackupProjectFile(t, env.projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.29-alpine\n")
 
-	result, err := env.service.PerformSync(t.Context(), "0", syncRecord.ID, types.SystemUser)
+	result, err := env.service.PerformSync(t.Context(), SyncRequest{
+		EnvironmentID: "0",
+		SyncID:        syncRecord.ID,
+		Actor:         types.SystemUser,
+	})
 	require.NoError(t, err)
 	require.True(t, result.Success)
 

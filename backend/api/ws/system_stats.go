@@ -212,7 +212,7 @@ func (h *WebSocketHandler) collectSystemStats(ctx context.Context) types.SystemS
 	cpuCount, memUsed, memTotal := h.applyCgroupLimits(ctx, h.systemStaticInfo.cpuCount, memUsed, memTotal)
 
 	diskUsagePath, found, err := h.diskUsagePathCache.GetWithLoaders(struct{}{}, func(_ []struct{}) (map[struct{}]string, error) {
-		return map[struct{}]string{{}: h.systemService.GetDiskUsagePath(ctx)}, nil
+		return map[struct{}]string{{}: cmp.Or(h.settingsService.GetSettingsConfig().DiskUsagePath.Value, "/")}, nil
 	})
 	diskUsagePath = kit.Ternary(err != nil || !found, "/", diskUsagePath)
 	diskInfo, err := disk.Usage(diskUsagePath)

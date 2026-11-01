@@ -48,7 +48,7 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 		path = AppendQuery(path, spec.Query)
 	}
 
-	resp, err := c.Get(cmd.Context(), path)
+	resp, err := c.Request(cmd.Context(), http.MethodGet, path, nil)
 	if err != nil {
 		return fmt.Errorf("failed to list %s: %w", spec.Resource, err)
 	}
@@ -156,7 +156,7 @@ type DeleteSpec struct {
 
 // RunDelete returns nil on cancellation, otherwise printing raw data in JSON mode or SuccessMessage in text mode.
 func RunDelete(cmd *cobra.Command, c *client.Client, spec DeleteSpec) error {
-	confirmed, err := ConfirmOrCancel(cmd, spec.Force, spec.Prompt)
+	confirmed, err := ConfirmOrCancel(cmd, ConfirmOptions{Label: spec.Prompt, Force: spec.Force})
 	if err != nil || !confirmed {
 		return err
 	}
