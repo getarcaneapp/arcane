@@ -552,8 +552,9 @@ func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]env.Variable,
 	return vars, nil
 }
 
-// WriteLocalEnvFile materializes summary into .env.global and its
-// .env.global.noinject companion listing the interpolation-only keys.
+// WriteLocalEnvFile materializes summary into .env.global. Interpolation-only
+// keys are marked in the header, ahead of every value, so values and marks are
+// always read from one consistent snapshot.
 func (s *VariableService) WriteLocalEnvFile(ctx context.Context, summary env.Summary) error {
 	envPath, err := s.localEnvFilePathInternal(ctx)
 	if err != nil {
@@ -569,7 +570,15 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, summary env.Sum
 
 	var builder strings.Builder
 	builder.WriteString("# Global Environment Variables\n")
-	builder.WriteString("# These variables are available to all projects\n\n")
+	builder.WriteString("# These variables are available to all projects\n")
+
+	for _, key := range summary.NoInjectKeys {
+		if !envKeyPattern.MatchString(key) {
+			return common.Classify(common.ErrInvalidEnvKey, fmt.Errorf("invalid env key %q (must match [A-Za-z_][A-Za-z0-9_]*)", key))
+		}
+		_, _ = fmt.Fprintf(&builder, "# %s %s\n", projects.GlobalEnvNoInjectDirective, key)
+	}
+	builder.WriteString("\n")
 
 	for _, v := range summary.Variables {
 		if strings.TrimSpace(v.Key) == "" {
@@ -591,23 +600,11 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, summary env.Sum
 		_, _ = fmt.Fprintf(&builder, "%s=%s\n", key, value)
 	}
 
-	var noInjectBuilder strings.Builder
-	noInjectBuilder.WriteString("# Global variables listed here are only available for ${VAR} interpolation\n")
-	noInjectBuilder.WriteString("# and are not injected into container environments\n\n")
-
-	for _, key := range summary.NoInjectKeys {
-		if !envKeyPattern.MatchString(key) {
-			return common.Classify(common.ErrInvalidEnvKey, fmt.Errorf("invalid env key %q (must match [A-Za-z_][A-Za-z0-9_]*)", key))
-		}
-		noInjectBuilder.WriteString(key + "\n")
+	mode := utils.FilePerm
+	if entry, statErr := acfs.Stat(ctx, projectsDirectory, "/"+projects.GlobalEnvFileName, false); statErr == nil {
+		mode = os.FileMode(entry.UnixMode).Perm()
 	}
-
-	// The exclusion list goes first so a concurrent compose load never injects
-	// a key that is being made interpolation-only.
-	if writeErr := writeProjectsRootFileInternal(ctx, projectsDirectory, projects.GlobalEnvNoInjectFileName, noInjectBuilder.String()); writeErr != nil {
-		return fmt.Errorf("failed to write global variables no-inject file: %w", writeErr)
-	}
-	if writeErr := writeProjectsRootFileInternal(ctx, projectsDirectory, projects.GlobalEnvFileName, builder.String()); writeErr != nil {
+	if writeErr := acfs.Write(ctx, projectsDirectory, "/"+projects.GlobalEnvFileName, []byte(builder.String()), acfs.WriteOptions{Mode: mode, InPlace: true}); writeErr != nil {
 		return fmt.Errorf("failed to write global variables file: %w", writeErr)
 	}
 
@@ -617,16 +614,6 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, summary env.Sum
 		"noInjectCount", len(summary.NoInjectKeys))
 
 	return nil
-}
-
-// writeProjectsRootFileInternal writes a managed file at the projects
-// directory root, keeping the mode of an existing file.
-func writeProjectsRootFileInternal(ctx context.Context, projectsDirectory, name, content string) error {
-	mode := utils.FilePerm
-	if entry, statErr := acfs.Stat(ctx, projectsDirectory, "/"+name, false); statErr == nil {
-		mode = os.FileMode(entry.UnixMode).Perm()
-	}
-	return acfs.Write(ctx, projectsDirectory, "/"+name, []byte(content), acfs.WriteOptions{Mode: mode, InPlace: true})
 }
 
 // ImportLegacyLocalEnvFile imports the manager's existing .env.global entries

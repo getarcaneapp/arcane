@@ -339,6 +339,12 @@ func TestSyncEnvironment_LocalSkipsInjectionForInterpolationOnlyVariables(t *tes
 
 	require.NoError(t, service.SyncEnvironment(ctx, "0"))
 
+	content, err := os.ReadFile(filepath.Join(projectsDir, ".env.global"))
+	require.NoError(t, err)
+	markIndex := strings.Index(string(content), "# arcane:noinject DB_PASSWORD\n")
+	require.GreaterOrEqual(t, markIndex, 0)
+	require.Less(t, markIndex, strings.Index(string(content), "DB_PASSWORD=hunter2"), "the mark must precede the value")
+
 	workdir := filepath.Join(projectsDir, "app")
 	require.NoError(t, os.MkdirAll(workdir, utils.DirPerm))
 	envMap, injectionVars, err := projects.NewEnvLoader(projectsDir, workdir, false).LoadEnvironment(ctx)

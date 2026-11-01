@@ -42,26 +42,6 @@ func TestReadProjectEnvState_TreatsPermissionLockedEnvAsUnreadable(t *testing.T)
 	assert.Equal(t, "FOO=locked\n", string(content))
 }
 
-func TestLoadEnvironment_UnreadableNoInjectListInjectsNoGlobalKeys(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("permission bits are ignored when running as root")
-	}
-
-	projectsDir := t.TempDir()
-	workdir := filepath.Join(projectsDir, "app")
-	require.NoError(t, os.MkdirAll(workdir, utils.DirPerm))
-	require.NoError(t, os.WriteFile(filepath.Join(projectsDir, GlobalEnvFileName), []byte("DB_PASSWORD=secret\n"), utils.FilePerm))
-	noInjectPath := filepath.Join(projectsDir, GlobalEnvNoInjectFileName)
-	require.NoError(t, os.WriteFile(noInjectPath, []byte("DB_PASSWORD\n"), utils.FilePerm))
-	require.NoError(t, os.Chmod(noInjectPath, 0o000))
-	t.Cleanup(func() { _ = os.Chmod(noInjectPath, 0o644) })
-
-	envMap, injectionVars, err := NewEnvLoader(projectsDir, workdir, false).LoadEnvironment(t.Context())
-	require.NoError(t, err)
-	assert.Equal(t, "secret", envMap["DB_PASSWORD"])
-	assert.Empty(t, injectionVars, "an unreadable list must not fall back to injecting every key")
-}
-
 func TestReadProjectEnvState_TreatsDirectoryAsUnreadable(t *testing.T) {
 	for _, fileName := range []string{EffectiveEnvFileName, GitSourceEnvFileName, OverrideEnvFileName} {
 		t.Run(fileName, func(t *testing.T) {
