@@ -14,7 +14,7 @@ import (
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 )

@@ -5,7 +5,7 @@ import (
 	"slices"
 
 	"github.com/spf13/cobra"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 )

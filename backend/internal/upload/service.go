@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
-	"go.getarcane.app/acfs"
-	acfstypes "go.getarcane.app/acfs/types"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"

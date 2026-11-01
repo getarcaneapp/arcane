@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
-	acfstypes "go.getarcane.app/acfs/types"
+	acfstypes "kit.getarcane.app/acfs/types"
 )
 
 // FileEntry converts ACFS metadata to Arcane's shared workspace entry type.

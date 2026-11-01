@@ -27,9 +27,9 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
-	kit "go.getarcane.app/kit/pkg"
-	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"

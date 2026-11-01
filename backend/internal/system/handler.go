@@ -7,8 +7,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
-	"go.getarcane.app/docker/convert"
-	converttypes "go.getarcane.app/docker/convert/types"
+	"kit.getarcane.app/docker/convert"
+	converttypes "kit.getarcane.app/docker/convert/types"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"

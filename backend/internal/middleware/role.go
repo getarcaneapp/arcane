@@ -8,7 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/labstack/echo/v5"
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"

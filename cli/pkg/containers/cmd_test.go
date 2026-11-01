@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/cli/v3/internal/testutil"
 )

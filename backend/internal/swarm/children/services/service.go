@@ -16,8 +16,8 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
-	"go.getarcane.app/docker"
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
+	"kit.getarcane.app/docker"
 
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"

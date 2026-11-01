@@ -9,7 +9,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/updater/labels"
+	"kit.getarcane.app/updater/labels"
 )
 
 func TestNormalizeRecreatedArcaneLabels(t *testing.T) {

@@ -19,8 +19,8 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
-	"go.getarcane.app/kit/pkg"
 	"golang.org/x/sync/errgroup"
+	"kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"

@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/getarcaneapp/arcane/types/v3"
-	"go.getarcane.app/docker"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/docker"
 
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"

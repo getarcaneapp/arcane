@@ -10,7 +10,7 @@ import (
 
 	"github.com/docker/go-units"
 	"github.com/getarcaneapp/arcane/types/v3"
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
 )
 
 type MessageFormat string

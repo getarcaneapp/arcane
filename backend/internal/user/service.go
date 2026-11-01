@@ -14,11 +14,11 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
-	"go.getarcane.app/kit/normalization"
-	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/crypto/argon2"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/normalization"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"

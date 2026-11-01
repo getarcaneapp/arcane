@@ -12,7 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/term"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 // fileDescriptor supplies a writer's descriptor for terminal detection and sizing.

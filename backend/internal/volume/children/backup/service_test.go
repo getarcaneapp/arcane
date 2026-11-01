@@ -10,9 +10,9 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
-	kit "go.getarcane.app/kit/pkg"
-	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"

@@ -18,8 +18,8 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/api/types/system"
 	"github.com/moby/moby/client"
-	kit "go.getarcane.app/kit/pkg"
 	"go.uber.org/fx"
+	kit "kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"

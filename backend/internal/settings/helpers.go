@@ -11,8 +11,8 @@ import (
 	"strings"
 	"uuid"
 
-	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
+	"kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"

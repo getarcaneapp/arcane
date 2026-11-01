@@ -8,7 +8,7 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	composeapi "github.com/docker/compose/v5/pkg/api"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 // ImagePullMode describes when Arcane should pull an image for a project.

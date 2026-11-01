@@ -29,14 +29,14 @@ import (
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/gofrs/flock"
-	"go.getarcane.app/acfs"
-	acfstypes "go.getarcane.app/acfs/types"
-	kit "go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )

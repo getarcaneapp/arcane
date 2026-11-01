@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	"github.com/compose-spec/compose-go/v2/loader"
-	kit "go.getarcane.app/kit/pkg"
 	"go.yaml.in/yaml/v4"
+	kit "kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 )

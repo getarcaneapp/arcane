@@ -9,8 +9,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
-	kit "go.getarcane.app/kit/pkg"
 	"go.uber.org/fx"
+	kit "kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"

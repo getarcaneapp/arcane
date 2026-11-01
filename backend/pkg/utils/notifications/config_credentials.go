@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"go.getarcane.app/sys/crypto"
+	"kit.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 )

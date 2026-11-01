@@ -21,11 +21,11 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
-	"go.getarcane.app/kit/normalization"
-	"go.getarcane.app/kit/pkg"
-	"go.getarcane.app/sys/crypto"
 	"go.yaml.in/yaml/v4"
 	"gorm.io/gorm"
+	"kit.getarcane.app"
+	"kit.getarcane.app/normalization"
+	"kit.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"

@@ -9,7 +9,7 @@ import (
 	ref "github.com/distribution/reference"
 	dockerauthconfig "github.com/moby/moby/api/pkg/authconfig"
 	dockerregistry "github.com/moby/moby/api/types/registry"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 func GetRegistryAddress(imageRef string) (string, error) {

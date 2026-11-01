@@ -18,8 +18,8 @@ import (
 	"strings"
 
 	"github.com/getarcaneapp/arcane/types/v3"
-	"go.getarcane.app/acfs"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v3/pkg/workspace"

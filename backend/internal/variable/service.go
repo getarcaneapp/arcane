@@ -20,11 +20,11 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
-	"go.getarcane.app/acfs"
-	acfstypes "go.getarcane.app/acfs/types"
-	"go.getarcane.app/kit/pkg"
-	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
+	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"

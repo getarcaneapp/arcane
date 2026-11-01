@@ -8,7 +8,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
-	"go.getarcane.app/kit/pkg/mapping"
+	"kit.getarcane.app/mapping"
 
 	"github.com/getarcaneapp/arcane/backend/v3/buildables"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"

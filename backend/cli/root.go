@@ -7,7 +7,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/cli/v3/pkg/generate"
 	"github.com/spf13/cobra"
-	"go.getarcane.app/kit/pkg/signals"
+	"kit.getarcane.app/signals"
 
 	"github.com/getarcaneapp/arcane/backend/v3/cli/admin"
 	"github.com/getarcaneapp/arcane/backend/v3/cli/recovery"

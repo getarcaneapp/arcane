@@ -14,8 +14,8 @@ import (
 
 	"github.com/gofrs/flock"
 	"github.com/samber/hot"
-	"go.getarcane.app/acfs/atomic"
 	"go.yaml.in/yaml/v4"
+	"kit.getarcane.app/fs/atomic"
 
 	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/types"

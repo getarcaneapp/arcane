@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )

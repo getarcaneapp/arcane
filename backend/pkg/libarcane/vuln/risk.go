@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/getarcaneapp/arcane/types/v3"
-	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/mod/semver"
+	kit "kit.getarcane.app"
 )
 
 const (

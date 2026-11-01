@@ -4,7 +4,7 @@ import (
 	"cmp"
 
 	"github.com/getarcaneapp/arcane/types/v3"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 type Environmental interface {

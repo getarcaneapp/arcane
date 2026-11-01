@@ -17,8 +17,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/hot"
-	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/sync/singleflight"
+	kit "kit.getarcane.app"
 )
 
 // AMDGPUSysfsPath is the sysfs base used to discover AMD GPUs.

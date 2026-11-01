@@ -25,9 +25,9 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/streams/bus"
-	"go.getarcane.app/updater/labels"
 	"gorm.io/gorm"
+	"kit.getarcane.app/docker/streams/bus"
+	"kit.getarcane.app/updater/labels"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"

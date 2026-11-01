@@ -26,7 +26,7 @@ import (
 	"github.com/moby/buildkit/util/attestation"
 	"github.com/moby/moby/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"

@@ -11,12 +11,12 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/getarcaneapp/arcane/types/v3"
-	"go.getarcane.app/streams/agg"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
+	"kit.getarcane.app/docker/streams/agg"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"

@@ -12,7 +12,7 @@ import (
 	"charm.land/lipgloss/v2/table"
 	"github.com/charmbracelet/x/term"
 	"github.com/mattn/go-runewidth"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 var (

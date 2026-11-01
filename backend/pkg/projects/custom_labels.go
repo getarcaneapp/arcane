@@ -17,8 +17,8 @@ import (
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/types/v3"
-	kit "go.getarcane.app/kit/pkg"
-	updaterlabels "go.getarcane.app/updater/labels"
+	kit "kit.getarcane.app"
+	updaterlabels "kit.getarcane.app/updater/labels"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/iconcatalog"

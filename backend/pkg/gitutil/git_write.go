@@ -22,9 +22,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"go.getarcane.app/acfs"
-	acfstypes "go.getarcane.app/acfs/types"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 )
 
 var (

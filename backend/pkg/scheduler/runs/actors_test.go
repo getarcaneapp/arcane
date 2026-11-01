@@ -18,8 +18,8 @@ import (
 	"github.com/italypaleale/francis/actor"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
-	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
+	kit "kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"

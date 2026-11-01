@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/updater/labels"
+	"kit.getarcane.app/updater/labels"
 )
 
 func TestIsUpdateCheckDisabled(t *testing.T) {

@@ -19,8 +19,8 @@ import (
 	"github.com/samber/hot"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/streams/bus"
 	"gorm.io/gorm"
+	"kit.getarcane.app/docker/streams/bus"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"

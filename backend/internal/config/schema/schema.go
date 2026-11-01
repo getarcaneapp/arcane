@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"strings"
 
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"

@@ -11,9 +11,9 @@ import (
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/kit/pkg/mapping"
-	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
+	"kit.getarcane.app/mapping"
+	"kit.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"

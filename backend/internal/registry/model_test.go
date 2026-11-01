@@ -5,7 +5,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/kit/pkg/mapping"
+	"kit.getarcane.app/mapping"
 )
 
 func TestContainerRegistry_MapsHostAndNamespace(t *testing.T) {

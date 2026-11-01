@@ -17,8 +17,8 @@ import (
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
-	kit "go.getarcane.app/kit/pkg"
-	"go.getarcane.app/sys/cgroup"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/sys/cgroup"
 
 	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
 	httputil "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"

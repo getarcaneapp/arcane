@@ -11,9 +11,9 @@ import (
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
-	"go.getarcane.app/docker/compat"
-	"go.getarcane.app/sys/cgroup"
-	"go.getarcane.app/updater/labels"
+	"kit.getarcane.app/docker/compat"
+	"kit.getarcane.app/sys/cgroup"
+	"kit.getarcane.app/updater/labels"
 )
 
 const (

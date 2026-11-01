@@ -19,9 +19,9 @@ import (
 	"unicode"
 
 	"github.com/getarcaneapp/arcane/types/v3"
-	"go.getarcane.app/acfs"
-	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
+	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"

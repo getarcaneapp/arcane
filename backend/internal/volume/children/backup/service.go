@@ -21,8 +21,8 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
-	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
+	kit "kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"

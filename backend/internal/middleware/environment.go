@@ -20,7 +20,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"

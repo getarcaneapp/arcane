@@ -11,8 +11,8 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
-	kit "go.getarcane.app/kit/pkg"
-	"go.getarcane.app/kit/pkg/mapping"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/mapping"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"

@@ -19,9 +19,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/hot"
-	"go.getarcane.app/kit/normalization"
-	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
+	"kit.getarcane.app"
+	"kit.getarcane.app/normalization"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"

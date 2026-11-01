@@ -17,7 +17,6 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
-	"go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -25,6 +24,7 @@ import (
 	"go.uber.org/fx"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
+	"kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"

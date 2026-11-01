@@ -12,7 +12,7 @@ import (
 	"github.com/sigstore/sigstore-go/pkg/root"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/cli/v3/internal/selfupdate"
 )

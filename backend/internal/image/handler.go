@@ -14,9 +14,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
-	buildtypes "go.getarcane.app/builds/types"
-	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
+	"kit.getarcane.app"
+	buildtypes "kit.getarcane.app/builds/types"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/build"

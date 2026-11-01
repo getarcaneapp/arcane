@@ -5,11 +5,11 @@ import (
 	"errors"
 	"strings"
 
-	"go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
+	"kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )

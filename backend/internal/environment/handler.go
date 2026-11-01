@@ -23,9 +23,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
-	kit "go.getarcane.app/kit/pkg"
-	"go.getarcane.app/kit/pkg/mapping"
-	"go.getarcane.app/streams/agg"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/docker/streams/agg"
+	"kit.getarcane.app/mapping"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"

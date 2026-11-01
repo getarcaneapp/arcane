@@ -13,7 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 // ParseImageRefsJSON parses a JSON array of image references, returning nil

@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
-	"go.getarcane.app/kit/pkg"
 	"golang.org/x/time/rate"
+	"kit.getarcane.app"
 )
 
 // ipRateLimiter tracks per-client token bucket limiters keyed by client IP.

@@ -19,7 +19,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/samber/hot"
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"

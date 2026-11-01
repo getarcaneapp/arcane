@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"go.getarcane.app/acfs/atomic"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/fs/atomic"
 )
 
 const (

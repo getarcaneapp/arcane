@@ -16,7 +16,7 @@ import (
 
 	containertypes "github.com/moby/moby/api/types/container"
 	dockerregistry "github.com/moby/moby/api/types/registry"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 )

@@ -13,7 +13,7 @@ import (
 	composeloader "github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/samber/mo"
-	"go.getarcane.app/acfs"
+	"kit.getarcane.app/acfs"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"

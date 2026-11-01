@@ -20,9 +20,9 @@ import (
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	buildtypes "go.getarcane.app/builds/types"
-	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
+	buildtypes "kit.getarcane.app/builds/types"
+	"kit.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"

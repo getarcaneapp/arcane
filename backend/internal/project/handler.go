@@ -12,9 +12,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
-	dockertypes "go.getarcane.app/docker/types"
-	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
+	kit "kit.getarcane.app"
+	dockertypes "kit.getarcane.app/docker/types"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
 )
 
 func TestDockerExpectationIdentityAndExpiry(t *testing.T) {

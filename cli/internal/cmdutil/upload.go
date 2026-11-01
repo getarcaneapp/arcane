@@ -12,7 +12,7 @@ import (
 
 	charmLog "charm.land/log/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/output"

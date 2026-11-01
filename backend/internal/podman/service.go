@@ -13,8 +13,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
-	"go.getarcane.app/docker/compat"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/docker/compat"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/kube"

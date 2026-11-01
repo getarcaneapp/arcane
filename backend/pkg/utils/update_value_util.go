@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/samber/mo"
-	"go.getarcane.app/sys/crypto"
+	"kit.getarcane.app/sys/crypto"
 )
 
 // ApplyChanged updates target when value is present and differs from the current value.

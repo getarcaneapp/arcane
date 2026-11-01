@@ -9,7 +9,7 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
-	updaterlabels "go.getarcane.app/updater/labels"
+	updaterlabels "kit.getarcane.app/updater/labels"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )

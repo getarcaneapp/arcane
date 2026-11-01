@@ -17,10 +17,10 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	kit "go.getarcane.app/kit/pkg"
-	"go.getarcane.app/streams/bus"
-	"go.getarcane.app/updater"
 	"gorm.io/gorm"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/docker/streams/bus"
+	"kit.getarcane.app/updater"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"

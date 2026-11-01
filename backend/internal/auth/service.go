@@ -19,10 +19,10 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/samber/hot"
-	"go.getarcane.app/kit/normalization"
-	"go.getarcane.app/kit/pkg"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
+	"kit.getarcane.app"
+	"kit.getarcane.app/normalization"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"

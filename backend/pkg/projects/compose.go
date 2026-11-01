@@ -17,10 +17,10 @@ import (
 	"github.com/docker/compose/v5/pkg/compose"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
-	"go.getarcane.app/docker"
-	"go.getarcane.app/docker/compat"
-	"go.getarcane.app/docker/types"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/docker"
+	"kit.getarcane.app/docker/compat"
+	"kit.getarcane.app/docker/types"
 )
 
 type Client struct {
