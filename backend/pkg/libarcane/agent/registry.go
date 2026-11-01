@@ -213,7 +213,7 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 			tunnelMetadata := tunnel.MetadataSnapshot()
 			existingStale := staleAfter > 0 && time.Since(existingMetadata.LastHeartbeat) > staleAfter
 			sameAgentInstance := existingMetadata.AgentInstance != "" && tunnelMetadata.AgentInstance != "" && existingMetadata.AgentInstance == tunnelMetadata.AgentInstance
-			if (existing != nil && existing.Conn != nil && !existing.Conn.IsClosed()) && !existingStale && !sameAgentInstance {
+			if existing.Conn != nil && !existing.Conn.IsClosed() && !existingStale && !sameAgentInstance {
 				result.reason = "another agent session is already active"
 				return result, false, nil
 			}

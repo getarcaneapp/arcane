@@ -44,23 +44,25 @@ type Service struct {
 	branchLock     func(repositoryID, branch string) *sync.Mutex
 }
 
-func New(
-	db *database.DB,
-	repoService *gitrepo.GitRepositoryService,
-	projectService *projectpkg.ProjectService,
-	eventService *event.EventService,
-	limits func(context.Context, *projectpkg.GitOpsSync) (int, int64, int64),
-	logError func(context.Context, *projectpkg.GitOpsSync, types.Actor, string),
-	branchLock func(repositoryID, branch string) *sync.Mutex,
-) *Service {
+type Params struct {
+	DB             *database.DB
+	RepoService    *gitrepo.GitRepositoryService
+	ProjectService *projectpkg.ProjectService
+	EventService   *event.EventService
+	Limits         func(context.Context, *projectpkg.GitOpsSync) (int, int64, int64)
+	LogError       func(context.Context, *projectpkg.GitOpsSync, types.Actor, string)
+	BranchLock     func(repositoryID, branch string) *sync.Mutex
+}
+
+func New(p Params) *Service {
 	return &Service{
-		db:             db,
-		repoService:    repoService,
-		projectService: projectService,
-		eventService:   eventService,
-		limits:         limits,
-		logError:       logError,
-		branchLock:     branchLock,
+		db:             p.DB,
+		repoService:    p.RepoService,
+		projectService: p.ProjectService,
+		eventService:   p.EventService,
+		limits:         p.Limits,
+		logError:       p.LogError,
+		branchLock:     p.BranchLock,
 	}
 }
 

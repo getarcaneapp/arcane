@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1734,10 +1735,16 @@ func TestClassifyDigestError(t *testing.T) {
 	require.NotErrorIs(t, classifyDigestError(unknownHost), common.ErrUnavailable)
 }
 
-func newRegistryTestService(t *testing.T, db *database.DB, dockerClient registryDaemonGetter, distributionHTTPClients ...*http.Client) *ContainerRegistryService {
+func newRegistryTestService(t *testing.T, db *database.DB, dockerClient registryDaemonGetter, httpClients ...*http.Client) *ContainerRegistryService {
 	t.Helper()
 
 	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
-	return NewContainerRegistryService(db, dockerClient, kv.NewKVService(db), settingsService, distributionHTTPClients...)
+	return NewContainerRegistryService(ContainerRegistryServiceParams{
+		DB:              db,
+		DockerClient:    dockerClient,
+		KVService:       kv.NewKVService(db),
+		SettingsService: settingsService,
+		HTTPClient:      slices.Concat(httpClients, []*http.Client{nil})[0],
+	})
 }

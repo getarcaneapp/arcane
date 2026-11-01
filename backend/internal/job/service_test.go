@@ -76,15 +76,18 @@ func newJobCoordinatorForTest(t *testing.T, db *database.DB) *runs.Coordinator {
 
 func newJobServiceForTest(t *testing.T, db *database.DB, settingsService *settings.SettingsService, cfg *config.Config) *JobService {
 	t.Helper()
-	service := NewJobService(
-		db,
-		settingsService,
-		cfg,
-		newJobCoordinatorForTest(t, db),
-		role.NewRoleService(db),
-		environment.NewEnvironmentService(db, nil, nil, settingsService, nil),
-		activity.NewActivityService(db, settingsService),
-	)
+	service := NewJobService(JobServiceParams{
+		DB:            db,
+		LocalSettings: settingsService,
+		Config:        cfg,
+		Coordinator:   newJobCoordinatorForTest(t, db),
+		Roles:         role.NewRoleService(db),
+		LocalEnvironment: environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+			DB:              db,
+			SettingsService: settingsService,
+		}),
+		LocalActivity: activity.NewActivityService(db, settingsService),
+	})
 	service.SetScheduler(t.Context(), newFakeJobScheduler())
 	return service
 }
@@ -616,15 +619,18 @@ func newJobActivityTestService(t *testing.T) (*JobService, *activity.ActivitySer
 	settingsService, err := newSettingsServiceForTest(t, t.Context(), db)
 	require.NoError(t, err)
 	activities := activity.NewActivityService(db, nil)
-	svc := NewJobService(
-		db,
-		settingsService,
-		&config.Config{},
-		newJobCoordinatorForTest(t, db),
-		role.NewRoleService(db),
-		environment.NewEnvironmentService(db, nil, nil, settingsService, nil),
-		activities,
-	)
+	svc := NewJobService(JobServiceParams{
+		DB:            db,
+		LocalSettings: settingsService,
+		Config:        &config.Config{},
+		Coordinator:   newJobCoordinatorForTest(t, db),
+		Roles:         role.NewRoleService(db),
+		LocalEnvironment: environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+			DB:              db,
+			SettingsService: settingsService,
+		}),
+		LocalActivity: activities,
+	})
 	svc.SetScheduler(t.Context(), newFakeJobScheduler())
 	return svc, activities, db
 }
@@ -883,15 +889,18 @@ func TestJobActivityRestartRepairsFailedProjection(t *testing.T) {
 		return nil
 	}))
 	require.NoError(t, db.AutoMigrate(&activity.Activity{}, &activity.ActivityMessage{}))
-	restarted := NewJobService(
-		db,
-		svc.settings,
-		&config.Config{},
-		svc.runs,
-		role.NewRoleService(db),
-		environment.NewEnvironmentService(db, nil, nil, svc.settings, nil),
-		activities,
-	)
+	restarted := NewJobService(JobServiceParams{
+		DB:            db,
+		LocalSettings: svc.settings,
+		Config:        &config.Config{},
+		Coordinator:   svc.runs,
+		Roles:         role.NewRoleService(db),
+		LocalEnvironment: environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+			DB:              db,
+			SettingsService: svc.settings,
+		}),
+		LocalActivity: activities,
+	})
 	restarted.SetScheduler(ctx, newFakeJobScheduler())
 	require.NoError(t, restarted.runs.Start(ctx, ctx))
 	t.Cleanup(func() {

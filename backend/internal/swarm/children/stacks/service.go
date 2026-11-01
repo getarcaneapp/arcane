@@ -51,21 +51,23 @@ type Service struct {
 	settingsService  *settings.SettingsService
 }
 
-func NewService(
-	dockerService *dockerInternal.DockerClientService,
-	ensureManager func(ctx context.Context) error,
-	listTasks func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error),
-	paginateServices func(ctx context.Context, services []swarm.Service, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error),
-	registryAuth func(ctx context.Context, imageRef string) (string, error),
-	settingsService *settings.SettingsService,
-) *Service {
+type ServiceParams struct {
+	DockerService    *dockerInternal.DockerClientService
+	EnsureManager    func(ctx context.Context) error
+	ListTasks        func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
+	PaginateServices func(ctx context.Context, services []swarm.Service, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error)
+	RegistryAuth     func(ctx context.Context, imageRef string) (string, error)
+	SettingsService  *settings.SettingsService
+}
+
+func NewService(p ServiceParams) *Service {
 	return &Service{
-		docker:           dockerService,
-		ensureManager:    ensureManager,
-		listTasks:        listTasks,
-		paginateServices: paginateServices,
-		registryAuth:     registryAuth,
-		settingsService:  settingsService,
+		docker:           p.DockerService,
+		ensureManager:    p.EnsureManager,
+		listTasks:        p.ListTasks,
+		paginateServices: p.PaginateServices,
+		registryAuth:     p.RegistryAuth,
+		settingsService:  p.SettingsService,
 	}
 }
 
@@ -377,8 +379,8 @@ func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName s
 var deployStackAfterSourceUpdate = (*Service).DeployStack
 
 type StackSourceUpdate struct {
-	Source    types.SwarmStackSource
 	Submitted map[string]bool
+	Source    types.SwarmStackSource
 }
 
 func (s *Service) UpdateStackSource(ctx context.Context, environmentID, stackName string, change StackSourceUpdate) (*types.SwarmStackSource, error) {
@@ -863,9 +865,7 @@ func (s *Service) resolveSwarmStackSourceEnvironmentDir(ctx context.Context, env
 		normalizedEnvironmentID = "0"
 	}
 
-	configuredRootDir := defaultSwarmStackSourceRootDir
-	configuredRootDir = s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory")
-	rootDir := projects.ResolveConfiguredContainerDirectory(configuredRootDir, defaultSwarmStackSourceRootDir)
+	rootDir := projects.ResolveConfiguredContainerDirectory(s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory"), defaultSwarmStackSourceRootDir)
 
 	environmentDir := filepath.Clean(filepath.Join(rootDir, normalizedEnvironmentID))
 	if !projects.IsSafeSubdirectory(rootDir, environmentDir) {

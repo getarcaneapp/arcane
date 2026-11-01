@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"go.uber.org/fx"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
@@ -27,15 +28,19 @@ type Module struct {
 	uploadService      *upload.UploadService
 }
 
+type Params struct {
+	fx.In
+
+	Service            *VolumeService
+	DockerService      *docker.DockerClientService
+	ActivityService    *activity.ActivityService
+	EnvironmentService *environment.EnvironmentService
+	UploadService      *upload.UploadService
+}
+
 // New wires volume routes around an existing service.
-func New(
-	service *VolumeService,
-	dockerService *docker.DockerClientService,
-	activityService *activity.ActivityService,
-	environmentService *environment.EnvironmentService,
-	uploadService *upload.UploadService,
-) *Module {
-	return &Module{service: service, dockerService: dockerService, activityService: activityService, environmentService: environmentService, uploadService: uploadService}
+func New(p Params) *Module {
+	return &Module{service: p.Service, dockerService: p.DockerService, activityService: p.ActivityService, environmentService: p.EnvironmentService, uploadService: p.UploadService}
 }
 
 // Service exposes the volume service to collaborators that use it directly,
@@ -60,7 +65,13 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 
 	RegisterVolumes(api, m.dockerService, m.service, m.activityService, m.environmentService, appCtx)
 	workspace.RegisterRoutes(api, workspace.NewHandler(service.workspace, m.activityService, appCtx.Context()))
-	backup.RegisterRoutes(api, backup.NewHandler(service.backup, m.activityService, m.environmentService, m.uploadService, appCtx.Context()))
+	backup.RegisterRoutes(api, backup.NewHandler(backup.HandlerParams{
+		Service:            service.backup,
+		ActivityService:    m.activityService,
+		EnvironmentService: m.environmentService,
+		UploadService:      m.uploadService,
+		AppCtx:             appCtx.Context(),
+	}))
 }
 
 // RegisterVolumes registers volume management routes using Huma.

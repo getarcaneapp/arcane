@@ -6,8 +6,8 @@ import (
 )
 
 type TransferOptions struct {
-	Total        int64
 	Label        string
+	Total        int64
 	ShowProgress bool
 }
 

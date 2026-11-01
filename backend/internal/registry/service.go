@@ -112,16 +112,18 @@ type ContainerRegistryService struct {
 	browse                 *browse.Service
 }
 
+type ContainerRegistryServiceParams struct {
+	DB              *database.DB
+	DockerClient    registryDaemonGetter
+	KVService       *kv.KVService
+	SettingsService *settings.SettingsService
+	HTTPClient      *http.Client
+}
+
 // NewContainerRegistryService creates a registry service. kvService may be nil
 // in tests that do not need pull tracking or rate-limit caching.
-func NewContainerRegistryService(
-	db *database.DB,
-	dockerClient registryDaemonGetter,
-	kvService *kv.KVService,
-	settingsService *settings.SettingsService,
-	distributionHTTPClients ...*http.Client,
-) *ContainerRegistryService {
-	rawHTTPClient := cmp.Or(slices.Concat(distributionHTTPClients, []*http.Client{nil})[0], &http.Client{Timeout: 30 * time.Second})
+func NewContainerRegistryService(p ContainerRegistryServiceParams) *ContainerRegistryService {
+	rawHTTPClient := cmp.Or(p.HTTPClient, &http.Client{Timeout: 30 * time.Second})
 	// Trace a copy so the injected client keeps its raw transport.
 	distributionHTTPClient := &http.Client{
 		Transport:     otelhttp.NewTransport(rawHTTPClient.Transport),
@@ -131,8 +133,8 @@ func NewContainerRegistryService(
 	}
 	var service *ContainerRegistryService
 	service = &ContainerRegistryService{
-		db:           db,
-		dockerClient: dockerClient,
+		db:           p.DB,
+		dockerClient: p.DockerClient,
 		cache: hot.NewHotCache[string, string](hot.LRU, 4096).
 			WithTTL(registryCacheTTL).
 			WithRevalidation(registryCacheTTL, func(imageRefs []string) (map[string]string, error) {
@@ -168,8 +170,8 @@ func NewContainerRegistryService(
 			WithTTL(versionLabelCacheTTL).
 			Build(),
 		distributionHTTPClient: distributionHTTPClient,
-		kvService:              kvService,
-		settingsService:        settingsService,
+		kvService:              p.KVService,
+		settingsService:        p.SettingsService,
 		browse: browse.NewService(
 			func(ctx context.Context, id string) (types.ContainerRegistry, *types.ContainerRegistryCredential, error) {
 				reg, err := service.GetRegistryByID(ctx, id)
@@ -882,7 +884,7 @@ func (s *ContainerRegistryService) InspectImageDigest(
 		if fallbackErr == nil {
 			return fallbackResult, nil
 		}
-		if fallbackErr != nil && IsRateLimitErrorString(fallbackErr.Error()) {
+		if IsRateLimitErrorString(fallbackErr.Error()) {
 			slog.DebugContext(ctx, "rate limited by registry on fallback", "registry", parts.RegistryHost, "imageRef", parts.NormalizedRef)
 			return nil, backoff.Permanent(fallbackErr)
 		}
@@ -928,7 +930,7 @@ func classifyDigestError(err error) error {
 	case isDNSErr && dnsErr.IsNotFound:
 		// A registry host that does not resolve is a bad reference, not an outage worth retrying.
 		return err
-	case (err != nil && IsRateLimitErrorString(err.Error())), errdefs.IsUnavailable(err), isNetErr,
+	case IsRateLimitErrorString(err.Error()), errdefs.IsUnavailable(err), isNetErr,
 		strings.Contains(strings.ToLower(err.Error()), "connection refused"), isTransport && transportErr.StatusCode >= http.StatusInternalServerError:
 		return common.Classify(common.ErrUnavailable, err)
 	case errors.Is(err, context.DeadlineExceeded), errdefs.IsDeadlineExceeded(err):

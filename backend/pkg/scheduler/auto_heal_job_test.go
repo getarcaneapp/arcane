@@ -85,81 +85,67 @@ func TestAutoHeal_ProcessCandidate_SkipsQuadletContainers(t *testing.T) {
 	}, target)
 }
 
-func TestAutoHeal_CanRestart_UnderLimit(t *testing.T) {
+func TestAutoHeal_ReserveRestartSlot_UnderLimit(t *testing.T) {
 	job := newTestAutoHealJob()
 
-	// No restarts recorded yet — should be allowed
-	require.True(t, job.canRestart("container-1", 5, 30*time.Minute))
-
-	// Record 4 restarts (under limit of 5)
-	for range 4 {
-		job.recordRestart("container-1")
-	}
-
-	require.True(t, job.canRestart("container-1", 5, 30*time.Minute))
-}
-
-func TestAutoHeal_CanRestart_AtLimit(t *testing.T) {
-	job := newTestAutoHealJob()
-
-	// Record exactly 5 restarts (at limit)
 	for range 5 {
-		job.recordRestart("container-1")
+		_, reserved := job.reserveRestartSlot("container-1", 5, 30*time.Minute)
+		require.True(t, reserved)
 	}
-
-	require.False(t, job.canRestart("container-1", 5, 30*time.Minute))
 }
 
-func TestAutoHeal_CanRestart_WindowExpiry(t *testing.T) {
+func TestAutoHeal_ReserveRestartSlot_AtLimit(t *testing.T) {
 	job := newTestAutoHealJob()
 
-	// Record 5 restarts 31 minutes ago (outside window)
+	for range 5 {
+		job.reserveRestartSlot("container-1", 5, 30*time.Minute)
+	}
+
+	_, reserved := job.reserveRestartSlot("container-1", 5, 30*time.Minute)
+	require.False(t, reserved)
+}
+
+func TestAutoHeal_ReserveRestartSlot_WindowExpiry(t *testing.T) {
+	job := newTestAutoHealJob()
+
 	oldTime := time.Now().Add(-31 * time.Minute)
 	for range 5 {
 		job.RecordRestartAtExported("container-1", oldTime)
 	}
 
-	// Should be allowed because all timestamps are outside the 30-minute window
-	require.True(t, job.canRestart("container-1", 5, 30*time.Minute))
+	_, reserved := job.reserveRestartSlot("container-1", 5, 30*time.Minute)
+	require.True(t, reserved)
 }
 
-func TestAutoHeal_CanRestart_MixedTimestamps(t *testing.T) {
+func TestAutoHeal_ReserveRestartSlot_MixedTimestamps(t *testing.T) {
 	job := newTestAutoHealJob()
 
-	// Record 3 old restarts (outside window)
 	oldTime := time.Now().Add(-31 * time.Minute)
 	for range 3 {
 		job.RecordRestartAtExported("container-1", oldTime)
 	}
 
-	// Record 4 recent restarts (inside window)
-	for range 4 {
-		job.recordRestart("container-1")
+	for range 5 {
+		_, reserved := job.reserveRestartSlot("container-1", 5, 30*time.Minute)
+		require.True(t, reserved)
 	}
 
-	// Should still be allowed (only 4 recent, limit is 5)
-	require.True(t, job.canRestart("container-1", 5, 30*time.Minute))
-
-	// Add one more recent restart
-	job.recordRestart("container-1")
-
-	// Now should be blocked (5 recent)
-	require.False(t, job.canRestart("container-1", 5, 30*time.Minute))
+	_, reserved := job.reserveRestartSlot("container-1", 5, 30*time.Minute)
+	require.False(t, reserved)
 }
 
-func TestAutoHeal_CanRestart_DifferentContainers(t *testing.T) {
+func TestAutoHeal_ReserveRestartSlot_DifferentContainers(t *testing.T) {
 	job := newTestAutoHealJob()
 
-	// Fill up container-1
 	for range 5 {
-		job.recordRestart("container-1")
+		job.reserveRestartSlot("container-1", 5, 30*time.Minute)
 	}
 
-	// container-1 should be blocked
-	require.False(t, job.canRestart("container-1", 5, 30*time.Minute))
+	_, reserved := job.reserveRestartSlot("container-1", 5, 30*time.Minute)
+	require.False(t, reserved)
 
-	// container-2 should still be allowed
-	require.True(t, job.canRestart("container-2", 5, 30*time.Minute))
+	_, reserved = job.reserveRestartSlot("container-2", 5, 30*time.Minute)
+	require.True(t, reserved)
 }
 
 func TestAutoHeal_Schedule_Default(t *testing.T) {
@@ -172,7 +158,10 @@ func TestAutoHeal_Schedule_Default(t *testing.T) {
 func TestAutoHeal_ShouldSchedule(t *testing.T) {
 	ctx := t.Context()
 	_, settingsSvc, _ := setupAnalyticsStateServices(t)
-	job, err := NewAutoHealJob(nil, settingsSvc, nil, nil, newTestAdmissionGate(t))
+	job, err := NewAutoHealJob(AutoHealJobParams{
+		SettingsService: settingsSvc,
+		AdmissionGate:   newTestAdmissionGate(t),
+	})
 	require.NoError(t, err)
 
 	require.False(t, job.ShouldSchedule(ctx))
@@ -184,17 +173,16 @@ func TestAutoHeal_ShouldSchedule(t *testing.T) {
 func TestAutoHeal_ResetRestartTracking(t *testing.T) {
 	job := newTestAutoHealJob()
 
-	// Fill up container-1
 	for range 5 {
-		job.recordRestart("container-1")
+		job.reserveRestartSlot("container-1", 5, 30*time.Minute)
 	}
-	require.False(t, job.canRestart("container-1", 5, 30*time.Minute))
+	_, reserved := job.reserveRestartSlot("container-1", 5, 30*time.Minute)
+	require.False(t, reserved)
 
-	// Reset tracking
 	job.ResetRestartTracking()
 
-	// Should be allowed again
-	require.True(t, job.canRestart("container-1", 5, 30*time.Minute))
+	_, reserved = job.reserveRestartSlot("container-1", 5, 30*time.Minute)
+	require.True(t, reserved)
 }
 
 func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
@@ -212,20 +200,29 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 
 	cfg := &config.Config{}
 	eventSvc := event.NewEventService(wrappedDB, cfg, nil)
-	job, err := NewAutoHealJob(
-		nil,
-		settingsSvc,
-		eventSvc,
-		notification.NewNotificationService(
-			wrappedDB,
-			cfg,
-			environment.NewEnvironmentService(wrappedDB, nil, eventSvc, settingsSvc, nil),
-			eventSvc,
-			apns.NewApnsService(ctx, wrappedDB, cfg, settingsSvc, nil, eventSvc, nil),
-			settingsSvc,
-		),
-		newTestAdmissionGate(t),
-	)
+	job, err := NewAutoHealJob(AutoHealJobParams{
+		SettingsService: settingsSvc,
+		EventService:    eventSvc,
+		NotificationService: notification.NewNotificationService(notification.NotificationServiceParams{
+			DB:     wrappedDB,
+			Config: cfg,
+			EnvironmentSvc: environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+				DB:              wrappedDB,
+				EventService:    eventSvc,
+				SettingsService: settingsSvc,
+			}),
+			EventSvc: eventSvc,
+			APNSSvc: apns.NewApnsService(apns.ApnsServiceParams{
+				LifecycleCtx:    ctx,
+				DB:              wrappedDB,
+				Config:          cfg,
+				SettingsService: settingsSvc,
+				EventService:    eventSvc,
+			}),
+			SettingsService: settingsSvc,
+		}),
+		AdmissionGate: newTestAdmissionGate(t),
+	})
 	require.NoError(t, err)
 	job.getDockerClientFn = func() (*client.Client, error) { return nil, nil }
 	job.listContainers = func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
@@ -283,7 +280,10 @@ func TestAutoHealJob_OverlappingRunIsSkipped(t *testing.T) {
 	_, settingsSvc, _ := setupAnalyticsStateServices(t)
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", true))
 
-	job, err := NewAutoHealJob(nil, settingsSvc, nil, nil, newTestAdmissionGate(t))
+	job, err := NewAutoHealJob(AutoHealJobParams{
+		SettingsService: settingsSvc,
+		AdmissionGate:   newTestAdmissionGate(t),
+	})
 	require.NoError(t, err)
 	job.getDockerClientFn = func() (*client.Client, error) { return nil, nil }
 	started := make(chan struct{}, 1)

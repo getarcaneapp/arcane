@@ -58,13 +58,18 @@ func TestNewHumaMiddleware_AcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) 
 	}
 
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
-	api.UseMiddleware(NewHumaMiddleware(api, &AuthService{}, nil, nil, testEnvironmentAccessResolver{
-		env: &environment.Environment{
-			ID:          "env-self",
-			Name:        "Self Target",
-			AccessToken: &token,
+	api.UseMiddleware(NewHumaMiddleware(HumaMiddlewareParams{
+		API:         api,
+		AuthService: &AuthService{},
+		EnvTokenResolver: testEnvironmentAccessResolver{
+			env: &environment.Environment{
+				ID:          "env-self",
+				Name:        "Self Target",
+				AccessToken: &token,
+			},
 		},
-	}, &config.Config{}))
+		Config: &config.Config{},
+	}))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "secure",
@@ -105,7 +110,11 @@ func TestNewHumaMiddleware_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToke
 	sessionSvc := session.NewSessionService(db)
 
 	signingKey := newTestSigningKey()
-	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, nil, nil, &config.Config{JWTRefreshExpiry: 24 * time.Hour}).WithSigningKey(signingKey)
+	authSvc := NewAuthService(AuthServiceParams{
+		UserService:    userSvc,
+		SessionService: sessionSvc,
+		Config:         &config.Config{JWTRefreshExpiry: 24 * time.Hour},
+	}).WithSigningKey(signingKey)
 	bearerToken := mintHumaMiddlewareTestToken(t, userSvc, sessionSvc, signingKey, "u-loopback")
 
 	ps := authz.NewPermissionSet()
@@ -122,13 +131,19 @@ func TestNewHumaMiddleware_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToke
 	}
 
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
-	api.UseMiddleware(NewHumaMiddleware(api, authSvc, nil, staticPermissionResolver{ps: ps}, testEnvironmentAccessResolver{
-		env: &environment.Environment{
-			ID:          "remote-env",
-			Name:        "Remote Env",
-			AccessToken: &envToken,
+	api.UseMiddleware(NewHumaMiddleware(HumaMiddlewareParams{
+		API:          api,
+		AuthService:  authSvc,
+		PermResolver: staticPermissionResolver{ps: ps},
+		EnvTokenResolver: testEnvironmentAccessResolver{
+			env: &environment.Environment{
+				ID:          "remote-env",
+				Name:        "Remote Env",
+				AccessToken: &envToken,
+			},
 		},
-	}, &config.Config{}))
+		Config: &config.Config{},
+	}))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "loopback-start",
@@ -179,7 +194,11 @@ func TestNewHumaMiddleware_RejectsApiKeyOnBearerOnlyOperation(t *testing.T) {
 	}
 
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
-	api.UseMiddleware(NewHumaMiddleware(api, &AuthService{}, nil, nil, nil, &config.Config{}))
+	api.UseMiddleware(NewHumaMiddleware(HumaMiddlewareParams{
+		API:         api,
+		AuthService: &AuthService{},
+		Config:      &config.Config{},
+	}))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "bearer-only",
@@ -269,7 +288,11 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 
 	signingKey := newTestSigningKey()
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
-	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, nil, nil, cfg).WithSigningKey(signingKey)
+	authSvc := NewAuthService(AuthServiceParams{
+		UserService:    userSvc,
+		SessionService: sessionSvc,
+		Config:         cfg,
+	}).WithSigningKey(signingKey)
 
 	_, err := userSvc.CreateUser(t.Context(), &user.User{
 		ID:       "u-logout",
@@ -300,7 +323,11 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 		"BearerAuth": {Type: "http", Scheme: "bearer"},
 	}
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
-	api.UseMiddleware(NewHumaMiddleware(api, authSvc, nil, nil, nil, &config.Config{}))
+	api.UseMiddleware(NewHumaMiddleware(HumaMiddlewareParams{
+		API:         api,
+		AuthService: authSvc,
+		Config:      &config.Config{},
+	}))
 
 	var sawSessionID string
 	huma.Register(api, huma.Operation{
@@ -357,7 +384,11 @@ func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 	signingKey := newTestSigningKey()
 	browserSigningKey := bytes.Repeat([]byte{0x24}, browserSessionSigningKeySize)
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
-	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, nil, nil, cfg).WithSigningKey(signingKey)
+	authSvc := NewAuthService(AuthServiceParams{
+		UserService:    userSvc,
+		SessionService: sessionSvc,
+		Config:         cfg,
+	}).WithSigningKey(signingKey)
 	authSvc.browserSigningKey = browserSigningKey
 
 	_, err := userSvc.CreateUser(t.Context(), &user.User{
@@ -396,7 +427,11 @@ func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 		"BearerAuth": {Type: "http", Scheme: "bearer"},
 	}
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
-	api.UseMiddleware(NewHumaMiddleware(api, authSvc, nil, nil, nil, &config.Config{}))
+	api.UseMiddleware(NewHumaMiddleware(HumaMiddlewareParams{
+		API:         api,
+		AuthService: authSvc,
+		Config:      &config.Config{},
+	}))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "protected",
@@ -447,9 +482,13 @@ func TestNewHumaMiddleware_AgentAuthAppliesForwardedIconCatalog(t *testing.T) {
 	}
 
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
-	api.UseMiddleware(NewHumaMiddleware(api, &AuthService{}, nil, nil, nil, &config.Config{
-		AgentEnabled: true,
-		AgentToken:   agentToken,
+	api.UseMiddleware(NewHumaMiddleware(HumaMiddlewareParams{
+		API:         api,
+		AuthService: &AuthService{},
+		Config: &config.Config{
+			AgentEnabled: true,
+			AgentToken:   agentToken,
+		},
 	}))
 
 	huma.Register(api, huma.Operation{

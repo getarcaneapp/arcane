@@ -80,14 +80,16 @@ type UploadBackupInput struct {
 	Body          types.UploadVolumeBackupRequest
 }
 
-func NewHandler(
-	service *Service,
-	activityService *activity.ActivityService,
-	environmentService *environment.EnvironmentService,
-	uploadService *upload.UploadService,
-	appCtx context.Context,
-) *Handler {
-	return &Handler{service: service, activityService: activityService, environmentService: environmentService, uploadService: uploadService, appCtx: appCtx}
+type HandlerParams struct {
+	Service            *Service
+	ActivityService    *activity.ActivityService
+	EnvironmentService *environment.EnvironmentService
+	UploadService      *upload.UploadService
+	AppCtx             context.Context
+}
+
+func NewHandler(p HandlerParams) *Handler {
+	return &Handler{service: p.Service, activityService: p.ActivityService, environmentService: p.EnvironmentService, uploadService: p.UploadService, appCtx: p.AppCtx}
 }
 
 func (h *Handler) DownloadBackup(ctx context.Context, input *DownloadBackupInput) (*huma.StreamResponse, error) {

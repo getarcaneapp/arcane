@@ -42,7 +42,12 @@ func testRestartPersistence(t *testing.T, databaseURL string) {
 	port := freePort(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
-	first, err := New(databaseURL, "test-encryption-key", "test-instance", port)
+	first, err := New(Config{
+		DatabaseURL:   databaseURL,
+		EncryptionKey: "test-encryption-key",
+		InstanceID:    "test-instance",
+		Port:          port,
+	})
 	require.NoError(t, err)
 	service := first.Service()
 	first.NameActor(actorID, "durable@0")
@@ -57,7 +62,12 @@ func testRestartPersistence(t *testing.T, databaseURL string) {
 	require.NoError(t, service.SetState(ctx, "test", actorID, state, nil))
 	require.NoError(t, first.Stop(ctx))
 
-	second, err := New(databaseURL, "test-encryption-key", "test-instance", port)
+	second, err := New(Config{
+		DatabaseURL:   databaseURL,
+		EncryptionKey: "test-encryption-key",
+		InstanceID:    "test-instance",
+		Port:          port,
+	})
 	require.NoError(t, err)
 	second.NameActor(actorID, "durable@0")
 	require.NoError(t, second.RegisterActor("test", func(string, *actor.Service) actor.Actor { return struct{}{} }))

@@ -184,7 +184,11 @@ func setupVolumeBackupLifecycleTest(t *testing.T, handler http.Handler) *Service
 	db := &database.DB{DB: gormDB}
 	dockerService := newVolumeTestDockerService(t, dockerClient)
 	eventService := event.NewEventService(db, &config.Config{}, nil)
-	containerService := containerdomain.NewContainerService(eventService, dockerService, nil, nil, nil, nil, podman.NewService(podman.Config{Engine: dockerService.Engine}))
+	containerService := containerdomain.NewContainerService(containerdomain.ContainerServiceParams{
+		EventService:  eventService,
+		DockerService: dockerService,
+		PodmanService: podman.NewService(podman.Config{Engine: dockerService.Engine}),
+	})
 	return NewService(Dependencies{
 		Docker:         dockerService,
 		StopContainer:  containerService.StopContainer,

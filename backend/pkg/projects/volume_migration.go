@@ -47,7 +47,13 @@ func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, compo
 		return nil, nil
 	}
 
-	return volumes.NewMigration(dockerClient, entries, oldComposeName, newComposeName, toolsImage), nil
+	return volumes.NewMigration(volumes.MigrationConfig{
+		DockerClient: dockerClient,
+		Entries:      entries,
+		OldProject:   oldComposeName,
+		NewProject:   newComposeName,
+		ToolsImage:   toolsImage,
+	}), nil
 }
 
 func collectProjectRenameVolumeEntries(ctx context.Context,

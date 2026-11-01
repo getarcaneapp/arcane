@@ -16,9 +16,8 @@ const (
 
 	// volumeHelperIdleTimeoutSetting is the settings key (in minutes) controlling how
 	// long a volume workspace helper container may sit idle before it is reaped.
-	volumeHelperIdleTimeoutSetting        = "volumeHelperIdleTimeout"
-	defaultVolumeHelperIdleTimeoutMinutes = 10
-	volumeHelperPruningSchedule           = "0 */5 * * * *"
+	volumeHelperIdleTimeoutSetting = "volumeHelperIdleTimeout"
+	volumeHelperPruningSchedule    = "0 */5 * * * *"
 )
 
 // PruningVolumeHelperJob periodically removes idle volume workspace helper
@@ -47,8 +46,7 @@ func (j *PruningVolumeHelperJob) Schedule(ctx context.Context) string {
 }
 
 func (j *PruningVolumeHelperJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
-	minutes := defaultVolumeHelperIdleTimeoutMinutes
-	minutes = j.settingsService.GetIntSetting(ctx, volumeHelperIdleTimeoutSetting)
+	minutes := j.settingsService.GetIntSetting(ctx, volumeHelperIdleTimeoutSetting)
 	if minutes <= 0 {
 		// 0 (or negative) disables idle pruning.
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil

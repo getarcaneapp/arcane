@@ -606,12 +606,12 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 	// upgrade) we find the existing `arcane` user to recover, if any.
 	var adminUserID string
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		var count int64
-		if err := tx.Model(&User{}).Count(&count).Error; err != nil {
+		var userCount int64
+		if err := tx.Model(&User{}).Count(&userCount).Error; err != nil {
 			return fmt.Errorf("failed to count users: %w", err)
 		}
 
-		if count == 0 {
+		if userCount == 0 {
 			hashedPassword, err := s.HashPassword(ctx, "arcane-admin")
 			if err != nil {
 				return fmt.Errorf("failed to hash default admin password: %w", err)

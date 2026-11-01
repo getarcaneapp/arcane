@@ -352,8 +352,7 @@ func (s *DockerClientService) Call[T any](ctx context.Context, op func(context.C
 		var zero T
 		return zero, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	timeout := timeouts.DefaultDockerAPI
-	timeout = timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	timeout := timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
 	apiCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return op(apiCtx, dockerClient)

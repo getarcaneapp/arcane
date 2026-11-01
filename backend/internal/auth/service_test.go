@@ -85,7 +85,12 @@ func newBootstrapTestVersionService(t *testing.T, db *database.DB) *version.Vers
 	t.Cleanup(func() {
 		_ = dockerClient.Close()
 	})
-	return version.NewVersionService(nil, "1.2.3", "revision", nil, docker.NewDockerClientService(t.Context(), nil, versionSettings, bus.Config{}).WithClient(dockerClient), nil, versionSettings)
+	return version.NewVersionService(version.VersionServiceParams{
+		AppVersion:      "1.2.3",
+		Revision:        "revision",
+		DockerService:   docker.NewDockerClientService(t.Context(), nil, versionSettings, bus.Config{}).WithClient(dockerClient),
+		SettingsService: versionSettings,
+	})
 }
 
 func newTestSigningKey() *mldsa.PrivateKey {
@@ -1036,9 +1041,11 @@ func TestGetSessionBootstrap(t *testing.T) {
 				{ID: "env-b", Name: "B", Enabled: true},
 			}).Error)
 			s := &AuthService{
-				userService:        userSvc,
-				environmentService: environment.NewEnvironmentService(db, nil, nil, nil, nil),
-				versionService:     newBootstrapTestVersionService(t, db),
+				userService: userSvc,
+				environmentService: environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+					DB: db,
+				}),
+				versionService: newBootstrapTestVersionService(t, db),
 			}
 
 			bootstrap, err := s.GetSessionBootstrap(t.Context(), "u-bootstrap", tt.ps)
@@ -1059,9 +1066,11 @@ func TestGetSessionBootstrap(t *testing.T) {
 	t.Run("unknown user fails", func(t *testing.T) {
 		db := setupAuthServiceTestDB(t)
 		s := &AuthService{
-			userService:        user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB),
-			environmentService: environment.NewEnvironmentService(db, nil, nil, nil, nil),
-			versionService:     newBootstrapTestVersionService(t, db),
+			userService: user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB),
+			environmentService: environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+				DB: db,
+			}),
+			versionService: newBootstrapTestVersionService(t, db),
 		}
 
 		_, err := s.GetSessionBootstrap(t.Context(), "missing", nil)

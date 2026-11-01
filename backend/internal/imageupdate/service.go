@@ -26,6 +26,7 @@ import (
 	"go.getarcane.app/sys/crypto"
 	"go.getarcane.app/updater/digest"
 	"go.getarcane.app/updater/refs"
+	"go.uber.org/fx"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
@@ -140,27 +141,31 @@ type monitoringEligibility struct {
 	byContainer map[string]bool
 }
 
-func NewImageUpdateService(
-	db *database.DB,
-	settingsService *settings.SettingsService,
-	registryService *registry.ContainerRegistryService,
-	dockerService *docker.DockerClientService,
-	eventService *event.EventService,
-	notificationService *notification.NotificationService,
-	activityService *activity.ActivityService,
-) *ImageUpdateService {
+type ImageUpdateServiceParams struct {
+	fx.In
+
+	DB                  *database.DB
+	SettingsService     *settings.SettingsService
+	RegistryService     *registry.ContainerRegistryService
+	DockerService       *docker.DockerClientService
+	EventService        *event.EventService
+	NotificationService *notification.NotificationService
+	ActivityService     *activity.ActivityService
+}
+
+func NewImageUpdateService(p ImageUpdateServiceParams) *ImageUpdateService {
 	registryLimiter := ratelimit.NewRegistryRateLimiter()
 	return &ImageUpdateService{
-		db:                  db,
-		settingsService:     settingsService,
-		registryService:     registryService,
-		dockerService:       dockerService,
-		eventService:        eventService,
-		notificationService: notificationService,
+		db:                  p.DB,
+		settingsService:     p.SettingsService,
+		registryService:     p.RegistryService,
+		dockerService:       p.DockerService,
+		eventService:        p.EventService,
+		notificationService: p.NotificationService,
 		registryLimiter:     registryLimiter,
-		tags:                tags.NewService(registryService, dockerService, settingsService, registryLimiter),
-		releaseNotes:        releasenotes.NewService(dockerService, registryService.ImageLabels),
-		activityService:     activityService,
+		tags:                tags.NewService(p.RegistryService, p.DockerService, p.SettingsService, registryLimiter),
+		releaseNotes:        releasenotes.NewService(p.DockerService, p.RegistryService.ImageLabels),
+		activityService:     p.ActivityService,
 		credentials:         hot.NewHotCache[string, []types.ContainerRegistryCredential](hot.LRU, 8).WithTTL(time.Minute).Build(),
 		// They outlive the longest check: its slot wait plus its workflow timeout.
 		requestCredentials: hot.NewHotCache[string, []types.ContainerRegistryCredential](hot.LRU, 64).

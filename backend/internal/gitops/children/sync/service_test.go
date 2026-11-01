@@ -57,14 +57,27 @@ func setupSyncTestService(t *testing.T) (*Service, *database.DB, string) {
 	cfg, err := config.Load()
 	require.NoError(t, err)
 	eventService := event.NewEventService(arcaneDB, cfg, nil)
-	projectService := projectpkg.NewProjectService(arcaneDB, settingsService, eventService, nil, testDockerService, nil, nil, nil, cfg, nil, nil)
+	projectService := projectpkg.NewProjectService(projectpkg.ProjectServiceParams{
+		DB:              arcaneDB,
+		SettingsService: settingsService,
+		EventService:    eventService,
+		DockerService:   testDockerService,
+		Config:          cfg,
+	})
 
 	limits := func(_ context.Context, sync *projectpkg.GitOpsSync) (int, int64, int64) {
 		return sync.MaxSyncFiles, sync.MaxSyncTotalSize, sync.MaxSyncBinarySize
 	}
 	logError := func(context.Context, *projectpkg.GitOpsSync, types.Actor, string) {}
 	unregisterJob := func(context.Context, string) {}
-	return New(arcaneDB, nil, projectService, nil, eventService, limits, logError, unregisterJob), arcaneDB, projectsDir
+	return New(Params{
+		DB:             arcaneDB,
+		ProjectService: projectService,
+		EventService:   eventService,
+		Limits:         limits,
+		LogError:       logError,
+		UnregisterJob:  unregisterJob,
+	}), arcaneDB, projectsDir
 }
 
 func writeFile(t *testing.T, rootDir, relativePath string, content []byte) {

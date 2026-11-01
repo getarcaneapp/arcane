@@ -24,6 +24,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/fx"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -175,21 +176,25 @@ func (s *GitOpsSyncService) validateLifecycleConfig(ctx context.Context, current
 	return nil
 }
 
-func NewGitOpsSyncService(
-	db *database.DB,
-	repoService *gitrepo.GitRepositoryService,
-	projectService *projectpkg.ProjectService,
-	swarmService *swarm.SwarmService,
-	eventService *event.EventService,
-	settingsService *settings.SettingsService,
-) *GitOpsSyncService {
+type GitOpsSyncServiceParams struct {
+	fx.In
+
+	DB              *database.DB
+	RepoService     *gitrepo.GitRepositoryService
+	ProjectService  *projectpkg.ProjectService
+	SwarmService    *swarm.SwarmService
+	EventService    *event.EventService
+	SettingsService *settings.SettingsService
+}
+
+func NewGitOpsSyncService(p GitOpsSyncServiceParams) *GitOpsSyncService {
 	s := &GitOpsSyncService{
-		db:              db,
-		repoService:     repoService,
-		projectService:  projectService,
-		swarmService:    swarmService,
-		eventService:    eventService,
-		settingsService: settingsService,
+		db:              p.DB,
+		repoService:     p.RepoService,
+		projectService:  p.ProjectService,
+		swarmService:    p.SwarmService,
+		eventService:    p.EventService,
+		settingsService: p.SettingsService,
 		jobs:            entityjobs.New(entityjobs.GitOpsSyncJobPrefix, gitOpsSyncAdmissionScope),
 		backups:         &backupRuntime{branches: map[string]*sync.Mutex{}, timers: map[string]*time.Timer{}, debounce: backup.DefaultBackupSaveDebounce},
 	}
@@ -207,8 +212,25 @@ func NewGitOpsSyncService(
 			EnvironmentID: new(syncRecord.EnvironmentID),
 		})
 	}
-	s.sync = gitopssync.New(db, repoService, projectService, swarmService, eventService, s.getEffectiveSyncLimits, logError, s.jobs.Unregister)
-	s.backup = backup.New(db, repoService, projectService, eventService, s.getEffectiveSyncLimits, logError, s.backups.branchLock)
+	s.sync = gitopssync.New(gitopssync.Params{
+		DB:             p.DB,
+		RepoService:    p.RepoService,
+		ProjectService: p.ProjectService,
+		SwarmService:   p.SwarmService,
+		EventService:   p.EventService,
+		Limits:         s.getEffectiveSyncLimits,
+		LogError:       logError,
+		UnregisterJob:  s.jobs.Unregister,
+	})
+	s.backup = backup.New(backup.Params{
+		DB:             p.DB,
+		RepoService:    p.RepoService,
+		ProjectService: p.ProjectService,
+		EventService:   p.EventService,
+		Limits:         s.getEffectiveSyncLimits,
+		LogError:       logError,
+		BranchLock:     s.backups.branchLock,
+	})
 	return s
 }
 
@@ -475,9 +497,9 @@ func (s *GitOpsSyncService) getSyncByID(ctx context.Context, environmentID, id s
 }
 
 type SyncUpdate struct {
-	Request   types.GitOpsSync
 	Submitted map[string]bool
 	Actor     types.Actor
+	Request   types.GitOpsSync
 }
 
 func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string, change SyncUpdate) (*projectpkg.GitOpsSync, error) {
@@ -496,7 +518,9 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 	case mode == types.GitOpsSyncModeDeploy && (change.Request.BackupDirectory != "" || len(change.Request.BackupPaths) > 0 || change.Submitted["backupOnSave"]):
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: errors.New("backup options require mode \"backup\"")})
 	case mode == types.GitOpsSyncModeBackup &&
-		(change.Request.TargetType != "" && change.Request.TargetType != "project" || change.Request.SyncDirectory || change.Request.PullImageAfterSync || change.Request.RedeployAfterSync || hasPreDeployConfig(change.Submitted)):
+		(change.Request.TargetType != "" && change.Request.TargetType != "project" ||
+			change.Request.SyncDirectory || change.Request.PullImageAfterSync || change.Request.RedeployAfterSync ||
+			hasPreDeployConfig(change.Submitted)):
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: errors.New("deployment options cannot be set on a backup sync")})
 	case mode == types.GitOpsSyncModeDeploy && strings.TrimSpace(change.Request.ComposePath) == "":
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "composePath", Err: errors.New("compose path is required")})

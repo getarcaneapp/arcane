@@ -74,13 +74,21 @@ type resourceInstruments struct {
 	restarts                 metric.Int64ObservableCounter
 }
 
+type Params struct {
+	GetClient     func(context.Context) (*client.Client, error)
+	DockerHost    func() string
+	CacheTTL      time.Duration
+	SampleTimeout time.Duration
+	BatchTimeout  time.Duration
+}
+
 // New builds a stats service. Non-positive timeouts fall back to defaults.
-func New(getClient func(context.Context) (*client.Client, error), dockerHost func() string, cacheTTL, sampleTimeout, batchTimeout time.Duration) *Service {
+func New(p Params) *Service {
 	return &Service{
-		getClient:  getClient,
-		dockerHost: dockerHost,
+		getClient:  p.GetClient,
+		dockerHost: p.DockerHost,
 		cache: hot.NewHotCache[string, cachedStats](hot.LRU, ContainerResourceSampleCacheSize).
-			WithTTL(cacheTTL).
+			WithTTL(p.CacheTTL).
 			WithJanitor().
 			Build(),
 		// Restart count and start time only change on restart, so metrics reuse inspects for a minute.
@@ -88,8 +96,8 @@ func New(getClient func(context.Context) (*client.Client, error), dockerHost fun
 			WithTTL(time.Minute).
 			WithJanitor().
 			Build(),
-		sampleTimeout: kit.Ternary(sampleTimeout > 0, sampleTimeout, ContainerResourceCollectTimeout),
-		batchTimeout:  kit.Ternary(batchTimeout > 0, batchTimeout, timeouts.DefaultDockerAPI),
+		sampleTimeout: kit.Ternary(p.SampleTimeout > 0, p.SampleTimeout, ContainerResourceCollectTimeout),
+		batchTimeout:  kit.Ternary(p.BatchTimeout > 0, p.BatchTimeout, timeouts.DefaultDockerAPI),
 	}
 }
 

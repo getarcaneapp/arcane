@@ -72,8 +72,17 @@ func TestPruneVolumesSkipsBackupVolume(t *testing.T) {
 	db := &database.DB{DB: gormDB}
 
 	dockerService := newSettingsDockerService(t, dockerClient)
-	volumeService := volume.NewVolumeService(db, dockerService, event.NewEventService(db, nil, nil), nil, nil, nil, nil, nil, nil, nil)
-	service := NewService(time.UTC, dockerService, nil, nil, volumeService, nil)
+	volumeService := volume.NewVolumeService(volume.VolumeServiceParams{
+		Config:        &config.Config{},
+		DB:            db,
+		DockerService: dockerService,
+		EventService:  event.NewEventService(db, nil, nil),
+	})
+	service := NewService(ServiceParams{
+		Location:      time.UTC,
+		DockerService: dockerService,
+		VolumeService: volumeService,
+	})
 
 	result, err := service.pruneVolumes(t.Context(), types.PruneVolumesOptions{Mode: types.PruneVolumeModeAll})
 	require.NoError(t, err)
@@ -126,8 +135,17 @@ func TestGetDiskUsageSumsReclaimableResources(t *testing.T) {
 	db := &database.DB{DB: gormDB}
 
 	dockerService := newSettingsDockerService(t, dockerClient)
-	volumeService := volume.NewVolumeService(db, dockerService, event.NewEventService(db, nil, nil), nil, nil, nil, nil, nil, nil, nil)
-	service := NewService(time.UTC, dockerService, nil, nil, volumeService, nil)
+	volumeService := volume.NewVolumeService(volume.VolumeServiceParams{
+		Config:        &config.Config{},
+		DB:            db,
+		DockerService: dockerService,
+		EventService:  event.NewEventService(db, nil, nil),
+	})
+	service := NewService(ServiceParams{
+		Location:      time.UTC,
+		DockerService: dockerService,
+		VolumeService: volumeService,
+	})
 
 	usage, err := service.GetDiskUsage(t.Context())
 	require.NoError(t, err)

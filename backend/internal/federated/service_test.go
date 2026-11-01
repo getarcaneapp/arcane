@@ -148,8 +148,15 @@ func setupFederatedCredentialService(t *testing.T, issuer *federatedTestIssuer) 
 	eventSvc := event.NewEventService(db, &config.Config{}, nil)
 	signingKey, err := mldsa.GenerateKey(mldsa.MLDSA87())
 	require.NoError(t, err)
-	authSvc := auth.NewAuthService(userSvc, settingsSvc, eventSvc, sessionSvc, roleSvc, nil, nil, &config.Config{
-		JWTRefreshExpiry: 24 * time.Hour,
+	authSvc := auth.NewAuthService(auth.AuthServiceParams{
+		UserService:     userSvc,
+		SettingsService: settingsSvc,
+		EventService:    eventSvc,
+		SessionService:  sessionSvc,
+		RoleService:     roleSvc,
+		Config: &config.Config{
+			JWTRefreshExpiry: 24 * time.Hour,
+		},
 	}).WithSigningKey(signingKey)
 
 	keySetManager := oidcjwk.NewKeySetManager(t.Context())
@@ -158,7 +165,16 @@ func setupFederatedCredentialService(t *testing.T, issuer *federatedTestIssuer) 
 		defer cancel()
 		require.NoError(t, keySetManager.Shutdown(shutdownCtx))
 	})
-	service := NewFederatedCredentialService(db, authSvc, userSvc, settingsSvc, eventSvc, issuer.server.Client(), keySetManager, roleSvc)
+	service := NewFederatedCredentialService(FederatedCredentialServiceParams{
+		DB:              db,
+		AuthService:     authSvc,
+		UserService:     userSvc,
+		SettingsService: settingsSvc,
+		EventService:    eventSvc,
+		HTTPClient:      issuer.server.Client(),
+		KeySetManager:   keySetManager,
+		RoleService:     roleSvc,
+	})
 
 	viewerRole := role.Role{
 		ID:          "role-federated-viewer",

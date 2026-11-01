@@ -484,8 +484,8 @@ type FinishRegistrationRequest struct {
 	UserID     string
 	SessionID  string
 	CeremonyID string
-	Payload    []byte
 	Name       string
+	Payload    []byte
 }
 
 func (s *PasskeyService) FinishRegistration(ctx context.Context, req FinishRegistrationRequest) (*PasskeySummary, error) {

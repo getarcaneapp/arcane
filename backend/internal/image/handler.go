@@ -342,7 +342,12 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 			}
 			activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 
-			writer := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, rawWriter, "Pulling image")
+			writer := activitylib.NewWriter(runtimeCtx, activitylib.WriterOptions{
+				Service:     h.activityService,
+				ActivityID:  activityID,
+				Output:      rawWriter,
+				DefaultStep: "Pulling image",
+			})
 			if pullImageErr := h.imageService.Pull(runtimeCtx, PullRequest{
 				Ref:         fullImageName,
 				Progress:    writer,
@@ -395,7 +400,12 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 			}
 			activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 
-			writer := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, rawWriter, "Building image")
+			writer := activitylib.NewWriter(runtimeCtx, activitylib.WriterOptions{
+				Service:     h.activityService,
+				ActivityID:  activityID,
+				Output:      rawWriter,
+				DefaultStep: "Building image",
+			})
 			if _, buildImageErr := h.buildService.BuildImage(runtimeCtx, input.EnvironmentID, input.Body, writer, "", user); buildImageErr != nil {
 				activitylib.FlushWriter(writer)
 				activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Image build failed", buildImageErr)

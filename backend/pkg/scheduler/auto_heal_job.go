@@ -3,7 +3,6 @@ package scheduler
 import (
 	"context"
 	"encoding/json/v2"
-	"errors"
 	"log/slog"
 	"slices"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"go.getarcane.app/docker/compat"
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
+	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
@@ -75,22 +75,23 @@ type AutoHealJob struct {
 	mu sync.Mutex
 }
 
-func NewAutoHealJob(
-	dockerClientService *dockerInternal.DockerClientService,
-	settingsService *settings.SettingsService,
-	eventService *event.EventService,
-	notificationService *notification.NotificationService,
-	admissionGate *runs.Admission,
-) (*AutoHealJob, error) {
-	if admissionGate == nil {
-		return nil, errors.New("auto-heal admission gate unavailable")
-	}
+type AutoHealJobParams struct {
+	fx.In
+
+	DockerClientService *dockerInternal.DockerClientService
+	SettingsService     *settings.SettingsService
+	EventService        *event.EventService
+	NotificationService *notification.NotificationService
+	AdmissionGate       *runs.Admission
+}
+
+func NewAutoHealJob(p AutoHealJobParams) (*AutoHealJob, error) {
 	return &AutoHealJob{
-		dockerClientService: dockerClientService,
-		settingsService:     settingsService,
-		eventService:        eventService,
-		notificationService: notificationService,
-		admissionGate:       admissionGate,
+		dockerClientService: p.DockerClientService,
+		settingsService:     p.SettingsService,
+		eventService:        p.EventService,
+		notificationService: p.NotificationService,
+		admissionGate:       p.AdmissionGate,
 		restarts:            make(map[string]*restartRecord),
 	}, nil
 }
@@ -391,33 +392,6 @@ func (j *AutoHealJob) releaseRestartSlot(containerID string, reserved time.Time)
 	if len(record.timestamps) == 0 {
 		delete(j.restarts, containerID)
 	}
-}
-
-// canRestart checks if a container can be restarted within the rate limit.
-func (j *AutoHealJob) canRestart(containerID string, maxRestarts int, window time.Duration) bool {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-
-	record := j.pruneRecordLocked(containerID, time.Now().Add(-window))
-	if record == nil {
-		return true
-	}
-
-	return len(record.timestamps) < maxRestarts
-}
-
-// recordRestart records a restart timestamp for a container.
-func (j *AutoHealJob) recordRestart(containerID string) {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-
-	record, exists := j.restarts[containerID]
-	if !exists {
-		record = &restartRecord{}
-		j.restarts[containerID] = record
-	}
-
-	record.timestamps = append(record.timestamps, time.Now())
 }
 
 // pruneTimestamps removes timestamps older than the cutoff.

@@ -31,6 +31,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"go.uber.org/fx"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
@@ -129,20 +130,24 @@ func (s *EnvironmentService) ForgetSyncState(environmentID string) {
 	}
 }
 
-func NewEnvironmentService(
-	db *database.DB,
-	dockerService *docker.DockerClientService,
-	eventService *event.EventService,
-	settingsService *settings.SettingsService,
-	apiKeyService *apikey.ApiKeyService,
-) *EnvironmentService {
+type EnvironmentServiceParams struct {
+	fx.In
+
+	DB              *database.DB
+	DockerService   *docker.DockerClientService
+	EventService    *event.EventService
+	SettingsService *settings.SettingsService
+	APIKeyService   *apikey.ApiKeyService
+}
+
+func NewEnvironmentService(p EnvironmentServiceParams) *EnvironmentService {
 	syncGate := &utils.SyncGate{Expiry: SyncDeliveryExpiry}
 	return &EnvironmentService{
 		syncGate:        syncGate,
-		db:              db,
-		dockerService:   dockerService,
-		eventService:    eventService,
-		settingsService: settingsService,
+		db:              p.DB,
+		dockerService:   p.DockerService,
+		eventService:    p.EventService,
+		settingsService: p.SettingsService,
 		agentTokens: &agentTokenCache{
 			byToken: hot.NewHotCache[string, string](hot.LRU, 1024).WithTTL(agentTokenCacheTTL).WithJanitor().Build(),
 			byEnvID: make(map[string]string),
@@ -165,10 +170,10 @@ func NewEnvironmentService(
 			running: make(map[string]bool),
 			pending: make(map[string]bool),
 		},
-		proxy:    proxy.New(db, settingsService, syncGate),
-		health:   health.New(dockerService),
-		snippets: snippets.New(eventService),
-		swarm:    swarm.New(apiKeyService),
+		proxy:    proxy.New(p.DB, p.SettingsService, syncGate),
+		health:   health.New(p.DockerService),
+		snippets: snippets.New(p.EventService),
+		swarm:    swarm.New(p.APIKeyService),
 	}
 }
 
@@ -797,7 +802,7 @@ func (s *EnvironmentService) GetActiveRemoteEnvironmentSnapshot(environmentID st
 	s.remoteEnvs.mu.RLock()
 	envRecord, ok := s.remoteEnvs.envs[environmentID]
 	s.remoteEnvs.mu.RUnlock()
-	if !ok || !(envRecord.ID != "" && envRecord.ID != "0" && envRecord.Enabled && !envRecord.Hidden) {
+	if !ok || envRecord.ID == "" || envRecord.ID == "0" || !envRecord.Enabled || envRecord.Hidden {
 		return mo.None[Environment]()
 	}
 	return mo.Some(envRecord)

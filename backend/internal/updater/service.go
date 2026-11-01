@@ -29,6 +29,7 @@ import (
 	"go.getarcane.app/updater/pkg/utils/tagpolicy"
 	"go.getarcane.app/updater/refs"
 	updatertypes "go.getarcane.app/updater/types"
+	"go.uber.org/fx"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
@@ -97,12 +98,12 @@ type updaterDependencies struct {
 	RegistryDigestResolver *registry.ContainerRegistryService
 	Events                 *event.EventService
 	Notifications          *notification.NotificationService
-	SelfUpgrade            selfUpgradeService
+	SelfUpgrade            SelfUpgrader
 	Activity               *activity.ActivityService
 	SystemUser             types.Actor
 }
 
-type selfUpgradeService interface {
+type SelfUpgrader interface {
 	// TriggerUpgradeViaCLI returns the spawned upgrader container's ID, which this
 	// service does not need — only update-all's manager step uses it.
 	TriggerUpgradeViaCLI(ctx context.Context, user types.Actor, target updater.SelfUpdateTarget) (string, error)
@@ -146,55 +147,59 @@ type (
 	}
 )
 
+type UpdaterServiceParams struct {
+	fx.In
+
+	DB                  *database.DB
+	SettingsService     *settings.SettingsService
+	DockerService       *dockerInternal.DockerClientService
+	ProjectService      *projectpkg.ProjectService
+	ImageUpdateService  *imageupdate.ImageUpdateService
+	RegistryService     *registry.ContainerRegistryService
+	EventService        *event.EventService
+	ImageService        *image.ImageService
+	NotificationService *notification.NotificationService
+	SelfUpgrader        SelfUpgrader
+	ActivityService     *activity.ActivityService
+	Config              *config.Config
+	Admission           *runs.Admission
+	RoleService         *role.RoleService
+}
+
 // NewUpdaterService constructs the Arcane updater facade.
-func NewUpdaterService(
-	db *database.DB,
-	localSettings *settings.SettingsService,
-	localDocker *dockerInternal.DockerClientService,
-	projectService *projectpkg.ProjectService,
-	imageUpdates *imageupdate.ImageUpdateService,
-	registries *registry.ContainerRegistryService,
-	events *event.EventService,
-	imageSvc *image.ImageService,
-	localNotifications *notification.NotificationService,
-	upgrade selfUpgradeService,
-	activityService *activity.ActivityService,
-	cfg *config.Config,
-	admission *runs.Admission,
-	roles *role.RoleService,
-) (*UpdaterService, error) {
+func NewUpdaterService(p UpdaterServiceParams) (*UpdaterService, error) {
 	service := &UpdaterService{
-		admission: admission,
+		admission: p.Admission,
 		deps: updaterDependencies{
-			DB:                     db,
-			Docker:                 localDocker,
-			Settings:               localSettings,
-			Projects:               projectService,
-			ImagePuller:            imageSvc,
-			ImageUpdates:           imageUpdates,
-			RegistryDigestResolver: registries,
-			Events:                 events,
-			Notifications:          localNotifications,
-			SelfUpgrade:            upgrade,
-			Activity:               activityService,
+			DB:                     p.DB,
+			Docker:                 p.DockerService,
+			Settings:               p.SettingsService,
+			Projects:               p.ProjectService,
+			ImagePuller:            p.ImageService,
+			ImageUpdates:           p.ImageUpdateService,
+			RegistryDigestResolver: p.RegistryService,
+			Events:                 p.EventService,
+			Notifications:          p.NotificationService,
+			SelfUpgrade:            p.SelfUpgrader,
+			Activity:               p.ActivityService,
 			SystemUser:             types.SystemUser,
 		},
 	}
 	// keep: recovery callbacks bind to the allocated service
-	service.recovery = recovery.NewService(
-		localDocker,
-		imageSvc,
-		service.PendingImageUpdates,
-		activityIDFromContext,
-		func(ctx context.Context, ids []string) (context.Context, func(), error) {
+	service.recovery = recovery.NewService(recovery.ServiceParams{
+		DockerService:  p.DockerService,
+		Images:         p.ImageService,
+		PendingUpdates: service.PendingImageUpdates,
+		ActivityID:     activityIDFromContext,
+		AcquireUpdate: func(ctx context.Context, ids []string) (context.Context, func(), error) {
 			return service.acquireUpdate(ctx, ids, false)
 		},
-		service.ApplyPending,
-	)
+		ApplyPending: service.ApplyPending,
+	})
 	// keep: execution callbacks bind to the allocated service and its recovery
 	service.execution = execution.NewService(execution.Dependencies{
-		Config: cfg,
-		Roles:  roles,
+		Config: p.Config,
+		Roles:  p.RoleService,
 		AcquireUpdate: func(ctx context.Context, ids []string) (context.Context, func(), error) {
 			return service.acquireUpdate(ctx, ids, false)
 		},
@@ -214,7 +219,7 @@ func NewUpdaterService(
 		PendingStore:           service,
 		RunRecorder:            service,
 		Settings:               service,
-		RegistryDigestResolver: registries,
+		RegistryDigestResolver: p.RegistryService,
 		RegistryTagLister:      service,
 		ProjectUpdater:         service,
 		SelfUpdater:            service,
@@ -231,7 +236,7 @@ func NewUpdaterService(
 	}
 	// keep: the engine is configured with the allocated service
 	service.engine = engine
-	events.SetDockerUpdatingContainers(func() []string { return engine.Status().ContainerIDs })
+	p.EventService.SetDockerUpdatingContainers(func() []string { return engine.Status().ContainerIDs })
 	return service, nil
 }
 
@@ -853,7 +858,12 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 	if err != nil {
 		return err
 	}
-	writer := activitylib.NewWriter(ctx, s.deps.Activity, activityIDFromContext(ctx), progress, "Pulling updated images")
+	writer := activitylib.NewWriter(ctx, activitylib.WriterOptions{
+		Service:     s.deps.Activity,
+		ActivityID:  activityIDFromContext(ctx),
+		Output:      progress,
+		DefaultStep: "Pulling updated images",
+	})
 	defer activitylib.FlushWriter(writer)
 
 	credentials, err := s.deps.Projects.ResolveRegistryCredentials(ctx)

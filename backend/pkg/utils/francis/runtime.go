@@ -57,12 +57,20 @@ type registration struct {
 	options   []local.RegisterActorOption
 }
 
-func New(databaseURL, encryptionKey, instanceID, port string, options ...local.HostOption) (*Runtime, error) {
-	portNumber, err := strconv.Atoi(cmp.Or(port, "3551"))
+type Config struct {
+	DatabaseURL   string
+	EncryptionKey string
+	InstanceID    string
+	Port          string
+	HostOptions   []local.HostOption
+}
+
+func New(cfg Config) (*Runtime, error) {
+	portNumber, err := strconv.Atoi(cmp.Or(cfg.Port, "3551"))
 	if err != nil || portNumber < 1 || portNumber > 65535 {
 		return nil, errors.New("ARCANE_ACTOR_PORT must be between 1 and 65535")
 	}
-	storeURL, err := StoreURL(databaseURL)
+	storeURL, err := StoreURL(cfg.DatabaseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -86,12 +94,12 @@ func New(databaseURL, encryptionKey, instanceID, port string, options ...local.H
 		Handler: slog.Default().With("scope", "francis.arcane.internal").Handler(),
 		names:   &runtime.actorNames,
 	})))
-	if encryptionKey != "" && instanceID != "" {
-		if configureIdentityErr := runtime.ConfigureIdentity(encryptionKey, instanceID); configureIdentityErr != nil {
+	if cfg.EncryptionKey != "" && cfg.InstanceID != "" {
+		if configureIdentityErr := runtime.ConfigureIdentity(cfg.EncryptionKey, cfg.InstanceID); configureIdentityErr != nil {
 			return nil, configureIdentityErr
 		}
 	}
-	runtime.options = append(runtime.options, options...)
+	runtime.options = append(runtime.options, cfg.HostOptions...)
 	return runtime, nil
 }
 

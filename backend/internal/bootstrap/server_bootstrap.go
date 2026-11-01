@@ -50,27 +50,20 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	if p.TunnelServer != nil {
-		p.TunnelServer.Config = agentCfg
-	}
+	p.TunnelServer.Config = agentCfg
 
 	// Managers serve the gRPC agent tunnel on the shared listener.
-	var httpHandler http.Handler = p.Router
-	var grpcServer *grpc.Server
-	if p.TunnelServer != nil {
-		//nolint:contextcheck // Stream interceptors receive request-scoped context from grpc.ServerStream.
-		grpcServer = grpc.NewServer(p.TunnelServer.GRPCServerOptions()...)
-		tunnelpb.RegisterTunnelServiceServer(grpcServer, p.TunnelServer)
-		httpHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isTunnelGRPCRequest(r) {
-				grpcServer.ServeHTTP(w, normalizeTunnelGRPCRequestPath(r))
-				return
-			}
-			p.Router.ServeHTTP(w, r)
-		})
-		slog.InfoContext(p.AppCtx, "Using shared HTTP/gRPC listener for agent tunnel", "addr", listenAddr)
-	}
-	httpHandler, protocols := configureHTTPProtocols(useTLS, httpHandler)
+	//nolint:contextcheck // Stream interceptors receive request-scoped context from grpc.ServerStream.
+	grpcServer := grpc.NewServer(p.TunnelServer.GRPCServerOptions()...)
+	tunnelpb.RegisterTunnelServiceServer(grpcServer, p.TunnelServer)
+	slog.InfoContext(p.AppCtx, "Using shared HTTP/gRPC listener for agent tunnel", "addr", listenAddr)
+	httpHandler, protocols := configureHTTPProtocols(useTLS, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isTunnelGRPCRequest(r) {
+			grpcServer.ServeHTTP(w, normalizeTunnelGRPCRequestPath(r))
+			return
+		}
+		p.Router.ServeHTTP(w, r)
+	}))
 
 	var tlsConfig *tls.Config
 	if useTLS {
@@ -148,20 +141,18 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 				slog.ErrorContext(ctx, "Server forced to shutdown", "error", shutdownErr)
 			}
 
-			if grpcServer != nil {
-				grpcStopped := make(chan struct{})
-				go func() {
-					grpcServer.GracefulStop()
-					close(grpcStopped)
-				}()
-				grpcTimer := time.NewTimer(2 * time.Second)
-				select {
-				case <-grpcStopped:
-					grpcTimer.Stop()
-				case <-grpcTimer.C:
-					grpcServer.Stop()
-					<-grpcStopped
-				}
+			grpcStopped := make(chan struct{})
+			go func() {
+				grpcServer.GracefulStop()
+				close(grpcStopped)
+			}()
+			grpcTimer := time.NewTimer(2 * time.Second)
+			select {
+			case <-grpcStopped:
+				grpcTimer.Stop()
+			case <-grpcTimer.C:
+				grpcServer.Stop()
+				<-grpcStopped
 			}
 			if shutdownErr == nil {
 				slog.InfoContext(ctx, "Server stopped gracefully")

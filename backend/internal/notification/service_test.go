@@ -68,14 +68,24 @@ func newNotificationTestService(t *testing.T, db *database.DB, cfg *config.Confi
 	settingsService, err := settings.NewSettingsService(t.Context(), db, cfg, settings.Env{})
 	require.NoError(t, err)
 	eventService := event.NewEventService(db, cfg, nil)
-	return NewNotificationService(
-		db,
-		cfg,
-		environment.NewEnvironmentService(db, nil, eventService, settingsService, nil),
-		eventService,
-		apns.NewApnsService(t.Context(), db, cfg, settingsService, nil, eventService, nil),
-		settingsService,
-	)
+	return NewNotificationService(NotificationServiceParams{
+		DB:     db,
+		Config: cfg,
+		EnvironmentSvc: environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+			DB:              db,
+			EventService:    eventService,
+			SettingsService: settingsService,
+		}),
+		EventSvc: eventService,
+		APNSSvc: apns.NewApnsService(apns.ApnsServiceParams{
+			LifecycleCtx:    t.Context(),
+			DB:              db,
+			Config:          cfg,
+			SettingsService: settingsService,
+			EventService:    eventService,
+		}),
+		SettingsService: settingsService,
+	})
 }
 
 func newNotificationTestUpdateInfo() *types.ImageUpdateResponse {

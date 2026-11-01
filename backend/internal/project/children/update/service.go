@@ -49,21 +49,23 @@ type Service struct {
 	restoreState    func(ctx context.Context, journal *types.ProjectRenameJournal) error
 }
 
-func New(
-	kvService *kv.KVService,
-	dockerService *docker.DockerClientService,
-	registryService *registry.ContainerRegistryService,
-	credentials func(ctx context.Context) ([]types.ContainerRegistryCredential, error),
-	projectState func(ctx context.Context, projectID string) (name, path string, found bool, err error),
-	restoreState func(ctx context.Context, journal *types.ProjectRenameJournal) error,
-) *Service {
+type Params struct {
+	KVService       *kv.KVService
+	DockerService   *docker.DockerClientService
+	RegistryService *registry.ContainerRegistryService
+	Credentials     func(ctx context.Context) ([]types.ContainerRegistryCredential, error)
+	ProjectState    func(ctx context.Context, projectID string) (name, path string, found bool, err error)
+	RestoreState    func(ctx context.Context, journal *types.ProjectRenameJournal) error
+}
+
+func New(p Params) *Service {
 	return &Service{
-		kv:              kvService,
-		dockerService:   dockerService,
-		registryService: registryService,
-		credentials:     credentials,
-		projectState:    projectState,
-		restoreState:    restoreState,
+		kv:              p.KVService,
+		dockerService:   p.DockerService,
+		registryService: p.RegistryService,
+		credentials:     p.Credentials,
+		projectState:    p.ProjectState,
+		restoreState:    p.RestoreState,
 	}
 }
 
@@ -112,13 +114,13 @@ func (s *Service) SyncState(ctx context.Context) SyncState {
 }
 
 type RenameRequest struct {
+	Migration         types.VolumeMigration
+	OldDirName        *string
+	Name              *string
 	ProjectID         string
 	OldName           string
 	OldPath           string
-	OldDirName        *string
-	Name              *string
 	ProjectsDirectory string
-	Migration         types.VolumeMigration
 }
 
 // Prepare builds the journal for renaming a project, or nil when the name

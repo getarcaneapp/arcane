@@ -142,11 +142,12 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	service := NewSystemService(
-		db, nil, nil, nil, nil, nil, settingsService, nil, nil, nil, nil, nil, nil,
-		s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }), nil, nil, &config.Config{},
-		nil,
-	)
+	service := NewSystemService(SystemServiceParams{
+		DB:              db,
+		SettingsService: settingsService,
+		S3Destinations:  s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),
+		Config:          &config.Config{},
+	})
 
 	systemRows, page, err := service.backup.ListBackupHistory(t.Context(), pagination.QueryParams{
 		Sort: "createdAt", Order: pagination.SortDesc, Limit: 20,
@@ -228,26 +229,20 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		cli, _ := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
 		return cli
 	}())
-	service := NewSystemService(
-		db,
-		dockerService,
-		nil,
-		nil,
-		volume.NewVolumeService(db, dockerService, nil, nil, nil, nil, nil, nil, nil, nil),
-		nil,
-		settingsService,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		backup.NewEngine(gate, nil),
-		s3Destinations,
-		recoveryKeys,
-		nil,
-		&config.Config{DatabaseURL: "file:system-backup-schedules-test.db"},
-		nil,
-	)
+	service := NewSystemService(SystemServiceParams{
+		DB:            db,
+		DockerService: dockerService,
+		VolumeService: volume.NewVolumeService(volume.VolumeServiceParams{
+			Config:        &config.Config{},
+			DB:            db,
+			DockerService: dockerService,
+		}),
+		SettingsService: settingsService,
+		BackupEngine:    backup.NewEngine(gate, nil),
+		S3Destinations:  s3Destinations,
+		RecoveryKeys:    recoveryKeys,
+		Config:          &config.Config{DatabaseURL: "file:system-backup-schedules-test.db"},
+	})
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	require.NoError(t, service.backup.RegisterWorkflows(harness.Engine))
 	harness.Start(t)
@@ -321,12 +316,12 @@ func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&SystemBackupPolicy{}, &backup.SystemBackupRecoveryConfig{}, &s3.S3Destination{}))
 	db := &database.DB{DB: gormDB}
-	service := NewSystemService(
-		db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),
-		backup.NewRecoveryKeyStore(db), nil, &config.Config{DatabaseURL: "file:system-backup-key-required-test.db"},
-		nil,
-	)
+	service := NewSystemService(SystemServiceParams{
+		DB:             db,
+		S3Destinations: s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),
+		RecoveryKeys:   backup.NewRecoveryKeyStore(db),
+		Config:         &config.Config{DatabaseURL: "file:system-backup-key-required-test.db"},
+	})
 
 	_, err = service.backup.UpdatePolicies(t.Context(), []types.UpdateBackupPolicy{{
 		Enabled: true, Schedule: "0 0 2 * * *", RetentionCount: 7, LocalEnabled: true,

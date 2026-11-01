@@ -669,18 +669,20 @@ func createEnvironmentUser(env *environment.Environment) *userdomain.User {
 	}
 }
 
+type HumaMiddlewareParams struct {
+	API              huma.API
+	AuthService      *AuthService
+	APIKeyService    *apikey.ApiKeyService
+	PermResolver     PermissionResolver
+	EnvTokenResolver EnvironmentAccessTokenResolver
+	Config           *config.Config
+}
+
 // NewHumaMiddleware creates middleware that validates credentials and
 // enforces security requirements defined on operations. It also resolves the
 // caller's effective PermissionSet via permResolver and stashes it on the
 // request context for downstream middleware.RequirePermission checks.
-func NewHumaMiddleware(
-	api huma.API,
-	authService *AuthService,
-	apiKeyService *apikey.ApiKeyService,
-	permResolver PermissionResolver,
-	envTokenResolver EnvironmentAccessTokenResolver,
-	cfg *config.Config,
-) func(
+func NewHumaMiddleware(p HumaMiddlewareParams) func(
 	ctx huma.Context,
 	next func(
 		huma.Context,
@@ -688,22 +690,17 @@ func NewHumaMiddleware(
 ) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		ctx = huma.WithContext(ctx, context.WithValue(ctx.Context(), middleware.ContextKeyRemoteAddr, ctx.RemoteAddr()))
-		if authService == nil {
-			next(ctx)
-			return
-		}
-
-		if newCtx, ok := tryAgentAuth(ctx, cfg); ok {
+		if newCtx, ok := tryAgentAuth(ctx, p.Config); ok {
 			next(newCtx)
 			return
 		}
 
-		reqs := parseSecurityRequirements(api, ctx)
+		reqs := parseSecurityRequirements(p.API, ctx)
 		if !reqs.isRequired {
 			// Public routes (e.g. logout) still learn who the caller is when a
 			// valid bearer token is present, but never fail the request.
-			if authenticatedUser, sessionID, err := tryBearerAuth(ctx, authService); err == nil && authenticatedUser != nil {
-				newCtx := setUserInContext(ctx.Context(), authenticatedUser, resolveUserPermissions(ctx.Context(), permResolver, authenticatedUser))
+			if authenticatedUser, sessionID, err := tryBearerAuth(ctx, p.AuthService); err == nil && authenticatedUser != nil {
+				newCtx := setUserInContext(ctx.Context(), authenticatedUser, resolveUserPermissions(ctx.Context(), p.PermResolver, authenticatedUser))
 				ctx = huma.WithContext(ctx, context.WithValue(newCtx, middleware.ContextKeyCurrentSessionID, sessionID))
 			}
 			next(ctx)
@@ -711,11 +708,11 @@ func NewHumaMiddleware(
 		}
 
 		if reqs.apiKeyAuth && ctx.Header(middleware.HeaderApiKey) != "" {
-			handleApiKeyAuth(api, ctx, authService, apiKeyService, permResolver, envTokenResolver, reqs.bearerAuth, next)
+			handleApiKeyAuth(p.API, ctx, p.AuthService, p.APIKeyService, p.PermResolver, p.EnvTokenResolver, reqs.bearerAuth, next)
 			return
 		}
 
-		if authenticatedUser, env, ok := tryEnvironmentAccessTokenAuth(ctx, envTokenResolver, ctx.Header(middleware.HeaderAgentToken)); ok {
+		if authenticatedUser, env, ok := tryEnvironmentAccessTokenAuth(ctx, p.EnvTokenResolver, ctx.Header(middleware.HeaderAgentToken)); ok {
 			applyProxiedIconCatalog(ctx, authenticatedUser)
 			newCtx := setUserInContext(ctx.Context(), authenticatedUser, authz.EnvironmentPermissionSet(env.ID))
 			next(huma.WithContext(ctx, newCtx))
@@ -723,7 +720,7 @@ func NewHumaMiddleware(
 		}
 
 		if reqs.bearerAuth {
-			nextCtx, handled := handleBearerAuth(api, ctx, authService, permResolver)
+			nextCtx, handled := handleBearerAuth(p.API, ctx, p.AuthService, p.PermResolver)
 			if handled {
 				if nextCtx != nil {
 					next(nextCtx)
@@ -732,7 +729,7 @@ func NewHumaMiddleware(
 			}
 		}
 
-		_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Unauthorized: valid authentication required")
+		_ = huma.WriteErr(p.API, ctx, http.StatusUnauthorized, "Unauthorized: valid authentication required")
 	}
 }
 

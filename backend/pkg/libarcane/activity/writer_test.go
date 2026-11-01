@@ -48,7 +48,12 @@ func (f failingWriter) Write(_ []byte) (int, error) {
 
 func TestWriterContinuesActivityCaptureWhenResponseWriterFails(t *testing.T) {
 	appender := &recordingAppender{}
-	writer := NewWriter(t.Context(), appender, "activity-1", failingWriter{}, "Pulling image")
+	writer := NewWriter(t.Context(), WriterOptions{
+		Service:     appender,
+		ActivityID:  "activity-1",
+		Output:      failingWriter{},
+		DefaultStep: "Pulling image",
+	})
 
 	n, err := writer.Write([]byte("Downloading layer\n"))
 	require.NoError(t, err)
@@ -66,7 +71,12 @@ func TestWriterContinuesActivityCaptureWhenResponseWriterFails(t *testing.T) {
 
 func TestWriterRecordsLogAndErrorFramesVerbatim(t *testing.T) {
 	appender := &recordingAppender{}
-	writer := NewWriter(t.Context(), appender, "activity-1", io.Discard, "Deploying project")
+	writer := NewWriter(t.Context(), WriterOptions{
+		Service:     appender,
+		ActivityID:  "activity-1",
+		Output:      io.Discard,
+		DefaultStep: "Deploying project",
+	})
 
 	_, err := writer.Write([]byte("{\"log\":\"Container web-1  Created\"}\n{\"error\":\"Error response from daemon: conflict\"}\nno trailing newline"))
 	require.NoError(t, err)
@@ -104,7 +114,12 @@ func (g *gatedAppender) AppendMessages(ctx context.Context, activityID string, r
 // AppendMessages call, in order, rather than one call per line.
 func TestWriterBatchesQueuedLinesIntoOneAppend(t *testing.T) {
 	appender := &gatedAppender{started: make(chan struct{}), release: make(chan struct{})}
-	writer := NewWriter(t.Context(), appender, "activity-1", io.Discard, "Pulling image")
+	writer := NewWriter(t.Context(), WriterOptions{
+		Service:     appender,
+		ActivityID:  "activity-1",
+		Output:      io.Discard,
+		DefaultStep: "Pulling image",
+	})
 
 	_, err := writer.Write([]byte("layer 0\n"))
 	require.NoError(t, err)
@@ -135,7 +150,10 @@ func TestWriterBatchesQueuedLinesIntoOneAppend(t *testing.T) {
 }
 
 func TestWriterReturnsWrappedWriteErrorWithoutActivity(t *testing.T) {
-	writer := NewWriter(t.Context(), nil, "", failingWriter{}, "Pulling image")
+	writer := NewWriter(t.Context(), WriterOptions{
+		Output:      failingWriter{},
+		DefaultStep: "Pulling image",
+	})
 
 	_, err := writer.Write([]byte("Downloading layer\n"))
 	require.ErrorContains(t, err, "client disconnected")
@@ -154,7 +172,12 @@ var (
 func TestWriterPersistsQueuedLinesAfterCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	appender := &gatedAppender{started: make(chan struct{}), release: make(chan struct{})}
-	writer := NewWriter(ctx, appender, "activity-1", io.Discard, "Pulling image")
+	writer := NewWriter(ctx, WriterOptions{
+		Service:     appender,
+		ActivityID:  "activity-1",
+		Output:      io.Discard,
+		DefaultStep: "Pulling image",
+	})
 
 	_, err := writer.Write([]byte("layer 0\n"))
 	require.NoError(t, err)

@@ -79,8 +79,8 @@ func (h *WebSocketHandler) releaseLogStream(key string, stream *wsLogStream, don
 
 // logStreamParams holds the standard query parameters shared by every WS log endpoint.
 type logStreamParams struct {
-	stream  types.LogStreamOptions
 	format  string
+	stream  types.LogStreamOptions
 	batched bool
 }
 

@@ -5,13 +5,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	kit "go.getarcane.app/kit/pkg"
 )
 
-func TestEffectiveMaxFileSizeMB(t *testing.T) {
-	require.Equal(t, DefaultMaxFileSizeMB, kit.Ternary(0 <= 0, DefaultMaxFileSizeMB, 0))
-	require.Equal(t, DefaultMaxFileSizeMB, kit.Ternary(-1 <= 0, DefaultMaxFileSizeMB, -1))
-	require.Equal(t, 24, kit.Ternary(24 <= 0, DefaultMaxFileSizeMB, 24))
+func TestMaxFileSizeBytes(t *testing.T) {
+	require.Equal(t, int64(DefaultMaxFileSizeMB*1024*1024), MaxFileSizeBytes(0))
+	require.Equal(t, int64(DefaultMaxFileSizeMB*1024*1024), MaxFileSizeBytes(-1))
 	require.Equal(t, int64(24*1024*1024), MaxFileSizeBytes(24))
 }
 

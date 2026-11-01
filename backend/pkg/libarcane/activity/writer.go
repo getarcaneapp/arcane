@@ -62,11 +62,18 @@ type writerQueueItem struct {
 	flush   chan struct{}
 }
 
-func NewWriter(ctx context.Context, activityService MessageAppender, activityID string, writer io.Writer, defaultStep string) io.Writer {
-	if activityService == nil || strings.TrimSpace(activityID) == "" {
-		return kit.Ternary(writer == nil, io.Discard, writer)
+type WriterOptions struct {
+	Service     MessageAppender
+	ActivityID  string
+	Output      io.Writer
+	DefaultStep string
+}
+
+func NewWriter(ctx context.Context, opts WriterOptions) io.Writer {
+	if opts.Service == nil || strings.TrimSpace(opts.ActivityID) == "" {
+		return kit.Ternary(opts.Output == nil, io.Discard, opts.Output)
 	}
-	if existing, ok := writer.(*Writer); ok {
+	if existing, ok := opts.Output.(*Writer); ok {
 		return existing
 	}
 	persistCtx := ctx
@@ -76,10 +83,10 @@ func NewWriter(ctx context.Context, activityService MessageAppender, activityID 
 	out := &Writer{
 		ctx:             ctx,
 		persistCtx:      persistCtx,
-		activityService: activityService,
-		activityID:      strings.TrimSpace(activityID),
-		writer:          writer,
-		defaultStep:     strings.TrimSpace(defaultStep),
+		activityService: opts.Service,
+		activityID:      strings.TrimSpace(opts.ActivityID),
+		writer:          opts.Output,
+		defaultStep:     strings.TrimSpace(opts.DefaultStep),
 		queueCh:         make(chan writerQueueItem, writerAppendQueueSize),
 	}
 	go out.drainMessages(ctx)

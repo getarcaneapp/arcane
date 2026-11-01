@@ -22,6 +22,7 @@ import (
 	"github.com/samber/mo"
 	"go.getarcane.app/docker"
 	kit "go.getarcane.app/kit/pkg"
+	"go.uber.org/fx"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
@@ -74,60 +75,55 @@ const (
 	legacyDefaultEncryptionKey     = "arcane-dev-key-32-characters!!!"
 )
 
-func NewVolumeService(
-	db *database.DB,
-	dockerService *dockerInternal.DockerClientService,
-	eventService *event.EventService,
-	settingsService *settings.SettingsService,
-	containerService *containerdomain.ContainerService,
-	imageService *image.ImageService,
-	engine *backup.Engine,
-	s3Destinations *s3.S3DestinationService,
-	cfg *config.Config,
-	recoveryKeys *backup.RecoveryKeyStore,
-) *VolumeService {
-	backupVolumeName := ""
-	encryptionKey := ""
-	if cfg != nil {
-		backupVolumeName = cfg.BackupVolumeName
-		encryptionKey = cmp.Or(cfg.EncryptionKey, legacyDefaultEncryptionKey)
-	}
-	if strings.TrimSpace(backupVolumeName) == "" {
-		backupVolumeName = "arcane-backups"
-	}
+type VolumeServiceParams struct {
+	fx.In
+
+	DB               *database.DB
+	DockerService    *dockerInternal.DockerClientService
+	EventService     *event.EventService
+	SettingsService  *settings.SettingsService
+	ContainerService *containerdomain.ContainerService
+	ImageService     *image.ImageService
+	Engine           *backup.Engine
+	S3Destinations   *s3.S3DestinationService
+	Config           *config.Config
+	RecoveryKeys     *backup.RecoveryKeyStore
+}
+
+func NewVolumeService(p VolumeServiceParams) *VolumeService {
+	backupVolumeName := cmp.Or(strings.TrimSpace(p.Config.BackupVolumeName), "arcane-backups")
 	service := &VolumeService{
-		db:               db,
-		dockerService:    dockerService,
-		eventService:     eventService,
-		settingsService:  settingsService,
-		imageService:     imageService,
+		db:               p.DB,
+		dockerService:    p.DockerService,
+		eventService:     p.EventService,
+		settingsService:  p.SettingsService,
+		imageService:     p.ImageService,
 		backupVolumeName: backupVolumeName,
 		helperByVolume:   make(map[string]*volumeHelper),
 	}
 	backupDeps := volumebackup.Dependencies{
 		Store:            service.backupStore(),
-		DB:               db,
-		Docker:           dockerService,
-		Events:           eventService,
-		Settings:         settingsService,
-		Engine:           engine,
-		S3Destinations:   s3Destinations,
-		RecoveryKeys:     recoveryKeys,
+		DB:               p.DB,
+		Docker:           p.DockerService,
+		Events:           p.EventService,
+		Settings:         p.SettingsService,
+		Engine:           p.Engine,
+		S3Destinations:   p.S3Destinations,
+		RecoveryKeys:     p.RecoveryKeys,
 		Locks:            &service.workspaceLocks,
 		AlreadyRunning:   ErrVolumeBackupAlreadyRunning,
 		HelperImage:      service.getVolumeHelperImage,
 		AcquireHelper:    service.acquireVolumeHelper,
 		Exec:             service.execInContainer,
 		BackupVolumeName: backupVolumeName,
-		EncryptionKey:    encryptionKey,
-	}
-	if containerService != nil {
-		backupDeps.StopContainer, backupDeps.StartContainer = containerService.StopContainer, containerService.StartContainer
+		EncryptionKey:    cmp.Or(p.Config.EncryptionKey, legacyDefaultEncryptionKey),
+		StopContainer:    p.ContainerService.StopContainer,
+		StartContainer:   p.ContainerService.StartContainer,
 	}
 	service.backup = volumebackup.NewService(backupDeps)
 	service.workspace = workspace.NewService(workspace.Dependencies{
-		Docker:                dockerService,
-		Events:                eventService,
+		Docker:                p.DockerService,
+		Events:                p.EventService,
 		Locks:                 &service.workspaceLocks,
 		AcquireHelper:         service.acquireVolumeHelper,
 		RequireACFS:           service.requireVolumeHelperACFS,
@@ -136,7 +132,7 @@ func NewVolumeService(
 		BackupStorageMount:    service.backup.StorageMount,
 		ArchiveFileTarget:     service.backup.ArchiveFileTarget,
 		RestoreArchiveMembers: service.backup.RestoreArchiveMembers,
-		Settings:              settingsService,
+		Settings:              p.SettingsService,
 	})
 	return service
 }

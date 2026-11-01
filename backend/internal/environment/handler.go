@@ -133,25 +133,27 @@ type DownloadEnvironmentMTLSFileInput struct {
 	FileName string `path:"fileName" doc:"mTLS asset filename"`
 }
 
+type HandlerParams struct {
+	EnvironmentService *EnvironmentService
+	SettingsService    *settings.SettingsService
+	APIKeyService      *apikey.ApiKeyService
+	EventService       *event.EventService
+	Config             *config.Config
+	ActivityService    activity.Service
+}
+
 // NewHandler builds the environment HTTP handler and its stream producer.
-func NewHandler(
-	environmentService *EnvironmentService,
-	settingsService *settings.SettingsService,
-	apiKeyService *apikey.ApiKeyService,
-	eventService *event.EventService,
-	cfg *config.Config,
-	activityService activity.Service,
-) *EnvironmentHandler {
+func NewHandler(p HandlerParams) *EnvironmentHandler {
 	return &EnvironmentHandler{
-		environmentService: environmentService,
-		settingsService:    settingsService,
-		apiKeyService:      apiKeyService,
-		eventService:       eventService,
-		cfg:                cfg,
+		environmentService: p.EnvironmentService,
+		settingsService:    p.SettingsService,
+		apiKeyService:      p.APIKeyService,
+		eventService:       p.EventService,
+		cfg:                p.Config,
 		streamHub:          &agg.Hub[[]types.Environment]{},
 		changeHub:          &agg.Hub[struct{}]{},
 		changeCursors:      concurrency.NewStateMap[string, types.EnvironmentChanges](),
-		activityService:    activityService,
+		activityService:    p.ActivityService,
 	}
 }
 

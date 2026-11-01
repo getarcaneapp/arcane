@@ -165,12 +165,12 @@ func DecideDeployImageAction(svc composetypes.ServiceConfig, pullPolicyOverride 
 	buildEnabled := svc.Build != nil
 
 	if buildEnabled {
-		switch {
-		case policy == "build":
+		switch policy {
+		case "build":
 			return DeployImageDecision{Build: true}
-		case policy == "never":
+		case "never":
 			return DeployImageDecision{RequireLocalOnly: true}
-		case (policy == "always"):
+		case "always":
 			return DeployImageDecision{PullAlways: true, FallbackBuildOnPullFail: true}
 		default:
 			if window, ok := refreshWindowForPolicy(svc, policy); ok {
@@ -184,10 +184,10 @@ func DecideDeployImageAction(svc composetypes.ServiceConfig, pullPolicyOverride 
 		}
 	}
 
-	switch {
-	case policy == "never":
+	switch policy {
+	case "never":
 		return DeployImageDecision{RequireLocalOnly: true}
-	case (policy == "always"):
+	case "always":
 		return DeployImageDecision{PullAlways: true}
 	default:
 		if window, ok := refreshWindowForPolicy(svc, policy); ok {

@@ -24,6 +24,7 @@ import (
 	"go.getarcane.app/kit/normalization"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
+	"go.uber.org/fx"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
@@ -62,23 +63,27 @@ type ApnsService struct {
 	drainPending atomic.Bool
 }
 
-func NewApnsService(
-	lifecycleCtx context.Context,
-	db *database.DB,
-	cfg *config.Config,
-	settingsService *settings.SettingsService,
-	roleService *role.RoleService,
-	eventService *event.EventService,
-	httpClient *http.Client,
-) *ApnsService {
+type ApnsServiceParams struct {
+	fx.In
+
+	LifecycleCtx    context.Context
+	DB              *database.DB
+	Config          *config.Config
+	SettingsService *settings.SettingsService
+	RoleService     *role.RoleService
+	EventService    *event.EventService
+	HTTPClient      *http.Client
+}
+
+func NewApnsService(p ApnsServiceParams) *ApnsService {
 	return &ApnsService{
-		db:           db,
-		config:       cfg,
-		settings:     settingsService,
-		roles:        roleService,
-		events:       eventService,
-		httpClient:   httpClient,
-		lifecycleCtx: lifecycleCtx,
+		db:           p.DB,
+		config:       p.Config,
+		settings:     p.SettingsService,
+		roles:        p.RoleService,
+		events:       p.EventService,
+		httpClient:   p.HTTPClient,
+		lifecycleCtx: p.LifecycleCtx,
 	}
 }
 
@@ -385,8 +390,8 @@ func (s *ApnsService) device(ctx context.Context, userID, id string) (*Device, e
 }
 
 type DeviceUpdate struct {
-	Request   types.ApnsDevice
 	Submitted map[string]bool
+	Request   types.ApnsDevice
 }
 
 func (s *ApnsService) UpdateDevice(ctx context.Context, userID, id string, change DeviceUpdate) (types.ApnsDevice, error) {

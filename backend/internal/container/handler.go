@@ -531,7 +531,12 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *GetCont
 		Queue: true,
 	})
 	activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
-	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Redeploying container")
+	activityWriter := activitylib.NewWriter(runtimeCtx, activitylib.WriterOptions{
+		Service:     h.activityService,
+		ActivityID:  activityID,
+		Output:      io.Discard,
+		DefaultStep: "Redeploying container",
+	})
 	redeployCtx := context.WithValue(runtimeCtx, dockertypes.ProgressWriterKey{}, activityWriter)
 	newContainerID, err := h.containerService.RedeployContainer(redeployCtx, input.ContainerID, *user)
 	if err != nil {
@@ -627,7 +632,12 @@ func (h *ContainerHandler) EditContainer(ctx context.Context, input *EditContain
 		Queue: true,
 	})
 	activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
-	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Editing container")
+	activityWriter := activitylib.NewWriter(runtimeCtx, activitylib.WriterOptions{
+		Service:     h.activityService,
+		ActivityID:  activityID,
+		Output:      io.Discard,
+		DefaultStep: "Editing container",
+	})
 	editCtx := context.WithValue(runtimeCtx, dockertypes.ProgressWriterKey{}, activityWriter)
 	newContainerID, err := h.containerService.EditContainer(editCtx, input.ContainerID, input.Body, *user)
 	if err != nil {

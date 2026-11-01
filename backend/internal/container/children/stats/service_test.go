@@ -84,13 +84,11 @@ func TestCollectMaxAge(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = dockerClient.Close() })
 
-			svc := New(
-				func(context.Context) (*client.Client, error) { return dockerClient, nil },
-				func() string { return "test" },
-				ContainerResourceSampleTTL,
-				0,
-				0,
-			)
+			svc := New(Params{
+				GetClient:  func(context.Context) (*client.Client, error) { return dockerClient, nil },
+				DockerHost: func() string { return "test" },
+				CacheTTL:   ContainerResourceSampleTTL,
+			})
 			for range 2 {
 				samples, collectErr := svc.Collect(t.Context(), []types.ContainerSummary{{ID: "web", State: "running"}}, tt.maxAge, true)
 				require.NoError(t, collectErr)
