@@ -3,7 +3,7 @@ package workspace
 import (
 	"archive/tar"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"net/http"
@@ -57,7 +57,7 @@ func TestValidateVolumeHelperSupport(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(volume.Volume{Name: "workspace-volume", Driver: "local", Options: options}); err != nil {
+		if err := json.MarshalWrite(w, volume.Volume{Name: "workspace-volume", Driver: "local", Options: options}); err != nil {
 			t.Errorf("encode volume inspect response: %v", err)
 		}
 	}))
@@ -399,12 +399,12 @@ func TestCreateVolumeWorkspaceMutationContainerUsesDedicatedBackupHelper(t *test
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
 			createCalls++
-			if err := json.NewDecoder(r.Body).Decode(&createRequest); err != nil {
+			if err := json.UnmarshalRead(r.Body, &createRequest); err != nil {
 				t.Errorf("decode container create request: %v", err)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"Id": "restore-helper", "Warnings": []string{}})
+			_ = json.MarshalWrite(w, map[string]any{"Id": "restore-helper", "Warnings": []string{}})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/restore-helper/start"):
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/containers/restore-helper"):

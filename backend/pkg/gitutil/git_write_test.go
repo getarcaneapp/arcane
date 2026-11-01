@@ -48,7 +48,7 @@ func pushCommit(t *testing.T, url, branch, message string, files map[string]stri
 	writer := NewClient(t.TempDir())
 	checkout, err := writer.CheckoutForWrite(t.Context(), url, branch, noAuth())
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = writer.Cleanup(checkout.RepoPath) })
+	t.Cleanup(func() { _ = os.RemoveAll(checkout.RepoPath) })
 
 	request := CommitRequest{Message: message, AuthorName: "Other", AuthorEmail: "other@localhost"}
 	for path, content := range files {
@@ -99,7 +99,7 @@ func TestCheckoutForWrite_CreatesMissingBranchFromDefault(t *testing.T) {
 
 	checkout, err := gitClient.CheckoutForWrite(ctx, url, "feature", noAuth())
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = gitClient.Cleanup(checkout.RepoPath) })
+	t.Cleanup(func() { _ = os.RemoveAll(checkout.RepoPath) })
 	require.FileExists(t, filepath.Join(checkout.RepoPath, "unrelated", "keep.txt"))
 
 	head, committed, err := gitClient.CommitAndPush(ctx, checkout, CommitRequest{
@@ -119,7 +119,7 @@ func TestCheckoutForWrite_CreatesMissingBranchFromDefault(t *testing.T) {
 	verify := NewClient(t.TempDir())
 	repoPath, err := verify.Clone(ctx, url, "feature", noAuth(), 0)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = verify.Cleanup(repoPath) })
+	t.Cleanup(func() { _ = os.RemoveAll(repoPath) })
 	assert.FileExists(t, filepath.Join(repoPath, "unrelated", "keep.txt"))
 	assert.FileExists(t, filepath.Join(repoPath, "backups", "app", "compose.yaml"))
 }
@@ -133,7 +133,7 @@ func TestWriteCommitAndPush_RejectsWhenRemoteAdvanced(t *testing.T) {
 
 	checkout, err := gitClient.CheckoutForWrite(ctx, url, "main", noAuth())
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = gitClient.Cleanup(checkout.RepoPath) })
+	t.Cleanup(func() { _ = os.RemoveAll(checkout.RepoPath) })
 
 	pushCommit(t, url, "main", "other writer", map[string]string{"other/notes.txt": "notes\n"})
 

@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/samber/mo"
 	kit "go.getarcane.app/kit/pkg"
 )
 
@@ -39,16 +38,6 @@ func ProxyRequest(ctx context.Context, tunnel *AgentTunnel, method, path, query 
 		return 0, nil, nil, fmt.Errorf("read agent tunnel response: %w", err)
 	}
 	return resp.StatusCode, flattenResponseHeaders(resp.Header), respBody, nil
-}
-
-// HasActiveTunnel checks if an environment has an active agent tunnel
-func HasActiveTunnel(envID string) bool {
-	return GetRegistry().Active(envID).IsPresent()
-}
-
-// WaitForActiveTunnel waits for an environment to establish a live tunnel in the default registry.
-func WaitForActiveTunnel(ctx context.Context, envID string, timeout time.Duration) mo.Option[*AgentTunnel] {
-	return GetRegistry().WaitForActive(ctx, envID, timeout)
 }
 
 // DoRequest performs a service-level HTTP request through an agent tunnel and returns the status and body.

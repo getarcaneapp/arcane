@@ -34,7 +34,7 @@ func (s *Service) Probe(ctx context.Context, id string, authenticated func(conte
 		}
 		return "online", nil
 	}
-	if !agent.HasActiveTunnel(id) {
+	if !agent.GetRegistry().Active(id).IsPresent() {
 		return "offline", errors.New("agent is not connected")
 	}
 

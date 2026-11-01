@@ -2,7 +2,7 @@ package volume
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -46,17 +46,17 @@ func TestCreateTempContainerReusesWritableHelper(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]string{"Id": "tools-image"}); err != nil {
+			if err := json.MarshalWrite(w, map[string]string{"Id": "tools-image"}); err != nil {
 				t.Errorf("encode image inspect response: %v", err)
 			}
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
 			createCalls++
-			if err := json.NewDecoder(r.Body).Decode(&createRequest); err != nil {
+			if err := json.UnmarshalRead(r.Body, &createRequest); err != nil {
 				t.Errorf("decode container create request: %v", err)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]any{"Id": "helper-1", "Warnings": []string{}}); err != nil {
+			if err := json.MarshalWrite(w, map[string]any{"Id": "helper-1", "Warnings": []string{}}); err != nil {
 				t.Errorf("encode container create response: %v", err)
 			}
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper-1/start"):
@@ -64,7 +64,7 @@ func TestCreateTempContainerReusesWritableHelper(t *testing.T) {
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/helper-1/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(container.InspectResponse{
+			if err := json.MarshalWrite(w, container.InspectResponse{
 				ID:    "helper-1",
 				State: &container.State{Running: true},
 			}); err != nil {

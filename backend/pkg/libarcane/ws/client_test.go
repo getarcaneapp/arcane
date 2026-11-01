@@ -16,7 +16,7 @@ import (
 )
 
 func TestNewClient(t *testing.T) {
-	serverConn, cleanup := newTestWSPairInternal(t)
+	serverConn, cleanup := newTestWSPair(t)
 	defer cleanup()
 
 	c := NewClient(serverConn, 64)
@@ -256,7 +256,7 @@ func TestServeClient_StoppedHubDoesNotBlock(t *testing.T) {
 	cancel()
 	<-stopped
 
-	serverConn, cleanup := newTestWSPairInternal(t)
+	serverConn, cleanup := newTestWSPair(t)
 	defer cleanup()
 
 	var onRemoveCalled atomic.Bool

@@ -29,7 +29,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/dbutil"
 )
 
 const (
@@ -125,7 +124,7 @@ func (s *ApiKeyService) BackfillApiKeyPermissions(ctx context.Context) error {
 		return nil
 	}
 
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	return s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		keyIDs := make([]string, 0, len(keys))
 		for _, key := range keys {
 			keyIDs = append(keyIDs, key.ID)
@@ -358,7 +357,7 @@ func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, callerP
 	}
 
 	var created *types.ApiKeyCreatedDto
-	if createTxErr := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	if createTxErr := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var createErr error
 		if created, createErr = s.createAPIKeyWithRawKey(ctx, tx, &userID, rawKey, req, nil, nil, ApiKeyKindScoped); createErr != nil {
 			return createErr
@@ -918,7 +917,7 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 	}
 
 	permissionsUpdated := false
-	if err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	if err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&ApiKey{}).
 			Where("id = ?", ak.ID).
 			Select("name", "description", "expires_at", "updated_at").

@@ -402,7 +402,7 @@ func (s *Service) resolveSwarmNodeAgentRuntime(ctx context.Context, env *environ
 		}
 	}
 	return swarmNodeAgentRuntime{
-		connected:     found || agent.HasActiveTunnel(env.ID),
+		connected:     found || agent.GetRegistry().Active(env.ID).IsPresent(),
 		lastHeartbeat: kit.FromPtr(agent.GetTunnelRuntimeState(env.ID).OrEmpty()).LastHeartbeat,
 		identity:      kit.Ternary(found, &identity, nil),
 	}

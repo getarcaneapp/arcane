@@ -2,7 +2,7 @@ package stacks
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -254,7 +254,7 @@ func stacksScopeContext(t *testing.T, target string, bodies map[string]any) cont
 				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
 				return
 			}
-			_ = json.NewEncoder(w).Encode(body)
+			_ = json.MarshalWrite(w, body)
 		}),
 		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
 			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil

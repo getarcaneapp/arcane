@@ -2,7 +2,7 @@ package vuln
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"testing"
 
 	dockerregistry "github.com/moby/moby/api/types/registry"

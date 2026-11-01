@@ -14,6 +14,7 @@ import (
 
 	"charm.land/fang/v2"
 	"charm.land/lipgloss/v2"
+	charmLog "charm.land/log/v2"
 	"github.com/spf13/cobra"
 	kit "go.getarcane.app/kit/pkg"
 
@@ -201,7 +202,7 @@ func instrumentCommandTree(cmd *cobra.Command) {
 	if cmd.RunE != nil {
 		originalRunE := cmd.RunE
 		cmd.RunE = func(command *cobra.Command, args []string) error {
-			logger.GetLogger().Debug(action, "command", command.CommandPath(), "arg_count", len(args))
+			charmLog.Default().Debug(action, "command", command.CommandPath(), "arg_count", len(args))
 			if !command.HasParent() {
 				return originalRunE(command, args)
 			}
@@ -212,7 +213,7 @@ func instrumentCommandTree(cmd *cobra.Command) {
 	if cmd.Run != nil {
 		originalRun := cmd.Run
 		cmd.Run = func(command *cobra.Command, args []string) {
-			logger.GetLogger().Debug(action, "command", command.CommandPath(), "arg_count", len(args))
+			charmLog.Default().Debug(action, "command", command.CommandPath(), "arg_count", len(args))
 			originalRun(command, args)
 		}
 	}

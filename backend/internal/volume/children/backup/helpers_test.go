@@ -2,7 +2,7 @@ package backup
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -203,7 +203,7 @@ func TestVolumeBackupContainerLifecycleStopsAndRestartsOnlyRunningContainersUsin
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+			assert.NoError(t, json.MarshalWrite(w, []container.Summary{
 				{ID: "uses-volume", Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}}},
 				{ID: "other-volume", Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "other-data"}}},
 				{ID: "arcane", Labels: map[string]string{"com.getarcaneapp.arcane": "true"}, Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}}},
@@ -243,7 +243,7 @@ func TestVolumeBackupContainerLifecycleRollsBackStoppedContainersOnStopFailure(t
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+			assert.NoError(t, json.MarshalWrite(w, []container.Summary{
 				{ID: "first", Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}}},
 				{ID: "second", Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}}},
 			}))
@@ -288,7 +288,7 @@ func TestVolumeBackupContainerLifecycleWaitsForRunningComposeReplacement(t *test
 			call := listCalls
 			mu.Unlock()
 			if call == 1 {
-				assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+				assert.NoError(t, json.MarshalWrite(w, []container.Summary{
 					{
 						ID:     "old-id",
 						Names:  []string{"/old-name"},
@@ -300,10 +300,10 @@ func TestVolumeBackupContainerLifecycleWaitsForRunningComposeReplacement(t *test
 				return
 			}
 			if call == 2 {
-				assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+				assert.NoError(t, json.MarshalWrite(w, []container.Summary{}))
 				return
 			}
-			assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+			assert.NoError(t, json.MarshalWrite(w, []container.Summary{
 				{
 					ID:     "new-id",
 					Names:  []string{"/new-name"},

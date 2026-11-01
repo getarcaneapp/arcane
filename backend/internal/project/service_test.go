@@ -4,7 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/binary"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -200,7 +200,7 @@ func newImagePullServerWithObserver(t *testing.T, inspectByRef map[string]docker
 				onPull(fullRef, strings.TrimSpace(r.Header.Get("X-Registry-Auth")))
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"status": "Pulled", "id": fullRef})
+			_ = json.MarshalWrite(w, map[string]string{"status": "Pulled", "id": fullRef})
 		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			path := r.URL.Path
 			imagePathIndex := strings.Index(path, "/images/")
@@ -218,7 +218,7 @@ func newImagePullServerWithObserver(t *testing.T, inspectByRef map[string]docker
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(inspect)
+			_ = json.MarshalWrite(w, inspect)
 		default:
 			http.NotFound(w, r)
 		}
@@ -355,7 +355,7 @@ func setupProjectDestroyTestService(t *testing.T) (*ProjectService, *database.DB
 	require.NoError(t, err)
 
 	projectsDir := t.TempDir()
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, loadTestConfig(t), nil)
 	return NewProjectService(ProjectServiceParams{
@@ -780,7 +780,7 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	imageRef := "registry.example.com/team/app:1.2.3"
 	repository := "registry.example.com/team/app"
@@ -1274,7 +1274,7 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFails(t *testing.T
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	imageRef := "registry.example.com/team/app:9.9.9"
 	failingServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1376,7 +1376,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreate(t *testing.T) {
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	imageRef := "registry.example.com/team/app:9.9.9"
 	repository := "registry.example.com/team/app"
@@ -1528,7 +1528,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, nil, nil)
 	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1537,7 +1537,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 			_, _ = io.WriteString(w, "OK")
 		case strings.HasSuffix(r.URL.Path, "/version"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]string{
 				"ApiVersion":    "1.41",
 				"MinAPIVersion": "1.24",
 				"Version":       "24.0.0",
@@ -1546,12 +1546,12 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 			}
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/bar_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{
 				"Name": "bar_data",
 			})) {
 				return
@@ -1684,7 +1684,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -1692,7 +1692,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 			http.NotFound(w, r)
 		case strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{
 				"Name":   "nginx_data",
 				"Driver": "local",
 				"Labels": map[string]string{
@@ -1704,7 +1704,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 			}
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 		default:
@@ -1926,7 +1926,7 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, nil, nil)
 	kvService := kv.NewKVService(db)
@@ -2004,7 +2004,7 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryWithoutDoc
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, nil, nil)
 	kvService := kv.NewKVService(db)
@@ -2253,7 +2253,7 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, nil, nil)
 	server := configureProjectRuntimeDocker(t, []container.Summary{
@@ -2357,7 +2357,7 @@ func TestProjectService_RecoverStuckProjectStatuses(t *testing.T) {
 
 			settingsService, err := newSettingsServiceForTest(t, ctx, db)
 			require.NoError(t, err)
-			require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+			require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 			server := configureProjectRuntimeDocker(t, tt.containers)
 			svc := NewProjectService(ProjectServiceParams{
@@ -2402,7 +2402,7 @@ func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVo
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, nil, nil)
 	server := newProjectRuntimeDockerServer(t, nil)
@@ -2471,7 +2471,7 @@ func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, nil, nil)
 	server := newProjectRuntimeDockerServer(t, []container.Summary{
@@ -4411,7 +4411,7 @@ func TestProjectService_GetProjectDetails_IncludesUpdateInfo(t *testing.T) {
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	imageService := image.NewImageService(image.ImageServiceParams{
 		DB: db,
@@ -4471,7 +4471,7 @@ func TestProjectService_GetProjectDetails_RefreshesRuntimeStatusWithoutRuntimeSe
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	projectPath := createComposeProjectDir(t, projectsDir, "projectA")
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  server:\n    image: nginx:alpine\n  worker:\n    image: busybox:latest\n"), 0o644))
@@ -4556,7 +4556,7 @@ func TestProjectService_GetProjectDetails_PopulatesRuntimeServicesFromComposePs(
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	projectPath := createComposeProjectDir(t, projectsDir, "projectA")
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  server:\n    image: nginx:alpine\n"), 0o644))
@@ -4654,7 +4654,7 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	imageService := image.NewImageService(image.ImageServiceParams{
 		DB: db,
@@ -4901,7 +4901,7 @@ func TestBuildDiscoveredComposeProjectUpdateRows_FallsBackToImageID(t *testing.T
 	// The tracked-project path resolves the same record through the runtime image ID.
 	settingsService, settingsErr := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, settingsErr)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", t.TempDir()))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", t.TempDir()))
 	service := NewProjectService(ProjectServiceParams{
 		DB:                          db,
 		SettingsService:             settingsService,
@@ -4937,7 +4937,7 @@ func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	projectsRoot := t.TempDir()
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	activePath := createComposeProjectDir(t, projectsRoot, "active-demo")
 	archivedPath := createComposeProjectDir(t, projectsRoot, "archived-demo")
@@ -5010,7 +5010,7 @@ func TestProjectService_ListProjects_FiltersByExactName(t *testing.T) {
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	projectsRoot := t.TempDir()
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	for _, name := range []string{"demo", "demo-extra"} {
 		require.NoError(t, db.Create(&Project{
@@ -5057,7 +5057,7 @@ func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
 	projectsRoot := t.TempDir()
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	projectPath := createComposeProjectDir(t, projectsRoot, "running-demo")
 	// DB row says stopped; the live Docker state below is what must block the archive.
@@ -5114,7 +5114,7 @@ func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
 	projectsRoot := t.TempDir()
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	projectPath := createComposeProjectDir(t, projectsRoot, "stopped-demo")
 	require.NoError(t, db.Create(&Project{
@@ -5160,7 +5160,7 @@ func TestProjectService_ArchiveProject_LiveVerificationErrorPolicy(t *testing.T)
 	projectsRoot := t.TempDir()
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	unreachablePath := createComposeProjectDir(t, projectsRoot, "unreachable-demo")
 	require.NoError(t, db.Create(&Project{
@@ -5215,7 +5215,7 @@ func TestProjectService_ListProjects_PersistsInferredServiceCount(t *testing.T) 
 	settingsService, err := newSettingsServiceForTest(t, t.Context(), db)
 	require.NoError(t, err)
 	projectsDir := t.TempDir()
-	require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(t.Context(), "projectsDirectory", projectsDir))
 	projectPath := filepath.Join(projectsDir, "inferred")
 	require.NoError(t, os.MkdirAll(projectPath, 0o755))
 	inferred := Project{ID: "inferred", Name: "inferred", Path: projectPath, ServiceCount: 0}
@@ -5271,7 +5271,7 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	for i := range 25 {
 		projectPath := createComposeProjectDir(t, projectsRoot, fmt.Sprintf("stopped-%02d", i))
@@ -5324,7 +5324,7 @@ func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T)
 	composeContent := "services:\n  web:\n    pull_policy: build\n    build:\n      context: .\n"
 
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte(composeContent), 0o644))
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot+":"+projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot+":"+projectsRoot))
 
 	proj := &Project{
 		ID:     "p1",
@@ -5373,7 +5373,7 @@ func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing
 		"  COPY --from=builder /usr/bin/caddy /usr/bin/caddy\n"
 
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte(composeContent), 0o644))
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot+":"+projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot+":"+projectsRoot))
 
 	proj := &Project{
 		ID:     "p-generated",
@@ -5420,8 +5420,8 @@ func TestProjectService_SyncProjectsFromFileSystem_IgnoresSymlinkedProjectDirsWh
 	linkTarget := createComposeProjectDir(t, targetRoot, "linked-target")
 	require.NoError(t, os.Symlink(linkTarget, filepath.Join(projectsRoot, "linked")))
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
-	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "false"))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "followProjectSymlinks", "false"))
 
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -5458,8 +5458,8 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsSymlinkedProjectDirsWh
 	linkPath := filepath.Join(projectsRoot, "linked")
 	require.NoError(t, os.Symlink(linkTarget, linkPath))
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
-	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "followProjectSymlinks", "true"))
 
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -5494,7 +5494,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversNestedProjectsAndRel
 	nestedPath := createComposeProjectDir(t, projectsRoot, filepath.Join("main-project", "sub-project1"))
 	topLevelPath := createComposeProjectDir(t, projectsRoot, "project2")
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -5539,7 +5539,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RespectsConfiguredScanMaxDept
 	topLevelPath := createComposeProjectDir(t, projectsRoot, "project1")
 	createComposeProjectDir(t, projectsRoot, filepath.Join("group", "project2"))
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 	require.NoError(t, settingsService.SetIntSetting(ctx, "projectScanMaxDepth", 1))
 
 	svc := NewProjectService(ProjectServiceParams{
@@ -5599,7 +5599,7 @@ services:
       com.getarcaneapp.arcane.icon-dark: *watchtower-icon
 `), 0o600))
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -5637,7 +5637,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t
 	projectsRoot := t.TempDir()
 	projectPath := createComposeProjectDir(t, projectsRoot, filepath.Join("main-project", "sub-project1"))
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -5678,7 +5678,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PrunesLeakedScratchRow(t *tes
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	createComposeProjectDir(t, projectsRoot, "app")
 
@@ -5723,7 +5723,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectsWhenDirector
 	// projects volume: GetProjectsDirectory resolves (and MkdirAll's) it, discovery
 	// finds nothing, and every stored project path is now missing on disk.
 	projectsRoot := t.TempDir()
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	// Seed a small deployment's worth of filesystem-managed projects whose
 	// directories do not exist. Each would individually be pruned as "directory no
@@ -5769,7 +5769,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectWithAmbiguous
 	projectsRoot := t.TempDir()
 	projectPath := createComposeProjectDir(t, projectsRoot, "ambiguous-project")
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -5818,7 +5818,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedS
 	topLevelPath := createComposeProjectDir(t, projectsRoot, "project1")
 	nestedPath := createComposeProjectDir(t, projectsRoot, filepath.Join("group", "project2"))
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	// Initial sync at the default scan depth discovers both the top-level and
 	// the nested project, persisting them to the database.
@@ -5887,7 +5887,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesDBRecordsWhenDirecto
 	projectsRoot := t.TempDir()
 	createComposeProjectDir(t, projectsRoot, "project1")
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -5912,7 +5912,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesDBRecordsWhenDirecto
 	require.NoError(t, os.Chmod(unreadable, 0))
 	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o700) })
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", unreadable))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", unreadable))
 
 	syncErr := svc.SyncProjectsFromFileSystem(ctx)
 	require.Error(t, syncErr, "sync should propagate the permission-denied error")
@@ -5964,7 +5964,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDesp
 		Status:  ProjectStatusStopped,
 	}).Error)
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -6012,7 +6012,7 @@ func TestProjectService_SyncProjectsFromFileSystem_AllowsDuplicateLeafDirectorie
 	firstPath := createComposeProjectDir(t, projectsRoot, filepath.Join("main-project1", "app"))
 	secondPath := createComposeProjectDir(t, projectsRoot, filepath.Join("main-project2", "app"))
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -6054,8 +6054,8 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsNestedSymlinkedProject
 	linkPath := filepath.Join(projectsRoot, "linked-root")
 	require.NoError(t, os.Symlink(filepath.Join(targetRoot, "main-project"), linkPath))
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
-	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "followProjectSymlinks", "true"))
 
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -6097,8 +6097,8 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesSymlinkedProjectsWhenD
 	linkPath := filepath.Join(projectsRoot, "linked")
 	require.NoError(t, os.Symlink(linkTarget, linkPath))
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
-	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "followProjectSymlinks", "true"))
 
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -6119,7 +6119,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesSymlinkedProjectsWhenD
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "false"))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "followProjectSymlinks", "false"))
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, err = svc.ListAllProjects(ctx)
@@ -6140,7 +6140,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RefreshesServiceCountOnCompos
 	projectsRoot := t.TempDir()
 	projectPath := createComposeProjectDir(t, projectsRoot, "demo")
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -6177,7 +6177,7 @@ func TestProjectService_SyncProjectsFromFileSystem_AlignsNameToEffectiveComposeN
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	projectPath := createComposeProjectDir(t, projectsRoot, "aitools")
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(`name: ai_tools
@@ -6218,7 +6218,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesValidCustomNameWitho
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	projectPath := createComposeProjectDir(t, projectsRoot, "folder-name")
 	dirName := "folder-name"
@@ -6291,7 +6291,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCus
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -6353,7 +6353,7 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 		GitOpsManagedBy: &syncID,
 	}).Error)
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -6395,8 +6395,8 @@ func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testi
 	linkPath := filepath.Join(projectsRoot, "demo")
 	require.NoError(t, os.Symlink(targetPath, linkPath))
 
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
-	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "followProjectSymlinks", "true"))
 
 	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(ProjectServiceParams{
@@ -6451,7 +6451,7 @@ func TestProjectService_UpdateProject_WritesThroughExternalEnvSymlink(t *testing
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 	projectPath := createComposeProjectDir(t, projectsRoot, "demo")
 	targetPath := filepath.Join(t.TempDir(), "project.env")
 	targetPerm := os.FileMode(0o640)
@@ -6521,7 +6521,7 @@ func TestProjectService_UpdateProject_RestoresExternalEnvSymlinkTargetWhenProjec
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 	projectPath := createComposeProjectDir(t, projectsRoot, "demo")
 	targetPath := filepath.Join(t.TempDir(), "project.env")
 	originalContent := "FOO=original\n"
@@ -6625,14 +6625,14 @@ func newProjectRuntimeDockerServer(t *testing.T, containers []container.Summary)
 			_, _ = io.WriteString(w, "OK")
 		case strings.HasSuffix(r.URL.Path, "/version"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{
+			_ = json.MarshalWrite(w, map[string]string{
 				"ApiVersion":    "1.41",
 				"MinAPIVersion": "1.24",
 				"Version":       "24.0.0",
 			})
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(containers)
+			_ = json.MarshalWrite(w, containers)
 		case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
 			containerID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path[strings.LastIndex(r.URL.Path, "/containers/"):], "/containers/"), "/json")
 			for _, c := range containers {
@@ -6640,7 +6640,7 @@ func newProjectRuntimeDockerServer(t *testing.T, containers []container.Summary)
 					continue
 				}
 				w.Header().Set("Content-Type", "application/json")
-				_ = json.NewEncoder(w).Encode(container.InspectResponse{
+				_ = json.MarshalWrite(w, container.InspectResponse{
 					ID: c.ID,
 					State: &container.State{
 						Status:  c.State,
@@ -6987,7 +6987,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsPreservedTargetJourna
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Name": "web_data"})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
@@ -7218,7 +7218,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRo
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "nginx_data"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
@@ -7227,12 +7227,12 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRo
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "web_data"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
@@ -7335,7 +7335,7 @@ func TestProjectService_RecoverProjectRenameJournals_CompletesCommittedVolumeJou
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "web_data"})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
@@ -7422,7 +7422,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWh
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "nginx_data"})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
@@ -7518,7 +7518,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "nginx_data"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
@@ -7527,17 +7527,17 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_cache"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "web_cache"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_cache"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "nginx_cache"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
@@ -7797,12 +7797,12 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCl
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_cache"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "web_cache"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_cache"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "nginx_cache"})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
@@ -7896,7 +7896,7 @@ func TestProjectService_RecoverProjectRenameJournals_MarksSourceCleanupPendingWh
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "web_data"})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
@@ -7992,7 +7992,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsSourceCleanupPendingJ
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "web_data"})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
@@ -8080,22 +8080,22 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackSourceCleanupPendi
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "nginx_data"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_cache"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "web_cache"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_cache"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "nginx_cache"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
@@ -8203,7 +8203,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJo
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "web_data"})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
@@ -8355,14 +8355,14 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhe
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "web_data"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
@@ -8534,7 +8534,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackTa
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "nginx_data"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
@@ -8624,14 +8624,14 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "web_data"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
@@ -8718,7 +8718,7 @@ func TestProjectPathMapperUsesCurrentSettings(t *testing.T) {
 	})
 	containerDir := t.TempDir()
 	for _, hostDir := range []string{t.TempDir(), t.TempDir()} {
-		require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", containerDir+":"+hostDir))
+		require.NoError(t, settingsService.UpdateSetting(t.Context(), "projectsDirectory", containerDir+":"+hostDir))
 		mapper := service.projectPathMapper(t.Context())
 		require.NotNil(t, mapper)
 		mapped, _, containerToHostErr := mapper.ContainerToHost(filepath.Join(containerDir, "data"))
@@ -8879,7 +8879,7 @@ func TestUpdateProjectServiceImagesPersistsBeforeDeploymentAndRetries(t *testing
 	t.Setenv("ARCANE_PROJECTS_DIRECTORY", directory)
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", directory))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", directory))
 	projectPath := createComposeProjectDir(t, directory, "image-tags")
 	source := "# keep\n\nservices:\n  app:\n    image: app:${VERSION}\n\n  worker:\n    image: app:${VERSION}\n"
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(source), 0o600))
@@ -8950,7 +8950,7 @@ func TestUpdateProjectServiceImagesRejectsOverrideBeforeWriting(t *testing.T) {
 	t.Setenv("ARCANE_PROJECTS_DIRECTORY", directory)
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", directory))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", directory))
 	projectPath := createComposeProjectDir(t, directory, "image-overrides")
 	original := []byte("services:\n  app:\n    image: app:1.0.0\n")
 	override := []byte("services:\n  app:\n    image: app:1.2.0\n")
@@ -9037,7 +9037,7 @@ func TestDiscoveredProjectTagUpdatesRemainScoped(t *testing.T) {
 	require.Equal(t, target, rows[0].UpdateInfo.UpdateInfoByRef["example:3.1.0"].LatestVersion)
 	settingsService, err := newSettingsServiceForTest(t, t.Context(), db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", t.TempDir()))
+	require.NoError(t, settingsService.UpdateSetting(t.Context(), "projectsDirectory", t.TempDir()))
 	service := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -9262,7 +9262,7 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 			t.Setenv("ARCANE_PROJECTS_DIRECTORY", directory)
 			settingsService, err := newSettingsServiceForTest(t, ctx, db)
 			require.NoError(t, err)
-			require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", directory))
+			require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", directory))
 			path := createComposeProjectDir(t, directory, "manual-tag")
 			source := "services:\n  app:\n    image: app:1.2.0\n    labels:\n      com.getarcaneapp.arcane.updater.strategy: " +
 				"tag\n      com.getarcaneapp.arcane.updater.constraint: 1.x\n  selected-digest:\n    image: " +
@@ -9408,7 +9408,7 @@ func TestStoppedProjectTagPolicyNeverInheritsSharedDigestCheck(t *testing.T) {
 	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 	settingsService, err := newSettingsServiceForTest(t, t.Context(), db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(t.Context(), "projectsDirectory", projectsDir))
 	projectPath := createComposeProjectDir(t, projectsDir, "tag-stopped")
 	require.NoError(
 		t,
@@ -9497,7 +9497,7 @@ func TestConfiguredProjectUsesScheduledRuntimeChecks(t *testing.T) {
 			t.Setenv("ARCANE_PROJECTS_DIRECTORY", directory)
 			settingsService, err := newSettingsServiceForTest(t, ctx, db)
 			require.NoError(t, err)
-			require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", directory))
+			require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", directory))
 			path := createComposeProjectDir(t, directory, "scheduled-project")
 			source := "services:\n  web:\n    image: " + tt.sourceRef + "\n    labels:\n      com.getarcaneapp.arcane.updater.strategy: auto\n"
 			if tt.sourceConstraint != "" {
@@ -9898,7 +9898,7 @@ func newEnvDirectoryProject(t *testing.T, id string) (*ProjectService, *Project,
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -10338,7 +10338,7 @@ func TestParseLifecycleExtraMountsText_RejectsInvalidMode(t *testing.T) {
 func TestRunPreDeploy_ProjectNotGitOpsManaged(t *testing.T) {
 	db := setupLifecycleTestDB(t)
 	svc, settingsService := newLifecycleTestService(t, db)
-	require.NoError(t, settingsService.SetStringSetting(t.Context(), "lifecycleEnabled", "true"))
+	require.NoError(t, settingsService.UpdateSetting(t.Context(), "lifecycleEnabled", "true"))
 
 	project := &Project{
 		Name:            "demo",
@@ -10447,7 +10447,7 @@ func TestRunPreDeploy_KillSwitchAndLastRunState(t *testing.T) {
 	require.NoError(t, svc.runPreDeploy(t.Context(), project, types.Actor{}))
 	assert.Nil(t, loadSync().PreDeployLastRunAt)
 
-	require.NoError(t, settingsService.SetStringSetting(t.Context(), "lifecycleEnabled", "true"))
+	require.NoError(t, settingsService.UpdateSetting(t.Context(), "lifecycleEnabled", "true"))
 	before := time.Now()
 	require.NoError(t, svc.runPreDeploy(t.Context(), project, types.Actor{}))
 	stored := loadSync()
@@ -10471,7 +10471,7 @@ func TestRunPreDeploy_KillSwitchAndLastRunState(t *testing.T) {
 func TestRunPreDeploy_NoScriptConfigured(t *testing.T) {
 	db := setupLifecycleTestDB(t)
 	svc, settingsService := newLifecycleTestService(t, db)
-	require.NoError(t, settingsService.SetStringSetting(t.Context(), "lifecycleEnabled", "true"))
+	require.NoError(t, settingsService.UpdateSetting(t.Context(), "lifecycleEnabled", "true"))
 
 	syncID := "sync-1"
 	project := &Project{
@@ -10501,8 +10501,8 @@ func TestRunPreDeploy_NoScriptConfigured(t *testing.T) {
 func TestRunPreDeploy_MissingRunnerImage(t *testing.T) {
 	db := setupLifecycleTestDB(t)
 	svc, settingsService := newLifecycleTestService(t, db)
-	require.NoError(t, settingsService.SetStringSetting(t.Context(), "lifecycleEnabled", "true"))
-	require.NoError(t, settingsService.SetStringSetting(t.Context(), "lifecycleDefaultRunnerImage", " "))
+	require.NoError(t, settingsService.UpdateSetting(t.Context(), "lifecycleEnabled", "true"))
+	require.NoError(t, settingsService.UpdateSetting(t.Context(), "lifecycleDefaultRunnerImage", " "))
 
 	syncID := "sync-1"
 	projectDir := writeLifecycleProjectDirWithScript(t, "pre-deploy.sh", "echo hi\n")
@@ -10537,7 +10537,7 @@ func TestRunPreDeploy_MissingRunnerImage(t *testing.T) {
 func TestRunPreDeploy_PathTraversalRejected(t *testing.T) {
 	db := setupLifecycleTestDB(t)
 	svc, settingsService := newLifecycleTestService(t, db)
-	require.NoError(t, settingsService.SetStringSetting(t.Context(), "lifecycleEnabled", "true"))
+	require.NoError(t, settingsService.UpdateSetting(t.Context(), "lifecycleEnabled", "true"))
 
 	syncID := "sync-1"
 	project := &Project{
@@ -10609,7 +10609,7 @@ func projectScopeContext(t *testing.T, target string, bodies map[string]any) (co
 				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
 				return
 			}
-			_ = json.NewEncoder(w).Encode(body)
+			_ = json.MarshalWrite(w, body)
 		}),
 		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
 			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil

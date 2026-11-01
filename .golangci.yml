@@ -128,6 +128,8 @@ linters:
           alias: kit
         - pkg: github.com/getarcaneapp/arcane/backend/v3/internal/docker
           alias: dockerInternal
+        - pkg: charm.land/log/v2
+          alias: charmLog
 
     lll:
       line-length: 200

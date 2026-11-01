@@ -1,7 +1,7 @@
 package volumehelper
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,7 +30,7 @@ func TestResolveHelperImage_UsesLocalToolsImage(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Id": "tools-image"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Id": "tools-image"})) {
 				return
 			}
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/images/create"):
@@ -90,14 +90,14 @@ func TestResolveHelperImage_FallsBackToArcaneRuntimeWhenToolsPullFails(t *testin
 			http.Error(w, "pull failed", http.StatusInternalServerError)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{
 				{ID: "arcane-container", Image: "arcane:local", State: container.StateRunning},
 			})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/containers/arcane-container/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(container.InspectResponse{
+			if !assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
 				ID: "arcane-container",
 				Config: &container.Config{
 					Image: "arcane:local",
@@ -126,7 +126,7 @@ func TestResolveHelperImage_ReturnsPullErrorWhenNoFallbackExists(t *testing.T) {
 			http.Error(w, "pull failed", http.StatusInternalServerError)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 		default:

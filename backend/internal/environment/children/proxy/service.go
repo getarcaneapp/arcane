@@ -50,10 +50,10 @@ func New(db *database.DB, settingsService *settings.SettingsService, syncGate *u
 		db: db,
 		client: remenv.NewClient(remenv.TunnelTransportFuncs{
 			EnsureAvailableFunc: func(ctx context.Context, envID string) error {
-				if agent.HasActiveTunnel(envID) {
+				if agent.GetRegistry().Active(envID).IsPresent() {
 					return nil
 				}
-				if _, ok := agent.WaitForActiveTunnel(ctx, envID, agent.DefaultTunnelAcquireTimeout).Get(); ok {
+				if _, ok := agent.GetRegistry().WaitForActive(ctx, envID, agent.DefaultTunnelAcquireTimeout).Get(); ok {
 					return nil
 				}
 				return remenv.ErrEnvironmentUnavailable
@@ -138,7 +138,7 @@ func (s *Service) Execute(
 }
 
 func (s *Service) Stream(ctx context.Context, target *Target, path string) (*http.Response, error) {
-	tunnel, ok := agent.WaitForActiveTunnel(ctx, target.id, agent.DefaultTunnelAcquireTimeout).Get()
+	tunnel, ok := agent.GetRegistry().WaitForActive(ctx, target.id, agent.DefaultTunnelAcquireTimeout).Get()
 	if !ok {
 		return nil, &remenv.TransportError{Err: remenv.ErrEnvironmentUnavailable}
 	}

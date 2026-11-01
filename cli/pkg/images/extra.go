@@ -3,7 +3,6 @@ package images
 import (
 	"bufio"
 	"cmp"
-	jsonv1 "encoding/json"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
@@ -16,13 +15,13 @@ import (
 	"strings"
 	"time"
 
+	charmLog "charm.land/log/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	buildtypes "go.getarcane.app/builds/types"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
@@ -35,7 +34,7 @@ func newSearchCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log := logger.GetLogger()
+			log := charmLog.Default()
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err
@@ -70,7 +69,7 @@ func newHistoryCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log := logger.GetLogger()
+			log := charmLog.Default()
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err
@@ -114,7 +113,7 @@ func newTagCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(2),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log := logger.GetLogger()
+			log := charmLog.Default()
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err
@@ -159,7 +158,7 @@ func newExportCmd() *cobra.Command {
 		Args:         cobra.RangeArgs(1, 2),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log := logger.GetLogger()
+			log := charmLog.Default()
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err
@@ -238,7 +237,7 @@ func newAttestationsCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log := logger.GetLogger()
+			log := charmLog.Default()
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err
@@ -335,7 +334,7 @@ func newBuildCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log := logger.GetLogger()
+			log := charmLog.Default()
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err
@@ -368,8 +367,7 @@ func newBuildCmd() *cobra.Command {
 					requestBody.BuildArgs[key] = value
 				}
 			}
-			// The build contract uses legacy omitempty semantics for booleans and numbers.
-			payload, marshalErr := jsonv1.Marshal(requestBody)
+			payload, marshalErr := json.Marshal(requestBody, json.OmitZeroStructFields(true))
 			if marshalErr != nil {
 				return fmt.Errorf("failed to build image: %w", marshalErr)
 			}
@@ -475,7 +473,7 @@ func newBuildsGetCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log := logger.GetLogger()
+			log := charmLog.Default()
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err

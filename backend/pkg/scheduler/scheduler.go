@@ -23,7 +23,7 @@ type watcherRegistration struct {
 	watcher types.BusWatcher
 	done    chan struct{}
 }
-type jobSchedulerInternal struct {
+type jobScheduler struct {
 	context     context.Context
 	jobsByID    map[string]types.SchedulerJob
 	watchers    map[string]types.BusWatcher
@@ -45,7 +45,7 @@ func NewJobScheduler(ctx context.Context, coordinator *runs.Coordinator, locatio
 		location = time.UTC
 	}
 	lifetime, cancel := context.WithCancel(ctx)
-	return &jobSchedulerInternal{
+	return &jobScheduler{
 			context:     lifetime,
 			cancel:      cancel,
 			location:    location,
@@ -58,7 +58,7 @@ func NewJobScheduler(ctx context.Context, coordinator *runs.Coordinator, locatio
 		nil
 }
 
-func (js *jobSchedulerInternal) RegisterJob(job types.SchedulerJob) error {
+func (js *jobScheduler) RegisterJob(job types.SchedulerJob) error {
 	if job == nil {
 		return errors.New("scheduler job unavailable")
 	}
@@ -71,7 +71,7 @@ func (js *jobSchedulerInternal) RegisterJob(job types.SchedulerJob) error {
 	return nil
 }
 
-func (js *jobSchedulerInternal) RegisterBusWatcher(watcher types.BusWatcher, manual bool) error {
+func (js *jobScheduler) RegisterBusWatcher(watcher types.BusWatcher, manual bool) error {
 	js.mu.Lock()
 	defer js.mu.Unlock()
 	if js.stopping {
@@ -96,7 +96,7 @@ func (js *jobSchedulerInternal) RegisterBusWatcher(watcher types.BusWatcher, man
 	return nil
 }
 
-func (js *jobSchedulerInternal) RunBusWatcherNow(ctx context.Context, id string) error {
+func (js *jobScheduler) RunBusWatcherNow(ctx context.Context, id string) error {
 	js.mu.RLock()
 	watcher, found := js.watchers[id]
 	js.mu.RUnlock()
@@ -106,14 +106,14 @@ func (js *jobSchedulerInternal) RunBusWatcherNow(ctx context.Context, id string)
 	return watcher.RunNow(ctx)
 }
 
-func (js *jobSchedulerInternal) GetJob(id string) (types.SchedulerJob, bool) {
+func (js *jobScheduler) GetJob(id string) (types.SchedulerJob, bool) {
 	js.mu.RLock()
 	defer js.mu.RUnlock()
 	job, ok := js.jobsByID[id]
 	return job, ok
 }
-func (js *jobSchedulerInternal) HasJob(id string) bool { _, ok := js.GetJob(id); return ok }
-func (js *jobSchedulerInternal) GetJobRuntimeState(id string) (types.JobRuntimeState, bool) {
+func (js *jobScheduler) HasJob(id string) bool { _, ok := js.GetJob(id); return ok }
+func (js *jobScheduler) GetJobRuntimeState(id string) (types.JobRuntimeState, bool) {
 	if !js.HasJob(id) {
 		return types.JobRuntimeState{}, false
 	}
@@ -128,7 +128,7 @@ func (js *jobSchedulerInternal) GetJobRuntimeState(id string) (types.JobRuntimeS
 	return state, true
 }
 
-func (js *jobSchedulerInternal) StartScheduler(ctx context.Context) error {
+func (js *jobScheduler) StartScheduler(ctx context.Context) error {
 	js.mu.Lock()
 	if js.stopping {
 		js.mu.Unlock()
@@ -159,7 +159,7 @@ func (js *jobSchedulerInternal) StartScheduler(ctx context.Context) error {
 	return schedulingErr
 }
 
-func (js *jobSchedulerInternal) install(ctx context.Context, job types.SchedulerJob) error {
+func (js *jobScheduler) install(ctx context.Context, job types.SchedulerJob) error {
 	next := time.Time{}
 	schedule := job.Schedule(ctx)
 	should := true
@@ -179,7 +179,7 @@ func (js *jobSchedulerInternal) install(ctx context.Context, job types.Scheduler
 	return js.coordinator.Checkpoint(ctx, job.Name(), schedule, next)
 }
 
-func (js *jobSchedulerInternal) AddJob(ctx context.Context, job types.SchedulerJob) error {
+func (js *jobScheduler) AddJob(ctx context.Context, job types.SchedulerJob) error {
 	if err := js.RegisterJob(job); err != nil {
 		return err
 	}
@@ -192,11 +192,11 @@ func (js *jobSchedulerInternal) AddJob(ctx context.Context, job types.SchedulerJ
 	return js.install(ctx, job)
 }
 
-func (js *jobSchedulerInternal) RescheduleJob(ctx context.Context, job types.SchedulerJob) error {
+func (js *jobScheduler) RescheduleJob(ctx context.Context, job types.SchedulerJob) error {
 	return js.AddJob(ctx, job)
 }
 
-func (js *jobSchedulerInternal) RemoveJob(ctx context.Context, id string) {
+func (js *jobScheduler) RemoveJob(ctx context.Context, id string) {
 	js.mu.Lock()
 	delete(js.jobsByID, id)
 	started := js.started
@@ -207,8 +207,8 @@ func (js *jobSchedulerInternal) RemoveJob(ctx context.Context, id string) {
 		}
 	}
 }
-func (js *jobSchedulerInternal) GetLocation() *time.Location { return js.location }
-func (js *jobSchedulerInternal) Stop(ctx context.Context) error {
+func (js *jobScheduler) GetLocation() *time.Location { return js.location }
+func (js *jobScheduler) Stop(ctx context.Context) error {
 	js.mu.Lock()
 	js.stopping = true
 	js.cancel()

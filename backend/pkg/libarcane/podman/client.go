@@ -3,7 +3,8 @@ package podman
 import (
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -170,7 +171,7 @@ func (c *Client) doJSON[T any](ctx context.Context, req request) (T, error) {
 	}
 	defer func() { _ = body.Close() }()
 
-	if decodeErr := json.NewDecoder(body).Decode(&out); decodeErr != nil && !errors.Is(decodeErr, io.EOF) {
+	if decodeErr := json.UnmarshalDecode(jsontext.NewDecoder(body), &out, json.MatchCaseInsensitiveNames(true)); decodeErr != nil && !errors.Is(decodeErr, io.EOF) {
 		return out, fmt.Errorf("decode podman %s %s: %w", req.method, req.path, decodeErr)
 	}
 	return out, nil
@@ -216,7 +217,7 @@ func (c *Client) do(ctx context.Context, req request) (io.ReadCloser, error) {
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	var apiErr apiError
 	message := strings.TrimSpace(string(data))
-	if json.Unmarshal(data, &apiErr) == nil {
+	if json.Unmarshal(data, &apiErr, json.MatchCaseInsensitiveNames(true)) == nil {
 		message = cmp.Or(apiErr.Message, apiErr.Cause, message)
 	}
 	err = fmt.Errorf("podman %s %s: %s", req.method, req.path, cmp.Or(message, resp.Status))

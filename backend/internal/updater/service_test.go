@@ -452,8 +452,8 @@ func TestUpdaterService_StatusTracking(t *testing.T) {
 	svc, svcErr := NewUpdaterService(UpdaterServiceParams{})
 	require.NoError(t, svcErr)
 
-	stopContainer := svc.BeginContainerUpdate("container-1")
-	stopProject := svc.BeginProjectUpdate("project-a")
+	stopContainer := svc.engine.BeginContainerUpdate("container-1")
+	stopProject := svc.engine.BeginProjectUpdate("project-a")
 
 	status := svc.GetStatus()
 	assert.Equal(t, 1, status.UpdatingContainers)

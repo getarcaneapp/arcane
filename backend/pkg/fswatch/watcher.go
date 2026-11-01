@@ -116,7 +116,7 @@ func (fw *Watcher) Start(ctx context.Context) error {
 
 	watchCtx, cancel := context.WithCancel(ctx)
 	fw.cancel = cancel
-	go fw.watchLoopInternal(watchCtx)
+	go fw.watchLoop(watchCtx)
 	fw.callbacks.Go(func() { fw.notifyLoop(watchCtx) })
 	fw.started = true
 
@@ -154,7 +154,7 @@ func (fw *Watcher) Stop() error {
 	return fw.stopErr
 }
 
-func (fw *Watcher) watchLoopInternal(ctx context.Context) {
+func (fw *Watcher) watchLoop(ctx context.Context) {
 	defer close(fw.stoppedCh)
 
 	debounceTimer := time.NewTimer(fw.debounce)

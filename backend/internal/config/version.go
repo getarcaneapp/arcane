@@ -1,7 +1,5 @@
 package config
 
-import "runtime"
-
 var (
 	Version          = "dev"
 	Revision         = "unknown"
@@ -16,9 +14,4 @@ func ShortRevision() string {
 		return Revision[:8]
 	}
 	return Revision
-}
-
-// GoVersion returns the Go runtime version
-func GoVersion() string {
-	return runtime.Version()
 }

@@ -86,8 +86,8 @@ func newFilesystemWatcherTestJob(t *testing.T) *FilesystemWatcherJob {
 
 	db, settingsService, kvService := setupAnalyticsStateServices(t)
 	require.NoError(t, db.AutoMigrate(&project.Project{}, &project.ProjectTag{}, &template.TemplateRegistry{}, &template.ComposeTemplate{}))
-	require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", t.TempDir()))
-	require.NoError(t, settingsService.SetStringSetting(t.Context(), "templatesDirectory", t.TempDir()))
+	require.NoError(t, settingsService.UpdateSetting(t.Context(), "projectsDirectory", t.TempDir()))
+	require.NoError(t, settingsService.UpdateSetting(t.Context(), "templatesDirectory", t.TempDir()))
 
 	job, err := NewFilesystemWatcherJob(
 		t.Context(),

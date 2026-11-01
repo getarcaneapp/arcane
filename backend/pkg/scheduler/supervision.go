@@ -102,14 +102,14 @@ func (s *watcherSupervisor) start(ctx context.Context) (panicked bool, err error
 	return false, s.watcher.Start(ctx)
 }
 
-func (js *jobSchedulerInternal) Submit(ctx context.Context, request types.SchedulerRequest) (types.SchedulerRun, error) {
+func (js *jobScheduler) Submit(ctx context.Context, request types.SchedulerRequest) (types.SchedulerRun, error) {
 	if js.context.Err() != nil {
 		return types.SchedulerRun{}, errJobSchedulerStopped
 	}
 	return js.coordinator.Submit(ctx, request)
 }
 
-func (js *jobSchedulerInternal) ListRegisteredJobs() []types.SchedulerJob {
+func (js *jobScheduler) ListRegisteredJobs() []types.SchedulerJob {
 	js.mu.RLock()
 	defer js.mu.RUnlock()
 	jobs := make([]types.SchedulerJob, 0, len(js.jobsByID))
@@ -119,7 +119,7 @@ func (js *jobSchedulerInternal) ListRegisteredJobs() []types.SchedulerJob {
 	return jobs
 }
 
-func (js *jobSchedulerInternal) RestartWatcher(ctx context.Context, id string) error {
+func (js *jobScheduler) RestartWatcher(ctx context.Context, id string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -145,7 +145,7 @@ func (js *jobSchedulerInternal) RestartWatcher(ctx context.Context, id string) e
 	return nil
 }
 
-func (js *jobSchedulerInternal) WatcherHealth(id string) (types.SchedulerWorkerHealth, bool) {
+func (js *jobScheduler) WatcherHealth(id string) (types.SchedulerWorkerHealth, bool) {
 	js.mu.RLock()
 	supervisor, ok := js.supervisors[id]
 	js.mu.RUnlock()

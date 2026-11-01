@@ -689,10 +689,6 @@ func (s *SettingsService) SetIntSetting(ctx context.Context, key string, value i
 	return s.UpdateSetting(ctx, key, strconv.Itoa(value))
 }
 
-func (s *SettingsService) SetStringSetting(ctx context.Context, key, value string) error {
-	return s.UpdateSetting(ctx, key, value)
-}
-
 // SetContainerAutoUpdateExclusion adds (excluded) or removes a container name
 // in the autoUpdateExcludedContainers setting.
 func (s *SettingsService) SetContainerAutoUpdateExclusion(ctx context.Context, containerName string, excluded bool) error {

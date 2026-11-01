@@ -43,9 +43,3 @@ func FirstWhere[T any](ctx context.Context, db *gorm.DB, notFound error, where s
 	}
 	return &out, nil
 }
-
-// WithTx runs fn inside a GORM transaction bound to ctx. Equivalent to
-// db.WithContext(ctx).Transaction(fn) but tightens the surface area at call sites.
-func WithTx(ctx context.Context, db *gorm.DB, fn func(tx *gorm.DB) error) error {
-	return db.WithContext(ctx).Transaction(fn)
-}

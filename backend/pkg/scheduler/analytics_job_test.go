@@ -1,7 +1,7 @@
 package scheduler
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -32,7 +32,7 @@ func setupAnalyticsStateServices(t *testing.T) (*database.DB, *settings.Settings
 	wrappedDB := &database.DB{DB: db}
 	settingsService, err := newSettingsServiceForTest(t, ctx, wrappedDB)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.SetStringSetting(ctx, "instanceId", "test-instance"))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "instanceId", "test-instance"))
 
 	return wrappedDB, settingsService, kv.NewKVService(wrappedDB)
 }

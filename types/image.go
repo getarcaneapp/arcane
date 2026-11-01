@@ -1,7 +1,7 @@
 package types
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"math"
 	"strings"
 	"time"
@@ -240,7 +240,7 @@ type ImageAttestation struct {
 	StatementType string                    `json:"statementType,omitempty"`
 	Platform      string                    `json:"platform,omitempty"`
 	Subject       []ImageAttestationSubject `json:"subject"`
-	Statement     json.RawMessage           `json:"statement,omitempty"`
+	Statement     jsontext.Value            `json:"statement,omitempty"`
 	Size          int64                     `json:"size"`
 }
 

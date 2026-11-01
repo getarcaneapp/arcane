@@ -2,7 +2,7 @@ package pods
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -238,7 +238,7 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 			var got map[string]any
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				assert.Equal(t, "/v4.0.0/libpod/pods/create", r.URL.Path)
-				assert.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+				assert.NoError(t, json.UnmarshalRead(r.Body, &got))
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{"Id":"pod-1"}`))
 			}))

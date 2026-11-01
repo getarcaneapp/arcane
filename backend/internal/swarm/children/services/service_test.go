@@ -2,7 +2,8 @@ package services
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -45,14 +46,14 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 	maxConcurrent := uint64(2)
 
 	tests := []struct {
-		mode       swarm.ServiceMode
 		assertMode func(*testing.T, swarm.ServiceMode)
 		name       string
+		modeJSON   string
 		wantErr    bool
 	}{
 		{
-			name: "replicated",
-			mode: swarm.ServiceMode{Replicated: &swarm.ReplicatedService{}},
+			name:     "replicated",
+			modeJSON: `{"Replicated":{}}`,
 			assertMode: func(t *testing.T, mode swarm.ServiceMode) {
 				t.Helper()
 				require.NotNil(t, mode.Replicated)
@@ -62,8 +63,8 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 			},
 		},
 		{
-			name: "replicated job",
-			mode: swarm.ServiceMode{ReplicatedJob: &swarm.ReplicatedJob{MaxConcurrent: &maxConcurrent}},
+			name:     "replicated job",
+			modeJSON: `{"ReplicatedJob":{"MaxConcurrent":2}}`,
 			assertMode: func(t *testing.T, mode swarm.ServiceMode) {
 				t.Helper()
 				require.Nil(t, mode.Replicated)
@@ -75,14 +76,14 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 			},
 		},
 		{
-			name:    "global",
-			mode:    swarm.ServiceMode{Global: &swarm.GlobalService{}},
-			wantErr: true,
+			name:     "global",
+			modeJSON: `{"Global":{}}`,
+			wantErr:  true,
 		},
 		{
-			name:    "global job",
-			mode:    swarm.ServiceMode{GlobalJob: &swarm.GlobalJob{}},
-			wantErr: true,
+			name:     "global job",
+			modeJSON: `{"GlobalJob":{}}`,
+			wantErr:  true,
 		},
 	}
 
@@ -96,7 +97,7 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 
 				switch {
 				case r.Method == http.MethodGet && r.URL.Path == "/v1.41/info":
-					if !assert.NoError(t, json.NewEncoder(w).Encode(system.Info{
+					if !assert.NoError(t, json.MarshalWrite(w, system.Info{
 						Swarm: swarm.Info{
 							LocalNodeState:   swarm.LocalNodeStateActive,
 							ControlAvailable: true,
@@ -105,25 +106,16 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 						return
 					}
 				case r.Method == http.MethodGet && r.URL.Path == "/v1.41/services/service-1":
-					if !assert.NoError(t, json.NewEncoder(w).Encode(swarm.Service{
-						ID:      "service-1",
-						Version: swarm.Version{Index: 7},
-						Spec: swarm.ServiceSpec{
-							Annotations: swarm.Annotations{Name: "service-1"},
-							Mode:        tt.mode,
-						},
-					})) {
-						return
-					}
+					_, _ = fmt.Fprintf(w, `{"ID":"service-1","Version":{"Index":7},"Spec":{"Name":"service-1","Mode":%s}}`, tt.modeJSON)
 				case r.Method == http.MethodPost && r.URL.Path == "/v1.41/services/service-1/update":
 					updateCalls++
 					if !assert.Equal(t, "7", r.URL.Query().Get("version")) {
 						return
 					}
-					if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&updatedSpec)) {
+					if !assert.NoError(t, json.UnmarshalRead(r.Body, &updatedSpec)) {
 						return
 					}
-					if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Warnings": []string{"updated"}})) {
+					if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Warnings": []string{"updated"}})) {
 						return
 					}
 				default:
@@ -164,7 +156,7 @@ func servicesScopeContext(t *testing.T, target string, bodies map[string]any) co
 				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
 				return
 			}
-			_ = json.NewEncoder(w).Encode(body)
+			_ = json.MarshalWrite(w, body)
 		}),
 		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
 			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil

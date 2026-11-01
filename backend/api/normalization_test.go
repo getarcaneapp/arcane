@@ -18,6 +18,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
+
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jsonx"
 )
 
 type normalizationTestBody struct {
@@ -46,7 +48,7 @@ func TestNormalizationBeforeHumaValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			router := echo.New()
 			cfg := huma.DefaultConfig("test", "1")
-			cfg.Formats = map[string]huma.Format{"application/json": jsonV2Format, "json": jsonV2Format}
+			cfg.Formats = map[string]huma.Format{"application/json": jsonx.HumaFormat, "json": jsonx.HumaFormat}
 			api := humaecho.New(router, cfg)
 			registerNormalization(api)
 			called := false

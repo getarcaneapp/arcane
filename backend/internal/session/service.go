@@ -17,7 +17,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/dbutil"
 )
 
 type SessionService struct {
@@ -95,7 +94,7 @@ func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID, refr
 	now := time.Now()
 	var rotated UserSession
 
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var session UserSession
 		if err := tx.Where("id = ?", sessionID).First(&session).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {

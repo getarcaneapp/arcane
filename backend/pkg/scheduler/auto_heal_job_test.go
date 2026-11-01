@@ -196,7 +196,7 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 	settingsSvc, err := newSettingsServiceForTest(t, ctx, wrappedDB)
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", true))
-	require.NoError(t, settingsSvc.SetStringSetting(ctx, "autoHealExcludedContainers", "skip-me"))
+	require.NoError(t, settingsSvc.UpdateSetting(ctx, "autoHealExcludedContainers", "skip-me"))
 
 	cfg := &config.Config{}
 	eventSvc := event.NewEventService(wrappedDB, cfg, nil)

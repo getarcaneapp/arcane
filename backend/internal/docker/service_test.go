@@ -2,7 +2,7 @@ package docker
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -212,7 +212,15 @@ func TestDockerClientService_RefreshClientProbeFailureKeepsCachedClient(t *testi
 }
 
 func TestDockerClientService_PublishesDaemonImageEvents(t *testing.T) {
-	expected := events.Message{Type: events.ImageEventType, Action: events.ActionPull, TimeNano: 123, Actor: events.Actor{ID: "nginx:latest"}}
+	expected := events.Message{
+		Type:     events.ImageEventType,
+		Action:   events.ActionPull,
+		TimeNano: 123,
+		Actor: events.Actor{
+			ID:         "nginx:latest",
+			Attributes: map[string]string{"name": "nginx"},
+		},
+	}
 	payload, err := json.Marshal(expected)
 	require.NoError(t, err)
 	server := newDockerPingTestServerWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
@@ -418,7 +426,7 @@ func TestDockerClientService_ListContainersCachedUntilInvalidated(t *testing.T) 
 				case <-r.Context().Done():
 					return
 				case message := <-daemonEvents:
-					assert.NoError(t, json.NewEncoder(w).Encode(message))
+					assert.NoError(t, json.MarshalWrite(w, message))
 					assert.NoError(t, http.NewResponseController(w).Flush())
 				}
 			}

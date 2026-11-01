@@ -88,7 +88,7 @@ func CollectFiles(ctx context.Context, root string, selection []string, opts Col
 			return nil, fmt.Errorf("%s is a symbolic link: %w", selected, ErrSelectionInvalid)
 		}
 		if !entry.IsDirectory {
-			if addErr := c.addInternal(ctx, entry); addErr != nil {
+			if addErr := c.add(ctx, entry); addErr != nil {
 				return nil, addErr
 			}
 			continue
@@ -115,10 +115,10 @@ func (c *fileCollector) visit(ctx context.Context, child acfstypes.Entry) error 
 	if child.IsDirectory || child.IsSymlink || (c.opts.SkipFile != nil && c.opts.SkipFile(child.Name)) {
 		return nil
 	}
-	return c.addInternal(ctx, child)
+	return c.add(ctx, child)
 }
 
-func (c *fileCollector) addInternal(ctx context.Context, entry acfstypes.Entry) error {
+func (c *fileCollector) add(ctx context.Context, entry acfstypes.Entry) error {
 	relative := strings.TrimPrefix(entry.Path, "/")
 	if _, ok := c.seen[relative]; ok {
 		return nil
@@ -220,12 +220,12 @@ func (c *Client) CheckoutForWrite(ctx context.Context, url, branch string, auth 
 	if err == nil {
 		repo, openErr := git.PlainOpen(repoPath)
 		if openErr != nil {
-			_ = c.Cleanup(repoPath)
+			_ = os.RemoveAll(repoPath)
 			return nil, fmt.Errorf("failed to open checkout: %w", openErr)
 		}
 		head, headErr := repo.Head()
 		if headErr != nil {
-			_ = c.Cleanup(repoPath)
+			_ = os.RemoveAll(repoPath)
 			return nil, fmt.Errorf("failed to resolve checkout head: %w", headErr)
 		}
 		return &WriteCheckout{RepoPath: repoPath, Branch: branch, HeadCommit: head.Hash().String(), BranchExists: true, url: normalized, repo: repo}, nil
@@ -273,16 +273,16 @@ func (c *Client) checkoutNewBranch(ctx context.Context, url, branch string, auth
 	}
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
-		_ = c.Cleanup(repoPath)
+		_ = os.RemoveAll(repoPath)
 		return nil, fmt.Errorf("failed to open checkout: %w", err)
 	}
 	worktree, err := repo.Worktree()
 	if err != nil {
-		_ = c.Cleanup(repoPath)
+		_ = os.RemoveAll(repoPath)
 		return nil, fmt.Errorf("failed to open worktree: %w", err)
 	}
 	if checkoutErr := worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName(branch), Create: true}); checkoutErr != nil {
-		_ = c.Cleanup(repoPath)
+		_ = os.RemoveAll(repoPath)
 		return nil, fmt.Errorf("failed to create branch %s: %w", branch, checkoutErr)
 	}
 	return &WriteCheckout{RepoPath: repoPath, Branch: branch, url: url, repo: repo}, nil

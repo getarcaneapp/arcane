@@ -62,7 +62,7 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 				m.AddActions(method, suffix, param, perms)
 				continue
 			}
-			if perm, localOk := requiredPermissionInternal(op).Get(); localOk {
+			if perm, localOk := requiredPermission(op).Get(); localOk {
 				m.Add(method, suffix, perm)
 				continue
 			}
@@ -88,7 +88,7 @@ func envResourceSuffix(path string) mo.Option[string] {
 	return mo.Some(strings.TrimPrefix(path, envPathPrefix))
 }
 
-func requiredPermissionInternal(op *huma.Operation) mo.Option[string] {
+func requiredPermission(op *huma.Operation) mo.Option[string] {
 	if op.Metadata == nil {
 		return mo.None[string]()
 	}

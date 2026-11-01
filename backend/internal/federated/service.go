@@ -35,7 +35,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/dbutil"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jwtclaims"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/oidcjwk"
@@ -115,7 +114,7 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 	}
 
 	var created FederatedCredential
-	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err = s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		serviceUser := user.User{
 			Username:         "svc_federated_" + strings.ReplaceAll(uuid.New().String(), "-", ""),
 			DisplayName:      mo.EmptyableToOption(strings.TrimSpace("Federated: " + normalized.Name)).ToPointer(),
@@ -260,7 +259,7 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID, i
 		}
 	}
 
-	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err = s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if updateCredentialErr := tx.Save(&updated).Error; updateCredentialErr != nil {
 			return fmt.Errorf("failed to update federated credential: %w", updateCredentialErr)
 		}
@@ -307,7 +306,7 @@ func (s *FederatedCredentialService) Delete(ctx context.Context, id string) erro
 		return err
 	}
 
-	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err = s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if deleteErr := tx.Delete(&FederatedCredential{}, "id = ?", credential.ID).Error; deleteErr != nil {
 			return fmt.Errorf("failed to delete federated credential: %w", deleteErr)
 		}

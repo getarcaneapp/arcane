@@ -91,9 +91,9 @@ func TestHasActiveTunnel(t *testing.T) {
 	registry.Register("env-active", tunnel)
 	defer registry.Unregister("env-active")
 
-	assert.True(t, HasActiveTunnel("env-active"))
-	assert.False(t, HasActiveTunnel("non-existent"))
+	assert.True(t, GetRegistry().Active("env-active").IsPresent())
+	assert.False(t, GetRegistry().Active("non-existent").IsPresent())
 
 	_ = tunnel.CloseWithReason("")
-	assert.False(t, HasActiveTunnel("env-active"))
+	assert.False(t, GetRegistry().Active("env-active").IsPresent())
 }

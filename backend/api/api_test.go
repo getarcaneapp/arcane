@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/json/jsontext"
 	"net/http"
 	"reflect"
 	"regexp"
@@ -424,4 +425,12 @@ func TestEnvScopedOperationsDeclarePermission(t *testing.T) {
 		assert.Failf(t, "unexpected failure", "%d env-scoped operation(s) missing required-permission metadata; register them with middleware.RegisterWithPermission:\n  %s",
 			len(missing), strings.Join(missing, "\n  "))
 	}
+}
+
+func TestSchemaRegistry_RawJSONIsUntyped(t *testing.T) {
+	registry := SetupAPIForSpec().OpenAPI().Components.Schemas
+
+	schema := registry.Schema(reflect.TypeFor[jsontext.Value](), true, "")
+	require.Empty(t, schema.Type)
+	require.Empty(t, schema.ContentEncoding)
 }

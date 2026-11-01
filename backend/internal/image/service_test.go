@@ -2,7 +2,7 @@ package image
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"net/http"
@@ -200,17 +200,17 @@ func TestImageService_GetImageDetail_EnrichesPinnedReferences(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
-			_ = json.NewEncoder(w).Encode([]image.Summary{
+			_ = json.MarshalWrite(w, []image.Summary{
 				{ID: pinnedID, Size: 2048},
 			})
 		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
-			_ = json.NewEncoder(w).Encode(image.InspectResponse{
+			_ = json.MarshalWrite(w, image.InspectResponse{
 				ID:       pinnedID,
 				RepoTags: []string{pinnedDigest},
 				Size:     2048,
 			})
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			_ = json.NewEncoder(w).Encode([]container.Summary{
+			_ = json.MarshalWrite(w, []container.Summary{
 				{
 					ID:      "c-pinned-detail",
 					ImageID: pinnedID,
@@ -246,11 +246,11 @@ func TestImageService_GetImageDetail_ContainerFailureDoesNotBreakInspection(t *t
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
-			_ = json.NewEncoder(w).Encode([]image.Summary{
+			_ = json.MarshalWrite(w, []image.Summary{
 				{ID: testID, Size: 1024},
 			})
 		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
-			_ = json.NewEncoder(w).Encode(image.InspectResponse{
+			_ = json.MarshalWrite(w, image.InspectResponse{
 				ID:   testID,
 				Size: 1024,
 			})
@@ -517,7 +517,7 @@ func TestImageServiceGetImageHistoryCallsDockerAPI(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		_ = json.NewEncoder(w).Encode([]map[string]any{
+		_ = json.MarshalWrite(w, []map[string]any{
 			{
 				"Id":        "layer-1",
 				"Created":   1710000000,
@@ -589,7 +589,7 @@ func TestImageServiceSearchImagesCallsDockerAPI(t *testing.T) {
 			return
 		}
 		gotTerm, _ = url.QueryUnescape(r.URL.Query().Get("term"))
-		_ = json.NewEncoder(w).Encode([]map[string]any{
+		_ = json.MarshalWrite(w, []map[string]any{
 			{
 				"name":        "library/nginx",
 				"description": "web server",
@@ -895,7 +895,7 @@ func imageScopeContext(t *testing.T, target string, bodies map[string]any) (cont
 				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
 				return
 			}
-			_ = json.NewEncoder(w).Encode(body)
+			_ = json.MarshalWrite(w, body)
 		}),
 		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
 			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil

@@ -72,7 +72,7 @@ func (s *RoleService) EnsureBuiltInRoles(ctx context.Context) error {
 		authz.BuiltInRoleViewer:        {"Viewer", "Read-only access to all resources", authz.BuiltInViewerPermissions()},
 	}
 
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	return s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for id, spec := range builtIns {
 			role := Role{
 				ID:          id,
@@ -102,7 +102,7 @@ func (s *RoleService) BackfillLegacyRoleAssignments(ctx context.Context) error {
 	}
 
 	var inserted int64
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		claimed, err := kv.NewKVService(&database.DB{DB: tx}).CreateIfAbsent(ctx, legacyRoleBackfillCompletedKey, time.Now().UTC().Format(time.RFC3339))
 		if err != nil {
 			return fmt.Errorf("failed to claim legacy role backfill marker: %w", err)
@@ -224,7 +224,7 @@ func (s *RoleService) CreateRole(ctx context.Context, name string, description *
 		Permissions: database.StringSlice(permissions),
 		BuiltIn:     false,
 	}
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var conflict int64
 		if err := tx.Model(&Role{}).Where("name = ?", input.Name).Count(&conflict).Error; err != nil {
 			return fmt.Errorf("failed to check role name uniqueness: %w", err)
@@ -276,7 +276,7 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 	}
 	var out Role
 	var affected []string
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.LockGlobalAdminGuard(tx); err != nil {
 			return err
 		}
@@ -328,7 +328,7 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 
 func (s *RoleService) DeleteRole(ctx context.Context, id string) error {
 	var affected []string
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.LockGlobalAdminGuard(tx); err != nil {
 			return err
 		}
@@ -413,7 +413,7 @@ func (s *RoleService) ReplaceUserAssignments(ctx context.Context, userID, source
 		desired[i].UserID = userID
 		desired[i].Source = source
 	}
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.LockGlobalAdminGuard(tx); err != nil {
 			return err
 		}
@@ -722,7 +722,7 @@ func (s *RoleService) resolveApiKeyPermissionsInDB(ctx context.Context, db *gorm
 
 // SetApiKeyPermissions atomically replaces the API key's permission rows.
 func (s *RoleService) SetApiKeyPermissions(ctx context.Context, apiKeyID string, grants []ApiKeyPermission) error {
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return s.SetApiKeyPermissionsInDB(ctx, tx, apiKeyID, grants)
 	})
 	if err != nil {
@@ -770,7 +770,7 @@ func (s *RoleService) CreateOidcMapping(ctx context.Context, claimValue, roleID 
 		return nil, common.Classify(common.ErrValidation, errors.New("role id is required"))
 	}
 	var mapping OidcRoleMapping
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := validateAssignmentsExist(tx, []UserRoleAssignment{{RoleID: roleID, EnvironmentID: environmentID}}); err != nil {
 			return err
 		}
@@ -801,7 +801,7 @@ func (s *RoleService) UpdateOidcMapping(ctx context.Context, id, claimValue, rol
 		return nil, common.Classify(common.ErrValidation, errors.New("role id is required"))
 	}
 	var out OidcRoleMapping
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing OidcRoleMapping
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&existing).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -831,7 +831,7 @@ func (s *RoleService) UpdateOidcMapping(ctx context.Context, id, claimValue, rol
 }
 
 func (s *RoleService) DeleteOidcMapping(ctx context.Context, id string) error {
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	return s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing OidcRoleMapping
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&existing).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -869,7 +869,7 @@ func (s *RoleService) ReconcileEnvOidcMappings(ctx context.Context, rawSpec stri
 		}
 	}
 
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	return s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Verify roles inside the tx so a concurrent role delete cannot race past it.
 		roleIDs := make([]string, 0, len(specs))
 		for _, sp := range specs {

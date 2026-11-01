@@ -2,7 +2,7 @@ package ws
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"testing"
 	"time"
 
@@ -12,9 +12,9 @@ import (
 
 // registerCollector registers a client on the hub and returns its send channel.
 // Must be called before broadcasting so the client is present to receive messages.
-func registerCollectorInternal(t *testing.T, h *Hub) *Client {
+func registerCollector(t *testing.T, h *Hub) *Client {
 	t.Helper()
-	sc, cleanup := newTestWSPairInternal(t)
+	sc, cleanup := newTestWSPair(t)
 	t.Cleanup(cleanup)
 
 	c := NewClient(sc, 256)
@@ -28,7 +28,7 @@ func registerCollectorInternal(t *testing.T, h *Hub) *Client {
 }
 
 // drainClient reads count messages from the client's send channel.
-func drainClientInternal(t *testing.T, c *Client, count int) [][]byte {
+func drainClient(t *testing.T, c *Client, count int) [][]byte {
 	t.Helper()
 	var msgs [][]byte
 	deadline := time.After(2 * time.Second)
@@ -49,7 +49,7 @@ func TestForwardLines(t *testing.T) {
 	go h.Run(ctx)
 
 	// Register collector BEFORE starting forwarder
-	c := registerCollectorInternal(t, h)
+	c := registerCollector(t, h)
 
 	lines := make(chan string, 5)
 	lines <- "line 1"
@@ -59,7 +59,7 @@ func TestForwardLines(t *testing.T) {
 
 	go ForwardLines(ctx, h, lines)
 
-	msgs := drainClientInternal(t, c, 3)
+	msgs := drainClient(t, c, 3)
 	assert.Equal(t, "line 1", string(msgs[0]))
 	assert.Equal(t, "line 2", string(msgs[1]))
 	assert.Equal(t, "line 3", string(msgs[2]))
@@ -94,7 +94,7 @@ func TestForwardLogJSON(t *testing.T) {
 	ctx := t.Context()
 	go h.Run(ctx)
 
-	c := registerCollectorInternal(t, h)
+	c := registerCollector(t, h)
 
 	logs := make(chan LogMessage, 3)
 	logs <- LogMessage{Seq: 1, Level: "stdout", Message: "hello", Timestamp: "2024-01-15T10:30:45Z"}
@@ -103,7 +103,7 @@ func TestForwardLogJSON(t *testing.T) {
 
 	go ForwardLogJSON(ctx, h, logs)
 
-	msgs := drainClientInternal(t, c, 2)
+	msgs := drainClient(t, c, 2)
 
 	var m1, m2 LogMessage
 	require.NoError(t, json.Unmarshal(msgs[0], &m1))
@@ -120,7 +120,7 @@ func TestForwardLogJSON_FillsEmptyTimestamp(t *testing.T) {
 	ctx := t.Context()
 	go h.Run(ctx)
 
-	c := registerCollectorInternal(t, h)
+	c := registerCollector(t, h)
 
 	logs := make(chan LogMessage, 1)
 	logs <- LogMessage{Seq: 1, Message: "no timestamp"}
@@ -128,7 +128,7 @@ func TestForwardLogJSON_FillsEmptyTimestamp(t *testing.T) {
 
 	go ForwardLogJSON(ctx, h, logs)
 
-	msgs := drainClientInternal(t, c, 1)
+	msgs := drainClient(t, c, 1)
 
 	var m LogMessage
 	require.NoError(t, json.Unmarshal(msgs[0], &m))
@@ -143,7 +143,7 @@ func TestForwardLogJSONBatched(t *testing.T) {
 	ctx := t.Context()
 	go h.Run(ctx)
 
-	c := registerCollectorInternal(t, h)
+	c := registerCollector(t, h)
 
 	logs := make(chan LogMessage, 10)
 	for i := range 5 {
@@ -157,7 +157,7 @@ func TestForwardLogJSONBatched(t *testing.T) {
 
 	go ForwardLogJSONBatched(ctx, h, logs, 5, 100*time.Millisecond)
 
-	msgs := drainClientInternal(t, c, 1)
+	msgs := drainClient(t, c, 1)
 
 	var batch []LogMessage
 	require.NoError(t, json.Unmarshal(msgs[0], &batch))
@@ -169,7 +169,7 @@ func TestForwardLogJSONBatched_FlushesOnInterval(t *testing.T) {
 	ctx := t.Context()
 	go h.Run(ctx)
 
-	c := registerCollectorInternal(t, h)
+	c := registerCollector(t, h)
 
 	logs := make(chan LogMessage, 10)
 	logs <- LogMessage{Seq: 1, Message: "a", Timestamp: "2024-01-15T10:30:45Z"}
@@ -177,7 +177,7 @@ func TestForwardLogJSONBatched_FlushesOnInterval(t *testing.T) {
 
 	go ForwardLogJSONBatched(ctx, h, logs, 10, 50*time.Millisecond)
 
-	msgs := drainClientInternal(t, c, 1)
+	msgs := drainClient(t, c, 1)
 
 	var batch []LogMessage
 	require.NoError(t, json.Unmarshal(msgs[0], &batch))
@@ -189,7 +189,7 @@ func TestForwardLogJSONBatched_MultipleBatches(t *testing.T) {
 	ctx := t.Context()
 	go h.Run(ctx)
 
-	c := registerCollectorInternal(t, h)
+	c := registerCollector(t, h)
 
 	logs := make(chan LogMessage, 10)
 	for i := range 6 {
@@ -203,7 +203,7 @@ func TestForwardLogJSONBatched_MultipleBatches(t *testing.T) {
 
 	go ForwardLogJSONBatched(ctx, h, logs, 3, time.Second)
 
-	msgs := drainClientInternal(t, c, 2)
+	msgs := drainClient(t, c, 2)
 
 	var batch1, batch2 []LogMessage
 	require.NoError(t, json.Unmarshal(msgs[0], &batch1))
@@ -217,7 +217,7 @@ func TestForwardLogJSONBatched_DelegatesToUnbatchedWhenMaxBatchOne(t *testing.T)
 	ctx := t.Context()
 	go h.Run(ctx)
 
-	c := registerCollectorInternal(t, h)
+	c := registerCollector(t, h)
 
 	logs := make(chan LogMessage, 3)
 	logs <- LogMessage{Seq: 1, Message: "single", Timestamp: "2024-01-15T10:30:45Z"}
@@ -226,7 +226,7 @@ func TestForwardLogJSONBatched_DelegatesToUnbatchedWhenMaxBatchOne(t *testing.T)
 
 	go ForwardLogJSONBatched(ctx, h, logs, 1, time.Second)
 
-	msgs := drainClientInternal(t, c, 2)
+	msgs := drainClient(t, c, 2)
 
 	// Each message should be a single object, not an array
 	var m1 LogMessage
@@ -239,7 +239,7 @@ func TestForwardLogJSONBatched_FlushesOnChannelClose(t *testing.T) {
 	ctx := t.Context()
 	go h.Run(ctx)
 
-	c := registerCollectorInternal(t, h)
+	c := registerCollector(t, h)
 
 	logs := make(chan LogMessage, 10)
 	// Send 2 messages but maxBatch is 100 — should flush on channel close
@@ -249,7 +249,7 @@ func TestForwardLogJSONBatched_FlushesOnChannelClose(t *testing.T) {
 
 	go ForwardLogJSONBatched(ctx, h, logs, 100, time.Hour)
 
-	msgs := drainClientInternal(t, c, 1)
+	msgs := drainClient(t, c, 1)
 
 	var batch []LogMessage
 	require.NoError(t, json.Unmarshal(msgs[0], &batch))
@@ -263,7 +263,7 @@ func TestForwardLogJSONBatched_FlushesOnContextCancel(t *testing.T) {
 	hubCtx := t.Context()
 	go h.Run(hubCtx)
 
-	c := registerCollectorInternal(t, h)
+	c := registerCollector(t, h)
 
 	// Use an unbuffered channel so we can control exactly when messages are sent
 	logs := make(chan LogMessage)
@@ -289,7 +289,7 @@ func TestForwardLogJSONBatched_FlushesOnContextCancel(t *testing.T) {
 	}
 
 	// The buffered message should have been flushed
-	msgs := drainClientInternal(t, c, 1)
+	msgs := drainClient(t, c, 1)
 	var batch []LogMessage
 	require.NoError(t, json.Unmarshal(msgs[0], &batch))
 	assert.Len(t, batch, 1)

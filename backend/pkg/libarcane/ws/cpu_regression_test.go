@@ -2,7 +2,7 @@ package ws
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -55,7 +55,7 @@ func startStatsHubPipeline(ctx context.Context, hub *Hub) {
 }
 
 // readOneWithTimeout reads a single message with a timeout, discarding the payload.
-func readOneWithTimeoutInternal(tb testing.TB, conn *websocket.Conn) error {
+func readOneWithTimeout(tb testing.TB, conn *websocket.Conn) error {
 	readCtx, cancel := context.WithTimeout(tb.Context(), 2*time.Second)
 	defer cancel()
 	_, _, err := conn.Read(readCtx)
@@ -117,7 +117,7 @@ func BenchmarkCPU_PageReloadSimulation(b *testing.B) {
 		}
 
 		// Read one message to exercise the pipeline
-		_ = readOneWithTimeoutInternal(b, conn)
+		_ = readOneWithTimeout(b, conn)
 		_ = conn.CloseNow()
 
 		// Brief settle for cleanup
@@ -203,7 +203,7 @@ func BenchmarkCPU_ContainerLogReloadSimulation(b *testing.B) {
 			require.FailNowf(b, "benchmark websocket dial failed", "%v", err)
 		}
 
-		_ = readOneWithTimeoutInternal(b, conn)
+		_ = readOneWithTimeout(b, conn)
 		_ = conn.CloseNow()
 		time.Sleep(50 * time.Millisecond)
 		if (i+1)%10 == 0 || i == b.N-1 {
@@ -259,7 +259,7 @@ func BenchmarkCPU_GoroutineScaling(b *testing.B) {
 				}
 
 				for _, c := range conns {
-					_ = readOneWithTimeoutInternal(b, c)
+					_ = readOneWithTimeout(b, c)
 				}
 
 				// Close all
@@ -306,7 +306,7 @@ func BenchmarkCPU_SustainedStreaming(b *testing.B) {
 			require.FailNowf(b, "benchmark websocket dial failed", "%v", err)
 		}
 		for range 10 {
-			if readOneWithTimeoutErr := readOneWithTimeoutInternal(b, conn); readOneWithTimeoutErr != nil {
+			if readOneWithTimeoutErr := readOneWithTimeout(b, conn); readOneWithTimeoutErr != nil {
 				break
 			}
 		}
@@ -342,7 +342,7 @@ func TestCPU_GoroutineCountReport(t *testing.T) {
 	for i := range 30 {
 		conn, _, err := websocket.Dial(t.Context(), url, nil)
 		require.NoError(t, err)
-		_ = readOneWithTimeoutInternal(t, conn)
+		_ = readOneWithTimeout(t, conn)
 		_ = conn.CloseNow()
 		time.Sleep(50 * time.Millisecond)
 		current := runtime.NumGoroutine()

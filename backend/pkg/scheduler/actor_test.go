@@ -58,9 +58,9 @@ func newTestCoordinator(t testing.TB,
 	return coordinator, runtime
 }
 
-func newJobSchedulerForTest(t testing.TB, ctx context.Context, location *time.Location) *jobSchedulerInternal {
+func newJobSchedulerForTest(t testing.TB, ctx context.Context, location *time.Location) *jobScheduler {
 	t.Helper()
-	var scheduler *jobSchedulerInternal
+	var scheduler *jobScheduler
 	coordinator, runtime := newTestCoordinator(t, ctx, location, func(ctx context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
 		job, ok := scheduler.GetJob(run.JobID)
 		if !ok {
@@ -70,7 +70,7 @@ func newJobSchedulerForTest(t testing.TB, ctx context.Context, location *time.Lo
 	})
 	created, err := NewJobScheduler(ctx, coordinator, location)
 	require.NoError(t, err)
-	scheduler = created.(*jobSchedulerInternal)
+	scheduler = created.(*jobScheduler)
 	schedulerTestRuntimes.Store(scheduler, runtime)
 	t.Cleanup(func() {
 		require.NoError(t, scheduler.Stop(context.WithoutCancel(t.Context())))
@@ -79,7 +79,7 @@ func newJobSchedulerForTest(t testing.TB, ctx context.Context, location *time.Lo
 	return scheduler
 }
 
-func stopJobSchedulerForTest(ctx context.Context, scheduler *jobSchedulerInternal) error {
+func stopJobSchedulerForTest(ctx context.Context, scheduler *jobScheduler) error {
 	if err := scheduler.Stop(ctx); err != nil {
 		return err
 	}

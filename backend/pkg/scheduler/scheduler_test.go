@@ -531,7 +531,7 @@ func TestJobScheduler_StopWaitsForCanceledJobToFinish(t *testing.T) {
 	}
 }
 
-func requireScheduledJob(t *testing.T, js *jobSchedulerInternal, id string) {
+func requireScheduledJob(t *testing.T, js *jobScheduler, id string) {
 	t.Helper()
 	state, found := js.GetJobRuntimeState(id)
 	require.True(t, found)

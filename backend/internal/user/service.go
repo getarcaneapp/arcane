@@ -187,7 +187,7 @@ func (s *UserService) CreateUser(ctx context.Context, localUser *User) (*User, e
 		localUser.Email = email
 	}
 
-	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err = s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if localUser.OidcSubjectId == nil {
 			if ensureEmailErr := ensureEmailAvailable(tx, localUser.ID, localUser.Email); ensureEmailErr != nil {
 				return ensureEmailErr
@@ -337,7 +337,7 @@ func (s *UserService) UpdateUser(ctx context.Context, localUser *User, actorPerm
 		localUser.Preferences.DashboardLayout = &widgets
 	}
 	var updated User
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.checkTargetPrivilege(ctx, tx, actorPerms, localUser.ID); err != nil {
 			return err
 		}
@@ -455,7 +455,7 @@ func (s *UserService) SetPassword(ctx context.Context, localUser *User, password
 	}
 
 	var updated User
-	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err = s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&User{}).
 			Where("id = ?", localUser.ID).
 			Select("password_hash", "requires_password_change", "updated_at").
@@ -501,7 +501,7 @@ func (s *UserService) SetPasswordAndRevokeSessionsExcept(ctx context.Context, lo
 	}
 
 	var updatedUser User
-	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err = s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if privilegeErr := s.checkTargetPrivilege(ctx, tx, actorPerms, localUser.ID); privilegeErr != nil {
 			return privilegeErr
 		}
@@ -538,7 +538,7 @@ func (s *UserService) SetPasswordAndRevokeSessionsExcept(ctx context.Context, lo
 // This MUST be done inside a transaction to ensure the lock is held until the update is committed.
 func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID, subject string, updateFn func(u *User)) (*User, error) {
 	var out *User
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var u User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ?", userID).
@@ -605,7 +605,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 	// empty we create it; otherwise (zero global admins — a broken/ancient
 	// upgrade) we find the existing `arcane` user to recover, if any.
 	var adminUserID string
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var userCount int64
 		if err := tx.Model(&User{}).Count(&userCount).Error; err != nil {
 			return fmt.Errorf("failed to count users: %w", err)
@@ -697,7 +697,7 @@ func (s *UserService) grantDefaultAdminRole(ctx context.Context, adminUserID str
 // be present in ctx. Pass nil for internal service-to-service calls. A
 // non-admin caller may not delete a global admin target.
 func (s *UserService) DeleteUser(ctx context.Context, id string, actorPerms *authz.PermissionSet) error {
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.roleService.LockGlobalAdminGuard(tx); err != nil {
 			return err
 		}
@@ -861,7 +861,7 @@ func (s *UserService) getUser(ctx context.Context, userID string, tx *gorm.DB) (
 
 // UploadAvatar stores avatar bytes for a user, replacing any existing avatar.
 func (s *UserService) UploadAvatar(ctx context.Context, userID string, data []byte, mimeType string) error {
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	return s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		avatar := UserAvatar{
 			UserID:   userID,
 			Data:     data,
@@ -885,7 +885,7 @@ func (s *UserService) UploadAvatar(ctx context.Context, userID string, data []by
 
 // DeleteAvatar removes the avatar for a user.
 func (s *UserService) DeleteAvatar(ctx context.Context, userID string) error {
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	return s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&UserAvatar{}).Error; err != nil {
 			return fmt.Errorf("failed to delete avatar data: %w", err)
 		}

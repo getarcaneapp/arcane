@@ -10,11 +10,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	charmLog "charm.land/log/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
@@ -24,7 +24,7 @@ const uploadChunkAttempts = 3
 // UploadFileInChunks sends retried chunks with optional progress and aborts the session on failure.
 // It returns the completed upload session ID.
 func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath string, showProgress bool) (string, error) {
-	log := logger.GetLogger()
+	log := charmLog.Default()
 
 	file, err := os.Open(filePath)
 	if err != nil {

@@ -5,7 +5,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/binary"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -327,7 +327,7 @@ func TestContainerServiceCommitContainerCallsDockerAPI(t *testing.T) {
 			"comment":   r.URL.Query().Get("comment"),
 			"author":    r.URL.Query().Get("author"),
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"ID": "sha256:new-image"})
+		_ = json.MarshalWrite(w, map[string]string{"ID": "sha256:new-image"})
 	}))
 	t.Cleanup(server.Close)
 
@@ -371,7 +371,7 @@ func TestContainerServiceCommitContainerOmitsReferenceWhenRepositoryEmpty(t *tes
 			"repo":      r.URL.Query().Get("repo"),
 			"tag":       r.URL.Query().Get("tag"),
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"ID": "sha256:new-image"})
+		_ = json.MarshalWrite(w, map[string]string{"ID": "sha256:new-image"})
 	}))
 	t.Cleanup(server.Close)
 
@@ -724,7 +724,7 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 		if path == "/containers/create" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
-			if err := json.NewEncoder(w).Encode(map[string]any{"Id": "new-id", "Warnings": []string{}}); err != nil {
+			if err := json.MarshalWrite(w, map[string]any{"Id": "new-id", "Warnings": []string{}}); err != nil {
 				t.Errorf("encode container creation response: %v", err)
 			}
 			return
@@ -804,7 +804,7 @@ func TestRecreateContainerRollsBackAfterRequestCancellation(t *testing.T) {
 		case "/containers/create":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
-			if err := json.NewEncoder(w).Encode(map[string]any{"Id": "new-id", "Warnings": []string{}}); err != nil {
+			if err := json.MarshalWrite(w, map[string]any{"Id": "new-id", "Warnings": []string{}}); err != nil {
 				t.Errorf("encode container creation response: %v", err)
 			}
 		case "/containers/new-id/start":
@@ -924,7 +924,7 @@ func TestRecoverInterruptedRedeploys(t *testing.T) {
 				path := dockerTestPath(r.URL.Path)
 				if path == "/containers/json" {
 					w.Header().Set("Content-Type", "application/json")
-					if err := json.NewEncoder(w).Encode(tt.containers); err != nil {
+					if err := json.MarshalWrite(w, tt.containers); err != nil {
 						t.Errorf("encode container list: %v", err)
 					}
 					return
@@ -1170,7 +1170,7 @@ func (f *resourceStatsServer) handler() http.Handler {
 			f.mu.Lock()
 			list := append([]container.Summary{}, f.containers...)
 			f.mu.Unlock()
-			_ = json.NewEncoder(w).Encode(list)
+			_ = json.MarshalWrite(w, list)
 		case strings.HasPrefix(path, "/containers/") && strings.HasSuffix(path, "/json"):
 			id := strings.TrimSuffix(strings.TrimPrefix(path, "/containers/"), "/json")
 			f.mu.Lock()
@@ -1187,7 +1187,7 @@ func (f *resourceStatsServer) handler() http.Handler {
 						},
 						State: &container.State{Status: summary.State},
 					}
-					if err := json.NewEncoder(w).Encode(inspect); err != nil {
+					if err := json.MarshalWrite(w, inspect); err != nil {
 						http.Error(w, err.Error(), http.StatusInternalServerError)
 					}
 					return
@@ -1229,7 +1229,7 @@ func (f *resourceStatsServer) handler() http.Handler {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(statsData)
+			_ = json.MarshalWrite(w, statsData)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1681,7 +1681,7 @@ func containerScopeContext(t *testing.T, target string, bodies map[string]any) (
 				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
 				return
 			}
-			_ = json.NewEncoder(w).Encode(body)
+			_ = json.MarshalWrite(w, body)
 		}),
 		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
 			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
@@ -1831,7 +1831,7 @@ func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTe
 		mu.Unlock()
 		if r.Method == http.MethodGet && path == "/containers/quadlet-id/json" {
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(container.InspectResponse{
+			if err := json.MarshalWrite(w, container.InspectResponse{
 				ID:         "quadlet-id",
 				Name:       "/web",
 				State:      &container.State{Running: true},

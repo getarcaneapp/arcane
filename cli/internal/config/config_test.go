@@ -134,7 +134,7 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			require.Equal(t, 8, cached.LimitFor("gitops-syncs"))
 			require.NotContains(t, cached.Pagination.Resources, "GitOps")
 			require.NotContains(t, cached.Pagination.Resources, "volumes")
-			invalidateCache()
+			configCache.Purge()
 			loaded, err := Load()
 
 			require.NoError(t, err,
@@ -544,7 +544,7 @@ func TestAuthTokens(t *testing.T) {
 
 	apiKeyConfig := &types.Config{ServerURL: "https://a.test", APIKey: "arc_key"}
 	require.NoError(t, Save(t.Context(), apiKeyConfig))
-	invalidateCache()
+	configCache.Purge()
 	loaded, err := Load()
 	require.NoError(t, err)
 	require.Equal(t, "arc_key", loaded.APIKey)

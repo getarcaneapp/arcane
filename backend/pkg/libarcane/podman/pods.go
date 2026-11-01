@@ -3,7 +3,7 @@ package podman
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -32,8 +32,8 @@ type PodPortMapping struct {
 	HostIP        string `json:"host_ip,omitempty"`
 	Protocol      string `json:"protocol,omitempty"`
 	ContainerPort uint16 `json:"container_port"`
-	HostPort      uint16 `json:"host_port,omitempty"`
-	Range         uint16 `json:"range,omitempty"`
+	HostPort      uint16 `json:"host_port,omitzero"`
+	Range         uint16 `json:"range,omitzero"`
 }
 
 type PodNamespace struct {
@@ -75,20 +75,20 @@ type PodIDMappings struct {
 }
 
 type PodMemoryLimits struct {
-	Limit *int64 `json:"limit,omitempty"`
-	Swap  *int64 `json:"swap,omitempty"`
+	Limit *int64 `json:"limit,omitzero"`
+	Swap  *int64 `json:"swap,omitzero"`
 }
 
 type PodCPULimits struct {
-	Shares *uint64 `json:"shares,omitempty"`
-	Quota  *int64  `json:"quota,omitempty"`
-	Period *uint64 `json:"period,omitempty"`
+	Shares *uint64 `json:"shares,omitzero"`
+	Quota  *int64  `json:"quota,omitzero"`
+	Period *uint64 `json:"period,omitzero"`
 	Cpus   string  `json:"cpus,omitempty"`
 	Mems   string  `json:"mems,omitempty"`
 }
 
 type PodWeightDevice struct {
-	Weight *uint16 `json:"weight,omitempty"`
+	Weight *uint16 `json:"weight,omitzero"`
 	Major  int64   `json:"major"`
 	Minor  int64   `json:"minor"`
 }
@@ -100,34 +100,34 @@ type PodThrottleDevice struct {
 }
 
 type PodBlockIO struct {
-	Weight                 *uint16             `json:"weight,omitempty"`
+	Weight                 *uint16             `json:"weight,omitzero"`
 	WeightDevice           []PodWeightDevice   `json:"weightDevice,omitempty"`
 	ThrottleReadBpsDevice  []PodThrottleDevice `json:"throttleReadBpsDevice,omitempty"`
 	ThrottleWriteBpsDevice []PodThrottleDevice `json:"throttleWriteBpsDevice,omitempty"`
 }
 
 type PodResources struct {
-	Memory  *PodMemoryLimits `json:"memory,omitempty"`
-	CPU     *PodCPULimits    `json:"cpu,omitempty"`
-	BlockIO *PodBlockIO      `json:"blockIO,omitempty"`
+	Memory  *PodMemoryLimits `json:"memory,omitzero"`
+	CPU     *PodCPULimits    `json:"cpu,omitzero"`
+	BlockIO *PodBlockIO      `json:"blockIO,omitzero"`
 }
 
 type PodSpec struct {
 	Labels             map[string]string            `json:"labels,omitempty"`
-	Ipc                *PodNamespace                `json:"ipcns,omitempty"`
-	RestartRetries     *uint                        `json:"restart_tries,omitempty"`
-	ShareParent        *bool                        `json:"share_parent,omitempty"`
-	Pid                *PodNamespace                `json:"pidns,omitempty"`
-	Userns             *PodNamespace                `json:"userns,omitempty"`
-	Uts                *PodNamespace                `json:"utsns,omitempty"`
+	Ipc                *PodNamespace                `json:"ipcns,omitzero"`
+	RestartRetries     *uint                        `json:"restart_tries,omitzero"`
+	ShareParent        *bool                        `json:"share_parent,omitzero"`
+	Pid                *PodNamespace                `json:"pidns,omitzero"`
+	Userns             *PodNamespace                `json:"userns,omitzero"`
+	Uts                *PodNamespace                `json:"utsns,omitzero"`
 	Sysctl             map[string]string            `json:"sysctl,omitempty"`
-	NetNS              *PodNamespace                `json:"netns,omitempty"`
+	NetNS              *PodNamespace                `json:"netns,omitzero"`
 	Networks           map[string]PodNetworkOptions `json:"Networks,omitempty"`
 	NetworkOptions     map[string][]string          `json:"network_options,omitempty"`
-	ResourceLimits     *PodResources                `json:"resource_limits,omitempty"`
-	ShmSize            *int64                       `json:"shm_size,omitempty"`
-	ShmSizeSystemd     *int64                       `json:"shm_size_systemd,omitempty"`
-	IDMappings         *PodIDMappings               `json:"idmappings,omitempty"`
+	ResourceLimits     *PodResources                `json:"resource_limits,omitzero"`
+	ShmSize            *int64                       `json:"shm_size,omitzero"`
+	ShmSizeSystemd     *int64                       `json:"shm_size_systemd,omitzero"`
+	IDMappings         *PodIDMappings               `json:"idmappings,omitzero"`
 	Name               string                       `json:"name"`
 	Hostname           string                       `json:"hostname,omitempty"`
 	ExitPolicy         string                       `json:"exit_policy,omitempty"`
@@ -149,10 +149,10 @@ type PodSpec struct {
 	Volumes            []PodNamedVolume             `json:"volumes,omitempty"`
 	VolumesFrom        []string                     `json:"volumes_from,omitempty"`
 	SecurityOpt        []string                     `json:"security_opt,omitempty"`
-	NoInfra            bool                         `json:"no_infra,omitempty"`
-	NoManageResolvConf bool                         `json:"no_manage_resolv_conf,omitempty"`
-	NoManageHostname   bool                         `json:"no_manage_hostname,omitempty"`
-	NoManageHosts      bool                         `json:"no_manage_hosts,omitempty"`
+	NoInfra            bool                         `json:"no_infra,omitzero"`
+	NoManageResolvConf bool                         `json:"no_manage_resolv_conf,omitzero"`
+	NoManageHostname   bool                         `json:"no_manage_hostname,omitzero"`
+	NoManageHosts      bool                         `json:"no_manage_hosts,omitzero"`
 }
 
 func (c *Client) PodList(ctx context.Context, filters map[string][]string) ([]types.Pod, error) {

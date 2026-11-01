@@ -3,7 +3,8 @@ package flow
 import (
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -21,6 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jsonx"
 )
 
 const (
@@ -41,15 +43,15 @@ type (
 
 	// envelope is every instance's input: its run binding plus the caller's payload.
 	envelope struct {
-		Binding Binding         `json:"binding"`
-		Payload json.RawMessage `json:"payload,omitempty"`
+		Binding Binding        `json:"binding"`
+		Payload jsontext.Value `json:"payload,omitempty"`
 	}
 
 	// Task is what an engine handler receives: the Francis task plus its binding.
 	Task struct {
 		workflow.Task
 		binding Binding
-		payload json.RawMessage
+		payload jsontext.Value
 		// recovered marks a standalone task whose instance an earlier process started.
 		recovered bool
 	}
@@ -204,7 +206,7 @@ func (t Task) Payload(into any) error {
 	if len(t.payload) == 0 {
 		return nil
 	}
-	return json.Unmarshal(t.payload, into)
+	return json.Unmarshal(t.payload, into, jsonx.DurationNano)
 }
 
 // Recovered reports a standalone task whose instance an earlier process started, so no caller is waiting on it
@@ -217,7 +219,7 @@ func (t Task) ActivityID() string { return t.binding.RootID }
 // ChildInput returns the output for a step that precedes a Child step, so the
 // child inherits this instance's run binding.
 func (t Task) ChildInput(payload any) (any, error) {
-	encoded, err := json.Marshal(payload)
+	encoded, err := json.Marshal(payload, jsonx.DurationNano)
 	if err != nil {
 		return nil, err
 	}
@@ -228,13 +230,13 @@ func (t Task) ChildInput(payload any) (any, error) {
 // slot as an object whose only key is "error", so successful outputs must never
 // have that shape.
 func Results[T any](t Task, step string) ([]Result[T], error) {
-	var slots []json.RawMessage
+	var slots []jsontext.Value
 	if err := t.DecodeOutput(step, &slots); err != nil {
 		return nil, err
 	}
 	results := make([]Result[T], len(slots))
 	for index, slot := range slots {
-		var failure map[string]json.RawMessage
+		var failure map[string]jsontext.Value
 		if json.Unmarshal(slot, &failure) == nil && len(failure) == 1 {
 			var message string
 			if raw, ok := failure["error"]; ok && json.Unmarshal(raw, &message) == nil {
@@ -242,7 +244,7 @@ func Results[T any](t Task, step string) ([]Result[T], error) {
 				continue
 			}
 		}
-		if err := json.Unmarshal(slot, &results[index].Value); err != nil {
+		if err := json.Unmarshal(slot, &results[index].Value, jsonx.DurationNano); err != nil {
 			return nil, fmt.Errorf("decode %s output %d: %w", step, index, err)
 		}
 	}

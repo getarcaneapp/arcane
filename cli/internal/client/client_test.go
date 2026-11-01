@@ -1,7 +1,7 @@
 package client
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -131,7 +131,7 @@ func TestClient_Request_DoesNotDoubleMarshalBytes(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var p payload
-		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		if err := json.UnmarshalRead(r.Body, &p); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -276,7 +276,7 @@ func TestClient_DoRaw_Success(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		_ = json.MarshalWrite(w, map[string]any{"ok": true})
 	}))
 	defer srv.Close()
 

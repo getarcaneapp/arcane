@@ -546,14 +546,9 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 	return nodes, nil
 }
 
-// Cleanup removes a temporary repository directory with os.RemoveAll, since acfs refuses to remove its own root.
-func (c *Client) Cleanup(repoPath string) error {
-	return os.RemoveAll(repoPath)
-}
-
 // Discard removes a scratch checkout, logging instead of failing when removal breaks.
 func (c *Client) Discard(ctx context.Context, repoPath string) {
-	if err := c.Cleanup(repoPath); err != nil {
+	if err := os.RemoveAll(repoPath); err != nil {
 		slog.WarnContext(ctx, "Failed to cleanup repository", "path", repoPath, "error", err)
 	}
 }
