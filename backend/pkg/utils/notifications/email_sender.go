@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/wneessen/go-mail"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 const (

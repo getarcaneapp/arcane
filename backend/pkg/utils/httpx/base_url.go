@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 // NormalizeBaseURL validates an outbound HTTP URL and strips endpoint-specific components.

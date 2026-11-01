@@ -16,7 +16,7 @@ import (
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/host/local"
 	"github.com/robfig/cron/v3"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 
 	scheduleutil "github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"

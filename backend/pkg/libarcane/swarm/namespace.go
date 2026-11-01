@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	composegotypes "github.com/compose-spec/compose-go/v2/types"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 const (

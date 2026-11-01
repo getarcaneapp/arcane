@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/moby/moby/client"
-	"go.getarcane.app/updater/refs"
+	"kit.getarcane.app/updater/refs"
 )
 
 // PullAsTag runs pull for the immutable pulled reference, tags it as selected,

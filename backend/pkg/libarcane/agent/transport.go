@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/samber/mo"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 const (

@@ -12,9 +12,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
-	"go.getarcane.app/docker"
-	kit "go.getarcane.app/kit/pkg"
-	"go.getarcane.app/updater/labels"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/docker"
+	"kit.getarcane.app/updater/labels"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"

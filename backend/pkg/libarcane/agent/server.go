@@ -20,8 +20,6 @@ import (
 
 	certgen "github.com/getarcaneapp/arcane/cli/v3/pkg/generate"
 	"github.com/labstack/echo/v5"
-	"go.getarcane.app/acfs/atomic"
-	kit "go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -31,6 +29,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/fs/atomic"
 
 	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"

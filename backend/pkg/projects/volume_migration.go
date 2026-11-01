@@ -16,8 +16,8 @@ import (
 	composepkg "github.com/docker/compose/v5/pkg/compose"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/client"
-	"go.getarcane.app/docker"
 	"go.yaml.in/yaml/v4"
+	"kit.getarcane.app/docker"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumes"
 )

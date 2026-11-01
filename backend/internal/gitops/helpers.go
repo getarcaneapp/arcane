@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
 )
 
 func normalizeSyncLimitSetting(value, defaultValue int) int {

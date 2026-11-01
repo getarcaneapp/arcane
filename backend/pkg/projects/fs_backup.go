@@ -11,9 +11,9 @@ import (
 	"slices"
 	"strings"
 
-	"go.getarcane.app/acfs"
-	"go.getarcane.app/acfs/atomic"
-	acfstypes "go.getarcane.app/acfs/types"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/fs/atomic"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )

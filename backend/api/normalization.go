@@ -15,7 +15,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
-	"go.getarcane.app/kit/normalization"
+	"kit.getarcane.app/normalization"
 )
 
 // Install before routes so Huma validates normalized input.

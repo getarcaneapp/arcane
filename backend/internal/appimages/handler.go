@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 )

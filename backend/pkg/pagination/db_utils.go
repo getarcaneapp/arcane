@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	kit "go.getarcane.app/kit/pkg"
-	"go.getarcane.app/kit/pkg/mapping"
 	"gorm.io/gorm"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/mapping"
 )
 
 // ApplyFilter adds a WHERE clause to the GORM query.

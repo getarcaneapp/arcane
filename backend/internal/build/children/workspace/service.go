@@ -16,8 +16,8 @@ import (
 	"syscall"
 
 	"github.com/getarcaneapp/arcane/types/v3"
-	"go.getarcane.app/acfs"
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	acfsutils "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/acfs"

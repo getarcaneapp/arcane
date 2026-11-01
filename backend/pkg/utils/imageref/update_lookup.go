@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	ref "github.com/distribution/reference"
-	kit "go.getarcane.app/kit/pkg"
-	"go.getarcane.app/updater"
-	"go.getarcane.app/updater/pkg/utils/tagpolicy"
-	"go.getarcane.app/updater/refs"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/updater"
+	"kit.getarcane.app/updater/pkg/utils/tagpolicy"
+	"kit.getarcane.app/updater/refs"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/registryauth"
 )

@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
-	kit "go.getarcane.app/kit/pkg"
-	"go.getarcane.app/sys/crypto"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"

@@ -18,11 +18,11 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/types/v3"
-	"go.getarcane.app/kit/normalization"
-	kit "go.getarcane.app/kit/pkg"
-	"go.getarcane.app/sys/crypto"
 	"go.uber.org/fx"
 	"gorm.io/gorm"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/normalization"
+	"kit.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/container"

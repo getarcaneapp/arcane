@@ -7,7 +7,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/samber/mo"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 // GetStringClaim extracts a string claim from a map

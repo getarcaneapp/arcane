@@ -7,7 +7,7 @@ import (
 	"runtime/debug"
 
 	"github.com/distribution/reference"
-	"go.getarcane.app/sys/cgroup"
+	"kit.getarcane.app/sys/cgroup"
 
 	"github.com/getarcaneapp/arcane/backend/v3/buildables"
 )

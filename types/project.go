@@ -14,7 +14,7 @@ import (
 	"github.com/docker/go-units"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
-	buildtypes "go.getarcane.app/builds/types"
+	buildtypes "kit.getarcane.app/builds/types"
 )
 
 // ProjectIncludeFile represents an included file within a project.

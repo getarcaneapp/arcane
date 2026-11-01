@@ -16,8 +16,8 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/types/v3"
-	"go.getarcane.app/acfs"
-	buildtypes "go.getarcane.app/builds/types"
+	"kit.getarcane.app/acfs"
+	buildtypes "kit.getarcane.app/builds/types"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/image"

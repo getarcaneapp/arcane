@@ -15,10 +15,10 @@ import (
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	libcrypto "go.getarcane.app/sys/crypto"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
+	libcrypto "kit.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v3/api"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"

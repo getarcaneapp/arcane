@@ -29,11 +29,11 @@ import (
 	"time"
 
 	certgen "github.com/getarcaneapp/arcane/cli/v3/pkg/generate"
-	"go.getarcane.app/acfs"
-	"go.getarcane.app/acfs/atomic"
-	kit "go.getarcane.app/kit/pkg"
-	libcrypto "go.getarcane.app/sys/crypto"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	"kit.getarcane.app/fs/atomic"
+	libcrypto "kit.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"

@@ -15,7 +15,7 @@ import (
 	"github.com/docker/go-connections/nat"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/output"

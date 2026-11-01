@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/samber/mo"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 var commandRoutes = []commandRoute{

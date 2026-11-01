@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 const DefaultMaxFileSizeMB = 10

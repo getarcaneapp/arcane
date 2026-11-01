@@ -14,8 +14,8 @@ import (
 
 	"github.com/cenkalti/backoff/v5"
 	"github.com/getarcaneapp/arcane/types/v3"
-	kit "go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	kit "kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"

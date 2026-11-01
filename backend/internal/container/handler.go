@@ -12,8 +12,8 @@ import (
 	dockercontainer "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/samber/mo"
-	dockertypes "go.getarcane.app/docker/types"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
+	dockertypes "kit.getarcane.app/docker/types"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"

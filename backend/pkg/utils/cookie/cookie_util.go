@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 var (

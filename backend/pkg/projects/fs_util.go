@@ -14,10 +14,10 @@ import (
 	"strings"
 
 	"github.com/samber/mo"
-	"go.getarcane.app/acfs"
-	acfstypes "go.getarcane.app/acfs/types"
-	kit "go.getarcane.app/kit/pkg"
 	"go.yaml.in/yaml/v4"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"

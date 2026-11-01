@@ -17,7 +17,7 @@ import (
 
 	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/nicholas-fedor/shoutrrr/pkg/types"
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
 )
 
 // genericPayloadTemplateID names the Shoutrrr template a user's payload template is registered under.

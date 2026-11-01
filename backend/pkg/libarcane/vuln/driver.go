@@ -26,8 +26,8 @@ import (
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
-	"go.getarcane.app/docker"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/docker"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
 )

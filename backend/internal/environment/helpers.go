@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/samber/hot"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 // agentTokenCache maps agent tokens to environment IDs; the reverse index drops

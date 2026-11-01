@@ -17,11 +17,11 @@ import (
 	"github.com/libtnb/sqlite"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
-	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"gorm.io/plugin/opentelemetry/metrics"
+	kit "kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database/migrations"
 	sqliteutil "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/sqlite"

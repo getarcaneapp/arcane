@@ -13,7 +13,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
-	"go.getarcane.app/streams/logs"
+	"kit.getarcane.app/docker/streams/logs"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/diagnostics"

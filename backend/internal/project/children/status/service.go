@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/moby/moby/api/types/events"
-	"go.getarcane.app/docker"
-	"go.getarcane.app/streams/bus"
+	"kit.getarcane.app/docker"
+	"kit.getarcane.app/docker/streams/bus"
 
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 )

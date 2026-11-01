@@ -10,11 +10,11 @@ import (
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/docker/compat"
-	"go.getarcane.app/streams/bus"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"gorm.io/gorm"
+	"kit.getarcane.app/docker/compat"
+	"kit.getarcane.app/docker/streams/bus"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"

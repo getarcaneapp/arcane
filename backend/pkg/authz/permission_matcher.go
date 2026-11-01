@@ -6,7 +6,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 // PermissionMatcher maps an HTTP method and environment-relative resource path

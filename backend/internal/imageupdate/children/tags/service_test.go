@@ -5,7 +5,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/updater"
+	"kit.getarcane.app/updater"
 )
 
 func TestContainerAggregationPreservesImageResult(t *testing.T) {

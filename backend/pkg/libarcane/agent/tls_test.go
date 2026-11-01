@@ -24,8 +24,8 @@ import (
 	certgen "github.com/getarcaneapp/arcane/cli/v3/pkg/generate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	kit "go.getarcane.app/kit/pkg"
-	libcrypto "go.getarcane.app/sys/crypto"
+	kit "kit.getarcane.app"
+	libcrypto "kit.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )

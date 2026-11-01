@@ -17,9 +17,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/builtin/workflow"
-	"go.getarcane.app/acfs"
-	"go.getarcane.app/kit/pkg"
-	"go.getarcane.app/kit/pkg/mapping"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -27,6 +24,9 @@ import (
 	"go.uber.org/fx"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	"kit.getarcane.app/mapping"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"

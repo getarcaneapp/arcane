@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.getarcane.app/updater/refs"
+	"kit.getarcane.app/updater/refs"
 )
 
 // SplitRepositoryReferences moves digest names returned in RepoTags by the

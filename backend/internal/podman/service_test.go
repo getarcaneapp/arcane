@@ -13,7 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/docker/compat"
+	"kit.getarcane.app/docker/compat"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	libpodman "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"

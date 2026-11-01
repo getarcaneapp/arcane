@@ -13,8 +13,8 @@ import (
 	"github.com/docker/cli/cli/command"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/client"
-	"go.getarcane.app/docker/compat"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/docker/compat"
 )
 
 // logsDemuxCompatibleDockerCli exposes an API client that keeps

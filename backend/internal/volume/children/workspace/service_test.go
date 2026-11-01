@@ -23,9 +23,9 @@ import (
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
-	acfstypes "go.getarcane.app/acfs/types"
-	"go.getarcane.app/streams/bus"
 	"gorm.io/gorm"
+	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/docker/streams/bus"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"

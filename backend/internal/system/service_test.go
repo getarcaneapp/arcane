@@ -15,10 +15,10 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/kit/pkg"
-	"go.getarcane.app/streams/bus"
-	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
+	"kit.getarcane.app"
+	"kit.getarcane.app/docker/streams/bus"
+	"kit.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"

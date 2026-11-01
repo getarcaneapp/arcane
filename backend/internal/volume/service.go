@@ -20,11 +20,11 @@ import (
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
-	"go.getarcane.app/docker"
-	kit "go.getarcane.app/kit/pkg"
 	"go.uber.org/fx"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/docker"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"

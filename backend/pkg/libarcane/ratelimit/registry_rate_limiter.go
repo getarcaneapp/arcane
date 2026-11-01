@@ -5,8 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/sync/semaphore"
+	kit "kit.getarcane.app"
 )
 
 type RegistryRateLimiter struct {

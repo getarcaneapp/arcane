@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 const (

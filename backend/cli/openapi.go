@@ -4,7 +4,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"go.getarcane.app/acfs/atomic"
+	"kit.getarcane.app/fs/atomic"
 
 	"github.com/getarcaneapp/arcane/backend/v3/api"
 )

@@ -10,8 +10,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/events"
-	"go.getarcane.app/streams/bus"
 	"go.uber.org/fx"
+	"kit.getarcane.app/docker/streams/bus"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"

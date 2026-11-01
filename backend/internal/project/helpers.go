@@ -9,9 +9,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
-	buildtypes "go.getarcane.app/builds/types"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	buildtypes "kit.getarcane.app/builds/types"
 
 	projectsync "github.com/getarcaneapp/arcane/backend/v3/internal/project/children/sync"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"

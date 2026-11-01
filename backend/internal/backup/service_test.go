@@ -6,8 +6,8 @@ import (
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
+	"kit.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 )

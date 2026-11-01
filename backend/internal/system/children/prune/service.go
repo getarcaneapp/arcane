@@ -17,10 +17,10 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
-	"go.getarcane.app/docker"
-	"go.getarcane.app/docker/compat"
-	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/sync/errgroup"
+	kit "kit.getarcane.app"
+	"kit.getarcane.app/docker"
+	"kit.getarcane.app/docker/compat"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"

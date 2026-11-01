@@ -11,9 +11,9 @@ import (
 
 	"github.com/lmittmann/tint"
 	slogGorm "github.com/orandin/slog-gorm"
-	"go.getarcane.app/streams/logs"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"kit.getarcane.app/docker/streams/logs"
 
 	"github.com/getarcaneapp/arcane/backend/v3/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"

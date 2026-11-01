@@ -11,7 +11,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/types/v3"
 	dockerclient "github.com/moby/moby/client"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 )
 
 // Swarm tears tasks down asynchronously, so a config, secret, or network can

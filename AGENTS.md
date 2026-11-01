@@ -151,7 +151,7 @@ service_playwright.go   → service_playwright_test.go
 
 Search these before adding backend logic:
 
-- `go.getarcane.app/docker` (Kit): Docker names, labels, clients, logs, streams
+- `kit.getarcane.app/docker` (Kit): Docker names, labels, clients, logs, streams
 - `backend/pkg/projects`: Compose parsing, discovery, image refs
 - `backend/pkg/pagination`: in-memory and database pagination
 - `backend/pkg/libarcane`: reusable engines and transport

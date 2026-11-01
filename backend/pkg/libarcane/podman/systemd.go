@@ -12,7 +12,7 @@ import (
 	"github.com/coreos/go-systemd/v22/dbus"
 	"github.com/getarcaneapp/arcane/types/v3"
 	godbus "github.com/godbus/dbus/v5"
-	kit "go.getarcane.app/kit/pkg"
+	kit "kit.getarcane.app"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 )

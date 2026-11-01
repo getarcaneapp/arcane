@@ -122,9 +122,9 @@ linters:
 
     importas:
       alias:
-        - pkg: go.getarcane.app/docker
+        - pkg: kit.getarcane.app/docker
           alias: docker
-        - pkg: go.getarcane.app/kit/pkg
+        - pkg: kit.getarcane.app
           alias: kit
         - pkg: github.com/getarcaneapp/arcane/backend/v3/internal/docker
           alias: dockerInternal

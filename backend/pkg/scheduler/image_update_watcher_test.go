@@ -12,7 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/events"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/streams/bus"
+	"kit.getarcane.app/docker/streams/bus"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"

@@ -10,8 +10,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
-	"go.getarcane.app/kit/normalization"
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
+	"kit.getarcane.app/normalization"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
