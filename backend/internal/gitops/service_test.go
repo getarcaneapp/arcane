@@ -126,24 +126,33 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 	}), db, projectsDir
 }
 
-func TestGitOpsSyncService_OverlappingSyncPreservesSuccessShapedSkip(t *testing.T) {
+func TestGitOpsSyncService_OverlappingSyncWaitsThenRuns(t *testing.T) {
 	gate := newGitOpsAdmissionGateForTest(t)
-	key := types.SchedulerAdmissionKey{Scope: gitOpsSyncAdmissionScope, ID: "sync-id"}
-	lease, admitted, err := gate.TryAcquire(t.Context(), key)
+	lease, admitted, err := gate.TryAcquire(t.Context(), types.SchedulerAdmissionKey{Scope: gitOpsSyncAdmissionScope, ID: "sync-id"})
 	require.NoError(t, err)
 	require.True(t, admitted)
 
-	service := &GitOpsSyncService{jobs: entityjobs.New(entityjobs.GitOpsSyncJobPrefix, gitOpsSyncAdmissionScope)}
+	service, _, _ := setupGitOpsSyncDirectoryTestService(t)
 	require.NoError(t, service.SetScheduler(t.Context(), &gitOpsSyncTestScheduler{}, gate))
-	result, err := service.PerformSync(t.Context(), SyncRequest{
-		EnvironmentID: "0",
-		SyncID:        "sync-id",
-		Actor:         types.Actor{},
-	})
-	require.NoError(t, err)
-	require.False(t, result.Success)
-	require.Equal(t, "sync already in progress", result.Message)
+	done := make(chan error, 1)
+	go func() {
+		_, syncErr := service.PerformSync(t.Context(), SyncRequest{EnvironmentID: "0", SyncID: "sync-id"})
+		done <- syncErr
+	}()
+	select {
+	case syncErr := <-done:
+		require.FailNowf(t, "sync ran while another sync held admission", "%v", syncErr)
+	case <-time.After(400 * time.Millisecond):
+	}
+
 	lease.Release(t.Context())
+	select {
+	case syncErr := <-done:
+		require.Error(t, syncErr)
+		require.NotContains(t, syncErr.Error(), "failed to admit GitOps sync")
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "sync did not run after admission was released")
+	}
 }
 
 type gitOpsSyncTestScheduler struct {

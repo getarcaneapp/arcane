@@ -13,7 +13,7 @@ import (
 
 const (
 	AutoPatchJobName     = "auto-patch"
-	autoPatchDefaultCron = "0 0 3 * * *"
+	autoPatchDefaultCron = "0 3 * * *"
 )
 
 // NewAutoPatchJob runs the durable auto-patch workflow. It is opt-in via the

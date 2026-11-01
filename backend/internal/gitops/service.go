@@ -878,14 +878,11 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, req SyncRequest) (s
 	}()
 
 	// Overlapping runs of one sync (schedule, kick, manual, webhook) must not race the clone and redeploy.
-	lease, admitted, err := s.jobs.TryAcquire(ctx, req.SyncID)
+	admitCtx, cancelAdmit := context.WithTimeout(ctx, defaultGitSyncTimeout)
+	lease, err := s.jobs.Acquire(admitCtx, req.SyncID)
+	cancelAdmit()
 	if err != nil {
 		return nil, fmt.Errorf("failed to admit GitOps sync: %w", err)
-	}
-	if !admitted {
-		slog.InfoContext(ctx, "GitOps sync already in progress; skipping", "syncId", req.SyncID)
-		span.SetAttributes(attribute.Bool("arcane.gitops.skipped", true))
-		return &types.GitOpsSyncResult{Success: false, Message: "sync already in progress", SyncedAt: time.Now()}, nil
 	}
 	defer lease.Release(ctx)
 	counted = true

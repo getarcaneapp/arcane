@@ -171,7 +171,6 @@ func newImageUpdateWatcherForTest(t *testing.T,
 		projectService:     backfiller,
 		trigger:            make(chan struct{}, 1),
 		scheduleRefresh:    make(chan struct{}, 1),
-		location:           time.UTC,
 		debounce:           10 * time.Millisecond,
 		backfillRetry:      10 * time.Millisecond,
 		metadataReady:      make(chan struct{}),
@@ -477,7 +476,7 @@ func TestImageUpdateWatcher_CancellationStopsBackfillWithoutScanning(t *testing.
 
 func TestImageUpdateWatcher_ScheduledPollTriggersScanWithoutEvents(t *testing.T) {
 	scanner := &imageUpdateScannerFake{}
-	settings := &pollingSettingReaderFake{enabled: true, schedule: "* * * * * *"}
+	settings := &pollingSettingReaderFake{enabled: true, schedule: "@every 1s"}
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, bus.NewDockerEventBus(bus.Config{}), nil)
 	jobScheduler, err := NewJobScheduler(t.Context(), watcher.coordinator, time.UTC)
 	require.NoError(t, err)
@@ -486,14 +485,14 @@ func TestImageUpdateWatcher_ScheduledPollTriggersScanWithoutEvents(t *testing.T)
 
 	require.Eventually(t, func() bool { return scanner.count() == 1 }, time.Second, 5*time.Millisecond)
 	require.Eventually(t, func() bool {
-		record, scheduleStateErr := watcher.coordinator.ScheduleState(t.Context(), watcher.Name())
-		return scheduleStateErr == nil && record.Schedule == settings.schedule && !record.NextRun.IsZero()
+		record, nextRun, scheduleStateErr := watcher.coordinator.ScheduleState(t.Context(), watcher.Name())
+		return scheduleStateErr == nil && record.Schedule == settings.schedule && nextRun != nil
 	}, time.Second, 5*time.Millisecond)
 	require.NoError(t, jobScheduler.StartScheduler(t.Context()))
-	record, err := watcher.coordinator.ScheduleState(t.Context(), watcher.Name())
+	record, nextRun, err := watcher.coordinator.ScheduleState(t.Context(), watcher.Name())
 	require.NoError(t, err)
 	require.Equal(t, settings.schedule, record.Schedule)
-	require.False(t, record.NextRun.IsZero())
+	require.NotNil(t, nextRun)
 	require.Eventually(t, func() bool { return scanner.count() >= 3 }, 5*time.Second, 10*time.Millisecond)
 	require.Eventually(t, func() bool {
 		history, listErr := watcher.coordinator.List(t.Context(), "0", watcher.Name(), 1, 10)

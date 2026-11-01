@@ -58,7 +58,7 @@ import (
 )
 
 const (
-	defaultSystemBackupSchedule = "0 0 3 * * *"
+	defaultSystemBackupSchedule = "0 3 * * *"
 	systemRecoveryHelperPath    = "/app/arcane-recovery-helper"
 )
 

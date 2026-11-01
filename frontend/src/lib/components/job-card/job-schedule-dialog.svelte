@@ -43,10 +43,10 @@
 	const isLoading = $derived(saveMutation.isPending);
 
 	const cronExamples = [
-		{ label: m.jobs_cron_example_every_15min(), value: '0 */15 * * * *' },
-		{ label: m.jobs_cron_example_hourly(), value: '0 0 * * * *' },
-		{ label: m.jobs_cron_example_every_6hours(), value: '0 0 */6 * * *' },
-		{ label: m.jobs_cron_example_daily(), value: '0 0 0 * * *' }
+		{ label: m.jobs_cron_example_every_15min(), value: '*/15 * * * *' },
+		{ label: m.jobs_cron_example_hourly(), value: '0 * * * *' },
+		{ label: m.jobs_cron_example_every_6hours(), value: '0 */6 * * *' },
+		{ label: m.jobs_cron_example_daily(), value: '0 0 * * *' }
 	];
 
 	function validateCron(value: string): boolean {
@@ -93,7 +93,7 @@
 	<div class="space-y-4 py-4">
 		<div class="space-y-2">
 			<Label for="schedule">{m.jobs_cron_expression()}</Label>
-			<Input id="schedule" bind:value={scheduleValue} placeholder={mixed ? m.mixed() : '0 */15 * * * *'} aria-invalid={!!error} />
+			<Input id="schedule" bind:value={scheduleValue} placeholder={mixed ? m.mixed() : '*/15 * * * *'} aria-invalid={!!error} />
 			{#if error}
 				<p class="text-sm text-destructive">{error}</p>
 			{:else}

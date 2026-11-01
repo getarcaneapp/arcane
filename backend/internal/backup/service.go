@@ -877,7 +877,7 @@ func (r PolicyReconciliation[P, U]) Run(ctx context.Context, updates []U) error 
 
 // ValidatePolicyUpdate applies the shared cron, retention, and destination rules used by backup policies.
 func ValidatePolicyUpdate(ctx context.Context, domain string, update types.UpdateBackupPolicy, s3Service *s3.S3DestinationService) (types.UpdateBackupPolicy, error) {
-	normalized, err := schedule.NormalizeSixField(update.Schedule, domain+" backup")
+	normalized, err := schedule.Normalize(update.Schedule, domain+" backup")
 	if err != nil {
 		return update, common.Classify(common.ErrValidation, &types.FieldError{Field: "schedule", Err: err})
 	}

@@ -29,7 +29,7 @@ func (j *ActivitySweepJob) Name() string {
 }
 
 func (j *ActivitySweepJob) Schedule(_ context.Context) string {
-	return "0 */5 * * * *"
+	return "*/5 * * * *"
 }
 
 func (j *ActivitySweepJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {

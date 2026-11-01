@@ -26,16 +26,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 	scheduleutil "github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 const (
 	AutoHealJobName            = "auto-heal"
-	autoHealDefaultSchedule    = "0 */5 * * * *"
+	autoHealDefaultSchedule    = "*/5 * * * *"
 	autoHealInspectConcurrency = 4
-	autoHealAdmissionScope     = "auto-heal"
 )
 
 // restartRecord tracks restart timestamps for a single container.
@@ -59,7 +57,6 @@ type AutoHealJob struct {
 	settingsService     *settings.SettingsService
 	eventService        *event.EventService
 	notificationService *notification.NotificationService
-	admissionGate       *runs.Admission
 
 	restarts map[string]*restartRecord
 
@@ -82,7 +79,6 @@ type AutoHealJobParams struct {
 	SettingsService     *settings.SettingsService
 	EventService        *event.EventService
 	NotificationService *notification.NotificationService
-	AdmissionGate       *runs.Admission
 }
 
 func NewAutoHealJob(p AutoHealJobParams) (*AutoHealJob, error) {
@@ -91,7 +87,6 @@ func NewAutoHealJob(p AutoHealJobParams) (*AutoHealJob, error) {
 		settingsService:     p.SettingsService,
 		eventService:        p.EventService,
 		notificationService: p.NotificationService,
-		admissionGate:       p.AdmissionGate,
 		restarts:            make(map[string]*restartRecord),
 	}, nil
 }
@@ -114,17 +109,6 @@ func (j *AutoHealJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 		slog.DebugContext(ctx, "auto-heal disabled; skipping run")
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
-
-	lease, admitted, err := j.admissionGate.TryAcquire(ctx, types.SchedulerAdmissionKey{Scope: autoHealAdmissionScope})
-	if err != nil {
-		slog.ErrorContext(ctx, "auto-heal admission failed", "error", err)
-		return types.SchedulerOutcome{}, err
-	}
-	if !admitted {
-		slog.WarnContext(ctx, "auto-heal run still in progress; skipping overlapping run")
-		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
-	}
-	defer lease.Release(ctx)
 
 	dockerClient, err := j.getDockerClient(ctx)
 	if err != nil {
@@ -499,14 +483,6 @@ func (j *AutoHealJob) RecordRestartAtExported(containerID string, t time.Time) {
 }
 
 func (j *AutoHealJob) Reconcile(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
-	lease, admitted, err := j.admissionGate.TryAcquire(ctx, types.SchedulerAdmissionKey{Scope: autoHealAdmissionScope})
-	if err != nil {
-		return types.SchedulerOutcome{}, err
-	}
-	if !admitted {
-		return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "A container healing run already owns admission"}, nil
-	}
-	defer lease.Release(ctx)
 	var plan autoHealPlan
 	planned := false
 	for _, target := range previous.Outcome.Targets {

@@ -41,7 +41,7 @@ func (j *GitCloneCleanupJob) Name() string {
 
 func (j *GitCloneCleanupJob) Schedule(_ context.Context) string {
 	// Staggered from the upload-sessions cleanup, which fires at minute 0.
-	return "0 30 * * * *"
+	return "30 * * * *"
 }
 
 func (j *GitCloneCleanupJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {

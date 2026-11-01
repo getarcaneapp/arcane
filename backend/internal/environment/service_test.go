@@ -93,22 +93,6 @@ func (testGlobalVariableRow) TableName() string { return "global_variables" }
 
 func (testGlobalVariableEnvironmentRow) TableName() string { return "global_variable_environments" }
 
-func TestEnvironmentService_OverlappingHealthCheckIsSkipped(t *testing.T) {
-	gate := newAdmissionGateForEnvironmentTest(t)
-
-	key := types.SchedulerAdmissionKey{Scope: environmentHealthAdmissionScope, ID: "environment-id"}
-	lease, admitted, err := gate.TryAcquire(t.Context(), key)
-	require.NoError(t, err)
-	require.True(t, admitted)
-
-	service := NewEnvironmentService(EnvironmentServiceParams{})
-	require.NoError(t, service.SetScheduler(t.Context(), &environmentTestScheduler{}, gate))
-	outcome, runErr := service.runHealthCheck(t.Context(), "environment-id")
-	require.NoError(t, runErr)
-	require.Equal(t, types.RunStatusSkipped, outcome.Status)
-	lease.Release(t.Context())
-}
-
 func (s *environmentTestScheduler) AddJob(_ context.Context, job types.SchedulerJob) error {
 	s.added = append(s.added, job.Name())
 	return nil

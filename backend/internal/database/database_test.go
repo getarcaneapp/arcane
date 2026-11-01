@@ -223,6 +223,62 @@ func TestMigration100_RemovesDashboardReadPermission(t *testing.T) {
 	assert.JSONEq(t, `["containers:list","images:list"]`, r1Permissions)
 }
 
+func TestMigration101_ConvertsCronSchedulesToFiveFields(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-cron-five-field.db")
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 100))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES
+		('pollingInterval', '0 0 * * * *'),
+		('autoHealInterval', '@every 5m'),
+		('scheduledPruneInterval', '30 2 * * *'),
+		('projectsDirectory', 'a b c d e f')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO system_backup_policies (id, schedule) VALUES ('s1', '0 0 3 * * *'), ('s2', '@daily')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO volume_backup_policies (id, volume_name, schedule) VALUES ('v1', 'data', '0 */15 * * * *')`)
+	require.NoError(t, err)
+
+	schedules := func() map[string]string {
+		values := map[string]string{}
+		rows, queryErr := rawDB.QueryContext(ctx, `
+			SELECT key, value FROM settings WHERE key IN ('pollingInterval', 'autoHealInterval', 'scheduledPruneInterval', 'projectsDirectory')
+			UNION ALL SELECT id, schedule FROM system_backup_policies
+			UNION ALL SELECT id, schedule FROM volume_backup_policies`)
+		require.NoError(t, queryErr)
+		for rows.Next() {
+			var id, value string
+			require.NoError(t, rows.Scan(&id, &value))
+			values[id] = value
+		}
+		require.NoError(t, rows.Err())
+		require.NoError(t, rows.Close())
+		return values
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 101))
+	assert.Equal(t, map[string]string{
+		"pollingInterval":        "0 * * * *",
+		"autoHealInterval":       "@every 5m",
+		"scheduledPruneInterval": "30 2 * * *",
+		"projectsDirectory":      "a b c d e f",
+		"s1":                     "0 3 * * *",
+		"s2":                     "@daily",
+		"v1":                     "*/15 * * * *",
+	}, schedules())
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 100))
+	assert.Equal(t, map[string]string{
+		"pollingInterval":        "0 0 * * * *",
+		"autoHealInterval":       "@every 5m",
+		"scheduledPruneInterval": "0 30 2 * * *",
+		"projectsDirectory":      "a b c d e f",
+		"s1":                     "0 0 3 * * *",
+		"s2":                     "@daily",
+		"v1":                     "0 */15 * * * *",
+	}, schedules())
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := t.Context()
 	rawDB, dsn := newSQLiteSQLDB(t, t.TempDir(), "arcane-future.db")

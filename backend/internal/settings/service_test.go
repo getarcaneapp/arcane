@@ -389,7 +389,7 @@ func TestSettingsService_InvalidStoredValueFallsBackToDefault(t *testing.T) {
 
 	_, byKey := settingsFields()
 	require.Equal(t, SourceDefault, svc.snapshot.Load().sources[byKey["autoHealInterval"].position])
-	require.Equal(t, "0 */5 * * * *", svc.GetStringSetting(ctx, "autoHealInterval"))
+	require.Equal(t, "*/5 * * * *", svc.GetStringSetting(ctx, "autoHealInterval"))
 	require.False(t, svc.GetBoolSetting(ctx, "enableGravatar"))
 }
 
@@ -443,7 +443,7 @@ func TestSettingsService_ReadOnlyGate(t *testing.T) {
 	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"baseServerUrl": "https://changed.example"})
 	require.ErrorIs(t, err, common.ErrValidation)
 	require.ErrorContains(t, err, "UI configuration is disabled")
-	err = svc.UpdateSettingValues(ctx, []libarcane.SettingUpdate{{Key: "pollingInterval", Value: "0 */10 * * * *"}})
+	err = svc.UpdateSettingValues(ctx, []libarcane.SettingUpdate{{Key: "pollingInterval", Value: "*/10 * * * *"}})
 	require.ErrorIs(t, err, common.ErrValidation)
 
 	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"baseServerUrl": "http://localhost"})
@@ -456,12 +456,13 @@ func TestSettingsService_UpdateSettingRejectsInvalidCronBeforePersistence(t *tes
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	require.NoError(t, svc.UpdateSetting(ctx, "pollingInterval", "*/5 * * * * *"))
+	require.NoError(t, svc.UpdateSetting(ctx, "pollingInterval", "*/5 * * * *"))
 	require.Error(t, svc.UpdateSetting(ctx, "pollingInterval", "not a cron schedule"))
+	require.Error(t, svc.UpdateSetting(ctx, "pollingInterval", "0 */5 * * * *"))
 
 	var setting SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "pollingInterval").First(&setting).Error)
-	require.Equal(t, "*/5 * * * * *", setting.Value)
+	require.Equal(t, "*/5 * * * *", setting.Value)
 }
 
 func TestSettingsService_UpdateSetting_RefreshesCachedSnapshot(t *testing.T) {
@@ -603,7 +604,7 @@ func TestSettingsServiceActorNotifiesSubscriberOnceForMultipleMatchingKeys(t *te
 
 	err = svc.UpdateSettings(ctx, types.SettingsUpdate{
 		"pollingEnabled":  "false",
-		"pollingInterval": "0 */5 * * * *",
+		"pollingInterval": "*/5 * * * *",
 	})
 	require.NoError(t, err)
 	require.Len(t, <-notified, 2)

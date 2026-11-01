@@ -147,7 +147,6 @@ func TestAutoHeal_ShouldSchedule(t *testing.T) {
 	_, settingsSvc, _ := setupAnalyticsStateServices(t)
 	job, err := NewAutoHealJob(AutoHealJobParams{
 		SettingsService: settingsSvc,
-		AdmissionGate:   newTestAdmissionGate(t),
 	})
 	require.NoError(t, err)
 
@@ -208,7 +207,6 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 			}),
 			SettingsService: settingsSvc,
 		}),
-		AdmissionGate: newTestAdmissionGate(t),
 	})
 	require.NoError(t, err)
 	job.getDockerClientFn = func() (*client.Client, error) { return nil, nil }
@@ -260,52 +258,4 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 	require.Greater(t, maxConcurrent.Load(), int32(1))
 	require.LessOrEqual(t, maxConcurrent.Load(), int32(autoHealInspectConcurrency))
 	require.Equal(t, int32(4), restarts.Load())
-}
-
-func TestAutoHealJob_OverlappingRunIsSkipped(t *testing.T) {
-	ctx := t.Context()
-	_, settingsSvc, _ := setupAnalyticsStateServices(t)
-	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", true))
-
-	job, err := NewAutoHealJob(AutoHealJobParams{
-		SettingsService: settingsSvc,
-		AdmissionGate:   newTestAdmissionGate(t),
-	})
-	require.NoError(t, err)
-	job.getDockerClientFn = func() (*client.Client, error) { return nil, nil }
-	started := make(chan struct{}, 1)
-	release := make(chan struct{})
-	var calls atomic.Int32
-	job.listContainers = func(context.Context, *client.Client) ([]container.Summary, error) {
-		calls.Add(1)
-		select {
-		case started <- struct{}{}:
-		default:
-		}
-		<-release
-		return nil, nil
-	}
-
-	firstDone := make(chan struct{})
-	go func() {
-		_, runErr2 := job.Run(ctx)
-		if runErr2 != nil {
-			t.Errorf("first auto heal job run failed: %v", runErr2)
-			close(firstDone)
-			return
-		}
-		close(firstDone)
-	}()
-	<-started
-
-	_, runErr3 := job.Run(ctx)
-	require.NoError(t, runErr3)
-	require.Equal(t, int32(1), calls.Load())
-
-	close(release)
-	select {
-	case <-firstDone:
-	case <-time.After(time.Second):
-		require.FailNow(t, "first auto-heal run did not finish")
-	}
 }

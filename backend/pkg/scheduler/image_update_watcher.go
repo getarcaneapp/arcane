@@ -11,6 +11,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/events"
+	"github.com/robfig/cron/v3"
 	"go.uber.org/fx"
 	"kit.getarcane.app/docker/streams/bus"
 
@@ -28,7 +29,7 @@ import (
 const (
 	imageUpdateWatcherDebounce        = 2 * time.Second
 	imageUpdateWatcherBackfillRetry   = 5 * time.Second
-	imageUpdateWatcherDefaultSchedule = "0 0 * * * *"
+	imageUpdateWatcherDefaultSchedule = "0 * * * *"
 )
 
 type imageUpdateScanner interface {
@@ -59,7 +60,6 @@ type ImageUpdateWatcher struct {
 	scheduleRefresh        chan struct{}
 	cancel                 context.CancelFunc
 	done                   chan struct{}
-	location               *time.Location
 	metadataReady          chan struct{}
 	stopped                chan struct{}
 	triggerGeneration      atomic.Uint64
@@ -93,7 +93,6 @@ func NewImageUpdateWatcher(p ImageUpdateWatcherParams) *ImageUpdateWatcher {
 		settingsService:    p.SettingsService,
 		dockerService:      p.DockerService,
 		projectService:     p.ProjectService,
-		location:           p.Config.GetLocation(),
 		debounce:           imageUpdateWatcherDebounce,
 		backfillRetry:      imageUpdateWatcherBackfillRetry,
 		metadataReady:      make(chan struct{}),
@@ -377,19 +376,14 @@ func (w *ImageUpdateWatcher) refreshSchedule(ctx context.Context) error {
 		return errors.New("durable job coordinator unavailable")
 	}
 	if !w.settingsService.GetBoolSetting(ctx, "pollingEnabled") {
-		return coordinator.Checkpoint(ctx, w.Name(), "", time.Time{})
+		return coordinator.Install(ctx, w.Name(), "")
 	}
 	spec := w.settingsService.GetStringSetting(ctx, "pollingInterval")
-	schedule, err := cronScheduleParser.Parse(spec)
-	if err != nil {
+	if _, err := cron.ParseStandard(spec); err != nil {
 		slog.WarnContext(ctx, "invalid pollingInterval cron expression; using default schedule", "pollingInterval", spec, "error", err)
 		spec = imageUpdateWatcherDefaultSchedule
-		schedule, err = cronScheduleParser.Parse(spec)
-		if err != nil {
-			return err
-		}
 	}
-	return coordinator.Checkpoint(ctx, w.Name(), spec, schedule.Next(time.Now().In(w.location)))
+	return coordinator.Install(ctx, w.Name(), spec)
 }
 
 func (w *ImageUpdateWatcher) SetCoordinator(coordinator *runs.Coordinator) {

@@ -5,9 +5,7 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
-	"fmt"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -50,7 +48,7 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 	}
 	legacy.Runs[0].ActivityID = legacy.Runs[0].ID
 	for _, jobID := range []string{"gitops-sync:first", "gitops-sync:second"} {
-		record := types.SchedulerQueueRecord{JobID: jobID, EnvironmentID: "0", Schedule: "@every 5m", NextRun: time.Now().UTC().Add(time.Hour)}
+		record := types.SchedulerQueueRecord{JobID: jobID, EnvironmentID: "0", Schedule: "@every 5m"}
 		for i := range 1600 {
 			created := time.Now().UTC().Add(-time.Duration(1600-i) * 5 * time.Minute)
 			record.Runs = append(
@@ -114,10 +112,10 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 		require.NoError(t, listErr)
 		require.Equal(t, 100, history.Total)
 		require.Equal(t, types.RunStatusFailed, history.Runs[0].Status)
-		state, stateErr := restored.ScheduleState(t.Context(), jobID)
+		state, nextRun, stateErr := restored.ScheduleState(t.Context(), jobID)
 		require.NoError(t, stateErr)
 		require.Equal(t, "@every 5m", state.Schedule)
-		require.True(t, state.NextRun.After(time.Now()))
+		require.Nil(t, nextRun)
 	}
 	duplicate, err := restored.Submit(t.Context(), types.SchedulerRequest{JobID: legacy.JobID, RunID: legacy.Runs[0].ID, Trigger: "manual"})
 	require.NoError(t, err)
@@ -136,29 +134,89 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 	require.True(t, exists)
 }
 
-type occurrenceEnvelope struct{ occurrence types.ScheduleOccurrence }
+func TestInstallSchedulesFrancisCronJob(t *testing.T) {
+	q := newTestCoordinator(t)
+	require.NoError(t, q.Install(t.Context(), "schedule", "*/5 * * * *"))
+	record, nextRun, err := q.ScheduleState(t.Context(), "schedule")
+	require.NoError(t, err)
+	require.Equal(t, "*/5 * * * *", record.Schedule)
+	require.NotEmpty(t, record.ScheduleJobID)
+	require.NotNil(t, nextRun)
+	require.True(t, nextRun.After(time.Now()))
+	first, err := q.service.GetJob(t.Context(), record.ScheduleJobID)
+	require.NoError(t, err)
+	require.Equal(t, "CRON_TZ=UTC */5 * * * *", first.Cron)
 
-func (e occurrenceEnvelope) Decode(value any) error {
-	*value.(*types.ScheduleOccurrence) = e.occurrence
-	return nil
+	require.NoError(t, q.Install(t.Context(), "schedule", "*/5 * * * *"))
+	unchanged, _, err := q.ScheduleState(t.Context(), "schedule")
+	require.NoError(t, err)
+	require.Equal(t, first.JobID, unchanged.ScheduleJobID)
+
+	require.NoError(t, q.Install(t.Context(), "schedule", "0 3 * * *"))
+	rescheduled, _, err := q.ScheduleState(t.Context(), "schedule")
+	require.NoError(t, err)
+	require.Equal(t, "0 3 * * *", rescheduled.Schedule)
+	require.NotEqual(t, first.JobID, rescheduled.ScheduleJobID)
+	_, err = q.service.GetJob(t.Context(), first.JobID)
+	require.ErrorIs(t, err, actor.ErrJobNotFound)
+	replacement, err := q.service.GetJob(t.Context(), rescheduled.ScheduleJobID)
+	require.NoError(t, err)
+	require.Equal(t, "CRON_TZ=UTC 0 3 * * *", replacement.Cron)
+
+	require.NoError(t, q.Install(t.Context(), "schedule", ""))
+	_, nextRun, err = q.ScheduleState(t.Context(), "schedule")
+	require.ErrorIs(t, err, actor.ErrStateNotFound)
+	require.Nil(t, nextRun)
+	_, err = q.service.GetJob(t.Context(), rescheduled.ScheduleJobID)
+	require.ErrorIs(t, err, actor.ErrJobNotFound)
 }
 
-func TestAlarmIgnoresStaleGeneration(t *testing.T) {
+func TestTickEnqueuesAndCoalescesRuns(t *testing.T) {
 	q := newTestCoordinator(t)
-	next := time.Now().UTC().Add(time.Hour)
-	require.NoError(t, q.Checkpoint(t.Context(), "schedule", "0 * * * * *", next))
-	before, err := q.ScheduleState(t.Context(), "schedule")
+	release := make(chan struct{})
+	var once sync.Once
+	t.Cleanup(func() { once.Do(func() { close(release) }) })
+	var executed atomic.Int32
+	q.SetExecutor(func(ctx context.Context, _ types.SchedulerRun) (types.SchedulerOutcome, error) {
+		executed.Add(1)
+		select {
+		case <-ctx.Done():
+			return types.SchedulerOutcome{}, ctx.Err()
+		case <-release:
+			return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
+		}
+	}, nil)
+	require.NoError(t, q.Install(t.Context(), "tick", "0 3 * * *"))
+	record, _, err := q.ScheduleState(t.Context(), "tick")
 	require.NoError(t, err)
-	q.enabled.Store(true)
-	defer q.enabled.Store(false)
-	coordinator := &coordinatorActor{id: kit.SHA256Hex("0\x00schedule"), q: q}
-	require.NoError(t, coordinator.Alarm(t.Context(), "old", occurrenceEnvelope{types.ScheduleOccurrence{Generation: before.Generation - 1, Sequence: before.Sequence}}))
-	after, err := q.ScheduleState(t.Context(), "schedule")
+	scheduleJob, err := q.service.GetJob(t.Context(), record.ScheduleJobID)
 	require.NoError(t, err)
-	require.Equal(t, before.Generation, after.Generation)
-	require.Equal(t, before.Sequence, after.Sequence)
-	require.True(t, before.NextRun.Equal(after.NextRun))
-	require.Empty(t, after.Runs)
+	coordinator := &coordinatorActor{id: scheduleJob.ActorID, q: q}
+	require.ErrorIs(t, coordinator.Job(t.Context(), "tick", nil), actor.ErrJobRejected)
+	require.NoError(t, q.Start(t.Context(), t.Context()))
+	q.Activate()
+	t.Cleanup(func() {
+		once.Do(func() { close(release) })
+		require.NoError(t, q.Stop(context.WithoutCancel(t.Context())))
+	})
+
+	require.NoError(t, coordinator.Job(t.Context(), "tick", nil))
+	require.Eventually(t, func() bool { return executed.Load() == 1 }, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, coordinator.Job(t.Context(), "tick", nil))
+	history, err := q.List(t.Context(), "0", "tick", 1, 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, history.Total)
+	require.Equal(t, "scheduled", history.Runs[0].Trigger)
+
+	once.Do(func() { close(release) })
+	require.Eventually(t, func() bool {
+		stored, getErr := q.Get(t.Context(), "0", "tick", history.Runs[0].ID)
+		return getErr == nil && stored.Status == types.RunStatusSucceeded
+	}, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, coordinator.Job(t.Context(), "tick", nil))
+	history, err = q.List(t.Context(), "0", "tick", 1, 10)
+	require.NoError(t, err)
+	require.Equal(t, 2, history.Total)
 }
 
 func TestDuplicateDispatchAndCanceledDelivery(t *testing.T) {
@@ -218,19 +276,15 @@ func TestDuplicateDispatchAndCanceledDelivery(t *testing.T) {
 	}
 }
 
-func TestCapacityGroupsReserveHealthSlots(t *testing.T) {
+func TestDistinctJobsRunConcurrently(t *testing.T) {
 	q := newTestCoordinator(t)
-	var ordinary, health atomic.Int32
+	var running atomic.Int32
 	release := make(chan struct{})
 	var once sync.Once
 	t.Cleanup(func() { once.Do(func() { close(release) }) })
 	q.SetExecutor(func(ctx context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
-		counter := &ordinary
-		if strings.HasPrefix(run.JobID, "environment-health") {
-			counter = &health
-		}
-		counter.Add(1)
-		defer counter.Add(-1)
+		running.Add(1)
+		defer running.Add(-1)
 		select {
 		case <-ctx.Done():
 			return types.SchedulerOutcome{}, ctx.Err()
@@ -238,7 +292,20 @@ func TestCapacityGroupsReserveHealthSlots(t *testing.T) {
 			return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 		}
 	}, nil)
-	for _, job := range []string{"one", "two", "three", "four", "five", "six", "environment-health-one", "environment-health-two"} {
+	jobs := []string{
+		"one",
+		"two",
+		"three",
+		"four",
+		"five",
+		"six",
+		"environment-health-one",
+		"environment-health-two",
+		"environment-health-three",
+		"environment-health-four",
+		"environment-health-five",
+	}
+	for _, job := range jobs {
 		_, err := q.Submit(t.Context(), types.SchedulerRequest{JobID: job, Trigger: "manual"})
 		require.NoError(t, err)
 	}
@@ -248,7 +315,7 @@ func TestCapacityGroupsReserveHealthSlots(t *testing.T) {
 		once.Do(func() { close(release) })
 		require.NoError(t, q.Stop(context.WithoutCancel(t.Context())))
 	})
-	require.Eventually(t, func() bool { return ordinary.Load() == 4 && health.Load() == 2 }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return running.Load() == int32(len(jobs)) }, 5*time.Second, 10*time.Millisecond)
 	once.Do(func() { close(release) })
 	require.Eventually(t, func() bool {
 		history, err := q.List(t.Context(), "0", "", 1, 20)
@@ -260,29 +327,8 @@ func TestCapacityGroupsReserveHealthSlots(t *testing.T) {
 				return false
 			}
 		}
-		return history.Total == 8
+		return history.Total == len(jobs)
 	}, 5*time.Second, 10*time.Millisecond)
-}
-
-func TestReconciliationRepairsMissingAlarm(t *testing.T) {
-	q := newTestCoordinator(t)
-	require.NoError(t, q.Checkpoint(t.Context(), "repair", "0 * * * * *", time.Now().UTC().Add(time.Hour)))
-	q.enabled.Store(true)
-	defer q.enabled.Store(false)
-	record, err := q.ScheduleState(t.Context(), "repair")
-	require.NoError(t, err)
-	id := kit.SHA256Hex("0\x00repair")
-	_, err = q.repair(t.Context(), coordinatorStates(t, q), true)
-	require.NoError(t, err)
-	require.NoError(t, q.service.DeleteAlarm(t.Context(), coordinatorType, id, fmt.Sprintf("schedule-%d-%d", record.Generation, record.Sequence)))
-	_, err = q.repair(t.Context(), coordinatorStates(t, q), true)
-	require.NoError(t, err)
-	require.NoError(t, q.service.DeleteAlarm(t.Context(), coordinatorType, id, fmt.Sprintf("schedule-%d-%d", record.Generation, record.Sequence)))
-	after, err := q.ScheduleState(t.Context(), "repair")
-	require.NoError(t, err)
-	require.Equal(t, record.Generation, after.Generation)
-	require.Equal(t, record.Sequence, after.Sequence)
-	require.Empty(t, after.Runs)
 }
 
 func TestAdmissionAndCompletionRejectStaleTokens(t *testing.T) {

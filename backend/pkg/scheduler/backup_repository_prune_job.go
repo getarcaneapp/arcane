@@ -36,7 +36,7 @@ func (j *BackupRepositoryPruneJob) Name() string {
 // system backup schedule. Rustic keeps marked packs for 23 hours, so a daily
 // run could leave deleted data on disk for almost two days.
 func (j *BackupRepositoryPruneJob) Schedule(_ context.Context) string {
-	return "0 15 4,16 * * *"
+	return "15 4,16 * * *"
 }
 
 // Run prunes the local system and volume backup repositories.

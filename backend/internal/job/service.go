@@ -37,7 +37,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	scheduleutil "github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
@@ -204,12 +203,11 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates types.JobSc
 	}
 
 	// Validate inputs (cron expressions)
-	parser := scheduleutil.Parser()
 	for _, field := range fields {
 		if !submitted[field.key] || field.update == "" {
 			continue
 		}
-		if _, err := parser.Parse(field.update); err != nil {
+		if _, err := cron.ParseStandard(field.update); err != nil {
 			return types.JobScheduleConfig{}, common.Classify(common.ErrValidation, &types.FieldError{Field: field.key, Err: fmt.Errorf("invalid cron expression for %s: %w", field.key, err)})
 		}
 	}
@@ -338,15 +336,10 @@ func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, erro
 				if schedule == "" || schedule == "continuous" {
 					return nil
 				}
-				// Parse schedule and force it to use the same timezone as the scheduler.
-				sched, err := scheduleutil.Parser().Parse(schedule)
+				sched, err := cron.ParseStandard("CRON_TZ=" + s.location.String() + " " + schedule)
 				if err != nil {
 					return nil
 				}
-				if specSchedule, ok := sched.(*cron.SpecSchedule); ok {
-					specSchedule.Location = s.location // keep: cron's parser returns the schedule without a location option
-				}
-				// Calculate next run using the configured timezone.
 				return new(sched.Next(time.Now().In(s.location)))
 			}()),
 			(jobMeta.EnabledKey == "" || s.settings.GetBoolSetting(ctx, jobMeta.EnabledKey)),

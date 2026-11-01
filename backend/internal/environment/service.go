@@ -1122,7 +1122,7 @@ func (s *EnvironmentService) NotifyRuntimeStateChanged() {
 }
 
 const (
-	defaultEnvironmentHealthInterval = "0 */2 * * * *"
+	defaultEnvironmentHealthInterval = "*/2 * * * *"
 	environmentHealthCheckTimeout    = 90 * time.Second
 	environmentHealthJobPrefix       = "environment-health:"
 	environmentHealthAdmissionScope  = "environment-health"
@@ -1216,17 +1216,6 @@ func (s *EnvironmentService) RunHealthChecksNow(ctx context.Context) error {
 // runHealthCheck tests one environment's connection, persisting its status, and
 // syncs manager-owned resources to online remotes.
 func (s *EnvironmentService) runHealthCheck(ctx context.Context, envID string) (types.SchedulerOutcome, error) {
-	lease, admitted, err := s.jobs.TryAcquire(ctx, envID)
-	if err != nil {
-		slog.ErrorContext(ctx, "environment health check admission failed", "environmentId", envID, "error", err)
-		return types.SchedulerOutcome{}, err
-	}
-	if !admitted {
-		slog.WarnContext(ctx, "environment health check skipped; previous run still in progress", "environmentId", envID)
-		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
-	}
-	defer lease.Release(ctx)
-
 	localEnvironment, err := s.GetEnvironmentByID(ctx, envID)
 	if err != nil {
 		return types.SchedulerOutcome{}, err

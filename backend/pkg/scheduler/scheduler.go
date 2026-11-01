@@ -9,15 +9,12 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
+	"github.com/robfig/cron/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	scheduleutil "github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
 )
 
-var (
-	cronScheduleParser     = scheduleutil.Parser()
-	errJobSchedulerStopped = errors.New("job scheduler stopped")
-)
+var errJobSchedulerStopped = errors.New("job scheduler stopped")
 
 type watcherRegistration struct {
 	watcher types.BusWatcher
@@ -117,15 +114,15 @@ func (js *jobScheduler) GetJobRuntimeState(id string) (types.JobRuntimeState, bo
 	if !js.HasJob(id) {
 		return types.JobRuntimeState{}, false
 	}
-	record, err := js.coordinator.ScheduleState(js.context, id)
+	record, nextRun, err := js.coordinator.ScheduleState(js.context, id)
 	if err != nil {
 		return types.JobRuntimeState{}, true
 	}
-	state := types.JobRuntimeState{Schedule: record.Schedule, Scheduled: !record.NextRun.IsZero()}
-	if state.Scheduled {
-		state.NextRun = new(record.NextRun)
-	}
-	return state, true
+	return types.JobRuntimeState{
+		NextRun:   nextRun,
+		Schedule:  record.Schedule,
+		Scheduled: nextRun != nil,
+	}, true
 }
 
 func (js *jobScheduler) StartScheduler(ctx context.Context) error {
@@ -145,7 +142,7 @@ func (js *jobScheduler) StartScheduler(ctx context.Context) error {
 		_, watching := js.watchers[record.JobID]
 		js.mu.RUnlock()
 		if record.EnvironmentID == "0" && record.Schedule != "" && !js.HasJob(record.JobID) && !watching {
-			if removeErr := js.coordinator.Remove(ctx, record.JobID); removeErr != nil {
+			if removeErr := js.coordinator.Install(ctx, record.JobID, ""); removeErr != nil {
 				return removeErr
 			}
 		}
@@ -160,23 +157,14 @@ func (js *jobScheduler) StartScheduler(ctx context.Context) error {
 }
 
 func (js *jobScheduler) install(ctx context.Context, job types.SchedulerJob) error {
-	next := time.Time{}
+	if conditional, ok := job.(types.ConditionalJob); ok && !conditional.ShouldSchedule(ctx) {
+		return js.coordinator.Install(ctx, job.Name(), "")
+	}
 	schedule := job.Schedule(ctx)
-	should := true
-	if conditional, ok := job.(types.ConditionalJob); ok {
-		should = conditional.ShouldSchedule(ctx)
+	if _, err := cron.ParseStandard(schedule); err != nil {
+		return err
 	}
-	if should {
-		parsed, err := cronScheduleParser.Parse(schedule)
-		if err != nil {
-			return err
-		}
-		next = parsed.Next(time.Now().In(js.location))
-	}
-	if !should {
-		schedule = ""
-	}
-	return js.coordinator.Checkpoint(ctx, job.Name(), schedule, next)
+	return js.coordinator.Install(ctx, job.Name(), schedule)
 }
 
 func (js *jobScheduler) AddJob(ctx context.Context, job types.SchedulerJob) error {
@@ -202,7 +190,7 @@ func (js *jobScheduler) RemoveJob(ctx context.Context, id string) {
 	started := js.started
 	js.mu.Unlock()
 	if started {
-		if err := js.coordinator.Remove(ctx, id); err != nil {
+		if err := js.coordinator.Install(ctx, id, ""); err != nil {
 			slog.ErrorContext(ctx, "Unschedule failed", "job", id, "error", err)
 		}
 	}

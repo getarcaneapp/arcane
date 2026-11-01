@@ -25,7 +25,7 @@ func (j *ApnsOutboxJob) Name() string {
 }
 
 func (j *ApnsOutboxJob) Schedule(_ context.Context) string {
-	return "0 */5 * * * *"
+	return "*/5 * * * *"
 }
 
 func (j *ApnsOutboxJob) ShouldSchedule(ctx context.Context) bool {

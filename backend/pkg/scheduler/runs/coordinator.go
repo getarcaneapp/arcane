@@ -31,10 +31,10 @@ type Coordinator struct {
 	lifecycleCtx context.Context
 	observer     types.RunObserver
 	observers    utils.KeyedMutex
+	mutations    utils.KeyedMutex
 	store        *kv.KVService
 	service      *actor.Service
 	runtime      *francis.Runtime
-	checkpointed map[string]bool
 	cancel       context.CancelFunc
 	done         chan struct{}
 	wake         chan struct{}
@@ -85,9 +85,6 @@ func (q *Coordinator) Submit(ctx context.Context, request types.SchedulerRequest
 	fresh := result
 	err := q.mutate(ctx, request.EnvironmentID, request.JobID, func(record *types.SchedulerQueueRecord) error {
 		result = fresh
-		if request.Trigger == "scheduled" || request.Trigger == "recovery" {
-			record.LastEnqueuedAt = now
-		}
 		for _, existing := range record.Runs {
 			// Manual and remote work never joins another run; other triggers join runs still waiting to start.
 			coalesces := !separateTrigger(request.Trigger) && !separateTrigger(existing.Trigger) &&
@@ -128,63 +125,10 @@ func separateTrigger(trigger string) bool {
 	}
 }
 
-// Checkpoint records the next due occurrence atomically with overdue recovery.
-func (q *Coordinator) Checkpoint(ctx context.Context, jobID, schedule string, next time.Time) error {
-	q.mu.Lock()
-	first := !q.checkpointed[jobID]
-	q.mu.Unlock()
-	recovered := false
-	var recoveredRun types.SchedulerRun
-	err := q.mutate(ctx, "0", jobID, func(record *types.SchedulerQueueRecord) error {
-		recovered = false
-		recoveredRun = types.SchedulerRun{}
-		now := time.Now().UTC()
-		if first && record.Schedule == schedule && !record.NextRun.IsZero() && !record.NextRun.After(now) && record.LastEnqueuedAt.Before(record.NextRun) {
-			if !slices.ContainsFunc(record.Runs, func(run types.SchedulerRun) bool {
-				return !run.Status.Terminal() && run.Status != types.RunStatusNeedsAttention
-			}) {
-				recovered = true
-				record.LastEnqueuedAt = now
-				recoveredRun = types.SchedulerRun{
-					ID:            uuid.New().String(),
-					JobID:         jobID,
-					EnvironmentID: "0",
-					Trigger:       "recovery",
-					Status:        types.RunStatusQueued,
-					CreatedAt:     now,
-					UpdatedAt:     now,
-				}
-				record.Runs = append(record.Runs, recoveredRun)
-			}
-		}
-		if record.Schedule != schedule || record.NextRun.IsZero() || (first && !record.NextRun.After(now)) {
-			record.Generation++
-			record.Sequence++
-			record.Schedule = schedule
-			record.NextRun = next
-		}
-		return nil
-	})
-	if err == nil {
-		q.mu.Lock()
-		q.checkpointed[jobID] = true
-		q.mu.Unlock()
-		if recovered {
-			q.observeRun(ctx, recoveredRun)
-			q.signal()
-		}
-	}
-	return err
-}
-
-func (q *Coordinator) Remove(ctx context.Context, jobID string) error {
-	if err := q.Checkpoint(ctx, jobID, "", time.Time{}); err != nil {
-		return err
-	}
-	q.mu.Lock()
-	delete(q.checkpointed, jobID)
-	q.mu.Unlock()
-	_, err := q.service.Invoke(ctx, coordinatorType, kit.SHA256Hex("0\x00"+jobID), "remove", nil)
+func (q *Coordinator) Install(ctx context.Context, jobID, schedule string) error {
+	id := kit.SHA256Hex("0\x00" + jobID)
+	q.runtime.NameActor(id, jobID+"@0")
+	_, err := q.service.Invoke(ctx, coordinatorType, id, "install", types.SchedulerScheduleCommand{JobID: jobID, Schedule: schedule})
 	return err
 }
 
@@ -433,15 +377,10 @@ func (q *Coordinator) Cancel(ctx context.Context, environmentID, jobID, runID st
 	if err == nil {
 		var state types.SchedulerCoordinatorState
 		id := kit.SHA256Hex(environmentID + "\x00" + jobID)
-		actorType := kit.Ternary(
-			strings.HasPrefix(jobID, "environment-health") || jobID == "docker-client-refresh" || jobID == "activity-sweep",
-			healthExecutorType,
-			executorType,
-		)
 		if readErr := q.service.GetState(ctx, coordinatorType, id, &state); readErr == nil {
 			for _, intent := range state.Dispatches {
 				if intent.RunID == runID && intent.JobID != "" {
-					_ = q.service.DeleteJob(ctx, actorType, id, intent.JobID, actor.WithLiveJobsOnly())
+					_ = q.service.DeleteJob(ctx, executorType, id, intent.JobID, actor.WithLiveJobsOnly())
 				}
 			}
 		}

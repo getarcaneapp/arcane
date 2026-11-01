@@ -17,7 +17,7 @@ const UpgradeLogCleanupJobName = "upgrade-log-cleanup"
 func NewUpgradeLogCleanupJob(service *system.SystemService) types.SchedulerJob {
 	return &types.GenericJob{
 		JobName:    UpgradeLogCleanupJobName,
-		ScheduleFn: func(context.Context) string { return "0 15 * * * *" },
+		ScheduleFn: func(context.Context) string { return "15 * * * *" },
 		RunFn: func(ctx context.Context) (types.SchedulerOutcome, error) {
 			removed, err := service.PruneUpgradeLogs(ctx, libarcane.UpgradeLogDirectory, time.Now())
 			if err != nil {
