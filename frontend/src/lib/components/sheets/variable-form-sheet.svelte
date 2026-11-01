@@ -51,6 +51,7 @@
 	let scopeError = $state<string | null>(null);
 	let bulkText = $state('');
 	let bulkSecret = $state(false);
+	let bulkInject = $state(false);
 	let bulkError = $state<string | null>(null);
 
 	const keyPattern = /^[A-Z_][A-Z0-9_]*$/i;
@@ -81,7 +82,8 @@
 					.regex(keyPattern, m.invalid_key_format())
 					.refine((key) => !scopeConflicts(key), m.variables_duplicate_keys_error()),
 				value: z.string(),
-				isSecret: z.boolean()
+				isSecret: z.boolean(),
+				injectIntoContainers: z.boolean()
 			})
 			.superRefine((data, ctx) => {
 				// A stored secret is never sent back to the client, so turning the
@@ -95,7 +97,12 @@
 	const formData = untrack(() => {
 		let value = '';
 		if (variableToEdit && !variableToEdit.isSecret) value = variableToEdit.value;
-		return { key: variableToEdit?.key ?? '', value, isSecret: variableToEdit?.isSecret ?? false };
+		return {
+			key: variableToEdit?.key ?? '',
+			value,
+			isSecret: variableToEdit?.isSecret ?? false,
+			injectIntoContainers: variableToEdit?.injectIntoContainers ?? false
+		};
 	});
 
 	const form = createForm<typeof formSchema>(formSchema, formData);
@@ -144,6 +151,7 @@
 					key: entry.key,
 					value: entry.value,
 					isSecret: bulkSecret,
+					injectIntoContainers: bulkInject,
 					...scopeDto()
 				}))
 			});
@@ -154,12 +162,26 @@
 		if (!data || !scopeValid) return;
 
 		if (isEditMode && variableToEdit) {
-			const dto: GlobalVariableUpdateDto = { key: data.key, isSecret: data.isSecret, ...scopeDto() };
+			const dto: GlobalVariableUpdateDto = {
+				key: data.key,
+				isSecret: data.isSecret,
+				injectIntoContainers: data.injectIntoContainers,
+				...scopeDto()
+			};
 			// Editing a secret with an empty value keeps the stored value.
 			if (!(variableToEdit.isSecret && data.value === '')) dto.value = data.value;
 			onSubmit({ mode: 'edit', id: variableToEdit.id, variable: dto });
 		} else {
-			onSubmit({ mode: 'create', variable: { key: data.key, value: data.value, isSecret: data.isSecret, ...scopeDto() } });
+			onSubmit({
+				mode: 'create',
+				variable: {
+					key: data.key,
+					value: data.value,
+					isSecret: data.isSecret,
+					injectIntoContainers: data.injectIntoContainers,
+					...scopeDto()
+				}
+			});
 		}
 	}
 </script>
@@ -248,6 +270,13 @@
 					bind:checked={bulkSecret}
 				/>
 
+				<SwitchWithLabel
+					id="variable-bulk-inject"
+					label={m.variables_inject_into_containers()}
+					description={m.variables_inject_into_containers_description()}
+					bind:checked={bulkInject}
+				/>
+
 				{@render scopeSelector()}
 			{:else}
 				<div>
@@ -286,6 +315,13 @@
 					label={m.secret()}
 					description={m.secret_description()}
 					bind:checked={inputs.isSecret.value}
+				/>
+
+				<SwitchWithLabel
+					id="variable-inject"
+					label={m.variables_inject_into_containers()}
+					description={m.variables_inject_into_containers_description()}
+					bind:checked={inputs.injectIntoContainers.value}
 				/>
 
 				{@render scopeSelector()}

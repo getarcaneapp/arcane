@@ -113,10 +113,11 @@ func (s *VariableService) CreateVariable(ctx context.Context, req env.CreateGlob
 	}
 
 	variable := GlobalVariable{
-		Key:             key,
-		Value:           value,
-		IsSecret:        req.IsSecret,
-		AllEnvironments: allEnvironments,
+		Key:                  key,
+		Value:                value,
+		IsSecret:             req.IsSecret,
+		AllEnvironments:      allEnvironments,
+		InjectIntoContainers: req.InjectIntoContainers,
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -173,6 +174,9 @@ func (s *VariableService) UpdateVariable(ctx context.Context, id string, req env
 	variable.Value = value
 	variable.IsSecret = isSecret
 	variable.AllEnvironments = allEnvironments
+	if req.InjectIntoContainers != nil {
+		variable.InjectIntoContainers = *req.InjectIntoContainers
+	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if validateScopeConflictErr := s.validateScopeConflictInternal(tx, key, variable.ID, allEnvironments, envIDs); validateScopeConflictErr != nil {
@@ -269,15 +273,17 @@ func (s *VariableService) DeleteVariable(ctx context.Context, id string) error {
 }
 
 // resolveEffectiveVariablesInternal computes the variable set for one
-// environment: all-environment variables first, env-scoped variables override.
-// Secret values are decrypted; variables that fail to decrypt are skipped.
-func (s *VariableService) resolveEffectiveVariablesInternal(ctx context.Context, envID string) ([]env.Variable, error) {
+// environment: all-environment variables first, env-scoped variables override
+// (including their injection flag). Secret values are decrypted; variables
+// that fail to decrypt are skipped.
+func (s *VariableService) resolveEffectiveVariablesInternal(ctx context.Context, envID string) (env.Summary, error) {
 	variables, err := s.loadVariablesInternal(ctx)
 	if err != nil {
-		return nil, err
+		return env.Summary{}, err
 	}
 
 	effective := make(map[string]string)
+	injected := make(map[string]bool)
 	for _, scoped := range []bool{false, true} {
 		for _, variable := range variables {
 			if variable.AllEnvironments == scoped {
@@ -297,16 +303,20 @@ func (s *VariableService) resolveEffectiveVariablesInternal(ctx context.Context,
 				value = decrypted
 			}
 			effective[variable.Key] = value
+			injected[variable.Key] = variable.InjectIntoContainers
 		}
 	}
 
 	keys := slices.Sorted(maps.Keys(effective))
 
-	result := make([]env.Variable, 0, len(effective))
+	summary := env.Summary{Variables: make([]env.Variable, 0, len(effective))}
 	for _, key := range keys {
-		result = append(result, env.Variable{Key: key, Value: effective[key]})
+		summary.Variables = append(summary.Variables, env.Variable{Key: key, Value: effective[key]})
+		if !injected[key] {
+			summary.NoInjectKeys = append(summary.NoInjectKeys, key)
+		}
 	}
-	return result, nil
+	return summary, nil
 }
 
 // SyncEnvironment materializes the effective variable set into one
@@ -333,16 +343,16 @@ func (s *VariableService) syncEnvironmentInternal(ctx context.Context, envID str
 		}
 	}
 
-	vars, err := s.resolveEffectiveVariablesInternal(ctx, envID)
+	summary, err := s.resolveEffectiveVariablesInternal(ctx, envID)
 	if err != nil {
 		return err
 	}
 
 	if envID == environment.LocalEnvironmentID {
-		return s.WriteLocalEnvFile(ctx, vars)
+		return s.WriteLocalEnvFile(ctx, summary)
 	}
 
-	body, err := json.Marshal(env.Summary{Variables: vars})
+	body, err := json.Marshal(summary)
 	if err != nil {
 		return fmt.Errorf("failed to marshal variables for sync: %w", err)
 	}
@@ -542,7 +552,10 @@ func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]env.Variable,
 	return vars, nil
 }
 
-func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []env.Variable) error {
+// WriteLocalEnvFile materializes summary into .env.global. Interpolation-only
+// keys are marked in the header, ahead of every value, so values and marks are
+// always read from one consistent snapshot.
+func (s *VariableService) WriteLocalEnvFile(ctx context.Context, summary env.Summary) error {
 	envPath, err := s.localEnvFilePathInternal(ctx)
 	if err != nil {
 		return err
@@ -557,9 +570,17 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []env.Vari
 
 	var builder strings.Builder
 	builder.WriteString("# Global Environment Variables\n")
-	builder.WriteString("# These variables are available to all projects\n\n")
+	builder.WriteString("# These variables are available to all projects\n")
 
-	for _, v := range vars {
+	for _, key := range summary.NoInjectKeys {
+		if !envKeyPattern.MatchString(key) {
+			return common.Classify(common.ErrInvalidEnvKey, fmt.Errorf("invalid env key %q (must match [A-Za-z_][A-Za-z0-9_]*)", key))
+		}
+		_, _ = fmt.Fprintf(&builder, "# %s %s\n", projects.GlobalEnvNoInjectDirective, key)
+	}
+	builder.WriteString("\n")
+
+	for _, v := range summary.Variables {
 		if strings.TrimSpace(v.Key) == "" {
 			continue
 		}
@@ -589,7 +610,8 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []env.Vari
 
 	slog.DebugContext(ctx, "Synchronized global variables file",
 		"path", envPath,
-		"count", len(vars))
+		"count", len(summary.Variables),
+		"noInjectCount", len(summary.NoInjectKeys))
 
 	return nil
 }
@@ -679,10 +701,12 @@ func (s *VariableService) importVariablesInternal(ctx context.Context, vars []en
 			continue
 		}
 
+		// Legacy .env.global entries were always injected into every container.
 		variable := GlobalVariable{
-			Key:             key,
-			Value:           entry.Value,
-			AllEnvironments: scopeEnvID == "",
+			Key:                  key,
+			Value:                entry.Value,
+			AllEnvironments:      scopeEnvID == "",
+			InjectIntoContainers: true,
 		}
 		transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			if createImportedVariableErr := tx.Omit("Environments").Create(&variable).Error; createImportedVariableErr != nil {
@@ -831,13 +855,14 @@ func environmentsFromIDsInternal(envIDs []string) []environment.Environment {
 func globalVariableToDTOInternal(variable GlobalVariable) env.GlobalVariable {
 	value := kit.Ternary(variable.IsSecret, "", variable.Value)
 	return env.GlobalVariable{
-		ID:              variable.ID,
-		Key:             variable.Key,
-		Value:           value,
-		IsSecret:        variable.IsSecret,
-		AllEnvironments: variable.AllEnvironments,
-		EnvironmentIDs:  scopedEnvironmentIDsInternal(variable.Environments),
-		CreatedAt:       variable.CreatedAt,
-		UpdatedAt:       variable.UpdatedAt,
+		ID:                   variable.ID,
+		Key:                  variable.Key,
+		Value:                value,
+		IsSecret:             variable.IsSecret,
+		AllEnvironments:      variable.AllEnvironments,
+		InjectIntoContainers: variable.InjectIntoContainers,
+		EnvironmentIDs:       scopedEnvironmentIDsInternal(variable.Environments),
+		CreatedAt:            variable.CreatedAt,
+		UpdatedAt:            variable.UpdatedAt,
 	}
 }

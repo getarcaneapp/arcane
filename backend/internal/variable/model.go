@@ -17,6 +17,9 @@ type GlobalVariable struct {
 	// insert and the column default would silently win.
 	AllEnvironments bool                      `json:"allEnvironments" gorm:"column:all_environments"`
 	Environments    []environment.Environment `json:"-" gorm:"many2many:global_variable_environments;joinForeignKey:GlobalVariableID;joinReferences:EnvironmentID"`
+	// When false the variable is only available for ${VAR} interpolation and
+	// is not added to every container's environment.
+	InjectIntoContainers bool `json:"injectIntoContainers" gorm:"column:inject_into_containers"`
 }
 
 func (GlobalVariable) TableName() string { return "global_variables" }

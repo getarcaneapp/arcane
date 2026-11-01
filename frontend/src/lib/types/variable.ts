@@ -4,6 +4,7 @@ export interface GlobalVariable {
 	value: string; // '' when isSecret (server redacts)
 	isSecret: boolean;
 	allEnvironments: boolean;
+	injectIntoContainers: boolean; // false = only available for ${VAR} interpolation
 	environmentIds: string[];
 	createdAt: string;
 	updatedAt?: string;
@@ -14,6 +15,7 @@ export interface GlobalVariableCreateDto {
 	value: string;
 	isSecret?: boolean;
 	allEnvironments?: boolean;
+	injectIntoContainers?: boolean;
 	environmentIds?: string[];
 }
 
@@ -22,6 +24,7 @@ export interface GlobalVariableUpdateDto {
 	value?: string; // omitted for secrets = keep stored value
 	isSecret?: boolean;
 	allEnvironments?: boolean;
+	injectIntoContainers?: boolean;
 	environmentIds?: string[];
 }
 

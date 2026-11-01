@@ -72,6 +72,26 @@ func TestLoadEnvironment(t *testing.T) {
 	})
 }
 
+func TestLoadEnvironment_SkipsInjectionForNoInjectGlobalKeys(t *testing.T) {
+	tmpDir := t.TempDir()
+	projectsDir := filepath.Join(tmpDir, "projects")
+	workdir := filepath.Join(projectsDir, "myproject")
+	require.NoError(t, os.MkdirAll(workdir, utils.DirPerm))
+	globalEnvPath := filepath.Join(projectsDir, GlobalEnvFileName)
+	require.NoError(t, os.WriteFile(globalEnvPath, []byte("# Global\n# arcane:noinject DB_PASSWORD\n\nPUID=1000\nDB_PASSWORD=secret\n"), utils.FilePerm))
+
+	envMap, injectionVars, err := NewEnvLoader(projectsDir, workdir, false).LoadEnvironment(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "secret", envMap["DB_PASSWORD"])
+	assert.Equal(t, EnvMap{"PUID": "1000"}, injectionVars)
+
+	// Marks after the first variable line are ignored, so a value can never act as one.
+	require.NoError(t, os.WriteFile(globalEnvPath, []byte("PUID=1000\n# arcane:noinject DB_PASSWORD\nDB_PASSWORD=secret\n"), utils.FilePerm))
+	_, injectionVars, err = NewEnvLoader(projectsDir, workdir, false).LoadEnvironment(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, EnvMap{"PUID": "1000", "DB_PASSWORD": "secret"}, injectionVars)
+}
+
 func TestLoadEnvironment_DoesNotCreateMissingGlobalEnvFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	projectsDir := filepath.Join(tmpDir, "projects")

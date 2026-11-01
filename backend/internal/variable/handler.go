@@ -164,7 +164,7 @@ func (h *VariableHandler) UpdateMaterializedVariables(ctx context.Context, input
 		return &handlerutil.Out[base.MessageResponse]{Body: *response}, nil
 	}
 
-	if err := h.variableService.WriteLocalEnvFile(ctx, input.Body.Variables); err != nil {
+	if err := h.variableService.WriteLocalEnvFile(ctx, input.Body); err != nil {
 		if errors.Is(err, common.ErrInvalidEnvKey) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
