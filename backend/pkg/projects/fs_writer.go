@@ -14,12 +14,12 @@ import (
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/cli"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
+	kitfs "kit.getarcane.app/fs"
 	"kit.getarcane.app/fs/atomic"
-
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 type (
@@ -39,7 +39,7 @@ const (
 	DefaultComposeFileName = "compose.yaml"
 	// DefaultComposeOverrideFileName is the override filename Arcane writes when a
 	// project gains an override but has none on disk. It is deliberately
-	// composeOverrideFileCandidates[1] ("compose.override.yaml"), NOT [0]
+	// ComposeOverrideFileCandidates[1] ("compose.override.yaml"), NOT [0]
 	// ("compose.override.yml"), so the default override extension matches Arcane's
 	// ".yaml" base default (DefaultComposeFileName = "compose.yaml"). Do not "fix"
 	// this to [0]: `docker compose` has no preference between the two, and keeping
@@ -48,12 +48,12 @@ const (
 )
 
 var (
-	// composeFileCandidates lists supported base compose filenames in Arcane's
+	// ComposeFileCandidates lists supported base compose filenames in Arcane's
 	// detection order. This order is intentionally explicit rather than sourced
 	// from compose-go's cli.DefaultFileNames: compose-go prefers docker-compose.yml
 	// over docker-compose.yaml, and adopting that order would silently switch the
 	// base file for existing projects that ship both.
-	composeFileCandidates = []string{
+	ComposeFileCandidates = []string{
 		DefaultComposeFileName,
 		"compose.yml",
 		"docker-compose.yaml",
@@ -62,16 +62,10 @@ var (
 		"podman-compose.yml",
 	}
 
-	// composeOverrideFileCandidates lists supported compose override filenames in
+	// ComposeOverrideFileCandidates lists supported compose override filenames in
 	// detection order, sourced from compose-go.
-	composeOverrideFileCandidates = slices.Clone(cli.DefaultOverrideFileNames)
+	ComposeOverrideFileCandidates = slices.Clone(cli.DefaultOverrideFileNames)
 )
-
-// ComposeFileCandidates returns the supported base compose filenames in Arcane's
-// detection order. A copy is returned so callers can't mutate package state.
-func ComposeFileCandidates() []string {
-	return slices.Clone(composeFileCandidates)
-}
 
 // detectExistingComposeFile finds an existing compose file in the directory
 func detectExistingComposeFile(ctx context.Context, projectsRoot, dir string) string {
@@ -90,12 +84,12 @@ func WriteComposeFile(ctx context.Context, projectsRoot, dirPath, content string
 
 	// The project directory is the confinement root for the write itself, so it
 	// has to exist before acfs can open it.
-	if err := os.MkdirAll(dirPath, utils.DirPerm); err != nil {
+	if err := os.MkdirAll(dirPath, kitfs.DirPerm); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	composeFileName := DefaultComposeFileName
-	mode := utils.FilePerm
+	mode := kitfs.FilePerm
 	if existingFile := detectExistingComposeFile(ctx, projectsRoot, dirPath); existingFile != "" {
 		composeFileName = filepath.Base(existingFile)
 		if entry, statErr := (acfs.Root{Path: dirPath}).Stat(ctx, "/"+composeFileName, acfstypes.StatOptions{}); statErr == nil {
@@ -119,7 +113,7 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 		return fmt.Errorf("invalid project file name %q", fileName)
 	}
 
-	if err := os.MkdirAll(dirPath, utils.DirPerm); err != nil {
+	if err := os.MkdirAll(dirPath, kitfs.DirPerm); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
@@ -144,7 +138,7 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 		return fmt.Errorf("failed to inspect project file %s: %w", fileName, statErr)
 	}
 
-	mode := utils.FilePerm
+	mode := kitfs.FilePerm
 	if statErr == nil {
 		existingContent, readErr := acfs.Root{Path: dirPath}.ReadFile(ctx, logicalPath)
 		if readErr == nil && string(existingContent) == content {
@@ -193,12 +187,12 @@ func resolveEnvFileWriteTarget(envPath string) (writePath string, perm os.FileMo
 	info, err := os.Lstat(envPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return envPath, utils.FilePerm, false, nil
+			return envPath, kitfs.FilePerm, false, nil
 		}
 		return "", 0, false, fmt.Errorf("inspect env file: %w", err)
 	}
 	if info.Mode()&os.ModeSymlink == 0 {
-		return envPath, utils.FilePerm, false, nil
+		return envPath, kitfs.FilePerm, false, nil
 	}
 
 	resolvedPath, err := filepath.EvalSymlinks(envPath)
@@ -247,11 +241,11 @@ func WriteProjectFiles(ctx context.Context, projectsRoot, dirPath, composeConten
 // WriteTemplateFile writes a template file (like .compose.template or .env.template)
 func WriteTemplateFile(filePath, content string) error {
 	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, utils.DirPerm); err != nil {
+	if err := os.MkdirAll(dir, kitfs.DirPerm); err != nil {
 		return fmt.Errorf("failed to create template directory: %w", err)
 	}
 
-	if err := atomic.WriteFile(filePath, []byte(content), utils.FilePerm); err != nil {
+	if err := atomic.WriteFile(filePath, []byte(content), kitfs.FilePerm); err != nil {
 		return fmt.Errorf("failed to write template file: %w", err)
 	}
 
@@ -261,7 +255,7 @@ func WriteTemplateFile(filePath, content string) error {
 // WriteFileWithPerm is a generic file writer with custom permissions
 func WriteFileWithPerm(filePath, content string, perm os.FileMode) error {
 	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, utils.DirPerm); err != nil {
+	if err := os.MkdirAll(dir, kitfs.DirPerm); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
@@ -340,7 +334,7 @@ func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string,
 
 	// The project directory is the confinement root for every write below, so
 	// it has to exist before acfs can open it.
-	if err := os.MkdirAll(projectPath, utils.DirPerm); err != nil {
+	if err := os.MkdirAll(projectPath, kitfs.DirPerm); err != nil {
 		return nil, fmt.Errorf("failed to create project directory: %w", err)
 	}
 
@@ -352,7 +346,7 @@ func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string,
 			return nil, fmt.Errorf("file path %s would escape project directory", file.RelativePath)
 		}
 
-		if mkdirAllErr := (acfs.Root{Path: projectPath}).MkdirAll(ctx, path.Dir(logicalPath), utils.DirPerm); mkdirAllErr != nil {
+		if mkdirAllErr := (acfs.Root{Path: projectPath}).MkdirAll(ctx, path.Dir(logicalPath), kitfs.DirPerm); mkdirAllErr != nil {
 			return nil, fmt.Errorf("failed to create directory for %s: %w", file.RelativePath, mkdirAllErr)
 		}
 
@@ -368,7 +362,7 @@ func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string,
 
 		// Write the file. Honor the source's executable bit so scripts arrive
 		// runnable for lifecycle hooks and similar consumers.
-		perm := kit.Ternary(file.Executable, 0o755, utils.FilePerm)
+		perm := kit.Ternary(file.Executable, 0o755, kitfs.FilePerm)
 		if writeErr := (acfs.Root{Path: projectPath}).Write(ctx, logicalPath, file.Content, acfs.WriteOptions{Mode: perm, InPlace: true}); writeErr != nil {
 			return nil, fmt.Errorf("failed to write file %s: %w", file.RelativePath, writeErr)
 		}
@@ -440,12 +434,6 @@ func cleanupEmptyDirs(ctx context.Context, projectPath, startLogical string) {
 	}
 }
 
-// ComposeOverrideFileCandidates returns the supported compose override filenames
-// in detection order. A copy is returned so callers can't mutate package state.
-func ComposeOverrideFileCandidates() []string {
-	return slices.Clone(composeOverrideFileCandidates)
-}
-
 // findComposeOverrideCandidates returns every supported override
 // candidate name for which exists reports true, in compose-go preference order.
 // It is the single primitive behind both filesystem discovery
@@ -453,7 +441,7 @@ func ComposeOverrideFileCandidates() []string {
 // (ResolveComposeOverride), so the two can never drift in preference order.
 func findComposeOverrideCandidates(exists func(name string) bool) []string {
 	found := make([]string, 0, 1)
-	for _, name := range composeOverrideFileCandidates {
+	for _, name := range ComposeOverrideFileCandidates {
 		if exists(name) {
 			found = append(found, name)
 		}
@@ -542,7 +530,7 @@ func WriteComposeOverrideFile(ctx context.Context, projectsRoot, dir string, con
 
 	// Remove stale override files: deleted from the source, or renamed to a
 	// different candidate name than the one currently written.
-	for _, candidate := range composeOverrideFileCandidates {
+	for _, candidate := range ComposeOverrideFileCandidates {
 		if candidate == keep {
 			continue
 		}

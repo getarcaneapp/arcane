@@ -6,15 +6,16 @@ import (
 	"path"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/client"
+
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/backupbrowser"
+	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/pkg/backupbrowser"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
 type (

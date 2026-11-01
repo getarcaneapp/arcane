@@ -17,13 +17,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/concurrency"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -32,7 +32,7 @@ type (
 	// instance, which holds for Arcane's single-instance-per-node deployment (for
 	// remote environments the session lives on that environment's agent).
 	UploadService struct {
-		locks           utils.KeyedMutex
+		locks           concurrency.KeyedMutex
 		settingsService *settings.SettingsService
 		root            string
 	}

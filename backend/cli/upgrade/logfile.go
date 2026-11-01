@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	kit "kit.getarcane.app"
+	"kit.getarcane.app"
 	"kit.getarcane.app/fs/atomic"
 )
 

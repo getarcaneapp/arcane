@@ -1,0 +1,211 @@
+package activity
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
+)
+
+type (
+	recordingAppender struct {
+		messages   []AppendMessageRequest
+		batchSizes []int
+		mu         sync.Mutex
+	}
+
+	failingWriter struct{}
+
+	// gatedAppender blocks its first AppendMessages call until release is
+	// closed, letting a test queue lines behind a known-stalled drain goroutine.
+	gatedAppender struct {
+		started chan struct{}
+		release chan struct{}
+		recordingAppender
+		startedOnce sync.Once
+	}
+)
+
+var (
+	_ MessageAppender = (*recordingAppender)(nil)
+	_ io.Writer       = failingWriter{}
+)
+
+func (a *recordingAppender) AppendMessage(_ context.Context, _ string, req AppendMessageRequest) (*types.ActivityMessage, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.messages = append(a.messages, req)
+	return &types.ActivityMessage{}, nil
+}
+
+func (a *recordingAppender) AppendMessages(_ context.Context, _ string, reqs []AppendMessageRequest) ([]types.ActivityMessage, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.messages = append(a.messages, reqs...)
+	a.batchSizes = append(a.batchSizes, len(reqs))
+	return make([]types.ActivityMessage, len(reqs)), nil
+}
+
+func (a *recordingAppender) recorded() ([]AppendMessageRequest, []int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]AppendMessageRequest(nil), a.messages...), append([]int(nil), a.batchSizes...)
+}
+
+func (f failingWriter) Write(_ []byte) (int, error) {
+	return 0, errors.New("client disconnected")
+}
+
+func TestWriterContinuesActivityCaptureWhenResponseWriterFails(t *testing.T) {
+	appender := &recordingAppender{}
+	writer := NewWriter(t.Context(), WriterOptions{
+		Service:     appender,
+		ActivityID:  "activity-1",
+		Output:      failingWriter{},
+		DefaultStep: "Pulling image",
+	})
+
+	n, err := writer.Write([]byte("Downloading layer\n"))
+	require.NoError(t, err)
+	require.Equal(t, len("Downloading layer\n"), n)
+
+	FlushWriter(writer)
+	require.Eventually(t, func() bool {
+		messages, _ := appender.recorded()
+		return len(messages) == 1
+	}, time.Second, 10*time.Millisecond)
+	messages, _ := appender.recorded()
+	require.Equal(t, "Downloading layer", messages[0].Message)
+	require.Equal(t, types.ActivityMessageLevelInfo, messages[0].Level)
+}
+
+func TestWriterRecordsLogAndErrorFramesVerbatim(t *testing.T) {
+	appender := &recordingAppender{}
+	writer := NewWriter(t.Context(), WriterOptions{
+		Service:     appender,
+		ActivityID:  "activity-1",
+		Output:      io.Discard,
+		DefaultStep: "Deploying project",
+	})
+
+	_, err := writer.Write([]byte("{\"log\":\"Container web-1  Created\"}\n{\"error\":\"Error response from daemon: conflict\"}\nno trailing newline"))
+	require.NoError(t, err)
+
+	FlushWriter(writer)
+	require.Eventually(t, func() bool {
+		messages, _ := appender.recorded()
+		return len(messages) == 3
+	}, time.Second, 10*time.Millisecond)
+	messages, _ := appender.recorded()
+	require.Equal(t, "Container web-1  Created", messages[0].Message)
+	require.Equal(t, types.ActivityMessageLevelInfo, messages[0].Level)
+	require.Equal(t, "Error response from daemon: conflict", messages[1].Message)
+	require.Equal(t, types.ActivityMessageLevelError, messages[1].Level)
+	require.Equal(t, "no trailing newline", messages[2].Message)
+}
+
+func (g *gatedAppender) AppendMessages(ctx context.Context, activityID string, reqs []AppendMessageRequest) ([]types.ActivityMessage, error) {
+	g.startedOnce.Do(func() { close(g.started) })
+	<-g.release
+	return g.recordingAppender.AppendMessages(ctx, activityID, reqs)
+}
+
+// TestWriterBatchesQueuedLinesIntoOneAppend verifies lines already
+// queued when the drain goroutine wakes are persisted through a single
+// AppendMessages call, in order, rather than one call per line.
+func TestWriterBatchesQueuedLinesIntoOneAppend(t *testing.T) {
+	appender := &gatedAppender{started: make(chan struct{}), release: make(chan struct{})}
+	writer := NewWriter(t.Context(), WriterOptions{
+		Service:     appender,
+		ActivityID:  "activity-1",
+		Output:      io.Discard,
+		DefaultStep: "Pulling image",
+	})
+
+	_, err := writer.Write([]byte("layer 0\n"))
+	require.NoError(t, err)
+	select {
+	case <-appender.started:
+	case <-time.After(time.Second):
+		t.Fatal("first append never started")
+	}
+
+	// The drain goroutine is stalled inside the first append; everything
+	// written now queues up behind it.
+	for i := 1; i < 10; i++ {
+		_, writeErr := writer.Write(fmt.Appendf(nil, "layer %d\n", i))
+		require.NoError(t, writeErr)
+	}
+	close(appender.release)
+
+	require.Eventually(t, func() bool {
+		messages, _ := appender.recorded()
+		return len(messages) == 10
+	}, time.Second, 10*time.Millisecond)
+
+	messages, batchSizes := appender.recorded()
+	for i, message := range messages {
+		require.Equal(t, fmt.Sprintf("layer %d", i), message.Message)
+	}
+	require.Equal(t, []int{1, 9}, batchSizes)
+}
+
+func TestWriterReturnsWrappedWriteErrorWithoutActivity(t *testing.T) {
+	writer := NewWriter(t.Context(), WriterOptions{
+		Output:      failingWriter{},
+		DefaultStep: "Pulling image",
+	})
+
+	_, err := writer.Write([]byte("Downloading layer\n"))
+	require.ErrorContains(t, err, "client disconnected")
+}
+
+// TestWriterPersistsQueuedLinesAfterCancel verifies that cancelling
+// the work context does not abandon lines the writer already accepted:
+// batches persist on a detached context and the drain goroutine empties the
+// queue before exiting, since the lines queued at cancellation are usually
+// the ones explaining it.
+func TestWriterPersistsQueuedLinesAfterCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	appender := &gatedAppender{started: make(chan struct{}), release: make(chan struct{})}
+	writer := NewWriter(ctx, WriterOptions{
+		Service:     appender,
+		ActivityID:  "activity-1",
+		Output:      io.Discard,
+		DefaultStep: "Pulling image",
+	})
+
+	_, err := writer.Write([]byte("layer 0\n"))
+	require.NoError(t, err)
+	select {
+	case <-appender.started:
+	case <-time.After(time.Second):
+		t.Fatal("first append never started")
+	}
+
+	// The drain goroutine is stalled inside the first append; these queue up
+	// behind it and are still pending when the context is cancelled.
+	for i := 1; i < 10; i++ {
+		_, writeErr := writer.Write(fmt.Appendf(nil, "layer %d\n", i))
+		require.NoError(t, writeErr)
+	}
+	cancel()
+	close(appender.release)
+
+	require.Eventually(t, func() bool {
+		messages, _ := appender.recorded()
+		return len(messages) == 10
+	}, time.Second, 10*time.Millisecond)
+
+	messages, _ := appender.recorded()
+	for i, message := range messages {
+		require.Equal(t, fmt.Sprintf("layer %d", i), message.Message)
+	}
+}

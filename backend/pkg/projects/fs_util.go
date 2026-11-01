@@ -15,12 +15,13 @@ import (
 
 	"github.com/samber/mo"
 	"go.yaml.in/yaml/v4"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
+	kitfs "kit.getarcane.app/fs"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"getarcane.dev/arcane/v3/internal/common"
 )
 
 // ErrProjectDirExists is returned by CreateExactDir when the target directory
@@ -48,7 +49,7 @@ func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, erro
 	// os.* rather than acfs: this creates the confinement root itself, which
 	// has to exist before acfs can open it.
 	if _, err := os.Stat(projectsDirectory); os.IsNotExist(err) {
-		if mkdirAllErr := os.MkdirAll(projectsDirectory, utils.DirPerm); mkdirAllErr != nil {
+		if mkdirAllErr := os.MkdirAll(projectsDirectory, kitfs.DirPerm); mkdirAllErr != nil {
 			return "", mkdirAllErr
 		}
 		slog.InfoContext(ctx, "Created projects directory", "path", projectsDirectory)
@@ -158,7 +159,7 @@ func GetTemplatesDirectory(ctx context.Context, templatesDir string) (string, er
 	// os.* rather than acfs: this creates the confinement root itself, which
 	// has to exist before acfs can open it.
 	if _, err := os.Stat(resolved); os.IsNotExist(err) {
-		if mkdirAllErr := os.MkdirAll(resolved, utils.DirPerm); mkdirAllErr != nil {
+		if mkdirAllErr := os.MkdirAll(resolved, kitfs.DirPerm); mkdirAllErr != nil {
 			return "", mkdirAllErr
 		}
 		slog.InfoContext(ctx, "Created templates directory", "path", resolved)
@@ -246,7 +247,7 @@ func DirectorySyncContentsChanged(ctx context.Context, projectPath string, syncF
 		}
 	}
 
-	for _, candidate := range ComposeFileCandidates() {
+	for _, candidate := range ComposeFileCandidates {
 		if candidate == composeFileName {
 			continue
 		}
@@ -289,7 +290,7 @@ func StaleComposeFiles(ctx context.Context, projectPath, composeFileName string,
 		if _, exists := syncedFileSet[name]; exists {
 			continue
 		}
-		if slices.Contains(ComposeFileCandidates(), name) {
+		if slices.Contains(ComposeFileCandidates, name) {
 			stale = append(stale, name)
 			continue
 		}

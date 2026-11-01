@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 
-	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
+	wshub "getarcane.dev/arcane/v3/pkg/ws"
+	"getarcane.dev/types/v3"
 )
 
 const (
@@ -121,7 +121,7 @@ func (h *WebSocketHandler) runContainerStatsHub(containerID string, hub *wshub.H
 		slog.WarnContext(ctx, "container stats stream failed", "containerId", containerID, "error", err)
 		if b, marshalErr := json.Marshal(map[string]any{
 			"error":     "Failed to stream container stats: " + err.Error(),
-			"timestamp": wshub.NowRFC3339(),
+			"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 		}); marshalErr == nil {
 			hub.Broadcast(b)
 		}

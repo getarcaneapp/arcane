@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/libtnb/sqlite"
@@ -20,20 +19,22 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app/docker/streams/bus"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/internal/apikey"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/session"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/arcane/v3/internal/version"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/types/v3"
 )
 
 func setupAuthServiceTestDB(t *testing.T) *database.DB {

@@ -17,28 +17,29 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/sys/cgroup"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config/schema"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	git "github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/backupbrowser"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
+	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/config/schema"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/backupbrowser"
+	"getarcane.dev/arcane/v3/pkg/francis"
+	git "getarcane.dev/arcane/v3/pkg/gitutil"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -650,7 +651,7 @@ func currentMounts(ctx context.Context, dockerClient *client.Client) (mounts []c
 	if inContainer = containerErr == nil; !inContainer {
 		return nil, false, nil
 	}
-	inspect, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
+	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
 	if err != nil {
 		return nil, true, fmt.Errorf("failed to inspect Arcane container mounts: %w", err)
 	}

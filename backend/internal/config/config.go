@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
-	kit "kit.getarcane.app"
+	"kit.getarcane.app"
+	"kit.getarcane.app/fs"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 )
 
 type (
@@ -106,8 +106,8 @@ func Load() (*Config, error) {
 	}
 
 	// Set global file permissions
-	utils.FilePerm = cfg.FilePerm
-	utils.DirPerm = cfg.DirPerm
+	fs.FilePerm = cfg.FilePerm
+	fs.DirPerm = cfg.DirPerm
 
 	return cfg, nil
 }
@@ -163,7 +163,7 @@ func loadFromEnv(cfg *Config) error {
 		envValue := os.Getenv(envTag)
 		var fromFile bool
 		if slices.Contains(strings.Split(fieldType.Tag.Get("options"), ","), "file") {
-			envValue, _, fromFile = utils.LookupEnvOrFile(envTag)
+			envValue, _, fromFile = kit.LookupEnvOrFile(envTag)
 		}
 		if !fromFile {
 			envValue = kit.TrimQuotes(envValue)

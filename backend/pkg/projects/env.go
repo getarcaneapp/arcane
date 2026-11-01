@@ -17,12 +17,13 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/consts"
 	"github.com/compose-spec/compose-go/v2/dotenv"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/hot"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -998,11 +999,10 @@ func parseComposeBool(env EnvMap, key string) bool {
 	if raw == "" {
 		return false
 	}
-	v, err := strconv.ParseBool(raw)
-	if err != nil {
+	v, ok := kit.ParseBool(raw)
+	if !ok {
 		slog.DebugContext(context.Background(), "ignoring invalid compose boolean env var", //nolint:forbidigo // Compose environment parsing is a pure helper without a request context.
 			"key", key, "value", raw)
-		return false
 	}
 	return v
 }

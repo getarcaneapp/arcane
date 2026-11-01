@@ -16,13 +16,14 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/getarcaneapp/arcane/types/v3"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	updaterlabels "kit.getarcane.app/updater/labels"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/iconcatalog"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
+	"getarcane.dev/arcane/v3/pkg/iconcatalog"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -536,7 +537,7 @@ func applyServiceLabelMetadata(project *composetypes.Project) error {
 			key   string
 			label string
 		}{
-			{key: "hidden", label: libarcane.HiddenResourceLabel},
+			{key: "hidden", label: selfcontainer.HiddenResourceLabel},
 			{key: "update-check", label: imageref.UpdateCheckLabel},
 		} {
 			value, present := arcane[metadata.key]
@@ -644,8 +645,7 @@ func metadataBool(value any) (bool, error) {
 		return enabled, nil
 	}
 	if text, ok := value.(string); ok {
-		enabled, err := strconv.ParseBool(strings.TrimSpace(text))
-		if err == nil {
+		if enabled, parsed := kit.ParseBool(text); parsed {
 			return enabled, nil
 		}
 	}

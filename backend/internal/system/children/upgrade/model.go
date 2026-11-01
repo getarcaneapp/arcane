@@ -4,7 +4,7 @@ import (
 	"database/sql/driver"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/database"
 )
 
 type (

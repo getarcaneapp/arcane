@@ -18,7 +18,6 @@ import (
 
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -33,24 +32,24 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/vulnerability"
-	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/vuln"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/logging"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/vulnerability"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/vuln"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -118,7 +117,7 @@ func (s *Service) PatchImage(ctx context.Context, envID, imageID string, opts ty
 			return nil, err
 		}
 	}
-	record, run, err := s.startPatch(utils.ActivityRuntimeContext(ctx, nil), envID, imageID, opts, user, "")
+	record, run, err := s.startPatch(activitylib.ActivityRuntimeContext(ctx, nil), envID, imageID, opts, user, "")
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +278,7 @@ func (s *Service) startPatch(
 
 // runPatch executes one recorded patch with Copacetic and settles its record and activity.
 func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts types.PatchOptions, reportData []byte, copaImageRef, activityID string) (runErr error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "image.patch", trace.WithAttributes(
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "image.patch", trace.WithAttributes(
 		attribute.String("arcane.environment.id", record.EnvironmentID),
 		attribute.String("arcane.image.patch_id", record.ID),
 		attribute.String("arcane.image.ref", record.OriginalRef),
@@ -287,7 +286,7 @@ func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts t
 		attribute.String("arcane.image.patch_mode", record.Mode),
 		attribute.String("arcane.activity.id", activityID),
 	))
-	defer func() { tracing.End(span, runErr) }()
+	defer func() { logging.EndSpan(span, runErr) }()
 	fail := func(err error, durationMs int64) error {
 		s.finishPatchRecord(ctx, record, types.PatchStatusFailed, err.Error(), nil, durationMs)
 		s.completePatchActivity(ctx, activityID, false, err.Error())
@@ -928,7 +927,7 @@ func (s *Service) completePatchActivity(ctx context.Context, activityID string, 
 		switch {
 		case success:
 			return types.ActivityStatusSuccess, "Image patch completed", nil
-		case activitylib.CancelledByContext(ctx):
+		case errors.Is(context.Cause(ctx), activitylib.ErrCanceled):
 			return types.ActivityStatusCancelled, "Image patch cancelled", nil
 		default:
 			return types.ActivityStatusFailed, cmp.Or(errMessage, "Image patch failed"), mo.EmptyableToOption(errMessage).ToPointer()

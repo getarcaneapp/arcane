@@ -12,14 +12,14 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v3"
-	kit "kit.getarcane.app"
+	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/podman"
+	"getarcane.dev/types/v3"
 )
 
 type (

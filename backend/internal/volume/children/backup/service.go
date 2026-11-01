@@ -15,35 +15,36 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	userdomain "github.com/getarcaneapp/arcane/backend/v3/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/volume/children/backup/children/browser"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/volume/children/backup/children/policies"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/volume/children/backup/children/restore"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	s3utils "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/s3"
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
+
+	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/s3"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	userdomain "getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/arcane/v3/internal/volume/children/backup/children/browser"
+	"getarcane.dev/arcane/v3/internal/volume/children/backup/children/policies"
+	"getarcane.dev/arcane/v3/internal/volume/children/backup/children/restore"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	s3util "getarcane.dev/arcane/v3/pkg/s3"
+	"getarcane.dev/arcane/v3/pkg/volumes"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -71,7 +72,7 @@ type (
 		Engine           *backup.Engine
 		S3Destinations   *s3.S3DestinationService
 		RecoveryKeys     *backup.RecoveryKeyStore
-		Locks            *utils.KeyedMutex
+		Locks            *concurrency.KeyedMutex
 		AlreadyRunning   error
 		StopContainer    func(ctx context.Context, containerID string, user types.Actor) error
 		StartContainer   func(ctx context.Context, containerID string, user types.Actor) error
@@ -409,7 +410,7 @@ func (s *Service) completeBackup(ctx context.Context, entry *types.VolumeBackup,
 }
 
 func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, user types.Actor, plan backupPlan) (err error) {
-	defer utils.RecoverToError(&err, "volume backup")
+	defer concurrency.RecoverToError(&err, "volume backup")
 	volumeName := entry.VolumeName
 	if held, _ := ctx.Value(lockHeldKey{}).(lockHeld); held.service != s || held.volumeName != volumeName {
 		defer s.deps.Locks.Lock(volumeName)()
@@ -754,7 +755,7 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 		}
 		scratchVolume := "arcane-rustic-download-" + uuid.New().String()
 		if _, volumeCreateErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
-			return dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: scratchVolume, Labels: volumehelper.Labels()})
+			return dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: scratchVolume, Labels: volumes.Labels()})
 		}); volumeCreateErr != nil {
 			return nil, 0, fmt.Errorf("failed to create download scratch volume: %w", volumeCreateErr)
 		}
@@ -786,7 +787,7 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 	if err != nil {
 		return nil, 0, err
 	}
-	reader, size, err := volumehelper.DownloadFileFromContainer(ctx, dockerClient, containerID, archivePath, cleanup)
+	reader, size, err := volumes.DownloadFileFromContainer(ctx, dockerClient, containerID, archivePath, cleanup)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -833,7 +834,7 @@ func (s *Service) DiscoverRemoteBackups(ctx context.Context, destinationID strin
 	if err != nil {
 		return 0, nil, errors.New("the selected S3 backup destination is not configured")
 	}
-	roots, err := s3utils.ListRepositoryRoots(ctx, configuration, backup.VolumeRoot)
+	roots, err := s3util.ListRepositoryRoots(ctx, configuration, backup.VolumeRoot)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to list volume backup repositories: %w", err)
 	}

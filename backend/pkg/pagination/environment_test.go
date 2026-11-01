@@ -4,8 +4,9 @@ import (
 	"cmp"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
 )
 
 type (

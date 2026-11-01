@@ -15,31 +15,32 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/samber/hot"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
+
 	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/normalization"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jwtclaims"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/session"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/arcane/v3/internal/version"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/cookie"
+	"getarcane.dev/arcane/v3/pkg/oidc"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/validation"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -656,15 +657,15 @@ func (s *AuthService) extractOidcGroups(ctx context.Context, userInfo types.Oidc
 		claim = cmp.Or(strings.TrimSpace(localSettings.OidcGroupsClaim.Value), "groups")
 	}
 
-	if v, ok := jwtclaims.GetByPath(userInfo.Extra, claim).Get(); ok {
-		if groups := jwtclaims.GetStringSliceClaim(map[string]any{"groups": v}, "groups"); len(groups) > 0 {
+	if v, ok := oidc.GetByPath(userInfo.Extra, claim).Get(); ok {
+		if groups := oidc.GetStringSliceClaim(map[string]any{"groups": v}, "groups"); len(groups) > 0 {
 			return groups
 		}
 	}
 	if tokenResp != nil && tokenResp.IDToken != "" {
-		if parsed := jwtclaims.ParseJWTClaims(tokenResp.IDToken); parsed != nil {
-			if v, ok := jwtclaims.GetByPath(parsed, claim).Get(); ok {
-				if groups := jwtclaims.GetStringSliceClaim(map[string]any{"groups": v}, "groups"); len(groups) > 0 {
+		if parsed := oidc.ParseJWTClaims(tokenResp.IDToken); parsed != nil {
+			if v, ok := oidc.GetByPath(parsed, claim).Get(); ok {
+				if groups := oidc.GetStringSliceClaim(map[string]any{"groups": v}, "groups"); len(groups) > 0 {
 					return groups
 				}
 			}
@@ -1143,7 +1144,7 @@ func (s *AuthService) runInBackground(ctx context.Context, name string, fn func(
 
 	go func() {
 		defer func() {
-			if panicErr := utils.PanicToError(recover()); panicErr != nil {
+			if panicErr := concurrency.PanicToError(recover()); panicErr != nil {
 				slog.ErrorContext(bgCtx, "Unhandled error", "error", fmt.Errorf("Background task panicked: %w", panicErr), "task", name) //nolint:staticcheck // Preserve the existing error message.
 			}
 		}()

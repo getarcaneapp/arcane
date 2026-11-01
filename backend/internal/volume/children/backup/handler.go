@@ -9,20 +9,19 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/upload"
-	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/upload"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -95,7 +94,7 @@ func NewHandler(p HandlerParams) *Handler {
 }
 
 func (h *Handler) DownloadBackup(ctx context.Context, input *DownloadBackupInput) (*huma.StreamResponse, error) {
-	user, _ := userctx.CurrentUserFromContext(ctx)
+	user, _ := handlerutil.CurrentUserFromContext(ctx)
 	reader, size, err := h.service.DownloadBackup(ctx, input.BackupID, user)
 	if err != nil {
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
@@ -150,7 +149,7 @@ func (h *Handler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*
 	if err != nil {
 		return nil, err
 	}
-	entry, err := h.service.StartBackup(utils.ActivityRuntimeContext(ctx, h.appCtx), input.EnvironmentID, input.VolumeName, *user, kit.FromPtr(input.Body))
+	entry, err := h.service.StartBackup(activitylib.ActivityRuntimeContext(ctx, h.appCtx), input.EnvironmentID, input.VolumeName, *user, kit.FromPtr(input.Body))
 	if errors.Is(err, h.service.deps.AlreadyRunning) {
 		return nil, huma.Error409Conflict(err.Error())
 	}
@@ -163,8 +162,8 @@ func (h *Handler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*
 }
 
 func (h *Handler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
-	user, _ := userctx.CurrentUserFromContext(ctx)
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	user, _ := handlerutil.CurrentUserFromContext(ctx)
+	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           types.ActivityTypeResourceAction,
@@ -211,9 +210,9 @@ func (h *Handler) DiscoverBackups(ctx context.Context, input *DiscoverVolumeBack
 }
 
 func (h *Handler) UploadBackup(ctx context.Context, input *UploadBackupInput) (*handlerutil.Out[*types.VolumeBackup], error) {
-	user, _ := userctx.CurrentUserFromContext(ctx)
+	user, _ := handlerutil.CurrentUserFromContext(ctx)
 	var uploaded *types.VolumeBackup
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           types.ActivityTypeResourceAction,

@@ -6,8 +6,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
 )
 
 type (
@@ -74,11 +74,11 @@ func GetRemoteAddrFromContext(ctx context.Context) string {
 // NewActivityBatchID lifts the client-supplied activity batch ID header into the
 // request context so activities spawned by one logical bulk action can be
 // grouped without threading the ID through every handler. Invalid values are
-// ignored by utils.WithActivityBatchID.
+// ignored by activitylib.WithActivityBatchID.
 func NewActivityBatchID() func(ctx huma.Context, next func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		if batchID := strings.TrimSpace(ctx.Header(HeaderActivityBatchID)); batchID != "" {
-			ctx = huma.WithContext(ctx, utils.WithActivityBatchID(ctx.Context(), batchID))
+			ctx = huma.WithContext(ctx, activitylib.WithActivityBatchID(ctx.Context(), batchID))
 		}
 		next(ctx)
 	}

@@ -1,0 +1,95 @@
+// Package iconcatalog resolves Arcane icon metadata into catalog URLs.
+package iconcatalog
+
+import (
+	"cmp"
+	"fmt"
+	"net/url"
+	"strings"
+
+	"kit.getarcane.app"
+)
+
+type (
+	IconSet struct {
+		Icon  string
+		Light string
+		Dark  string
+	}
+
+	ResolvedIconSet struct {
+		IconLightURL string
+		IconDarkURL  string
+	}
+)
+
+const (
+	CatalogSelfhst        = "selfhst"
+	CatalogDashboardIcons = "dashboard-icons"
+	DefaultCatalog        = CatalogSelfhst
+)
+
+func (s IconSet) IsEmpty() bool {
+	return strings.TrimSpace(s.Icon) == "" &&
+		strings.TrimSpace(s.Light) == "" &&
+		strings.TrimSpace(s.Dark) == ""
+}
+
+func Resolve(catalog string, set IconSet) ResolvedIconSet {
+	selectedCatalog := Normalize(catalog)
+	if strings.TrimSpace(set.Light) == "" && strings.TrimSpace(set.Dark) == "" {
+		generic := resolveValue(selectedCatalog, set.Icon, "")
+		return ResolvedIconSet{
+			IconLightURL: generic,
+			IconDarkURL:  generic,
+		}
+	}
+
+	light := cmp.Or(kit.TrimNonEmpty([]string{set.Light, set.Icon, set.Dark})...)
+	dark := cmp.Or(kit.TrimNonEmpty([]string{set.Dark, set.Icon, set.Light})...)
+
+	return ResolvedIconSet{
+		IconLightURL: resolveValue(selectedCatalog, light, "light"),
+		IconDarkURL:  resolveValue(selectedCatalog, dark, "dark"),
+	}
+}
+
+// Normalize maps a raw catalog preference onto one of the known catalog
+// constants, falling back to the default for unknown values.
+func Normalize(catalog string) string {
+	switch strings.ToLower(strings.TrimSpace(catalog)) {
+	case CatalogDashboardIcons:
+		return CatalogDashboardIcons
+	default:
+		return DefaultCatalog
+	}
+}
+
+func resolveValue(catalog, raw, variant string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" || strings.HasPrefix(strings.ToLower(value), "data:") {
+		return ""
+	}
+	if isAbsoluteHTTPURL(value) {
+		return value
+	}
+
+	slug := url.PathEscape(value)
+	switch catalog {
+	case CatalogDashboardIcons:
+		return fmt.Sprintf("https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/%s.svg", slug)
+	default:
+		if variant != "" {
+			slug += "-" + variant
+		}
+		return fmt.Sprintf("https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/%s.svg", slug)
+	}
+}
+
+func isAbsoluteHTTPURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	return u.IsAbs() && (u.Scheme == "http" || u.Scheme == "https")
+}

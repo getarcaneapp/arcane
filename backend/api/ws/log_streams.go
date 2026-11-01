@@ -12,10 +12,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 
-	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
+	wshub "getarcane.dev/arcane/v3/pkg/ws"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -151,7 +151,7 @@ func broadcastLogStreamError(ctx context.Context, label, resourceID, format stri
 			Level:     "error",
 			Message:   errorPrefix + err.Error(),
 			Service:   "arcane",
-			Timestamp: wshub.NowRFC3339(),
+			Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
 		}
 		if b, marshalErr := json.Marshal(msg); marshalErr == nil {
 			ls.hub.Broadcast(b)
@@ -314,7 +314,7 @@ func startLogForwarders(
 				Seq:         ls.seq.Add(1),
 				Level:       message.Level,
 				Message:     message.Message,
-				Timestamp:   cmp.Or(message.Timestamp, wshub.NowRFC3339()),
+				Timestamp:   cmp.Or(message.Timestamp, time.Now().UTC().Format(time.RFC3339Nano)),
 				Service:     message.Service,
 				ContainerID: message.ContainerID,
 			}

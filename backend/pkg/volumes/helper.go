@@ -1,0 +1,189 @@
+package volumes
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"runtime"
+	"slices"
+	"strings"
+
+	ref "github.com/distribution/reference"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/client"
+	"github.com/samber/mo"
+
+	"kit.getarcane.app"
+	"kit.getarcane.app/docker/compat"
+
+	"getarcane.dev/arcane/v3/pkg/registry"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+)
+
+type (
+	// RuntimeImage describes the Arcane runtime image that can run internal helper
+	// commands from inside temporary containers.
+	RuntimeImage struct {
+		Image      string
+		Source     string
+		Entrypoint []string
+		Command    []string
+	}
+)
+
+const (
+	toolsRepoPath  = "getarcaneapp/tools"
+	ContainerLabel = "com.getarcaneapp.volume-helper"
+)
+
+// ToolsImage returns the shared Arcane tools image reference hosted on the given registry setting.
+func ToolsImage(registrySetting string) string {
+	return registry.ArcaneRegistryHost(registrySetting) + "/" + toolsRepoPath + ":latest"
+}
+
+// Labels returns the labels used for temporary internal volume helper containers.
+func Labels() map[string]string {
+	return map[string]string{
+		selfcontainer.InternalResourceLabel: "true",
+		ContainerLabel:                      "true",
+	}
+}
+
+// RemoveOptions returns the container remove options used for volume helpers.
+func RemoveOptions() client.ContainerRemoveOptions {
+	return client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}
+}
+
+func IsHelperContainer(c container.Summary) bool {
+	if internal, _ := kit.ParseBool(c.Labels[selfcontainer.InternalResourceLabel]); !internal {
+		return false
+	}
+	if strings.EqualFold(c.Labels[ContainerLabel], "true") {
+		return true
+	}
+	command := strings.ToLower(c.Command)
+	return strings.Contains(command, "sleep") && strings.Contains(command, "infinity") && slices.ContainsFunc(c.Mounts, func(mounted container.MountPoint) bool {
+		return mounted.Destination == "/volume"
+	})
+}
+
+// HostConfig builds the host config shared by volume helper containers.
+func HostConfig(helperImage string, binds []string, mounts []mount.Mount) *container.HostConfig {
+	hostConfig := &container.HostConfig{
+		Binds:      binds,
+		Mounts:     mounts,
+		AutoRemove: true,
+	}
+
+	if runtime.GOOS == "linux" && isArcaneFallbackImage(helperImage) {
+		hostConfig.Tmpfs = map[string]string{
+			"/app/data": "rw,noexec,nosuid,nodev",
+		}
+	}
+
+	return hostConfig
+}
+
+// ResolveHelperImage returns an image suitable for temporary volume helper
+// containers, pulling the tools image when it is not already present.
+func ResolveHelperImage(ctx context.Context, dockerClient *client.Client, toolsImage string) (string, error) {
+	if dockerClient == nil {
+		return "", errors.New("docker service unavailable")
+	}
+
+	if _, err := dockerClient.ImageInspect(ctx, toolsImage); err == nil {
+		return toolsImage, nil
+	}
+
+	pullReader, pullErr := dockerClient.ImagePull(ctx, toolsImage, client.ImagePullOptions{})
+	if pullErr == nil {
+		if pullReader == nil {
+			pullErr = errors.New("helper image pull returned no response body")
+		} else {
+			defer func() { _ = pullReader.Close() }()
+			if _, err := io.Copy(io.Discard, pullReader); err != nil {
+				pullErr = fmt.Errorf("read helper image pull response: %w", err)
+			} else {
+				return toolsImage, nil
+			}
+		}
+	}
+
+	if fallback, ok := ResolveArcaneRuntimeImage(ctx, dockerClient).Get(); ok && strings.TrimSpace(fallback.Image) != "" {
+		return fallback.Image, nil
+	}
+
+	return "", fmt.Errorf("failed to resolve helper image: tools image unavailable and arcane fallback not found: %w", pullErr)
+}
+
+// ResolveArcaneRuntimeImage resolves the current Arcane or Arcane agent image
+// so internal helper commands can run without pulling an external helper image.
+func ResolveArcaneRuntimeImage(ctx context.Context, dockerClient *client.Client) mo.Option[RuntimeImage] {
+	hostname, _ := os.Hostname()
+	if hostname != "" {
+		if inspect,
+			err := compat.ContainerInspectWithCompatibility(ctx,
+			dockerClient,
+			hostname,
+			client.ContainerInspectOptions{}); err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
+			return mo.Some(buildRuntimeImage(inspect.Container.Config.Image, inspect.Container.Config.Entrypoint, inspect.Container.Config.Cmd, "hostname"))
+		}
+	}
+
+	for _, label := range []string{"com.getarcaneapp.arcane=true", "com.getarcaneapp.arcane.agent=true"} {
+		filter := make(client.Filters)
+		filter = filter.Add("label", label)
+		containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{Filters: filter, All: true})
+		if err != nil || len(containers.Items) == 0 {
+			continue
+		}
+
+		if resolved, ok := resolveRuntimeImageFromContainers(ctx, dockerClient, containers.Items, label, true).Get(); ok {
+			return mo.Some(resolved)
+		}
+		if resolved, ok := resolveRuntimeImageFromContainers(ctx, dockerClient, containers.Items, label, false).Get(); ok {
+			return mo.Some(resolved)
+		}
+	}
+
+	return mo.None[RuntimeImage]()
+}
+
+func resolveRuntimeImageFromContainers(ctx context.Context, dockerClient *client.Client, containers []container.Summary, label string, runningOnly bool) mo.Option[RuntimeImage] {
+	source := kit.Ternary(strings.Contains(label, ".agent="), "arcane-agent-label", "arcane-label")
+
+	for _, c := range containers {
+		if runningOnly && c.State != container.StateRunning {
+			continue
+		}
+		if !runningOnly && c.State == container.StateRunning {
+			continue
+		}
+		inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
+		if err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
+			return mo.Some(buildRuntimeImage(inspect.Container.Config.Image, inspect.Container.Config.Entrypoint, inspect.Container.Config.Cmd, source))
+		}
+		if strings.TrimSpace(c.Image) != "" {
+			return mo.Some(buildRuntimeImage(c.Image, nil, nil, source))
+		}
+	}
+
+	return mo.None[RuntimeImage]()
+}
+
+func buildRuntimeImage(image string, entrypoint, command []string, source string) RuntimeImage {
+	return RuntimeImage{
+		Image:      strings.TrimSpace(image),
+		Entrypoint: append([]string(nil), entrypoint...),
+		Command:    append([]string(nil), command...),
+		Source:     source,
+	}
+}
+
+func isArcaneFallbackImage(helperImage string) bool {
+	named, err := ref.ParseNormalizedNamed(strings.TrimSpace(helperImage))
+	return err != nil || ref.Path(named) != toolsRepoPath
+}

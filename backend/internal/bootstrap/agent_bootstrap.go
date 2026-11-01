@@ -7,19 +7,20 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"go.uber.org/fx"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/notification"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
+
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/notification"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/types/v3"
 )
 
 // registerAgentTunnelRoutes configures the manager-side agent tunnel server.
@@ -70,12 +71,14 @@ func registerAgentTunnelRoutes(
 
 	lifecycle.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			var err error
-			stopCleanup, err = concurrency.StartSupervised(ctx, "agent tunnel cleanup", func(runCtx context.Context) error {
-				server.StartCleanupLoop(runCtx)
-				return nil
-			})
-			return err
+			stopCleanup = concurrency.Supervise(ctx, concurrency.SuperviseConfig{
+				Run: func(runCtx context.Context) error {
+					server.StartCleanupLoop(runCtx)
+					return nil
+				},
+				Name: "agent tunnel cleanup",
+			}).Stop
+			return nil
 		},
 		OnStop: func(stopCtx context.Context) error {
 			if stopCleanup == nil {

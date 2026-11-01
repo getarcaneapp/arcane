@@ -1,0 +1,91 @@
+package scheduler
+
+import (
+	"context"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/libtnb/sqlite"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/francis"
+	francistest "getarcane.dev/arcane/v3/pkg/francis/testing"
+	"getarcane.dev/types/v3"
+)
+
+var schedulerTestRuntimes sync.Map
+
+func newTestCoordinator(t testing.TB,
+	ctx context.Context,
+	location *time.Location,
+	execute func(context.Context,
+		types.SchedulerRun) (types.SchedulerOutcome, error),
+) (*runs.Coordinator, *francis.Runtime) {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&kv.KVEntry{}))
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
+	runtime := francistest.New(t)
+	coordinator := runs.New(kv.NewKVService(&database.DB{DB: db}), runtime.Service(), location)
+	coordinator.SetExecutor(execute, nil)
+	require.NoError(t, coordinator.Register(runtime))
+	require.NoError(t, runtime.Start(t.Context(), ctx, nil))
+	t.Cleanup(func() { require.NoError(t, runtime.Stop(context.WithoutCancel(t.Context()))) })
+	require.NoError(t, coordinator.Start(t.Context(), ctx))
+	coordinator.Activate()
+	t.Cleanup(func() { require.NoError(t, coordinator.Stop(context.WithoutCancel(t.Context()))) })
+	return coordinator, runtime
+}
+
+func newJobSchedulerForTest(t testing.TB, ctx context.Context, location *time.Location) *jobScheduler {
+	t.Helper()
+	var scheduler *jobScheduler
+	coordinator, runtime := newTestCoordinator(t, ctx, location, func(ctx context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
+		job, ok := scheduler.GetJob(run.JobID)
+		if !ok {
+			return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
+		}
+		return job.Run(jobcontext.WithExecution(ctx, run, nil))
+	})
+	created, err := NewJobScheduler(ctx, coordinator, location)
+	require.NoError(t, err)
+	scheduler = created.(*jobScheduler)
+	schedulerTestRuntimes.Store(scheduler, runtime)
+	t.Cleanup(func() {
+		require.NoError(t, scheduler.Stop(context.WithoutCancel(t.Context())))
+		schedulerTestRuntimes.Delete(scheduler)
+	})
+	return scheduler
+}
+
+func stopJobSchedulerForTest(ctx context.Context, scheduler *jobScheduler) error {
+	if err := scheduler.Stop(ctx); err != nil {
+		return err
+	}
+	if err := scheduler.coordinator.Stop(ctx); err != nil {
+		return err
+	}
+	runtime, _ := schedulerTestRuntimes.Load(scheduler)
+	return runtime.(*francis.Runtime).Stop(ctx)
+}
+
+func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
+	t.Helper()
+	svc, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
+	if err == nil {
+		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
+	}
+	return svc, err
+}

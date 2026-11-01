@@ -19,21 +19,23 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/concurrency"
+	kitfs "kit.getarcane.app/fs"
 	"kit.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -49,10 +51,10 @@ type (
 		kvService                     *kv.KVService
 		syncStatus                    map[string]types.EnvironmentSyncStatus
 
-		importLocks utils.KeyedMutex
+		importLocks concurrency.KeyedMutex
 
 		// syncGate skips the agent PUT when the effective variable set is unchanged.
-		syncGate utils.SyncGate
+		syncGate concurrency.SyncGate
 
 		statusMu sync.RWMutex
 	}
@@ -78,7 +80,7 @@ func validateVariableKey(key string) error {
 
 func NewVariableService(db *database.DB, environmentService *environment.EnvironmentService, settingsService *settings.SettingsService, kvService *kv.KVService) *VariableService {
 	service := &VariableService{
-		syncGate:        utils.SyncGate{Expiry: environment.SyncDeliveryExpiry},
+		syncGate:        concurrency.SyncGate{Expiry: environment.SyncDeliveryExpiry},
 		db:              db,
 		settingsService: settingsService,
 		kvService:       kvService,
@@ -551,7 +553,7 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []types.En
 	// The data directory is the confinement root for the write, so it is created
 	// through os before acfs opens it.
 	projectsDirectory := filepath.Dir(envPath)
-	if mkdirAllErr := os.MkdirAll(projectsDirectory, utils.DirPerm); mkdirAllErr != nil {
+	if mkdirAllErr := os.MkdirAll(projectsDirectory, kitfs.DirPerm); mkdirAllErr != nil {
 		return fmt.Errorf("failed to create projects directory: %w", mkdirAllErr)
 	}
 
@@ -579,7 +581,7 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []types.En
 		_, _ = fmt.Fprintf(&builder, "%s=%s\n", key, value)
 	}
 
-	mode := utils.FilePerm
+	mode := kitfs.FilePerm
 	if entry, statErr := (acfs.Root{Path: projectsDirectory}).Stat(ctx, "/"+projects.GlobalEnvFileName, acfstypes.StatOptions{}); statErr == nil {
 		mode = os.FileMode(entry.UnixMode).Perm()
 	}

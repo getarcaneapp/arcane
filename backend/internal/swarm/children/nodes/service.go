@@ -15,22 +15,22 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
 	"golang.org/x/sync/errgroup"
-	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -306,7 +306,7 @@ func (s *Service) resolveNodeAgentCoverage(ctx context.Context, environmentID st
 	for _, candidate := range probeEnvsByID {
 		env := candidate
 		g.Go(func() (workerErr error) {
-			defer utils.RecoverToError(&workerErr, "swarm worker")
+			defer concurrency.RecoverToError(&workerErr, "swarm worker")
 
 			runtime := s.resolveSwarmNodeAgentRuntime(groupCtx, &env)
 			runtimeMu.Lock()
@@ -453,7 +453,7 @@ func (s *Service) JoinEnvironments(ctx context.Context, managerEnvironmentID str
 			continue
 		}
 		group.Go(func() (workerErr error) {
-			defer utils.RecoverToError(&workerErr, "swarm worker")
+			defer concurrency.RecoverToError(&workerErr, "swarm worker")
 
 			if groupCtx.Err() == nil {
 				processTarget(index)
@@ -779,7 +779,7 @@ func (s *Service) GetJoinCandidates(ctx context.Context, environmentID string) (
 // token-free message. Agent HTTP errors contribute their detail; transport
 // errors keep their own text.
 func describeSwarmJoinFailure(err error, joinToken string) string {
-	var status *remenv.StatusError
+	var status *agent.StatusError
 	if !errors.As(err, &status) {
 		return RedactSwarmJoinToken(err.Error(), joinToken)
 	}

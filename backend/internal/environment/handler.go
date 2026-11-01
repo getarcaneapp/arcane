@@ -22,28 +22,26 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v3"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/agg"
 	"kit.getarcane.app/mapping"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
+	"getarcane.dev/arcane/v3/internal/apikey"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -333,8 +331,8 @@ func (h *EnvironmentHandler) runRemoteChangePoller(ctx context.Context, environm
 				"since": {strconv.FormatUint(since, 10)},
 				"wait":  {strconv.Itoa(max(int((timeouts.GetDuration(h.settingsService.GetSettingsConfig().ProxyRequestTimeout.AsInt(), timeouts.DefaultProxyRequest) - remoteChangeWaitMargin).Seconds()), 1))},
 			}.Encode(), nil, &out)
-		statusError, isStatusError := errors.AsType[*remenv.StatusError](err)
-		_, isDecodeError := errors.AsType[*remenv.DecodeError](err)
+		statusError, isStatusError := errors.AsType[*agent.StatusError](err)
+		_, isDecodeError := errors.AsType[*agent.DecodeError](err)
 		switch {
 		case ctx.Err() != nil:
 		case err == nil:
@@ -559,7 +557,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 
 // currentUserRefs returns the request user's ID and username, or nils without a user.
 func currentUserRefs(ctx context.Context) (userID, username *string) {
-	if user, _ := userctx.CurrentUserFromContext(ctx); user != nil {
+	if user, _ := handlerutil.CurrentUserFromContext(ctx); user != nil {
 		return new(user.ID), new(user.Username)
 	}
 	return nil, nil
@@ -610,7 +608,7 @@ func (h *EnvironmentHandler) SyncEnvironment(ctx context.Context, input *SyncEnv
 		return nil, err
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	runtimeCtx := activity.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := h.environmentService.SyncResourcesToEnvironment(runtimeCtx, input.ID, user, h.activityService)
 	if err != nil {
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
@@ -625,7 +623,7 @@ func (h *EnvironmentHandler) triggerEnvironmentResourceSync(ctx context.Context,
 
 	for _, resource := range h.environmentService.resourceSyncs() {
 		go func() {
-			syncCtx, cancel := context.WithTimeout(detachedCtx, agent.DefaultProxyTimeout)
+			syncCtx, cancel := context.WithTimeout(detachedCtx, timeouts.DefaultAgentProxy)
 			defer cancel()
 			if err := resource.sync(syncCtx, environmentID); err != nil {
 				slog.WarnContext(syncCtx, "Failed to sync resources to environment",

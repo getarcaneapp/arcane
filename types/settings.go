@@ -8,6 +8,11 @@ type (
 	// SettingsUpdate maps setting keys to their new string values.
 	SettingsUpdate map[string]string
 
+	SettingUpdate struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+
 	// SettingState describes one setting and how its effective value was resolved.
 	SettingState struct {
 		// Key is the identifier of the setting.

@@ -13,12 +13,12 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/podman"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
+	"getarcane.dev/arcane/v3/internal/container"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/podman"
+	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/volume"
 )
 
 type (

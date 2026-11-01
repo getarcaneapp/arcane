@@ -5,15 +5,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/types/v3"
 )
 
 func newReadyTestService(t *testing.T, shutdown <-chan struct{}) (*Service, *database.DB) {

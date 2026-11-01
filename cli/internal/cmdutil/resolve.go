@@ -12,12 +12,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v3"
-
-	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/prompt"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/runtime"
+	"getarcane.dev/cli/v3/internal/client"
+	"getarcane.dev/cli/v3/internal/output"
+	"getarcane.dev/cli/v3/internal/prompt"
+	"getarcane.dev/cli/v3/internal/runtime"
+	"getarcane.dev/types/v3"
 )
 
 type (

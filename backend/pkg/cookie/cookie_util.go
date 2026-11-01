@@ -1,0 +1,167 @@
+package cookie
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"strings"
+
+	"kit.getarcane.app"
+)
+
+type (
+	// SecureCookieContextKey is the context key under which router middleware
+	// records its trusted secure-cookie decision (a bool derived from TLS or
+	// trusted proxy headers).
+	SecureCookieContextKey struct{}
+)
+
+// Legacy ML-DSA browser tokens exceed the 4096-byte cookie limit, so readers
+// retain numbered chunk support until existing sessions expire or refresh.
+const (
+	tokenCookieChunkSize = 3072
+	tokenCookieMaxChunks = 4
+)
+
+var (
+	TokenCookieName           = "__Host-token" // #nosec G101: cookie name label, not a credential
+	InsecureTokenCookieName   = "token"        // #nosec G101: cookie name label, not a credential
+	OidcStateCookieName       = "oidc_state"
+	RefreshCookieName         = "__Secure-refresh"
+	InsecureRefreshCookieName = "refresh"
+	RefreshCookiePath         = "/api/auth"
+)
+
+func tokenCookieChunkName(base string, index int) string {
+	if index == 0 {
+		return base
+	}
+	return fmt.Sprintf("%s.%d", base, index)
+}
+
+// SecureCookieFromContext returns the secure-cookie decision that router
+// middleware derived from TLS or trusted proxy headers.
+func SecureCookieFromContext(ctx context.Context) bool {
+	secure, _ := ctx.Value(SecureCookieContextKey{}).(bool)
+	return secure
+}
+
+// SecureCookieFromRequest returns true when the request was made over TLS or
+// router middleware marked it as forwarded from HTTPS by a trusted proxy.
+func SecureCookieFromRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return SecureCookieFromContext(r.Context())
+}
+
+func ClearTokenCookie(w http.ResponseWriter, r *http.Request) {
+	for _, cookieHeader := range BuildClearTokenCookieStringsFor(SecureCookieFromRequest(r)) {
+		w.Header().Add("Set-Cookie", cookieHeader)
+	}
+}
+
+func BuildRefreshCookieStringFor(maxAgeInSeconds int, value string, secure bool) string {
+	return buildCookieString(kit.Ternary(secure, RefreshCookieName, InsecureRefreshCookieName), RefreshCookiePath, value, max(maxAgeInSeconds, 0), secure, http.SameSiteStrictMode)
+}
+
+func BuildClearRefreshCookieStringsFor(secure bool) []string {
+	headers := []string{buildCookieString(InsecureRefreshCookieName, RefreshCookiePath, "", -1, false, http.SameSiteStrictMode)}
+	if secure {
+		headers = append(headers, buildCookieString(RefreshCookieName, RefreshCookiePath, "", -1, true, http.SameSiteStrictMode))
+	}
+	return headers
+}
+
+func GetTokenCookie(r *http.Request) (string, error) {
+	if value, err := readTokenCookie(r, TokenCookieName); err == nil {
+		return value, nil
+	}
+	return readTokenCookie(r, InsecureTokenCookieName)
+}
+
+func readTokenCookie(r *http.Request, base string) (string, error) {
+	byName := make(map[string]string, len(r.Cookies()))
+	for _, c := range r.Cookies() {
+		byName[c.Name] = c.Value
+	}
+	first, ok := byName[base]
+	if !ok {
+		return "", http.ErrNoCookie
+	}
+	var value strings.Builder
+	value.WriteString(first)
+	for i := 1; ; i++ {
+		chunk, localOk := byName[tokenCookieChunkName(base, i)]
+		if !localOk {
+			break
+		}
+		value.WriteString(chunk)
+	}
+	return value.String(), nil
+}
+
+// BuildTokenCookieStringFor builds Set-Cookie header strings matching the
+// current request security context. Compact browser tokens use one cookie;
+// legacy oversized tokens are chunked for upgrade compatibility. Unused chunk
+// slots are cleared so stale legacy chunks cannot corrupt reassembly.
+// Callers must pass the trusted secure flag from SecureCookieFromContext /
+// SecureCookieFromRequest so the cookie name (__Host-token vs. token)
+// round-trips correctly behind HTTPS reverse proxies.
+func BuildTokenCookieStringFor(maxAgeInSeconds int, token string, secure bool) []string {
+	base := kit.Ternary(secure, TokenCookieName, InsecureTokenCookieName)
+
+	var chunks []string
+	for len(token) > tokenCookieChunkSize {
+		chunks = append(chunks, token[:tokenCookieChunkSize])
+		token = token[tokenCookieChunkSize:]
+	}
+	chunks = append(chunks, token)
+
+	var headers []string
+	for i, chunk := range chunks {
+		headers = append(headers, buildCookieString(tokenCookieChunkName(base, i), "/", chunk, max(maxAgeInSeconds, 0), secure, http.SameSiteLaxMode))
+	}
+	for i := len(chunks); i < tokenCookieMaxChunks; i++ {
+		headers = append(headers, buildCookieString(tokenCookieChunkName(base, i), "/", "", -1, secure, http.SameSiteLaxMode))
+	}
+	return headers
+}
+
+// BuildClearTokenCookieStringsFor builds Set-Cookie header strings to clear
+// token cookies matching the current request security context. Secure contexts
+// also clear the HTTP fallback cookie so stale sessions from older releases are
+// flushed instead of being re-presented forever.
+func BuildClearTokenCookieStringsFor(secure bool) []string {
+	var headers []string
+	for i := range tokenCookieMaxChunks {
+		headers = append(headers, buildCookieString(tokenCookieChunkName(InsecureTokenCookieName, i), "/", "", -1, false, http.SameSiteLaxMode))
+		if secure {
+			headers = append(headers, buildCookieString(tokenCookieChunkName(TokenCookieName, i), "/", "", -1, true, http.SameSiteLaxMode))
+		}
+	}
+	return headers
+}
+
+func buildCookieString(name, path, value string, maxAge int, secure bool, sameSite http.SameSite) string {
+	cookie := &http.Cookie{ // #nosec G124: Secure mirrors the caller-provided TLS state so the clear directive matches whichever cookie variant (__Host-token vs. token) was originally set.
+		Name:     name,
+		Value:    value,
+		Path:     path,
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: sameSite,
+	}
+	return cookie.String()
+}
+
+// BuildOidcStateCookieString builds a Set-Cookie header string for the OIDC state cookie.
+func BuildOidcStateCookieString(value string, maxAgeInSeconds int, secure bool) string {
+	return buildCookieString(OidcStateCookieName, "/", value, max(maxAgeInSeconds, 0), secure, http.SameSiteLaxMode)
+}
+
+// BuildClearOidcStateCookieString builds a Set-Cookie header string to clear the OIDC state cookie.
+func BuildClearOidcStateCookieString(secure bool) string {
+	return buildCookieString(OidcStateCookieName, "/", "", -1, secure, http.SameSiteLaxMode)
+}

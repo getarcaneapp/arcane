@@ -7,23 +7,24 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app"
 	"kit.getarcane.app/builds/pkg/contextsource"
 	"kit.getarcane.app/normalization"
 	"kit.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/gitutil"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/arcane/v3/pkg/update"
+	"getarcane.dev/arcane/v3/pkg/validation"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -616,15 +617,15 @@ func (s *GitRepositoryService) updateExistingRepository(ctx context.Context, ite
 }
 
 func (s *GitRepositoryService) checkRepositoryNeedsUpdate(item types.GitRepositorySync, existing *GitRepository) (bool, error) {
-	needsUpdate := utils.ApplyChanged(&existing.Name, mo.Some(item.Name))
-	needsUpdate = utils.ApplyChanged(&existing.URL, mo.Some(item.URL)) || needsUpdate
-	needsUpdate = utils.ApplyChanged(&existing.AuthType, mo.Some(item.AuthType)) || needsUpdate
-	needsUpdate = utils.ApplyChanged(&existing.Username, mo.Some(item.Username)) || needsUpdate
-	needsUpdate = utils.ApplyChanged(&existing.SSHHostKeyVerification, mo.Some(item.SSHHostKeyVerification)) || needsUpdate
-	needsUpdate = utils.ApplyChanged(&existing.CommitAuthorName, mo.Some(item.CommitAuthorName)) || needsUpdate
-	needsUpdate = utils.ApplyChanged(&existing.CommitAuthorEmail, mo.Some(item.CommitAuthorEmail)) || needsUpdate
-	needsUpdate = utils.ApplyNullable(&existing.Description, mo.PointerToOption(item.Description)) || needsUpdate
-	needsUpdate = utils.ApplyChanged(&existing.Enabled, mo.Some(item.Enabled)) || needsUpdate
+	needsUpdate := update.ApplyChanged(&existing.Name, mo.Some(item.Name))
+	needsUpdate = update.ApplyChanged(&existing.URL, mo.Some(item.URL)) || needsUpdate
+	needsUpdate = update.ApplyChanged(&existing.AuthType, mo.Some(item.AuthType)) || needsUpdate
+	needsUpdate = update.ApplyChanged(&existing.Username, mo.Some(item.Username)) || needsUpdate
+	needsUpdate = update.ApplyChanged(&existing.SSHHostKeyVerification, mo.Some(item.SSHHostKeyVerification)) || needsUpdate
+	needsUpdate = update.ApplyChanged(&existing.CommitAuthorName, mo.Some(item.CommitAuthorName)) || needsUpdate
+	needsUpdate = update.ApplyChanged(&existing.CommitAuthorEmail, mo.Some(item.CommitAuthorEmail)) || needsUpdate
+	needsUpdate = update.ApplyNullable(&existing.Description, mo.PointerToOption(item.Description)) || needsUpdate
+	needsUpdate = update.ApplyChanged(&existing.Enabled, mo.Some(item.Enabled)) || needsUpdate
 
 	signingKey, passphrase := item.SigningKey, item.SigningKeyPassphrase
 	if signingKey != "" {
@@ -641,7 +642,7 @@ func (s *GitRepositoryService) checkRepositoryNeedsUpdate(item types.GitReposito
 		{&existing.SigningKey, signingKey},
 		{&existing.SigningKeyPassphrase, passphrase},
 	} {
-		changed, err := utils.ApplyEncrypted(credential.field, credential.plaintext)
+		changed, err := update.ApplyEncrypted(credential.field, credential.plaintext)
 		if err != nil {
 			return false, err
 		}

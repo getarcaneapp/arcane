@@ -18,7 +18,8 @@ import (
 
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 )
 
 //go:embed all:dist

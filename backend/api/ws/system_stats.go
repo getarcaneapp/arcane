@@ -11,17 +11,18 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/sys/cgroup"
 
-	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
-	httputil "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	wshub "getarcane.dev/arcane/v3/pkg/ws"
+	"getarcane.dev/types/v3"
 )
 
 const (
@@ -338,7 +339,7 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 		}
 	}()
 
-	interval, _ := httputil.GetIntQueryParam(c.Request(), "interval", false)
+	interval, _ := httpx.GetIntQueryParam(c.Request(), "interval", false)
 	sampleInterval := time.Duration(min(cmp.Or(max(interval, 0), 2), 60)) * time.Second
 
 	conn.SetReadLimit(512)

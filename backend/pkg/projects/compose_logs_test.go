@@ -9,10 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
 )
 
 const (

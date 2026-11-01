@@ -12,11 +12,11 @@ import (
 	"uuid"
 
 	"gorm.io/gorm"
+
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
 )
 
 type (
@@ -96,7 +96,7 @@ func LoadEnv() (Env, error) {
 		if field.isInternal {
 			continue
 		}
-		raw, _, _ := utils.LookupEnvOrFile(field.envName)
+		raw, _, _ := kit.LookupEnvOrFile(field.envName)
 		value := kit.TrimQuotes(raw)
 		if value == "" {
 			continue

@@ -13,19 +13,20 @@ import (
 	"time"
 
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/samber/mo"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/sys/cgroup"
 	"kit.getarcane.app/updater/labels"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/iconcatalog"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/pkg/iconcatalog"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
 type (

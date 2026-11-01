@@ -15,7 +15,6 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
@@ -24,28 +23,30 @@ import (
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
+	kitregistry "kit.getarcane.app/registry"
 	"kit.getarcane.app/sys/crypto"
 	"kit.getarcane.app/updater/digest"
 	"kit.getarcane.app/updater/refs"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate/children/releasenotes"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate/children/tags"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/notification"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ratelimit"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/registryauth"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/imageupdate/children/releasenotes"
+	"getarcane.dev/arcane/v3/internal/imageupdate/children/tags"
+	"getarcane.dev/arcane/v3/internal/notification"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/settings"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	arcaneregistry "getarcane.dev/arcane/v3/pkg/registry"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -56,7 +57,7 @@ type (
 		dockerService       *docker.DockerClientService
 		eventService        *event.EventService
 		notificationService *notification.NotificationService
-		registryLimiter     *ratelimit.RegistryRateLimiter
+		registryLimiter     *arcaneregistry.RegistryRateLimiter
 		tags                *tags.Service
 		releaseNotes        *releasenotes.Service
 		activityService     *activity.ActivityService
@@ -156,7 +157,7 @@ var (
 )
 
 func NewImageUpdateService(p ImageUpdateServiceParams) *ImageUpdateService {
-	registryLimiter := ratelimit.NewRegistryRateLimiter()
+	registryLimiter := arcaneregistry.NewRegistryRateLimiter()
 	return &ImageUpdateService{
 		db:                  p.DB,
 		settingsService:     p.SettingsService,
@@ -237,7 +238,7 @@ func (s *ImageUpdateService) completeImageUpdateActivity(ctx context.Context, ac
 		switch {
 		case success:
 			return types.ActivityStatusSuccess, nil, cmp.Or(message, "Image update check completed")
-		case activitylib.CancelledByContext(ctx):
+		case errors.Is(context.Cause(ctx), activitylib.ErrCanceled):
 			return types.ActivityStatusCancelled, nil, "Image update check cancelled"
 		default:
 			return types.ActivityStatusFailed, mo.EmptyableToOption(strings.TrimSpace(message)).ToPointer(), cmp.Or(message, "Image update check completed")
@@ -434,7 +435,7 @@ func digestPinnedImageUpdateResult(imageRef, activityID string, responseTimeMs i
 
 func isLocalBuildImageRef(imageRef string, composeBuildRefs map[string]struct{}) bool {
 	if named, err := reference.ParseNormalizedNamed(strings.TrimSpace(imageRef)); err == nil &&
-		registryauth.NormalizeRegistryForComparison(reference.Domain(named)) == imageref.LocalBuildRegistry {
+		kitregistry.Normalize(reference.Domain(named)) == imageref.LocalBuildRegistry {
 		return true
 	}
 	_, ok := composeBuildRefs[refs.NormalizeImageUpdateRef(imageRef)]
@@ -445,7 +446,7 @@ func (s *ImageUpdateService) parseImageReference(imageRef string) *ImageParts {
 	// Use the official Docker reference parser to handle all edge cases
 	if named, err := reference.ParseNormalizedNamed(imageRef); err == nil {
 		return &ImageParts{
-			Registry:   registryauth.NormalizeRegistryForComparison(reference.Domain(named)),
+			Registry:   kitregistry.Normalize(reference.Domain(named)),
 			Repository: reference.Path(named),
 			// Extract tag or default to latest
 			Tag: func() string {
@@ -473,13 +474,13 @@ func (s *ImageUpdateService) parseImageReference(imageRef string) *ImageParts {
 		parts := strings.Split(digestParts[0], "/")
 		if strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":") {
 			return &ImageParts{
-				Registry:   registryauth.NormalizeRegistryForComparison(parts[0]),
+				Registry:   kitregistry.Normalize(parts[0]),
 				Repository: strings.Join(parts[1:], "/"),
 				Tag:        "latest",
 			}
 		}
 		return &ImageParts{
-			Registry:   registryauth.NormalizeRegistryForComparison("docker.io"),
+			Registry:   kitregistry.Normalize("docker.io"),
 			Repository: kit.Ternary(len(parts) == 1, "library/"+parts[0], digestParts[0]),
 			Tag:        "latest",
 		}
@@ -489,21 +490,21 @@ func (s *ImageUpdateService) parseImageReference(imageRef string) *ImageParts {
 	case len(parts) == 1:
 		repository, tag := splitTag(parts[0])
 		return &ImageParts{
-			Registry:   registryauth.NormalizeRegistryForComparison("docker.io"),
+			Registry:   kitregistry.Normalize("docker.io"),
 			Repository: "library/" + repository,
 			Tag:        tag,
 		}
 	case strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":"):
 		repository, tag := splitTag(strings.Join(parts[1:], "/"))
 		return &ImageParts{
-			Registry:   registryauth.NormalizeRegistryForComparison(parts[0]),
+			Registry:   kitregistry.Normalize(parts[0]),
 			Repository: repository,
 			Tag:        tag,
 		}
 	default:
 		repository, tag := splitTag(imageRef)
 		return &ImageParts{
-			Registry:   registryauth.NormalizeRegistryForComparison("docker.io"),
+			Registry:   kitregistry.Normalize("docker.io"),
 			Repository: repository,
 			Tag:        tag,
 		}

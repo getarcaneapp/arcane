@@ -1,6 +1,6 @@
 package role
 
-import "github.com/getarcaneapp/arcane/backend/v3/internal/database"
+import "getarcane.dev/arcane/v3/internal/database"
 
 type (
 	// Role is a named permission set. Built-in roles (Admin, Editor, Deployer,

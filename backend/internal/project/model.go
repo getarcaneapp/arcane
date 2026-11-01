@@ -6,15 +6,16 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/gitrepo"
+	"getarcane.dev/types/v3"
 )
 
 type (

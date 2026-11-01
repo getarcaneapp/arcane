@@ -14,16 +14,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	acfsutils "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/acfs"
-	workspacepkg "github.com/getarcaneapp/arcane/backend/v3/pkg/workspace"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	workspacepkg "getarcane.dev/arcane/v3/pkg/workspace"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -99,7 +98,7 @@ func (s *Service) File(ctx context.Context, projectPath, composeFileName, relati
 	if entry.IsSymlink {
 		return response(types.FileReadOnlySymlink, "", ""), nil
 	}
-	if !acfsutils.IsRegular(entry) {
+	if entry.IsDirectory || entry.IsSymlink || !strings.HasPrefix(entry.Mode, "-") {
 		return response(types.FileReadOnlySpecial, "", ""), nil
 	}
 	maxFileSizeBytes := workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb"))

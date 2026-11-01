@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
@@ -20,12 +19,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/bus"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/types/v3"
 )
 
 func TestDockerClientService_GetClientPinsEffectiveAPIVersion(t *testing.T) {
@@ -239,11 +240,13 @@ func TestDockerClientService_PublishesDaemonImageEvents(t *testing.T) {
 	t.Cleanup(svc.Close)
 	eventCh, unsubscribe := svc.EventBus().Subscribe(events.ImageEventType, bus.SubscribeOptions{})
 	t.Cleanup(unsubscribe)
-	stop, err := concurrency.StartSupervised(t.Context(), "Docker event watcher", func(ctx context.Context) error {
-		svc.WatchEvents(ctx)
-		return nil
-	})
-	require.NoError(t, err)
+	stop := concurrency.Supervise(t.Context(), concurrency.SuperviseConfig{
+		Run: func(ctx context.Context) error {
+			svc.WatchEvents(ctx)
+			return nil
+		},
+		Name: "Docker event watcher",
+	}).Stop
 	t.Cleanup(func() { _ = stop(context.WithoutCancel(t.Context())) })
 
 	select {
@@ -281,11 +284,13 @@ func TestDockerClientService_EventActorStopCancelsAndJoinsStream(t *testing.T) {
 
 	eventsCh, unsubscribe := service.EventBus().Subscribe(events.ImageEventType, bus.SubscribeOptions{})
 	t.Cleanup(unsubscribe)
-	stop, err := concurrency.StartSupervised(t.Context(), "Docker event watcher", func(ctx context.Context) error {
-		service.WatchEvents(ctx)
-		return nil
-	})
-	require.NoError(t, err)
+	stop := concurrency.Supervise(t.Context(), concurrency.SuperviseConfig{
+		Run: func(ctx context.Context) error {
+			service.WatchEvents(ctx)
+			return nil
+		},
+		Name: "Docker event watcher",
+	}).Stop
 
 	select {
 	case <-streamStarted:
@@ -350,11 +355,13 @@ func TestDockerClientService_WatchEventsResumesFromLastEventAfterRefresh(t *test
 	})
 	svc := newDockerClientServiceForTest(t, server.URL)
 	t.Cleanup(svc.Close)
-	stop, err := concurrency.StartSupervised(t.Context(), "Docker event watcher", func(ctx context.Context) error {
-		svc.WatchEvents(ctx)
-		return nil
-	})
-	require.NoError(t, err)
+	stop := concurrency.Supervise(t.Context(), concurrency.SuperviseConfig{
+		Run: func(ctx context.Context) error {
+			svc.WatchEvents(ctx)
+			return nil
+		},
+		Name: "Docker event watcher",
+	}).Stop
 	t.Cleanup(func() { _ = stop(context.WithoutCancel(t.Context())) })
 
 	select {
@@ -449,11 +456,13 @@ func TestDockerClientService_ListContainersCachedUntilInvalidated(t *testing.T) 
 	require.NoError(t, err)
 	assert.Equal(t, int32(2), listCalls.Load(), "lists are not cached before the event stream is live")
 
-	stop, err := concurrency.StartSupervised(t.Context(), "Docker event watcher", func(ctx context.Context) error {
-		svc.WatchEvents(ctx)
-		return nil
-	})
-	require.NoError(t, err)
+	stop := concurrency.Supervise(t.Context(), concurrency.SuperviseConfig{
+		Run: func(ctx context.Context) error {
+			svc.WatchEvents(ctx)
+			return nil
+		},
+		Name: "Docker event watcher",
+	}).Stop
 	t.Cleanup(func() { _ = stop(context.WithoutCancel(t.Context())) })
 	require.Eventually(t, func() bool { return svc.inventory.Load() != nil }, time.Second, time.Millisecond)
 

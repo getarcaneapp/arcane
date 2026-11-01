@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/pkg/authconfig"
 	"github.com/moby/moby/api/types/container"
@@ -24,21 +23,23 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app/docker/streams/bus"
 	"kit.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow/flowtest"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
 type (

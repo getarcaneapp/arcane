@@ -15,11 +15,11 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jsonx"
+	"getarcane.dev/arcane/v3/pkg/jsonx"
+	"getarcane.dev/types/v3"
 )
 
 type (

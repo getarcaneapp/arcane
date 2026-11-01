@@ -9,17 +9,18 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/updater"
 	"kit.getarcane.app/updater/refs"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/types/v3"
 )
 
 type (

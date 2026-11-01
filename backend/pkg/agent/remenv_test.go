@@ -1,0 +1,233 @@
+package agent
+
+import (
+	"bytes"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/labstack/echo/v5"
+	"github.com/stretchr/testify/require"
+)
+
+type (
+	chunkReader struct {
+		chunks [][]byte
+		idx    int
+	}
+
+	flushResponseWriter struct {
+		header  http.Header
+		buf     bytes.Buffer
+		status  int
+		flushes int
+	}
+
+	noFlushResponseWriter struct {
+		header http.Header
+		buf    bytes.Buffer
+		status int
+	}
+)
+
+func (r *chunkReader) Read(p []byte) (int, error) {
+	if r.idx >= len(r.chunks) {
+		return 0, io.EOF
+	}
+	c := r.chunks[r.idx]
+	r.idx++
+	return copy(p, c), nil
+}
+
+func newFlushResponseWriter() *flushResponseWriter {
+	return &flushResponseWriter{header: make(http.Header)}
+}
+
+func (w *flushResponseWriter) Header() http.Header { return w.header }
+
+func (w *flushResponseWriter) Write(b []byte) (int, error) {
+	return w.buf.Write(b)
+}
+
+func (w *flushResponseWriter) WriteHeader(statusCode int) { w.status = statusCode }
+
+func (w *flushResponseWriter) Flush() { w.flushes++ }
+
+func newNoFlushResponseWriter() *noFlushResponseWriter {
+	return &noFlushResponseWriter{header: make(http.Header)}
+}
+
+func (w *noFlushResponseWriter) Header() http.Header { return w.header }
+
+func (w *noFlushResponseWriter) Write(b []byte) (int, error) {
+	return w.buf.Write(b)
+}
+
+func (w *noFlushResponseWriter) WriteHeader(statusCode int) { w.status = statusCode }
+
+func TestCopyRequestHeaders_SkipsExpectedHeaders(t *testing.T) {
+	from := http.Header{}
+	from.Add("X-Test", "a")
+	from.Add("X-Test", "b")
+	from.Set(HeaderAuthorization, "Bearer should-not-copy")
+	from.Set(HeaderAPIKey, "token-should-not-copy")
+	from.Set("Host", "example.com")
+	from.Set(HeaderCookie, "session=abc")
+	from.Set("Transfer-Encoding", "chunked")
+
+	to := http.Header{}
+	CopyRequestHeaders(from, to)
+
+	require.Equal(t, []string{"a", "b"}, to.Values("X-Test"))
+	require.Empty(t, to.Get(HeaderAuthorization))
+	require.Empty(t, to.Get(HeaderAPIKey))
+	require.Empty(t, to.Get("Host"))
+	require.Empty(t, to.Get(HeaderCookie))
+	require.Empty(t, to.Get("Transfer-Encoding"))
+}
+
+func TestSetAuthHeader_ForwardsAPIKeyAndAuthorization(t *testing.T) {
+	e := echo.New()
+	w := httptest.NewRecorder()
+	req0 := httptest.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
+	req0.Header.Set(HeaderAPIKey, "api-token")
+	req0.Header.Set(HeaderAuthorization, "Bearer auth")
+	c := e.NewContext(req0, w)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://remote", http.NoBody)
+	require.NoError(t, err)
+
+	SetAuthHeader(req.Header, c)
+	require.Equal(t, "api-token", req.Header.Get(HeaderAPIKey))
+	require.Equal(t, "Bearer auth", req.Header.Get(HeaderAuthorization))
+}
+
+func TestSetAuthHeader_UsesCookieTokenWhenNoAuthorization(t *testing.T) {
+	e := echo.New()
+	w := httptest.NewRecorder()
+	req0 := httptest.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
+	req0.AddCookie(&http.Cookie{Name: "token", Value: "cookie-token"})
+	c := e.NewContext(req0, w)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://remote", http.NoBody)
+	require.NoError(t, err)
+
+	SetAuthHeader(req.Header, c)
+	require.Equal(t, "Bearer cookie-token", req.Header.Get(HeaderAuthorization))
+}
+
+func TestSetAgentToken(t *testing.T) {
+	headers := http.Header{}
+
+	SetAgentToken(headers, " ")
+	require.Empty(t, headers.Get(HeaderAgentToken))
+	require.Empty(t, headers.Get(HeaderAPIKey))
+
+	SetAgentToken(headers, "agent-token")
+	require.Equal(t, "agent-token", headers.Get(HeaderAgentToken))
+	require.Equal(t, "agent-token", headers.Get(HeaderAPIKey))
+	require.Empty(t, headers.Get(HeaderAuthorization))
+}
+
+func TestSetBearer(t *testing.T) {
+	headers := http.Header{}
+
+	SetBearer(headers, "")
+	require.Empty(t, headers.Get(HeaderAuthorization))
+
+	SetBearer(headers, "user-token")
+	require.Equal(t, "Bearer user-token", headers.Get(HeaderAuthorization))
+	require.Equal(t, "user-token", ExtractBearerToken(headers.Get(HeaderAuthorization)))
+}
+
+func TestBuildHopByHopHeaders_AddsConnectionTokens(t *testing.T) {
+	respHeader := http.Header{}
+	respHeader.Add("Connection", "X-Foo, keep-alive")
+	respHeader.Add("Connection", "x-bar")
+
+	hop := BuildHopByHopHeaders(respHeader)
+	require.Contains(t, hop, http.CanonicalHeaderKey("X-Foo"))
+	require.Contains(t, hop, http.CanonicalHeaderKey("Keep-Alive"))
+	require.Contains(t, hop, http.CanonicalHeaderKey("X-Bar"))
+}
+
+func TestCopyResponseHeaders_SkipsHopByHopAndConnectionNamedHeaders(t *testing.T) {
+	from := http.Header{}
+	from.Set("Content-Type", "application/json")
+	from.Set("Transfer-Encoding", "chunked")
+	from.Set("X-Foo", "bar")
+	from.Add("Connection", "X-Foo")
+
+	hop := BuildHopByHopHeaders(from)
+	to := http.Header{}
+	CopyResponseHeaders(from, to, hop)
+
+	require.Equal(t, "application/json", to.Get("Content-Type"))
+	require.Empty(t, to.Get("Transfer-Encoding"))
+	require.Empty(t, to.Get("X-Foo"))
+	require.Empty(t, to.Get("Connection"))
+}
+
+func TestBuildWebSocketHeaders_UsesAuthorizationHeaderAndAddsAgentToken(t *testing.T) {
+	e := echo.New()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
+	req.Header.Set(HeaderAPIKey, "api-key")
+	req.Header.Set(HeaderAuthorization, "Bearer auth")
+	req.Header.Set(HeaderCookie, "session=abc")
+	c := e.NewContext(req, w)
+
+	agent := "agent-token"
+	headers := BuildWebSocketHeaders(c, &agent)
+
+	require.Equal(t, agent, headers.Get(HeaderAPIKey))
+	require.Equal(t, "Bearer auth", headers.Get(HeaderAuthorization))
+	require.Empty(t, headers.Get(HeaderCookie))
+	require.Equal(t, agent, headers.Get(HeaderAgentToken))
+}
+
+func TestBuildWebSocketHeaders_UsesCookieTokenAsBearer(t *testing.T) {
+	e := echo.New()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
+	req.AddCookie(&http.Cookie{Name: "token", Value: "cookie-token"})
+	c := e.NewContext(req, w)
+
+	headers := BuildWebSocketHeaders(c, nil)
+	require.Equal(t, "Bearer cookie-token", headers.Get(HeaderAuthorization))
+}
+
+func TestBuildWebSocketHeaders_ForwardsCookieHeaderWhenNoAuthPresent(t *testing.T) {
+	e := echo.New()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
+	req.Header.Set(HeaderCookie, "session=abc")
+	c := e.NewContext(req, w)
+
+	headers := BuildWebSocketHeaders(c, nil)
+	require.Equal(t, "session=abc", headers.Get(HeaderCookie))
+}
+
+func TestHTTPToWebSocketURL(t *testing.T) {
+	require.Equal(t, "wss://example.com/path", HTTPToWebSocketURL("https://example.com/path"))
+	require.Equal(t, "ws://example.com/path", HTTPToWebSocketURL("http://example.com/path"))
+	require.Equal(t, "ws://already", HTTPToWebSocketURL("ws://already"))
+}
+
+func TestCopyBodyWithFlush_FlushesWhenSupported(t *testing.T) {
+	w := newFlushResponseWriter()
+	body := &chunkReader{chunks: [][]byte{[]byte("hello "), []byte("world")}}
+
+	require.NoError(t, CopyBodyWithFlush(w, body))
+	require.Equal(t, "hello world", w.buf.String())
+	require.Equal(t, 2, w.flushes)
+}
+
+func TestCopyBodyWithFlush_DoesNotRequireFlusher(t *testing.T) {
+	w := newNoFlushResponseWriter()
+	body := &chunkReader{chunks: [][]byte{[]byte("a"), []byte("b"), []byte("c")}}
+
+	require.NoError(t, CopyBodyWithFlush(w, body))
+	require.Equal(t, "abc", w.buf.String())
+}

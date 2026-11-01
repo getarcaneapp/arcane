@@ -5,11 +5,11 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
 // RegisterNetworks registers network endpoints.

@@ -14,12 +14,13 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/compose/v5/pkg/api"
 	composepkg "github.com/docker/compose/v5/pkg/compose"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/client"
 	"go.yaml.in/yaml/v4"
+
 	"kit.getarcane.app/docker"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumes"
+	"getarcane.dev/arcane/v3/pkg/volumes"
+	"getarcane.dev/types/v3"
 )
 
 func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, composeProject *composetypes.Project, oldComposeName, newComposeName, toolsImage string) (types.VolumeMigration, error) {

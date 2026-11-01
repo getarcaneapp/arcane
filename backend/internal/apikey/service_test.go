@@ -8,19 +8,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/session"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
 type (

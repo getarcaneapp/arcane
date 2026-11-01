@@ -14,7 +14,6 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/robfig/cron/v3"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -22,22 +21,23 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/job/children/remote"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/job/children/runtime"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/job/children/remote"
+	"getarcane.dev/arcane/v3/internal/job/children/runtime"
+	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -89,7 +89,7 @@ type (
 )
 
 func NewJobService(p JobServiceParams) *JobService {
-	meter := otel.Meter(tracing.InstrumentationName)
+	meter := otel.Meter(logging.InstrumentationName)
 	runCount, runCountErr := meter.Int64Counter("arcane.job.runs",
 		metric.WithDescription("Executed job runs by outcome"), metric.WithUnit("{run}"))
 	runDuration, runDurationErr := meter.Float64Histogram("arcane.job.duration",
@@ -215,15 +215,15 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates types.JobSc
 	}
 
 	changedKeys := make([]string, 0, len(fields))
-	previousValues := make([]libarcane.SettingUpdate, 0, len(fields))
-	valuesToUpdate := make([]libarcane.SettingUpdate, 0, len(fields))
+	previousValues := make([]types.SettingUpdate, 0, len(fields))
+	valuesToUpdate := make([]types.SettingUpdate, 0, len(fields))
 	for _, field := range fields {
 		if !submitted[field.key] || field.update == field.current {
 			continue
 		}
 		changedKeys = append(changedKeys, field.key)
-		previousValues = append(previousValues, libarcane.SettingUpdate{Key: field.key, Value: field.current})
-		valuesToUpdate = append(valuesToUpdate, libarcane.SettingUpdate{Key: field.key, Value: field.update})
+		previousValues = append(previousValues, types.SettingUpdate{Key: field.key, Value: field.current})
+		valuesToUpdate = append(valuesToUpdate, types.SettingUpdate{Key: field.key, Value: field.update})
 	}
 
 	if len(valuesToUpdate) == 0 {
@@ -291,7 +291,7 @@ func (s *JobService) RescheduleJobsForSettingKeys(ctx context.Context, changedKe
 		}
 
 		slog.DebugContext(ctx, "Processing job setting change", "job", jobID, "settingsKey", jobMeta.SettingsKey, "enabledKey", jobMeta.EnabledKey)
-		if err := s.scheduler.RescheduleJob(s.lifecycleCtx, job); err != nil {
+		if err := s.scheduler.AddJob(s.lifecycleCtx, job); err != nil {
 			rescheduleErrors = append(rescheduleErrors, fmt.Errorf("reschedule job %s: %w", jobID, err))
 			continue
 		}
@@ -551,7 +551,7 @@ func (s *JobService) authorizeRun(ctx context.Context, run types.SchedulerRun) e
 func (s *JobService) executeRun(ctx context.Context, run types.SchedulerRun) (result types.SchedulerOutcome, runErr error) {
 	// Entity-scoped jobs ("gitops-sync:<id>") share one span name and metric series per job type.
 	jobType, _, _ := strings.Cut(run.JobID, ":")
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "job "+jobType, trace.WithAttributes(
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "job "+jobType, trace.WithAttributes(
 		attribute.String("arcane.job.id", run.JobID),
 		attribute.String("arcane.job.run_id", run.ID),
 		attribute.String("arcane.environment.id", run.EnvironmentID),
@@ -562,7 +562,7 @@ func (s *JobService) executeRun(ctx context.Context, run types.SchedulerRun) (re
 	defer func() {
 		outcomeAttr := attribute.String("arcane.job.outcome", string(result.Status))
 		span.SetAttributes(outcomeAttr)
-		tracing.End(span, runErr)
+		logging.EndSpan(span, runErr)
 		// Record against a non-canceled context so shutdown-interrupted runs still count.
 		metricCtx := context.WithoutCancel(ctx)
 		attrs := metric.WithAttributes(jobAttr, outcomeAttr)

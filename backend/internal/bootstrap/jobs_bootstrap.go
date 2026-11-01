@@ -11,24 +11,23 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/apns"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/job"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/apns"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/gitops"
+	"getarcane.dev/arcane/v3/internal/job"
+	"getarcane.dev/arcane/v3/internal/scheduler"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/system"
+	"getarcane.dev/arcane/v3/internal/volume"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -105,11 +104,11 @@ type (
 	}
 
 	settingsChangeSubscriber interface {
-		SubscribeSettingsChanges(keys []string, callback func([]libarcane.SettingUpdate)) func()
+		SubscribeSettingsChanges(keys []string, callback func([]types.SettingUpdate)) func()
 	}
 
 	settingsEffectsScheduler interface {
-		RescheduleJob(ctx context.Context, job types.SchedulerJob) error
+		AddJob(ctx context.Context, job types.SchedulerJob) error
 	}
 
 	timeoutSettingsEnvironment interface {
@@ -405,35 +404,35 @@ func registerDynamicJobs(params dynamicJobsParams) error {
 
 func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 	unsubscribes := make([]func(), 0, 8)
-	subscribe := func(keys []string, callback func([]libarcane.SettingUpdate)) {
+	subscribe := func(keys []string, callback func([]types.SettingUpdate)) {
 		unsubscribes = append(unsubscribes, params.Settings.SubscribeSettingsChanges(keys, callback))
 	}
 	rescheduleOn := func(keys []string, job types.SchedulerJob) {
-		subscribe(keys, func(_ []libarcane.SettingUpdate) {
-			if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, job); err != nil {
+		subscribe(keys, func(_ []types.SettingUpdate) {
+			if err := params.Scheduler.AddJob(params.LifecycleCtx, job); err != nil {
 				slog.WarnContext(params.LifecycleCtx, "Failed to reschedule job", "job", job.Name(), "error", err)
 			}
 		})
 	}
 	timeoutSyncExecutor, cancelTimeoutSync := setupTimeoutSettingsSubscription(params, subscribe)
 
-	subscribe([]string{"pollingEnabled", "pollingInterval"}, func(_ []libarcane.SettingUpdate) {
+	subscribe([]string{"pollingEnabled", "pollingInterval"}, func(_ []types.SettingUpdate) {
 		params.ImageUpdateWatcher.RefreshSchedule()
 		params.ImageUpdateWatcher.Trigger()
-		if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, params.AutoUpdate); err != nil {
+		if err := params.Scheduler.AddJob(params.LifecycleCtx, params.AutoUpdate); err != nil {
 			slog.WarnContext(params.LifecycleCtx, "Failed to reschedule auto-update job", "error", err)
 		}
 	})
 
-	subscribe([]string{"apnsEnabled"}, func(updates []libarcane.SettingUpdate) {
+	subscribe([]string{"apnsEnabled"}, func(updates []types.SettingUpdate) {
 		params.Apns.ApplyEnabledUpdates(params.LifecycleCtx, updates, func() error {
-			return params.Scheduler.RescheduleJob(params.LifecycleCtx, params.ApnsOutbox)
+			return params.Scheduler.AddJob(params.LifecycleCtx, params.ApnsOutbox)
 		})
 	})
 
 	rescheduleOn([]string{"autoUpdate", "autoUpdateInterval"}, params.AutoUpdate)
 
-	subscribe([]string{"dockerClientRefreshInterval", "environmentHealthInterval"}, func(updates []libarcane.SettingUpdate) {
+	subscribe([]string{"dockerClientRefreshInterval", "environmentHealthInterval"}, func(updates []types.SettingUpdate) {
 		changedKeys := make([]string, 0, len(updates))
 		for _, update := range updates {
 			changedKeys = append(changedKeys, update.Key)
@@ -443,14 +442,14 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 		}
 	})
 
-	subscribe([]string{"projectsDirectory", "followProjectSymlinks", "projectScanMaxDepth"}, func(_ []libarcane.SettingUpdate) {
+	subscribe([]string{"projectsDirectory", "followProjectSymlinks", "projectScanMaxDepth"}, func(_ []types.SettingUpdate) {
 		if err := params.FilesystemWatcher.RestartProjectsWatcher(params.LifecycleCtx); err != nil {
 			slog.WarnContext(params.LifecycleCtx, "Failed to restart projects filesystem watcher", "error", err)
 			params.FilesystemWatcher.RequestRestart()
 		}
 	})
 
-	subscribe([]string{"templatesDirectory"}, func(_ []libarcane.SettingUpdate) {
+	subscribe([]string{"templatesDirectory"}, func(_ []types.SettingUpdate) {
 		if err := params.FilesystemWatcher.RestartTemplatesWatcher(params.LifecycleCtx); err != nil {
 			slog.WarnContext(params.LifecycleCtx, "Failed to restart templates filesystem watcher", "error", err)
 			params.FilesystemWatcher.RequestRestart()
@@ -496,7 +495,7 @@ func (w *timeoutSyncWorker) Stop(ctx context.Context) error {
 	}
 }
 
-func setupTimeoutSettingsSubscription(params settingsSubscriptionsParams, subscribe func([]string, func([]libarcane.SettingUpdate))) (*timeoutSyncWorker, context.CancelFunc) {
+func setupTimeoutSettingsSubscription(params settingsSubscriptionsParams, subscribe func([]string, func([]types.SettingUpdate))) (*timeoutSyncWorker, context.CancelFunc) {
 	if params.Config.AgentEnabled {
 		return nil, nil
 	}
@@ -519,7 +518,7 @@ func setupTimeoutSettingsSubscription(params settingsSubscriptionsParams, subscr
 			}
 		}
 	}()
-	subscribe(settings.PropagatedKeys(), func(updates []libarcane.SettingUpdate) {
+	subscribe(settings.PropagatedKeys(), func(updates []types.SettingUpdate) {
 		worker.mu.Lock()
 		defer worker.mu.Unlock()
 		if worker.closed {

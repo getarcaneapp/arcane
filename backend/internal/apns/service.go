@@ -20,22 +20,22 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"go.uber.org/fx"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app"
 	"kit.getarcane.app/normalization"
 	"kit.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/notifications"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -221,7 +221,7 @@ func (s *ApnsService) EnsureChannel(ctx context.Context) (string, error) {
 	return parsed.ChannelID, nil
 }
 
-func (s *ApnsService) ApplyEnabledUpdates(ctx context.Context, updates []libarcane.SettingUpdate, rescheduleOutbox func() error) {
+func (s *ApnsService) ApplyEnabledUpdates(ctx context.Context, updates []types.SettingUpdate, rescheduleOutbox func() error) {
 	if s == nil {
 		return
 	}

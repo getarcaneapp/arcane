@@ -5,16 +5,16 @@ import (
 	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v3"
+
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/upload"
-	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/upload"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -57,7 +57,7 @@ func (h *Handler) restoreBackup(ctx context.Context, input *RestoreBackupInput) 
 		return nil, err
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           types.ActivityTypeResourceAction,
@@ -91,7 +91,7 @@ func (h *Handler) restoreBackupFiles(ctx context.Context, input *RestoreBackupIn
 		return nil, err
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           types.ActivityTypeResourceAction,
@@ -137,7 +137,7 @@ func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreI
 	}
 	defer cleanup()
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           types.ActivityTypeResourceAction,

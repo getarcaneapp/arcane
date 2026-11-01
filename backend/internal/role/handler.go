@@ -5,12 +5,13 @@ import (
 	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v3"
+
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
 type (

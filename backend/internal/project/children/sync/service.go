@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
 type (

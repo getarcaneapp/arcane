@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/moby/moby/client"
 	"github.com/subosito/gotenv"
@@ -20,38 +19,39 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config/schema"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/dashboard"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/di"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/variable"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/startup"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/apikey"
+	"getarcane.dev/arcane/v3/internal/auth"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/config/schema"
+	"getarcane.dev/arcane/v3/internal/container"
+	"getarcane.dev/arcane/v3/internal/dashboard"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/di"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/gitops"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/swarm"
+	"getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/arcane/v3/internal/variable"
+	"getarcane.dev/arcane/v3/internal/volume"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/arcane/v3/pkg/startup"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
 )
 
 type (
@@ -120,7 +120,7 @@ func Bootstrap(ctx context.Context) error {
 	slog.InfoContext(ctx, "Arcane Identity Configuration", "puid", os.Getuid(), "pgid", os.Getgid())
 
 	appCtx, cancelApp := context.WithCancelCause(ctx)
-	appCtx = utils.WithAppLifecycleContext(appCtx)
+	appCtx = activitylib.WithAppLifecycleContext(appCtx)
 
 	db, err := database.Initialize(appCtx, cfg.DatabaseURL, database.MigrationOptions{AllowDowngrade: cfg.AllowDowngrade})
 	if err != nil {
@@ -163,7 +163,7 @@ func Bootstrap(ctx context.Context) error {
 		}
 	}()
 	if providers.loggerProvider != nil {
-		SetupSlogLogger(cfg, otelslog.NewHandler(tracing.InstrumentationName, otelslog.WithLoggerProvider(providers.loggerProvider)))
+		SetupSlogLogger(cfg, otelslog.NewHandler(logging.InstrumentationName, otelslog.WithLoggerProvider(providers.loggerProvider)))
 		db.Logger = BuildGormLogger(cfg)
 	}
 	if providers.tracerProvider != nil || providers.meterProvider != nil || providers.loggerProvider != nil {
@@ -221,9 +221,9 @@ func applicationOptions(
 		fx.Provide(
 			func() context.Context { return appCtx },
 			func(settingsService *settings.SettingsService) *http.Client {
-				return httpx.NewHTTPClient(types.HTTPClientOptions{
+				return httpx.NewHTTPClient(httpx.ClientConfig{
 					Timeout:             timeouts.GetDuration(settingsService.GetSettingsOrDefaults(appCtx).HTTPClientTimeout.AsInt(), timeouts.DefaultHTTPClient),
-					TLSHandshakeTimeout: 10 * time.Second,
+					MaxIdleConnsPerHost: 32,
 				})
 			},
 		),
@@ -295,7 +295,7 @@ func applicationOptions(
 						})
 						startup.WarnDeprecatedImage(dockerCtx, func(ctx context.Context) (string, error) {
 							return dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
-								self, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
+								self, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
 								if err != nil {
 									return "", err
 								}
@@ -313,9 +313,11 @@ func applicationOptions(
 				var stop func(context.Context) error
 				lc.Append(fx.Hook{
 					OnStart: func(context.Context) error {
-						var err error
-						stop, err = concurrency.StartSupervised(appCtx, "project status watcher", projectService.WatchStatuses)
-						return err
+						stop = concurrency.Supervise(appCtx, concurrency.SuperviseConfig{
+							Run:  projectService.WatchStatuses,
+							Name: "project status watcher",
+						}).Stop
+						return nil
 					},
 					OnStop: func(stopCtx context.Context) error {
 						if stop == nil {
@@ -326,7 +328,7 @@ func applicationOptions(
 				})
 			},
 			func(lc fx.Lifecycle, dashboardService *dashboard.DashboardService) {
-				if err := dashboardService.ObserveInventory(otel.Meter(tracing.InstrumentationName)); err != nil {
+				if err := dashboardService.ObserveInventory(otel.Meter(logging.InstrumentationName)); err != nil {
 					otel.Handle(err)
 				}
 				if providers.meterProvider != nil {

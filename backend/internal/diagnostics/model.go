@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
+	"getarcane.dev/arcane/v3/pkg/francis"
 )
 
 type (

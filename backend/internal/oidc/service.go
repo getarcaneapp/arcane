@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/hot"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -25,14 +24,15 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
 	"golang.org/x/oauth2"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jwtclaims"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/oidcjwk"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/auth"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	arcaneoidc "getarcane.dev/arcane/v3/pkg/oidc"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -43,7 +43,7 @@ type (
 		httpClient         *http.Client
 		insecureHttpClient *http.Client
 		providerCache      *hot.HotCache[oidcProviderKey, *oidc.Provider]
-		keySetManager      *oidcjwk.KeySetManager
+		keySetManager      *arcaneoidc.KeySetManager
 	}
 
 	oidcProviderKey struct {
@@ -66,7 +66,7 @@ type (
 		SettingsService *settings.SettingsService
 		Config          *config.Config
 		HTTPClient      *http.Client
-		KeySetManager   *oidcjwk.KeySetManager
+		KeySetManager   *arcaneoidc.KeySetManager
 	}
 
 	CallbackRequest struct {
@@ -260,11 +260,11 @@ func (s *OidcService) getOrDiscoverProvider(ctx context.Context, cfg *settings.O
 func (s *OidcService) discoverProvider(ctx context.Context, key oidcProviderKey) (_ *oidc.Provider, err error) {
 	discoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
-	discoveryCtx, span := otel.Tracer(tracing.InstrumentationName).Start(discoveryCtx, "oidc.discover_provider", trace.WithAttributes(
+	discoveryCtx, span := otel.Tracer(logging.InstrumentationName).Start(discoveryCtx, "oidc.discover_provider", trace.WithAttributes(
 		attribute.String("arcane.oidc.issuer", key.issuer),
 		attribute.Bool("arcane.oidc.skip_tls_verify", key.skipTLS),
 	))
-	defer func() { tracing.End(span, err) }()
+	defer func() { logging.EndSpan(span, err) }()
 	providerCtx := oidc.ClientContext(discoveryCtx, kit.Ternary(key.skipTLS, s.insecureHttpClient, s.httpClient))
 
 	provider, err := oidc.NewProvider(providerCtx, key.issuer)
@@ -289,8 +289,8 @@ func (s *OidcService) discoverProvider(ctx context.Context, key oidcProviderKey)
 }
 
 func (s *OidcService) HandleCallback(ctx context.Context, req CallbackRequest) (_ *types.OidcUserInfo, _ *types.OidcTokenResponse, err error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "oidc.callback")
-	defer func() { tracing.End(span, err) }()
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "oidc.callback")
+	defer func() { logging.EndSpan(span, err) }()
 	slog.DebugContext(ctx, "HandleCallback: processing callback", "codePresent", req.Code != "", "statePresent", req.State != "")
 
 	var stateData OidcState
@@ -374,7 +374,7 @@ func (s *OidcService) verifyIDToken(ctx context.Context, provider *oidc.Provider
 	}
 	verifier := oidc.NewVerifier(issuer, keySet, &oidc.Config{
 		ClientID:             cfg.ClientID,
-		SupportedSigningAlgs: oidcjwk.SupportedSigningAlgs(),
+		SupportedSigningAlgs: arcaneoidc.SupportedSigningAlgs(),
 	})
 	idToken, err := verifier.Verify(oidc.ClientContext(ctx, client), rawIDToken)
 	if err != nil {
@@ -469,7 +469,7 @@ func (s *OidcService) buildUserInfo(
 		claims = merged
 	}
 
-	subject := jwtclaims.GetStringClaim(claims, "sub")
+	subject := arcaneoidc.GetStringClaim(claims, "sub")
 	if subject == "" {
 		slog.ErrorContext(ctx, "HandleCallback: missing required 'sub' claim")
 		return nil, nil, errors.New("missing required 'sub' claim in user info")
@@ -477,15 +477,15 @@ func (s *OidcService) buildUserInfo(
 
 	userInfoDto := types.OidcUserInfo{
 		Subject:           subject,
-		Name:              jwtclaims.GetStringClaim(claims, "name"),
-		Email:             jwtclaims.GetStringClaim(claims, "email"),
+		Name:              arcaneoidc.GetStringClaim(claims, "name"),
+		Email:             arcaneoidc.GetStringClaim(claims, "email"),
 		EmailVerified:     kit.As(claims["email_verified"], false),
-		PreferredUsername: jwtclaims.GetStringClaim(claims, "preferred_username"),
-		GivenName:         jwtclaims.GetStringClaim(claims, "given_name"),
-		FamilyName:        jwtclaims.GetStringClaim(claims, "family_name"),
-		Admin:             jwtclaims.GetBoolClaim(claims, "admin"),
-		Roles:             jwtclaims.GetStringSliceClaim(claims, "roles"),
-		Groups:            jwtclaims.GetStringSliceClaim(claims, "groups"),
+		PreferredUsername: arcaneoidc.GetStringClaim(claims, "preferred_username"),
+		GivenName:         arcaneoidc.GetStringClaim(claims, "given_name"),
+		FamilyName:        arcaneoidc.GetStringClaim(claims, "family_name"),
+		Admin:             arcaneoidc.GetBoolClaim(claims, "admin"),
+		Roles:             arcaneoidc.GetStringSliceClaim(claims, "roles"),
+		Groups:            arcaneoidc.GetStringSliceClaim(claims, "groups"),
 		Extra:             claims,
 	}
 
@@ -526,8 +526,8 @@ func postForm(ctx context.Context, client *http.Client, endpoint string, values 
 
 // InitiateDeviceAuth initiates the OIDC device authorization flow.
 func (s *OidcService) InitiateDeviceAuth(ctx context.Context) (_ *types.OidcDeviceAuthResponse, err error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "oidc.device_authorize")
-	defer func() { tracing.End(span, err) }()
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "oidc.device_authorize")
+	defer func() { logging.EndSpan(span, err) }()
 
 	cfg, err := s.effectiveConfig(ctx)
 	if err != nil {
@@ -607,11 +607,11 @@ func (s *OidcService) InitiateDeviceAuth(ctx context.Context) (_ *types.OidcDevi
 
 // ExchangeDeviceToken exchanges a device code for tokens.
 func (s *OidcService) ExchangeDeviceToken(ctx context.Context, deviceCode string) (_ *types.OidcUserInfo, _ *types.OidcTokenResponse, err error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "oidc.device_token")
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "oidc.device_token")
 	defer func() {
 		// Pending and slow_down are normal polling outcomes, not failures.
 		pending := err != nil && (err.Error() == "authorization_pending" || err.Error() == "slow_down")
-		tracing.End(span, kit.Ternary(pending, nil, err))
+		logging.EndSpan(span, kit.Ternary(pending, nil, err))
 	}()
 
 	cfg, err := s.effectiveConfig(ctx)

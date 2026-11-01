@@ -6,9 +6,8 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/getarcaneapp/arcane/types/v3"
-
-	"github.com/getarcaneapp/arcane/backend/v3/buildables"
+	"getarcane.dev/arcane/v3/buildables"
+	"getarcane.dev/types/v3"
 )
 
 // GetAutoLoginConfig returns the auto-login configuration for the frontend.

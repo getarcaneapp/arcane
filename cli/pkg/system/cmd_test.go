@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/cli/v3/internal/testutil"
+	"getarcane.dev/cli/v3/internal/testutil"
 )
 
 func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {

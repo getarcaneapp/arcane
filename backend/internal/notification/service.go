@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -24,24 +23,26 @@ import (
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/apns"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/notification/children/templates"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
+	"getarcane.dev/arcane/v3/internal/apns"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/notification/children/templates"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/arcane/v3/pkg/notifications"
+	"getarcane.dev/arcane/v3/pkg/validation"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -139,7 +140,7 @@ var (
 	ErrUnsupportedDispatchKind          = errors.New("unsupported notification dispatch kind")
 
 	notificationsSent = func() metric.Int64Counter {
-		counter, err := otel.Meter(tracing.InstrumentationName).Int64Counter("arcane.notifications.sent",
+		counter, err := otel.Meter(logging.InstrumentationName).Int64Counter("arcane.notifications.sent",
 			metric.WithDescription("Notification provider sends by outcome"), metric.WithUnit("{notification}"))
 		if err != nil {
 			otel.Handle(err)
@@ -570,7 +571,7 @@ func (s *NotificationService) send(
 	content notifications.Content,
 ) (handled bool, err error) {
 	providerAttr := attribute.String("arcane.notification.provider", string(setting.Provider))
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "notification.send", trace.WithAttributes(
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "notification.send", trace.WithAttributes(
 		providerAttr,
 		attribute.String("arcane.notification.kind", string(eventType)),
 		attribute.String("arcane.environment.id", target.EnvironmentID),
@@ -621,7 +622,7 @@ func (s *NotificationService) notifyEnabledProviders(
 	g.SetLimit(notificationDispatchConcurrency)
 	for i := range eligible {
 		g.Go(func() error {
-			defer utils.RecoverToError(&sendErrs[i], "notification dispatch", "provider", eligible[i].Provider)
+			defer concurrency.RecoverToError(&sendErrs[i], "notification dispatch", "provider", eligible[i].Provider)
 			handled[i] = true
 			handled[i], sendErrs[i] = s.send(ctx, target, eventType, &eligible[i], content)
 			return nil
@@ -666,7 +667,7 @@ func (s *NotificationService) notifyEnabledProviders(
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			defer utils.RecoverToError(nil, "notification event logging", "provider", providerName)
+			defer concurrency.RecoverToError(nil, "notification event logging", "provider", providerName)
 			logCtx, cancelLog := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 			defer cancelLog()
 			if _, createErr := s.eventSvc.CreateEvent(logCtx, req); createErr != nil {

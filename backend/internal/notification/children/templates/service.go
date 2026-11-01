@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
+	"getarcane.dev/arcane/v3/pkg/notifications"
+	"getarcane.dev/types/v3"
 )
 
 type (

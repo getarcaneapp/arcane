@@ -8,25 +8,23 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/normalization"
 	"kit.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/s3"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/s3"
+	"getarcane.dev/arcane/v3/pkg/update"
+	"getarcane.dev/types/v3"
 )
 
 type (
 	S3DestinationService struct {
-		db *database.DB
-		// checkRemoteReferences rejects a deletion while any managed environment
-		// still references the destination (or cannot be checked conclusively).
-		// Nil outside the manager's module wiring.
+		db                    *database.DB
 		checkRemoteReferences func(ctx context.Context, destinationID string) error
 	}
 )
@@ -34,9 +32,7 @@ type (
 var (
 	ErrS3DestinationNotFound = common.Classify(common.ErrNotFound, errors.New("S3 destination not found"))
 	ErrS3DestinationInUse    = errors.New("S3 destination is in use")
-	// errS3SecretRequired enforces the fresh-secret rule: a stored
-	// secret is never combined with changed connection or trust settings.
-	errS3SecretRequired = errors.New("re-enter the secret access key when changing the endpoint, bucket, region, access key ID, SSL mode, or path style")
+	errS3SecretRequired      = errors.New("re-enter the secret access key when changing the endpoint, bucket, region, access key ID, SSL mode, or path style")
 )
 
 func NewS3DestinationService(db *database.DB, checkRemoteReferences func(context.Context, string) error) *S3DestinationService {
@@ -153,21 +149,21 @@ func (s *S3DestinationService) CreateS3Destination(ctx context.Context, input ty
 	return &dto, nil
 }
 
-func (s *S3DestinationService) MergeS3Destination(ctx context.Context, id string, update types.S3Destination, submitted map[string]bool) (types.S3Destination, error) {
+func (s *S3DestinationService) MergeS3Destination(ctx context.Context, id string, patch types.S3Destination, submitted map[string]bool) (types.S3Destination, error) {
 	destination, err := s.getS3DestinationModel(ctx, id)
 	if err != nil {
 		return types.S3Destination{}, err
 	}
 	return types.S3Destination{
-		Name:            kit.Ternary(submitted["name"], update.Name, destination.Name),
-		Endpoint:        kit.Ternary(submitted["endpoint"], update.Endpoint, destination.Endpoint),
-		Bucket:          kit.Ternary(submitted["bucket"], update.Bucket, destination.Bucket),
-		Region:          kit.Ternary(submitted["region"], update.Region, destination.Region),
-		AccessKeyID:     kit.Ternary(submitted["accessKeyId"], update.AccessKeyID, destination.AccessKeyID),
-		SecretAccessKey: kit.Ternary(submitted["secretAccessKey"], update.SecretAccessKey, ""),
-		Prefix:          kit.Ternary(submitted["prefix"], update.Prefix, destination.Prefix),
-		UseSSL:          kit.Ternary(submitted["useSsl"], update.UseSSL, destination.UseSSL),
-		ForcePathStyle:  kit.Ternary(submitted["forcePathStyle"], update.ForcePathStyle, destination.ForcePathStyle),
+		Name:            kit.Ternary(submitted["name"], patch.Name, destination.Name),
+		Endpoint:        kit.Ternary(submitted["endpoint"], patch.Endpoint, destination.Endpoint),
+		Bucket:          kit.Ternary(submitted["bucket"], patch.Bucket, destination.Bucket),
+		Region:          kit.Ternary(submitted["region"], patch.Region, destination.Region),
+		AccessKeyID:     kit.Ternary(submitted["accessKeyId"], patch.AccessKeyID, destination.AccessKeyID),
+		SecretAccessKey: kit.Ternary(submitted["secretAccessKey"], patch.SecretAccessKey, ""),
+		Prefix:          kit.Ternary(submitted["prefix"], patch.Prefix, destination.Prefix),
+		UseSSL:          kit.Ternary(submitted["useSsl"], patch.UseSSL, destination.UseSSL),
+		ForcePathStyle:  kit.Ternary(submitted["forcePathStyle"], patch.ForcePathStyle, destination.ForcePathStyle),
 	}, nil
 }
 
@@ -317,7 +313,7 @@ func (s *S3DestinationService) SyncS3Destinations(ctx context.Context, destinati
 		// The manager resends the full set every health tick; unchanged rows
 		// keep their ciphertext and skip the write.
 		encryptedSecret := current.SecretAccessKey
-		secretChanged, err := utils.ApplyEncrypted(&encryptedSecret, configuration.SecretAccessKey)
+		secretChanged, err := update.ApplyEncrypted(&encryptedSecret, configuration.SecretAccessKey)
 		if err != nil {
 			return fmt.Errorf("failed to apply S3 secret access key for %s: %w", configuration.ID, err)
 		}

@@ -3,8 +3,9 @@ package pagination
 import (
 	"cmp"
 
-	"github.com/getarcaneapp/arcane/types/v3"
-	kit "kit.getarcane.app"
+	"kit.getarcane.app"
+
+	"getarcane.dev/types/v3"
 )
 
 type (

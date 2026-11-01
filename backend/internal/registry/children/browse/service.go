@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1"
@@ -23,12 +22,14 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
+
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/registryauth"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/registry"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -85,10 +86,10 @@ func (s *Service) cachedNames(key string, list func() ([]string, error)) ([]stri
 // ListRepositories lists the repositories of a configured registry through the
 // catalog API, limited to the namespace of the registry URL.
 func (s *Service) ListRepositories(ctx context.Context, id string, params pagination.QueryParams) (listed []types.ContainerRegistryRepository, paging pagination.Response, listErr error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "registry.list_repositories", trace.WithAttributes(attribute.String("arcane.registry.id", id)))
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "registry.list_repositories", trace.WithAttributes(attribute.String("arcane.registry.id", id)))
 	defer func() {
 		span.SetAttributes(attribute.Int("arcane.result.count", len(listed)))
-		tracing.End(span, listErr)
+		logging.EndSpan(span, listErr)
 	}()
 
 	lookupCtx, cancel := s.lookupContext(ctx)
@@ -122,13 +123,13 @@ func (s *Service) ListRepositoryTags(
 	id, repository string,
 	params pagination.QueryParams,
 ) (listed []types.ContainerRegistryRepositoryTag, paging pagination.Response, listErr error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "registry.list_tags", trace.WithAttributes(
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "registry.list_tags", trace.WithAttributes(
 		attribute.String("arcane.registry.id", id),
 		attribute.String("arcane.registry.repository", repository),
 	))
 	defer func() {
 		span.SetAttributes(attribute.Int("arcane.result.count", len(listed)))
-		tracing.End(span, listErr)
+		logging.EndSpan(span, listErr)
 	}()
 
 	lookupCtx, cancel := s.lookupContext(ctx)
@@ -168,14 +169,14 @@ func (s *Service) ListRepositoryTags(
 // DeleteRepositoryTag deletes the manifest a tag points to. Registries delete
 // manifests by digest, so every tag sharing that digest is removed too.
 func (s *Service) DeleteRepositoryTag(ctx context.Context, id, repository, tag string) (deleted string, opErr error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "registry.delete_tag", trace.WithAttributes(
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "registry.delete_tag", trace.WithAttributes(
 		attribute.String("arcane.registry.id", id),
 		attribute.String("arcane.registry.repository", repository),
 		attribute.String("arcane.image.tag", tag),
 	))
 	defer func() {
 		span.SetAttributes(attribute.String("arcane.image.digest", deleted))
-		tracing.End(span, opErr)
+		logging.EndSpan(span, opErr)
 	}()
 
 	lookupCtx, cancel := s.lookupContext(ctx)
@@ -213,7 +214,7 @@ func (s *Service) target(ctx context.Context, id string) (*target, error) {
 		return nil, err
 	}
 
-	host, prefix := registryauth.SplitRegistryURL(reg.URL)
+	host, prefix := registry.SplitRegistryURL(reg.URL)
 	registryName, err := name.NewRegistry(host, kit.Ternary(reg.Insecure, []name.Option{name.StrictValidation, name.Insecure}, []name.Option{name.StrictValidation})...)
 	if err != nil {
 		return nil, common.Classify(common.ErrValidation, fmt.Errorf("invalid registry URL %q: %w", reg.URL, err))

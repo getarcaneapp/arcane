@@ -8,13 +8,14 @@ import (
 	"time"
 
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"kit.getarcane.app/updater/labels"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/iconcatalog"
+	"getarcane.dev/arcane/v3/pkg/iconcatalog"
+	"getarcane.dev/types/v3"
 )
 
 func TestCalculateProjectStatus(t *testing.T) {

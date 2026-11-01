@@ -4,25 +4,26 @@ import (
 	"context"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app/docker/streams/bus"
 	"kit.getarcane.app/sys/crypto"
 
-	backupengine "github.com/getarcaneapp/arcane/backend/v3/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow/flowtest"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
+	backupengine "getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/s3"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/volume"
+	francistest "getarcane.dev/arcane/v3/pkg/francis/testing"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
 func TestHistoryDestinationDecoration(t *testing.T) {

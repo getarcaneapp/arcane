@@ -15,7 +15,6 @@ import (
 	"uuid"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -24,21 +23,22 @@ import (
 	"go.uber.org/fx"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jwtclaims"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/oidcjwk"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
+	"getarcane.dev/arcane/v3/internal/auth"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/session"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	arcaneoidc "getarcane.dev/arcane/v3/pkg/oidc"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -52,7 +52,7 @@ type (
 		eventService    *event.EventService
 		roleService     *role.RoleService
 		httpClient      *http.Client
-		keySetManager   *oidcjwk.KeySetManager
+		keySetManager   *arcaneoidc.KeySetManager
 		keySets         map[string]oidc.KeySet
 		providerMu      sync.RWMutex
 	}
@@ -66,7 +66,7 @@ type (
 		SettingsService *settings.SettingsService
 		EventService    *event.EventService
 		HTTPClient      *http.Client
-		KeySetManager   *oidcjwk.KeySetManager
+		KeySetManager   *arcaneoidc.KeySetManager
 		RoleService     *role.RoleService
 	}
 
@@ -84,14 +84,17 @@ const (
 var errInvalidGrant = common.Classify(common.ErrFederatedCredentialInvalidGrant, errors.New("invalid federated token grant"))
 
 func NewFederatedCredentialService(p FederatedCredentialServiceParams) *FederatedCredentialService {
-	client := httpx.NewHTTPClient(types.HTTPClientOptions{Timeout: 15 * time.Second, TLSHandshakeTimeout: 10 * time.Second})
+	client := httpx.NewHTTPClient(httpx.ClientConfig{
+		Timeout:             15 * time.Second,
+		MaxIdleConnsPerHost: 32,
+	})
 	if p.HTTPClient != nil {
 		copied := *p.HTTPClient
 		client = &copied
 	}
 	client.Transport = otelhttp.NewTransport(client.Transport)
 
-	exchanges, err := otel.Meter(tracing.InstrumentationName).Int64Counter("arcane.federated.token_exchanges",
+	exchanges, err := otel.Meter(logging.InstrumentationName).Int64Counter("arcane.federated.token_exchanges",
 		metric.WithDescription("Federated credential token exchanges by outcome"), metric.WithUnit("{exchange}"))
 	if err != nil {
 		otel.Handle(err)
@@ -326,15 +329,15 @@ func (s *FederatedCredentialService) Delete(ctx context.Context, id string) erro
 }
 
 func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req types.TokenExchangeRequest) (_ *types.FederatedTokenResponse, err error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "federated.token_exchange")
-	claims := jwtclaims.ParseJWTClaims(req.SubjectToken)
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "federated.token_exchange")
+	claims := arcaneoidc.ParseJWTClaims(req.SubjectToken)
 	issuer := ""
 	subject := ""
 	var audiences []string
 	if claims != nil {
-		issuer = kit.ToString(jwtclaims.GetByPath(claims, "iss").OrEmpty())
-		subject = kit.ToString(jwtclaims.GetByPath(claims, "sub").OrEmpty())
-		audiences = kit.Unique(kit.TrimNonEmpty(kit.Collect(jwtclaims.GetByPath(claims, "aud").OrEmpty(), func(item any) string { return kit.As(item, "") })))
+		issuer = kit.ToString(arcaneoidc.GetByPath(claims, "iss").OrEmpty())
+		subject = kit.ToString(arcaneoidc.GetByPath(claims, "sub").OrEmpty())
+		audiences = kit.Unique(kit.TrimNonEmpty(kit.Collect(arcaneoidc.GetByPath(claims, "aud").OrEmpty(), func(item any) string { return kit.As(item, "") })))
 	}
 
 	logResult := "failure"
@@ -344,7 +347,7 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req type
 		outcome := []attribute.KeyValue{attribute.String("arcane.federated.outcome", logResult), attribute.String("arcane.federated.reason", logReason)}
 		s.exchanges.Add(context.WithoutCancel(ctx), 1, metric.WithAttributes(outcome...))
 		span.SetAttributes(append(outcome, attribute.String("arcane.federated.issuer", issuer), attribute.String("arcane.federated.credential_id", credentialID))...)
-		tracing.End(span, err)
+		logging.EndSpan(span, err)
 
 		slog.InfoContext(ctx, "Federated credential token exchange",
 			"result", logResult,
@@ -424,7 +427,7 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req type
 		return nil, common.Classify(common.ErrFederatedCredentialInvalidGrant, fmt.Errorf("invalid federated token grant: %w", err))
 	}
 	if subject == "" {
-		subject = kit.ToString(jwtclaims.GetByPath(verifiedClaims, defaultFederatedSubjectClaim).OrEmpty())
+		subject = kit.ToString(arcaneoidc.GetByPath(verifiedClaims, defaultFederatedSubjectClaim).OrEmpty())
 	}
 	if len(audiences) == 0 {
 		audiences = append([]string{}, verifiedToken.Audience...)
@@ -446,7 +449,7 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req type
 	if pruneErr := s.db.WithContext(ctx).Where("expires_at < ?", time.Now()).Delete(&FederatedTokenReplay{}).Error; pruneErr != nil {
 		return nil, fmt.Errorf("failed to prune federated token replay records: %w", pruneErr)
 	}
-	tokenID := strings.TrimSpace(kit.ToString(jwtclaims.GetByPath(verifiedClaims, "jti").OrEmpty()))
+	tokenID := strings.TrimSpace(kit.ToString(arcaneoidc.GetByPath(verifiedClaims, "jti").OrEmpty()))
 	tokenKind := "jti"
 	if tokenID == "" {
 		tokenID = req.SubjectToken
@@ -542,7 +545,7 @@ func (s *FederatedCredentialService) verifySubjectToken(ctx context.Context, iss
 
 	verifier := oidc.NewVerifier(issuer, keySet, &oidc.Config{
 		SkipClientIDCheck:    true,
-		SupportedSigningAlgs: oidcjwk.SupportedSigningAlgs(),
+		SupportedSigningAlgs: arcaneoidc.SupportedSigningAlgs(),
 	})
 	idToken, err := verifier.Verify(oidc.ClientContext(ctx, s.httpClient), rawToken)
 	if err != nil {
@@ -566,7 +569,7 @@ func credentialMatchesToken(credential *FederatedCredential, tokenAudiences []st
 	}
 
 	subjectClaim := cmp.Or(strings.TrimSpace(credential.SubjectClaim), defaultFederatedSubjectClaim)
-	subject := kit.ToString(jwtclaims.GetByPath(claims, subjectClaim).OrEmpty())
+	subject := kit.ToString(arcaneoidc.GetByPath(claims, subjectClaim).OrEmpty())
 	if subject == "" {
 		return false
 	}

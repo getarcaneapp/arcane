@@ -12,29 +12,29 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
-	kit "kit.getarcane.app"
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/gitrepo"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/s3"
+	"getarcane.dev/arcane/v3/internal/settings"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
 )
 
 type (
 	Service struct {
 		db              *database.DB
-		client          *remenv.Client
+		client          *agent.RemoteClient
 		settingsService *settings.SettingsService
-		syncGate        *utils.SyncGate
-		syncLocks       utils.KeyedMutex
+		syncGate        *concurrency.SyncGate
+		syncLocks       concurrency.KeyedMutex
 	}
 
 	// Target is a validated remote environment endpoint; build it with NewTarget.
@@ -47,43 +47,10 @@ type (
 
 // New builds the remote transport. syncGate is owned by the parent so it can
 // forget delivery state when an environment reconnects.
-func New(db *database.DB, settingsService *settings.SettingsService, syncGate *utils.SyncGate) *Service {
+func New(db *database.DB, settingsService *settings.SettingsService, syncGate *concurrency.SyncGate) *Service {
 	return &Service{
-		db: db,
-		client: remenv.NewClient(remenv.TunnelTransportFuncs{
-			EnsureAvailableFunc: func(ctx context.Context, envID string) error {
-				if agent.GetRegistry().Active(envID).IsPresent() {
-					return nil
-				}
-				if _, ok := agent.GetRegistry().WaitForActive(ctx, envID, agent.DefaultTunnelAcquireTimeout).Get(); ok {
-					return nil
-				}
-				return remenv.ErrEnvironmentUnavailable
-			},
-			DoFunc: func(ctx context.Context, envID, method, path string, headers map[string]string, body []byte) (*remenv.Response, error) {
-				tunnel, ok := agent.GetRegistry().Get(envID).Get()
-				if !ok {
-					return nil, fmt.Errorf("no active tunnel for environment %s: %w", envID, remenv.ErrEnvironmentUnavailable)
-				}
-				if tunnel.Conn.IsClosed() {
-					return nil, fmt.Errorf("tunnel for environment %s is closed: %w", envID, remenv.ErrEnvironmentUnavailable)
-				}
-
-				statusCode, respHeaders, respBody, err := agent.ProxyRequest(ctx, tunnel, method, path, "", headers, body)
-				if err != nil {
-					if errors.Is(err, agent.ErrTunnelConnectionClosed) {
-						err = errors.Join(remenv.ErrEnvironmentUnavailable, err)
-					}
-					return nil, fmt.Errorf("tunnel request failed: %w", err)
-				}
-
-				return &remenv.Response{
-					StatusCode: statusCode,
-					Body:       respBody,
-					Headers:    respHeaders,
-				}, nil
-			},
-		}),
+		db:              db,
+		client:          agent.NewRemoteClient(agent.RemoteClientConfig{}),
 		settingsService: settingsService,
 		syncGate:        syncGate,
 	}
@@ -113,19 +80,19 @@ func (s *Service) Execute(
 	method string,
 	path string,
 	body []byte,
-) (*remenv.Response, error) {
+) (*agent.RemoteResponse, error) {
 	// Forward the activity batch ID so bulk actions proxied to a remote
 	// environment group the same way they do locally.
-	requestHeaders := make(map[string]string, 3)
-	if batchID := utils.ActivityBatchIDFromContext(ctx); batchID != "" {
-		requestHeaders[middleware.HeaderActivityBatchID] = batchID
+	requestHeaders := make(http.Header, 3)
+	if batchID := activitylib.ActivityBatchIDFromContext(ctx); batchID != "" {
+		requestHeaders.Set(middleware.HeaderActivityBatchID, batchID)
 	}
 	if len(body) > 0 && method != http.MethodGet {
-		requestHeaders["Content-Type"] = "application/json"
+		requestHeaders.Set("Content-Type", "application/json")
 	}
-	remenv.ApplyAgentTokenHeaderMap(requestHeaders, target.accessToken)
+	agent.SetAgentToken(requestHeaders, kit.FromPtr(target.accessToken))
 
-	resp, err := s.client.Do(ctx, remenv.Request{
+	resp, err := s.client.Do(ctx, agent.RemoteRequest{
 		EnvironmentID: target.id,
 		Method:        method,
 		Path:          path,
@@ -142,22 +109,22 @@ func (s *Service) Execute(
 func (s *Service) Stream(ctx context.Context, target *Target, path string) (*http.Response, error) {
 	tunnel, ok := agent.GetRegistry().WaitForActive(ctx, target.id, agent.DefaultTunnelAcquireTimeout).Get()
 	if !ok {
-		return nil, &remenv.TransportError{Err: remenv.ErrEnvironmentUnavailable}
+		return nil, &agent.TransportError{Err: agent.ErrEnvironmentUnavailable}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, agent.MuxAgentBaseURL+path, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("create stream request: %w", err)
 	}
 	req.Header.Set("Accept", "text/event-stream")
-	remenv.ApplyAgentTokenHeaders(req.Header, target.accessToken)
+	agent.SetAgentToken(req.Header, kit.FromPtr(target.accessToken))
 	resp, err := tunnel.HTTPClient.Do(req)
 	if err != nil {
-		return nil, &remenv.TransportError{Err: err}
+		return nil, &agent.TransportError{Err: err}
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		_ = resp.Body.Close()
-		return nil, &remenv.StatusError{StatusCode: resp.StatusCode, Body: body}
+		return nil, &agent.StatusError{StatusCode: resp.StatusCode, Body: body}
 	}
 	return resp, nil
 }
@@ -179,12 +146,12 @@ func (s *Service) JSON(
 		return requireSuccessErr
 	}
 	// This is the erased decode behind the RemoteJSONProxy func-value seam;
-	// typed callers go through RemoteJSONProxy.JSON or remenv's generic decode.
+	// typed callers go through RemoteJSONProxy.JSON.
 	if out == nil {
 		return nil
 	}
 	if unmarshalErr := json.Unmarshal(resp.Body, out); unmarshalErr != nil {
-		return &remenv.DecodeError{Err: unmarshalErr}
+		return &agent.DecodeError{Err: unmarshalErr}
 	}
 
 	return nil

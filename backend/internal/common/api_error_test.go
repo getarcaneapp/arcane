@@ -5,8 +5,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
 )
 
 func TestToAPIErrorMapsClassifiedValidationDetails(t *testing.T) {

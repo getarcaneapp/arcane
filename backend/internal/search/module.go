@@ -7,7 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
 type (

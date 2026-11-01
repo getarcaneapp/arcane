@@ -8,9 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
 )
 
 func TestDiagnosticsServiceScanGoroutineLeaks(t *testing.T) {

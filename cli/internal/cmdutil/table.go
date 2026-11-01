@@ -5,9 +5,10 @@ import (
 	"slices"
 
 	"github.com/spf13/cobra"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	"kit.getarcane.app"
+
+	"getarcane.dev/cli/v3/internal/output"
 )
 
 type (

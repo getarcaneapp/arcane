@@ -15,15 +15,16 @@ import (
 	"time"
 
 	charmLog "charm.land/log/v2"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
-	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
-	"github.com/getarcaneapp/arcane/cli/v3/pkg/images/updates"
+	"kit.getarcane.app"
+
+	"getarcane.dev/cli/v3/internal/client"
+	"getarcane.dev/cli/v3/internal/cmdutil"
+	"getarcane.dev/cli/v3/internal/output"
+	clitypes "getarcane.dev/cli/v3/internal/types"
+	"getarcane.dev/cli/v3/pkg/images/updates"
+	"getarcane.dev/types/v3"
 )
 
 var ImageRef = cmdutil.ResourceRef[types.ImageDetailSummary, types.ImageSummary]{

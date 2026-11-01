@@ -42,7 +42,7 @@ Arcane is a Docker management platform.
 
 - **Imports:** default names. Alias only to fix a real conflict.
 - **Shared contracts:** top-level `types/`. Persistence models stay in their domain.
-- **Helpers:** `backend/pkg/utils/`.
+- **Helpers:** a purpose-named package directly under `backend/pkg/`.
 
 ### Go style
 
@@ -117,7 +117,7 @@ service_playwright.go   → service_playwright_test.go
 
 - Never create a production file just to justify a test name.
 - **Scope:** business domains and their children.
-- **Excluded:** `bootstrap`, `common`, `config`, `database`, `di`, `backend/pkg`, CLI packages, shared types.
+- **Excluded:** `bootstrap`, `common`, `config`, `database`, `di`, `scheduler`, `backend/pkg`, CLI packages, shared types.
 - **Middleware:** descriptive single-word names like `cors.go`, `csrf.go`, `environment.go`, with the same test pairing.
 
 ### Wiring and API assembly
@@ -154,8 +154,11 @@ Search these before adding backend logic:
 - `kit.getarcane.app/docker` (Kit): Docker names, labels, clients, logs, streams
 - `backend/pkg/projects`: Compose parsing, discovery, image refs
 - `backend/pkg/pagination`: in-memory and database pagination
-- `backend/pkg/libarcane`: reusable engines and transport
-- `backend/pkg/utils`: shared infra utilities
+- `backend/pkg/agent`, `backend/pkg/ws`: agent tunnel and WebSocket transport
+- `backend/pkg/httpx`, `backend/pkg/handlerutil`: outbound HTTP and handler helpers
+- `backend/pkg/registry`: registry auth, hosts, and rate limiting
+- `backend/pkg/volumes`: volume helper containers and renames
+- `backend/pkg/*`: one package per purpose; check for an existing one before adding
 
 ### Persistence
 
@@ -282,7 +285,7 @@ Don't stop at `console.error`. Pick the matching path:
 
 - **Contract:** implement the scheduler job contract.
 - **Wiring:** `internal/di`, then register in `internal/bootstrap/jobs_bootstrap.go`.
-- **Multi-step, fan-out, or resumable jobs:** use `backend/pkg/scheduler/flow` (Francis workflows in coordinator runs).
+- **Multi-step, fan-out, or resumable jobs:** use `backend/internal/scheduler/flow` (Francis workflows in coordinator runs).
   - Follow the migration recipe in the package doc.
   - Steps are idempotent service methods.
   - The last step returns `scheduler.Outcome`.

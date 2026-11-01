@@ -7,7 +7,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/federated"
+	"getarcane.dev/arcane/v3/internal/federated"
 )
 
 type (

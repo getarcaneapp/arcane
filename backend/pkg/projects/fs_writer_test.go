@@ -10,19 +10,19 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	kit "kit.getarcane.app"
-	"kit.getarcane.app/acfs"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	"kit.getarcane.app/fs"
 )
 
 func TestWriteFilesPermissions(t *testing.T) {
 	// Save original perms
-	origFilePerm := utils.FilePerm
-	origDirPerm := utils.DirPerm
+	origFilePerm := fs.FilePerm
+	origDirPerm := fs.DirPerm
 	defer func() {
-		utils.FilePerm = origFilePerm
-		utils.DirPerm = origDirPerm
+		fs.FilePerm = origFilePerm
+		fs.DirPerm = origDirPerm
 	}()
 
 	tmpDir := t.TempDir()
@@ -30,8 +30,8 @@ func TestWriteFilesPermissions(t *testing.T) {
 	projectDir := filepath.Join(tmpDir, "test-project")
 
 	t.Run("WriteComposeFile uses custom permissions", func(t *testing.T) {
-		utils.FilePerm = 0o600
-		utils.DirPerm = 0o700
+		fs.FilePerm = 0o600
+		fs.DirPerm = 0o700
 
 		err := WriteComposeFile(t.Context(), projectsRoot, projectDir, "services: {}")
 		require.NoError(t, err)
@@ -50,8 +50,8 @@ func TestWriteFilesPermissions(t *testing.T) {
 	})
 
 	t.Run("WriteEnvFile uses custom permissions", func(t *testing.T) {
-		utils.FilePerm = 0o600
-		utils.DirPerm = 0o700
+		fs.FilePerm = 0o600
+		fs.DirPerm = 0o700
 
 		err := WriteProjectFile(t.Context(), projectsRoot, projectDir, ".env", "VAR=VAL")
 		require.NoError(t, err)

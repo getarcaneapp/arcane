@@ -9,7 +9,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -17,15 +16,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app/docker/streams/bus"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	containerdomain "github.com/getarcaneapp/arcane/backend/v3/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/podman"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/config"
+	containerdomain "getarcane.dev/arcane/v3/internal/container"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/podman"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/types/v3"
 )
 
 func TestResolveBackupStorageMountFromMounts(t *testing.T) {

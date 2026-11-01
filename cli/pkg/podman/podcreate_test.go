@@ -3,10 +3,11 @@ package podman
 import (
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
 )
 
 func TestPodCreateOptionsRequest(t *testing.T) {

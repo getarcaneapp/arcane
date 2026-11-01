@@ -7,11 +7,12 @@ import (
 	"testing"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
+
 	updaterlabels "kit.getarcane.app/updater/labels"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/types/v3"
 )
 
 func TestParseArcaneComposeMetadata_InterpolationAndAnchor(t *testing.T) {

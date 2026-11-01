@@ -5,15 +5,15 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
-	userdomain "github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/session"
+	userdomain "getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/types/v3"
 )
 
 func newPasskeyServiceTestDB(t *testing.T) *database.DB {

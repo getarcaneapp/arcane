@@ -11,7 +11,8 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/consts"
 	"github.com/compose-spec/compose-go/v2/dotenv"
-	"github.com/getarcaneapp/arcane/types/v3"
+
+	"getarcane.dev/types/v3"
 )
 
 // BuildValidationEnvironment resolves the env a compose file is validated

@@ -23,25 +23,26 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/rustic"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
-	s3util "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/s3"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/s3"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/scheduler/schedule"
+	"getarcane.dev/arcane/v3/pkg/rustic"
+	s3util "getarcane.dev/arcane/v3/pkg/s3"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/arcane/v3/pkg/volumes"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -648,7 +649,7 @@ func (e *Engine) RekeyRepositories(ctx context.Context, dockerClient *client.Cli
 // Rustic's native `copy` needs a TOML profile for the target, which the env-only Repository cannot express.
 func (e *Engine) Replicate(ctx context.Context, dockerClient *client.Client, from Repository, fromSnapshotID string, to Repository, password, label string, tags ...string) (Snapshot, error) {
 	temporaryVolume := "arcane-rustic-copy-" + uuid.New().String()
-	if _, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: temporaryVolume, Labels: volumehelper.Labels()}); err != nil {
+	if _, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: temporaryVolume, Labels: volumes.Labels()}); err != nil {
 		return Snapshot{}, fmt.Errorf("failed to create temporary Rustic copy volume: %w", err)
 	}
 	defer func() {
@@ -697,7 +698,7 @@ func (e *Engine) runContainer(ctx context.Context, dockerClient *client.Client, 
 		repository.Environment,
 		append(slices.Clone(repository.Mounts), extraMounts...),
 		func() container.NetworkMode {
-			arcane, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
+			arcane, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
 			if err != nil || kit.FromPtr(arcane).ID == "" {
 				slog.DebugContext(ctx, "backup engine: running Rustic on the default network", "error", err)
 				return ""

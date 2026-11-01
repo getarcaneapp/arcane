@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	"getarcane.dev/cli/v3/internal/output"
 )
 
 type (

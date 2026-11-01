@@ -5,9 +5,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v3"
-
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/types/v3"
 )
 
 var ecrRegistryEndpointPattern = regexp.MustCompile(`^(https://)?[0-9]{12}\.(dkr\.ecr(-fips)?\.[a-z0-9-]+\.amazonaws\.com(\.cn)?|dkr-ecr(-fips)?\.[a-z0-9-]+\.on\.aws)(:443)?/?$`)

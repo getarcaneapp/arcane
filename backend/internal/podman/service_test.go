@@ -10,15 +10,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"kit.getarcane.app/docker/compat"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	libpodman "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/notifications"
+	libpodman "getarcane.dev/arcane/v3/pkg/podman"
+	"getarcane.dev/types/v3"
 )
 
 type (

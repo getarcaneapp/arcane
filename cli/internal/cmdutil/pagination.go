@@ -8,10 +8,11 @@ import (
 	"strconv"
 
 	"github.com/spf13/cobra"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/cli/v3/internal/config"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/runtime"
+	"kit.getarcane.app"
+
+	"getarcane.dev/cli/v3/internal/config"
+	"getarcane.dev/cli/v3/internal/runtime"
 )
 
 type (

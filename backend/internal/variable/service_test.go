@@ -12,20 +12,21 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
+	"kit.getarcane.app/fs"
 	"kit.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -222,7 +223,7 @@ func TestWriteLocalEnvFile_PreservesExistingFileMode(t *testing.T) {
 	require.NoError(t, service.WriteLocalEnvFile(ctx, []types.EnvVariable{{Key: "A", Value: "1"}}))
 	info, err := os.Stat(envPath)
 	require.NoError(t, err)
-	require.Equal(t, utils.FilePerm, info.Mode().Perm(), "new file must use the configured default mode")
+	require.Equal(t, fs.FilePerm, info.Mode().Perm(), "new file must use the configured default mode")
 
 	require.NoError(t, os.Chmod(envPath, 0o600))
 	require.NoError(t, service.WriteLocalEnvFile(ctx, []types.EnvVariable{{Key: "A", Value: "2"}}))
@@ -275,8 +276,8 @@ func TestSyncEnvironment_AgentMaterializesSecretsThroughAgentRoute(t *testing.T)
 			Method: method,
 			Path:   path,
 			Headers: map[string]string{
-				remenv.HeaderAPIKey:     token,
-				remenv.HeaderAgentToken: token,
+				agent.HeaderAPIKey:     token,
+				agent.HeaderAgentToken: token,
 			},
 			Body: append([]byte(nil), body...),
 		})
@@ -314,13 +315,13 @@ func requireMaterializationRequests(t *testing.T, requests []capturedVariableSyn
 	require.Equal(t, http.MethodGet, requests[0].Method)
 	require.Equal(t, agentVariablesPath, requests[0].Path)
 	require.Empty(t, requests[0].Body)
-	require.Equal(t, token, requests[0].Headers[remenv.HeaderAPIKey])
-	require.Equal(t, token, requests[0].Headers[remenv.HeaderAgentToken])
+	require.Equal(t, token, requests[0].Headers[agent.HeaderAPIKey])
+	require.Equal(t, token, requests[0].Headers[agent.HeaderAgentToken])
 
 	require.Equal(t, http.MethodPut, requests[1].Method)
 	require.Equal(t, agentVariablesPath, requests[1].Path)
-	require.Equal(t, token, requests[1].Headers[remenv.HeaderAPIKey])
-	require.Equal(t, token, requests[1].Headers[remenv.HeaderAgentToken])
+	require.Equal(t, token, requests[1].Headers[agent.HeaderAPIKey])
+	require.Equal(t, token, requests[1].Headers[agent.HeaderAgentToken])
 	var materialized types.EnvSummary
 	require.NoError(t, json.Unmarshal(requests[1].Body, &materialized))
 	require.Equal(t, []types.EnvVariable{{Key: "API_TOKEN", Value: "super-secret"}}, materialized.Variables)

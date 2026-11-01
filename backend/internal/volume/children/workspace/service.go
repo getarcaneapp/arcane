@@ -21,25 +21,25 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
+
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	acfsutils "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/acfs"
-	workspacepkg "github.com/getarcaneapp/arcane/backend/v3/pkg/workspace"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/volumes"
+	workspacepkg "getarcane.dev/arcane/v3/pkg/workspace"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -47,7 +47,7 @@ type (
 	Dependencies struct {
 		Docker                *dockerInternal.DockerClientService
 		Events                *event.EventService
-		Locks                 *utils.KeyedMutex
+		Locks                 *concurrency.KeyedMutex
 		AcquireHelper         func(ctx context.Context, volumeName string) (string, func(), error)
 		RequireACFS           func(ctx context.Context, volumeName, containerID string) error
 		Exec                  func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
@@ -314,7 +314,7 @@ func (s *Service) GetVolumeWorkspaceFile(ctx context.Context, volumeName, relati
 	if entry.IsDirectory {
 		return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("path is a directory"))
 	}
-	if !acfsutils.IsRegular(entry) {
+	if entry.IsDirectory || entry.IsSymlink || !strings.HasPrefix(entry.Mode, "-") {
 		return volumeWorkspaceFileContentResponse(rel, "special", entry.Size, nil, s.MaxFileSizeBytes(ctx))
 	}
 	maxFileSizeBytes := s.MaxFileSizeBytes(ctx)
@@ -990,8 +990,8 @@ func (s *Service) createVolumeWorkspaceMutationContainer(ctx context.Context, vo
 	if err != nil {
 		return "", nil, err
 	}
-	config := &container.Config{Image: helperImage, Cmd: []string{"sleep", "infinity"}, NetworkDisabled: true, Labels: volumehelper.Labels()}
-	hostConfig := volumehelper.HostConfig(helperImage, []string{volumeName + ":/volume"}, []mount.Mount{backupMount})
+	config := &container.Config{Image: helperImage, Cmd: []string{"sleep", "infinity"}, NetworkDisabled: true, Labels: volumes.Labels()}
+	hostConfig := volumes.HostConfig(helperImage, []string{volumeName + ":/volume"}, []mount.Mount{backupMount})
 	resp, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
 		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{Config: config, HostConfig: hostConfig})
 	})
@@ -1003,7 +1003,7 @@ func (s *Service) createVolumeWorkspaceMutationContainer(ctx context.Context, vo
 	}); containerStartErr != nil {
 		startErr := fmt.Errorf("start volume workspace helper: %w", containerStartErr)
 		if _, cleanupErr := s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
+			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
 		}); cleanupErr != nil && !errdefs.IsNotFound(cleanupErr) {
 			return "", nil, errors.Join(startErr, fmt.Errorf("remove volume workspace helper after start failure: %w", cleanupErr))
 		}
@@ -1011,7 +1011,7 @@ func (s *Service) createVolumeWorkspaceMutationContainer(ctx context.Context, vo
 	}
 	return resp.ID, func() {
 		_, _ = s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
+			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
 		})
 	}, nil
 }
@@ -1237,7 +1237,7 @@ func volumeWorkspaceFileContentResponse(relativePath, kind string, size int64, c
 }
 
 func volumeWorkspaceEntryFromACFS(entry acfstypes.Entry, maxFileSizeBytes int64) (types.WorkspaceFileEntry, string) {
-	fileEntry := acfsutils.FileEntry(entry)
+	fileEntry := workspacepkg.FileEntry(entry)
 	fileEntry.RelativePath = strings.TrimPrefix(entry.Path, "/")
 	switch {
 	case entry.IsDirectory:
@@ -1247,7 +1247,7 @@ func volumeWorkspaceEntryFromACFS(entry acfstypes.Entry, maxFileSizeBytes int64)
 	case entry.IsSymlink:
 		fileEntry.ReadOnlyReason = types.FileReadOnlySymlink
 		return fileEntry, "symlink"
-	case acfsutils.IsRegular(entry):
+	case !entry.IsDirectory && !entry.IsSymlink && strings.HasPrefix(entry.Mode, "-"):
 		if entry.Size > maxFileSizeBytes {
 			fileEntry.ReadOnlyReason = types.FileReadOnlyTooLarge
 		} else {

@@ -13,17 +13,18 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/docker/streams/bus"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/podman"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
-	libpodman "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/podman"
+	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/volume"
+	libpodman "getarcane.dev/arcane/v3/pkg/podman"
 )
 
 func setupDashboardServiceTestSettings(t *testing.T) (*database.DB, *settings.SettingsService) {

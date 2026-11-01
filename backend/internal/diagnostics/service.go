@@ -18,13 +18,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/pkg/francis"
+	"getarcane.dev/types/v3"
 )
 
 type (

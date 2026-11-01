@@ -8,7 +8,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/config"
 )
 
 func newCSRFTestRouter() *echo.Echo {

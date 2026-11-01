@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -24,15 +23,17 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/docker/streams/bus"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/volumes"
+	"getarcane.dev/types/v3"
 )
 
 func newVolumeWorkspaceTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
@@ -425,7 +426,7 @@ func TestCreateVolumeWorkspaceMutationContainerUsesDedicatedBackupHelper(t *test
 			return "cached-helper", func() {}, nil
 		},
 		HelperImage: func(context.Context) (string, error) {
-			return volumehelper.ToolsImage(""), nil
+			return volumes.ToolsImage(""), nil
 		},
 		BackupStorageMount: func(_ context.Context, _ *client.Client, target string, readOnly bool) (mount.Mount, error) {
 			return mount.Mount{Type: mount.TypeVolume, Source: "arcane-backups", Target: target, ReadOnly: readOnly}, nil
@@ -465,7 +466,7 @@ func TestVolumeWorkspaceScriptsAgainstToolsImage(t *testing.T) {
 	}
 	runInVolume := func(volumeName, outerScript string, args ...string) string {
 		t.Helper()
-		dockerArgs := []string{"run", "--rm", "-v", volumeName + ":/volume", volumehelper.ToolsImage(""), "sh", "-c", outerScript, "sh"}
+		dockerArgs := []string{"run", "--rm", "-v", volumeName + ":/volume", volumes.ToolsImage(""), "sh", "-c", outerScript, "sh"}
 		dockerArgs = append(dockerArgs, args...)
 		return runDocker(dockerArgs...)
 	}

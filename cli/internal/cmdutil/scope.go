@@ -12,13 +12,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/prompt"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/runtime"
-	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
+	"getarcane.dev/cli/v3/internal/output"
+	"getarcane.dev/cli/v3/internal/prompt"
+	"getarcane.dev/cli/v3/internal/runtime"
+	clitypes "getarcane.dev/cli/v3/internal/types"
+	"getarcane.dev/types/v3"
 )
 
 type (

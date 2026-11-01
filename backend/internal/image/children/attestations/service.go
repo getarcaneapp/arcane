@@ -16,7 +16,6 @@ import (
 	"sync"
 
 	"github.com/containerd/platforms"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1"
@@ -26,13 +25,15 @@ import (
 	"github.com/moby/buildkit/util/attestation"
 	"github.com/moby/moby/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/registryauth"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/registry"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -82,7 +83,7 @@ var (
 	})
 
 	safeRegistryTransport = sync.OnceValues(func() (http.RoundTripper, error) {
-		safeClient, err := httpx.NewSafeOutboundHTTPClient(nil, httpx.DefaultLookupIP)
+		safeClient, err := httpx.NewSafeOutboundHTTPClient(nil, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -283,7 +284,7 @@ func (s *Service) remoteOptionsForImageRef(ctx context.Context, resolution refer
 		return options, nil
 	}
 
-	dockerAuth, err := registryauth.DecodeAuthHeader(encodedAuth)
+	dockerAuth, err := registry.DecodeAuthHeader(encodedAuth)
 	if err != nil {
 		slog.DebugContext(ctx, "registry auth decode failed for attestation request", "image", imageRef, "error", err)
 		return options, nil

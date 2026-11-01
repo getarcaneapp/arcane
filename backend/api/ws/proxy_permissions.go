@@ -5,7 +5,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/authz"
 )
 
 type (

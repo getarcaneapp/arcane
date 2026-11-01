@@ -7,10 +7,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"kit.getarcane.app"
+	"kit.getarcane.app/normalization"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -30,7 +30,7 @@ func (s *CustomizeSearchService) GetCustomizeCategories() []types.Category {
 
 // BuildCategories extracts searchable metadata in model field order.
 func BuildCategories[T any](profile types.SearchProfile) []types.Category {
-	catMetaMap := utils.ExtractCategoryMetadata[T]()
+	catMetaMap := normalization.ExtractCategoryMetadata[T]()
 
 	categories := map[string][]types.SettingMetadata{}
 	var categoryOrder []string
@@ -43,14 +43,14 @@ func BuildCategories[T any](profile types.SearchProfile) []types.Category {
 			continue
 		}
 
-		metaTag := utils.ParseMetaTag(field.Tag.Get("meta"))
+		metaTag := normalization.ParseMetaTag(field.Tag.Get("meta"))
 		label := cmp.Or(metaTag["label"], key)
 		typ := cmp.Or(metaTag["type"], "text")
 		desc := metaTag["description"]
-		keywords := utils.ParseKeywords(metaTag["keywords"])
+		keywords := normalization.ParseKeywords(metaTag["keywords"])
 		categoryID := metaTag["category"]
 		if categoryID == "" && profile == types.SearchProfileSettings {
-			catMeta := utils.ParseMetaTag(field.Tag.Get("catmeta"))
+			catMeta := normalization.ParseMetaTag(field.Tag.Get("catmeta"))
 			categoryID = catMeta["id"]
 		}
 		if categoryID == "" {
@@ -89,7 +89,7 @@ func BuildCategories[T any](profile types.SearchProfile) []types.Category {
 			Description: catMeta["description"],
 			Icon:        catMeta["icon"],
 			URL:         catMeta["url"],
-			Keywords:    utils.ParseKeywords(catMeta["keywords"]),
+			Keywords:    normalization.ParseKeywords(catMeta["keywords"]),
 			Settings:    categories[catID],
 		})
 	}

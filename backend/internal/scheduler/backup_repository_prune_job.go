@@ -1,0 +1,64 @@
+package scheduler
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+
+	"getarcane.dev/arcane/v3/internal/system"
+	"getarcane.dev/arcane/v3/internal/volume"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	// BackupRepositoryPruneJob removes packs that deleted backups left marked for deletion.
+	// Internal job: no job_metadata entry, invisible in the Jobs UI.
+	BackupRepositoryPruneJob struct {
+		systemService *system.SystemService
+		volumeService *volume.VolumeService
+	}
+)
+
+const (
+	// BackupRepositoryPruneJobName identifies the periodic prune of the local backup repositories.
+	BackupRepositoryPruneJobName = "backup-repository-prune"
+)
+
+// NewBackupRepositoryPruneJob builds the prune job for the scheduler.
+func NewBackupRepositoryPruneJob(systemService *system.SystemService, volumeService *volume.VolumeService) *BackupRepositoryPruneJob {
+	return &BackupRepositoryPruneJob{systemService: systemService, volumeService: volumeService}
+}
+
+// Name returns the job name.
+func (j *BackupRepositoryPruneJob) Name() string {
+	return BackupRepositoryPruneJobName
+}
+
+// Schedule runs the prune twice a day, staggered after the default 03:00
+// system backup schedule. Rustic keeps marked packs for 23 hours, so a daily
+// run could leave deleted data on disk for almost two days.
+func (j *BackupRepositoryPruneJob) Schedule(_ context.Context) string {
+	return "15 4,16 * * *"
+}
+
+// Run prunes the local system and volume backup repositories.
+func (j *BackupRepositoryPruneJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
+	var pruneErr error
+	if err := j.systemService.PruneLocalBackupRepository(ctx); err != nil {
+		pruneErr = fmt.Errorf("prune system backup repository: %w", err)
+	}
+	if err := j.volumeService.PruneLocalBackupRepository(ctx); err != nil {
+		pruneErr = errors.Join(pruneErr, fmt.Errorf("prune volume backup repository: %w", err))
+	}
+	if pruneErr != nil {
+		slog.ErrorContext(ctx, "Failed to prune local backup repositories", "jobName", BackupRepositoryPruneJobName, "error", pruneErr)
+		return types.SchedulerOutcome{}, pruneErr
+	}
+	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
+}
+
+// Reschedule is a no-op: the schedule is fixed.
+func (j *BackupRepositoryPruneJob) Reschedule(_ context.Context) error {
+	return nil
+}

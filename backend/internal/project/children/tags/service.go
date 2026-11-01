@@ -9,10 +9,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v3"
-	kit "kit.getarcane.app"
+	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
 type (

@@ -6,13 +6,14 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
+
 	"kit.getarcane.app/mapping"
 
-	"github.com/getarcaneapp/arcane/backend/v3/buildables"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
+	"getarcane.dev/arcane/v3/buildables"
+	"getarcane.dev/arcane/v3/internal/auth"
+	"getarcane.dev/arcane/v3/pkg/cookie"
+	"getarcane.dev/types/v3"
 )
 
 // SetupBuildablesRoutes registers buildable feature routes based on EnabledFeatures.

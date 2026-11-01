@@ -7,10 +7,11 @@ import (
 	"time"
 
 	"github.com/moby/moby/api/types/events"
+
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/streams/bus"
 
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 )
 
 type (

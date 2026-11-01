@@ -14,24 +14,25 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"golang.org/x/sync/errgroup"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/network"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/network"
+	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
+	"getarcane.dev/arcane/v3/internal/volume"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -133,7 +134,7 @@ func (s *Service) StartPruneAll(ctx context.Context, environmentID string, req t
 		}
 	}
 
-	backgroundCtx := s.activityService.Track(utils.ActivityRuntimeContext(ctx, nil), prune.activityID)
+	backgroundCtx := s.activityService.Track(activitylib.ActivityRuntimeContext(ctx, nil), prune.activityID)
 	go func() {
 		defer s.finishSystemPrune(environmentID)
 		s.runSystemPrune(backgroundCtx, req, prune.activityID)
@@ -209,7 +210,7 @@ func (s *Service) runSystemPrune(ctx context.Context, req types.PruneAllRequest,
 
 	if req.Images != nil && req.Images.Mode != types.PruneImageModeNone {
 		g.Go(func() (workerErr error) {
-			defer utils.RecoverToError(&workerErr, "system info worker")
+			defer concurrency.RecoverToError(&workerErr, "system info worker")
 
 			s.appendSystemPruneActivityMessage(groupCtx, activityID, "Pruning images", 40)
 			slog.InfoContext(groupCtx, "Pruning images...", "mode", req.Images.Mode, "until", req.Images.Until)
@@ -224,7 +225,7 @@ func (s *Service) runSystemPrune(ctx context.Context, req types.PruneAllRequest,
 
 	if req.BuildCache != nil && req.BuildCache.Mode != types.PruneBuildCacheModeNone {
 		g.Go(func() (workerErr error) {
-			defer utils.RecoverToError(&workerErr, "system info worker")
+			defer concurrency.RecoverToError(&workerErr, "system info worker")
 
 			s.appendSystemPruneActivityMessage(groupCtx, activityID, "Pruning build cache", 45)
 			slog.InfoContext(groupCtx, "Pruning build cache...", "mode", req.BuildCache.Mode, "until", req.BuildCache.Until)
@@ -242,7 +243,7 @@ func (s *Service) runSystemPrune(ctx context.Context, req types.PruneAllRequest,
 
 	if req.Volumes != nil && req.Volumes.Mode != types.PruneVolumeModeNone {
 		g.Go(func() (workerErr error) {
-			defer utils.RecoverToError(&workerErr, "system info worker")
+			defer concurrency.RecoverToError(&workerErr, "system info worker")
 
 			s.appendSystemPruneActivityMessage(groupCtx, activityID, "Pruning volumes", 55)
 			slog.InfoContext(groupCtx, "Pruning volumes...", "mode", req.Volumes.Mode)
@@ -257,7 +258,7 @@ func (s *Service) runSystemPrune(ctx context.Context, req types.PruneAllRequest,
 
 	if req.Networks != nil && req.Networks.Mode != types.PruneNetworkModeNone {
 		g.Go(func() (workerErr error) {
-			defer utils.RecoverToError(&workerErr, "system info worker")
+			defer concurrency.RecoverToError(&workerErr, "system info worker")
 
 			s.appendSystemPruneActivityMessage(groupCtx, activityID, "Pruning networks", 65)
 			slog.InfoContext(groupCtx, "Pruning networks...", "mode", req.Networks.Mode, "until", req.Networks.Until)
@@ -344,13 +345,13 @@ func (s *Service) completeSystemPruneActivity(ctx context.Context, activityID st
 		switch {
 		case result.Success && len(result.Errors) == 0:
 			return types.ActivityStatusSuccess, "System prune completed", nil
-		case activitylib.CancelledByContext(ctx):
+		case errors.Is(context.Cause(ctx), activitylib.ErrCanceled):
 			return types.ActivityStatusCancelled, "System prune cancelled", nil
 		default:
 			return types.ActivityStatusFailed, "System prune completed with errors", new(strings.Join(result.Errors, "; "))
 		}
 	}()
-	if _, err := s.activityService.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, message, errMessage); err != nil {
+	if _, err := s.activityService.CompleteActivity(activitylib.ActivityRuntimeContext(ctx, nil), activityID, status, message, errMessage); err != nil {
 		slog.DebugContext(ctx, "failed to complete system prune activity", "activityId", activityID, "error", err)
 	}
 }
@@ -696,7 +697,7 @@ func (s *Service) selectPruneVolumes(req types.PruneAllRequest, usage client.Dis
 	for _, item := range usage.Volumes.Items {
 		// The backup volume is unused between backups but holds them, so it is never pruned.
 		if item.UsageData == nil || item.UsageData.RefCount > int64(volumeRefs[item.Name]) ||
-			strings.EqualFold(item.Labels[libarcane.InternalResourceLabel], "true") || s.volumeService.IsBackupVolume(item.Name) {
+			strings.EqualFold(item.Labels[selfcontainer.InternalResourceLabel], "true") || s.volumeService.IsBackupVolume(item.Name) {
 			continue
 		}
 		if _, anonymous := item.Labels["com.docker.volume.anonymous"]; req.Volumes.Mode == types.PruneVolumeModeAnonymous && !anonymous {
@@ -1074,7 +1075,7 @@ func (s *Service) pruneResourceEligible(ctx context.Context, plan prunePlan, res
 		if usersErr != nil {
 			return resource.Size, false, true, usersErr
 		}
-		return resource.Size, len(users) == 0 && !strings.EqualFold(inspected.Volume.Labels[libarcane.InternalResourceLabel], "true") &&
+		return resource.Size, len(users) == 0 && !strings.EqualFold(inspected.Volume.Labels[selfcontainer.InternalResourceLabel], "true") &&
 			!s.volumeService.IsBackupVolume(inspected.Volume.Name), true, nil
 	default:
 		return resource.Size, false, false, nil

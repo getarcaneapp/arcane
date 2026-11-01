@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v3/buildables"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"getarcane.dev/arcane/v3/buildables"
+	"getarcane.dev/arcane/v3/internal/config"
 )
 
 func enableAutoLoginFeature(t *testing.T) {

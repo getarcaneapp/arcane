@@ -15,17 +15,18 @@ import (
 	"time"
 
 	"github.com/distribution/reference"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/samber/hot"
+
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -74,9 +75,9 @@ func NewService(dockerService *docker.DockerClientService, remoteLabels func(con
 	return &Service{
 		docker:       dockerService,
 		remoteLabels: remoteLabels,
-		httpClient: httpx.NewHTTPClient(types.HTTPClientOptions{
+		httpClient: httpx.NewHTTPClient(httpx.ClientConfig{
 			Timeout:             timeouts.DefaultHTTPClient,
-			TLSHandshakeTimeout: 10 * time.Second,
+			MaxIdleConnsPerHost: 32,
 		}),
 		githubAPIBase: githubAPIBase,
 		releases:      hot.NewHotCache[string, []githubRelease](hot.LRU, 256).WithTTL(time.Hour).Build(),

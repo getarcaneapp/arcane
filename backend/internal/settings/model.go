@@ -12,13 +12,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/robfig/cron/v3"
 	"github.com/samber/mo"
-	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"kit.getarcane.app"
+	"kit.getarcane.app/normalization"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -293,7 +294,7 @@ func buildSettingsFieldCache() {
 		}
 
 		attrList := strings.Split(attrs, ",")
-		metaTag := utils.ParseMetaTag(field.Tag.Get("meta"))
+		metaTag := normalization.ParseMetaTag(field.Tag.Get("meta"))
 		minValue, minErr := strconv.ParseFloat(metaTag["min"], 64)
 		maxValue, maxErr := strconv.ParseFloat(metaTag["max"], 64)
 

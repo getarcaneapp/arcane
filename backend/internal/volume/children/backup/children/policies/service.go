@@ -10,19 +10,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/entityjobs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/s3"
+	"getarcane.dev/arcane/v3/internal/scheduler/entityjobs"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/types/v3"
 )
 
 type (

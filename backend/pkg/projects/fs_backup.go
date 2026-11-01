@@ -13,9 +13,8 @@ import (
 
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/fs"
 	"kit.getarcane.app/fs/atomic"
-
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 type (
@@ -563,7 +562,7 @@ func RestoreProjectDirectoryBackup(ctx context.Context, projectsDirectory, proje
 	}
 
 	slog.DebugContext(ctx, "restoring project directory backup", "path", projectAbs, "backup", backup.BackupDir)
-	if mkdirAllErr := (acfs.Root{Path: rootAbs}).MkdirAll(ctx, projectLogical, utils.DirPerm); mkdirAllErr != nil {
+	if mkdirAllErr := (acfs.Root{Path: rootAbs}).MkdirAll(ctx, projectLogical, fs.DirPerm); mkdirAllErr != nil {
 		return fmt.Errorf("failed to recreate project directory: %w", mkdirAllErr)
 	}
 	if restoreProjectUpdateBackupErr := RestoreProjectUpdateBackup(ctx, projectAbs, backup); restoreProjectUpdateBackupErr != nil {

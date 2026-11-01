@@ -14,20 +14,20 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/agg"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -106,7 +106,7 @@ func (h *ActivityHandler) ListActivities(ctx context.Context, input *ListActivit
 		out, err := h.listRemoteActivities(ctx, input, func(path string) (*types.Paginated[types.Activity], error) {
 			var remote types.Paginated[types.Activity]
 			if proxyErr := h.environment.ProxyJSONRequest(ctx, input.EnvironmentID, http.MethodGet, path, nil, &remote); proxyErr != nil {
-				var transportErr *remenv.TransportError
+				var transportErr *agent.TransportError
 				unavailable = errors.As(proxyErr, &transportErr) && transportErr.Unavailable()
 				return nil, handlerutil.TranslateRemoteProxyError(proxyErr)
 			}
@@ -208,7 +208,7 @@ func (h *ActivityHandler) CancelActivity(ctx context.Context, input *ActivityAct
 
 	// Prefer the authenticated user; a proxying manager forwards its user's name.
 	requestedBy := strings.TrimSpace(input.RequestedBy)
-	if user, ok := userctx.CurrentUserFromContext(ctx); ok && user != nil {
+	if user, ok := handlerutil.CurrentUserFromContext(ctx); ok && user != nil {
 		requestedBy = cmp.Or(strings.TrimSpace(kit.FromPtr(user.DisplayName)), strings.TrimSpace(user.Username), requestedBy)
 	}
 	cancelled, err := h.activityService.CancelActivity(ctx, input.EnvironmentID, input.ActivityID, requestedBy)

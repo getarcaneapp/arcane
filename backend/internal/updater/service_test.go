@@ -19,7 +19,6 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/pkg/authconfig"
 	"github.com/moby/moby/api/types/container"
@@ -29,35 +28,36 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/sys/crypto"
 	"kit.getarcane.app/updater"
 	"kit.getarcane.app/updater/labels"
 	updatertypes "kit.getarcane.app/updater/types"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/apns"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/notification"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow/flowtest"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/apns"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/notification"
+	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
+	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/arcane/v3/pkg/notifications"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -950,7 +950,7 @@ func TestUpdaterService_AcceptSingleContainerUpdateUsesQueuedActivity(t *testing
 			defer release()
 
 			requestCtx, cancelRequest := context.WithCancel(t.Context())
-			workCtx := utils.ActivityRuntimeContext(requestCtx, t.Context())
+			workCtx := activitylib.ActivityRuntimeContext(requestCtx, t.Context())
 			type acceptResult struct {
 				activity *types.Activity
 				err      error

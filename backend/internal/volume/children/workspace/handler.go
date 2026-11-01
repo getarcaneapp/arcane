@@ -8,17 +8,16 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -120,7 +119,7 @@ func (h *Handler) UpdateVolumeWorkspace(ctx context.Context, input *UpdateVolume
 		return nil, err
 	}
 	var result *types.Workspace
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID: input.EnvironmentID, Type: types.ActivityTypeResourceAction, ResourceType: "volume", ResourceID: input.VolumeName, ResourceName: input.VolumeName, User: user,
 		Step: "Updating volume workspace", Message: "Updating volume workspace", SuccessMessage: "Volume workspace updated successfully",

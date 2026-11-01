@@ -10,16 +10,15 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm/children/nodes"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/swarm/children/nodes"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -349,7 +348,7 @@ func (h *SwarmHandler) UpdateSwarmSpec(ctx context.Context, input *UpdateSwarmSp
 func (h *SwarmHandler) auditSwarmMutation(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any) {
 	var userID *string
 	var username *string
-	if user, ok := userctx.CurrentUserFromContext(ctx); ok {
+	if user, ok := handlerutil.CurrentUserFromContext(ctx); ok {
 		userID = new(user.ID)
 		username = new(user.Username)
 	}
@@ -423,7 +422,7 @@ func mapSwarmServiceError(err error, fallback string) error {
 	if errdefs.IsConflict(err) || errors.Is(err, common.ErrConflict) {
 		return huma.Error409Conflict(err.Error())
 	}
-	if remoteStatus, ok := errors.AsType[*remenv.StatusError](err); ok && remoteStatus.StatusCode >= 400 && remoteStatus.StatusCode <= 599 {
+	if remoteStatus, ok := errors.AsType[*agent.StatusError](err); ok && remoteStatus.StatusCode >= 400 && remoteStatus.StatusCode <= 599 {
 		return huma.NewError(remoteStatus.StatusCode, fallback)
 	}
 	errText := strings.ToLower(err.Error())

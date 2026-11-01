@@ -14,14 +14,13 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app/docker/streams/bus"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/settings"
 )
 
 func newVolumeServiceTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
@@ -107,97 +106,6 @@ func TestCreateTempContainerReusesWritableHelper(t *testing.T) {
 	releaseFirst()
 	releaseSecond()
 	require.Zero(t, service.helperByVolume["workspace-volume"].inUse)
-}
-
-func TestIsUnlabeledVolumeHelperContainer(t *testing.T) {
-	tests := []struct {
-		name    string
-		summary container.Summary
-		want    bool
-	}{
-		{
-			name: "unlabeled helper signature matches",
-			summary: container.Summary{
-				Labels: map[string]string{
-					libarcane.InternalResourceLabel: "true",
-				},
-				Command: "sleep infinity",
-				Mounts: []container.MountPoint{
-					{Destination: "/volume"},
-				},
-			},
-			want: true,
-		},
-		{
-			name: "internal trivy-like helper is not treated as an unlabeled volume helper",
-			summary: container.Summary{
-				Labels: map[string]string{
-					libarcane.InternalResourceLabel: "true",
-				},
-				Command: "trivy image --quiet alpine:latest",
-				Mounts: []container.MountPoint{
-					{Destination: "/var/run/docker.sock"},
-				},
-			},
-			want: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, isUnlabeledVolumeHelperContainer(tt.summary))
-		})
-	}
-}
-
-func TestIsVolumeHelperContainer_UsesExplicitHelperLabel(t *testing.T) {
-	tests := []struct {
-		name    string
-		summary container.Summary
-		want    bool
-	}{
-		{
-			name: "new helper label matches",
-			summary: container.Summary{
-				Labels: map[string]string{
-					libarcane.InternalResourceLabel: "true",
-					volumehelper.ContainerLabel:     "true",
-				},
-			},
-			want: true,
-		},
-		{
-			name: "generic internal volume mount does not match",
-			summary: container.Summary{
-				Labels: map[string]string{
-					libarcane.InternalResourceLabel: "true",
-				},
-				Mounts: []container.MountPoint{
-					{Destination: "/volume"},
-				},
-			},
-			want: false,
-		},
-		{
-			name: "unlabeled helper still matches",
-			summary: container.Summary{
-				Labels: map[string]string{
-					libarcane.InternalResourceLabel: "true",
-				},
-				Command: "sleep infinity",
-				Mounts: []container.MountPoint{
-					{Destination: "/volume"},
-				},
-			},
-			want: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, isVolumeHelperContainer(tt.summary))
-		})
-	}
 }
 
 func TestCollectStaleHelperIDs(t *testing.T) {

@@ -6,14 +6,15 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v3"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/mapping"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"getarcane.dev/arcane/v3/internal/common"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -48,7 +49,7 @@ type (
 
 // RunUpdater applies pending container updates.
 func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput) (*handlerutil.Out[*types.UpdaterResult], error) {
-	out, err := h.updaterService.ApplyPending(utils.ActivityRuntimeContext(ctx, h.appCtx), types.UpdaterOptions{
+	out, err := h.updaterService.ApplyPending(activitylib.ActivityRuntimeContext(ctx, h.appCtx), types.UpdaterOptions{
 		Type:                     kit.FromPtr(input.Body).Type,
 		ResourceIds:              kit.FromPtr(input.Body).ResourceIds,
 		ForceUpdate:              kit.FromPtr(input.Body).ForceUpdate,
@@ -106,7 +107,7 @@ func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdate
 }
 
 func (h *UpdaterHandler) updateContainer(ctx context.Context, input *UpdateContainerInput) (*updateContainerOutput, error) {
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	if input.Async {
 		acceptedActivity, err := h.updaterService.AcceptSingleContainerUpdate(runtimeCtx, input.ContainerID)
 		if err != nil {

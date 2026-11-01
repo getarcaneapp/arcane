@@ -11,19 +11,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/docker/compat"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/kube"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/pods"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/quadlets"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/secrets"
-	libpodman "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/podman/children/kube"
+	"getarcane.dev/arcane/v3/internal/podman/children/pods"
+	"getarcane.dev/arcane/v3/internal/podman/children/quadlets"
+	"getarcane.dev/arcane/v3/internal/podman/children/secrets"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/notifications"
+	libpodman "getarcane.dev/arcane/v3/pkg/podman"
+	"getarcane.dev/types/v3"
 )
 
 type (

@@ -5,10 +5,10 @@ import (
 	"log/slog"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -51,7 +51,7 @@ func (h *Handler) PruneAll(ctx context.Context, input *PruneAllInput) (*handleru
 		"networks", input.Body.Networks,
 		"buildCache", input.Body.BuildCache)
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	result := h.service.StartPruneAll(runtimeCtx, input.EnvironmentID, input.Body)
 
 	slog.InfoContext(runtimeCtx, "System prune background activity started", "activityId", result.ActivityID)

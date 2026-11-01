@@ -5,9 +5,10 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
 )
 
 func TestRenamedEnv(t *testing.T) {

@@ -15,12 +15,13 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/config"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/types"
+	"getarcane.dev/cli/v3/internal/cmdutil"
+	"getarcane.dev/cli/v3/internal/config"
+	"getarcane.dev/cli/v3/internal/output"
+	"getarcane.dev/cli/v3/internal/types"
 )
 
 // Command is the command for managing API configuration

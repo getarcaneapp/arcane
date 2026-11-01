@@ -18,24 +18,25 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
+	kitfs "kit.getarcane.app/fs"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
-	projectpkg "github.com/getarcaneapp/arcane/backend/v3/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/gitrepo"
+	projectpkg "getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
+	"getarcane.dev/arcane/v3/internal/swarm"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -331,7 +332,7 @@ func (s *Service) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOps
 	}
 
 	// Like docker compose, only a standard compose filename auto-loads a sibling override; a custom path is the -f case.
-	if slices.Contains(projects.ComposeFileCandidates(), filepath.Base(sync.ComposePath)) {
+	if slices.Contains(projects.ComposeFileCandidates, filepath.Base(sync.ComposePath)) {
 		overrideName, overrideContent, overrideFound, overrideErr := projects.ResolveComposeOverride(
 			func(name string) bool {
 				return s.repoService.FileExists(ctx, repoPath, filepath.Join(composeDir, name))
@@ -788,7 +789,7 @@ func (s *Service) createDirectorySyncProject(ctx context.Context, sync *projectp
 	// so a collision here means the name is taken by an unrelated/unrecoverable dir;
 	// treat it as a broken binding rather than creating a duplicate.
 	basePath := filepath.Join(projectsDir, projects.SanitizeProjectName(sync.ProjectName))
-	projectPath, folderName, err := projects.CreateExactDir(ctx, projectsDir, basePath, sync.ProjectName, utils.DirPerm)
+	projectPath, folderName, err := projects.CreateExactDir(ctx, projectsDir, basePath, sync.ProjectName, kitfs.DirPerm)
 	if err != nil {
 		if errors.Is(err, projects.ErrProjectDirExists) {
 			return nil, common.Classify(
@@ -819,7 +820,7 @@ func (s *Service) createDirectorySyncProject(ctx context.Context, sync *projectp
 	}
 	stage.stagePath = ""
 
-	if chmodErr := os.Chmod(projectPath, utils.DirPerm); chmodErr != nil {
+	if chmodErr := os.Chmod(projectPath, kitfs.DirPerm); chmodErr != nil {
 		_ = acfs.Root{Path: projectsDir}.RemoveAll(ctx, projectLogical)
 		return nil, fmt.Errorf("failed to set project directory permissions: %w", chmodErr)
 	}
@@ -860,10 +861,10 @@ func (s *Service) updateDirectorySyncProject(ctx context.Context, sync *projectp
 		}
 	} else if errors.Is(err, os.ErrNotExist) {
 		existed = false
-		if mkdirAllErr := os.MkdirAll(projectPath, utils.DirPerm); mkdirAllErr != nil {
+		if mkdirAllErr := os.MkdirAll(projectPath, kitfs.DirPerm); mkdirAllErr != nil {
 			return nil, fmt.Errorf("failed to recreate project directory: %w", mkdirAllErr)
 		}
-		if chmodErr := os.Chmod(projectPath, utils.DirPerm); chmodErr != nil {
+		if chmodErr := os.Chmod(projectPath, kitfs.DirPerm); chmodErr != nil {
 			return nil, fmt.Errorf("failed to set project directory permissions: %w", chmodErr)
 		}
 	} else {
@@ -973,7 +974,7 @@ func linkProjectIntoStage(livePath, stagePath string, scopePaths []string) error
 			}
 			stageEntry := filepath.Join(stagePath, filepath.FromSlash(entryRel))
 			if _, isAncestor := ancestors[entryRel]; isAncestor && entry.IsDir() {
-				if mkdirErr := os.Mkdir(stageEntry, utils.DirPerm); mkdirErr != nil {
+				if mkdirErr := os.Mkdir(stageEntry, kitfs.DirPerm); mkdirErr != nil {
 					return mkdirErr
 				}
 				if linkErr := link(entryRel); linkErr != nil {

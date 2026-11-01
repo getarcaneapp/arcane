@@ -13,24 +13,26 @@ import (
 	"time"
 
 	"github.com/distribution/reference"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"golang.org/x/mod/semver"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/docker/streams/agg"
 	"kit.getarcane.app/sys/cgroup"
 
-	"github.com/getarcaneapp/arcane/backend/v3/buildables"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/apns"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"getarcane.dev/arcane/v3/buildables"
+	"getarcane.dev/arcane/v3/internal/apns"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/settings"
+	arcaneregistry "getarcane.dev/arcane/v3/pkg/registry"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -318,10 +320,10 @@ func (s *VersionService) updateCheckImageRef(currentImageRef string) string {
 		return currentImageRef
 	}
 
-	host := libarcane.ArcaneImageRegistryHost(target)
+	host := arcaneregistry.ArcaneImageRegistryHost(target)
 	repoPath := reference.Path(named)
 	// Docker Hub and ECR Public publish the images under the manager and agent names only
-	if host == libarcane.DockerHubRegistryHost || host == libarcane.ECRPublicRegistryHost {
+	if host == arcaneregistry.DefaultRegistryDomain || host == arcaneregistry.ECRPublicRegistryHost {
 		switch repoPath {
 		case "getarcaneapp/arcane":
 			repoPath = "getarcaneapp/manager"
@@ -477,7 +479,7 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (detected c
 	if err != nil {
 		// Fall back to the Arcane label when cgroup/hostname detection fails.
 		slog.DebugContext(ctx, "detectCurrentImageInfo: cgroup detection failed, trying label fallback", "error", err)
-		containerId = libarcane.FindArcaneContainerIDByLabel(ctx, dockerClient)
+		containerId = selfcontainer.FindArcaneContainerIDByLabel(ctx, dockerClient)
 	}
 	if containerId == "" {
 		slog.DebugContext(ctx, "detectCurrentImageInfo: could not detect container ID")

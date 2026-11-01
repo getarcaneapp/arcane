@@ -7,9 +7,10 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
 	"kit.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/database"
 )
 
 func TestMarkSnapshotDirectories(t *testing.T) {

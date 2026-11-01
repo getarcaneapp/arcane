@@ -14,27 +14,27 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity/children/pubsub"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity/children/slots"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity/children/sweeps"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/dbutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
+
+	"getarcane.dev/arcane/v3/internal/activity/children/pubsub"
+	"getarcane.dev/arcane/v3/internal/activity/children/slots"
+	"getarcane.dev/arcane/v3/internal/activity/children/sweeps"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/settings"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/sqlite"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -189,7 +189,7 @@ func (s *ActivityService) StartActivity(ctx context.Context, req StartActivityRe
 	model := &Activity{
 		ID:                   req.ID,
 		EnvironmentID:        environmentID,
-		BatchID:              copyPtr(kit.Ternary(req.BatchID != nil, req.BatchID, mo.EmptyableToOption(utils.ActivityBatchIDFromContext(ctx)).ToPointer())),
+		BatchID:              copyPtr(kit.Ternary(req.BatchID != nil, req.BatchID, mo.EmptyableToOption(activitylib.ActivityBatchIDFromContext(ctx)).ToPointer())),
 		Type:                 cmp.Or(req.Type, types.ActivityTypeAutoUpdate),
 		Status:               status,
 		ResourceType:         copyPtr(req.ResourceType),
@@ -504,7 +504,7 @@ func (s *ActivityService) retryWrite(ctx context.Context, activityID, what strin
 	const attempts = 3
 	for attempt := 1; ; attempt++ {
 		err := s.db.WithContext(ctx).Transaction(write)
-		if err == nil || attempt == attempts || !dbutil.IsRetryableWriteError(err) {
+		if err == nil || attempt == attempts || !sqlite.IsRetryableWriteError(err) {
 			return err
 		}
 		slog.WarnContext(ctx, "retrying activity write", "write", what, "activityId", activityID, "attempt", attempt, "error", err)
@@ -573,7 +573,7 @@ func (s *ActivityService) CompleteActivity(ctx context.Context, activityID strin
 			level = types.ActivityMessageLevelWarning
 		case types.ActivityStatusQueued, types.ActivityStatusRunning, types.ActivityStatusSuccess:
 		}
-		activityCtx := utils.ActivityRuntimeContext(ctx, nil)
+		activityCtx := activitylib.ActivityRuntimeContext(ctx, nil)
 		if _, err := s.AppendMessage(activityCtx, activityID, AppendActivityMessageRequest{
 			Level:   level,
 			Message: finalMessage,
@@ -641,7 +641,7 @@ func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, act
 	}
 
 	requestedBy = cmp.Or(strings.TrimSpace(requestedBy), "a user")
-	writeCtx := utils.ActivityRuntimeContext(ctx, nil)
+	writeCtx := activitylib.ActivityRuntimeContext(ctx, nil)
 	if _, err := s.AppendMessage(writeCtx, activityID, AppendActivityMessageRequest{
 		Level:   types.ActivityMessageLevelWarning,
 		Message: "Cancellation requested by " + requestedBy,

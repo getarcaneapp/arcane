@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -20,20 +19,22 @@ import (
 	"github.com/spf13/cobra"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v3/cli/upgrade"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/config/schema"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
-	rusticruntime "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/rustic"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
+	"getarcane.dev/arcane/v3/cli/upgrade"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/config/schema"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/system"
+	"getarcane.dev/arcane/v3/pkg/francis"
+	rusticruntime "getarcane.dev/arcane/v3/pkg/rustic"
+	"getarcane.dev/types/v3"
 )
 
 const (

@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/cli/v3/pkg/generate"
+	"getarcane.dev/cli/v3/pkg/generate"
 )
 
 // captureOutput captures stdout produced by fn and returns it as a string.

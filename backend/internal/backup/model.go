@@ -1,6 +1,6 @@
 package backup
 
-import "github.com/getarcaneapp/arcane/backend/v3/internal/database"
+import "getarcane.dev/arcane/v3/internal/database"
 
 type (
 	// SystemBackupRecoveryConfig stores the encrypted recovery key; it must be reversible because Rustic needs the plaintext.

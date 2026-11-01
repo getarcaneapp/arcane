@@ -7,10 +7,11 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
 )
 
 func TestBuildProjectRenamedVolumeConfig(t *testing.T) {

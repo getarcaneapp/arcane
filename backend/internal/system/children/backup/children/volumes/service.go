@@ -13,25 +13,26 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"gorm.io/gorm"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/entityjobs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
+
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/s3"
+	"getarcane.dev/arcane/v3/internal/scheduler/entityjobs"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/volume"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -456,7 +457,7 @@ func (s *Service) executeSystemVolumeBackups(
 			Failures:  failures,
 		}
 	}()
-	defer utils.RecoverToError(&err, "system-managed volume backup")
+	defer concurrency.RecoverToError(&err, "system-managed volume backup")
 
 	policy := types.UpdateBackupPolicy{
 		Enabled: true, Schedule: input.Policy.Schedule, RetentionCount: input.Policy.RetentionCount,

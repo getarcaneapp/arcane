@@ -13,21 +13,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	"golang.org/x/crypto/argon2"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 	"kit.getarcane.app/normalization"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/dbutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/sqlite"
+	"getarcane.dev/arcane/v3/pkg/validation"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -211,15 +212,15 @@ func (s *UserService) CreateUser(ctx context.Context, localUser *User) (*User, e
 }
 
 func (s *UserService) GetUserByUsername(ctx context.Context, username string) (*User, error) {
-	return dbutil.FirstWhere[User](ctx, s.db.DB, common.ErrUserNotFound, "username = ?", username)
+	return sqlite.FirstWhere[User](ctx, s.db.DB, common.ErrUserNotFound, "username = ?", username)
 }
 
 func (s *UserService) GetUserByID(ctx context.Context, id string) (*User, error) {
-	return dbutil.FirstWhere[User](ctx, s.db.DB, common.ErrUserNotFound, "id = ?", id)
+	return sqlite.FirstWhere[User](ctx, s.db.DB, common.ErrUserNotFound, "id = ?", id)
 }
 
 func (s *UserService) GetUserByOidcSubjectId(ctx context.Context, subjectId string) (*User, error) {
-	return dbutil.FirstWhere[User](ctx, s.db.DB, common.ErrUserNotFound, "oidc_subject_id = ?", subjectId)
+	return sqlite.FirstWhere[User](ctx, s.db.DB, common.ErrUserNotFound, "oidc_subject_id = ?", subjectId)
 }
 
 // GetUserByEmail returns the user with the given email. The schema does not
@@ -257,7 +258,7 @@ func (s *UserService) checkTargetPrivilege(ctx context.Context, tx *gorm.DB, act
 	revalidateActor := actorPerms != nil && !actorPerms.Sudo && actorPerms.IsGlobalAdmin()
 	actorID := ""
 	if revalidateActor {
-		actor, ok := userctx.CurrentUserFromContext(ctx)
+		actor, ok := handlerutil.CurrentUserFromContext(ctx)
 		if !ok || actor == nil || actor.ID == "" {
 			return ErrInsufficientPrivilege
 		}

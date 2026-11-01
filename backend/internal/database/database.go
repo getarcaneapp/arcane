@@ -21,10 +21,11 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"gorm.io/plugin/opentelemetry/metrics"
-	kit "kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database/migrations"
-	sqliteutil "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/sqlite"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/database/migrations"
+	sqliteutil "getarcane.dev/arcane/v3/pkg/sqlite"
 )
 
 type (

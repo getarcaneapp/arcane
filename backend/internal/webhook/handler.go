@@ -4,14 +4,14 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v3"
+
 	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -60,7 +60,7 @@ func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *types.Environm
 
 // CreateWebhook creates a new webhook and returns the raw token (shown once only).
 func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhookInput) (*handlerutil.Out[types.WebhookCreated], error) {
-	currentUser, _ := userctx.CurrentUserFromContext(ctx)
+	currentUser, _ := handlerutil.CurrentUserFromContext(ctx)
 
 	callerPerms, _ := middleware.PermissionsFromContext(ctx)
 	wh, rawToken, err := h.webhookService.CreateWebhook(
@@ -101,7 +101,7 @@ func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhook
 		return nil, huma.Error400BadRequest("invalid webhook update body")
 	}
 
-	currentUser, _ := userctx.CurrentUserFromContext(ctx)
+	currentUser, _ := handlerutil.CurrentUserFromContext(ctx)
 
 	callerPerms, _ := middleware.PermissionsFromContext(ctx)
 	wh, err := h.webhookService.UpdateWebhook(ctx, input.WebhookID, input.EnvironmentID, input.Body, submitted, kit.FromPtr(currentUser), callerPerms)
@@ -118,7 +118,7 @@ func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhook
 
 // DeleteWebhook removes a webhook.
 func (h *WebhookHandler) DeleteWebhook(ctx context.Context, input *DeleteWebhookInput) (*handlerutil.Out[any], error) {
-	currentUser, _ := userctx.CurrentUserFromContext(ctx)
+	currentUser, _ := handlerutil.CurrentUserFromContext(ctx)
 
 	if err := h.webhookService.DeleteWebhook(ctx, input.WebhookID, input.EnvironmentID, kit.FromPtr(currentUser)); err != nil {
 		apiErr := common.ToAPIError(err)

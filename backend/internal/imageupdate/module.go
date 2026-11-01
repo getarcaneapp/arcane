@@ -8,16 +8,16 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v3"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate/children/releasenotes"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
+	"getarcane.dev/arcane/v3/internal/imageupdate/children/releasenotes"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -30,7 +30,7 @@ type (
 // New wires image update routes and registers the arcane.image.updates gauges once.
 func New(service *ImageUpdateService, getUpdateInfo func(context.Context, []string) (map[string]*types.ImageUpdateInfo, error)) *Module {
 	if service != nil {
-		meter := otel.Meter(tracing.InstrumentationName)
+		meter := otel.Meter(logging.InstrumentationName)
 		updates, updatesErr := meter.Int64ObservableGauge("arcane.image.updates",
 			metric.WithDescription("Local images with an available update by update type"), metric.WithUnit("{image}"))
 		checkErrors, checkErrorsErr := meter.Int64ObservableGauge("arcane.image.update.check_errors",

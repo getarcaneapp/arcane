@@ -16,7 +16,8 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/docker/go-units"
 	"github.com/mattn/go-runewidth"
-	kit "kit.getarcane.app"
+
+	"kit.getarcane.app"
 )
 
 type (
