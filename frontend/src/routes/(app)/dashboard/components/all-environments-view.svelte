@@ -328,7 +328,7 @@
 	});
 
 	const eventsQuery = createQueries(() => {
-		const environments = limitEnvironments(loadableEnvironments('events:read'));
+		const environments = limitEnvironments(userStore.hasPermission('events:read') ? loadableEnvironments('events:read') : []);
 		const enabled = anyWidgetVisible(ATTENTION_WIDGETS);
 		return {
 			queries: environments.included.map((environment) => ({
