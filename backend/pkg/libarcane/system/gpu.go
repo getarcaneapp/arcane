@@ -21,52 +21,52 @@ import (
 	kit "kit.getarcane.app"
 )
 
+type (
+	// GPUMonitor probes for an attached GPU (NVIDIA / AMD / Intel) and reports VRAM usage.
+	// Detection is cached for gpuDetectionTTL; once a vendor is detected, subsequent Stats
+	// calls invoke the vendor-specific tool directly.
+	GPUMonitor struct {
+		statsGroup singleflight.Group
+
+		detectionCache *hot.HotCache[struct{}, gpuDetection]
+
+		// statsCache holds the last vendor-tool result (success or failure) for
+		// gpuStatsTTL so concurrent consumers and fast sampler ticks share one
+		// process fork instead of each launching their own.
+		statsCache     atomic.Pointer[gpuStatsSnapshot]
+		configuredType string
+
+		announcedType string
+
+		detectionMu   sync.Mutex
+		detectionDone bool
+
+		enabled bool
+	}
+
+	gpuStatsSnapshot struct {
+		sampledAt time.Time
+		err       error
+		stats     []types.GPUStats
+	}
+
+	gpuDetection struct {
+		gpuType  string
+		toolPath string
+		detected bool
+	}
+)
+
 // AMDGPUSysfsPath is the sysfs base used to discover AMD GPUs.
 const (
 	AMDGPUSysfsPath = "/sys/class/drm"
-
 	// gpuDetectionTTL bounds how long a successful detection result is reused before re-detecting.
 	gpuDetectionTTL = 30 * time.Second
-
 	// gpuStatsTTL bounds how often the vendor tool is invoked: reading VRAM
 	// stats forks a process (nvidia-smi, intel_gpu_top), which is far too
 	// expensive to repeat on every sampler tick.
 	gpuStatsTTL = 3 * time.Second
 )
-
-// GPUMonitor probes for an attached GPU (NVIDIA / AMD / Intel) and reports VRAM usage.
-// Detection is cached for gpuDetectionTTL; once a vendor is detected, subsequent Stats
-// calls invoke the vendor-specific tool directly.
-type GPUMonitor struct {
-	statsGroup singleflight.Group
-
-	detectionCache *hot.HotCache[struct{}, gpuDetection]
-
-	// statsCache holds the last vendor-tool result (success or failure) for
-	// gpuStatsTTL so concurrent consumers and fast sampler ticks share one
-	// process fork instead of each launching their own.
-	statsCache     atomic.Pointer[gpuStatsSnapshot]
-	configuredType string
-
-	announcedType string
-
-	detectionMu   sync.Mutex
-	detectionDone bool
-
-	enabled bool
-}
-
-type gpuStatsSnapshot struct {
-	sampledAt time.Time
-	err       error
-	stats     []types.GPUStats
-}
-
-type gpuDetection struct {
-	gpuType  string
-	toolPath string
-	detected bool
-}
 
 // NewGPUMonitor creates a monitor. enabled gates Stats; when false, Stats returns
 // (nil, nil). configuredType is the user-pinned vendor ("nvidia"|"amd"|"intel"|"auto"|"")

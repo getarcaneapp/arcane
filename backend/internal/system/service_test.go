@@ -34,6 +34,13 @@ import (
 	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
 )
 
+type (
+	systemBackupPolicyScheduler struct {
+		jobs      map[string]types.SchedulerJob
+		submitted []types.SchedulerRequest
+	}
+)
+
 func TestResolveSystemUpgraderRuntimeOptions_TCPDockerHost(t *testing.T) {
 	currentContainer := &container.InspectResponse{
 		HostConfig: &container.HostConfig{NetworkMode: "bridge"},
@@ -178,11 +185,6 @@ func newSystemBackupAdmissionGateForTest(t testing.TB) *runs.Admission {
 	require.NoError(t, gate.Register(runtime))
 	francistest.Start(t, runtime)
 	return gate
-}
-
-type systemBackupPolicyScheduler struct {
-	jobs      map[string]types.SchedulerJob
-	submitted []types.SchedulerRequest
 }
 
 func (s *systemBackupPolicyScheduler) AddJob(_ context.Context, job types.SchedulerJob) error {

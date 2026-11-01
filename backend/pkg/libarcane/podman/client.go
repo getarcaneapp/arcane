@@ -20,39 +20,48 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 )
 
-const apiPrefix = "/v4.0.0/libpod"
+type (
+	Client struct {
+		httpClient *http.Client
+		baseURL    string
+	}
 
-type Client struct {
-	httpClient *http.Client
-	baseURL    string
-}
+	Runtime struct {
+		Systemd  Systemd
+		Client   *Client
+		Version  types.PodmanVersion
+		Rootless bool
+	}
 
-type Runtime struct {
-	Systemd  Systemd
-	Client   *Client
-	Version  types.PodmanVersion
-	Rootless bool
-}
+	Features struct {
+		AutoUpdateMode       types.PodmanAutoUpdateMode
+		QuadletsSupported    bool
+		QuadletAppsSupported bool
+	}
 
-type Features struct {
-	AutoUpdateMode       types.PodmanAutoUpdateMode
-	QuadletsSupported    bool
-	QuadletAppsSupported bool
-}
+	request struct {
+		method      string
+		path        string
+		query       url.Values
+		body        io.Reader
+		contentType string
+	}
 
-type request struct {
-	method      string
-	path        string
-	query       url.Values
-	body        io.Reader
-	contentType string
-}
+	apiError struct {
+		Cause    string `json:"cause"`
+		Message  string `json:"message"`
+		Response int    `json:"response"`
+	}
 
-type apiError struct {
-	Cause    string `json:"cause"`
-	Message  string `json:"message"`
-	Response int    `json:"response"`
-}
+	containerResponse struct {
+		Ports []PodPortMapping `json:"Ports"`
+		types.PodmanContainer
+	}
+)
+
+const (
+	apiPrefix = "/v4.0.0/libpod"
+)
 
 func NewClient(host string) (*Client, error) {
 	parsed, err := url.Parse(host)
@@ -111,11 +120,6 @@ func (c *Client) Version(ctx context.Context) (types.PodmanVersion, error) {
 
 func (c *Client) Info(ctx context.Context) (types.PodmanInfo, error) {
 	return c.doJSON[types.PodmanInfo](ctx, request{method: http.MethodGet, path: "/info"})
-}
-
-type containerResponse struct {
-	Ports []PodPortMapping `json:"Ports"`
-	types.PodmanContainer
 }
 
 func (c *Client) ContainerList(ctx context.Context, labels, pods []string) ([]types.PodmanContainer, error) {

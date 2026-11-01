@@ -5,13 +5,15 @@ import (
 	"time"
 )
 
-type State struct {
-	EnvOverride    string
-	OutputMode     string
-	AssumeYes      bool
-	NoColor        bool
-	RequestTimeout time.Duration
-}
+type (
+	State struct {
+		EnvOverride    string
+		OutputMode     string
+		AssumeYes      bool
+		NoColor        bool
+		RequestTimeout time.Duration
+	}
+)
 
 var (
 	mu    sync.RWMutex

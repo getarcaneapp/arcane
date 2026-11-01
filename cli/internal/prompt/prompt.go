@@ -12,6 +12,19 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 )
 
+type (
+	selectItem struct {
+		title string
+		index int
+	}
+
+	selectModel struct {
+		list     list.Model
+		choice   int
+		canceled bool
+	}
+)
+
 // IsInteractive reports whether stdin is a terminal.
 func IsInteractive() bool {
 	return term.IsTerminal(os.Stdin.Fd())
@@ -65,20 +78,11 @@ func Select(label string, options []string) (int, error) {
 	return result.choice, nil
 }
 
-type selectItem struct {
-	title string
-	index int
-}
+func (i selectItem) Title() string { return i.title }
 
-func (i selectItem) Title() string       { return i.title }
 func (i selectItem) Description() string { return "" }
-func (i selectItem) FilterValue() string { return i.title }
 
-type selectModel struct {
-	list     list.Model
-	choice   int
-	canceled bool
-}
+func (i selectItem) FilterValue() string { return i.title }
 
 func (m selectModel) Init() tea.Cmd {
 	return nil

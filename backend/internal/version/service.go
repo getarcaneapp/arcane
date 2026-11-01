@@ -33,6 +33,51 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 )
 
+type (
+	latestRelease struct {
+		TagName     string
+		Body        string
+		PublishedAt string
+	}
+
+	nextImage struct {
+		Version  string
+		Revision string
+	}
+
+	currentImageInfo struct {
+		Tag          string
+		Digest       string
+		ImageRef     string
+		ImageID      string
+		DigestPinned bool
+	}
+
+	VersionService struct {
+		httpClient               *http.Client
+		cache                    *hot.HotCache[struct{}, latestRelease]
+		commitNotesCache         *hot.HotCache[string, string]
+		containerRegistryService *registry.ContainerRegistryService
+		dockerService            *docker.DockerClientService
+		imageUpdateService       *imageupdate.ImageUpdateService
+		settingsService          *settings.SettingsService
+		streamHub                *agg.Hub[types.VersionStreamEvent]
+		currentImage             *hot.HotCache[struct{}, currentImageInfo]
+		version                  string
+		revision                 string
+	}
+
+	VersionServiceParams struct {
+		HTTPClient               *http.Client
+		ContainerRegistryService *registry.ContainerRegistryService
+		DockerService            *docker.DockerClientService
+		ImageUpdateService       *imageupdate.ImageUpdateService
+		SettingsService          *settings.SettingsService
+		AppVersion               string
+		Revision                 string
+	}
+)
+
 const (
 	versionStreamPollInterval = 5 * time.Minute
 	versionTTL                = 3 * time.Hour
@@ -40,49 +85,6 @@ const (
 	commitNotesTTL            = 24 * time.Hour
 	defaultRequestTimeout     = 15 * time.Second
 )
-
-type latestRelease struct {
-	TagName     string
-	Body        string
-	PublishedAt string
-}
-
-type nextImage struct {
-	Version  string
-	Revision string
-}
-
-type currentImageInfo struct {
-	Tag          string
-	Digest       string
-	ImageRef     string
-	ImageID      string
-	DigestPinned bool
-}
-
-type VersionService struct {
-	httpClient               *http.Client
-	cache                    *hot.HotCache[struct{}, latestRelease]
-	commitNotesCache         *hot.HotCache[string, string]
-	containerRegistryService *registry.ContainerRegistryService
-	dockerService            *docker.DockerClientService
-	imageUpdateService       *imageupdate.ImageUpdateService
-	settingsService          *settings.SettingsService
-	streamHub                *agg.Hub[types.VersionStreamEvent]
-	currentImage             *hot.HotCache[struct{}, currentImageInfo]
-	version                  string
-	revision                 string
-}
-
-type VersionServiceParams struct {
-	HTTPClient               *http.Client
-	ContainerRegistryService *registry.ContainerRegistryService
-	DockerService            *docker.DockerClientService
-	ImageUpdateService       *imageupdate.ImageUpdateService
-	SettingsService          *settings.SettingsService
-	AppVersion               string
-	Revision                 string
-}
 
 func NewVersionService(p VersionServiceParams) *VersionService {
 	if p.HTTPClient == nil {

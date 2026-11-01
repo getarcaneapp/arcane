@@ -19,12 +19,14 @@ import (
 	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
 )
 
-// Harness is an engine with its host and coordinator, ready for workflows to be defined.
-type Harness struct {
-	Runtime     *francis.Runtime
-	Coordinator *runs.Coordinator
-	Engine      *flow.Engine
-}
+type (
+	// Harness is an engine with its host and coordinator, ready for workflows to be defined.
+	Harness struct {
+		Runtime     *francis.Runtime
+		Coordinator *runs.Coordinator
+		Engine      *flow.Engine
+	}
+)
 
 // New builds a harness on an in-memory host, or on the given database URL.
 func New(t testing.TB, activities flow.Activities, databaseURLs ...string) *Harness {

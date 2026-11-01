@@ -75,6 +75,104 @@ import (
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v3/pkg/workspace"
 )
 
+type (
+	ProjectService struct {
+		composeCoordinator types.ComposeCoordinator
+
+		parsedCompose types.ComposeCache[*composetypes.Project]
+		// metaCache holds per-project icon/URL metadata, keyed by project ID. Deriving
+		// it costs a full compose load (interpolation plus .env reads) and, for GitOps
+		// projects, a gitops_syncs lookup — per project, on every list request.
+		// Entries are validated by compose/include/env file mtimes rather than a TTL.
+		metaCache types.ComposeCache[projects.ArcaneComposeMetadata]
+		// composeIdentities caches filesystem-sync compose identities by project path,
+		// so a sync only re-parses projects whose compose or env files changed.
+		composeIdentities types.ComposeCache[types.ComposeIdentity]
+
+		db                          *database.DB
+		settingsService             *settings.SettingsService
+		eventService                *event.EventService
+		imageService                *image.ImageService
+		dockerService               *dockerInternal.DockerClientService
+		lifecycleService            *LifecycleService
+		workspace                   *workspace.Service
+		details                     *projectdetails.Service
+		listing                     *listing.Service
+		statuses                    *projectstatus.Service
+		deployment                  *deployment.Service
+		updates                     *update.Service
+		containerRegistryService    *registry.ContainerRegistryService
+		config                      *config.Config
+		RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
+
+		// FilesChanged fires with the project ID after project files are saved
+		// through Arcane, so Git backups can react without polling.
+		FilesChanged *concurrency.Signal[string]
+
+		// opLock serializes mutating operations on the same project.
+		opLock utils.KeyedMutex
+
+		composeNames composeNameCache
+
+		// syncMu serializes SyncProjectsFromFileSystem: its discovery walk and its
+		// cleanup pass must not interleave with another run's.
+		syncMu sync.Mutex
+	}
+
+	// CreateGitOpsManagedProject persists a promoted GitOps project, links both
+	// records, updates the compose-name cache, and records the creation event.
+	GitOpsProjectRequest struct {
+		Sync      *GitOpsSync
+		Project   *Project
+		Actor     types.Actor
+		SkipEvent bool
+	}
+
+	ProjectServiceParams struct {
+		DB                          *database.DB
+		SettingsService             *settings.SettingsService
+		EventService                *event.EventService
+		ImageService                *image.ImageService
+		DockerService               *dockerInternal.DockerClientService
+		BuildService                builder
+		LifecycleService            *LifecycleService
+		ContainerRegistryService    *registry.ContainerRegistryService
+		Config                      *config.Config
+		KVService                   *kv.KVService
+		RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
+	}
+
+	// LifecycleService runs a GitOps sync's pre-deploy script in a throwaway container.
+	// The script is trusted like the repo's compose.yaml; configuring its path is the trust event.
+	LifecycleService struct {
+		db              *database.DB
+		settingsService *settings.SettingsService
+		eventService    *event.EventService
+		hooks           *lifecycle.Service
+	}
+
+	LifecycleServiceParams struct {
+		fx.In
+
+		DB              *database.DB
+		SettingsService *settings.SettingsService
+		EventService    *event.EventService
+		DockerService   *dockerInternal.DockerClientService
+		ImageService    *image.ImageService
+	}
+
+	DestroyOptions struct {
+		RemoveFiles   bool
+		RemoveVolumes bool
+	}
+
+	ProjectTagUpdate struct {
+		Name     string
+		Color    types.ProjectTagColor
+		Attached bool
+	}
+)
+
 const (
 	maxConcurrentComposeReads = 8
 	// inferredServiceCountBatchSize keeps one inferred count update under
@@ -88,49 +186,6 @@ var (
 	composeStopProjectServices = projects.ComposeStop
 	composeUpProjectServices   = projects.ComposeUp
 )
-
-type ProjectService struct {
-	composeCoordinator types.ComposeCoordinator
-
-	parsedCompose types.ComposeCache[*composetypes.Project]
-	// metaCache holds per-project icon/URL metadata, keyed by project ID. Deriving
-	// it costs a full compose load (interpolation plus .env reads) and, for GitOps
-	// projects, a gitops_syncs lookup — per project, on every list request.
-	// Entries are validated by compose/include/env file mtimes rather than a TTL.
-	metaCache types.ComposeCache[projects.ArcaneComposeMetadata]
-	// composeIdentities caches filesystem-sync compose identities by project path,
-	// so a sync only re-parses projects whose compose or env files changed.
-	composeIdentities types.ComposeCache[types.ComposeIdentity]
-
-	db                          *database.DB
-	settingsService             *settings.SettingsService
-	eventService                *event.EventService
-	imageService                *image.ImageService
-	dockerService               *dockerInternal.DockerClientService
-	lifecycleService            *LifecycleService
-	workspace                   *workspace.Service
-	details                     *projectdetails.Service
-	listing                     *listing.Service
-	statuses                    *projectstatus.Service
-	deployment                  *deployment.Service
-	updates                     *update.Service
-	containerRegistryService    *registry.ContainerRegistryService
-	config                      *config.Config
-	RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
-
-	// FilesChanged fires with the project ID after project files are saved
-	// through Arcane, so Git backups can react without polling.
-	FilesChanged *concurrency.Signal[string]
-
-	// opLock serializes mutating operations on the same project.
-	opLock utils.KeyedMutex
-
-	composeNames composeNameCache
-
-	// syncMu serializes SyncProjectsFromFileSystem: its discovery walk and its
-	// cleanup pass must not interleave with another run's.
-	syncMu sync.Mutex
-}
 
 // EnsureGitOpsProjectLinked persists the bidirectional GitOps/project binding
 // and refreshes the compose-name cache as one domain operation.
@@ -247,15 +302,6 @@ func (s *ProjectService) ValidateComposeDirectory(ctx context.Context, projectNa
 	return len(composeProject.Services), nil
 }
 
-// CreateGitOpsManagedProject persists a promoted GitOps project, links both
-// records, updates the compose-name cache, and records the creation event.
-type GitOpsProjectRequest struct {
-	Sync      *GitOpsSync
-	Project   *Project
-	Actor     types.Actor
-	SkipEvent bool
-}
-
 func (s *ProjectService) CreateGitOpsManagedProject(ctx context.Context, req GitOpsProjectRequest) error {
 	if req.Sync == nil || req.Project == nil {
 		return errors.New("GitOps sync and project are required")
@@ -335,20 +381,6 @@ func (s *ProjectService) preloadGitOpsComposePaths(ctx context.Context, env *pro
 	for _, record := range syncRecords {
 		env.gitOpsComposePaths[record.ID] = record.ComposePath
 	}
-}
-
-type ProjectServiceParams struct {
-	DB                          *database.DB
-	SettingsService             *settings.SettingsService
-	EventService                *event.EventService
-	ImageService                *image.ImageService
-	DockerService               *dockerInternal.DockerClientService
-	BuildService                builder
-	LifecycleService            *LifecycleService
-	ContainerRegistryService    *registry.ContainerRegistryService
-	Config                      *config.Config
-	KVService                   *kv.KVService
-	RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
 }
 
 func NewProjectService(p ProjectServiceParams) *ProjectService {
@@ -865,25 +897,6 @@ func (s *ProjectService) refreshComposeProjectName(ctx context.Context, proj *Pr
 		IsArchived:         proj.IsArchived,
 		ArchivedAt:         proj.ArchivedAt,
 	}
-}
-
-// LifecycleService runs a GitOps sync's pre-deploy script in a throwaway container.
-// The script is trusted like the repo's compose.yaml; configuring its path is the trust event.
-type LifecycleService struct {
-	db              *database.DB
-	settingsService *settings.SettingsService
-	eventService    *event.EventService
-	hooks           *lifecycle.Service
-}
-
-type LifecycleServiceParams struct {
-	fx.In
-
-	DB              *database.DB
-	SettingsService *settings.SettingsService
-	EventService    *event.EventService
-	DockerService   *dockerInternal.DockerClientService
-	ImageService    *image.ImageService
 }
 
 // NewLifecycleService constructs a LifecycleService wired against shared
@@ -1570,11 +1583,6 @@ func (s *ProjectService) CreateProject(
 	)
 
 	return proj, nil
-}
-
-type DestroyOptions struct {
-	RemoveFiles   bool
-	RemoveVolumes bool
 }
 
 func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, opts DestroyOptions, user types.Actor) error {
@@ -3673,12 +3681,6 @@ func (s *ProjectService) ListProjectReferences(ctx context.Context) ([]types.Pro
 		return nil, fmt.Errorf("list project references: %w", err)
 	}
 	return references, nil
-}
-
-type ProjectTagUpdate struct {
-	Name     string
-	Color    types.ProjectTagColor
-	Attached bool
 }
 
 // UpdateProjectTag attaches or detaches a UI-managed tag and rejects Compose-owned names.

@@ -6,10 +6,12 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-// Module owns the liveness and readiness routes.
-type Module struct {
-	service *Service
-}
+type (
+	// Module owns the liveness and readiness routes.
+	Module struct {
+		service *Service
+	}
+)
 
 // New builds the health module that registers the liveness and readiness routes.
 func New(service *Service) *Module {

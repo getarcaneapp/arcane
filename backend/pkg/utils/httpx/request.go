@@ -14,9 +14,11 @@ import (
 	kit "kit.getarcane.app"
 )
 
-type HeaderSetter interface {
-	SetHeader(key, value string)
-}
+type (
+	HeaderSetter interface {
+		SetHeader(key, value string)
+	}
+)
 
 func SetJSONStreamHeaders(headers HeaderSetter) {
 	headers.SetHeader("Content-Type", "application/x-json-stream")

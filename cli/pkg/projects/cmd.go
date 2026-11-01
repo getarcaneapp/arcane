@@ -26,6 +26,51 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+type (
+	projectStreamFrame struct {
+		Log   string `json:"log"`
+		Error string `json:"error"`
+		Done  bool   `json:"done"`
+	}
+
+	projectStreamActionConfig struct {
+		body           any
+		endpoint       func(string, string) string
+		failureMessage string
+		successMessage string
+	}
+
+	projectListOptions struct {
+		projectsUpdatesFilter  string
+		projectsStatusFilter   string
+		projectsArchivedFilter string
+		projectsLabelFilter    string
+		limitFlag              int
+		startFlag              int
+		allFlag                bool
+	}
+)
+
+var projectRef = cmdutil.ResourceRef[types.Project, types.Project]{
+	EnvironmentScoped: true,
+	Singular:          "project",
+	Plural:            "projects",
+	IDHint:            "the project ID",
+	ListCmd:           "arcane projects list",
+	GetPath:           clitypes.Project,
+	IdentifierOf:      func(data types.Project) string { return data.ID },
+	ListPath:          clitypes.Projects,
+	Matches: func(item types.Project, identifierLower, original string) bool {
+		return strings.Contains(strings.ToLower(item.ID), identifierLower) ||
+			strings.Contains(strings.ToLower(item.Name), identifierLower) || strings.EqualFold(item.Name, original) ||
+			strings.Contains(strings.ToLower(item.Path), identifierLower)
+	},
+	Label: func(match types.Project) string {
+		return fmt.Sprintf("%s (%s, %s)", match.Name, match.ID, match.Status)
+	},
+	Promote: func(match types.Project) *types.Project { return &match },
+}
+
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "projects",
@@ -278,19 +323,6 @@ func newPullCmd() *cobra.Command {
 			})
 		},
 	}
-}
-
-type projectStreamFrame struct {
-	Log   string `json:"log"`
-	Error string `json:"error"`
-	Done  bool   `json:"done"`
-}
-
-type projectStreamActionConfig struct {
-	body           any
-	endpoint       func(string, string) string
-	failureMessage string
-	successMessage string
 }
 
 func runProjectStreamAction(cmd *cobra.Command, identifier string, cfg projectStreamActionConfig) error {
@@ -629,36 +661,6 @@ func newCountsCmd() *cobra.Command {
 	}
 	cmdutil.SetScope(cmdutil.ScopeMerged, cmd)
 	return cmd
-}
-
-var projectRef = cmdutil.ResourceRef[types.Project, types.Project]{
-	EnvironmentScoped: true,
-	Singular:          "project",
-	Plural:            "projects",
-	IDHint:            "the project ID",
-	ListCmd:           "arcane projects list",
-	GetPath:           clitypes.Project,
-	IdentifierOf:      func(data types.Project) string { return data.ID },
-	ListPath:          clitypes.Projects,
-	Matches: func(item types.Project, identifierLower, original string) bool {
-		return strings.Contains(strings.ToLower(item.ID), identifierLower) ||
-			strings.Contains(strings.ToLower(item.Name), identifierLower) || strings.EqualFold(item.Name, original) ||
-			strings.Contains(strings.ToLower(item.Path), identifierLower)
-	},
-	Label: func(match types.Project) string {
-		return fmt.Sprintf("%s (%s, %s)", match.Name, match.ID, match.Status)
-	},
-	Promote: func(match types.Project) *types.Project { return &match },
-}
-
-type projectListOptions struct {
-	projectsUpdatesFilter  string
-	projectsStatusFilter   string
-	projectsArchivedFilter string
-	projectsLabelFilter    string
-	limitFlag              int
-	startFlag              int
-	allFlag                bool
 }
 
 func runProjectList(cmd *cobra.Command, opts projectListOptions) error {

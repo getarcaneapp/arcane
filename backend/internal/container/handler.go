@@ -30,112 +30,114 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-type ContainerHandler struct {
-	containerService *ContainerService
-	dockerService    *docker.DockerClientService
-	settingsService  *settings.SettingsService
-	activityService  *activity.ActivityService
-	appCtx           context.Context
-}
+type (
+	ContainerHandler struct {
+		containerService *ContainerService
+		dockerService    *docker.DockerClientService
+		settingsService  *settings.SettingsService
+		activityService  *activity.ActivityService
+		appCtx           context.Context
+	}
 
-// ContainerPaginatedResponse is the paginated list response for containers.
-type ContainerPaginatedResponse struct {
-	Data                  []types.ContainerSummary      `json:"data"`
-	Groups                []types.ContainerSummaryGroup `json:"groups,omitempty"`
-	FailedEnvironments    []types.EnvironmentFailure    `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
-	Pagination            types.PaginationResponse      `json:"pagination"`
-	Counts                types.ContainerStatusCounts   `json:"counts"`
-	Success               bool                          `json:"success"`
-	ResourceSortSupported bool                          `json:"resourceSortSupported"`
-}
+	// ContainerPaginatedResponse is the paginated list response for containers.
+	ContainerPaginatedResponse struct {
+		Data                  []types.ContainerSummary      `json:"data"`
+		Groups                []types.ContainerSummaryGroup `json:"groups,omitempty"`
+		FailedEnvironments    []types.EnvironmentFailure    `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
+		Pagination            types.PaginationResponse      `json:"pagination"`
+		Counts                types.ContainerStatusCounts   `json:"counts"`
+		Success               bool                          `json:"success"`
+		ResourceSortSupported bool                          `json:"resourceSortSupported"`
+	}
 
-type ListContainersInput struct {
-	EnvironmentID   string `path:"id" doc:"Environment ID"`
-	Search          string `query:"search" doc:"Search query"`
-	Sort            string `query:"sort" doc:"Column to sort by"`
-	Order           string `query:"order" default:"asc" doc:"Sort direction"`
-	GroupBy         string `query:"groupBy" doc:"Optional grouping mode (for example: project)"`
-	Updates         string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
-	Standalone      string `query:"standalone" doc:"Filter standalone containers only (true/false)"`
-	Label           string `query:"label" doc:"Filter by label key or key=value"`
-	Start           int    `query:"start" default:"0" doc:"Start index"`
-	Limit           int    `query:"limit" default:"20" doc:"Limit"`
-	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
-	IncludeHidden   bool   `query:"includeHidden" default:"false" doc:"Include hidden containers"`
-}
+	ListContainersInput struct {
+		EnvironmentID   string `path:"id" doc:"Environment ID"`
+		Search          string `query:"search" doc:"Search query"`
+		Sort            string `query:"sort" doc:"Column to sort by"`
+		Order           string `query:"order" default:"asc" doc:"Sort direction"`
+		GroupBy         string `query:"groupBy" doc:"Optional grouping mode (for example: project)"`
+		Updates         string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
+		Standalone      string `query:"standalone" doc:"Filter standalone containers only (true/false)"`
+		Label           string `query:"label" doc:"Filter by label key or key=value"`
+		Start           int    `query:"start" default:"0" doc:"Start index"`
+		Limit           int    `query:"limit" default:"20" doc:"Limit"`
+		IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
+		IncludeHidden   bool   `query:"includeHidden" default:"false" doc:"Include hidden containers"`
+	}
 
-type ListContainersOutput struct {
-	Body ContainerPaginatedResponse
-}
+	ListContainersOutput struct {
+		Body ContainerPaginatedResponse
+	}
 
-type GetContainerStatusCountsInput struct {
-	EnvironmentID   string `path:"id" doc:"Environment ID"`
-	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
-	IncludeHidden   bool   `query:"includeHidden" default:"false" doc:"Include hidden containers"`
-}
+	GetContainerStatusCountsInput struct {
+		EnvironmentID   string `path:"id" doc:"Environment ID"`
+		IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
+		IncludeHidden   bool   `query:"includeHidden" default:"false" doc:"Include hidden containers"`
+	}
 
-type CreateContainerInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	types.Create[types.Container]
-}
+	CreateContainerInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		types.Create[types.Container]
+	}
 
-type GetContainerInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ContainerID   string `path:"containerId" doc:"Container ID"`
-}
+	GetContainerInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ContainerID   string `path:"containerId" doc:"Container ID"`
+	}
 
-type ContainerActionInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ContainerID   string `path:"containerId" doc:"Container ID"`
-	Action        string `query:"action" required:"true" enum:"start,stop,restart,kill,pause,unpause" doc:"Lifecycle action"`
-	Signal        string `query:"signal" doc:"Signal to send for kill (for example SIGTERM, SIGKILL). Defaults to SIGKILL."`
-}
+	ContainerActionInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ContainerID   string `path:"containerId" doc:"Container ID"`
+		Action        string `query:"action" required:"true" enum:"start,stop,restart,kill,pause,unpause" doc:"Lifecycle action"`
+		Signal        string `query:"signal" doc:"Signal to send for kill (for example SIGTERM, SIGKILL). Defaults to SIGKILL."`
+	}
 
-type DeleteContainerInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ContainerID   string `path:"containerId" doc:"Container ID"`
-	Force         bool   `query:"force" default:"false" doc:"Force delete running container"`
-	RemoveVolumes bool   `query:"volumes" default:"false" doc:"Remove associated volumes"`
-}
+	DeleteContainerInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ContainerID   string `path:"containerId" doc:"Container ID"`
+		Force         bool   `query:"force" default:"false" doc:"Force delete running container"`
+		RemoveVolumes bool   `query:"volumes" default:"false" doc:"Remove associated volumes"`
+	}
 
-// SetAutoUpdateInput is the request input for toggling container auto-update.
-type SetAutoUpdateInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ContainerID   string `path:"containerId" doc:"Container ID"`
-	Body          types.ContainerSetAutoUpdateRequest
-}
+	// SetAutoUpdateInput is the request input for toggling container auto-update.
+	SetAutoUpdateInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ContainerID   string `path:"containerId" doc:"Container ID"`
+		Body          types.ContainerSetAutoUpdateRequest
+	}
 
-type CommitContainerInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ContainerID   string `path:"containerId" doc:"Container ID"`
-	Body          types.ContainerCommitRequest
-}
+	CommitContainerInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ContainerID   string `path:"containerId" doc:"Container ID"`
+		Body          types.ContainerCommitRequest
+	}
 
-type GetContainerEditConfigInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ContainerID   string `path:"containerId" doc:"Container ID"`
-}
+	GetContainerEditConfigInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ContainerID   string `path:"containerId" doc:"Container ID"`
+	}
 
-type EditContainerInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ContainerID   string `path:"containerId" doc:"Container ID"`
-	Body          types.ContainerEdit
-}
+	EditContainerInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ContainerID   string `path:"containerId" doc:"Container ID"`
+		Body          types.ContainerEdit
+	}
 
-type GenerateComposeInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.ContainerGenerateComposeRequest
-}
+	GenerateComposeInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.ContainerGenerateComposeRequest
+	}
 
-type containerActionConfig struct {
-	Action          func(context.Context, string, types.Actor) error
-	ActivityType    types.ActivityType
-	Verb            string
-	Step            string
-	StartMessage    string
-	CompleteMessage string
-	SuccessMessage  string
-}
+	containerActionConfig struct {
+		Action          func(context.Context, string, types.Actor) error
+		ActivityType    types.ActivityType
+		Verb            string
+		Step            string
+		StartMessage    string
+		CompleteMessage string
+		SuccessMessage  string
+	}
+)
 
 func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContainersInput) (*ListContainersOutput, error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)

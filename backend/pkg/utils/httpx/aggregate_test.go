@@ -15,9 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type aggregateRow struct {
-	ID string `json:"id"`
-}
+type (
+	aggregateRow struct {
+		ID string `json:"id"`
+	}
+)
 
 func aggregateContext(t *testing.T, handler http.Handler, ids ...string) context.Context {
 	t.Helper()

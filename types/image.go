@@ -9,289 +9,493 @@ import (
 	"github.com/moby/moby/api/types/image"
 )
 
-// ImageListResponse is the paginated image list together with the upload limit the
-// environment enforces, so list consumers need no settings access.
-type ImageListResponse struct {
-	Data []ImageSummary `json:"data" doc:"Array of items for the current page"`
+type (
+	// ImageListResponse is the paginated image list together with the upload limit the
+	// environment enforces, so list consumers need no settings access.
+	ImageListResponse struct {
+		Data []ImageSummary `json:"data" doc:"Array of items for the current page"`
 
-	FailedEnvironments []EnvironmentFailure `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
-	Pagination         PaginationResponse   `json:"pagination" doc:"Pagination metadata"`
+		FailedEnvironments []EnvironmentFailure `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
+		Pagination         PaginationResponse   `json:"pagination" doc:"Pagination metadata"`
 
-	// MaxImageUploadSize is the maximum image archive upload size in MB.
+		// MaxImageUploadSize is the maximum image archive upload size in MB.
+		//
+		// Required: true
+		MaxImageUploadSize int `json:"maxImageUploadSize" doc:"Maximum image archive upload size in MB"`
+
+		Success bool `json:"success" doc:"Whether the request was successful"`
+	}
+
+	ImageUpdateInfo struct {
+		// CheckTime is the time when the update check was performed.
+		//
+		// Required: true
+		CheckTime time.Time `json:"checkTime"`
+
+		// UpdateType describes the type of update (e.g., major, minor, patch).
+		//
+		// Required: true
+		UpdateType string `json:"updateType"`
+
+		// CurrentVersion is the current version of the image.
+		//
+		// Required: true
+		CurrentVersion string `json:"currentVersion"`
+
+		// LatestVersion is the latest available version of the image.
+		//
+		// Required: true
+		LatestVersion string `json:"latestVersion"`
+
+		// CurrentDigest is the digest (hash) of the current image.
+		//
+		// Required: true
+		CurrentDigest string `json:"currentDigest"`
+
+		// LatestDigest is the digest (hash) of the latest available image.
+		//
+		// Required: true
+		LatestDigest string `json:"latestDigest"`
+
+		// Error contains any error message from the update check.
+		//
+		// Required: true
+		Error string `json:"error"`
+
+		// AuthMethod is the authentication method used.
+		//
+		// Required: false
+		AuthMethod string `json:"authMethod,omitempty"`
+
+		// AuthUsername is the username used for authentication.
+		//
+		// Required: false
+		AuthUsername string `json:"authUsername,omitempty"`
+
+		// AuthRegistry is the registry used for authentication.
+		//
+		// Required: false
+		AuthRegistry string `json:"authRegistry,omitempty"`
+
+		// ResponseTimeMs is the response time in milliseconds.
+		//
+		// Required: true
+		ResponseTimeMs int `json:"responseTimeMs"`
+
+		// HasUpdate indicates if an update is available for the image.
+		//
+		// Required: true
+		HasUpdate bool `json:"hasUpdate"`
+
+		// UsedCredential indicates if credentials were used for the update check.
+		//
+		// Required: false
+		UsedCredential bool `json:"usedCredential,omitempty"`
+	}
+
+	ImageUsedBy struct {
+		// Type indicates the usage source (e.g., project, container).
+		//
+		// Required: true
+		Type string `json:"type"`
+
+		// Name is the project or container name.
+		//
+		// Required: true
+		Name string `json:"name"`
+
+		// ID is the identifier of the project or container (if available).
+		//
+		// Required: false
+		ID string `json:"id,omitempty"`
+	}
+
+	ImageSummary struct {
+		// Labels contains user-defined metadata for the image.
+		//
+		// Required: true
+		Labels map[string]any `json:"labels"`
+
+		// UpdateInfo contains information about available updates for the image.
+		//
+		// Required: false
+		UpdateInfo *ImageUpdateInfo `json:"updateInfo,omitempty"`
+
+		// VulnerabilityScan contains the latest vulnerability scan summary for the image.
+		//
+		// Required: false
+		VulnerabilityScan *VulnerabilityScanSummary `json:"vulnerabilityScan,omitempty"`
+
+		EnvironmentTag
+
+		// ID is the unique identifier of the image.
+		//
+		// Required: true
+		ID string `json:"id" sortable:"true"`
+
+		// Repo is the repository name of the image.
+		//
+		// Required: true
+		Repo string `json:"repo" sortable:"true"`
+
+		// Tag is the tag of the image.
+		//
+		// Required: true
+		Tag string `json:"tag" sortable:"true"`
+
+		// RepoTags is a list of tag references, excluding digest-pinned names.
+		//
+		// Required: true
+		RepoTags []string `json:"repoTags"`
+
+		// RepoDigests is a list of content-addressable digests of the image.
+		//
+		// Required: true
+		RepoDigests []string `json:"repoDigests"`
+
+		// UsedBy lists projects or containers currently using this image.
+		//
+		// Required: false
+		UsedBy []ImageUsedBy `json:"usedBy,omitempty"`
+
+		// PinnedReferences contains exact digest-pinned references used by containers.
+		//
+		// Required: false
+		PinnedReferences []string `json:"pinnedReferences,omitempty"`
+
+		// Created is the Unix timestamp when the image was created.
+		//
+		// Required: true
+		Created int64 `json:"created" sortable:"true"`
+
+		// Size is the total size of the image including all layers.
+		//
+		// Required: true
+		Size int64 `json:"size" sortable:"true"`
+
+		// VirtualSize is the virtual size of the image.
+		//
+		// Required: true
+		VirtualSize int64 `json:"virtualSize"`
+
+		// InUse indicates if the image is currently in use by a container.
+		//
+		// Required: true
+		InUse bool `json:"inUse" sortable:"true"`
+	}
+
+	ImageAttestationList struct {
+		ImageRef      string             `json:"imageRef"`
+		SubjectDigest string             `json:"subjectDigest"`
+		Platform      string             `json:"platform,omitempty"`
+		Attestations  []ImageAttestation `json:"attestations"`
+	}
+
+	ImageReleaseNotes struct {
+		// ImageRef is the image reference the release notes were resolved for.
+		//
+		// Required: true
+		ImageRef string `json:"imageRef"`
+
+		// Version is the target version used to match a release.
+		//
+		// Required: false
+		Version string `json:"version,omitempty"`
+
+		// Status is the lookup result: found, not_found, unavailable, link, or no_source.
+		//
+		// Required: true
+		Status string `json:"status"`
+
+		// SourceURL is the source repository of the image.
+		//
+		// Required: false
+		SourceURL string `json:"sourceUrl,omitempty"`
+
+		// ReleaseURL links to the matched release or the releases page.
+		//
+		// Required: false
+		ReleaseURL string `json:"releaseUrl,omitempty"`
+
+		// ReleaseName is the name of the matched release.
+		//
+		// Required: false
+		ReleaseName string `json:"releaseName,omitempty"`
+
+		// Notes is the markdown body of the matched release.
+		//
+		// Required: false
+		Notes string `json:"notes,omitempty"`
+
+		// PublishedAt is when the matched release was published.
+		//
+		// Required: false
+		PublishedAt string `json:"publishedAt,omitempty"`
+	}
+
+	ImageAttestation struct {
+		Digest        string                    `json:"digest"`
+		MediaType     string                    `json:"mediaType"`
+		ArtifactType  string                    `json:"artifactType,omitempty"`
+		PredicateType string                    `json:"predicateType"`
+		StatementType string                    `json:"statementType,omitempty"`
+		Platform      string                    `json:"platform,omitempty"`
+		Subject       []ImageAttestationSubject `json:"subject"`
+		Statement     jsontext.Value            `json:"statement,omitempty"`
+		Size          int64                     `json:"size"`
+	}
+
+	ImageAttestationSubject struct {
+		Digest map[string]string `json:"digest"`
+		Name   string            `json:"name"`
+	}
+
+	ImagePruneReport struct {
+		// ImagesDeleted is a list of image IDs that were deleted.
+		//
+		// Required: true
+		ImagesDeleted []string `json:"imagesDeleted"`
+
+		// SpaceReclaimed is the amount of space reclaimed in bytes.
+		//
+		// Required: true
+		SpaceReclaimed int64 `json:"spaceReclaimed"`
+	}
+
+	// ImageTagRequest is used to add a new repository tag to an existing image.
+	ImageTagRequest struct {
+		// Repository is the target repository name.
+		//
+		// Required: true
+		Repository string `json:"repository" doc:"Target repository name"`
+
+		// Tag is the target tag. Docker defaults to latest when omitted.
+		//
+		// Required: false
+		Tag string `json:"tag,omitempty" doc:"Target tag"`
+	}
+
+	// ImageHistoryItem describes a single image history layer entry.
+	ImageHistoryItem struct {
+		ID        string   `json:"id"`
+		CreatedBy string   `json:"createdBy"`
+		Comment   string   `json:"comment"`
+		Tags      []string `json:"tags"`
+		Created   int64    `json:"created"`
+		Size      int64    `json:"size"`
+	}
+
+	// ImageSearchResult describes an image registry search result.
+	ImageSearchResult struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		StarCount   int    `json:"starCount"`
+		Official    bool   `json:"official"`
+		Automated   bool   `json:"automated"`
+	}
+
+	ImageUsageCounts struct {
+		// Inuse is the number of images currently in use.
+		//
+		// Required: true
+		Inuse int `json:"imagesInuse"`
+
+		// Unused is the number of images not in use.
+		//
+		// Required: true
+		Unused int `json:"imagesUnused"`
+
+		// Total is the total number of images.
+		//
+		// Required: true
+		Total int `json:"totalImages"`
+
+		// TotalSize is the total size of all images in bytes.
+		//
+		// Required: true
+		TotalSize int64 `json:"totalImageSize"`
+	}
+
+	ImageLoadResult struct {
+		// Stream contains the output stream from the load operation.
+		//
+		// Required: true
+		Stream string `json:"stream"`
+	}
+
+	ImageDetailSummary struct {
+		// GraphDriver contains information about the graph driver.
+		//
+		// Required: true
+		GraphDriver struct {
+			// Data contains driver-specific data.
+			Data any `json:"data"`
+			// Name is the name of the graph driver.
+			Name string `json:"name"`
+		} `json:"graphDriver"`
+
+		// Os is the operating system for which the image was built.
+		//
+		// Required: true
+		Os string `json:"os"`
+
+		// Created is the creation timestamp of the image.
+		//
+		// Required: true
+		Created string `json:"created"`
+
+		// Author is the author of the image.
+		//
+		// Required: true
+		Author string `json:"author"`
+
+		// Architecture is the architecture for which the image was built.
+		//
+		// Required: true
+		Architecture string `json:"architecture"`
+
+		// ID is the unique identifier of the image.
+		//
+		// Required: true
+		ID string `json:"id"`
+
+		// Metadata contains metadata about the image.
+		//
+		// Required: true
+		Metadata struct {
+			// LastTagTime is the time when the image was last tagged.
+			LastTagTime string `json:"lastTagTime"`
+		} `json:"metadata"`
+
+		// Comment is a comment associated with the image.
+		//
+		// Required: true
+		Comment string `json:"comment"`
+
+		// Descriptor is the OCI descriptor of the image.
+		//
+		// Required: true
+		Descriptor struct {
+			// MediaType is the media type of the descriptor.
+			MediaType string `json:"mediaType"`
+			// Digest is the digest of the descriptor.
+			Digest string `json:"digest"`
+			// Size is the size of the descriptor.
+			Size int64 `json:"size"`
+		} `json:"descriptor"`
+
+		// RootFs contains information about the root filesystem.
+		//
+		// Required: true
+		RootFs struct {
+			// Type is the type of the root filesystem.
+			Type string `json:"type"`
+			// Layers are the layers of the image.
+			Layers []string `json:"layers"`
+		} `json:"rootFs"`
+
+		// RepoTags is a list of tag references, excluding digest-pinned names.
+		//
+		// Required: true
+		RepoTags []string `json:"repoTags"`
+
+		// RepoDigests is a list of content-addressable digests of the image.
+		//
+		// Required: true
+		RepoDigests []string `json:"repoDigests"`
+
+		// PinnedReferences contains exact digest-pinned references used by containers.
+		//
+		// Required: false
+		PinnedReferences []string `json:"pinnedReferences,omitempty"`
+
+		// Config contains the configuration of the image.
+		//
+		// Required: true
+		Config struct {
+			// ExposedPorts are the ports exposed by the image.
+			ExposedPorts map[string]struct{} `json:"exposedPorts,omitempty"`
+			// Volumes are the volumes defined in the image.
+			Volumes map[string]struct{} `json:"volumes,omitempty"`
+			// WorkingDir is the working directory in the container.
+			WorkingDir string `json:"workingDir,omitempty"`
+			// Env are the environment variables set in the image.
+			Env []string `json:"env,omitempty"`
+			// Cmd is the default command to run in the container.
+			Cmd []string `json:"cmd,omitempty"`
+			// ArgsEscaped indicates if the arguments are escaped.
+			ArgsEscaped bool `json:"argsEscaped,omitempty"`
+		} `json:"config"`
+
+		// Size is the total size of the image.
+		//
+		// Required: true
+		Size int64 `json:"size"`
+	}
+
+	// ImagePullOptions contains options for pulling an image.
+	ImagePullOptions struct {
+		// ImageName is the name of the image to pull.
+		//
+		// Required: true
+		ImageName string `json:"imageName" minLength:"1" doc:"Name of the image to pull (e.g., nginx)"`
+
+		// Tag is the tag of the image to pull. Defaults to 'latest'.
+		//
+		// Required: false
+		Tag string `json:"tag,omitempty" doc:"Tag of the image to pull (e.g., latest)"`
+
+		// Auth for authenticating with private registries (legacy field name).
+		//
+		// Required: false
+		Auth *ContainerRegistryCredential `json:"auth,omitempty"`
+
+		// Credentials for authenticating with private registries.
+		//
+		// Required: false
+		Credentials []ContainerRegistryCredential `json:"credentials,omitempty"`
+	}
+
+	// ImageBuildRecord represents a historical image build entry.
 	//
-	// Required: true
-	MaxImageUploadSize int `json:"maxImageUploadSize" doc:"Maximum image archive upload size in MB"`
-
-	Success bool `json:"success" doc:"Whether the request was successful"`
-}
-
-type ImageUpdateInfo struct {
-	// CheckTime is the time when the update check was performed.
-	//
-	// Required: true
-	CheckTime time.Time `json:"checkTime"`
-
-	// UpdateType describes the type of update (e.g., major, minor, patch).
-	//
-	// Required: true
-	UpdateType string `json:"updateType"`
-
-	// CurrentVersion is the current version of the image.
-	//
-	// Required: true
-	CurrentVersion string `json:"currentVersion"`
-
-	// LatestVersion is the latest available version of the image.
-	//
-	// Required: true
-	LatestVersion string `json:"latestVersion"`
-
-	// CurrentDigest is the digest (hash) of the current image.
-	//
-	// Required: true
-	CurrentDigest string `json:"currentDigest"`
-
-	// LatestDigest is the digest (hash) of the latest available image.
-	//
-	// Required: true
-	LatestDigest string `json:"latestDigest"`
-
-	// Error contains any error message from the update check.
-	//
-	// Required: true
-	Error string `json:"error"`
-
-	// AuthMethod is the authentication method used.
-	//
-	// Required: false
-	AuthMethod string `json:"authMethod,omitempty"`
-
-	// AuthUsername is the username used for authentication.
-	//
-	// Required: false
-	AuthUsername string `json:"authUsername,omitempty"`
-
-	// AuthRegistry is the registry used for authentication.
-	//
-	// Required: false
-	AuthRegistry string `json:"authRegistry,omitempty"`
-
-	// ResponseTimeMs is the response time in milliseconds.
-	//
-	// Required: true
-	ResponseTimeMs int `json:"responseTimeMs"`
-
-	// HasUpdate indicates if an update is available for the image.
-	//
-	// Required: true
-	HasUpdate bool `json:"hasUpdate"`
-
-	// UsedCredential indicates if credentials were used for the update check.
-	//
-	// Required: false
-	UsedCredential bool `json:"usedCredential,omitempty"`
-}
-
-type ImageUsedBy struct {
-	// Type indicates the usage source (e.g., project, container).
-	//
-	// Required: true
-	Type string `json:"type"`
-
-	// Name is the project or container name.
-	//
-	// Required: true
-	Name string `json:"name"`
-
-	// ID is the identifier of the project or container (if available).
-	//
-	// Required: false
-	ID string `json:"id,omitempty"`
-}
-
-type ImageSummary struct {
-	// Labels contains user-defined metadata for the image.
-	//
-	// Required: true
-	Labels map[string]any `json:"labels"`
-
-	// UpdateInfo contains information about available updates for the image.
-	//
-	// Required: false
-	UpdateInfo *ImageUpdateInfo `json:"updateInfo,omitempty"`
-
-	// VulnerabilityScan contains the latest vulnerability scan summary for the image.
-	//
-	// Required: false
-	VulnerabilityScan *VulnerabilityScanSummary `json:"vulnerabilityScan,omitempty"`
-
-	EnvironmentTag
-
-	// ID is the unique identifier of the image.
-	//
-	// Required: true
-	ID string `json:"id" sortable:"true"`
-
-	// Repo is the repository name of the image.
-	//
-	// Required: true
-	Repo string `json:"repo" sortable:"true"`
-
-	// Tag is the tag of the image.
-	//
-	// Required: true
-	Tag string `json:"tag" sortable:"true"`
-
-	// RepoTags is a list of tag references, excluding digest-pinned names.
-	//
-	// Required: true
-	RepoTags []string `json:"repoTags"`
-
-	// RepoDigests is a list of content-addressable digests of the image.
-	//
-	// Required: true
-	RepoDigests []string `json:"repoDigests"`
-
-	// UsedBy lists projects or containers currently using this image.
-	//
-	// Required: false
-	UsedBy []ImageUsedBy `json:"usedBy,omitempty"`
-
-	// PinnedReferences contains exact digest-pinned references used by containers.
-	//
-	// Required: false
-	PinnedReferences []string `json:"pinnedReferences,omitempty"`
-
-	// Created is the Unix timestamp when the image was created.
-	//
-	// Required: true
-	Created int64 `json:"created" sortable:"true"`
-
-	// Size is the total size of the image including all layers.
-	//
-	// Required: true
-	Size int64 `json:"size" sortable:"true"`
-
-	// VirtualSize is the virtual size of the image.
-	//
-	// Required: true
-	VirtualSize int64 `json:"virtualSize"`
-
-	// InUse indicates if the image is currently in use by a container.
-	//
-	// Required: true
-	InUse bool `json:"inUse" sortable:"true"`
-}
-
-type ImageAttestationList struct {
-	ImageRef      string             `json:"imageRef"`
-	SubjectDigest string             `json:"subjectDigest"`
-	Platform      string             `json:"platform,omitempty"`
-	Attestations  []ImageAttestation `json:"attestations"`
-}
-
-type ImageReleaseNotes struct {
-	// ImageRef is the image reference the release notes were resolved for.
-	//
-	// Required: true
-	ImageRef string `json:"imageRef"`
-
-	// Version is the target version used to match a release.
-	//
-	// Required: false
-	Version string `json:"version,omitempty"`
-
-	// Status is the lookup result: found, not_found, unavailable, link, or no_source.
-	//
-	// Required: true
-	Status string `json:"status"`
-
-	// SourceURL is the source repository of the image.
-	//
-	// Required: false
-	SourceURL string `json:"sourceUrl,omitempty"`
-
-	// ReleaseURL links to the matched release or the releases page.
-	//
-	// Required: false
-	ReleaseURL string `json:"releaseUrl,omitempty"`
-
-	// ReleaseName is the name of the matched release.
-	//
-	// Required: false
-	ReleaseName string `json:"releaseName,omitempty"`
-
-	// Notes is the markdown body of the matched release.
-	//
-	// Required: false
-	Notes string `json:"notes,omitempty"`
-
-	// PublishedAt is when the matched release was published.
-	//
-	// Required: false
-	PublishedAt string `json:"publishedAt,omitempty"`
-}
-
-type ImageAttestation struct {
-	Digest        string                    `json:"digest"`
-	MediaType     string                    `json:"mediaType"`
-	ArtifactType  string                    `json:"artifactType,omitempty"`
-	PredicateType string                    `json:"predicateType"`
-	StatementType string                    `json:"statementType,omitempty"`
-	Platform      string                    `json:"platform,omitempty"`
-	Subject       []ImageAttestationSubject `json:"subject"`
-	Statement     jsontext.Value            `json:"statement,omitempty"`
-	Size          int64                     `json:"size"`
-}
-
-type ImageAttestationSubject struct {
-	Digest map[string]string `json:"digest"`
-	Name   string            `json:"name"`
-}
-
-type ImagePruneReport struct {
-	// ImagesDeleted is a list of image IDs that were deleted.
-	//
-	// Required: true
-	ImagesDeleted []string `json:"imagesDeleted"`
-
-	// SpaceReclaimed is the amount of space reclaimed in bytes.
-	//
-	// Required: true
-	SpaceReclaimed int64 `json:"spaceReclaimed"`
-}
-
-// ImageTagRequest is used to add a new repository tag to an existing image.
-type ImageTagRequest struct {
-	// Repository is the target repository name.
-	//
-	// Required: true
-	Repository string `json:"repository" doc:"Target repository name"`
-
-	// Tag is the target tag. Docker defaults to latest when omitted.
-	//
-	// Required: false
-	Tag string `json:"tag,omitempty" doc:"Target tag"`
-}
-
-// ImageHistoryItem describes a single image history layer entry.
-type ImageHistoryItem struct {
-	ID        string   `json:"id"`
-	CreatedBy string   `json:"createdBy"`
-	Comment   string   `json:"comment"`
-	Tags      []string `json:"tags"`
-	Created   int64    `json:"created"`
-	Size      int64    `json:"size"`
-}
-
-// ImageSearchResult describes an image registry search result.
-type ImageSearchResult struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	StarCount   int    `json:"starCount"`
-	Official    bool   `json:"official"`
-	Automated   bool   `json:"automated"`
-}
+	//nolint:recvcheck // Rows read the environment by value and set it through a pointer.
+	ImageBuildRecord struct {
+		CreatedAt       time.Time         `json:"createdAt" sortable:"true"`
+		BuildArgs       map[string]string `json:"buildArgs,omitempty"`
+		UserID          *string           `json:"userId,omitempty"`
+		Username        *string           `json:"username,omitempty"`
+		Digest          *string           `json:"digest,omitempty"`
+		ErrorMessage    *string           `json:"errorMessage,omitempty"`
+		Output          *string           `json:"output,omitempty"`
+		CompletedAt     *time.Time        `json:"completedAt,omitempty" sortable:"true"`
+		DurationMs      *int64            `json:"durationMs,omitempty"`
+		Labels          map[string]string `json:"labels,omitempty"`
+		Ulimits         map[string]string `json:"ulimits,omitempty"`
+		ID              string            `json:"id" sortable:"true"`
+		EnvironmentID   string            `json:"environmentId"`
+		EnvironmentName string            `json:"environmentName,omitempty"`
+		Status          string            `json:"status" sortable:"true"`
+		Provider        string            `json:"provider,omitempty"`
+		ContextDir      string            `json:"contextDir"`
+		Dockerfile      string            `json:"dockerfile,omitempty"`
+		Target          string            `json:"target,omitempty"`
+		Network         string            `json:"network,omitempty"`
+		Isolation       string            `json:"isolation,omitempty"`
+		Tags            []string          `json:"tags,omitempty"`
+		Platforms       []string          `json:"platforms,omitempty"`
+		CacheFrom       []string          `json:"cacheFrom,omitempty"`
+		CacheTo         []string          `json:"cacheTo,omitempty"`
+		Entitlements    []string          `json:"entitlements,omitempty"`
+		ExtraHosts      []string          `json:"extraHosts,omitempty"`
+		ShmSize         int64             `json:"shmSize,omitempty"`
+		NoCache         bool              `json:"noCache"`
+		Pull            bool              `json:"pull"`
+		Privileged      bool              `json:"privileged"`
+		Push            bool              `json:"push"`
+		Load            bool              `json:"load"`
+		OutputTruncated bool              `json:"outputTruncated"`
+	}
+)
 
 // NewImagePruneReport creates a PruneReport from a Docker image prune report.
 // It extracts deleted and untagged image IDs from the Docker API response,
@@ -317,168 +521,6 @@ func NewImagePruneReport(src image.PruneReport) ImagePruneReport {
 		}
 	}
 	return out
-}
-
-type ImageUsageCounts struct {
-	// Inuse is the number of images currently in use.
-	//
-	// Required: true
-	Inuse int `json:"imagesInuse"`
-
-	// Unused is the number of images not in use.
-	//
-	// Required: true
-	Unused int `json:"imagesUnused"`
-
-	// Total is the total number of images.
-	//
-	// Required: true
-	Total int `json:"totalImages"`
-
-	// TotalSize is the total size of all images in bytes.
-	//
-	// Required: true
-	TotalSize int64 `json:"totalImageSize"`
-}
-
-type ImageLoadResult struct {
-	// Stream contains the output stream from the load operation.
-	//
-	// Required: true
-	Stream string `json:"stream"`
-}
-
-type ImageDetailSummary struct {
-	// GraphDriver contains information about the graph driver.
-	//
-	// Required: true
-	GraphDriver struct {
-		// Data contains driver-specific data.
-		Data any `json:"data"`
-		// Name is the name of the graph driver.
-		Name string `json:"name"`
-	} `json:"graphDriver"`
-
-	// Os is the operating system for which the image was built.
-	//
-	// Required: true
-	Os string `json:"os"`
-
-	// Created is the creation timestamp of the image.
-	//
-	// Required: true
-	Created string `json:"created"`
-
-	// Author is the author of the image.
-	//
-	// Required: true
-	Author string `json:"author"`
-
-	// Architecture is the architecture for which the image was built.
-	//
-	// Required: true
-	Architecture string `json:"architecture"`
-
-	// ID is the unique identifier of the image.
-	//
-	// Required: true
-	ID string `json:"id"`
-
-	// Metadata contains metadata about the image.
-	//
-	// Required: true
-	Metadata struct {
-		// LastTagTime is the time when the image was last tagged.
-		LastTagTime string `json:"lastTagTime"`
-	} `json:"metadata"`
-
-	// Comment is a comment associated with the image.
-	//
-	// Required: true
-	Comment string `json:"comment"`
-
-	// Descriptor is the OCI descriptor of the image.
-	//
-	// Required: true
-	Descriptor struct {
-		// MediaType is the media type of the descriptor.
-		MediaType string `json:"mediaType"`
-		// Digest is the digest of the descriptor.
-		Digest string `json:"digest"`
-		// Size is the size of the descriptor.
-		Size int64 `json:"size"`
-	} `json:"descriptor"`
-
-	// RootFs contains information about the root filesystem.
-	//
-	// Required: true
-	RootFs struct {
-		// Type is the type of the root filesystem.
-		Type string `json:"type"`
-		// Layers are the layers of the image.
-		Layers []string `json:"layers"`
-	} `json:"rootFs"`
-
-	// RepoTags is a list of tag references, excluding digest-pinned names.
-	//
-	// Required: true
-	RepoTags []string `json:"repoTags"`
-
-	// RepoDigests is a list of content-addressable digests of the image.
-	//
-	// Required: true
-	RepoDigests []string `json:"repoDigests"`
-
-	// PinnedReferences contains exact digest-pinned references used by containers.
-	//
-	// Required: false
-	PinnedReferences []string `json:"pinnedReferences,omitempty"`
-
-	// Config contains the configuration of the image.
-	//
-	// Required: true
-	Config struct {
-		// ExposedPorts are the ports exposed by the image.
-		ExposedPorts map[string]struct{} `json:"exposedPorts,omitempty"`
-		// Volumes are the volumes defined in the image.
-		Volumes map[string]struct{} `json:"volumes,omitempty"`
-		// WorkingDir is the working directory in the container.
-		WorkingDir string `json:"workingDir,omitempty"`
-		// Env are the environment variables set in the image.
-		Env []string `json:"env,omitempty"`
-		// Cmd is the default command to run in the container.
-		Cmd []string `json:"cmd,omitempty"`
-		// ArgsEscaped indicates if the arguments are escaped.
-		ArgsEscaped bool `json:"argsEscaped,omitempty"`
-	} `json:"config"`
-
-	// Size is the total size of the image.
-	//
-	// Required: true
-	Size int64 `json:"size"`
-}
-
-// ImagePullOptions contains options for pulling an image.
-type ImagePullOptions struct {
-	// ImageName is the name of the image to pull.
-	//
-	// Required: true
-	ImageName string `json:"imageName" minLength:"1" doc:"Name of the image to pull (e.g., nginx)"`
-
-	// Tag is the tag of the image to pull. Defaults to 'latest'.
-	//
-	// Required: false
-	Tag string `json:"tag,omitempty" doc:"Tag of the image to pull (e.g., latest)"`
-
-	// Auth for authenticating with private registries (legacy field name).
-	//
-	// Required: false
-	Auth *ContainerRegistryCredential `json:"auth,omitempty"`
-
-	// Credentials for authenticating with private registries.
-	//
-	// Required: false
-	Credentials []ContainerRegistryCredential `json:"credentials,omitempty"`
 }
 
 // GetFullImageName returns the image name with tag.
@@ -574,46 +616,6 @@ func NewImageDetailSummary(src *image.InspectResponse) ImageDetailSummary {
 	}
 
 	return out
-}
-
-// ImageBuildRecord represents a historical image build entry.
-//
-//nolint:recvcheck // Rows read the environment by value and set it through a pointer.
-type ImageBuildRecord struct {
-	CreatedAt       time.Time         `json:"createdAt" sortable:"true"`
-	BuildArgs       map[string]string `json:"buildArgs,omitempty"`
-	UserID          *string           `json:"userId,omitempty"`
-	Username        *string           `json:"username,omitempty"`
-	Digest          *string           `json:"digest,omitempty"`
-	ErrorMessage    *string           `json:"errorMessage,omitempty"`
-	Output          *string           `json:"output,omitempty"`
-	CompletedAt     *time.Time        `json:"completedAt,omitempty" sortable:"true"`
-	DurationMs      *int64            `json:"durationMs,omitempty"`
-	Labels          map[string]string `json:"labels,omitempty"`
-	Ulimits         map[string]string `json:"ulimits,omitempty"`
-	ID              string            `json:"id" sortable:"true"`
-	EnvironmentID   string            `json:"environmentId"`
-	EnvironmentName string            `json:"environmentName,omitempty"`
-	Status          string            `json:"status" sortable:"true"`
-	Provider        string            `json:"provider,omitempty"`
-	ContextDir      string            `json:"contextDir"`
-	Dockerfile      string            `json:"dockerfile,omitempty"`
-	Target          string            `json:"target,omitempty"`
-	Network         string            `json:"network,omitempty"`
-	Isolation       string            `json:"isolation,omitempty"`
-	Tags            []string          `json:"tags,omitempty"`
-	Platforms       []string          `json:"platforms,omitempty"`
-	CacheFrom       []string          `json:"cacheFrom,omitempty"`
-	CacheTo         []string          `json:"cacheTo,omitempty"`
-	Entitlements    []string          `json:"entitlements,omitempty"`
-	ExtraHosts      []string          `json:"extraHosts,omitempty"`
-	ShmSize         int64             `json:"shmSize,omitempty"`
-	NoCache         bool              `json:"noCache"`
-	Pull            bool              `json:"pull"`
-	Privileged      bool              `json:"privileged"`
-	Push            bool              `json:"push"`
-	Load            bool              `json:"load"`
-	OutputTruncated bool              `json:"outputTruncated"`
 }
 
 func (r ImageBuildRecord) Environment() EnvironmentRef {

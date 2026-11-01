@@ -17,21 +17,25 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 )
 
-const defaultSystemBusAddress = "unix:path=/run/dbus/system_bus_socket"
+type (
+	Systemd interface {
+		Availability(ctx context.Context) types.PodmanSystemdAvailability
+		Start(ctx context.Context, unit string) error
+		Stop(ctx context.Context, unit string) error
+		Restart(ctx context.Context, unit string) error
+		UnitStatus(ctx context.Context, unit string) (types.PodmanUnitStatus, error)
+	}
 
-type Systemd interface {
-	Availability(ctx context.Context) types.PodmanSystemdAvailability
-	Start(ctx context.Context, unit string) error
-	Stop(ctx context.Context, unit string) error
-	Restart(ctx context.Context, unit string) error
-	UnitStatus(ctx context.Context, unit string) (types.PodmanUnitStatus, error)
-}
+	dbusSystemd struct {
+		address string
+		scope   types.PodmanSystemdScope
+		reason  string
+	}
+)
 
-type dbusSystemd struct {
-	address string
-	scope   types.PodmanSystemdScope
-	reason  string
-}
+const (
+	defaultSystemBusAddress = "unix:path=/run/dbus/system_bus_socket"
+)
 
 func NewSystemd(host string, rootless bool, getenv func(string) string) Systemd {
 	scope := kit.Ternary(rootless, types.PodmanSystemdScopeUser, types.PodmanSystemdScopeSystem)

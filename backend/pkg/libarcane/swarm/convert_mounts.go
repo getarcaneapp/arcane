@@ -16,6 +16,16 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
+type (
+	resolvedFileReference struct {
+		meta   resourceMeta
+		target string
+		uid    string
+		gid    string
+		mode   os.FileMode
+	}
+)
+
 func convertServiceMounts(
 	volumes []composegotypes.ServiceVolumeConfig,
 	ns namespace,
@@ -96,14 +106,6 @@ func resolveServiceMountSource(
 		return "", composegotypes.VolumeConfig{}, fmt.Errorf("undefined volume %q", source)
 	}
 	return ns.Resolve(source, projectVolume.Name), projectVolume, nil
-}
-
-type resolvedFileReference struct {
-	meta   resourceMeta
-	target string
-	uid    string
-	gid    string
-	mode   os.FileMode
 }
 
 func resolveServiceFileReferences(

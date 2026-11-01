@@ -25,9 +25,12 @@ formatters:
   settings:
     gci:
       sections:
-        - prefix(arena,archive/,bufio,bytes,cmp,compress/,container/,context,crypto,database/,debug/,embed,encoding,errors,expvar,flag,fmt,go/,hash,html,image,index/,io,iter,log,maps,math,mime,net,os,path,plugin,reflect,regexp,runtime,slices,sort,strconv,strings,structs,sync,syscall,testing,text/,time,unicode,unique,unsafe,uuid,weak)
+        - standard
         - default
         - localmodule
+        # - prefix(arena,archive/,bufio,bytes,cmp,compress/,container/,context,crypto,database/,debug/,embed,encoding,errors,expvar,flag,fmt,go/,hash,html,image,index/,io,iter,log,maps,math,mime,net,os,path,plugin,reflect,regexp,runtime,slices,sort,strconv,strings,structs,sync,syscall,testing,text/,time,unicode,unique,unsafe,uuid,weak)
+        # - default
+        # - localmodule
       custom-order: true
     gofumpt:
       extra:
@@ -39,15 +42,18 @@ linters:
   default: none
   enable:
     - copyloopvar
+    - decorder
     - depguard
     - errcheck
     - errorlint
+    - exptostd
     - exhaustruct_v5
     - forbidigo
     - gocognit
     - gocritic
     - gomodguard_v2
     - govet
+    - grouper
     - importas
     - ineffassign
     - lll
@@ -67,6 +73,17 @@ linters:
     - gocyclo
 
   settings:
+    decorder:
+      dec-order:
+        - type
+        - const
+        - var
+        - func
+      ignore-underscore-vars: false
+      disable-dec-order-check: false
+      disable-init-func-first-check: false
+      disable-dec-num-check: true
+
     depguard:
       rules:
         main:
@@ -142,11 +159,11 @@ linters:
 
     grouper:
       const-require-single-const: true
-      const-require-grouping: true
+      const-require-grouping: false
       var-require-single-var: true
-      var-require-grouping: true
+      var-require-grouping: false
       type-require-single-type: true
-      type-require-grouping: true
+      type-require-grouping: false
 
     nakedret:
       # Disallow naked returns if func has more lines of code than this setting.

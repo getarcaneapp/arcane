@@ -31,6 +31,103 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
+type (
+	registerJobsParams struct {
+		fx.In
+
+		Lifecycle fx.Lifecycle
+		AppCtx    context.Context
+		Config    *config.Config
+		Scheduler types.JobScheduler
+
+		Activity    *activity.ActivityService
+		GitOpsSync  *gitops.GitOpsSyncService
+		Environment *environment.EnvironmentService
+		JobSchedule *job.JobService
+		Settings    *settings.SettingsService
+		Volume      *volume.VolumeService
+		System      *system.SystemService
+		Admission   *runs.Admission
+		Apns        *apns.ApnsService
+
+		AutoUpdate             *flow.Job `name:"auto-update"`
+		ImageUpdateWatcher     *scheduler.ImageUpdateWatcher
+		DockerClientRefresh    *scheduler.DockerClientRefreshJob
+		Analytics              *scheduler.AnalyticsJob
+		UpgradeLogCleanup      types.SchedulerJob `name:"upgrade-log-cleanup"`
+		EventCleanup           *scheduler.EventCleanupJob
+		PruningVolumeHelper    *scheduler.PruningVolumeHelperJob
+		ExpiredSessionsCleanup *scheduler.ExpiredSessionsCleanupJob
+		ScheduledPrune         *scheduler.ScheduledPruneJob
+		FilesystemWatcher      *scheduler.FilesystemWatcherJob
+		VulnerabilityScan      *flow.Job `name:"vulnerability-scan"`
+		VulnerabilityRisk      *scheduler.VulnerabilityRiskJob
+		AutoPatch              *flow.Job `name:"auto-patch"`
+		AutoHeal               *scheduler.AutoHealJob
+		ActivitySweep          *scheduler.ActivitySweepJob
+		UploadSessionsCleanup  *scheduler.UploadSessionsCleanupJob
+		GitCloneCleanup        *scheduler.GitCloneCleanupJob
+		BackupRepositoryPrune  *scheduler.BackupRepositoryPruneJob
+		ApnsOutbox             *scheduler.ApnsOutboxJob
+	}
+
+	dynamicJobsParams struct {
+		AppCtx      context.Context
+		Config      *config.Config
+		Scheduler   types.JobScheduler
+		GitOpsSync  *gitops.GitOpsSyncService
+		Environment *environment.EnvironmentService
+		JobSchedule *job.JobService
+		Volume      *volume.VolumeService
+		System      *system.SystemService
+		Admission   *runs.Admission
+	}
+
+	settingsSubscriptionsParams struct {
+		Lifecycle    fx.Lifecycle
+		LifecycleCtx context.Context
+		Config       *config.Config
+		Scheduler    settingsEffectsScheduler
+		Settings     settingsChangeSubscriber
+		Environment  timeoutSettingsEnvironment
+		JobSchedule  *job.JobService
+
+		AutoUpdate         *flow.Job
+		ImageUpdateWatcher *scheduler.ImageUpdateWatcher
+		FilesystemWatcher  *scheduler.FilesystemWatcherJob
+		ScheduledPrune     *scheduler.ScheduledPruneJob
+		VulnerabilityScan  *flow.Job
+		VulnerabilityRisk  *scheduler.VulnerabilityRiskJob
+		AutoPatch          *flow.Job
+		AutoHeal           *scheduler.AutoHealJob
+		Apns               *apns.ApnsService
+		ApnsOutbox         *scheduler.ApnsOutboxJob
+	}
+
+	settingsChangeSubscriber interface {
+		SubscribeSettingsChanges(keys []string, callback func([]libarcane.SettingUpdate)) func()
+	}
+
+	settingsEffectsScheduler interface {
+		RescheduleJob(ctx context.Context, job types.SchedulerJob) error
+	}
+
+	timeoutSettingsEnvironment interface {
+		ListRemoteEnvironments(ctx context.Context) ([]environment.Environment, error)
+		ProxyRequest(ctx context.Context, envID, method, path string, body []byte) ([]byte, int, error)
+	}
+
+	timeoutSyncWorker struct {
+		ctx     context.Context
+		updates map[string]string
+		wake    chan struct{}
+		done    chan struct{}
+		cancel  context.CancelFunc
+		mu      sync.Mutex
+		closed  bool
+	}
+)
+
 func newJobScheduler(
 	appCtx context.Context,
 	lc fx.Lifecycle,
@@ -195,45 +292,6 @@ func reconcileCoordinatorStartup(
 	return jobs.ReconcileStartupActivities(ctx, activities...)
 }
 
-type registerJobsParams struct {
-	fx.In
-
-	Lifecycle fx.Lifecycle
-	AppCtx    context.Context
-	Config    *config.Config
-	Scheduler types.JobScheduler
-
-	Activity    *activity.ActivityService
-	GitOpsSync  *gitops.GitOpsSyncService
-	Environment *environment.EnvironmentService
-	JobSchedule *job.JobService
-	Settings    *settings.SettingsService
-	Volume      *volume.VolumeService
-	System      *system.SystemService
-	Admission   *runs.Admission
-	Apns        *apns.ApnsService
-
-	AutoUpdate             *flow.Job `name:"auto-update"`
-	ImageUpdateWatcher     *scheduler.ImageUpdateWatcher
-	DockerClientRefresh    *scheduler.DockerClientRefreshJob
-	Analytics              *scheduler.AnalyticsJob
-	UpgradeLogCleanup      types.SchedulerJob `name:"upgrade-log-cleanup"`
-	EventCleanup           *scheduler.EventCleanupJob
-	PruningVolumeHelper    *scheduler.PruningVolumeHelperJob
-	ExpiredSessionsCleanup *scheduler.ExpiredSessionsCleanupJob
-	ScheduledPrune         *scheduler.ScheduledPruneJob
-	FilesystemWatcher      *scheduler.FilesystemWatcherJob
-	VulnerabilityScan      *flow.Job `name:"vulnerability-scan"`
-	VulnerabilityRisk      *scheduler.VulnerabilityRiskJob
-	AutoPatch              *flow.Job `name:"auto-patch"`
-	AutoHeal               *scheduler.AutoHealJob
-	ActivitySweep          *scheduler.ActivitySweepJob
-	UploadSessionsCleanup  *scheduler.UploadSessionsCleanupJob
-	GitCloneCleanup        *scheduler.GitCloneCleanupJob
-	BackupRepositoryPrune  *scheduler.BackupRepositoryPruneJob
-	ApnsOutbox             *scheduler.ApnsOutboxJob
-}
-
 func registerJobs(params registerJobsParams) error {
 	params.JobSchedule.SetScheduler(params.AppCtx, params.Scheduler)
 
@@ -305,18 +363,6 @@ func registerJobs(params registerJobsParams) error {
 	return nil
 }
 
-type dynamicJobsParams struct {
-	AppCtx      context.Context
-	Config      *config.Config
-	Scheduler   types.JobScheduler
-	GitOpsSync  *gitops.GitOpsSyncService
-	Environment *environment.EnvironmentService
-	JobSchedule *job.JobService
-	Volume      *volume.VolumeService
-	System      *system.SystemService
-	Admission   *runs.Admission
-}
-
 // registerDynamicJobs injects the scheduler into the services that own per-entity
 // jobs and registers the jobs for already-existing entities at startup. AddJob is
 // an idempotent upsert, so these run safely before the scheduler is started.
@@ -355,40 +401,6 @@ func registerDynamicJobs(params dynamicJobsParams) error {
 		params.Environment.RescheduleHealthJobs(params.AppCtx)
 	}
 	return nil
-}
-
-type settingsSubscriptionsParams struct {
-	Lifecycle    fx.Lifecycle
-	LifecycleCtx context.Context
-	Config       *config.Config
-	Scheduler    settingsEffectsScheduler
-	Settings     settingsChangeSubscriber
-	Environment  timeoutSettingsEnvironment
-	JobSchedule  *job.JobService
-
-	AutoUpdate         *flow.Job
-	ImageUpdateWatcher *scheduler.ImageUpdateWatcher
-	FilesystemWatcher  *scheduler.FilesystemWatcherJob
-	ScheduledPrune     *scheduler.ScheduledPruneJob
-	VulnerabilityScan  *flow.Job
-	VulnerabilityRisk  *scheduler.VulnerabilityRiskJob
-	AutoPatch          *flow.Job
-	AutoHeal           *scheduler.AutoHealJob
-	Apns               *apns.ApnsService
-	ApnsOutbox         *scheduler.ApnsOutboxJob
-}
-
-type settingsChangeSubscriber interface {
-	SubscribeSettingsChanges(keys []string, callback func([]libarcane.SettingUpdate)) func()
-}
-
-type settingsEffectsScheduler interface {
-	RescheduleJob(ctx context.Context, job types.SchedulerJob) error
-}
-
-type timeoutSettingsEnvironment interface {
-	ListRemoteEnvironments(ctx context.Context) ([]environment.Environment, error)
-	ProxyRequest(ctx context.Context, envID, method, path string, body []byte) ([]byte, int, error)
 }
 
 func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
@@ -466,16 +478,6 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 		},
 	})
 	return nil
-}
-
-type timeoutSyncWorker struct {
-	ctx     context.Context
-	updates map[string]string
-	wake    chan struct{}
-	done    chan struct{}
-	cancel  context.CancelFunc
-	mu      sync.Mutex
-	closed  bool
 }
 
 func (w *timeoutSyncWorker) Stop(ctx context.Context) error {

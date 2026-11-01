@@ -53,11 +53,13 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v3/pkg/webhooks"
 )
 
-type rootOptions struct {
-	logLevel, configPath, outputMode, envOverride  string
-	logJSON, showVersion, assumeYes, noColor, json bool
-	requestTimeout                                 time.Duration
-}
+type (
+	rootOptions struct {
+		logLevel, configPath, outputMode, envOverride  string
+		logJSON, showVersion, assumeYes, noColor, json bool
+		requestTimeout                                 time.Duration
+	}
+)
 
 // NewRootCommand builds a fresh Arcane CLI command tree.
 func NewRootCommand() *cobra.Command {

@@ -18,44 +18,46 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
-// ProjectUpdateBackupScope describes exactly what a project update can mutate,
-// so the pre-update backup copies only those paths instead of the whole
-// project directory (which may contain huge container data directories).
-type ProjectUpdateBackupScope struct {
-	// Paths are normalized project-relative paths a file change can create,
-	// overwrite or delete.
-	Paths []string
-	// RenamedDirs holds {src, dest} pairs for a rename/move of an existing
-	// directory. These are rolled back with an inverse rename instead of a
-	// copy, so a huge directory move never triggers a full copy.
-	RenamedDirs [][2]string
-	// TopLevelFiles backs up every top-level regular file in the project
-	// directory. Compose/env persistence only ever writes top-level files.
-	TopLevelFiles bool
-}
+type (
+	// ProjectUpdateBackupScope describes exactly what a project update can mutate,
+	// so the pre-update backup copies only those paths instead of the whole
+	// project directory (which may contain huge container data directories).
+	ProjectUpdateBackupScope struct {
+		// Paths are normalized project-relative paths a file change can create,
+		// overwrite or delete.
+		Paths []string
+		// RenamedDirs holds {src, dest} pairs for a rename/move of an existing
+		// directory. These are rolled back with an inverse rename instead of a
+		// copy, so a huge directory move never triggers a full copy.
+		RenamedDirs [][2]string
+		// TopLevelFiles backs up every top-level regular file in the project
+		// directory. Compose/env persistence only ever writes top-level files.
+		TopLevelFiles bool
+	}
 
-type projectUpdateEnvSymlinkBackup struct {
-	relativePath string
-	linkTarget   string
-	resolvedPath string
-}
+	projectUpdateEnvSymlinkBackup struct {
+		relativePath string
+		linkTarget   string
+		resolvedPath string
+	}
+
+	// ProjectUpdateBackup records what BackupProjectUpdateScope copied so
+	// RestoreProjectUpdateBackup can put the project directory back without
+	// touching anything outside the update's scope.
+	ProjectUpdateBackup struct {
+		envSymlink    *projectUpdateEnvSymlinkBackup
+		BackupDir     string
+		FileEntries   []string    // regular file contents copied into BackupDir
+		DirEntries    []string    // directories copied recursively
+		AbsentEntries []string    // did not exist at backup time -> removed on restore
+		RenamedDirs   [][2]string // undone via inverse rename on restore
+		Skipped       []string    // unreadable, skipped; preserved on restore
+		TopLevelFiles bool
+	}
+)
 
 func (s ProjectUpdateBackupScope) IsEmpty() bool {
 	return !s.TopLevelFiles && len(s.Paths) == 0 && len(s.RenamedDirs) == 0
-}
-
-// ProjectUpdateBackup records what BackupProjectUpdateScope copied so
-// RestoreProjectUpdateBackup can put the project directory back without
-// touching anything outside the update's scope.
-type ProjectUpdateBackup struct {
-	envSymlink    *projectUpdateEnvSymlinkBackup
-	BackupDir     string
-	FileEntries   []string    // regular file contents copied into BackupDir
-	DirEntries    []string    // directories copied recursively
-	AbsentEntries []string    // did not exist at backup time -> removed on restore
-	RenamedDirs   [][2]string // undone via inverse rename on restore
-	Skipped       []string    // unreadable, skipped; preserved on restore
-	TopLevelFiles bool
 }
 
 // BackupProjectUpdateScope copies the parts of projectDir named by scope into

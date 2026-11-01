@@ -10,20 +10,21 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/upload"
 )
 
+type (
+	// UploadSessionsCleanupJob purges upload sessions that have been idle for
+	// longer than uploadSessionMaxAge. It runs on managers and agents alike,
+	// since sessions live on whichever node serves the environment.
+	UploadSessionsCleanupJob struct {
+		uploadService *upload.UploadService
+	}
+)
+
 const (
 	// UploadSessionsCleanupJobName identifies the hourly purge of idle chunked
 	// upload sessions.
 	UploadSessionsCleanupJobName = "upload-sessions-cleanup"
-
-	uploadSessionMaxAge = 24 * time.Hour
+	uploadSessionMaxAge          = 24 * time.Hour
 )
-
-// UploadSessionsCleanupJob purges upload sessions that have been idle for
-// longer than uploadSessionMaxAge. It runs on managers and agents alike,
-// since sessions live on whichever node serves the environment.
-type UploadSessionsCleanupJob struct {
-	uploadService *upload.UploadService
-}
 
 // NewUploadSessionsCleanupJob builds the cleanup job for the scheduler.
 func NewUploadSessionsCleanupJob(uploadService *upload.UploadService) *UploadSessionsCleanupJob {

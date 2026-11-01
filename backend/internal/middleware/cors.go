@@ -13,10 +13,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 )
 
-type CORSMiddleware struct {
-	cfg           *config.Config
-	customOrigins []string
-}
+type (
+	CORSMiddleware struct {
+		cfg           *config.Config
+		customOrigins []string
+	}
+)
 
 func NewCORSMiddleware(cfg *config.Config) *CORSMiddleware {
 	return &CORSMiddleware{cfg: cfg}

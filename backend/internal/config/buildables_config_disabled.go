@@ -2,9 +2,11 @@
 
 package config
 
-// BuildablesConfig provides stub fields when buildables are not enabled.
-// This keeps references compile-safe while avoiding env-based configuration.
-type BuildablesConfig struct {
-	AutoLoginUsername string
-	AutoLoginPassword string
-}
+type (
+	// BuildablesConfig provides stub fields when buildables are not enabled.
+	// This keeps references compile-safe while avoiding env-based configuration.
+	BuildablesConfig struct {
+		AutoLoginUsername string
+		AutoLoginPassword string
+	}
+)

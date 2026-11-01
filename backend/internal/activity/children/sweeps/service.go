@@ -13,13 +13,26 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 )
 
+type (
+	// Candidate is the part of an activity row a sweep decides on.
+	Candidate struct {
+		StartedAt time.Time
+		Metadata  database.JSON `gorm:"type:text"`
+		ID        string
+	}
+
+	// Service runs the candidate queries behind the periodic activity sweeps.
+	Service struct {
+		db *database.DB
+	}
+)
+
 const (
 	staleImageUpdateCheckAge = 6 * time.Hour
 	// abandonedActivityGrace is how old an untracked queued/running activity
 	// must be before the periodic sweep fails it. It covers the window between
 	// StartActivity's row creation and the worker's Track call.
 	abandonedActivityGrace = 2 * time.Minute
-
 	// abandonedActivitySweepLimit bounds one sweep; later sweeps take the rest.
 	abandonedActivitySweepLimit = 500
 )
@@ -30,18 +43,6 @@ var backupActions = []string{
 	"run_system_volume_backups",
 	"scheduled_volume_backup",
 	"scheduled_system_backup",
-}
-
-// Candidate is the part of an activity row a sweep decides on.
-type Candidate struct {
-	StartedAt time.Time
-	Metadata  database.JSON `gorm:"type:text"`
-	ID        string
-}
-
-// Service runs the candidate queries behind the periodic activity sweeps.
-type Service struct {
-	db *database.DB
 }
 
 // NewService returns a sweeps query service over db.

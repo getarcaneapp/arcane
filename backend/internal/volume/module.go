@@ -19,24 +19,26 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// Module wires the volume domain and mounts its routes.
-type Module struct {
-	service            *VolumeService
-	dockerService      *docker.DockerClientService
-	activityService    *activity.ActivityService
-	environmentService *environment.EnvironmentService
-	uploadService      *upload.UploadService
-}
+type (
+	// Module wires the volume domain and mounts its routes.
+	Module struct {
+		service            *VolumeService
+		dockerService      *docker.DockerClientService
+		activityService    *activity.ActivityService
+		environmentService *environment.EnvironmentService
+		uploadService      *upload.UploadService
+	}
 
-type Params struct {
-	fx.In
+	Params struct {
+		fx.In
 
-	Service            *VolumeService
-	DockerService      *docker.DockerClientService
-	ActivityService    *activity.ActivityService
-	EnvironmentService *environment.EnvironmentService
-	UploadService      *upload.UploadService
-}
+		Service            *VolumeService
+		DockerService      *docker.DockerClientService
+		ActivityService    *activity.ActivityService
+		EnvironmentService *environment.EnvironmentService
+		UploadService      *upload.UploadService
+	}
+)
 
 // New wires volume routes around an existing service.
 func New(p Params) *Module {

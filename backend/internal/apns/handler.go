@@ -11,27 +11,29 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type ApnsHandler struct {
-	service *ApnsService
-}
+type (
+	ApnsHandler struct {
+		service *ApnsService
+	}
 
-type RegisterDeviceInput struct {
-	Body types.ApnsRegisterDeviceRequest
-}
+	RegisterDeviceInput struct {
+		Body types.ApnsRegisterDeviceRequest
+	}
 
-type UpdateDeviceInput struct {
-	ID string `path:"id" doc:"Device ID"`
-	types.Update[types.ApnsDevice]
-}
+	UpdateDeviceInput struct {
+		ID string `path:"id" doc:"Device ID"`
+		types.Update[types.ApnsDevice]
+	}
 
-type DeviceIDInput struct {
-	ID string `path:"id" doc:"Device ID"`
-}
+	DeviceIDInput struct {
+		ID string `path:"id" doc:"Device ID"`
+	}
 
-type DeviceActionInput struct {
-	ID     string `path:"id" doc:"Device ID"`
-	Action string `query:"action" required:"true" enum:"test" doc:"Device action"`
-}
+	DeviceActionInput struct {
+		ID     string `path:"id" doc:"Device ID"`
+		Action string `query:"action" required:"true" enum:"test" doc:"Device action"`
+	}
+)
 
 func securedApnsOperation(operationID, method, path, summary, description string) huma.Operation {
 	op := handlerutil.Operation(operationID, method, path, summary, description, "Mobile Push")

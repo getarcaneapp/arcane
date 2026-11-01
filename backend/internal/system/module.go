@@ -18,12 +18,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// Module wires the system domain and mounts its routes.
-type Module struct {
-	service         *SystemService
-	activityService *activity.ActivityService
-	cfg             *config.Config
-}
+type (
+	// Module wires the system domain and mounts its routes.
+	Module struct {
+		service         *SystemService
+		activityService *activity.ActivityService
+		cfg             *config.Config
+	}
+)
 
 // New wires system routes around an existing service.
 func New(

@@ -28,6 +28,15 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
+type (
+	capturedVariableSyncRequest struct {
+		Method  string
+		Path    string
+		Headers map[string]string
+		Body    []byte
+	}
+)
+
 func newSettingsServiceForVariableTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
 	svc, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
@@ -243,13 +252,6 @@ func TestSyncEnvironment_LocalWritesEnvGlobalFile(t *testing.T) {
 	statuses := service.SyncStatuses()
 	require.Len(t, statuses, 1)
 	require.Equal(t, "synced", statuses[0].Status)
-}
-
-type capturedVariableSyncRequest struct {
-	Method  string
-	Path    string
-	Headers map[string]string
-	Body    []byte
 }
 
 func TestSyncEnvironment_AgentMaterializesSecretsThroughAgentRoute(t *testing.T) {

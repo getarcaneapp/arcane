@@ -54,6 +54,35 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
+type (
+	initializeStartupStateParams struct {
+		fx.In
+
+		AppCtx context.Context
+		Config *config.Config
+		DB     *database.DB
+
+		Volume      *volume.VolumeService
+		Settings    *settings.SettingsService
+		Environment *environment.EnvironmentService
+		Activity    *activity.ActivityService
+		Event       *event.EventService
+		GitOpsSync  *gitops.GitOpsSyncService
+		Project     *project.ProjectService
+		Container   *container.ContainerService
+		Image       *image.ImageService
+		Variable    *variable.VariableService
+		Role        *role.RoleService
+		Auth        *auth.AuthService
+		User        *user.UserService
+		ApiKey      *apikey.ApiKeyService
+	}
+)
+
+const (
+	startupTaskTimeout = 30 * time.Second
+)
+
 func Bootstrap(ctx context.Context) error {
 	if err := gotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("load .env: %w", err)
@@ -303,31 +332,6 @@ func applicationOptions(appCtx context.Context, cfg *config.Config, settingsEnv 
 		fx.StopTimeout(7*time.Second),
 	)
 }
-
-type initializeStartupStateParams struct {
-	fx.In
-
-	AppCtx context.Context
-	Config *config.Config
-	DB     *database.DB
-
-	Volume      *volume.VolumeService
-	Settings    *settings.SettingsService
-	Environment *environment.EnvironmentService
-	Activity    *activity.ActivityService
-	Event       *event.EventService
-	GitOpsSync  *gitops.GitOpsSyncService
-	Project     *project.ProjectService
-	Container   *container.ContainerService
-	Image       *image.ImageService
-	Variable    *variable.VariableService
-	Role        *role.RoleService
-	Auth        *auth.AuthService
-	User        *user.UserService
-	ApiKey      *apikey.ApiKeyService
-}
-
-const startupTaskTimeout = 30 * time.Second
 
 func initializeStartupState(p initializeStartupStateParams) {
 	p.Activity.Changes.Subscribe(func(environmentID string) {

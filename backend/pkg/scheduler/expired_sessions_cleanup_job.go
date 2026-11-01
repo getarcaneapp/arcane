@@ -12,12 +12,16 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
 )
 
-const ExpiredSessionsCleanupJobName = "expired-sessions-cleanup"
+type (
+	ExpiredSessionsCleanupJob struct {
+		sessionService  *session.SessionService
+		settingsService *settings.SettingsService
+	}
+)
 
-type ExpiredSessionsCleanupJob struct {
-	sessionService  *session.SessionService
-	settingsService *settings.SettingsService
-}
+const (
+	ExpiredSessionsCleanupJobName = "expired-sessions-cleanup"
+)
 
 func NewExpiredSessionsCleanupJob(sessionService *session.SessionService, settingsService *settings.SettingsService) *ExpiredSessionsCleanupJob {
 	return &ExpiredSessionsCleanupJob{

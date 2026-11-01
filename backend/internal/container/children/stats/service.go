@@ -34,6 +34,48 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 )
 
+type (
+	// Service collects container stats through the parent's Docker client.
+	Service struct {
+		flight        singleflight.Group
+		getClient     func(context.Context) (*client.Client, error)
+		dockerHost    func() string
+		cache         *hot.HotCache[string, cachedStats]
+		inspectCache  *hot.HotCache[string, container.InspectResponse]
+		history       stats.Store
+		sampleTimeout time.Duration
+		batchTimeout  time.Duration
+	}
+
+	// cachedStats records when Arcane fetched a sample, so freshness checks don't depend on the daemon's clock.
+	cachedStats struct {
+		fetchedAt time.Time
+		stats     container.StatsResponse
+	}
+
+	resourceSample struct {
+		inspect *container.InspectResponse
+		stats   container.StatsResponse
+	}
+
+	resourceInstruments struct {
+		cpuTime                  metric.Float64ObservableCounter
+		cpuUtilization, uptime   metric.Float64ObservableGauge
+		memoryUsage, memoryLimit metric.Int64ObservableGauge
+		pids                     metric.Int64ObservableGauge
+		networkIO, diskIO        metric.Int64ObservableCounter
+		restarts                 metric.Int64ObservableCounter
+	}
+
+	Params struct {
+		GetClient     func(context.Context) (*client.Client, error)
+		DockerHost    func() string
+		CacheTTL      time.Duration
+		SampleTimeout time.Duration
+		BatchTimeout  time.Duration
+	}
+)
+
 const (
 	ContainerResourceSampleTTL          = 5 * time.Second
 	ContainerResourceSampleCacheSize    = 4096
@@ -41,46 +83,6 @@ const (
 	ContainerResourceCollectTimeout     = 3 * time.Second
 	ContainerMetricsCollectTimeout      = 20 * time.Second
 )
-
-// Service collects container stats through the parent's Docker client.
-type Service struct {
-	flight        singleflight.Group
-	getClient     func(context.Context) (*client.Client, error)
-	dockerHost    func() string
-	cache         *hot.HotCache[string, cachedStats]
-	inspectCache  *hot.HotCache[string, container.InspectResponse]
-	history       stats.Store
-	sampleTimeout time.Duration
-	batchTimeout  time.Duration
-}
-
-// cachedStats records when Arcane fetched a sample, so freshness checks don't depend on the daemon's clock.
-type cachedStats struct {
-	fetchedAt time.Time
-	stats     container.StatsResponse
-}
-
-type resourceSample struct {
-	inspect *container.InspectResponse
-	stats   container.StatsResponse
-}
-
-type resourceInstruments struct {
-	cpuTime                  metric.Float64ObservableCounter
-	cpuUtilization, uptime   metric.Float64ObservableGauge
-	memoryUsage, memoryLimit metric.Int64ObservableGauge
-	pids                     metric.Int64ObservableGauge
-	networkIO, diskIO        metric.Int64ObservableCounter
-	restarts                 metric.Int64ObservableCounter
-}
-
-type Params struct {
-	GetClient     func(context.Context) (*client.Client, error)
-	DockerHost    func() string
-	CacheTTL      time.Duration
-	SampleTimeout time.Duration
-	BatchTimeout  time.Duration
-}
 
 // New builds a stats service. Non-positive timeouts fall back to defaults.
 func New(p Params) *Service {

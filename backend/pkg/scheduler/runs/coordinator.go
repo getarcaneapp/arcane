@@ -26,27 +26,29 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
 )
 
-// Coordinator persists work before dispatching it to the owning domain.
-type Coordinator struct {
-	lifecycleCtx context.Context
-	observer     types.RunObserver
-	observers    utils.KeyedMutex
-	mutations    utils.KeyedMutex
-	store        *kv.KVService
-	service      *actor.Service
-	runtime      *francis.Runtime
-	cancel       context.CancelFunc
-	done         chan struct{}
-	wake         chan struct{}
-	execute      func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error)
-	reconcile    func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error)
-	location     *time.Location
-	owner        string
-	mu           sync.Mutex
-	enabled      atomic.Bool
-	stopping     bool
-	started      bool
-}
+type (
+	// Coordinator persists work before dispatching it to the owning domain.
+	Coordinator struct {
+		lifecycleCtx context.Context
+		observer     types.RunObserver
+		observers    utils.KeyedMutex
+		mutations    utils.KeyedMutex
+		store        *kv.KVService
+		service      *actor.Service
+		runtime      *francis.Runtime
+		cancel       context.CancelFunc
+		done         chan struct{}
+		wake         chan struct{}
+		execute      func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error)
+		reconcile    func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error)
+		location     *time.Location
+		owner        string
+		mu           sync.Mutex
+		enabled      atomic.Bool
+		stopping     bool
+		started      bool
+	}
+)
 
 // Submit persists acceptance before waking the dispatcher. Run IDs deduplicate
 // requests within a job and environment. Manual and remote requests stay separate;

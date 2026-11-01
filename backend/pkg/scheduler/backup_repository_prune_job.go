@@ -12,15 +12,19 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
 )
 
-// BackupRepositoryPruneJobName identifies the periodic prune of the local backup repositories.
-const BackupRepositoryPruneJobName = "backup-repository-prune"
+type (
+	// BackupRepositoryPruneJob removes packs that deleted backups left marked for deletion.
+	// Internal job: no job_metadata entry, invisible in the Jobs UI.
+	BackupRepositoryPruneJob struct {
+		systemService *system.SystemService
+		volumeService *volume.VolumeService
+	}
+)
 
-// BackupRepositoryPruneJob removes packs that deleted backups left marked for deletion.
-// Internal job: no job_metadata entry, invisible in the Jobs UI.
-type BackupRepositoryPruneJob struct {
-	systemService *system.SystemService
-	volumeService *volume.VolumeService
-}
+const (
+	// BackupRepositoryPruneJobName identifies the periodic prune of the local backup repositories.
+	BackupRepositoryPruneJobName = "backup-repository-prune"
+)
 
 // NewBackupRepositoryPruneJob builds the prune job for the scheduler.
 func NewBackupRepositoryPruneJob(systemService *system.SystemService, volumeService *volume.VolumeService) *BackupRepositoryPruneJob {

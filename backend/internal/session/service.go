@@ -19,9 +19,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 )
 
-type SessionService struct {
-	db *database.DB
-}
+type (
+	SessionService struct {
+		db *database.DB
+	}
+)
 
 func NewSessionService(db *database.DB) *SessionService {
 	return &SessionService{db: db}

@@ -9,8 +9,10 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// InstrumentationName identifies spans, metrics, and logs emitted by Arcane code.
-const InstrumentationName = "github.com/getarcaneapp/arcane/backend"
+const (
+	// InstrumentationName identifies spans, metrics, and logs emitted by Arcane code.
+	InstrumentationName = "github.com/getarcaneapp/arcane/backend"
+)
 
 // End records err on span, marks the span failed, and ends it. Context
 // cancellation is treated as a normal outcome.

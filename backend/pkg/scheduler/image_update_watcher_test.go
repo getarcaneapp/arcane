@@ -18,16 +18,36 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
 )
 
-type imageUpdateScannerFake struct {
-	startedCh chan int
-	releaseCh <-chan struct{}
-	errors    []error
-	panics    []bool
-	calls     int
-	active    int
-	maxActive int
-	mu        sync.Mutex
-}
+type (
+	imageUpdateScannerFake struct {
+		startedCh chan int
+		releaseCh <-chan struct{}
+		errors    []error
+		panics    []bool
+		calls     int
+		active    int
+		maxActive int
+		mu        sync.Mutex
+	}
+
+	pollingSettingReaderFake struct {
+		schedule            string
+		mu                  sync.RWMutex
+		enabled             bool
+		eventWatcherEnabled bool
+	}
+
+	dockerEventBusProviderFake struct {
+		eventBus *bus.DockerEventBus
+	}
+
+	projectImageRefsBackfillerFake struct {
+		run     func(ctx context.Context, call int) (int, error)
+		started chan int
+		calls   int
+		mu      sync.Mutex
+	}
+)
 
 func (s *imageUpdateScannerFake) RunImageCheck(ctx context.Context, _ types.ImageUpdateCheckRequest) (types.SchedulerOutcome, error) {
 	s.mu.Lock()
@@ -81,13 +101,6 @@ func (s *imageUpdateScannerFake) peakActive() int {
 	return s.maxActive
 }
 
-type pollingSettingReaderFake struct {
-	schedule            string
-	mu                  sync.RWMutex
-	enabled             bool
-	eventWatcherEnabled bool
-}
-
 func (s *pollingSettingReaderFake) GetBoolSetting(_ context.Context, key string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -113,19 +126,8 @@ func (s *pollingSettingReaderFake) setEnabled(enabled bool) {
 	s.mu.Unlock()
 }
 
-type dockerEventBusProviderFake struct {
-	eventBus *bus.DockerEventBus
-}
-
 func (p dockerEventBusProviderFake) EventBus() *bus.DockerEventBus {
 	return p.eventBus
-}
-
-type projectImageRefsBackfillerFake struct {
-	run     func(ctx context.Context, call int) (int, error)
-	started chan int
-	calls   int
-	mu      sync.Mutex
 }
 
 func (b *projectImageRefsBackfillerFake) BackfillProjectImageRefs(ctx context.Context) (int, error) {

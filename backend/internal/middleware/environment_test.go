@@ -21,6 +21,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
+const (
+	proxyTestEnvID = "remote-1"
+)
+
 func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
 	return &EnvironmentMiddleware{
 		localID:   "0",
@@ -376,8 +380,6 @@ func TestIsManagementPath_VolumeBackupPolicyIsMethodAware(t *testing.T) {
 	assert.False(t, IsManagerLocalPath(http.MethodPost, "/volumes/app-data/backups/policy"))
 	assert.False(t, IsManagerLocalPath(http.MethodGet, "/volumes/app-data/backups"))
 }
-
-const proxyTestEnvID = "remote-1"
 
 func newProxyAuthzMiddleware(matcher *authz.PermissionMatcher) *EnvironmentMiddleware {
 	return &EnvironmentMiddleware{localID: "0", paramName: "id", matcher: matcher}

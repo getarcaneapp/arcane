@@ -17,6 +17,14 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+type (
+	settingsListConfig struct {
+		endpoint       func(string) string
+		failureMessage string
+		totalLabel     string
+	}
+)
+
 // Command is the parent command for settings operations
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
@@ -136,12 +144,6 @@ func newPublicCmd() *cobra.Command {
 			})
 		},
 	}
-}
-
-type settingsListConfig struct {
-	endpoint       func(string) string
-	failureMessage string
-	totalLabel     string
 }
 
 func runSettingsList(cmd *cobra.Command, cfg settingsListConfig) error {

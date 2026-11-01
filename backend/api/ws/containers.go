@@ -17,17 +17,19 @@ import (
 	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
 )
 
+type (
+	containersStatsResult struct {
+		samples map[string]*types.ContainerResourceSample
+		err     error
+	}
+)
+
 const (
 	// containersStatsInterval is the wall-clock period every subscription samples on.
 	containersStatsInterval = 2 * time.Second
 	// containersStatsReadLimit fits a subscription of 500 full container IDs, the most one batch samples.
 	containersStatsReadLimit = 64 << 10
 )
-
-type containersStatsResult struct {
-	samples map[string]*types.ContainerResourceSample
-	err     error
-}
 
 // ContainersStats streams resource samples for a client-chosen set of containers over one WebSocket.
 // The client sends a ResourceSampleSubscription whenever its set changes; the server answers with a

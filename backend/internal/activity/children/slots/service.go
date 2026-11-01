@@ -12,36 +12,38 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
+type (
+	// Service reads the limit from settings on every acquisition attempt, while
+	// held slots are counted independently of it — so changing the limit
+	// mid-flight never miscounts running work: existing holders keep occupying
+	// capacity until they release, and waiters are re-evaluated against the new
+	// limit.
+	Service struct {
+		settings *settings.SettingsService
+
+		state map[string]*environmentSlots
+
+		// releases maps an activity ID to the release func of the slot it holds;
+		// the slot is freed when the activity completes.
+		releases map[string]func()
+
+		mu         sync.Mutex
+		releasesMu sync.Mutex
+	}
+
+	environmentSlots struct {
+		// wake is closed (and replaced) on every release to broadcast to waiters;
+		// each re-checks against the current limit, so a raised limit can admit
+		// more than one of them.
+		wake chan struct{}
+		held int
+	}
+)
+
 const (
 	maxConcurrentActivitiesSettingKey = "maxConcurrentActivities"
 	slotWaitRecheckInterval           = 2 * time.Second
 )
-
-// Service reads the limit from settings on every acquisition attempt, while
-// held slots are counted independently of it — so changing the limit
-// mid-flight never miscounts running work: existing holders keep occupying
-// capacity until they release, and waiters are re-evaluated against the new
-// limit.
-type Service struct {
-	settings *settings.SettingsService
-
-	state map[string]*environmentSlots
-
-	// releases maps an activity ID to the release func of the slot it holds;
-	// the slot is freed when the activity completes.
-	releases map[string]func()
-
-	mu         sync.Mutex
-	releasesMu sync.Mutex
-}
-
-type environmentSlots struct {
-	// wake is closed (and replaced) on every release to broadcast to waiters;
-	// each re-checks against the current limit, so a raised limit can admit
-	// more than one of them.
-	wake chan struct{}
-	held int
-}
 
 // NewService returns a slot limiter sized from the local settings.
 func NewService(localSettings *settings.SettingsService) *Service {

@@ -21,21 +21,32 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 )
 
-type PlaywrightService struct {
-	apiKeyService     *apikey.ApiKeyService
-	userService       *user.UserService
-	repositoryService *gitrepo.GitRepositoryService
-	syncService       *gitops.GitOpsSyncService
-	projectService    *project.ProjectService
-}
+type (
+	PlaywrightService struct {
+		apiKeyService     *apikey.ApiKeyService
+		userService       *user.UserService
+		repositoryService *gitrepo.GitRepositoryService
+		syncService       *gitops.GitOpsSyncService
+		projectService    *project.ProjectService
+	}
 
-type PlaywrightServiceParams struct {
-	APIKeyService     *apikey.ApiKeyService
-	UserService       *user.UserService
-	RepositoryService *gitrepo.GitRepositoryService
-	SyncService       *gitops.GitOpsSyncService
-	ProjectService    *project.ProjectService
-}
+	PlaywrightServiceParams struct {
+		APIKeyService     *apikey.ApiKeyService
+		UserService       *user.UserService
+		RepositoryService *gitrepo.GitRepositoryService
+		SyncService       *gitops.GitOpsSyncService
+		ProjectService    *project.ProjectService
+	}
+)
+
+const (
+	testRepositoryName = "gitsyncs-test-repo"
+	testRepositoryURL  = "https://github.com/getarcaneapp/gitsyncs.git"
+	testSyncName       = "gitops-test-sync"
+	testProjectName    = "gitops-test-project"
+	testBranch         = "main"
+	testComposePath    = "compose-test-repo/compose.yaml"
+)
 
 func NewPlaywrightService(p PlaywrightServiceParams) *PlaywrightService {
 	return &PlaywrightService{
@@ -110,15 +121,6 @@ func (ps *PlaywrightService) DeleteAllTestApiKeys(ctx context.Context) error {
 	slog.InfoContext(ctx, "Playwright: Test API keys deleted", "count", len(apiKeys))
 	return nil
 }
-
-const (
-	testRepositoryName = "gitsyncs-test-repo"
-	testRepositoryURL  = "https://github.com/getarcaneapp/gitsyncs.git"
-	testSyncName       = "gitops-test-sync"
-	testProjectName    = "gitops-test-project"
-	testBranch         = "main"
-	testComposePath    = "compose-test-repo/compose.yaml"
-)
 
 // CreateTestGitOpsProject seeds the suite prerequisite through the real GitOps services.
 func (ps *PlaywrightService) CreateTestGitOpsProject(ctx context.Context) error {

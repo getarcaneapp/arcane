@@ -12,12 +12,44 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// Handler serves the swarm config endpoints.
-type Handler struct {
-	service  *Service
-	audit    func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
-	mapError func(err error, fallback string) error
-}
+type (
+	// Handler serves the swarm config endpoints.
+	Handler struct {
+		service  *Service
+		audit    func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
+		mapError func(err error, fallback string) error
+	}
+
+	ListSwarmConfigsInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
+
+	GetSwarmConfigInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ConfigID      string `path:"configId" doc:"Config ID"`
+	}
+
+	CreateSwarmConfigInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		types.Create[types.SwarmConfig]
+	}
+
+	UpdateSwarmConfigInput struct {
+		Body          types.SwarmConfigUpdateRequest
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ConfigID      string `path:"configId" doc:"Config ID"`
+	}
+
+	DeleteSwarmConfigInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ConfigID      string `path:"configId" doc:"Config ID"`
+	}
+)
 
 func NewHandler(
 	service *Service,
@@ -25,36 +57,6 @@ func NewHandler(
 	mapError func(err error, fallback string) error,
 ) *Handler {
 	return &Handler{service: service, audit: audit, mapError: mapError}
-}
-
-type ListSwarmConfigsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
-
-type GetSwarmConfigInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ConfigID      string `path:"configId" doc:"Config ID"`
-}
-
-type CreateSwarmConfigInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	types.Create[types.SwarmConfig]
-}
-
-type UpdateSwarmConfigInput struct {
-	Body          types.SwarmConfigUpdateRequest
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ConfigID      string `path:"configId" doc:"Config ID"`
-}
-
-type DeleteSwarmConfigInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ConfigID      string `path:"configId" doc:"Config ID"`
 }
 
 // ListConfigs lists swarm configs in the current environment.

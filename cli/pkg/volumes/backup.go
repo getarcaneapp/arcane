@@ -23,6 +23,49 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+type (
+	backupListOptions struct {
+		limitFlag int
+		startFlag int
+		allFlag   bool
+	}
+
+	backupPolicyOptions struct {
+		policySchedule       string
+		policyS3Destination  string
+		policyID             string
+		policyFile           string
+		policyRetention      int
+		policyEnabled        bool
+		policyStopContainers bool
+		policyLocal          bool
+		policyS3             bool
+	}
+)
+
+var backupRef = cmdutil.ResourceRef[types.VolumeBackupEntry, types.VolumeBackupEntry]{
+	EnvironmentScoped: true, Singular: "backup", Plural: "backups", IDHint: "the backup ID", ListCmd: "arcane-cli volumes backups list <volume-name>",
+	SearchCandidates: func(ctx context.Context, c *client.Client, identifier string) ([]types.VolumeBackupEntry, error) {
+		volumes, err := c.GetJSON[[]types.Volume](ctx, clitypes.Volumes(c.EnvID())+"?limit=-1")
+		if err != nil {
+			return nil, err
+		}
+		var matches []types.VolumeBackupEntry
+		var failures []error
+		for _, item := range volumes.Data {
+			backups, listErr := c.GetJSON[[]types.VolumeBackupEntry](ctx, clitypes.VolumeBackups(c.EnvID(), item.Name)+"?limit=-1")
+			if listErr != nil {
+				failures = append(failures, fmt.Errorf("%s: %w", item.Name, listErr))
+				continue
+			}
+			matches = append(matches, slices.DeleteFunc(backups.Data, func(entry types.VolumeBackupEntry) bool { return entry.ID != identifier })...)
+		}
+		return matches, errors.Join(failures...)
+	},
+	Label:   func(item types.VolumeBackupEntry) string { return item.VolumeName + " (" + item.ID + ")" },
+	Promote: func(item types.VolumeBackupEntry) *types.VolumeBackupEntry { return &item },
+}
+
 func newRenameCmd() *cobra.Command {
 	var opts struct {
 		forceFlag bool
@@ -500,35 +543,6 @@ func newBackupsFilesCmd() *cobra.Command {
 	return cmd
 }
 
-var backupRef = cmdutil.ResourceRef[types.VolumeBackupEntry, types.VolumeBackupEntry]{
-	EnvironmentScoped: true, Singular: "backup", Plural: "backups", IDHint: "the backup ID", ListCmd: "arcane-cli volumes backups list <volume-name>",
-	SearchCandidates: func(ctx context.Context, c *client.Client, identifier string) ([]types.VolumeBackupEntry, error) {
-		volumes, err := c.GetJSON[[]types.Volume](ctx, clitypes.Volumes(c.EnvID())+"?limit=-1")
-		if err != nil {
-			return nil, err
-		}
-		var matches []types.VolumeBackupEntry
-		var failures []error
-		for _, item := range volumes.Data {
-			backups, listErr := c.GetJSON[[]types.VolumeBackupEntry](ctx, clitypes.VolumeBackups(c.EnvID(), item.Name)+"?limit=-1")
-			if listErr != nil {
-				failures = append(failures, fmt.Errorf("%s: %w", item.Name, listErr))
-				continue
-			}
-			matches = append(matches, slices.DeleteFunc(backups.Data, func(entry types.VolumeBackupEntry) bool { return entry.ID != identifier })...)
-		}
-		return matches, errors.Join(failures...)
-	},
-	Label:   func(item types.VolumeBackupEntry) string { return item.VolumeName + " (" + item.ID + ")" },
-	Promote: func(item types.VolumeBackupEntry) *types.VolumeBackupEntry { return &item },
-}
-
-type backupListOptions struct {
-	limitFlag int
-	startFlag int
-	allFlag   bool
-}
-
 func runBackupList(cmd *cobra.Command, args []string, opts backupListOptions) error {
 	c, err := cmdutil.ClientFromCommand(cmd)
 	if err != nil {
@@ -618,18 +632,6 @@ func renderVolumePolicies(name string, data types.VolumeBackupPolicyCollection) 
 		}
 	}
 	return output.Table(headers, rows)
-}
-
-type backupPolicyOptions struct {
-	policySchedule       string
-	policyS3Destination  string
-	policyID             string
-	policyFile           string
-	policyRetention      int
-	policyEnabled        bool
-	policyStopContainers bool
-	policyLocal          bool
-	policyS3             bool
 }
 
 func volumeBackupPolicies(cmd *cobra.Command, c *client.Client, name string, opts backupPolicyOptions) (types.UpdateVolumeBackupPolicies, error) {

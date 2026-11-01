@@ -21,6 +21,22 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+type (
+	mergedScopeKey struct{}
+
+	mergedScope struct {
+		names    map[string]string
+		failures []types.EnvironmentFailure
+	}
+
+	environmentResult struct {
+		EnvironmentID   string         `json:"environmentId"`
+		EnvironmentName string         `json:"environmentName"`
+		Error           string         `json:"error,omitempty"`
+		Result          jsontext.Value `json:"result,omitempty"`
+	}
+)
+
 const (
 	ScopeRead        = "read"
 	ScopeMerged      = "merged"
@@ -29,20 +45,6 @@ const (
 	ScopeResource    = "resource"
 	ScopeGlobal      = "global"
 )
-
-type mergedScopeKey struct{}
-
-type mergedScope struct {
-	names    map[string]string
-	failures []types.EnvironmentFailure
-}
-
-type environmentResult struct {
-	EnvironmentID   string         `json:"environmentId"`
-	EnvironmentName string         `json:"environmentName"`
-	Error           string         `json:"error,omitempty"`
-	Result          jsontext.Value `json:"result,omitempty"`
-}
 
 // SetResource binds raw identifiers through a command-owned closure; call after assigning RunE.
 func SetResource[D, S any](ref ResourceRef[D, S], commands ...*cobra.Command) {

@@ -12,43 +12,45 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-type Handler struct {
-	service *Service
-	audit   func(ctx context.Context, environmentID, action, resourceType, resourceName string, metadata map[string]any)
-}
+type (
+	Handler struct {
+		service *Service
+		audit   func(ctx context.Context, environmentID, action, resourceType, resourceName string, metadata map[string]any)
+	}
+
+	ListSecretsInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
+
+	GetSecretInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		SecretID      string `path:"secretId" doc:"Secret name or ID"`
+	}
+
+	CreateSecretInput struct {
+		Body          types.PodmanSecretCreateRequest
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+	}
+
+	UpdateSecretInput struct {
+		Body          types.PodmanSecretUpdateRequest
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		SecretID      string `path:"secretId" doc:"Secret name"`
+	}
+
+	DeleteSecretInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		SecretID      string `path:"secretId" doc:"Secret name or ID"`
+	}
+)
 
 func NewHandler(service *Service, audit func(ctx context.Context, environmentID, action, resourceType, resourceName string, metadata map[string]any)) *Handler {
 	return &Handler{service: service, audit: audit}
-}
-
-type ListSecretsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
-
-type GetSecretInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	SecretID      string `path:"secretId" doc:"Secret name or ID"`
-}
-
-type CreateSecretInput struct {
-	Body          types.PodmanSecretCreateRequest
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type UpdateSecretInput struct {
-	Body          types.PodmanSecretUpdateRequest
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	SecretID      string `path:"secretId" doc:"Secret name"`
-}
-
-type DeleteSecretInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	SecretID      string `path:"secretId" doc:"Secret name or ID"`
 }
 
 func (h *Handler) List(ctx context.Context, input *ListSecretsInput) (*handlerutil.Page[types.PodmanSecret], error) {

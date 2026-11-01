@@ -8,25 +8,29 @@ import (
 	"time"
 )
 
-const broadcastDropWarningInterval = 5 * time.Second
+type (
+	Hub struct {
+		clients    map[*Client]struct{}
+		register   chan *Client
+		unregister chan *Client
+		broadcast  chan []byte
+		// stopped is closed when Run returns, so registration attempts against a
+		// torn-down hub fail fast instead of blocking forever on the unbuffered
+		// register channel.
+		stopped     chan struct{}
+		onFirst     func()
+		onActive    func()
+		onEmpty     func()
+		dropped     atomic.Uint64
+		lastWarned  atomic.Int64
+		mu          sync.RWMutex
+		stoppedOnce sync.Once
+	}
+)
 
-type Hub struct {
-	clients    map[*Client]struct{}
-	register   chan *Client
-	unregister chan *Client
-	broadcast  chan []byte
-	// stopped is closed when Run returns, so registration attempts against a
-	// torn-down hub fail fast instead of blocking forever on the unbuffered
-	// register channel.
-	stopped     chan struct{}
-	onFirst     func()
-	onActive    func()
-	onEmpty     func()
-	dropped     atomic.Uint64
-	lastWarned  atomic.Int64
-	mu          sync.RWMutex
-	stoppedOnce sync.Once
-}
+const (
+	broadcastDropWarningInterval = 5 * time.Second
+)
 
 func NewHub(buffer int) *Hub {
 	return &Hub{

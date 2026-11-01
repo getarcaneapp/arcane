@@ -19,55 +19,56 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 )
 
-type Writer struct {
-	ctx context.Context
-	// persistCtx is ctx detached from cancellation. Cancellation usually
-	// races the last — most diagnostic — output lines (the error frames
-	// explaining it), so batches persist on persistCtx while ctx only bounds
-	// the drain goroutine's intake, mirroring CompleteActivity's detached
-	// terminal write.
-	persistCtx      context.Context
-	activityService MessageAppender
-	writer          io.Writer
-	queueCh         chan writerQueueItem
+type (
+	Writer struct {
+		ctx context.Context
+		// persistCtx is ctx detached from cancellation. Cancellation usually
+		// races the last — most diagnostic — output lines (the error frames
+		// explaining it), so batches persist on persistCtx while ctx only bounds
+		// the drain goroutine's intake, mirroring CompleteActivity's detached
+		// terminal write.
+		persistCtx      context.Context
+		activityService MessageAppender
+		writer          io.Writer
+		queueCh         chan writerQueueItem
 
-	activityID  string
-	defaultStep string
-	buffer      []byte
+		activityID  string
+		defaultStep string
+		buffer      []byte
 
-	dropped      atomic.Uint64
-	lastDropWarn atomic.Int64
+		dropped      atomic.Uint64
+		lastDropWarn atomic.Int64
 
-	mu sync.Mutex
-}
+		mu sync.Mutex
+	}
+
+	writerAppendMessage struct {
+		level   types.ActivityMessageLevel
+		message string
+		payload database.JSON
+		step    string
+	}
+
+	writerQueueItem struct {
+		message *writerAppendMessage
+		flush   chan struct{}
+	}
+
+	WriterOptions struct {
+		Service     MessageAppender
+		ActivityID  string
+		Output      io.Writer
+		DefaultStep string
+	}
+)
 
 const (
 	writerAppendQueueSize = 128
 	// writerAppendBatchSize caps how many queued lines are drained into one
 	// AppendMessages transaction.
-	writerAppendBatchSize = 32
-
+	writerAppendBatchSize     = 32
 	writerDropWarningInterval = 5 * time.Second
 )
-
-type writerAppendMessage struct {
-	level   types.ActivityMessageLevel
-	message string
-	payload database.JSON
-	step    string
-}
-
-type writerQueueItem struct {
-	message *writerAppendMessage
-	flush   chan struct{}
-}
-
-type WriterOptions struct {
-	Service     MessageAppender
-	ActivityID  string
-	Output      io.Writer
-	DefaultStep string
-}
 
 func NewWriter(ctx context.Context, opts WriterOptions) io.Writer {
 	if opts.Service == nil || strings.TrimSpace(opts.ActivityID) == "" {

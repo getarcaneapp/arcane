@@ -14,16 +14,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type controlledCloseTunnelConn struct {
-	closeStarted chan struct{}
-	releaseClose chan struct{}
-	closed       chan struct{}
-}
+type (
+	controlledCloseTunnelConn struct {
+		closeStarted chan struct{}
+		releaseClose chan struct{}
+		closed       chan struct{}
+	}
+)
 
-func (c *controlledCloseTunnelConn) Send(*TunnelMessage) error                  { return nil }
-func (c *controlledCloseTunnelConn) Receive() (*TunnelMessage, error)           { return nil, nil }
+func (c *controlledCloseTunnelConn) Send(*TunnelMessage) error { return nil }
+
+func (c *controlledCloseTunnelConn) Receive() (*TunnelMessage, error) { return nil, nil }
+
 func (c *controlledCloseTunnelConn) muxConn(context.Context) io.ReadWriteCloser { return nil }
-func (c *controlledCloseTunnelConn) Transport() string                          { return TransportWebSocket }
+
+func (c *controlledCloseTunnelConn) Transport() string { return TransportWebSocket }
 
 func (c *controlledCloseTunnelConn) IsClosed() bool {
 	select {

@@ -18,15 +18,17 @@ import (
 	"gorm.io/plugin/opentelemetry/metrics"
 )
 
+type (
+	sqliteReadRouter struct {
+		*gorm.PreparedStmtDB
+		reader *gorm.PreparedStmtDB
+	}
+)
+
 const (
 	sqliteWriteConns      = 2
 	sqliteConnMaxIdleTime = 5 * time.Minute
 )
-
-type sqliteReadRouter struct {
-	*gorm.PreparedStmtDB
-	reader *gorm.PreparedStmtDB
-}
 
 func (r *sqliteReadRouter) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return r.route(query).QueryContext(ctx, query, args...)

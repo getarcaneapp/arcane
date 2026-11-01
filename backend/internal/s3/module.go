@@ -12,10 +12,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Module struct {
-	service                *S3DestinationService
-	syncRemoteDestinations func(context.Context)
-}
+type (
+	Module struct {
+		service                *S3DestinationService
+		syncRemoteDestinations func(context.Context)
+	}
+)
 
 func New(service *S3DestinationService, syncRemoteDestinations func(context.Context)) *Module {
 	return &Module{service: service, syncRemoteDestinations: syncRemoteDestinations}

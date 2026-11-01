@@ -35,37 +35,43 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
 )
 
+type (
+	DockerClientService struct {
+		clientLastProbe time.Time
+
+		// Coalesce concurrent full-inventory lists into one Docker response; per-instance
+		// because a WithClient copy talks to a different daemon.
+		imageListFlight     singleflight.Group
+		containerListFlight singleflight.Group
+		diskUsageFlight     singleflight.Group
+		*client.Client
+
+		db              *database.DB
+		settingsService *settings.SettingsService
+		engineClient    *client.Client
+		eventBus        *bus.DockerEventBus
+		streamConnected *concurrency.Signal[struct{}]
+		inventory       atomic.Pointer[dockerInventory]
+
+		engine        compat.EngineCompatibilityInfo
+		clientVersion string
+		clientHost    string
+		boundHost     string
+		mu            sync.Mutex
+	}
+
+	dockerInventory struct {
+		containers atomic.Pointer[[]container.Summary]
+		images     atomic.Pointer[[]image.Summary]
+	}
+)
+
 const (
 	dockerClientNegotiationTimeout = 5 * time.Second
-
 	// dockerEventStreamHealthyAfter is how long an event stream must survive before
 	// the reconnect backoff is considered recovered and reset.
 	dockerEventStreamHealthyAfter = 30 * time.Second
 )
-
-type DockerClientService struct {
-	clientLastProbe time.Time
-
-	// Coalesce concurrent full-inventory lists into one Docker response; per-instance
-	// because a WithClient copy talks to a different daemon.
-	imageListFlight     singleflight.Group
-	containerListFlight singleflight.Group
-	diskUsageFlight     singleflight.Group
-	*client.Client
-
-	db              *database.DB
-	settingsService *settings.SettingsService
-	engineClient    *client.Client
-	eventBus        *bus.DockerEventBus
-	streamConnected *concurrency.Signal[struct{}]
-	inventory       atomic.Pointer[dockerInventory]
-
-	engine        compat.EngineCompatibilityInfo
-	clientVersion string
-	clientHost    string
-	boundHost     string
-	mu            sync.Mutex
-}
 
 func NewDockerClientService(ctx context.Context, db *database.DB, settingsService *settings.SettingsService, eventBusConfig bus.Config) *DockerClientService {
 	service := &DockerClientService{
@@ -592,9 +598,4 @@ func CountNetworkUsage(networks []network.Summary, containers []container.Summar
 		}
 	}
 	return inuse, unused, total
-}
-
-type dockerInventory struct {
-	containers atomic.Pointer[[]container.Summary]
-	images     atomic.Pointer[[]image.Summary]
 }

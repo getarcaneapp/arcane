@@ -26,6 +26,24 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+type (
+	rankedTemplateMatch struct {
+		template types.Template
+		score    int
+	}
+)
+
+var templateRef = cmdutil.ResourceRef[types.Template, types.Template]{
+	Singular:         "template",
+	Plural:           "templates",
+	IDHint:           "the template ID",
+	ListCmd:          "arcane templates list",
+	GetPath:          func(_, identifier string) string { return clitypes.Template(identifier) },
+	SearchCandidates: searchTemplateCandidates,
+	SelectCandidate:  selectTemplateCandidate,
+	Promote:          func(match types.Template) *types.Template { return &match },
+}
+
 // Command is the parent command for template operations
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
@@ -325,17 +343,6 @@ func newGetCmd() *cobra.Command {
 	}
 }
 
-var templateRef = cmdutil.ResourceRef[types.Template, types.Template]{
-	Singular:         "template",
-	Plural:           "templates",
-	IDHint:           "the template ID",
-	ListCmd:          "arcane templates list",
-	GetPath:          func(_, identifier string) string { return clitypes.Template(identifier) },
-	SearchCandidates: searchTemplateCandidates,
-	SelectCandidate:  selectTemplateCandidate,
-	Promote:          func(match types.Template) *types.Template { return &match },
-}
-
 func searchTemplateCandidates(ctx context.Context, c *client.Client, identifier string) ([]types.Template, error) {
 	result, err := c.GetJSON[[]types.Template](ctx, clitypes.TemplatesAll())
 	if err != nil {
@@ -426,11 +433,6 @@ func selectTemplateCandidate(matches []types.Template, identifier string, allowP
 		return nil, err
 	}
 	return &ordered[choice], nil
-}
-
-type rankedTemplateMatch struct {
-	template types.Template
-	score    int
 }
 
 func rankFuzzyTemplateMatches(query string, candidates []types.Template) []rankedTemplateMatch {

@@ -11,15 +11,17 @@ import (
 	kit "kit.getarcane.app"
 )
 
+type (
+	smtpBuildOptions struct {
+		tlsConfig *tls.Config
+		timeout   time.Duration
+	}
+)
+
 const (
 	defaultSMTPClientHost = "localhost"
 	defaultSMTPTimeout    = 10 * time.Second
 )
-
-type smtpBuildOptions struct {
-	tlsConfig *tls.Config
-	timeout   time.Duration
-}
 
 func smtpBuildOptionsFromContext(ctx context.Context) smtpBuildOptions {
 	options := smtpBuildOptions{}

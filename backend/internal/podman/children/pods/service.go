@@ -20,23 +20,15 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-const cpuPeriod = 100000
-
-type Service struct {
-	runtime func(context.Context) (podman.Runtime, error)
-}
-
-func NewService(runtime func(context.Context) (podman.Runtime, error)) *Service {
-	return &Service{runtime: runtime}
-}
-
-func (s *Service) List(ctx context.Context) ([]types.Pod, error) {
-	rt, err := s.runtime(ctx)
-	if err != nil {
-		return nil, err
+type (
+	Service struct {
+		runtime func(context.Context) (podman.Runtime, error)
 	}
-	return rt.Client.PodList(ctx, nil)
-}
+)
+
+const (
+	cpuPeriod = 100000
+)
 
 var podPagination = pagination.Config[types.Pod]{
 	SearchAccessors: []pagination.SearchAccessor[types.Pod]{
@@ -64,6 +56,18 @@ var podPagination = pagination.Config[types.Pod]{
 			return a.Created.Compare(b.Created)
 		}},
 	},
+}
+
+func NewService(runtime func(context.Context) (podman.Runtime, error)) *Service {
+	return &Service{runtime: runtime}
+}
+
+func (s *Service) List(ctx context.Context) ([]types.Pod, error) {
+	rt, err := s.runtime(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return rt.Client.PodList(ctx, nil)
 }
 
 func (s *Service) ListPaginated(ctx context.Context, params pagination.QueryParams) ([]types.Pod, pagination.Response, error) {

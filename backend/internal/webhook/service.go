@@ -37,6 +37,43 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
+type (
+	remoteWebhookTarget struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+
+	WebhookService struct {
+		tokenHashes map[string]struct{}
+
+		db                 *database.DB
+		containerService   *container.ContainerService
+		updaterService     *updater.UpdaterService
+		projectService     *project.ProjectService
+		gitOpsSyncService  *gitops.GitOpsSyncService
+		eventService       *event.EventService
+		environmentService *environment.EnvironmentService
+
+		// actions tracks in-flight background webhook actions accepted with a 202
+		// so shutdown can drain them instead of dropping acknowledged work.
+		actions      sync.WaitGroup
+		tokenMu      sync.RWMutex
+		tokenWriteMu sync.Mutex
+	}
+
+	WebhookServiceParams struct {
+		fx.In
+
+		DB                 *database.DB
+		ContainerService   *container.ContainerService
+		UpdaterService     *updater.UpdaterService
+		ProjectService     *project.ProjectService
+		GitOpsSyncService  *gitops.GitOpsSyncService
+		EventService       *event.EventService
+		EnvironmentService *environment.EnvironmentService
+	}
+)
+
 const (
 	webhookTokenPrefix    = "arc_wh_"
 	webhookTokenLength    = 32 // raw bytes → 64 hex chars
@@ -54,48 +91,35 @@ var (
 	ErrWebhookMissingName   = common.Classify(common.ErrValidation, errors.New("webhook name is required"))
 	ErrWebhookMissingTarget = common.Classify(common.ErrValidation, errors.New("target ID is required for container, project, and gitops webhook types"))
 	ErrWebhookForbidden     = common.Classify(common.ErrForbidden, errors.New("you do not have permission to run this webhook action"))
-
 	// remoteWebhookTargetListPaths lists agent endpoints for target types whose records live in the agent's database.
 	remoteWebhookTargetListPaths = map[string]string{
 		WebhookTargetTypeProject: "/api/environments/" + types.LocalDockerEnvironmentID + "/projects/references",
 		WebhookTargetTypeGitOps:  "/api/environments/" + types.LocalDockerEnvironmentID + "/gitops/syncs?limit=-1",
 	}
+
+	webhookActionPermissions = map[string]map[string]string{
+		WebhookTargetTypeContainer: {
+			WebhookActionTypeUpdate:   authz.PermImageUpdatesCheck,
+			WebhookActionTypeStart:    authz.PermContainersStart,
+			WebhookActionTypeStop:     authz.PermContainersStop,
+			WebhookActionTypeRestart:  authz.PermContainersRestart,
+			WebhookActionTypeRedeploy: authz.PermContainersRedeploy,
+		},
+		WebhookTargetTypeProject: {
+			WebhookActionTypeUpdate:   authz.PermProjectsUpdate,
+			WebhookActionTypeUp:       authz.PermProjectsDeploy,
+			WebhookActionTypeDown:     authz.PermProjectsDown,
+			WebhookActionTypeRestart:  authz.PermProjectsRestart,
+			WebhookActionTypeRedeploy: authz.PermProjectsDeploy,
+		},
+		WebhookTargetTypeUpdater: {
+			WebhookActionTypeRun: authz.PermImageUpdatesCheck,
+		},
+		WebhookTargetTypeGitOps: {
+			WebhookActionTypeSync: authz.PermGitOpsSync,
+		},
+	}
 )
-
-type remoteWebhookTarget struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-type WebhookService struct {
-	tokenHashes map[string]struct{}
-
-	db                 *database.DB
-	containerService   *container.ContainerService
-	updaterService     *updater.UpdaterService
-	projectService     *project.ProjectService
-	gitOpsSyncService  *gitops.GitOpsSyncService
-	eventService       *event.EventService
-	environmentService *environment.EnvironmentService
-
-	// actions tracks in-flight background webhook actions accepted with a 202
-	// so shutdown can drain them instead of dropping acknowledged work.
-	actions      sync.WaitGroup
-	tokenMu      sync.RWMutex
-	tokenWriteMu sync.Mutex
-}
-
-type WebhookServiceParams struct {
-	fx.In
-
-	DB                 *database.DB
-	ContainerService   *container.ContainerService
-	UpdaterService     *updater.UpdaterService
-	ProjectService     *project.ProjectService
-	GitOpsSyncService  *gitops.GitOpsSyncService
-	EventService       *event.EventService
-	EnvironmentService *environment.EnvironmentService
-}
 
 func NewWebhookService(p WebhookServiceParams) *WebhookService {
 	return &WebhookService{
@@ -223,29 +247,6 @@ func resolveWebhookActionType(targetType, actionType string) (string, error) {
 	}
 
 	return "", ErrWebhookInvalidAction
-}
-
-var webhookActionPermissions = map[string]map[string]string{
-	WebhookTargetTypeContainer: {
-		WebhookActionTypeUpdate:   authz.PermImageUpdatesCheck,
-		WebhookActionTypeStart:    authz.PermContainersStart,
-		WebhookActionTypeStop:     authz.PermContainersStop,
-		WebhookActionTypeRestart:  authz.PermContainersRestart,
-		WebhookActionTypeRedeploy: authz.PermContainersRedeploy,
-	},
-	WebhookTargetTypeProject: {
-		WebhookActionTypeUpdate:   authz.PermProjectsUpdate,
-		WebhookActionTypeUp:       authz.PermProjectsDeploy,
-		WebhookActionTypeDown:     authz.PermProjectsDown,
-		WebhookActionTypeRestart:  authz.PermProjectsRestart,
-		WebhookActionTypeRedeploy: authz.PermProjectsDeploy,
-	},
-	WebhookTargetTypeUpdater: {
-		WebhookActionTypeRun: authz.PermImageUpdatesCheck,
-	},
-	WebhookTargetTypeGitOps: {
-		WebhookActionTypeSync: authz.PermGitOpsSync,
-	},
 }
 
 func authorizeWebhookAction(callerPerms *authz.PermissionSet, targetType, actionType, environmentID string) error {

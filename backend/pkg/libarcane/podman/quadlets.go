@@ -9,18 +9,20 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 )
 
-type QuadletInstallOptions struct {
-	File          types.QuadletFile
-	Application   string
-	ExtraFiles    []types.QuadletFile
-	Replace       bool
-	AppsSupported bool
-}
+type (
+	QuadletInstallOptions struct {
+		File          types.QuadletFile
+		Application   string
+		ExtraFiles    []types.QuadletFile
+		Replace       bool
+		AppsSupported bool
+	}
 
-type QuadletRemoveOptions struct {
-	Force  bool
-	Ignore bool
-}
+	QuadletRemoveOptions struct {
+		Force  bool
+		Ignore bool
+	}
+)
 
 func (c *Client) QuadletList(ctx context.Context, filters map[string][]string) ([]types.Quadlet, error) {
 	query, err := filtersQuery(url.Values{}, filters)

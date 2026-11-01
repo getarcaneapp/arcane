@@ -44,15 +44,68 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/oidcjwk"
 )
 
-type backupEngineParams struct {
-	fx.In
+type (
+	backupEngineParams struct {
+		fx.In
 
-	Lifecycle    fx.Lifecycle
-	Admission    *runs.Admission
-	ImageService *image.ImageService
-	Roles        *role.RoleService
-	Config       *config.Config
-}
+		Lifecycle    fx.Lifecycle
+		Admission    *runs.Admission
+		ImageService *image.ImageService
+		Roles        *role.RoleService
+		Config       *config.Config
+	}
+
+	actorRuntimeParams struct {
+		fx.In
+
+		AppCtx          context.Context
+		Config          *config.Config
+		SettingsService *settings.SettingsService
+		Lifecycle       fx.Lifecycle
+		CancelApp       context.CancelCauseFunc
+		EncryptionKey   string `name:"encryptionKey"`
+	}
+
+	workflowEngineParams struct {
+		fx.In
+
+		AppCtx      context.Context
+		Runtime     *francis.Runtime
+		Coordinator *runs.Coordinator
+		Activities  *activity.ActivityService
+		Lifecycle   fx.Lifecycle
+	}
+
+	dockerClientServiceParams struct {
+		fx.In
+
+		Ctx           context.Context
+		Lifecycle     fx.Lifecycle
+		DB            *database.DB
+		LocalSettings *settings.SettingsService
+		EventService  *event.EventService
+	}
+
+	authMiddlewareParams struct {
+		fx.In
+
+		AuthService *auth.AuthService
+		APIKey      *apikey.ApiKeyService
+		Env         *environment.EnvironmentService
+		LocalRole   *role.RoleService
+		Config      *config.Config
+	}
+
+	filesystemWatcherJobParams struct {
+		fx.In
+
+		Ctx           context.Context
+		Lifecycle     fx.Lifecycle
+		LocalProject  *project.ProjectService
+		LocalTemplate *template.TemplateService
+		LocalSettings *settings.SettingsService
+	}
+)
 
 func provideBackupEngine(p backupEngineParams) *backup.Engine {
 	engine := backup.NewEngine(p.Admission, p.ImageService)
@@ -77,17 +130,6 @@ func provideBackupEngine(p backupEngineParams) *backup.Engine {
 	})
 	p.Lifecycle.Append(fx.Hook{OnStop: engine.Stop})
 	return engine
-}
-
-type actorRuntimeParams struct {
-	fx.In
-
-	AppCtx          context.Context
-	Config          *config.Config
-	SettingsService *settings.SettingsService
-	Lifecycle       fx.Lifecycle
-	CancelApp       context.CancelCauseFunc
-	EncryptionKey   string `name:"encryptionKey"`
 }
 
 func provideActorRuntime(p actorRuntimeParams) (*francis.Runtime, error) {
@@ -116,16 +158,6 @@ func provideRunCoordinator(runtime *francis.Runtime, store *kv.KVService, cfg *c
 		return nil, err
 	}
 	return coordinator, nil
-}
-
-type workflowEngineParams struct {
-	fx.In
-
-	AppCtx      context.Context
-	Runtime     *francis.Runtime
-	Coordinator *runs.Coordinator
-	Activities  *activity.ActivityService
-	Lifecycle   fx.Lifecycle
 }
 
 // provideWorkflowEngine starts monitoring after the host is ready; its
@@ -157,16 +189,6 @@ func provideTunnelRegistry(lc fx.Lifecycle) *agent.TunnelRegistry {
 		return localRegistry.Stop(stopCtx)
 	}})
 	return localRegistry
-}
-
-type dockerClientServiceParams struct {
-	fx.In
-
-	Ctx           context.Context
-	Lifecycle     fx.Lifecycle
-	DB            *database.DB
-	LocalSettings *settings.SettingsService
-	EventService  *event.EventService
 }
 
 func provideDockerClientService(p dockerClientServiceParams) *docker.DockerClientService {
@@ -258,31 +280,11 @@ func provideJWKSetManager(ctx context.Context, lc fx.Lifecycle) *oidcjwk.KeySetM
 	return manager
 }
 
-type authMiddlewareParams struct {
-	fx.In
-
-	AuthService *auth.AuthService
-	APIKey      *apikey.ApiKeyService
-	Env         *environment.EnvironmentService
-	LocalRole   *role.RoleService
-	Config      *config.Config
-}
-
 func provideAuthMiddleware(p authMiddlewareParams) *auth.AuthMiddleware {
 	return auth.NewAuthMiddleware(p.AuthService, p.Config).
 		WithApiKeyValidator(p.APIKey).
 		WithEnvironmentAccessTokenResolver(p.Env).
 		WithPermissionResolver(p.LocalRole)
-}
-
-type filesystemWatcherJobParams struct {
-	fx.In
-
-	Ctx           context.Context
-	Lifecycle     fx.Lifecycle
-	LocalProject  *project.ProjectService
-	LocalTemplate *template.TemplateService
-	LocalSettings *settings.SettingsService
 }
 
 func provideFilesystemWatcherJob(p filesystemWatcherJobParams) (

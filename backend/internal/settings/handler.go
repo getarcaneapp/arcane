@@ -21,34 +21,36 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// SettingsHandler provides Huma-based settings management endpoints.
-type SettingsHandler struct {
-	settingsService       *SettingsService
-	settingsSearchService *SettingsSearchService
-	proxyRemoteJSON       handlerutil.RemoteJSONProxy
-	cfg                   *config.Config
-}
+type (
+	// SettingsHandler provides Huma-based settings management endpoints.
+	SettingsHandler struct {
+		settingsService       *SettingsService
+		settingsSearchService *SettingsSearchService
+		proxyRemoteJSON       handlerutil.RemoteJSONProxy
+		cfg                   *config.Config
+	}
 
-type SettingsSnapshotOutput struct {
-	Body types.SettingsSnapshot
-}
+	SettingsSnapshotOutput struct {
+		Body types.SettingsSnapshot
+	}
 
-type UpdateSettingsInput struct {
-	Body          types.SettingsUpdate `doc:"Setting keys mapped to their new values"`
-	EnvironmentID string               `path:"id" doc:"Environment ID"`
-}
+	UpdateSettingsInput struct {
+		Body          types.SettingsUpdate `doc:"Setting keys mapped to their new values"`
+		EnvironmentID string               `path:"id" doc:"Environment ID"`
+	}
 
-type SearchSettingsInput struct {
-	Body types.SearchRequest `doc:"Search query"`
-}
+	SearchSettingsInput struct {
+		Body types.SearchRequest `doc:"Search query"`
+	}
 
-type SearchSettingsOutput struct {
-	Body types.SearchResponse
-}
+	SearchSettingsOutput struct {
+		Body types.SearchResponse
+	}
 
-type GetCategoriesOutput struct {
-	Body []types.Category
-}
+	GetCategoriesOutput struct {
+		Body []types.Category
+	}
+)
 
 func (h *SettingsHandler) runtimeSettings(authenticated bool) types.SettingsRuntime {
 	telemetryRuntime := types.SettingsRuntime{

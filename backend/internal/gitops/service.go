@@ -50,25 +50,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
-var syncRuns = func() metric.Int64Counter {
-	counter, err := otel.Meter(tracing.InstrumentationName).Int64Counter("arcane.gitops.syncs",
-		metric.WithDescription("GitOps sync runs by outcome"), metric.WithUnit("{sync}"))
-	if err != nil {
-		otel.Handle(err)
-	}
-	return counter
-}()
-
-const (
-	defaultGitSyncTimeout = 5 * time.Minute
-
-	defaultMaxSyncFiles        = 500
-	defaultMaxSyncTotalSizeMB  = 50
-	defaultMaxSyncBinarySizeMB = 10
-
-	gitOpsSyncAdmissionScope = "gitops-sync"
-)
-
 type (
 	GitOpsSyncService struct {
 		db              *database.DB
@@ -87,13 +68,11 @@ type (
 		sync    *gitopssync.Service
 		backup  *backup.Service
 	}
-
 	// syncTarget is the gitops-sync workflow input: the sync one scheduled job runs.
 	syncTarget struct {
 		EnvironmentID string `json:"environmentId"`
 		SyncID        string `json:"syncId"`
 	}
-
 	// lifecycleConfigInput is the pre-deploy hook slice of a create or update request.
 	lifecycleConfigInput struct {
 		targetType    *string
@@ -105,7 +84,6 @@ type (
 		networkMode   *string
 		syncDirectory *bool
 	}
-
 	// backupRuntime holds the in-memory coordination for backup syncs.
 	backupRuntime struct {
 		branches map[string]*sync.Mutex
@@ -113,7 +91,48 @@ type (
 		debounce time.Duration
 		mu       sync.Mutex
 	}
+
+	GitOpsSyncServiceParams struct {
+		fx.In
+
+		DB              *database.DB
+		RepoService     *gitrepo.GitRepositoryService
+		ProjectService  *projectpkg.ProjectService
+		SwarmService    *swarm.SwarmService
+		EventService    *event.EventService
+		SettingsService *settings.SettingsService
+	}
+
+	SyncUpdate struct {
+		Submitted map[string]bool
+		Actor     types.Actor
+		Request   types.GitOpsSync
+	}
+
+	SyncRequest struct {
+		EnvironmentID string
+		SyncID        string
+		Actor         types.Actor
+		BackupAdopt   bool
+	}
 )
+
+const (
+	defaultGitSyncTimeout      = 5 * time.Minute
+	defaultMaxSyncFiles        = 500
+	defaultMaxSyncTotalSizeMB  = 50
+	defaultMaxSyncBinarySizeMB = 10
+	gitOpsSyncAdmissionScope   = "gitops-sync"
+)
+
+var syncRuns = func() metric.Int64Counter {
+	counter, err := otel.Meter(tracing.InstrumentationName).Int64Counter("arcane.gitops.syncs",
+		metric.WithDescription("GitOps sync runs by outcome"), metric.WithUnit("{sync}"))
+	if err != nil {
+		otel.Handle(err)
+	}
+	return counter
+}()
 
 func (s *GitOpsSyncService) validateLifecycleConfig(ctx context.Context, current *projectpkg.GitOpsSync, in lifecycleConfigInput) error {
 	var currentScript, currentRunner *string
@@ -174,17 +193,6 @@ func (s *GitOpsSyncService) validateLifecycleConfig(ctx context.Context, current
 		return invalid("preDeployExtraMounts", err.Error())
 	}
 	return nil
-}
-
-type GitOpsSyncServiceParams struct {
-	fx.In
-
-	DB              *database.DB
-	RepoService     *gitrepo.GitRepositoryService
-	ProjectService  *projectpkg.ProjectService
-	SwarmService    *swarm.SwarmService
-	EventService    *event.EventService
-	SettingsService *settings.SettingsService
 }
 
 func NewGitOpsSyncService(p GitOpsSyncServiceParams) *GitOpsSyncService {
@@ -494,12 +502,6 @@ func (s *GitOpsSyncService) getSyncByID(ctx context.Context, environmentID, id s
 		return nil, fmt.Errorf("failed to get sync: %w", err)
 	}
 	return &syncRecord, nil
-}
-
-type SyncUpdate struct {
-	Submitted map[string]bool
-	Actor     types.Actor
-	Request   types.GitOpsSync
 }
 
 func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string, change SyncUpdate) (*projectpkg.GitOpsSync, error) {
@@ -852,13 +854,6 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 	})
 
 	return nil
-}
-
-type SyncRequest struct {
-	EnvironmentID string
-	SyncID        string
-	Actor         types.Actor
-	BackupAdopt   bool
 }
 
 func (s *GitOpsSyncService) PerformSync(ctx context.Context, req SyncRequest) (syncResult *types.GitOpsSyncResult, syncErr error) {

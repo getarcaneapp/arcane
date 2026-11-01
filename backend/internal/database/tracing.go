@@ -14,7 +14,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
-const statementSpanKey = "arcane:otel_span"
+const (
+	statementSpanKey = "arcane:otel_span"
+)
 
 var statementTracer = otel.Tracer(tracing.InstrumentationName)
 

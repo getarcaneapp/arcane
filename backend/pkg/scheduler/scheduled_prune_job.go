@@ -13,13 +13,17 @@ import (
 	scheduleutil "github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
 )
 
-const ScheduledPruneJobName = "scheduled-prune"
+type (
+	ScheduledPruneJob struct {
+		systemService       *system.SystemService
+		settingsService     *settings.SettingsService
+		notificationService *notification.NotificationService
+	}
+)
 
-type ScheduledPruneJob struct {
-	systemService       *system.SystemService
-	settingsService     *settings.SettingsService
-	notificationService *notification.NotificationService
-}
+const (
+	ScheduledPruneJobName = "scheduled-prune"
+)
 
 func NewScheduledPruneJob(systemService *system.SystemService, settingsService *settings.SettingsService, notificationService *notification.NotificationService) *ScheduledPruneJob {
 	return &ScheduledPruneJob{

@@ -14,72 +14,74 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// TemplateHandler handles template management endpoints.
-type TemplateHandler struct {
-	templateService *TemplateService
-}
+type (
+	// TemplateHandler handles template management endpoints.
+	TemplateHandler struct {
+		templateService *TemplateService
+	}
 
-type ListTemplatesInput struct {
-	Search string `query:"search" doc:"Search query"`
-	Sort   string `query:"sort" doc:"Column to sort by"`
-	Order  string `query:"order" default:"asc" doc:"Sort direction"`
-	Type   string `query:"type" doc:"Filter by template type (comma-separated: false,true)"`
-	Start  int    `query:"start" default:"0" doc:"Start index"`
-	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
-}
+	ListTemplatesInput struct {
+		Search string `query:"search" doc:"Search query"`
+		Sort   string `query:"sort" doc:"Column to sort by"`
+		Order  string `query:"order" default:"asc" doc:"Sort direction"`
+		Type   string `query:"type" doc:"Filter by template type (comma-separated: false,true)"`
+		Start  int    `query:"start" default:"0" doc:"Start index"`
+		Limit  int    `query:"limit" default:"20" doc:"Items per page"`
+	}
 
-type GetAllTemplatesInput struct{}
+	GetAllTemplatesInput struct{}
 
-type GetTemplateInput struct {
-	ID string `path:"id" doc:"Template ID"`
-}
+	GetTemplateInput struct {
+		ID string `path:"id" doc:"Template ID"`
+	}
 
-type GetTemplateContentInput struct {
-	ID string `path:"id" doc:"Template ID"`
-}
+	GetTemplateContentInput struct {
+		ID string `path:"id" doc:"Template ID"`
+	}
 
-type CreateTemplateInput struct {
-	types.Create[types.Template]
-}
+	CreateTemplateInput struct {
+		types.Create[types.Template]
+	}
 
-type UpdateTemplateInput struct {
-	ID string `path:"id" doc:"Template ID"`
-	types.Update[types.Template]
-}
+	UpdateTemplateInput struct {
+		ID string `path:"id" doc:"Template ID"`
+		types.Update[types.Template]
+	}
 
-type DeleteTemplateInput struct {
-	ID string `path:"id" doc:"Template ID"`
-}
+	DeleteTemplateInput struct {
+		ID string `path:"id" doc:"Template ID"`
+	}
 
-type TemplateActionInput struct {
-	ID     string `path:"id" doc:"Template ID"`
-	Action string `query:"action" required:"true" enum:"download" doc:"Template action"`
-}
+	TemplateActionInput struct {
+		ID     string `path:"id" doc:"Template ID"`
+		Action string `query:"action" required:"true" enum:"download" doc:"Template action"`
+	}
 
-type GetDefaultTemplatesInput struct{}
+	GetDefaultTemplatesInput struct{}
 
-type SaveDefaultTemplatesInput struct {
-	Body types.SaveDefaultTemplatesRequest
-}
+	SaveDefaultTemplatesInput struct {
+		Body types.SaveDefaultTemplatesRequest
+	}
 
-type GetTemplateRegistriesInput struct{}
+	GetTemplateRegistriesInput struct{}
 
-type CreateTemplateRegistryInput struct {
-	types.Create[types.TemplateRegistry]
-}
+	CreateTemplateRegistryInput struct {
+		types.Create[types.TemplateRegistry]
+	}
 
-type UpdateTemplateRegistryInput struct {
-	ID string `path:"id" doc:"Registry ID"`
-	types.Update[types.TemplateRegistry]
-}
+	UpdateTemplateRegistryInput struct {
+		ID string `path:"id" doc:"Registry ID"`
+		types.Update[types.TemplateRegistry]
+	}
 
-type DeleteTemplateRegistryInput struct {
-	ID string `path:"id" doc:"Registry ID"`
-}
+	DeleteTemplateRegistryInput struct {
+		ID string `path:"id" doc:"Registry ID"`
+	}
 
-type FetchTemplateRegistryInput struct {
-	URL string `query:"url" required:"true" doc:"Registry URL"`
-}
+	FetchTemplateRegistryInput struct {
+		URL string `query:"url" required:"true" doc:"Registry URL"`
+	}
+)
 
 // ListTemplates returns a paginated list of templates.
 func (h *TemplateHandler) ListTemplates(ctx context.Context, input *ListTemplatesInput) (*handlerutil.Page[types.Template], error) {

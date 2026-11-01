@@ -16,6 +16,18 @@ import (
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
+type (
+	blockingGRPCManagerStream struct {
+		ctx         context.Context
+		recvStarted chan struct{}
+	}
+
+	closeOrderAgentStream struct {
+		ctx    context.Context
+		events []string
+	}
+)
+
 func newWebSocketAgentTunnel(envID string, conn *websocket.Conn) *AgentTunnel {
 	return NewAgentTunnelWithConn(envID, NewTunnelConn(conn))
 }
@@ -112,11 +124,6 @@ func TestGRPCManagerTunnelConn_CloseCancelsReceive(t *testing.T) {
 	}
 }
 
-type blockingGRPCManagerStream struct {
-	ctx         context.Context
-	recvStarted chan struct{}
-}
-
 func (b *blockingGRPCManagerStream) Send(*tunnelpb.ManagerMessage) error { return nil }
 
 func (b *blockingGRPCManagerStream) Recv() (*tunnelpb.AgentMessage, error) {
@@ -183,11 +190,6 @@ func TestTunnelConn_ReceiveDeadlineMarksClosed(t *testing.T) {
 	_, err = tunnelConn.Receive()
 	require.Error(t, err)
 	assert.True(t, tunnelConn.IsClosed())
-}
-
-type closeOrderAgentStream struct {
-	ctx    context.Context
-	events []string
 }
 
 func (s *closeOrderAgentStream) Send(*tunnelpb.AgentMessage) error { return nil }

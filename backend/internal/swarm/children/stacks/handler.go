@@ -11,12 +11,74 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// Handler serves the swarm stack endpoints.
-type Handler struct {
-	service  *Service
-	audit    func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
-	mapError func(err error, fallback string) error
-}
+type (
+	// Handler serves the swarm stack endpoints.
+	Handler struct {
+		service  *Service
+		audit    func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
+		mapError func(err error, fallback string) error
+	}
+
+	ListSwarmStacksInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
+
+	DeploySwarmStackInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.SwarmStackDeployRequest
+	}
+
+	GetSwarmStackInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Name          string `path:"name" doc:"Stack name"`
+	}
+
+	GetSwarmStackSourceInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Name          string `path:"name" doc:"Stack name"`
+	}
+
+	UpdateSwarmStackSourceInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Name          string `path:"name" doc:"Stack name"`
+		types.Update[types.SwarmStackSource]
+	}
+
+	DeleteSwarmStackInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Name          string `path:"name" doc:"Stack name"`
+	}
+
+	ListSwarmStackServicesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Name          string `path:"name" doc:"Stack name"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
+
+	ListSwarmStackTasksInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Name          string `path:"name" doc:"Stack name"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
+
+	RenderSwarmStackConfigInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.SwarmStackRenderConfigRequest
+	}
+)
 
 func NewHandler(
 	service *Service,
@@ -24,66 +86,6 @@ func NewHandler(
 	mapError func(err error, fallback string) error,
 ) *Handler {
 	return &Handler{service: service, audit: audit, mapError: mapError}
-}
-
-type ListSwarmStacksInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
-
-type DeploySwarmStackInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.SwarmStackDeployRequest
-}
-
-type GetSwarmStackInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Name          string `path:"name" doc:"Stack name"`
-}
-
-type GetSwarmStackSourceInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Name          string `path:"name" doc:"Stack name"`
-}
-
-type UpdateSwarmStackSourceInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Name          string `path:"name" doc:"Stack name"`
-	types.Update[types.SwarmStackSource]
-}
-
-type DeleteSwarmStackInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Name          string `path:"name" doc:"Stack name"`
-}
-
-type ListSwarmStackServicesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Name          string `path:"name" doc:"Stack name"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
-
-type ListSwarmStackTasksInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Name          string `path:"name" doc:"Stack name"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
-
-type RenderSwarmStackConfigInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.SwarmStackRenderConfigRequest
 }
 
 // ListStacks lists swarm stacks for the current environment.

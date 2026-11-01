@@ -25,6 +25,65 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
+type (
+	// SchemaDocument is the canonical JSON artifact consumed by the docs site.
+	SchemaDocument struct {
+		RenamedEnv    map[string]string `json:"renamedEnv"`
+		EnvConfig     []ConfigEntry     `json:"envConfig"`
+		Settings      []SettingEntry    `json:"settings"`
+		RetiredEnv    []string          `json:"retiredEnv"`
+		SchemaVersion int               `json:"schemaVersion"`
+	}
+
+	// ConfigEntry describes an environment-backed runtime config value.
+	ConfigEntry struct {
+		Env          string   `json:"env"`
+		Field        string   `json:"field"`
+		Type         string   `json:"type"`
+		DefaultValue string   `json:"defaultValue,omitempty"`
+		Description  string   `json:"description,omitempty"`
+		Source       string   `json:"source"`
+		SourceFile   string   `json:"sourceFile"`
+		SourceSymbol string   `json:"sourceSymbol"`
+		Options      []string `json:"options,omitempty"`
+		BuildTags    []string `json:"buildTags,omitempty"`
+		SupportsFile bool     `json:"supportsFile,omitempty"`
+		Conditional  bool     `json:"conditional,omitempty"`
+	}
+
+	SettingEntry struct {
+		Min          *float64 `json:"min,omitempty"`
+		Max          *float64 `json:"max,omitempty"`
+		Env          string   `json:"env"`
+		Key          string   `json:"key"`
+		Type         string   `json:"type"`
+		Default      string   `json:"default,omitempty"`
+		Scope        string   `json:"scope"`
+		Description  string   `json:"description,omitempty"`
+		Category     string   `json:"category,omitempty"`
+		Requires     string   `json:"requires,omitempty"`
+		Note         string   `json:"note,omitempty"`
+		Source       string   `json:"source"`
+		SourceFile   string   `json:"sourceFile"`
+		SourceSymbol string   `json:"sourceSymbol"`
+		Values       []string `json:"values,omitempty"`
+		Sensitive    bool     `json:"sensitive"`
+		Public       bool     `json:"public"`
+	}
+
+	envFieldOptions struct {
+		sourceFile  string
+		sourceType  string
+		buildTags   []string
+		conditional bool
+	}
+
+	overrideDocRule struct {
+		requires string
+		note     string
+	}
+)
+
 const (
 	schemaVersion                = 2
 	sourceFileConfig             = "backend/internal/config/config.go"
@@ -33,63 +92,6 @@ const (
 	sourceSymbolConfig           = "config.Config"
 	sourceSymbolBuildablesConfig = "config.BuildablesConfig"
 )
-
-// SchemaDocument is the canonical JSON artifact consumed by the docs site.
-type SchemaDocument struct {
-	RenamedEnv    map[string]string `json:"renamedEnv"`
-	EnvConfig     []ConfigEntry     `json:"envConfig"`
-	Settings      []SettingEntry    `json:"settings"`
-	RetiredEnv    []string          `json:"retiredEnv"`
-	SchemaVersion int               `json:"schemaVersion"`
-}
-
-// ConfigEntry describes an environment-backed runtime config value.
-type ConfigEntry struct {
-	Env          string   `json:"env"`
-	Field        string   `json:"field"`
-	Type         string   `json:"type"`
-	DefaultValue string   `json:"defaultValue,omitempty"`
-	Description  string   `json:"description,omitempty"`
-	Source       string   `json:"source"`
-	SourceFile   string   `json:"sourceFile"`
-	SourceSymbol string   `json:"sourceSymbol"`
-	Options      []string `json:"options,omitempty"`
-	BuildTags    []string `json:"buildTags,omitempty"`
-	SupportsFile bool     `json:"supportsFile,omitempty"`
-	Conditional  bool     `json:"conditional,omitempty"`
-}
-
-type SettingEntry struct {
-	Min          *float64 `json:"min,omitempty"`
-	Max          *float64 `json:"max,omitempty"`
-	Env          string   `json:"env"`
-	Key          string   `json:"key"`
-	Type         string   `json:"type"`
-	Default      string   `json:"default,omitempty"`
-	Scope        string   `json:"scope"`
-	Description  string   `json:"description,omitempty"`
-	Category     string   `json:"category,omitempty"`
-	Requires     string   `json:"requires,omitempty"`
-	Note         string   `json:"note,omitempty"`
-	Source       string   `json:"source"`
-	SourceFile   string   `json:"sourceFile"`
-	SourceSymbol string   `json:"sourceSymbol"`
-	Values       []string `json:"values,omitempty"`
-	Sensitive    bool     `json:"sensitive"`
-	Public       bool     `json:"public"`
-}
-
-type envFieldOptions struct {
-	sourceFile  string
-	sourceType  string
-	buildTags   []string
-	conditional bool
-}
-
-type overrideDocRule struct {
-	requires string
-	note     string
-}
 
 var overrideDocRules = map[string]overrideDocRule{
 	"autoUpdateInterval": {

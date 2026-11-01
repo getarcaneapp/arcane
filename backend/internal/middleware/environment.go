@@ -28,56 +28,66 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-const (
-	apiEnvironmentsPrefix  = "/api/environments/"
-	environmentsPathMarker = "/environments/"
+type (
+	// EnvResolver resolves an environment ID to its connection details.
+	// Returns: accessToken, enabled, error
+	EnvResolver func(ctx context.Context, id string) (*string, bool, error)
 
+	// AuthValidator authenticates a request and returns the caller's permission set and user (nil for non-user callers).
+	// Sudo permission sets (internal agent proxies) bypass authorization.
+	AuthValidator func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool)
+
+	// EnvironmentMiddleware proxies requests for remote environments to their respective agents.
+	EnvironmentMiddleware struct {
+		resolver      EnvResolver
+		authValidator AuthValidator
+		registry      *agent.TunnelRegistry
+		matcher       *authz.PermissionMatcher
+		// checkOrigin is the local WebSocket Origin validator, so proxied upgrades cannot ride a cross-origin session.
+		checkOrigin func(*http.Request) bool
+		localID     string
+		paramName   string
+	}
+
+	EnvironmentProxyConfig struct {
+		Resolver      EnvResolver
+		AuthValidator AuthValidator
+		Matcher       *authz.PermissionMatcher
+		Registry      *agent.TunnelRegistry
+		CheckOrigin   func(*http.Request) bool
+		LocalID       string
+		ParamName     string
+	}
+
+	proxiedReplayBody struct {
+		io.Reader
+
+		captured *os.File
+		original io.ReadCloser
+	}
+)
+
+const (
+	apiEnvironmentsPrefix            = "/api/environments/"
+	environmentsPathMarker           = "/environments/"
 	maxProxiedWorkspaceManifestBytes = 1024 * 1024
 	maxProxiedWorkspacePrefixBytes   = 16 * 1024 * 1024
 	maxProxiedGitOpsSyncBodyBytes    = 1024 * 1024
 )
 
-var errProxiedBodyTooLarge = errors.New("proxied request body is too large")
+var (
+	errProxiedBodyTooLarge = errors.New("proxied request body is too large")
 
-// managementEndpointSet contains paths handled locally and never proxied to remote environments.
-var managementEndpointSet = map[string]struct{}{
-	"/test":       {},
-	"/sync":       {},
-	"/deployment": {},
-	"/version":    {},
-	"/settings":   {},
-	"/jobs":       {},
-}
-
-// EnvResolver resolves an environment ID to its connection details.
-// Returns: accessToken, enabled, error
-type EnvResolver func(ctx context.Context, id string) (*string, bool, error)
-
-// AuthValidator authenticates a request and returns the caller's permission set and user (nil for non-user callers).
-// Sudo permission sets (internal agent proxies) bypass authorization.
-type AuthValidator func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool)
-
-// EnvironmentMiddleware proxies requests for remote environments to their respective agents.
-type EnvironmentMiddleware struct {
-	resolver      EnvResolver
-	authValidator AuthValidator
-	registry      *agent.TunnelRegistry
-	matcher       *authz.PermissionMatcher
-	// checkOrigin is the local WebSocket Origin validator, so proxied upgrades cannot ride a cross-origin session.
-	checkOrigin func(*http.Request) bool
-	localID     string
-	paramName   string
-}
-
-type EnvironmentProxyConfig struct {
-	Resolver      EnvResolver
-	AuthValidator AuthValidator
-	Matcher       *authz.PermissionMatcher
-	Registry      *agent.TunnelRegistry
-	CheckOrigin   func(*http.Request) bool
-	LocalID       string
-	ParamName     string
-}
+	// managementEndpointSet contains paths handled locally and never proxied to remote environments.
+	managementEndpointSet = map[string]struct{}{
+		"/test":       {},
+		"/sync":       {},
+		"/deployment": {},
+		"/version":    {},
+		"/settings":   {},
+		"/jobs":       {},
+	}
+)
 
 func NewEnvironmentProxyMiddleware(cfg EnvironmentProxyConfig) echo.MiddlewareFunc {
 	m := &EnvironmentMiddleware{
@@ -405,13 +415,6 @@ func proxiedGitOpsSyncPermissions(request *http.Request, method string, segments
 		required = append(required, authz.PermGitOpsBackup)
 	}
 	return required, nil
-}
-
-type proxiedReplayBody struct {
-	io.Reader
-
-	captured *os.File
-	original io.ReadCloser
 }
 
 func (b *proxiedReplayBody) Close() error {

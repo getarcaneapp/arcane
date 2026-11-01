@@ -27,29 +27,30 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
 )
 
+type (
+	// DiagnosticsService gathers Go runtime, memory, and garbage-collector
+	// statistics for the diagnostics endpoints. It holds no external dependencies;
+	// WebSocket metrics and worker-goroutine counts are merged in at the handler
+	// layer to avoid an import cycle with the api/ws package.
+	DiagnosticsService struct {
+		startedAt    time.Time
+		actors       *francis.Runtime
+		coordinator  *runs.Coordinator
+		environments *environment.EnvironmentService
+
+		leakReport types.GoroutineLeakReport
+
+		leakMu sync.Mutex
+	}
+)
+
 const (
 	recentGCPauseSamples     = 16
 	goroutineLeakProfileName = "goroutineleak"
 	leakScanCacheTTL         = 30 * time.Second
-
 	// maxActorDetailRows caps the instances and failures listed per actor type.
 	maxActorDetailRows = 10
 )
-
-// DiagnosticsService gathers Go runtime, memory, and garbage-collector
-// statistics for the diagnostics endpoints. It holds no external dependencies;
-// WebSocket metrics and worker-goroutine counts are merged in at the handler
-// layer to avoid an import cycle with the api/ws package.
-type DiagnosticsService struct {
-	startedAt    time.Time
-	actors       *francis.Runtime
-	coordinator  *runs.Coordinator
-	environments *environment.EnvironmentService
-
-	leakReport types.GoroutineLeakReport
-
-	leakMu sync.Mutex
-}
 
 func NewDiagnosticsService(actors *francis.Runtime, coordinator *runs.Coordinator, environments *environment.EnvironmentService) *DiagnosticsService {
 	return &DiagnosticsService{startedAt: time.Now(), actors: actors, coordinator: coordinator, environments: environments}

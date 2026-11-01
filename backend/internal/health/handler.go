@@ -8,27 +8,29 @@ import (
 	kit "kit.getarcane.app"
 )
 
-type healthHandler struct {
-	service *Service
-}
+type (
+	healthHandler struct {
+		service *Service
+	}
 
-type healthOutput struct {
-	Body   types.HealthResponse
-	Status int
-}
+	healthOutput struct {
+		Body   types.HealthResponse
+		Status int
+	}
 
-type headHealthOutput struct {
-	Status int
-}
+	headHealthOutput struct {
+		Status int
+	}
 
-type readyOutput struct {
-	Body   types.ReadinessResponse
-	Status int
-}
+	readyOutput struct {
+		Body   types.ReadinessResponse
+		Status int
+	}
 
-type healthOutputs interface {
-	healthOutput | headHealthOutput
-}
+	healthOutputs interface {
+		healthOutput | headHealthOutput
+	}
+)
 
 // health reports DOWN once the Francis host has exited; startup stays UP.
 func health[T healthOutputs](h *healthHandler) func(context.Context, *struct{}) (*T, error) {

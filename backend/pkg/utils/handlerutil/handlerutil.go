@@ -20,12 +20,31 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
 )
 
-// Out is the huma response envelope for endpoints returning base.ApiResponse[T].
-// It replaces the per-endpoint `type XxxOutput struct { Body base.ApiResponse[T] }`
-// wrappers; outputs carrying extra fields (headers, status) keep their own type.
-type Out[T any] struct {
-	Body types.ApiResponse[T]
-}
+type (
+	// Out is the huma response envelope for endpoints returning base.ApiResponse[T].
+	// It replaces the per-endpoint `type XxxOutput struct { Body base.ApiResponse[T] }`
+	// wrappers; outputs carrying extra fields (headers, status) keep their own type.
+	Out[T any] struct {
+		Body types.ApiResponse[T]
+	}
+
+	// Page is the huma response envelope for endpoints returning base.Paginated[T].
+	Page[T any] struct {
+		Body types.Paginated[T]
+	}
+
+	// ActivityAppContext carries the app lifecycle context through handler registration.
+	ActivityAppContext struct {
+		ctx context.Context
+	}
+
+	// ProblemError is an RFC 9457 problem that also carries API error details such as the invalid field.
+	ProblemError struct {
+		*huma.ErrorModel
+
+		Details any `json:"details,omitempty"`
+	}
+)
 
 // MessageOutput is a success response carrying a message and, when an activity tracks the work, its ID.
 func MessageOutput(message, activityID string) *Out[types.MessageResponse] {
@@ -34,16 +53,6 @@ func MessageOutput(message, activityID string) *Out[types.MessageResponse] {
 		data.ActivityID = &activityID
 	}
 	return &Out[types.MessageResponse]{Body: types.ApiResponse[types.MessageResponse]{Success: true, Data: data}}
-}
-
-// Page is the huma response envelope for endpoints returning base.Paginated[T].
-type Page[T any] struct {
-	Body types.Paginated[T]
-}
-
-// ActivityAppContext carries the app lifecycle context through handler registration.
-type ActivityAppContext struct {
-	ctx context.Context
 }
 
 // NewActivityAppContext wraps the app lifecycle context for handler constructors.
@@ -93,13 +102,6 @@ func RequireUser(ctx context.Context) (*types.Actor, error) {
 		return nil, huma.Error401Unauthorized("Not authenticated")
 	}
 	return user, nil
-}
-
-// ProblemError is an RFC 9457 problem that also carries API error details such as the invalid field.
-type ProblemError struct {
-	*huma.ErrorModel
-
-	Details any `json:"details,omitempty"`
 }
 
 // APIError converts a service error into a problem response that keeps its API error details.

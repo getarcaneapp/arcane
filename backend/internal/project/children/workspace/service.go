@@ -26,10 +26,12 @@ import (
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v3/pkg/workspace"
 )
 
-// Service reads and edits a project directory as a bounded workspace.
-type Service struct {
-	settingsService *settings.SettingsService
-}
+type (
+	// Service reads and edits a project directory as a bounded workspace.
+	Service struct {
+		settingsService *settings.SettingsService
+	}
+)
 
 func New(settingsService *settings.SettingsService) *Service {
 	return &Service{settingsService: settingsService}

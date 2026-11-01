@@ -30,27 +30,28 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
+type (
+	// StreamHandler multiplexes every live feed onto one connection.
+	StreamHandler struct {
+		events      *event.EventService
+		activity    *activity.ActivityHandler
+		environment *environment.EnvironmentHandler
+		version     *version.VersionService
+		system      *system.SystemService
+	}
+
+	StreamClientInput struct {
+		Channels string `query:"channels" doc:"Comma-separated channels to subscribe to: environments, activities, events, version, arcane-upgrade"`
+		Limit    int    `query:"limit" default:"0" doc:"Maximum activities to include in each activities-channel snapshot"`
+	}
+)
+
 const (
 	clientStreamHeartbeatInterval = 15 * time.Second
 	clientStreamDeadPeerTimeout   = 45 * time.Second
 	clientStreamEventBuffer       = 64
-	// Per-channel handoff buffer; small because the shared writer is the real backpressure point.
-	clientStreamChannelBuffer = 16
+	clientStreamChannelBuffer     = 16
 )
-
-// StreamHandler multiplexes every live feed onto one connection.
-type StreamHandler struct {
-	events      *event.EventService
-	activity    *activity.ActivityHandler
-	environment *environment.EnvironmentHandler
-	version     *version.VersionService
-	system      *system.SystemService
-}
-
-type StreamClientInput struct {
-	Channels string `query:"channels" doc:"Comma-separated channels to subscribe to: environments, activities, events, version, arcane-upgrade"`
-	Limit    int    `query:"limit" default:"0" doc:"Maximum activities to include in each activities-channel snapshot"`
-}
 
 // RegisterStream registers the multiplexed client stream, reusing each domain's producer for its channel.
 func RegisterStream(

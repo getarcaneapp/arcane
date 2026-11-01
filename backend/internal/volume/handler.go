@@ -26,92 +26,94 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// VolumeHandler provides Huma-based volume management endpoints.
-type VolumeHandler struct {
-	volumeService      *VolumeService
-	dockerService      *docker.DockerClientService
-	activityService    *activity.ActivityService
-	environmentService *environment.EnvironmentService
-	appCtx             context.Context
-}
+type (
+	// VolumeHandler provides Huma-based volume management endpoints.
+	VolumeHandler struct {
+		volumeService      *VolumeService
+		dockerService      *docker.DockerClientService
+		activityService    *activity.ActivityService
+		environmentService *environment.EnvironmentService
+		appCtx             context.Context
+	}
 
-// VolumeUsageCountsData represents the counts of volumes by usage status.
-// This is a local type to avoid schema naming conflicts with image.UsageCounts.
-type VolumeUsageCountsData struct {
-	Inuse  int `json:"inuse"`
-	Unused int `json:"unused"`
-	Total  int `json:"total"`
-}
+	// VolumeUsageCountsData represents the counts of volumes by usage status.
+	// This is a local type to avoid schema naming conflicts with image.UsageCounts.
+	VolumeUsageCountsData struct {
+		Inuse  int `json:"inuse"`
+		Unused int `json:"unused"`
+		Total  int `json:"total"`
+	}
 
-type ListVolumesInput struct {
-	EnvironmentID   string `path:"id" doc:"Environment ID"`
-	Search          string `query:"search" doc:"Search query"`
-	Sort            string `query:"sort" doc:"Column to sort by"`
-	Order           string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	InUse           string `query:"inUse" doc:"Filter by in-use status (true/false)"`
-	Start           int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit           int    `query:"limit" default:"20" doc:"Number of items per page"`
-	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal volumes"`
-}
+	ListVolumesInput struct {
+		EnvironmentID   string `path:"id" doc:"Environment ID"`
+		Search          string `query:"search" doc:"Search query"`
+		Sort            string `query:"sort" doc:"Column to sort by"`
+		Order           string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		InUse           string `query:"inUse" doc:"Filter by in-use status (true/false)"`
+		Start           int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit           int    `query:"limit" default:"20" doc:"Number of items per page"`
+		IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal volumes"`
+	}
 
-type ListVolumesOutput struct {
-	Body types.PaginatedWithCounts[types.Volume, VolumeUsageCountsData]
-}
+	ListVolumesOutput struct {
+		Body types.PaginatedWithCounts[types.Volume, VolumeUsageCountsData]
+	}
 
-type GetVolumeInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-}
+	GetVolumeInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		VolumeName    string `path:"volumeName" doc:"Volume name"`
+	}
 
-type CreateVolumeInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	types.Create[types.Volume]
-}
+	CreateVolumeInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		types.Create[types.Volume]
+	}
 
-type RenameVolumeInput struct {
-	EnvironmentID string             `path:"id" doc:"Environment ID"`
-	VolumeName    string             `path:"volumeName" doc:"Current volume name"`
-	Body          types.VolumeRename `doc:"Volume rename data"`
-}
+	RenameVolumeInput struct {
+		EnvironmentID string             `path:"id" doc:"Environment ID"`
+		VolumeName    string             `path:"volumeName" doc:"Current volume name"`
+		Body          types.VolumeRename `doc:"Volume rename data"`
+	}
 
-type RemoveVolumeInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	Force         bool   `query:"force" doc:"Force removal"`
-}
+	RemoveVolumeInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		VolumeName    string `path:"volumeName" doc:"Volume name"`
+		Force         bool   `query:"force" doc:"Force removal"`
+	}
 
-// VolumePruneReportData represents the result of a volume prune operation.
-// This is a local type to avoid schema naming conflicts with image.PruneReport.
-type VolumePruneReportData struct {
-	ActivityID     *string  `json:"activityId,omitempty"`
-	VolumesDeleted []string `json:"volumesDeleted,omitempty"`
-	SpaceReclaimed uint64   `json:"spaceReclaimed"`
-}
+	// VolumePruneReportData represents the result of a volume prune operation.
+	// This is a local type to avoid schema naming conflicts with image.PruneReport.
+	VolumePruneReportData struct {
+		ActivityID     *string  `json:"activityId,omitempty"`
+		VolumesDeleted []string `json:"volumesDeleted,omitempty"`
+		SpaceReclaimed uint64   `json:"spaceReclaimed"`
+	}
 
-type GetVolumeUsageInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-}
+	GetVolumeUsageInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		VolumeName    string `path:"volumeName" doc:"Volume name"`
+	}
 
-// VolumeUsageResponse represents volume usage information.
-type VolumeUsageResponse struct {
-	Containers []string `json:"containers"`
-	InUse      bool     `json:"inUse"`
-}
+	// VolumeUsageResponse represents volume usage information.
+	VolumeUsageResponse struct {
+		Containers []string `json:"containers"`
+		InUse      bool     `json:"inUse"`
+	}
 
-type GetVolumeUsageCountsInput struct {
-	EnvironmentID   string `path:"id" doc:"Environment ID"`
-	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal volumes"`
-}
+	GetVolumeUsageCountsInput struct {
+		EnvironmentID   string `path:"id" doc:"Environment ID"`
+		IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal volumes"`
+	}
 
-// VolumeSizeInfo represents size information for a single volume.
-type VolumeSizeInfo struct {
-	types.EnvironmentTag
+	// VolumeSizeInfo represents size information for a single volume.
+	VolumeSizeInfo struct {
+		types.EnvironmentTag
 
-	Name     string `json:"name"`
-	Size     int64  `json:"size"`
-	RefCount int64  `json:"refCount"`
-}
+		Name     string `json:"name"`
+		Size     int64  `json:"size"`
+		RefCount int64  `json:"refCount"`
+	}
+)
 
 // ListVolumes returns a paginated list of volumes.
 func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput) (*ListVolumesOutput, error) {

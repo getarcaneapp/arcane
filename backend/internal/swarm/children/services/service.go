@@ -26,35 +26,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jsonx"
 )
 
-// Service manages swarm services.
-type Service struct {
-	docker        *dockerInternal.DockerClientService
-	ensureManager func(ctx context.Context) error
-	listTasks     func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
-}
-
-func NewService(
-	dockerService *dockerInternal.DockerClientService,
-	ensureManager func(ctx context.Context) error,
-	listTasks func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error),
-) *Service {
-	return &Service{docker: dockerService, ensureManager: ensureManager, listTasks: listTasks}
-}
-
-func (s *Service) ListServicesPaginated(ctx context.Context, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error) {
-	if err := s.ensureManager(ctx); err != nil {
-		return nil, pagination.Response{}, err
+type (
+	// Service manages swarm services.
+	Service struct {
+		docker        *dockerInternal.DockerClientService
+		ensureManager func(ctx context.Context) error
+		listTasks     func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
 	}
-
-	servicesResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceListResult, error) {
-		return dockerClient.ServiceList(ctx, client.ServiceListOptions{Status: true})
-	})
-	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm services: %w", err)
-	}
-
-	return s.PaginateSummaries(ctx, servicesResult.Items, params)
-}
+)
 
 var servicePagination = pagination.Config[types.SwarmServiceSummary]{
 	SearchAccessors: []pagination.SearchAccessor[types.SwarmServiceSummary]{
@@ -83,6 +62,29 @@ var servicePagination = pagination.Config[types.SwarmServiceSummary]{
 		{Key: "created", Fn: func(a, b types.SwarmServiceSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
 		{Key: "updated", Fn: func(a, b types.SwarmServiceSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
 	},
+}
+
+func NewService(
+	dockerService *dockerInternal.DockerClientService,
+	ensureManager func(ctx context.Context) error,
+	listTasks func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error),
+) *Service {
+	return &Service{docker: dockerService, ensureManager: ensureManager, listTasks: listTasks}
+}
+
+func (s *Service) ListServicesPaginated(ctx context.Context, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error) {
+	if err := s.ensureManager(ctx); err != nil {
+		return nil, pagination.Response{}, err
+	}
+
+	servicesResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceListResult, error) {
+		return dockerClient.ServiceList(ctx, client.ServiceListOptions{Status: true})
+	})
+	if err != nil {
+		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm services: %w", err)
+	}
+
+	return s.PaginateSummaries(ctx, servicesResult.Items, params)
 }
 
 // PaginateSummaries summarizes services with their running nodes and networks, then paginates them.

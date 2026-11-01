@@ -13,7 +13,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 )
 
-const maxCustomThemes = 20
+const (
+	maxCustomThemes = 20
+)
 
 // CurrentUserFromContext retrieves the authenticated persistence model.
 func CurrentUserFromContext(ctx context.Context) (*User, bool) {

@@ -11,8 +11,30 @@ import (
 	kit "kit.getarcane.app"
 )
 
-// ImagePullMode describes when Arcane should pull an image for a project.
-type ImagePullMode int
+type (
+	// ImagePullMode describes when Arcane should pull an image for a project.
+	ImagePullMode int
+
+	// ImagePullStep is one entry of an image pull plan: the mode plus, for
+	// ImagePullModeRefresh, the window after which a new pull is due.
+	ImagePullStep struct {
+		Mode         ImagePullMode
+		RefreshAfter time.Duration
+	}
+
+	// DeployImageDecision describes how deploy should handle a service image.
+	DeployImageDecision struct {
+		StaleAfter    time.Duration
+		Build         bool
+		PullAlways    bool
+		PullIfMissing bool
+		// PullIfStale pulls when the image is missing or its last-tag time is
+		// older than StaleAfter (pull_policy daily/weekly/every_N).
+		PullIfStale             bool
+		FallbackBuildOnPullFail bool
+		RequireLocalOnly        bool
+	}
+)
 
 const (
 	// ImagePullModeNever skips pulling the image.
@@ -25,26 +47,6 @@ const (
 	// ImagePullModeAlways pulls even when the image is present locally.
 	ImagePullModeAlways
 )
-
-// ImagePullStep is one entry of an image pull plan: the mode plus, for
-// ImagePullModeRefresh, the window after which a new pull is due.
-type ImagePullStep struct {
-	Mode         ImagePullMode
-	RefreshAfter time.Duration
-}
-
-// DeployImageDecision describes how deploy should handle a service image.
-type DeployImageDecision struct {
-	StaleAfter    time.Duration
-	Build         bool
-	PullAlways    bool
-	PullIfMissing bool
-	// PullIfStale pulls when the image is missing or its last-tag time is
-	// older than StaleAfter (pull_policy daily/weekly/every_N).
-	PullIfStale             bool
-	FallbackBuildOnPullFail bool
-	RequireLocalOnly        bool
-}
 
 // ResolveServiceImagePullMode resolves compose pull_policy into Arcane's pull step.
 func ResolveServiceImagePullMode(svc composetypes.ServiceConfig) ImagePullStep {

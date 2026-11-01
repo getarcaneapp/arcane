@@ -32,6 +32,28 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
 )
 
+type (
+	RuntimeOptions struct {
+		NetworkMode  string
+		ContainerEnv []string
+		Mounts       []mounttypes.Mount
+	}
+
+	ResourceLimits struct {
+		CPUSet    string
+		Resources containertypes.Resources
+		Apply     bool
+	}
+
+	HostConfigOptions struct {
+		CacheVolume  string
+		Runtime      RuntimeOptions
+		SecurityOpts []string
+		Limits       ResourceLimits
+		Privileged   bool
+	}
+)
+
 const (
 	// DefaultNetworkMode is the network the scan container joins when nothing
 	// more specific is configured or detected.
@@ -42,26 +64,17 @@ const (
 	// RegistryConfigDir is where the generated registry auth config lands inside
 	// the scan container.
 	RegistryConfigDir = "/tmp/arcane-registry-auth"
-
 	// NanoCPUsPerCore and BytesPerMB convert configured limits to Docker units.
 	NanoCPUsPerCore = int64(1_000_000_000)
 	BytesPerMB      = int64(1024 * 1024)
-
 	// ContainerFilesDir is where generated files are copied inside the scan container.
 	ContainerFilesDir  = "/tmp"
 	RegistryConfigFile = "arcane-registry-auth/config.json"
 	TrivyConfigFile    = "trivy-config.yaml"
 	TrivyIgnoreFile    = "trivy-ignore"
-
-	outputPathPrefix = "/tmp/arcane-trivy-result-"
-	errorExcerptSize = int64(32 * 1024)
+	outputPathPrefix   = "/tmp/arcane-trivy-result-"
+	errorExcerptSize   = int64(32 * 1024)
 )
-
-type RuntimeOptions struct {
-	NetworkMode  string
-	ContainerEnv []string
-	Mounts       []mounttypes.Mount
-}
 
 func ResolveUnixSocketSource(
 	ctx context.Context,
@@ -93,20 +106,6 @@ func ResolveUnixSocketSource(
 
 func NewOutputPath() string {
 	return outputPathPrefix + strconv.FormatInt(time.Now().UnixNano(), 10) + ".json"
-}
-
-type ResourceLimits struct {
-	CPUSet    string
-	Resources containertypes.Resources
-	Apply     bool
-}
-
-type HostConfigOptions struct {
-	CacheVolume  string
-	Runtime      RuntimeOptions
-	SecurityOpts []string
-	Limits       ResourceLimits
-	Privileged   bool
 }
 
 func BuildHostConfig(opts HostConfigOptions) *containertypes.HostConfig {

@@ -12,11 +12,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type activityObserverFake struct {
-	unavailable  atomic.Bool
-	observed     atomic.Int32
-	existingOnly bool
-}
+type (
+	activityObserverFake struct {
+		unavailable  atomic.Bool
+		observed     atomic.Int32
+		existingOnly bool
+	}
+)
 
 func (o *activityObserverFake) ActivityID(run types.SchedulerRun) string {
 	if o.existingOnly {

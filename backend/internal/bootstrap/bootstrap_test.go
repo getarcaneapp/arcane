@@ -45,10 +45,12 @@ import (
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
-type blockingBusWatcher struct {
-	started chan struct{}
-	stopped chan struct{}
-}
+type (
+	blockingBusWatcher struct {
+		started chan struct{}
+		stopped chan struct{}
+	}
+)
 
 func (w *blockingBusWatcher) Name() string { return "blocking" }
 

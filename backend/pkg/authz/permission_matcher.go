@@ -9,31 +9,33 @@ import (
 	kit "kit.getarcane.app"
 )
 
-// PermissionMatcher maps an HTTP method and environment-relative resource path
-// to the permission required to perform it. It mirrors the per-operation
-// RequirePermission checks enforced for the local environment so the remote
-// environment proxy can enforce the same permission before forwarding a request
-// to an agent (which itself runs with a sudo permission set and performs no
-// authorization).
-//
-// Paths registered and looked up are the resource suffix AFTER the
-// /environments/{id} prefix, e.g. "/containers/{containerId}/start" for the
-// REST API or "/ws/containers/{containerId}/terminal" for WebSocket streams.
-//
-// The matcher is populated once during startup and is read-only afterwards, so
-// concurrent Lookup calls during request serving need no synchronization.
-type PermissionMatcher struct {
-	aggregates map[string]struct{}
-	routes     []permRoute
-}
+type (
+	// PermissionMatcher maps an HTTP method and environment-relative resource path
+	// to the permission required to perform it. It mirrors the per-operation
+	// RequirePermission checks enforced for the local environment so the remote
+	// environment proxy can enforce the same permission before forwarding a request
+	// to an agent (which itself runs with a sudo permission set and performs no
+	// authorization).
+	//
+	// Paths registered and looked up are the resource suffix AFTER the
+	// /environments/{id} prefix, e.g. "/containers/{containerId}/start" for the
+	// REST API or "/ws/containers/{containerId}/terminal" for WebSocket streams.
+	//
+	// The matcher is populated once during startup and is read-only afterwards, so
+	// concurrent Lookup calls during request serving need no synchronization.
+	PermissionMatcher struct {
+		aggregates map[string]struct{}
+		routes     []permRoute
+	}
 
-type permRoute struct {
-	actionPerms map[string]string
-	method      string
-	perm        string
-	actionParam string
-	segments    []string // literal segment, or "*" for a path parameter
-}
+	permRoute struct {
+		actionPerms map[string]string
+		method      string
+		perm        string
+		actionParam string
+		segments    []string // literal segment, or "*" for a path parameter
+	}
+)
 
 // NewPermissionMatcher returns an empty matcher.
 func NewPermissionMatcher() *PermissionMatcher {

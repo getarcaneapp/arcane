@@ -21,6 +21,16 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/s3"
 )
 
+type (
+	S3DestinationService struct {
+		db *database.DB
+		// checkRemoteReferences rejects a deletion while any managed environment
+		// still references the destination (or cannot be checked conclusively).
+		// Nil outside the manager's module wiring.
+		checkRemoteReferences func(ctx context.Context, destinationID string) error
+	}
+)
+
 var (
 	ErrS3DestinationNotFound = common.Classify(common.ErrNotFound, errors.New("S3 destination not found"))
 	ErrS3DestinationInUse    = errors.New("S3 destination is in use")
@@ -28,14 +38,6 @@ var (
 	// secret is never combined with changed connection or trust settings.
 	errS3SecretRequired = errors.New("re-enter the secret access key when changing the endpoint, bucket, region, access key ID, SSL mode, or path style")
 )
-
-type S3DestinationService struct {
-	db *database.DB
-	// checkRemoteReferences rejects a deletion while any managed environment
-	// still references the destination (or cannot be checked conclusively).
-	// Nil outside the manager's module wiring.
-	checkRemoteReferences func(ctx context.Context, destinationID string) error
-}
 
 func NewS3DestinationService(db *database.DB, checkRemoteReferences func(context.Context, string) error) *S3DestinationService {
 	return &S3DestinationService{db: db, checkRemoteReferences: checkRemoteReferences}

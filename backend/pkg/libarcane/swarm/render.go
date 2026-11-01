@@ -13,24 +13,26 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
-type StackRenderOptions struct {
-	PathMapper      *projects.PathMapper
-	Name            string
-	ComposeContent  string
-	OverrideContent string
-	EnvContent      string
-	WorkingDir      string
-}
+type (
+	StackRenderOptions struct {
+		PathMapper      *projects.PathMapper
+		Name            string
+		ComposeContent  string
+		OverrideContent string
+		EnvContent      string
+		WorkingDir      string
+	}
 
-type StackRenderResult struct {
-	Name            string
-	RenderedCompose string
-	Services        []string
-	Networks        []string
-	Volumes         []string
-	Configs         []string
-	Secrets         []string
-}
+	StackRenderResult struct {
+		Name            string
+		RenderedCompose string
+		Services        []string
+		Networks        []string
+		Volumes         []string
+		Configs         []string
+		Secrets         []string
+	}
+)
 
 // RenderStackConfig renders a Compose-defined stack without deploying it.
 //

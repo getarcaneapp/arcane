@@ -49,46 +49,58 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-type VolumeService struct {
-	workspaceLocks utils.KeyedMutex
-	// helperGroup deduplicates concurrent read-only helper creation per volume.
-	// Without it two simultaneous browse requests each create a helper and the
-	// second overwrites the first in helperByVolume, orphaning a `sleep infinity`
-	// container that pins the volume until restart.
-	helperGroup      singleflight.Group
-	db               *database.DB
-	dockerService    *dockerInternal.DockerClientService
-	eventService     *event.EventService
-	settingsService  *settings.SettingsService
-	imageService     *image.ImageService
-	helperByVolume   map[string]*volumeHelper
-	backup           *volumebackup.Service
-	workspace        *workspace.Service
-	backupVolumeName string
-	helperMu         sync.Mutex
-}
+type (
+	VolumeService struct {
+		workspaceLocks utils.KeyedMutex
+		// helperGroup deduplicates concurrent read-only helper creation per volume.
+		// Without it two simultaneous browse requests each create a helper and the
+		// second overwrites the first in helperByVolume, orphaning a `sleep infinity`
+		// container that pins the volume until restart.
+		helperGroup      singleflight.Group
+		db               *database.DB
+		dockerService    *dockerInternal.DockerClientService
+		eventService     *event.EventService
+		settingsService  *settings.SettingsService
+		imageService     *image.ImageService
+		helperByVolume   map[string]*volumeHelper
+		backup           *volumebackup.Service
+		workspace        *workspace.Service
+		backupVolumeName string
+		helperMu         sync.Mutex
+	}
 
-var ErrVolumeBackupAlreadyRunning = errors.New("a backup is already running for this volume")
+	VolumeServiceParams struct {
+		fx.In
+
+		DB               *database.DB
+		DockerService    *dockerInternal.DockerClientService
+		EventService     *event.EventService
+		SettingsService  *settings.SettingsService
+		ContainerService *containerdomain.ContainerService
+		ImageService     *image.ImageService
+		Engine           *backup.Engine
+		S3Destinations   *s3.S3DestinationService
+		Config           *config.Config
+		RecoveryKeys     *backup.RecoveryKeyStore
+	}
+
+	// VolumeSizeData holds size information for a volume.
+	VolumeSizeData struct {
+		Size     int64
+		RefCount int64
+	}
+)
 
 const (
 	internalVolumePruneFilterValue = libarcane.InternalResourceLabel + "=true"
 	legacyDefaultEncryptionKey     = "arcane-dev-key-32-characters!!!"
 )
 
-type VolumeServiceParams struct {
-	fx.In
+var (
+	ErrVolumeBackupAlreadyRunning = errors.New("a backup is already running for this volume")
 
-	DB               *database.DB
-	DockerService    *dockerInternal.DockerClientService
-	EventService     *event.EventService
-	SettingsService  *settings.SettingsService
-	ContainerService *containerdomain.ContainerService
-	ImageService     *image.ImageService
-	Engine           *backup.Engine
-	S3Destinations   *s3.S3DestinationService
-	Config           *config.Config
-	RecoveryKeys     *backup.RecoveryKeyStore
-}
+	generatedAnonymousVolumeName = regexp.MustCompile(`^[a-f0-9]{64}$`)
+)
 
 func NewVolumeService(p VolumeServiceParams) *VolumeService {
 	backupVolumeName := cmp.Or(strings.TrimSpace(p.Config.BackupVolumeName), "arcane-backups")
@@ -606,12 +618,6 @@ func (s *VolumeService) GetVolumeUsage(ctx context.Context, name string) (bool, 
 	return inUse, containerIDs, nil
 }
 
-// VolumeSizeData holds size information for a volume.
-type VolumeSizeData struct {
-	Size     int64
-	RefCount int64
-}
-
 // GetVolumeSizes returns disk usage data for all volumes.
 // This is a slow operation as it calls Docker's DiskUsage API.
 func (s *VolumeService) GetVolumeSizes(ctx context.Context) (map[string]VolumeSizeData, error) {
@@ -776,8 +782,6 @@ func (s *VolumeService) isInternalVolume(v types.Volume) bool {
 	internal, _ := kit.ParseBool(v.Labels[libarcane.InternalResourceLabel])
 	return internal
 }
-
-var generatedAnonymousVolumeName = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 // ListBackupVolumeOptions returns the current non-internal volumes used by centralized backup selection.
 func (s *VolumeService) ListBackupVolumeOptions(ctx context.Context) ([]types.SystemVolumeBackupOption, error) {

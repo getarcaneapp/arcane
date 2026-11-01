@@ -28,20 +28,22 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
-type Service struct {
-	db              *database.DB
-	client          *remenv.Client
-	settingsService *settings.SettingsService
-	syncGate        *utils.SyncGate
-	syncLocks       utils.KeyedMutex
-}
+type (
+	Service struct {
+		db              *database.DB
+		client          *remenv.Client
+		settingsService *settings.SettingsService
+		syncGate        *utils.SyncGate
+		syncLocks       utils.KeyedMutex
+	}
 
-// Target is a validated remote environment endpoint; build it with NewTarget.
-type Target struct {
-	accessToken *string
-	id          string
-	name        string
-}
+	// Target is a validated remote environment endpoint; build it with NewTarget.
+	Target struct {
+		accessToken *string
+		id          string
+		name        string
+	}
+)
 
 // New builds the remote transport. syncGate is owned by the parent so it can
 // forget delivery state when an environment reconnects.

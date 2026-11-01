@@ -38,6 +38,45 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
+type (
+	ApnsService struct {
+		db         *database.DB
+		config     *config.Config
+		settings   *settings.SettingsService
+		roles      *role.RoleService
+		events     *event.EventService
+		httpClient *http.Client
+
+		lifecycleCtx context.Context
+		channelMu    sync.Mutex
+		drainMu      sync.Mutex
+		drainPending atomic.Bool
+	}
+
+	ApnsServiceParams struct {
+		fx.In
+
+		LifecycleCtx    context.Context
+		DB              *database.DB
+		Config          *config.Config
+		SettingsService *settings.SettingsService
+		RoleService     *role.RoleService
+		EventService    *event.EventService
+		HTTPClient      *http.Client
+	}
+
+	relaySigner struct {
+		algorithm string
+		sign      func([]byte) ([]byte, error)
+		publicKey []byte
+	}
+
+	DeviceUpdate struct {
+		Submitted map[string]bool
+		Request   types.ApnsDevice
+	}
+)
+
 const (
 	FeatureName          = "mobile-push-v1"
 	signatureHeader      = "X-Arcane-Signature"
@@ -48,32 +87,6 @@ const (
 	maxTitleLen          = 120
 	maxBodyLen           = 500
 )
-
-type ApnsService struct {
-	db         *database.DB
-	config     *config.Config
-	settings   *settings.SettingsService
-	roles      *role.RoleService
-	events     *event.EventService
-	httpClient *http.Client
-
-	lifecycleCtx context.Context
-	channelMu    sync.Mutex
-	drainMu      sync.Mutex
-	drainPending atomic.Bool
-}
-
-type ApnsServiceParams struct {
-	fx.In
-
-	LifecycleCtx    context.Context
-	DB              *database.DB
-	Config          *config.Config
-	SettingsService *settings.SettingsService
-	RoleService     *role.RoleService
-	EventService    *event.EventService
-	HTTPClient      *http.Client
-}
 
 func NewApnsService(p ApnsServiceParams) *ApnsService {
 	return &ApnsService{
@@ -89,12 +102,6 @@ func NewApnsService(p ApnsServiceParams) *ApnsService {
 
 func (s *ApnsService) Enabled(ctx context.Context) bool {
 	return s.config != nil && !s.config.AgentEnabled && s.settings.GetBoolSetting(ctx, "apnsEnabled")
-}
-
-type relaySigner struct {
-	algorithm string
-	sign      func([]byte) ([]byte, error)
-	publicKey []byte
 }
 
 func (s *ApnsService) signer(ctx context.Context) (*relaySigner, error) {
@@ -387,11 +394,6 @@ func (s *ApnsService) device(ctx context.Context, userID, id string) (*Device, e
 		return nil, fmt.Errorf("failed to load push device: %w", err)
 	}
 	return &device, nil
-}
-
-type DeviceUpdate struct {
-	Submitted map[string]bool
-	Request   types.ApnsDevice
 }
 
 func (s *ApnsService) UpdateDevice(ctx context.Context, userID, id string, change DeviceUpdate) (types.ApnsDevice, error) {

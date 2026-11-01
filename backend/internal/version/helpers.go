@@ -13,15 +13,30 @@ import (
 	kit "kit.getarcane.app"
 )
 
+type (
+	commitParser struct {
+		pattern *regexp.Regexp
+		group   string
+	}
+
+	commitComparison struct {
+		Commits []struct {
+			SHA    string `json:"sha"`
+			Commit struct {
+				Message string `json:"message"`
+			} `json:"commit"`
+			Author struct {
+				Login string `json:"login"`
+			} `json:"author"`
+		} `json:"commits"`
+		TotalCommits int `json:"total_commits"`
+	}
+)
+
 const (
 	repoURL              = "https://github.com/getarcaneapp/arcane"
 	commitCompareURLBase = "https://api.github.com/repos/getarcaneapp/arcane/compare/"
 )
-
-type commitParser struct {
-	pattern *regexp.Regexp
-	group   string
-}
 
 var (
 	commitSHAPattern      = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
@@ -51,19 +66,6 @@ var (
 		"Other",
 	}
 )
-
-type commitComparison struct {
-	Commits []struct {
-		SHA    string `json:"sha"`
-		Commit struct {
-			Message string `json:"message"`
-		} `json:"commit"`
-		Author struct {
-			Login string `json:"login"`
-		} `json:"author"`
-	} `json:"commits"`
-	TotalCommits int `json:"total_commits"`
-}
 
 func (s *VersionService) commitNotes(ctx context.Context, base, head string) string {
 	key := base + "..." + head

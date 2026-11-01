@@ -26,6 +26,18 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
+type (
+	// UploadService stages chunked upload sessions on local disk. Sessions are
+	// node-local by design: chunks and the consuming request must reach the same
+	// instance, which holds for Arcane's single-instance-per-node deployment (for
+	// remote environments the session lives on that environment's agent).
+	UploadService struct {
+		locks           utils.KeyedMutex
+		settingsService *settings.SettingsService
+		root            string
+	}
+)
+
 const (
 	sessionMetaFilename = "meta.json"
 	sessionDataFilename = "data"
@@ -34,16 +46,6 @@ const (
 // uploadIDPattern matches the random hex component acfs.MkdirTemp generates
 // for session directories; anything else is rejected before touching disk.
 var uploadIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
-
-// UploadService stages chunked upload sessions on local disk. Sessions are
-// node-local by design: chunks and the consuming request must reach the same
-// instance, which holds for Arcane's single-instance-per-node deployment (for
-// remote environments the session lives on that environment's agent).
-type UploadService struct {
-	locks           utils.KeyedMutex
-	settingsService *settings.SettingsService
-	root            string
-}
 
 // NewUploadService builds the session service rooted in the system temp
 // directory; the root is created lazily on first session.

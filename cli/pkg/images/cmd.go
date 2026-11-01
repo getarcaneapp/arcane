@@ -26,6 +26,45 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v3/pkg/images/updates"
 )
 
+var ImageRef = cmdutil.ResourceRef[types.ImageDetailSummary, types.ImageSummary]{
+	EnvironmentScoped: true,
+	Singular:          "image",
+	Plural:            "images",
+	IDHint:            "the image ID",
+	ListCmd:           "arcane images list",
+	GetPath:           clitypes.Image,
+	ListPath:          clitypes.Images,
+	SearchCandidates:  searchImageCandidates,
+	Matches:           imageMatches,
+	Label: func(match types.ImageSummary) string {
+		label := match.ID
+		switch {
+		case len(match.RepoTags) > 0:
+			label = match.RepoTags[0]
+		case match.Repo != "" && match.Tag != "":
+			label = match.Repo + ":" + match.Tag
+		}
+		return fmt.Sprintf("%s (%s)", label, match.ID)
+	},
+	Promote: func(match types.ImageSummary) *types.ImageDetailSummary {
+		return &types.ImageDetailSummary{
+			ID:               match.ID,
+			RepoTags:         match.RepoTags,
+			RepoDigests:      match.RepoDigests,
+			PinnedReferences: match.PinnedReferences,
+			Size:             match.Size,
+		}
+	},
+	IDOf:         func(match types.ImageSummary) string { return match.ID },
+	IdentifierOf: func(details types.ImageDetailSummary) string { return details.ID },
+	Validate: func(details types.ImageDetailSummary, identifier string) error {
+		if details.ID == "" {
+			return fmt.Errorf("image lookup for %q returned empty ID", identifier)
+		}
+		return nil
+	},
+}
+
 // Command builds the images command tree.
 func Command() *cobra.Command {
 	command := &cobra.Command{
@@ -410,45 +449,6 @@ func newUploadCmd() *cobra.Command {
 			return uploadErr
 		},
 	}
-}
-
-var ImageRef = cmdutil.ResourceRef[types.ImageDetailSummary, types.ImageSummary]{
-	EnvironmentScoped: true,
-	Singular:          "image",
-	Plural:            "images",
-	IDHint:            "the image ID",
-	ListCmd:           "arcane images list",
-	GetPath:           clitypes.Image,
-	ListPath:          clitypes.Images,
-	SearchCandidates:  searchImageCandidates,
-	Matches:           imageMatches,
-	Label: func(match types.ImageSummary) string {
-		label := match.ID
-		switch {
-		case len(match.RepoTags) > 0:
-			label = match.RepoTags[0]
-		case match.Repo != "" && match.Tag != "":
-			label = match.Repo + ":" + match.Tag
-		}
-		return fmt.Sprintf("%s (%s)", label, match.ID)
-	},
-	Promote: func(match types.ImageSummary) *types.ImageDetailSummary {
-		return &types.ImageDetailSummary{
-			ID:               match.ID,
-			RepoTags:         match.RepoTags,
-			RepoDigests:      match.RepoDigests,
-			PinnedReferences: match.PinnedReferences,
-			Size:             match.Size,
-		}
-	},
-	IDOf:         func(match types.ImageSummary) string { return match.ID },
-	IdentifierOf: func(details types.ImageDetailSummary) string { return details.ID },
-	Validate: func(details types.ImageDetailSummary, identifier string) error {
-		if details.ID == "" {
-			return fmt.Errorf("image lookup for %q returned empty ID", identifier)
-		}
-		return nil
-	},
 }
 
 func searchImageCandidates(ctx context.Context, c *client.Client, identifier string) ([]types.ImageSummary, error) {

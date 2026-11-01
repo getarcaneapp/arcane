@@ -16,6 +16,29 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
+type (
+	runtimeIdentityRequest struct {
+		DockerHost    string
+		UID           int
+		GID           int
+		CredentialUID uint32
+		CredentialGID uint32
+		Enabled       bool
+	}
+
+	// RuntimeIdentityConfig contains the config-backed environment values used to
+	// switch the process runtime identity before the application initializes.
+	RuntimeIdentityConfig struct {
+		PUID              string
+		PGID              string
+		DockerHost        string
+		DockerConfig      string
+		DatabaseURL       string
+		ProjectsDirectory string
+		InContainer       bool
+	}
+)
+
 const (
 	defaultDataDirectory    = "/app/data"
 	defaultBuildsDirectory  = "/builds"
@@ -28,27 +51,6 @@ const (
 )
 
 var lchownFn = os.Lchown
-
-type runtimeIdentityRequest struct {
-	DockerHost    string
-	UID           int
-	GID           int
-	CredentialUID uint32
-	CredentialGID uint32
-	Enabled       bool
-}
-
-// RuntimeIdentityConfig contains the config-backed environment values used to
-// switch the process runtime identity before the application initializes.
-type RuntimeIdentityConfig struct {
-	PUID              string
-	PGID              string
-	DockerHost        string
-	DockerConfig      string
-	DatabaseURL       string
-	ProjectsDirectory string
-	InContainer       bool
-}
 
 // ApplyRequestedRuntimeIdentity switches the current process to the configured
 // runtime UID/GID before the rest of the app initializes.

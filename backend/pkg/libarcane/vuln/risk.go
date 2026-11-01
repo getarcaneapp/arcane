@@ -11,15 +11,37 @@ import (
 	kit "kit.getarcane.app"
 )
 
+type (
+	// ThreatIntel is the exploitation evidence known for one CVE.
+	ThreatIntel struct {
+		EPSS           *float64
+		KnownExploited bool
+		// KEVOverdue reports a known-exploited CVE past its CISA KEV due date.
+		KEVOverdue bool
+	}
+
+	// RiskScore collects scored members keyed by ID: distinct fixable findings for an image, scanned images for an environment.
+	RiskScore struct {
+		scores   map[string]float64
+		weights  map[string]float64
+		unscored map[string]struct{}
+		// peak is the highest image score recorded for an environment.
+		peak float64
+		// exploitedRunning counts members with a fixable known-exploited finding on a running (or unknown) image;
+		// overdueExploitedRunning counts those past their KEV due date. For an image they are 0 or 1.
+		exploitedRunning        int
+		overdueExploitedRunning int
+	}
+)
+
 const (
 	// ScoringVersion tags risk snapshots; trends only read the current formula.
 	ScoringVersion = 4
 	// TopPackageInsightLimit caps the packages listed in scan insights.
 	TopPackageInsightLimit = 5
-
-	threatFactorNoData = 0.7
-	usageFactorStopped = 0.8
-	usageFactorUnused  = 0.5
+	threatFactorNoData     = 0.7
+	usageFactorStopped     = 0.8
+	usageFactorUnused      = 0.5
 	// concentrationPenalty is the most the fixable finding count adds to an image; it saturates over concentrationScale findings.
 	concentrationPenalty = 8
 	concentrationScale   = 40
@@ -38,14 +60,6 @@ const (
 
 // rankWeights is the share of each of an image's worst fixable findings that enters its score, worst first.
 var rankWeights = [...]float64{0.70, 0.15, 0.05, 0.02}
-
-// ThreatIntel is the exploitation evidence known for one CVE.
-type ThreatIntel struct {
-	EPSS           *float64
-	KnownExploited bool
-	// KEVOverdue reports a known-exploited CVE past its CISA KEV due date.
-	KEVOverdue bool
-}
 
 // CVSSScore returns the CVSS v3 score, else v2, else 0.
 func CVSSScore(cvss *types.CVSSInfo) float64 {
@@ -139,19 +153,6 @@ func FindingPriority(base float64, intel ThreatIntel, exposure types.ImageExposu
 	case types.ImageExposureRunning, types.ImageExposureUnknown:
 	}
 	return min(100, 10*base*threat*usage)
-}
-
-// RiskScore collects scored members keyed by ID: distinct fixable findings for an image, scanned images for an environment.
-type RiskScore struct {
-	scores   map[string]float64
-	weights  map[string]float64
-	unscored map[string]struct{}
-	// peak is the highest image score recorded for an environment.
-	peak float64
-	// exploitedRunning counts members with a fixable known-exploited finding on a running (or unknown) image;
-	// overdueExploitedRunning counts those past their KEV due date. For an image they are 0 or 1.
-	exploitedRunning        int
-	overdueExploitedRunning int
 }
 
 // AddFinding scores one finding occurrence, records it when fixable, and returns its 0-100 priority.

@@ -12,48 +12,50 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// Handler provides file browsing endpoints for manual build workspaces.
-type Handler struct {
-	service       *Service
-	uploadService *upload.UploadService
-}
+type (
+	// Handler provides file browsing endpoints for manual build workspaces.
+	Handler struct {
+		service       *Service
+		uploadService *upload.UploadService
+	}
 
-type BrowseBuildsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Path          string `query:"path" default:"/" doc:"Directory path to browse"`
-}
+	BrowseBuildsInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Path          string `query:"path" default:"/" doc:"Directory path to browse"`
+	}
 
-type GetBuildFileContentInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Path          string `query:"path" doc:"File path"`
-	MaxBytes      int64  `query:"maxBytes" default:"1048576" doc:"Maximum bytes to read (default 1MB)"`
-}
+	GetBuildFileContentInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Path          string `query:"path" doc:"File path"`
+		MaxBytes      int64  `query:"maxBytes" default:"1048576" doc:"Maximum bytes to read (default 1MB)"`
+	}
 
-type BuildFileContentResponse struct {
-	MimeType string `json:"mimeType"`
-	Content  []byte `json:"content"`
-}
+	BuildFileContentResponse struct {
+		MimeType string `json:"mimeType"`
+		Content  []byte `json:"content"`
+	}
 
-type DownloadBuildFileInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Path          string `query:"path" doc:"File path"`
-}
+	DownloadBuildFileInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Path          string `query:"path" doc:"File path"`
+	}
 
-type UploadBuildFileInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Path          string `query:"path" default:"/" doc:"Destination path"`
-	Body          types.UploadConsumeRequest
-}
+	UploadBuildFileInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Path          string `query:"path" default:"/" doc:"Destination path"`
+		Body          types.UploadConsumeRequest
+	}
 
-type CreateBuildDirectoryInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Path          string `query:"path" doc:"Directory path to create"`
-}
+	CreateBuildDirectoryInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Path          string `query:"path" doc:"Directory path to create"`
+	}
 
-type DeleteBuildFileInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Path          string `query:"path" doc:"File or directory path to delete"`
-}
+	DeleteBuildFileInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Path          string `query:"path" doc:"File or directory path to delete"`
+	}
+)
 
 func workspaceHTTPError(err error) error {
 	apiErr := common.ToAPIError(err)

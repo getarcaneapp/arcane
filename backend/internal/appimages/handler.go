@@ -12,28 +12,30 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 )
 
-// AppImagesHandler provides Huma-based application image endpoints.
-type AppImagesHandler struct {
-	appImagesService *ApplicationImagesService
-}
+type (
+	// AppImagesHandler provides Huma-based application image endpoints.
+	AppImagesHandler struct {
+		appImagesService *ApplicationImagesService
+	}
 
-type GetLogoInput struct {
-	Color    string `query:"color" doc:"Optional accent color override for preview (e.g., 'oklch(0.65 0.2 150)')"`
-	Full     bool   `query:"full" default:"false" doc:"Return full logo instead of icon"`
-	Animated bool   `query:"animated" default:"false" doc:"Return trace-and-fill animated logo variant"`
-	Loop     bool   `query:"loop" default:"false" doc:"Loop the animated icon indefinitely (loader mode; animated icon only)"`
-}
+	GetLogoInput struct {
+		Color    string `query:"color" doc:"Optional accent color override for preview (e.g., 'oklch(0.65 0.2 150)')"`
+		Full     bool   `query:"full" default:"false" doc:"Return full logo instead of icon"`
+		Animated bool   `query:"animated" default:"false" doc:"Return trace-and-fill animated logo variant"`
+		Loop     bool   `query:"loop" default:"false" doc:"Loop the animated icon indefinitely (loader mode; animated icon only)"`
+	}
 
-type GetPWAIconInput struct {
-	Filename string `path:"filename" example:"icon-192x192.png" doc:"PWA icon filename"`
-}
+	GetPWAIconInput struct {
+		Filename string `path:"filename" example:"icon-192x192.png" doc:"PWA icon filename"`
+	}
 
-type GetAppImageOutput struct {
-	ContentType         string `header:"Content-Type"`
-	CacheControl        string `header:"Cache-Control"`
-	XContentTypeOptions string `header:"X-Content-Type-Options"`
-	Body                []byte
-}
+	GetAppImageOutput struct {
+		ContentType         string `header:"Content-Type"`
+		CacheControl        string `header:"Cache-Control"`
+		XContentTypeOptions string `header:"X-Content-Type-Options"`
+		Body                []byte
+	}
+)
 
 var allowedPWAIconFilenames = map[string]struct{}{
 	"icon-72x72.png":   {},

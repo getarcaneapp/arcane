@@ -57,114 +57,116 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
+type (
+	// Store persists system backup runs and policies through their public DTOs;
+	// the system domain owns the persistence models.
+	Store struct {
+		CreateRun                 func(ctx context.Context, run *types.SystemBackupRun) error
+		SaveRun                   func(ctx context.Context, run *types.SystemBackupRun) error
+		FailRun                   func(ctx context.Context, id, message string) error
+		DeleteRun                 func(ctx context.Context, id string) error
+		Run                       func(ctx context.Context, id string) (*types.SystemBackupRun, error)
+		ListRuns                  func(ctx context.Context, params pagination.QueryParams) ([]types.SystemBackupRun, pagination.Response, error)
+		ExpiredRunIDs             func(ctx context.Context, policyID string, keep int) ([]string, error)
+		RunsByID                  func(ctx context.Context, ids []string) ([]*types.SystemBackupRun, error)
+		LatestPolicyRun           func(ctx context.Context, policyID string) (*types.SystemBackupRun, error)
+		RemoteSnapshotIDs         func(ctx context.Context, destinationID string) ([]string, error)
+		CountRuns                 func(ctx context.Context) (int64, error)
+		CountLocalRuns            func(ctx context.Context) (int64, error)
+		CountVolumeRepositoryRuns func(ctx context.Context) (int64, error)
+		CountRunningVolumeBackups func(ctx context.Context) (int64, error)
+		Policies                  func(ctx context.Context) ([]types.SystemBackupPolicy, error)
+		Policy                    func(ctx context.Context, id string) (*types.SystemBackupPolicy, error)
+		ReconcilePolicies         func(
+			ctx context.Context,
+			updates []types.UpdateBackupPolicy,
+			build func(context.Context, *types.SystemBackupPolicy, types.UpdateBackupPolicy) error,
+			unregister func(context.Context, string),
+			reschedule func(context.Context, *types.SystemBackupPolicy),
+		) error
+		DisablePolicyRemote  func(ctx context.Context, policy *types.SystemBackupPolicy, field string) (bool, error)
+		CheckScheduledRemote func(ctx context.Context, destinationID string) error
+		ListHistory          func(ctx context.Context, params pagination.QueryParams) ([]types.SystemVolumeBackupHistoryEntry, pagination.Response, error)
+	}
+
+	// RuntimeOptionsResolver determines how a helper container reaches the Docker daemon.
+	RuntimeOptionsResolver func(
+		ctx context.Context,
+		dockerHost string,
+		currentContainer *container.InspectResponse,
+		discoverHostPath func(context.Context, string) (string, error),
+		isRunningInDocker func() bool,
+		selectReachableNetwork func(context.Context, *container.InspectResponse, string) string,
+	) ([]string, []mount.Mount, container.NetworkMode, error)
+
+	// Dependencies are the services, persistence, and helper hooks system backups run on.
+	Dependencies struct {
+		Store                 Store
+		DB                    *database.DB
+		SQLDB                 func() (*sql.DB, error)
+		ActorStore            func() (*gorm.DB, error)
+		Docker                *dockerInternal.DockerClientService
+		Volumes               *volume.VolumeService
+		Engine                *backup.Engine
+		S3Destinations        *s3.S3DestinationService
+		Activity              *activity.ActivityService
+		Settings              *settings.SettingsService
+		Config                *config.Config
+		SettingsEnv           settings.Env
+		RecoveryKeys          *backup.RecoveryKeyStore
+		ResolveRuntimeOptions RuntimeOptionsResolver
+	}
+
+	// Service orchestrates Arcane system recovery backups: runs, policies,
+	// schedules, replication, retention, and restore.
+	Service struct {
+		store                 Store
+		dockerService         *dockerInternal.DockerClientService
+		volumeService         *volume.VolumeService
+		engine                *backup.Engine
+		s3Destinations        *s3.S3DestinationService
+		activityService       *activity.ActivityService
+		settingsService       *settings.SettingsService
+		config                *config.Config
+		settingsEnv           settings.Env
+		recoveryKeys          *backup.RecoveryKeyStore
+		resolveRuntimeOptions RuntimeOptionsResolver
+		jobs                  *entityjobs.Registry
+		snapshots             *snapshots.Service
+		volumes               *volumes.Service
+		flow                  *flow.Engine
+		// backupWorkflow runs backups StartBackup accepted; policyWorkflow runs scheduled policies.
+		backupWorkflow *flow.Workflow
+		policyWorkflow *flow.Workflow
+		operations     metric.Int64Counter
+	}
+
+	// manualBackupInput is a manual backup's workflow payload; the run row is created before it starts.
+	manualBackupInput struct {
+		Requester  types.BackupRequester `json:"requester"`
+		Checkpoint systemBackupRecovery  `json:"checkpoint"`
+	}
+
+	// systemBackupRecovery is the checkpoint a run records so an interrupted backup can resume.
+	systemBackupRecovery struct {
+		BackupID     string `json:"backupId"`
+		LocalEnabled bool   `json:"localEnabled"`
+		S3Enabled    bool   `json:"s3Enabled"`
+	}
+
+	preparedSystemBackup struct {
+		run         *types.SystemBackupRun
+		recoveryKey string
+		checkpoint  systemBackupRecovery
+	}
+)
+
 const (
 	defaultSystemBackupSchedule = "0 3 * * *"
 	systemRecoveryHelperPath    = "/app/arcane-recovery-helper"
 )
 
 var ErrSystemBackupAlreadyRunning = common.Classify(common.ErrConflict, errors.New("an Arcane system backup is already running"))
-
-// Store persists system backup runs and policies through their public DTOs;
-// the system domain owns the persistence models.
-type Store struct {
-	CreateRun                 func(ctx context.Context, run *types.SystemBackupRun) error
-	SaveRun                   func(ctx context.Context, run *types.SystemBackupRun) error
-	FailRun                   func(ctx context.Context, id, message string) error
-	DeleteRun                 func(ctx context.Context, id string) error
-	Run                       func(ctx context.Context, id string) (*types.SystemBackupRun, error)
-	ListRuns                  func(ctx context.Context, params pagination.QueryParams) ([]types.SystemBackupRun, pagination.Response, error)
-	ExpiredRunIDs             func(ctx context.Context, policyID string, keep int) ([]string, error)
-	RunsByID                  func(ctx context.Context, ids []string) ([]*types.SystemBackupRun, error)
-	LatestPolicyRun           func(ctx context.Context, policyID string) (*types.SystemBackupRun, error)
-	RemoteSnapshotIDs         func(ctx context.Context, destinationID string) ([]string, error)
-	CountRuns                 func(ctx context.Context) (int64, error)
-	CountLocalRuns            func(ctx context.Context) (int64, error)
-	CountVolumeRepositoryRuns func(ctx context.Context) (int64, error)
-	CountRunningVolumeBackups func(ctx context.Context) (int64, error)
-	Policies                  func(ctx context.Context) ([]types.SystemBackupPolicy, error)
-	Policy                    func(ctx context.Context, id string) (*types.SystemBackupPolicy, error)
-	ReconcilePolicies         func(
-		ctx context.Context,
-		updates []types.UpdateBackupPolicy,
-		build func(context.Context, *types.SystemBackupPolicy, types.UpdateBackupPolicy) error,
-		unregister func(context.Context, string),
-		reschedule func(context.Context, *types.SystemBackupPolicy),
-	) error
-	DisablePolicyRemote  func(ctx context.Context, policy *types.SystemBackupPolicy, field string) (bool, error)
-	CheckScheduledRemote func(ctx context.Context, destinationID string) error
-	ListHistory          func(ctx context.Context, params pagination.QueryParams) ([]types.SystemVolumeBackupHistoryEntry, pagination.Response, error)
-}
-
-// RuntimeOptionsResolver determines how a helper container reaches the Docker daemon.
-type RuntimeOptionsResolver func(
-	ctx context.Context,
-	dockerHost string,
-	currentContainer *container.InspectResponse,
-	discoverHostPath func(context.Context, string) (string, error),
-	isRunningInDocker func() bool,
-	selectReachableNetwork func(context.Context, *container.InspectResponse, string) string,
-) ([]string, []mount.Mount, container.NetworkMode, error)
-
-// Dependencies are the services, persistence, and helper hooks system backups run on.
-type Dependencies struct {
-	Store                 Store
-	DB                    *database.DB
-	SQLDB                 func() (*sql.DB, error)
-	ActorStore            func() (*gorm.DB, error)
-	Docker                *dockerInternal.DockerClientService
-	Volumes               *volume.VolumeService
-	Engine                *backup.Engine
-	S3Destinations        *s3.S3DestinationService
-	Activity              *activity.ActivityService
-	Settings              *settings.SettingsService
-	Config                *config.Config
-	SettingsEnv           settings.Env
-	RecoveryKeys          *backup.RecoveryKeyStore
-	ResolveRuntimeOptions RuntimeOptionsResolver
-}
-
-// Service orchestrates Arcane system recovery backups: runs, policies,
-// schedules, replication, retention, and restore.
-type Service struct {
-	store                 Store
-	dockerService         *dockerInternal.DockerClientService
-	volumeService         *volume.VolumeService
-	engine                *backup.Engine
-	s3Destinations        *s3.S3DestinationService
-	activityService       *activity.ActivityService
-	settingsService       *settings.SettingsService
-	config                *config.Config
-	settingsEnv           settings.Env
-	recoveryKeys          *backup.RecoveryKeyStore
-	resolveRuntimeOptions RuntimeOptionsResolver
-	jobs                  *entityjobs.Registry
-	snapshots             *snapshots.Service
-	volumes               *volumes.Service
-	flow                  *flow.Engine
-	// backupWorkflow runs backups StartBackup accepted; policyWorkflow runs scheduled policies.
-	backupWorkflow *flow.Workflow
-	policyWorkflow *flow.Workflow
-	operations     metric.Int64Counter
-}
-
-// manualBackupInput is a manual backup's workflow payload; the run row is created before it starts.
-type manualBackupInput struct {
-	Requester  types.BackupRequester `json:"requester"`
-	Checkpoint systemBackupRecovery  `json:"checkpoint"`
-}
-
-// systemBackupRecovery is the checkpoint a run records so an interrupted backup can resume.
-type systemBackupRecovery struct {
-	BackupID     string `json:"backupId"`
-	LocalEnabled bool   `json:"localEnabled"`
-	S3Enabled    bool   `json:"s3Enabled"`
-}
-
-type preparedSystemBackup struct {
-	run         *types.SystemBackupRun
-	recoveryKey string
-	checkpoint  systemBackupRecovery
-}
 
 func NewService(deps Dependencies) *Service {
 	operations, counterErr := otel.Meter(tracing.InstrumentationName).Int64Counter("arcane.backups",

@@ -19,6 +19,31 @@ import (
 	internaltypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+var secretRef = cmdutil.ResourceRef[types.PodmanSecret, types.PodmanSecret]{
+	EnvironmentScoped: true,
+	Singular:          "Podman secret",
+	Plural:            "Podman secrets",
+	IDHint:            "the secret ID",
+	ListCmd:           "arcane podman secrets list",
+	SearchCandidates: func(ctx context.Context, c *client.Client, identifier string) ([]types.PodmanSecret, error) {
+		return searchPodman(ctx, c, internaltypes.PodmanSecrets(c.EnvID()), func(secret types.PodmanSecret) bool {
+			return secret.Spec.Name == identifier || cmdutil.LooksLikeIDPrefix(strings.ToLower(identifier)) && strings.HasPrefix(secret.ID, strings.ToLower(identifier))
+		})
+	},
+	Label: func(secret types.PodmanSecret) string {
+		return fmt.Sprintf("%s (%s)", secret.Spec.Name, secret.ID[:min(len(secret.ID), 12)])
+	},
+	Promote: func(secret types.PodmanSecret) *types.PodmanSecret {
+		return &secret
+	},
+	IdentifierOf: func(secret types.PodmanSecret) string {
+		return secret.Spec.Name
+	},
+	Exact: func(secret types.PodmanSecret, identifierLower, original string) bool {
+		return secret.Spec.Name == original || secret.ID == identifierLower
+	},
+}
+
 func newSecretsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "secrets",
@@ -256,29 +281,4 @@ func newSecretDeleteCmd() *cobra.Command {
 	cmdutil.SetResource(secretRef, cmd)
 	cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "Force deletion without confirmation")
 	return cmd
-}
-
-var secretRef = cmdutil.ResourceRef[types.PodmanSecret, types.PodmanSecret]{
-	EnvironmentScoped: true,
-	Singular:          "Podman secret",
-	Plural:            "Podman secrets",
-	IDHint:            "the secret ID",
-	ListCmd:           "arcane podman secrets list",
-	SearchCandidates: func(ctx context.Context, c *client.Client, identifier string) ([]types.PodmanSecret, error) {
-		return searchPodman(ctx, c, internaltypes.PodmanSecrets(c.EnvID()), func(secret types.PodmanSecret) bool {
-			return secret.Spec.Name == identifier || cmdutil.LooksLikeIDPrefix(strings.ToLower(identifier)) && strings.HasPrefix(secret.ID, strings.ToLower(identifier))
-		})
-	},
-	Label: func(secret types.PodmanSecret) string {
-		return fmt.Sprintf("%s (%s)", secret.Spec.Name, secret.ID[:min(len(secret.ID), 12)])
-	},
-	Promote: func(secret types.PodmanSecret) *types.PodmanSecret {
-		return &secret
-	},
-	IdentifierOf: func(secret types.PodmanSecret) string {
-		return secret.Spec.Name
-	},
-	Exact: func(secret types.PodmanSecret, identifierLower, original string) bool {
-		return secret.Spec.Name == original || secret.ID == identifierLower
-	},
 }

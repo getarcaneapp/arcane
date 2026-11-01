@@ -31,17 +31,42 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
 )
 
-type secureInput struct{}
+type (
+	secureInput struct{}
 
-type secureOutput struct {
-	Body struct {
-		UserID string `json:"userId"`
-	} `json:"body"`
-}
+	secureOutput struct {
+		Body struct {
+			UserID string `json:"userId"`
+		} `json:"body"`
+	}
 
-type testEnvironmentAccessResolver struct {
-	env *environment.Environment
-}
+	testEnvironmentAccessResolver struct {
+		env *environment.Environment
+	}
+
+	staticPermissionResolver struct {
+		ps *authz.PermissionSet
+	}
+
+	testOperationProvider struct {
+		operation *huma.Operation
+	}
+
+	testEnvironmentTokenResolver struct {
+		env *environment.Environment
+	}
+
+	testApiKeyValidator struct {
+		user *user.User
+		key  *apikey.ApiKey
+	}
+
+	// testPermissionResolver returns distinguishable sets so tests can tell which
+	// resolution path the middleware took: user roles vs per-key grants.
+	testPermissionResolver struct{}
+)
+
+var ErrInvalidEnvironmentAccessTokenForTest = context.Canceled
 
 func TestNewHumaMiddleware_AcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) {
 	token := "env-access-token"
@@ -557,10 +582,6 @@ func mintHumaMiddlewareTestToken(t *testing.T, userSvc *user.UserService, sessio
 	return signJWXToken(t, signingKey, claims)
 }
 
-type staticPermissionResolver struct {
-	ps *authz.PermissionSet
-}
-
 func (r staticPermissionResolver) ResolvePermissions(_ context.Context, _ string) (*authz.PermissionSet, error) {
 	return r.ps, nil
 }
@@ -569,16 +590,8 @@ func (r staticPermissionResolver) ResolveApiKeyPermissions(_ context.Context, _ 
 	return r.ps, nil
 }
 
-type testOperationProvider struct {
-	operation *huma.Operation
-}
-
 func (p testOperationProvider) Operation() *huma.Operation {
 	return p.operation
-}
-
-type testEnvironmentTokenResolver struct {
-	env *environment.Environment
 }
 
 func (r testEnvironmentTokenResolver) ResolveEnvironmentByAccessToken(_ context.Context, token string) (*environment.Environment, error) {
@@ -588,23 +601,12 @@ func (r testEnvironmentTokenResolver) ResolveEnvironmentByAccessToken(_ context.
 	return nil, ErrInvalidEnvironmentAccessTokenForTest
 }
 
-var ErrInvalidEnvironmentAccessTokenForTest = context.Canceled
-
-type testApiKeyValidator struct {
-	user *user.User
-	key  *apikey.ApiKey
-}
-
 func (v testApiKeyValidator) ValidateApiKeyWithID(_ context.Context, rawKey string) (*user.User, *apikey.ApiKey, error) {
 	if rawKey == "valid-key" {
 		return v.user, v.key, nil
 	}
 	return nil, nil, context.Canceled
 }
-
-// testPermissionResolver returns distinguishable sets so tests can tell which
-// resolution path the middleware took: user roles vs per-key grants.
-type testPermissionResolver struct{}
 
 func (testPermissionResolver) ResolvePermissions(_ context.Context, _ string) (*authz.PermissionSet, error) {
 	ps := authz.NewPermissionSet()

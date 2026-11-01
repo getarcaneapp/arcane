@@ -13,11 +13,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type recordingAppender struct {
-	messages   []AppendMessageRequest
-	batchSizes []int
-	mu         sync.Mutex
-}
+type (
+	recordingAppender struct {
+		messages   []AppendMessageRequest
+		batchSizes []int
+		mu         sync.Mutex
+	}
+
+	failingWriter struct{}
+
+	// gatedAppender blocks its first AppendMessages call until release is
+	// closed, letting a test queue lines behind a known-stalled drain goroutine.
+	gatedAppender struct {
+		started chan struct{}
+		release chan struct{}
+		recordingAppender
+		startedOnce sync.Once
+	}
+)
+
+var (
+	_ MessageAppender = (*recordingAppender)(nil)
+	_ io.Writer       = failingWriter{}
+)
 
 func (a *recordingAppender) AppendMessage(_ context.Context, _ string, req AppendMessageRequest) (*types.ActivityMessage, error) {
 	a.mu.Lock()
@@ -39,8 +57,6 @@ func (a *recordingAppender) recorded() ([]AppendMessageRequest, []int) {
 	defer a.mu.Unlock()
 	return append([]AppendMessageRequest(nil), a.messages...), append([]int(nil), a.batchSizes...)
 }
-
-type failingWriter struct{}
 
 func (f failingWriter) Write(_ []byte) (int, error) {
 	return 0, errors.New("client disconnected")
@@ -92,15 +108,6 @@ func TestWriterRecordsLogAndErrorFramesVerbatim(t *testing.T) {
 	require.Equal(t, "Error response from daemon: conflict", messages[1].Message)
 	require.Equal(t, types.ActivityMessageLevelError, messages[1].Level)
 	require.Equal(t, "no trailing newline", messages[2].Message)
-}
-
-// gatedAppender blocks its first AppendMessages call until release is
-// closed, letting a test queue lines behind a known-stalled drain goroutine.
-type gatedAppender struct {
-	started chan struct{}
-	release chan struct{}
-	recordingAppender
-	startedOnce sync.Once
 }
 
 func (g *gatedAppender) AppendMessages(ctx context.Context, activityID string, reqs []AppendMessageRequest) ([]types.ActivityMessage, error) {
@@ -158,11 +165,6 @@ func TestWriterReturnsWrappedWriteErrorWithoutActivity(t *testing.T) {
 	_, err := writer.Write([]byte("Downloading layer\n"))
 	require.ErrorContains(t, err, "client disconnected")
 }
-
-var (
-	_ MessageAppender = (*recordingAppender)(nil)
-	_ io.Writer       = failingWriter{}
-)
 
 // TestWriterPersistsQueuedLinesAfterCancel verifies that cancelling
 // the work context does not abandon lines the writer already accepted:

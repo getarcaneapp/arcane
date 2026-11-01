@@ -11,6 +11,13 @@ import (
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
+type (
+	scriptedAgentStream struct {
+		ctx  context.Context
+		msgs []*tunnelpb.ManagerMessage
+	}
+)
+
 func TestTunnelMessageToAgentProto_Register(t *testing.T) {
 	protoMsg, err := tunnelMessageToAgentProto(&TunnelMessage{
 		Type:       MessageTypeRegister,
@@ -41,11 +48,6 @@ func TestGRPCAgentTunnelConn_ReceiveSkipsUnknownPayload(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, MessageTypeRegisterResponse, msg.Type)
 	assert.Equal(t, "reg-2", msg.ID)
-}
-
-type scriptedAgentStream struct {
-	ctx  context.Context
-	msgs []*tunnelpb.ManagerMessage
 }
 
 func (s *scriptedAgentStream) Send(*tunnelpb.AgentMessage) error { return nil }

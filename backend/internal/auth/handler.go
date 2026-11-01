@@ -38,57 +38,108 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
-type AuthHandler struct {
-	userService            *userdomain.UserService
-	authService            *AuthService
-	beginMFAAuthentication func(context.Context, string, types.SessionMeta, string) (*types.MFAChallenge, error)
-	settingsService        *settings.SettingsService
-}
+type (
+	AuthHandler struct {
+		userService            *userdomain.UserService
+		authService            *AuthService
+		beginMFAAuthentication func(context.Context, string, types.SessionMeta, string) (*types.MFAChallenge, error)
+		settingsService        *settings.SettingsService
+	}
 
-type LoginInput struct {
-	UserAgent string `header:"User-Agent"`
-	Body      types.AuthLogin
-}
+	LoginInput struct {
+		UserAgent string `header:"User-Agent"`
+		Body      types.AuthLogin
+	}
 
-type LoginOutput struct {
-	SetCookie []string `header:"Set-Cookie" doc:"Session cookie"`
-	Body      types.ApiResponse[types.AuthenticationResponse]
-}
+	LoginOutput struct {
+		SetCookie []string `header:"Set-Cookie" doc:"Session cookie"`
+		Body      types.ApiResponse[types.AuthenticationResponse]
+	}
 
-type LogoutInput struct {
-	Body                  *types.AuthLogout `required:"false"`
-	SecureRefreshCookie   string            `cookie:"__Secure-refresh" doc:"Refresh cookie (HTTPS)"`
-	InsecureRefreshCookie string            `cookie:"refresh" doc:"Refresh cookie (HTTP)"`
-}
+	LogoutInput struct {
+		Body                  *types.AuthLogout `required:"false"`
+		SecureRefreshCookie   string            `cookie:"__Secure-refresh" doc:"Refresh cookie (HTTPS)"`
+		InsecureRefreshCookie string            `cookie:"refresh" doc:"Refresh cookie (HTTP)"`
+	}
 
-type LogoutOutput struct {
-	SetCookie []string `header:"Set-Cookie" doc:"Cleared session cookie"`
-	Body      types.ApiResponse[types.MessageResponse]
-}
+	LogoutOutput struct {
+		SetCookie []string `header:"Set-Cookie" doc:"Cleared session cookie"`
+		Body      types.ApiResponse[types.MessageResponse]
+	}
 
-type RefreshTokenInput struct {
-	Body                  *types.AuthRefresh `required:"false"`
-	UserAgent             string             `header:"User-Agent"`
-	SecureRefreshCookie   string             `cookie:"__Secure-refresh" doc:"Refresh cookie (HTTPS)"`
-	InsecureRefreshCookie string             `cookie:"refresh" doc:"Refresh cookie (HTTP)"`
-}
+	RefreshTokenInput struct {
+		Body                  *types.AuthRefresh `required:"false"`
+		UserAgent             string             `header:"User-Agent"`
+		SecureRefreshCookie   string             `cookie:"__Secure-refresh" doc:"Refresh cookie (HTTPS)"`
+		InsecureRefreshCookie string             `cookie:"refresh" doc:"Refresh cookie (HTTP)"`
+	}
 
-type RefreshTokenOutput struct {
-	SetCookie []string `header:"Set-Cookie" doc:"Updated session cookie"`
-	Body      types.ApiResponse[types.TokenRefreshResponse]
-}
+	RefreshTokenOutput struct {
+		SetCookie []string `header:"Set-Cookie" doc:"Updated session cookie"`
+		Body      types.ApiResponse[types.TokenRefreshResponse]
+	}
 
-type ChangePasswordInput struct {
-	Body types.PasswordChange
-}
+	ChangePasswordInput struct {
+		Body types.PasswordChange
+	}
 
-type UpdateMyProfileInput struct {
-	types.Update[types.User]
-}
+	UpdateMyProfileInput struct {
+		types.Update[types.User]
+	}
 
-type UploadMyAvatarInput struct {
-	RawBody multipart.Form `contentType:"multipart/form-data"`
-}
+	UploadMyAvatarInput struct {
+		RawBody multipart.Form `contentType:"multipart/form-data"`
+	}
+
+	// securityRequirements holds parsed security requirements from an operation.
+	securityRequirements struct {
+		isRequired bool
+		bearerAuth bool
+		apiKeyAuth bool
+	}
+
+	operationProvider interface {
+		Operation() *huma.Operation
+	}
+
+	HumaMiddlewareParams struct {
+		API              huma.API
+		AuthService      *AuthService
+		APIKeyService    *apikey.ApiKeyService
+		PermResolver     PermissionResolver
+		EnvTokenResolver EnvironmentAccessTokenResolver
+		Config           *config.Config
+	}
+
+	AuthOptions struct {
+		AdminRequired   bool
+		SuccessOptional bool
+	}
+
+	ApiKeyValidator interface {
+		ValidateApiKeyWithID(ctx context.Context, rawKey string) (*userdomain.User, *apikey.ApiKey, error)
+	}
+
+	EnvironmentAccessTokenResolver interface {
+		ResolveEnvironmentByAccessToken(ctx context.Context, token string) (*environment.Environment, error)
+	}
+
+	// PermissionResolver resolves a caller's effective permission set. Implemented
+	// by role.RoleService; kept as an interface so tests can stub it.
+	PermissionResolver interface {
+		ResolvePermissions(ctx context.Context, userID string) (*authz.PermissionSet, error)
+		ResolveApiKeyPermissions(ctx context.Context, apiKeyID string) (*authz.PermissionSet, error)
+	}
+
+	AuthMiddleware struct {
+		authService      *AuthService
+		apiKeyValidator  ApiKeyValidator
+		envTokenResolver EnvironmentAccessTokenResolver
+		roleResolver     PermissionResolver
+		cfg              *config.Config
+		options          AuthOptions
+	}
+)
 
 // Login authenticates a user and returns tokens.
 func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutput, error) {
@@ -562,17 +613,6 @@ func imageHasTransparency(img image.Image) bool {
 	return false
 }
 
-// securityRequirements holds parsed security requirements from an operation.
-type securityRequirements struct {
-	isRequired bool
-	bearerAuth bool
-	apiKeyAuth bool
-}
-
-type operationProvider interface {
-	Operation() *huma.Operation
-}
-
 // parseSecurityRequirements extracts security requirements from a Huma operation.
 func parseSecurityRequirements(api huma.API, ctx operationProvider) securityRequirements {
 	reqs := securityRequirements{}
@@ -667,15 +707,6 @@ func createEnvironmentUser(env *environment.Environment) *userdomain.User {
 		ID:       "environment:" + env.ID,
 		Username: env.Name,
 	}
-}
-
-type HumaMiddlewareParams struct {
-	API              huma.API
-	AuthService      *AuthService
-	APIKeyService    *apikey.ApiKeyService
-	PermResolver     PermissionResolver
-	EnvTokenResolver EnvironmentAccessTokenResolver
-	Config           *config.Config
 }
 
 // NewHumaMiddleware creates middleware that validates credentials and
@@ -882,35 +913,6 @@ func setUserInContext(ctx context.Context, authenticatedUser *userdomain.User, p
 	ctx = context.WithValue(ctx, types.CurrentUserContextKey{}, authenticatedUser)
 	ctx = context.WithValue(ctx, middleware.ContextKeyUserPermissions, ps)
 	return ctx
-}
-
-type AuthOptions struct {
-	AdminRequired   bool
-	SuccessOptional bool
-}
-
-type ApiKeyValidator interface {
-	ValidateApiKeyWithID(ctx context.Context, rawKey string) (*userdomain.User, *apikey.ApiKey, error)
-}
-
-type EnvironmentAccessTokenResolver interface {
-	ResolveEnvironmentByAccessToken(ctx context.Context, token string) (*environment.Environment, error)
-}
-
-// PermissionResolver resolves a caller's effective permission set. Implemented
-// by role.RoleService; kept as an interface so tests can stub it.
-type PermissionResolver interface {
-	ResolvePermissions(ctx context.Context, userID string) (*authz.PermissionSet, error)
-	ResolveApiKeyPermissions(ctx context.Context, apiKeyID string) (*authz.PermissionSet, error)
-}
-
-type AuthMiddleware struct {
-	authService      *AuthService
-	apiKeyValidator  ApiKeyValidator
-	envTokenResolver EnvironmentAccessTokenResolver
-	roleResolver     PermissionResolver
-	cfg              *config.Config
-	options          AuthOptions
 }
 
 func NewAuthMiddleware(authService *AuthService, cfg *config.Config) *AuthMiddleware {

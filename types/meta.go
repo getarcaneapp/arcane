@@ -4,51 +4,96 @@ import (
 	"time"
 )
 
-// SettingMetadata represents metadata about a configuration or setting.
-type SettingMetadata struct {
-	// Key is the identifier for the metadata.
-	//
-	// Required: true
-	Key string `json:"key"`
+type (
+	// SettingMetadata represents metadata about a configuration or setting.
+	SettingMetadata struct {
+		// Key is the identifier for the metadata.
+		//
+		// Required: true
+		Key string `json:"key"`
 
-	// Label is the human-readable label for the metadata.
-	//
-	// Required: true
-	Label string `json:"label"`
+		// Label is the human-readable label for the metadata.
+		//
+		// Required: true
+		Label string `json:"label"`
 
-	// Type is the data type of the metadata value.
-	//
-	// Required: true
-	Type string `json:"type"`
+		// Type is the data type of the metadata value.
+		//
+		// Required: true
+		Type string `json:"type"`
 
-	// Description provides additional information about the metadata.
-	//
-	// Required: false
-	Description string `json:"description,omitempty"`
+		// Description provides additional information about the metadata.
+		//
+		// Required: false
+		Description string `json:"description,omitempty"`
 
-	// Keywords is a list of keywords associated with the metadata.
-	//
-	// Required: false
-	Keywords []string `json:"keywords,omitempty"`
-}
+		// Keywords is a list of keywords associated with the metadata.
+		//
+		// Required: false
+		Keywords []string `json:"keywords,omitempty"`
+	}
 
-type JobMetadata struct {
-	ID             string
-	Name           string
-	Description    string
-	Category       string
-	SettingsKey    string
-	EnabledKey     string
-	Prerequisites  []JobPrerequisiteMetadata
-	ManagerOnly    bool
-	IsContinuous   bool
-	CanRunManually bool
-}
+	JobMetadata struct {
+		ID             string
+		Name           string
+		Description    string
+		Category       string
+		SettingsKey    string
+		EnabledKey     string
+		Prerequisites  []JobPrerequisiteMetadata
+		ManagerOnly    bool
+		IsContinuous   bool
+		CanRunManually bool
+	}
 
-type JobPrerequisiteMetadata struct {
-	SettingKey string
-	Label      string
-}
+	JobPrerequisiteMetadata struct {
+		SettingKey string
+		Label      string
+	}
+
+	// TemplateMeta represents metadata about a template.
+	TemplateMeta struct {
+		// Version of the template.
+		//
+		// Required: false
+		Version *string `json:"version,omitempty"`
+
+		// Author of the template.
+		//
+		// Required: false
+		Author *string `json:"author,omitempty"`
+
+		// RemoteURL is the URL to the remote template file.
+		//
+		// Required: false
+		RemoteURL *string `json:"remoteUrl,omitempty"`
+
+		// EnvURL is the URL to the environment file.
+		//
+		// Required: false
+		EnvURL *string `json:"envUrl,omitempty"`
+
+		// DocumentationURL is the URL to the template documentation.
+		//
+		// Required: false
+		DocumentationURL *string `json:"documentationUrl,omitempty"`
+
+		// IconURL is the URL to the template icon, from the registry's icon_url for remote templates or x-arcane metadata for local ones.
+		//
+		// Required: false
+		IconURL *string `json:"iconUrl,omitempty"`
+
+		// UpdatedAt is the date and time when the template was last updated.
+		//
+		// Required: false
+		UpdatedAt *string `json:"updatedAt,omitempty"`
+
+		// Tags is a list of tags associated with the template.
+		//
+		// Required: false
+		Tags []string `json:"tags,omitempty"`
+	}
+)
 
 var jobMetadataRegistry = map[string]JobMetadata{
 	"environment-health": {
@@ -270,47 +315,4 @@ func (meta JobMetadata) ToJobStatus(schedule string, nextRun *time.Time, enabled
 		Prerequisites:  prerequisites,
 		SettingsKey:    meta.SettingsKey,
 	}
-}
-
-// TemplateMeta represents metadata about a template.
-type TemplateMeta struct {
-	// Version of the template.
-	//
-	// Required: false
-	Version *string `json:"version,omitempty"`
-
-	// Author of the template.
-	//
-	// Required: false
-	Author *string `json:"author,omitempty"`
-
-	// RemoteURL is the URL to the remote template file.
-	//
-	// Required: false
-	RemoteURL *string `json:"remoteUrl,omitempty"`
-
-	// EnvURL is the URL to the environment file.
-	//
-	// Required: false
-	EnvURL *string `json:"envUrl,omitempty"`
-
-	// DocumentationURL is the URL to the template documentation.
-	//
-	// Required: false
-	DocumentationURL *string `json:"documentationUrl,omitempty"`
-
-	// IconURL is the URL to the template icon, from the registry's icon_url for remote templates or x-arcane metadata for local ones.
-	//
-	// Required: false
-	IconURL *string `json:"iconUrl,omitempty"`
-
-	// UpdatedAt is the date and time when the template was last updated.
-	//
-	// Required: false
-	UpdatedAt *string `json:"updatedAt,omitempty"`
-
-	// Tags is a list of tags associated with the template.
-	//
-	// Required: false
-	Tags []string `json:"tags,omitempty"`
 }

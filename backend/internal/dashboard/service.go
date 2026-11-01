@@ -21,14 +21,24 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
 )
 
-const dashboardInventoryCollectTimeout = 15 * time.Second
+type (
+	DashboardService struct {
+		dockerService  *dockerInternal.DockerClientService
+		projectService *project.ProjectService
+		volumeService  *volume.VolumeService
+		podmanService  *podman.Service
+	}
 
-type DashboardService struct {
-	dockerService  *dockerInternal.DockerClientService
-	projectService *project.ProjectService
-	volumeService  *volume.VolumeService
-	podmanService  *podman.Service
-}
+	inventoryGauges struct {
+		containers, health, images, imageSize, volumes, networks, projects metric.Int64ObservableGauge
+		swarmNodes, swarmServices, swarmTasks                              metric.Int64ObservableGauge
+		podmanPods                                                         metric.Int64ObservableGauge
+	}
+)
+
+const (
+	dashboardInventoryCollectTimeout = 15 * time.Second
+)
 
 func NewDashboardService(
 	dockerService *dockerInternal.DockerClientService,
@@ -42,12 +52,6 @@ func NewDashboardService(
 		volumeService:  volumeService,
 		podmanService:  podmanService,
 	}
-}
-
-type inventoryGauges struct {
-	containers, health, images, imageSize, volumes, networks, projects metric.Int64ObservableGauge
-	swarmNodes, swarmServices, swarmTasks                              metric.Int64ObservableGauge
-	podmanPods                                                         metric.Int64ObservableGauge
 }
 
 // ObserveInventory reports the local Docker engine's inventory through arcane.docker.* and arcane.projects gauges.

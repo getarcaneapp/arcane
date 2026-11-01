@@ -24,25 +24,29 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
-const defaultAdminUsername = "arcane"
+const (
+	defaultAdminUsername = "arcane"
+)
 
-var resetPasswordUsername string
+var (
+	resetPasswordUsername string
 
-// AdminCmd contains administration commands that run inside the Arcane
-// container without starting the HTTP server.
-var AdminCmd = &cobra.Command{
-	Use:   "admin",
-	Short: "Manage Arcane administration",
-}
+	// AdminCmd contains administration commands that run inside the Arcane
+	// container without starting the HTTP server.
+	AdminCmd = &cobra.Command{
+		Use:   "admin",
+		Short: "Manage Arcane administration",
+	}
 
-var resetPasswordCmd = &cobra.Command{
-	Use:          "reset-password",
-	Short:        "Reset the password for a global administrator",
-	Long:         "Reset the password for a global administrator. This command must be explicitly enabled with ARCANE_ALLOW_CLI_PASSWORD_RESET=true.",
-	Args:         cobra.NoArgs,
-	SilenceUsage: true,
-	RunE:         runResetPasswordCommand,
-}
+	resetPasswordCmd = &cobra.Command{
+		Use:          "reset-password",
+		Short:        "Reset the password for a global administrator",
+		Long:         "Reset the password for a global administrator. This command must be explicitly enabled with ARCANE_ALLOW_CLI_PASSWORD_RESET=true.",
+		Args:         cobra.NoArgs,
+		SilenceUsage: true,
+		RunE:         runResetPasswordCommand,
+	}
+)
 
 func init() {
 	resetPasswordCmd.Flags().StringVar(&resetPasswordUsername, "username", defaultAdminUsername, "Username of the global administrator")

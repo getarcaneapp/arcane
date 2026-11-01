@@ -17,6 +17,10 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+const (
+	secretMask = "********"
+)
+
 // Command is the parent command for global variable operations.
 func Command() *cobra.Command {
 	command := &cobra.Command{
@@ -32,8 +36,6 @@ func Command() *cobra.Command {
 	command.AddCommand(newSyncCmd())
 	return command
 }
-
-const secretMask = "********"
 
 func printMutationResult(result types.GlobalVariableMutationResponse, message string) error {
 	output.Success("%s", message)

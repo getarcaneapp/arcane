@@ -7,15 +7,17 @@ import (
 	kit "kit.getarcane.app"
 )
 
-type Environmental interface {
-	Environment() types.EnvironmentRef
-}
+type (
+	Environmental interface {
+		Environment() types.EnvironmentRef
+	}
 
-type EnvironmentPage[T any] struct {
-	Environment    types.EnvironmentRef
-	Items          []T
-	TotalAvailable int64
-}
+	EnvironmentPage[T any] struct {
+		Environment    types.EnvironmentRef
+		Items          []T
+		TotalAvailable int64
+	}
+)
 
 func WithEnvironment[T Environmental](c Config[T]) Config[T] {
 	byEnvironment := func(a, b T) int {

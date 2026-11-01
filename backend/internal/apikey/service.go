@@ -31,46 +31,50 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 )
 
+type (
+	ApiKeyService struct {
+		db                *database.DB
+		userService       *user.UserService
+		roleService       *role.RoleService
+		argon2Params      *user.Argon2Params
+		validatedKeyCache *hot.HotCache[string, ApiKey]
+		rejectedKeyCache  *hot.HotCache[string, struct{}]
+		lastUsedWrites    map[string]time.Time
+		cacheKeyPepper    []byte
+		cacheGen          atomic.Uint64
+		cacheFillMu       sync.Mutex
+		lastUsedMu        sync.Mutex
+	}
+
+	ApiKeyUpdate struct {
+		Submitted map[string]bool
+		Request   types.ApiKey
+	}
+)
+
 const (
 	apiKeyPrefix              = "arc_"
 	apiKeyLength              = 32
 	apiKeyPrefixLen           = 8
 	apiKeyLastUsedWriteWindow = 5 * time.Minute
 	apiKeySHA256HashPrefix    = "sha256$"
-
-	managedByAdminBootstrap = "admin_account_default_api_key"
-	defaultAdminUsername    = "arcane"
-	defaultAdminAPIKeyName  = "Static Admin API Key"
+	managedByAdminBootstrap   = "admin_account_default_api_key"
+	defaultAdminUsername      = "arcane"
+	defaultAdminAPIKeyName    = "Static Admin API Key"
 )
 
 var (
-	ErrApiKeyNotFound  = errors.New("API key not found")
-	ErrApiKeyExpired   = errors.New("API key has expired")
-	ErrApiKeyInvalid   = errors.New("invalid API key")
-	ErrApiKeyProtected = errors.New("API key is protected")
-
+	ErrApiKeyNotFound             = errors.New("API key not found")
+	ErrApiKeyExpired              = errors.New("API key has expired")
+	ErrApiKeyInvalid              = errors.New("invalid API key")
+	ErrApiKeyProtected            = errors.New("API key is protected")
 	ErrApiKeyPermissionEscalation = common.Classify(common.ErrForbidden, errors.New("cannot grant a permission you do not have"))
+	ErrApiKeyPersonalNoGrants     = errors.New("personal API keys inherit the owner's permissions and cannot carry grants")
 
-	ErrApiKeyPersonalNoGrants = errors.New("personal API keys inherit the owner's permissions and cannot carry grants")
+	defaultAdminAPIKeyDescription = func() *string {
+		return new("Environment-managed static API key for the built-in admin account")
+	}()
 )
-
-var defaultAdminAPIKeyDescription = func() *string {
-	return new("Environment-managed static API key for the built-in admin account")
-}()
-
-type ApiKeyService struct {
-	db                *database.DB
-	userService       *user.UserService
-	roleService       *role.RoleService
-	argon2Params      *user.Argon2Params
-	validatedKeyCache *hot.HotCache[string, ApiKey]
-	rejectedKeyCache  *hot.HotCache[string, struct{}]
-	lastUsedWrites    map[string]time.Time
-	cacheKeyPepper    []byte
-	cacheGen          atomic.Uint64
-	cacheFillMu       sync.Mutex
-	lastUsedMu        sync.Mutex
-}
 
 func NewApiKeyService(db *database.DB, userService *user.UserService, roleService *role.RoleService) *ApiKeyService {
 	pepper := make([]byte, 32)
@@ -849,11 +853,6 @@ func (s *ApiKeyService) ListApiKeysByUser(ctx context.Context, userID string) ([
 		result = append(result, toAPIKeyDTOWithPermissions(&apiKeys[i], false))
 	}
 	return result, nil
-}
-
-type ApiKeyUpdate struct {
-	Submitted map[string]bool
-	Request   types.ApiKey
 }
 
 func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.PermissionSet, id string, change ApiKeyUpdate) (*types.ApiKey, error) {

@@ -42,25 +42,127 @@ import (
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v3/pkg/workspace"
 )
 
-// Dependencies are the helper-container, lock, and backup operations the workspace runs through.
-type Dependencies struct {
-	Docker                *dockerInternal.DockerClientService
-	Events                *event.EventService
-	Locks                 *utils.KeyedMutex
-	AcquireHelper         func(ctx context.Context, volumeName string) (string, func(), error)
-	RequireACFS           func(ctx context.Context, volumeName, containerID string) error
-	Exec                  func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
-	HelperImage           func(ctx context.Context) (string, error)
-	BackupStorageMount    func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
-	ArchiveFileTarget     func(ctx context.Context, volumeName, backupID, rel string) (string, string, error)
-	RestoreArchiveMembers func(ctx context.Context, containerID, filename string, cleanedPaths []string) (string, error)
-	Settings              *settings.SettingsService
-}
+type (
+	// Dependencies are the helper-container, lock, and backup operations the workspace runs through.
+	Dependencies struct {
+		Docker                *dockerInternal.DockerClientService
+		Events                *event.EventService
+		Locks                 *utils.KeyedMutex
+		AcquireHelper         func(ctx context.Context, volumeName string) (string, func(), error)
+		RequireACFS           func(ctx context.Context, volumeName, containerID string) error
+		Exec                  func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
+		HelperImage           func(ctx context.Context) (string, error)
+		BackupStorageMount    func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
+		ArchiveFileTarget     func(ctx context.Context, volumeName, backupID, rel string) (string, string, error)
+		RestoreArchiveMembers func(ctx context.Context, containerID, filename string, cleanedPaths []string) (string, error)
+		Settings              *settings.SettingsService
+	}
 
-// Service browses and edits the files inside a volume through its helper container.
-type Service struct {
-	deps Dependencies
-}
+	// Service browses and edits the files inside a volume through its helper container.
+	Service struct {
+		deps Dependencies
+	}
+
+	volumeWorkspaceReadStream struct {
+		ctx       context.Context
+		err       error
+		cancel    context.CancelFunc
+		stopClose func() bool
+		pipe      *io.PipeReader
+		done      <-chan error
+		cleanup   func()
+		remaining int64
+		once      sync.Once
+	}
+
+	// volumeWorkspaceWriteIdentity is the identity workspace file mutations run as,
+	// so files land owned by the user the consuming container runs with. The zero value means root.
+	volumeWorkspaceWriteIdentity struct {
+		execUser string
+		uid      int
+		gid      int
+	}
+
+	volumeWorkspaceStagedFile struct {
+		path string
+		size int64
+	}
+
+	volumeWorkspaceStagedContent struct {
+		content io.ReadCloser
+		name    string
+		size    int64
+	}
+
+	volumeWorkspaceBackupArchive struct {
+		relativePath string
+		archivePath  string
+	}
+
+	volumeWorkspaceBackup struct {
+		archives      []volumeWorkspaceBackupArchive
+		absentEntries []string
+	}
+)
+
+const (
+	volumeWorkspaceValidatePathScript = `set -e
+rel="$1"
+allow_missing="$2"
+cur=/volume
+remaining=$rel
+while :; do
+  case "$remaining" in '') break ;; esac
+  case "$remaining" in
+    */*) segment=${remaining%%/*}; remaining=${remaining#*/} ;;
+    *) segment=$remaining; remaining= ;;
+  esac
+  cur="$cur/$segment"
+  if mode=$(stat -c '%A' -- "$cur" 2>/dev/null); then
+    case "$mode" in l*) echo ARCANE_SYMLINK >&2; exit 42 ;; esac
+  else
+    case "$allow_missing" in 1) exit 0 ;; esac
+    echo ARCANE_NOT_FOUND >&2
+    exit 44
+  fi
+  case "$remaining" in
+    '') ;;
+    *) case "$mode" in d*) ;; *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;; esac ;;
+  esac
+done`
+	volumeWorkspaceBackupCreateScript = `set -e
+rel="$1"
+archive="$2"
+cur=/volume
+current=
+remaining=$rel
+while :; do
+  case "$remaining" in '') break ;; esac
+  case "$remaining" in
+    */*) segment=${remaining%%/*}; remaining=${remaining#*/} ;;
+    *) segment=$remaining; remaining= ;;
+  esac
+  case "$current" in '') current=$segment ;; *) current="$current/$segment" ;; esac
+  cur="$cur/$segment"
+  if mode=$(stat -c '%A' -- "$cur" 2>/dev/null); then
+    case "$mode" in l*) echo ARCANE_SYMLINK >&2; exit 42 ;; esac
+  else
+    printf 'absent\0%s\0' "$current"
+    exit 0
+  fi
+  case "$remaining" in
+    '') ;;
+    *) case "$mode" in d*) ;; *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;; esac ;;
+  esac
+done
+case "$rel" in
+  */*) parent="/volume/${rel%/*}"; entry=${rel##*/} ;;
+  *) parent=/volume; entry=$rel ;;
+esac
+cd "$parent"
+tar -cf "$archive" "./$entry"
+printf 'present\0'`
+)
 
 func NewService(deps Dependencies) *Service {
 	return &Service{deps: deps}
@@ -269,18 +371,6 @@ func (s *Service) DownloadVolumeWorkspaceFile(ctx context.Context, volumeName, r
 	return s.startVolumeWorkspaceRead(ctx, containerID, rel, 0, cleanupAndUnlock)
 }
 
-type volumeWorkspaceReadStream struct {
-	ctx       context.Context
-	err       error
-	cancel    context.CancelFunc
-	stopClose func() bool
-	pipe      *io.PipeReader
-	done      <-chan error
-	cleanup   func()
-	remaining int64
-	once      sync.Once
-}
-
 func (r *volumeWorkspaceReadStream) Read(buffer []byte) (int, error) {
 	if r.remaining == 0 {
 		var extra [1]byte
@@ -404,66 +494,6 @@ func (s *Service) validateVolumeHelperSupport(ctx context.Context, volumeName st
 	}
 	return nil
 }
-
-const (
-	volumeWorkspaceValidatePathScript = `set -e
-rel="$1"
-allow_missing="$2"
-cur=/volume
-remaining=$rel
-while :; do
-  case "$remaining" in '') break ;; esac
-  case "$remaining" in
-    */*) segment=${remaining%%/*}; remaining=${remaining#*/} ;;
-    *) segment=$remaining; remaining= ;;
-  esac
-  cur="$cur/$segment"
-  if mode=$(stat -c '%A' -- "$cur" 2>/dev/null); then
-    case "$mode" in l*) echo ARCANE_SYMLINK >&2; exit 42 ;; esac
-  else
-    case "$allow_missing" in 1) exit 0 ;; esac
-    echo ARCANE_NOT_FOUND >&2
-    exit 44
-  fi
-  case "$remaining" in
-    '') ;;
-    *) case "$mode" in d*) ;; *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;; esac ;;
-  esac
-done`
-
-	volumeWorkspaceBackupCreateScript = `set -e
-rel="$1"
-archive="$2"
-cur=/volume
-current=
-remaining=$rel
-while :; do
-  case "$remaining" in '') break ;; esac
-  case "$remaining" in
-    */*) segment=${remaining%%/*}; remaining=${remaining#*/} ;;
-    *) segment=$remaining; remaining= ;;
-  esac
-  case "$current" in '') current=$segment ;; *) current="$current/$segment" ;; esac
-  cur="$cur/$segment"
-  if mode=$(stat -c '%A' -- "$cur" 2>/dev/null); then
-    case "$mode" in l*) echo ARCANE_SYMLINK >&2; exit 42 ;; esac
-  else
-    printf 'absent\0%s\0' "$current"
-    exit 0
-  fi
-  case "$remaining" in
-    '') ;;
-    *) case "$mode" in d*) ;; *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;; esac ;;
-  esac
-done
-case "$rel" in
-  */*) parent="/volume/${rel%/*}"; entry=${rel##*/} ;;
-  *) parent=/volume; entry=$rel ;;
-esac
-cd "$parent"
-tar -cf "$archive" "./$entry"
-printf 'present\0'`
-)
 
 func (s *Service) UpdateVolumeWorkspace(
 	ctx context.Context,
@@ -633,14 +663,6 @@ for rel do rm -rf -- "/volume/$rel"; done`, "sh"}, volumeWorkspaceRollbackPaths(
 	return tree, nil
 }
 
-// volumeWorkspaceWriteIdentity is the identity workspace file mutations run as,
-// so files land owned by the user the consuming container runs with. The zero value means root.
-type volumeWorkspaceWriteIdentity struct {
-	execUser string
-	uid      int
-	gid      int
-}
-
 func volumeWorkspaceWriteIdentityFromConfigUser(configUser string) volumeWorkspaceWriteIdentity {
 	trimmed := strings.TrimSpace(configUser)
 	if trimmed == "" {
@@ -722,17 +744,6 @@ func (s *Service) resolveVolumeWorkspaceWriteIdentity(ctx context.Context, conta
 		slog.InfoContext(ctx, "volume workspace writes run as volume root owner", "volume", volumeName, "identity", identity.execUser)
 	}
 	return identity
-}
-
-type volumeWorkspaceStagedFile struct {
-	path string
-	size int64
-}
-
-type volumeWorkspaceStagedContent struct {
-	content io.ReadCloser
-	name    string
-	size    int64
 }
 
 func (s *Service) stageVolumeWorkspaceChanges(
@@ -1003,16 +1014,6 @@ func (s *Service) createVolumeWorkspaceMutationContainer(ctx context.Context, vo
 			return dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
 		})
 	}, nil
-}
-
-type volumeWorkspaceBackupArchive struct {
-	relativePath string
-	archivePath  string
-}
-
-type volumeWorkspaceBackup struct {
-	archives      []volumeWorkspaceBackupArchive
-	absentEntries []string
 }
 
 func (s *Service) backupVolumeWorkspaceScope(ctx context.Context, containerID string, scope []string) (*volumeWorkspaceBackup, error) {

@@ -36,28 +36,30 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
+type (
+	NetworkService struct {
+		db            *database.DB
+		dockerService *dockerInternal.DockerClientService
+		eventService  *event.EventService
+
+		// Shared, immutable topology build; network mutations bump topologyGen,
+		// which retires cached entries and in-flight builds started before them.
+		topologyFlight singleflight.Group
+		topologyCache  atomic.Pointer[networkTopologyCacheEntry]
+		topologyGen    atomic.Uint64
+	}
+
+	networkTopologyCacheEntry struct {
+		topology *types.NetworkTopology
+		builtAt  time.Time
+		gen      uint64
+	}
+)
+
 const (
 	networkTopologyCacheTTL     = 5 * time.Second
 	networkTopologyBuildTimeout = 30 * time.Second
 )
-
-type NetworkService struct {
-	db            *database.DB
-	dockerService *dockerInternal.DockerClientService
-	eventService  *event.EventService
-
-	// Shared, immutable topology build; network mutations bump topologyGen,
-	// which retires cached entries and in-flight builds started before them.
-	topologyFlight singleflight.Group
-	topologyCache  atomic.Pointer[networkTopologyCacheEntry]
-	topologyGen    atomic.Uint64
-}
-
-type networkTopologyCacheEntry struct {
-	topology *types.NetworkTopology
-	builtAt  time.Time
-	gen      uint64
-}
 
 func NewNetworkService(db *database.DB, dockerService *dockerInternal.DockerClientService, eventService *event.EventService) *NetworkService {
 	return &NetworkService{

@@ -1,158 +1,159 @@
 package authz
 
+type (
+	// AccessSurface describes one frontend-visible surface whose reachability is
+	// derived from backend-owned permission metadata. This is decision metadata for
+	// UX gating; backend middleware and service checks remain authoritative.
+	AccessSurface struct {
+		ID            string
+		Kind          string
+		URL           string
+		Label         string
+		AccessMode    string
+		MatchMode     string
+		ScopeMode     string
+		Permissions   []string
+		Children      []string
+		FallbackOrder int
+	}
+)
+
 const (
 	AccessSurfaceKindRoute             = "route"
 	AccessSurfaceKindSettingsCategory  = "settings-category"
 	AccessSurfaceKindCustomizeCategory = "customize-category"
 	AccessSurfaceKindLanding           = "landing"
-
-	AccessModePermissions = "permissions"
-	AccessModeAnyChild    = "any-child"
-
-	AccessMatchModeAnyOf = "any-of"
-	AccessMatchModeAllOf = "all-of"
-
-	AccessScopeModeGlobalOnly        = "global-only"
-	AccessScopeModeEnvPlusGlobal     = "env-plus-global"
-	AccessScopeModeAnyEffectiveScope = "any-effective-scope"
+	AccessModePermissions              = "permissions"
+	AccessModeAnyChild                 = "any-child"
+	AccessMatchModeAnyOf               = "any-of"
+	AccessMatchModeAllOf               = "all-of"
+	AccessScopeModeGlobalOnly          = "global-only"
+	AccessScopeModeEnvPlusGlobal       = "env-plus-global"
+	AccessScopeModeAnyEffectiveScope   = "any-effective-scope"
 )
 
-// AccessSurface describes one frontend-visible surface whose reachability is
-// derived from backend-owned permission metadata. This is decision metadata for
-// UX gating; backend middleware and service checks remain authoritative.
-type AccessSurface struct {
-	ID            string
-	Kind          string
-	URL           string
-	Label         string
-	AccessMode    string
-	MatchMode     string
-	ScopeMode     string
-	Permissions   []string
-	Children      []string
-	FallbackOrder int
-}
+var (
+	accessSurfaces = []AccessSurface{
+		landingSurface("landing.customize", "/customize", "Customize", []string{
+			"customize.category.templates",
+			"customize.category.registries",
+			"customize.category.variables",
+			"customize.category.git-repositories",
+		}, 40),
+		landingSurface("landing.settings", "/settings", "Settings", []string{
+			"settings.category.storage",
+			"settings.category.docker",
+			"settings.category.security",
+			"settings.category.timeouts",
+			"settings.category.activity",
+			"settings.category.build",
+			"settings.category.jobschedule",
+		}, 120),
+		landingSurface("landing.system", "/system", "System", []string{
+			"settings.category.apikeys",
+			"settings.category.authentication",
+			"settings.category.notifications",
+			"settings.category.roles",
+			"settings.category.s3destinations",
+			"settings.category.systembackups",
+			"settings.category.users",
+			"settings.category.webhooks",
+			"settings.category.diagnostics",
+		}, 125),
 
-var accessSurfaces = []AccessSurface{
-	landingSurface("landing.customize", "/customize", "Customize", []string{
-		"customize.category.templates",
-		"customize.category.registries",
-		"customize.category.variables",
-		"customize.category.git-repositories",
-	}, 40),
-	landingSurface("landing.settings", "/settings", "Settings", []string{
-		"settings.category.storage",
-		"settings.category.docker",
-		"settings.category.security",
-		"settings.category.timeouts",
-		"settings.category.activity",
-		"settings.category.build",
-		"settings.category.jobschedule",
-	}, 120),
-	landingSurface("landing.system", "/system", "System", []string{
-		"settings.category.apikeys",
-		"settings.category.authentication",
-		"settings.category.notifications",
-		"settings.category.roles",
-		"settings.category.s3destinations",
-		"settings.category.systembackups",
-		"settings.category.users",
-		"settings.category.webhooks",
-		"settings.category.diagnostics",
-	}, 125),
+		routeSurface("route.projects", "/projects", "Projects", AccessScopeModeEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead}, 30),
+		routeSurface("route.projects.new", "/projects/new", "Create project", AccessScopeModeEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead, PermProjectsCreate}, 0),
+		routeSurface("route.projects.detail", "/projects/{projectId}", "Project", AccessScopeModeEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead}, 0),
+		routeSurface("route.environments", "/environments", "Environments", AccessScopeModeGlobalOnly, []string{PermEnvironmentsList, PermEnvironmentsRead}, 130),
+		routeSurface("route.environments.detail", "/environments/{id}", "Environment", AccessScopeModeGlobalOnly, []string{PermEnvironmentsList, PermEnvironmentsRead}, 0),
+		routeSurface("route.gitops", "/gitops", "GitOps Syncs", AccessScopeModeEnvPlusGlobal, []string{PermGitOpsList, PermGitOpsRead}, 0),
+		routeSurface("route.containers", "/containers", "Containers", AccessScopeModeEnvPlusGlobal, []string{PermContainersList, PermContainersRead}, 20),
+		routeSurface("route.containers.detail", "/containers/{containerId}", "Container", AccessScopeModeEnvPlusGlobal, []string{PermContainersList, PermContainersRead}, 0),
+		routeSurface("route.images", "/images", "Images", AccessScopeModeEnvPlusGlobal, []string{PermImagesList, PermImagesRead}, 50),
+		routeSurface("route.images.detail", "/images/{imageId}", "Image", AccessScopeModeEnvPlusGlobal, []string{PermImagesList, PermImagesRead}, 0),
+		routeSurface("route.images.builds", "/images/builds", "Builds", AccessScopeModeEnvPlusGlobal, []string{PermImagesBuild}, 0),
+		// The security page moved from /images/vulnerabilities; the surface ID stays
+		// stable so saved role access scopes keep working.
+		routeSurface("route.images.vulnerabilities", "/security", "Security", AccessScopeModeEnvPlusGlobal, []string{PermVulnsRead}, 55),
+		routeSurface("route.updates", "/updates", "Image Updates", AccessScopeModeEnvPlusGlobal, []string{PermImageUpdatesRead}, 0),
+		routeSurface("route.networks", "/networks", "Networks", AccessScopeModeEnvPlusGlobal, []string{PermNetworksList, PermNetworksRead}, 70),
+		routeSurface("route.networks.detail", "/networks/{networkId}", "Network", AccessScopeModeEnvPlusGlobal, []string{PermNetworksList, PermNetworksRead}, 0),
+		routeSurface("route.ports", "/networks/ports", "Ports", AccessScopeModeEnvPlusGlobal, []string{PermContainersList}, 0),
+		routeSurface("route.networks.topology", "/networks/topology", "Network Topology", AccessScopeModeEnvPlusGlobal, []string{PermNetworksRead}, 0),
+		routeSurface("route.volumes", "/volumes", "Volumes", AccessScopeModeEnvPlusGlobal, []string{PermVolumesList, PermVolumesRead}, 60),
+		routeSurface("route.volumes.detail", "/volumes/{volumeName}", "Volume", AccessScopeModeEnvPlusGlobal, []string{PermVolumesList, PermVolumesRead}, 0),
+		routeSurface("route.swarm", "/swarm", "Swarm", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
+		routeSurface("route.swarm.services", "/swarm/services", "Services", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 80),
+		routeSurface("route.swarm.services.detail", "/swarm/services/{serviceId}", "Service", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
+		routeSurface("route.swarm.nodes", "/swarm/nodes", "Nodes", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
+		routeSurface("route.swarm.tasks", "/swarm/tasks", "Tasks", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
+		routeSurface("route.swarm.stacks", "/swarm/stacks", "Stacks", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 90),
+		routeSurface("route.swarm.stacks.new", "/swarm/stacks/new", "Create stack", AccessScopeModeEnvPlusGlobal, []string{PermSwarmStacks}, 0),
+		routeSurface("route.swarm.stacks.detail", "/swarm/stacks/{name}", "Stack", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
+		routeSurface("route.swarm.cluster", "/swarm/cluster", "Cluster", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 100),
+		routeSurface("route.swarm.configs", "/swarm/configs", "Configs", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
+		routeSurface("route.swarm.secrets", "/swarm/secrets", "Secrets", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
+		routeSurface("route.podman", "/podman/pods", "Podman", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead}, 0),
+		routeSurface("route.podman.quadlets", "/podman/quadlets", "Quadlets", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead}, 0),
+		allOfRouteSurface("route.podman.quadlets.new", "/podman/quadlets/new", "Install quadlet", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead, PermPodmanQuadlets}),
+		allOfRouteSurface("route.podman.kube", "/podman/kube", "Kube", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead, PermPodmanKube}),
+		routeSurface("route.podman.secrets", "/podman/secrets", "Podman secrets", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead}, 0),
+		allOfRouteSurface("route.podman.autoupdate", "/podman/autoupdate", "Podman auto-update", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead, PermPodmanAutoUpdate}),
+		routeSurface("route.events", "/events", "Events", AccessScopeModeGlobalOnly, []string{PermEventsRead}, 110),
+		routeSurface("route.activities", "", "Activities", AccessScopeModeAnyEffectiveScope, []string{PermActivitiesRead}, 0),
+		allOfRouteSurface("route.oidc-role-mappings", "", "OIDC Role Mappings", AccessScopeModeGlobalOnly, AllPermissions()),
+		routeSurface("route.customize.templates.create",
+			"/customize/templates/create",
+			"Create template",
+			AccessScopeModeGlobalOnly,
+			[]string{
+				PermCustomizeManage,
+				PermTemplatesList,
+				PermTemplatesRead,
+			},
+			0),
 
-	routeSurface("route.projects", "/projects", "Projects", AccessScopeModeEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead}, 30),
-	routeSurface("route.projects.new", "/projects/new", "Create project", AccessScopeModeEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead, PermProjectsCreate}, 0),
-	routeSurface("route.projects.detail", "/projects/{projectId}", "Project", AccessScopeModeEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead}, 0),
-	routeSurface("route.environments", "/environments", "Environments", AccessScopeModeGlobalOnly, []string{PermEnvironmentsList, PermEnvironmentsRead}, 130),
-	routeSurface("route.environments.detail", "/environments/{id}", "Environment", AccessScopeModeGlobalOnly, []string{PermEnvironmentsList, PermEnvironmentsRead}, 0),
-	routeSurface("route.gitops", "/gitops", "GitOps Syncs", AccessScopeModeEnvPlusGlobal, []string{PermGitOpsList, PermGitOpsRead}, 0),
-	routeSurface("route.containers", "/containers", "Containers", AccessScopeModeEnvPlusGlobal, []string{PermContainersList, PermContainersRead}, 20),
-	routeSurface("route.containers.detail", "/containers/{containerId}", "Container", AccessScopeModeEnvPlusGlobal, []string{PermContainersList, PermContainersRead}, 0),
-	routeSurface("route.images", "/images", "Images", AccessScopeModeEnvPlusGlobal, []string{PermImagesList, PermImagesRead}, 50),
-	routeSurface("route.images.detail", "/images/{imageId}", "Image", AccessScopeModeEnvPlusGlobal, []string{PermImagesList, PermImagesRead}, 0),
-	routeSurface("route.images.builds", "/images/builds", "Builds", AccessScopeModeEnvPlusGlobal, []string{PermImagesBuild}, 0),
-	// The security page moved from /images/vulnerabilities; the surface ID stays
-	// stable so saved role access scopes keep working.
-	routeSurface("route.images.vulnerabilities", "/security", "Security", AccessScopeModeEnvPlusGlobal, []string{PermVulnsRead}, 55),
-	routeSurface("route.updates", "/updates", "Image Updates", AccessScopeModeEnvPlusGlobal, []string{PermImageUpdatesRead}, 0),
-	routeSurface("route.networks", "/networks", "Networks", AccessScopeModeEnvPlusGlobal, []string{PermNetworksList, PermNetworksRead}, 70),
-	routeSurface("route.networks.detail", "/networks/{networkId}", "Network", AccessScopeModeEnvPlusGlobal, []string{PermNetworksList, PermNetworksRead}, 0),
-	routeSurface("route.ports", "/networks/ports", "Ports", AccessScopeModeEnvPlusGlobal, []string{PermContainersList}, 0),
-	routeSurface("route.networks.topology", "/networks/topology", "Network Topology", AccessScopeModeEnvPlusGlobal, []string{PermNetworksRead}, 0),
-	routeSurface("route.volumes", "/volumes", "Volumes", AccessScopeModeEnvPlusGlobal, []string{PermVolumesList, PermVolumesRead}, 60),
-	routeSurface("route.volumes.detail", "/volumes/{volumeName}", "Volume", AccessScopeModeEnvPlusGlobal, []string{PermVolumesList, PermVolumesRead}, 0),
-	routeSurface("route.swarm", "/swarm", "Swarm", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
-	routeSurface("route.swarm.services", "/swarm/services", "Services", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 80),
-	routeSurface("route.swarm.services.detail", "/swarm/services/{serviceId}", "Service", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
-	routeSurface("route.swarm.nodes", "/swarm/nodes", "Nodes", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
-	routeSurface("route.swarm.tasks", "/swarm/tasks", "Tasks", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
-	routeSurface("route.swarm.stacks", "/swarm/stacks", "Stacks", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 90),
-	routeSurface("route.swarm.stacks.new", "/swarm/stacks/new", "Create stack", AccessScopeModeEnvPlusGlobal, []string{PermSwarmStacks}, 0),
-	routeSurface("route.swarm.stacks.detail", "/swarm/stacks/{name}", "Stack", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
-	routeSurface("route.swarm.cluster", "/swarm/cluster", "Cluster", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 100),
-	routeSurface("route.swarm.configs", "/swarm/configs", "Configs", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
-	routeSurface("route.swarm.secrets", "/swarm/secrets", "Secrets", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
-	routeSurface("route.podman", "/podman/pods", "Podman", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead}, 0),
-	routeSurface("route.podman.quadlets", "/podman/quadlets", "Quadlets", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead}, 0),
-	allOfRouteSurface("route.podman.quadlets.new", "/podman/quadlets/new", "Install quadlet", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead, PermPodmanQuadlets}),
-	allOfRouteSurface("route.podman.kube", "/podman/kube", "Kube", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead, PermPodmanKube}),
-	routeSurface("route.podman.secrets", "/podman/secrets", "Podman secrets", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead}, 0),
-	allOfRouteSurface("route.podman.autoupdate", "/podman/autoupdate", "Podman auto-update", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead, PermPodmanAutoUpdate}),
-	routeSurface("route.events", "/events", "Events", AccessScopeModeGlobalOnly, []string{PermEventsRead}, 110),
-	routeSurface("route.activities", "", "Activities", AccessScopeModeAnyEffectiveScope, []string{PermActivitiesRead}, 0),
-	allOfRouteSurface("route.oidc-role-mappings", "", "OIDC Role Mappings", AccessScopeModeGlobalOnly, AllPermissions()),
-	routeSurface("route.customize.templates.create",
-		"/customize/templates/create",
-		"Create template",
-		AccessScopeModeGlobalOnly,
-		[]string{
-			PermCustomizeManage,
-			PermTemplatesList,
-			PermTemplatesRead,
-		},
-		0),
+		routeSurface("route.customize.templates.default",
+			"/customize/templates/default",
+			"Default template",
+			AccessScopeModeGlobalOnly,
+			[]string{
+				PermCustomizeManage,
+				PermTemplatesList,
+				PermTemplatesRead,
+			},
+			0),
 
-	routeSurface("route.customize.templates.default",
-		"/customize/templates/default",
-		"Default template",
-		AccessScopeModeGlobalOnly,
-		[]string{
-			PermCustomizeManage,
-			PermTemplatesList,
-			PermTemplatesRead,
-		},
-		0),
+		routeSurface("route.customize.templates.detail", "/customize/templates/{id}", "Template", AccessScopeModeGlobalOnly, []string{PermCustomizeManage, PermTemplatesList, PermTemplatesRead}, 0),
+		allOfRouteSurface("route.customize.registries.browse", "/customize/registries/{id}", "Registry browser", AccessScopeModeGlobalOnly, []string{PermRegistriesRead, PermRegistriesBrowse}),
 
-	routeSurface("route.customize.templates.detail", "/customize/templates/{id}", "Template", AccessScopeModeGlobalOnly, []string{PermCustomizeManage, PermTemplatesList, PermTemplatesRead}, 0),
-	allOfRouteSurface("route.customize.registries.browse", "/customize/registries/{id}", "Registry browser", AccessScopeModeGlobalOnly, []string{PermRegistriesRead, PermRegistriesBrowse}),
+		settingsCategorySurface("apikeys", "/system/api-keys", "API Keys", AccessScopeModeGlobalOnly, []string{PermApiKeysList, PermApiKeysRead}),
+		settingsCategorySurface("authentication", "/system/authentication", "Authentication", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
+		settingsCategorySurface("notifications", "/system/notifications", "Notifications", AccessScopeModeGlobalOnly, []string{PermNotificationsManage}),
+		settingsCategorySurface("roles", "/system/roles", "Roles", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}),
+		settingsCategorySurface("s3destinations", "/system/backups/s3", "S3 Destinations", AccessScopeModeGlobalOnly, []string{PermS3DestinationsList, PermS3DestinationsRead}),
+		globalAdminSettingsCategorySurface("systembackups", "/system/backups", "Backups"),
+		routeSurface("route.settings.roles.new", "/system/roles/new", "Create role", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}, 0),
+		routeSurface("route.settings.roles.detail", "/system/roles/{id}", "Role", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}, 0),
+		settingsCategorySurface("users", "/system/users", "Users", AccessScopeModeGlobalOnly, []string{PermUsersList, PermUsersRead}),
+		settingsCategorySurface("webhooks", "/system/webhooks", "Webhooks", AccessScopeModeEnvPlusGlobal, []string{PermWebhooksList}),
+		settingsCategorySurface("diagnostics", "/system/diagnostics", "Diagnostics", AccessScopeModeGlobalOnly, []string{PermDiagnosticsRead}),
+		settingsCategorySurface("storage", "/settings/storage", "Storage & Limits", AccessScopeModeEnvPlusGlobal, []string{PermSettingsRead}),
+		settingsCategorySurface("docker", "/settings/docker", "Docker", AccessScopeModeEnvPlusGlobal, []string{PermSettingsRead}),
+		settingsCategorySurface("security", "/settings/security", "Security", AccessScopeModeEnvPlusGlobal, []string{PermSettingsRead}),
+		settingsCategorySurface("timeouts", "/settings/timeouts", "Timeouts", AccessScopeModeEnvPlusGlobal, []string{PermSettingsRead}),
+		settingsCategorySurface("activity", "/settings/activity", "Activity", AccessScopeModeEnvPlusGlobal, []string{PermSettingsRead}),
+		settingsCategorySurface("build", "/settings/builds", "Builds", AccessScopeModeEnvPlusGlobal, []string{PermSettingsRead}),
+		settingsCategorySurface("jobschedule", "/settings/automations", "Automations", AccessScopeModeEnvPlusGlobal, []string{PermJobsManage}),
 
-	settingsCategorySurface("apikeys", "/system/api-keys", "API Keys", AccessScopeModeGlobalOnly, []string{PermApiKeysList, PermApiKeysRead}),
-	settingsCategorySurface("authentication", "/system/authentication", "Authentication", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
-	settingsCategorySurface("notifications", "/system/notifications", "Notifications", AccessScopeModeGlobalOnly, []string{PermNotificationsManage}),
-	settingsCategorySurface("roles", "/system/roles", "Roles", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}),
-	settingsCategorySurface("s3destinations", "/system/backups/s3", "S3 Destinations", AccessScopeModeGlobalOnly, []string{PermS3DestinationsList, PermS3DestinationsRead}),
-	globalAdminSettingsCategorySurface("systembackups", "/system/backups", "Backups"),
-	routeSurface("route.settings.roles.new", "/system/roles/new", "Create role", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}, 0),
-	routeSurface("route.settings.roles.detail", "/system/roles/{id}", "Role", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}, 0),
-	settingsCategorySurface("users", "/system/users", "Users", AccessScopeModeGlobalOnly, []string{PermUsersList, PermUsersRead}),
-	settingsCategorySurface("webhooks", "/system/webhooks", "Webhooks", AccessScopeModeEnvPlusGlobal, []string{PermWebhooksList}),
-	settingsCategorySurface("diagnostics", "/system/diagnostics", "Diagnostics", AccessScopeModeGlobalOnly, []string{PermDiagnosticsRead}),
-	settingsCategorySurface("storage", "/settings/storage", "Storage & Limits", AccessScopeModeEnvPlusGlobal, []string{PermSettingsRead}),
-	settingsCategorySurface("docker", "/settings/docker", "Docker", AccessScopeModeEnvPlusGlobal, []string{PermSettingsRead}),
-	settingsCategorySurface("security", "/settings/security", "Security", AccessScopeModeEnvPlusGlobal, []string{PermSettingsRead}),
-	settingsCategorySurface("timeouts", "/settings/timeouts", "Timeouts", AccessScopeModeEnvPlusGlobal, []string{PermSettingsRead}),
-	settingsCategorySurface("activity", "/settings/activity", "Activity", AccessScopeModeEnvPlusGlobal, []string{PermSettingsRead}),
-	settingsCategorySurface("build", "/settings/builds", "Builds", AccessScopeModeEnvPlusGlobal, []string{PermSettingsRead}),
-	settingsCategorySurface("jobschedule", "/settings/automations", "Automations", AccessScopeModeEnvPlusGlobal, []string{PermJobsManage}),
+		customizeCategorySurface("templates", "/customize/templates", "Templates", []string{PermCustomizeManage, PermTemplatesList, PermTemplatesRead}),
+		customizeCategorySurface("registries", "/customize/registries", "Container Registries", []string{PermCustomizeManage, PermRegistriesList, PermRegistriesRead}),
+		customizeCategorySurface("variables", "/customize/variables", "Variables", []string{PermVariablesRead}),
+		customizeCategorySurface("git-repositories", "/customize/git-repositories", "Git Repositories", []string{PermCustomizeManage, PermGitReposList, PermGitReposRead}),
+	}
 
-	customizeCategorySurface("templates", "/customize/templates", "Templates", []string{PermCustomizeManage, PermTemplatesList, PermTemplatesRead}),
-	customizeCategorySurface("registries", "/customize/registries", "Container Registries", []string{PermCustomizeManage, PermRegistriesList, PermRegistriesRead}),
-	customizeCategorySurface("variables", "/customize/variables", "Variables", []string{PermVariablesRead}),
-	customizeCategorySurface("git-repositories", "/customize/git-repositories", "Git Repositories", []string{PermCustomizeManage, PermGitReposList, PermGitReposRead}),
-}
-
-var accessSurfacesByID = buildAccessSurfaceIndex(accessSurfaces)
+	accessSurfacesByID = buildAccessSurfaceIndex(accessSurfaces)
+)
 
 // AccessSurfaces returns a defensive copy of every backend-owned access
 // surface in stable evaluation order.

@@ -17,9 +17,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
 )
 
-type Service struct {
-	apiKeys *apikey.ApiKeyService
-}
+type (
+	Service struct {
+		apiKeys *apikey.ApiKeyService
+	}
+)
 
 func New(apiKeys *apikey.ApiKeyService) *Service {
 	return &Service{apiKeys: apiKeys}

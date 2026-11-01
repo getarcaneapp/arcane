@@ -36,16 +36,20 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
 )
 
-const rusticImage = rusticruntime.DefaultImage
+const (
+	rusticImage = rusticruntime.DefaultImage
+)
 
-var requestPath string
+var (
+	requestPath string
 
-var RestoreCmd = &cobra.Command{
-	Use:    "recovery-restore",
-	Short:  "Apply a prepared Arcane recovery snapshot",
-	Hidden: true,
-	RunE:   runRestore,
-}
+	RestoreCmd = &cobra.Command{
+		Use:    "recovery-restore",
+		Short:  "Apply a prepared Arcane recovery snapshot",
+		Hidden: true,
+		RunE:   runRestore,
+	}
+)
 
 func init() {
 	RestoreCmd.Flags().StringVar(&requestPath, "request", "/app/data/.arcane-recovery-request.json", "Prepared recovery request")

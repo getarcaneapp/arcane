@@ -18,6 +18,15 @@ import (
 	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
 )
 
+type (
+	claimingObserverFake struct {
+		claim   func(types.SchedulerRun)
+		target  string
+		once    sync.Once
+		claimed bool
+	}
+)
+
 func newTestCoordinator(t *testing.T) *Coordinator {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -32,13 +41,6 @@ func newTestCoordinator(t *testing.T) *Coordinator {
 	require.NoError(t, q.Register(runtime))
 	francistest.Start(t, runtime)
 	return q
-}
-
-type claimingObserverFake struct {
-	claim   func(types.SchedulerRun)
-	target  string
-	once    sync.Once
-	claimed bool
 }
 
 func (o *claimingObserverFake) ActivityID(run types.SchedulerRun) string {

@@ -6,17 +6,19 @@ import (
 	"strings"
 )
 
-// PermissionSet is the effective permission set for one caller in one request.
-// Built once by the auth bridge and stashed in the request context.
-//
-// Global permissions apply to every environment and to org-level endpoints.
-// PerEnv permissions apply only when the caller is acting on that specific
-// environment. Sudo bypasses all checks (used for the agent token path).
-type PermissionSet struct {
-	Global map[string]struct{}
-	PerEnv map[string]map[string]struct{}
-	Sudo   bool
-}
+type (
+	// PermissionSet is the effective permission set for one caller in one request.
+	// Built once by the auth bridge and stashed in the request context.
+	//
+	// Global permissions apply to every environment and to org-level endpoints.
+	// PerEnv permissions apply only when the caller is acting on that specific
+	// environment. Sudo bypasses all checks (used for the agent token path).
+	PermissionSet struct {
+		Global map[string]struct{}
+		PerEnv map[string]map[string]struct{}
+		Sudo   bool
+	}
+)
 
 // Allows reports whether the caller may perform `perm`. For env-scoped
 // permissions, envID is the target environment's ID. For org-level

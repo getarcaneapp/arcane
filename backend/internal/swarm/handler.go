@@ -22,50 +22,52 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
 )
 
-type SwarmHandler struct {
-	swarmService *SwarmService
-	eventService *event.EventService
-}
+type (
+	SwarmHandler struct {
+		swarmService *SwarmService
+		eventService *event.EventService
+	}
 
-type ListSwarmTasksInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
+	ListSwarmTasksInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
 
-type InitSwarmInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.SwarmInitRequest
-}
+	InitSwarmInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.SwarmInitRequest
+	}
 
-type JoinSwarmInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.SwarmJoinRequest
-}
+	JoinSwarmInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.SwarmJoinRequest
+	}
 
-type LeaveSwarmInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.SwarmLeaveRequest
-}
+	LeaveSwarmInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.SwarmLeaveRequest
+	}
 
-type UnlockSwarmInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.SwarmUnlockRequest
-}
+	UnlockSwarmInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.SwarmUnlockRequest
+	}
 
-type SwarmJoinTokensActionInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Action        string `query:"action" required:"true" enum:"rotate" doc:"Join token action"`
-	Body          types.SwarmRotateJoinTokensRequest
-}
+	SwarmJoinTokensActionInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Action        string `query:"action" required:"true" enum:"rotate" doc:"Join token action"`
+		Body          types.SwarmRotateJoinTokensRequest
+	}
 
-type UpdateSwarmSpecInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.SwarmUpdateRequest
-}
+	UpdateSwarmSpecInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.SwarmUpdateRequest
+	}
+)
 
 func NewHandler(swarmService *SwarmService, eventService *event.EventService) *SwarmHandler {
 	return &SwarmHandler{swarmService: swarmService, eventService: eventService}

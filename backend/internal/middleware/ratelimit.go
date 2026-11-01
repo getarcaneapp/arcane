@@ -15,26 +15,28 @@ import (
 	"kit.getarcane.app"
 )
 
-// ipRateLimiter tracks per-client token bucket limiters keyed by client IP.
-type ipRateLimiter struct {
-	lastSweep  time.Time
-	limiters   map[string]*limiterEntry
-	rate       rate.Limit
-	burst      int
-	ttl        time.Duration
-	maxEntries int
-	mu         sync.Mutex
-}
+type (
+	// ipRateLimiter tracks per-client token bucket limiters keyed by client IP.
+	ipRateLimiter struct {
+		lastSweep  time.Time
+		limiters   map[string]*limiterEntry
+		rate       rate.Limit
+		burst      int
+		ttl        time.Duration
+		maxEntries int
+		mu         sync.Mutex
+	}
 
-type limiterAge struct {
-	seen time.Time
-	key  string
-}
+	limiterAge struct {
+		seen time.Time
+		key  string
+	}
 
-type limiterEntry struct {
-	limiter *rate.Limiter
-	seen    time.Time
-}
+	limiterEntry struct {
+		limiter *rate.Limiter
+		seen    time.Time
+	}
+)
 
 func newIPRateLimiter(r rate.Limit, burst int) *ipRateLimiter {
 	return &ipRateLimiter{

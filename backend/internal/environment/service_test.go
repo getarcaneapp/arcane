@@ -44,48 +44,50 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-type environmentTestScheduler struct {
-	submitted []types.SchedulerRequest
-	added     []string
-	removed   []string
-}
+type (
+	environmentTestScheduler struct {
+		submitted []types.SchedulerRequest
+		added     []string
+		removed   []string
+	}
 
-// Project imports environment, so these rows avoid an import cycle in tests.
-type testProjectRow struct {
-	database.BaseModel
-	GitOpsManagedBy *string `gorm:"column:gitops_managed_by"`
-	Name            string
-	Path            string
-	Status          string
-}
+	// Project imports environment, so these rows avoid an import cycle in tests.
+	testProjectRow struct {
+		database.BaseModel
+		GitOpsManagedBy *string `gorm:"column:gitops_managed_by"`
+		Name            string
+		Path            string
+		Status          string
+	}
 
-type testGitOpsSyncRow struct {
-	database.BaseModel
-	Name          string
-	EnvironmentID string
-	RepositoryID  string
-	ComposePath   string
-	ProjectName   string
-	SyncInterval  int
-}
+	testGitOpsSyncRow struct {
+		database.BaseModel
+		Name          string
+		EnvironmentID string
+		RepositoryID  string
+		ComposePath   string
+		ProjectName   string
+		SyncInterval  int
+	}
 
-type testFederatedCredentialRow struct {
-	database.BaseModel
-	EnvironmentID  *string `gorm:"column:environment_id"`
-	Name           string
-	IdentityUserID string `gorm:"column:identity_user_id"`
-}
+	testFederatedCredentialRow struct {
+		database.BaseModel
+		EnvironmentID  *string `gorm:"column:environment_id"`
+		Name           string
+		IdentityUserID string `gorm:"column:identity_user_id"`
+	}
 
-type testGlobalVariableRow struct {
-	database.BaseModel
-	Key             string
-	AllEnvironments bool `gorm:"column:all_environments"`
-}
+	testGlobalVariableRow struct {
+		database.BaseModel
+		Key             string
+		AllEnvironments bool `gorm:"column:all_environments"`
+	}
 
-type testGlobalVariableEnvironmentRow struct {
-	GlobalVariableID string `gorm:"column:global_variable_id;primaryKey"`
-	EnvironmentID    string `gorm:"column:environment_id;primaryKey"`
-}
+	testGlobalVariableEnvironmentRow struct {
+		GlobalVariableID string `gorm:"column:global_variable_id;primaryKey"`
+		EnvironmentID    string `gorm:"column:environment_id;primaryKey"`
+	}
+)
 
 func (testFederatedCredentialRow) TableName() string { return "federated_credentials" }
 

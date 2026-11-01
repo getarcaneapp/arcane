@@ -13,6 +13,19 @@ import (
 	"github.com/muesli/cancelreader"
 )
 
+type (
+	secretModel struct {
+		input           textinput.Model
+		done, submitted bool
+	}
+
+	confirmModel struct {
+		out                  io.Writer
+		label                string
+		yes, confirmed, done bool
+	}
+)
+
 // Confirm requires terminal input, using a selector or line input depending on the output terminal.
 func Confirm(ctx context.Context, input io.Reader, out io.Writer, label string) (bool, error) {
 	if err := ctx.Err(); err != nil {
@@ -173,11 +186,6 @@ func readLine(r io.Reader) (string, error) {
 	return strings.TrimSuffix(string(line), "\r"), nil
 }
 
-type secretModel struct {
-	input           textinput.Model
-	done, submitted bool
-}
-
 func (m secretModel) Init() tea.Cmd { return nil }
 
 func (m secretModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -207,12 +215,6 @@ func (m secretModel) View() tea.View {
 		return tea.NewView("")
 	}
 	return tea.NewView(m.input.View() + "\n")
-}
-
-type confirmModel struct {
-	out                  io.Writer
-	label                string
-	yes, confirmed, done bool
 }
 
 func (m confirmModel) Init() tea.Cmd { return nil }

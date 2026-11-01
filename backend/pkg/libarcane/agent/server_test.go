@@ -25,6 +25,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+type (
+	registerResponseOrderConn struct {
+		sendHook func(*TunnelMessage) error
+		recvErr  error
+	}
+)
+
 func TestTunnelServer_HandleConnect(t *testing.T) {
 	resolver := func(ctx context.Context, token string) (string, error) {
 		if token == "valid-token" {
@@ -476,11 +483,6 @@ func TestIsExpectedTunnelReceiveError(t *testing.T) {
 	t.Run("unexpected error not expected", func(t *testing.T) {
 		assert.False(t, isExpectedReceiveError(errors.New("boom")))
 	})
-}
-
-type registerResponseOrderConn struct {
-	sendHook func(*TunnelMessage) error
-	recvErr  error
 }
 
 func (f *registerResponseOrderConn) Send(msg *TunnelMessage) error {

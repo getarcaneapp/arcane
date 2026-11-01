@@ -8,15 +8,17 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 )
 
-// proxiedWSRoute couples a proxied WebSocket route (relative to the
-// /environments/{id}/ws group) with its handler and the permission it requires.
-// It is the single source of truth for both Echo route registration and the
-// remote environment proxy permission matcher, so the two can never drift.
-type proxiedWSRoute struct {
-	path    string
-	handler echo.HandlerFunc
-	perm    string
-}
+type (
+	// proxiedWSRoute couples a proxied WebSocket route (relative to the
+	// /environments/{id}/ws group) with its handler and the permission it requires.
+	// It is the single source of truth for both Echo route registration and the
+	// remote environment proxy permission matcher, so the two can never drift.
+	proxiedWSRoute struct {
+		path    string
+		handler echo.HandlerFunc
+		perm    string
+	}
+)
 
 // proxiedRoutes returns the WebSocket streams that are proxied to remote
 // environments, each paired with its required permission.

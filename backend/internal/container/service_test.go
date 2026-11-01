@@ -55,19 +55,28 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
-type resourceStatsServer struct {
-	stats       map[string]container.StatsResponse
-	statsStatus map[string]int
-	statsCalls  map[string]int
-	slowIDs     map[string]bool
+type (
+	resourceStatsServer struct {
+		stats       map[string]container.StatsResponse
+		statsStatus map[string]int
+		statsCalls  map[string]int
+		slowIDs     map[string]bool
 
-	containers []container.Summary
-	delay      time.Duration
-	mu         sync.Mutex
+		containers []container.Summary
+		delay      time.Duration
+		mu         sync.Mutex
 
-	current atomic.Int32
-	maxSeen atomic.Int32
-}
+		current atomic.Int32
+		maxSeen atomic.Int32
+	}
+
+	quadletTestSystemd struct {
+		calls []string
+		mu    sync.Mutex
+	}
+)
+
+var dockerAPIVersionPrefix = regexp.MustCompile(`^/v\d+\.\d+`)
 
 func TestPaginateContainerProjectGroupsKeepsProjectWhole(t *testing.T) {
 	items := []types.ContainerSummary{
@@ -438,8 +447,6 @@ func setupProjectTestDB(t *testing.T) *database.DB {
 	require.NoError(t, db.AutoMigrate(&project.Project{}, &settings.SettingVariable{}, &imageupdate.ImageUpdateRecord{}, &event.Event{}, &kv.KVEntry{}))
 	return &database.DB{DB: db}
 }
-
-var dockerAPIVersionPrefix = regexp.MustCompile(`^/v\d+\.\d+`)
 
 func TestApplyEditPreservesUnmanagedSettings(t *testing.T) {
 	cfg := container.Config{
@@ -1741,11 +1748,6 @@ func TestAggregateContainersMergesEnvironments(t *testing.T) {
 		require.Empty(t, body.Data)
 		require.Len(t, body.FailedEnvironments, 3)
 	})
-}
-
-type quadletTestSystemd struct {
-	calls []string
-	mu    sync.Mutex
 }
 
 func (f *quadletTestSystemd) Availability(context.Context) types.PodmanSystemdAvailability {

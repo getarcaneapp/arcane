@@ -25,13 +25,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jsonx"
 )
 
-const (
-	// maxErrorLength bounds task errors recorded in the workflow journal.
-	maxErrorLength = 1024
-	// slotWait bounds how long a resumed task waits for its activity slot before it is handed back.
-	slotWait = 20 * time.Second
-)
-
 type (
 	// Binding ties an instance, and its children, to the run that started it.
 	Binding struct {
@@ -40,13 +33,11 @@ type (
 		RunID         string `json:"runId,omitempty"`
 		RootID        string `json:"rootId"`
 	}
-
 	// envelope is every instance's input: its run binding plus the caller's payload.
 	envelope struct {
 		Binding Binding        `json:"binding"`
 		Payload jsontext.Value `json:"payload,omitempty"`
 	}
-
 	// Task is what an engine handler receives: the Francis task plus its binding.
 	Task struct {
 		workflow.Task
@@ -55,12 +46,18 @@ type (
 		// recovered marks a standalone task whose instance an earlier process started.
 		recovered bool
 	}
-
 	// Result is one fan-out slot: the task's output, or the error that failed it.
 	Result[T any] struct {
 		Value T
 		Err   string
 	}
+)
+
+const (
+	// maxErrorLength bounds task errors recorded in the workflow journal.
+	maxErrorLength = 1024
+	// slotWait bounds how long a resumed task waits for its activity slot before it is handed back.
+	slotWait = 20 * time.Second
 )
 
 // Handler wraps a step handler. Its ctx carries the bound run exactly as a job's

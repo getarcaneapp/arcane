@@ -9,12 +9,19 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 )
 
-type appLifecycleContextKey struct{}
-
 type (
+	appLifecycleContextKey struct{}
+
 	activityBatchIDContextKey struct{}
 	updateInitiatorContextKey struct{}
+
+	activityRuntimeContext struct {
+		valueCtx     context.Context
+		lifecycleCtx context.Context
+	}
 )
+
+var activityBatchIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // WithUpdateInitiator carries manager-authenticated attribution through an
 // agent request without changing the authenticated agent identity.
@@ -32,8 +39,6 @@ func UpdateInitiatorFromContext(ctx context.Context) (types.ActivityStartedBy, b
 	initiator, ok := ctx.Value(updateInitiatorContextKey{}).(types.ActivityStartedBy)
 	return initiator, ok
 }
-
-var activityBatchIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // WithActivityBatchID attaches a client-supplied batch ID that groups the
 // activities spawned by one logical user action (e.g. a bulk container
@@ -56,11 +61,6 @@ func ActivityBatchIDFromContext(ctx context.Context) string {
 	}
 	batchID, _ := ctx.Value(activityBatchIDContextKey{}).(string)
 	return batchID
-}
-
-type activityRuntimeContext struct {
-	valueCtx     context.Context
-	lifecycleCtx context.Context
 }
 
 // WithAppLifecycleContext marks ctx as the application lifecycle context.

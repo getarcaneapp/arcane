@@ -18,150 +18,152 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type PasskeyHandler struct {
-	passkeyService *PasskeyService
-	authService    *auth.AuthService
-	userService    *user.UserService
-}
+type (
+	PasskeyHandler struct {
+		passkeyService *PasskeyService
+		authService    *auth.AuthService
+		userService    *user.UserService
+	}
 
-type passkeyCredentialBody struct {
-	CeremonyID string         `json:"ceremonyId,omitempty"`
-	Credential map[string]any `json:"credential"`
-	Name       string         `json:"name,omitempty"`
-}
+	passkeyCredentialBody struct {
+		CeremonyID string         `json:"ceremonyId,omitempty"`
+		Credential map[string]any `json:"credential"`
+		Name       string         `json:"name,omitempty"`
+	}
 
-type mfaBeginBody struct {
-	TransactionID string `json:"transactionId"`
-}
+	mfaBeginBody struct {
+		TransactionID string `json:"transactionId"`
+	}
 
-type mfaFinishBody struct {
-	Credential    map[string]any `json:"credential"`
-	TransactionID string         `json:"transactionId"`
-}
+	mfaFinishBody struct {
+		Credential    map[string]any `json:"credential"`
+		TransactionID string         `json:"transactionId"`
+	}
 
-type mobilePasskeyFinishBody struct {
-	CeremonyID    string         `json:"ceremonyId"`
-	Credential    map[string]any `json:"credential"`
-	CodeChallenge string         `json:"codeChallenge" minLength:"43" maxLength:"43"`
-}
+	mobilePasskeyFinishBody struct {
+		CeremonyID    string         `json:"ceremonyId"`
+		Credential    map[string]any `json:"credential"`
+		CodeChallenge string         `json:"codeChallenge" minLength:"43" maxLength:"43"`
+	}
 
-type mobilePasskeyExchangeBody struct {
-	TransactionID string `json:"transactionId"`
-	CodeVerifier  string `json:"codeVerifier" minLength:"43" maxLength:"43"`
-}
+	mobilePasskeyExchangeBody struct {
+		TransactionID string `json:"transactionId"`
+		CodeVerifier  string `json:"codeVerifier" minLength:"43" maxLength:"43"`
+	}
 
-type stepUpFinishBody struct {
-	Credential    map[string]any `json:"credential"`
-	TransactionID string         `json:"transactionId"`
-}
+	stepUpFinishBody struct {
+		Credential    map[string]any `json:"credential"`
+		TransactionID string         `json:"transactionId"`
+	}
 
-type recoveryBody struct {
-	TransactionID string `json:"transactionId"`
-	Code          string `json:"code"`
-}
+	recoveryBody struct {
+		TransactionID string `json:"transactionId"`
+		Code          string `json:"code"`
+	}
 
-type renamePasskeyBody struct {
-	Name string `json:"name" minLength:"1" maxLength:"128"`
-}
+	renamePasskeyBody struct {
+		Name string `json:"name" minLength:"1" maxLength:"128"`
+	}
 
-type passwordReauthBody struct {
-	Password string `json:"password" writeOnly:"true" minLength:"1"`
-}
+	passwordReauthBody struct {
+		Password string `json:"password" writeOnly:"true" minLength:"1"`
+	}
 
-type PasskeyLoginFinishInput struct {
-	UserAgent string `header:"User-Agent"`
-	Body      passkeyCredentialBody
-}
+	PasskeyLoginFinishInput struct {
+		UserAgent string `header:"User-Agent"`
+		Body      passkeyCredentialBody
+	}
 
-type PasskeyLoginFinishOutput struct {
-	SetCookie []string `header:"Set-Cookie" doc:"Session cookie"`
-	Body      types.ApiResponse[types.AuthenticationResponse]
-}
+	PasskeyLoginFinishOutput struct {
+		SetCookie []string `header:"Set-Cookie" doc:"Session cookie"`
+		Body      types.ApiResponse[types.AuthenticationResponse]
+	}
 
-type MobilePasskeyFinishInput struct {
-	Body mobilePasskeyFinishBody
-}
+	MobilePasskeyFinishInput struct {
+		Body mobilePasskeyFinishBody
+	}
 
-type MobilePasskeyExchangeInput struct {
-	UserAgent string `header:"User-Agent"`
-	Body      mobilePasskeyExchangeBody
-}
+	MobilePasskeyExchangeInput struct {
+		UserAgent string `header:"User-Agent"`
+		Body      mobilePasskeyExchangeBody
+	}
 
-type MobilePasskeyExchangeOutput struct {
-	Body types.ApiResponse[types.AuthenticationResponse]
-}
+	MobilePasskeyExchangeOutput struct {
+		Body types.ApiResponse[types.AuthenticationResponse]
+	}
 
-type PasskeyMFAStartInput struct {
-	Body mfaBeginBody
-}
+	PasskeyMFAStartInput struct {
+		Body mfaBeginBody
+	}
 
-type PasskeyMFAFinishInput struct {
-	Body mfaFinishBody
-}
+	PasskeyMFAFinishInput struct {
+		Body mfaFinishBody
+	}
 
-type PasskeyMFAFinishOutput struct {
-	SetCookie []string `header:"Set-Cookie" doc:"Session cookie"`
-	Body      types.ApiResponse[types.AuthenticationResponse]
-}
+	PasskeyMFAFinishOutput struct {
+		SetCookie []string `header:"Set-Cookie" doc:"Session cookie"`
+		Body      types.ApiResponse[types.AuthenticationResponse]
+	}
 
-type PasskeyRecoveryInput struct {
-	Body recoveryBody
-}
+	PasskeyRecoveryInput struct {
+		Body recoveryBody
+	}
 
-type PasskeyRecoveryOutput struct {
-	SetCookie []string `header:"Set-Cookie" doc:"Session cookie"`
-	Body      types.ApiResponse[types.AuthenticationResponse]
-}
+	PasskeyRecoveryOutput struct {
+		SetCookie []string `header:"Set-Cookie" doc:"Session cookie"`
+		Body      types.ApiResponse[types.AuthenticationResponse]
+	}
 
-type passkeyBeginResponse struct {
-	ExpiresAt     time.Time `json:"expiresAt"`
-	Options       any       `json:"options"`
-	CeremonyID    string    `json:"ceremonyId"`
-	TransactionID string    `json:"transactionId,omitempty"`
-}
+	passkeyBeginResponse struct {
+		ExpiresAt     time.Time `json:"expiresAt"`
+		Options       any       `json:"options"`
+		CeremonyID    string    `json:"ceremonyId"`
+		TransactionID string    `json:"transactionId,omitempty"`
+	}
 
-type BeginPasskeyRegistrationInput struct {
-	StepUpToken string `header:"X-Step-Up-Token"`
-}
+	BeginPasskeyRegistrationInput struct {
+		StepUpToken string `header:"X-Step-Up-Token"`
+	}
 
-type FinishPasskeyRegistrationInput struct {
-	UserAgent string `header:"User-Agent"`
-	Body      passkeyCredentialBody
-}
+	FinishPasskeyRegistrationInput struct {
+		UserAgent string `header:"User-Agent"`
+		Body      passkeyCredentialBody
+	}
 
-type RenamePasskeyInput struct {
-	ID          string `path:"id"`
-	StepUpToken string `header:"X-Step-Up-Token"`
-	Body        renamePasskeyBody
-}
+	RenamePasskeyInput struct {
+		ID          string `path:"id"`
+		StepUpToken string `header:"X-Step-Up-Token"`
+		Body        renamePasskeyBody
+	}
 
-type DeletePasskeyInput struct {
-	ID          string `path:"id"`
-	StepUpToken string `header:"X-Step-Up-Token"`
-}
+	DeletePasskeyInput struct {
+		ID          string `path:"id"`
+		StepUpToken string `header:"X-Step-Up-Token"`
+	}
 
-type BeginStepUpInput struct{}
+	BeginStepUpInput struct{}
 
-type FinishStepUpInput struct {
-	Body stepUpFinishBody
-}
+	FinishStepUpInput struct {
+		Body stepUpFinishBody
+	}
 
-type PasswordStepUpInput struct {
-	Body passwordReauthBody
-}
+	PasswordStepUpInput struct {
+		Body passwordReauthBody
+	}
 
-type MFASettingsInput struct {
-	StepUpToken string `header:"X-Step-Up-Token"`
-}
+	MFASettingsInput struct {
+		StepUpToken string `header:"X-Step-Up-Token"`
+	}
 
-type MFARecoveryActionInput struct {
-	StepUpToken string `header:"X-Step-Up-Token"`
-	Action      string `query:"action" required:"true" enum:"regenerate" doc:"Recovery code action"`
-}
+	MFARecoveryActionInput struct {
+		StepUpToken string `header:"X-Step-Up-Token"`
+		Action      string `query:"action" required:"true" enum:"regenerate" doc:"Recovery code action"`
+	}
 
-type RecoveryCodesResponse struct {
-	Codes []string `json:"codes" doc:"Recovery codes; shown only once"`
-}
+	RecoveryCodesResponse struct {
+		Codes []string `json:"codes" doc:"Recovery codes; shown only once"`
+	}
+)
 
 func (h *PasskeyHandler) getLoginAvailability(ctx context.Context, _ *struct{}) (*handlerutil.Out[types.PasskeyLoginAvailability], error) {
 	available, err := h.passkeyService.LoginAvailable(ctx)

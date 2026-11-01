@@ -60,6 +60,56 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/resources"
 )
 
+type (
+	// HandlerDeps contains the services required to register HTTP API handlers.
+	// It contains only dependencies consumed by SetupAPI and the authentication middleware.
+	HandlerDeps struct {
+		fx.In
+
+		AppImages         *appimages.ApplicationImagesService
+		User              *user.Module
+		Project           *project.Module
+		Environment       *environment.Module
+		Settings          *settings.Module
+		JobSchedule       *job.Module
+		Search            *search.Module
+		Container         *container.Module
+		Image             *image.Module
+		Build             *build.BuildService
+		Volume            *volume.Module
+		S3Destination     *s3.Module
+		Network           *network.NetworkService
+		Port              *port.PortService
+		Swarm             *swarm.Module
+		Podman            *podman.Module
+		ImageUpdate       *imageupdate.Module
+		Auth              *auth.Module
+		Passkey           *passkey.PasskeyService
+		Oidc              *oidc.OidcService
+		Docker            *docker.DockerClientService
+		Template          *template.Module
+		ContainerRegistry *registry.Module
+		System            *system.Module
+		Diagnostics       *diagnostics.DiagnosticsService
+		Updater           *updater.Module
+		Event             *event.Module
+		Activity          *activity.Module
+		Version           *version.VersionService
+		Notification      *notification.Module
+		ApiKey            *apikey.Module
+		Apns              *apns.Module
+		Federated         *federated.FederatedCredentialService
+		GitRepository     *gitrepo.Module
+		GitOpsSync        *gitops.Module
+		Webhook           *webhook.Module
+		Vulnerability     *vulnerability.Module
+		Role              *role.Module
+		Variable          *variable.Module
+		Upload            *upload.Module
+		Health            *health.Module
+	}
+)
+
 const (
 	scalarDocsHTML = `<!doctype html>
 <html>
@@ -83,54 +133,6 @@ const (
   </body>
 </html>`
 )
-
-// HandlerDeps contains the services required to register HTTP API handlers.
-// It contains only dependencies consumed by SetupAPI and the authentication middleware.
-type HandlerDeps struct {
-	fx.In
-
-	AppImages         *appimages.ApplicationImagesService
-	User              *user.Module
-	Project           *project.Module
-	Environment       *environment.Module
-	Settings          *settings.Module
-	JobSchedule       *job.Module
-	Search            *search.Module
-	Container         *container.Module
-	Image             *image.Module
-	Build             *build.BuildService
-	Volume            *volume.Module
-	S3Destination     *s3.Module
-	Network           *network.NetworkService
-	Port              *port.PortService
-	Swarm             *swarm.Module
-	Podman            *podman.Module
-	ImageUpdate       *imageupdate.Module
-	Auth              *auth.Module
-	Passkey           *passkey.PasskeyService
-	Oidc              *oidc.OidcService
-	Docker            *docker.DockerClientService
-	Template          *template.Module
-	ContainerRegistry *registry.Module
-	System            *system.Module
-	Diagnostics       *diagnostics.DiagnosticsService
-	Updater           *updater.Module
-	Event             *event.Module
-	Activity          *activity.Module
-	Version           *version.VersionService
-	Notification      *notification.Module
-	ApiKey            *apikey.Module
-	Apns              *apns.Module
-	Federated         *federated.FederatedCredentialService
-	GitRepository     *gitrepo.Module
-	GitOpsSync        *gitops.Module
-	Webhook           *webhook.Module
-	Vulnerability     *vulnerability.Module
-	Role              *role.Module
-	Variable          *variable.Module
-	Upload            *upload.Module
-	Health            *health.Module
-}
 
 // SetupAPI creates and configures the Huma API attached to the Echo router.
 func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityAppContext, cfg *config.Config, deps HandlerDeps) huma.API {

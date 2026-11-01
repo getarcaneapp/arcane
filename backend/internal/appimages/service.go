@@ -16,16 +16,18 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
-type appImage struct {
-	mimeType string
-	data     []byte
-}
+type (
+	appImage struct {
+		mimeType string
+		data     []byte
+	}
 
-type ApplicationImagesService struct {
-	standard        map[string]appImage
-	development     map[string]appImage
-	settingsService *settings.SettingsService
-}
+	ApplicationImagesService struct {
+		standard        map[string]appImage
+		development     map[string]appImage
+		settingsService *settings.SettingsService
+	}
+)
 
 func NewApplicationImagesService(embeddedFS embed.FS, settingsService *settings.SettingsService) *ApplicationImagesService {
 	service := &ApplicationImagesService{

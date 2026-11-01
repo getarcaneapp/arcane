@@ -18,9 +18,11 @@ import (
 	kit "kit.getarcane.app"
 )
 
-type composeCoordinator struct {
-	commands types.ComposeCommands
-}
+type (
+	composeCoordinator struct {
+		commands types.ComposeCommands
+	}
+)
 
 // NewCoordinator owns Compose workflow sequencing using the configured SDK commands.
 func NewCoordinator(commands types.ComposeCommands) types.ComposeCoordinator {

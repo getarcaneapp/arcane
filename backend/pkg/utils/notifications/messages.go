@@ -13,7 +13,17 @@ import (
 	"kit.getarcane.app"
 )
 
-type MessageFormat string
+type (
+	MessageFormat string
+
+	// ContainerUpdateBatchEntry describes one container updated as part of a batch.
+	ContainerUpdateBatchEntry struct {
+		ContainerName string
+		ImageRef      string
+		OldDigest     string
+		NewDigest     string
+	}
+)
 
 const (
 	MessageFormatPlain        MessageFormat = "plain"
@@ -236,14 +246,6 @@ func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentN
 	}
 
 	return message.String()
-}
-
-// ContainerUpdateBatchEntry describes one container updated as part of a batch.
-type ContainerUpdateBatchEntry struct {
-	ContainerName string
-	ImageRef      string
-	OldDigest     string
-	NewDigest     string
 }
 
 // BuildBatchContainerUpdateNotificationMessage builds a formatted notification for a batch of container updates.

@@ -30,7 +30,41 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/backupbrowser"
 )
 
-const restoreBackupFilesScript = `set -e
+type (
+	// Dependencies are the backup runtime, storage, and helper-container operations restores run through.
+	Dependencies struct {
+		Docker          *docker.DockerClientService
+		Engine          *backup.Engine
+		Events          *event.EventService
+		Locks           *utils.KeyedMutex
+		Run             func(ctx context.Context, backupID string) (*types.VolumeBackup, error)
+		Repository      func(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (backup.Repository, string, error)
+		Password        func(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error)
+		StopContainers  func(ctx context.Context, volumeName string, user types.Actor, refuseArcaneWriters bool) ([]container.Summary, error)
+		StartContainers func(ctx context.Context, stopped []container.Summary, user types.Actor) ([]container.Summary, error)
+		SafetyBackup    func(ctx context.Context, volumeName string, user types.Actor) (string, error)
+		ArchivePaths    func(ctx context.Context, backupID string) ([]string, error)
+		ArchiveFilename func(backupID string) (string, error)
+		HelperImage     func(ctx context.Context) (string, error)
+		StorageMount    func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
+		AcquireHelper   func(ctx context.Context, volumeName string) (string, func(), error)
+		Exec            func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
+	}
+
+	// Service restores volume backups, selected backup files, and uploaded archives into volumes.
+	Service struct {
+		deps Dependencies
+	}
+
+	selectionPlan struct {
+		entries      []types.BackupFileEntry
+		archivePaths []string
+		globalRoot   bool
+	}
+)
+
+const (
+	restoreBackupFilesScript = `set -e
 archive="$1"
 shift
 archive_mode=$(stat -c '%A' -- "$archive" 2>/dev/null) || { echo ARCANE_NOT_FOUND >&2; exit 44; }
@@ -40,7 +74,7 @@ for member do
 done
 tar -xzf "$archive" -C /volume -- "$@"`
 
-const replaceVolumeScript = `set -e
+	replaceVolumeScript = `set -e
 : "${1:?}"
 for f in /volume/* /volume/.[!.]* /volume/..?*; do
   case "$f" in "$1") ;; *) rm -rf -- "$f" ;; esac
@@ -50,37 +84,13 @@ for f in "$1"/* "$1"/.[!.]* "$1"/..?*; do
 done
 rmdir -- "$1"`
 
-const restoreArchiveScript = `set -e
+	restoreArchiveScript = `set -e
 tmp=$(mktemp -d /volume/.restore_tmp.XXXXXX)
 tar -tzf "$1" >/dev/null
 tar -xzf "$1" -C "$tmp"
 set -- "$tmp"
 ` + replaceVolumeScript
-
-// Dependencies are the backup runtime, storage, and helper-container operations restores run through.
-type Dependencies struct {
-	Docker          *docker.DockerClientService
-	Engine          *backup.Engine
-	Events          *event.EventService
-	Locks           *utils.KeyedMutex
-	Run             func(ctx context.Context, backupID string) (*types.VolumeBackup, error)
-	Repository      func(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (backup.Repository, string, error)
-	Password        func(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error)
-	StopContainers  func(ctx context.Context, volumeName string, user types.Actor, refuseArcaneWriters bool) ([]container.Summary, error)
-	StartContainers func(ctx context.Context, stopped []container.Summary, user types.Actor) ([]container.Summary, error)
-	SafetyBackup    func(ctx context.Context, volumeName string, user types.Actor) (string, error)
-	ArchivePaths    func(ctx context.Context, backupID string) ([]string, error)
-	ArchiveFilename func(backupID string) (string, error)
-	HelperImage     func(ctx context.Context) (string, error)
-	StorageMount    func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
-	AcquireHelper   func(ctx context.Context, volumeName string) (string, func(), error)
-	Exec            func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
-}
-
-// Service restores volume backups, selected backup files, and uploaded archives into volumes.
-type Service struct {
-	deps Dependencies
-}
+)
 
 func NewService(deps Dependencies) *Service {
 	return &Service{deps: deps}
@@ -190,12 +200,6 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 		slog.WarnContext(ctx, "could not log volume backup restore event", "volume", volumeName, "error", logErr)
 	}
 	return nil
-}
-
-type selectionPlan struct {
-	entries      []types.BackupFileEntry
-	archivePaths []string
-	globalRoot   bool
 }
 
 func (s *Service) resolveRestoreSelection(

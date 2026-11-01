@@ -8,9 +8,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
 )
 
-type Service struct {
-	runtime func(context.Context) (podman.Runtime, error)
-}
+type (
+	Service struct {
+		runtime func(context.Context) (podman.Runtime, error)
+	}
+)
 
 func NewService(runtime func(context.Context) (podman.Runtime, error)) *Service {
 	return &Service{runtime: runtime}

@@ -27,21 +27,22 @@ import (
 	sqliteutil "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/sqlite"
 )
 
-type DB struct {
-	*gorm.DB
-	reader *sql.DB
-}
+type (
+	DB struct {
+		*gorm.DB
+		reader *sql.DB
+	}
 
-type MigrationOptions struct {
-	AllowDowngrade bool
-}
+	MigrationOptions struct {
+		AllowDowngrade bool
+	}
+)
 
 const (
 	dbProviderSQLite             = "sqlite"
 	dbProviderPostgres           = "postgres"
 	gooseVersionTable            = "goose_db_version"
 	latestMigrationVersion int64 = -1
-
 	// Bound prepared statements so variable SQL does not retain an unbounded cache.
 	preparedStmtMaxSize = 256
 	preparedStmtTTL     = 15 * time.Minute

@@ -21,7 +21,17 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
 )
 
-const queuePrefix = "jobs."
+const (
+	queuePrefix = "jobs."
+)
+
+var (
+	// ErrRunNotFound indicates that neither a run nor its receipt exists.
+	ErrRunNotFound = errors.New("job run not found")
+
+	// ErrRunConflict indicates that execution ownership or state changed.
+	ErrRunConflict = errors.New("job run state changed")
+)
 
 func (q *Coordinator) mutate(ctx context.Context, environmentID, jobID string, change func(*types.SchedulerQueueRecord) error) error {
 	id := kit.SHA256Hex(environmentID + "\x00" + jobID)
@@ -327,12 +337,6 @@ func pruneRuns(record *types.SchedulerQueueRecord, now time.Time) bool {
 	}
 	return changed
 }
-
-// ErrRunNotFound indicates that neither a run nor its receipt exists.
-var ErrRunNotFound = errors.New("job run not found")
-
-// ErrRunConflict indicates that execution ownership or state changed.
-var ErrRunConflict = errors.New("job run state changed")
 
 func New(store *kv.KVService, service *actor.Service, location *time.Location) *Coordinator {
 	if location == nil {

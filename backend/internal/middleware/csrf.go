@@ -12,6 +12,20 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 )
 
+type (
+	// CSRFMiddleware rejects cross-origin state-changing requests to the cookie-backed
+	// API. It complements the SameSite=Lax session cookie with server-side origin
+	// verification (Sec-Fetch-Site, with an Origin/Host fallback) via the standard
+	// library's net/http.CrossOriginProtection.
+	//
+	// Header-credentialed requests (Bearer / X-API-Key / agent token) are not CSRF-able
+	// — a browser cannot attach those headers to a forged cross-origin request — so they
+	// are left untouched, as are non-browser clients that send no Origin header.
+	CSRFMiddleware struct {
+		cfg *config.Config
+	}
+)
+
 // publicCrossOriginBypassPaths are endpoints intentionally reachable cross-origin
 // by non-browser callers that authenticate with their OWN token carried in the
 // path or request body (not the session cookie). Cross-origin protection must not
@@ -20,18 +34,6 @@ import (
 var publicCrossOriginBypassPaths = []string{
 	"/api/webhooks/trigger/{token}",
 	"/api/auth/federated/token",
-}
-
-// CSRFMiddleware rejects cross-origin state-changing requests to the cookie-backed
-// API. It complements the SameSite=Lax session cookie with server-side origin
-// verification (Sec-Fetch-Site, with an Origin/Host fallback) via the standard
-// library's net/http.CrossOriginProtection.
-//
-// Header-credentialed requests (Bearer / X-API-Key / agent token) are not CSRF-able
-// — a browser cannot attach those headers to a forged cross-origin request — so they
-// are left untouched, as are non-browser clients that send no Origin header.
-type CSRFMiddleware struct {
-	cfg *config.Config
 }
 
 func NewCSRFMiddleware(cfg *config.Config) *CSRFMiddleware {

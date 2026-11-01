@@ -33,28 +33,54 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
+type (
+	// Service manages swarm nodes, their agent bindings, and Easy Join.
+	Service struct {
+		docker             *dockerInternal.DockerClientService
+		ensureManager      func(ctx context.Context) error
+		listTasks          func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
+		localJoinTokens    func(ctx context.Context) (*types.SwarmJoinTokensResponse, error)
+		environmentService *environment.EnvironmentService
+		identityCache      *hot.HotCache[string, SwarmNodeIdentity]
+	}
+
+	ServiceParams struct {
+		DockerService      *dockerInternal.DockerClientService
+		EnsureManager      func(ctx context.Context) error
+		ListTasks          func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
+		LocalJoinTokens    func(ctx context.Context) (*types.SwarmJoinTokensResponse, error)
+		EnvironmentService *environment.EnvironmentService
+	}
+
+	SwarmNodeIdentity struct {
+		SwarmNodeID   string `json:"swarmNodeId"`
+		Hostname      string `json:"hostname"`
+		Role          string `json:"role"`
+		EngineVersion string `json:"engineVersion"`
+		SwarmActive   bool   `json:"swarmActive"`
+	}
+
+	swarmNodeAgentRuntime struct {
+		lastHeartbeat *time.Time
+		identity      *SwarmNodeIdentity
+		connected     bool
+	}
+
+	swarmNodeAgentCoverage struct {
+		runtimeByEnvID     map[string]swarmNodeAgentRuntime
+		boundEnvsByNodeID  map[string][]environment.Environment
+		candidatesByNodeID map[string][]environment.Environment
+		localIdentity      *SwarmNodeIdentity
+		// Resolved once per request rather than per node: the name is user-editable, and
+		// applyNodeAgentCoverage runs in a loop with no context to look it up.
+		localEnvironmentName string
+	}
+)
+
 const (
 	swarmNodeIdentityProbeConcurrency = 5
 	swarmNodeIdentityCacheTTL         = 30 * time.Second
 )
-
-// Service manages swarm nodes, their agent bindings, and Easy Join.
-type Service struct {
-	docker             *dockerInternal.DockerClientService
-	ensureManager      func(ctx context.Context) error
-	listTasks          func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
-	localJoinTokens    func(ctx context.Context) (*types.SwarmJoinTokensResponse, error)
-	environmentService *environment.EnvironmentService
-	identityCache      *hot.HotCache[string, SwarmNodeIdentity]
-}
-
-type ServiceParams struct {
-	DockerService      *dockerInternal.DockerClientService
-	EnsureManager      func(ctx context.Context) error
-	ListTasks          func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
-	LocalJoinTokens    func(ctx context.Context) (*types.SwarmJoinTokensResponse, error)
-	EnvironmentService *environment.EnvironmentService
-}
 
 func NewService(p ServiceParams) *Service {
 	return &Service{
@@ -68,30 +94,6 @@ func NewService(p ServiceParams) *Service {
 			WithJanitor().
 			Build(),
 	}
-}
-
-type SwarmNodeIdentity struct {
-	SwarmNodeID   string `json:"swarmNodeId"`
-	Hostname      string `json:"hostname"`
-	Role          string `json:"role"`
-	EngineVersion string `json:"engineVersion"`
-	SwarmActive   bool   `json:"swarmActive"`
-}
-
-type swarmNodeAgentRuntime struct {
-	lastHeartbeat *time.Time
-	identity      *SwarmNodeIdentity
-	connected     bool
-}
-
-type swarmNodeAgentCoverage struct {
-	runtimeByEnvID     map[string]swarmNodeAgentRuntime
-	boundEnvsByNodeID  map[string][]environment.Environment
-	candidatesByNodeID map[string][]environment.Environment
-	localIdentity      *SwarmNodeIdentity
-	// Resolved once per request rather than per node: the name is user-editable, and
-	// applyNodeAgentCoverage runs in a loop with no context to look it up.
-	localEnvironmentName string
 }
 
 func (s *Service) ListNodesPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.SwarmNode, pagination.Response, error) {

@@ -23,6 +23,20 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
+type (
+	stackSourceDeployRecorder struct {
+		lastReq types.SwarmStackDeployRequest
+		calls   int
+	}
+)
+
+var fullStackSourceSubmitted = map[string]bool{
+	"composeContent":  true,
+	"overrideContent": true,
+	"envContent":      true,
+	"files":           true,
+}
+
 func setupSwarmServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -40,18 +54,6 @@ func newSettingsServiceForSwarmTest(t testing.TB, ctx context.Context, db *datab
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}
 	return svc, err
-}
-
-type stackSourceDeployRecorder struct {
-	lastReq types.SwarmStackDeployRequest
-	calls   int
-}
-
-var fullStackSourceSubmitted = map[string]bool{
-	"composeContent":  true,
-	"overrideContent": true,
-	"envContent":      true,
-	"files":           true,
 }
 
 func stubStackSourceUpdateDeploy(t *testing.T) *stackSourceDeployRecorder {

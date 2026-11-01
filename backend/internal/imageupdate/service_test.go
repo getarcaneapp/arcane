@@ -52,25 +52,27 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
+type (
+	fakeRegistryDaemonClient struct {
+		registryLoginFn       func(context.Context, client.RegistryLoginOptions) (client.RegistryLoginResult, error)
+		distributionInspectFn func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error)
+	}
+
+	// testProjectRow is a minimal stand-in for project.Project: the project
+	// package imports this one, so the in-package test cannot import it back.
+	testProjectRow struct {
+		database.BaseModel
+		BuildImageRefsJSON *string `gorm:"column:build_image_refs_json"`
+		Name               string
+		Path               string
+	}
+
+	// noopActivities stands in for the activity service in tests that do not inspect activities.
+	noopActivities struct{}
+)
+
 // autoLabels opts a test container into tag-based update checks.
 var autoLabels = map[string]string{labels.LabelUpdateStrategy: "auto"}
-
-type fakeRegistryDaemonClient struct {
-	registryLoginFn       func(context.Context, client.RegistryLoginOptions) (client.RegistryLoginResult, error)
-	distributionInspectFn func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error)
-}
-
-// testProjectRow is a minimal stand-in for project.Project: the project
-// package imports this one, so the in-package test cannot import it back.
-type testProjectRow struct {
-	database.BaseModel
-	BuildImageRefsJSON *string `gorm:"column:build_image_refs_json"`
-	Name               string
-	Path               string
-}
-
-// noopActivities stands in for the activity service in tests that do not inspect activities.
-type noopActivities struct{}
 
 func (f *fakeRegistryDaemonClient) RegistryLogin(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error) {
 	if f.registryLoginFn == nil {

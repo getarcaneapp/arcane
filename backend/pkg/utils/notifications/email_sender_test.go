@@ -28,26 +28,28 @@ import (
 	kit "kit.getarcane.app"
 )
 
+type (
+	smtpTestServer struct {
+		listener           net.Listener
+		tlsConfig          *tls.Config
+		clientTLSConfig    *tls.Config
+		done               chan error
+		authMechanismUsed  string
+		message            string
+		authMechanisms     []string
+		commands           []string
+		mu                 sync.Mutex
+		supportStartTLS    bool
+		authBeforeTLS      bool
+		authAfterTLS       bool
+		startTLSNegotiated bool
+	}
+)
+
 const (
 	smtpTestHost        = "localhost"
 	smtpTestConnTimeout = 2 * time.Second
 )
-
-type smtpTestServer struct {
-	listener           net.Listener
-	tlsConfig          *tls.Config
-	clientTLSConfig    *tls.Config
-	done               chan error
-	authMechanismUsed  string
-	message            string
-	authMechanisms     []string
-	commands           []string
-	mu                 sync.Mutex
-	supportStartTLS    bool
-	authBeforeTLS      bool
-	authAfterTLS       bool
-	startTLSNegotiated bool
-}
 
 func TestSendEmailStartTLSRequiresTLSBeforeAuth(t *testing.T) {
 	server := newSMTPTestServer(t, true, []string{"PLAIN"})

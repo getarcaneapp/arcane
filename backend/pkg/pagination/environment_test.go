@@ -8,11 +8,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type environmentRow struct {
-	types.EnvironmentTag
+type (
+	environmentRow struct {
+		types.EnvironmentTag
 
-	Name string
-}
+		Name string
+	}
+)
 
 func environmentRowConfig() Config[environmentRow] {
 	return Config[environmentRow]{SortBindings: []SortBinding[environmentRow]{

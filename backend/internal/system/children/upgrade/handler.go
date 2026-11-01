@@ -16,40 +16,42 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// Handler serves the self-upgrade and upgrade job endpoints.
-type Handler struct {
-	service *Service
-	cfg     *config.Config
-	appCtx  context.Context
-}
+type (
+	// Handler serves the self-upgrade and upgrade job endpoints.
+	Handler struct {
+		service *Service
+		cfg     *config.Config
+		appCtx  context.Context
+	}
+
+	CheckUpgradeOutput struct {
+		Body types.UpgradeCheckResult
+	}
+
+	TriggerUpgradeInput struct {
+		Body          *TriggerUpgradeBody `doc:"Optional upgrade parameters"`
+		EnvironmentID string              `path:"id" doc:"Environment ID"`
+	}
+
+	TriggerUpgradeBody struct {
+		TargetVersion string `json:"targetVersion,omitempty" doc:"Release version to upgrade to; overrides this instance's own version check"`
+	}
+
+	// TriggerUpgradeData reports the upgrade was accepted. UpToDate lets a client skip waiting
+	// for a restart: an environment already on the newest image is not recreated.
+	TriggerUpgradeData struct {
+		Message  string `json:"message" doc:"Response message"`
+		UpToDate bool   `json:"upToDate" doc:"Environment already runs the newest image, so no restart is expected"`
+	}
+
+	StartUpgradeJobInput struct {
+		Body *types.StartUpgradeJobRequest
+		types.EnvironmentInput
+	}
+)
 
 func NewHandler(service *Service, cfg *config.Config, appCtx context.Context) *Handler {
 	return &Handler{service: service, cfg: cfg, appCtx: appCtx}
-}
-
-type CheckUpgradeOutput struct {
-	Body types.UpgradeCheckResult
-}
-
-type TriggerUpgradeInput struct {
-	Body          *TriggerUpgradeBody `doc:"Optional upgrade parameters"`
-	EnvironmentID string              `path:"id" doc:"Environment ID"`
-}
-
-type TriggerUpgradeBody struct {
-	TargetVersion string `json:"targetVersion,omitempty" doc:"Release version to upgrade to; overrides this instance's own version check"`
-}
-
-// TriggerUpgradeData reports the upgrade was accepted. UpToDate lets a client skip waiting
-// for a restart: an environment already on the newest image is not recreated.
-type TriggerUpgradeData struct {
-	Message  string `json:"message" doc:"Response message"`
-	UpToDate bool   `json:"upToDate" doc:"Environment already runs the newest image, so no restart is expected"`
-}
-
-type StartUpgradeJobInput struct {
-	Body *types.StartUpgradeJobRequest
-	types.EnvironmentInput
 }
 
 // CheckUpgradeAvailable checks if a system upgrade is available.

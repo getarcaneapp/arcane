@@ -29,20 +29,22 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/dbutil"
 )
 
+type (
+	RoleService struct {
+		db             *database.DB
+		userCache      *hot.HotCache[string, *authz.PermissionSet]
+		apiKeyCache    *hot.HotCache[string, *authz.PermissionSet]
+		cacheFillMu    sync.Mutex
+		userCacheGen   atomic.Uint64
+		apiKeyCacheGen atomic.Uint64
+	}
+)
+
 const (
 	permissionCacheTTL                   = 60 * time.Second
 	legacyRoleBackfillCompletedKey       = "migration.legacy_user_roles.v1.completed"
 	globalAdminGuardLockKey        int64 = 0x617263616e65
 )
-
-type RoleService struct {
-	db             *database.DB
-	userCache      *hot.HotCache[string, *authz.PermissionSet]
-	apiKeyCache    *hot.HotCache[string, *authz.PermissionSet]
-	cacheFillMu    sync.Mutex
-	userCacheGen   atomic.Uint64
-	apiKeyCacheGen atomic.Uint64
-}
 
 func NewRoleService(db *database.DB) *RoleService {
 	return &RoleService{

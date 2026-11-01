@@ -12,8 +12,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
 )
 
-// RemoteJSONProxy is the remote environment transport operation used by domain handlers.
-type RemoteJSONProxy func(context.Context, string, string, string, []byte, any) error
+type (
+	// RemoteJSONProxy is the remote environment transport operation used by domain handlers.
+	RemoteJSONProxy func(context.Context, string, string, string, []byte, any) error
+)
 
 // JSON marshals a request, invokes the environment proxy, and translates transport errors for Huma.
 func (p RemoteJSONProxy) JSON[T any](

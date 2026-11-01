@@ -11,24 +11,26 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 )
 
-// CustomizeHandler handles customization search endpoints.
-type CustomizeHandler struct {
-	customizeSearchService *CustomizeSearchService
-}
+type (
+	// CustomizeHandler handles customization search endpoints.
+	CustomizeHandler struct {
+		customizeSearchService *CustomizeSearchService
+	}
 
-type SearchCustomizeInput struct {
-	Body types.SearchRequest
-}
+	SearchCustomizeInput struct {
+		Body types.SearchRequest
+	}
 
-type SearchCustomizeOutput struct {
-	Body types.SearchResponse
-}
+	SearchCustomizeOutput struct {
+		Body types.SearchResponse
+	}
 
-type GetCustomizeCategoriesInput struct{}
+	GetCustomizeCategoriesInput struct{}
 
-type GetCustomizeCategoriesOutput struct {
-	Body []types.Category
-}
+	GetCustomizeCategoriesOutput struct {
+		Body []types.Category
+	}
+)
 
 func filterCustomizeCategories(ps *authz.PermissionSet, categories []types.Category) []types.Category {
 	if ps == nil {

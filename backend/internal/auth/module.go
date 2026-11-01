@@ -14,12 +14,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Module struct {
-	service                *AuthService
-	user                   *user.UserService
-	settings               *settings.SettingsService
-	beginMFAAuthentication func(context.Context, string, types.SessionMeta, string) (*types.MFAChallenge, error)
-}
+type (
+	Module struct {
+		service                *AuthService
+		user                   *user.UserService
+		settings               *settings.SettingsService
+		beginMFAAuthentication func(context.Context, string, types.SessionMeta, string) (*types.MFAChallenge, error)
+	}
+)
 
 func New(
 	service *AuthService,

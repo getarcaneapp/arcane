@@ -13,21 +13,22 @@ import (
 	"github.com/coder/websocket"
 )
 
-const (
-	writeWait  = 10 * time.Second
-	pingPeriod = 54 * time.Second
+type (
+	// Client represents a single WebSocket connection.
+	Client struct {
+		conn     *websocket.Conn
+		send     chan []byte
+		onRemove func()
+		once     sync.Once
+	}
+)
 
+const (
+	writeWait        = 10 * time.Second
+	pingPeriod       = 54 * time.Second
 	maxMessageSize   = 64 * 1024
 	clientSendBuffer = 256
 )
-
-// Client represents a single WebSocket connection.
-type Client struct {
-	conn     *websocket.Conn
-	send     chan []byte
-	onRemove func()
-	once     sync.Once
-}
 
 func NewClient(conn *websocket.Conn, sendBuffer int) *Client {
 	conn.SetReadLimit(maxMessageSize)

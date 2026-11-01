@@ -44,60 +44,193 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// maxConcurrentAgentSyncs bounds in-flight event forwards to the manager.
+type (
+	EventService struct {
+		Changes     *concurrency.Signal[types.EnvironmentChanges]
+		changeKinds map[string]map[string]uint64
+		correlation *correlation.Service
+		db          *database.DB
+		cfg         *config.Config
+		httpClient  *http.Client
+		agentSyncs  *semaphore.Weighted
+		// Daemon events are persisted in batches by a writer started on first use.
+		daemonQueue    chan CreateEventRequest
+		daemonDone     chan struct{}
+		changeEpoch    string
+		changeRevision uint64
+		changesMu      sync.RWMutex
+		daemonMu       sync.RWMutex
+		daemonStart    sync.Once
+		daemonStopped  bool
+	}
+
+	CreateEventRequest struct {
+		ResourceType  *string       `json:"resourceType,omitempty"`
+		ResourceID    *string       `json:"resourceId,omitempty"`
+		ResourceName  *string       `json:"resourceName,omitempty"`
+		UserID        *string       `json:"userId,omitempty"`
+		Username      *string       `json:"username,omitempty"`
+		EnvironmentID *string       `json:"environmentId,omitempty"`
+		Metadata      database.JSON `json:"metadata,omitempty"`
+		// Internal identity for replay-safe daemon delivery; never accepted from API payloads.
+		deduplicationKey string
+		Type             EventType     `json:"type"`
+		Severity         EventSeverity `json:"severity,omitempty"`
+		Title            string        `json:"title"`
+		Description      string        `json:"description,omitempty"`
+	}
+
+	ResourceEvent struct {
+		Metadata      database.JSON
+		Type          EventType
+		ResourceType  string
+		ResourceID    string
+		ResourceName  string
+		UserID        string
+		Username      string
+		EnvironmentID string
+	}
+
+	eventDefinition struct {
+		TitleFormat       string
+		DescriptionFormat string
+		Severity          EventSeverity
+	}
+)
+
 const (
+	// maxConcurrentAgentSyncs bounds in-flight event forwards to the manager.
 	maxConcurrentAgentSyncs = 16
 	agentSyncQueueTimeout   = time.Minute
 	agentSyncPublishTimeout = 10 * time.Second
-)
 
-const (
 	daemonEventQueueSize     = 1024
 	DaemonEventBatchSize     = 64
 	daemonEventFlushInterval = 250 * time.Millisecond
-)
 
-const (
 	changeKindAll             = "all"
 	changeStreamFlushInterval = time.Second
 	changeWaitCoalesce        = 250 * time.Millisecond
 	changeWaitLimit           = timeouts.DefaultProxyRequest - 5*time.Second
+
+	daemonEventChanBuffer = 256
 )
 
-var changeKindAliases = map[string]string{
-	"activities":      "activity",
-	"builds":          "build",
-	"containers":      "container",
-	"environments":    "environment",
-	"events":          "event",
-	"git":             "gitops",
-	"image_updates":   "image_update",
-	"images":          "image",
-	"networks":        "network",
-	"projects":        "project",
-	"volumes":         "volume",
-	"vulnerabilities": "vulnerability",
-	"webhooks":        "webhook",
-}
+var (
+	changeKindAliases = map[string]string{
+		"activities":      "activity",
+		"builds":          "build",
+		"containers":      "container",
+		"environments":    "environment",
+		"events":          "event",
+		"git":             "gitops",
+		"image_updates":   "image_update",
+		"images":          "image",
+		"networks":        "network",
+		"projects":        "project",
+		"volumes":         "volume",
+		"vulnerabilities": "vulnerability",
+		"webhooks":        "webhook",
+	}
 
-type EventService struct {
-	Changes     *concurrency.Signal[types.EnvironmentChanges]
-	changeKinds map[string]map[string]uint64
-	correlation *correlation.Service
-	db          *database.DB
-	cfg         *config.Config
-	httpClient  *http.Client
-	agentSyncs  *semaphore.Weighted
-	// Daemon events are persisted in batches by a writer started on first use.
-	daemonQueue    chan CreateEventRequest
-	daemonDone     chan struct{}
-	changeEpoch    string
-	changeRevision uint64
-	changesMu      sync.RWMutex
-	daemonMu       sync.RWMutex
-	daemonStart    sync.Once
-	daemonStopped  bool
-}
+	eventDefinitions = map[EventType]eventDefinition{
+		EventTypeContainerStart:   {"Container started: %s", "Container '%s' has been started", EventSeveritySuccess},
+		EventTypeContainerStop:    {"Container stopped: %s", "Container '%s' has been stopped", EventSeverityInfo},
+		EventTypeContainerRestart: {"Container restarted: %s", "Container '%s' has been restarted", EventSeverityInfo},
+		EventTypeContainerDelete:  {"Container deleted: %s", "Container '%s' has been deleted", EventSeverityWarning},
+		EventTypeContainerCreate:  {"Container created: %s", "Container '%s' has been created", EventSeveritySuccess},
+		EventTypeContainerScan:    {"Container scanned: %s", "Security scan completed for container '%s'", EventSeverityInfo},
+		EventTypeContainerUpdate:  {"Container updated: %s", "Container '%s' has been updated", EventSeverityInfo},
+		EventTypeContainerError:   {"Container error: %s", "An error occurred with container '%s'", EventSeverityError},
+
+		EventTypeImagePull:   {"Image pulled: %s", "Image '%s' has been pulled", EventSeveritySuccess},
+		EventTypeImageLoad:   {"Image loaded: %s", "Image '%s' has been loaded from archive", EventSeveritySuccess},
+		EventTypeImageDelete: {"Image deleted: %s", "Image '%s' has been deleted", EventSeverityWarning},
+		EventTypeImageScan:   {"Image scanned: %s", "Security scan completed for image '%s'", EventSeverityInfo},
+		EventTypeImageError:  {"Image error: %s", "An error occurred with image '%s'", EventSeverityError},
+
+		EventTypeProjectDeploy: {"Project deployed: %s", "Project '%s' has been deployed", EventSeveritySuccess},
+		EventTypeProjectDelete: {"Project deleted: %s", "Project '%s' has been deleted", EventSeverityWarning},
+		EventTypeProjectStart:  {"Project started: %s", "Project '%s' has been started", EventSeveritySuccess},
+		EventTypeProjectStop:   {"Project stopped: %s", "Project '%s' has been stopped", EventSeverityInfo},
+		EventTypeProjectCreate: {"Project created: %s", "Project '%s' has been created", EventSeveritySuccess},
+		EventTypeProjectUpdate: {"Project updated: %s", "Project '%s' has been updated", EventSeverityInfo},
+		EventTypeProjectError:  {"Project error: %s", "An error occurred with project '%s'", EventSeverityError},
+
+		EventTypeVolumeCreate:             {"Volume created: %s", "Volume '%s' has been created", EventSeveritySuccess},
+		EventTypeVolumeRename:             {"Volume renamed: %s", "Volume '%s' has been renamed", EventSeveritySuccess},
+		EventTypeVolumeDelete:             {"Volume deleted: %s", "Volume '%s' has been deleted", EventSeverityWarning},
+		EventTypeVolumeError:              {"Volume error: %s", "An error occurred with volume '%s'", EventSeverityError},
+		EventTypeVolumeFileCreate:         {"Volume file created: %s", "A file or directory was created in volume '%s'", EventSeveritySuccess},
+		EventTypeVolumeFileDelete:         {"Volume file deleted: %s", "A file or directory was deleted in volume '%s'", EventSeverityWarning},
+		EventTypeVolumeFileUpload:         {"Volume file uploaded: %s", "A file was uploaded to volume '%s'", EventSeveritySuccess},
+		EventTypeVolumeFileUpdate:         {"Volume workspace updated: %s", "Files in volume '%s' were updated", EventSeverityInfo},
+		EventTypeVolumeWorkspaceUpdate:    {"Volume workspace updated: %s", "Workspace files in volume '%s' were updated", EventSeverityInfo},
+		EventTypeVolumeBackupCreate:       {"Volume backup created: %s", "A backup was created for volume '%s'", EventSeveritySuccess},
+		EventTypeVolumeBackupDelete:       {"Volume backup deleted: %s", "A backup was deleted for volume '%s'", EventSeverityWarning},
+		EventTypeVolumeBackupRestore:      {"Volume backup restored: %s", "A backup was restored for volume '%s'", EventSeverityWarning},
+		EventTypeVolumeBackupRestoreFiles: {"Volume backup files restored: %s", "Selected files were restored for volume '%s'", EventSeverityWarning},
+		EventTypeVolumeBackupDownload:     {"Volume backup downloaded: %s", "A backup was downloaded for volume '%s'", EventSeverityInfo},
+
+		EventTypeNetworkCreate:     {"Network created: %s", "Network '%s' has been created", EventSeveritySuccess},
+		EventTypeNetworkDelete:     {"Network deleted: %s", "Network '%s' has been deleted", EventSeverityWarning},
+		EventTypeNetworkConnect:    {"Network connected: %s", "A container has been connected to network '%s'", EventSeveritySuccess},
+		EventTypeNetworkDisconnect: {"Network disconnected: %s", "A container has been disconnected from network '%s'", EventSeverityInfo},
+		EventTypeNetworkError:      {"Network error: %s", "An error occurred with network '%s'", EventSeverityError},
+
+		EventTypeSystemPrune:      {"System prune completed", "System resources have been pruned", EventSeverityInfo},
+		EventTypeSystemAutoUpdate: {"System auto-update completed", "System auto-update process has completed", EventSeverityInfo},
+		EventTypeSystemUpgrade:    {"System upgrade completed", "System upgrade process has completed", EventSeverityInfo},
+
+		EventTypeUserLogin:         {"User logged in: %s", "User '%s' has logged in", EventSeverityInfo},
+		EventTypeUserLogout:        {"User logged out: %s", "User '%s' has logged out", EventSeverityInfo},
+		EventTypeFederatedExchange: {"Federated credential exchange: %s", "Federated credential exchange for '%s'", EventSeverityInfo},
+	}
+
+	swarmDaemonEventTypes = []events.Type{
+		events.ServiceEventType,
+		events.NodeEventType,
+		events.SecretEventType,
+		events.ConfigEventType,
+	}
+
+	daemonEventTypes = map[events.Type]map[events.Action]EventType{
+		events.ContainerEventType: {
+			events.ActionCreate:                EventTypeContainerCreate,
+			events.ActionStart:                 EventTypeContainerStart,
+			events.ActionStop:                  EventTypeContainerStop,
+			events.ActionRestart:               EventTypeContainerRestart,
+			events.ActionDie:                   EventTypeContainerDie,
+			events.ActionOOM:                   EventTypeContainerOOM,
+			events.ActionKill:                  EventTypeContainerKill,
+			events.ActionDestroy:               EventTypeContainerDelete,
+			events.ActionPause:                 EventTypeContainerPause,
+			events.ActionUnPause:               EventTypeContainerUnpause,
+			events.ActionRename:                EventTypeContainerRename,
+			events.ActionUpdate:                EventTypeContainerUpdate,
+			events.ActionHealthStatusUnhealthy: EventTypeContainerUnhealthy,
+		},
+		events.ImageEventType: {
+			events.ActionPull:   EventTypeImagePull,
+			events.ActionDelete: EventTypeImageDelete,
+			events.ActionTag:    EventTypeImageTag,
+			events.ActionUnTag:  EventTypeImageUntag,
+			events.ActionImport: EventTypeImageImport,
+			events.ActionLoad:   EventTypeImageLoad,
+			events.ActionPrune:  EventTypeImagePrune,
+		},
+		events.VolumeEventType: {
+			events.ActionCreate:  EventTypeVolumeCreate,
+			events.ActionDestroy: EventTypeVolumeDelete,
+			events.ActionPrune:   EventTypeVolumePrune,
+		},
+		events.NetworkEventType: {
+			events.ActionCreate:  EventTypeNetworkCreate,
+			events.ActionDestroy: EventTypeNetworkDelete,
+			events.ActionPrune:   EventTypeNetworkPrune,
+		},
+	}
+)
 
 func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Client) *EventService {
 	if httpClient == nil {
@@ -117,22 +250,6 @@ func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Clien
 		daemonQueue: make(chan CreateEventRequest, daemonEventQueueSize),
 		daemonDone:  make(chan struct{}),
 	}
-}
-
-type CreateEventRequest struct {
-	ResourceType  *string       `json:"resourceType,omitempty"`
-	ResourceID    *string       `json:"resourceId,omitempty"`
-	ResourceName  *string       `json:"resourceName,omitempty"`
-	UserID        *string       `json:"userId,omitempty"`
-	Username      *string       `json:"username,omitempty"`
-	EnvironmentID *string       `json:"environmentId,omitempty"`
-	Metadata      database.JSON `json:"metadata,omitempty"`
-	// Internal identity for replay-safe daemon delivery; never accepted from API payloads.
-	deduplicationKey string
-	Type             EventType     `json:"type"`
-	Severity         EventSeverity `json:"severity,omitempty"`
-	Title            string        `json:"title"`
-	Description      string        `json:"description,omitempty"`
 }
 
 func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) (*Event, error) {
@@ -440,17 +557,6 @@ func (s *EventService) DeleteOldEvents(ctx context.Context, olderThan time.Durat
 	return err
 }
 
-type ResourceEvent struct {
-	Metadata      database.JSON
-	Type          EventType
-	ResourceType  string
-	ResourceID    string
-	ResourceName  string
-	UserID        string
-	Username      string
-	EnvironmentID string
-}
-
 func (s *EventService) LogResourceEvent(ctx context.Context, e ResourceEvent) error {
 	title, description, severity := describeEvent(e.Type, e.ResourceType, e.ResourceName)
 	_, err := s.CreateEvent(ctx, CreateEventRequest{
@@ -548,66 +654,6 @@ func cloneEventMetadataValue(value any) any {
 	default:
 		return value
 	}
-}
-
-type eventDefinition struct {
-	TitleFormat       string
-	DescriptionFormat string
-	Severity          EventSeverity
-}
-
-var eventDefinitions = map[EventType]eventDefinition{
-	EventTypeContainerStart:   {"Container started: %s", "Container '%s' has been started", EventSeveritySuccess},
-	EventTypeContainerStop:    {"Container stopped: %s", "Container '%s' has been stopped", EventSeverityInfo},
-	EventTypeContainerRestart: {"Container restarted: %s", "Container '%s' has been restarted", EventSeverityInfo},
-	EventTypeContainerDelete:  {"Container deleted: %s", "Container '%s' has been deleted", EventSeverityWarning},
-	EventTypeContainerCreate:  {"Container created: %s", "Container '%s' has been created", EventSeveritySuccess},
-	EventTypeContainerScan:    {"Container scanned: %s", "Security scan completed for container '%s'", EventSeverityInfo},
-	EventTypeContainerUpdate:  {"Container updated: %s", "Container '%s' has been updated", EventSeverityInfo},
-	EventTypeContainerError:   {"Container error: %s", "An error occurred with container '%s'", EventSeverityError},
-
-	EventTypeImagePull:   {"Image pulled: %s", "Image '%s' has been pulled", EventSeveritySuccess},
-	EventTypeImageLoad:   {"Image loaded: %s", "Image '%s' has been loaded from archive", EventSeveritySuccess},
-	EventTypeImageDelete: {"Image deleted: %s", "Image '%s' has been deleted", EventSeverityWarning},
-	EventTypeImageScan:   {"Image scanned: %s", "Security scan completed for image '%s'", EventSeverityInfo},
-	EventTypeImageError:  {"Image error: %s", "An error occurred with image '%s'", EventSeverityError},
-
-	EventTypeProjectDeploy: {"Project deployed: %s", "Project '%s' has been deployed", EventSeveritySuccess},
-	EventTypeProjectDelete: {"Project deleted: %s", "Project '%s' has been deleted", EventSeverityWarning},
-	EventTypeProjectStart:  {"Project started: %s", "Project '%s' has been started", EventSeveritySuccess},
-	EventTypeProjectStop:   {"Project stopped: %s", "Project '%s' has been stopped", EventSeverityInfo},
-	EventTypeProjectCreate: {"Project created: %s", "Project '%s' has been created", EventSeveritySuccess},
-	EventTypeProjectUpdate: {"Project updated: %s", "Project '%s' has been updated", EventSeverityInfo},
-	EventTypeProjectError:  {"Project error: %s", "An error occurred with project '%s'", EventSeverityError},
-
-	EventTypeVolumeCreate:             {"Volume created: %s", "Volume '%s' has been created", EventSeveritySuccess},
-	EventTypeVolumeRename:             {"Volume renamed: %s", "Volume '%s' has been renamed", EventSeveritySuccess},
-	EventTypeVolumeDelete:             {"Volume deleted: %s", "Volume '%s' has been deleted", EventSeverityWarning},
-	EventTypeVolumeError:              {"Volume error: %s", "An error occurred with volume '%s'", EventSeverityError},
-	EventTypeVolumeFileCreate:         {"Volume file created: %s", "A file or directory was created in volume '%s'", EventSeveritySuccess},
-	EventTypeVolumeFileDelete:         {"Volume file deleted: %s", "A file or directory was deleted in volume '%s'", EventSeverityWarning},
-	EventTypeVolumeFileUpload:         {"Volume file uploaded: %s", "A file was uploaded to volume '%s'", EventSeveritySuccess},
-	EventTypeVolumeFileUpdate:         {"Volume workspace updated: %s", "Files in volume '%s' were updated", EventSeverityInfo},
-	EventTypeVolumeWorkspaceUpdate:    {"Volume workspace updated: %s", "Workspace files in volume '%s' were updated", EventSeverityInfo},
-	EventTypeVolumeBackupCreate:       {"Volume backup created: %s", "A backup was created for volume '%s'", EventSeveritySuccess},
-	EventTypeVolumeBackupDelete:       {"Volume backup deleted: %s", "A backup was deleted for volume '%s'", EventSeverityWarning},
-	EventTypeVolumeBackupRestore:      {"Volume backup restored: %s", "A backup was restored for volume '%s'", EventSeverityWarning},
-	EventTypeVolumeBackupRestoreFiles: {"Volume backup files restored: %s", "Selected files were restored for volume '%s'", EventSeverityWarning},
-	EventTypeVolumeBackupDownload:     {"Volume backup downloaded: %s", "A backup was downloaded for volume '%s'", EventSeverityInfo},
-
-	EventTypeNetworkCreate:     {"Network created: %s", "Network '%s' has been created", EventSeveritySuccess},
-	EventTypeNetworkDelete:     {"Network deleted: %s", "Network '%s' has been deleted", EventSeverityWarning},
-	EventTypeNetworkConnect:    {"Network connected: %s", "A container has been connected to network '%s'", EventSeveritySuccess},
-	EventTypeNetworkDisconnect: {"Network disconnected: %s", "A container has been disconnected from network '%s'", EventSeverityInfo},
-	EventTypeNetworkError:      {"Network error: %s", "An error occurred with network '%s'", EventSeverityError},
-
-	EventTypeSystemPrune:      {"System prune completed", "System resources have been pruned", EventSeverityInfo},
-	EventTypeSystemAutoUpdate: {"System auto-update completed", "System auto-update process has completed", EventSeverityInfo},
-	EventTypeSystemUpgrade:    {"System upgrade completed", "System upgrade process has completed", EventSeverityInfo},
-
-	EventTypeUserLogin:         {"User logged in: %s", "User '%s' has logged in", EventSeverityInfo},
-	EventTypeUserLogout:        {"User logged out: %s", "User '%s' has logged out", EventSeverityInfo},
-	EventTypeFederatedExchange: {"Federated credential exchange: %s", "Federated credential exchange for '%s'", EventSeverityInfo},
 }
 
 // describeEvent formats an event's title, description, and severity, with a generic fallback for undefined types.
@@ -767,8 +813,6 @@ func (s *EventService) RunStreamProducer(ctx context.Context, ps *authz.Permissi
 		lastSent = time.Now()
 	}
 }
-
-const daemonEventChanBuffer = 256
 
 // SubscribeDockerEvents prepares subscriptions before the watcher starts. The caller
 // runs the returned worker and calls cleanup after joining it, including on failed startup.
@@ -954,50 +998,6 @@ func (s *EventService) Stop(ctx context.Context) error {
 	case <-ctx.Done():
 		return fmt.Errorf("failed to flush Docker daemon events: %w", ctx.Err())
 	}
-}
-
-var swarmDaemonEventTypes = []events.Type{
-	events.ServiceEventType,
-	events.NodeEventType,
-	events.SecretEventType,
-	events.ConfigEventType,
-}
-
-var daemonEventTypes = map[events.Type]map[events.Action]EventType{
-	events.ContainerEventType: {
-		events.ActionCreate:                EventTypeContainerCreate,
-		events.ActionStart:                 EventTypeContainerStart,
-		events.ActionStop:                  EventTypeContainerStop,
-		events.ActionRestart:               EventTypeContainerRestart,
-		events.ActionDie:                   EventTypeContainerDie,
-		events.ActionOOM:                   EventTypeContainerOOM,
-		events.ActionKill:                  EventTypeContainerKill,
-		events.ActionDestroy:               EventTypeContainerDelete,
-		events.ActionPause:                 EventTypeContainerPause,
-		events.ActionUnPause:               EventTypeContainerUnpause,
-		events.ActionRename:                EventTypeContainerRename,
-		events.ActionUpdate:                EventTypeContainerUpdate,
-		events.ActionHealthStatusUnhealthy: EventTypeContainerUnhealthy,
-	},
-	events.ImageEventType: {
-		events.ActionPull:   EventTypeImagePull,
-		events.ActionDelete: EventTypeImageDelete,
-		events.ActionTag:    EventTypeImageTag,
-		events.ActionUnTag:  EventTypeImageUntag,
-		events.ActionImport: EventTypeImageImport,
-		events.ActionLoad:   EventTypeImageLoad,
-		events.ActionPrune:  EventTypeImagePrune,
-	},
-	events.VolumeEventType: {
-		events.ActionCreate:  EventTypeVolumeCreate,
-		events.ActionDestroy: EventTypeVolumeDelete,
-		events.ActionPrune:   EventTypeVolumePrune,
-	},
-	events.NetworkEventType: {
-		events.ActionCreate:  EventTypeNetworkCreate,
-		events.ActionDestroy: EventTypeNetworkDelete,
-		events.ActionPrune:   EventTypeNetworkPrune,
-	},
 }
 
 func mapDaemonEvent(msg events.Message) (CreateEventRequest, bool) {

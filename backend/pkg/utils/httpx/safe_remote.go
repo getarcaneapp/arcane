@@ -17,7 +17,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 )
 
-type LookupIPFunc func(ctx context.Context, host string) ([]net.IP, error)
+type (
+	LookupIPFunc func(ctx context.Context, host string) ([]net.IP, error)
+)
 
 // blockedRemotePrefixes lists special-use ranges the netip.Addr helpers in resolveAllowedIPs do not cover,
 // keeping the SSRF policy reviewable in one place.

@@ -43,10 +43,18 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
-type fakeRegistryDaemonClient struct {
-	registryLoginFn       func(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error)
-	distributionInspectFn func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error)
-}
+type (
+	fakeRegistryDaemonClient struct {
+		registryLoginFn       func(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error)
+		distributionInspectFn func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error)
+	}
+
+	roundTripFunc func(*http.Request) (*http.Response, error)
+)
+
+const (
+	dockerHubChallenge = `Bearer realm="https://auth.docker.io/token",service="registry.docker.io"`
+)
 
 func setupContainerRegistryTestDB(t *testing.T) *database.DB {
 	t.Helper()
@@ -88,8 +96,6 @@ func decodeRegistryAuth(t *testing.T, encoded string) dockerregistry.AuthConfig 
 	return *cfg
 }
 
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
@@ -107,8 +113,6 @@ func (f *fakeRegistryDaemonClient) DistributionInspect(ctx context.Context, imag
 	}
 	return f.distributionInspectFn(ctx, imageRef, options)
 }
-
-const dockerHubChallenge = `Bearer realm="https://auth.docker.io/token",service="registry.docker.io"`
 
 // registryPing answers the /v2/ version check every registry client sends first: a bearer challenge when set, else OK.
 func registryPing(w http.ResponseWriter, r *http.Request, challenge string) bool {

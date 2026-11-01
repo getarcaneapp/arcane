@@ -11,11 +11,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Module struct {
-	service       *ContainerRegistryService
-	handler       *ContainerRegistryHandler
-	browseHandler *browse.Handler
-}
+type (
+	Module struct {
+		service       *ContainerRegistryService
+		handler       *ContainerRegistryHandler
+		browseHandler *browse.Handler
+	}
+)
 
 func New(service *ContainerRegistryService, syncRemoteRegistries func(context.Context)) *Module {
 	return &Module{

@@ -35,27 +35,40 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
+type (
+	RouterParams struct {
+		fx.In
+
+		Context        context.Context
+		Lifecycle      fx.Lifecycle
+		Config         *config.Config
+		HandlerDeps    api.HandlerDeps
+		AuthMiddleware *auth.AuthMiddleware
+		TunnelRegistry *agent.TunnelRegistry
+	}
+)
+
 var (
 	registerPlaywrightRoutes []func(apiGroup *echo.Group, deps api.HandlerDeps)
 	registerBuildableRoutes  []func(apiGroup *echo.Group, deps api.HandlerDeps)
-)
 
-var loggerSkipPatterns = []string{
-	"GET /api/environments/*/ws/containers/stats",
-	"GET /api/environments/*/ws/containers/*/logs",
-	"GET /api/environments/*/ws/containers/*/stats",
-	"GET /api/environments/*/ws/containers/*/terminal",
-	"GET /api/environments/*/ws/projects/*/logs",
-	"GET /api/environments/*/ws/system/stats",
-	"GET /api/stream",
-	"POST /api/telemetry/*",
-	"GET /_app/*",
-	"GET /img",
-	"GET /api/health",
-	"HEAD /api/health",
-	"GET /api/app/images/*",
-	"PUT /api/environments/*/uploads/*/*/chunks/*",
-}
+	loggerSkipPatterns = []string{
+		"GET /api/environments/*/ws/containers/stats",
+		"GET /api/environments/*/ws/containers/*/logs",
+		"GET /api/environments/*/ws/containers/*/stats",
+		"GET /api/environments/*/ws/containers/*/terminal",
+		"GET /api/environments/*/ws/projects/*/logs",
+		"GET /api/environments/*/ws/system/stats",
+		"GET /api/stream",
+		"POST /api/telemetry/*",
+		"GET /_app/*",
+		"GET /img",
+		"GET /api/health",
+		"HEAD /api/health",
+		"GET /api/app/images/*",
+		"PUT /api/environments/*/uploads/*/*/chunks/*",
+	}
+)
 
 func createAuthValidator(deps api.HandlerDeps) middleware.AuthValidator {
 	resolveUser := func(ctx context.Context, user *types.Actor) *authz.PermissionSet {
@@ -117,17 +130,6 @@ func createAuthValidator(deps api.HandlerDeps) middleware.AuthValidator {
 		}
 		return resolveUser(ctx, user.Actor()), user.Actor(), true
 	}
-}
-
-type RouterParams struct {
-	fx.In
-
-	Context        context.Context
-	Lifecycle      fx.Lifecycle
-	Config         *config.Config
-	HandlerDeps    api.HandlerDeps
-	AuthMiddleware *auth.AuthMiddleware
-	TunnelRegistry *agent.TunnelRegistry
 }
 
 func newRouter(p RouterParams) (*echo.Echo, *agent.TunnelServer) {

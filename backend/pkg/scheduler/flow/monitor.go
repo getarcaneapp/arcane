@@ -17,11 +17,6 @@ import (
 	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
 )
 
-const (
-	minPollInterval = 100 * time.Millisecond
-	maxPollInterval = time.Second
-)
-
 type (
 	// instanceMonitor is the single poller for one root instance. It owns the
 	// instance's activity and broadcasts step changes and the final outcome.
@@ -34,13 +29,17 @@ type (
 		steps    []types.StepOutcome
 		mu       sync.Mutex
 	}
-
 	// activityProjection remembers what was last written to the activity.
 	activityProjection struct {
 		statuses map[string]types.RunStatus
 		step     string
 		progress int
 	}
+)
+
+const (
+	minPollInterval = 100 * time.Millisecond
+	maxPollInterval = time.Second
 )
 
 func (e *Engine) monitor(wf *Workflow, instanceID string) *instanceMonitor {

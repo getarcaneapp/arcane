@@ -13,37 +13,39 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// ImagePatchHandler provides Huma-based image patching endpoints.
-type ImagePatchHandler struct {
-	imagePatchService *Service
-	appCtx            context.Context
-}
+type (
+	// ImagePatchHandler provides Huma-based image patching endpoints.
+	ImagePatchHandler struct {
+		imagePatchService *Service
+		appCtx            context.Context
+	}
 
-type PatchImageInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ImageID       string `path:"imageId" doc:"Image ID to patch"`
-	Body          types.PatchOptions
-}
+	PatchImageInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ImageID       string `path:"imageId" doc:"Image ID to patch"`
+		Body          types.PatchOptions
+	}
 
-type ListPatchTargetsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"desc" doc:"Sort direction"`
-	Start         int    `query:"start" default:"0" doc:"Start offset"`
-	Limit         int    `query:"limit" default:"20" doc:"Limit"`
-}
+	ListPatchTargetsInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"desc" doc:"Sort direction"`
+		Start         int    `query:"start" default:"0" doc:"Start offset"`
+		Limit         int    `query:"limit" default:"20" doc:"Limit"`
+	}
 
-type ListImagePatchesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Sort field"`
-	Order         string `query:"order" doc:"Sort order"`
-	Status        string `query:"status" doc:"Filter by patch status"`
-	Start         int    `query:"start" doc:"Start offset"`
-	Limit         int    `query:"limit" doc:"Limit"`
-	IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
-}
+	ListImagePatchesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Sort field"`
+		Order         string `query:"order" doc:"Sort order"`
+		Status        string `query:"status" doc:"Filter by patch status"`
+		Start         int    `query:"start" doc:"Start offset"`
+		Limit         int    `query:"limit" doc:"Limit"`
+		IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
+	}
+)
 
 // PatchImage starts a background patch run for an image.
 func (h *ImagePatchHandler) PatchImage(ctx context.Context, input *PatchImageInput) (*handlerutil.Out[types.PatchRecord], error) {

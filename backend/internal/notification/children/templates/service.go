@@ -14,10 +14,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
-// Service builds the per-event notification content and renders email templates.
-type Service struct {
-	appURL func() string
-}
+type (
+	// Service builds the per-event notification content and renders email templates.
+	Service struct {
+		appURL func() string
+	}
+)
 
 func NewService(appURL func() string) *Service {
 	return &Service{appURL: appURL}

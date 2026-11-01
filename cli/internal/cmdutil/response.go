@@ -14,13 +14,17 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 )
 
-const maxErrorBodyBytes = 4096
+type (
+	// HTTPStatusError represents a non-2xx HTTP response.
+	HTTPStatusError struct {
+		Body       string
+		StatusCode int
+	}
+)
 
-// HTTPStatusError represents a non-2xx HTTP response.
-type HTTPStatusError struct {
-	Body       string
-	StatusCode int
-}
+const (
+	maxErrorBodyBytes = 4096
+)
 
 func (e *HTTPStatusError) Error() string {
 	body := strings.TrimSpace(e.Body)

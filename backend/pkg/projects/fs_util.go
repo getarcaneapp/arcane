@@ -23,6 +23,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
+// ErrProjectDirExists is returned by CreateExactDir when the target directory
+// already exists. Callers that must not auto-rename (e.g. GitOps creates, which
+// must never mint "-N" duplicate projects on a broken binding) use this to fail
+// loudly instead of suffixing.
+var ErrProjectDirExists = errors.New("project directory already exists")
+
 func ResolveConfiguredContainerDirectory(configuredPath, defaultPath string) string {
 	directory := cmp.Or(strings.TrimSpace(configuredPath), defaultPath)
 
@@ -366,12 +372,6 @@ func CreateUniqueDir(ctx context.Context, projectsRoot, basePath, name string, p
 		folderName = fmt.Sprintf("%s-%d", sanitized, counter)
 	}
 }
-
-// ErrProjectDirExists is returned by CreateExactDir when the target directory
-// already exists. Callers that must not auto-rename (e.g. GitOps creates, which
-// must never mint "-N" duplicate projects on a broken binding) use this to fail
-// loudly instead of suffixing.
-var ErrProjectDirExists = errors.New("project directory already exists")
 
 // CreateExactDir creates basePath (the sanitized project directory) under
 // projectsRoot WITHOUT any "-N" collision suffixing. It returns ErrProjectDirExists

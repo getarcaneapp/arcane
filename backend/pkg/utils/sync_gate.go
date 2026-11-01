@@ -7,25 +7,26 @@ import (
 	"time"
 )
 
-// SyncGate remembers the SHA-256 of the last payload delivered per scope and
-// key so periodic re-syncs skip the network when nothing changed, and
-// serializes deliveries for one key so overlapping pushes reach the target in
-// the order they are remembered. Only the digest is retained. Expiry bounds
-// how long a delivery is trusted (zero means forever) so a target rebuilt
-// behind an unchanged status still converges. The zero value is ready to use.
-type SyncGate struct {
-	sent   map[string]map[string]syncGateEntry
-	epochs map[string]uint64
-	locks  KeyedMutex
-	Expiry time.Duration
+type (
+	// SyncGate remembers the SHA-256 of the last payload delivered per scope and
+	// key so periodic re-syncs skip the network when nothing changed, and
+	// serializes deliveries for one key so overlapping pushes reach the target in
+	// the order they are remembered. Only the digest is retained. Expiry bounds
+	// how long a delivery is trusted (zero means forever) so a target rebuilt
+	// behind an unchanged status still converges. The zero value is ready to use.
+	SyncGate struct {
+		sent   map[string]map[string]syncGateEntry
+		epochs map[string]uint64
+		locks  KeyedMutex
+		Expiry time.Duration
 
-	mu sync.Mutex
-}
-
-type syncGateEntry struct {
-	sentAt time.Time
-	digest [sha256.Size]byte
-}
+		mu sync.Mutex
+	}
+	syncGateEntry struct {
+		sentAt time.Time
+		digest [sha256.Size]byte
+	}
+)
 
 // Begin reports whether body is already delivered for scope and key. When it
 // is not, the key stays locked until finish runs; finish(true) remembers the

@@ -12,10 +12,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Module struct {
-	service  *ProjectService
-	activity *activity.ActivityService
-}
+type (
+	Module struct {
+		service  *ProjectService
+		activity *activity.ActivityService
+	}
+)
 
 func New(service *ProjectService, activityService *activity.ActivityService) *Module {
 	return &Module{service: service, activity: activityService}

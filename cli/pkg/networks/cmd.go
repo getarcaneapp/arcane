@@ -18,6 +18,35 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v3/pkg/containers"
 )
 
+var networkRef = cmdutil.ResourceRef[types.NetworkInspect, types.NetworkSummary]{
+	EnvironmentScoped: true,
+	Singular:          "network",
+	Plural:            "networks",
+	IDHint:            "the network ID",
+	ListCmd:           "arcane networks list",
+	GetPath:           clitypes.Network,
+	IdentifierOf:      func(data types.NetworkInspect) string { return data.ID },
+	ListPath:          clitypes.Networks,
+	Matches: func(item types.NetworkSummary, identifierLower, original string) bool {
+		return strings.Contains(strings.ToLower(item.ID), identifierLower) ||
+			strings.Contains(strings.ToLower(item.Name), identifierLower) || strings.EqualFold(item.Name, original)
+	},
+	Label: func(match types.NetworkSummary) string {
+		return fmt.Sprintf("%s (%s)", match.Name, match.ID[:min(len(match.ID), 12)])
+	},
+	Promote: func(match types.NetworkSummary) *types.NetworkInspect {
+		return &types.NetworkInspect{
+			ID:      match.ID,
+			Name:    match.Name,
+			Driver:  match.Driver,
+			Scope:   match.Scope,
+			Created: match.Created,
+			Options: match.Options,
+			Labels:  match.Labels,
+		}
+	},
+}
+
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "networks",
@@ -511,33 +540,4 @@ func newTopologyCmd() *cobra.Command {
 	}
 	cmdutil.SetScope(cmdutil.ScopeRead, cmd)
 	return cmd
-}
-
-var networkRef = cmdutil.ResourceRef[types.NetworkInspect, types.NetworkSummary]{
-	EnvironmentScoped: true,
-	Singular:          "network",
-	Plural:            "networks",
-	IDHint:            "the network ID",
-	ListCmd:           "arcane networks list",
-	GetPath:           clitypes.Network,
-	IdentifierOf:      func(data types.NetworkInspect) string { return data.ID },
-	ListPath:          clitypes.Networks,
-	Matches: func(item types.NetworkSummary, identifierLower, original string) bool {
-		return strings.Contains(strings.ToLower(item.ID), identifierLower) ||
-			strings.Contains(strings.ToLower(item.Name), identifierLower) || strings.EqualFold(item.Name, original)
-	},
-	Label: func(match types.NetworkSummary) string {
-		return fmt.Sprintf("%s (%s)", match.Name, match.ID[:min(len(match.ID), 12)])
-	},
-	Promote: func(match types.NetworkSummary) *types.NetworkInspect {
-		return &types.NetworkInspect{
-			ID:      match.ID,
-			Name:    match.Name,
-			Driver:  match.Driver,
-			Scope:   match.Scope,
-			Created: match.Created,
-			Options: match.Options,
-			Labels:  match.Labels,
-		}
-	},
 }

@@ -9,12 +9,16 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 )
 
-const ApnsOutboxJobName = "apns-outbox"
+type (
+	ApnsOutboxJob struct {
+		service *apns.ApnsService
+		config  *config.Config
+	}
+)
 
-type ApnsOutboxJob struct {
-	service *apns.ApnsService
-	config  *config.Config
-}
+const (
+	ApnsOutboxJobName = "apns-outbox"
+)
 
 func NewApnsOutboxJob(service *apns.ApnsService, cfg *config.Config) *ApnsOutboxJob {
 	return &ApnsOutboxJob{service: service, config: cfg}

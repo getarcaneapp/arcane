@@ -36,6 +36,34 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
+type (
+	// VariableService manages manager-level global variables (DB source of truth)
+	// and materializes each environment's effective set into that environment's
+	// .env.global file: locally via template.TemplateService, remotely via the existing
+	// agent variables endpoint.
+	VariableService struct {
+		db                            *database.DB
+		proxyEnvironmentJSON          func(context.Context, string, string, string, []byte, any) error
+		listEnabledRemoteEnvironments func(context.Context) ([]environment.Environment, error)
+		settingsService               *settings.SettingsService
+		kvService                     *kv.KVService
+		syncStatus                    map[string]types.EnvironmentSyncStatus
+
+		importLocks utils.KeyedMutex
+
+		// syncGate skips the agent PUT when the effective variable set is unchanged.
+		syncGate utils.SyncGate
+
+		statusMu sync.RWMutex
+	}
+)
+
+const (
+	globalVariablesImportedKVPrefix = "globalvars:imported:"
+	agentVariablesPath              = "/api/environments/0/templates/variables"
+	variableSyncTimeout             = 15 * time.Second
+)
+
 // envKeyPattern is the POSIX env-name shape used to validate variable keys
 // before they are persisted to .env.global. Keys that do not match are
 // rejected with common.ErrInvalidEnvKey.
@@ -46,32 +74,6 @@ func validateVariableKey(key string) error {
 		return nil
 	}
 	return common.Classify(common.ErrInvalidEnvKey, &types.FieldError{Field: "key", Err: fmt.Errorf("invalid key %q: use letters, numbers, and underscores, and do not start with a number", key)})
-}
-
-const (
-	globalVariablesImportedKVPrefix = "globalvars:imported:"
-	agentVariablesPath              = "/api/environments/0/templates/variables"
-	variableSyncTimeout             = 15 * time.Second
-)
-
-// VariableService manages manager-level global variables (DB source of truth)
-// and materializes each environment's effective set into that environment's
-// .env.global file: locally via template.TemplateService, remotely via the existing
-// agent variables endpoint.
-type VariableService struct {
-	db                            *database.DB
-	proxyEnvironmentJSON          func(context.Context, string, string, string, []byte, any) error
-	listEnabledRemoteEnvironments func(context.Context) ([]environment.Environment, error)
-	settingsService               *settings.SettingsService
-	kvService                     *kv.KVService
-	syncStatus                    map[string]types.EnvironmentSyncStatus
-
-	importLocks utils.KeyedMutex
-
-	// syncGate skips the agent PUT when the effective variable set is unchanged.
-	syncGate utils.SyncGate
-
-	statusMu sync.RWMutex
 }
 
 func NewVariableService(db *database.DB, environmentService *environment.EnvironmentService, settingsService *settings.SettingsService, kvService *kv.KVService) *VariableService {

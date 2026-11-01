@@ -12,6 +12,14 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v3/internal/runtime"
 )
 
+type (
+	// Declining prints Cancelled to stderr and returns false without an error.
+	ConfirmOptions struct {
+		Label string
+		Force bool
+	}
+)
+
 // ClientFromCommand returns a configured authenticated client for the command.
 func ClientFromCommand(cmd *cobra.Command) (*client.Client, error) {
 	if cmd == nil {
@@ -63,12 +71,6 @@ func AssumeYes(cmd *cobra.Command) bool {
 // AllowPrompt reports whether interactive prompts are allowed for this command.
 func AllowPrompt(cmd *cobra.Command) bool {
 	return !JSONOutputEnabled(cmd) && prompt.IsInteractive()
-}
-
-// Declining prints Cancelled to stderr and returns false without an error.
-type ConfirmOptions struct {
-	Label string
-	Force bool
 }
 
 func ConfirmOrCancel(cmd *cobra.Command, opts ConfirmOptions) (bool, error) {

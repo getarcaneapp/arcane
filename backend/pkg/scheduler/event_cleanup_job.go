@@ -18,25 +18,29 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
 )
 
-const EventCleanupJobName = "event-cleanup"
+type (
+	EventCleanupJob struct {
+		eventService    *event.EventService
+		activityService *activity.ActivityService
+		buildService    *build.BuildService
+		settingsService *settings.SettingsService
+		updaterService  *updater.UpdaterService
+	}
 
-type EventCleanupJob struct {
-	eventService    *event.EventService
-	activityService *activity.ActivityService
-	buildService    *build.BuildService
-	settingsService *settings.SettingsService
-	updaterService  *updater.UpdaterService
-}
+	EventCleanupJobParams struct {
+		fx.In
 
-type EventCleanupJobParams struct {
-	fx.In
+		EventService    *event.EventService
+		ActivityService *activity.ActivityService
+		BuildService    *build.BuildService
+		SettingsService *settings.SettingsService
+		UpdaterService  *updater.UpdaterService
+	}
+)
 
-	EventService    *event.EventService
-	ActivityService *activity.ActivityService
-	BuildService    *build.BuildService
-	SettingsService *settings.SettingsService
-	UpdaterService  *updater.UpdaterService
-}
+const (
+	EventCleanupJobName = "event-cleanup"
+)
 
 func NewEventCleanupJob(p EventCleanupJobParams) *EventCleanupJob {
 	return &EventCleanupJob{

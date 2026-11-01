@@ -14,10 +14,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 )
 
-// KVService persists lightweight application state in the kv table.
-type KVService struct {
-	db *database.DB
-}
+type (
+	// KVService persists lightweight application state in the kv table.
+	KVService struct {
+		db *database.DB
+	}
+)
 
 func NewKVService(db *database.DB) *KVService {
 	return &KVService{db: db}

@@ -22,61 +22,63 @@ import (
 	internaltypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
-var podNetworkModes = []string{"bridge", "host", "none", "private", "slirp4netns", "pasta", "ns"}
+type (
+	podCreateOptions struct {
+		labels             map[string]string
+		sysctl             map[string]string
+		name               string
+		hostname           string
+		exitPolicy         string
+		restart            string
+		infraImage         string
+		infraCommand       string
+		infraName          string
+		infraConmonPidFile string
+		share              string
+		pid                string
+		ipc                string
+		uts                string
+		userns             string
+		ip                 string
+		ip6                string
+		macAddress         string
+		hostsFile          string
+		cgroupParent       string
+		cpusetCPUs         string
+		cpusetMems         string
+		memory             string
+		memorySwap         string
+		shmSize            string
+		shmSizeSystemd     string
+		labelFiles         []string
+		uidMap             []string
+		gidMap             []string
+		networks           []string
+		networkAliases     []string
+		publish            []string
+		dns                []string
+		dnsSearch          []string
+		dnsOptions         []string
+		addHosts           []string
+		blkioWeightDevices []string
+		deviceReadBps      []string
+		deviceWriteBps     []string
+		devices            []string
+		gpus               []string
+		volumes            []string
+		volumesFrom        []string
+		securityOpt        []string
+		cpus               float64
+		cpuShares          uint64
+		blkioWeight        uint16
+		infra              bool
+		shareParent        bool
+		noHosts            bool
+		noHostname         bool
+	}
+)
 
-type podCreateOptions struct {
-	labels             map[string]string
-	sysctl             map[string]string
-	name               string
-	hostname           string
-	exitPolicy         string
-	restart            string
-	infraImage         string
-	infraCommand       string
-	infraName          string
-	infraConmonPidFile string
-	share              string
-	pid                string
-	ipc                string
-	uts                string
-	userns             string
-	ip                 string
-	ip6                string
-	macAddress         string
-	hostsFile          string
-	cgroupParent       string
-	cpusetCPUs         string
-	cpusetMems         string
-	memory             string
-	memorySwap         string
-	shmSize            string
-	shmSizeSystemd     string
-	labelFiles         []string
-	uidMap             []string
-	gidMap             []string
-	networks           []string
-	networkAliases     []string
-	publish            []string
-	dns                []string
-	dnsSearch          []string
-	dnsOptions         []string
-	addHosts           []string
-	blkioWeightDevices []string
-	deviceReadBps      []string
-	deviceWriteBps     []string
-	devices            []string
-	gpus               []string
-	volumes            []string
-	volumesFrom        []string
-	securityOpt        []string
-	cpus               float64
-	cpuShares          uint64
-	blkioWeight        uint16
-	infra              bool
-	shareParent        bool
-	noHosts            bool
-	noHostname         bool
-}
+var podNetworkModes = []string{"bridge", "host", "none", "private", "slirp4netns", "pasta", "ns"}
 
 func newPodCreateCmd() *cobra.Command {
 	var opts podCreateOptions

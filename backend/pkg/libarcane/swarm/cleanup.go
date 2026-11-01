@@ -14,9 +14,18 @@ import (
 	kit "kit.getarcane.app"
 )
 
-// Swarm tears tasks down asynchronously, so a config, secret, or network can
-// stay referenced for a short window after the owning services are removed.
-const staleSwarmResourceRemoveAttempts = 5
+type (
+	staleManagedResource struct {
+		ID   string
+		Name string
+	}
+)
+
+const (
+	// Swarm tears tasks down asynchronously, so a config, secret, or network can
+	// stay referenced for a short window after the owning services are removed.
+	staleSwarmResourceRemoveAttempts = 5
+)
 
 var staleSwarmResourceRemoveBackoff = 500 * time.Millisecond
 
@@ -66,11 +75,6 @@ func collectStaleManagedResources[T any](items []T, convert func(T) staleManaged
 		resources = append(resources, convert(item))
 	}
 	return resources
-}
-
-type staleManagedResource struct {
-	ID   string
-	Name string
 }
 
 func cleanupStaleManagedResources(

@@ -17,20 +17,22 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
-var errWatcherStopped = errors.New("filesystem watcher stopped")
+type (
+	FilesystemWatcherJob struct {
+		projectService   *project.ProjectService
+		templateService  *template.TemplateService
+		settingsService  *settings.SettingsService
+		lifecycleCtx     context.Context
+		projectsWatcher  *tripwire.Watcher[string]
+		templatesWatcher *tripwire.Watcher[struct{}]
+		restart          chan struct{}
+		restartMu        sync.Mutex
+		mu               sync.Mutex
+		stopped          bool
+	}
+)
 
-type FilesystemWatcherJob struct {
-	projectService   *project.ProjectService
-	templateService  *template.TemplateService
-	settingsService  *settings.SettingsService
-	lifecycleCtx     context.Context
-	projectsWatcher  *tripwire.Watcher[string]
-	templatesWatcher *tripwire.Watcher[struct{}]
-	restart          chan struct{}
-	restartMu        sync.Mutex
-	mu               sync.Mutex
-	stopped          bool
-}
+var errWatcherStopped = errors.New("filesystem watcher stopped")
 
 func NewFilesystemWatcherJob(
 	ctx context.Context,

@@ -39,46 +39,48 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
+type (
+	Source string
+
+	LockReason string
+
+	snapshot struct {
+		values  *Settings
+		sources []Source
+	}
+
+	SettingsService struct {
+		lifecycleCtx  context.Context
+		db            *database.DB
+		appConfig     *config.Config
+		env           Env
+		snapshot      atomic.Pointer[snapshot]
+		effectsWake   chan struct{}
+		effectsDone   chan struct{}
+		changes       *concurrency.Signal[[]libarcane.SettingUpdate]
+		effects       []func()
+		writes        sync.Mutex
+		effectsMu     sync.Mutex
+		effectsClosed bool
+	}
+
+	SettingsSearchService struct {
+		categories []types.Category
+	}
+)
+
 const (
 	browserSessionSigningKeySize  = 64
 	minCiphertextBytes            = 28
 	sensitiveSettingsEncryptedKey = "sensitiveSettingsEncrypted"
-)
 
-type Source string
-
-const (
 	SourceDefault Source = "default"
 	SourceDB      Source = "db"
 	SourceEnv     Source = "env"
-)
 
-type LockReason string
-
-const (
 	LockReasonEnv      LockReason = "env"
 	LockReasonReadOnly LockReason = "readOnly"
 )
-
-type snapshot struct {
-	values  *Settings
-	sources []Source
-}
-
-type SettingsService struct {
-	lifecycleCtx  context.Context
-	db            *database.DB
-	appConfig     *config.Config
-	env           Env
-	snapshot      atomic.Pointer[snapshot]
-	effectsWake   chan struct{}
-	effectsDone   chan struct{}
-	changes       *concurrency.Signal[[]libarcane.SettingUpdate]
-	effects       []func()
-	writes        sync.Mutex
-	effectsMu     sync.Mutex
-	effectsClosed bool
-}
 
 func NewSettingsService(ctx context.Context, db *database.DB, appConfig *config.Config, env Env) (*SettingsService, error) {
 	if ctx == nil {
@@ -879,10 +881,6 @@ func (s *SettingsService) RequireFeature(ctx context.Context, id types.FeatureID
 		return nil
 	}
 	return fmt.Errorf("feature %s is disabled: %w", id, common.ErrFeatureDisabled)
-}
-
-type SettingsSearchService struct {
-	categories []types.Category
 }
 
 func NewSettingsSearchService() *SettingsSearchService {

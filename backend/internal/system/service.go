@@ -57,43 +57,71 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
 )
 
-// SystemService owns Docker system-wide operations and coordinates the prune
-// and self-upgrade features.
-type SystemService struct {
-	db                    *database.DB
-	dockerService         *dockerInternal.DockerClientService
-	containerService      *container.ContainerService
-	settingsService       *settings.SettingsService
-	activityService       *activity.ActivityService
-	dockerHostMemoryCache *hot.HotCache[struct{}, dockerHostMemoryInfo]
+type (
+	// SystemService owns Docker system-wide operations and coordinates the prune
+	// and self-upgrade features.
+	SystemService struct {
+		db                    *database.DB
+		dockerService         *dockerInternal.DockerClientService
+		containerService      *container.ContainerService
+		settingsService       *settings.SettingsService
+		activityService       *activity.ActivityService
+		dockerHostMemoryCache *hot.HotCache[struct{}, dockerHostMemoryInfo]
 
-	prune   *prune.Service
-	upgrade *upgrade.Service
-	backup  *systembackup.Service
-}
+		prune   *prune.Service
+		upgrade *upgrade.Service
+		backup  *systembackup.Service
+	}
 
-type SystemServiceParams struct {
-	fx.In
+	SystemServiceParams struct {
+		fx.In
 
-	DB                 *database.DB
-	DockerService      *dockerInternal.DockerClientService
-	ContainerService   *container.ContainerService
-	ImageUpdateService *imageupdate.ImageUpdateService
-	VolumeService      *volume.VolumeService
-	NetworkService     *network.NetworkService
-	SettingsService    *settings.SettingsService
-	ActivityService    *activity.ActivityService
-	VersionService     *version.VersionService
-	EventService       *event.EventService
-	ProjectService     *project.ProjectService
-	RegistryService    *registry.ContainerRegistryService
-	BackupEngine       *backup.Engine
-	S3Destinations     *s3.S3DestinationService
-	RecoveryKeys       *backup.RecoveryKeyStore
-	Actors             *francis.Runtime
-	Config             *config.Config
-	SettingsEnv        settings.Env
-}
+		DB                 *database.DB
+		DockerService      *dockerInternal.DockerClientService
+		ContainerService   *container.ContainerService
+		ImageUpdateService *imageupdate.ImageUpdateService
+		VolumeService      *volume.VolumeService
+		NetworkService     *network.NetworkService
+		SettingsService    *settings.SettingsService
+		ActivityService    *activity.ActivityService
+		VersionService     *version.VersionService
+		EventService       *event.EventService
+		ProjectService     *project.ProjectService
+		RegistryService    *registry.ContainerRegistryService
+		BackupEngine       *backup.Engine
+		S3Destinations     *s3.S3DestinationService
+		RecoveryKeys       *backup.RecoveryKeyStore
+		Actors             *francis.Runtime
+		Config             *config.Config
+		SettingsEnv        settings.Env
+	}
+
+	startMatchingContainersOptions struct {
+		ShouldStart    func(mobycontainer.Summary) bool
+		Action         func(context.Context, string) error
+		ActivityType   types.ActivityType
+		ActionName     string
+		ResourceName   string
+		StartMessage   string
+		SuccessMessage string
+	}
+
+	dockerHostMemoryInfo struct {
+		root  string
+		total uint64
+	}
+)
+
+const (
+	dockerHostMemoryCacheTTL = 30 * time.Second
+
+	systemBackupHistoryUnion = "SELECT id, size, created_at, status, trigger, destination, '' AS format, local_snapshot_id, " +
+		"remote_snapshot_id, '' AS remote_instance_id, s3_destination_id, policy_id, error, 'system' AS type, 'system' AS " +
+		"resource_type, 'Arcane' AS resource_name FROM system_backup_runs UNION ALL SELECT id, size, " +
+		"created_at, status, trigger, destination, format, local_snapshot_id, remote_snapshot_id, COALESCE(remote_instance_id, '') AS remote_instance_id, " +
+		"s3_destination_id, policy_id, error, CASE WHEN policy_id LIKE 'system-volume:%' THEN 'system' ELSE " +
+		"'volume' END AS type, 'volume' AS resource_type, volume_name AS resource_name FROM volume_backups"
+)
 
 func NewSystemService(p SystemServiceParams) *SystemService {
 	s := &SystemService{
@@ -256,16 +284,6 @@ func (s *SystemService) StopAllContainers(ctx context.Context, environmentID str
 	})
 }
 
-type startMatchingContainersOptions struct {
-	ShouldStart    func(mobycontainer.Summary) bool
-	Action         func(context.Context, string) error
-	ActivityType   types.ActivityType
-	ActionName     string
-	ResourceName   string
-	StartMessage   string
-	SuccessMessage string
-}
-
 func (s *SystemService) performBatchContainerAction(ctx context.Context, environmentID string, opts startMatchingContainersOptions) (*types.ContainerActionResult, error) {
 	localActivity, err := s.activityService.StartActivity(ctx, activity.StartActivityRequest{
 		EnvironmentID: environmentID,
@@ -399,13 +417,6 @@ func (s *SystemService) GetDockerInfo(ctx context.Context) (types.DockerInfo, er
 	}, nil
 }
 
-const dockerHostMemoryCacheTTL = 30 * time.Second
-
-type dockerHostMemoryInfo struct {
-	root  string
-	total uint64
-}
-
 // GetDockerHostMemory reports enclosing guest memory when Docker shares its
 // host's cgroup namespace. A false result leaves the caller's baseline intact.
 func (s *SystemService) GetDockerHostMemory(ctx context.Context) (uint64, uint64, bool) {
@@ -506,13 +517,6 @@ func resolveUpgraderRuntimeOptions(
 		Target: socketPath,
 	}}, "", nil
 }
-
-const systemBackupHistoryUnion = "SELECT id, size, created_at, status, trigger, destination, '' AS format, local_snapshot_id, " +
-	"remote_snapshot_id, '' AS remote_instance_id, s3_destination_id, policy_id, error, 'system' AS type, 'system' AS " +
-	"resource_type, 'Arcane' AS resource_name FROM system_backup_runs UNION ALL SELECT id, size, " +
-	"created_at, status, trigger, destination, format, local_snapshot_id, remote_snapshot_id, COALESCE(remote_instance_id, '') AS remote_instance_id, " +
-	"s3_destination_id, policy_id, error, CASE WHEN policy_id LIKE 'system-volume:%' THEN 'system' ELSE " +
-	"'volume' END AS type, 'volume' AS resource_type, volume_name AS resource_name FROM volume_backups"
 
 // backupStore persists system backup runs and policies for the backup child.
 func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) systembackup.Store {

@@ -18,15 +18,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// Service manages swarm configs.
-type Service struct {
-	docker        *docker.DockerClientService
-	ensureManager func(ctx context.Context) error
-}
-
-func NewService(dockerService *docker.DockerClientService, ensureManager func(ctx context.Context) error) *Service {
-	return &Service{docker: dockerService, ensureManager: ensureManager}
-}
+type (
+	// Service manages swarm configs.
+	Service struct {
+		docker        *docker.DockerClientService
+		ensureManager func(ctx context.Context) error
+	}
+)
 
 var configPagination = pagination.Config[types.SwarmConfig]{
 	SearchAccessors: []pagination.SearchAccessor[types.SwarmConfig]{
@@ -48,6 +46,10 @@ var configPagination = pagination.Config[types.SwarmConfig]{
 			return a.UpdatedAt.Compare(b.UpdatedAt)
 		}},
 	},
+}
+
+func NewService(dockerService *docker.DockerClientService, ensureManager func(ctx context.Context) error) *Service {
+	return &Service{docker: dockerService, ensureManager: ensureManager}
 }
 
 func (s *Service) ListConfigs(ctx context.Context, params pagination.QueryParams) ([]types.SwarmConfig, pagination.Response, error) {

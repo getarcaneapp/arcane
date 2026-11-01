@@ -10,794 +10,1463 @@ import (
 	"github.com/moby/moby/api/types/network"
 )
 
-// ContainerSetAutoUpdateRequest configures container auto-update.
-type ContainerSetAutoUpdateRequest struct {
-	Enabled bool `json:"enabled" doc:"Whether auto-update is enabled for this container"`
-}
-
-// ContainerRestartPolicyCreate represents restart policy options for container creation.
-type ContainerRestartPolicyCreate struct {
-	// Name of the restart policy.
-	//
-	// Required: false
-	Name string `json:"name,omitempty"`
-
-	// MaximumRetryCount is only used when name is on-failure.
-	//
-	// Required: false
-	MaximumRetryCount int `json:"maximumRetryCount,omitempty"`
-}
-
-// ContainerPortBindingCreate represents host port bindings for container creation.
-type ContainerPortBindingCreate struct {
-	// HostIP is the IP address to bind to on the host.
-	//
-	// Required: false
-	HostIP string `json:"hostIp,omitempty"`
-
-	// HostPort is the port on the host.
-	//
-	// Required: false
-	HostPort string `json:"hostPort,omitempty"`
-}
-
-// ContainerHostConfigCreate represents host configuration for container creation.
-type ContainerHostConfigCreate struct {
-	// PortBindings maps container ports to host bindings.
-	//
-	// Required: false
-	PortBindings map[string][]ContainerPortBindingCreate `json:"portBindings,omitempty"`
-
-	// RestartPolicy for the container.
-	//
-	// Required: false
-	RestartPolicy *ContainerRestartPolicyCreate `json:"restartPolicy,omitempty"`
-
-	// Privileged indicates if the container runs in privileged mode.
-	//
-	// Required: false
-	Privileged *bool `json:"privileged,omitempty"`
-
-	// AutoRemove indicates if the container is removed when stopped.
-	//
-	// Required: false
-	AutoRemove *bool `json:"autoRemove,omitempty"`
-
-	// ReadonlyRootfs makes the root filesystem read-only.
-	//
-	// Required: false
-	ReadonlyRootfs *bool `json:"readonlyRootfs,omitempty"`
-
-	// PublishAllPorts publishes all exposed ports to random host ports.
-	//
-	// Required: false
-	PublishAllPorts *bool `json:"publishAllPorts,omitempty"`
-
-	// NetworkMode for the container.
-	//
-	// Required: false
-	NetworkMode string `json:"networkMode,omitempty"`
-
-	// Binds is a list of volume bindings.
-	//
-	// Required: false
-	Binds []string `json:"binds,omitempty"`
-
-	// CapAdd is a list of kernel capabilities to add.
-	//
-	// Required: false
-	CapAdd []string `json:"capAdd,omitempty"`
-
-	// CapDrop is a list of kernel capabilities to drop.
-	//
-	// Required: false
-	CapDrop []string `json:"capDrop,omitempty"`
-
-	// Mounts is a list of typed mounts (bind or volume).
-	//
-	// Required: false
-	Mounts []ContainerMountCreate `json:"mounts,omitempty"`
-
-	// Memory limit in bytes.
-	//
-	// Required: false
-	Memory int64 `json:"memory,omitempty"`
-
-	// MemorySwap limits total memory usage (memory + swap) in bytes.
-	//
-	// Required: false
-	MemorySwap int64 `json:"memorySwap,omitempty"`
-
-	// NanoCPUs is CPU allocation in nano CPUs.
-	//
-	// Required: false
-	NanoCPUs int64 `json:"nanoCpus,omitempty"`
-
-	// CPUShares is the relative CPU share weight.
-	//
-	// Required: false
-	CPUShares int64 `json:"cpuShares,omitempty"`
-}
-
-// ContainerEndpointSettingsCreate represents network endpoint settings for container creation.
-type ContainerEndpointSettingsCreate struct {
-	// IPv4Address is a static IPv4 address for the container on this network.
-	//
-	// Required: false
-	IPv4Address string `json:"ipv4Address,omitempty"`
-
-	// IPv6Address is a static IPv6 address for the container on this network.
-	//
-	// Required: false
-	IPv6Address string `json:"ipv6Address,omitempty"`
-	// Aliases for the container on this network.
-	//
-	// Required: false
-	Aliases []string `json:"aliases,omitempty"`
-}
-
-// ContainerMountCreate represents a typed mount (bind or volume) for container creation.
-type ContainerMountCreate struct {
-	// Type of the mount (bind or volume).
-	//
-	// Required: true
-	Type string `json:"type"`
-
-	// Source is the host path (bind) or volume name (volume).
-	//
-	// Required: true
-	Source string `json:"source"`
-
-	// Target path inside the container.
-	//
-	// Required: true
-	Target string `json:"target"`
-
-	// ReadOnly mounts the target read-only.
-	//
-	// Required: false
-	ReadOnly bool `json:"readOnly,omitempty"`
-}
-
-// ContainerHealthcheckCreate represents a container healthcheck configuration for
-// create/edit requests. Duration values are expressed in seconds on the wire.
-type ContainerHealthcheckCreate struct {
-	// Test is the probe command. ["NONE"] disables an image-defined healthcheck.
-	//
-	// Required: false
-	Test []string `json:"test,omitempty"`
-
-	// Interval between probes, in seconds.
-	//
-	// Required: false
-	Interval int64 `json:"interval,omitempty"`
-
-	// Timeout for a single probe, in seconds.
-	//
-	// Required: false
-	Timeout int64 `json:"timeout,omitempty"`
-
-	// StartPeriod is the initialization grace period, in seconds.
-	//
-	// Required: false
-	StartPeriod int64 `json:"startPeriod,omitempty"`
-
-	// StartInterval is the probe interval during the start period, in seconds.
-	//
-	// Required: false
-	StartInterval int64 `json:"startInterval,omitempty"`
-
-	// Retries is the number of consecutive failures before unhealthy.
-	//
-	// Required: false
-	Retries int `json:"retries,omitempty"`
-}
-
-// ContainerNetworkingConfigCreate represents network configuration for container creation.
-type ContainerNetworkingConfigCreate struct {
-	// EndpointsConfig maps network names to endpoint settings.
-	//
-	// Required: false
-	EndpointsConfig map[string]ContainerEndpointSettingsCreate `json:"endpointsConfig,omitempty"`
-}
-
-// Container is the writable representation of a container.
-type Container struct {
-	// Labels to set on the container.
-	//
-	// Required: false
-	Labels map[string]string `json:"labels,omitempty"`
-
-	// ExposedPorts are ports exposed by the container.
-	//
-	// Required: false
-	ExposedPorts map[string]struct{} `json:"exposedPorts,omitempty"`
-
-	// Healthcheck overrides the image healthcheck. Test ["NONE"] disables it.
-	//
-	// Required: false
-	Healthcheck *ContainerHealthcheckCreate `json:"healthcheck,omitempty"`
-
-	// HostConfig holds advanced host-level settings.
-	//
-	// Required: false
-	HostConfig *ContainerHostConfigCreate `json:"hostConfig,omitempty"`
-
-	// NetworkingConfig defines network endpoints.
-	//
-	// Required: false
-	NetworkingConfig *ContainerNetworkingConfigCreate `json:"networkingConfig,omitempty"`
-
-	// Ports is a map of port bindings.
-	//
-	// Required: false
-	Ports map[string]string `json:"ports,omitempty"`
-
-	// Name of the container.
-	//
-	// Required: false
-	Name string `json:"name" required:"false"`
-
-	// Image to use for the container.
-	//
-	// Required: false
-	Image string `json:"image" required:"false"`
-
-	// WorkingDir is the working directory inside the container.
-	//
-	// Required: false
-	WorkingDir string `json:"workingDir,omitempty"`
-
-	// User to run the container as.
-	//
-	// Required: false
-	User string `json:"user,omitempty"`
-
-	// Hostname for the container.
-	//
-	// Required: false
-	Hostname string `json:"hostname,omitempty"`
-
-	// Domainname for the container.
-	//
-	// Required: false
-	Domainname string `json:"domainname,omitempty"`
-
-	// RestartPolicy for the container.
-	//
-	// Required: false
-	RestartPolicy string `json:"restartPolicy,omitempty"`
-
-	// Command to run in the container.
-	//
-	// Required: false
-	Command []string `json:"command,omitempty"`
-
-	// Cmd is an alias for Command.
-	//
-	// Required: false
-	Cmd []string `json:"cmd,omitempty"`
-
-	// Entrypoint for the container.
-	//
-	// Required: false
-	Entrypoint []string `json:"entrypoint,omitempty"`
-
-	// Environment variables for the container.
-	//
-	// Required: false
-	Environment []string `json:"environment,omitempty"`
-
-	// Env is an alias for Environment.
-	//
-	// Required: false
-	Env []string `json:"env,omitempty"`
-
-	// Volumes is a list of volume mounts.
-	//
-	// Required: false
-	Volumes []string `json:"volumes,omitempty"`
-
-	// Networks is a list of networks to connect to.
-	//
-	// Required: false
-	Networks []string `json:"networks,omitempty"`
-
-	// Credentials for pulling images from private registries.
-	//
-	// Required: false
-	Credentials []ContainerRegistryCredential `json:"credentials,omitempty" writeOnly:"true"`
-
-	// Memory limit for the container in bytes.
-	//
-	// Required: false
-	Memory int64 `json:"memory,omitempty"`
-
-	// CPUs is the number of CPUs to allocate.
-	//
-	// Required: false
-	CPUs float64 `json:"cpus,omitempty"`
-
-	// AttachStdout attaches stdout.
-	//
-	// Required: false
-	AttachStdout bool `json:"attachStdout,omitempty"`
-
-	// AttachStderr attaches stderr.
-	//
-	// Required: false
-	AttachStderr bool `json:"attachStderr,omitempty"`
-
-	// AttachStdin attaches stdin.
-	//
-	// Required: false
-	AttachStdin bool `json:"attachStdin,omitempty"`
-
-	// Tty allocates a pseudo-TTY.
-	//
-	// Required: false
-	Tty bool `json:"tty,omitempty"`
-
-	// OpenStdin keeps stdin open.
-	//
-	// Required: false
-	OpenStdin bool `json:"openStdin,omitempty"`
-
-	// StdinOnce closes stdin after first attach.
-	//
-	// Required: false
-	StdinOnce bool `json:"stdinOnce,omitempty"`
-
-	// NetworkDisabled disables networking.
-	//
-	// Required: false
-	NetworkDisabled bool `json:"networkDisabled,omitempty"`
-
-	// Privileged indicates if the container runs in privileged mode.
-	//
-	// Required: false
-	Privileged bool `json:"privileged,omitempty"`
-
-	// AutoRemove indicates if the container should be removed when stopped.
-	//
-	// Required: false
-	AutoRemove bool `json:"autoRemove,omitempty"`
-}
-
-// ContainerCommitRequest is used to create an image from a container's current filesystem.
-type ContainerCommitRequest struct {
-	// Repository is the target image repository.
-	//
-	// Required: false
-	Repository string `json:"repository,omitempty" doc:"Target image repository"`
-
-	// Tag is the target image tag.
-	//
-	// Required: false
-	Tag string `json:"tag,omitempty" doc:"Target image tag"`
-
-	// Comment records why the image was committed.
-	//
-	// Required: false
-	Comment string `json:"comment,omitempty" doc:"Commit comment"`
-
-	// Author records who created the committed image.
-	//
-	// Required: false
-	Author string `json:"author,omitempty" doc:"Commit author"`
-
-	// Changes contains Dockerfile-style changes to apply during commit.
-	//
-	// Required: false
-	Changes []string `json:"changes,omitempty" doc:"Dockerfile changes to apply"`
-
-	// NoPause disables the default pause during commit.
-	//
-	// Required: false
-	NoPause bool `json:"noPause,omitempty" doc:"Do not pause the container during commit"`
-}
-
-// ContainerCommitResult identifies the image created by a container commit.
-type ContainerCommitResult struct {
-	ID string `json:"id"`
-}
-
-// ContainerGenerateComposeRequest selects the containers to convert into a compose project.
-type ContainerGenerateComposeRequest struct {
-	ContainerIDs []string `json:"containerIds" minItems:"1" doc:"IDs of the containers to convert"`
-}
-
-// ContainerGenerateComposeResponse carries the compose file generated from containers.
-type ContainerGenerateComposeResponse struct {
-	ComposeContent string `json:"composeContent"`
-}
-
-// ContainerStatusCounts contains counts of containers by status.
-type ContainerStatusCounts struct {
-	// RunningContainers is the number of running containers.
-	//
-	// Required: true
-	RunningContainers int `json:"runningContainers"`
-
-	// StoppedContainers is the number of stopped containers.
-	//
-	// Required: true
-	StoppedContainers int `json:"stoppedContainers"`
-
-	// TotalContainers is the total number of containers.
-	//
-	// Required: true
-	TotalContainers int `json:"totalContainers"`
-
-	UnhealthyContainers int `json:"unhealthyContainers" doc:"Containers whose healthcheck reports unhealthy"`
-
-	UpdatesAvailable int `json:"updatesAvailable" doc:"Standalone containers with a pending image update"`
-}
-
-// ContainerActionResult represents the result of a container action (start/stop/etc).
-type ContainerActionResult struct {
-	// ActivityID is the background activity that tracked this action.
-	//
-	// Required: false
-	ActivityID *string `json:"activityId,omitempty"`
-	// Started is a list of container IDs that were started.
-	//
-	// Required: false
-	Started []string `json:"started,omitempty"`
-
-	// Stopped is a list of container IDs that were stopped.
-	//
-	// Required: false
-	Stopped []string `json:"stopped,omitempty"`
-
-	// Failed is a list of container IDs that failed.
-	//
-	// Required: false
-	Failed []string `json:"failed,omitempty"`
-
-	// Errors is a list of error messages encountered.
-	//
-	// Required: false
-	Errors []string `json:"errors,omitempty"`
-
-	// Success indicates if the overall action was successful.
-	//
-	// Required: true
-	Success bool `json:"success"`
-}
-
-// ContainerPort represents a port binding for a container.
-type ContainerPort struct {
-	// IP address the port is bound to.
-	//
-	// Required: false
-	IP string `json:"ip,omitempty"`
-
-	// Type is the protocol type (tcp/udp).
-	//
-	// Required: true
-	Type string `json:"type"`
-
-	// PrivatePort is the port inside the container.
-	//
-	// Required: true
-	PrivatePort int `json:"privatePort"`
-
-	// PublicPort is the port on the host.
-	//
-	// Required: false
-	PublicPort int `json:"publicPort,omitempty"`
-}
-
-// ContainerMount represents a volume mount for a container.
-type ContainerMount struct {
-	// Type of the mount (bind, volume, tmpfs).
-	//
-	// Required: true
-	Type string `json:"type"`
-
-	// Name of the volume (for volume mounts).
-	//
-	// Required: false
-	Name string `json:"name,omitempty"`
-
-	// Source path on the host.
-	//
-	// Required: false
-	Source string `json:"source,omitempty"`
-
-	// Destination path in the container.
-	//
-	// Required: true
-	Destination string `json:"destination"`
-
-	// Driver is the volume driver (for volume mounts).
-	//
-	// Required: false
-	Driver string `json:"driver,omitempty"`
-
-	// Mode specifies mount permissions.
-	//
-	// Required: false
-	Mode string `json:"mode,omitempty"`
-
-	// Propagation mode for the mount.
-	//
-	// Required: false
-	Propagation string `json:"propagation,omitempty"`
-
-	// RW indicates if the mount is read-write.
-	//
-	// Required: false
-	RW bool `json:"rw,omitempty"`
-}
-
-// ContainerNetworkEndpoint represents network endpoint settings for a container.
-type ContainerNetworkEndpoint struct {
-	// IPAMConfig contains IP address management configuration.
-	//
-	// Required: false
-	IPAMConfig any `json:"ipamConfig,omitempty"`
-
-	// DriverOpts contains driver-specific options.
-	//
-	// Required: false
-	DriverOpts map[string]string `json:"driverOpts,omitempty"`
-
-	// MacAddress of the container on this network.
-	//
-	// Required: false
-	MacAddress string `json:"macAddress,omitempty"`
-
-	// NetworkID is the ID of the network.
-	//
-	// Required: false
-	NetworkID string `json:"networkId,omitempty"`
-
-	// EndpointID is the ID of this endpoint.
-	//
-	// Required: false
-	EndpointID string `json:"endpointId,omitempty"`
-
-	// Gateway address for the network.
-	//
-	// Required: false
-	Gateway string `json:"gateway,omitempty"`
-
-	// IPAddress assigned to the container.
-	//
-	// Required: false
-	IPAddress string `json:"ipAddress,omitempty"`
-
-	// IPv6Gateway address for the network.
-	//
-	// Required: false
-	IPv6Gateway string `json:"ipv6Gateway,omitempty"`
-
-	// GlobalIPv6Address assigned to the container.
-	//
-	// Required: false
-	GlobalIPv6Address string `json:"globalIPv6Address,omitempty"`
-
-	// Links to other containers.
-	//
-	// Required: false
-	Links []string `json:"links,omitempty"`
-
-	// Aliases for the container on this network.
-	//
-	// Required: false
-	Aliases []string `json:"aliases,omitempty"`
-
-	// DNSNames are DNS names for this endpoint.
-	//
-	// Required: false
-	DNSNames []string `json:"dnsNames,omitempty"`
-
-	// GwPriority is the gateway priority.
-	//
-	// Required: false
-	GwPriority int `json:"gwPriority,omitempty"`
-
-	// IPPrefixLen is the IP prefix length.
-	//
-	// Required: false
-	IPPrefixLen int `json:"ipPrefixLen,omitempty"`
-
-	// GlobalIPv6PrefixLen is the IPv6 prefix length.
-	//
-	// Required: false
-	GlobalIPv6PrefixLen int `json:"globalIPv6PrefixLen,omitempty"`
-}
-
-// ContainerNetworkSettings contains network configuration for a container.
-type ContainerNetworkSettings struct {
-	// Networks is a map of network name to endpoint settings.
-	//
-	// Required: true
-	Networks map[string]ContainerNetworkEndpoint `json:"networks"`
-}
-
-// ContainerState represents the state of a container.
-type ContainerState struct {
-	// Health contains the healthcheck status, if the container defines one.
-	//
-	// Required: false
-	Health *ContainerHealth `json:"health,omitempty"`
-	// Status is the current status of the container.
-	//
-	// Required: true
-	Status string `json:"status"`
-
-	// StartedAt is when the container was started.
-	//
-	// Required: false
-	StartedAt string `json:"startedAt,omitempty"`
-
-	// FinishedAt is when the container finished.
-	//
-	// Required: false
-	FinishedAt string `json:"finishedAt,omitempty"`
-
-	// ExitCode is the exit code of the container process.
-	//
-	// Required: false
-	ExitCode int `json:"exitCode,omitempty"`
-
-	// Running indicates if the container is running.
-	//
-	// Required: true
-	Running bool `json:"running"`
-}
-
-// ContainerHealthLogEntry represents a single probe result from the healthcheck log.
-type ContainerHealthLogEntry struct {
-	// Start is when the probe started.
-	//
-	// Required: false
-	Start string `json:"start,omitempty"`
-
-	// End is when the probe finished.
-	//
-	// Required: false
-	End string `json:"end,omitempty"`
-
-	// Output is the stdout/stderr captured from the probe.
-	//
-	// Required: false
-	Output string `json:"output,omitempty"`
-
-	// ExitCode is the exit code of the probe command.
-	//
-	// Required: false
-	ExitCode int `json:"exitCode"`
-}
-
-// ContainerHealth represents the current healthcheck state of a container.
-type ContainerHealth struct {
-	// Status is the current healthcheck status (starting, healthy, unhealthy, none).
-	//
-	// Required: true
-	Status string `json:"status"`
-
-	// Log is the recent probe history, oldest first.
-	//
-	// Required: false
-	Log []ContainerHealthLogEntry `json:"log,omitempty"`
-
-	// FailingStreak is the number of consecutive failures.
-	//
-	// Required: false
-	FailingStreak int `json:"failingStreak"`
-}
-
-// ContainerHealthcheck represents a container's healthcheck configuration.
-// Duration values are expressed in nanoseconds (Docker SDK convention).
-type ContainerHealthcheck struct {
-	// Test is the probe command. Common forms:
-	//  - empty / nil: inherit from the image
-	//  - ["NONE"]: healthcheck disabled
-	//  - ["CMD", "..."] / ["CMD-SHELL", "..."]: probe command
-	//
-	// Required: false
-	Test []string `json:"test,omitempty"`
-
-	// Interval between probes, in nanoseconds.
-	//
-	// Required: false
-	Interval int64 `json:"interval,omitempty"`
-
-	// Timeout for a single probe, in nanoseconds.
-	//
-	// Required: false
-	Timeout int64 `json:"timeout,omitempty"`
-
-	// StartPeriod is the initialization grace period, in nanoseconds.
-	//
-	// Required: false
-	StartPeriod int64 `json:"startPeriod,omitempty"`
-
-	// StartInterval is the probe interval during the start period, in nanoseconds.
-	//
-	// Required: false
-	StartInterval int64 `json:"startInterval,omitempty"`
-
-	// Retries is the number of consecutive failures before the container is marked unhealthy.
-	//
-	// Required: false
-	Retries int `json:"retries,omitempty"`
-}
-
-// ContainerConfig represents configuration details for a container.
-type ContainerConfig struct {
-	// Healthcheck is the container's healthcheck configuration.
-	//
-	// Required: false
-	Healthcheck *ContainerHealthcheck `json:"healthcheck,omitempty"`
-
-	// WorkingDir is the working directory.
-	//
-	// Required: false
-	WorkingDir string `json:"workingDir,omitempty"`
-
-	// User to run as.
-	//
-	// Required: false
-	User string `json:"user,omitempty"`
-
-	// Hostname of the container.
-	//
-	// Required: false
-	Hostname string `json:"hostname,omitempty"`
-
-	// Env is a list of environment variables.
-	//
-	// Required: false
-	Env []string `json:"env,omitempty"`
-
-	// Cmd is the command to run.
-	//
-	// Required: false
-	Cmd []string `json:"cmd,omitempty"`
-
-	// Entrypoint is the entrypoint for the container.
-	//
-	// Required: false
-	Entrypoint []string `json:"entrypoint,omitempty"`
-}
-
-// ContainerHostConfig represents host configuration for a container.
-type ContainerHostConfig struct {
-	// NetworkMode for the container.
-	//
-	// Required: false
-	NetworkMode string `json:"networkMode,omitempty"`
-
-	// RestartPolicy for the container.
-	//
-	// Required: false
-	RestartPolicy string `json:"restartPolicy,omitempty"`
-
-	// Privileged indicates if the container runs in privileged mode.
-	//
-	// Required: false
-	Privileged bool `json:"privileged,omitempty"`
-
-	// AutoRemove indicates if the container is removed when stopped.
-	//
-	// Required: false
-	AutoRemove bool `json:"autoRemove,omitempty"`
-
-	// NanoCPUs is CPU allocation in nano CPUs.
-	//
-	// Required: false
-	NanoCPUs int64 `json:"nanoCpus,omitempty"`
-
-	// Memory limit in bytes.
-	//
-	// Required: false
-	Memory int64 `json:"memory,omitempty"`
-}
+type (
+	// ContainerSetAutoUpdateRequest configures container auto-update.
+	ContainerSetAutoUpdateRequest struct {
+		Enabled bool `json:"enabled" doc:"Whether auto-update is enabled for this container"`
+	}
+
+	// ContainerRestartPolicyCreate represents restart policy options for container creation.
+	ContainerRestartPolicyCreate struct {
+		// Name of the restart policy.
+		//
+		// Required: false
+		Name string `json:"name,omitempty"`
+
+		// MaximumRetryCount is only used when name is on-failure.
+		//
+		// Required: false
+		MaximumRetryCount int `json:"maximumRetryCount,omitempty"`
+	}
+
+	// ContainerPortBindingCreate represents host port bindings for container creation.
+	ContainerPortBindingCreate struct {
+		// HostIP is the IP address to bind to on the host.
+		//
+		// Required: false
+		HostIP string `json:"hostIp,omitempty"`
+
+		// HostPort is the port on the host.
+		//
+		// Required: false
+		HostPort string `json:"hostPort,omitempty"`
+	}
+
+	// ContainerHostConfigCreate represents host configuration for container creation.
+	ContainerHostConfigCreate struct {
+		// PortBindings maps container ports to host bindings.
+		//
+		// Required: false
+		PortBindings map[string][]ContainerPortBindingCreate `json:"portBindings,omitempty"`
+
+		// RestartPolicy for the container.
+		//
+		// Required: false
+		RestartPolicy *ContainerRestartPolicyCreate `json:"restartPolicy,omitempty"`
+
+		// Privileged indicates if the container runs in privileged mode.
+		//
+		// Required: false
+		Privileged *bool `json:"privileged,omitempty"`
+
+		// AutoRemove indicates if the container is removed when stopped.
+		//
+		// Required: false
+		AutoRemove *bool `json:"autoRemove,omitempty"`
+
+		// ReadonlyRootfs makes the root filesystem read-only.
+		//
+		// Required: false
+		ReadonlyRootfs *bool `json:"readonlyRootfs,omitempty"`
+
+		// PublishAllPorts publishes all exposed ports to random host ports.
+		//
+		// Required: false
+		PublishAllPorts *bool `json:"publishAllPorts,omitempty"`
+
+		// NetworkMode for the container.
+		//
+		// Required: false
+		NetworkMode string `json:"networkMode,omitempty"`
+
+		// Binds is a list of volume bindings.
+		//
+		// Required: false
+		Binds []string `json:"binds,omitempty"`
+
+		// CapAdd is a list of kernel capabilities to add.
+		//
+		// Required: false
+		CapAdd []string `json:"capAdd,omitempty"`
+
+		// CapDrop is a list of kernel capabilities to drop.
+		//
+		// Required: false
+		CapDrop []string `json:"capDrop,omitempty"`
+
+		// Mounts is a list of typed mounts (bind or volume).
+		//
+		// Required: false
+		Mounts []ContainerMountCreate `json:"mounts,omitempty"`
+
+		// Memory limit in bytes.
+		//
+		// Required: false
+		Memory int64 `json:"memory,omitempty"`
+
+		// MemorySwap limits total memory usage (memory + swap) in bytes.
+		//
+		// Required: false
+		MemorySwap int64 `json:"memorySwap,omitempty"`
+
+		// NanoCPUs is CPU allocation in nano CPUs.
+		//
+		// Required: false
+		NanoCPUs int64 `json:"nanoCpus,omitempty"`
+
+		// CPUShares is the relative CPU share weight.
+		//
+		// Required: false
+		CPUShares int64 `json:"cpuShares,omitempty"`
+	}
+
+	// ContainerEndpointSettingsCreate represents network endpoint settings for container creation.
+	ContainerEndpointSettingsCreate struct {
+		// IPv4Address is a static IPv4 address for the container on this network.
+		//
+		// Required: false
+		IPv4Address string `json:"ipv4Address,omitempty"`
+
+		// IPv6Address is a static IPv6 address for the container on this network.
+		//
+		// Required: false
+		IPv6Address string `json:"ipv6Address,omitempty"`
+		// Aliases for the container on this network.
+		//
+		// Required: false
+		Aliases []string `json:"aliases,omitempty"`
+	}
+
+	// ContainerMountCreate represents a typed mount (bind or volume) for container creation.
+	ContainerMountCreate struct {
+		// Type of the mount (bind or volume).
+		//
+		// Required: true
+		Type string `json:"type"`
+
+		// Source is the host path (bind) or volume name (volume).
+		//
+		// Required: true
+		Source string `json:"source"`
+
+		// Target path inside the container.
+		//
+		// Required: true
+		Target string `json:"target"`
+
+		// ReadOnly mounts the target read-only.
+		//
+		// Required: false
+		ReadOnly bool `json:"readOnly,omitempty"`
+	}
+
+	// ContainerHealthcheckCreate represents a container healthcheck configuration for
+	// create/edit requests. Duration values are expressed in seconds on the wire.
+	ContainerHealthcheckCreate struct {
+		// Test is the probe command. ["NONE"] disables an image-defined healthcheck.
+		//
+		// Required: false
+		Test []string `json:"test,omitempty"`
+
+		// Interval between probes, in seconds.
+		//
+		// Required: false
+		Interval int64 `json:"interval,omitempty"`
+
+		// Timeout for a single probe, in seconds.
+		//
+		// Required: false
+		Timeout int64 `json:"timeout,omitempty"`
+
+		// StartPeriod is the initialization grace period, in seconds.
+		//
+		// Required: false
+		StartPeriod int64 `json:"startPeriod,omitempty"`
+
+		// StartInterval is the probe interval during the start period, in seconds.
+		//
+		// Required: false
+		StartInterval int64 `json:"startInterval,omitempty"`
+
+		// Retries is the number of consecutive failures before unhealthy.
+		//
+		// Required: false
+		Retries int `json:"retries,omitempty"`
+	}
+
+	// ContainerNetworkingConfigCreate represents network configuration for container creation.
+	ContainerNetworkingConfigCreate struct {
+		// EndpointsConfig maps network names to endpoint settings.
+		//
+		// Required: false
+		EndpointsConfig map[string]ContainerEndpointSettingsCreate `json:"endpointsConfig,omitempty"`
+	}
+
+	// Container is the writable representation of a container.
+	Container struct {
+		// Labels to set on the container.
+		//
+		// Required: false
+		Labels map[string]string `json:"labels,omitempty"`
+
+		// ExposedPorts are ports exposed by the container.
+		//
+		// Required: false
+		ExposedPorts map[string]struct{} `json:"exposedPorts,omitempty"`
+
+		// Healthcheck overrides the image healthcheck. Test ["NONE"] disables it.
+		//
+		// Required: false
+		Healthcheck *ContainerHealthcheckCreate `json:"healthcheck,omitempty"`
+
+		// HostConfig holds advanced host-level settings.
+		//
+		// Required: false
+		HostConfig *ContainerHostConfigCreate `json:"hostConfig,omitempty"`
+
+		// NetworkingConfig defines network endpoints.
+		//
+		// Required: false
+		NetworkingConfig *ContainerNetworkingConfigCreate `json:"networkingConfig,omitempty"`
+
+		// Ports is a map of port bindings.
+		//
+		// Required: false
+		Ports map[string]string `json:"ports,omitempty"`
+
+		// Name of the container.
+		//
+		// Required: false
+		Name string `json:"name" required:"false"`
+
+		// Image to use for the container.
+		//
+		// Required: false
+		Image string `json:"image" required:"false"`
+
+		// WorkingDir is the working directory inside the container.
+		//
+		// Required: false
+		WorkingDir string `json:"workingDir,omitempty"`
+
+		// User to run the container as.
+		//
+		// Required: false
+		User string `json:"user,omitempty"`
+
+		// Hostname for the container.
+		//
+		// Required: false
+		Hostname string `json:"hostname,omitempty"`
+
+		// Domainname for the container.
+		//
+		// Required: false
+		Domainname string `json:"domainname,omitempty"`
+
+		// RestartPolicy for the container.
+		//
+		// Required: false
+		RestartPolicy string `json:"restartPolicy,omitempty"`
+
+		// Command to run in the container.
+		//
+		// Required: false
+		Command []string `json:"command,omitempty"`
+
+		// Cmd is an alias for Command.
+		//
+		// Required: false
+		Cmd []string `json:"cmd,omitempty"`
+
+		// Entrypoint for the container.
+		//
+		// Required: false
+		Entrypoint []string `json:"entrypoint,omitempty"`
+
+		// Environment variables for the container.
+		//
+		// Required: false
+		Environment []string `json:"environment,omitempty"`
+
+		// Env is an alias for Environment.
+		//
+		// Required: false
+		Env []string `json:"env,omitempty"`
+
+		// Volumes is a list of volume mounts.
+		//
+		// Required: false
+		Volumes []string `json:"volumes,omitempty"`
+
+		// Networks is a list of networks to connect to.
+		//
+		// Required: false
+		Networks []string `json:"networks,omitempty"`
+
+		// Credentials for pulling images from private registries.
+		//
+		// Required: false
+		Credentials []ContainerRegistryCredential `json:"credentials,omitempty" writeOnly:"true"`
+
+		// Memory limit for the container in bytes.
+		//
+		// Required: false
+		Memory int64 `json:"memory,omitempty"`
+
+		// CPUs is the number of CPUs to allocate.
+		//
+		// Required: false
+		CPUs float64 `json:"cpus,omitempty"`
+
+		// AttachStdout attaches stdout.
+		//
+		// Required: false
+		AttachStdout bool `json:"attachStdout,omitempty"`
+
+		// AttachStderr attaches stderr.
+		//
+		// Required: false
+		AttachStderr bool `json:"attachStderr,omitempty"`
+
+		// AttachStdin attaches stdin.
+		//
+		// Required: false
+		AttachStdin bool `json:"attachStdin,omitempty"`
+
+		// Tty allocates a pseudo-TTY.
+		//
+		// Required: false
+		Tty bool `json:"tty,omitempty"`
+
+		// OpenStdin keeps stdin open.
+		//
+		// Required: false
+		OpenStdin bool `json:"openStdin,omitempty"`
+
+		// StdinOnce closes stdin after first attach.
+		//
+		// Required: false
+		StdinOnce bool `json:"stdinOnce,omitempty"`
+
+		// NetworkDisabled disables networking.
+		//
+		// Required: false
+		NetworkDisabled bool `json:"networkDisabled,omitempty"`
+
+		// Privileged indicates if the container runs in privileged mode.
+		//
+		// Required: false
+		Privileged bool `json:"privileged,omitempty"`
+
+		// AutoRemove indicates if the container should be removed when stopped.
+		//
+		// Required: false
+		AutoRemove bool `json:"autoRemove,omitempty"`
+	}
+
+	// ContainerCommitRequest is used to create an image from a container's current filesystem.
+	ContainerCommitRequest struct {
+		// Repository is the target image repository.
+		//
+		// Required: false
+		Repository string `json:"repository,omitempty" doc:"Target image repository"`
+
+		// Tag is the target image tag.
+		//
+		// Required: false
+		Tag string `json:"tag,omitempty" doc:"Target image tag"`
+
+		// Comment records why the image was committed.
+		//
+		// Required: false
+		Comment string `json:"comment,omitempty" doc:"Commit comment"`
+
+		// Author records who created the committed image.
+		//
+		// Required: false
+		Author string `json:"author,omitempty" doc:"Commit author"`
+
+		// Changes contains Dockerfile-style changes to apply during commit.
+		//
+		// Required: false
+		Changes []string `json:"changes,omitempty" doc:"Dockerfile changes to apply"`
+
+		// NoPause disables the default pause during commit.
+		//
+		// Required: false
+		NoPause bool `json:"noPause,omitempty" doc:"Do not pause the container during commit"`
+	}
+
+	// ContainerCommitResult identifies the image created by a container commit.
+	ContainerCommitResult struct {
+		ID string `json:"id"`
+	}
+
+	// ContainerGenerateComposeRequest selects the containers to convert into a compose project.
+	ContainerGenerateComposeRequest struct {
+		ContainerIDs []string `json:"containerIds" minItems:"1" doc:"IDs of the containers to convert"`
+	}
+
+	// ContainerGenerateComposeResponse carries the compose file generated from containers.
+	ContainerGenerateComposeResponse struct {
+		ComposeContent string `json:"composeContent"`
+	}
+
+	// ContainerStatusCounts contains counts of containers by status.
+	ContainerStatusCounts struct {
+		// RunningContainers is the number of running containers.
+		//
+		// Required: true
+		RunningContainers int `json:"runningContainers"`
+
+		// StoppedContainers is the number of stopped containers.
+		//
+		// Required: true
+		StoppedContainers int `json:"stoppedContainers"`
+
+		// TotalContainers is the total number of containers.
+		//
+		// Required: true
+		TotalContainers int `json:"totalContainers"`
+
+		UnhealthyContainers int `json:"unhealthyContainers" doc:"Containers whose healthcheck reports unhealthy"`
+
+		UpdatesAvailable int `json:"updatesAvailable" doc:"Standalone containers with a pending image update"`
+	}
+
+	// ContainerActionResult represents the result of a container action (start/stop/etc).
+	ContainerActionResult struct {
+		// ActivityID is the background activity that tracked this action.
+		//
+		// Required: false
+		ActivityID *string `json:"activityId,omitempty"`
+		// Started is a list of container IDs that were started.
+		//
+		// Required: false
+		Started []string `json:"started,omitempty"`
+
+		// Stopped is a list of container IDs that were stopped.
+		//
+		// Required: false
+		Stopped []string `json:"stopped,omitempty"`
+
+		// Failed is a list of container IDs that failed.
+		//
+		// Required: false
+		Failed []string `json:"failed,omitempty"`
+
+		// Errors is a list of error messages encountered.
+		//
+		// Required: false
+		Errors []string `json:"errors,omitempty"`
+
+		// Success indicates if the overall action was successful.
+		//
+		// Required: true
+		Success bool `json:"success"`
+	}
+
+	// ContainerPort represents a port binding for a container.
+	ContainerPort struct {
+		// IP address the port is bound to.
+		//
+		// Required: false
+		IP string `json:"ip,omitempty"`
+
+		// Type is the protocol type (tcp/udp).
+		//
+		// Required: true
+		Type string `json:"type"`
+
+		// PrivatePort is the port inside the container.
+		//
+		// Required: true
+		PrivatePort int `json:"privatePort"`
+
+		// PublicPort is the port on the host.
+		//
+		// Required: false
+		PublicPort int `json:"publicPort,omitempty"`
+	}
+
+	// ContainerMount represents a volume mount for a container.
+	ContainerMount struct {
+		// Type of the mount (bind, volume, tmpfs).
+		//
+		// Required: true
+		Type string `json:"type"`
+
+		// Name of the volume (for volume mounts).
+		//
+		// Required: false
+		Name string `json:"name,omitempty"`
+
+		// Source path on the host.
+		//
+		// Required: false
+		Source string `json:"source,omitempty"`
+
+		// Destination path in the container.
+		//
+		// Required: true
+		Destination string `json:"destination"`
+
+		// Driver is the volume driver (for volume mounts).
+		//
+		// Required: false
+		Driver string `json:"driver,omitempty"`
+
+		// Mode specifies mount permissions.
+		//
+		// Required: false
+		Mode string `json:"mode,omitempty"`
+
+		// Propagation mode for the mount.
+		//
+		// Required: false
+		Propagation string `json:"propagation,omitempty"`
+
+		// RW indicates if the mount is read-write.
+		//
+		// Required: false
+		RW bool `json:"rw,omitempty"`
+	}
+
+	// ContainerNetworkEndpoint represents network endpoint settings for a container.
+	ContainerNetworkEndpoint struct {
+		// IPAMConfig contains IP address management configuration.
+		//
+		// Required: false
+		IPAMConfig any `json:"ipamConfig,omitempty"`
+
+		// DriverOpts contains driver-specific options.
+		//
+		// Required: false
+		DriverOpts map[string]string `json:"driverOpts,omitempty"`
+
+		// MacAddress of the container on this network.
+		//
+		// Required: false
+		MacAddress string `json:"macAddress,omitempty"`
+
+		// NetworkID is the ID of the network.
+		//
+		// Required: false
+		NetworkID string `json:"networkId,omitempty"`
+
+		// EndpointID is the ID of this endpoint.
+		//
+		// Required: false
+		EndpointID string `json:"endpointId,omitempty"`
+
+		// Gateway address for the network.
+		//
+		// Required: false
+		Gateway string `json:"gateway,omitempty"`
+
+		// IPAddress assigned to the container.
+		//
+		// Required: false
+		IPAddress string `json:"ipAddress,omitempty"`
+
+		// IPv6Gateway address for the network.
+		//
+		// Required: false
+		IPv6Gateway string `json:"ipv6Gateway,omitempty"`
+
+		// GlobalIPv6Address assigned to the container.
+		//
+		// Required: false
+		GlobalIPv6Address string `json:"globalIPv6Address,omitempty"`
+
+		// Links to other containers.
+		//
+		// Required: false
+		Links []string `json:"links,omitempty"`
+
+		// Aliases for the container on this network.
+		//
+		// Required: false
+		Aliases []string `json:"aliases,omitempty"`
+
+		// DNSNames are DNS names for this endpoint.
+		//
+		// Required: false
+		DNSNames []string `json:"dnsNames,omitempty"`
+
+		// GwPriority is the gateway priority.
+		//
+		// Required: false
+		GwPriority int `json:"gwPriority,omitempty"`
+
+		// IPPrefixLen is the IP prefix length.
+		//
+		// Required: false
+		IPPrefixLen int `json:"ipPrefixLen,omitempty"`
+
+		// GlobalIPv6PrefixLen is the IPv6 prefix length.
+		//
+		// Required: false
+		GlobalIPv6PrefixLen int `json:"globalIPv6PrefixLen,omitempty"`
+	}
+
+	// ContainerNetworkSettings contains network configuration for a container.
+	ContainerNetworkSettings struct {
+		// Networks is a map of network name to endpoint settings.
+		//
+		// Required: true
+		Networks map[string]ContainerNetworkEndpoint `json:"networks"`
+	}
+
+	// ContainerState represents the state of a container.
+	ContainerState struct {
+		// Health contains the healthcheck status, if the container defines one.
+		//
+		// Required: false
+		Health *ContainerHealth `json:"health,omitempty"`
+		// Status is the current status of the container.
+		//
+		// Required: true
+		Status string `json:"status"`
+
+		// StartedAt is when the container was started.
+		//
+		// Required: false
+		StartedAt string `json:"startedAt,omitempty"`
+
+		// FinishedAt is when the container finished.
+		//
+		// Required: false
+		FinishedAt string `json:"finishedAt,omitempty"`
+
+		// ExitCode is the exit code of the container process.
+		//
+		// Required: false
+		ExitCode int `json:"exitCode,omitempty"`
+
+		// Running indicates if the container is running.
+		//
+		// Required: true
+		Running bool `json:"running"`
+	}
+
+	// ContainerHealthLogEntry represents a single probe result from the healthcheck log.
+	ContainerHealthLogEntry struct {
+		// Start is when the probe started.
+		//
+		// Required: false
+		Start string `json:"start,omitempty"`
+
+		// End is when the probe finished.
+		//
+		// Required: false
+		End string `json:"end,omitempty"`
+
+		// Output is the stdout/stderr captured from the probe.
+		//
+		// Required: false
+		Output string `json:"output,omitempty"`
+
+		// ExitCode is the exit code of the probe command.
+		//
+		// Required: false
+		ExitCode int `json:"exitCode"`
+	}
+
+	// ContainerHealth represents the current healthcheck state of a container.
+	ContainerHealth struct {
+		// Status is the current healthcheck status (starting, healthy, unhealthy, none).
+		//
+		// Required: true
+		Status string `json:"status"`
+
+		// Log is the recent probe history, oldest first.
+		//
+		// Required: false
+		Log []ContainerHealthLogEntry `json:"log,omitempty"`
+
+		// FailingStreak is the number of consecutive failures.
+		//
+		// Required: false
+		FailingStreak int `json:"failingStreak"`
+	}
+
+	// ContainerHealthcheck represents a container's healthcheck configuration.
+	// Duration values are expressed in nanoseconds (Docker SDK convention).
+	ContainerHealthcheck struct {
+		// Test is the probe command. Common forms:
+		//  - empty / nil: inherit from the image
+		//  - ["NONE"]: healthcheck disabled
+		//  - ["CMD", "..."] / ["CMD-SHELL", "..."]: probe command
+		//
+		// Required: false
+		Test []string `json:"test,omitempty"`
+
+		// Interval between probes, in nanoseconds.
+		//
+		// Required: false
+		Interval int64 `json:"interval,omitempty"`
+
+		// Timeout for a single probe, in nanoseconds.
+		//
+		// Required: false
+		Timeout int64 `json:"timeout,omitempty"`
+
+		// StartPeriod is the initialization grace period, in nanoseconds.
+		//
+		// Required: false
+		StartPeriod int64 `json:"startPeriod,omitempty"`
+
+		// StartInterval is the probe interval during the start period, in nanoseconds.
+		//
+		// Required: false
+		StartInterval int64 `json:"startInterval,omitempty"`
+
+		// Retries is the number of consecutive failures before the container is marked unhealthy.
+		//
+		// Required: false
+		Retries int `json:"retries,omitempty"`
+	}
+
+	// ContainerConfig represents configuration details for a container.
+	ContainerConfig struct {
+		// Healthcheck is the container's healthcheck configuration.
+		//
+		// Required: false
+		Healthcheck *ContainerHealthcheck `json:"healthcheck,omitempty"`
+
+		// WorkingDir is the working directory.
+		//
+		// Required: false
+		WorkingDir string `json:"workingDir,omitempty"`
+
+		// User to run as.
+		//
+		// Required: false
+		User string `json:"user,omitempty"`
+
+		// Hostname of the container.
+		//
+		// Required: false
+		Hostname string `json:"hostname,omitempty"`
+
+		// Env is a list of environment variables.
+		//
+		// Required: false
+		Env []string `json:"env,omitempty"`
+
+		// Cmd is the command to run.
+		//
+		// Required: false
+		Cmd []string `json:"cmd,omitempty"`
+
+		// Entrypoint is the entrypoint for the container.
+		//
+		// Required: false
+		Entrypoint []string `json:"entrypoint,omitempty"`
+	}
+
+	// ContainerHostConfig represents host configuration for a container.
+	ContainerHostConfig struct {
+		// NetworkMode for the container.
+		//
+		// Required: false
+		NetworkMode string `json:"networkMode,omitempty"`
+
+		// RestartPolicy for the container.
+		//
+		// Required: false
+		RestartPolicy string `json:"restartPolicy,omitempty"`
+
+		// Privileged indicates if the container runs in privileged mode.
+		//
+		// Required: false
+		Privileged bool `json:"privileged,omitempty"`
+
+		// AutoRemove indicates if the container is removed when stopped.
+		//
+		// Required: false
+		AutoRemove bool `json:"autoRemove,omitempty"`
+
+		// NanoCPUs is CPU allocation in nano CPUs.
+		//
+		// Required: false
+		NanoCPUs int64 `json:"nanoCpus,omitempty"`
+
+		// Memory limit in bytes.
+		//
+		// Required: false
+		Memory int64 `json:"memory,omitempty"`
+	}
+
+	// ContainerResourceSample is a point-in-time resource usage sample for a container,
+	// returned with resource-sorted list responses so ordering and displayed
+	// values come from the same data.
+	ContainerResourceSample struct {
+		// SampleTime is when the sample was taken.
+		//
+		// Required: true
+		SampleTime time.Time `json:"sampleTime"`
+		// CPUPercent is the normalized CPU usage percentage (0-100 scale).
+		//
+		// Required: true
+		CPUPercent float64 `json:"cpuPercent"`
+
+		// MemoryUsageBytes is the memory usage in bytes.
+		//
+		// Required: true
+		MemoryUsageBytes uint64 `json:"memoryUsageBytes"`
+
+		// MemoryLimitBytes is the memory limit in bytes.
+		//
+		// Required: true
+		MemoryLimitBytes uint64 `json:"memoryLimitBytes"`
+	}
+
+	// ContainerResourceSampleSubscription is the client frame on the batched container stats
+	// stream naming the containers to sample. Each frame replaces the previous set.
+	ContainerResourceSampleSubscription struct {
+		// ContainerIDs are the containers to sample.
+		//
+		// Required: true
+		ContainerIDs []string `json:"containerIds"`
+	}
+
+	// ContainerResourceSampleBatch is one server frame on the batched container stats stream.
+	ContainerResourceSampleBatch struct {
+		// Timestamp is when the batch was sent.
+		//
+		// Required: true
+		Timestamp time.Time `json:"timestamp"`
+		// Samples maps container ID to its sample. Stopped, unknown and unsampled
+		// containers are omitted.
+		//
+		// Required: true
+		Samples map[string]*ContainerResourceSample `json:"samples"`
+
+		// Error describes why this round could not be sampled.
+		//
+		// Required: false
+		Error string `json:"error,omitempty"`
+	}
+
+	// ContainerSummary represents a container summary.
+	ContainerSummary struct {
+		// Labels contains user-defined metadata.
+		//
+		// Required: true
+		Labels map[string]string `json:"labels"`
+
+		// NetworkSettings contains network configuration.
+		//
+		// Required: true
+		NetworkSettings ContainerNetworkSettings `json:"networkSettings"`
+
+		// UpdateInfo contains image update information for this container.
+		//
+		// Required: false
+		UpdateInfo *ImageUpdateInfo `json:"updateInfo,omitempty"`
+
+		// ResourceSample holds the resource usage sample collected for a
+		// resource-sorted list request. Nil when the request was not resource-sorted
+		// or the sample was unavailable (stopped container or collection failure).
+		//
+		// Required: false
+		ResourceSample *ContainerResourceSample `json:"resourceSample,omitempty"`
+		EnvironmentTag
+
+		// ID is the unique identifier of the container.
+		//
+		// Required: true
+		ID string `json:"id"`
+
+		// Image used by the container.
+		//
+		// Required: true
+		Image string `json:"image"`
+
+		// ImageID is the ID of the image.
+		//
+		// Required: true
+		ImageID string `json:"imageId"`
+
+		// Command running in the container.
+		//
+		// Required: true
+		Command string `json:"command"`
+
+		// State is the current state of the container.
+		//
+		// Required: true
+		State string `json:"state"`
+
+		// Status provides a human-readable status.
+		//
+		// Required: true
+		Status string `json:"status"`
+
+		// IconLightURL is the resolved light icon URL for dark themes.
+		//
+		// Required: false
+		IconLightURL string `json:"iconLightUrl,omitempty"`
+
+		// IconDarkURL is the resolved dark icon URL for light themes.
+		//
+		// Required: false
+		IconDarkURL string `json:"iconDarkUrl,omitempty"`
+
+		// UpdateStrategy is the strategy resolved by the updater for this image and policy.
+		UpdateStrategy string `json:"updateStrategy,omitempty"`
+
+		// Names is a list of names for the container.
+		//
+		// Required: true
+		Names []string `json:"names"`
+
+		// Ports exposed by the container.
+		//
+		// Required: true
+		Ports []ContainerPort `json:"ports"`
+
+		// Mounts lists volume mounts.
+		//
+		// Required: true
+		Mounts []ContainerMount `json:"mounts"`
+
+		// HostConfig contains host configuration.
+		//
+		// Required: true
+		HostConfig ContainerHostConfig `json:"hostConfig"`
+
+		// Created is the Unix timestamp when the container was created.
+		//
+		// Required: true
+		Created int64 `json:"created"`
+
+		// RedeployDisabled indicates whether redeploy actions are disabled for this container.
+		//
+		// Required: false
+		RedeployDisabled bool `json:"redeployDisabled,omitempty"`
+
+		// AutoUpdateEnabled reports whether the container is eligible for auto-update
+		// under its updater label and the excluded-containers setting. It does not
+		// reflect whether the auto-update scheduler itself is enabled.
+		//
+		// Required: true
+		AutoUpdateEnabled bool `json:"autoUpdateEnabled"`
+
+		// Hidden indicates whether the container is hidden from lists and dashboard counts.
+		//
+		// Required: false
+		Hidden bool `json:"hidden,omitempty"`
+	}
+
+	// ContainerComposeInfo contains Docker Compose project information extracted from container labels.
+	ContainerComposeInfo struct {
+		// ProjectName is the name of the Docker Compose project.
+		//
+		// Required: true
+		ProjectName string `json:"projectName"`
+
+		// ServiceName is the name of the service within the Compose project.
+		//
+		// Required: true
+		ServiceName string `json:"serviceName"`
+
+		// WorkingDir is the working directory of the Compose project.
+		//
+		// Required: false
+		WorkingDir string `json:"workingDir,omitempty"`
+
+		// ConfigFiles is the list of Compose config file paths for the project.
+		//
+		// Required: false
+		ConfigFiles string `json:"configFiles,omitempty"`
+	}
+
+	// ContainerSummaryGroup represents a group of container summaries.
+	ContainerSummaryGroup struct {
+		// GroupName is the group label, such as a compose project name.
+		//
+		// Required: true
+		GroupName string `json:"groupName"`
+
+		// Items contains the container summaries in the group.
+		//
+		// Required: true
+		Items []ContainerSummary `json:"items"`
+	}
+
+	// ContainerDetails represents detailed container information.
+	ContainerDetails struct {
+		// Config contains container configuration.
+		//
+		// Required: true
+		Config ContainerConfig `json:"config"`
+
+		// State contains the container's current state.
+		//
+		// Required: true
+		State ContainerState `json:"state"`
+
+		// NetworkSettings contains network configuration.
+		//
+		// Required: true
+		NetworkSettings ContainerNetworkSettings `json:"networkSettings"`
+
+		// Labels contains user-defined metadata.
+		//
+		// Required: false
+		Labels map[string]string `json:"labels,omitempty"`
+
+		// ComposeInfo contains Docker Compose project information.
+		// Only present if container is part of a Compose project.
+		//
+		// Required: false
+		ComposeInfo *ContainerComposeInfo `json:"composeInfo,omitempty"`
+
+		// UpdateInfo is the stored update check matching this container's current policy.
+		//
+		// Required: false
+		UpdateInfo *ImageUpdateInfo `json:"updateInfo,omitempty"`
+
+		// ActivityID is the background activity that tracked the action returning these details.
+		//
+		// Required: false
+		ActivityID *string `json:"activityId,omitempty"`
+		// ID is the unique identifier of the container.
+		//
+		// Required: true
+		ID string `json:"id"`
+
+		// Name of the container.
+		//
+		// Required: true
+		Name string `json:"name"`
+
+		// Image used by the container.
+		//
+		// Required: true
+		Image string `json:"image"`
+
+		// ImageID is the ID of the image.
+		//
+		// Required: true
+		ImageID string `json:"imageId"`
+
+		// Created is when the container was created.
+		//
+		// Required: true
+		Created string `json:"created"`
+
+		// IconLightURL is the resolved light icon URL for dark themes.
+		//
+		// Required: false
+		IconLightURL string `json:"iconLightUrl,omitempty"`
+
+		// IconDarkURL is the resolved dark icon URL for light themes.
+		//
+		// Required: false
+		IconDarkURL string `json:"iconDarkUrl,omitempty"`
+
+		// Ports exposed by the container.
+		//
+		// Required: true
+		Ports []ContainerPort `json:"ports"`
+
+		// Mounts lists volume mounts.
+		//
+		// Required: true
+		Mounts []ContainerMount `json:"mounts"`
+
+		// HostConfig contains host-level configuration.
+		//
+		// Required: true
+		HostConfig ContainerHostConfig `json:"hostConfig"`
+
+		// RedeployDisabled indicates whether redeploy actions are disabled for this container.
+		//
+		// Required: false
+		RedeployDisabled bool `json:"redeployDisabled,omitempty"`
+
+		// AutoUpdateEnabled reports whether the container is eligible for auto-update
+		// under its updater label and the excluded-containers setting. It does not
+		// reflect whether the auto-update scheduler itself is enabled.
+		//
+		// Required: true
+		AutoUpdateEnabled bool `json:"autoUpdateEnabled"`
+	}
+
+	// ContainerCreated represents a newly created container.
+	ContainerCreated struct {
+		// ID is the unique identifier of the container.
+		//
+		// Required: true
+		ID string `json:"id"`
+
+		// Name of the container.
+		//
+		// Required: true
+		Name string `json:"name"`
+
+		// Image used by the container.
+		//
+		// Required: true
+		Image string `json:"image"`
+
+		// Status of the container.
+		//
+		// Required: true
+		Status string `json:"status"`
+
+		// Created is when the container was created.
+		//
+		// Required: true
+		Created string `json:"created"`
+	}
+
+	// ContainerHostConfigEdit carries host-level configuration changes for a container
+	// edit. Each field is a pointer: nil preserves the existing value, non-nil
+	// (even empty) replaces it.
+	ContainerHostConfigEdit struct {
+		// Binds is the full desired list of volume bindings.
+		//
+		// Required: false
+		Binds *[]string `json:"binds,omitempty"`
+
+		// Mounts is the full desired list of typed mounts.
+		//
+		// Required: false
+		Mounts *[]ContainerMountCreate `json:"mounts,omitempty"`
+
+		// PortBindings is the full desired port binding map.
+		//
+		// Required: false
+		PortBindings *map[string][]ContainerPortBindingCreate `json:"portBindings,omitempty"`
+
+		// RestartPolicy for the container.
+		//
+		// Required: false
+		RestartPolicy *ContainerRestartPolicyCreate `json:"restartPolicy,omitempty"`
+
+		// Privileged indicates if the container runs in privileged mode.
+		//
+		// Required: false
+		Privileged *bool `json:"privileged,omitempty"`
+
+		// CapAdd is the full desired list of added kernel capabilities.
+		//
+		// Required: false
+		CapAdd *[]string `json:"capAdd,omitempty"`
+
+		// CapDrop is the full desired list of dropped kernel capabilities.
+		//
+		// Required: false
+		CapDrop *[]string `json:"capDrop,omitempty"`
+
+		// AutoRemove indicates if the container is removed when stopped.
+		//
+		// Required: false
+		AutoRemove *bool `json:"autoRemove,omitempty"`
+
+		// ReadonlyRootfs makes the root filesystem read-only.
+		//
+		// Required: false
+		ReadonlyRootfs *bool `json:"readonlyRootfs,omitempty"`
+
+		// Memory limit in bytes.
+		//
+		// Required: false
+		Memory *int64 `json:"memory,omitempty"`
+
+		// MemorySwap limits total memory usage (memory + swap) in bytes.
+		//
+		// Required: false
+		MemorySwap *int64 `json:"memorySwap,omitempty"`
+
+		// NanoCPUs is CPU allocation in nano CPUs.
+		//
+		// Required: false
+		NanoCPUs *int64 `json:"nanoCpus,omitempty"`
+
+		// CPUShares is the relative CPU share weight.
+		//
+		// Required: false
+		CPUShares *int64 `json:"cpuShares,omitempty"`
+	}
+
+	// ContainerEdit describes configuration changes to apply when recreating a container.
+	// Each form-owned section is a pointer: nil preserves the inspected value,
+	// non-nil (even empty) replaces that section. Settings not represented here
+	// (sysctls, ulimits, log drivers, devices, tmpfs, DNS, ...) always carry over
+	// from the existing container untouched.
+	ContainerEdit struct {
+		// Name is the new container name.
+		//
+		// Required: false
+		Name *string `json:"name,omitempty"`
+
+		// Image reference to run.
+		//
+		// Required: false
+		Image *string `json:"image,omitempty"`
+
+		// WorkingDir is the working directory inside the container.
+		//
+		// Required: false
+		WorkingDir *string `json:"workingDir,omitempty"`
+
+		// User to run the container as.
+		//
+		// Required: false
+		User *string `json:"user,omitempty"`
+
+		// Hostname for the container. An empty value clears it.
+		//
+		// Required: false
+		Hostname *string `json:"hostname,omitempty"`
+
+		// Command to run in the container.
+		//
+		// Required: false
+		Command *[]string `json:"command,omitempty"`
+
+		// Entrypoint for the container.
+		//
+		// Required: false
+		Entrypoint *[]string `json:"entrypoint,omitempty"`
+
+		// Environment variables for the container.
+		//
+		// Required: false
+		Environment *[]string `json:"environment,omitempty"`
+
+		// Labels to set on the container.
+		//
+		// Required: false
+		Labels *map[string]string `json:"labels,omitempty"`
+
+		// Healthcheck replaces the container healthcheck when set.
+		//
+		// Required: false
+		Healthcheck *ContainerHealthcheckCreate `json:"healthcheck,omitempty"`
+
+		// HostConfig holds host-level configuration changes.
+		//
+		// Required: false
+		HostConfig *ContainerHostConfigEdit `json:"hostConfig,omitempty"`
+
+		// NetworkingConfig is the full desired network endpoint set. Nil preserves
+		// the existing attachments.
+		//
+		// Required: false
+		NetworkingConfig *ContainerNetworkingConfigCreate `json:"networkingConfig,omitempty"`
+
+		// Credentials for pulling images from private registries.
+		//
+		// Required: false
+		Credentials []ContainerRegistryCredential `json:"credentials,omitempty"`
+
+		// ClearHealthcheck reverts to the image-defined healthcheck.
+		//
+		// Required: false
+		ClearHealthcheck bool `json:"clearHealthcheck,omitempty"`
+	}
+
+	// ContainerEditConfigNetwork describes one desired network attachment as shown in the
+	// edit form.
+	ContainerEditConfigNetwork struct {
+		// IPv4Address is the configured static IPv4 address, if any.
+		//
+		// Required: false
+		IPv4Address string `json:"ipv4Address,omitempty"`
+
+		// IPv6Address is the configured static IPv6 address, if any.
+		//
+		// Required: false
+		IPv6Address string `json:"ipv6Address,omitempty"`
+		// Aliases for the container on this network.
+		//
+		// Required: false
+		Aliases []string `json:"aliases,omitempty"`
+	}
+
+	// ContainerEditConfigHostConfig is the host-config subset surfaced by the edit form.
+	ContainerEditConfigHostConfig struct {
+		// PortBindings maps container ports to host bindings.
+		//
+		// Required: false
+		PortBindings map[string][]ContainerPortBindingCreate `json:"portBindings,omitempty"`
+
+		// NetworkMode for the container.
+		//
+		// Required: false
+		NetworkMode string `json:"networkMode,omitempty"`
+
+		// Binds is the list of volume bindings.
+		//
+		// Required: false
+		Binds []string `json:"binds,omitempty"`
+
+		// Mounts is the list of typed mounts.
+		//
+		// Required: false
+		Mounts []ContainerMountCreate `json:"mounts,omitempty"`
+
+		// RestartPolicy for the container.
+		//
+		// Required: false
+		RestartPolicy ContainerRestartPolicyCreate `json:"restartPolicy"`
+
+		// CapAdd is the list of added kernel capabilities.
+		//
+		// Required: false
+		CapAdd []string `json:"capAdd,omitempty"`
+
+		// CapDrop is the list of dropped kernel capabilities.
+		//
+		// Required: false
+		CapDrop []string `json:"capDrop,omitempty"`
+
+		// Memory limit in bytes.
+		//
+		// Required: false
+		Memory int64 `json:"memory,omitempty"`
+
+		// MemorySwap limits total memory usage (memory + swap) in bytes.
+		//
+		// Required: false
+		MemorySwap int64 `json:"memorySwap,omitempty"`
+
+		// NanoCPUs is CPU allocation in nano CPUs.
+		//
+		// Required: false
+		NanoCPUs int64 `json:"nanoCpus,omitempty"`
+
+		// CPUShares is the relative CPU share weight.
+		//
+		// Required: false
+		CPUShares int64 `json:"cpuShares,omitempty"`
+
+		// Privileged indicates if the container runs in privileged mode.
+		//
+		// Required: false
+		Privileged bool `json:"privileged,omitempty"`
+
+		// AutoRemove indicates if the container is removed when stopped.
+		//
+		// Required: false
+		AutoRemove bool `json:"autoRemove,omitempty"`
+
+		// ReadonlyRootfs indicates a read-only root filesystem.
+		//
+		// Required: false
+		ReadonlyRootfs bool `json:"readonlyRootfs,omitempty"`
+	}
+
+	// ContainerEditConfig is the read DTO backing the container edit form.
+	ContainerEditConfig struct {
+		// Labels set on the container.
+		//
+		// Required: false
+		Labels map[string]string `json:"labels,omitempty"`
+
+		// Healthcheck configuration (durations in seconds), if the container
+		// defines one.
+		//
+		// Required: false
+		Healthcheck *ContainerHealthcheckCreate `json:"healthcheck,omitempty"`
+
+		// Networks maps network names to their desired endpoint settings.
+		//
+		// Required: false
+		Networks map[string]ContainerEditConfigNetwork `json:"networks,omitempty"`
+
+		// ID is the unique identifier of the container.
+		//
+		// Required: true
+		ID string `json:"id"`
+
+		// Name of the container.
+		//
+		// Required: true
+		Name string `json:"name"`
+
+		// Image reference the container was created from.
+		//
+		// Required: true
+		Image string `json:"image"`
+
+		// WorkingDir is the working directory inside the container.
+		//
+		// Required: false
+		WorkingDir string `json:"workingDir,omitempty"`
+
+		// User the container runs as.
+		//
+		// Required: false
+		User string `json:"user,omitempty"`
+
+		// Hostname of the container, omitted when it is the Docker default.
+		//
+		// Required: false
+		Hostname string `json:"hostname,omitempty"`
+
+		// ComposeProject is the owning compose project name, if any.
+		//
+		// Required: false
+		ComposeProject string `json:"composeProject,omitempty"`
+
+		// Command the container runs.
+		//
+		// Required: false
+		Command []string `json:"command,omitempty"`
+
+		// Entrypoint for the container.
+		//
+		// Required: false
+		Entrypoint []string `json:"entrypoint,omitempty"`
+
+		// Environment variables of the container.
+		//
+		// Required: false
+		Environment []string `json:"environment,omitempty"`
+
+		// HostConfig is the host-config subset surfaced by the edit form.
+		//
+		// Required: true
+		HostConfig ContainerEditConfigHostConfig `json:"hostConfig"`
+
+		// IsCompose indicates the container is managed by a compose project.
+		//
+		// Required: false
+		IsCompose bool `json:"isCompose,omitempty"`
+
+		// EditDisabled indicates edit actions are disabled for this container.
+		//
+		// Required: false
+		EditDisabled bool `json:"editDisabled,omitempty"`
+
+		// Running indicates whether the container is currently running.
+		//
+		// Required: true
+		Running bool `json:"running"`
+	}
+
+	// ContainerProcesses is the process snapshot Docker reports for a running container.
+	ContainerProcesses struct {
+		// Titles are the column headers Docker returned, in order.
+		//
+		// Required: true
+		Titles []string `json:"titles"`
+
+		// Processes are the rows Docker returned; each row is positional to Titles.
+		//
+		// Required: true
+		Processes [][]string `json:"processes"`
+	}
+)
 
 // Resource sort keys accepted by the container list endpoint. They are part of
 // the shared API contract: the manager's environment proxy inspects the sort
@@ -811,332 +1480,6 @@ const (
 // IsContainerResourceSort reports whether sort is a resource-based sort key.
 func IsContainerResourceSort(sort string) bool {
 	return sort == ContainerSortCPUUsage || sort == ContainerSortMemoryUsage
-}
-
-// ContainerResourceSample is a point-in-time resource usage sample for a container,
-// returned with resource-sorted list responses so ordering and displayed
-// values come from the same data.
-type ContainerResourceSample struct {
-	// SampleTime is when the sample was taken.
-	//
-	// Required: true
-	SampleTime time.Time `json:"sampleTime"`
-	// CPUPercent is the normalized CPU usage percentage (0-100 scale).
-	//
-	// Required: true
-	CPUPercent float64 `json:"cpuPercent"`
-
-	// MemoryUsageBytes is the memory usage in bytes.
-	//
-	// Required: true
-	MemoryUsageBytes uint64 `json:"memoryUsageBytes"`
-
-	// MemoryLimitBytes is the memory limit in bytes.
-	//
-	// Required: true
-	MemoryLimitBytes uint64 `json:"memoryLimitBytes"`
-}
-
-// ContainerResourceSampleSubscription is the client frame on the batched container stats
-// stream naming the containers to sample. Each frame replaces the previous set.
-type ContainerResourceSampleSubscription struct {
-	// ContainerIDs are the containers to sample.
-	//
-	// Required: true
-	ContainerIDs []string `json:"containerIds"`
-}
-
-// ContainerResourceSampleBatch is one server frame on the batched container stats stream.
-type ContainerResourceSampleBatch struct {
-	// Timestamp is when the batch was sent.
-	//
-	// Required: true
-	Timestamp time.Time `json:"timestamp"`
-	// Samples maps container ID to its sample. Stopped, unknown and unsampled
-	// containers are omitted.
-	//
-	// Required: true
-	Samples map[string]*ContainerResourceSample `json:"samples"`
-
-	// Error describes why this round could not be sampled.
-	//
-	// Required: false
-	Error string `json:"error,omitempty"`
-}
-
-// ContainerSummary represents a container summary.
-type ContainerSummary struct {
-	// Labels contains user-defined metadata.
-	//
-	// Required: true
-	Labels map[string]string `json:"labels"`
-
-	// NetworkSettings contains network configuration.
-	//
-	// Required: true
-	NetworkSettings ContainerNetworkSettings `json:"networkSettings"`
-
-	// UpdateInfo contains image update information for this container.
-	//
-	// Required: false
-	UpdateInfo *ImageUpdateInfo `json:"updateInfo,omitempty"`
-
-	// ResourceSample holds the resource usage sample collected for a
-	// resource-sorted list request. Nil when the request was not resource-sorted
-	// or the sample was unavailable (stopped container or collection failure).
-	//
-	// Required: false
-	ResourceSample *ContainerResourceSample `json:"resourceSample,omitempty"`
-	EnvironmentTag
-
-	// ID is the unique identifier of the container.
-	//
-	// Required: true
-	ID string `json:"id"`
-
-	// Image used by the container.
-	//
-	// Required: true
-	Image string `json:"image"`
-
-	// ImageID is the ID of the image.
-	//
-	// Required: true
-	ImageID string `json:"imageId"`
-
-	// Command running in the container.
-	//
-	// Required: true
-	Command string `json:"command"`
-
-	// State is the current state of the container.
-	//
-	// Required: true
-	State string `json:"state"`
-
-	// Status provides a human-readable status.
-	//
-	// Required: true
-	Status string `json:"status"`
-
-	// IconLightURL is the resolved light icon URL for dark themes.
-	//
-	// Required: false
-	IconLightURL string `json:"iconLightUrl,omitempty"`
-
-	// IconDarkURL is the resolved dark icon URL for light themes.
-	//
-	// Required: false
-	IconDarkURL string `json:"iconDarkUrl,omitempty"`
-
-	// UpdateStrategy is the strategy resolved by the updater for this image and policy.
-	UpdateStrategy string `json:"updateStrategy,omitempty"`
-
-	// Names is a list of names for the container.
-	//
-	// Required: true
-	Names []string `json:"names"`
-
-	// Ports exposed by the container.
-	//
-	// Required: true
-	Ports []ContainerPort `json:"ports"`
-
-	// Mounts lists volume mounts.
-	//
-	// Required: true
-	Mounts []ContainerMount `json:"mounts"`
-
-	// HostConfig contains host configuration.
-	//
-	// Required: true
-	HostConfig ContainerHostConfig `json:"hostConfig"`
-
-	// Created is the Unix timestamp when the container was created.
-	//
-	// Required: true
-	Created int64 `json:"created"`
-
-	// RedeployDisabled indicates whether redeploy actions are disabled for this container.
-	//
-	// Required: false
-	RedeployDisabled bool `json:"redeployDisabled,omitempty"`
-
-	// AutoUpdateEnabled reports whether the container is eligible for auto-update
-	// under its updater label and the excluded-containers setting. It does not
-	// reflect whether the auto-update scheduler itself is enabled.
-	//
-	// Required: true
-	AutoUpdateEnabled bool `json:"autoUpdateEnabled"`
-
-	// Hidden indicates whether the container is hidden from lists and dashboard counts.
-	//
-	// Required: false
-	Hidden bool `json:"hidden,omitempty"`
-}
-
-// ContainerComposeInfo contains Docker Compose project information extracted from container labels.
-type ContainerComposeInfo struct {
-	// ProjectName is the name of the Docker Compose project.
-	//
-	// Required: true
-	ProjectName string `json:"projectName"`
-
-	// ServiceName is the name of the service within the Compose project.
-	//
-	// Required: true
-	ServiceName string `json:"serviceName"`
-
-	// WorkingDir is the working directory of the Compose project.
-	//
-	// Required: false
-	WorkingDir string `json:"workingDir,omitempty"`
-
-	// ConfigFiles is the list of Compose config file paths for the project.
-	//
-	// Required: false
-	ConfigFiles string `json:"configFiles,omitempty"`
-}
-
-// ContainerSummaryGroup represents a group of container summaries.
-type ContainerSummaryGroup struct {
-	// GroupName is the group label, such as a compose project name.
-	//
-	// Required: true
-	GroupName string `json:"groupName"`
-
-	// Items contains the container summaries in the group.
-	//
-	// Required: true
-	Items []ContainerSummary `json:"items"`
-}
-
-// ContainerDetails represents detailed container information.
-type ContainerDetails struct {
-	// Config contains container configuration.
-	//
-	// Required: true
-	Config ContainerConfig `json:"config"`
-
-	// State contains the container's current state.
-	//
-	// Required: true
-	State ContainerState `json:"state"`
-
-	// NetworkSettings contains network configuration.
-	//
-	// Required: true
-	NetworkSettings ContainerNetworkSettings `json:"networkSettings"`
-
-	// Labels contains user-defined metadata.
-	//
-	// Required: false
-	Labels map[string]string `json:"labels,omitempty"`
-
-	// ComposeInfo contains Docker Compose project information.
-	// Only present if container is part of a Compose project.
-	//
-	// Required: false
-	ComposeInfo *ContainerComposeInfo `json:"composeInfo,omitempty"`
-
-	// UpdateInfo is the stored update check matching this container's current policy.
-	//
-	// Required: false
-	UpdateInfo *ImageUpdateInfo `json:"updateInfo,omitempty"`
-
-	// ActivityID is the background activity that tracked the action returning these details.
-	//
-	// Required: false
-	ActivityID *string `json:"activityId,omitempty"`
-	// ID is the unique identifier of the container.
-	//
-	// Required: true
-	ID string `json:"id"`
-
-	// Name of the container.
-	//
-	// Required: true
-	Name string `json:"name"`
-
-	// Image used by the container.
-	//
-	// Required: true
-	Image string `json:"image"`
-
-	// ImageID is the ID of the image.
-	//
-	// Required: true
-	ImageID string `json:"imageId"`
-
-	// Created is when the container was created.
-	//
-	// Required: true
-	Created string `json:"created"`
-
-	// IconLightURL is the resolved light icon URL for dark themes.
-	//
-	// Required: false
-	IconLightURL string `json:"iconLightUrl,omitempty"`
-
-	// IconDarkURL is the resolved dark icon URL for light themes.
-	//
-	// Required: false
-	IconDarkURL string `json:"iconDarkUrl,omitempty"`
-
-	// Ports exposed by the container.
-	//
-	// Required: true
-	Ports []ContainerPort `json:"ports"`
-
-	// Mounts lists volume mounts.
-	//
-	// Required: true
-	Mounts []ContainerMount `json:"mounts"`
-
-	// HostConfig contains host-level configuration.
-	//
-	// Required: true
-	HostConfig ContainerHostConfig `json:"hostConfig"`
-
-	// RedeployDisabled indicates whether redeploy actions are disabled for this container.
-	//
-	// Required: false
-	RedeployDisabled bool `json:"redeployDisabled,omitempty"`
-
-	// AutoUpdateEnabled reports whether the container is eligible for auto-update
-	// under its updater label and the excluded-containers setting. It does not
-	// reflect whether the auto-update scheduler itself is enabled.
-	//
-	// Required: true
-	AutoUpdateEnabled bool `json:"autoUpdateEnabled"`
-}
-
-// ContainerCreated represents a newly created container.
-type ContainerCreated struct {
-	// ID is the unique identifier of the container.
-	//
-	// Required: true
-	ID string `json:"id"`
-
-	// Name of the container.
-	//
-	// Required: true
-	Name string `json:"name"`
-
-	// Image used by the container.
-	//
-	// Required: true
-	Image string `json:"image"`
-
-	// Status of the container.
-	//
-	// Required: true
-	Status string `json:"status"`
-
-	// Created is when the container was created.
-	//
-	// Required: true
-	Created string `json:"created"`
 }
 
 // NewContainerSummary creates a ContainerSummary from a docker container.Summary.
@@ -1463,334 +1806,6 @@ func mapEndpointSettings(n *network.EndpointSettings) ContainerNetworkEndpoint {
 	}
 }
 
-// ContainerHostConfigEdit carries host-level configuration changes for a container
-// edit. Each field is a pointer: nil preserves the existing value, non-nil
-// (even empty) replaces it.
-type ContainerHostConfigEdit struct {
-	// Binds is the full desired list of volume bindings.
-	//
-	// Required: false
-	Binds *[]string `json:"binds,omitempty"`
-
-	// Mounts is the full desired list of typed mounts.
-	//
-	// Required: false
-	Mounts *[]ContainerMountCreate `json:"mounts,omitempty"`
-
-	// PortBindings is the full desired port binding map.
-	//
-	// Required: false
-	PortBindings *map[string][]ContainerPortBindingCreate `json:"portBindings,omitempty"`
-
-	// RestartPolicy for the container.
-	//
-	// Required: false
-	RestartPolicy *ContainerRestartPolicyCreate `json:"restartPolicy,omitempty"`
-
-	// Privileged indicates if the container runs in privileged mode.
-	//
-	// Required: false
-	Privileged *bool `json:"privileged,omitempty"`
-
-	// CapAdd is the full desired list of added kernel capabilities.
-	//
-	// Required: false
-	CapAdd *[]string `json:"capAdd,omitempty"`
-
-	// CapDrop is the full desired list of dropped kernel capabilities.
-	//
-	// Required: false
-	CapDrop *[]string `json:"capDrop,omitempty"`
-
-	// AutoRemove indicates if the container is removed when stopped.
-	//
-	// Required: false
-	AutoRemove *bool `json:"autoRemove,omitempty"`
-
-	// ReadonlyRootfs makes the root filesystem read-only.
-	//
-	// Required: false
-	ReadonlyRootfs *bool `json:"readonlyRootfs,omitempty"`
-
-	// Memory limit in bytes.
-	//
-	// Required: false
-	Memory *int64 `json:"memory,omitempty"`
-
-	// MemorySwap limits total memory usage (memory + swap) in bytes.
-	//
-	// Required: false
-	MemorySwap *int64 `json:"memorySwap,omitempty"`
-
-	// NanoCPUs is CPU allocation in nano CPUs.
-	//
-	// Required: false
-	NanoCPUs *int64 `json:"nanoCpus,omitempty"`
-
-	// CPUShares is the relative CPU share weight.
-	//
-	// Required: false
-	CPUShares *int64 `json:"cpuShares,omitempty"`
-}
-
-// ContainerEdit describes configuration changes to apply when recreating a container.
-// Each form-owned section is a pointer: nil preserves the inspected value,
-// non-nil (even empty) replaces that section. Settings not represented here
-// (sysctls, ulimits, log drivers, devices, tmpfs, DNS, ...) always carry over
-// from the existing container untouched.
-type ContainerEdit struct {
-	// Name is the new container name.
-	//
-	// Required: false
-	Name *string `json:"name,omitempty"`
-
-	// Image reference to run.
-	//
-	// Required: false
-	Image *string `json:"image,omitempty"`
-
-	// WorkingDir is the working directory inside the container.
-	//
-	// Required: false
-	WorkingDir *string `json:"workingDir,omitempty"`
-
-	// User to run the container as.
-	//
-	// Required: false
-	User *string `json:"user,omitempty"`
-
-	// Hostname for the container. An empty value clears it.
-	//
-	// Required: false
-	Hostname *string `json:"hostname,omitempty"`
-
-	// Command to run in the container.
-	//
-	// Required: false
-	Command *[]string `json:"command,omitempty"`
-
-	// Entrypoint for the container.
-	//
-	// Required: false
-	Entrypoint *[]string `json:"entrypoint,omitempty"`
-
-	// Environment variables for the container.
-	//
-	// Required: false
-	Environment *[]string `json:"environment,omitempty"`
-
-	// Labels to set on the container.
-	//
-	// Required: false
-	Labels *map[string]string `json:"labels,omitempty"`
-
-	// Healthcheck replaces the container healthcheck when set.
-	//
-	// Required: false
-	Healthcheck *ContainerHealthcheckCreate `json:"healthcheck,omitempty"`
-
-	// HostConfig holds host-level configuration changes.
-	//
-	// Required: false
-	HostConfig *ContainerHostConfigEdit `json:"hostConfig,omitempty"`
-
-	// NetworkingConfig is the full desired network endpoint set. Nil preserves
-	// the existing attachments.
-	//
-	// Required: false
-	NetworkingConfig *ContainerNetworkingConfigCreate `json:"networkingConfig,omitempty"`
-
-	// Credentials for pulling images from private registries.
-	//
-	// Required: false
-	Credentials []ContainerRegistryCredential `json:"credentials,omitempty"`
-
-	// ClearHealthcheck reverts to the image-defined healthcheck.
-	//
-	// Required: false
-	ClearHealthcheck bool `json:"clearHealthcheck,omitempty"`
-}
-
-// ContainerEditConfigNetwork describes one desired network attachment as shown in the
-// edit form.
-type ContainerEditConfigNetwork struct {
-	// IPv4Address is the configured static IPv4 address, if any.
-	//
-	// Required: false
-	IPv4Address string `json:"ipv4Address,omitempty"`
-
-	// IPv6Address is the configured static IPv6 address, if any.
-	//
-	// Required: false
-	IPv6Address string `json:"ipv6Address,omitempty"`
-	// Aliases for the container on this network.
-	//
-	// Required: false
-	Aliases []string `json:"aliases,omitempty"`
-}
-
-// ContainerEditConfigHostConfig is the host-config subset surfaced by the edit form.
-type ContainerEditConfigHostConfig struct {
-	// PortBindings maps container ports to host bindings.
-	//
-	// Required: false
-	PortBindings map[string][]ContainerPortBindingCreate `json:"portBindings,omitempty"`
-
-	// NetworkMode for the container.
-	//
-	// Required: false
-	NetworkMode string `json:"networkMode,omitempty"`
-
-	// Binds is the list of volume bindings.
-	//
-	// Required: false
-	Binds []string `json:"binds,omitempty"`
-
-	// Mounts is the list of typed mounts.
-	//
-	// Required: false
-	Mounts []ContainerMountCreate `json:"mounts,omitempty"`
-
-	// RestartPolicy for the container.
-	//
-	// Required: false
-	RestartPolicy ContainerRestartPolicyCreate `json:"restartPolicy"`
-
-	// CapAdd is the list of added kernel capabilities.
-	//
-	// Required: false
-	CapAdd []string `json:"capAdd,omitempty"`
-
-	// CapDrop is the list of dropped kernel capabilities.
-	//
-	// Required: false
-	CapDrop []string `json:"capDrop,omitempty"`
-
-	// Memory limit in bytes.
-	//
-	// Required: false
-	Memory int64 `json:"memory,omitempty"`
-
-	// MemorySwap limits total memory usage (memory + swap) in bytes.
-	//
-	// Required: false
-	MemorySwap int64 `json:"memorySwap,omitempty"`
-
-	// NanoCPUs is CPU allocation in nano CPUs.
-	//
-	// Required: false
-	NanoCPUs int64 `json:"nanoCpus,omitempty"`
-
-	// CPUShares is the relative CPU share weight.
-	//
-	// Required: false
-	CPUShares int64 `json:"cpuShares,omitempty"`
-
-	// Privileged indicates if the container runs in privileged mode.
-	//
-	// Required: false
-	Privileged bool `json:"privileged,omitempty"`
-
-	// AutoRemove indicates if the container is removed when stopped.
-	//
-	// Required: false
-	AutoRemove bool `json:"autoRemove,omitempty"`
-
-	// ReadonlyRootfs indicates a read-only root filesystem.
-	//
-	// Required: false
-	ReadonlyRootfs bool `json:"readonlyRootfs,omitempty"`
-}
-
-// ContainerEditConfig is the read DTO backing the container edit form.
-type ContainerEditConfig struct {
-	// Labels set on the container.
-	//
-	// Required: false
-	Labels map[string]string `json:"labels,omitempty"`
-
-	// Healthcheck configuration (durations in seconds), if the container
-	// defines one.
-	//
-	// Required: false
-	Healthcheck *ContainerHealthcheckCreate `json:"healthcheck,omitempty"`
-
-	// Networks maps network names to their desired endpoint settings.
-	//
-	// Required: false
-	Networks map[string]ContainerEditConfigNetwork `json:"networks,omitempty"`
-
-	// ID is the unique identifier of the container.
-	//
-	// Required: true
-	ID string `json:"id"`
-
-	// Name of the container.
-	//
-	// Required: true
-	Name string `json:"name"`
-
-	// Image reference the container was created from.
-	//
-	// Required: true
-	Image string `json:"image"`
-
-	// WorkingDir is the working directory inside the container.
-	//
-	// Required: false
-	WorkingDir string `json:"workingDir,omitempty"`
-
-	// User the container runs as.
-	//
-	// Required: false
-	User string `json:"user,omitempty"`
-
-	// Hostname of the container, omitted when it is the Docker default.
-	//
-	// Required: false
-	Hostname string `json:"hostname,omitempty"`
-
-	// ComposeProject is the owning compose project name, if any.
-	//
-	// Required: false
-	ComposeProject string `json:"composeProject,omitempty"`
-
-	// Command the container runs.
-	//
-	// Required: false
-	Command []string `json:"command,omitempty"`
-
-	// Entrypoint for the container.
-	//
-	// Required: false
-	Entrypoint []string `json:"entrypoint,omitempty"`
-
-	// Environment variables of the container.
-	//
-	// Required: false
-	Environment []string `json:"environment,omitempty"`
-
-	// HostConfig is the host-config subset surfaced by the edit form.
-	//
-	// Required: true
-	HostConfig ContainerEditConfigHostConfig `json:"hostConfig"`
-
-	// IsCompose indicates the container is managed by a compose project.
-	//
-	// Required: false
-	IsCompose bool `json:"isCompose,omitempty"`
-
-	// EditDisabled indicates edit actions are disabled for this container.
-	//
-	// Required: false
-	EditDisabled bool `json:"editDisabled,omitempty"`
-
-	// Running indicates whether the container is currently running.
-	//
-	// Required: true
-	Running bool `json:"running"`
-}
-
 // NewContainerEditConfigFromInspect builds an EditConfig from a docker inspect response.
 func NewContainerEditConfigFromInspect(c *container.InspectResponse, isCompose, editDisabled bool) ContainerEditConfig {
 	cfg := ContainerEditConfig{
@@ -1926,17 +1941,4 @@ func mapEditNetworks(c *container.InspectResponse) map[string]ContainerEditConfi
 	}
 
 	return out
-}
-
-// ContainerProcesses is the process snapshot Docker reports for a running container.
-type ContainerProcesses struct {
-	// Titles are the column headers Docker returned, in order.
-	//
-	// Required: true
-	Titles []string `json:"titles"`
-
-	// Processes are the rows Docker returned; each row is positional to Titles.
-	//
-	// Required: true
-	Processes [][]string `json:"processes"`
 }

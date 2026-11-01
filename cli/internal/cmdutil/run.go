@@ -18,22 +18,40 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 )
 
-// ListSpec describes a paginated list with raw JSON passthrough or table rendering.
-type ListSpec[T any] struct {
-	// Query holds extra query parameters, applied after pagination.
-	Query url.Values
+type (
+	// ListSpec describes a paginated list with raw JSON passthrough or table rendering.
+	ListSpec[T any] struct {
+		// Query holds extra query parameters, applied after pagination.
+		Query url.Values
 
-	Row func(T) []string
-	// Resource names the collection in error messages and the trailing
-	// "Showing x of y <resource>" line.
-	Resource string
-	// Endpoint is the list path (environment already applied).
-	Endpoint string
+		Row func(T) []string
+		// Resource names the collection in error messages and the trailing
+		// "Showing x of y <resource>" line.
+		Resource string
+		// Endpoint is the list path (environment already applied).
+		Endpoint string
 
-	Headers []string
-	// Params configures pagination from the command's flags.
-	Params ListParams
-}
+		Headers []string
+		// Params configures pagination from the command's flags.
+		Params ListParams
+	}
+
+	// Spec describes a request with raw JSON data output or typed text rendering.
+	// Render is required in text mode; a nil Render returns a programmer error before requesting.
+	Spec[T any] struct {
+		Body                         any
+		Render                       func(T) error
+		Method, Path, FailureMessage string
+		Timeout                      time.Duration
+	}
+
+	// DeleteSpec describes a confirmed DELETE with optional body and human-readable success output.
+	DeleteSpec struct {
+		Body                                         any
+		Prompt, Path, FailureMessage, SuccessMessage string
+		Force                                        bool
+	}
+)
 
 // RunList executes one standard list command as described by spec.
 func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) error {
@@ -98,15 +116,6 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 	return PrintTable(cmd, headers, rows, TableSummary{Resource: spec.Resource, Total: result.Pagination.TotalItems, Paginated: true})
 }
 
-// Spec describes a request with raw JSON data output or typed text rendering.
-// Render is required in text mode; a nil Render returns a programmer error before requesting.
-type Spec[T any] struct {
-	Body                         any
-	Render                       func(T) error
-	Method, Path, FailureMessage string
-	Timeout                      time.Duration
-}
-
 // Run enforces a success envelope and prints raw data in JSON mode or invokes Render in text mode.
 func Run[T any](cmd *cobra.Command, c *client.Client, spec Spec[T]) error {
 	jsonMode := JSONOutputEnabled(cmd)
@@ -145,13 +154,6 @@ func Run[T any](cmd *cobra.Command, c *client.Client, spec Spec[T]) error {
 		}
 	}
 	return spec.Render(data)
-}
-
-// DeleteSpec describes a confirmed DELETE with optional body and human-readable success output.
-type DeleteSpec struct {
-	Body                                         any
-	Prompt, Path, FailureMessage, SuccessMessage string
-	Force                                        bool
 }
 
 // RunDelete returns nil on cancellation, otherwise printing raw data in JSON mode or SuccessMessage in text mode.

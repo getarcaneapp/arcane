@@ -15,91 +15,91 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Handler struct {
-	service  *Service
-	activity *activity.ActivityService
-	appCtx   context.Context
-}
-
-type ListSystemBackupsInput struct {
-	Search       string `query:"search"`
-	Sort         string `query:"sort" default:"createdAt"`
-	Order        string `query:"order" default:"desc"`
-	Start        int    `query:"start" default:"0"`
-	Limit        int    `query:"limit" default:"20"`
-	IncludeTotal bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
-}
-
-type ListBackupHistoryInput struct {
-	Search       string `query:"search"`
-	Sort         string `query:"sort" default:"createdAt"`
-	Order        string `query:"order" default:"desc"`
-	Type         string `query:"type"`
-	Start        int    `query:"start" default:"0"`
-	Limit        int    `query:"limit" default:"20"`
-	IncludeTotal bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
-}
-
-type SystemBackupPoliciesOutput struct {
-	Body types.SystemBackupPolicyCollection
-}
-
-type UpdateSystemBackupPoliciesInput struct {
-	Body types.UpdateSystemBackupPolicies
-}
-
-type SetSystemBackupRecoveryKeyInput struct {
-	Body types.SystemBackupRecoveryKey
-}
-
-type SystemBackupRecoveryKeyOutput struct {
-	Body types.SystemBackupRecoveryKeyStatus
-}
-
-type GenerateSystemBackupRecoveryKeyInput struct {
-	Action string `query:"action" required:"true" enum:"generate" doc:"Recovery key action"`
-}
-
-type GenerateSystemBackupRecoveryKeyOutput struct {
-	Body types.SystemBackupRecoveryKey
-}
-
-type CreateSystemBackupInput struct {
-	Body types.CreateSystemBackupRequest
-}
-
 type (
+	Handler struct {
+		service  *Service
+		activity *activity.ActivityService
+		appCtx   context.Context
+	}
+
+	ListSystemBackupsInput struct {
+		Search       string `query:"search"`
+		Sort         string `query:"sort" default:"createdAt"`
+		Order        string `query:"order" default:"desc"`
+		Start        int    `query:"start" default:"0"`
+		Limit        int    `query:"limit" default:"20"`
+		IncludeTotal bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
+	}
+
+	ListBackupHistoryInput struct {
+		Search       string `query:"search"`
+		Sort         string `query:"sort" default:"createdAt"`
+		Order        string `query:"order" default:"desc"`
+		Type         string `query:"type"`
+		Start        int    `query:"start" default:"0"`
+		Limit        int    `query:"limit" default:"20"`
+		IncludeTotal bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
+	}
+
+	SystemBackupPoliciesOutput struct {
+		Body types.SystemBackupPolicyCollection
+	}
+
+	UpdateSystemBackupPoliciesInput struct {
+		Body types.UpdateSystemBackupPolicies
+	}
+
+	SetSystemBackupRecoveryKeyInput struct {
+		Body types.SystemBackupRecoveryKey
+	}
+
+	SystemBackupRecoveryKeyOutput struct {
+		Body types.SystemBackupRecoveryKeyStatus
+	}
+
+	GenerateSystemBackupRecoveryKeyInput struct {
+		Action string `query:"action" required:"true" enum:"generate" doc:"Recovery key action"`
+	}
+
+	GenerateSystemBackupRecoveryKeyOutput struct {
+		Body types.SystemBackupRecoveryKey
+	}
+
+	CreateSystemBackupInput struct {
+		Body types.CreateSystemBackupRequest
+	}
+
 	SystemBackupOutput       struct{ Body types.SystemBackupRun }
 	RestoreSystemBackupInput struct {
 		ID     string `path:"id"`
 		Action string `query:"action" required:"true" enum:"restore,restorefiles" doc:"Restore action"`
 		Body   types.RestoreSystemBackupFilesRequest
 	}
+
+	// BrowseSystemBackupFilesInput selects one page of a system backup tree.
+	BrowseSystemBackupFilesInput struct {
+		ID     string `path:"id"`
+		Path   string `query:"path" doc:"Folder path relative to the backup root"`
+		Search string `query:"search" doc:"Case-insensitive full-path search"`
+		Body   types.SystemBackupRecoveryKey
+		Start  int `query:"start" default:"0" doc:"Start index for the page"`
+		Limit  int `query:"limit" default:"20" doc:"Requested page size"`
+	}
+
+	UploadSystemBackupInput struct {
+		ID   string `path:"id"`
+		Body types.UploadSystemBackupRequest
+	}
+
+	DeleteSystemBackupInput struct {
+		ID   string `path:"id"`
+		Body types.DeleteSystemBackupRequest
+	}
+
+	DiscoverSystemBackupsInput struct {
+		Body types.DiscoverSystemBackupsRequest
+	}
 )
-
-// BrowseSystemBackupFilesInput selects one page of a system backup tree.
-type BrowseSystemBackupFilesInput struct {
-	ID     string `path:"id"`
-	Path   string `query:"path" doc:"Folder path relative to the backup root"`
-	Search string `query:"search" doc:"Case-insensitive full-path search"`
-	Body   types.SystemBackupRecoveryKey
-	Start  int `query:"start" default:"0" doc:"Start index for the page"`
-	Limit  int `query:"limit" default:"20" doc:"Requested page size"`
-}
-
-type UploadSystemBackupInput struct {
-	ID   string `path:"id"`
-	Body types.UploadSystemBackupRequest
-}
-
-type DeleteSystemBackupInput struct {
-	ID   string `path:"id"`
-	Body types.DeleteSystemBackupRequest
-}
-
-type DiscoverSystemBackupsInput struct {
-	Body types.DiscoverSystemBackupsRequest
-}
 
 func NewHandler(service *Service, activityService *activity.ActivityService, appCtx context.Context) *Handler {
 	return &Handler{service: service, activity: activityService, appCtx: appCtx}

@@ -22,6 +22,18 @@ import (
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
+type (
+	HTTPServerParams struct {
+		fx.In
+
+		AppCtx       context.Context
+		Config       *config.Config
+		Router       *echo.Echo
+		TunnelServer *agent.TunnelServer
+		Scheduler    types.JobScheduler
+	}
+)
+
 var serverOptions = fx.Options(
 	fx.Provide(
 		newRouter,
@@ -29,16 +41,6 @@ var serverOptions = fx.Options(
 		NewHTTPServer,
 	),
 )
-
-type HTTPServerParams struct {
-	fx.In
-
-	AppCtx       context.Context
-	Config       *config.Config
-	Router       *echo.Echo
-	TunnelServer *agent.TunnelServer
-	Scheduler    types.JobScheduler
-}
 
 // NewHTTPServer builds the shared HTTP/gRPC server and registers its lifecycle.
 func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {

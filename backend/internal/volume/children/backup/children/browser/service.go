@@ -17,23 +17,25 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/backupbrowser"
 )
 
-// Dependencies are the backup storage and repository operations the browser reads through.
-type Dependencies struct {
-	Docker          *docker.DockerClientService
-	Engine          *backup.Engine
-	Run             func(ctx context.Context, backupID string) (*types.VolumeBackup, error)
-	Repository      func(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (backup.Repository, string, error)
-	Password        func(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error)
-	SanitizePath    func(input string) (string, error)
-	ArchiveFilename func(backupID string) (string, error)
-	TempContainer   func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (string, func(), error)
-	Exec            func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
-}
+type (
+	// Dependencies are the backup storage and repository operations the browser reads through.
+	Dependencies struct {
+		Docker          *docker.DockerClientService
+		Engine          *backup.Engine
+		Run             func(ctx context.Context, backupID string) (*types.VolumeBackup, error)
+		Repository      func(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (backup.Repository, string, error)
+		Password        func(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error)
+		SanitizePath    func(input string) (string, error)
+		ArchiveFilename func(backupID string) (string, error)
+		TempContainer   func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (string, func(), error)
+		Exec            func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
+	}
 
-// Service lists and browses the files stored in volume backups.
-type Service struct {
-	deps Dependencies
-}
+	// Service lists and browses the files stored in volume backups.
+	Service struct {
+		deps Dependencies
+	}
+)
 
 func NewService(deps Dependencies) *Service {
 	return &Service{deps: deps}

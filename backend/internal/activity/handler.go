@@ -30,44 +30,53 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
 )
 
-type ActivityHandler struct {
-	activityService *ActivityService
-	environment     EnvironmentDependencies
-	remoteStreamHub *agg.Hub[types.ActivityStreamEvent]
-}
+type (
+	ActivityHandler struct {
+		activityService *ActivityService
+		environment     EnvironmentDependencies
+		remoteStreamHub *agg.Hub[types.ActivityStreamEvent]
+	}
 
-type EnvironmentDependencies struct {
-	ProxyJSONRequest               handlerutil.RemoteJSONProxy
-	ListActiveRemoteEnvironments   func(context.Context) ([]environment.Environment, error)
-	GetActiveRemoteEnvironment     func(string) mo.Option[environment.Environment]
-	ProxyJSONRequestForEnvironment func(context.Context, environment.Environment, string, string, []byte, any) error
-	ResolveEnvironmentName         func(context.Context, string) string
-	Changes                        *concurrency.Signal[types.EnvironmentChanges]
-	EnvironmentChanges             func(string) types.EnvironmentChanges
-}
+	EnvironmentDependencies struct {
+		ProxyJSONRequest               handlerutil.RemoteJSONProxy
+		ListActiveRemoteEnvironments   func(context.Context) ([]environment.Environment, error)
+		GetActiveRemoteEnvironment     func(string) mo.Option[environment.Environment]
+		ProxyJSONRequestForEnvironment func(context.Context, environment.Environment, string, string, []byte, any) error
+		ResolveEnvironmentName         func(context.Context, string) string
+		Changes                        *concurrency.Signal[types.EnvironmentChanges]
+		EnvironmentChanges             func(string) types.EnvironmentChanges
+	}
 
-type ListActivitiesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"desc" doc:"Sort direction"`
-	Status        string `query:"status" doc:"Filter by activity status"`
-	Type          string `query:"type" doc:"Filter by activity type"`
-	ResourceType  string `query:"resourceType" doc:"Filter by resource type"`
-	Start         int    `query:"start" default:"0" doc:"Start index"`
-	Limit         int    `query:"limit" default:"50" doc:"Limit"`
-	IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
-}
+	ListActivitiesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"desc" doc:"Sort direction"`
+		Status        string `query:"status" doc:"Filter by activity status"`
+		Type          string `query:"type" doc:"Filter by activity type"`
+		ResourceType  string `query:"resourceType" doc:"Filter by resource type"`
+		Start         int    `query:"start" default:"0" doc:"Start index"`
+		Limit         int    `query:"limit" default:"50" doc:"Limit"`
+		IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
+	}
 
-type GetActivityInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ActivityID    string `path:"activityId" doc:"Activity ID"`
-	Limit         int    `query:"limit" default:"500" doc:"Maximum messages to return"`
-}
+	GetActivityInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ActivityID    string `path:"activityId" doc:"Activity ID"`
+		Limit         int    `query:"limit" default:"500" doc:"Maximum messages to return"`
+	}
 
-type StreamAllActivitiesInput struct {
-	Limit int `query:"limit" default:"50" doc:"Snapshot limit per environment"`
-}
+	StreamAllActivitiesInput struct {
+		Limit int `query:"limit" default:"50" doc:"Snapshot limit per environment"`
+	}
+
+	ActivityActionInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ActivityID    string `path:"activityId" doc:"Activity ID"`
+		Action        string `query:"action" required:"true" enum:"cancel" doc:"Activity action"`
+		RequestedBy   string `query:"requestedBy" doc:"Display name to attribute the cancellation to (used when proxying to a remote environment)"`
+	}
+)
 
 const (
 	activityStreamHeartbeatInterval    = 15 * time.Second
@@ -75,13 +84,6 @@ const (
 	activityStreamEnvReconcileInterval = 30 * time.Second
 	activityStreamRemotePollTimeout    = 15 * time.Second
 )
-
-type ActivityActionInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ActivityID    string `path:"activityId" doc:"Activity ID"`
-	Action        string `query:"action" required:"true" enum:"cancel" doc:"Activity action"`
-	RequestedBy   string `query:"requestedBy" doc:"Display name to attribute the cancellation to (used when proxying to a remote environment)"`
-}
 
 func NewHandler(activityService *ActivityService, localEnvironment EnvironmentDependencies) *ActivityHandler {
 	return &ActivityHandler{

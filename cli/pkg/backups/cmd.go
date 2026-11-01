@@ -19,6 +19,19 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+type (
+	policiesUpdateOptions struct {
+		file          string
+		id            string
+		schedule      string
+		s3Destination string
+		retention     int
+		enabled       bool
+		local         bool
+		s3            bool
+	}
+)
+
 // Command is the parent command for Arcane system backup operations (admin-only).
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
@@ -571,17 +584,6 @@ func renderSystemPolicies(policies types.SystemBackupPolicyCollection) error {
 		}
 	}
 	return output.Table(headers, rows)
-}
-
-type policiesUpdateOptions struct {
-	file          string
-	id            string
-	schedule      string
-	s3Destination string
-	retention     int
-	enabled       bool
-	local         bool
-	s3            bool
 }
 
 func (opts policiesUpdateOptions) requestFromFile() (types.UpdateSystemBackupPolicies, error) {

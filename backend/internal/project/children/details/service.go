@@ -36,13 +36,15 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
-// Service reads project runtime state, include files and update checks.
-type Service struct {
-	db              *database.DB
-	dockerService   *dockerInternal.DockerClientService
-	imageService    *image.ImageService
-	settingsService *settings.SettingsService
-}
+type (
+	// Service reads project runtime state, include files and update checks.
+	Service struct {
+		db              *database.DB
+		dockerService   *dockerInternal.DockerClientService
+		imageService    *image.ImageService
+		settingsService *settings.SettingsService
+	}
+)
 
 func New(db *database.DB, dockerService *dockerInternal.DockerClientService, imageService *image.ImageService, settingsService *settings.SettingsService) *Service {
 	return &Service{

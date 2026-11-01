@@ -38,25 +38,49 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
-// Service edits Compose sources for image updates and persists rename journals in the KV store.
-// Project rows stay with the parent, which supplies their state through callbacks.
-type Service struct {
-	kv              *kv.KVService
-	dockerService   *docker.DockerClientService
-	registryService *registry.ContainerRegistryService
-	credentials     func(ctx context.Context) ([]types.ContainerRegistryCredential, error)
-	projectState    func(ctx context.Context, projectID string) (name, path string, found bool, err error)
-	restoreState    func(ctx context.Context, journal *types.ProjectRenameJournal) error
-}
+type (
+	// Service edits Compose sources for image updates and persists rename journals in the KV store.
+	// Project rows stay with the parent, which supplies their state through callbacks.
+	Service struct {
+		kv              *kv.KVService
+		dockerService   *docker.DockerClientService
+		registryService *registry.ContainerRegistryService
+		credentials     func(ctx context.Context) ([]types.ContainerRegistryCredential, error)
+		projectState    func(ctx context.Context, projectID string) (name, path string, found bool, err error)
+		restoreState    func(ctx context.Context, journal *types.ProjectRenameJournal) error
+	}
 
-type Params struct {
-	KVService       *kv.KVService
-	DockerService   *docker.DockerClientService
-	RegistryService *registry.ContainerRegistryService
-	Credentials     func(ctx context.Context) ([]types.ContainerRegistryCredential, error)
-	ProjectState    func(ctx context.Context, projectID string) (name, path string, found bool, err error)
-	RestoreState    func(ctx context.Context, journal *types.ProjectRenameJournal) error
-}
+	Params struct {
+		KVService       *kv.KVService
+		DockerService   *docker.DockerClientService
+		RegistryService *registry.ContainerRegistryService
+		Credentials     func(ctx context.Context) ([]types.ContainerRegistryCredential, error)
+		ProjectState    func(ctx context.Context, projectID string) (name, path string, found bool, err error)
+		RestoreState    func(ctx context.Context, journal *types.ProjectRenameJournal) error
+	}
+
+	// SyncState holds the paths an in-flight rename protects from filesystem sync.
+	SyncState struct {
+		SkipDiscoveredPaths map[string]struct{}
+		ProtectSeenPaths    map[string]struct{}
+	}
+
+	// composeImageEdit is an image scalar's source byte span and its replacement text.
+	composeImageEdit struct {
+		text       []byte
+		start, end int
+	}
+
+	RenameRequest struct {
+		Migration         types.VolumeMigration
+		OldDirName        *string
+		Name              *string
+		ProjectID         string
+		OldName           string
+		OldPath           string
+		ProjectsDirectory string
+	}
+)
 
 func New(p Params) *Service {
 	return &Service{
@@ -67,18 +91,6 @@ func New(p Params) *Service {
 		projectState:    p.ProjectState,
 		restoreState:    p.RestoreState,
 	}
-}
-
-// SyncState holds the paths an in-flight rename protects from filesystem sync.
-type SyncState struct {
-	SkipDiscoveredPaths map[string]struct{}
-	ProtectSeenPaths    map[string]struct{}
-}
-
-// composeImageEdit is an image scalar's source byte span and its replacement text.
-type composeImageEdit struct {
-	text       []byte
-	start, end int
 }
 
 // SyncState collects the paths pending renames protect during filesystem sync.
@@ -111,16 +123,6 @@ func (s *Service) SyncState(ctx context.Context) SyncState {
 	}
 
 	return state
-}
-
-type RenameRequest struct {
-	Migration         types.VolumeMigration
-	OldDirName        *string
-	Name              *string
-	ProjectID         string
-	OldName           string
-	OldPath           string
-	ProjectsDirectory string
 }
 
 // Prepare builds the journal for renaming a project, or nil when the name

@@ -2,27 +2,29 @@ package pagination
 
 import "strings"
 
-type FilterResult[T any] struct {
-	Items          []T
-	TotalCount     int64
-	TotalAvailable int64
-}
+type (
+	FilterResult[T any] struct {
+		Items          []T
+		TotalCount     int64
+		TotalAvailable int64
+	}
 
-type FilterAccessor[T any] struct {
-	Fn  func(item T, filterValue string) bool
-	Key string
-	// NoSplit passes the raw value through instead of treating commas as alternatives.
-	NoSplit bool
-}
+	FilterAccessor[T any] struct {
+		Fn  func(item T, filterValue string) bool
+		Key string
+		// NoSplit passes the raw value through instead of treating commas as alternatives.
+		NoSplit bool
+	}
 
-type Config[T any] struct {
-	SearchAccessors []SearchAccessor[T]
-	// SortBindings order matters: the first binding is the default sort when the
-	// requested key is empty or unknown, and serves as the tie-break for every
-	// other binding so pagination is deterministic.
-	SortBindings    []SortBinding[T]
-	FilterAccessors []FilterAccessor[T]
-}
+	Config[T any] struct {
+		SearchAccessors []SearchAccessor[T]
+		// SortBindings order matters: the first binding is the default sort when the
+		// requested key is empty or unknown, and serves as the tie-break for every
+		// other binding so pagination is deterministic.
+		SortBindings    []SortBinding[T]
+		FilterAccessors []FilterAccessor[T]
+	}
+)
 
 func (c Config[T]) SearchOrderAndPaginate(items []T, params QueryParams) FilterResult[T] {
 	totalAvailable := len(items)

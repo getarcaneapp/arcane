@@ -34,26 +34,45 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
-// Service runs manual and scheduled prunes, serializing them per environment.
-type Service struct {
-	location           *time.Location
-	dockerService      *dockerInternal.DockerClientService
-	activityService    *activity.ActivityService
-	imageUpdateService *imageupdate.ImageUpdateService
-	volumeService      *volume.VolumeService
-	networkService     *network.NetworkService
-	runningPrunes      map[string]string
-	pruneMu            sync.Mutex
-}
+type (
+	// Service runs manual and scheduled prunes, serializing them per environment.
+	Service struct {
+		location           *time.Location
+		dockerService      *dockerInternal.DockerClientService
+		activityService    *activity.ActivityService
+		imageUpdateService *imageupdate.ImageUpdateService
+		volumeService      *volume.VolumeService
+		networkService     *network.NetworkService
+		runningPrunes      map[string]string
+		pruneMu            sync.Mutex
+	}
 
-type ServiceParams struct {
-	Location           *time.Location
-	DockerService      *dockerInternal.DockerClientService
-	ActivityService    *activity.ActivityService
-	ImageUpdateService *imageupdate.ImageUpdateService
-	VolumeService      *volume.VolumeService
-	NetworkService     *network.NetworkService
-}
+	ServiceParams struct {
+		Location           *time.Location
+		DockerService      *dockerInternal.DockerClientService
+		ActivityService    *activity.ActivityService
+		ImageUpdateService *imageupdate.ImageUpdateService
+		VolumeService      *volume.VolumeService
+		NetworkService     *network.NetworkService
+	}
+
+	systemPruneBeginResult struct {
+		activityID string
+		started    mo.Option[struct{}]
+	}
+
+	pruneResource struct {
+		Kind  string   `json:"kind"`
+		ID    string   `json:"id"`
+		Names []string `json:"names,omitempty"`
+		Size  int64    `json:"size"`
+	}
+
+	prunePlan struct {
+		Request   types.PruneAllRequest `json:"request"`
+		Resources []pruneResource       `json:"resources"`
+	}
+)
 
 func NewService(p ServiceParams) *Service {
 	return &Service{
@@ -124,11 +143,6 @@ func (s *Service) StartPruneAll(ctx context.Context, environmentID string, req t
 		Success:    true,
 		ActivityID: mo.EmptyableToOption(strings.TrimSpace(prune.activityID)).ToPointer(),
 	}
-}
-
-type systemPruneBeginResult struct {
-	activityID string
-	started    mo.Option[struct{}]
 }
 
 func (s *Service) beginSystemPrune(ctx context.Context, environmentID string, req types.PruneAllRequest) systemPruneBeginResult {
@@ -497,18 +511,6 @@ func (s *Service) pruneNetworks(ctx context.Context, options types.PruneNetworks
 	slog.InfoContext(ctx, "Network prune completed", "networksDeleted", len(report.Report.NetworksDeleted))
 
 	return types.PruneAllResult{NetworksDeleted: report.Report.NetworksDeleted}, nil
-}
-
-type pruneResource struct {
-	Kind  string   `json:"kind"`
-	ID    string   `json:"id"`
-	Names []string `json:"names,omitempty"`
-	Size  int64    `json:"size"`
-}
-
-type prunePlan struct {
-	Request   types.PruneAllRequest `json:"request"`
-	Resources []pruneResource       `json:"resources"`
 }
 
 // PruneScheduled freezes exact targets before applying destructive work.

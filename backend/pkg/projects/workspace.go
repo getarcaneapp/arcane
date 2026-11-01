@@ -25,21 +25,37 @@ import (
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v3/pkg/workspace"
 )
 
+type (
+	ProjectWorkspaceApplyOptions struct {
+		ExpectedRevision string
+		SkipDirectories  string
+		ComposeFileName  string
+		MaxDepth         int
+		MaxEntries       int
+		MaxFileSizeBytes int64
+	}
+
+	projectWorkspaceTreeWalker struct {
+		ctx              context.Context
+		revisionHash     hash.Hash
+		protected        map[string]bool
+		skipDirs         map[string]bool
+		projectAbs       string
+		files            []types.WorkspaceFileEntry
+		maxDepth         int
+		maxEntries       int
+		maxFileSizeBytes int64
+		entryCount       int
+		truncated        bool
+	}
+)
+
 var (
 	ErrProjectWorkspaceRevisionConflict        = errors.New("project workspace changed; refresh it and try again")
 	ErrProjectWorkspaceOutsideProjectDirectory = errors.New("path is outside project directory")
 	ErrProjectWorkspaceProtectedPath           = errors.New("protected project configuration cannot be modified through the workspace")
 	ErrProjectWorkspaceSymlinkPath             = errors.New("symlink workspace paths are not supported")
 )
-
-type ProjectWorkspaceApplyOptions struct {
-	ExpectedRevision string
-	SkipDirectories  string
-	ComposeFileName  string
-	MaxDepth         int
-	MaxEntries       int
-	MaxFileSizeBytes int64
-}
 
 func ReadProjectWorkspace(
 	ctx context.Context,
@@ -89,20 +105,6 @@ func ReadProjectWorkspace(
 	})
 
 	return walker.files, hex.EncodeToString(walker.revisionHash.Sum(nil)), walker.truncated, nil
-}
-
-type projectWorkspaceTreeWalker struct {
-	ctx              context.Context
-	revisionHash     hash.Hash
-	protected        map[string]bool
-	skipDirs         map[string]bool
-	projectAbs       string
-	files            []types.WorkspaceFileEntry
-	maxDepth         int
-	maxEntries       int
-	maxFileSizeBytes int64
-	entryCount       int
-	truncated        bool
 }
 
 // walk visits the tree level by level (every top-level entry, then the next

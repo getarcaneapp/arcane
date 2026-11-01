@@ -19,16 +19,17 @@ const (
 	// TunnelEventTypeNotificationDispatch marks an event carrying a notification dispatch request in MetadataJSON;
 	// tunnel-connected agents lack manager HTTP config, so dispatch rides the event channel (#3002).
 	TunnelEventTypeNotificationDispatch = "notification.dispatch"
-
 	// agentEventTimeout bounds the manager's processing of one agent event.
 	agentEventTimeout = 15 * time.Second
 )
 
-// ErrNoActiveAgentTunnel is returned when no active agent tunnel exists for outbound event sync.
-var ErrNoActiveAgentTunnel = errors.New("no active agent tunnel")
+var (
+	// ErrNoActiveAgentTunnel is returned when no active agent tunnel exists for outbound event sync.
+	ErrNoActiveAgentTunnel = errors.New("no active agent tunnel")
 
-// activeAgentEvents is the live multiplexed session's client for posting events to the manager.
-var activeAgentEvents atomic.Pointer[http.Client]
+	// activeAgentEvents is the live multiplexed session's client for posting events to the manager.
+	activeAgentEvents atomic.Pointer[http.Client]
+)
 
 // PublishEventToManager sends an event from the active agent tunnel to the manager.
 func PublishEventToManager(ctx context.Context, event *TunnelEvent) error {

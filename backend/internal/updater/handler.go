@@ -16,33 +16,35 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// UpdaterHandler provides Huma-based updater management endpoints.
-type UpdaterHandler struct {
-	updaterService *UpdaterService
-	appCtx         context.Context
-}
+type (
+	// UpdaterHandler provides Huma-based updater management endpoints.
+	UpdaterHandler struct {
+		updaterService *UpdaterService
+		appCtx         context.Context
+	}
 
-type RunUpdaterInput struct {
-	Body          *types.UpdaterOptions `doc:"Updater run options"`
-	EnvironmentID string                `path:"id" doc:"Environment ID"`
-	Automatic     bool                  `query:"automatic" doc:"Honor updater opt-out labels and excluded containers, as automatic runs do"`
-}
+	RunUpdaterInput struct {
+		Body          *types.UpdaterOptions `doc:"Updater run options"`
+		EnvironmentID string                `path:"id" doc:"Environment ID"`
+		Automatic     bool                  `query:"automatic" doc:"Honor updater opt-out labels and excluded containers, as automatic runs do"`
+	}
 
-type UpdateContainerInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ContainerID   string `path:"containerId" doc:"Container ID to update"`
-	Async         bool   `query:"async" doc:"Return an accepted activity immediately instead of waiting for the update"`
-}
+	UpdateContainerInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ContainerID   string `path:"containerId" doc:"Container ID to update"`
+		Async         bool   `query:"async" doc:"Return an accepted activity immediately instead of waiting for the update"`
+	}
 
-type updateContainerOutput struct {
-	Body   types.ApiResponse[any]
-	Status int
-}
+	updateContainerOutput struct {
+		Body   types.ApiResponse[any]
+		Status int
+	}
 
-type GetUpdaterHistoryInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Limit         int    `query:"limit" default:"50" doc:"Number of history entries to return"`
-}
+	GetUpdaterHistoryInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Limit         int    `query:"limit" default:"50" doc:"Number of history entries to return"`
+	}
+)
 
 // RunUpdater applies pending container updates.
 func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput) (*handlerutil.Out[*types.UpdaterResult], error) {

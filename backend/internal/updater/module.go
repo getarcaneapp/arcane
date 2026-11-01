@@ -14,10 +14,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// Module wires the updater domain and mounts its routes.
-type Module struct {
-	service *UpdaterService
-}
+type (
+	// Module wires the updater domain and mounts its routes.
+	Module struct {
+		service *UpdaterService
+	}
+)
 
 // New assembles updater routes around the provided service.
 func New(service *UpdaterService) *Module {

@@ -9,33 +9,35 @@ import (
 	"kit.getarcane.app"
 )
 
+type (
+	expectation struct {
+		resourceType, resourceID, resourceName string
+	}
+
+	windowKey struct {
+		kind, name string
+		resource   expectation
+	}
+
+	window struct {
+		expires time.Time
+		active  int
+	}
+
+	// Service correlates Docker daemon observations with local Arcane actions.
+	Service struct {
+		expectations       map[expectation]time.Time
+		windows            map[windowKey]window
+		now                func() time.Time
+		updatingContainers func() []string
+		mu                 sync.Mutex
+	}
+)
+
 const (
 	expectationTTL         = 60 * time.Second
 	suppressionWindowGrace = 10 * time.Second
 )
-
-type expectation struct {
-	resourceType, resourceID, resourceName string
-}
-
-type windowKey struct {
-	kind, name string
-	resource   expectation
-}
-
-type window struct {
-	expires time.Time
-	active  int
-}
-
-// Service correlates Docker daemon observations with local Arcane actions.
-type Service struct {
-	expectations       map[expectation]time.Time
-	windows            map[windowKey]window
-	now                func() time.Time
-	updatingContainers func() []string
-	mu                 sync.Mutex
-}
 
 func NewService(now func() time.Time) *Service {
 	return &Service{now: now}

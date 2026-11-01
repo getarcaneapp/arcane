@@ -20,6 +20,17 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
+type (
+	// GitSyncEnvUpdate is the resolved three-file env change for one git sync.
+	GitSyncEnvUpdate struct {
+		gitEnvContent *string
+		// EffectiveContent is the merged .env content, or nil when none is kept.
+		EffectiveContent *string
+		overrideContent  string
+		State            projects.ProjectEnvState
+	}
+)
+
 func PersistEffectiveEnvContent(ctx context.Context, projectPath, projectsDirectory, envContent string) error {
 	state, err := projects.ReadProjectEnvState(projectPath)
 	if err != nil {
@@ -245,15 +256,6 @@ func PrepareGitSyncEnvUpdate(projectPath string, gitEnvContent *string) (GitSync
 		overrideContent:  overrideContent,
 		EffectiveContent: &effectiveContent,
 	}, nil
-}
-
-// GitSyncEnvUpdate is the resolved three-file env change for one git sync.
-type GitSyncEnvUpdate struct {
-	gitEnvContent *string
-	// EffectiveContent is the merged .env content, or nil when none is kept.
-	EffectiveContent *string
-	overrideContent  string
-	State            projects.ProjectEnvState
 }
 
 // PersistGitSyncEnvFiles writes a prepared env merge.

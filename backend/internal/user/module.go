@@ -11,11 +11,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Module struct {
-	service                  *UserService
-	invalidateUserTokenCache func(string)
-	settings                 *settings.SettingsService
-}
+type (
+	Module struct {
+		service                  *UserService
+		invalidateUserTokenCache func(string)
+		settings                 *settings.SettingsService
+	}
+)
 
 func New(service *UserService, invalidateUserTokenCache func(string), settingsService *settings.SettingsService) *Module {
 	return &Module{service: service, invalidateUserTokenCache: invalidateUserTokenCache, settings: settingsService}

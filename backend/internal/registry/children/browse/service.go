@@ -31,29 +31,31 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
+type (
+	// Service browses repositories and tags through the distribution API.
+	Service struct {
+		resolve       func(ctx context.Context, id string) (types.ContainerRegistry, *types.ContainerRegistryCredential, error)
+		lookupContext func(ctx context.Context) (context.Context, context.CancelFunc)
+		transport     http.RoundTripper
+		names         *hot.HotCache[string, []string]
+	}
+
+	// target is a configured registry resolved for the distribution API.
+	target struct {
+		registry name.Registry
+		// prefix is the repository namespace configured in the registry URL, if any.
+		prefix      string
+		cacheKey    string
+		nameOptions []name.Option
+		options     []remote.Option
+	}
+)
+
 const (
 	tagDetailsConcurrency = 4
 	maxBrowsePageSize     = 100
 	browseListCacheTTL    = 30 * time.Second
 )
-
-// Service browses repositories and tags through the distribution API.
-type Service struct {
-	resolve       func(ctx context.Context, id string) (types.ContainerRegistry, *types.ContainerRegistryCredential, error)
-	lookupContext func(ctx context.Context) (context.Context, context.CancelFunc)
-	transport     http.RoundTripper
-	names         *hot.HotCache[string, []string]
-}
-
-// target is a configured registry resolved for the distribution API.
-type target struct {
-	registry name.Registry
-	// prefix is the repository namespace configured in the registry URL, if any.
-	prefix      string
-	cacheKey    string
-	nameOptions []name.Option
-	options     []remote.Option
-}
 
 func NewService(
 	resolve func(ctx context.Context, id string) (types.ContainerRegistry, *types.ContainerRegistryCredential, error),

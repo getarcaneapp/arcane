@@ -22,11 +22,21 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
+type (
+	// SyncFile represents a file to be written during directory sync
+	SyncFile struct {
+		RelativePath string // Path relative to the project directory
+		Content      []byte
+		// Executable preserves the source's +x bit so lifecycle hooks and other
+		// repo-committed scripts arrive runnable in the project workspace.
+		Executable bool
+	}
+)
+
 const (
 	// DefaultComposeFileName is the compose filename Arcane writes when a project
 	// has no existing compose file.
 	DefaultComposeFileName = "compose.yaml"
-
 	// DefaultComposeOverrideFileName is the override filename Arcane writes when a
 	// project gains an override but has none on disk. It is deliberately
 	// composeOverrideFileCandidates[1] ("compose.override.yaml"), NOT [0]
@@ -37,19 +47,25 @@ const (
 	DefaultComposeOverrideFileName = "compose.override.yaml"
 )
 
-// composeFileCandidates lists supported base compose filenames in Arcane's
-// detection order. This order is intentionally explicit rather than sourced
-// from compose-go's cli.DefaultFileNames: compose-go prefers docker-compose.yml
-// over docker-compose.yaml, and adopting that order would silently switch the
-// base file for existing projects that ship both.
-var composeFileCandidates = []string{
-	DefaultComposeFileName,
-	"compose.yml",
-	"docker-compose.yaml",
-	"docker-compose.yml",
-	"podman-compose.yaml",
-	"podman-compose.yml",
-}
+var (
+	// composeFileCandidates lists supported base compose filenames in Arcane's
+	// detection order. This order is intentionally explicit rather than sourced
+	// from compose-go's cli.DefaultFileNames: compose-go prefers docker-compose.yml
+	// over docker-compose.yaml, and adopting that order would silently switch the
+	// base file for existing projects that ship both.
+	composeFileCandidates = []string{
+		DefaultComposeFileName,
+		"compose.yml",
+		"docker-compose.yaml",
+		"docker-compose.yml",
+		"podman-compose.yaml",
+		"podman-compose.yml",
+	}
+
+	// composeOverrideFileCandidates lists supported compose override filenames in
+	// detection order, sourced from compose-go.
+	composeOverrideFileCandidates = slices.Clone(cli.DefaultOverrideFileNames)
+)
 
 // ComposeFileCandidates returns the supported base compose filenames in Arcane's
 // detection order. A copy is returned so callers can't mutate package state.
@@ -314,15 +330,6 @@ func relocateRenameConflictDirectory(ctx context.Context, localPath string) (str
 	return "", fmt.Errorf("relocate project rename target path: no available conflict path for %s", localPath)
 }
 
-// SyncFile represents a file to be written during directory sync
-type SyncFile struct {
-	RelativePath string // Path relative to the project directory
-	Content      []byte
-	// Executable preserves the source's +x bit so lifecycle hooks and other
-	// repo-committed scripts arrive runnable in the project workspace.
-	Executable bool
-}
-
 // WriteSyncedDirectory writes multiple files to a project directory.
 // It validates all paths are within the project directory and creates
 // subdirectories as needed. Returns the list of written file paths.
@@ -432,10 +439,6 @@ func cleanupEmptyDirs(ctx context.Context, projectPath, startLogical string) {
 		}
 	}
 }
-
-// composeOverrideFileCandidates lists supported compose override filenames in
-// detection order, sourced from compose-go.
-var composeOverrideFileCandidates = slices.Clone(cli.DefaultOverrideFileNames)
 
 // ComposeOverrideFileCandidates returns the supported compose override filenames
 // in detection order. A copy is returned so callers can't mutate package state.

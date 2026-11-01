@@ -28,6 +28,32 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v3/internal/selfupdate"
 )
 
+type (
+	cliUpdateOptions struct {
+		version, target string
+		dryRun, verbose bool
+	}
+
+	cliUpdatePlan struct {
+		Channel           string `json:"channel"`
+		Version           string `json:"version"`
+		ArtifactName      string `json:"artifactName"`
+		ArtifactURL       string `json:"artifactUrl"`
+		ChecksumURL       string `json:"checksumUrl"`
+		BundleURL         string `json:"bundleUrl,omitempty"`
+		ArtifactSHA       string `json:"artifactSha"`
+		ExpectedSHA       string `json:"expectedSha,omitempty"`
+		CurrentSHA        string `json:"currentSha"`
+		TargetPath        string `json:"targetPath"`
+		SignatureVerified bool   `json:"signatureVerified"`
+		UpdateNeeded      bool   `json:"updateNeeded"`
+	}
+
+	githubLatestRelease struct {
+		TagName string `json:"tag_name"`
+	}
+)
+
 const (
 	cliUpdateChannelNext   = "next"
 	cliUpdateChannelStable = "stable"
@@ -39,30 +65,6 @@ const (
 )
 
 var errCLIUpdateNotFound = errors.New("HTTP 404 Not Found")
-
-type cliUpdateOptions struct {
-	version, target string
-	dryRun, verbose bool
-}
-
-type cliUpdatePlan struct {
-	Channel           string `json:"channel"`
-	Version           string `json:"version"`
-	ArtifactName      string `json:"artifactName"`
-	ArtifactURL       string `json:"artifactUrl"`
-	ChecksumURL       string `json:"checksumUrl"`
-	BundleURL         string `json:"bundleUrl,omitempty"`
-	ArtifactSHA       string `json:"artifactSha"`
-	ExpectedSHA       string `json:"expectedSha,omitempty"`
-	CurrentSHA        string `json:"currentSha"`
-	TargetPath        string `json:"targetPath"`
-	SignatureVerified bool   `json:"signatureVerified"`
-	UpdateNeeded      bool   `json:"updateNeeded"`
-}
-
-type githubLatestRelease struct {
-	TagName string `json:"tag_name"`
-}
 
 // Command updates the arcane-cli executable.
 func Command() *cobra.Command {

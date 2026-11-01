@@ -7,9 +7,11 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-type Module struct {
-	service *ApnsService
-}
+type (
+	Module struct {
+		service *ApnsService
+	}
+)
 
 func New(service *ApnsService) *Module {
 	return &Module{service: service}

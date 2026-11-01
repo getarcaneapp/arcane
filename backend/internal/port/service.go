@@ -17,9 +17,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-type PortService struct {
-	dockerService *dockerInternal.DockerClientService
-}
+type (
+	PortService struct {
+		dockerService *dockerInternal.DockerClientService
+	}
+)
 
 func NewPortService(dockerService *dockerInternal.DockerClientService) *PortService {
 	return &PortService{dockerService: dockerService}

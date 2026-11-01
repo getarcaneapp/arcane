@@ -19,17 +19,19 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
 )
 
-var resetMFAUsername string
+var (
+	resetMFAUsername string
 
-var resetMFACmd = &cobra.Command{
-	Use:   "reset-mfa",
-	Short: "Reset passkey MFA for a user",
-	Long: "Disable passkey MFA, remove recovery codes, cancel pending MFA transactions, and revoke the user's sessions. " +
-		"This command must be explicitly enabled with ARCANE_ALLOW_CLI_MFA_RESET=true.",
-	Args:         cobra.NoArgs,
-	SilenceUsage: true,
-	RunE:         runResetMFACommand,
-}
+	resetMFACmd = &cobra.Command{
+		Use:   "reset-mfa",
+		Short: "Reset passkey MFA for a user",
+		Long: "Disable passkey MFA, remove recovery codes, cancel pending MFA transactions, and revoke the user's sessions. " +
+			"This command must be explicitly enabled with ARCANE_ALLOW_CLI_MFA_RESET=true.",
+		Args:         cobra.NoArgs,
+		SilenceUsage: true,
+		RunE:         runResetMFACommand,
+	}
+)
 
 func init() {
 	resetMFACmd.Flags().StringVar(&resetMFAUsername, "username", defaultAdminUsername, "Username whose passkey MFA should be reset")

@@ -12,10 +12,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Module struct {
-	service *NotificationService
-	config  *config.Config
-}
+type (
+	Module struct {
+		service *NotificationService
+		config  *config.Config
+	}
+)
 
 func New(service *NotificationService, cfg *config.Config) *Module {
 	return &Module{service: service, config: cfg}

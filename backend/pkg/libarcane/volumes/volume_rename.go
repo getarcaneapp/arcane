@@ -23,31 +23,35 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
 )
 
-type dockerProjectVolumeRenameMigration struct {
-	dockerClient   *client.Client
-	oldComposeName string
-	newComposeName string
-	toolsImage     string
-	entries        []types.VolumeRenameEntry
-	createdNew     []types.VolumeRenameEntry
-	removedOld     []types.VolumeRenameEntry
-}
+type (
+	dockerProjectVolumeRenameMigration struct {
+		dockerClient   *client.Client
+		oldComposeName string
+		newComposeName string
+		toolsImage     string
+		entries        []types.VolumeRenameEntry
+		createdNew     []types.VolumeRenameEntry
+		removedOld     []types.VolumeRenameEntry
+	}
 
-type projectVolumeCopyRuntime struct {
-	Image string
-}
+	projectVolumeCopyRuntime struct {
+		Image string
+	}
+
+	MigrationConfig struct {
+		DockerClient *client.Client
+		OldProject   string
+		NewProject   string
+		ToolsImage   string
+		Entries      []types.VolumeRenameEntry
+	}
+)
 
 const (
 	projectVolumeCopyMountPath = "/volume"
 )
 
-type MigrationConfig struct {
-	DockerClient *client.Client
-	OldProject   string
-	NewProject   string
-	ToolsImage   string
-	Entries      []types.VolumeRenameEntry
-}
+var errProjectRenameRollbackSourceMissing = errors.New("source volume is missing and target volume may contain the only remaining data copy")
 
 // NewMigration prepares generic volume copies with caller-supplied target configuration.
 func NewMigration(cfg MigrationConfig) types.VolumeMigration {
@@ -612,8 +616,6 @@ func NewSourceCleanupError(sourceVolume string, err error) error {
 		Err:          err,
 	}
 }
-
-var errProjectRenameRollbackSourceMissing = errors.New("source volume is missing and target volume may contain the only remaining data copy")
 
 func NewTargetPreservedDuringRollbackError(vol types.VolumeJournalVolume, err error) error {
 	return &types.TargetPreservedDuringRollbackError{

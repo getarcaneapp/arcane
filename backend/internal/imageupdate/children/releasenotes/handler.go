@@ -13,18 +13,22 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-const statusClientClosedRequest = 499
+type (
+	Handler struct {
+		service *Service
+	}
 
-type Handler struct {
-	service *Service
-}
+	GetReleaseNotesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ImageRef      string `query:"imageRef" required:"true" doc:"Image reference"`
+		Version       string `query:"version" doc:"Target version or tag"`
+		Digest        string `query:"digest" doc:"Target manifest digest"`
+	}
+)
 
-type GetReleaseNotesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ImageRef      string `query:"imageRef" required:"true" doc:"Image reference"`
-	Version       string `query:"version" doc:"Target version or tag"`
-	Digest        string `query:"digest" doc:"Target manifest digest"`
-}
+const (
+	statusClientClosedRequest = 499
+)
 
 func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}

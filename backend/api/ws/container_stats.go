@@ -16,6 +16,10 @@ import (
 	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
 )
 
+const (
+	streamEndDrainGrace = 2 * time.Second
+)
+
 // ============================================================================
 // Container Stats WebSocket Endpoint
 // ============================================================================
@@ -62,8 +66,6 @@ func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 	onRemove()
 	return nil
 }
-
-const streamEndDrainGrace = 2 * time.Second
 
 func (h *WebSocketHandler) runContainerStatsHub(containerID string, hub *wshub.Hub) {
 	ctx, cancel := context.WithCancel(h.ctx)

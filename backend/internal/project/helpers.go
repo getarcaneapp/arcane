@@ -18,32 +18,53 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
-type builder interface {
-	BuildImage(ctx context.Context, environmentID string, req buildtypes.BuildRequest, progressWriter io.Writer, serviceName string, user *types.Actor) (*buildtypes.BuildResult, error)
-	BuildSettings() buildtypes.BuildSettings
-}
+type (
+	builder interface {
+		BuildImage(ctx context.Context, environmentID string, req buildtypes.BuildRequest, progressWriter io.Writer, serviceName string, user *types.Actor) (*buildtypes.BuildResult, error)
+		BuildSettings() buildtypes.BuildSettings
+	}
 
-// projectMetadataEnv carries the request-scoped inputs compose
-// resolution needs beyond the project itself, resolved once per list request.
-type projectMetadataEnv struct {
-	// settings is the snapshot shared by compose loads.
-	settings *settings.Settings
-	// gitOpsComposePaths maps preloaded GitOps sync IDs to their configured
-	// compose paths. Sync IDs that were preloaded but have no row map to "",
-	// which resolves the same way as a missing row; sync IDs absent from the
-	// map are queried per project.
-	gitOpsComposePaths map[string]string
-	pathMapper         func() *projects.PathMapper
+	// projectMetadataEnv carries the request-scoped inputs compose
+	// resolution needs beyond the project itself, resolved once per list request.
+	projectMetadataEnv struct {
+		// settings is the snapshot shared by compose loads.
+		settings *settings.Settings
+		// gitOpsComposePaths maps preloaded GitOps sync IDs to their configured
+		// compose paths. Sync IDs that were preloaded but have no row map to "",
+		// which resolves the same way as a missing row; sync IDs absent from the
+		// map are queried per project.
+		gitOpsComposePaths map[string]string
+		pathMapper         func() *projects.PathMapper
 
-	composeFiles      map[string]string
-	projectsDirectory string
+		composeFiles      map[string]string
+		projectsDirectory string
 
-	// composeFiles memoizes successfully resolved compose files by project ID.
-	// Failures are not stored so a later phase in the same request retries
-	// resolution instead of replaying an error that may have been transient.
-	composeFilesMu sync.Mutex
-	autoInjectEnv  bool
-}
+		// composeFiles memoizes successfully resolved compose files by project ID.
+		// Failures are not stored so a later phase in the same request retries
+		// resolution instead of replaying an error that may have been transient.
+		composeFilesMu sync.Mutex
+		autoInjectEnv  bool
+	}
+
+	// composeNameCache maps normalized compose project names to project
+	// IDs so a name lookup skips the projects table scan.
+	composeNameCache struct {
+		byName map[string]string
+		mu     sync.RWMutex
+	}
+
+	// projectCleanupDecision records a project the reconcile pass intends to delete,
+	// alongside the reason logged when the deletion is carried out.
+	projectCleanupDecision struct {
+		reason  string
+		project Project
+	}
+
+	// tagStore persists tag assignments for the tags child inside one transaction.
+	tagStore struct {
+		tx *gorm.DB
+	}
+)
 
 // composeFile memoizes successful compose file resolutions for the request.
 // The lock is not held across resolve, which does I/O; workers resolve
@@ -66,13 +87,6 @@ func (env *projectMetadataEnv) composeFile(projectID string, resolve func() (str
 	env.composeFiles[projectID] = path
 	env.composeFilesMu.Unlock()
 	return path, nil
-}
-
-// composeNameCache maps normalized compose project names to project
-// IDs so a name lookup skips the projects table scan.
-type composeNameCache struct {
-	byName map[string]string
-	mu     sync.RWMutex
 }
 
 func (c *composeNameCache) projectID(normalizedName string) mo.Option[string] {
@@ -122,13 +136,6 @@ func (c *composeNameCache) replace(byName map[string]string) {
 	c.mu.Unlock()
 }
 
-// projectCleanupDecision records a project the reconcile pass intends to delete,
-// alongside the reason logged when the deletion is carried out.
-type projectCleanupDecision struct {
-	reason  string
-	project Project
-}
-
 func deleteProjectWithTags(tx *gorm.DB, projectID string) error {
 	if err := tx.Where("project_id = ?", projectID).Delete(&ProjectTag{}).Error; err != nil {
 		return fmt.Errorf("delete project tags: %w", err)
@@ -169,11 +176,6 @@ func projectRecords(projectsList []Project) []types.ProjectRecord {
 		records[i] = projectRecord(p)
 	}
 	return records
-}
-
-// tagStore persists tag assignments for the tags child inside one transaction.
-type tagStore struct {
-	tx *gorm.DB
 }
 
 func (s tagStore) CountTag(projectID, name string, source types.ProjectTagSource) (int64, error) {

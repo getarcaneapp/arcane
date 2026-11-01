@@ -24,98 +24,100 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// OidcHandler handles OIDC authentication endpoints, plus OIDC group → role
-// mapping management (since mappings only make sense in the OIDC context).
-type OidcHandler struct {
-	authService    *auth.AuthService
-	passkeyService *passkey.PasskeyService
-	oidcService    *OidcService
-	roleService    *role.RoleService
-	userService    *user.UserService
-	config         *config.Config
-}
-
-type OidcHeaders struct {
-	Origin          string `header:"Origin"`
-	XForwardedHost  string `header:"X-Forwarded-Host"`
-	XForwardedProto string `header:"X-Forwarded-Proto"`
-	Host            string `header:"Host"`
-	UserAgent       string `header:"User-Agent"`
-}
-
-type GetOidcStatusInput struct{}
-
-type GetOidcStatusOutput struct {
-	Body types.OidcStatusInfo
-}
-
-type GetOidcAuthUrlInput struct {
-	OidcHeaders
-
-	Body types.OidcAuthUrlRequest
-}
-
-type GetOidcAuthUrlOutput struct {
-	SetCookie string `header:"Set-Cookie" doc:"OIDC state cookie"`
-	Body      types.OidcAuthUrlResponse
-}
-
-type HandleOidcCallbackInput struct {
-	OidcHeaders
-
-	OidcStateCookie string `cookie:"oidc_state" doc:"OIDC state cookie from auth URL request"`
-	Body            types.OidcCallbackRequest
-}
-
-type HandleOidcCallbackOutput struct {
-	Body      types.AuthenticationResponse
-	SetCookie []string `header:"Set-Cookie" doc:"Session and clear state cookies"`
-}
-
-type GetOidcConfigInput struct {
-	OidcHeaders
-}
-
-type GetOidcConfigOutput struct {
-	Body types.OidcConfigResponse
-}
-
-type InitiateDeviceAuthInput struct{}
-
-type InitiateDeviceAuthOutput struct {
-	Body types.OidcDeviceAuthResponse
-}
-
-type ExchangeDeviceTokenInput struct {
-	UserAgent string `header:"User-Agent"`
-	Body      types.OidcDeviceTokenRequest
-}
-
-type ExchangeDeviceTokenOutput struct {
-	Body types.AuthenticationResponse
-}
-
-type ListOidcRoleMappingsInput struct{}
-
-type CreateOidcRoleMappingInput struct {
-	types.Create[types.OidcRoleMapping]
-}
-
-type UpdateOidcRoleMappingInput struct {
-	ID string `path:"id" doc:"Mapping ID"`
-	types.Update[types.OidcRoleMapping]
-}
-
-type DeleteOidcRoleMappingInput struct {
-	ID string `path:"id" doc:"Mapping ID"`
-}
-
-type DeleteOidcRoleMappingOutput struct {
-	Body struct {
-		Message string `json:"message"`
-		Success bool   `json:"success"`
+type (
+	// OidcHandler handles OIDC authentication endpoints, plus OIDC group → role
+	// mapping management (since mappings only make sense in the OIDC context).
+	OidcHandler struct {
+		authService    *auth.AuthService
+		passkeyService *passkey.PasskeyService
+		oidcService    *OidcService
+		roleService    *role.RoleService
+		userService    *user.UserService
+		config         *config.Config
 	}
-}
+
+	OidcHeaders struct {
+		Origin          string `header:"Origin"`
+		XForwardedHost  string `header:"X-Forwarded-Host"`
+		XForwardedProto string `header:"X-Forwarded-Proto"`
+		Host            string `header:"Host"`
+		UserAgent       string `header:"User-Agent"`
+	}
+
+	GetOidcStatusInput struct{}
+
+	GetOidcStatusOutput struct {
+		Body types.OidcStatusInfo
+	}
+
+	GetOidcAuthUrlInput struct {
+		OidcHeaders
+
+		Body types.OidcAuthUrlRequest
+	}
+
+	GetOidcAuthUrlOutput struct {
+		SetCookie string `header:"Set-Cookie" doc:"OIDC state cookie"`
+		Body      types.OidcAuthUrlResponse
+	}
+
+	HandleOidcCallbackInput struct {
+		OidcHeaders
+
+		OidcStateCookie string `cookie:"oidc_state" doc:"OIDC state cookie from auth URL request"`
+		Body            types.OidcCallbackRequest
+	}
+
+	HandleOidcCallbackOutput struct {
+		Body      types.AuthenticationResponse
+		SetCookie []string `header:"Set-Cookie" doc:"Session and clear state cookies"`
+	}
+
+	GetOidcConfigInput struct {
+		OidcHeaders
+	}
+
+	GetOidcConfigOutput struct {
+		Body types.OidcConfigResponse
+	}
+
+	InitiateDeviceAuthInput struct{}
+
+	InitiateDeviceAuthOutput struct {
+		Body types.OidcDeviceAuthResponse
+	}
+
+	ExchangeDeviceTokenInput struct {
+		UserAgent string `header:"User-Agent"`
+		Body      types.OidcDeviceTokenRequest
+	}
+
+	ExchangeDeviceTokenOutput struct {
+		Body types.AuthenticationResponse
+	}
+
+	ListOidcRoleMappingsInput struct{}
+
+	CreateOidcRoleMappingInput struct {
+		types.Create[types.OidcRoleMapping]
+	}
+
+	UpdateOidcRoleMappingInput struct {
+		ID string `path:"id" doc:"Mapping ID"`
+		types.Update[types.OidcRoleMapping]
+	}
+
+	DeleteOidcRoleMappingInput struct {
+		ID string `path:"id" doc:"Mapping ID"`
+	}
+
+	DeleteOidcRoleMappingOutput struct {
+		Body struct {
+			Message string `json:"message"`
+			Success bool   `json:"success"`
+		}
+	}
+)
 
 // GetOidcStatus returns the OIDC configuration status.
 func (h *OidcHandler) GetOidcStatus(ctx context.Context, _ *GetOidcStatusInput) (*GetOidcStatusOutput, error) {

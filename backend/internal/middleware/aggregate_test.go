@@ -18,9 +18,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-type scopeTestInput struct {
-	ID string `path:"id"`
-}
+type (
+	scopeTestInput struct {
+		ID string `path:"id"`
+	}
+)
 
 func newScopeTestRouter(t *testing.T, limit int) (*echo.Echo, *[]*httpx.EnvironmentScope) {
 	t.Helper()

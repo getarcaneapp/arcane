@@ -19,12 +19,25 @@ import (
 	kit "kit.getarcane.app"
 )
 
-var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+type (
+	trackerStep struct {
+		key, label     string
+		status         int
+		current, total int64
+		bytes          bool
+	}
 
-var (
-	trackersMu     sync.Mutex
-	activeTrackers = make(map[*tracker]struct{})
-	terminalMu     sync.Mutex
+	tracker struct {
+		out                           io.Writer
+		stop, done                    chan struct{}
+		resumeOuter                   func()
+		steps                         []trackerStep
+		current, drawn, frame, paused int
+		once                          sync.Once
+		mu                            sync.Mutex
+		live                          bool
+		stopped                       bool
+	}
 )
 
 const (
@@ -34,24 +47,13 @@ const (
 	stepFailed
 )
 
-type trackerStep struct {
-	key, label     string
-	status         int
-	current, total int64
-	bytes          bool
-}
+var (
+	spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
-type tracker struct {
-	out                           io.Writer
-	stop, done                    chan struct{}
-	resumeOuter                   func()
-	steps                         []trackerStep
-	current, drawn, frame, paused int
-	once                          sync.Once
-	mu                            sync.Mutex
-	live                          bool
-	stopped                       bool
-}
+	trackersMu     sync.Mutex
+	activeTrackers = make(map[*tracker]struct{})
+	terminalMu     sync.Mutex
+)
 
 // StartTracker renders a checklist only for interactive text output.
 func StartTracker(ctx context.Context, out io.Writer, enabled bool, labels ...string) *tracker {

@@ -28,6 +28,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 )
 
+type (
+	// testRegistries is an in-memory registry store keyed by ID.
+	testRegistries map[string]types.ContainerRegistryCredential
+)
+
 // newTestRegistry starts an in-memory OCI registry and returns its
 // host as "localhost:PORT" so go-containerregistry resolves it over plain HTTP.
 func newTestRegistry(t *testing.T) string {
@@ -38,9 +43,6 @@ func newTestRegistry(t *testing.T) string {
 	require.NoError(t, err)
 	return "localhost:" + serverURL.Port()
 }
-
-// testRegistries is an in-memory registry store keyed by ID.
-type testRegistries map[string]types.ContainerRegistryCredential
 
 func (r testRegistries) add(registryURL, username, token string) string {
 	id := fmt.Sprintf("registry-%d", len(r)+1)

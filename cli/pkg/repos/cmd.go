@@ -18,6 +18,26 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+var repoRef = cmdutil.ResourceRef[types.GitRepository, types.GitRepository]{
+	Singular: "repository",
+	Plural:   "repositories",
+	IDHint:   "the repository ID",
+	ListCmd:  "arcane repos list",
+	GetPath:  func(_, identifier string) string { return clitypes.GitRepository(identifier) },
+	ListPath: func(string) string { return clitypes.GitRepositories() },
+	Matches: func(item types.GitRepository, identifierLower, original string) bool {
+		return strings.EqualFold(item.Name, original) || strings.EqualFold(item.ID, original) ||
+			strings.HasPrefix(strings.ToLower(item.ID), identifierLower) || strings.Contains(strings.ToLower(item.Name), identifierLower)
+	},
+	Label: func(match types.GitRepository) string {
+		return fmt.Sprintf("%s (%s)", match.Name, match.ID)
+	},
+	Promote: func(match types.GitRepository) *types.GitRepository { return &match },
+	Exact: func(item types.GitRepository, _, original string) bool {
+		return strings.EqualFold(item.Name, original) || strings.EqualFold(item.ID, original)
+	},
+}
+
 // Command is the parent command for git repository operations.
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
@@ -507,24 +527,4 @@ func newFilesCmd() *cobra.Command {
 	_ = cmd.MarkFlagRequired("branch")
 	cmd.Flags().StringVar(&opts.path, "path", "", "Path within repository")
 	return cmd
-}
-
-var repoRef = cmdutil.ResourceRef[types.GitRepository, types.GitRepository]{
-	Singular: "repository",
-	Plural:   "repositories",
-	IDHint:   "the repository ID",
-	ListCmd:  "arcane repos list",
-	GetPath:  func(_, identifier string) string { return clitypes.GitRepository(identifier) },
-	ListPath: func(string) string { return clitypes.GitRepositories() },
-	Matches: func(item types.GitRepository, identifierLower, original string) bool {
-		return strings.EqualFold(item.Name, original) || strings.EqualFold(item.ID, original) ||
-			strings.HasPrefix(strings.ToLower(item.ID), identifierLower) || strings.Contains(strings.ToLower(item.Name), identifierLower)
-	},
-	Label: func(match types.GitRepository) string {
-		return fmt.Sprintf("%s (%s)", match.Name, match.ID)
-	},
-	Promote: func(match types.GitRepository) *types.GitRepository { return &match },
-	Exact: func(item types.GitRepository, _, original string) bool {
-		return strings.EqualFold(item.Name, original) || strings.EqualFold(item.ID, original)
-	},
 }

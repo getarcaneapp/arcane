@@ -12,12 +12,44 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// Handler serves the swarm secret endpoints.
-type Handler struct {
-	service  *Service
-	audit    func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
-	mapError func(err error, fallback string) error
-}
+type (
+	// Handler serves the swarm secret endpoints.
+	Handler struct {
+		service  *Service
+		audit    func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
+		mapError func(err error, fallback string) error
+	}
+
+	ListSwarmSecretsInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
+
+	GetSwarmSecretInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		SecretID      string `path:"secretId" doc:"Secret ID"`
+	}
+
+	CreateSwarmSecretInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		types.Create[types.SwarmSecret]
+	}
+
+	UpdateSwarmSecretInput struct {
+		Body          types.SwarmSecretUpdateRequest
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		SecretID      string `path:"secretId" doc:"Secret ID"`
+	}
+
+	DeleteSwarmSecretInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		SecretID      string `path:"secretId" doc:"Secret ID"`
+	}
+)
 
 func NewHandler(
 	service *Service,
@@ -25,36 +57,6 @@ func NewHandler(
 	mapError func(err error, fallback string) error,
 ) *Handler {
 	return &Handler{service: service, audit: audit, mapError: mapError}
-}
-
-type ListSwarmSecretsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
-
-type GetSwarmSecretInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	SecretID      string `path:"secretId" doc:"Secret ID"`
-}
-
-type CreateSwarmSecretInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	types.Create[types.SwarmSecret]
-}
-
-type UpdateSwarmSecretInput struct {
-	Body          types.SwarmSecretUpdateRequest
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	SecretID      string `path:"secretId" doc:"Secret ID"`
-}
-
-type DeleteSwarmSecretInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	SecretID      string `path:"secretId" doc:"Secret ID"`
 }
 
 // ListSecrets lists swarm secrets in the current environment.

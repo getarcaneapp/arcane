@@ -15,24 +15,30 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
 )
 
-const admissionType = "resource-admission"
+type (
+	Admission struct {
+		service *actor.Service
+		pending map[string]map[string]types.SchedulerAdmissionCommand
+		epoch   string
+		mu      sync.Mutex
+	}
 
-type Admission struct {
-	service *actor.Service
-	pending map[string]map[string]types.SchedulerAdmissionCommand
-	epoch   string
-	mu      sync.Mutex
-}
-type Lease struct {
-	admission *Admission
-	id        string
-	token     string
-	once      sync.Once
-}
-type admissionActor struct {
-	service *actor.Service
-	id      string
-}
+	Lease struct {
+		admission *Admission
+		id        string
+		token     string
+		once      sync.Once
+	}
+
+	admissionActor struct {
+		service *actor.Service
+		id      string
+	}
+)
+
+const (
+	admissionType = "resource-admission"
+)
 
 func NewAdmission(service *actor.Service, epoch string) *Admission {
 	return &Admission{service: service, epoch: epoch, pending: make(map[string]map[string]types.SchedulerAdmissionCommand)}

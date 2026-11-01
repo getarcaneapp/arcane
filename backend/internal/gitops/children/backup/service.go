@@ -32,27 +32,70 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
-// Service runs backup syncs. Branch locks, sync limits and error events stay
-// with the parent and arrive as callbacks.
-type Service struct {
-	db             *database.DB
-	repoService    *gitrepo.GitRepositoryService
-	projectService *projectpkg.ProjectService
-	eventService   *event.EventService
-	limits         func(context.Context, *projectpkg.GitOpsSync) (int, int64, int64)
-	logError       func(context.Context, *projectpkg.GitOpsSync, types.Actor, string)
-	branchLock     func(repositoryID, branch string) *sync.Mutex
-}
+type (
+	// Service runs backup syncs. Branch locks, sync limits and error events stay
+	// with the parent and arrive as callbacks.
+	Service struct {
+		db             *database.DB
+		repoService    *gitrepo.GitRepositoryService
+		projectService *projectpkg.ProjectService
+		eventService   *event.EventService
+		limits         func(context.Context, *projectpkg.GitOpsSync) (int, int64, int64)
+		logError       func(context.Context, *projectpkg.GitOpsSync, types.Actor, string)
+		branchLock     func(repositoryID, branch string) *sync.Mutex
+	}
 
-type Params struct {
-	DB             *database.DB
-	RepoService    *gitrepo.GitRepositoryService
-	ProjectService *projectpkg.ProjectService
-	EventService   *event.EventService
-	Limits         func(context.Context, *projectpkg.GitOpsSync) (int, int64, int64)
-	LogError       func(context.Context, *projectpkg.GitOpsSync, types.Actor, string)
-	BranchLock     func(repositoryID, branch string) *sync.Mutex
-}
+	Params struct {
+		DB             *database.DB
+		RepoService    *gitrepo.GitRepositoryService
+		ProjectService *projectpkg.ProjectService
+		EventService   *event.EventService
+		Limits         func(context.Context, *projectpkg.GitOpsSync) (int, int64, int64)
+		LogError       func(context.Context, *projectpkg.GitOpsSync, types.Actor, string)
+		BranchLock     func(repositoryID, branch string) *sync.Mutex
+	}
+
+	// backupCreateConfig is the validated backup configuration for a new sync.
+	backupCreateConfig struct {
+		project     *projectpkg.Project
+		directory   string
+		composeFile string
+		paths       []string
+	}
+
+	// backupSnapshot is the set of project files a backup run commits.
+	backupSnapshot struct {
+		hashes map[string]string
+		files  []git.CommitFile
+	}
+
+	// backupAnalysis is the decision for one backup run.
+	backupAnalysis struct {
+		state     string
+		changes   []types.GitOpsBackupFileChange
+		conflicts []types.GitOpsBackupFileChange
+		remove    []string
+	}
+)
+
+const (
+	DefaultBackupIntervalMinutes = 5
+	DefaultBackupSaveDebounce    = 10 * time.Second
+	BackupPushAttempts           = 3
+	BackupStatusRunning          = "running"
+	BackupStatusConflict         = "conflict"
+	BackupCommitFileLines        = 20
+	BackupSnapshotMaxRetry       = 3
+	LegacyBackupManifestFileName = ".arcane-backup.json"
+	BackupPreviewClean           = "clean"
+	BackupPreviewChanges         = "changes"
+	BackupPreviewConflict        = "conflict"
+	BackupPreviewOccupied        = "destination_occupied"
+	BackupChangeAdded            = "added"
+	BackupChangeModified         = "modified"
+	BackupChangeRemoved          = "removed"
+	DefaultBackupHistoryLimit    = 20
+)
 
 func New(p Params) *Service {
 	return &Service{
@@ -83,14 +126,6 @@ func (s *Service) ApplyCreate(ctx context.Context, tx *gorm.DB, req types.GitOps
 	syncRecord.AutoSync = kit.Ternary(submitted["autoSync"], req.AutoSync, true)
 	syncRecord.SyncInterval = kit.Ternary(submitted["syncInterval"], req.SyncInterval, DefaultBackupIntervalMinutes)
 	return nil
-}
-
-// backupCreateConfig is the validated backup configuration for a new sync.
-type backupCreateConfig struct {
-	project     *projectpkg.Project
-	directory   string
-	composeFile string
-	paths       []string
 }
 
 // prepareBackupCreate validates a backup create request against the project and other backups on the branch.
@@ -506,20 +541,6 @@ func (s *Service) Preview(previewCtx context.Context, syncRecord *projectpkg.Git
 	}, nil
 }
 
-// backupSnapshot is the set of project files a backup run commits.
-type backupSnapshot struct {
-	hashes map[string]string
-	files  []git.CommitFile
-}
-
-// backupAnalysis is the decision for one backup run.
-type backupAnalysis struct {
-	state     string
-	changes   []types.GitOpsBackupFileChange
-	conflicts []types.GitOpsBackupFileChange
-	remove    []string
-}
-
 // backupComposeFiles resolves the primary compose file and sibling overrides as project-relative paths.
 func (s *Service) backupComposeFiles(ctx context.Context, project *projectpkg.Project) (string, []string, error) {
 	composePath, err := s.projectService.ResolveProjectComposeFile(ctx, project)
@@ -734,27 +755,6 @@ func diffBackupHashes(local, remote map[string]string) []types.GitOpsBackupFileC
 	sort.Slice(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
 	return changes
 }
-
-const (
-	DefaultBackupIntervalMinutes = 5
-	DefaultBackupSaveDebounce    = 10 * time.Second
-	BackupPushAttempts           = 3
-	BackupStatusRunning          = "running"
-	BackupStatusConflict         = "conflict"
-	BackupCommitFileLines        = 20
-
-	BackupSnapshotMaxRetry       = 3
-	LegacyBackupManifestFileName = ".arcane-backup.json"
-	BackupPreviewClean           = "clean"
-	BackupPreviewChanges         = "changes"
-	BackupPreviewConflict        = "conflict"
-	BackupPreviewOccupied        = "destination_occupied"
-	BackupChangeAdded            = "added"
-	BackupChangeModified         = "modified"
-	BackupChangeRemoved          = "removed"
-
-	DefaultBackupHistoryLimit = 20
-)
 
 // backupSelectionCovers reports whether the selection includes file directly or via a parent directory.
 func backupSelectionCovers(paths []string, file string) bool {

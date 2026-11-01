@@ -17,26 +17,28 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Handler struct {
-	service         *Service
-	activityService *activity.ActivityService
-	uploadService   *upload.UploadService
-	appCtx          context.Context
-}
+type (
+	Handler struct {
+		service         *Service
+		activityService *activity.ActivityService
+		uploadService   *upload.UploadService
+		appCtx          context.Context
+	}
 
-type RestoreBackupInput struct {
-	Body          *types.BackupRestoreSelection `required:"false"`
-	EnvironmentID string                        `path:"id" doc:"Environment ID"`
-	VolumeName    string                        `path:"volumeName" doc:"Volume name"`
-	BackupID      string                        `path:"backupId" doc:"Backup ID"`
-	Action        string                        `query:"action" required:"true" enum:"restore,restorefiles" doc:"Restore action"`
-}
+	RestoreBackupInput struct {
+		Body          *types.BackupRestoreSelection `required:"false"`
+		EnvironmentID string                        `path:"id" doc:"Environment ID"`
+		VolumeName    string                        `path:"volumeName" doc:"Volume name"`
+		BackupID      string                        `path:"backupId" doc:"Backup ID"`
+		Action        string                        `query:"action" required:"true" enum:"restore,restorefiles" doc:"Restore action"`
+	}
 
-type UploadAndRestoreInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	Body          types.UploadConsumeRequest
-}
+	UploadAndRestoreInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		VolumeName    string `path:"volumeName" doc:"Volume name"`
+		Body          types.UploadConsumeRequest
+	}
+)
 
 func NewHandler(service *Service, activityService *activity.ActivityService, uploadService *upload.UploadService, appCtx context.Context) *Handler {
 	return &Handler{service: service, activityService: activityService, uploadService: uploadService, appCtx: appCtx}

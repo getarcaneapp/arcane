@@ -18,20 +18,25 @@ import (
 	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
 )
 
-// ============================================================================
-// Shared Log Stream Helpers
-// ============================================================================
+type (
+	wsLogStream struct {
+		hub             *wshub.Hub
+		cancel          context.CancelFunc
+		firstSubscriber chan struct{}
+		format          string
+		key             string
+		refs            int
+		done            bool
+		seq             atomic.Uint64
+	}
 
-type wsLogStream struct {
-	hub             *wshub.Hub
-	cancel          context.CancelFunc
-	firstSubscriber chan struct{}
-	format          string
-	key             string
-	refs            int
-	done            bool
-	seq             atomic.Uint64
-}
+	// logStreamParams holds the standard query parameters shared by every WS log endpoint.
+	logStreamParams struct {
+		format  string
+		stream  types.LogStreamOptions
+		batched bool
+	}
+)
 
 func (h *WebSocketHandler) getOrCreateLogStream(key string, create func(onEmpty func(*wsLogStream)) *wsLogStream) *wsLogStream {
 	h.logStreamsMu.Lock()
@@ -75,13 +80,6 @@ func (h *WebSocketHandler) releaseLogStream(key string, stream *wsLogStream, don
 	if cancel != nil {
 		cancel()
 	}
-}
-
-// logStreamParams holds the standard query parameters shared by every WS log endpoint.
-type logStreamParams struct {
-	format  string
-	stream  types.LogStreamOptions
-	batched bool
 }
 
 func parseLogStreamParams(c *echo.Context) logStreamParams {

@@ -13,43 +13,45 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type RoleHandler struct {
-	roleService *RoleService
-}
+type (
+	RoleHandler struct {
+		roleService *RoleService
+	}
 
-type ListRolesInput struct {
-	Search string `query:"search" doc:"Search by role name or description"`
-	Sort   string `query:"sort" doc:"Column to sort by"`
-	Order  string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start  int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
-}
+	ListRolesInput struct {
+		Search string `query:"search" doc:"Search by role name or description"`
+		Sort   string `query:"sort" doc:"Column to sort by"`
+		Order  string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Start  int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit  int    `query:"limit" default:"20" doc:"Items per page"`
+	}
 
-type GetRoleInput struct {
-	ID string `path:"id" doc:"Role ID"`
-}
+	GetRoleInput struct {
+		ID string `path:"id" doc:"Role ID"`
+	}
 
-type CreateRoleInput struct {
-	types.Create[types.Role]
-}
+	CreateRoleInput struct {
+		types.Create[types.Role]
+	}
 
-type UpdateRoleInput struct {
-	ID string `path:"id" doc:"Role ID"`
-	types.Update[types.Role]
-}
+	UpdateRoleInput struct {
+		ID string `path:"id" doc:"Role ID"`
+		types.Update[types.Role]
+	}
 
-type DeleteRoleInput struct {
-	ID string `path:"id" doc:"Role ID"`
-}
+	DeleteRoleInput struct {
+		ID string `path:"id" doc:"Role ID"`
+	}
 
-type ListUserRoleAssignmentsInput struct {
-	UserID string `path:"userId" doc:"User ID"`
-}
+	ListUserRoleAssignmentsInput struct {
+		UserID string `path:"userId" doc:"User ID"`
+	}
 
-type SetUserRoleAssignmentsInput struct {
-	UserID string `path:"userId" doc:"User ID"`
-	Body   types.SetUserRoleAssignments
-}
+	SetUserRoleAssignmentsInput struct {
+		UserID string `path:"userId" doc:"User ID"`
+		Body   types.SetUserRoleAssignments
+	}
+)
 
 func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*handlerutil.Page[types.Role], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)

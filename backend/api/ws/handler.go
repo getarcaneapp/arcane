@@ -36,56 +36,58 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
+type (
+	// WebSocketHandler consolidates all WebSocket and streaming endpoints.
+	// REST endpoints are handled by Huma handlers.
+	WebSocketHandler struct {
+		// ctx ends after open connections were closed with StatusGoingAway on app shutdown.
+		ctx                context.Context
+		projectService     *project.ProjectService
+		containerService   *container.ContainerService
+		swarmService       *swarm.SwarmService
+		systemService      *system.SystemService
+		settingsService    *settings.SettingsService
+		diagnosticsService *diagnostics.DiagnosticsService
+		checkWSOrigin      func(*http.Request) bool
+		activeConnections  map[string]int
+		logStreams         map[string]*wsLogStream
+		cpuCache           concurrency.Snapshot[float64]
+		containersStatsHub *agg.Hub[containersStatsResult]
+		cgroupCache        *cgroup.Cache
+		gpuMonitor         atomic.Pointer[systemlib.GPUMonitor]
+
+		diskUsagePathCache   *hot.HotCache[struct{}, string]
+		projectLogStreamer   func(ctx context.Context, projectID string, logsChan chan<- string, opts types.LogStreamOptions) error
+		containerLogStreamer func(ctx context.Context, containerID string, logsChan chan<- string, opts types.LogStreamOptions) error
+		systemStatsCollector func(ctx context.Context) types.SystemStats
+		cpuUsageReader       func(interval time.Duration) (float64, bool)
+		systemStatsSampler   struct {
+			latest            concurrency.Snapshot[types.SystemStats]
+			intervals         map[time.Duration]int
+			cancel            context.CancelFunc
+			ready             chan struct{}
+			wake              chan struct{}
+			clients           int
+			effectiveInterval atomic.Int64
+			lifecycleMu       sync.Mutex
+			running           bool
+		}
+		conns              sync.Map
+		containerStatsHubs sync.Map
+		systemStaticInfo   struct {
+			hostname string
+			cpuCount int
+			once     sync.Once
+		}
+		activeConnectionsMu sync.Mutex
+		logStreamsMu        sync.Mutex
+	}
+)
+
 var (
 	defaultWebSocketMetrics     = wshub.NewWebSocketMetrics()
 	observeWebSocketMetricsOnce sync.Once
 )
-
-// WebSocketHandler consolidates all WebSocket and streaming endpoints.
-// REST endpoints are handled by Huma handlers.
-type WebSocketHandler struct {
-	// ctx ends after open connections were closed with StatusGoingAway on app shutdown.
-	ctx                context.Context
-	projectService     *project.ProjectService
-	containerService   *container.ContainerService
-	swarmService       *swarm.SwarmService
-	systemService      *system.SystemService
-	settingsService    *settings.SettingsService
-	diagnosticsService *diagnostics.DiagnosticsService
-	checkWSOrigin      func(*http.Request) bool
-	activeConnections  map[string]int
-	logStreams         map[string]*wsLogStream
-	cpuCache           concurrency.Snapshot[float64]
-	containersStatsHub *agg.Hub[containersStatsResult]
-	cgroupCache        *cgroup.Cache
-	gpuMonitor         atomic.Pointer[systemlib.GPUMonitor]
-
-	diskUsagePathCache   *hot.HotCache[struct{}, string]
-	projectLogStreamer   func(ctx context.Context, projectID string, logsChan chan<- string, opts types.LogStreamOptions) error
-	containerLogStreamer func(ctx context.Context, containerID string, logsChan chan<- string, opts types.LogStreamOptions) error
-	systemStatsCollector func(ctx context.Context) types.SystemStats
-	cpuUsageReader       func(interval time.Duration) (float64, bool)
-	systemStatsSampler   struct {
-		latest            concurrency.Snapshot[types.SystemStats]
-		intervals         map[time.Duration]int
-		cancel            context.CancelFunc
-		ready             chan struct{}
-		wake              chan struct{}
-		clients           int
-		effectiveInterval atomic.Int64
-		lifecycleMu       sync.Mutex
-		running           bool
-	}
-	conns              sync.Map
-	containerStatsHubs sync.Map
-	systemStaticInfo   struct {
-		hostname string
-		cpuCount int
-		once     sync.Once
-	}
-	activeConnectionsMu sync.Mutex
-	logStreamsMu        sync.Mutex
-}
 
 func NewWebSocketHandler(
 	appCtx context.Context,

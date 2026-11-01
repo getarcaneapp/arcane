@@ -16,57 +16,58 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
 )
 
+type (
+	// Service fans activity stream events out to per-environment subscribers.
+	Service struct {
+		changes           *concurrency.Signal[string]
+		subscribers       map[int]*subscriber
+		terminalPublished map[string]time.Time
+		nextSubID         int
+
+		subscribersMu sync.RWMutex
+
+		// terminalPublished records when each activity's terminal snapshot was
+		// published, so later non-terminal snapshots from slower goroutines can
+		// be dropped (see admit). Entries are pruned on terminal publishes once
+		// older than terminalPublishRetention.
+		terminalPublishedMu sync.Mutex
+	}
+
+	// subscriber buffers stream events between publishers and one stream
+	// consumer. "activity" events are coalesced in place per activity ID (only the
+	// latest pending state matters to the UI), so bulk operations emitting rapid
+	// progress updates cannot overflow the subscriber and force full-snapshot
+	// resends. Other events keep arrival order in a FIFO bounded by
+	// subscriberMessageQueueLimit with drop-oldest on overflow.
+	subscriber struct {
+		ch   chan types.ActivityStreamEvent
+		done chan struct{}
+		wake chan struct{}
+
+		pendingActivity map[string]*pendingStreamEvent
+		environmentID   string
+		queue           []*pendingStreamEvent
+		messageCount    int
+
+		mu     sync.Mutex
+		missed bool
+	}
+
+	pendingStreamEvent struct {
+		event types.ActivityStreamEvent
+	}
+)
+
 const (
 	// terminalPublishRetention bounds how long a terminal publish suppresses
 	// stale non-terminal snapshots for the same activity. Stale publishers are
 	// goroutines already past their commit, so they publish within moments; the
 	// retention only has to outlive that gap while keeping the latch map small.
 	terminalPublishRetention = 10 * time.Minute
-
 	// subscriberMessageQueueLimit bounds the per-subscriber backlog of "message"
 	// events; the oldest message is dropped (and flagged as missed) on overflow.
 	subscriberMessageQueueLimit = 256
 )
-
-// Service fans activity stream events out to per-environment subscribers.
-type Service struct {
-	changes           *concurrency.Signal[string]
-	subscribers       map[int]*subscriber
-	terminalPublished map[string]time.Time
-	nextSubID         int
-
-	subscribersMu sync.RWMutex
-
-	// terminalPublished records when each activity's terminal snapshot was
-	// published, so later non-terminal snapshots from slower goroutines can
-	// be dropped (see admit). Entries are pruned on terminal publishes once
-	// older than terminalPublishRetention.
-	terminalPublishedMu sync.Mutex
-}
-
-// subscriber buffers stream events between publishers and one stream
-// consumer. "activity" events are coalesced in place per activity ID (only the
-// latest pending state matters to the UI), so bulk operations emitting rapid
-// progress updates cannot overflow the subscriber and force full-snapshot
-// resends. Other events keep arrival order in a FIFO bounded by
-// subscriberMessageQueueLimit with drop-oldest on overflow.
-type subscriber struct {
-	ch   chan types.ActivityStreamEvent
-	done chan struct{}
-	wake chan struct{}
-
-	pendingActivity map[string]*pendingStreamEvent
-	environmentID   string
-	queue           []*pendingStreamEvent
-	messageCount    int
-
-	mu     sync.Mutex
-	missed bool
-}
-
-type pendingStreamEvent struct {
-	event types.ActivityStreamEvent
-}
 
 // NewService returns an empty subscriber registry.
 func NewService(changes *concurrency.Signal[string]) *Service {

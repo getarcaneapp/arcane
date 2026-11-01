@@ -60,6 +60,43 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
+type (
+	fakeDockerClientProvider struct {
+		client any
+	}
+
+	fakeImagePuller struct {
+		fail   map[string]error
+		pulled []string
+	}
+
+	fakeRunRecorder struct {
+		results []updater.ResourceResult
+	}
+
+	fakeSettingsProvider struct{}
+
+	fakeUsedImageCollector struct {
+		images map[string]struct{}
+	}
+
+	fakeProjectUpdater struct {
+		projects     map[string]updater.ComposeProject
+		updateErrs   map[string]error
+		imageChanges map[string]map[string]updatertypes.ServiceImageChange
+		calls        []string
+	}
+
+	mockSystemUpgradeService struct {
+		triggerError   error
+		capturedUser   *types.Actor
+		capturedTarget *updater.SelfUpdateTarget
+		triggerCalled  bool
+	}
+
+	projectCheckRegistry struct{}
+)
+
 func newUnreachableDockerService(t *testing.T) *docker.DockerClientService {
 	t.Helper()
 
@@ -68,41 +105,6 @@ func newUnreachableDockerService(t *testing.T) *docker.DockerClientService {
 		return cli
 	}())
 }
-
-type fakeDockerClientProvider struct {
-	client any
-}
-
-type fakeImagePuller struct {
-	fail   map[string]error
-	pulled []string
-}
-
-type fakeRunRecorder struct {
-	results []updater.ResourceResult
-}
-
-type fakeSettingsProvider struct{}
-
-type fakeUsedImageCollector struct {
-	images map[string]struct{}
-}
-
-type fakeProjectUpdater struct {
-	projects     map[string]updater.ComposeProject
-	updateErrs   map[string]error
-	imageChanges map[string]map[string]updatertypes.ServiceImageChange
-	calls        []string
-}
-
-type mockSystemUpgradeService struct {
-	triggerError   error
-	capturedUser   *types.Actor
-	capturedTarget *updater.SelfUpdateTarget
-	triggerCalled  bool
-}
-
-type projectCheckRegistry struct{}
 
 func (f fakeDockerClientProvider) DockerClient(context.Context) (*client.Client, error) {
 	cli, _ := f.client.(*client.Client)

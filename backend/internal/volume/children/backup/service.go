@@ -46,81 +46,83 @@ import (
 	s3utils "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/s3"
 )
 
-// Store persists volume backup records for this feature.
-type Store struct {
-	Create            func(ctx context.Context, entry *types.VolumeBackup) error
-	Save              func(ctx context.Context, entry *types.VolumeBackup) error
-	Fail              func(ctx context.Context, backupID, message string) error
-	Delete            func(ctx context.Context, backupID string) error
-	Run               func(ctx context.Context, backupID string) (*types.VolumeBackup, error)
-	Runs              func(ctx context.Context, backupIDs []string) ([]*types.VolumeBackup, error)
-	Latest            func(ctx context.Context, policyID string) (*types.VolumeBackup, error)
-	List              func(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, pagination.Response, error)
-	RemoteSnapshotIDs func(ctx context.Context, destinationID string) ([]string, error)
-	CountLocal        func(ctx context.Context) (int64, error)
-}
+type (
+	// Store persists volume backup records for this feature.
+	Store struct {
+		Create            func(ctx context.Context, entry *types.VolumeBackup) error
+		Save              func(ctx context.Context, entry *types.VolumeBackup) error
+		Fail              func(ctx context.Context, backupID, message string) error
+		Delete            func(ctx context.Context, backupID string) error
+		Run               func(ctx context.Context, backupID string) (*types.VolumeBackup, error)
+		Runs              func(ctx context.Context, backupIDs []string) ([]*types.VolumeBackup, error)
+		Latest            func(ctx context.Context, policyID string) (*types.VolumeBackup, error)
+		List              func(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, pagination.Response, error)
+		RemoteSnapshotIDs func(ctx context.Context, destinationID string) ([]string, error)
+		CountLocal        func(ctx context.Context) (int64, error)
+	}
 
-// Dependencies are the persistence, runtime, and helper-container operations volume backups use.
-type Dependencies struct {
-	Store            Store
-	DB               *database.DB
-	Docker           *docker.DockerClientService
-	Events           *event.EventService
-	Settings         *settings.SettingsService
-	Engine           *backup.Engine
-	S3Destinations   *s3.S3DestinationService
-	RecoveryKeys     *backup.RecoveryKeyStore
-	Locks            *utils.KeyedMutex
-	AlreadyRunning   error
-	StopContainer    func(ctx context.Context, containerID string, user types.Actor) error
-	StartContainer   func(ctx context.Context, containerID string, user types.Actor) error
-	HelperImage      func(ctx context.Context) (string, error)
-	AcquireHelper    func(ctx context.Context, volumeName string) (string, func(), error)
-	Exec             func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
-	BackupVolumeName string
-	EncryptionKey    string
-}
+	// Dependencies are the persistence, runtime, and helper-container operations volume backups use.
+	Dependencies struct {
+		Store            Store
+		DB               *database.DB
+		Docker           *docker.DockerClientService
+		Events           *event.EventService
+		Settings         *settings.SettingsService
+		Engine           *backup.Engine
+		S3Destinations   *s3.S3DestinationService
+		RecoveryKeys     *backup.RecoveryKeyStore
+		Locks            *utils.KeyedMutex
+		AlreadyRunning   error
+		StopContainer    func(ctx context.Context, containerID string, user types.Actor) error
+		StartContainer   func(ctx context.Context, containerID string, user types.Actor) error
+		HelperImage      func(ctx context.Context) (string, error)
+		AcquireHelper    func(ctx context.Context, volumeName string) (string, func(), error)
+		Exec             func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
+		BackupVolumeName string
+		EncryptionKey    string
+	}
 
-// Service runs volume backups and owns their policies, file browser, and restores.
-type Service struct {
-	policies *policies.Service
-	browser  *browser.Service
-	restore  *restore.Service
-	flow     *flow.Engine
-	// backupWorkflow runs manual backups that StartBackup accepted.
-	backupWorkflow *flow.Workflow
-	deps           Dependencies
-	rekeyed        sync.Map
-}
+	// Service runs volume backups and owns their policies, file browser, and restores.
+	Service struct {
+		policies *policies.Service
+		browser  *browser.Service
+		restore  *restore.Service
+		flow     *flow.Engine
+		// backupWorkflow runs manual backups that StartBackup accepted.
+		backupWorkflow *flow.Workflow
+		deps           Dependencies
+		rekeyed        sync.Map
+	}
 
-// backupPlan is one run's resolved destinations; it doubles as the run's recovery checkpoint.
-type backupPlan struct {
-	Policy          *policies.VolumeBackupPolicy `json:"policy,omitempty"`
-	BackupID        string                       `json:"backupId"`
-	S3DestinationID string                       `json:"s3DestinationId"`
-	LocalEnabled    bool                         `json:"localEnabled"`
-	S3Enabled       bool                         `json:"s3Enabled"`
-}
+	// backupPlan is one run's resolved destinations; it doubles as the run's recovery checkpoint.
+	backupPlan struct {
+		Policy          *policies.VolumeBackupPolicy `json:"policy,omitempty"`
+		BackupID        string                       `json:"backupId"`
+		S3DestinationID string                       `json:"s3DestinationId"`
+		LocalEnabled    bool                         `json:"localEnabled"`
+		S3Enabled       bool                         `json:"s3Enabled"`
+	}
 
-// manualBackupInput is a manual backup's workflow payload; the row and plan are frozen before it starts.
-type manualBackupInput struct {
-	Requester  types.BackupRequester `json:"requester"`
-	VolumeName string                `json:"volumeName"`
-	Checkpoint backupPlan            `json:"checkpoint"`
-}
+	// manualBackupInput is a manual backup's workflow payload; the row and plan are frozen before it starts.
+	manualBackupInput struct {
+		Requester  types.BackupRequester `json:"requester"`
+		VolumeName string                `json:"volumeName"`
+		Checkpoint backupPlan            `json:"checkpoint"`
+	}
 
-// lockHeld marks a context whose caller already holds the volume's workspace lock.
-type lockHeld struct {
-	service    *Service
-	volumeName string
-}
+	// lockHeld marks a context whose caller already holds the volume's workspace lock.
+	lockHeld struct {
+		service    *Service
+		volumeName string
+	}
 
-type lockHeldKey struct{}
+	lockHeldKey struct{}
 
-type remoteRepositoryKey struct {
-	destinationID string
-	instanceID    string
-}
+	remoteRepositoryKey struct {
+		destinationID string
+		instanceID    string
+	}
+)
 
 func NewService(deps Dependencies) *Service {
 	s := &Service{deps: deps}

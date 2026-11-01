@@ -13,10 +13,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 )
 
-// Service runs connectivity probes; the parent persists the resulting status.
-type Service struct {
-	dockerService *docker.DockerClientService
-}
+type (
+	// Service runs connectivity probes; the parent persists the resulting status.
+	Service struct {
+		dockerService *docker.DockerClientService
+	}
+)
 
 func New(dockerService *docker.DockerClientService) *Service {
 	return &Service{dockerService: dockerService}

@@ -12,11 +12,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type testSchedulerJob struct {
-	run      func(context.Context)
-	name     string
-	schedule string
-}
+type (
+	testSchedulerJob struct {
+		run      func(context.Context)
+		name     string
+		schedule string
+	}
+
+	conditionalTestSchedulerJob struct {
+		*testSchedulerJob
+		shouldSchedule func(context.Context) bool
+	}
+
+	testBusWatcher struct {
+		started chan struct{}
+		stopped chan struct{}
+		ranNow  chan context.Context
+		name    string
+	}
+
+	orderedStopBusWatcher struct {
+		started      chan struct{}
+		runnerExited chan struct{}
+		name         string
+	}
+)
 
 func (j *testSchedulerJob) Name() string { return j.name }
 
@@ -27,24 +47,6 @@ func (j *testSchedulerJob) Run(ctx context.Context) (types.SchedulerOutcome, err
 		j.run(ctx)
 	}
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
-}
-
-type conditionalTestSchedulerJob struct {
-	*testSchedulerJob
-	shouldSchedule func(context.Context) bool
-}
-
-type testBusWatcher struct {
-	started chan struct{}
-	stopped chan struct{}
-	ranNow  chan context.Context
-	name    string
-}
-
-type orderedStopBusWatcher struct {
-	started      chan struct{}
-	runnerExited chan struct{}
-	name         string
 }
 
 func (w *orderedStopBusWatcher) Name() string {

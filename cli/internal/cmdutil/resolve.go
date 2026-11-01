@@ -20,59 +20,63 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v3/internal/runtime"
 )
 
-// MaxPromptOptions caps how many search matches the resolver offers
-// interactively before asking the user to refine the query instead.
-const MaxPromptOptions = 20
+type (
+	// ResourceRef resolves a resource from a name, ID, or prefix.
+	// D is the detail shape and S is the list summary.
+	ResourceRef[D any, S any] struct {
+		// GetPath builds the GET-by-identifier path; ListPath the list endpoint
+		// that Resolve queries with ?search=<identifier>&limit=-1.
+		GetPath  func(envID, identifier string) string
+		ListPath func(envID string) string
+		// SearchCandidates replaces the standard list search for resources with
+		// specialized matching rules.
+		SearchCandidates func(context.Context, *client.Client, string) ([]S, error)
+		// SelectCandidate replaces the standard ambiguity handling while keeping
+		// direct lookup and not-found behavior in Resolve.
+		SelectCandidate func([]S, string, bool) (*S, error)
+		// Validate checks a successful direct lookup before Resolve returns it.
+		Validate func(D, string) error
 
-// ResourceRef resolves a resource from a name, ID, or prefix.
-// D is the detail shape and S is the list summary.
-type ResourceRef[D any, S any] struct {
-	// GetPath builds the GET-by-identifier path; ListPath the list endpoint
-	// that Resolve queries with ?search=<identifier>&limit=-1.
-	GetPath  func(envID, identifier string) string
-	ListPath func(envID string) string
-	// SearchCandidates replaces the standard list search for resources with
-	// specialized matching rules.
-	SearchCandidates func(context.Context, *client.Client, string) ([]S, error)
-	// SelectCandidate replaces the standard ambiguity handling while keeping
-	// direct lookup and not-found behavior in Resolve.
-	SelectCandidate func([]S, string, bool) (*S, error)
-	// Validate checks a successful direct lookup before Resolve returns it.
-	Validate func(D, string) error
+		// Matches reports whether a listed item matches the identifier.
+		Matches func(item S, identifierLower, original string) bool
+		// Label renders one match as an interactive prompt option.
+		Label func(S) string
+		// Promote converts a selected summary into the detail shape.
+		Promote func(S) *D
 
-	// Matches reports whether a listed item matches the identifier.
-	Matches func(item S, identifierLower, original string) bool
-	// Label renders one match as an interactive prompt option.
-	Label func(S) string
-	// Promote converts a selected summary into the detail shape.
-	Promote func(S) *D
+		// IDOf enables an ID-prefix scan over the full list. Leave nil for resources without opaque IDs.
+		IDOf func(S) string
+		// IdentifierOf supplies the canonical identifier for commands accepting raw IDs.
+		IdentifierOf func(D) string
 
-	// IDOf enables an ID-prefix scan over the full list. Leave nil for resources without opaque IDs.
-	IDOf func(S) string
-	// IdentifierOf supplies the canonical identifier for commands accepting raw IDs.
-	IdentifierOf func(D) string
+		// Exact identifies exact matches so a unique exact search result wins over substring matches.
+		Exact func(item S, identifierLower, original string) bool
+		// Singular and Plural name the resource in prompts and error messages
+		// ("container", "containers").
+		Singular string
+		Plural   string
+		// IDHint completes "use <IDHint> or run `<ListCmd>`" guidance
+		// ("the container ID", "the volume name").
+		IDHint  string
+		ListCmd string
 
-	// Exact identifies exact matches so a unique exact search result wins over substring matches.
-	Exact func(item S, identifierLower, original string) bool
-	// Singular and Plural name the resource in prompts and error messages
-	// ("container", "containers").
-	Singular string
-	Plural   string
-	// IDHint completes "use <IDHint> or run `<ListCmd>`" guidance
-	// ("the container ID", "the volume name").
-	IDHint  string
-	ListCmd string
+		EnvironmentScoped bool
+	}
 
-	EnvironmentScoped bool
-}
+	resourceCandidate[D any] struct {
+		details  *D
+		envID    string
+		label    string
+		complete bool
+		exact    bool
+	}
+)
 
-type resourceCandidate[D any] struct {
-	details  *D
-	envID    string
-	label    string
-	complete bool
-	exact    bool
-}
+const (
+	// MaxPromptOptions caps how many search matches the resolver offers
+	// interactively before asking the user to refine the query instead.
+	MaxPromptOptions = 20
+)
 
 // Fetch resolves an identifier and retrieves full detail when resolution returned only a summary.
 func (ref ResourceRef[D, S]) Fetch(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (*D, error) {

@@ -13,9 +13,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
-type CustomizeSearchService struct {
-	categories []types.Category
-}
+type (
+	CustomizeSearchService struct {
+		categories []types.Category
+	}
+)
 
 func NewCustomizeSearchService() *CustomizeSearchService {
 	return &CustomizeSearchService{categories: BuildCategories[CustomizeItem](types.SearchProfileCustomize)}

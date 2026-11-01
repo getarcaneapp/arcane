@@ -19,7 +19,9 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
-const uploadChunkAttempts = 3
+const (
+	uploadChunkAttempts = 3
+)
 
 // UploadFileInChunks sends retried chunks with optional progress and aborts the session on failure.
 // It returns the completed upload session ID.

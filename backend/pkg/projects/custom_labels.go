@@ -25,6 +25,28 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
+type (
+	IconSet = iconcatalog.IconSet
+
+	// ArcaneComposeMetadata represents Arcane-specific configuration extracted from a Compose file.
+	ArcaneComposeMetadata struct {
+		// ServiceIconSets maps service names to their fallback, light, and dark icon values.
+		ServiceIconSets map[string]IconSet
+		// ProjectIcon contains fallback, light, and dark icon values for the project.
+		ProjectIcon IconSet
+		// ProjectURLS are additional URLs related to the project (e.g., documentation, homepage).
+		ProjectURLS []string
+		// ProjectTags are normalized tags managed by Compose metadata.
+		ProjectTags []types.ProjectTagOption
+		// ComposeFiles lists every compose file the metadata was parsed from: the root, COMPOSE_FILE entries, an auto-loaded override, and includes.
+		ComposeFiles []string
+		// EnvFiles lists every env file the parse read: the .env beside each parsed compose file plus resolved COMPOSE_ENV_FILES entries.
+		EnvFiles []string
+		// ProjectTagsAuthoritative reports whether every Compose tag was parsed successfully.
+		ProjectTagsAuthoritative bool
+	}
+)
+
 const (
 	// ArcaneIconLabel is the full reverse-DNS label key for fallback service-level icons.
 	ArcaneIconLabel = "com.getarcaneapp.arcane.icon"
@@ -32,39 +54,28 @@ const (
 	ArcaneIconLightLabel = "com.getarcaneapp.arcane.icon-light"
 	// ArcaneIconDarkLabel is the full reverse-DNS label key for dark service-level icons.
 	ArcaneIconDarkLabel = "com.getarcaneapp.arcane.icon-dark"
-
-	arcaneBlockKey     = "x-arcane"
-	arcaneIconKey      = "icon"
-	arcaneIconsKey     = "icons"
-	arcaneIconLightKey = "icon-light"
-	arcaneIconDarkKey  = "icon-dark"
-	arcaneURLsKey      = "urls"
-	arcaneTagsKey      = "tags"
-
+	arcaneBlockKey      = "x-arcane"
+	arcaneIconKey       = "icon"
+	arcaneIconsKey      = "icons"
+	arcaneIconLightKey  = "icon-light"
+	arcaneIconDarkKey   = "icon-dark"
+	arcaneURLsKey       = "urls"
+	arcaneTagsKey       = "tags"
 	// ProjectTagMaxLength is the maximum number of Unicode characters in a tag name.
 	ProjectTagMaxLength = 64
 	// ProjectTagsPerSourceLimit is the maximum number of UI or Compose tags on one project.
 	ProjectTagsPerSourceLimit = 50
 )
 
-type IconSet = iconcatalog.IconSet
-
-// ArcaneComposeMetadata represents Arcane-specific configuration extracted from a Compose file.
-type ArcaneComposeMetadata struct {
-	// ServiceIconSets maps service names to their fallback, light, and dark icon values.
-	ServiceIconSets map[string]IconSet
-	// ProjectIcon contains fallback, light, and dark icon values for the project.
-	ProjectIcon IconSet
-	// ProjectURLS are additional URLs related to the project (e.g., documentation, homepage).
-	ProjectURLS []string
-	// ProjectTags are normalized tags managed by Compose metadata.
-	ProjectTags []types.ProjectTagOption
-	// ComposeFiles lists every compose file the metadata was parsed from: the root, COMPOSE_FILE entries, an auto-loaded override, and includes.
-	ComposeFiles []string
-	// EnvFiles lists every env file the parse read: the .env beside each parsed compose file plus resolved COMPOSE_ENV_FILES entries.
-	EnvFiles []string
-	// ProjectTagsAuthoritative reports whether every Compose tag was parsed successfully.
-	ProjectTagsAuthoritative bool
+var projectTagColors = map[types.ProjectTagColor]struct{}{
+	types.ProjectTagColorGray:   {},
+	types.ProjectTagColorPurple: {},
+	types.ProjectTagColorBlue:   {},
+	types.ProjectTagColorGreen:  {},
+	types.ProjectTagColorYellow: {},
+	types.ProjectTagColorOrange: {},
+	types.ProjectTagColorRed:    {},
+	types.ProjectTagColorPink:   {},
 }
 
 // ParseArcaneComposeMetadata reads a Docker Compose file and extracts Arcane-specific metadata.
@@ -457,17 +468,6 @@ func parseLabelPair(raw string) (string, string, bool) {
 		return "", "", false
 	}
 	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), true
-}
-
-var projectTagColors = map[types.ProjectTagColor]struct{}{
-	types.ProjectTagColorGray:   {},
-	types.ProjectTagColorPurple: {},
-	types.ProjectTagColorBlue:   {},
-	types.ProjectTagColorGreen:  {},
-	types.ProjectTagColorYellow: {},
-	types.ProjectTagColorOrange: {},
-	types.ProjectTagColorRed:    {},
-	types.ProjectTagColorPink:   {},
 }
 
 // NormalizeProjectTag validates and normalizes a project tag name.

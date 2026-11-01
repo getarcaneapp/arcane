@@ -7,19 +7,21 @@ import (
 	"time"
 )
 
-type connContextKey struct{}
+type (
+	connContextKey struct{}
 
-// connState tracks per-connection socket tuning. HTTP/2 multiplexes
-// every stream a client opens onto one TCP connection, so the dead-peer
-// timeout has to outlive whichever stream happens to finish first.
-type connState struct {
-	conn net.Conn
+	// connState tracks per-connection socket tuning. HTTP/2 multiplexes
+	// every stream a client opens onto one TCP connection, so the dead-peer
+	// timeout has to outlive whichever stream happens to finish first.
+	connState struct {
+		conn net.Conn
 
-	mu      sync.Mutex
-	holders int
+		mu      sync.Mutex
+		holders int
 
-	clearReadDeadlineOnce sync.Once
-}
+		clearReadDeadlineOnce sync.Once
+	}
+)
 
 // WithConn stores an accepted connection on its base context. Wire it up as
 // http.Server.ConnContext so long-lived handlers can tune socket options for

@@ -18,18 +18,36 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
+type (
+	handlerActivityIDContextKey struct{}
+
+	HandlerOptions struct {
+		User           *types.Actor
+		Metadata       database.JSON
+		EnvironmentID  string
+		Type           types.ActivityType
+		ResourceType   string
+		ResourceID     string
+		ResourceName   string
+		Step           string
+		Message        string
+		SuccessMessage string
+		// Queue routes the activity through the per-environment concurrency
+		// limiter so bulk long-running operations wait visibly instead of all
+		// running at once. Quick actions (start/stop/delete) must not set this.
+		Queue bool
+	}
+)
+
 const (
 	// ErrCanceled is the cancellation cause set on an activity's work context when a
 	// user requests cancellation. Completion paths read context.Cause to record a
 	// cancelled (rather than failed) terminal status.
-
 	// cancelledMessage is the latest-message recorded when work is cancelled.
 	cancelledMessage = "Cancelled by user"
 )
 
 var ErrCanceled = errors.New("activity cancelled by user")
-
-type handlerActivityIDContextKey struct{}
 
 func IDFromContext(ctx context.Context) string {
 	if ctx == nil {
@@ -45,23 +63,6 @@ func IDFromContext(ctx context.Context) string {
 // cancelled and a failed terminal status.
 func CancelledByContext(ctx context.Context) bool {
 	return ctx != nil && errors.Is(context.Cause(ctx), ErrCanceled)
-}
-
-type HandlerOptions struct {
-	User           *types.Actor
-	Metadata       database.JSON
-	EnvironmentID  string
-	Type           types.ActivityType
-	ResourceType   string
-	ResourceID     string
-	ResourceName   string
-	Step           string
-	Message        string
-	SuccessMessage string
-	// Queue routes the activity through the per-environment concurrency
-	// limiter so bulk long-running operations wait visibly instead of all
-	// running at once. Quick actions (start/stop/delete) must not set this.
-	Queue bool
 }
 
 // AwaitHandlerActivitySlot blocks until the queued activity holds a

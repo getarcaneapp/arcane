@@ -14,34 +14,36 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// SystemHandler handles system management endpoints.
-type SystemHandler struct {
-	systemService *SystemService
-	appCtx        context.Context
-}
+type (
+	// SystemHandler handles system management endpoints.
+	SystemHandler struct {
+		systemService *SystemService
+		appCtx        context.Context
+	}
 
-type GetDockerInfoOutput struct {
-	Body types.DockerInfo
-}
+	GetDockerInfoOutput struct {
+		Body types.DockerInfo
+	}
 
-type ContainersActionInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Action        string `query:"action" required:"true" enum:"startall,startstopped,stopall" doc:"Bulk container action"`
-}
+	ContainersActionInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Action        string `query:"action" required:"true" enum:"startall,startstopped,stopall" doc:"Bulk container action"`
+	}
 
-type containersAction struct {
-	Run   func(context.Context, string) (*types.ContainerActionResult, error)
-	Error string
-}
+	containersAction struct {
+		Run   func(context.Context, string) (*types.ContainerActionResult, error)
+		Error string
+	}
 
-type ConvertDockerRunInput struct {
-	EnvironmentID string                        `path:"id" doc:"Environment ID"`
-	Body          types.ConvertDockerRunRequest `doc:"Docker run command"`
-}
+	ConvertDockerRunInput struct {
+		EnvironmentID string                        `path:"id" doc:"Environment ID"`
+		Body          types.ConvertDockerRunRequest `doc:"Docker run command"`
+	}
 
-type ConvertDockerRunOutput struct {
-	Body types.ConvertDockerRunResponse
-}
+	ConvertDockerRunOutput struct {
+		Body types.ConvertDockerRunResponse
+	}
+)
 
 func NewHandler(systemService *SystemService, appCtx context.Context) *SystemHandler {
 	return &SystemHandler{systemService: systemService, appCtx: appCtx}

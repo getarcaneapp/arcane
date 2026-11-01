@@ -6,7 +6,22 @@ import (
 	"html/template"
 )
 
-const emailLayout = `<!DOCTYPE html>
+type (
+	emailRow struct {
+		Label string
+		Value string
+	}
+
+	emailData struct {
+		Title  string
+		Intro  string
+		AppURL string
+		Rows   []emailRow
+	}
+)
+
+const (
+	emailLayout = `<!DOCTYPE html>
 <html>
 <body style="font-family: Arial, Helvetica, sans-serif;">
 <h2>{{.Title}}</h2>
@@ -17,20 +32,9 @@ const emailLayout = `<!DOCTYPE html>
 <p><a href="{{.AppURL}}">Open Arcane</a></p>
 </body>
 </html>`
+)
 
 var emailTemplate = template.Must(template.New("email").Parse(emailLayout))
-
-type emailRow struct {
-	Label string
-	Value string
-}
-
-type emailData struct {
-	Title  string
-	Intro  string
-	AppURL string
-	Rows   []emailRow
-}
 
 func renderEmail(data emailData) (string, error) {
 	var buf bytes.Buffer

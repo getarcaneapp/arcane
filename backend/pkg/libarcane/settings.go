@@ -6,9 +6,15 @@ import (
 	kit "kit.getarcane.app"
 )
 
-const (
-	DepotTokenSettingKey = "depotToken"
+type (
+	SettingUpdate struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+)
 
+const (
+	DepotTokenSettingKey  = "depotToken"
 	GHCRRegistryHost      = "ghcr.io"
 	DockerHubRegistryHost = "docker.io"
 	ECRPublicRegistryHost = "public.ecr.aws"
@@ -25,9 +31,4 @@ func ArcaneImageRegistryHost(registry string) string {
 		return ECRPublicRegistryHost
 	}
 	return ArcaneRegistryHost(registry)
-}
-
-type SettingUpdate struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
 }

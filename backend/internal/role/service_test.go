@@ -19,6 +19,30 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 )
 
+type (
+	// Minimal stand-ins for the environments and api_keys rows these tests need.
+	testEnvironmentRow struct {
+		database.BaseModel
+		AccessToken *string `gorm:"column:access_token"`
+		Name        string
+		ApiUrl      string `gorm:"column:api_url"`
+		Status      string
+		Enabled     bool
+	}
+
+	testApiKeyRow struct {
+		database.BaseModel
+		UserID        *string `gorm:"column:user_id"`
+		EnvironmentID *string `gorm:"column:environment_id"`
+		ManagedBy     *string `gorm:"column:managed_by"`
+		ExpiresAt     *time.Time
+		Name          string
+		KeyHash       string `gorm:"column:key_hash"`
+		KeyPrefix     string `gorm:"column:key_prefix"`
+		Kind          string
+	}
+)
+
 func TestValidatePermissionsAgainstCallerRejectsEscalation(t *testing.T) {
 	_, roleSvc := setupUserAndRoleServices(t)
 
@@ -351,29 +375,7 @@ func createTestEnvironment(t *testing.T, db *database.DB, id, apiURL string, acc
 	}).Error)
 }
 
-// Minimal stand-ins for the environments and api_keys rows these tests need.
-type testEnvironmentRow struct {
-	database.BaseModel
-	AccessToken *string `gorm:"column:access_token"`
-	Name        string
-	ApiUrl      string `gorm:"column:api_url"`
-	Status      string
-	Enabled     bool
-}
-
 func (testEnvironmentRow) TableName() string { return "environments" }
-
-type testApiKeyRow struct {
-	database.BaseModel
-	UserID        *string `gorm:"column:user_id"`
-	EnvironmentID *string `gorm:"column:environment_id"`
-	ManagedBy     *string `gorm:"column:managed_by"`
-	ExpiresAt     *time.Time
-	Name          string
-	KeyHash       string `gorm:"column:key_hash"`
-	KeyPrefix     string `gorm:"column:key_prefix"`
-	Kind          string
-}
 
 func (testApiKeyRow) TableName() string { return "api_keys" }
 

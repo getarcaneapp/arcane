@@ -39,6 +39,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
+type (
+	roundTripFunc func(*http.Request) (*http.Response, error)
+)
+
 func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBuild(t *testing.T) {
 	ctx := t.Context()
 	db := setupImageUpdateTestDB(t)
@@ -205,8 +209,6 @@ func setupImageUpdateTestDB(t *testing.T) *database.DB {
 	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}, &event.Event{}, &project.Project{}))
 	return &database.DB{DB: db}
 }
-
-type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)

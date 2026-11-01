@@ -41,16 +41,18 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
-var imageDockerAPIVersionPrefix = regexp.MustCompile(`^/v\d+\.\d+`)
+type (
+	// testProjectRow is a minimal stand-in for project.Project: the project
+	// package imports this one, so the in-package test cannot import it back.
+	testProjectRow struct {
+		database.BaseModel
+		BuildImageRefsJSON *string `gorm:"column:build_image_refs_json"`
+		Name               string
+		Path               string
+	}
+)
 
-// testProjectRow is a minimal stand-in for project.Project: the project
-// package imports this one, so the in-package test cannot import it back.
-type testProjectRow struct {
-	database.BaseModel
-	BuildImageRefsJSON *string `gorm:"column:build_image_refs_json"`
-	Name               string
-	Path               string
-}
+var imageDockerAPIVersionPrefix = regexp.MustCompile(`^/v\d+\.\d+`)
 
 func imageDockerTestPath(path string) string {
 	return imageDockerAPIVersionPrefix.ReplaceAllString(path, "")

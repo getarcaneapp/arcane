@@ -16,38 +16,38 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
 )
 
-const (
-	browserSessionSigningKeySize = 64
+type (
+	accessTokenClaims struct {
+		ExpiresAt  time.Time
+		UserID     string
+		SessionID  string
+		Username   string
+		AppVersion string
+	}
 
-	accessTokenSubject    = "access"
-	browserTokenSubject   = "browser_session"
-	refreshTokenSubject   = "refresh"
-	browserRefreshSubject = "browser_refresh"
-
-	claimSessionID             = "sid"
-	claimUserID                = "user_id"
-	claimUsername              = "username"
-	claimEmail                 = "email"
-	claimDisplayName           = "display_name"
-	claimAppVersion            = "app_version"
-	claimTokenType             = "token_type"
-	claimFederatedCredentialID = "federated_credential_id"
+	refreshTokenClaims struct {
+		ID         string
+		UserID     string
+		SessionID  string
+		AppVersion string
+	}
 )
 
-type accessTokenClaims struct {
-	ExpiresAt  time.Time
-	UserID     string
-	SessionID  string
-	Username   string
-	AppVersion string
-}
-
-type refreshTokenClaims struct {
-	ID         string
-	UserID     string
-	SessionID  string
-	AppVersion string
-}
+const (
+	browserSessionSigningKeySize = 64
+	accessTokenSubject           = "access"
+	browserTokenSubject          = "browser_session"
+	refreshTokenSubject          = "refresh"
+	browserRefreshSubject        = "browser_refresh"
+	claimSessionID               = "sid"
+	claimUserID                  = "user_id"
+	claimUsername                = "username"
+	claimEmail                   = "email"
+	claimDisplayName             = "display_name"
+	claimAppVersion              = "app_version"
+	claimTokenType               = "token_type"
+	claimFederatedCredentialID   = "federated_credential_id"
+)
 
 var tokenParseOptions = []jwt.ParseOption{
 	jwt.WithStrictStringClaims(true),

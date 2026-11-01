@@ -23,6 +23,12 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
+type (
+	stubFileInfo struct {
+		dir bool
+	}
+)
+
 // Azure DevOps requires multi_ack/multi_ack_detailed in pack negotiation;
 // go-git's default UnsupportedCapabilities strips them and clones fail with
 // "invalid reset option: object not found" (#3168).
@@ -154,16 +160,17 @@ func TestGetKnownHostsPath(t *testing.T) {
 	}
 }
 
-type stubFileInfo struct {
-	dir bool
-}
+func (s stubFileInfo) Name() string { return "stub" }
 
-func (s stubFileInfo) Name() string       { return "stub" }
-func (s stubFileInfo) Size() int64        { return 0 }
-func (s stubFileInfo) Mode() os.FileMode  { return 0o755 }
+func (s stubFileInfo) Size() int64 { return 0 }
+
+func (s stubFileInfo) Mode() os.FileMode { return 0o755 }
+
 func (s stubFileInfo) ModTime() time.Time { return time.Time{} }
-func (s stubFileInfo) IsDir() bool        { return s.dir }
-func (s stubFileInfo) Sys() any           { return nil }
+
+func (s stubFileInfo) IsDir() bool { return s.dir }
+
+func (s stubFileInfo) Sys() any { return nil }
 
 func TestGetSSHHostKeyCallback(t *testing.T) {
 	client := NewClient("")

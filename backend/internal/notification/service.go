@@ -44,31 +44,56 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
-var notificationCredentialFieldsByProvider = map[notifications.NotificationProvider][]string{
-	notifications.NotificationProviderDiscord:  {"token"},
-	notifications.NotificationProviderEmail:    {"smtpPassword"},
-	notifications.NotificationProviderTelegram: {"botToken"},
-	notifications.NotificationProviderSignal:   {"password", "token"},
-	notifications.NotificationProviderSlack:    {"token"},
-	notifications.NotificationProviderNtfy:     {"password"},
-	notifications.NotificationProviderPushover: {"token"},
-	notifications.NotificationProviderGotify:   {"token"},
-	notifications.NotificationProviderMatrix:   {"password"},
-	// The Google Chat webhook URL embeds its key and token, so the whole URL is a credential.
-	notifications.NotificationProviderGoogleChat: {"webhookUrl"},
-}
+type (
+	NotificationService struct {
+		db              *database.DB
+		config          *config.Config
+		environmentSvc  *environment.EnvironmentService
+		eventSvc        *event.EventService
+		apnsSvc         *apns.ApnsService
+		settingsService *settings.SettingsService
+		templates       *templates.Service
+		httpClient      *http.Client
+	}
 
-var notificationTargetFieldByProvider = map[notifications.NotificationProvider]string{
-	notifications.NotificationProviderEmail:  "smtpHost",
-	notifications.NotificationProviderSignal: "host",
-	notifications.NotificationProviderNtfy:   "host",
-	notifications.NotificationProviderGotify: "host",
-	notifications.NotificationProviderMatrix: "host",
-}
+	NotificationTarget struct {
+		EnvironmentID   string
+		EnvironmentName string
+	}
+
+	NotificationServiceParams struct {
+		fx.In
+
+		DB              *database.DB
+		Config          *config.Config
+		EnvironmentSvc  *environment.EnvironmentService
+		EventSvc        *event.EventService
+		APNSSvc         *apns.ApnsService
+		SettingsService *settings.SettingsService
+	}
+
+	// VulnerabilityNotificationPayload is the data sent to all providers for vulnerability_found events.
+	// Only vulnerabilities with a fixed version should trigger this notification.
+	VulnerabilityNotificationPayload struct {
+		CVEID            string // e.g. CVE-2024-1234
+		CVELink          string // e.g. https://nvd.nist.gov/vuln/detail/CVE-2024-1234
+		Severity         string // CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN
+		ImageName        string // e.g. nginx:latest
+		FixedVersion     string
+		PkgName          string // optional
+		InstalledVersion string // optional
+	}
+
+	ContainerUpdateEvent struct {
+		ContainerName string
+		ImageRef      string
+		OldDigest     string
+		NewDigest     string
+	}
+)
 
 const (
-	notificationDispatchConcurrency = 4
-
+	notificationDispatchConcurrency      = 4
 	notificationTestTypeSimple           = "simple"
 	notificationTestTypeImageUpdate      = "image-update"
 	notificationTestTypeBatchImageUpdate = "batch-image-update"
@@ -77,45 +102,51 @@ const (
 	notificationTestTypeAutoHeal         = "auto-heal"
 )
 
-// notificationTestEventTypes lists supported test types and the event a real notification of that kind is gated on ("" = none).
-var notificationTestEventTypes = map[string]notifications.NotificationEventType{
-	notificationTestTypeSimple:           "",
-	notificationTestTypeImageUpdate:      notifications.NotificationEventImageUpdate,
-	notificationTestTypeBatchImageUpdate: notifications.NotificationEventImageUpdate,
-	notificationTestTypeVulnerability:    notifications.NotificationEventVulnerabilityFound,
-	notificationTestTypePruneReport:      notifications.NotificationEventPruneReport,
-	notificationTestTypeAutoHeal:         notifications.NotificationEventAutoHeal,
-}
-
 var (
+	notificationCredentialFieldsByProvider = map[notifications.NotificationProvider][]string{
+		notifications.NotificationProviderDiscord:  {"token"},
+		notifications.NotificationProviderEmail:    {"smtpPassword"},
+		notifications.NotificationProviderTelegram: {"botToken"},
+		notifications.NotificationProviderSignal:   {"password", "token"},
+		notifications.NotificationProviderSlack:    {"token"},
+		notifications.NotificationProviderNtfy:     {"password"},
+		notifications.NotificationProviderPushover: {"token"},
+		notifications.NotificationProviderGotify:   {"token"},
+		notifications.NotificationProviderMatrix:   {"password"},
+		// The Google Chat webhook URL embeds its key and token, so the whole URL is a credential.
+		notifications.NotificationProviderGoogleChat: {"webhookUrl"},
+	}
+
+	notificationTargetFieldByProvider = map[notifications.NotificationProvider]string{
+		notifications.NotificationProviderEmail:  "smtpHost",
+		notifications.NotificationProviderSignal: "host",
+		notifications.NotificationProviderNtfy:   "host",
+		notifications.NotificationProviderGotify: "host",
+		notifications.NotificationProviderMatrix: "host",
+	}
+
+	// notificationTestEventTypes lists supported test types and the event a real notification of that kind is gated on ("" = none).
+	notificationTestEventTypes = map[string]notifications.NotificationEventType{
+		notificationTestTypeSimple:           "",
+		notificationTestTypeImageUpdate:      notifications.NotificationEventImageUpdate,
+		notificationTestTypeBatchImageUpdate: notifications.NotificationEventImageUpdate,
+		notificationTestTypeVulnerability:    notifications.NotificationEventVulnerabilityFound,
+		notificationTestTypePruneReport:      notifications.NotificationEventPruneReport,
+		notificationTestTypeAutoHeal:         notifications.NotificationEventAutoHeal,
+	}
+
 	ErrUnauthorizedNotificationDispatch = errors.New("unauthorized notification dispatch")
 	ErrUnsupportedDispatchKind          = errors.New("unsupported notification dispatch kind")
+
+	notificationsSent = func() metric.Int64Counter {
+		counter, err := otel.Meter(tracing.InstrumentationName).Int64Counter("arcane.notifications.sent",
+			metric.WithDescription("Notification provider sends by outcome"), metric.WithUnit("{notification}"))
+		if err != nil {
+			otel.Handle(err)
+		}
+		return counter
+	}()
 )
-
-var notificationsSent = func() metric.Int64Counter {
-	counter, err := otel.Meter(tracing.InstrumentationName).Int64Counter("arcane.notifications.sent",
-		metric.WithDescription("Notification provider sends by outcome"), metric.WithUnit("{notification}"))
-	if err != nil {
-		otel.Handle(err)
-	}
-	return counter
-}()
-
-type NotificationService struct {
-	db              *database.DB
-	config          *config.Config
-	environmentSvc  *environment.EnvironmentService
-	eventSvc        *event.EventService
-	apnsSvc         *apns.ApnsService
-	settingsService *settings.SettingsService
-	templates       *templates.Service
-	httpClient      *http.Client
-}
-
-type NotificationTarget struct {
-	EnvironmentID   string
-	EnvironmentName string
-}
 
 func logManagerDispatchNotification(ctx context.Context, target NotificationTarget, kind types.NotificationDispatchKind) {
 	slog.InfoContext(ctx,
@@ -124,17 +155,6 @@ func logManagerDispatchNotification(ctx context.Context, target NotificationTarg
 		"environmentName", target.EnvironmentName,
 		"kind", string(kind),
 	)
-}
-
-type NotificationServiceParams struct {
-	fx.In
-
-	DB              *database.DB
-	Config          *config.Config
-	EnvironmentSvc  *environment.EnvironmentService
-	EventSvc        *event.EventService
-	APNSSvc         *apns.ApnsService
-	SettingsService *settings.SettingsService
 }
 
 func NewNotificationService(p NotificationServiceParams) *NotificationService {
@@ -676,18 +696,6 @@ func (s *NotificationService) notifyEnabledProviders(
 	return delivered, nil
 }
 
-// VulnerabilityNotificationPayload is the data sent to all providers for vulnerability_found events.
-// Only vulnerabilities with a fixed version should trigger this notification.
-type VulnerabilityNotificationPayload struct {
-	CVEID            string // e.g. CVE-2024-1234
-	CVELink          string // e.g. https://nvd.nist.gov/vuln/detail/CVE-2024-1234
-	Severity         string // CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN
-	ImageName        string // e.g. nginx:latest
-	FixedVersion     string
-	PkgName          string // optional
-	InstalledVersion string // optional
-}
-
 // --- Event entry points ---
 
 // SendBatchContainerUpdateNotification dispatches one notification covering all containers updated in an auto-update run.
@@ -786,13 +794,6 @@ func (s *NotificationService) sendImageUpdateNotificationForTarget(
 	content := s.templates.ImageUpdate(target.EnvironmentName, imageRef, updateInfo)
 	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, eventType)
 	return s.notifyEnabledProviders(ctx, target, eventType, imageRef, metadata, content)
-}
-
-type ContainerUpdateEvent struct {
-	ContainerName string
-	ImageRef      string
-	OldDigest     string
-	NewDigest     string
 }
 
 func (s *NotificationService) SendContainerUpdateNotification(ctx context.Context, update ContainerUpdateEvent) error {

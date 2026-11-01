@@ -61,119 +61,132 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
+type (
+	Service struct {
+		progress       *progressFeed
+		jobHub         *agg.Hub[types.UpgradeJob]
+		jobChanged     chan struct{}
+		agentSlotFreed chan struct{}
+		latestJob      atomic.Pointer[types.UpgradeJob]
+		flow           *flow.Engine
+		environments   *environment.EnvironmentService
+		roles          *role.RoleService
+		// upgradeJobWorkflow upgrades agents in parallel, then the manager last.
+		upgradeJobWorkflow *flow.Workflow
+		db                 *database.DB
+		dockerService      *dockerInternal.DockerClientService
+		versionService     *version.VersionService
+		eventService       *event.EventService
+		settingsService    *settings.SettingsService
+		projectService     *project.ProjectService
+		registryService    *registry.ContainerRegistryService
+		// resolveRuntimeOptions determines how the upgrader container reaches the Docker daemon.
+		resolveRuntimeOptions func(
+			ctx context.Context,
+			dockerHost string,
+			currentContainer *container.InspectResponse,
+			discoverHostPath func(context.Context, string) (string, error),
+			isRunningInDocker func() bool,
+			selectReachableNetwork func(context.Context, *container.InspectResponse, string) string,
+		) ([]string, []mount.Mount, container.NetworkMode, error)
+		resultMu     sync.Mutex
+		agentSlotsMu sync.Mutex
+		activeAgents int
+		upgrading    atomic.Bool
+		startingJob  atomic.Bool
+		keepUpgrader bool
+	}
+
+	// remoteAgent is one environment the upgrade job workflow upgrades.
+	remoteAgent struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+
+	// upgradeJobInput is the upgrade job payload: the job and the API key that requested it.
+	upgradeJobInput struct {
+		JobID string `json:"jobId"`
+		KeyID string `json:"keyId,omitempty"`
+	}
+
+	preparedUpgrade struct {
+		current      container.InspectResponse
+		dockerClient *client.Client
+		// saveCompose persists a tag change in the container's Compose project.
+		saveCompose   func(context.Context)
+		containerName string
+		binaryPath    string
+		// targetImage is what the recreated container runs; pullImage is the immutable reference pulled (same unless frozen).
+		targetImage string
+		pullImage   string
+		fromVersion string
+		toVersion   string
+	}
+
+	resumeAction struct {
+		markStale        bool
+		managerSucceeded bool
+	}
+
+	// upgraderExit is how much the watcher learned about an upgrader run.
+	upgraderExit int
+
+	ServiceParams struct {
+		DB                    *database.DB
+		DockerService         *dockerInternal.DockerClientService
+		VersionService        *version.VersionService
+		EventService          *event.EventService
+		SettingsService       *settings.SettingsService
+		ProjectService        *project.ProjectService
+		RegistryService       *registry.ContainerRegistryService
+		ResolveRuntimeOptions func(
+			ctx context.Context,
+			dockerHost string,
+			currentContainer *container.InspectResponse,
+			discoverHostPath func(context.Context, string) (string, error),
+			isRunningInDocker func() bool,
+			selectReachableNetwork func(context.Context, *container.InspectResponse, string) string,
+		) ([]string, []mount.Mount, container.NetworkMode, error)
+		KeepUpgrader bool
+	}
+
+	progressSink struct {
+		savedAt   time.Time
+		service   *Service
+		job       *UpgradeJob
+		baseLogs  []string
+		index     int
+		keepStage bool
+		dirty     bool
+		replaying bool
+		baseSet   bool
+	}
+)
+
+const (
+	upgraderExitUnobserved          upgraderExit = 0
+	upgraderExitSucceeded           upgraderExit = 1
+	upgraderExitFailed              upgraderExit = 2
+	upgraderExitCodeLost            upgraderExit = 3
+	upgradeJobStaleThreshold                     = time.Hour
+	upgradeJobAgentRequestTimeout                = 15 * time.Second
+	upgradeJobRedialMaxBackoff                   = 5 * time.Second
+	upgradeJobLegacyPollInterval                 = 10 * time.Second
+	upgradeJobPublishInterval                    = 250 * time.Millisecond
+	upgradeJobConfirmTimeout                     = 5 * time.Minute
+	upgradeJobErrorMaxLen                        = 500
+	upgradeJobMaxParallelAgents                  = 16
+	upgradeJobWorkflowName                       = "update-all"
+	upgradeJobManagerWatchTimeout                = 15 * time.Minute
+	upgradeJobManagerNoRestartGrace              = 15 * time.Second
+)
+
 var (
 	upgradeLogName           = regexp.MustCompile(`^arcane-upgrade-\d+\.log$`)
 	exactReleaseTag          = regexp.MustCompile(`^v?\d+\.\d+\.\d+(?:[-+].*)?$`)
 	activeUpgradeJobStatuses = []UpgradeJobStatus{UpgradeJobStatusPendingRestart, UpgradeJobStatusRunning}
 	errUpgradeJobInProgress  = common.Classify(common.ErrUpgradeJobInProgress, errors.New("an upgrade job is already in progress"))
 )
-
-const (
-	upgraderExitUnobserved upgraderExit = 0
-	upgraderExitSucceeded  upgraderExit = 1
-	upgraderExitFailed     upgraderExit = 2
-	upgraderExitCodeLost   upgraderExit = 3
-
-	upgradeJobStaleThreshold        = time.Hour
-	upgradeJobAgentRequestTimeout   = 15 * time.Second
-	upgradeJobRedialMaxBackoff      = 5 * time.Second
-	upgradeJobLegacyPollInterval    = 10 * time.Second
-	upgradeJobPublishInterval       = 250 * time.Millisecond
-	upgradeJobConfirmTimeout        = 5 * time.Minute
-	upgradeJobErrorMaxLen           = 500
-	upgradeJobMaxParallelAgents     = 16
-	upgradeJobWorkflowName          = "update-all"
-	upgradeJobManagerWatchTimeout   = 15 * time.Minute
-	upgradeJobManagerNoRestartGrace = 15 * time.Second
-)
-
-type Service struct {
-	progress       *progressFeed
-	jobHub         *agg.Hub[types.UpgradeJob]
-	jobChanged     chan struct{}
-	agentSlotFreed chan struct{}
-	latestJob      atomic.Pointer[types.UpgradeJob]
-	flow           *flow.Engine
-	environments   *environment.EnvironmentService
-	roles          *role.RoleService
-	// upgradeJobWorkflow upgrades agents in parallel, then the manager last.
-	upgradeJobWorkflow *flow.Workflow
-	db                 *database.DB
-	dockerService      *dockerInternal.DockerClientService
-	versionService     *version.VersionService
-	eventService       *event.EventService
-	settingsService    *settings.SettingsService
-	projectService     *project.ProjectService
-	registryService    *registry.ContainerRegistryService
-	// resolveRuntimeOptions determines how the upgrader container reaches the Docker daemon.
-	resolveRuntimeOptions func(
-		ctx context.Context,
-		dockerHost string,
-		currentContainer *container.InspectResponse,
-		discoverHostPath func(context.Context, string) (string, error),
-		isRunningInDocker func() bool,
-		selectReachableNetwork func(context.Context, *container.InspectResponse, string) string,
-	) ([]string, []mount.Mount, container.NetworkMode, error)
-	resultMu     sync.Mutex
-	agentSlotsMu sync.Mutex
-	activeAgents int
-	upgrading    atomic.Bool
-	startingJob  atomic.Bool
-	keepUpgrader bool
-}
-
-// remoteAgent is one environment the upgrade job workflow upgrades.
-type remoteAgent struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-// upgradeJobInput is the upgrade job payload: the job and the API key that requested it.
-type upgradeJobInput struct {
-	JobID string `json:"jobId"`
-	KeyID string `json:"keyId,omitempty"`
-}
-
-type preparedUpgrade struct {
-	current      container.InspectResponse
-	dockerClient *client.Client
-	// saveCompose persists a tag change in the container's Compose project.
-	saveCompose   func(context.Context)
-	containerName string
-	binaryPath    string
-	// targetImage is what the recreated container runs; pullImage is the immutable reference pulled (same unless frozen).
-	targetImage string
-	pullImage   string
-	fromVersion string
-	toVersion   string
-}
-
-type resumeAction struct {
-	markStale        bool
-	managerSucceeded bool
-}
-
-// upgraderExit is how much the watcher learned about an upgrader run.
-type upgraderExit int
-
-type ServiceParams struct {
-	DB                    *database.DB
-	DockerService         *dockerInternal.DockerClientService
-	VersionService        *version.VersionService
-	EventService          *event.EventService
-	SettingsService       *settings.SettingsService
-	ProjectService        *project.ProjectService
-	RegistryService       *registry.ContainerRegistryService
-	ResolveRuntimeOptions func(
-		ctx context.Context,
-		dockerHost string,
-		currentContainer *container.InspectResponse,
-		discoverHostPath func(context.Context, string) (string, error),
-		isRunningInDocker func() bool,
-		selectReachableNetwork func(context.Context, *container.InspectResponse, string) string,
-	) ([]string, []mount.Mount, container.NetworkMode, error)
-	KeepUpgrader bool
-}
 
 func NewService(p ServiceParams) *Service {
 	return &Service{
@@ -1469,18 +1482,6 @@ func (s *Service) followAgentProgress(ctx context.Context, envID string, sink *p
 		err = io.ErrUnexpectedEOF
 	}
 	return doneMessage, done, err
-}
-
-type progressSink struct {
-	savedAt   time.Time
-	service   *Service
-	job       *UpgradeJob
-	baseLogs  []string
-	index     int
-	keepStage bool
-	dirty     bool
-	replaying bool
-	baseSet   bool
 }
 
 func (p *progressSink) apply(ctx context.Context, update types.UpgradeProgressEvent) {

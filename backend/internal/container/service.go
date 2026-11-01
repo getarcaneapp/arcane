@@ -58,6 +58,73 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/iconcatalog"
 )
 
+type (
+	ContainerService struct {
+		dockerService   *dockerInternal.DockerClientService
+		eventService    *event.EventService
+		imageService    *image.ImageService
+		settingsService *settings.SettingsService
+		projectService  *project.ProjectService
+		kvService       *kv.KVService
+		podmanService   *podman.Service
+		iconMetaCache   *hot.HotCache[string, projects.ArcaneComposeMetadata]
+		stats           *stats.Service
+		// opLock serializes mutating operations on the same container.
+		opLock utils.KeyedMutex
+	}
+
+	ContainerListResult struct {
+		Items      []types.ContainerSummary
+		Groups     []types.ContainerSummaryGroup
+		Pagination pagination.Response
+		Counts     types.ContainerStatusCounts
+	}
+
+	containerLifecycleAction struct {
+		metadata           database.JSON
+		runContainerAction func(context.Context) error
+		action             string
+		eventType          event.EventType
+	}
+
+	ExecSession struct {
+		hijackedResp client.HijackedResponse
+		dockerClient *client.Client
+		execID       string
+		containerID  string
+		closeOnce    sync.Once
+	}
+
+	demuxedLogs struct {
+		io.Reader
+
+		pipe *io.PipeReader
+		logs io.ReadCloser
+	}
+
+	ContainerServiceParams struct {
+		fx.In
+
+		EventService    *event.EventService
+		DockerService   *dockerInternal.DockerClientService
+		ImageService    *image.ImageService
+		SettingsService *settings.SettingsService
+		ProjectService  *project.ProjectService
+		KVService       *kv.KVService
+		PodmanService   *podman.Service
+	}
+
+	DeleteContainerOptions struct {
+		Force         bool
+		RemoveVolumes bool
+	}
+
+	StatusCountOptions struct {
+		IncludeInternal bool
+		IncludeHidden   bool
+	}
+)
+
 const (
 	containerGroupByProject  = "project"
 	containerNoProjectGroup  = "No Project"
@@ -68,62 +135,21 @@ const (
 	rollbackTimeout = 2 * timeouts.DefaultDockerAPI
 	// redeployBackupInfix joins a container's name and a Unix timestamp to name the original kept during a redeploy.
 	redeployBackupInfix = "-arcane-redeploy-"
+
+	// ResourceSampleLimit caps how many requested containers one SampleResources call reads.
+	ResourceSampleLimit = 500
 )
 
-type ContainerService struct {
-	dockerService   *dockerInternal.DockerClientService
-	eventService    *event.EventService
-	imageService    *image.ImageService
-	settingsService *settings.SettingsService
-	projectService  *project.ProjectService
-	kvService       *kv.KVService
-	podmanService   *podman.Service
-	iconMetaCache   *hot.HotCache[string, projects.ArcaneComposeMetadata]
-	stats           *stats.Service
-	// opLock serializes mutating operations on the same container.
-	opLock utils.KeyedMutex
-}
+var (
+	// containerProcessesPsArgs lists ps argument sets in preference order: procps first, then
+	// BusyBox, which rejects %cpu/%mem. Windows daemons ignore the arguments.
+	containerProcessesPsArgs = [][]string{
+		{"-eo", "pid,user,%cpu,%mem,etime,cmd"},
+		{"-o", "pid,user,etime,args"},
+	}
 
-type ContainerListResult struct {
-	Items      []types.ContainerSummary
-	Groups     []types.ContainerSummaryGroup
-	Pagination pagination.Response
-	Counts     types.ContainerStatusCounts
-}
-
-type containerLifecycleAction struct {
-	metadata           database.JSON
-	runContainerAction func(context.Context) error
-	action             string
-	eventType          event.EventType
-}
-
-type ExecSession struct {
-	hijackedResp client.HijackedResponse
-	dockerClient *client.Client
-	execID       string
-	containerID  string
-	closeOnce    sync.Once
-}
-
-type demuxedLogs struct {
-	io.Reader
-
-	pipe *io.PipeReader
-	logs io.ReadCloser
-}
-
-type ContainerServiceParams struct {
-	fx.In
-
-	EventService    *event.EventService
-	DockerService   *dockerInternal.DockerClientService
-	ImageService    *image.ImageService
-	SettingsService *settings.SettingsService
-	ProjectService  *project.ProjectService
-	KVService       *kv.KVService
-	PodmanService   *podman.Service
-}
+	hostnameLabelPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
+)
 
 func NewContainerService(p ContainerServiceParams) *ContainerService {
 	return &ContainerService{
@@ -1545,13 +1571,6 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 	}, nil
 }
 
-// containerProcessesPsArgs lists ps argument sets in preference order: procps first, then
-// BusyBox, which rejects %cpu/%mem. Windows daemons ignore the arguments.
-var containerProcessesPsArgs = [][]string{
-	{"-eo", "pid,user,%cpu,%mem,etime,cmd"},
-	{"-o", "pid,user,etime,args"},
-}
-
 // GetContainerProcesses returns Docker's `top` snapshot for a container.
 func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerID string) (types.ContainerProcesses, error) {
 	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerTopResult, error) {
@@ -1581,11 +1600,6 @@ func (s *ContainerService) GetContainerNameByReference(ctx context.Context, ref 
 		return "", err
 	}
 	return strings.TrimPrefix(info.Name, "/"), nil
-}
-
-type DeleteContainerOptions struct {
-	Force         bool
-	RemoveVolumes bool
 }
 
 func (s *ContainerService) DeleteContainer(ctx context.Context, containerID string, opts DeleteContainerOptions, user types.Actor) error {
@@ -1686,8 +1700,6 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 
 	return nil
 }
-
-var hostnameLabelPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
 
 func validateContainerHostname(hostname string) error {
 	if hostname == "" {
@@ -1835,9 +1847,6 @@ func (s *ContainerService) StreamStats(ctx context.Context, containerID string, 
 	return s.stats.Stream(ctx, containerID, statsChan)
 }
 
-// ResourceSampleLimit caps how many requested containers one SampleResources call reads.
-const ResourceSampleLimit = 500
-
 // SampleResources samples the running containers among the first ResourceSampleLimit ids,
 // refetching samples older than maxAge. Blank, stopped and unknown IDs are omitted.
 func (s *ContainerService) SampleResources(ctx context.Context, ids []string, maxAge time.Duration) (map[string]*types.ContainerResourceSample, error) {
@@ -1982,11 +1991,6 @@ func (s *ContainerService) ListContainersPaginated(
 		Pagination: pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params),
 		Counts:     counts,
 	}, nil
-}
-
-type StatusCountOptions struct {
-	IncludeInternal bool
-	IncludeHidden   bool
 }
 
 func (s *ContainerService) GetContainerStatusCounts(ctx context.Context, opts StatusCountOptions) (types.ContainerStatusCounts, error) {

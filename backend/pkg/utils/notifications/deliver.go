@@ -13,57 +13,71 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 )
 
-// Content is the provider-independent description of one notification: the
-// message text per format plus the per-event knobs that vary between events.
-type Content struct {
-	// Text holds the message body per format, built once per fan-out via the
-	// messages.go builders.
-	Text map[MessageFormat]string
+type (
+	// Content is the provider-independent description of one notification: the
+	// message text per format plus the per-event knobs that vary between events.
+	Content struct {
+		// Text holds the message body per format, built once per fan-out via the
+		// messages.go builders.
+		Text map[MessageFormat]string
 
-	// RenderEmail lazily renders the email subject and HTML body. Built as a
-	// closure by the caller so template resources and app config stay out of
-	// this package. Nil means the provider map's email deliverer errors.
-	RenderEmail func() (subject, html string, err error)
+		// RenderEmail lazily renders the email subject and HTML body. Built as a
+		// closure by the caller so template resources and app config stay out of
+		// this package. Nil means the provider map's email deliverer errors.
+		RenderEmail func() (subject, html string, err error)
 
-	// Vars carries per-event variables (environment, environmentId, event,
-	// timestamp) for the generic webhook's payload template. They are only
-	// injected into the outgoing request when a payload template is configured,
-	// so existing template-less generic webhooks keep their exact payload.
-	Vars map[string]string
+		// Vars carries per-event variables (environment, environmentId, event,
+		// timestamp) for the generic webhook's payload template. They are only
+		// injected into the outgoing request when a payload template is configured,
+		// so existing template-less generic webhooks keep their exact payload.
+		Vars map[string]string
 
-	// Title is the generic-webhook title.
-	Title string
+		// Title is the generic-webhook title.
+		Title string
 
-	// NtfyTitle is the event-specific ntfy title used when the provider does
-	// not have a custom title configured.
-	NtfyTitle string
+		// NtfyTitle is the event-specific ntfy title used when the provider does
+		// not have a custom title configured.
+		NtfyTitle string
 
-	// DefaultTitle is applied to pushover/gotify when their config has no
-	// title; "" means don't default.
-	DefaultTitle string
+		// DefaultTitle is applied to pushover/gotify when their config has no
+		// title; "" means don't default.
+		DefaultTitle string
 
-	// RequireNtfyTopic preserves the per-event ntfy topic validation.
-	RequireNtfyTopic bool
+		// RequireNtfyTopic preserves the per-event ntfy topic validation.
+		RequireNtfyTopic bool
 
-	// ValidatePushoverUser preserves the per-event pushover token/user validation.
-	ValidatePushoverUser bool
-}
+		// ValidatePushoverUser preserves the per-event pushover token/user validation.
+		ValidatePushoverUser bool
+	}
 
-type delivererFunc func(ctx context.Context, config database.JSON, c Content) error
+	delivererFunc func(ctx context.Context, config database.JSON, c Content) error
 
-var providerDeliverers = map[NotificationProvider]delivererFunc{
-	NotificationProviderDiscord:    deliverDiscord,
-	NotificationProviderEmail:      deliverEmail,
-	NotificationProviderTelegram:   deliverTelegram,
-	NotificationProviderSignal:     deliverSignal,
-	NotificationProviderSlack:      deliverSlack,
-	NotificationProviderNtfy:       deliverNtfy,
-	NotificationProviderPushover:   deliverPushover,
-	NotificationProviderGotify:     deliverGotify,
-	NotificationProviderMatrix:     deliverMatrix,
-	NotificationProviderGoogleChat: deliverGoogleChat,
-	NotificationProviderGeneric:    deliverGeneric,
-}
+	// deliveryError reports a provider failure without its webhook URL while keeping the cause for errors.Is.
+	deliveryError struct {
+		err     error
+		message string
+	}
+)
+
+var (
+	providerDeliverers = map[NotificationProvider]delivererFunc{
+		NotificationProviderDiscord:    deliverDiscord,
+		NotificationProviderEmail:      deliverEmail,
+		NotificationProviderTelegram:   deliverTelegram,
+		NotificationProviderSignal:     deliverSignal,
+		NotificationProviderSlack:      deliverSlack,
+		NotificationProviderNtfy:       deliverNtfy,
+		NotificationProviderPushover:   deliverPushover,
+		NotificationProviderGotify:     deliverGotify,
+		NotificationProviderMatrix:     deliverMatrix,
+		NotificationProviderGoogleChat: deliverGoogleChat,
+		NotificationProviderGeneric:    deliverGeneric,
+	}
+
+	// webhookURL matches http(s) URLs in provider errors. Webhook tokens often sit in the path or userinfo,
+	// so only the scheme and host are kept.
+	webhookURL = regexp.MustCompile(`(https?://)(?:[^@/?#\s"']*@)?([^/?#\s"']+)[^\s"']*`)
+)
 
 // Deliver sends c to a single provider. handled is false for unknown providers.
 func Deliver(ctx context.Context, provider NotificationProvider, config database.JSON, c Content) (handled bool, err error) {
@@ -75,16 +89,6 @@ func Deliver(ctx context.Context, provider NotificationProvider, config database
 		return true, deliveryError{message: webhookURL.ReplaceAllString(deliverErr.Error(), "${1}${2}"), err: deliverErr}
 	}
 	return true, nil
-}
-
-// webhookURL matches http(s) URLs in provider errors. Webhook tokens often sit in the path or userinfo,
-// so only the scheme and host are kept.
-var webhookURL = regexp.MustCompile(`(https?://)(?:[^@/?#\s"']*@)?([^/?#\s"']+)[^\s"']*`)
-
-// deliveryError reports a provider failure without its webhook URL while keeping the cause for errors.Is.
-type deliveryError struct {
-	err     error
-	message string
 }
 
 func (e deliveryError) Error() string { return e.message }

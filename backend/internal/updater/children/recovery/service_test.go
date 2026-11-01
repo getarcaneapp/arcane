@@ -29,14 +29,16 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
 )
 
-// unresolvedDigests fails every registry digest lookup.
-type unresolvedDigests struct{}
+type (
+	// unresolvedDigests fails every registry digest lookup.
+	unresolvedDigests struct{}
+)
+
+var neverDeferred = func(updater.ImageUpdateRecord, container.Summary) bool { return false }
 
 func (unresolvedDigests) RemoteDigest(context.Context, string, []types.ContainerRegistryCredential) (string, error) {
 	return "", errors.New("registry digest unavailable")
 }
-
-var neverDeferred = func(updater.ImageUpdateRecord, container.Summary) bool { return false }
 
 func newTestService(t *testing.T, server *httptest.Server, pending func(context.Context) ([]updater.ImageUpdateRecord, error)) *Service {
 	t.Helper()

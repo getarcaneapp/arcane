@@ -34,6 +34,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
+type (
+	testBuildRecorder struct {
+		onBuild    func(buildtypes.BuildRequest)
+		onProgress func(buildtypes.BuildRequest, io.Writer)
+		err        error
+	}
+)
+
 func TestBuildService_ResolveBuildRequest_PassesThroughLocalContext(t *testing.T) {
 	contextDir := t.TempDir()
 	svc := &BuildService{
@@ -404,12 +412,6 @@ func TestSanitizeBuildContextForEventInternal_RedactsURLCredentials(t *testing.T
 		sanitizeBuildContextForEvent("https://user:pass@[bad-host/repo.git"),
 	)
 	assert.Equal(t, "/builds/demo", sanitizeBuildContextForEvent("/builds/demo"))
-}
-
-type testBuildRecorder struct {
-	onBuild    func(buildtypes.BuildRequest)
-	onProgress func(buildtypes.BuildRequest, io.Writer)
-	err        error
 }
 
 func (b testBuildRecorder) BuildImage(_ context.Context, req buildtypes.BuildRequest, writer io.Writer, _ string) (*buildtypes.BuildResult, error) {

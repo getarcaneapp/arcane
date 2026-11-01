@@ -26,13 +26,26 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
-type GitRepositoryService struct {
-	*git.Client
+type (
+	GitRepositoryService struct {
+		*git.Client
 
-	db              *database.DB
-	eventService    *event.EventService
-	settingsService *settings.SettingsService
-}
+		db              *database.DB
+		eventService    *event.EventService
+		settingsService *settings.SettingsService
+	}
+
+	RepositoryUpdate struct {
+		Submitted map[string]bool
+		Actor     types.Actor
+		Request   types.GitRepository
+	}
+)
+
+const (
+	defaultCommitAuthorName  = "Arcane"
+	defaultCommitAuthorEmail = "arcane@localhost"
+)
 
 func NewGitRepositoryService(db *database.DB, workDir string, eventService *event.EventService, settingsService *settings.SettingsService) *GitRepositoryService {
 	return &GitRepositoryService{
@@ -116,11 +129,6 @@ func (s *GitRepositoryService) FindEnabledRepositoryByURL(ctx context.Context, r
 	return nil, nil
 }
 
-const (
-	defaultCommitAuthorName  = "Arcane"
-	defaultCommitAuthorEmail = "arcane@localhost"
-)
-
 func (s *GitRepositoryService) CreateRepository(ctx context.Context, req types.GitRepository, submitted map[string]bool, actor types.Actor) (*GitRepository, error) {
 	if err := normalization.Normalize(&req); err != nil {
 		return nil, err
@@ -189,12 +197,6 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req types.G
 	})
 
 	return &repository, nil
-}
-
-type RepositoryUpdate struct {
-	Submitted map[string]bool
-	Actor     types.Actor
-	Request   types.GitRepository
 }
 
 func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, change RepositoryUpdate) (*GitRepository, error) {

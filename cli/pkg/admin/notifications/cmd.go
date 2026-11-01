@@ -17,6 +17,20 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+var providerRef = cmdutil.ResourceRef[types.NotificationSettings, types.NotificationSettings]{
+	EnvironmentScoped: true,
+	Singular:          "provider", Plural: "providers",
+	IDHint: "the identifier", ListCmd: "arcane-cli admin notifications settings get",
+	GetPath:  func(_, identifier string) string { return clitypes.NotificationSettingsProvider(identifier) },
+	ListPath: func(string) string { return clitypes.NotificationsSettings() },
+	Matches: func(item types.NotificationSettings, lower, original string) bool {
+		return strings.EqualFold(string(item.Provider), original)
+	},
+	Label:        func(item types.NotificationSettings) string { return string(item.Provider) },
+	Promote:      func(item types.NotificationSettings) *types.NotificationSettings { return &item },
+	IdentifierOf: func(item types.NotificationSettings) string { return string(item.Provider) },
+}
+
 // Command is the parent command for notification operations
 func Command() *cobra.Command {
 	command := &cobra.Command{
@@ -221,18 +235,4 @@ func newTestProviderCmd() *cobra.Command {
 	}
 	cmdutil.SetResource(providerRef, command)
 	return command
-}
-
-var providerRef = cmdutil.ResourceRef[types.NotificationSettings, types.NotificationSettings]{
-	EnvironmentScoped: true,
-	Singular:          "provider", Plural: "providers",
-	IDHint: "the identifier", ListCmd: "arcane-cli admin notifications settings get",
-	GetPath:  func(_, identifier string) string { return clitypes.NotificationSettingsProvider(identifier) },
-	ListPath: func(string) string { return clitypes.NotificationsSettings() },
-	Matches: func(item types.NotificationSettings, lower, original string) bool {
-		return strings.EqualFold(string(item.Provider), original)
-	},
-	Label:        func(item types.NotificationSettings) string { return string(item.Provider) },
-	Promote:      func(item types.NotificationSettings) *types.NotificationSettings { return &item },
-	IdentifierOf: func(item types.NotificationSettings) string { return string(item.Provider) },
 }

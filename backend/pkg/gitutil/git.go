@@ -41,15 +41,52 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
+type (
+	// Client handles git operations
+	Client struct {
+		workDir string
+	}
+
+	// AuthConfig holds authentication configuration
+	AuthConfig struct {
+		AuthType               string
+		Username               string
+		Token                  string
+		SSHKey                 string
+		SSHHostKeyVerification string // strict, accept_new, skip
+	}
+
+	// BranchInfo holds information about a git branch
+	BranchInfo struct {
+		Name      string
+		IsDefault bool
+	}
+
+	// SyncFileInfo holds information about a file to be synced
+	SyncFileInfo struct {
+		RelativePath string // Path relative to the sync directory
+		Content      []byte
+		Size         int64
+		IsBinary     bool
+		// Executable mirrors git's +x bit so lifecycle hook scripts arrive runnable.
+		Executable bool
+	}
+
+	// DirectoryWalkResult holds the result of walking a directory for sync
+	DirectoryWalkResult struct {
+		Files           []SyncFileInfo
+		TotalFiles      int
+		TotalSize       int64
+		SkippedBinaries int
+	}
+)
+
 const (
 	// binarySniffBytes is how much of a file is inspected to classify it as binary.
 	binarySniffBytes = 512
-
 	// CloneScratchPrefix names the per-run clone scratch dirs created by Clone.
 	CloneScratchPrefix = "gitops-"
-
-	errUnsupportedURL = "repository URL must use http(s)://, ssh://, git://, or git@host:path"
-
+	errUnsupportedURL  = "repository URL must use http(s)://, ssh://, git://, or git@host:path"
 	// SSH host key verification modes
 
 	SSHHostKeyVerificationStrict    = "strict"     // Require host key in known_hosts
@@ -58,6 +95,8 @@ const (
 	defaultKnownHostsDataDir        = "/app/data"
 	defaultKnownHostsPath           = "/app/data/.ssh/known_hosts"
 )
+
+var scpLikeURLPattern = regexp.MustCompile(`^[^@/]+@[^:/]+:`)
 
 // go-git's file transport execs the git binary, which the distroless image lacks, so unregister it.
 func init() {
@@ -68,13 +107,6 @@ func init() {
 		capability.ThinPack,
 	}
 }
-
-// Client handles git operations
-type Client struct {
-	workDir string
-}
-
-var scpLikeURLPattern = regexp.MustCompile(`^[^@/]+@[^:/]+:`)
 
 // normalizeURL coerces a repository URL onto a network transport, never the file transport.
 // Schemeless host-style URLs (e.g. github.com/org/repo.git) get https://.
@@ -109,15 +141,6 @@ func NewClient(workDir string) *Client {
 	return &Client{
 		workDir: workDir,
 	}
-}
-
-// AuthConfig holds authentication configuration
-type AuthConfig struct {
-	AuthType               string
-	Username               string
-	Token                  string
-	SSHKey                 string
-	SSHHostKeyVerification string // strict, accept_new, skip
 }
 
 // getAuth returns the appropriate transport.AuthMethod.
@@ -413,12 +436,6 @@ func (c *Client) GetCurrentCommit(ctx context.Context, repoPath string) (string,
 	return ref.Hash().String(), nil
 }
 
-// BranchInfo holds information about a git branch
-type BranchInfo struct {
-	Name      string
-	IsDefault bool
-}
-
 // ListBranches lists a remote repository's branches, default branch first.
 func (c *Client) ListBranches(ctx context.Context, url string, auth AuthConfig) ([]BranchInfo, error) {
 	refs, err := c.listRemoteReferences(ctx, url, auth)
@@ -623,24 +640,6 @@ func (c *Client) ReadFile(ctx context.Context, repoPath, filePath string) (strin
 		return "", fmt.Errorf("failed to read file: %w", err)
 	}
 	return string(content), nil
-}
-
-// SyncFileInfo holds information about a file to be synced
-type SyncFileInfo struct {
-	RelativePath string // Path relative to the sync directory
-	Content      []byte
-	Size         int64
-	IsBinary     bool
-	// Executable mirrors git's +x bit so lifecycle hook scripts arrive runnable.
-	Executable bool
-}
-
-// DirectoryWalkResult holds the result of walking a directory for sync
-type DirectoryWalkResult struct {
-	Files           []SyncFileInfo
-	TotalFiles      int
-	TotalSize       int64
-	SkippedBinaries int
 }
 
 // WalkDirectory returns every file in the compose file's directory, enforcing file count and

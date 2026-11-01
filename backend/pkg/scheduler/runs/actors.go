@@ -20,20 +20,23 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
 )
 
+type (
+	coordinatorActor struct {
+		q  *Coordinator
+		id string
+	}
+
+	executorActor struct {
+		q *Coordinator
+	}
+)
+
 const (
 	coordinatorType     = "job-coordinator"
 	executorType        = "job-executor"
 	outcomePersistGrace = 30 * time.Second
 	coordinatorIdleWake = 2 * time.Minute
 )
-
-type coordinatorActor struct {
-	q  *Coordinator
-	id string
-}
-type executorActor struct {
-	q *Coordinator
-}
 
 func (q *Coordinator) Register(runtime *francis.Runtime) error {
 	q.runtime = runtime

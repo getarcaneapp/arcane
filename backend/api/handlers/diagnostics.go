@@ -13,19 +13,21 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// DiagnosticsHandler serves the environment-scoped actor and goroutine diagnostics.
-// The live diagnostics snapshots use the api/ws streams.
-type DiagnosticsHandler struct {
-	diag *diagnostics.DiagnosticsService
-}
+type (
+	// DiagnosticsHandler serves the environment-scoped actor and goroutine diagnostics.
+	// The live diagnostics snapshots use the api/ws streams.
+	DiagnosticsHandler struct {
+		diag *diagnostics.DiagnosticsService
+	}
 
-type GetEnvironmentActorDiagnosticsOutput struct {
-	Body types.ActorDiagnostics
-}
+	GetEnvironmentActorDiagnosticsOutput struct {
+		Body types.ActorDiagnostics
+	}
 
-type GetEnvironmentGoroutineDiagnosticsOutput struct {
-	Body types.GoroutineProfile
-}
+	GetEnvironmentGoroutineDiagnosticsOutput struct {
+		Body types.GoroutineProfile
+	}
+)
 
 // RegisterDiagnostics registers the Huma diagnostics REST endpoints.
 func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
