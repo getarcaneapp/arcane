@@ -16,6 +16,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/kit/pkg"
+	"go.getarcane.app/streams/bus"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
@@ -223,7 +224,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	gate := newSystemBackupAdmissionGateForTest(t)
-	dockerService := (&docker.DockerClientService{}).WithClient(func() *client.Client {
+	dockerService := newSettingsDockerService(t, func() *client.Client {
 		cli, _ := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
 		return cli
 	}())
@@ -331,4 +332,17 @@ func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T
 		Enabled: true, Schedule: "0 0 2 * * *", RetentionCount: 7, LocalEnabled: true,
 	}})
 	require.ErrorContains(t, err, "configure a recovery key")
+}
+
+func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }

@@ -29,6 +29,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
@@ -137,20 +138,6 @@ func TestBuildService_ResolveBuildRequest_ProbesAndClonesRemoteGitContextWithout
 	assert.True(t, probeCalled)
 	assert.True(t, cloneCalled)
 	assert.Equal(t, filepath.Join(repoPath, "docker", "app"), resolvedReq.ContextDir)
-	require.NoError(t, cleanup())
-}
-
-func TestBuildService_ResolveBuildRequest_RequiresGitRepositoryServiceForRemoteContext(t *testing.T) {
-	svc := &BuildService{}
-
-	_, cleanup, err := svc.resolveBuildRequest(
-		t.Context(),
-		buildtypes.BuildRequest{ContextDir: "https://github.com/getarcaneapp/arcane.git#main"},
-		nil,
-		"",
-	)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "git repository service not available")
 	require.NoError(t, cleanup())
 }
 
@@ -273,9 +260,14 @@ func TestBuildService_BuildImage_PreservesRemoteSourceInHistory(t *testing.T) {
 	repoPath := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(repoPath, "Dockerfile"), []byte("FROM alpine:3.20\n"), 0o644))
 
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+
 	captured := buildtypes.BuildRequest{}
 	svc := &BuildService{
-		db: db,
+		db:       db,
+		settings: settingsService,
 		builder: testBuildRecorder{
 			onBuild: func(req buildtypes.BuildRequest) {
 				captured = req
@@ -532,7 +524,7 @@ func setupBuildHistoryTestDB() (*database.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if autoMigrateErr := db.AutoMigrate(&ImageBuild{}, &event.Event{}); autoMigrateErr != nil {
+	if autoMigrateErr := db.AutoMigrate(&ImageBuild{}, &event.Event{}, &settings.SettingVariable{}); autoMigrateErr != nil {
 		return nil, autoMigrateErr
 	}
 	return &database.DB{DB: db}, nil

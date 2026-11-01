@@ -197,7 +197,7 @@ func TestDisabledFeatureSkipsPatchVerificationScan(t *testing.T) {
 	defer func() { assert.NoError(t, dockerClient.Close()) }()
 	svc := NewService(
 		nil,
-		(&docker.DockerClientService{}).WithClient(dockerClient),
+		docker.NewDockerClientService(t.Context(), nil, settingsSvc, bus.Config{}).WithClient(dockerClient),
 		settingsSvc,
 		nil,
 		nil,

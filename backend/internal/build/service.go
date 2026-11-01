@@ -98,9 +98,6 @@ func NewBuildService(
 }
 
 func (s *BuildService) BuildSettings() buildtypes.BuildSettings {
-	if s.settings == nil {
-		return buildtypes.BuildSettings{}
-	}
 	localSettings := s.settings.GetSettingsConfig()
 	return buildtypes.BuildSettings{
 		DepotProjectID:   localSettings.DepotProjectId.Value,
@@ -138,7 +135,7 @@ func (
 	}
 
 	buildRecordID := ""
-	if s.db != nil && strings.TrimSpace(environmentID) != "" {
+	if strings.TrimSpace(environmentID) != "" {
 		if record, err := s.createBuildRecord(ctx, environmentID, req, user); err != nil {
 			slog.WarnContext(ctx, "failed to create build history record", "error", err)
 		} else {
@@ -170,7 +167,7 @@ func (
 		_ = logWriter.Close()
 	}
 
-	if s.db != nil && buildRecordID != "" {
+	if buildRecordID != "" {
 		output := logCapture.String()
 		var outputPtr *string
 		if output != "" {
@@ -224,7 +221,7 @@ func (
 }
 
 func (s *BuildService) logBuildFailureEvent(ctx context.Context, environmentID string, req buildtypes.BuildRequest, serviceName, buildRecordID string, err error, user *types.Actor) {
-	if s.eventService == nil || err == nil {
+	if err == nil {
 		return
 	}
 
@@ -273,9 +270,7 @@ func (s *BuildService) effectiveBuildProvider(provider string) string {
 	if provider != "" {
 		return provider
 	}
-	if s.settings != nil {
-		provider = strings.ToLower(strings.TrimSpace(s.settings.GetSettingsConfig().BuildProvider.Value))
-	}
+	provider = strings.ToLower(strings.TrimSpace(s.settings.GetSettingsConfig().BuildProvider.Value))
 	return kit.Ternary(provider == "", "local", provider)
 }
 
@@ -347,10 +342,6 @@ func (s *BuildService) resolveBuildRequest(
 }
 
 func (s *BuildService) resolveGitBuildAuth(ctx context.Context, rawURL string) (git.AuthConfig, bool, error) {
-	if s.gitRepository == nil {
-		return git.AuthConfig{}, false, nil
-	}
-
 	repository, err := s.gitRepository.FindEnabledRepositoryByURL(ctx, rawURL)
 	if err != nil {
 		return git.AuthConfig{}, false, fmt.Errorf("failed to resolve git repository credentials: %w", err)
@@ -372,11 +363,7 @@ func (s *BuildService) probeGitContext(ctx context.Context, repositoryURL string
 		return s.gitProbeFn(ctx, repositoryURL, authConfig)
 	}
 
-	if s.gitRepository != nil && s.gitRepository.Client != nil {
-		return s.gitRepository.ProbeRemote(ctx, repositoryURL, authConfig)
-	}
-
-	return errors.New("git repository service not available")
+	return s.gitRepository.ProbeRemote(ctx, repositoryURL, authConfig)
 }
 
 func (s *BuildService) cloneGitContext(ctx context.Context, repositoryURL, ref string, authConfig git.AuthConfig) (string, error) {
@@ -384,12 +371,7 @@ func (s *BuildService) cloneGitContext(ctx context.Context, repositoryURL, ref s
 		return s.gitCloneFn(ctx, repositoryURL, ref, authConfig)
 	}
 
-	if s.gitRepository != nil && s.gitRepository.Client != nil {
-		// Builds may run git describe or count commits, so they keep full history.
-		return s.gitRepository.Clone(ctx, repositoryURL, ref, authConfig, 0)
-	}
-
-	return "", errors.New("git repository service not available")
+	return s.gitRepository.Clone(ctx, repositoryURL, ref, authConfig, 0)
 }
 
 func (s *BuildService) cleanupGitContext(repoPath string) error {
@@ -399,10 +381,7 @@ func (s *BuildService) cleanupGitContext(repoPath string) error {
 	if s.gitCleanupFn != nil {
 		return s.gitCleanupFn(repoPath)
 	}
-	if s.gitRepository != nil && s.gitRepository.Client != nil {
-		return s.gitRepository.Cleanup(repoPath)
-	}
-	return errors.New("git repository service not available")
+	return s.gitRepository.Cleanup(repoPath)
 }
 
 func writeBuildProgressStatus(ctx context.Context, progressWriter io.Writer, serviceName, status string) {
@@ -420,10 +399,6 @@ func writeBuildProgressStatus(ctx context.Context, progressWriter io.Writer, ser
 }
 
 func (s *BuildService) ListImageBuildsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.ImageBuildRecord, pagination.Response, error) {
-	if s.db == nil {
-		return nil, pagination.Response{}, errors.New("build history not available")
-	}
-
 	var builds []ImageBuild
 	// The list DTO never includes the build output (buildToRecord with
 	// includeOutput=false), so skip reading the up-to-2-MiB output column.
@@ -498,10 +473,6 @@ func (s *BuildService) AggregateImageBuilds(ctx context.Context, params paginati
 }
 
 func (s *BuildService) GetImageBuildByID(ctx context.Context, environmentID, buildID string) (*types.ImageBuildRecord, error) {
-	if s.db == nil {
-		return nil, errors.New("build history not available")
-	}
-
 	var build ImageBuild
 	if err := s.db.WithContext(ctx).First(&build, "id = ? AND environment_id = ?", buildID, environmentID).Error; err != nil {
 		return nil, err
@@ -568,10 +539,6 @@ func (s *BuildService) completeBuildRecord(
 	completedAt time.Time,
 	durationMs *int64,
 ) error {
-	if s.db == nil {
-		return nil
-	}
-
 	updates := map[string]any{
 		"status":           status,
 		"completed_at":     completedAt,
@@ -598,7 +565,7 @@ func (s *BuildService) completeBuildRecord(
 // PruneHistory deletes finished and failed builds completed before the
 // retention window. Running builds are never pruned.
 func (s *BuildService) PruneHistory(ctx context.Context, retentionDays int) (int64, error) {
-	if s.db == nil || retentionDays <= 0 {
+	if retentionDays <= 0 {
 		return 0, nil
 	}
 

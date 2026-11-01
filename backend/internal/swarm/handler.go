@@ -345,10 +345,6 @@ func (h *SwarmHandler) UpdateSwarmSpec(ctx context.Context, input *UpdateSwarmSp
 // resourceName provides a human-readable resource name when one exists.
 // metadata supplies additional structured audit fields to attach to the event.
 func (h *SwarmHandler) auditSwarmMutation(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any) {
-	if h.eventService == nil {
-		return
-	}
-
 	var userID *string
 	var username *string
 	if user, ok := userctx.CurrentUserFromContext(ctx); ok {

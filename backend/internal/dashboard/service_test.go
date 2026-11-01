@@ -20,24 +20,27 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/podman"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
 	libpodman "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
 )
 
-func setupDashboardServiceTestSettings(t *testing.T) *settings.SettingsService {
+func setupDashboardServiceTestSettings(t *testing.T) (*database.DB, *settings.SettingsService) {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}, &project.Project{}))
+	db := &database.DB{DB: gormDB}
 
 	settingsEnv, err := settings.LoadEnv()
 	require.NoError(t, err)
-	settingsSvc, err := settings.NewSettingsService(t.Context(), &database.DB{DB: db}, &config.Config{}, settingsEnv)
+	settingsSvc, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settingsEnv)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsSvc.Stop(context.WithoutCancel(t.Context()))) })
 
-	return settingsSvc
+	return db, settingsSvc
 }
 
 func newDashboardTestDockerService(t *testing.T, settingsSvc *settings.SettingsService) *docker.DockerClientService {
@@ -70,7 +73,8 @@ func newDashboardTestDockerService(t *testing.T, settingsSvc *settings.SettingsS
 }
 
 func TestDashboardService_ReportsPodmanPods(t *testing.T) {
-	dockerSvc := newDashboardTestDockerService(t, setupDashboardServiceTestSettings(t))
+	db, settingsSvc := setupDashboardServiceTestSettings(t)
+	dockerSvc := newDashboardTestDockerService(t, settingsSvc)
 
 	libpodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -87,7 +91,7 @@ func TestDashboardService_ReportsPodmanPods(t *testing.T) {
 	}))
 	t.Cleanup(libpodServer.Close)
 
-	svc := NewDashboardService(dockerSvc, nil, nil, podman.NewService(podman.Config{
+	svc := NewDashboardService(dockerSvc, project.NewProjectService(db, settingsSvc, nil, nil, dockerSvc, nil, nil, nil, &config.Config{}, nil, nil), volume.NewVolumeService(db, dockerSvc, nil, settingsSvc, nil, nil, nil, nil, &config.Config{}, nil), podman.NewService(podman.Config{
 		Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
 			return compat.EngineCompatibilityInfo{Name: "podman"}, nil
 		},

@@ -1,6 +1,7 @@
 package volume
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,11 +9,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/streams/bus"
+	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
 )
@@ -73,8 +80,9 @@ func TestCreateTempContainerReusesWritableHelper(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	service := &VolumeService{
-		dockerService:  (&docker.DockerClientService{}).WithClient(newVolumeServiceTestDockerClient(t, server)),
-		helperByVolume: make(map[string]*volumeHelper),
+		settingsService: newVolumeTestSettingsService(t),
+		dockerService:   newVolumeTestDockerService(t, newVolumeServiceTestDockerClient(t, server)),
+		helperByVolume:  make(map[string]*volumeHelper),
 	}
 
 	firstID, releaseFirst, err := service.acquireVolumeHelper(t.Context(), "workspace-volume")
@@ -274,4 +282,22 @@ func TestTouchHelper(t *testing.T) {
 	// Missing volume is a no-op (must not panic or create an entry).
 	s.touchHelper("missing")
 	require.NotContains(t, s.helperByVolume, "missing")
+}
+
+func newVolumeTestSettingsService(t *testing.T) *settings.SettingsService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	settingsService, err := settings.NewSettingsService(t.Context(), &database.DB{DB: gormDB}, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return settingsService
+}
+
+func newVolumeTestDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	return docker.NewDockerClientService(t.Context(), nil, newVolumeTestSettingsService(t), bus.Config{}).WithClient(dockerClient)
 }

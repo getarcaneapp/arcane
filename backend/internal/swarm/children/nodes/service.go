@@ -93,7 +93,7 @@ type swarmNodeAgentCoverage struct {
 }
 
 func (s *Service) ListNodesPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.SwarmNode, pagination.Response, error) {
-	if environmentID != "0" && s.environmentService != nil {
+	if environmentID != "0" {
 		var remote struct {
 			Data    []types.SwarmNode `json:"data"`
 			Success bool              `json:"success"`
@@ -137,7 +137,7 @@ func (s *Service) ListNodesPaginated(ctx context.Context, environmentID string, 
 }
 
 func (s *Service) GetNode(ctx context.Context, environmentID, nodeID string) (*types.SwarmNode, error) {
-	if environmentID != "0" && s.environmentService != nil {
+	if environmentID != "0" {
 		var remote struct {
 			Data    types.SwarmNode `json:"data"`
 			Success bool            `json:"success"`
@@ -260,7 +260,7 @@ func (s *Service) GetLocalNodeIdentity(ctx context.Context) (*SwarmNodeIdentity,
 }
 
 func (s *Service) enrichNodeAgentStatuses(ctx context.Context, environmentID string, items []types.SwarmNode) {
-	if s.environmentService == nil || len(items) == 0 || strings.TrimSpace(environmentID) == "" {
+	if len(items) == 0 || strings.TrimSpace(environmentID) == "" {
 		return
 	}
 	coverage, err := s.resolveNodeAgentCoverage(ctx, environmentID)

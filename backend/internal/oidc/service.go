@@ -362,9 +362,6 @@ func (s *OidcService) verifyIDToken(ctx context.Context, provider *oidc.Provider
 	if jwksURL == "" {
 		return nil, "", errors.New("jwks URI must be configured when using manual OIDC endpoints")
 	}
-	if s.keySetManager == nil {
-		return nil, "", errors.New("failed to configure provider JWK set: JWK set manager is not configured")
-	}
 
 	client := s.httpClientFor(cfg.SkipTlsVerify)
 	keySet, err := s.keySetManager.KeySet(context.WithoutCancel(ctx), client, jwksURL)

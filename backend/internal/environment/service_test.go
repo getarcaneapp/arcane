@@ -31,6 +31,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
@@ -147,6 +148,9 @@ func setupEnvironmentServiceTestDB(t *testing.T) *database.DB {
 		&settings.SettingVariable{},
 		&user.User{},
 		&apikey.ApiKey{},
+		&role.Role{},
+		&role.UserRoleAssignment{},
+		&role.ApiKeyPermission{},
 		&event.Event{},
 		&testProjectRow{},
 		&testGitOpsSyncRow{},
@@ -955,8 +959,9 @@ func TestEnvironmentService_GenerateDeploymentSnippets_TransportDefaults(t *test
 func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_CreatesVisibleEnvironmentAndReusesToken(t *testing.T) {
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
-	userService := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
-	apiKeyService := apikey.NewApiKeyService(db, userService, nil)
+	roleService := role.NewRoleService(db)
+	userService := user.NewUserService(db, roleService, session.RevokeAllUserSessionsExceptInDB)
+	apiKeyService := apikey.NewApiKeyService(db, userService, roleService)
 	svc := NewEnvironmentService(db, nil, event.NewEventService(db, nil, nil), nil, apiKeyService)
 	localUser := createTestEnvironmentServiceUser(t, ctx, userService, "swarm-admin")
 
@@ -1087,8 +1092,9 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_ReusesLegacyHiddenRe
 func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_TokenResolvesEndToEnd(t *testing.T) {
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
-	userService := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
-	apiKeyService := apikey.NewApiKeyService(db, userService, nil)
+	roleService := role.NewRoleService(db)
+	userService := user.NewUserService(db, roleService, session.RevokeAllUserSessionsExceptInDB)
+	apiKeyService := apikey.NewApiKeyService(db, userService, roleService)
 	svc := NewEnvironmentService(db, nil, event.NewEventService(db, nil, nil), nil, apiKeyService)
 	localUser := createTestEnvironmentServiceUser(t, ctx, userService, "swarm-resolve-admin")
 

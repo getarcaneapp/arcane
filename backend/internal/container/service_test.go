@@ -32,6 +32,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/kit/pkg"
+	"go.getarcane.app/streams/bus"
 	"go.getarcane.app/updater/labels"
 	"gorm.io/gorm"
 
@@ -326,7 +327,7 @@ func TestContainerServiceCommitContainerCallsDockerAPI(t *testing.T) {
 
 	svc := NewContainerService(
 		event.NewEventService(db, nil, nil),
-		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
+		newSettingsDockerService(t, newTestDockerClient(t, server)),
 		nil,
 		nil,
 		nil,
@@ -375,7 +376,7 @@ func TestContainerServiceCommitContainerOmitsReferenceWhenRepositoryEmpty(t *tes
 
 	svc := NewContainerService(
 		event.NewEventService(db, nil, nil),
-		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
+		newSettingsDockerService(t, newTestDockerClient(t, server)),
 		nil,
 		nil,
 		nil,
@@ -690,7 +691,7 @@ func TestContainerServiceResizeExec(t *testing.T) {
 
 	svc := NewContainerService(
 		event.NewEventService(db, nil, nil),
-		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
+		newSettingsDockerService(t, newTestDockerClient(t, server)),
 		nil,
 		nil,
 		nil,
@@ -741,7 +742,7 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	kvService := kv.NewKVService(db)
-	svc := NewContainerService(events, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
+	svc := NewContainerService(events, newSettingsDockerService(t, newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
 	info := container.InspectResponse{
 		ID:         "old-id",
 		Name:       "/web",
@@ -820,7 +821,7 @@ func TestRecreateContainerRollsBackAfterRequestCancellation(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	kvService := kv.NewKVService(db)
-	svc := NewContainerService(event.NewEventService(db, nil, nil), (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
+	svc := NewContainerService(event.NewEventService(db, nil, nil), newSettingsDockerService(t, newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
 	info := container.InspectResponse{
 		ID:         "old-id",
 		Name:       "/web",
@@ -935,7 +936,7 @@ func TestRecoverInterruptedRedeploys(t *testing.T) {
 				w.WriteHeader(http.StatusNoContent)
 			}))
 			t.Cleanup(server.Close)
-			svc := NewContainerService(nil, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
+			svc := NewContainerService(nil, newSettingsDockerService(t, newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
 
 			require.NoError(t, svc.RecoverInterruptedRedeploys(t.Context()))
 
@@ -1064,7 +1065,7 @@ func TestContainerServiceGetContainerProcesses(t *testing.T) {
 			t.Cleanup(server.Close)
 			settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{}, settings.Env{})
 			require.NoError(t, err)
-			svc := NewContainerService(nil, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil, nil, nil)
+			svc := NewContainerService(nil, newSettingsDockerService(t, newTestDockerClient(t, server)), nil, settingsService, nil, nil, nil)
 
 			processes, err := svc.GetContainerProcesses(t.Context(), "container-1")
 			wantArgs := []string{strings.Join(containerProcessesPsArgs[0], " ")}
@@ -1092,7 +1093,7 @@ func TestContainerServiceGetContainerProcessesPropagatesContext(t *testing.T) {
 	t.Cleanup(server.Close)
 	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{}, settings.Env{})
 	require.NoError(t, err)
-	svc := NewContainerService(nil, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil, nil, nil)
+	svc := NewContainerService(nil, newSettingsDockerService(t, newTestDockerClient(t, server)), nil, settingsService, nil, nil, nil)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
@@ -1233,7 +1234,7 @@ func newResourceSortService(t *testing.T, fixture *resourceStatsServer) *Contain
 	db := setupProjectTestDB(t)
 	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
-	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
+	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
 	return NewContainerService(
 		nil,
 		dockerService,
@@ -1581,7 +1582,7 @@ func newLogsTestService(t *testing.T, tty bool, logsBody []byte, gotQuery *url.V
 
 	return NewContainerService(
 		event.NewEventService(setupProjectTestDB(t), nil, nil),
-		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
+		newSettingsDockerService(t, newTestDockerClient(t, server)),
 		nil,
 		nil,
 		nil,
@@ -1846,7 +1847,7 @@ func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTe
 	systemd := &quadletTestSystemd{}
 	svc := NewContainerService(
 		event.NewEventService(setupProjectTestDB(t), nil, nil),
-		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, dockerServer)),
+		newSettingsDockerService(t, newTestDockerClient(t, dockerServer)),
 		nil,
 		nil,
 		nil,
@@ -1983,4 +1984,17 @@ func TestAggregateContainerCountsSumsEnvironments(t *testing.T) {
 	require.Len(t, body.Environments, 2)
 	require.Equal(t, 2, body.Environments[1].Data.UpdatesAvailable)
 	require.Len(t, body.FailedEnvironments, 1)
+}
+
+func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }

@@ -274,7 +274,7 @@ func (s *VersionService) isChannelBuild(currentTag string) bool {
 // digest reference so the result and NewestDigest describe the same artifact.
 func (s *VersionService) resolveNextImage(ctx context.Context, imageRef, tag, newestDigest string) nextImage {
 	newestDigest, tag = strings.TrimSpace(newestDigest), strings.TrimSpace(tag)
-	if s.containerRegistryService == nil || strings.TrimSpace(imageRef) == "" || (newestDigest == "" && tag == "") {
+	if strings.TrimSpace(imageRef) == "" || (newestDigest == "" && tag == "") {
 		return nextImage{}
 	}
 
@@ -302,9 +302,6 @@ func (s *VersionService) resolveNextImage(ctx context.Context, imageRef, tag, ne
 
 // updateCheckImageRef points the digest lookup at the configured registry; "auto" keeps the running reference.
 func (s *VersionService) updateCheckImageRef(currentImageRef string) string {
-	if s.settingsService == nil {
-		return currentImageRef
-	}
 	target := strings.TrimSpace(s.settingsService.GetSettingsConfig().UpdateCheckRegistry.Value)
 	if target == "" || target == "auto" {
 		return currentImageRef
@@ -420,7 +417,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *types.VersionIn
 
 // storedOrDigestBasedUpdate uses the stored poller row only when the check targets the running, unpinned reference.
 func (s *VersionService) storedOrDigestBasedUpdate(ctx context.Context, current currentImageInfo, checkImageRef string) (bool, string) {
-	if s.imageUpdateService != nil && strings.TrimSpace(current.ImageID) != "" && checkImageRef == current.ImageRef && !current.DigestPinned {
+	if strings.TrimSpace(current.ImageID) != "" && checkImageRef == current.ImageRef && !current.DigestPinned {
 		record, found, err := s.imageUpdateService.StoredUpdateByImageID(ctx, current.ImageID)
 		if err != nil {
 			slog.WarnContext(ctx, "Failed to read stored Arcane image update state", "imageId", current.ImageID, "error", err)
@@ -429,7 +426,7 @@ func (s *VersionService) storedOrDigestBasedUpdate(ctx context.Context, current 
 		}
 	}
 
-	if current.Tag == "" || current.Digest == "" || checkImageRef == "" || s.containerRegistryService == nil {
+	if current.Tag == "" || current.Digest == "" || checkImageRef == "" {
 		return false, ""
 	}
 
@@ -461,11 +458,6 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (detected c
 			s.currentImage.SetWithTTL(struct{}{}, detected, time.Minute)
 		}
 	}()
-
-	if s.dockerService == nil {
-		slog.DebugContext(ctx, "detectCurrentImageInfo: dockerService is nil")
-		return currentImageInfo{}
-	}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {

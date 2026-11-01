@@ -13,7 +13,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apns"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
@@ -197,14 +202,30 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}, &event.Event{}, &notification.NotificationSettings{}, &environment.Environment{}))
+	wrappedDB := &database.DB{DB: db}
 
-	settingsSvc, err := newSettingsServiceForTest(t, ctx, &database.DB{DB: db})
+	settingsSvc, err := newSettingsServiceForTest(t, ctx, wrappedDB)
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", true))
 	require.NoError(t, settingsSvc.SetStringSetting(ctx, "autoHealExcludedContainers", "skip-me"))
 
-	job, err := NewAutoHealJob(nil, settingsSvc, nil, nil, newTestAdmissionGate(t))
+	cfg := &config.Config{}
+	eventSvc := event.NewEventService(wrappedDB, cfg, nil)
+	job, err := NewAutoHealJob(
+		nil,
+		settingsSvc,
+		eventSvc,
+		notification.NewNotificationService(
+			wrappedDB,
+			cfg,
+			environment.NewEnvironmentService(wrappedDB, nil, eventSvc, settingsSvc, nil),
+			eventSvc,
+			apns.NewApnsService(ctx, wrappedDB, cfg, settingsSvc, nil, eventSvc, nil),
+			settingsSvc,
+		),
+		newTestAdmissionGate(t),
+	)
 	require.NoError(t, err)
 	job.getDockerClientFn = func() (*client.Client, error) { return nil, nil }
 	job.listContainers = func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {

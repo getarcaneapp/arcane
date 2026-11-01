@@ -282,12 +282,7 @@ func (s *Service) checkContainerTag(ctx context.Context, engine *updater.Service
 		return failed(acquireErr)
 	}
 	defer s.limiter.Release(parsed.RegistryHost)
-	checkCtx, cancel := context.WithTimeout(ctx, func() time.Duration {
-		if s.settings == nil {
-			return timeouts.DefaultRegistryTags
-		}
-		return timeouts.GetDuration(s.settings.GetSettingsConfig().RegistryTagTimeout.AsInt(), timeouts.DefaultRegistryTags)
-	}())
+	checkCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settings.GetSettingsConfig().RegistryTagTimeout.AsInt(), timeouts.DefaultRegistryTags))
 	defer cancel()
 	check, err := engine.CheckContainerUpdate(checkCtx, cnt.ID)
 	if err != nil {

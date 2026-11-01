@@ -336,20 +336,18 @@ func (s *WebhookService) CreateWebhook(
 	s.tokenHashes[hash] = struct{}{}
 	s.tokenMu.Unlock()
 
-	if s.eventService != nil {
-		_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:          event.EventTypeWebhookCreate,
-			Severity:      event.EventSeveritySuccess,
-			Title:         "Webhook created: " + wh.Name,
-			Description:   fmt.Sprintf("Created webhook '%s' targeting %s (%s)", wh.Name, wh.TargetType, wh.ActionType),
-			ResourceType:  new("webhook"),
-			ResourceID:    &wh.ID,
-			ResourceName:  &wh.Name,
-			UserID:        &actor.ID,
-			Username:      &actor.Username,
-			EnvironmentID: &wh.EnvironmentID,
-		})
-	}
+	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
+		Type:          event.EventTypeWebhookCreate,
+		Severity:      event.EventSeveritySuccess,
+		Title:         "Webhook created: " + wh.Name,
+		Description:   fmt.Sprintf("Created webhook '%s' targeting %s (%s)", wh.Name, wh.TargetType, wh.ActionType),
+		ResourceType:  new("webhook"),
+		ResourceID:    &wh.ID,
+		ResourceName:  &wh.Name,
+		UserID:        &actor.ID,
+		Username:      &actor.Username,
+		EnvironmentID: &wh.EnvironmentID,
+	})
 
 	return wh, raw, nil
 }
@@ -455,17 +453,11 @@ func (s *WebhookService) resolveWebhookTargetName(ctx context.Context, wh *Webho
 			return wh.TargetID
 		}
 		if strings.TrimSpace(wh.TargetRef) != "" {
-			if s.containerService == nil {
-				return wh.TargetRef
-			}
 			name, err := s.containerService.GetContainerNameByReference(ctx, wh.TargetRef)
 			if err == nil {
 				return name
 			}
 			return wh.TargetRef
-		}
-		if s.containerService == nil {
-			return ""
 		}
 		name, err := s.containerService.GetContainerNameByID(ctx, wh.TargetID)
 		return kit.Ternary(err != nil, "", name)
@@ -532,20 +524,18 @@ func (s *WebhookService) DeleteWebhook(ctx context.Context, id, environmentID st
 	delete(s.tokenHashes, wh.TokenHash)
 	s.tokenMu.Unlock()
 
-	if s.eventService != nil {
-		_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:          event.EventTypeWebhookDelete,
-			Severity:      event.EventSeverityInfo,
-			Title:         "Webhook deleted: " + wh.Name,
-			Description:   fmt.Sprintf("Deleted webhook '%s'", wh.Name),
-			ResourceType:  new("webhook"),
-			ResourceID:    &wh.ID,
-			ResourceName:  &wh.Name,
-			UserID:        &actor.ID,
-			Username:      &actor.Username,
-			EnvironmentID: &wh.EnvironmentID,
-		})
-	}
+	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
+		Type:          event.EventTypeWebhookDelete,
+		Severity:      event.EventSeverityInfo,
+		Title:         "Webhook deleted: " + wh.Name,
+		Description:   fmt.Sprintf("Deleted webhook '%s'", wh.Name),
+		ResourceType:  new("webhook"),
+		ResourceID:    &wh.ID,
+		ResourceName:  &wh.Name,
+		UserID:        &actor.ID,
+		Username:      &actor.Username,
+		EnvironmentID: &wh.EnvironmentID,
+	})
 
 	return nil
 }
@@ -578,20 +568,18 @@ func (s *WebhookService) UpdateWebhook(
 		return nil, fmt.Errorf("failed to update webhook: %w", updateWebhookErr)
 	}
 
-	if s.eventService != nil {
-		_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:          event.EventTypeWebhookUpdate,
-			Severity:      event.EventSeveritySuccess,
-			Title:         "Webhook updated: " + wh.Name,
-			Description:   fmt.Sprintf("Updated webhook '%s' enabled=%v", wh.Name, enabled),
-			ResourceType:  new("webhook"),
-			ResourceID:    &wh.ID,
-			ResourceName:  &wh.Name,
-			UserID:        &actor.ID,
-			Username:      &actor.Username,
-			EnvironmentID: &wh.EnvironmentID,
-		})
-	}
+	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
+		Type:          event.EventTypeWebhookUpdate,
+		Severity:      event.EventSeveritySuccess,
+		Title:         "Webhook updated: " + wh.Name,
+		Description:   fmt.Sprintf("Updated webhook '%s' enabled=%v", wh.Name, enabled),
+		ResourceType:  new("webhook"),
+		ResourceID:    &wh.ID,
+		ResourceName:  &wh.Name,
+		UserID:        &actor.ID,
+		Username:      &actor.Username,
+		EnvironmentID: &wh.EnvironmentID,
+	})
 
 	return &wh, nil
 }
@@ -735,10 +723,6 @@ func remoteWebhookRequest(wh *Webhook, actionType string) (method, path string, 
 }
 
 func (s *WebhookService) executeRemoteWebhookAction(ctx context.Context, wh *Webhook, actionType string) (*types.UpdaterResult, error) {
-	if s.environmentService == nil {
-		return nil, s.wrapWebhookActionError(ctx, wh, wh.TargetType, actionType, errors.New("environment service not available"))
-	}
-
 	method, path, wantResult, err := remoteWebhookRequest(wh, actionType)
 	if err != nil {
 		return nil, err
@@ -800,10 +784,6 @@ func (s *WebhookService) executeContainerWebhookAction(ctx context.Context, wh *
 }
 
 func (s *WebhookService) resolveContainerWebhookTargetRef(ctx context.Context, targetID string) (string, error) {
-	if s.containerService == nil {
-		return "", nil
-	}
-
 	containerName, err := s.containerService.GetContainerNameByReference(ctx, targetID)
 	if errdefs.IsNotFound(err) {
 		return "", common.Classify(common.ErrBadRequest, fmt.Errorf("target container not found: %w", err))
@@ -816,10 +796,6 @@ func (s *WebhookService) resolveContainerWebhookTargetRef(ctx context.Context, t
 }
 
 func (s *WebhookService) resolveContainerWebhookTargetID(ctx context.Context, wh *Webhook) (string, error) {
-	if s.containerService == nil {
-		return wh.TargetID, nil
-	}
-
 	references := make([]string, 0, 2)
 	if strings.TrimSpace(wh.TargetRef) != "" {
 		references = append(references, wh.TargetRef)
@@ -928,9 +904,6 @@ func (s *WebhookService) wrapWebhookActionError(ctx context.Context, wh *Webhook
 }
 
 func (s *WebhookService) logWebhookEvent(ctx context.Context, wh *Webhook, actionType string, severity event.EventSeverity, errMsg string) {
-	if s.eventService == nil {
-		return
-	}
 	title := "Webhook triggered: " + wh.Name
 	if severity == event.EventSeverityError {
 		title = "Webhook trigger failed: " + wh.Name

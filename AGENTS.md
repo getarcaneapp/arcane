@@ -1,39 +1,63 @@
 # Arcane agent guide
 
-Arcane is a Docker management platform with a Go backend, SvelteKit frontend, headless agent modes, and a Cobra CLI.
+Arcane is a Docker management platform.
 
-## Rules that apply to every change
+- **Backend:** Go
+- **Frontend:** SvelteKit
+- **Also:** headless agent modes and a Cobra CLI
 
-Follow [AI_POLICY.md](./AI_POLICY.md), including its maintainer exemption. Outside contributors must disclose AI assistance and meet the policy's development and human verification requirements.
+## Ground rules (every change)
 
-- Never run state-changing Git commands. Do not stage, commit, push, tag, stash, create branches, or create worktrees.
-- For maintainer work, do not start, restart, or rebuild the development stack unless the user explicitly asks.
-- Search the owning domain and existing helpers before adding functions, services, API clients, components, or utilities. Update existing logic and its callers directly.
-- Do not add stubs, compatibility shims, pass-through wrappers, or duplicate implementations. Call existing helpers directly.
-- Add tests only for new functionality. For bug fixes and refactors, update existing tests when needed and run relevant existing coverage. Do not add regression tests.
-- Never add handler tests. Test new business behavior at the service layer or in its owning logic package. Preserve existing handler tests.
-- After every change, including documentation changes, run `just format all`, then `just lint all`. Fix every issue and keep the formatter's output.
-- Report what you verified and any blockers. Never claim manual verification that did not happen.
+- Follow [AI_POLICY.md](./AI_POLICY.md), including the maintainer exemption.
+- Outside contributors: disclose AI use and meet the policy's dev and human verification rules.
+- **Git:** never run state-changing commands.
+  - No stage, commit, push, tag, stash, branch, or worktree.
+- **Dev stack:** maintainers do not start, restart, or rebuild it unless the user asks.
+- **Search first:** check the owning domain and existing helpers before adding functions, services, API clients, components, or utils.
+  - Update existing logic and its callers directly.
+- **No clutter:** no stubs, compatibility shims, pass-through wrappers, or duplicates. Call existing helpers directly.
+- **Tests:**
+  - New functionality gets tests.
+  - Bug fixes and refactors: update existing tests if needed, then run relevant coverage.
+  - No regression tests.
+  - Never add handler tests. Test business behavior at the service layer or its owning logic package.
+  - Keep existing handler tests.
+- **Checks:** after every change, including docs, run `just format all`, then `just lint all`.
+  - Fix every issue. Keep the formatter's output.
+- **Reporting:** state what you verified and any blockers.
+  - Never claim manual verification that did not happen.
 
 ## Keep changes focused
 
-New functionality belongs in the domain that owns it. Keep each file focused on one clear responsibility. Do not create god files in services, components, or CLI commands.
-
-Use the standard domain file set and move substantial child features into `children/<feature>/`. Split code by responsibility rather than a fixed line count. Avoid trivial packages, unnecessary abstractions, and unrelated restructuring.
-
-Keep comments short. If the structure needs a paragraph to explain it, simplify the code.
-
-Avoid nested or chained ternary expressions unless absolutely necessary. Prefer `if`/`else` or `switch` for conditional logic with multiple branches.
+- **Ownership:** new features go in the domain that owns them.
+- **One job per file:** no god files in services, components, or CLI commands.
+- **File layout:** use the standard domain file set.
+  - Substantial child features go in `children/<feature>/`.
+  - Split by responsibility, not line count.
+- **Avoid:** trivial packages, needless abstractions, unrelated restructuring.
+- **Comments:** keep them short. If the structure needs a paragraph, simplify the code.
+- **Ternaries:** no nested or chained ones. Use `if`/`else` or `switch`.
 
 ### Go imports and shared code
 
-- Use default Go import names. Add an alias only to resolve an actual naming conflict.
-- Put public and shared Go contracts in the top-level `types/` module. Keep persistence models in their owning domain.
-- Put reusable helper utilities in the appropriate package under `backend/pkg/utils/`.
+- **Imports:** default names. Alias only to fix a real conflict.
+- **Shared contracts:** top-level `types/`. Persistence models stay in their domain.
+- **Helpers:** `backend/pkg/utils/`.
+
+### Go style
+
+- **Literals:** one keyed literal per value. Never assign fields after construction.
+- **Defaults:** `cmp.Or`, not `if x == "" { x = … }`.
+- **Pointers:** `kit.FromPtr` or `new(v)`. No `p != nil && *p` chains.
+- **Injected deps:** no nil checks. Tests pass fakes.
+- **No wrappers:** no forwarding wrappers or one-line helpers.
+- **Params:** no bool flags or long param lists on exported funcs. Use an options struct.
+- **Constructors:** 5+ deps means an `fx.In` params struct.
+- **Slices and maps:** no nil-to-empty guards. json v2 encodes them as `[]` and `{}`.
 
 ## Backend
 
-The backend is organized by domain. Each domain owns its behavior and routes.
+Organized by domain. Each domain owns its behavior and routes.
 
 ```text
 backend/
@@ -53,7 +77,7 @@ backend/
 
 ### Domain files
 
-Use these files under `backend/internal/<domain>/`:
+Under `backend/internal/<domain>/`:
 
 - `module.go`: composition and route registration
 - `service.go`: business operations and orchestration
@@ -61,100 +85,98 @@ Use these files under `backend/internal/<domain>/`:
 - `handler.go`: HTTP input and output
 - `helpers.go`: package-local helpers with a clear purpose
 
-Create a file only when it has a real responsibility. Do not add placeholders.
+- Create a file only when it has a real responsibility.
+- No placeholders.
 
-### Child features and import boundaries
+### Child features
 
-Place substantial features under `<domain>/children/<feature>/` and use the same standard file set. The `children/` directory itself must contain no Go files.
-
-Only a child package's immediate parent may import it. Siblings, higher-level ancestors, other domains, DI, bootstrap, and API assembly must use the parent's API. Apply this boundary recursively.
-
-Children must not import their parent. The parent coordinates interactions between children and keeps child instances private. Image patching belongs under `image/children/patch`. System recovery backups belong under `system/children/backup`, with snapshots and system-managed volumes beneath that feature.
-
-Do not expose child types through parent API signatures or inject child instances into outside packages. Keep shared persistence models in the parent's `model.go` and shared contracts in the top-level `types/` module.
+- **Location:** `<domain>/children/<feature>/`, same file set.
+- **`children/` itself:** no Go files.
+- **Imports:** only the immediate parent imports a child.
+  - Siblings, ancestors, other domains, DI, bootstrap, and API use the parent's API.
+  - This rule applies recursively.
+- **Children never import their parent.**
+- **Parent role:** coordinates children and keeps child instances private.
+- **Exposure:** never expose child types in parent signatures or inject them outside.
+- **Examples:**
+  - Image patching: `image/children/patch`
+  - System recovery backups: `system/children/backup`, with snapshots and system-managed volumes beneath it
+- **Shared models:** persistence models go in the parent's `model.go`. Shared contracts go in top-level `types/`.
 
 ### Filenames and test pairing
 
-Production filenames must be single words without underscores. Build-tagged files may append their tag:
-
-```text
-service_playwright.go
-service_buildables.go
-helpers_unix.go
-```
-
-Use `helpers_nonunix.go` for a `!unix` implementation.
-
-Tests belong beside the production file they cover. Use the exact production basename followed by `_test.go`:
+- **Names:** single words, no underscores.
+- **Build tags:** may append the tag. Examples: `service_playwright.go`, `service_buildables.go`, `helpers_unix.go`.
+- **`!unix` implementation:** `helpers_nonunix.go`.
+- **Tests:** beside the production file, using the exact basename plus `_test.go`.
 
 ```text
 service.go              → service_test.go
 service_playwright.go   → service_playwright_test.go
 ```
 
-Never create a production file just to justify a test filename.
-
-These layout rules apply to business domains and their children. The filename policy excludes:
-
-- Infrastructure packages: `bootstrap`, `common`, `config`, `database`, and `di`
-- `backend/pkg`
-- CLI packages
-- Shared types
-
-Middleware uses descriptive, single-word production filenames such as `cors.go`, `csrf.go`, and `environment.go`, with the same exact test-file pairing.
+- Never create a production file just to justify a test name.
+- **Scope:** business domains and their children.
+- **Excluded:** `bootstrap`, `common`, `config`, `database`, `di`, `backend/pkg`, CLI packages, shared types.
+- **Middleware:** descriptive single-word names like `cors.go`, `csrf.go`, `environment.go`, with the same test pairing.
 
 ### Wiring and API assembly
 
-Wire dependencies in `internal/di`.
-
-Keep startup order, lifecycle hooks, database migration wiring, and router assembly in `internal/bootstrap`.
-
-The remaining `api/` code handles API assembly, diagnostics, streams, WebSockets, and webhook dispatch. Ordinary REST endpoints belong in their domains. Do not expand `api/handlers` into a central handler layer or recreate a global `internal/services` or models package.
+- **DI:** wire dependencies in `internal/di`.
+- **Bootstrap:** startup order, lifecycle hooks, migration wiring, and router assembly live in `internal/bootstrap`.
+- **`api/`:** API assembly, diagnostics, streams, WebSockets, webhook dispatch.
+- **REST:** ordinary endpoints go in their domains.
+- **Don't:** grow `api/handlers` into a central layer, or recreate a global `internal/services` or models package.
 
 ### HTTP and business logic
 
-Use Echo v5 as the router and Huma v2 for typed REST/OpenAPI operations. Register permissioned endpoints with `middleware.RegisterWithPermission`.
-
-Direct Echo routes are reserved for:
-
-- WebSockets and streams
-- Diagnostics and webhooks
-- Playwright support
-- The environment proxy
-- Embedded frontend delivery
-
-Handlers translate typed HTTP data and call services. They must not contain business logic. Services receive dependencies through constructors/Fx.
-
-Use:
-
-- `slog` for structured logging
-- Standard `errors` and `fmt.Errorf("…: %w")` for error handling and wrapping
-- `internal/common.Classify` for semantic errors
-- `types/base.FieldError` for validation fields
+- **Router:** Echo v5.
+- **Typed REST/OpenAPI:** Huma v2.
+- **Permissions:** register permissioned endpoints with `middleware.RegisterWithPermission`.
+- **Direct Echo routes, only for:**
+  - WebSockets and streams
+  - Diagnostics and webhooks
+  - Playwright support
+  - The environment proxy
+  - Embedded frontend delivery
+- **Handlers:** translate HTTP data and call services. No business logic.
+- **Services:** get dependencies through constructors or Fx.
+- **Use:**
+  - `slog` for structured logging
+  - Standard `errors` and `fmt.Errorf("…: %w")` for wrapping
+  - `internal/common.Classify` for semantic errors
+  - `types/base.FieldError` for validation fields
 
 ### Existing helpers
 
-Before adding backend logic, search the owning domain and the relevant shared packages:
+Search these before adding backend logic:
 
-- `go.getarcane.app/docker` (Kit): Docker names, labels, clients, logs, and stream helpers
-- `backend/pkg/projects`: Compose parsing, discovery, and image references
+- `go.getarcane.app/docker` (Kit): Docker names, labels, clients, logs, streams
+- `backend/pkg/projects`: Compose parsing, discovery, image refs
 - `backend/pkg/pagination`: in-memory and database pagination
-- `backend/pkg/libarcane`: reusable Arcane engines and transport behavior
-- `backend/pkg/utils`: shared infrastructure utilities
+- `backend/pkg/libarcane`: reusable engines and transport
+- `backend/pkg/utils`: shared infra utilities
 
 ### Persistence
 
-Use `database.BaseModel` and existing database helpers where appropriate. Reuse GORM relationships and `Preload`.
+- **Models:** use `database.BaseModel` and DB helpers.
+- **Relations:** reuse GORM relationships and `Preload`.
+- **Separation:** keep persistence models apart from `types/` API contracts.
 
-Keep persistence models separate from the public API contracts in `types/`.
+### Migrations
 
-Schema migrations are Goose Go migrations in `backend/internal/database/migrations`. Version 94 is the Arcane v2.17.1 baseline, loaded from `baseline/{sqlite,postgres}.sql`; older databases must upgrade to v2.17.1 first. Add each new migration as `NNNNN_name.go`; Goose reads the version from the filename. Register it in `init()` with `goose.AddMigrationContext(run(…), run(…))`:
-
-- Use raw SQL only. Never import GORM, domain packages, or `types/`; lint enforces this.
-- Keep SQL in top-level constants. `run(sqlite, postgres)` picks the statements for the active dialect; pass the same constant twice when they match.
-- Use `goose.AddMigrationNoTxContext` only for work that cannot run in a transaction, such as SQLite table rebuilds with `PRAGMA foreign_keys=OFF`.
-- Provide a real `down` unless the change is an irreversible data cleanup.
-- Add an up/down test in `backend/internal/database/database_test.go`.
+- **Location:** Goose Go migrations in `backend/internal/database/migrations`.
+- **Baseline:** version 94 is Arcane v2.17.1, loaded from `baseline/{sqlite,postgres}.sql`.
+  - Older databases upgrade to v2.17.1 first.
+- **Naming:** `NNNNN_name.go`. Goose reads the version from the filename.
+- **Registration:** in `init()` with `goose.AddMigrationContext(run(…), run(…))`.
+- **SQL:**
+  - Raw SQL only. Never import GORM, domain packages, or `types/`. Lint enforces this.
+  - Keep SQL in top-level constants.
+  - `run(sqlite, postgres)` picks the dialect. Pass the same constant twice when they match.
+- **Transactions:** use `goose.AddMigrationNoTxContext` only for work that can't run in a transaction, like SQLite rebuilds with `PRAGMA foreign_keys=OFF`.
+- **Down:** provide a real `down`, unless the change is an irreversible data cleanup.
+- **Tests:** add an up/down test in `backend/internal/database/database_test.go`.
 
 ## CLI and shared types
 
@@ -172,15 +194,15 @@ cli/
 types/                   shared domain and API contracts, grouped by domain
 ```
 
-Update existing commands and reuse the CLI client, configuration, and output code.
-
-Keep commands focused on input, API calls, and output. Backend business behavior belongs in its owning backend domain.
-
-Shared contracts in `types/` must remain independent of backend persistence and application wiring.
+- **Commands:** update existing ones. Reuse the CLI client, config, and output code.
+- **Scope:** commands handle input, API calls, and output only.
+- **Business logic:** lives in its owning backend domain.
+- **`types/`:** stays independent of backend persistence and wiring.
 
 ## Frontend
 
-The frontend uses SvelteKit v3 and Svelte 5. Configuration lives in `frontend/vite.config.ts`.
+- **Stack:** SvelteKit v3, Svelte 5.
+- **Config:** `frontend/vite.config.ts`.
 
 ```text
 frontend/src/
@@ -200,64 +222,81 @@ frontend/src/
 
 ### Components and state
 
-- Use Svelte 5 runes: `$props`, `$state`, `$derived`, and `$effect`.
-- Do not use `export let`, `$:`, `on:event`, `$$props`, `$$restProps`, or legacy slots.
-- Extend `BaseAPIService` and reuse existing services and query/mutation patterns.
-- Use precise TypeScript types. Do not introduce `any`.
-- Reuse shared components before creating page-local variants.
+- **Runes:** use `$props`, `$state`, `$derived`, `$effect`.
+- **Banned:** `export let`, `$:`, `on:event`, `$$props`, `$$restProps`, legacy slots.
+- **Services:** extend `BaseAPIService`. Reuse existing services and query/mutation patterns.
+- **Types:** precise TypeScript. No `any`.
+- **Components:** reuse shared ones before making page-local variants.
 
 ### Error handling
 
-Component error paths must do more than call `console.error`:
+Don't stop at `console.error`. Pick the matching path:
 
-- For one-shot actions, use `handleApiResultWithCallbacks`.
-- Where a `Result` does not fit, such as TanStack `onError`, use `toast.error(headline, { description: extractApiErrorMessage(err) })`.
-- For streams and polling feeds, show an inline unavailable state where the data renders.
-- For page loads, rethrow through `throwPageLoadError`.
-
-A thrown `APIError.message` already contains the server's message. Surface that message rather than showing only a canned string.
+- **One-shot actions:** `handleApiResultWithCallbacks`.
+- **No `Result` fit** (e.g. TanStack `onError`): `toast.error(headline, { description: extractApiErrorMessage(err) })`.
+- **Streams and polling:** show an inline unavailable state where the data renders.
+- **Page loads:** rethrow through `throwPageLoadError`.
+- **Messages:** `APIError.message` already holds the server message. Show it, not a canned string.
 
 ### Translations
 
-- Put every rendered string behind Paraglide messages.
-- Reuse a matching key from `frontend/messages/en.json` before adding one.
-- Add new keys only to `en.json`. Crowdin manages every other locale.
-- Name each key after its English text in snake_case, with no domain prefix: `"apply": "Apply"`, `"view_details": "View Details"`. Only full sentences get a short descriptive key, such as `"engine_info_description": "Detailed information about your container installation"`. Append new keys at the end of `en.json`. Existing keys keep their names until they are touched.
-- Generate Paraglide output through the existing tooling. Do not edit generated files by hand.
+- **Strings:** every rendered string goes through Paraglide.
+- **Reuse:** check `frontend/messages/en.json` for a matching key first.
+- **New keys:** add only to `en.json`. Crowdin handles other locales.
+- **Naming:** snake_case from the English text, no domain prefix.
+  - `"apply": "Apply"`
+  - `"view_details": "View Details"`
+  - Full sentences get a short descriptive key, like `"engine_info_description": "Detailed information about your container installation"`.
+- **Placement:** append new keys at the end. Existing keys keep their names until touched.
+- **Generated code:** run the existing tooling. Never hand-edit it.
 
 ## Environments and authorization
 
 ### Environment-scoped behavior
 
-- Environment ID `"0"` is the local Docker environment.
-- Environment-scoped API paths use `/environments/{id}/...`.
-- Await `environmentStore.ready` or `getCurrentEnvironmentId()` before making requests.
-- Redirect environment-specific detail pages when the selected environment changes.
+- **Local Docker:** environment ID `"0"`.
+- **Paths:** `/environments/{id}/...`.
+- **Before requests:** await `environmentStore.ready` or `getCurrentEnvironmentId()`.
+- **Switching:** redirect environment-specific detail pages when the environment changes.
 
 ### Permissions
 
-Backend permission middleware is authoritative. Frontend gates are for user experience only.
-
-Keep the permission catalog, access-surface registry, and frontend navigation gates as separate layers.
-
-Determine global admin status through `PermissionSet.IsGlobalAdmin()` or the user DTO's `isGlobalAdmin`. Never infer it from a role ID.
+- **Authority:** backend permission middleware. Frontend gates are UX only.
+- **Layers:** keep these separate:
+  - Permission catalog
+  - Access-surface registry
+  - Frontend navigation gates
+- **Global admin:** use `PermissionSet.IsGlobalAdmin()` or the user DTO's `isGlobalAdmin`.
+  - Never infer it from a role ID.
 
 ## Runtime modes and jobs
 
 - Manager mode serves the UI and manages environments.
 - Edge agent mode uses `ARCANE_EDGE_AGENT=true` with `ARCANE_MANAGER_API_URL` and dials the manager.
 
-Background jobs implement the scheduler job contract. Wire them through `internal/di` and register them in `internal/bootstrap/jobs_bootstrap.go`.
+- **Modes:**
+  - Manager: serves the UI and manages environments.
+  - Edge agent: `ARCANE_EDGE_AGENT=true` with `ARCANE_MANAGER_API_URL`. Dials the manager.
 
-Multi-step, fan-out, or resumable jobs use `backend/pkg/scheduler/flow`: Francis workflows that run inside coordinator runs. Follow the migration recipe in its package doc. Steps are idempotent service methods, the last step returns `scheduler.Outcome`, the job registers a `flow.Job`, and `flowtest.AssertDefinitions` guards version bumps. Keep single-operation jobs as ordinary jobs.
+### Background jobs
+
+- **Contract:** implement the scheduler job contract.
+- **Wiring:** `internal/di`, then register in `internal/bootstrap/jobs_bootstrap.go`.
+- **Multi-step, fan-out, or resumable jobs:** use `backend/pkg/scheduler/flow` (Francis workflows in coordinator runs).
+  - Follow the migration recipe in the package doc.
+  - Steps are idempotent service methods.
+  - The last step returns `scheduler.Outcome`.
+  - The job registers a `flow.Job`.
+  - `flowtest.AssertDefinitions` guards version bumps.
+- **Single-operation jobs:** keep them ordinary.
 
 ## Validation
 
 ### Tests
 
-Adding tests and running tests are separate decisions. The new-functionality-only rule does not remove the need to verify changes.
-
-Run the narrowest relevant existing coverage for the changed behavior, then choose the appropriate repository test target:
+- Adding tests and running tests are separate. Verify every change anyway.
+- Run the narrowest relevant existing coverage first.
+- Then pick a repo target:
 
 ```bash
 just test backend
@@ -265,19 +304,24 @@ just test cli
 just test types
 ```
 
-Use `just test e2e` for browser coverage when the required environment is available. `just test all` includes E2E tests and requires their prerequisites.
-
-Do not start a development stack implicitly to satisfy a test target. Documentation-only changes do not require adding tests.
+- `just test e2e`: browser coverage, when the environment is ready.
+- `just test all`: includes E2E and needs its prerequisites.
+- Never start a dev stack just to satisfy a test target.
+- Docs-only changes need no new tests.
 
 ### Required checks
 
-After every change, including documentation changes, run these commands in order:
+After every change, including docs, run in order:
 
 ```bash
 just format all
 just lint all
 ```
 
-Fix every reported issue and retain the formatter's output.
+- Fix every reported issue.
+- Keep the formatter's output.
 
-Report what ran, what passed, and anything you could not verify. Outside contributions must also meet the development and human testing requirements in `AI_POLICY.md` before submission.
+### Reporting
+
+- Say what ran, what passed, and what you could not verify.
+- Outside contributors must also meet the dev and human testing rules in `AI_POLICY.md` before submitting.

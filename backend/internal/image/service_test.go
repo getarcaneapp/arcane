@@ -23,6 +23,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/streams/bus"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
@@ -64,6 +65,7 @@ func setupImageProjectTestDB(t *testing.T) *database.DB {
 		&settings.SettingVariable{},
 		&imageupdate.ImageUpdateRecord{},
 		&event.Event{},
+		&kv.KVEntry{},
 	))
 	return &database.DB{DB: db}
 }
@@ -221,7 +223,7 @@ func TestImageService_GetImageDetail_EnrichesPinnedReferences(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
+	imageSvc := NewImageService(db, newImageTestDockerService(t, server), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
 
 	detail, err := imageSvc.GetImageDetail(t.Context(), pinnedID)
 	require.NoError(t, err)
@@ -256,7 +258,7 @@ func TestImageService_GetImageDetail_ContainerFailureDoesNotBreakInspection(t *t
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
+	imageSvc := NewImageService(db, newImageTestDockerService(t, server), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
 
 	detail, err := imageSvc.GetImageDetail(t.Context(), testID)
 	require.NoError(t, err)
@@ -441,8 +443,7 @@ func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejected(t *testing.T) 
 	}))
 	t.Cleanup(server.Close)
 
-	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
-	imageSvc := NewImageService(db, dockerService, nil, nil, nil, eventService, nil, nil, nil)
+	imageSvc := NewImageService(db, newImageTestDockerService(t, server), registry.NewContainerRegistryService(db, nil, kv.NewKVService(db), nil), nil, nil, eventService, nil, nil, nil)
 
 	err := imageSvc.PullImage(t.Context(), "registry.example.com/team/app:latest", io.Discard, types.SystemUser, []types.ContainerRegistryCredential{
 		{
@@ -474,7 +475,7 @@ func TestImageServiceTagImageCallsDockerAPI(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, eventService, nil, nil, nil)
+	imageSvc := NewImageService(db, newImageTestDockerService(t, server), nil, nil, nil, eventService, nil, nil, nil)
 
 	err := imageSvc.TagImage(t.Context(), "source:latest", types.ImageTagRequest{Repository: "registry.example.com/team/app", Tag: "v2"}, types.SystemUser)
 	require.NoError(t, err)
@@ -500,7 +501,7 @@ func TestImageServiceGetImageHistoryCallsDockerAPI(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
+	imageSvc := NewImageService(db, newImageTestDockerService(t, server), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
 
 	history, err := imageSvc.GetImageHistory(t.Context(), "source:latest")
 	require.NoError(t, err)
@@ -532,7 +533,7 @@ func TestImageServiceExportImageReturnsTarStream(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
+	imageSvc := NewImageService(db, newImageTestDockerService(t, server), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
 
 	reader, err := imageSvc.ExportImage(t.Context(), "source:latest")
 	require.NoError(t, err)
@@ -562,7 +563,7 @@ func TestImageServiceSearchImagesCallsDockerAPI(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
+	imageSvc := NewImageService(db, newImageTestDockerService(t, server), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
 
 	results, err := imageSvc.SearchImages(t.Context(), "nginx")
 	require.NoError(t, err)
@@ -596,6 +597,20 @@ func decodeRegistryAuth(t *testing.T, encoded string) dockerregistry.AuthConfig 
 }
 
 // newTestDockerClient builds a Docker client pointed at a fake Docker HTTP server.
+func newImageTestDockerService(t *testing.T, server *httptest.Server) *docker.DockerClientService {
+	t.Helper()
+	gdb, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := gdb.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	require.NoError(t, gdb.AutoMigrate(&settings.SettingVariable{}))
+	settingsService, err := settings.NewSettingsService(t.Context(), &database.DB{DB: gdb}, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newTestDockerClient(t, server))
+}
+
 func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	t.Helper()
 

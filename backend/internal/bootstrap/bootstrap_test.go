@@ -413,7 +413,7 @@ func TestJobSchedulerStopCancelsItsPrivateContext(t *testing.T) {
 		environment.NewEnvironmentService(&database.DB{DB: db}, nil, nil, nil, nil),
 		activity.NewActivityService(&database.DB{DB: db}, nil),
 	)
-	gitopsSync := gitops.NewGitOpsSyncService(&database.DB{DB: db}, nil, nil, nil, nil, nil)
+	gitopsSync := gitops.NewGitOpsSyncService(&database.DB{DB: db}, nil, project.NewProjectService(&database.DB{DB: db}, nil, nil, nil, nil, nil, nil, nil, &config.Config{}, nil, nil), nil, nil, nil)
 	require.NoError(t, db.Create(&environment.Environment{ID: "0", Name: "Local", Enabled: true}).Error)
 	require.NoError(t, db.Create(&project.GitOpsSync{ID: "overdue", EnvironmentID: "0", AutoSync: true, SyncInterval: 1}).Error)
 	jobScheduler, err := newJobScheduler(appCtx, lifecycle, &config.Config{}, coordinator, admission, nil, nil, nil, jobService, workflows, nil, gitopsSync)

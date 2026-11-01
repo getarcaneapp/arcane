@@ -11,15 +11,21 @@ import (
 	"testing"
 
 	"github.com/getarcaneapp/arcane/types/v3"
+	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	kit "go.getarcane.app/kit/pkg"
+	"go.getarcane.app/streams/bus"
 	"go.getarcane.app/updater"
+	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
 )
 
@@ -38,7 +44,7 @@ func newTestService(t *testing.T, server *httptest.Server, pending func(context.
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dockerClient.Close() })
 	return NewService(
-		(&docker.DockerClientService{}).WithClient(dockerClient),
+		newSettingsDockerService(t, dockerClient),
 		unresolvedDigests{},
 		pending,
 		func(context.Context) string { return "" },
@@ -616,4 +622,17 @@ func TestResumePlanStartsStoppedOriginalAndPersistsNewBaseline(t *testing.T) {
 	var saved frozenUpdatePlan
 	require.NoError(t, json.Unmarshal(persisted, &saved))
 	require.Equal(t, "restarted", saved.Targets[0].BaselineStartedAt)
+}
+
+func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }

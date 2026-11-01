@@ -354,7 +354,7 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 	}
 	require.NoError(t, db.WithContext(t.Context()).Create(&localTemplates).Error)
 
-	service := NewTemplateService(t.Context(), db, http.DefaultClient, nil)
+	service := NewTemplateService(t.Context(), db, http.DefaultClient, minimalSettingsServiceForTest(t))
 	service.remoteCache.Set(service.remoteGeneration.Load(), []ComposeTemplate{
 		{
 			ID: "remote-one", CreatedAt: now, UpdatedAt: &now,

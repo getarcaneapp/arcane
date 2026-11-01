@@ -15,6 +15,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/streams/bus"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
@@ -30,10 +31,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow/flowtest"
 )
 
-var testDockerService = (&dockerInternal.DockerClientService{}).WithClient(func() *client.Client {
-	cli, _ := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
-	return cli
-}())
+func newUnreachableDockerService(t *testing.T) *dockerInternal.DockerClientService {
+	t.Helper()
+
+	return newSettingsDockerService(t, func() *client.Client {
+		cli, _ := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
+		return cli
+	}())
+}
 
 // TestService_UpgradeFlag tests the upgrading flag behavior
 func TestService_UpgradeFlag(t *testing.T) {
@@ -353,7 +358,7 @@ func TestResolveSelfUpgradeTargetImage(t *testing.T) {
 				}
 				require.NoError(t, db.Create(&project.Project{ID: "project-arcane", Name: "arcane", Path: projectPath}).Error)
 			}
-			svc := NewService(db, nil, nil, nil, nil, project.NewProjectService(db, settingsSvc, nil, nil, testDockerService, nil, nil, nil, nil, nil, nil), nil, nil, false)
+			svc := NewService(db, nil, nil, nil, nil, project.NewProjectService(db, settingsSvc, nil, nil, newUnreachableDockerService(t), nil, nil, nil, nil, nil, nil), nil, nil, false)
 			current := container.InspectResponse{Config: &container.Config{
 				Image:  tt.runtime,
 				Labels: map[string]string{"com.docker.compose.project": "arcane", "com.docker.compose.service": "server"},
@@ -694,10 +699,7 @@ func TestResumeUpgradeJobFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, versionSettings.Stop(context.WithoutCancel(t.Context()))) })
 	require.NoError(t, versionSettings.SetBoolSetting(ctx, "updateCheckEnabled", false))
 
-	// disabled=true keeps GetAppVersionInfo offline; nil docker => empty current digest.
-	// The reported version differs from ManagerVersionAtStart, so the manager upgrade
-	// is judged successful.
-	versionSvc := version.NewVersionService(nil, "v9.9.9-new", "", nil, nil, nil, versionSettings)
+	versionSvc := version.NewVersionService(nil, "v9.9.9-new", "", nil, newUnreachableDockerService(t), nil, versionSettings)
 	svc := NewService(db, nil, versionSvc, event.NewEventService(db, nil, nil), nil, nil, nil, nil, false)
 	harness := flowtest.New(t, nil)
 	require.NoError(t, svc.RegisterWorkflows(harness.Engine, nil, nil))
@@ -791,7 +793,7 @@ func TestStreamProgressServesRetainedRunBeforeLogReplay(t *testing.T) {
 }
 
 func TestFollowUpgraderKeepsFeedActiveWhenLogsFail(t *testing.T) {
-	svc := NewService(nil, testDockerService, nil, nil, nil, nil, nil, nil, false)
+	svc := NewService(nil, newUnreachableDockerService(t), nil, nil, nil, nil, nil, nil, false)
 	svc.progress.start("v1.0.0", "v1.1.0")
 	_, live, _, unsubscribe := svc.progress.subscribe()
 	defer unsubscribe()
@@ -933,4 +935,17 @@ func TestAcquireAgentSlotHonorsParallelSetting(t *testing.T) {
 	svc.agentSlotsMu.Unlock()
 	first()
 	second()
+}
+
+func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *dockerInternal.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return dockerInternal.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }

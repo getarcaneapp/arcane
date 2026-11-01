@@ -153,9 +153,7 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 	if err != nil {
 		return nil, err
 	}
-	if s.roleService != nil {
-		s.roleService.InvalidateUser(created.IdentityUserID)
-	}
+	s.roleService.InvalidateUser(created.IdentityUserID)
 
 	return s.Get(ctx, created.ID)
 }
@@ -284,10 +282,10 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID, i
 	if err != nil {
 		return nil, err
 	}
-	if roleChanged && s.roleService != nil {
+	if roleChanged {
 		s.roleService.InvalidateUser(updated.IdentityUserID)
 	}
-	if (revokeActiveSessions || roleChanged) && s.authService != nil {
+	if revokeActiveSessions || roleChanged {
 		s.authService.InvalidateUserTokenCache(updated.IdentityUserID)
 	}
 	return s.Get(ctx, id)
@@ -311,12 +309,8 @@ func (s *FederatedCredentialService) Delete(ctx context.Context, id string) erro
 	if err != nil {
 		return err
 	}
-	if s.roleService != nil {
-		s.roleService.InvalidateUser(credential.IdentityUserID)
-	}
-	if s.authService != nil {
-		s.authService.InvalidateUserTokenCache(credential.IdentityUserID)
-	}
+	s.roleService.InvalidateUser(credential.IdentityUserID)
+	s.authService.InvalidateUserTokenCache(credential.IdentityUserID)
 	return nil
 }
 
@@ -349,9 +343,6 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req type
 			"audiences", audiences,
 			"credentialId", credentialID,
 		)
-		if s.eventService == nil {
-			return
-		}
 		severity := event.EventSeverityInfo
 		title := "Federated credential token exchange"
 		if logResult != "success" {
@@ -519,9 +510,6 @@ func (s *FederatedCredentialService) verifySubjectToken(ctx context.Context, iss
 			}
 			if metadata.JWKSURL == "" {
 				return nil, errors.New("federated issuer metadata is missing jwks_uri")
-			}
-			if s.keySetManager == nil {
-				return nil, errors.New("JWK set manager is not configured")
 			}
 
 			discovered, err := s.keySetManager.KeySet(context.WithoutCancel(ctx), s.httpClient, metadata.JWKSURL)

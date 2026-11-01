@@ -87,7 +87,7 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 
-	passwordPolicy := h.passwordPolicy(ctx)
+	passwordPolicy := h.settingsService.GetStringSetting(ctx, "authPasswordPolicy")
 	if validatePasswordPolicyErr := validation.ValidatePasswordPolicy(input.Body.Password, passwordPolicy); validatePasswordPolicyErr != nil {
 		return nil, handlerutil.Error400BadRequestWithType(common.Classify(common.ErrValidation,
 			&types.FieldError{
@@ -179,7 +179,7 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 	}
 
 	if input.Body.Password != "" {
-		passwordPolicy := h.passwordPolicy(ctx)
+		passwordPolicy := h.settingsService.GetStringSetting(ctx, "authPasswordPolicy")
 		if validatePasswordPolicyErr := validation.ValidatePasswordPolicy(input.Body.Password, passwordPolicy); validatePasswordPolicyErr != nil {
 			fieldErr := common.Classify(common.ErrValidation, &types.FieldError{Field: "password", Err: validatePasswordPolicyErr})
 			return nil, handlerutil.Error400BadRequestWithType(fieldErr, validation.PasswordPolicyProblemType(passwordPolicy))
@@ -322,11 +322,4 @@ func (h *UserHandler) checkUpdateUserPrivileges(ctx context.Context, input *Upda
 		}
 	}
 	return callerPerms, nil
-}
-
-func (h *UserHandler) passwordPolicy(ctx context.Context) string {
-	if h.settingsService == nil {
-		return validation.PasswordPolicyStrong
-	}
-	return h.settingsService.GetStringSetting(ctx, "authPasswordPolicy")
 }

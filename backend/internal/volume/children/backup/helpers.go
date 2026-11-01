@@ -246,18 +246,12 @@ func backupArchiveFilename(backupID string) (string, error) {
 // volumeBackupPassword returns the recovery key once one is stored, re-keying the given repositories off the legacy derivation first.
 func (s *Service) volumeBackupPassword(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error) {
 	legacyPassword := kit.SHA256Hex(legacyVolumePasswordSalt + s.deps.EncryptionKey)
-	if s.deps.RecoveryKeys == nil {
-		return legacyPassword, nil
-	}
 	key, err := s.deps.RecoveryKeys.Get(ctx)
 	if errors.Is(err, backup.ErrRecoveryKeyNotConfigured) {
 		return legacyPassword, nil
 	}
 	if err != nil {
 		return "", err
-	}
-	if s.deps.Engine == nil {
-		return key, nil
 	}
 	// Re-key each legacy repository once per process; one that opens with neither password is left for the caller to create or report.
 	for _, repository := range repositories {

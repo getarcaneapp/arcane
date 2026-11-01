@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json/v2"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -190,9 +189,6 @@ func (j *AnalyticsJob) Reschedule(ctx context.Context) error {
 // claimHeartbeat reports whether a heartbeat is due and, if so, schedules the next one a day out. Claiming before
 // sending keeps restarts from sending twice; a failed send moves the next attempt up to the retry delay.
 func (j *AnalyticsJob) claimHeartbeat(ctx context.Context) (bool, error) {
-	if j.kvService == nil {
-		return false, errors.New("analytics heartbeat kv service is not configured")
-	}
 	j.runMu.Lock()
 	defer j.runMu.Unlock()
 

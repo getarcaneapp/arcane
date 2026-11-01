@@ -45,15 +45,9 @@ func (j *GitCloneCleanupJob) Schedule(_ context.Context) string {
 }
 
 func (j *GitCloneCleanupJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
-	if j.repoService == nil || j.repoService.Client == nil {
-		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
-	}
-
 	maxAge := gitCloneScratchMinAge
-	if j.settingsService != nil {
-		if buildTimeout := j.settingsService.GetSettingsConfig().BuildTimeout.AsDurationSeconds(); buildTimeout+gitCloneScratchBuildHold > maxAge {
-			maxAge = buildTimeout + gitCloneScratchBuildHold
-		}
+	if buildTimeout := j.settingsService.GetSettingsConfig().BuildTimeout.AsDurationSeconds(); buildTimeout+gitCloneScratchBuildHold > maxAge {
+		maxAge = buildTimeout + gitCloneScratchBuildHold
 	}
 	removed, err := j.repoService.PurgeScratchDirs(ctx, maxAge)
 	if err != nil {
