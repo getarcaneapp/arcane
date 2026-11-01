@@ -5,13 +5,19 @@ import (
 	"io"
 )
 
+type TransferOptions struct {
+	Total        int64
+	Label        string
+	ShowProgress bool
+}
+
 // Copy copies a transfer while reporting bytes, or activity for unknown totals.
-func Copy(ctx context.Context, dst io.Writer, src io.Reader, total int64, label string, enabled bool) (int64, error) {
-	loading := StartTracker(ctx, Stderr(), enabled, label)
+func Copy(ctx context.Context, dst io.Writer, src io.Reader, opts TransferOptions) (int64, error) {
+	loading := StartTracker(ctx, Stderr(), opts.ShowProgress, opts.Label)
 	loading.NextStep()
 	defer loading.Stop()
-	loading.SetProgress("", label, 0, total, true)
-	written, err := io.Copy(dst, &transferReader{ctx: ctx, source: src, loading: loading, total: total, label: label})
+	loading.SetProgress("", opts.Label, 0, opts.Total, true)
+	written, err := io.Copy(dst, &transferReader{ctx: ctx, source: src, loading: loading, total: opts.Total, label: opts.Label})
 	loading.Finish("", err)
 	return written, err
 }

@@ -1243,13 +1243,12 @@ func (s *UpdaterService) Notify(ctx context.Context, localNotification updater.N
 		buffer.Unlock()
 		return nil
 	}
-	return s.deps.Notifications.SendContainerUpdateNotification(
-		ctx,
-		localNotification.ContainerName,
-		localNotification.ImageRef,
-		localNotification.OldImage,
-		localNotification.NewImage,
-	)
+	return s.deps.Notifications.SendContainerUpdateNotification(ctx, notification.ContainerUpdateEvent{
+		ContainerName: localNotification.ContainerName,
+		ImageRef:      localNotification.ImageRef,
+		OldDigest:     localNotification.OldImage,
+		NewDigest:     localNotification.NewImage,
+	})
 }
 
 // RecordEvent records updater lifecycle events in Arcane's event stream.

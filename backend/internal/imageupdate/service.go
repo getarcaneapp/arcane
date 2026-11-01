@@ -168,10 +168,6 @@ func NewImageUpdateService(
 	}
 }
 
-func (s *ImageUpdateService) registryContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
-}
-
 func (s *ImageUpdateService) composeBuildImageRefs(ctx context.Context) (map[string]struct{}, error) {
 	var projectRows []struct {
 		BuildImageRefsJSON *string `gorm:"column:build_image_refs_json"`
@@ -913,7 +909,7 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 		// Digests have no ordering. Confirm a moved tag without using the digest cache.
 		// A registry failure leaves the differing previews untouched rather than
 		// blocking the reconciliation of the pulled image state.
-		registryCtx, cancel := s.registryContext(ctx)
+		registryCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
 		defer cancel()
 		latest, inspectErr := s.registryService.InspectImageDigest(registryCtx, imageRef, nil)
 		if inspectErr != nil {
@@ -1098,7 +1094,7 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 		}, nil, nil
 	}
 
-	registryCtx, registryCancel := s.registryContext(ctx)
+	registryCtx, registryCancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
 	digestResult, digestErr := s.registryService.InspectImageDigest(registryCtx, imageRef, externalCreds)
 	registryCancel()
 	if digestErr != nil {

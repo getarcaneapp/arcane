@@ -43,12 +43,7 @@ func ProxyRequest(ctx context.Context, tunnel *AgentTunnel, method, path, query 
 
 // HasActiveTunnel checks if an environment has an active agent tunnel
 func HasActiveTunnel(envID string) bool {
-	return GetActiveTunnel(envID).IsPresent()
-}
-
-// GetActiveTunnel returns the active tunnel for an environment in the default registry, if one exists.
-func GetActiveTunnel(envID string) mo.Option[*AgentTunnel] {
-	return GetRegistry().Active(envID)
+	return GetRegistry().Active(envID).IsPresent()
 }
 
 // WaitForActiveTunnel waits for an environment to establish a live tunnel in the default registry.
@@ -67,7 +62,7 @@ func DoRequest(ctx context.Context, envID, method, path string, body []byte) (in
 		defer cancel()
 	}
 
-	tunnel, ok := GetActiveTunnel(envID).Get()
+	tunnel, ok := GetRegistry().Active(envID).Get()
 	if !ok {
 		return 0, nil, fmt.Errorf("no active tunnel for environment %s", envID)
 	}

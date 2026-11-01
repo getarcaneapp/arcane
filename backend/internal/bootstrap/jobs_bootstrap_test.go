@@ -21,13 +21,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
 )
 
-type settingsSubscriptionStubInternal struct {
+type settingsSubscriptionStub struct {
 	pollingCallback  func([]libarcane.SettingUpdate)
 	timeoutCallback  func([]libarcane.SettingUpdate)
 	featureCallbacks []func([]libarcane.SettingUpdate)
 }
 
-func (s *settingsSubscriptionStubInternal) SubscribeSettingsChanges(keys []string, callback func([]libarcane.SettingUpdate)) func() {
+func (s *settingsSubscriptionStub) SubscribeSettingsChanges(keys []string, callback func([]libarcane.SettingUpdate)) func() {
 	if slices.Contains(keys, types.FeatureVulnerabilityManagementSettingKey) {
 		s.featureCallbacks = append(s.featureCallbacks, callback)
 	}
@@ -40,12 +40,12 @@ func (s *settingsSubscriptionStubInternal) SubscribeSettingsChanges(keys []strin
 	return func() {}
 }
 
-type settingsSubscriptionSchedulerStubInternal struct {
+type settingsSubscriptionSchedulerStub struct {
 	rescheduled chan struct{}
 	jobs        []string
 }
 
-func (s *settingsSubscriptionSchedulerStubInternal) RescheduleJob(_ context.Context, job types.SchedulerJob) error {
+func (s *settingsSubscriptionSchedulerStub) RescheduleJob(_ context.Context, job types.SchedulerJob) error {
 	if job != nil {
 		s.jobs = append(s.jobs, job.Name())
 	}
@@ -57,18 +57,18 @@ func (s *settingsSubscriptionSchedulerStubInternal) RescheduleJob(_ context.Cont
 	return nil
 }
 
-type timeoutSyncEnvironmentStubInternal struct {
+type timeoutSyncEnvironmentStub struct {
 	started chan struct{}
 }
 
-func (s *timeoutSyncEnvironmentStubInternal) ListRemoteEnvironments(context.Context) ([]environment.Environment, error) {
+func (s *timeoutSyncEnvironmentStub) ListRemoteEnvironments(context.Context) ([]environment.Environment, error) {
 	return []environment.Environment{{
 		ID:   "remote",
 		Name: "remote",
 	}}, nil
 }
 
-func (s *timeoutSyncEnvironmentStubInternal) ProxyRequest(ctx context.Context, _, _, _ string, _ []byte) ([]byte, int, error) {
+func (s *timeoutSyncEnvironmentStub) ProxyRequest(ctx context.Context, _, _, _ string, _ []byte) ([]byte, int, error) {
 	select {
 	case <-s.started:
 	default:
@@ -129,9 +129,9 @@ func TestSyncTimeoutSettingsToAgentsSkipsLockedKeysAndMismatchedAgents(t *testin
 func TestSettingsTimeoutSyncDoesNotBlockOtherEffects(t *testing.T) {
 	lifecycle := fxtest.NewLifecycle(t)
 
-	settings := &settingsSubscriptionStubInternal{}
-	localScheduler := &settingsSubscriptionSchedulerStubInternal{rescheduled: make(chan struct{})}
-	localEnvironment := &timeoutSyncEnvironmentStubInternal{started: make(chan struct{})}
+	settings := &settingsSubscriptionStub{}
+	localScheduler := &settingsSubscriptionSchedulerStub{rescheduled: make(chan struct{})}
+	localEnvironment := &timeoutSyncEnvironmentStub{started: make(chan struct{})}
 	require.NoError(t, setupSettingsSubscriptions(settingsSubscriptionsParams{
 		Lifecycle:          lifecycle,
 		LifecycleCtx:       t.Context(),
@@ -174,8 +174,8 @@ func TestSettingsTimeoutSyncDoesNotBlockOtherEffects(t *testing.T) {
 
 func TestFeatureChangeReschedulesScanAndPatchJobs(t *testing.T) {
 	lifecycle := fxtest.NewLifecycle(t)
-	settings := &settingsSubscriptionStubInternal{}
-	schedulerStub := &settingsSubscriptionSchedulerStubInternal{rescheduled: make(chan struct{})}
+	settings := &settingsSubscriptionStub{}
+	schedulerStub := &settingsSubscriptionSchedulerStub{rescheduled: make(chan struct{})}
 	require.NoError(t, setupSettingsSubscriptions(settingsSubscriptionsParams{
 		Lifecycle:         lifecycle,
 		LifecycleCtx:      t.Context(),

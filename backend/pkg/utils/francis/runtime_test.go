@@ -16,7 +16,7 @@ import (
 
 func TestSQLiteHostRestartPersistence(t *testing.T) {
 	databaseURL := "file:" + filepath.ToSlash(filepath.Join(t.TempDir(), "actors.db"))
-	testRestartPersistenceInternal(t, databaseURL)
+	testRestartPersistence(t, databaseURL)
 
 	var output bytes.Buffer
 	runtime := &Runtime{}
@@ -36,10 +36,10 @@ func TestSQLiteHostRestartPersistence(t *testing.T) {
 	require.Contains(t, output.String(), "nested.actorRef=job-health-executor/image-polling@0")
 }
 
-func testRestartPersistenceInternal(t *testing.T, databaseURL string) {
+func testRestartPersistence(t *testing.T, databaseURL string) {
 	t.Helper()
 	actorID := t.Name() + time.Now().Format("150405.000000000")
-	port := freePortInternal(t)
+	port := freePort(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
 	first, err := New(databaseURL, "test-encryption-key", "test-instance", port)
@@ -74,7 +74,7 @@ func testRestartPersistenceInternal(t *testing.T, databaseURL string) {
 	require.Error(t, second.RegisterActor("late", nil))
 }
 
-func freePortInternal(t *testing.T) string {
+func freePort(t *testing.T) string {
 	t.Helper()
 	var lc net.ListenConfig
 	listener, err := lc.ListenPacket(t.Context(), "udp", "127.0.0.1:0")

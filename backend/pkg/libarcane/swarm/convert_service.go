@@ -24,7 +24,7 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 )
 
-func buildServiceSpecInternal(
+func buildServiceSpec(
 	service composegotypes.ServiceConfig,
 	ns namespace,
 	stackLabels map[string]string,
@@ -34,24 +34,24 @@ func buildServiceSpecInternal(
 	projectVolumes composegotypes.Volumes,
 ) (swarm.ServiceSpec, error) {
 	serviceName := ns.Scope(service.Name)
-	serviceLabels := mergeLabelsInternal(nil, stackLabels)
+	serviceLabels := mergeLabels(nil, stackLabels)
 	if service.Deploy != nil {
-		serviceLabels = mergeLabelsInternal(service.Deploy.Labels, serviceLabels)
+		serviceLabels = mergeLabels(service.Deploy.Labels, serviceLabels)
 	}
 
-	mounts, err := convertServiceMountsInternal(service.Volumes, ns, projectVolumes, stackLabels)
+	mounts, err := convertServiceMounts(service.Volumes, ns, projectVolumes, stackLabels)
 	if err != nil {
 		return swarm.ServiceSpec{}, err
 	}
-	secretRefs, err := convertServiceSecretRefsInternal(service.Secrets, secretMetaByKey)
+	secretRefs, err := convertServiceSecretRefs(service.Secrets, secretMetaByKey)
 	if err != nil {
 		return swarm.ServiceSpec{}, err
 	}
-	configRefs, err := convertServiceConfigRefsInternal(service.Configs, configMetaByKey)
+	configRefs, err := convertServiceConfigRefs(service.Configs, configMetaByKey)
 	if err != nil {
 		return swarm.ServiceSpec{}, err
 	}
-	privileges, runtimeConfigRef, err := convertPrivilegesInternal(service.CredentialSpec, service.SecurityOpt, configMetaByKey)
+	privileges, runtimeConfigRef, err := convertPrivileges(service.CredentialSpec, service.SecurityOpt, configMetaByKey)
 	if err != nil {
 		return swarm.ServiceSpec{}, err
 	}
@@ -61,11 +61,11 @@ func buildServiceSpecInternal(
 			return configRefs[i].ConfigName < configRefs[j].ConfigName
 		})
 	}
-	healthcheck, err := convertHealthcheckInternal(service.HealthCheck)
+	healthcheck, err := convertHealthcheck(service.HealthCheck)
 	if err != nil {
 		return swarm.ServiceSpec{}, err
 	}
-	networks, err := buildServiceNetworksInternal(service, networkNameByKey)
+	networks, err := buildServiceNetworks(service, networkNameByKey)
 	if err != nil {
 		return swarm.ServiceSpec{}, err
 	}
@@ -79,29 +79,29 @@ func buildServiceSpecInternal(
 				Image:           service.Image,
 				Command:         kit.Ternary(len(service.Entrypoint) == 0, nil, service.Entrypoint),
 				Args:            kit.Ternary(len(service.Command) == 0, nil, service.Command),
-				Env:             convertEnvInternal(service.Environment),
+				Env:             convertEnv(service.Environment),
 				Dir:             service.WorkingDir,
 				User:            service.User,
 				Groups:          service.GroupAdd,
 				Hostname:        service.Hostname,
 				Init:            service.Init,
 				StopSignal:      service.StopSignal,
-				StopGracePeriod: convertDurationPtrInternal(service.StopGracePeriod),
+				StopGracePeriod: convertDurationPtr(service.StopGracePeriod),
 				ReadOnly:        service.ReadOnly,
 				TTY:             service.Tty,
 				OpenStdin:       service.StdinOpen,
-				Labels:          mergeLabelsInternal(service.Labels, stackLabels),
+				Labels:          mergeLabels(service.Labels, stackLabels),
 				Mounts:          mounts,
 				Secrets:         secretRefs,
 				Configs:         configRefs,
-				Hosts:           convertExtraHostsInternal(service.ExtraHosts),
+				Hosts:           convertExtraHosts(service.ExtraHosts),
 				Healthcheck:     healthcheck,
 				Privileges:      privileges,
 				Isolation:       container.Isolation(service.Isolation),
 				Sysctls:         map[string]string(service.Sysctls),
 				CapabilityAdd:   capabilityAdd,
 				CapabilityDrop:  capabilityDrop,
-				Ulimits:         convertUlimitsInternal(service.Ulimits),
+				Ulimits:         convertUlimits(service.Ulimits),
 				OomScoreAdj:     service.OomScoreAdj,
 			},
 			Networks: networks,
@@ -118,23 +118,23 @@ func buildServiceSpecInternal(
 
 	if len(service.DNS) > 0 || len(service.DNSSearch) > 0 || len(service.DNSOpts) > 0 {
 		spec.TaskTemplate.ContainerSpec.DNSConfig = &swarm.DNSConfig{
-			Nameservers: parseIPListInternal(service.DNS),
+			Nameservers: parseIPList(service.DNS),
 			Search:      service.DNSSearch,
 			Options:     service.DNSOpts,
 		}
 	}
 
-	if applyDeployConfigErr := applyDeployConfigInternal(&spec, service.Deploy, service.Scale, service.Restart); applyDeployConfigErr != nil {
+	if applyDeployConfigErr := applyDeployConfig(&spec, service.Deploy, service.Scale, service.Restart); applyDeployConfigErr != nil {
 		return swarm.ServiceSpec{}, applyDeployConfigErr
 	}
-	if applyServicePortsErr := applyServicePortsInternal(&spec, service.Ports); applyServicePortsErr != nil {
+	if applyServicePortsErr := applyServicePorts(&spec, service.Ports); applyServicePortsErr != nil {
 		return swarm.ServiceSpec{}, applyServicePortsErr
 	}
 
 	return spec, nil
 }
 
-func convertExtraHostsInternal(extraHosts composegotypes.HostsList) []string {
+func convertExtraHosts(extraHosts composegotypes.HostsList) []string {
 	hosts := make([]string, 0, len(extraHosts))
 	for hostName, addresses := range extraHosts {
 		for _, address := range addresses {
@@ -145,7 +145,7 @@ func convertExtraHostsInternal(extraHosts composegotypes.HostsList) []string {
 	return hosts
 }
 
-func convertHealthcheckInternal(healthcheck *composegotypes.HealthCheckConfig) (*container.HealthConfig, error) {
+func convertHealthcheck(healthcheck *composegotypes.HealthCheckConfig) (*container.HealthConfig, error) {
 	if healthcheck == nil {
 		return nil, nil
 	}
@@ -183,12 +183,12 @@ func convertHealthcheckInternal(healthcheck *composegotypes.HealthCheckConfig) (
 	return result, nil
 }
 
-func convertPrivilegesInternal(
+func convertPrivileges(
 	credentialSpec *composegotypes.CredentialSpecConfig,
 	securityOptions []string,
 	configMetaByKey map[string]resourceMeta,
 ) (*swarm.Privileges, *swarm.ConfigReference, error) {
-	convertedCredentialSpec, runtimeConfigRef, err := convertCredentialSpecInternal(credentialSpec, configMetaByKey)
+	convertedCredentialSpec, runtimeConfigRef, err := convertCredentialSpec(credentialSpec, configMetaByKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -196,7 +196,7 @@ func convertPrivilegesInternal(
 	privileges := &swarm.Privileges{CredentialSpec: convertedCredentialSpec}
 	hasPrivileges := convertedCredentialSpec != nil
 	for _, securityOption := range securityOptions {
-		applied, applySecurityOptionErr := applySecurityOptionInternal(privileges, securityOption)
+		applied, applySecurityOptionErr := applySecurityOption(privileges, securityOption)
 		if applySecurityOptionErr != nil {
 			return nil, nil, applySecurityOptionErr
 		}
@@ -208,7 +208,7 @@ func convertPrivilegesInternal(
 	return kit.Ternary(!hasPrivileges, nil, privileges), runtimeConfigRef, nil
 }
 
-func convertCredentialSpecInternal(
+func convertCredentialSpec(
 	credentialSpec *composegotypes.CredentialSpecConfig,
 	configMetaByKey map[string]resourceMeta,
 ) (*swarm.CredentialSpec, *swarm.ConfigReference, error) {
@@ -253,7 +253,7 @@ func convertCredentialSpecInternal(
 	}, nil
 }
 
-func applySecurityOptionInternal(privileges *swarm.Privileges, securityOption string) (bool, error) {
+func applySecurityOption(privileges *swarm.Privileges, securityOption string) (bool, error) {
 	option := strings.TrimSpace(securityOption)
 	if option == "" {
 		return false, nil
@@ -295,7 +295,7 @@ func applySecurityOptionInternal(privileges *swarm.Privileges, securityOption st
 			return false, fmt.Errorf("custom AppArmor profile %q is not supported for swarm stacks", value)
 		}
 	case "label":
-		if err := applySELinuxOptionInternal(privileges, value, securityOption); err != nil {
+		if err := applySELinuxOption(privileges, value, securityOption); err != nil {
 			return false, err
 		}
 	default:
@@ -304,7 +304,7 @@ func applySecurityOptionInternal(privileges *swarm.Privileges, securityOption st
 	return true, nil
 }
 
-func applySELinuxOptionInternal(privileges *swarm.Privileges, value, securityOption string) error {
+func applySELinuxOption(privileges *swarm.Privileges, value, securityOption string) error {
 	selinux := privileges.SELinuxContext
 	if selinux == nil {
 		selinux = &swarm.SELinuxContext{}
@@ -331,7 +331,7 @@ func applySELinuxOptionInternal(privileges *swarm.Privileges, value, securityOpt
 	return nil
 }
 
-func convertUlimitsInternal(ulimits map[string]*composegotypes.UlimitsConfig) []*container.Ulimit {
+func convertUlimits(ulimits map[string]*composegotypes.UlimitsConfig) []*container.Ulimit {
 	result := make([]*container.Ulimit, 0, len(ulimits))
 	for _, name := range slices.Sorted(maps.Keys(ulimits)) {
 		limit := ulimits[name]
@@ -351,12 +351,12 @@ func convertUlimitsInternal(ulimits map[string]*composegotypes.UlimitsConfig) []
 	return result
 }
 
-func applyDeployConfigInternal(spec *swarm.ServiceSpec, deploy *composegotypes.DeployConfig, scale *int, restart string) error {
+func applyDeployConfig(spec *swarm.ServiceSpec, deploy *composegotypes.DeployConfig, scale *int, restart string) error {
 	if deploy == nil {
-		if err := applyServiceModeInternal(spec, "", scale); err != nil {
+		if err := applyServiceMode(spec, "", scale); err != nil {
 			return err
 		}
-		restartPolicy, err := convertRestartPolicyInternal(restart, nil)
+		restartPolicy, err := convertRestartPolicy(restart, nil)
 		if err != nil {
 			return err
 		}
@@ -368,7 +368,7 @@ func applyDeployConfigInternal(spec *swarm.ServiceSpec, deploy *composegotypes.D
 	if deploy.Replicas != nil {
 		replicas = deploy.Replicas
 	}
-	if err := applyServiceModeInternal(spec, deploy.Mode, replicas); err != nil {
+	if err := applyServiceMode(spec, deploy.Mode, replicas); err != nil {
 		return err
 	}
 
@@ -379,10 +379,10 @@ func applyDeployConfigInternal(spec *swarm.ServiceSpec, deploy *composegotypes.D
 		spec.EndpointSpec.Mode = swarm.ResolutionMode(strings.ToLower(deploy.EndpointMode))
 	}
 
-	spec.UpdateConfig = convertUpdateConfigInternal(deploy.UpdateConfig)
-	spec.RollbackConfig = convertUpdateConfigInternal(deploy.RollbackConfig)
+	spec.UpdateConfig = convertUpdateConfig(deploy.UpdateConfig)
+	spec.RollbackConfig = convertUpdateConfig(deploy.RollbackConfig)
 
-	restartPolicy, err := convertRestartPolicyInternal(restart, deploy.RestartPolicy)
+	restartPolicy, err := convertRestartPolicy(restart, deploy.RestartPolicy)
 	if err != nil {
 		return err
 	}
@@ -426,7 +426,7 @@ func applyDeployConfigInternal(spec *swarm.ServiceSpec, deploy *composegotypes.D
 	return nil
 }
 
-func convertUpdateConfigInternal(source *composegotypes.UpdateConfig) *swarm.UpdateConfig {
+func convertUpdateConfig(source *composegotypes.UpdateConfig) *swarm.UpdateConfig {
 	if source == nil {
 		return nil
 	}
@@ -444,13 +444,13 @@ func convertUpdateConfigInternal(source *composegotypes.UpdateConfig) *swarm.Upd
 	}
 }
 
-func convertRestartPolicyInternal(restart string, deployPolicy *composegotypes.RestartPolicy) (*swarm.RestartPolicy, error) {
+func convertRestartPolicy(restart string, deployPolicy *composegotypes.RestartPolicy) (*swarm.RestartPolicy, error) {
 	if deployPolicy != nil {
 		return &swarm.RestartPolicy{
 			Condition:   swarm.RestartPolicyCondition(deployPolicy.Condition),
-			Delay:       convertDurationPtrInternal(deployPolicy.Delay),
+			Delay:       convertDurationPtr(deployPolicy.Delay),
 			MaxAttempts: deployPolicy.MaxAttempts,
-			Window:      convertDurationPtrInternal(deployPolicy.Window),
+			Window:      convertDurationPtr(deployPolicy.Window),
 		}, nil
 	}
 	if strings.TrimSpace(restart) == "" {
@@ -477,7 +477,7 @@ func convertRestartPolicyInternal(restart string, deployPolicy *composegotypes.R
 	}
 }
 
-func applyServiceModeInternal(spec *swarm.ServiceSpec, mode string, replicas *int) error {
+func applyServiceMode(spec *swarm.ServiceSpec, mode string, replicas *int) error {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	switch mode {
 	case "global":
@@ -491,7 +491,7 @@ func applyServiceModeInternal(spec *swarm.ServiceSpec, mode string, replicas *in
 		}
 		spec.Mode = swarm.ServiceMode{GlobalJob: &swarm.GlobalJob{}}
 	case "replicated-job":
-		replicaCount := toUint64PointerFromOptionalIntInternal(replicas)
+		replicaCount := toUint64PointerFromOptionalInt(replicas)
 		spec.Mode = swarm.ServiceMode{ReplicatedJob: &swarm.ReplicatedJob{
 			MaxConcurrent:    replicaCount,
 			TotalCompletions: replicaCount,
@@ -512,14 +512,14 @@ func applyServiceModeInternal(spec *swarm.ServiceSpec, mode string, replicas *in
 	return nil
 }
 
-func toUint64PointerFromOptionalIntInternal(value *int) *uint64 {
+func toUint64PointerFromOptionalInt(value *int) *uint64 {
 	if value == nil || *value < 0 {
 		return nil
 	}
 	return new(uint64(*value))
 }
 
-func applyServicePortsInternal(spec *swarm.ServiceSpec, ports []composegotypes.ServicePortConfig) error {
+func applyServicePorts(spec *swarm.ServiceSpec, ports []composegotypes.ServicePortConfig) error {
 	if len(ports) == 0 {
 		return nil
 	}
@@ -559,7 +559,7 @@ func applyServicePortsInternal(spec *swarm.ServiceSpec, ports []composegotypes.S
 	return nil
 }
 
-func buildServiceNetworksInternal(service composegotypes.ServiceConfig, networkNameByKey map[string]string) ([]swarm.NetworkAttachmentConfig, error) {
+func buildServiceNetworks(service composegotypes.ServiceConfig, networkNameByKey map[string]string) ([]swarm.NetworkAttachmentConfig, error) {
 	var attachments []swarm.NetworkAttachmentConfig
 	if len(service.Networks) == 0 {
 		defaultNetwork, ok := networkNameByKey["default"]
@@ -597,7 +597,7 @@ func buildServiceNetworksInternal(service composegotypes.ServiceConfig, networkN
 	return attachments, nil
 }
 
-func convertIPAMInternal(cfg composegotypes.IPAMConfig) *network.IPAM {
+func convertIPAM(cfg composegotypes.IPAMConfig) *network.IPAM {
 	if cfg.Driver == "" && len(cfg.Config) == 0 && len(cfg.Options) == 0 {
 		return nil
 	}
@@ -611,14 +611,14 @@ func convertIPAMInternal(cfg composegotypes.IPAMConfig) *network.IPAM {
 			if pool == nil {
 				continue
 			}
-			subnet := parsePrefixInternal(pool.Subnet)
-			ipRange := parsePrefixInternal(pool.IPRange)
-			gateway := parseAddrInternal(pool.Gateway).OrEmpty()
+			subnet := parsePrefix(pool.Subnet)
+			ipRange := parsePrefix(pool.IPRange)
+			gateway := parseAddr(pool.Gateway).OrEmpty()
 			pools = append(pools, network.IPAMConfig{
 				Subnet:     subnet,
 				Gateway:    gateway,
 				IPRange:    ipRange,
-				AuxAddress: parseAuxAddressesInternal(pool.AuxiliaryAddresses),
+				AuxAddress: parseAuxAddresses(pool.AuxiliaryAddresses),
 			})
 		}
 		result.Config = pools
@@ -626,13 +626,13 @@ func convertIPAMInternal(cfg composegotypes.IPAMConfig) *network.IPAM {
 	return result
 }
 
-func parseIPListInternal(values []string) []netip.Addr {
+func parseIPList(values []string) []netip.Addr {
 	if len(values) == 0 {
 		return nil
 	}
 	out := make([]netip.Addr, 0, len(values))
 	for _, value := range values {
-		addr, ok := parseAddrInternal(value).Get()
+		addr, ok := parseAddr(value).Get()
 		if ok {
 			out = append(out, addr)
 		}
@@ -640,7 +640,7 @@ func parseIPListInternal(values []string) []netip.Addr {
 	return out
 }
 
-func parseAddrInternal(value string) mo.Option[netip.Addr] {
+func parseAddr(value string) mo.Option[netip.Addr] {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return mo.None[netip.Addr]()
@@ -652,7 +652,7 @@ func parseAddrInternal(value string) mo.Option[netip.Addr] {
 	return mo.Some(addr)
 }
 
-func parsePrefixInternal(value string) netip.Prefix {
+func parsePrefix(value string) netip.Prefix {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return netip.Prefix{}
@@ -661,20 +661,20 @@ func parsePrefixInternal(value string) netip.Prefix {
 	return kit.Ternary(err != nil, netip.Prefix{}, prefix)
 }
 
-func parseAuxAddressesInternal(values map[string]string) map[string]netip.Addr {
+func parseAuxAddresses(values map[string]string) map[string]netip.Addr {
 	if len(values) == 0 {
 		return nil
 	}
 	out := make(map[string]netip.Addr, len(values))
 	for key, value := range values {
-		if addr, ok := parseAddrInternal(value).Get(); ok {
+		if addr, ok := parseAddr(value).Get(); ok {
 			out[key] = addr
 		}
 	}
 	return out
 }
 
-func convertEnvInternal(env composegotypes.MappingWithEquals) []string {
+func convertEnv(env composegotypes.MappingWithEquals) []string {
 	if env == nil {
 		return nil
 	}
@@ -690,7 +690,7 @@ func convertEnvInternal(env composegotypes.MappingWithEquals) []string {
 	return result
 }
 
-func convertDurationPtrInternal(duration *composegotypes.Duration) *time.Duration {
+func convertDurationPtr(duration *composegotypes.Duration) *time.Duration {
 	if duration == nil {
 		return nil
 	}

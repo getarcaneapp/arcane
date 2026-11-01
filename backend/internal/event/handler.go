@@ -108,7 +108,7 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 		params.Filters["type"] = input.Type
 	}
 
-	events, paginationResp, err := h.eventService.GetEventsByEnvironmentPaginated(ctx, input.EnvironmentID, params)
+	events, paginationResp, err := paginateEvents(h.eventService.db.WithContext(ctx).Model(&Event{}).Where("environment_id = ?", input.EnvironmentID), params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to list events: " + err.Error())
 	}

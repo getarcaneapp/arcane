@@ -291,17 +291,12 @@ func (s *Service) localRusticRepository(ctx context.Context, dockerClient *clien
 	}, nil
 }
 
-// remoteInstanceID resolves the instance whose S3 root holds a backup; empty means this instance.
-func (s *Service) remoteInstanceID(instanceID string) string {
-	return cmp.Or(strings.TrimSpace(instanceID), strings.TrimSpace(s.deps.Settings.GetSettingsConfig().InstanceID.Value))
-}
-
 // remoteRusticRepository addresses one instance's root on the destination; empty instanceID means this instance.
 func (s *Service) remoteRusticRepository(ctx context.Context, destinationID, instanceID string) (backup.Repository, error) {
 	if s.deps.S3Destinations == nil {
 		return backup.Repository{}, errors.New("S3 backup destinations are unavailable")
 	}
-	instanceID = s.remoteInstanceID(instanceID)
+	instanceID = cmp.Or(strings.TrimSpace(instanceID), strings.TrimSpace(s.deps.Settings.GetSettingsConfig().InstanceID.Value))
 	if instanceID == "" {
 		return backup.Repository{}, errors.New("arcane instance ID is unavailable")
 	}

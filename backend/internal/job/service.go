@@ -16,7 +16,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/robfig/cron/v3"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -344,7 +344,7 @@ func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, erro
 				// Calculate next run using the configured timezone.
 				return new(sched.Next(time.Now().In(s.location)))
 			}()),
-			s.isJobEnabled(ctx, jobMeta),
+			(jobMeta.EnabledKey == "" || s.settings.GetBoolSetting(ctx, jobMeta.EnabledKey)),
 			s.evaluatePrerequisites(ctx, jobMeta),
 		))
 	}
@@ -365,10 +365,6 @@ func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, erro
 		DurableRuns: true,
 		ObservedAt:  time.Now().UTC(),
 	}, nil
-}
-
-func (s *JobService) isJobEnabled(ctx context.Context, localMeta types.JobMetadata) bool {
-	return localMeta.EnabledKey == "" || s.settings.GetBoolSetting(ctx, localMeta.EnabledKey)
 }
 
 func (s *JobService) evaluatePrerequisites(ctx context.Context, localMeta types.JobMetadata) []types.JobPrerequisite {
@@ -515,7 +511,7 @@ func (s *JobService) validateLocalJob(ctx context.Context, jobID string) error {
 		if s.cfg.AgentEnabled && metadata.ManagerOnly {
 			return errors.New("job is manager-only")
 		}
-		if !s.isJobEnabled(ctx, metadata) {
+		if !(metadata.EnabledKey == "" || s.settings.GetBoolSetting(ctx, metadata.EnabledKey)) {
 			return errors.New("job is disabled")
 		}
 		if slices.ContainsFunc(s.evaluatePrerequisites(ctx, metadata), func(prereq types.JobPrerequisite) bool { return !prereq.IsMet }) {

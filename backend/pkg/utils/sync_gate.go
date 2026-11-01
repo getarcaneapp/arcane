@@ -14,7 +14,7 @@ import (
 // how long a delivery is trusted (zero means forever) so a target rebuilt
 // behind an unchanged status still converges. The zero value is ready to use.
 type SyncGate struct {
-	sent   map[string]map[string]syncGateEntryInternal
+	sent   map[string]map[string]syncGateEntry
 	epochs map[string]uint64
 	locks  KeyedMutex
 	Expiry time.Duration
@@ -22,7 +22,7 @@ type SyncGate struct {
 	mu sync.Mutex
 }
 
-type syncGateEntryInternal struct {
+type syncGateEntry struct {
 	sentAt time.Time
 	digest [sha256.Size]byte
 }
@@ -56,12 +56,12 @@ func (g *SyncGate) Begin(ctx context.Context, scope, key string, body []byte) (u
 			return
 		}
 		if g.sent == nil {
-			g.sent = make(map[string]map[string]syncGateEntryInternal)
+			g.sent = make(map[string]map[string]syncGateEntry)
 		}
 		if g.sent[scope] == nil {
-			g.sent[scope] = make(map[string]syncGateEntryInternal)
+			g.sent[scope] = make(map[string]syncGateEntry)
 		}
-		g.sent[scope][key] = syncGateEntryInternal{digest: sha256.Sum256(body), sentAt: time.Now()}
+		g.sent[scope][key] = syncGateEntry{digest: sha256.Sum256(body), sentAt: time.Now()}
 	}, nil
 }
 

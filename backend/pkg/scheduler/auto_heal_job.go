@@ -32,20 +32,20 @@ import (
 )
 
 const (
-	AutoHealJobName                = "auto-heal"
-	autoHealDefaultSchedule        = "0 */5 * * * *"
-	autoHealInspectConcurrency     = 4
-	autoHealAdmissionScopeInternal = "auto-heal"
+	AutoHealJobName            = "auto-heal"
+	autoHealDefaultSchedule    = "0 */5 * * * *"
+	autoHealInspectConcurrency = 4
+	autoHealAdmissionScope     = "auto-heal"
 )
 
 // restartRecord tracks restart timestamps for a single container.
-type autoHealPlanInternal struct {
+type autoHealPlan struct {
 	Containers    []container.Summary `json:"containers"`
 	MaxRestarts   int                 `json:"maxRestarts"`
 	WindowMinutes int                 `json:"windowMinutes"`
 }
 
-type autoHealBaselineInternal struct {
+type autoHealBaseline struct {
 	StartedAt    string `json:"startedAt"`
 	RestartCount int    `json:"restartCount"`
 }
@@ -114,7 +114,7 @@ func (j *AutoHealJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
 
-	lease, admitted, err := j.admissionGate.TryAcquire(ctx, types.SchedulerAdmissionKey{Scope: autoHealAdmissionScopeInternal})
+	lease, admitted, err := j.admissionGate.TryAcquire(ctx, types.SchedulerAdmissionKey{Scope: autoHealAdmissionScope})
 	if err != nil {
 		slog.ErrorContext(ctx, "auto-heal admission failed", "error", err)
 		return types.SchedulerOutcome{}, err
@@ -145,7 +145,7 @@ func (j *AutoHealJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 
 	selfID := j.selfContainerID(ctx)
 	candidates := j.filterCandidates(containers, excludedContainers, selfID)
-	frozen, err := json.Marshal(autoHealPlanInternal{Containers: candidates, MaxRestarts: maxRestarts, WindowMinutes: restartWindowMinutes})
+	frozen, err := json.Marshal(autoHealPlan{Containers: candidates, MaxRestarts: maxRestarts, WindowMinutes: restartWindowMinutes})
 	if err != nil {
 		return types.SchedulerOutcome{}, err
 	}
@@ -283,7 +283,7 @@ func (j *AutoHealJob) processCandidate(
 		return target, nil
 	}
 
-	baseline, err := json.Marshal(autoHealBaselineInternal{StartedAt: inspect.State.StartedAt, RestartCount: inspect.RestartCount})
+	baseline, err := json.Marshal(autoHealBaseline{StartedAt: inspect.State.StartedAt, RestartCount: inspect.RestartCount})
 	if err != nil {
 		releaseSlot()
 		return target, err
@@ -525,7 +525,7 @@ func (j *AutoHealJob) RecordRestartAtExported(containerID string, t time.Time) {
 }
 
 func (j *AutoHealJob) Reconcile(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
-	lease, admitted, err := j.admissionGate.TryAcquire(ctx, types.SchedulerAdmissionKey{Scope: autoHealAdmissionScopeInternal})
+	lease, admitted, err := j.admissionGate.TryAcquire(ctx, types.SchedulerAdmissionKey{Scope: autoHealAdmissionScope})
 	if err != nil {
 		return types.SchedulerOutcome{}, err
 	}
@@ -533,7 +533,7 @@ func (j *AutoHealJob) Reconcile(ctx context.Context, previous types.SchedulerRun
 		return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "A container healing run already owns admission"}, nil
 	}
 	defer lease.Release(ctx)
-	var plan autoHealPlanInternal
+	var plan autoHealPlan
 	planned := false
 	for _, target := range previous.Outcome.Targets {
 		if target.ID == "auto-heal-plan" && len(target.RecoveryData) > 0 {
@@ -568,7 +568,7 @@ func (j *AutoHealJob) confirmRestartTargets(ctx context.Context, dockerClient *c
 		if target.Status == types.RunStatusSucceeded || target.Status == types.RunStatusSkipped {
 			continue
 		}
-		var baseline autoHealBaselineInternal
+		var baseline autoHealBaseline
 		if len(target.RecoveryData) == 0 || json.Unmarshal(target.RecoveryData, &baseline) != nil {
 			message = "A container restart has no persisted baseline"
 			break
@@ -588,7 +588,7 @@ func (j *AutoHealJob) confirmRestartTargets(ctx context.Context, dockerClient *c
 	return message, nil
 }
 
-func (j *AutoHealJob) resumeHealingPlan(ctx context.Context, dockerClient *client.Client, plan autoHealPlanInternal, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
+func (j *AutoHealJob) resumeHealingPlan(ctx context.Context, dockerClient *client.Client, plan autoHealPlan, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 	outcome := types.SchedulerOutcome{Status: types.RunStatusSucceeded}
 	for _, candidate := range plan.Containers {
 		attempted := false

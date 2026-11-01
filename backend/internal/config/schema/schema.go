@@ -156,7 +156,7 @@ var overrideDocRules = map[string]overrideDocRule{
 
 // GenerateWithSourceRoot builds the canonical schema document for config and settings docs.
 func GenerateWithSourceRoot(sourceRoot string) (*SchemaDocument, error) {
-	envConfig, err := collectEnvConfigInternal(sourceRoot)
+	envConfig, err := collectEnvConfig(sourceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("collect env config: %w", err)
 	}
@@ -181,13 +181,13 @@ func MarshalJSON(doc *SchemaDocument) ([]byte, error) {
 	return output, nil
 }
 
-func collectEnvConfigInternal(sourceRoot string) ([]ConfigEntry, error) {
-	root, err := resolveSourceRootInternal(sourceRoot)
+func collectEnvConfig(sourceRoot string) ([]ConfigEntry, error) {
+	root, err := resolveSourceRoot(sourceRoot)
 	if err != nil {
 		return nil, err
 	}
 
-	configEntries, err := parseStructEnvFieldsInternal(
+	configEntries, err := parseStructEnvFields(
 		filepath.Join(root, "internal", "config", "config.go"),
 		"Config",
 		envFieldOptions{
@@ -199,7 +199,7 @@ func collectEnvConfigInternal(sourceRoot string) ([]ConfigEntry, error) {
 		return nil, err
 	}
 
-	buildablesEntries, err := parseStructEnvFieldsInternal(
+	buildablesEntries, err := parseStructEnvFields(
 		filepath.Join(root, "internal", "config", "buildables_config.go"),
 		"BuildablesConfig",
 		envFieldOptions{
@@ -221,14 +221,14 @@ func collectEnvConfigInternal(sourceRoot string) ([]ConfigEntry, error) {
 	return configEntries, nil
 }
 
-func parseStructEnvFieldsInternal(filename, structName string, opts envFieldOptions) ([]ConfigEntry, error) {
+func parseStructEnvFields(filename, structName string, opts envFieldOptions) ([]ConfigEntry, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, filename, nil, parser.ParseComments)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", filename, err)
 	}
 
-	structType, err := findStructTypeInternal(file, structName)
+	structType, err := findStructType(file, structName)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +251,7 @@ func parseStructEnvFieldsInternal(filename, structName string, opts envFieldOpti
 		}
 
 		options := kit.TrimNonEmpty(strings.Split(structTag.Get("options"), ","))
-		typeName, unquoteErr := exprStringInternal(field.Type)
+		typeName, unquoteErr := exprString(field.Type)
 		if unquoteErr != nil {
 			return nil, fmt.Errorf("render type for %s.%s: %w", structName, field.Names[0].Name, unquoteErr)
 		}
@@ -326,7 +326,7 @@ func collectSettings() []SettingEntry {
 	return entries
 }
 
-func findStructTypeInternal(file *ast.File, structName string) (*ast.StructType, error) {
+func findStructType(file *ast.File, structName string) (*ast.StructType, error) {
 	for _, decl := range file.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
 		if !ok || genDecl.Tok != token.TYPE {
@@ -351,7 +351,7 @@ func findStructTypeInternal(file *ast.File, structName string) (*ast.StructType,
 	return nil, fmt.Errorf("struct %s not found", structName)
 }
 
-func exprStringInternal(expr ast.Expr) (string, error) {
+func exprString(expr ast.Expr) (string, error) {
 	var buf bytes.Buffer
 	if err := format.Node(&buf, token.NewFileSet(), expr); err != nil {
 		return "", err
@@ -359,7 +359,7 @@ func exprStringInternal(expr ast.Expr) (string, error) {
 	return buf.String(), nil
 }
 
-func resolveSourceRootInternal(sourceRoot string) (string, error) {
+func resolveSourceRoot(sourceRoot string) (string, error) {
 	candidates := make([]string, 0, 2)
 	if strings.TrimSpace(sourceRoot) != "" {
 		candidates = append(candidates, sourceRoot)
@@ -372,7 +372,7 @@ func resolveSourceRootInternal(sourceRoot string) (string, error) {
 	}
 
 	for _, candidate := range candidates {
-		resolved, err := resolveSourceRootCandidateInternal(candidate)
+		resolved, err := resolveSourceRootCandidate(candidate)
 		if err == nil {
 			return resolved, nil
 		}
@@ -385,19 +385,19 @@ func resolveSourceRootInternal(sourceRoot string) (string, error) {
 	return "", errors.New("resolve source root: run from the repository root/backend directory or pass --source-root")
 }
 
-func resolveSourceRootCandidateInternal(candidate string) (string, error) {
+func resolveSourceRootCandidate(candidate string) (string, error) {
 	candidate, err := filepath.Abs(candidate)
 	if err != nil {
 		return "", fmt.Errorf("abs path for %q: %w", candidate, err)
 	}
 
 	for current := candidate; ; current = filepath.Dir(current) {
-		if hasSchemaSourceFilesInternal(current) {
+		if hasSchemaSourceFiles(current) {
 			return current, nil
 		}
 
 		backendRoot := filepath.Join(current, "backend")
-		if hasSchemaSourceFilesInternal(backendRoot) {
+		if hasSchemaSourceFiles(backendRoot) {
 			return backendRoot, nil
 		}
 
@@ -410,7 +410,7 @@ func resolveSourceRootCandidateInternal(candidate string) (string, error) {
 	return "", fmt.Errorf("schema sources not found from %q", candidate)
 }
 
-func hasSchemaSourceFilesInternal(root string) bool {
+func hasSchemaSourceFiles(root string) bool {
 	required := []string{
 		filepath.Join(root, "internal", "config", "config.go"),
 		filepath.Join(root, "internal", "config", "buildables_config.go"),

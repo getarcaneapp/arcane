@@ -62,5 +62,5 @@ func SendGoogleChat(ctx context.Context, config GoogleChatConfig, message string
 		return fmt.Errorf("failed to build shoutrrr Google Chat URL: %w", err)
 	}
 
-	return sendShoutrrrInternal("Google Chat", shoutrrrURL, message, &shoutrrrTypes.Params{})
+	return sendShoutrrr("Google Chat", shoutrrrURL, message, &shoutrrrTypes.Params{})
 }

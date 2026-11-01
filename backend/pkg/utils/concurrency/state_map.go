@@ -15,7 +15,7 @@ type StateMap[K comparable, V any] struct {
 	mu       sync.Mutex
 }
 
-type stateMapValueInternal[V any] struct {
+type stateMapValue[V any] struct {
 	value V
 	found bool
 }
@@ -23,7 +23,7 @@ type stateMapValueInternal[V any] struct {
 // NewStateMap creates a locally serialized state map for process-local state.
 func NewStateMap[K comparable, V any]() *StateMap[K, V] {
 	state := &StateMap[K, V]{values: make(map[K]V)}
-	state.publishInternal()
+	state.publish()
 	return state
 }
 
@@ -86,13 +86,13 @@ func (s *StateMap[K, V]) ApplyTyped[R any](
 		completed := false
 		defer func() {
 			if !completed {
-				s.publishInternal()
+				s.publish()
 			}
 		}()
 		result, changed, err := mutate(s.values)
 		completed = true
 		if changed || err != nil {
-			s.publishInternal()
+			s.publish()
 		}
 		return result, err
 	}
@@ -107,22 +107,22 @@ func (s *StateMap[K, V]) ApplyTyped[R any](
 
 // Store publishes a value and returns the value it replaced, if any.
 func (s *StateMap[K, V]) Store(ctx context.Context, label string, key K, value V) (V, bool, error) {
-	result, err := s.ApplyTyped(ctx, label, func(values map[K]V) (stateMapValueInternal[V], bool, error) {
+	result, err := s.ApplyTyped(ctx, label, func(values map[K]V) (stateMapValue[V], bool, error) {
 		previous, replaced := values[key]
 		values[key] = value
-		return stateMapValueInternal[V]{value: previous, found: replaced}, true, nil
+		return stateMapValue[V]{value: previous, found: replaced}, true, nil
 	})
 	return result.value, result.found, err
 }
 
 // Remove deletes and returns one value.
 func (s *StateMap[K, V]) Remove(ctx context.Context, label string, key K) (V, bool, error) {
-	result, err := s.ApplyTyped(ctx, label, func(values map[K]V) (stateMapValueInternal[V], bool, error) {
+	result, err := s.ApplyTyped(ctx, label, func(values map[K]V) (stateMapValue[V], bool, error) {
 		value, removed := values[key]
 		if removed {
 			delete(values, key)
 		}
-		return stateMapValueInternal[V]{value: value, found: removed}, removed, nil
+		return stateMapValue[V]{value: value, found: removed}, removed, nil
 	})
 	return result.value, result.found, err
 }
@@ -144,7 +144,7 @@ func (s *StateMap[K, V]) RemoveWhere(ctx context.Context, label string, predicat
 	})
 }
 
-func (s *StateMap[K, V]) publishInternal() {
+func (s *StateMap[K, V]) publish() {
 	snapshot := make(map[K]V, len(s.values))
 	maps.Copy(snapshot, s.values)
 	s.snapshot.Store(&snapshot)

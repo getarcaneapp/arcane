@@ -79,10 +79,13 @@ func TestService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager(t *t
 	svc := NewService(nil, nil, nil, nil, nil, settingsSvc)
 	deployRec := stubStackSourceUpdateDeploy(t)
 
-	updated, err := svc.UpdateStackSource(ctx, "0", "demo-stack", types.SwarmStackSource{
-		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
-		EnvContent:     "FOO=bar\n",
-	}, fullStackSourceSubmitted)
+	updated, err := svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source: types.SwarmStackSource{
+			ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+			EnvContent:     "FOO=bar\n",
+		},
+		Submitted: fullStackSourceSubmitted,
+	})
 	require.NoError(t, err)
 	require.Equal(t, "demo-stack", updated.Name)
 	// Saving stack source must trigger an actual stack deploy (#3463).
@@ -102,13 +105,16 @@ func TestService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager(t *t
 	require.Equal(t, updated.EnvContent, source.EnvContent)
 
 	// Test with additional files
-	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", types.SwarmStackSource{
-		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
-		Files: []types.SwarmSyncFile{
-			{RelativePath: "config/nginx.conf", Content: []byte("worker_processes 1;")},
-			{RelativePath: "scripts/setup.sh", Content: []byte("#!/bin/sh")},
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source: types.SwarmStackSource{
+			ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+			Files: []types.SwarmSyncFile{
+				{RelativePath: "config/nginx.conf", Content: []byte("worker_processes 1;")},
+				{RelativePath: "scripts/setup.sh", Content: []byte("#!/bin/sh")},
+			},
 		},
-	}, fullStackSourceSubmitted)
+		Submitted: fullStackSourceSubmitted,
+	})
 	require.NoError(t, err)
 	require.FileExists(t, filepath.Join(rootDir, "0", "demo-stack", "config", "nginx.conf"))
 	require.FileExists(t, filepath.Join(rootDir, "0", "demo-stack", "scripts", "setup.sh"))
@@ -117,12 +123,15 @@ func TestService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager(t *t
 	require.NoError(t, err)
 	require.Len(t, source.Files, 2)
 
-	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", types.SwarmStackSource{
-		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
-		Files: []types.SwarmSyncFile{
-			{RelativePath: "config/nginx.conf", Content: []byte("worker_processes auto;")},
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source: types.SwarmStackSource{
+			ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+			Files: []types.SwarmSyncFile{
+				{RelativePath: "config/nginx.conf", Content: []byte("worker_processes auto;")},
+			},
 		},
-	}, fullStackSourceSubmitted)
+		Submitted: fullStackSourceSubmitted,
+	})
 	require.NoError(t, err)
 	require.NoFileExists(t, filepath.Join(rootDir, "0", "demo-stack", "scripts", "setup.sh"))
 	source, err = svc.GetStackSource(ctx, "0", "demo-stack")
@@ -145,10 +154,13 @@ func TestService_UpdateAndGetStackSource_RoundTripsOverride(t *testing.T) {
 
 	overridePath := filepath.Join(rootDir, "0", "demo-stack", "compose.override.yaml")
 
-	updated, err := svc.UpdateStackSource(ctx, "0", "demo-stack", types.SwarmStackSource{
-		ComposeContent:  "services:\n  web:\n    image: nginx:alpine\n",
-		OverrideContent: "services:\n  web:\n    image: busybox:latest\n",
-	}, fullStackSourceSubmitted)
+	updated, err := svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source: types.SwarmStackSource{
+			ComposeContent:  "services:\n  web:\n    image: nginx:alpine\n",
+			OverrideContent: "services:\n  web:\n    image: busybox:latest\n",
+		},
+		Submitted: fullStackSourceSubmitted,
+	})
 	require.NoError(t, err)
 	require.Equal(t, "services:\n  web:\n    image: busybox:latest\n", updated.OverrideContent)
 	require.FileExists(t, overridePath)
@@ -160,9 +172,12 @@ func TestService_UpdateAndGetStackSource_RoundTripsOverride(t *testing.T) {
 	require.Empty(t, source.Files)
 
 	// Clearing the override removes the file so a UI redeploy stops merging it.
-	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", types.SwarmStackSource{
-		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
-	}, fullStackSourceSubmitted)
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source: types.SwarmStackSource{
+			ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+		},
+		Submitted: fullStackSourceSubmitted,
+	})
 	require.NoError(t, err)
 	require.NoFileExists(t, overridePath)
 
@@ -195,18 +210,24 @@ func TestService_UpdateStackSource_PrunesAndRestoresOnDeployFailure(t *testing.T
 	}
 
 	firstCompose := "services:\n  web:\n    image: nginx:alpine\n"
-	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", types.SwarmStackSource{
-		ComposeContent: firstCompose,
-	}, fullStackSourceSubmitted)
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source: types.SwarmStackSource{
+			ComposeContent: firstCompose,
+		},
+		Submitted: fullStackSourceSubmitted,
+	})
 	require.NoError(t, err)
 	// The saved source is the full stack spec: services removed from it must
 	// be pruned from the swarm on redeploy.
 	require.True(t, lastReq.Prune)
 
 	deployErr = errors.New("deploy failed")
-	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", types.SwarmStackSource{
-		ComposeContent: "services:\n  web:\n    image: nginx:broken\n",
-	}, fullStackSourceSubmitted)
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source: types.SwarmStackSource{
+			ComposeContent: "services:\n  web:\n    image: nginx:broken\n",
+		},
+		Submitted: fullStackSourceSubmitted,
+	})
 	require.ErrorContains(t, err, "deploy failed")
 
 	// A failed deploy must not commit the edited source.

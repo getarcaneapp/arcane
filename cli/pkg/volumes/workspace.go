@@ -189,7 +189,11 @@ func newWorkspaceDownloadCmd() *cobra.Command {
 			if openErr != nil {
 				return fmt.Errorf("failed to create file %s: %w", outputFile, openErr)
 			}
-			written, copyErr := output.Copy(cmd.Context(), file, resp.Body, resp.ContentLength, "Downloading workspace file", !cmdutil.JSONOutputEnabled(cmd))
+			written, copyErr := output.Copy(cmd.Context(), file, resp.Body, output.TransferOptions{
+				Total:        resp.ContentLength,
+				Label:        "Downloading workspace file",
+				ShowProgress: !cmdutil.JSONOutputEnabled(cmd),
+			})
 			if copyErr != nil {
 				_ = file.Close()
 				return fmt.Errorf("failed to write file %s: %w", outputFile, copyErr)

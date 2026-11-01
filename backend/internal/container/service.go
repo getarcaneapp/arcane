@@ -1574,7 +1574,12 @@ func (s *ContainerService) GetContainerNameByReference(ctx context.Context, ref 
 	return strings.TrimPrefix(info.Name, "/"), nil
 }
 
-func (s *ContainerService) DeleteContainer(ctx context.Context, containerID string, force, removeVolumes bool, user types.Actor) error {
+type DeleteContainerOptions struct {
+	Force         bool
+	RemoveVolumes bool
+}
+
+func (s *ContainerService) DeleteContainer(ctx context.Context, containerID string, opts DeleteContainerOptions, user types.Actor) error {
 	unlock, err := s.lockContainer(ctx, "delete container", containerID)
 	if err != nil {
 		return err
@@ -1593,7 +1598,7 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 
 	// Get container mounts before deletion if we need to remove volumes
 	var volumesToRemove []string
-	if removeVolumes {
+	if opts.RemoveVolumes {
 		for _, mount := range containerJSON.Container.Mounts {
 			// Only collect named volumes (not bind mounts or tmpfs)
 			if mount.Type == "volume" && mount.Name != "" {
@@ -1614,8 +1619,8 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	}
 	_, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
 		return dockerClient.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{
-			Force:         force,
-			RemoveVolumes: removeVolumes,
+			Force:         opts.Force,
+			RemoveVolumes: opts.RemoveVolumes,
 			RemoveLinks:   false,
 		})
 	})
@@ -1629,8 +1634,8 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 			EnvironmentID: "0",
 			Metadata: database.JSON{
 				"action":        "delete",
-				"force":         force,
-				"removeVolumes": removeVolumes,
+				"force":         opts.Force,
+				"removeVolumes": opts.RemoveVolumes,
 			},
 		}, err)
 		return fmt.Errorf("failed to delete container: %w", err)
@@ -1970,12 +1975,17 @@ func (s *ContainerService) ListContainersPaginated(
 	}, nil
 }
 
-func (s *ContainerService) GetContainerStatusCounts(ctx context.Context, includeInternal, includeHidden bool) (types.ContainerStatusCounts, error) {
+type StatusCountOptions struct {
+	IncludeInternal bool
+	IncludeHidden   bool
+}
+
+func (s *ContainerService) GetContainerStatusCounts(ctx context.Context, opts StatusCountOptions) (types.ContainerStatusCounts, error) {
 	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
 	if err != nil {
 		return types.ContainerStatusCounts{}, err
 	}
-	containers = FilterExcludedContainers(containers, includeInternal, includeHidden)
+	containers = FilterExcludedContainers(containers, opts.IncludeInternal, opts.IncludeHidden)
 	running, unhealthy := 0, 0
 	standalone := make([]container.Summary, 0, len(containers))
 	for _, c := range containers {
@@ -2561,21 +2571,21 @@ func (s *ContainerService) openLogs(ctx context.Context, containerID string, opt
 	return logs, containerInspect, nil
 }
 
-func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
+func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, logsChan chan<- string, opts types.LogStreamOptions) error {
 	logs, containerInspect, err := s.openLogs(ctx, containerID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
-		Follow:     follow,
-		Tail:       tail,
-		Since:      since,
-		Timestamps: timestamps,
+		Follow:     opts.Follow,
+		Tail:       opts.Tail,
+		Since:      opts.Since,
+		Timestamps: opts.Timestamps,
 	})
 	if err != nil {
 		return err
 	}
 	defer func() { _ = logs.Close() }()
 
-	return docker.StreamContainerLogs(ctx, logs, logsChan, docker.LogOptions{Follow: follow, TTY: kit.FromPtr(containerInspect.Container.Config).Tty})
+	return docker.StreamContainerLogs(ctx, logs, logsChan, docker.LogOptions{Follow: opts.Follow, TTY: kit.FromPtr(containerInspect.Container.Config).Tty})
 }
 
 // DownloadLogs returns every log line Docker retains for the container as a

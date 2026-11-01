@@ -16,7 +16,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/streams/agg"
 	"gorm.io/gorm"
 
@@ -245,7 +245,7 @@ func (h *ActivityHandler) CancelActivity(ctx context.Context, input *ActivityAct
 func (h *ActivityHandler) RunLocalStreamProducer(ctx context.Context, limit int, events chan<- types.ActivityStreamEvent) {
 	sendSnapshot := func() bool {
 		activities, _, err := h.activityService.ListActivitiesPaginated(ctx, "0", pagination.QueryParams{
-			Limit:     resolveActivityStreamLimit(limit),
+			Limit:     min(kit.Ternary(limit <= 0, 50, limit), 100),
 			SkipCount: true,
 		})
 		if err != nil {
@@ -331,7 +331,7 @@ func (h *ActivityHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.
 			// One shared poller per environment (and snapshot limit) serves
 			// every connected client; this subscriber only forwards its
 			// events onto this client's stream.
-			key := environment.ConnectionKey(remoteEnvironment) + ":" + strconv.Itoa(resolveActivityStreamLimit(limit))
+			key := environment.ConnectionKey(remoteEnvironment) + ":" + strconv.Itoa(min(kit.Ternary(limit <= 0, 50, limit), 100))
 			h.remoteStreamHub.Subscribe(pollCtx, key,
 				func(runCtx context.Context, publish func(types.ActivityStreamEvent)) {
 					h.runRemoteActivityStreamPoller(runCtx, remoteEnvironment, limit, publish)
@@ -361,7 +361,7 @@ func (h *ActivityHandler) runRemoteActivityStreamPoller(ctx context.Context, loc
 
 		output, err := h.listRemoteActivities(ctx, &ListActivitiesInput{
 			EnvironmentID: environmentID,
-			Limit:         resolveActivityStreamLimit(limit),
+			Limit:         min(kit.Ternary(limit <= 0, 50, limit), 100),
 			Order:         "desc",
 		}, func(path string) (*types.Paginated[types.Activity], error) {
 			pollCtx, cancelPoll := context.WithTimeout(ctx, activityStreamRemotePollTimeout)
@@ -461,10 +461,6 @@ func applyActivitySource(item *types.Activity, sourceID, sourceName string) {
 		item.Metadata = maps.Clone(item.Metadata)
 		item.Metadata["environmentId"] = sourceID
 	}
-}
-
-func resolveActivityStreamLimit(limit int) int {
-	return min(kit.Ternary(limit <= 0, 50, limit), 100)
 }
 
 // activityListParams maps list input onto pagination params and its filters.

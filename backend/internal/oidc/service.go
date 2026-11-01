@@ -19,7 +19,7 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/hot"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -113,14 +113,6 @@ func newInsecureTransport(base http.RoundTripper) *http.Transport {
 	return transport
 }
 
-func (s *OidcService) httpClientFor(skipTLSVerify bool) *http.Client {
-	return kit.Ternary(skipTLSVerify, s.insecureHttpClient, s.httpClient)
-}
-
-func hasManualEndpoints(cfg *settings.OidcConfig) bool {
-	return cfg.AuthorizationEndpoint != "" || cfg.TokenEndpoint != "" || cfg.UserinfoEndpoint != ""
-}
-
 // requestedScopes returns the configured scopes (defaulting to email and profile), always including openid.
 func requestedScopes(cfg *settings.OidcConfig) []string {
 	scopes := strings.Fields(cfg.Scopes)
@@ -142,7 +134,7 @@ func (s *OidcService) buildOAuth2Config(cfg *settings.OidcConfig, provider *oidc
 		return oauth2.Config{}, errors.New("authorization and token endpoints must be configured")
 	}
 
-	redirectURL := cmp.Or(mobileRedirectURI, s.GetOidcRedirectURL(origin))
+	redirectURL := cmp.Or(mobileRedirectURI, (cmp.Or(origin, strings.TrimSuffix(s.config.GetAppURL(), "/")) + "/auth/oidc/callback"))
 
 	return oauth2.Config{
 		ClientID:     cfg.ClientID,
@@ -157,7 +149,7 @@ func configAttributes(cfg *settings.OidcConfig) []attribute.KeyValue {
 	return []attribute.KeyValue{
 		attribute.String("arcane.oidc.issuer", cfg.IssuerURL),
 		attribute.Bool("arcane.oidc.skip_tls_verify", cfg.SkipTlsVerify),
-		attribute.Bool("arcane.oidc.manual_endpoints", hasManualEndpoints(cfg)),
+		attribute.Bool("arcane.oidc.manual_endpoints", (cfg.AuthorizationEndpoint != "" || cfg.TokenEndpoint != "" || cfg.UserinfoEndpoint != "")),
 	}
 }
 
@@ -180,7 +172,7 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo, origin, m
 	}
 
 	var provider *oidc.Provider
-	if !hasManualEndpoints(oidcConfig) {
+	if !(oidcConfig.AuthorizationEndpoint != "" || oidcConfig.TokenEndpoint != "" || oidcConfig.UserinfoEndpoint != "") {
 		var discoverProviderErr error
 		provider, discoverProviderErr = s.getOrDiscoverProvider(ctx, oidcConfig)
 		if discoverProviderErr != nil {
@@ -220,10 +212,6 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo, origin, m
 	return authURL, base64.URLEncoding.EncodeToString(stateJSON), nil
 }
 
-func (s *OidcService) GetOidcRedirectURL(origin string) string {
-	return cmp.Or(origin, strings.TrimSuffix(s.config.GetAppURL(), "/")) + "/auth/oidc/callback"
-}
-
 func (s *OidcService) getOrDiscoverProvider(ctx context.Context, cfg *settings.OidcConfig) (*oidc.Provider, error) {
 	key := oidcProviderKey{issuer: cfg.IssuerURL, skipTLS: cfg.SkipTlsVerify}
 	provider, found, err := s.providerCache.GetWithLoaders(key, func(keys []oidcProviderKey) (map[oidcProviderKey]*oidc.Provider, error) {
@@ -256,7 +244,7 @@ func (s *OidcService) discoverProvider(ctx context.Context, key oidcProviderKey)
 		attribute.Bool("arcane.oidc.skip_tls_verify", key.skipTLS),
 	))
 	defer func() { tracing.End(span, err) }()
-	providerCtx := oidc.ClientContext(discoveryCtx, s.httpClientFor(key.skipTLS))
+	providerCtx := oidc.ClientContext(discoveryCtx, kit.Ternary(key.skipTLS, s.insecureHttpClient, s.httpClient))
 
 	provider, err := oidc.NewProvider(providerCtx, key.issuer)
 	if err == nil {
@@ -279,13 +267,21 @@ func (s *OidcService) discoverProvider(ctx context.Context, key oidcProviderKey)
 	return provider, nil
 }
 
-func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedState, origin, mobileRedirectURI string) (_ *types.OidcUserInfo, _ *types.OidcTokenResponse, err error) {
+type CallbackRequest struct {
+	Code              string
+	State             string
+	StoredState       string
+	Origin            string
+	MobileRedirectURI string
+}
+
+func (s *OidcService) HandleCallback(ctx context.Context, req CallbackRequest) (_ *types.OidcUserInfo, _ *types.OidcTokenResponse, err error) {
 	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "oidc.callback")
 	defer func() { tracing.End(span, err) }()
-	slog.DebugContext(ctx, "HandleCallback: processing callback", "codePresent", code != "", "statePresent", state != "")
+	slog.DebugContext(ctx, "HandleCallback: processing callback", "codePresent", req.Code != "", "statePresent", req.State != "")
 
 	var stateData OidcState
-	stateJSON, err := base64.URLEncoding.DecodeString(storedState)
+	stateJSON, err := base64.URLEncoding.DecodeString(req.StoredState)
 	if err == nil {
 		err = json.Unmarshal(stateJSON, &stateData)
 	}
@@ -293,8 +289,8 @@ func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedSta
 		slog.ErrorContext(ctx, "HandleCallback: failed to decode stored state", "error", err)
 		return nil, nil, fmt.Errorf("invalid state parameter: %w", err)
 	}
-	if state != stateData.State {
-		slog.ErrorContext(ctx, "HandleCallback: state mismatch", "receivedLen", len(state), "expectedLen", len(stateData.State))
+	if req.State != stateData.State {
+		slog.ErrorContext(ctx, "HandleCallback: state mismatch", "receivedLen", len(req.State), "expectedLen", len(stateData.State))
 		return nil, nil, errors.New("state parameter mismatch")
 	}
 	if time.Since(stateData.CreatedAt) > 10*time.Minute {
@@ -310,18 +306,18 @@ func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedSta
 	span.SetAttributes(configAttributes(cfg)...)
 
 	var provider *oidc.Provider
-	if !hasManualEndpoints(cfg) {
+	if !(cfg.AuthorizationEndpoint != "" || cfg.TokenEndpoint != "" || cfg.UserinfoEndpoint != "") {
 		provider, err = s.getOrDiscoverProvider(ctx, cfg)
 		if err != nil {
 			return nil, nil, err
 		}
 	}
 
-	oauth2Config, err := s.buildOAuth2Config(cfg, provider, origin, mobileRedirectURI)
+	oauth2Config, err := s.buildOAuth2Config(cfg, provider, req.Origin, req.MobileRedirectURI)
 	if err != nil {
 		return nil, nil, err
 	}
-	token, err := oauth2Config.Exchange(oidc.ClientContext(ctx, s.httpClientFor(cfg.SkipTlsVerify)), code, oauth2.VerifierOption(stateData.CodeVerifier))
+	token, err := oauth2Config.Exchange(oidc.ClientContext(ctx, kit.Ternary(cfg.SkipTlsVerify, s.insecureHttpClient, s.httpClient)), req.Code, oauth2.VerifierOption(stateData.CodeVerifier))
 	if err != nil {
 		slog.ErrorContext(ctx, "HandleCallback: token exchange failed", "tokenEndpoint", oauth2Config.Endpoint.TokenURL, "error", err)
 		return nil, nil, fmt.Errorf("failed to exchange authorization code: %w", err)
@@ -358,7 +354,7 @@ func (s *OidcService) verifyIDToken(ctx context.Context, provider *oidc.Provider
 		return nil, "", errors.New("jwks URI must be configured when using manual OIDC endpoints")
 	}
 
-	client := s.httpClientFor(cfg.SkipTlsVerify)
+	client := kit.Ternary(cfg.SkipTlsVerify, s.insecureHttpClient, s.httpClient)
 	keySet, err := s.keySetManager.KeySet(context.WithoutCancel(ctx), client, jwksURL)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to configure provider JWK set: %w", err)
@@ -404,7 +400,7 @@ func (s *OidcService) buildUserInfo(
 	// Userinfo claims fill gaps; ID token claims win on conflict.
 	var userInfoClaims map[string]any
 	var userInfoErr error
-	client := s.httpClientFor(cfg.SkipTlsVerify)
+	client := kit.Ternary(cfg.SkipTlsVerify, s.insecureHttpClient, s.httpClient)
 	switch {
 	case provider != nil:
 		userInfo, fetchErr := provider.UserInfo(oidc.ClientContext(ctx, client), oauth2.StaticTokenSource(token))
@@ -552,7 +548,7 @@ func (s *OidcService) InitiateDeviceAuth(ctx context.Context) (_ *types.OidcDevi
 		values.Set("client_secret", cfg.ClientSecret)
 	}
 
-	respData, status, err := postForm(ctx, s.httpClientFor(cfg.SkipTlsVerify), deviceEndpoint, values)
+	respData, status, err := postForm(ctx, kit.Ternary(cfg.SkipTlsVerify, s.insecureHttpClient, s.httpClient), deviceEndpoint, values)
 	switch {
 	case status == 0:
 		slog.ErrorContext(ctx, "InitiateDeviceAuth: request failed", "error", err)
@@ -613,7 +609,7 @@ func (s *OidcService) ExchangeDeviceToken(ctx context.Context, deviceCode string
 	span.SetAttributes(configAttributes(cfg)...)
 
 	var provider *oidc.Provider
-	if !hasManualEndpoints(cfg) {
+	if !(cfg.AuthorizationEndpoint != "" || cfg.TokenEndpoint != "" || cfg.UserinfoEndpoint != "") {
 		if provider, err = s.getOrDiscoverProvider(ctx, cfg); err != nil {
 			return nil, nil, err
 		}
@@ -637,7 +633,7 @@ func (s *OidcService) ExchangeDeviceToken(ctx context.Context, deviceCode string
 		values.Set("client_secret", cfg.ClientSecret)
 	}
 
-	tokenResp, status, err := postForm(ctx, s.httpClientFor(cfg.SkipTlsVerify), tokenEndpoint, values)
+	tokenResp, status, err := postForm(ctx, kit.Ternary(cfg.SkipTlsVerify, s.insecureHttpClient, s.httpClient), tokenEndpoint, values)
 	if status == 0 {
 		slog.ErrorContext(ctx, "ExchangeDeviceToken: token request failed", "error", err)
 		return nil, nil, fmt.Errorf("token request failed: %w", err)

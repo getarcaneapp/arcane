@@ -101,7 +101,7 @@ func (j *FilesystemWatcherJob) Stop(ctx context.Context) error {
 	return err
 }
 
-func (j *FilesystemWatcherJob) handleFilesystemChangeInternal(ctx context.Context) {
+func (j *FilesystemWatcherJob) handleFilesystemChange(ctx context.Context) {
 	slog.InfoContext(ctx, "Filesystem change detected, syncing projects")
 
 	if err := j.projectService.SyncProjectsFromFileSystem(ctx); err != nil {
@@ -112,7 +112,7 @@ func (j *FilesystemWatcherJob) handleFilesystemChangeInternal(ctx context.Contex
 	}
 }
 
-func (j *FilesystemWatcherJob) handleProjectFilePathsChangedInternal(ctx context.Context, paths []string) {
+func (j *FilesystemWatcherJob) handleProjectFilePathsChanged(ctx context.Context, paths []string) {
 	if len(paths) == 0 {
 		return
 	}
@@ -121,11 +121,11 @@ func (j *FilesystemWatcherJob) handleProjectFilePathsChangedInternal(ctx context
 	if j.stopped || ctx.Err() != nil {
 		return
 	}
-	j.handleFilesystemChangeInternal(ctx)
+	j.handleFilesystemChange(ctx)
 	j.projectService.HandleProjectFilesChanged(ctx, paths)
 }
 
-func (j *FilesystemWatcherJob) handleTemplatesChangeInternal(ctx context.Context) {
+func (j *FilesystemWatcherJob) handleTemplatesChange(ctx context.Context) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if j.stopped || ctx.Err() != nil {
@@ -189,7 +189,7 @@ func (j *FilesystemWatcherJob) startProjectsWatcher(ctx context.Context) (*fswat
 	if err != nil {
 		return nil, err
 	}
-	j.logRecursiveProjectsWatchLimitWarningInternal(ctx, projectsDirectory)
+	j.logRecursiveProjectsWatchLimitWarning(ctx, projectsDirectory)
 
 	watcher, err := fswatch.NewWatcher(projectsDirectory, j.projectWatcherOptions(localSettings.FollowProjectSymlinks.IsTrue(), localSettings.ProjectScanMaxDepth.AsInt()))
 	if err != nil {
@@ -203,7 +203,7 @@ func (j *FilesystemWatcherJob) startProjectsWatcher(ctx context.Context) (*fswat
 	return watcher, nil
 }
 
-func (j *FilesystemWatcherJob) logRecursiveProjectsWatchLimitWarningInternal(ctx context.Context, projectsDirectory string) {
+func (j *FilesystemWatcherJob) logRecursiveProjectsWatchLimitWarning(ctx context.Context, projectsDirectory string) {
 	if runtime.GOOS != "linux" {
 		return
 	}
@@ -217,7 +217,7 @@ func (j *FilesystemWatcherJob) logRecursiveProjectsWatchLimitWarningInternal(ctx
 func (j *FilesystemWatcherJob) projectWatcherOptions(followProjectSymlinks bool, maxDepth int) fswatch.WatcherOptions {
 	return fswatch.WatcherOptions{
 		Debounce:          500 * time.Millisecond,
-		OnChangePaths:     j.handleProjectFilePathsChangedInternal,
+		OnChangePaths:     j.handleProjectFilePathsChanged,
 		MaxDepth:          maxDepth,
 		FollowSymlinkDirs: followProjectSymlinks,
 	}
@@ -255,7 +255,7 @@ func (j *FilesystemWatcherJob) startTemplatesWatcher(ctx context.Context) (*fswa
 		return nil, err
 	}
 
-	if directoriesOverlapInternal(projectsDirectory, templatesDir) {
+	if directoriesOverlap(projectsDirectory, templatesDir) {
 		slog.ErrorContext(ctx,
 			"Templates and projects directories overlap; templates watcher disabled",
 			"projectsDirectory", projectsDirectory,
@@ -265,7 +265,7 @@ func (j *FilesystemWatcherJob) startTemplatesWatcher(ctx context.Context) (*fswa
 
 	watcher, err := fswatch.NewWatcher(templatesDir, fswatch.WatcherOptions{
 		Debounce: 3 * time.Second,
-		OnChange: j.handleTemplatesChangeInternal,
+		OnChange: j.handleTemplatesChange,
 		MaxDepth: 1,
 	})
 	if err != nil {
@@ -280,10 +280,10 @@ func (j *FilesystemWatcherJob) startTemplatesWatcher(ctx context.Context) (*fswa
 	return watcher, nil
 }
 
-// directoriesOverlapInternal returns true when a or b is the same as or contained in the
+// directoriesOverlap returns true when a or b is the same as or contained in the
 // other. Used to refuse running both watchers against the same tree, which would
 // cause local templates to be auto-imported as projects.
-func directoriesOverlapInternal(a, b string) bool {
+func directoriesOverlap(a, b string) bool {
 	if a == "" || b == "" {
 		return false
 	}

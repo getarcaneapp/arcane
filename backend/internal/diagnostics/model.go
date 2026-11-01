@@ -9,9 +9,9 @@ import (
 
 // actorHostModel is a read-only view of a registered Francis host.
 type actorHostModel struct {
-	LastHealthCheck actorTimeInternal `gorm:"column:host_last_health_check"`
-	HostID          string            `gorm:"column:host_id"`
-	Address         string            `gorm:"column:host_address"`
+	LastHealthCheck actorTime `gorm:"column:host_last_health_check"`
+	HostID          string    `gorm:"column:host_id"`
+	Address         string    `gorm:"column:host_address"`
 }
 
 func (actorHostModel) TableName() string { return francis.TablePrefix + "_hosts" }
@@ -24,7 +24,7 @@ type actorTypeModel struct {
 
 // actorCountModel is one grouped count row from a Francis table.
 type actorCountModel struct {
-	NextDue   actorTimeInternal
+	NextDue   actorTime
 	ActorType string
 	Kind      string
 	Count     int
@@ -32,38 +32,38 @@ type actorCountModel struct {
 
 // activeActorModel is a read-only view of an activated actor.
 type activeActorModel struct {
-	Activation actorTimeInternal `gorm:"column:actor_activation"`
-	ActorType  string            `gorm:"column:actor_type"`
-	ActorID    string            `gorm:"column:actor_id"`
-	HostID     string            `gorm:"column:host_id"`
+	Activation actorTime `gorm:"column:actor_activation"`
+	ActorType  string    `gorm:"column:actor_type"`
+	ActorID    string    `gorm:"column:actor_id"`
+	HostID     string    `gorm:"column:host_id"`
 }
 
 func (activeActorModel) TableName() string { return francis.TablePrefix + "_active_actors" }
 
 // terminalJobModel is a read-only view of a finished actor job.
 type terminalJobModel struct {
-	EndedAt   actorTimeInternal `gorm:"column:ended_at"`
-	LastError *string           `gorm:"column:last_error"`
-	JobID     string            `gorm:"column:job_id"`
-	ActorType string            `gorm:"column:actor_type"`
-	ActorID   string            `gorm:"column:actor_id"`
-	JobMethod string            `gorm:"column:job_method"`
-	Attempts  int               `gorm:"column:attempts"`
+	EndedAt   actorTime `gorm:"column:ended_at"`
+	LastError *string   `gorm:"column:last_error"`
+	JobID     string    `gorm:"column:job_id"`
+	ActorType string    `gorm:"column:actor_type"`
+	ActorID   string    `gorm:"column:actor_id"`
+	JobMethod string    `gorm:"column:job_method"`
+	Attempts  int       `gorm:"column:attempts"`
 }
 
 func (terminalJobModel) TableName() string { return francis.TablePrefix + "_terminal_jobs" }
 
-// actorTimeInternal scans Francis timestamps: SQLite stores epoch milliseconds, Postgres a timestamp.
-type actorTimeInternal time.Time
+// actorTime scans Francis timestamps: SQLite stores epoch milliseconds, Postgres a timestamp.
+type actorTime time.Time
 
-func (t *actorTimeInternal) Scan(value any) error {
+func (t *actorTime) Scan(value any) error {
 	switch v := value.(type) {
 	case int64:
-		*t = actorTimeInternal(time.UnixMilli(v).UTC())
+		*t = actorTime(time.UnixMilli(v).UTC())
 	case time.Time:
-		*t = actorTimeInternal(v.UTC())
+		*t = actorTime(v.UTC())
 	case nil:
-		*t = actorTimeInternal{}
+		*t = actorTime{}
 	default:
 		return fmt.Errorf("unsupported actor timestamp %T", value)
 	}

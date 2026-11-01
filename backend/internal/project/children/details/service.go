@@ -217,7 +217,7 @@ func (s *Service) ServiceUpdateRecords(ctx context.Context, projectIDs []string)
 }
 
 // Logs streams Compose logs for the project line by line.
-func Logs(ctx context.Context, dockerHost, projectName string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
+func Logs(ctx context.Context, dockerHost, projectName string, logsChan chan<- string, opts types.LogStreamOptions) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	pr, pw := io.Pipe()
@@ -256,7 +256,7 @@ func Logs(ctx context.Context, dockerHost, projectName string, logsChan chan<- s
 
 	// Writer goroutine: compose logs -> pipe
 	go func() {
-		composeLogsErr := projects.ComposeLogs(ctx, dockerHost, projects.NormalizeProjectName(projectName), pw, follow, tail, since, timestamps)
+		composeLogsErr := projects.ComposeLogs(ctx, dockerHost, projects.NormalizeProjectName(projectName), pw, opts)
 		_ = pw.Close()
 		done <- composeLogsErr
 	}()

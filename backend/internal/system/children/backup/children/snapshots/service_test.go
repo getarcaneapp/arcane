@@ -290,7 +290,7 @@ func TestSnapshotLayoutProtectsDataFiles(t *testing.T) {
 	require.False(t, nested.protected("arcane.db"))
 	external := snapshotLayout{dataPath: "/data", projectsPath: "/projects", databaseName: "arcane.db"}
 	require.False(t, external.protected(".arcane-recovery.json"))
-	require.False(t, snapshotLayout{dataPath: "/data"}.projectsIncluded())
+	require.Empty(t, snapshotLayout{dataPath: "/data"}.projectsPath)
 }
 
 func TestProjectsSnapshotPath(t *testing.T) {

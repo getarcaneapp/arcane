@@ -319,11 +319,15 @@ func emptyArcaneComposeMetadata() ArcaneComposeMetadata {
 }
 
 func loadComposeProjectForMetadataFromFile(ctx context.Context, composeFilePath string, envMap map[string]string) (*composetypes.Project, error) {
-	return LoadComposeProject(ctx, composeFilePath, "", "", false, nil, envMap, func(opts *loader.Options) {
-		opts.SkipValidation = true
-		opts.SkipConsistencyCheck = true
-		opts.SkipResolveEnvironment = false
-	}, false, nil, nil, nil)
+	return LoadComposeProject(ctx, LoadOptions{
+		ComposeFile: composeFilePath,
+		EnvOverride: envMap,
+		ConfigureLoader: func(opts *loader.Options) {
+			opts.SkipValidation = true
+			opts.SkipConsistencyCheck = true
+			opts.SkipResolveEnvironment = false
+		},
+	})
 }
 
 func loadComposeEnvironment(workdir string) map[string]string {
@@ -455,7 +459,7 @@ func parseLabelPair(raw string) (string, string, bool) {
 	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), true
 }
 
-var projectTagColorsInternal = map[types.ProjectTagColor]struct{}{
+var projectTagColors = map[types.ProjectTagColor]struct{}{
 	types.ProjectTagColorGray:   {},
 	types.ProjectTagColorPurple: {},
 	types.ProjectTagColorBlue:   {},
@@ -513,7 +517,7 @@ func NormalizeProjectTagColor(color types.ProjectTagColor) (types.ProjectTagColo
 	if normalized == "" {
 		return types.ProjectTagColorGray, nil
 	}
-	if _, valid := projectTagColorsInternal[normalized]; !valid {
+	if _, valid := projectTagColors[normalized]; !valid {
 		return "", fmt.Errorf("unsupported tag color %q", color)
 	}
 	return normalized, nil

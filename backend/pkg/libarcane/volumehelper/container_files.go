@@ -10,14 +10,14 @@ import (
 	"github.com/moby/moby/client"
 )
 
-type cleanupReadCloserInternal struct {
+type cleanupReadCloser struct {
 	io.Reader
 	io.Closer
 
 	cleanup func()
 }
 
-func (c *cleanupReadCloserInternal) Close() error {
+func (c *cleanupReadCloser) Close() error {
 	err := c.Closer.Close()
 	c.cleanup()
 	return err
@@ -46,20 +46,20 @@ func DownloadFileFromContainer(
 		cleanup()
 		return nil, 0, fmt.Errorf("failed to read tar stream: %w", err)
 	}
-	if validateDownloadHeaderErr := validateDownloadHeaderInternal(hdr); validateDownloadHeaderErr != nil {
+	if validateDownloadHeaderErr := validateDownloadHeader(hdr); validateDownloadHeaderErr != nil {
 		_ = reader.Close()
 		cleanup()
 		return nil, 0, validateDownloadHeaderErr
 	}
 
-	return &cleanupReadCloserInternal{
+	return &cleanupReadCloser{
 		Reader:  tr,
 		Closer:  reader,
 		cleanup: cleanup,
 	}, hdr.Size, nil
 }
 
-func validateDownloadHeaderInternal(header *tar.Header) error {
+func validateDownloadHeader(header *tar.Header) error {
 	if header.FileInfo().IsDir() {
 		return errors.New("path is a directory")
 	}

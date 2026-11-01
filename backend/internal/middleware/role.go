@@ -85,7 +85,7 @@ func RequireEchoPermission(perm string) echo.MiddlewareFunc {
 func RequirePermission(api huma.API, perm string) huma.Middlewares {
 	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
 		ps, _ := PermissionsFromContext(ctx.Context())
-		if !permissionAllowedInternal(ctx, ps, perm) {
+		if !permissionAllowed(ctx, ps, perm) {
 			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: "+perm); err != nil {
 				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
 			}
@@ -109,7 +109,7 @@ func RequireActionPermission(api huma.API, param string, perms map[string]string
 			return
 		}
 		ps, _ := PermissionsFromContext(ctx.Context())
-		if !permissionAllowedInternal(ctx, ps, perm) {
+		if !permissionAllowed(ctx, ps, perm) {
 			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: "+perm); err != nil {
 				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
 			}
@@ -119,7 +119,7 @@ func RequireActionPermission(api huma.API, param string, perms map[string]string
 	}}
 }
 
-func permissionAllowedInternal(ctx huma.Context, ps *authz.PermissionSet, perm string) bool {
+func permissionAllowed(ctx huma.Context, ps *authz.PermissionSet, perm string) bool {
 	if scope, scoped := httpx.EnvironmentScopeFromContext(ctx.Context()); scoped && authz.IsEnvScoped(perm) {
 		return slices.ContainsFunc(scope.IDs, func(id string) bool {
 			return ps.Allows(perm, id)

@@ -7,6 +7,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func TestResolveBuildContext_AllowsRemoteGitContext(t *testing.T) {
@@ -34,7 +35,7 @@ func TestResolveBuildContext_AllowsRemoteGitContextWithoutGitSuffix(t *testing.T
 }
 
 func TestMergeBuildTags(t *testing.T) {
-	tags := MergeBuildTags("example/app:latest", []string{"example/app:sha", "example/app:latest", " "})
+	tags := kit.Unique(kit.TrimNonEmpty(append([]string{"example/app:latest"}, ([]string{"example/app:sha", "example/app:latest", " "})...)))
 	assert.Equal(t, []string{"example/app:latest", "example/app:sha"}, tags)
 }
 

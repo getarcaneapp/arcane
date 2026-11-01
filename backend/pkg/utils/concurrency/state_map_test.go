@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestStateMapSerializesMutationsAndPublishesSnapshotsInternal(t *testing.T) {
+func TestStateMapSerializesMutationsAndPublishesSnapshots(t *testing.T) {
 	state := NewStateMap[string, int]()
 
 	require.NoError(t, state.Apply(t.Context(), "store value", func(values map[string]int) (bool, error) {
@@ -19,7 +19,7 @@ func TestStateMapSerializesMutationsAndPublishesSnapshotsInternal(t *testing.T) 
 	require.Equal(t, 42, value)
 }
 
-func TestStateMapPublishesPartialMutationBeforeReturningErrorInternal(t *testing.T) {
+func TestStateMapPublishesPartialMutationBeforeReturningError(t *testing.T) {
 	state := NewStateMap[string, int]()
 	require.NoError(t, state.Apply(t.Context(), "seed", func(values map[string]int) (bool, error) {
 		values["removed"] = 1
@@ -40,7 +40,7 @@ func TestStateMapPublishesPartialMutationBeforeReturningErrorInternal(t *testing
 	require.Equal(t, 2, retained)
 }
 
-func TestStateMapPublishesPartialMutationBeforePropagatingPanicInternal(t *testing.T) {
+func TestStateMapPublishesPartialMutationBeforePropagatingPanic(t *testing.T) {
 	state := NewStateMap[string, int]()
 	require.NoError(t, state.Apply(t.Context(), "seed", func(values map[string]int) (bool, error) {
 		values["removed"] = 1

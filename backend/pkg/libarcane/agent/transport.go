@@ -71,7 +71,7 @@ func UseWebSocketTransport(cfg *Config) bool {
 
 // GetTunnelRuntimeState returns live metadata for an active tunnel.
 func GetTunnelRuntimeState(envID string) mo.Option[*TunnelRuntimeState] {
-	tunnel, ok := GetActiveTunnel(envID).Get()
+	tunnel, ok := GetRegistry().Active(envID).Get()
 	if !ok {
 		return mo.None[*TunnelRuntimeState]()
 	}

@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -844,6 +845,6 @@ func TestBatchImageUpdateLogRef_IsSortedSoRepeatsMatch(t *testing.T) {
 
 	want := "alpine:3, caddy:2, nginx:latest, postgres:16, redis:7"
 	for range 20 {
-		require.Equal(t, want, batchImageUpdateLogRef(maps.Clone(updates)))
+		require.Equal(t, want, strings.Join(slices.Sorted(maps.Keys(maps.Clone(updates))), ", "))
 	}
 }

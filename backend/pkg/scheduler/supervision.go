@@ -12,7 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 )
 
-type watcherSupervisorInternal struct {
+type watcherSupervisor struct {
 	watcher types.BusWatcher
 	restart chan struct{}
 	cancel  context.CancelFunc
@@ -20,11 +20,7 @@ type watcherSupervisorInternal struct {
 	mu      sync.Mutex
 }
 
-func newWatcherSupervisor(watcher types.BusWatcher) *watcherSupervisorInternal {
-	return &watcherSupervisorInternal{watcher: watcher, restart: make(chan struct{}, 1), health: types.SchedulerWorkerHealth{Status: "starting", UpdatedAt: time.Now()}}
-}
-
-func (s *watcherSupervisorInternal) setHealth(status string, err error, next *time.Time) {
+func (s *watcherSupervisor) setHealth(status string, err error, next *time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.health = types.SchedulerWorkerHealth{Status: status, NextRetry: next, UpdatedAt: time.Now()}
@@ -33,7 +29,7 @@ func (s *watcherSupervisorInternal) setHealth(status string, err error, next *ti
 	}
 }
 
-func (s *watcherSupervisorInternal) run(ctx context.Context) error {
+func (s *watcherSupervisor) run(ctx context.Context) error {
 	delay := 5 * time.Second
 	unexpected := 0
 	for ctx.Err() == nil {
@@ -96,7 +92,7 @@ func (s *watcherSupervisorInternal) run(ctx context.Context) error {
 	return ctx.Err()
 }
 
-func (s *watcherSupervisorInternal) start(ctx context.Context) (panicked bool, err error) {
+func (s *watcherSupervisor) start(ctx context.Context) (panicked bool, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("worker panic: %v", recovered)
@@ -108,7 +104,7 @@ func (s *watcherSupervisorInternal) start(ctx context.Context) (panicked bool, e
 
 func (js *jobSchedulerInternal) Submit(ctx context.Context, request types.SchedulerRequest) (types.SchedulerRun, error) {
 	if js.context.Err() != nil {
-		return types.SchedulerRun{}, errJobSchedulerStoppedInternal
+		return types.SchedulerRun{}, errJobSchedulerStopped
 	}
 	return js.coordinator.Submit(ctx, request)
 }
@@ -132,7 +128,7 @@ func (js *jobSchedulerInternal) RestartWatcher(ctx context.Context, id string) e
 	stopping := js.stopping
 	js.mu.RUnlock()
 	if stopping {
-		return errJobSchedulerStoppedInternal
+		return errJobSchedulerStopped
 	}
 	if !ok {
 		return errors.New("watcher not found")

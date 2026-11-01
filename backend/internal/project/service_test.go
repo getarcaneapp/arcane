@@ -387,7 +387,9 @@ func TestProjectService_DestroyProject_RemovesFilesWhenRequested(t *testing.T) {
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	require.NoError(t, svc.DestroyProject(ctx, project.ID, true, false, types.Actor{}))
+	require.NoError(t, svc.DestroyProject(ctx, project.ID, DestroyOptions{
+		RemoveFiles: true,
+	}, types.Actor{}))
 
 	_, statErr := os.Stat(projectPath)
 	assert.ErrorIs(t, statErr, os.ErrNotExist)
@@ -412,7 +414,7 @@ func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T)
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	require.NoError(t, svc.DestroyProject(ctx, project.ID, false, false, types.Actor{}))
+	require.NoError(t, svc.DestroyProject(ctx, project.ID, DestroyOptions{}, types.Actor{}))
 
 	assert.NoDirExists(t, projectPath)
 	assert.NoFileExists(t, projectDataPath)
@@ -504,7 +506,10 @@ func TestProjectService_DestroyProject_KeepsRowWhenDownFails(t *testing.T) {
 		Status:  ProjectStatusRunning,
 	}).Error)
 
-	require.Error(t, svc.DestroyProject(ctx, "project-destroy-down-fails", true, true, types.Actor{}))
+	require.Error(t, svc.DestroyProject(ctx, "project-destroy-down-fails", DestroyOptions{
+		RemoveFiles:   true,
+		RemoveVolumes: true,
+	}, types.Actor{}))
 
 	var stored Project
 	require.NoError(t, db.First(&stored, "id = ?", "project-destroy-down-fails").Error)
@@ -1285,7 +1290,7 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFails(t *testing.T
 		composeUpProjectServices = originalComposeUp
 	})
 	upCalled := false
-	composeUpProjectServices = func(context.Context, string, *composetypes.Project, []string, bool, bool, bool, map[string]dockerregistry.AuthConfig, time.Duration) error {
+	composeUpProjectServices = func(context.Context, string, *composetypes.Project, types.ComposeUpOptions) error {
 		upCalled = true
 		return errors.New("compose up should not run")
 	}
@@ -1403,22 +1408,14 @@ func TestProjectService_UpdateProjectServicesForcesRecreate(t *testing.T) {
 	}
 	upCalled := false
 	forceRecreate := false
-	composeUpProjectServices = func(
-		_ context.Context,
-		_ string,
-		selected *composetypes.Project,
-		services []string,
-		removeOrphans, force, _ bool,
-		_ map[string]dockerregistry.AuthConfig,
-		_ time.Duration,
-	) error {
+	composeUpProjectServices = func(_ context.Context, _ string, selected *composetypes.Project, opts types.ComposeUpOptions) error {
 		assert.True(t, eventService.ShouldSuppressDaemonEvent("container", "replacement", "app", selected.Name))
 		assert.False(t, eventService.ShouldSuppressDaemonEvent("image", "pulled-image", "", ""))
 		upCalled = true
 		assert.Equal(t, []string{"app", "dormant", "sidecar"}, selected.ServiceNames(), "stopped dependents stay in the model for recreation")
-		forceRecreate = force
-		assert.Equal(t, []string{"app", "sidecar"}, services, "stopped dependents are not started")
-		assert.False(t, removeOrphans)
+		forceRecreate = opts.ForceRecreate
+		assert.Equal(t, []string{"app", "sidecar"}, opts.Services, "stopped dependents are not started")
+		assert.False(t, opts.RemoveOrphans)
 		return errors.New("compose up failed after assertion")
 	}
 
@@ -8856,9 +8853,9 @@ func TestUpdateProjectServiceImagesPersistsBeforeDeploymentAndRetries(t *testing
 	var deployed []*composetypes.Project
 	var scopes [][]string
 	composeStopProjectServices = func(context.Context, string, *composetypes.Project, []string) error { return nil }
-	composeUpProjectServices = func(_ context.Context, _ string, selected *composetypes.Project, services []string, _, _, _ bool, _ map[string]dockerregistry.AuthConfig, _ time.Duration) error {
+	composeUpProjectServices = func(_ context.Context, _ string, selected *composetypes.Project, opts types.ComposeUpOptions) error {
 		deployed = append(deployed, selected)
-		scopes = append(scopes, services)
+		scopes = append(scopes, opts.Services)
 		return deploymentError
 	}
 	pullDocker := newSettingsDockerService(t, newTestDockerClient(t, newImagePullServerWithObserver(t, nil, nil)))
@@ -9242,9 +9239,9 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 			var deployed []*composetypes.Project
 			var scopes [][]string
 			composeStopProjectServices = func(context.Context, string, *composetypes.Project, []string) error { return nil }
-			composeUpProjectServices = func(_ context.Context, _ string, selected *composetypes.Project, services []string, _, _, _ bool, _ map[string]dockerregistry.AuthConfig, _ time.Duration) error {
+			composeUpProjectServices = func(_ context.Context, _ string, selected *composetypes.Project, opts types.ComposeUpOptions) error {
 				deployed = append(deployed, selected)
-				scopes = append(scopes, services)
+				scopes = append(scopes, opts.Services)
 				return deploymentError
 			}
 			pullDocker := newSettingsDockerService(t, newTestDockerClient(t, newImagePullServerWithObserver(t, nil, nil)))
@@ -10081,7 +10078,11 @@ func TestProjectTags_ReconcilePreservesUIAndComposeOwnershipIsReadOnly(t *testin
 	}
 	require.NoError(t, db.Create(&projectModel).Error)
 
-	projectTags, err := service.UpdateProjectTag(ctx, projectModel.ID, " Database ", types.ProjectTagColorPurple, true, types.Actor{})
+	projectTags, err := service.UpdateProjectTag(ctx, projectModel.ID, ProjectTagUpdate{
+		Name:     " Database ",
+		Color:    types.ProjectTagColorPurple,
+		Attached: true,
+	}, types.Actor{})
 	require.NoError(t, err)
 	require.Equal(t, []types.ProjectTag{{Name: "database", Color: types.ProjectTagColorPurple, Sources: []types.ProjectTagSource{types.ProjectTagSourceUI}}}, projectTags)
 
@@ -10096,13 +10097,21 @@ func TestProjectTags_ReconcilePreservesUIAndComposeOwnershipIsReadOnly(t *testin
 		{Name: "maintenance-window", Color: types.ProjectTagColorOrange, Sources: []types.ProjectTagSource{types.ProjectTagSourceCompose}},
 	}, projectTags)
 
-	_, err = service.UpdateProjectTag(ctx, projectModel.ID, "database", "", false, types.Actor{})
+	_, err = service.UpdateProjectTag(ctx, projectModel.ID, ProjectTagUpdate{
+		Name: "database",
+	}, types.Actor{})
 	require.ErrorIs(t, err, tags.ErrComposeTagReadOnly)
-	_, err = service.UpdateProjectTag(ctx, projectModel.ID, "maintenance-window", types.ProjectTagColorBlue, true, types.Actor{})
+	_, err = service.UpdateProjectTag(ctx, projectModel.ID, ProjectTagUpdate{
+		Name:     "maintenance-window",
+		Color:    types.ProjectTagColorBlue,
+		Attached: true,
+	}, types.Actor{})
 	require.ErrorIs(t, err, tags.ErrComposeTagReadOnly)
 
 	require.NoError(t, service.reconcileComposeProjectTags(ctx, projectModel.ID, nil))
-	projectTags, err = service.UpdateProjectTag(ctx, projectModel.ID, "database", "", false, types.Actor{})
+	projectTags, err = service.UpdateProjectTag(ctx, projectModel.ID, ProjectTagUpdate{
+		Name: "database",
+	}, types.Actor{})
 	require.NoError(t, err)
 	require.Empty(t, projectTags)
 }

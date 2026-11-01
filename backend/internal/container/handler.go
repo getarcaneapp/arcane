@@ -187,7 +187,10 @@ func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *
 		return &handlerutil.Out[types.ContainerStatusCounts]{Body: body}, nil
 	}
 
-	counts, err := h.containerService.GetContainerStatusCounts(ctx, input.IncludeInternal, input.IncludeHidden)
+	counts, err := h.containerService.GetContainerStatusCounts(ctx, StatusCountOptions{
+		IncludeInternal: input.IncludeInternal,
+		IncludeHidden:   input.IncludeHidden,
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get container counts: " + err.Error())
 	}
@@ -454,25 +457,22 @@ func (h *ContainerHandler) runContainerAction(ctx context.Context, input *Contai
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivity(
-		runtimeCtx,
-		h.activityService,
-		input.EnvironmentID,
-		cfg.ActivityType,
-		"container",
-		input.ContainerID,
-		h.containerActivityName(
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID: input.EnvironmentID,
+		Type:          cfg.ActivityType,
+		ResourceType:  "container",
+		ResourceID:    input.ContainerID,
+		ResourceName: h.containerActivityName(
 			runtimeCtx,
 			input.ContainerID,
 		),
-		user,
-		cfg.Step,
-		cfg.StartMessage,
-		database.JSON{
+		User:    user,
+		Step:    cfg.Step,
+		Message: cfg.StartMessage,
+		Metadata: database.JSON{
 			"containerID": input.ContainerID,
 		},
-		false,
-	)
+	})
 	if actionErr := cfg.Action(runtimeCtx, input.ContainerID, *user); actionErr != nil {
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.CompleteMessage, actionErr)
 		apiErr := common.ToAPIError(common.ClassifyDockerError(actionErr))
@@ -513,25 +513,23 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *GetCont
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivity(
-		runtimeCtx,
-		h.activityService,
-		input.EnvironmentID,
-		types.ActivityTypeContainerRedeploy,
-		"container",
-		input.ContainerID,
-		h.containerActivityName(
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID: input.EnvironmentID,
+		Type:          types.ActivityTypeContainerRedeploy,
+		ResourceType:  "container",
+		ResourceID:    input.ContainerID,
+		ResourceName: h.containerActivityName(
 			runtimeCtx,
 			input.ContainerID,
 		),
-		user,
-		"Starting redeploy",
-		"Container redeploy requested",
-		database.JSON{
+		User:    user,
+		Step:    "Starting redeploy",
+		Message: "Container redeploy requested",
+		Metadata: database.JSON{
 			"containerID": input.ContainerID,
 		},
-		true,
-	)
+		Queue: true,
+	})
 	activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Redeploying container")
 	redeployCtx := context.WithValue(runtimeCtx, dockertypes.ProgressWriterKey{}, activityWriter)
@@ -611,25 +609,23 @@ func (h *ContainerHandler) EditContainer(ctx context.Context, input *EditContain
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivity(
-		runtimeCtx,
-		h.activityService,
-		input.EnvironmentID,
-		types.ActivityTypeContainerEdit,
-		"container",
-		input.ContainerID,
-		h.containerActivityName(
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID: input.EnvironmentID,
+		Type:          types.ActivityTypeContainerEdit,
+		ResourceType:  "container",
+		ResourceID:    input.ContainerID,
+		ResourceName: h.containerActivityName(
 			runtimeCtx,
 			input.ContainerID,
 		),
-		user,
-		"Starting edit",
-		"Container edit requested",
-		database.JSON{
+		User:    user,
+		Step:    "Starting edit",
+		Message: "Container edit requested",
+		Metadata: database.JSON{
 			"containerID": input.ContainerID,
 		},
-		true,
-	)
+		Queue: true,
+	})
 	activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Editing container")
 	editCtx := context.WithValue(runtimeCtx, dockertypes.ProgressWriterKey{}, activityWriter)
@@ -693,28 +689,28 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivity(
-		runtimeCtx,
-		h.activityService,
-		input.EnvironmentID,
-		types.ActivityTypeContainerDelete,
-		"container",
-		input.ContainerID,
-		h.containerActivityName(
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID: input.EnvironmentID,
+		Type:          types.ActivityTypeContainerDelete,
+		ResourceType:  "container",
+		ResourceID:    input.ContainerID,
+		ResourceName: h.containerActivityName(
 			runtimeCtx,
 			input.ContainerID,
 		),
-		user,
-		"Deleting container",
-		"Container delete requested",
-		database.JSON{
+		User:    user,
+		Step:    "Deleting container",
+		Message: "Container delete requested",
+		Metadata: database.JSON{
 			"containerID":   input.ContainerID,
 			"force":         input.Force,
 			"removeVolumes": input.RemoveVolumes,
 		},
-		false,
-	)
-	if deleteContainerErr := h.containerService.DeleteContainer(runtimeCtx, input.ContainerID, input.Force, input.RemoveVolumes, *user); deleteContainerErr != nil {
+	})
+	if deleteContainerErr := h.containerService.DeleteContainer(runtimeCtx, input.ContainerID, DeleteContainerOptions{
+		Force:         input.Force,
+		RemoveVolumes: input.RemoveVolumes,
+	}, *user); deleteContainerErr != nil {
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container deleted", deleteContainerErr)
 		apiErr := common.ToAPIError(common.ClassifyDockerError(deleteContainerErr))
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete container: "+apiErr.Message)

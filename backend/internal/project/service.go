@@ -232,17 +232,14 @@ func (s *ProjectService) ValidateComposeDirectory(ctx context.Context, projectNa
 	if err != nil {
 		return 0, err
 	}
-	composeProject, err := projects.LoadComposeProject(
-		ctx,
-		filepath.Join(projectPath, composeFileName),
-		projects.NormalizeProjectName(projectName),
-		projectsDirectory,
-		s.settingsService.GetBoolSetting(ctx, "autoInjectEnv"),
-		s.projectPathMapper(ctx),
-		nil,
-		nil,
-		true, nil, nil, nil,
-	)
+	composeProject, err := projects.LoadComposeProject(ctx, projects.LoadOptions{
+		ComposeFile:       filepath.Join(projectPath, composeFileName),
+		ProjectName:       projects.NormalizeProjectName(projectName),
+		ProjectsDirectory: projectsDirectory,
+		AutoInjectEnv:     s.settingsService.GetBoolSetting(ctx, "autoInjectEnv"),
+		PathMapper:        s.projectPathMapper(ctx),
+		Lenient:           true,
+	})
 	if err != nil {
 		return 0, err
 	}
@@ -251,18 +248,25 @@ func (s *ProjectService) ValidateComposeDirectory(ctx context.Context, projectNa
 
 // CreateGitOpsManagedProject persists a promoted GitOps project, links both
 // records, updates the compose-name cache, and records the creation event.
-func (s *ProjectService) CreateGitOpsManagedProject(ctx context.Context, gitOpsSync *GitOpsSync, project *Project, actor types.Actor, logEventOptions ...bool) error {
-	if gitOpsSync == nil || project == nil {
+type GitOpsProjectRequest struct {
+	Sync      *GitOpsSync
+	Project   *Project
+	Actor     types.Actor
+	SkipEvent bool
+}
+
+func (s *ProjectService) CreateGitOpsManagedProject(ctx context.Context, req GitOpsProjectRequest) error {
+	if req.Sync == nil || req.Project == nil {
 		return errors.New("GitOps sync and project are required")
 	}
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(project).Error; err != nil {
+		if err := tx.Create(req.Project).Error; err != nil {
 			return fmt.Errorf("failed to create project: %w", err)
 		}
-		if err := tx.Model(&GitOpsSync{}).Where("id = ?", gitOpsSync.ID).Update("project_id", project.ID).Error; err != nil {
+		if err := tx.Model(&GitOpsSync{}).Where("id = ?", req.Sync.ID).Update("project_id", req.Project.ID).Error; err != nil {
 			return fmt.Errorf("failed to update sync with project ID: %w", err)
 		}
-		if err := tx.Model(&Project{}).Where("id = ?", project.ID).Update("gitops_managed_by", gitOpsSync.ID).Error; err != nil {
+		if err := tx.Model(&Project{}).Where("id = ?", req.Project.ID).Update("gitops_managed_by", req.Sync.ID).Error; err != nil {
 			return fmt.Errorf("failed to mark project as GitOps-managed: %w", err)
 		}
 		return nil
@@ -270,16 +274,16 @@ func (s *ProjectService) CreateGitOpsManagedProject(ctx context.Context, gitOpsS
 		return err
 	}
 
-	if err := s.EnsureGitOpsProjectLinked(ctx, gitOpsSync, project); err != nil {
+	if err := s.EnsureGitOpsProjectLinked(ctx, req.Sync, req.Project); err != nil {
 		return err
 	}
-	if err := s.reconcileComposeTagsForProject(ctx, project); err != nil {
-		slog.WarnContext(ctx, "failed to reconcile Compose project tags during GitOps project creation", "projectId", project.ID, "error", err)
+	if err := s.reconcileComposeTagsForProject(ctx, req.Project); err != nil {
+		slog.WarnContext(ctx, "failed to reconcile Compose project tags during GitOps project creation", "projectId", req.Project.ID, "error", err)
 	}
-	if len(logEventOptions) == 0 || logEventOptions[0] {
+	if !req.SkipEvent {
 		s.logProjectEvent(
-			ctx, event.EventTypeProjectCreate, project.ID, project.Name, actor,
-			database.JSON{"action": "create", "projectID": project.ID, "projectName": project.Name, "path": project.Path},
+			ctx, event.EventTypeProjectCreate, req.Project.ID, req.Project.Name, req.Actor,
+			database.JSON{"action": "create", "projectID": req.Project.ID, "projectName": req.Project.Name, "path": req.Project.Path},
 			"could not log project creation",
 		)
 	}
@@ -311,7 +315,7 @@ func (s *ProjectService) newProjectMetadataEnv(ctx context.Context, projectsList
 func (s *ProjectService) preloadGitOpsComposePaths(ctx context.Context, env *projectMetadataEnv, projectsList []Project) {
 	syncIDs := make([]string, 0, len(projectsList))
 	for _, proj := range projectsList {
-		if id := gitOpsSyncID(&proj); id != "" {
+		if id := strings.TrimSpace(kit.FromPtr((&proj).GitOpsManagedBy)); id != "" {
 			syncIDs = append(syncIDs, id)
 		}
 	}
@@ -702,14 +706,14 @@ func (s *ProjectService) resolveProjectComposeFile(ctx context.Context, proj *Pr
 
 		// A GitOps sync's compose path comes from the preloaded request map when available; a missing row resolves to "".
 		composePath, err := func() (string, error) {
-			if gitOpsSyncID(proj) == "" {
+			if strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy)) == "" {
 				return "", nil
 			}
-			if preloaded, ok := preloadedComposePaths[gitOpsSyncID(proj)]; ok {
+			if preloaded, ok := preloadedComposePaths[strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy))]; ok {
 				return preloaded, nil
 			}
 			var syncRecord GitOpsSync
-			if err := s.db.WithContext(ctx).Select("compose_path").Where("id = ?", gitOpsSyncID(proj)).First(&syncRecord).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			if err := s.db.WithContext(ctx).Select("compose_path").Where("id = ?", strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy))).First(&syncRecord).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				return "", fmt.Errorf("failed to resolve GitOps compose path for project %s: %w", proj.ID, err)
 			}
 			return syncRecord.ComposePath, nil
@@ -752,15 +756,15 @@ func (s *ProjectService) loadComposeProjectForProject(ctx context.Context, proj 
 	if dirErr != nil {
 		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", dirErr)
 	}
-	composeProject, loadErr := projects.LoadComposeProject(
-		ctx,
-		composeFileFullPath,
-		projects.NormalizeProjectName(proj.Name),
-		kit.Ternary(dirErr == nil, projectsDirectory, "/app/data/projects"),
-		kit.ParseOrDefault(cfg.AutoInjectEnv.Value, false, strconv.ParseBool),
-		s.projectPathMapper(ctx),
-		nil, nil, false, nil, services, prepare,
-	)
+	composeProject, loadErr := projects.LoadComposeProject(ctx, projects.LoadOptions{
+		ComposeFile:       composeFileFullPath,
+		ProjectName:       projects.NormalizeProjectName(proj.Name),
+		ProjectsDirectory: kit.Ternary(dirErr == nil, projectsDirectory, "/app/data/projects"),
+		AutoInjectEnv:     kit.ParseOrDefault(cfg.AutoInjectEnv.Value, false, strconv.ParseBool),
+		PathMapper:        s.projectPathMapper(ctx),
+		Services:          services,
+		Prepare:           prepare,
+	})
 	if loadErr != nil {
 		return nil, loadErr
 	}
@@ -888,7 +892,7 @@ func NewLifecycleService(
 // runPreDeploy runs the sync's pre-deploy hook, if configured and enabled. Any
 // failure aborts the deploy; every run records its last-run state on the sync.
 func (s *LifecycleService) runPreDeploy(ctx context.Context, project *Project, actor types.Actor) error {
-	if gitOpsSyncID(project) == "" || !s.settingsService.GetBoolSetting(ctx, "lifecycleEnabled") {
+	if strings.TrimSpace(kit.FromPtr(project.GitOpsManagedBy)) == "" || !s.settingsService.GetBoolSetting(ctx, "lifecycleEnabled") {
 		return nil
 	}
 
@@ -1085,7 +1089,7 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 		if loadErr != nil {
 			return fmt.Errorf("load project for service image checks: %w", loadErr)
 		}
-		changes, changesErr := s.updates.ImageChanges(ctx, effective, servicesToUpdate, gitOpsSyncID(proj) != "")
+		changes, changesErr := s.updates.ImageChanges(ctx, effective, servicesToUpdate, strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy)) != "")
 		if changesErr != nil {
 			return changesErr
 		}
@@ -1284,7 +1288,7 @@ func (s *ProjectService) deployProject(ctx context.Context, projectID string, us
 	projectModel, err := s.composeCoordinator.Deploy(ctx, types.ComposeDeployment{
 		ProjectID: projectID, ProjectPath: projectFromDb.Path, DockerHost: s.dockerService.DockerHost(), Options: options,
 		DefaultPullPolicy: s.settingsService.GetStringSetting(ctx, "defaultDeployPullPolicy"),
-		GitOpsManaged:     gitOpsSyncID(projectFromDb) != "",
+		GitOpsManaged:     strings.TrimSpace(kit.FromPtr(projectFromDb.GitOpsManagedBy)) != "",
 		WaitTimeout:       timeouts.GetDuration(s.settingsService.GetSettingsConfig().DeployWaitTimeout.AsInt(), timeouts.DefaultDeployWait),
 		AuthConfigs:       authConfigs,
 		Progress:          progressWriter,
@@ -1494,17 +1498,14 @@ func (s *ProjectService) CreateProject(
 	// GitOps-originated creates (allowNameSuffix=false) tolerate not-yet-supplied
 	// ${VAR} references the same way single-file git sync updates do; interactive
 	// creates (allowNameSuffix=true) stay strict.
-	if validateComposeContentForUpdateErr := projects.ValidateComposeContentForUpdate(
-		ctx,
-		projectsDirectory,
-		projectPath,
-		name,
-		composeContent,
-		envContent,
-		nil,
-		"",
-		!allowNameSuffix,
-	); validateComposeContentForUpdateErr != nil {
+	if validateComposeContentForUpdateErr := projects.ValidateComposeContentForUpdate(ctx, projects.ValidateComposeRequest{
+		ProjectsDirectory: projectsDirectory,
+		ProjectPath:       projectPath,
+		ProjectName:       name,
+		ComposeContent:    composeContent,
+		EnvContent:        envContent,
+		Lenient:           !allowNameSuffix,
+	}); validateComposeContentForUpdateErr != nil {
 		return nil, rollback(fmt.Errorf("invalid compose file: %w", validateComposeContentForUpdateErr))
 	}
 
@@ -1561,11 +1562,16 @@ func (s *ProjectService) CreateProject(
 	return proj, nil
 }
 
-func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, removeFiles, removeVolumes bool, user types.Actor) error {
+type DestroyOptions struct {
+	RemoveFiles   bool
+	RemoveVolumes bool
+}
+
+func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, opts DestroyOptions, user types.Actor) error {
 	slog.DebugContext(ctx, "DestroyProject service called",
 		"projectId", projectID,
-		"removeFiles", removeFiles,
-		"removeVolumes", removeVolumes,
+		"removeFiles", opts.RemoveFiles,
+		"removeVolumes", opts.RemoveVolumes,
 		"userId", user.ID,
 		"username", user.Username)
 
@@ -1593,7 +1599,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		return fmt.Errorf("failed to bring down project: %w", downErr)
 	}
 
-	if removeVolumes {
+	if opts.RemoveVolumes {
 		compProj, lerr := s.loadComposeProjectForProject(ctx, proj, nil)
 		switch {
 		case lerr == nil:
@@ -1606,7 +1612,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		}
 	}
 
-	if removeFiles {
+	if opts.RemoveFiles {
 		slog.DebugContext(ctx, "Removing project files", "path", proj.Path)
 		// An imported project can live anywhere, so the removal is rooted at the
 		// parent directory and names the project directory itself.
@@ -1623,7 +1629,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		return fmt.Errorf("failed to delete project from database: %w", transactionErr)
 	}
 
-	if !removeFiles {
+	if !opts.RemoveFiles {
 		if projectsDir, dirErr := s.GetProjectsDirectory(ctx); dirErr != nil {
 			slog.WarnContext(ctx, "Failed to resolve projects directory for quarantine", "error", dirErr)
 		} else if projects.IsSafeSubdirectory(projectsDir, proj.Path) && filepath.Clean(projectsDir) != filepath.Clean(proj.Path) {
@@ -1642,8 +1648,8 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		"action":        "destroy",
 		"projectID":     projectID,
 		"projectName":   proj.Name,
-		"removeFiles":   removeFiles,
-		"removeVolumes": removeVolumes,
+		"removeFiles":   opts.RemoveFiles,
+		"removeVolumes": opts.RemoveVolumes,
 	}, "could not log project destroy action")
 
 	return nil
@@ -1957,8 +1963,8 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	}()
 
 	var syncRecord GitOpsSync
-	if gitOpsSyncID(proj) != "" {
-		_ = s.db.WithContext(ctx).Preload("Repository").Where("id = ?", gitOpsSyncID(proj)).First(&syncRecord).Error
+	if strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy)) != "" {
+		_ = s.db.WithContext(ctx).Preload("Repository").Where("id = ?", strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy))).First(&syncRecord).Error
 	}
 
 	// Runtime status/counts refresh even without the full runtime service array; DB values are only a fallback.
@@ -2709,7 +2715,7 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 		}
 		// GitOps owns these projects' lifecycle: their compose files may not exist
 		// yet during a sync or after an SSH/clone failure.
-		if gitOpsSyncID(&p) != "" {
+		if strings.TrimSpace(kit.FromPtr((&p).GitOpsManagedBy)) != "" {
 			continue
 		}
 		// Rows imported from Arcane's own scratch dirs (project-update preview/backup,
@@ -2973,7 +2979,15 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		return nil, err
 	}
 
-	renameJournal := s.updates.Prepare(proj.ID, proj.Name, proj.Path, proj.DirName, name, projectsDirectory, volumeMigration)
+	renameJournal := s.updates.Prepare(update.RenameRequest{
+		ProjectID:         proj.ID,
+		OldName:           proj.Name,
+		OldPath:           proj.Path,
+		OldDirName:        proj.DirName,
+		Name:              name,
+		ProjectsDirectory: projectsDirectory,
+		Migration:         volumeMigration,
+	})
 	backup, cleanupBackup, err := func() (*projects.ProjectUpdateBackup, func(), error) {
 		if composeContent == nil && envContent == nil && overrideContent == nil {
 			return nil, func() {}, nil
@@ -3146,17 +3160,16 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(
 		return nil, false, fmt.Errorf("failed to resolve git env state: %w", err)
 	}
 
-	if validateComposeContentForUpdateErr := projects.ValidateComposeContentForUpdate(
-		ctx,
-		projectsDirectory,
-		proj.Path,
-		proj.Name,
-		composeContent,
-		envUpdate.EffectiveContent,
-		gitOverrideContent,
-		gitOverrideFileName,
-		true,
-	); validateComposeContentForUpdateErr != nil {
+	if validateComposeContentForUpdateErr := projects.ValidateComposeContentForUpdate(ctx, projects.ValidateComposeRequest{
+		ProjectsDirectory: projectsDirectory,
+		ProjectPath:       proj.Path,
+		ProjectName:       proj.Name,
+		ComposeContent:    composeContent,
+		EnvContent:        envUpdate.EffectiveContent,
+		OverrideContent:   gitOverrideContent,
+		OverrideFileName:  gitOverrideFileName,
+		Lenient:           true,
+	}); validateComposeContentForUpdateErr != nil {
 		return nil, false, fmt.Errorf("invalid compose file: %w", validateComposeContentForUpdateErr)
 	}
 
@@ -3362,7 +3375,7 @@ func (s *ProjectService) saveProjectServiceImages(ctx context.Context, projectID
 	if err != nil {
 		return nil, err
 	}
-	if gitOpsSyncID(proj) != "" {
+	if strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy)) != "" {
 		return nil, errors.New("tag updates cannot edit a GitOps-managed project; update image tags in the source repository")
 	}
 	// Selecting the changed services keeps profile-gated ones active.
@@ -3475,7 +3488,7 @@ func (s *ProjectService) workspaceComposeFileName(ctx context.Context, proj *Pro
 // by the project's GitOps sync. Returns nil for projects without a live sync,
 // including a stale gitops_managed_by marker.
 func (s *ProjectService) gitOpsOwnedWorkspacePaths(ctx context.Context, proj *Project) (map[string]struct{}, error) {
-	if gitOpsSyncID(proj) == "" {
+	if strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy)) == "" {
 		return nil, nil
 	}
 	var syncRecord GitOpsSync
@@ -3520,7 +3533,7 @@ func (s *ProjectService) projectServices(ctx context.Context, projectID string) 
 	return s.details.ComposeServices(ctx, composeProject, matched, s.ProjectMetadata(ctx, *projectFromDb, nil), IconCatalogForContext(ctx))
 }
 
-func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
+func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string, logsChan chan<- string, opts types.LogStreamOptions) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -3530,7 +3543,7 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 		slog.WarnContext(ctx, "failed to list containers for project log stream", "projectId", projectID, "error", listErr)
 	}
 	matched := listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*proj))
-	return projectdetails.Logs(ctx, s.dockerService.DockerHost(), projectdetails.RuntimeProjectName(proj.Name, matched), logsChan, follow, tail, since, timestamps)
+	return projectdetails.Logs(ctx, s.dockerService.DockerHost(), projectdetails.RuntimeProjectName(proj.Name, matched), logsChan, opts)
 }
 
 func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (types.ProjectStatusCounts, error) {
@@ -3652,9 +3665,15 @@ func (s *ProjectService) ListProjectReferences(ctx context.Context) ([]types.Pro
 	return references, nil
 }
 
+type ProjectTagUpdate struct {
+	Name     string
+	Color    types.ProjectTagColor
+	Attached bool
+}
+
 // UpdateProjectTag attaches or detaches a UI-managed tag and rejects Compose-owned names.
-func (s *ProjectService) UpdateProjectTag(ctx context.Context, projectID, name string, color types.ProjectTagColor, attached bool, user types.Actor) ([]types.ProjectTag, error) {
-	normalized, normalizedColor, err := tags.NormalizeUpdate(name, color, attached)
+func (s *ProjectService) UpdateProjectTag(ctx context.Context, projectID string, update ProjectTagUpdate, user types.Actor) ([]types.ProjectTag, error) {
+	normalized, normalizedColor, err := tags.NormalizeUpdate(update.Name, update.Color, update.Attached)
 	if err != nil {
 		return nil, err
 	}
@@ -3664,13 +3683,17 @@ func (s *ProjectService) UpdateProjectTag(ctx context.Context, projectID, name s
 		if findProjectErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&projectModel, "id = ?", projectID).Error; findProjectErr != nil {
 			return fmt.Errorf("find project for tag update: %w", findProjectErr)
 		}
-		return tags.ApplyUpdate(tagStore{tx: tx}, projectID, normalized, normalizedColor, attached)
+		return tags.ApplyUpdate(tagStore{tx: tx}, projectID, tags.TagUpdate{
+			Name:     normalized,
+			Color:    normalizedColor,
+			Attached: update.Attached,
+		})
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	metadata := database.JSON{"action": "update_tags", "projectID": projectID, "projectName": projectModel.Name, "tag": normalized, "attached": attached}
+	metadata := database.JSON{"action": "update_tags", "projectID": projectID, "projectName": projectModel.Name, "tag": normalized, "attached": update.Attached}
 	s.logProjectEvent(ctx, event.EventTypeProjectUpdate, projectID, projectModel.Name, user, metadata, "could not log project tag update")
 	return s.GetProjectTags(ctx, projectID)
 }

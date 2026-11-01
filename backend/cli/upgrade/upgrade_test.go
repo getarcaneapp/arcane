@@ -12,7 +12,7 @@ import (
 	"go.getarcane.app/updater/labels"
 )
 
-func TestNormalizeRecreatedArcaneLabelsInternal(t *testing.T) {
+func TestNormalizeRecreatedArcaneLabels(t *testing.T) {
 	tests := []struct {
 		labels     map[string]string
 		want       map[string]string
@@ -67,7 +67,7 @@ func TestNormalizeRecreatedArcaneLabelsInternal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := normalizeRecreatedArcaneLabelsInternal(tt.labels)
+			got := normalizeRecreatedArcaneLabels(tt.labels)
 
 			require.Equal(t, tt.want, got)
 			require.Equal(t, tt.wantSource, tt.labels)
@@ -75,7 +75,7 @@ func TestNormalizeRecreatedArcaneLabelsInternal(t *testing.T) {
 	}
 }
 
-func TestRefreshRecreatedImageLabelsInternal(t *testing.T) {
+func TestRefreshRecreatedImageLabels(t *testing.T) {
 	containerLabels := map[string]string{
 		"ORG.OPENCONTAINERS.IMAGE.VERSION":  "v2.6.0-next.30",
 		"org.opencontainers.image.revision": "old-revision",
@@ -109,7 +109,7 @@ func TestRefreshRecreatedImageLabelsInternal(t *testing.T) {
 		"org.opencontainers.image.authors":  "old-author",
 	}
 
-	got := refreshRecreatedImageLabelsInternal(containerLabels, previousImageLabels, targetImageLabels, "sha256:new-image")
+	got := refreshRecreatedImageLabels(containerLabels, previousImageLabels, targetImageLabels, "sha256:new-image")
 
 	require.Equal(t, map[string]string{
 		"org.opencontainers.image.version":  "v2.7.0-next.17",
@@ -126,7 +126,7 @@ func TestRefreshRecreatedImageLabelsInternal(t *testing.T) {
 }
 
 func TestRefreshRecreatedImageLabelsInternalKeepsNilWhenNoLabelsExist(t *testing.T) {
-	require.Nil(t, refreshRecreatedImageLabelsInternal(nil, nil, nil, ""))
+	require.Nil(t, refreshRecreatedImageLabels(nil, nil, nil, ""))
 }
 
 func TestRefreshRecreatedContainerLabelsInternalPreservesLabelsWhenTargetInspectFails(t *testing.T) {
@@ -151,7 +151,7 @@ func TestRefreshRecreatedContainerLabelsInternalPreservesLabelsWhenTargetInspect
 		"com.docker.compose.image":         "sha256:old-image",
 	}
 
-	got := refreshRecreatedContainerLabelsInternal(
+	got := refreshRecreatedContainerLabels(
 		t.Context(),
 		dockerClient,
 		containerLabels,
@@ -192,7 +192,7 @@ func TestRefreshRecreatedContainerLabelsInternalPreservesOverridesWhenPreviousIn
 		"com.docker.compose.image":         "sha256:old-image",
 	}
 
-	got := refreshRecreatedContainerLabelsInternal(
+	got := refreshRecreatedContainerLabels(
 		t.Context(),
 		dockerClient,
 		containerLabels,

@@ -47,14 +47,14 @@ func (n namespace) Resolve(key, configuredName string) string {
 	return n.Scope(key)
 }
 
-func mergeLabelsInternal(primary, secondary map[string]string) map[string]string {
+func mergeLabels(primary, secondary map[string]string) map[string]string {
 	out := map[string]string{}
 	maps.Copy(out, primary)
 	maps.Copy(out, secondary)
 	return out
 }
 
-func validateStackNameInternal(stackName string) error {
+func validateStackName(stackName string) error {
 	switch {
 	case stackName == "":
 		return errors.New("stack name is required")
@@ -65,14 +65,14 @@ func validateStackNameInternal(stackName string) error {
 	}
 }
 
-func invalidStackErrorInternal(err error) error {
+func invalidStackError(err error) error {
 	if err == nil || errors.Is(err, ErrInvalidStack) {
 		return err
 	}
 	return fmt.Errorf("%w: %w", ErrInvalidStack, err)
 }
 
-func hashManagedFileResourceInternal(config composegotypes.FileObjectConfig, data []byte) string {
+func hashManagedFileResource(config composegotypes.FileObjectConfig, data []byte) string {
 	if config.Driver == "" && config.TemplateDriver == "" && len(config.DriverOpts) == 0 {
 		return kit.SHA256Hex(data)
 	}
@@ -92,7 +92,7 @@ func hashManagedFileResourceInternal(config composegotypes.FileObjectConfig, dat
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
-func managedResourceNameInternal(logicalName, hash string) string {
+func managedResourceName(logicalName, hash string) string {
 	hash = strings.TrimSpace(hash)
 	if len(hash) > resourceNameMaxHash {
 		hash = hash[:resourceNameMaxHash]

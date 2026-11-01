@@ -94,7 +94,7 @@ func InspectCurrentArcaneContainer(ctx context.Context, dockerClient *client.Cli
 		// that match shares the derived container's network namespace — i.e. the
 		// derived target really was its sidecar (#3544, #3693). Otherwise the
 		// labeled container is a different Arcane instance and the hit is us.
-		if unlabeled == nil || sharesNetworkNamespaceInternal(&inspect.Container, unlabeled) {
+		if unlabeled == nil || sharesNetworkNamespace(&inspect.Container, unlabeled) {
 			return &inspect.Container, nil
 		}
 	}
@@ -106,11 +106,11 @@ func InspectCurrentArcaneContainer(ctx context.Context, dockerClient *client.Cli
 	return nil, errors.New("could not detect Arcane container")
 }
 
-// sharesNetworkNamespaceInternal reports whether candidate runs with
+// sharesNetworkNamespace reports whether candidate runs with
 // network_mode "container:<owner>", i.e. it borrows owner's network namespace
 // (and therefore owner's hostname). The reference may be the owner's ID (any
 // prefix length) or its name.
-func sharesNetworkNamespaceInternal(candidate, owner *container.InspectResponse) bool {
+func sharesNetworkNamespace(candidate, owner *container.InspectResponse) bool {
 	if candidate.HostConfig == nil || !candidate.HostConfig.NetworkMode.IsContainer() {
 		return false
 	}

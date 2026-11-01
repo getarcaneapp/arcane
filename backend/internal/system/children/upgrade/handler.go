@@ -85,7 +85,7 @@ func (h *Handler) TriggerUpgrade(ctx context.Context, input *TriggerUpgradeInput
 	slog.InfoContext(ctx, "System upgrade triggered", "user", user.Username, "userId", user.ID)
 
 	// Resolved before triggering, while the version check still describes the running container.
-	upToDate := h.service.AlreadyOnNewestImage(ctx)
+	upToDate := h.service.versionService.GetAppVersionInfo(ctx).AlreadyOnNewest()
 
 	err = h.service.TriggerUpgradeAsync(utils.ActivityRuntimeContext(ctx, h.appCtx), *user, kit.FromPtr(input.Body).TargetVersion)
 	if err != nil {

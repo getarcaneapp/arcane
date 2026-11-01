@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -52,8 +53,8 @@ const (
 	TrivyConfigFile    = "trivy-config.yaml"
 	TrivyIgnoreFile    = "trivy-ignore"
 
-	outputPathPrefixInternal = "/tmp/arcane-trivy-result-"
-	errorExcerptSizeInternal = int64(32 * 1024)
+	outputPathPrefix = "/tmp/arcane-trivy-result-"
+	errorExcerptSize = int64(32 * 1024)
 )
 
 type RuntimeOptions struct {
@@ -91,91 +92,49 @@ func ResolveUnixSocketSource(
 }
 
 func NewOutputPath() string {
-	return outputPathPrefixInternal + strconv.FormatInt(time.Now().UnixNano(), 10) + ".json"
+	return outputPathPrefix + strconv.FormatInt(time.Now().UnixNano(), 10) + ".json"
 }
 
-func BuildBatchHostConfig(
-	cacheVolume string,
-	runtimeOptions RuntimeOptions,
-	securityOpts []string,
-	privileged bool,
-) *containertypes.HostConfig {
-	mounts := append([]mounttypes.Mount{}, runtimeOptions.Mounts...)
-	if strings.TrimSpace(cacheVolume) != "" {
+type ResourceLimits struct {
+	Resources containertypes.Resources
+	CPUSet    string
+	Apply     bool
+}
+
+type HostConfigOptions struct {
+	CacheVolume  string
+	Runtime      RuntimeOptions
+	SecurityOpts []string
+	Privileged   bool
+	Limits       ResourceLimits
+}
+
+func BuildHostConfig(opts HostConfigOptions) *containertypes.HostConfig {
+	mounts := append([]mounttypes.Mount{}, opts.Runtime.Mounts...)
+	if strings.TrimSpace(opts.CacheVolume) != "" {
 		mounts = append(mounts, mounttypes.Mount{
 			Type:   mounttypes.TypeVolume,
-			Source: cacheVolume,
+			Source: opts.CacheVolume,
 			Target: CacheMountTarget,
 		})
 	}
 
-	hostConfig := &containertypes.HostConfig{
-		NetworkMode: containertypes.NetworkMode(SelectDefaultNetworkMode(runtimeOptions.NetworkMode)),
-		Mounts:      mounts,
+	resources := opts.Limits.Resources
+	if opts.Limits.CPUSet != "" {
+		resources.NanoCPUs = 0
+		resources.CpusetCpus = opts.Limits.CPUSet
 	}
 
-	ApplyRuntimeSecurity(hostConfig, securityOpts, privileged)
-	return hostConfig
-}
-
-func BuildHostConfig(
-	cacheVolume string,
-	resources containertypes.Resources,
-	cpuSet string,
-	applyLimits bool,
-	runtimeOptions RuntimeOptions,
-	securityOpts []string,
-	privileged bool,
-) *containertypes.HostConfig {
-	mounts := append([]mounttypes.Mount{}, runtimeOptions.Mounts...)
-	if strings.TrimSpace(cacheVolume) != "" {
-		mounts = append(mounts, mounttypes.Mount{
-			Type:   mounttypes.TypeVolume,
-			Source: cacheVolume,
-			Target: CacheMountTarget,
-		})
-	}
-
-	hostConfig := &containertypes.HostConfig{
-		NetworkMode: containertypes.NetworkMode(SelectDefaultNetworkMode(runtimeOptions.NetworkMode)),
+	return &containertypes.HostConfig{
+		NetworkMode: containertypes.NetworkMode(cmp.Or(strings.TrimSpace(opts.Runtime.NetworkMode), DefaultNetworkMode)),
 		// Keep single-scan containers until explicit cleanup so we can reliably
 		// wait for completion and collect logs across Docker variants.
-		AutoRemove: false,
-		Mounts:     mounts,
+		AutoRemove:  false,
+		Mounts:      mounts,
+		SecurityOpt: slices.Clone(opts.SecurityOpts),
+		Privileged:  opts.Privileged,
+		Resources:   kit.Ternary(opts.Limits.Apply, resources, containertypes.Resources{}),
 	}
-
-	ApplyRuntimeSecurity(hostConfig, securityOpts, privileged)
-	ApplyContainerResources(hostConfig, resources, cpuSet, applyLimits)
-	return hostConfig
-}
-
-func SelectDefaultNetworkMode(networkMode string) string {
-	networkMode = strings.TrimSpace(networkMode)
-	return kit.Ternary(networkMode == "", DefaultNetworkMode, networkMode)
-}
-
-func ApplyRuntimeSecurity(hostConfig *containertypes.HostConfig, securityOpts []string, privileged bool) {
-	if hostConfig == nil {
-		return
-	}
-
-	if len(securityOpts) > 0 {
-		hostConfig.SecurityOpt = append([]string(nil), securityOpts...)
-	}
-	hostConfig.Privileged = privileged
-}
-
-func ApplyContainerResources(hostConfig *containertypes.HostConfig, resources containertypes.Resources, cpuSet string, applyLimits bool) {
-	if hostConfig == nil || !applyLimits {
-		return
-	}
-
-	if cpuSet != "" {
-		resources.NanoCPUs = 0
-		resources.CpusetCpus = cpuSet
-	}
-
-	hostConfig.Resources = resources
 }
 
 func CreateLogTempFile(prefix string) (*os.File, error) {
@@ -320,8 +279,8 @@ func ReadStartupLogs(ctx context.Context, dockerClient *client.Client, container
 		slog.DebugContext(ctx, "failed to decode trivy startup logs", "containerId", containerID, "error", stdCopyErr)
 	}
 
-	stdoutLog := TruncateLogOutput(stdoutBuf.String(), errorExcerptSizeInternal)
-	stderrLog := TruncateLogOutput(stderrBuf.String(), errorExcerptSizeInternal)
+	stdoutLog := TruncateLogOutput(stdoutBuf.String(), errorExcerptSize)
+	stderrLog := TruncateLogOutput(stderrBuf.String(), errorExcerptSize)
 	return stdoutLog, stderrLog
 }
 
@@ -468,7 +427,7 @@ func ReadTempFileExcerpt(file *os.File) string {
 		return ""
 	}
 
-	content, err := io.ReadAll(io.LimitReader(file, errorExcerptSizeInternal))
+	content, err := io.ReadAll(io.LimitReader(file, errorExcerptSize))
 	if err != nil {
 		return ""
 	}

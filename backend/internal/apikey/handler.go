@@ -115,7 +115,10 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 	}
 
 	callerPerms, _ := middleware.PermissionsFromContext(ctx)
-	apiKey, err := h.apiKeyService.UpdateApiKey(ctx, callerPerms, input.ID, input.Body, submitted)
+	apiKey, err := h.apiKeyService.UpdateApiKey(ctx, callerPerms, input.ID, ApiKeyUpdate{
+		Request:   input.Body,
+		Submitted: submitted,
+	})
 	if err != nil {
 		if errors.Is(err, ErrApiKeyNotFound) {
 			return nil, huma.Error404NotFound("API key not found")

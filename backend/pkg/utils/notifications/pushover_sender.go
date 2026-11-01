@@ -70,5 +70,5 @@ func SendPushover(ctx context.Context, config PushoverConfig, message string) er
 		return fmt.Errorf("failed to build shoutrrr Pushover URL: %w", err)
 	}
 
-	return sendShoutrrrInternal("Pushover", shoutrrrURL, message, nil)
+	return sendShoutrrr("Pushover", shoutrrrURL, message, nil)
 }

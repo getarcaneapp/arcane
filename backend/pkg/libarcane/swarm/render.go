@@ -47,8 +47,8 @@ type StackRenderResult struct {
 // invalid, or the normalized Compose project cannot be marshaled.
 func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRenderResult, error) {
 	stackName := strings.TrimSpace(opts.Name)
-	if err := validateStackNameInternal(stackName); err != nil {
-		return nil, invalidStackErrorInternal(err)
+	if err := validateStackName(stackName); err != nil {
+		return nil, invalidStackError(err)
 	}
 	ns := namespace{name: stackName}
 
@@ -61,7 +61,7 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 		PathMapper:      opts.PathMapper,
 	})
 	if err != nil {
-		return nil, invalidStackErrorInternal(err)
+		return nil, invalidStackError(err)
 	}
 	if project.Name == "" {
 		project.Name = stackName
@@ -69,11 +69,11 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 
 	configMetaByKey, err := planConfigs(project, ns)
 	if err != nil {
-		return nil, invalidStackErrorInternal(err)
+		return nil, invalidStackError(err)
 	}
 	secretMetaByKey, err := planSecrets(project, ns)
 	if err != nil {
-		return nil, invalidStackErrorInternal(err)
+		return nil, invalidStackError(err)
 	}
 
 	rendered, err := project.MarshalYAML()
@@ -105,7 +105,7 @@ func sortedStringValues(valuesByKey map[string]string) []string {
 	return values
 }
 
-func sortedPlannedResourceNames(plansByKey map[string]plannedFileResourceInternal) []string {
+func sortedPlannedResourceNames(plansByKey map[string]plannedFileResource) []string {
 	names := make([]string, 0, len(plansByKey))
 	for _, plan := range plansByKey {
 		names = append(names, plan.Meta.Name)

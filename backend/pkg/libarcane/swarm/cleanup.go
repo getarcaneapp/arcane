@@ -16,9 +16,9 @@ import (
 
 // Swarm tears tasks down asynchronously, so a config, secret, or network can
 // stay referenced for a short window after the owning services are removed.
-const staleSwarmResourceRemoveAttemptsInternal = 5
+const staleSwarmResourceRemoveAttempts = 5
 
-var staleSwarmResourceRemoveBackoffInternal = 500 * time.Millisecond
+var staleSwarmResourceRemoveBackoff = 500 * time.Millisecond
 
 func cleanupStackResources(
 	ctx context.Context,
@@ -60,15 +60,15 @@ func cleanupStackResources(
 	return nil
 }
 
-func collectStaleManagedResources[T any](items []T, convert func(T) staleManagedResourceInternal) []staleManagedResourceInternal {
-	resources := make([]staleManagedResourceInternal, 0, len(items))
+func collectStaleManagedResources[T any](items []T, convert func(T) staleManagedResource) []staleManagedResource {
+	resources := make([]staleManagedResource, 0, len(items))
 	for _, item := range items {
 		resources = append(resources, convert(item))
 	}
 	return resources
 }
 
-type staleManagedResourceInternal struct {
+type staleManagedResource struct {
 	ID   string
 	Name string
 }
@@ -77,7 +77,7 @@ func cleanupStaleManagedResources(
 	ctx context.Context,
 	stackName string,
 	desiredNames map[string]struct{},
-	adapter fileResourceAdapterInternal,
+	adapter fileResourceAdapter,
 	managedOnly bool,
 	tolerateInUse bool,
 ) error {
@@ -86,7 +86,7 @@ func cleanupStaleManagedResources(
 		resourceTypeLabels = []string{resourceTypeLabel, legacyResourceTypeLabel}
 	}
 
-	resources := make([]staleManagedResourceInternal, 0)
+	resources := make([]staleManagedResource, 0)
 	seenResourceIDs := make(map[string]struct{})
 	for _, typeLabel := range resourceTypeLabels {
 		filters := make(dockerclient.Filters)
@@ -128,7 +128,7 @@ func cleanupStaleManagedResources(
 // otherwise the stack is being deleted and a lingering resource must surface as an error
 // instead of being silently orphaned.
 func removeStaleSwarmResource(ctx context.Context, tolerateInUse bool, remove func(context.Context) error) error {
-	attempts := kit.Ternary(tolerateInUse, 1, staleSwarmResourceRemoveAttemptsInternal)
+	attempts := kit.Ternary(tolerateInUse, 1, staleSwarmResourceRemoveAttempts)
 
 	var err error
 	for attempt := range attempts {
@@ -145,7 +145,7 @@ func removeStaleSwarmResource(ctx context.Context, tolerateInUse bool, remove fu
 		select {
 		case <-ctx.Done():
 			return errors.Join(ctx.Err(), err)
-		case <-time.After(staleSwarmResourceRemoveBackoffInternal):
+		case <-time.After(staleSwarmResourceRemoveBackoff):
 		}
 	}
 
@@ -156,7 +156,7 @@ func removeStaleSwarmResource(ctx context.Context, tolerateInUse bool, remove fu
 func RemoveStackResources(ctx context.Context, dockerClient *dockerclient.Client, stackName string) error {
 	stackName = strings.TrimSpace(stackName)
 	if stackName == "" {
-		return invalidStackErrorInternal(errors.New("stack name is required"))
+		return invalidStackError(errors.New("stack name is required"))
 	}
 
 	emptyDesiredSet := map[string]struct{}{}

@@ -32,7 +32,7 @@ func (m *CORSMiddleware) Add() echo.MiddlewareFunc {
 	}
 
 	return middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins:     deriveAllowedOriginsInternal(m.cfg, m.customOrigins),
+		AllowOrigins:     deriveAllowedOrigins(m.cfg, m.customOrigins),
 		AllowCredentials: true,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"},
 		AllowHeaders: []string{
@@ -61,7 +61,7 @@ func (m *CORSMiddleware) Add() echo.MiddlewareFunc {
 	})
 }
 
-func deriveAllowedOriginsInternal(cfg *config.Config, custom []string) []string {
+func deriveAllowedOrigins(cfg *config.Config, custom []string) []string {
 	ctx := context.Background() //nolint:forbidigo // Middleware configuration is derived at startup without a request context.
 	if len(custom) > 0 {
 		return kit.Unique(custom)

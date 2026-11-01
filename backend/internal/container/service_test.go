@@ -1892,7 +1892,10 @@ func TestContainerMutationsRefuseQuadletContainers(t *testing.T) {
 	require.ErrorIs(t, err, common.ErrContainerQuadletManaged)
 	_, err = svc.RedeployContainer(t.Context(), "quadlet-id", actor)
 	require.ErrorIs(t, err, common.ErrContainerQuadletManaged)
-	require.ErrorIs(t, svc.DeleteContainer(t.Context(), "quadlet-id", true, true, actor), common.ErrContainerQuadletManaged)
+	require.ErrorIs(t, svc.DeleteContainer(t.Context(), "quadlet-id", DeleteContainerOptions{
+		Force:         true,
+		RemoveVolumes: true,
+	}, actor), common.ErrContainerQuadletManaged)
 
 	require.Equal(t, []string{
 		"GET /containers/quadlet-id/json",

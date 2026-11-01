@@ -86,7 +86,7 @@ func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks
 	ancestors := make(map[string]struct{})
 
 	if err == nil {
-		err = walkProjectDirectoriesInternal(ctx, root, root, true, 0, maxDepth, followSymlinks, projectScanSkipDirectorySetInternal(skipDirectories), ancestors, &discovered)
+		err = walkProjectDirectories(ctx, root, root, true, 0, maxDepth, followSymlinks, projectScanSkipDirectorySet(skipDirectories), ancestors, &discovered)
 	}
 	if err != nil {
 		// The process runs as the PUID/PGID runtime user (default 65532) even
@@ -105,7 +105,7 @@ func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks
 	return discovered, nil
 }
 
-func walkProjectDirectoriesInternal(ctx context.Context,
+func walkProjectDirectories(ctx context.Context,
 	root,
 	path string,
 	isRoot bool,
@@ -123,7 +123,7 @@ func walkProjectDirectoriesInternal(ctx context.Context,
 		}
 	}
 
-	identity, err := ResolveDirectoryIdentityInternal(path)
+	identity, err := ResolveDirectoryIdentity(path)
 	if err != nil {
 		if !isRoot && errors.Is(err, os.ErrPermission) {
 			slog.WarnContext(ctx, "Skipping unreadable project directory during discovery", "path", path, "error", err)
@@ -187,7 +187,7 @@ func walkProjectDirectoriesInternal(ctx context.Context,
 			continue
 		}
 
-		if walkProjectDirectoriesErr := walkProjectDirectoriesInternal(
+		if walkProjectDirectoriesErr := walkProjectDirectories(
 			ctx,
 			root,
 			childPath,
@@ -253,16 +253,16 @@ func IsFilesystemSnapshotDirName(name string) bool {
 // filesystem snapshot/trash directory name, i.e. the path points into a
 // point-in-time copy rather than a live project directory.
 func PathContainsSnapshotDirectory(relPath string) bool {
-	return pathHasSegmentInternal(relPath, IsFilesystemSnapshotDirName)
+	return pathHasSegment(relPath, IsFilesystemSnapshotDirName)
 }
 
 // PathContainsIgnoredDirectory reports whether any segment of relPath is a
 // directory that project discovery skips (see IsIgnoredProjectDirName).
 func PathContainsIgnoredDirectory(relPath string) bool {
-	return pathHasSegmentInternal(relPath, IsIgnoredProjectDirName)
+	return pathHasSegment(relPath, IsIgnoredProjectDirName)
 }
 
-func pathHasSegmentInternal(relPath string, match func(string) bool) bool {
+func pathHasSegment(relPath string, match func(string) bool) bool {
 	for segment := range strings.SplitSeq(filepath.ToSlash(relPath), "/") {
 		if match(segment) {
 			return true
@@ -331,10 +331,10 @@ func NormalizeProjectName(name string) string {
 	return kit.Ternary(normalized == "", name, normalized)
 }
 
-// ResolveDirectoryIdentityInternal stays on os.*: it resolves symlinks that
+// ResolveDirectoryIdentity stays on os.*: it resolves symlinks that
 // may point anywhere on the host to establish directory identity, which the
 // root-confined acfs API cannot do.
-func ResolveDirectoryIdentityInternal(path string) (string, error) {
+func ResolveDirectoryIdentity(path string) (string, error) {
 	resolvedPath, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -366,16 +366,16 @@ func ComposeEnvRequiresDirectorySync(composePath, overrideFileName string, envCo
 	if overrideFileName != "" {
 		allowedComposeFiles[overrideFileName] = struct{}{}
 	}
-	if entriesNeedDirectorySyncInternal(ComposeFileEntriesFromEnv(envMap), allowedComposeFiles) {
+	if entriesNeedDirectorySync(ComposeFileEntriesFromEnv(envMap), allowedComposeFiles) {
 		return true
 	}
 
 	// Single-file sync writes the synced env content to .env, so a
 	// self-reference is satisfiable; anything else never reaches the project.
-	return entriesNeedDirectorySyncInternal(ComposeEnvFileEntriesFromEnv(envMap), map[string]struct{}{EffectiveEnvFileName: {}})
+	return entriesNeedDirectorySync(ComposeEnvFileEntriesFromEnv(envMap), map[string]struct{}{EffectiveEnvFileName: {}})
 }
 
-func entriesNeedDirectorySyncInternal(entries []string, allowed map[string]struct{}) bool {
+func entriesNeedDirectorySync(entries []string, allowed map[string]struct{}) bool {
 	for _, entry := range entries {
 		// Normalize so relative prefixes like "./compose.yaml" match allowed.
 		cleaned := filepath.Clean(entry)

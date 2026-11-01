@@ -277,7 +277,12 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 	}
 
 	currentSessionID, _ := middleware.GetCurrentSessionIDFromContext(ctx)
-	err = h.authService.ChangePassword(ctx, userModel.ID, input.Body.CurrentPassword, input.Body.NewPassword, currentSessionID)
+	err = h.authService.ChangePassword(ctx, ChangePasswordRequest{
+		UserID:           userModel.ID,
+		CurrentPassword:  input.Body.CurrentPassword,
+		NewPassword:      input.Body.NewPassword,
+		CurrentSessionID: currentSessionID,
+	})
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidCredentials):

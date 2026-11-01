@@ -60,7 +60,7 @@ func TestReadUpgradeLog(t *testing.T) {
 }
 
 func TestProgressFeedRetainsFinishedRun(t *testing.T) {
-	feed := newProgressFeed()
+	feed := &progressFeed{subscribers: map[chan types.UpgradeProgressEvent]struct{}{}}
 	feed.start("v1.0.0", "v1.1.0")
 	feed.emit(types.UpgradeProgressEventStage, 0, string(UpgradeStagePulling))
 	feed.finish("pull upgrader image: denied")

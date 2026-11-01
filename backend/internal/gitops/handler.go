@@ -189,7 +189,11 @@ func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsS
 		return nil, backupErr
 	}
 
-	sync, err := h.syncService.CreateSync(ctx, input.EnvironmentID, input.Body, submitted, handlerutil.CurrentActor(ctx))
+	sync, err := h.syncService.CreateSync(ctx, input.EnvironmentID, SyncUpdate{
+		Request:   input.Body,
+		Submitted: submitted,
+		Actor:     handlerutil.CurrentActor(ctx),
+	})
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to create GitOps sync: "+err.Error())
@@ -263,7 +267,11 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 		return nil, backupErr
 	}
 
-	sync, err := h.syncService.UpdateSync(ctx, input.EnvironmentID, input.SyncID, input.Body, submitted, handlerutil.CurrentActor(ctx))
+	sync, err := h.syncService.UpdateSync(ctx, input.EnvironmentID, input.SyncID, SyncUpdate{
+		Request:   input.Body,
+		Submitted: submitted,
+		Actor:     handlerutil.CurrentActor(ctx),
+	})
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to update GitOps sync: "+err.Error())

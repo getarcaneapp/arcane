@@ -19,7 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/oidcjwk"
 )
 
-func signCompactInternal(t *testing.T, sk *mldsa.PrivateKey, alg, kid string, claims map[string]any) string {
+func signCompact(t *testing.T, sk *mldsa.PrivateKey, alg, kid string, claims map[string]any) string {
 	t.Helper()
 	header, err := json.Marshal(map[string]string{"alg": alg, "kid": kid, "typ": "JWT"})
 	require.NoError(t, err)
@@ -78,7 +78,7 @@ func TestKeySetVerifySignature(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			token := signCompactInternal(t, sk, tc.params.String(), "pq", map[string]any{
+			token := signCompact(t, sk, tc.params.String(), "pq", map[string]any{
 				"iss": srv.URL,
 				"sub": "alice",
 				"aud": "arcane",

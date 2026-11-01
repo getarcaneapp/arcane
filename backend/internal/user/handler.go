@@ -252,7 +252,7 @@ func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*
 	callerPerms, _ := middleware.PermissionsFromContext(ctx)
 	caller, _ := userctx.CurrentUserFromContext(ctx)
 	if callerPerms != nil && !callerPerms.IsGlobalAdmin() && caller != nil && caller.ID != input.UserID {
-		targetPerms, err := h.userService.ResolveUserPermissions(ctx, input.UserID)
+		targetPerms, err := h.userService.roleService.ResolvePermissions(ctx, input.UserID)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to resolve target permissions")
 		}
@@ -313,7 +313,7 @@ func (h *UserHandler) checkUpdateUserPrivileges(ctx context.Context, input *Upda
 		if input.Body.Password != "" && caller != nil && caller.ID != targetID {
 			return nil, huma.Error403Forbidden(ErrInsufficientPrivilege.Error())
 		}
-		targetPerms, err := h.userService.ResolveUserPermissions(ctx, targetID)
+		targetPerms, err := h.userService.roleService.ResolvePermissions(ctx, targetID)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to resolve target permissions")
 		}

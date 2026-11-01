@@ -23,7 +23,7 @@ func (p RemoteJSONProxy) JSON[T any](
 	path string,
 	requestBody any,
 ) (*T, error) {
-	body, err := marshalRemoteRequestBodyInternal(requestBody)
+	body, err := marshalRemoteRequestBody(requestBody)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to marshal request body: " + err.Error())
 	}
@@ -36,7 +36,7 @@ func (p RemoteJSONProxy) JSON[T any](
 	return &output, nil
 }
 
-func marshalRemoteRequestBodyInternal(requestBody any) ([]byte, error) {
+func marshalRemoteRequestBody(requestBody any) ([]byte, error) {
 	switch value := requestBody.(type) {
 	case nil:
 		return nil, nil

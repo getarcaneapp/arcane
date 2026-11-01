@@ -32,8 +32,8 @@ const (
 	goroutineLeakProfileName = "goroutineleak"
 	leakScanCacheTTL         = 30 * time.Second
 
-	// maxActorDetailRowsInternal caps the instances and failures listed per actor type.
-	maxActorDetailRowsInternal = 10
+	// maxActorDetailRows caps the instances and failures listed per actor type.
+	maxActorDetailRows = 10
 )
 
 // DiagnosticsService gathers Go runtime, memory, and garbage-collector
@@ -336,12 +336,12 @@ func (s *DiagnosticsService) collectActorTypes(db *gorm.DB) ([]types.ActorTypeIn
 		}
 	})
 	for _, row := range instances {
-		if info := byType[row.ActorType]; info != nil && len(info.Instances) < maxActorDetailRowsInternal {
+		if info := byType[row.ActorType]; info != nil && len(info.Instances) < maxActorDetailRows {
 			info.Instances = append(info.Instances, types.ActorInstance{ActorID: row.ActorID, Name: s.actors.ActorName(row.ActorID), HostID: row.HostID, ActivatedAt: time.Time(row.Activation)})
 		}
 	}
 	for _, row := range failures {
-		if info := byType[row.ActorType]; info != nil && len(info.RecentFailures) < maxActorDetailRowsInternal {
+		if info := byType[row.ActorType]; info != nil && len(info.RecentFailures) < maxActorDetailRows {
 			info.RecentFailures = append(info.RecentFailures, types.ActorJobFailure{
 				JobID: row.JobID, ActorID: row.ActorID, Name: s.actors.ActorName(row.ActorID), Method: row.JobMethod,
 				Attempts: row.Attempts, LastError: kit.FromPtr(row.LastError), FailedAt: time.Time(row.EndedAt),

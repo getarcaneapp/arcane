@@ -202,25 +202,30 @@ func findCredential(query *gorm.DB, id string) (FederatedCredential, error) {
 	return credential, nil
 }
 
-func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID, id string, req types.FederatedCredential, submitted map[string]bool) (*types.FederatedCredential, error) {
+type CredentialUpdate struct {
+	Request   types.FederatedCredential
+	Submitted map[string]bool
+}
+
+func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID, id string, change CredentialUpdate) (*types.FederatedCredential, error) {
 	credential, err := findCredential(s.db.WithContext(ctx), id)
 	if err != nil {
 		return nil, err
 	}
 
 	normalized, err := normalizeFederatedCredential(types.FederatedCredential{
-		Name:            kit.Ternary(submitted["name"], req.Name, credential.Name),
-		Description:     kit.Ternary(submitted["description"], req.Description, credential.Description),
-		Enabled:         kit.Ternary(submitted["enabled"], req.Enabled, credential.Enabled),
-		IssuerURL:       kit.Ternary(submitted["issuerUrl"], req.IssuerURL, credential.IssuerURL),
-		Audiences:       kit.Ternary(submitted["audiences"], req.Audiences, []string(credential.Audiences)),
-		SubjectClaim:    kit.Ternary(submitted["subjectClaim"], req.SubjectClaim, credential.SubjectClaim),
-		SubjectMatch:    kit.Ternary(submitted["subjectMatch"], req.SubjectMatch, credential.SubjectMatch),
-		MatchType:       kit.Ternary(submitted["matchType"], req.MatchType, credential.MatchType),
-		RoleID:          kit.Ternary(submitted["roleId"], req.RoleID, credential.RoleID),
-		EnvironmentID:   kit.Ternary(submitted["environmentId"], req.EnvironmentID, credential.EnvironmentID),
-		TokenTTLSeconds: kit.Ternary(submitted["tokenTtlSeconds"], req.TokenTTLSeconds, credential.TokenTTLSeconds),
-		ExpiresAt:       kit.Ternary(submitted["expiresAt"], req.ExpiresAt, credential.ExpiresAt),
+		Name:            kit.Ternary(change.Submitted["name"], change.Request.Name, credential.Name),
+		Description:     kit.Ternary(change.Submitted["description"], change.Request.Description, credential.Description),
+		Enabled:         kit.Ternary(change.Submitted["enabled"], change.Request.Enabled, credential.Enabled),
+		IssuerURL:       kit.Ternary(change.Submitted["issuerUrl"], change.Request.IssuerURL, credential.IssuerURL),
+		Audiences:       kit.Ternary(change.Submitted["audiences"], change.Request.Audiences, []string(credential.Audiences)),
+		SubjectClaim:    kit.Ternary(change.Submitted["subjectClaim"], change.Request.SubjectClaim, credential.SubjectClaim),
+		SubjectMatch:    kit.Ternary(change.Submitted["subjectMatch"], change.Request.SubjectMatch, credential.SubjectMatch),
+		MatchType:       kit.Ternary(change.Submitted["matchType"], change.Request.MatchType, credential.MatchType),
+		RoleID:          kit.Ternary(change.Submitted["roleId"], change.Request.RoleID, credential.RoleID),
+		EnvironmentID:   kit.Ternary(change.Submitted["environmentId"], change.Request.EnvironmentID, credential.EnvironmentID),
+		TokenTTLSeconds: kit.Ternary(change.Submitted["tokenTtlSeconds"], change.Request.TokenTTLSeconds, credential.TokenTTLSeconds),
+		ExpiresAt:       kit.Ternary(change.Submitted["expiresAt"], change.Request.ExpiresAt, credential.ExpiresAt),
 	})
 	if err != nil {
 		return nil, err

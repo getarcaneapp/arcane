@@ -15,7 +15,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/kit/normalization"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/crypto/argon2"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -236,12 +236,6 @@ func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*User, 
 	default:
 		return nil, common.ErrAmbiguousUserEmail
 	}
-}
-
-// ResolveUserPermissions returns the effective PermissionSet for the given
-// user ID, or nil when no role.RoleService is wired (RBAC disabled paths).
-func (s *UserService) ResolveUserPermissions(ctx context.Context, userID string) (*authz.PermissionSet, error) {
-	return s.roleService.ResolvePermissions(ctx, userID)
 }
 
 // checkTargetPrivilege enforces actor-vs-target privilege ordering: a

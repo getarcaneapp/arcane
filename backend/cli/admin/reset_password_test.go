@@ -69,7 +69,7 @@ func TestResetPasswordInternalResetsPasswordAndRevokesSessions(t *testing.T) {
 	secondSession, _, err := sessionService.CreateSession(ctx, adminUser.ID, time.Now().Add(time.Hour), types.SessionMeta{})
 	require.NoError(t, err)
 
-	require.NoError(t, resetPasswordInternal(ctx, db, "arcane", "new-password", validation.PasswordPolicyBasic))
+	require.NoError(t, resetPassword(ctx, db, "arcane", "new-password", validation.PasswordPolicyBasic))
 
 	updatedUser, err := userService.GetUserByID(ctx, adminUser.ID)
 	require.NoError(t, err)
@@ -101,7 +101,7 @@ func TestResetPasswordInternalRollsBackWhenSessionRevocationFails(t *testing.T) 
 		END;
 	`).Error)
 
-	err = resetPasswordInternal(ctx, db, adminUser.Username, "new-password", validation.PasswordPolicyBasic)
+	err = resetPassword(ctx, db, adminUser.Username, "new-password", validation.PasswordPolicyBasic)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "forced session revocation failure")
 
@@ -128,7 +128,7 @@ func TestResetPasswordInternalRejectsNonAdmin(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = resetPasswordInternal(ctx, db, nonAdmin.Username, "new-password", validation.PasswordPolicyBasic)
+	err = resetPassword(ctx, db, nonAdmin.Username, "new-password", validation.PasswordPolicyBasic)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "effective global administrator")
 
@@ -139,12 +139,12 @@ func TestResetPasswordInternalRejectsNonAdmin(t *testing.T) {
 }
 
 func TestEnsurePasswordResetEnabled(t *testing.T) {
-	require.ErrorContains(t, ensurePasswordResetEnabledInternal(&config.Config{}), "ARCANE_ALLOW_CLI_PASSWORD_RESET=true")
-	require.NoError(t, ensurePasswordResetEnabledInternal(&config.Config{AllowCLIPasswordReset: true}))
+	require.ErrorContains(t, ensurePasswordResetEnabled(&config.Config{}), "ARCANE_ALLOW_CLI_PASSWORD_RESET=true")
+	require.NoError(t, ensurePasswordResetEnabled(&config.Config{AllowCLIPasswordReset: true}))
 }
 
 func TestValidatePasswordPair(t *testing.T) {
-	require.ErrorContains(t, validatePasswordPairInternal("short", "short", validation.PasswordPolicyBasic), "at least 8")
-	require.ErrorContains(t, validatePasswordPairInternal("new-password", "different", validation.PasswordPolicyBasic), "do not match")
-	require.NoError(t, validatePasswordPairInternal("new-password", "new-password", validation.PasswordPolicyBasic))
+	require.ErrorContains(t, validatePasswordPair("short", "short", validation.PasswordPolicyBasic), "at least 8")
+	require.ErrorContains(t, validatePasswordPair("new-password", "different", validation.PasswordPolicyBasic), "do not match")
+	require.NoError(t, validatePasswordPair("new-password", "new-password", validation.PasswordPolicyBasic))
 }

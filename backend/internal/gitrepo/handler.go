@@ -130,7 +130,11 @@ func (h *GitRepositoryHandler) UpdateRepository(ctx context.Context, input *Upda
 		return nil, huma.Error400BadRequest("invalid request body", err)
 	}
 
-	repo, err := h.repoService.UpdateRepository(ctx, input.ID, input.Body, submitted, handlerutil.CurrentActor(ctx))
+	repo, err := h.repoService.UpdateRepository(ctx, input.ID, RepositoryUpdate{
+		Request:   input.Body,
+		Submitted: submitted,
+		Actor:     handlerutil.CurrentActor(ctx),
+	})
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		if apiErr.Code == common.APIErrorCodeValidationError {

@@ -61,5 +61,5 @@ func SendMatrix(ctx context.Context, config MatrixConfig, message string) error 
 		return fmt.Errorf("failed to build shoutrrr Matrix URL: %w", err)
 	}
 
-	return sendShoutrrrInternal("Matrix", shoutrrrURL, message, &shoutrrrTypes.Params{})
+	return sendShoutrrr("Matrix", shoutrrrURL, message, &shoutrrrTypes.Params{})
 }

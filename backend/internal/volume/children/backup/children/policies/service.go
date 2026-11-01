@@ -210,7 +210,13 @@ func (s *Service) runScheduledBackup(ctx context.Context, t flow.Task) (any, err
 		remoteErr = backup.CheckScheduledRemote(ctx, s.deps.DB, s.deps.S3Destinations, "volume_backups", policy.S3DestinationID, root)
 	}
 	remoteDisabled, disableErr := backup.DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
-		return backup.DisableStoredRemote(ctx, s.deps.DB, &VolumeBackupPolicy{}, policy.ID, policy.S3DestinationID, policy.LocalEnabled, field)
+		return backup.DisableStoredRemote(ctx, s.deps.DB, backup.DisableRemoteRequest{
+			Model:         &VolumeBackupPolicy{},
+			ID:            policy.ID,
+			DestinationID: policy.S3DestinationID,
+			LocalEnabled:  policy.LocalEnabled,
+			Field:         field,
+		})
 	})
 	if disableErr != nil {
 		return nil, disableErr

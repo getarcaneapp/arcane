@@ -184,7 +184,7 @@ func NewService(
 		registryService:       registryService,
 		resolveRuntimeOptions: resolveRuntimeOptions,
 		keepUpgrader:          keepUpgrader,
-		progress:              newProgressFeed(),
+		progress:              &progressFeed{subscribers: map[chan types.UpgradeProgressEvent]struct{}{}},
 		jobHub:                &agg.Hub[types.UpgradeJob]{},
 		jobChanged:            make(chan struct{}, 1),
 		agentSlotFreed:        make(chan struct{}),
@@ -226,12 +226,6 @@ func (s *Service) CanUpgrade(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("arcane runs from the Quadlet unit %s; update it with podman auto-update instead", unit)
 	}
 	return true, nil
-}
-
-// AlreadyOnNewestImage reports whether the version check is confident this environment runs the newest image,
-// so a triggered upgrade will find nothing to swap in and no restart will follow.
-func (s *Service) AlreadyOnNewestImage(ctx context.Context) bool {
-	return s.versionService.GetAppVersionInfo(ctx).AlreadyOnNewest()
 }
 
 // TriggerUpgradeViaCLI runs the upgrade from a separate upgrader container and returns its ID.
@@ -1174,7 +1168,7 @@ func (s *Service) upgradeManagerTask(ctx context.Context, t flow.Task) (any, err
 
 func (s *Service) triggerManagerUpgrade(ctx context.Context, job *UpgradeJob, manager int) {
 	// Only a manager already on the newest image makes a no-op upgrader run expected; checked after the fact it proves nothing.
-	wasAlreadyNewest := s.AlreadyOnNewestImage(ctx)
+	wasAlreadyNewest := s.versionService.GetAppVersionInfo(ctx).AlreadyOnNewest()
 	_, events, _, unsubscribe := s.progress.subscribe()
 	defer unsubscribe()
 	sink := &progressSink{service: s, job: job, index: manager}

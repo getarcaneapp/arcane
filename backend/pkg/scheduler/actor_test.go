@@ -21,7 +21,7 @@ import (
 	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
 )
 
-var schedulerTestRuntimesInternal sync.Map
+var schedulerTestRuntimes sync.Map
 
 func newTestAdmissionGate(t *testing.T) *runs.Admission {
 	t.Helper()
@@ -71,10 +71,10 @@ func newJobSchedulerForTest(t testing.TB, ctx context.Context, location *time.Lo
 	created, err := NewJobScheduler(ctx, coordinator, location)
 	require.NoError(t, err)
 	scheduler = created.(*jobSchedulerInternal)
-	schedulerTestRuntimesInternal.Store(scheduler, runtime)
+	schedulerTestRuntimes.Store(scheduler, runtime)
 	t.Cleanup(func() {
 		require.NoError(t, scheduler.Stop(context.WithoutCancel(t.Context())))
-		schedulerTestRuntimesInternal.Delete(scheduler)
+		schedulerTestRuntimes.Delete(scheduler)
 	})
 	return scheduler
 }
@@ -86,7 +86,7 @@ func stopJobSchedulerForTest(ctx context.Context, scheduler *jobSchedulerInterna
 	if err := scheduler.coordinator.Stop(ctx); err != nil {
 		return err
 	}
-	runtime, _ := schedulerTestRuntimesInternal.Load(scheduler)
+	runtime, _ := schedulerTestRuntimes.Load(scheduler)
 	return runtime.(*francis.Runtime).Stop(ctx)
 }
 

@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSendGotifyDeliveryInternal(t *testing.T) {
+func TestSendGotifyDelivery(t *testing.T) {
 	for _, status := range []int{http.StatusOK, http.StatusInternalServerError} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			requests := make(chan string, 1)
@@ -40,7 +40,7 @@ func TestSendGotifyDeliveryInternal(t *testing.T) {
 	}
 }
 
-func TestSendShoutrrrConstructionErrorInternal(t *testing.T) {
-	err := sendShoutrrrInternal("Slack", "unsupported-provider://localhost", "message", nil)
+func TestSendShoutrrrConstructionError(t *testing.T) {
+	err := sendShoutrrr("Slack", "unsupported-provider://localhost", "message", nil)
 	require.ErrorContains(t, err, "failed to create shoutrrr Slack sender")
 }

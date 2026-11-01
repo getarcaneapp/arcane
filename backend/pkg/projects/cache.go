@@ -13,18 +13,18 @@ import (
 	"github.com/samber/hot"
 )
 
-type composeCacheInternal[T any] struct {
-	entries *hot.HotCache[string, composeCacheEntryInternal[T]]
+type composeCache[T any] struct {
+	entries *hot.HotCache[string, composeCacheEntry[T]]
 	clone   func(T) T
 }
 
-type composeCacheEntryInternal[T any] struct {
+type composeCacheEntry[T any] struct {
 	value       T
-	stamps      map[string]composeCacheStampInternal
+	stamps      map[string]composeCacheStamp
 	fingerprint string
 }
 
-type composeCacheStampInternal struct {
+type composeCacheStamp struct {
 	modTime time.Time
 	size    int64
 }
@@ -32,7 +32,7 @@ type composeCacheStampInternal struct {
 // NewComposeCache caches Compose-derived values and their file dependencies.
 // clone, when supplied, isolates stored values from mutations by callers.
 func NewComposeCache[T any](capacity int, clone func(T) T) types.ComposeCache[T] {
-	return &composeCacheInternal[T]{entries: hot.NewHotCache[string, composeCacheEntryInternal[T]](hot.LRU, capacity).Build(), clone: clone}
+	return &composeCache[T]{entries: hot.NewHotCache[string, composeCacheEntry[T]](hot.LRU, capacity).Build(), clone: clone}
 }
 
 // NewParsedComposeCache keeps operation-local models separate from cached state.
@@ -48,7 +48,7 @@ func cloneComposeProject(project *composetypes.Project) *composetypes.Project {
 	return project.WithServicesDisabled()
 }
 
-func (c *composeCacheInternal[T]) Get(projectID, fingerprint string) (T, bool) {
+func (c *composeCache[T]) Get(projectID, fingerprint string) (T, bool) {
 	entry, found := c.entries.Peek(projectID)
 	if found && entry.fingerprint == fingerprint && validComposeCacheEntry(entry.stamps) {
 		if c.clone != nil {
@@ -60,11 +60,11 @@ func (c *composeCacheInternal[T]) Get(projectID, fingerprint string) (T, bool) {
 	return zero, false
 }
 
-func (c *composeCacheInternal[T]) Set(projectID, fingerprint, projectPath, projectsDirectory, composePath string, composeFiles, envFiles []string, loadedAt time.Time, value T) error {
+func (c *composeCache[T]) Set(projectID, fingerprint, projectPath, projectsDirectory, composePath string, composeFiles, envFiles []string, loadedAt time.Time, value T) error {
 	if strings.TrimSpace(projectID) == "" {
 		return nil
 	}
-	stamps := make(map[string]composeCacheStampInternal)
+	stamps := make(map[string]composeCacheStamp)
 	for _, path := range append([]string{composePath}, composeFiles...) {
 		if path == "" {
 			continue
@@ -76,7 +76,7 @@ func (c *composeCacheInternal[T]) Set(projectID, fingerprint, projectPath, proje
 		if !info.ModTime().Before(loadedAt) {
 			return nil
 		}
-		stamps[path] = composeCacheStampInternal{modTime: info.ModTime(), size: info.Size()}
+		stamps[path] = composeCacheStamp{modTime: info.ModTime(), size: info.Size()}
 	}
 	dependencies := append([]string{filepath.Join(projectPath, EffectiveEnvFileName)}, envFiles...)
 	if projectsDirectory != "" {
@@ -92,26 +92,26 @@ func (c *composeCacheInternal[T]) Set(projectID, fingerprint, projectPath, proje
 			if !info.ModTime().Before(loadedAt) {
 				return nil
 			}
-			stamps[path] = composeCacheStampInternal{modTime: info.ModTime(), size: info.Size()}
+			stamps[path] = composeCacheStamp{modTime: info.ModTime(), size: info.Size()}
 			continue
 		}
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("stat compose dependency %s: %w", path, err)
 		}
-		stamps[path] = composeCacheStampInternal{}
+		stamps[path] = composeCacheStamp{}
 	}
 	if c.clone != nil {
 		value = c.clone(value)
 	}
-	c.entries.Set(projectID, composeCacheEntryInternal[T]{fingerprint: fingerprint, stamps: stamps, value: value})
+	c.entries.Set(projectID, composeCacheEntry[T]{fingerprint: fingerprint, stamps: stamps, value: value})
 	return nil
 }
 
-func (c *composeCacheInternal[T]) Invalidate(projectID string) {
+func (c *composeCache[T]) Invalidate(projectID string) {
 	c.entries.Delete(projectID)
 }
 
-func validComposeCacheEntry(stamps map[string]composeCacheStampInternal) bool {
+func validComposeCacheEntry(stamps map[string]composeCacheStamp) bool {
 	for path, stamp := range stamps {
 		info, err := os.Stat(path)
 		if err != nil {
@@ -155,7 +155,14 @@ func LoadCachedComposeProject(ctx context.Context,
 	}
 	dependencies := types.ComposeDependencies{}
 	loadedAt := time.Now()
-	model, err := LoadComposeProject(ctx, composePath, projectName, projectsDirectory, autoInject, pathMapper, nil, nil, false, &dependencies, nil, nil)
+	model, err := LoadComposeProject(ctx, LoadOptions{
+		ComposeFile:       composePath,
+		ProjectName:       projectName,
+		ProjectsDirectory: projectsDirectory,
+		AutoInjectEnv:     autoInject,
+		PathMapper:        pathMapper,
+		Dependencies:      &dependencies,
+	})
 	if err != nil {
 		return nil, err
 	}

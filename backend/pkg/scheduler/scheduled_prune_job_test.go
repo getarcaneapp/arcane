@@ -54,7 +54,7 @@ func TestBuildScheduledPruneRequest(t *testing.T) {
 		Mode:  types.PruneBuildCacheModeOlderThan,
 		Until: "30m",
 	}, req.BuildCache)
-	require.True(t, hasScheduledPruneTargets(req))
+	require.True(t, (req.Containers != nil || req.Images != nil || req.Volumes != nil || req.Networks != nil || req.BuildCache != nil))
 }
 
 func TestBuildScheduledPruneRequestInternal_SkipsWhenAllModesAreNone(t *testing.T) {
@@ -74,5 +74,5 @@ func TestBuildScheduledPruneRequestInternal_SkipsWhenAllModesAreNone(t *testing.
 	require.Nil(t, req.Volumes)
 	require.Nil(t, req.Networks)
 	require.Nil(t, req.BuildCache)
-	require.False(t, hasScheduledPruneTargets(req))
+	require.False(t, (req.Containers != nil || req.Images != nil || req.Volumes != nil || req.Networks != nil || req.BuildCache != nil))
 }

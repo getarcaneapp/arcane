@@ -213,7 +213,11 @@ func (h *ProjectHandler) UpdateProjectTag(ctx context.Context, input *UpdateProj
 		Metadata:       database.JSON{"action": "update_tags", "tag": input.Body.Name, "attached": input.Body.Attached},
 	}, func(runtimeCtx context.Context) error {
 		var updateErr error
-		projectTags, updateErr = h.projectService.UpdateProjectTag(runtimeCtx, input.ProjectID, input.Body.Name, input.Body.Color, input.Body.Attached, *user)
+		projectTags, updateErr = h.projectService.UpdateProjectTag(runtimeCtx, input.ProjectID, ProjectTagUpdate{
+			Name:     input.Body.Name,
+			Color:    input.Body.Color,
+			Attached: input.Body.Attached,
+		}, *user)
 		return updateErr
 	})
 	if err != nil {
@@ -274,20 +278,18 @@ func (h *ProjectHandler) streamProjectOperation(environmentID, projectID string,
 
 			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()
-			activityID, runtimeCtx := activitylib.StartHandlerActivity(
-				runtimeCtx,
-				h.activityService,
-				environmentID,
-				cfg.ActivityType,
-				"project",
-				projectID,
-				h.projectActivityName(runtimeCtx, projectID),
-				user,
-				cfg.Step,
-				cfg.StartMessage,
-				kit.Ternary(cfg.Metadata == nil, database.JSON{"projectID": projectID}, cfg.Metadata),
-				true,
-			)
+			activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+				EnvironmentID: environmentID,
+				Type:          cfg.ActivityType,
+				ResourceType:  "project",
+				ResourceID:    projectID,
+				ResourceName:  h.projectActivityName(runtimeCtx, projectID),
+				User:          user,
+				Step:          cfg.Step,
+				Message:       cfg.StartMessage,
+				Metadata:      kit.Ternary(cfg.Metadata == nil, database.JSON{"projectID": projectID}, cfg.Metadata),
+				Queue:         true,
+			})
 			activitylib.WriteStartedLine(rawWriter, activityID)
 			if f, ok := rawWriter.(http.Flusher); ok {
 				f.Flush()
@@ -577,7 +579,10 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 			"removeVolumes": kit.FromPtr(input.Body).RemoveVolumes,
 		},
 		Action: func(runtimeCtx context.Context, projectID string, user types.Actor) error {
-			return h.projectService.DestroyProject(runtimeCtx, projectID, mo.PointerToOption(kit.FromPtr(input.Body).RemoveFiles).OrElse(true), kit.FromPtr(input.Body).RemoveVolumes, user)
+			return h.projectService.DestroyProject(runtimeCtx, projectID, DestroyOptions{
+				RemoveFiles:   mo.PointerToOption(kit.FromPtr(input.Body).RemoveFiles).OrElse(true),
+				RemoveVolumes: kit.FromPtr(input.Body).RemoveVolumes,
+			}, user)
 		},
 		Error: func(err error) error {
 			return huma.NewError(common.ToAPIError(err).HTTPStatus(), "Failed to destroy project: "+err.Error())
@@ -716,20 +721,18 @@ func (h *ProjectHandler) runProjectActivityAction(ctx context.Context, environme
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivity(
-		runtimeCtx,
-		h.activityService,
-		environmentID,
-		cfg.ActivityType,
-		"project",
-		projectID,
-		h.projectActivityName(runtimeCtx, projectID),
-		user,
-		cfg.Step,
-		cfg.StartMessage,
-		kit.Ternary(cfg.Metadata == nil, database.JSON{"projectID": projectID}, cfg.Metadata),
-		cfg.Queue,
-	)
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID: environmentID,
+		Type:          cfg.ActivityType,
+		ResourceType:  "project",
+		ResourceID:    projectID,
+		ResourceName:  h.projectActivityName(runtimeCtx, projectID),
+		User:          user,
+		Step:          cfg.Step,
+		Message:       cfg.StartMessage,
+		Metadata:      kit.Ternary(cfg.Metadata == nil, database.JSON{"projectID": projectID}, cfg.Metadata),
+		Queue:         cfg.Queue,
+	})
 	if cfg.Queue {
 		activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, environmentID)
 	}

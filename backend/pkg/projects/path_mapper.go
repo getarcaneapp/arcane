@@ -94,7 +94,7 @@ func NewPathMapperForConfiguredDirectory(ctx context.Context, configuredPath, de
 
 	if strings.TrimSpace(hostDir) != "" {
 		pathMapper := NewPathMapper(containerDir, filepath.Clean(strings.TrimSpace(hostDir)))
-		return kit.Ternary(pathMapper.IsNonMatchingMount(), pathMapper, nil)
+		return kit.Ternary(pathMapper.isNonMatching, pathMapper, nil)
 	}
 
 	mounts, err := GetCurrentContainerMounts(ctx, dockerClient)
@@ -103,7 +103,7 @@ func NewPathMapperForConfiguredDirectory(ctx context.Context, configuredPath, de
 	}
 
 	pathMapper := NewPathMapperFromMounts(mounts)
-	return kit.Ternary(pathMapper.IsNonMatchingMount(), pathMapper, nil)
+	return kit.Ternary(pathMapper.isNonMatching, pathMapper, nil)
 }
 
 // ResolveHostPath returns the host-side path for containerPath by selecting the
@@ -209,7 +209,7 @@ func (pm *PathMapper) ContainerToHost(containerPath string) (string, bool, error
 // File-backed configs and secrets are translated only when the Docker host,
 // rather than Arcane itself, will read those files.
 func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, translateFileResources bool) error {
-	if !pm.IsNonMatchingMount() {
+	if !pm.isNonMatching {
 		return nil // No translation needed
 	}
 
@@ -305,17 +305,6 @@ func bindVolumeDevice(volume composetypes.VolumeConfig) (string, bool) {
 	return device, device != ""
 }
 
-func (pm *PathMapper) IsNonMatchingMount() bool {
-	return pm.isNonMatching
-}
-
-// VolumeSourceKey identifies a service bind mount across two loads of the same
-// Compose input. Bind targets are unique per service, so the target is a stable
-// key even though the source is exactly what differs between the loads.
-func VolumeSourceKey(service, target string) string {
-	return "volume:" + service + "\x00" + filepath.Clean(target)
-}
-
 // RemapEscapedRelativeSources rewrites daemon-side paths that compose-go
 // resolved against the container-side project directory but that
 // TranslateVolumeSources could not map, because they escaped every mounted
@@ -405,7 +394,7 @@ func remapTargets(project *composetypes.Project, includeFileResources bool) []re
 			targets = append(targets, remapTarget{
 				kind:    "service_volume",
 				name:    name,
-				key:     VolumeSourceKey(name, volume.Target),
+				key:     ("volume:" + name + "\x00" + filepath.Clean(volume.Target)),
 				current: volume.Source,
 				apply:   func(hostPath string) { volume.Source = hostPath },
 			})

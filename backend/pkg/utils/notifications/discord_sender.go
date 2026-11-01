@@ -35,5 +35,5 @@ func SendDiscord(ctx context.Context, config DiscordConfig, message string) erro
 		return fmt.Errorf("failed to build shoutrrr Discord URL: %w", err)
 	}
 
-	return sendShoutrrrInternal("Discord", shoutrrrURL, message, nil)
+	return sendShoutrrr("Discord", shoutrrrURL, message, nil)
 }

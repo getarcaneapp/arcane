@@ -34,7 +34,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackExplainsPreservedTar
 	}))
 	t.Cleanup(server.Close)
 
-	migration := &dockerProjectVolumeRenameMigrationInternal{
+	migration := &dockerProjectVolumeRenameMigration{
 		dockerClient: newTestDockerClient(t, server),
 		createdNew: []types.VolumeRenameEntry{
 			{OldName: "nginx_data", NewName: "web_data"},

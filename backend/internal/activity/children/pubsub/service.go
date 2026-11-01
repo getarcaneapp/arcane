@@ -77,13 +77,9 @@ func NewService(changes *concurrency.Signal[string]) *Service {
 	}
 }
 
-func isCoalescable(event types.ActivityStreamEvent) bool {
-	return event.Type == "activity" && event.ActivityID != ""
-}
-
 func (sub *subscriber) enqueue(event types.ActivityStreamEvent) {
 	sub.mu.Lock()
-	if isCoalescable(event) {
+	if event.Type == "activity" && event.ActivityID != "" {
 		if pending, ok := sub.pendingActivity[event.ActivityID]; ok {
 			pending.event = event
 			sub.mu.Unlock()
@@ -97,7 +93,7 @@ func (sub *subscriber) enqueue(event types.ActivityStreamEvent) {
 	}
 	entry := &pendingStreamEvent{event: event}
 	sub.queue = append(sub.queue, entry)
-	if isCoalescable(event) {
+	if event.Type == "activity" && event.ActivityID != "" {
 		sub.pendingActivity[event.ActivityID] = entry
 	}
 	sub.mu.Unlock()
@@ -110,7 +106,7 @@ func (sub *subscriber) enqueue(event types.ActivityStreamEvent) {
 
 func (sub *subscriber) dropOldestMessageLocked() {
 	for i, entry := range sub.queue {
-		if isCoalescable(entry.event) {
+		if entry.event.Type == "activity" && entry.event.ActivityID != "" {
 			continue
 		}
 		sub.queue = append(sub.queue[:i], sub.queue[i+1:]...)
@@ -133,7 +129,7 @@ func (sub *subscriber) next() mo.Option[types.ActivityStreamEvent] {
 	entry := sub.queue[0]
 	sub.queue = sub.queue[1:]
 	event := entry.event
-	if isCoalescable(event) {
+	if event.Type == "activity" && event.ActivityID != "" {
 		if sub.pendingActivity[event.ActivityID] == entry {
 			delete(sub.pendingActivity, event.ActivityID)
 		}

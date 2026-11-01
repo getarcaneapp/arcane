@@ -17,27 +17,27 @@ const (
 	// TopPackageInsightLimit caps the packages listed in scan insights.
 	TopPackageInsightLimit = 5
 
-	threatFactorNoDataInternal = 0.7
-	usageFactorStoppedInternal = 0.8
-	usageFactorUnusedInternal  = 0.5
-	// concentrationPenaltyInternal is the most the fixable finding count adds to an image; it saturates over concentrationScaleInternal findings.
-	concentrationPenaltyInternal = 8
-	concentrationScaleInternal   = 40
+	threatFactorNoData = 0.7
+	usageFactorStopped = 0.8
+	usageFactorUnused  = 0.5
+	// concentrationPenalty is the most the fixable finding count adds to an image; it saturates over concentrationScale findings.
+	concentrationPenalty = 8
+	concentrationScale   = 40
 	// exposureWeight*Internal set how much a scanned image counts in the environment average; unused and unknown images count once.
-	exposureWeightRunningInternal = 3
-	exposureWeightStoppedInternal = 2
-	// peakShareInternal is how far the environment score moves from the image average toward the riskiest image.
-	peakShareInternal = 0.6
+	exposureWeightRunning = 3
+	exposureWeightStopped = 2
+	// peakShare is how far the environment score moves from the image average toward the riskiest image.
+	peakShare = 0.6
 	// exploitedFloor*Internal set the lowest environment score while fixable known-exploited findings are running:
 	// the base for one image, a step per additional image, a bump once any is past its KEV due date, and a cap.
-	exploitedFloorBaseInternal     = 70
-	exploitedFloorPerImageInternal = 4
-	exploitedFloorOverdueInternal  = 10
-	exploitedFloorMaxInternal      = 95
+	exploitedFloorBase     = 70
+	exploitedFloorPerImage = 4
+	exploitedFloorOverdue  = 10
+	exploitedFloorMax      = 95
 )
 
-// rankWeightsInternal is the share of each of an image's worst fixable findings that enters its score, worst first.
-var rankWeightsInternal = [...]float64{0.70, 0.15, 0.05, 0.02}
+// rankWeights is the share of each of an image's worst fixable findings that enters its score, worst first.
+var rankWeights = [...]float64{0.70, 0.15, 0.05, 0.02}
 
 // ThreatIntel is the exploitation evidence known for one CVE.
 type ThreatIntel struct {
@@ -120,27 +120,22 @@ func SeveritySummary(vulns []types.Vulnerability) *types.VulnerabilitySeveritySu
 	return summary
 }
 
-// IsCVE reports whether an advisory ID can carry KEV/EPSS data; GHSA, DLA, DSA and similar IDs never do.
-func IsCVE(vulnerabilityID string) bool {
-	return strings.HasPrefix(strings.ToUpper(vulnerabilityID), "CVE-")
-}
-
 // FindingPriority maps a 0-10 severity onto a 0-100 patch priority using exploitation evidence and container usage.
 // A known-exploited finding takes the maximum rating regardless of CVSS, as RS³ does for threats seen in the wild.
 func FindingPriority(base float64, intel ThreatIntel, exposure types.ImageExposure) float64 {
-	threat := threatFactorNoDataInternal
+	threat := threatFactorNoData
 	switch {
 	case intel.KnownExploited:
 		base, threat = 10, 1
 	case intel.EPSS != nil:
-		threat = threatFactorNoDataInternal + (1-threatFactorNoDataInternal)*math.Sqrt(*intel.EPSS)
+		threat = threatFactorNoData + (1-threatFactorNoData)*math.Sqrt(*intel.EPSS)
 	}
 	usage := 1.0
 	switch exposure {
 	case types.ImageExposureStopped:
-		usage = usageFactorStoppedInternal
+		usage = usageFactorStopped
 	case types.ImageExposureUnused:
-		usage = usageFactorUnusedInternal
+		usage = usageFactorUnused
 	case types.ImageExposureRunning, types.ImageExposureUnknown:
 	}
 	return min(100, 10*base*threat*usage)
@@ -163,7 +158,7 @@ type RiskScore struct {
 // An unrated non-CVE advisory is left out entirely: it has no CVSS to score and no rating to wait for.
 func (r *RiskScore) AddFinding(vulnerabilityID string, fixable bool, base float64, intel ThreatIntel, exposure types.ImageExposure) float64 {
 	priority := FindingPriority(base, intel, exposure)
-	if !fixable || (priority <= 0 && !IsCVE(vulnerabilityID)) {
+	if !fixable || (priority <= 0 && !strings.HasPrefix(strings.ToUpper(vulnerabilityID), "CVE-")) {
 		return priority
 	}
 	status := kit.Ternary(priority <= 0, types.VulnerabilityScoreStatusUnavailable, types.VulnerabilityScoreStatusComplete)
@@ -182,9 +177,9 @@ func (r *RiskScore) AddImage(imageID string, image *RiskScore, exposure types.Im
 	weight := 1.0
 	switch exposure {
 	case types.ImageExposureRunning:
-		weight = exposureWeightRunningInternal
+		weight = exposureWeightRunning
 	case types.ImageExposureStopped:
-		weight = exposureWeightStoppedInternal
+		weight = exposureWeightStopped
 	case types.ImageExposureUnused, types.ImageExposureUnknown:
 	}
 	score, priority := image.ImageScore()
@@ -225,11 +220,11 @@ func (r *RiskScore) ImageScore() (float64, types.VulnerabilityPatchPriority) {
 	values := slices.Sorted(maps.Values(r.scores))
 	slices.Reverse(values)
 	total := 0.0
-	for i, score := range values[:min(len(values), len(rankWeightsInternal))] {
-		total += rankWeightsInternal[i] * score
+	for i, score := range values[:min(len(values), len(rankWeights))] {
+		total += rankWeights[i] * score
 	}
 	if len(values) > 0 {
-		total += concentrationPenaltyInternal * (1 - math.Exp(-float64(len(values))/concentrationScaleInternal))
+		total += concentrationPenalty * (1 - math.Exp(-float64(len(values))/concentrationScale))
 	}
 	return total, r.result(total)
 }
@@ -239,13 +234,13 @@ func (r *RiskScore) ImageScore() (float64, types.VulnerabilityPatchPriority) {
 // known-exploited floor that rises with each running image carrying a fixable KEV and once any is overdue.
 func (r *RiskScore) EnvironmentScore() (float64, types.VulnerabilityPatchPriority) {
 	basis := r.Basis()
-	total := basis.Score + peakShareInternal*max(0, basis.Peak-basis.Score)
+	total := basis.Score + peakShare*max(0, basis.Peak-basis.Score)
 	if basis.ExploitedRunningImages > 0 {
-		floor := exploitedFloorBaseInternal + exploitedFloorPerImageInternal*float64(basis.ExploitedRunningImages-1)
+		floor := exploitedFloorBase + exploitedFloorPerImage*float64(basis.ExploitedRunningImages-1)
 		if basis.OverdueExploitedRunningImages > 0 {
-			floor += exploitedFloorOverdueInternal
+			floor += exploitedFloorOverdue
 		}
-		total = max(total, min(floor, exploitedFloorMaxInternal))
+		total = max(total, min(floor, exploitedFloorMax))
 	}
 	return total, r.result(total)
 }

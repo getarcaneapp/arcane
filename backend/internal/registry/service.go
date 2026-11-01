@@ -24,7 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	dockerregistry "github.com/moby/moby/api/types/registry"
@@ -32,7 +32,7 @@ import (
 	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.getarcane.app/kit/normalization"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"go.getarcane.app/updater/digest"
 	"go.getarcane.app/updater/refs"
@@ -188,7 +188,7 @@ func NewContainerRegistryService(
 				}
 			},
 			func(ctx context.Context) (context.Context, context.CancelFunc) {
-				return service.tagLookupContext(ctx)
+				return context.WithTimeout(ctx, timeouts.GetDuration(service.settingsService.GetSettingsConfig().RegistryTagTimeout.AsInt(), timeouts.DefaultRegistryTags))
 			},
 			distributionHTTPClient.Transport,
 		),
@@ -841,7 +841,7 @@ func (s *ContainerRegistryService) InspectImageDigest(
 		if daemonErr == nil {
 			return result, nil
 		}
-		if isRateLimitError(daemonErr) {
+		if daemonErr != nil && IsRateLimitErrorString(daemonErr.Error()) {
 			slog.DebugContext(ctx, "rate limited by registry", "registry", parts.RegistryHost, "imageRef", parts.NormalizedRef)
 			return nil, backoff.Permanent(daemonErr)
 		}
@@ -882,7 +882,7 @@ func (s *ContainerRegistryService) InspectImageDigest(
 		if fallbackErr == nil {
 			return fallbackResult, nil
 		}
-		if isRateLimitError(fallbackErr) {
+		if fallbackErr != nil && IsRateLimitErrorString(fallbackErr.Error()) {
 			slog.DebugContext(ctx, "rate limited by registry on fallback", "registry", parts.RegistryHost, "imageRef", parts.NormalizedRef)
 			return nil, backoff.Permanent(fallbackErr)
 		}
@@ -928,7 +928,7 @@ func classifyDigestError(err error) error {
 	case isDNSErr && dnsErr.IsNotFound:
 		// A registry host that does not resolve is a bad reference, not an outage worth retrying.
 		return err
-	case isRateLimitError(err), errdefs.IsUnavailable(err), isNetErr,
+	case (err != nil && IsRateLimitErrorString(err.Error())), errdefs.IsUnavailable(err), isNetErr,
 		strings.Contains(strings.ToLower(err.Error()), "connection refused"), isTransport && transportErr.StatusCode >= http.StatusInternalServerError:
 		return common.Classify(common.ErrUnavailable, err)
 	case errors.Is(err, context.DeadlineExceeded), errdefs.IsDeadlineExceeded(err):
@@ -1178,10 +1178,6 @@ func normalizeRegistryServerAddress(registryURL string) string {
 	)
 }
 
-func isRateLimitError(err error) bool {
-	return err != nil && IsRateLimitErrorString(err.Error())
-}
-
 func IsRateLimitErrorString(msg string) bool {
 	return slices.ContainsFunc([]string{"toomanyrequests", "rate limit", "too many requests", "status: 429", "status 429", "retry-after"}, func(indicator string) bool {
 		return strings.Contains(strings.ToLower(msg), indicator)
@@ -1203,7 +1199,7 @@ func (s *ContainerRegistryService) ListImageTags(ctx context.Context, imageRef s
 	if err != nil {
 		return nil, err
 	}
-	lookupCtx, cancel := s.tagLookupContext(ctx)
+	lookupCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTagTimeout.AsInt(), timeouts.DefaultRegistryTags))
 	defer cancel()
 
 	tags, _, err := registryOperationWithCredentials(lookupCtx, s, parts.RegistryHost, "registry tag listing of "+parts.NormalizedRef, externalCreds,
@@ -1221,11 +1217,6 @@ func (s *ContainerRegistryService) ListImageTags(ctx context.Context, imageRef s
 			})
 		})
 	return tags, err
-}
-
-// tagLookupContext bounds tag and manifest walks by the configured registry tag timeout.
-func (s *ContainerRegistryService) tagLookupContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTagTimeout.AsInt(), timeouts.DefaultRegistryTags))
 }
 
 // GetOrRefreshECRToken returns a valid ECR auth token, reusing the encrypted cached one within its 12-hour window.

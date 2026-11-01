@@ -92,12 +92,6 @@ func UlimitsFromCompose(ulimits map[string]*composetypes.UlimitsConfig) map[stri
 	return kit.Ternary(len(out) == 0, nil, out)
 }
 
-// MergeBuildTags combines a primary image tag with compose tags, trimming blanks
-// and de-duplicating while preserving order (primary first).
-func MergeBuildTags(primaryImage string, composeTags []string) []string {
-	return kit.Unique(kit.TrimNonEmpty(append([]string{primaryImage}, composeTags...)))
-}
-
 // BuildPlatformsFromCompose returns the build platforms for a service, falling
 // back to the service platform when no build platforms are declared.
 func BuildPlatformsFromCompose(svc composetypes.ServiceConfig) []string {
@@ -198,7 +192,7 @@ func PrepareServiceBuildRequest(
 		ContextDir:       contextDir,
 		Dockerfile:       dockerfilePath,
 		DockerfileInline: dockerfileInline,
-		Tags:             MergeBuildTags(imageName, updatedSvc.Build.Tags),
+		Tags:             kit.Unique(kit.TrimNonEmpty(append([]string{imageName}, updatedSvc.Build.Tags...))),
 		Target:           strings.TrimSpace(updatedSvc.Build.Target),
 		BuildArgs:        BuildArgsFromCompose(updatedSvc.Build.Args),
 		Labels:           LabelsFromCompose(updatedSvc.Build.Labels),

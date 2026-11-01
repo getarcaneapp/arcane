@@ -84,7 +84,7 @@ func TestDockerSuppressionWindowsOverlapAndGrace(t *testing.T) {
 	}
 }
 
-func TestDockerResourceWindowsCoverLongOperationsInternal(t *testing.T) {
+func TestDockerResourceWindowsCoverLongOperations(t *testing.T) {
 	now := time.Now()
 	svc := NewService(func() time.Time { return now })
 	closeFirst := svc.BeginResourceWindow("image", "", "nginx:latest")

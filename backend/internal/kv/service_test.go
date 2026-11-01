@@ -11,7 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
-func setupKVServiceInternal(t *testing.T) *KVService {
+func setupKVService(t *testing.T) *KVService {
 	t.Helper()
 
 	db := setupSettingsTestDB(t)
@@ -22,7 +22,7 @@ func setupKVServiceInternal(t *testing.T) *KVService {
 
 func TestKVService_Get_MissingKey(t *testing.T) {
 	ctx := t.Context()
-	svc := setupKVServiceInternal(t)
+	svc := setupKVService(t)
 
 	value, ok, err := svc.Get(ctx, "missing")
 	require.NoError(t, err)
@@ -32,7 +32,7 @@ func TestKVService_Get_MissingKey(t *testing.T) {
 
 func TestKVService_Set_UpsertsValue(t *testing.T) {
 	ctx := t.Context()
-	svc := setupKVServiceInternal(t)
+	svc := setupKVService(t)
 
 	require.NoError(t, svc.Set(ctx, "analytics.heartbeat.last_attempt_at", "2026-03-10T00:00:00Z"))
 
@@ -59,7 +59,7 @@ func setupSettingsTestDB(t *testing.T) *database.DB {
 
 func TestKVService_ListByPrefix_EscapesLikeWildcards(t *testing.T) {
 	ctx := t.Context()
-	svc := setupKVServiceInternal(t)
+	svc := setupKVService(t)
 
 	entries := map[string]string{
 		`project_rename_journal:real`:       "journal",
@@ -79,18 +79,18 @@ func TestKVService_ListByPrefix_EscapesLikeWildcards(t *testing.T) {
 	require.ElementsMatch(t, []string{
 		`project_rename_journal:real`,
 		`project_rename_journal:real:other`,
-	}, kvEntryKeysForPrefixTestInternal(journalEntries))
+	}, kvEntryKeysForPrefixTest(journalEntries))
 
 	registryEntries, err := svc.ListByPrefix(ctx, "registry%pulls:")
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{`registry%pulls:real`}, kvEntryKeysForPrefixTestInternal(registryEntries))
+	require.ElementsMatch(t, []string{`registry%pulls:real`}, kvEntryKeysForPrefixTest(registryEntries))
 
 	pathEntries, err := svc.ListByPrefix(ctx, `path\prefix:`)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{`path\prefix:real`}, kvEntryKeysForPrefixTestInternal(pathEntries))
+	require.ElementsMatch(t, []string{`path\prefix:real`}, kvEntryKeysForPrefixTest(pathEntries))
 }
 
-func kvEntryKeysForPrefixTestInternal(entries []KVEntry) []string {
+func kvEntryKeysForPrefixTest(entries []KVEntry) []string {
 	keys := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		keys = append(keys, entry.Key)

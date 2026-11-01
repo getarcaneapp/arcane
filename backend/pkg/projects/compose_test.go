@@ -25,7 +25,7 @@ func TestWrapDockerCLIWithInspectCompatibility(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, baseCLI.Initialize(flags.NewClientOptions()))
 
-	wrapped := wrapDockerCLIWithInspectCompatibilityInternal(baseCLI)
+	wrapped := wrapDockerCLIWithInspectCompatibility(baseCLI)
 	require.NotNil(t, wrapped)
 	require.NotSame(t, baseCLI, wrapped)
 	require.NotEqual(t, reflect.TypeFor[*mobyclient.Client](), reflect.TypeOf(wrapped.Client()))
@@ -52,7 +52,7 @@ func TestPlainComposeClientCachedPerDockerHost(t *testing.T) {
 }
 
 func TestBuildComposeAuthConfigs(t *testing.T) {
-	authConfigs := buildComposeAuthConfigsInternal(map[string]dockerregistry.AuthConfig{
+	authConfigs := buildComposeAuthConfigs(map[string]dockerregistry.AuthConfig{
 		"docker.io": {
 			Username:      "docker-user",
 			Password:      "docker-token",

@@ -65,14 +65,14 @@ func ReadProjectWorkspace(
 	}
 	defer func() { _ = root.Close() }()
 
-	walker := &projectWorkspaceTreeWalkerInternal{
+	walker := &projectWorkspaceTreeWalker{
 		ctx:              ctx,
 		projectAbs:       projectAbs,
 		maxDepth:         maxDepth,
 		maxEntries:       maxEntries,
 		maxFileSizeBytes: kit.Ternary(maxFileSizeBytes <= 0, workspacepkg.MaxFileSizeBytes(workspacepkg.DefaultMaxFileSizeMB), maxFileSizeBytes),
 		protected:        ProtectedProjectPaths(projectAbs, composeFileName),
-		skipDirs:         projectScanSkipDirectorySetInternal(skipDirectories),
+		skipDirs:         projectScanSkipDirectorySet(skipDirectories),
 		files:            []types.WorkspaceFileEntry{},
 		revisionHash:     sha256.New(),
 	}
@@ -91,7 +91,7 @@ func ReadProjectWorkspace(
 	return walker.files, hex.EncodeToString(walker.revisionHash.Sum(nil)), walker.truncated, nil
 }
 
-type projectWorkspaceTreeWalkerInternal struct {
+type projectWorkspaceTreeWalker struct {
 	ctx              context.Context
 	revisionHash     hash.Hash
 	protected        map[string]bool
@@ -108,7 +108,7 @@ type projectWorkspaceTreeWalkerInternal struct {
 // walk visits the tree level by level (every top-level entry, then the next
 // level down) so a large early subtree cannot use the whole entry budget
 // before later top-level siblings are seen (#4452).
-func (w *projectWorkspaceTreeWalkerInternal) walk(fsys fs.FS) error {
+func (w *projectWorkspaceTreeWalker) walk(fsys fs.FS) error {
 	for queue := []string{"."}; len(queue) > 0; queue = queue[1:] {
 		entries, err := fs.ReadDir(fsys, queue[0])
 		if err != nil {
@@ -140,7 +140,7 @@ func (w *projectWorkspaceTreeWalkerInternal) walk(fsys fs.FS) error {
 }
 
 // visit records one entry and reports whether the walk should descend into it.
-func (w *projectWorkspaceTreeWalkerInternal) visit(rel string, entry fs.DirEntry) (bool, error) {
+func (w *projectWorkspaceTreeWalker) visit(rel string, entry fs.DirEntry) (bool, error) {
 	// Entries are visited in a fixed level-by-level, name-sorted order, so
 	// cutting off after maxEntries still yields a stable revision as long as
 	// the concurrency compare walk uses the same cap.

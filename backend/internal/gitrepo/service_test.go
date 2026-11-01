@@ -96,9 +96,13 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredTokenWo
 		Token:    "ghp_old_token",
 	})
 
-	_, err := svc.UpdateRepository(t.Context(), repo.ID, types.GitRepository{
-		URL: "https://attacker.tld/repo.git",
-	}, map[string]bool{"url": true}, types.Actor{})
+	_, err := svc.UpdateRepository(t.Context(), repo.ID, RepositoryUpdate{
+		Request: types.GitRepository{
+			URL: "https://attacker.tld/repo.git",
+		},
+		Submitted: map[string]bool{"url": true},
+		Actor:     types.Actor{},
+	})
 	require.Error(t, err)
 
 	require.ErrorIs(t, err, common.ErrValidation)
@@ -122,9 +126,13 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredSSHKeyW
 		SSHKey:   "-----BEGIN OPENSSH PRIVATE KEY-----\nkey-material\n-----END OPENSSH PRIVATE KEY-----",
 	})
 
-	_, err := svc.UpdateRepository(t.Context(), repo.ID, types.GitRepository{
-		URL: "git@attacker.tld:acme/private.git",
-	}, map[string]bool{"url": true}, types.Actor{})
+	_, err := svc.UpdateRepository(t.Context(), repo.ID, RepositoryUpdate{
+		Request: types.GitRepository{
+			URL: "git@attacker.tld:acme/private.git",
+		},
+		Submitted: map[string]bool{"url": true},
+		Actor:     types.Actor{},
+	})
 	require.Error(t, err)
 
 	require.ErrorIs(t, err, common.ErrValidation)
@@ -150,9 +158,13 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredTokenAn
 		SSHKey:   "-----BEGIN OPENSSH PRIVATE KEY-----\nkey-material\n-----END OPENSSH PRIVATE KEY-----",
 	})
 
-	_, err := svc.UpdateRepository(t.Context(), repo.ID, types.GitRepository{
-		URL: "https://attacker.tld/repo.git",
-	}, map[string]bool{"url": true}, types.Actor{})
+	_, err := svc.UpdateRepository(t.Context(), repo.ID, RepositoryUpdate{
+		Request: types.GitRepository{
+			URL: "https://attacker.tld/repo.git",
+		},
+		Submitted: map[string]bool{"url": true},
+		Actor:     types.Actor{},
+	})
 	require.Error(t, err)
 
 	var apiErr *common.APIError
@@ -172,10 +184,14 @@ func TestGitRepositoryService_UpdateRepository_AllowsURLChangeWhenTokenIsResuppl
 		Token:    "ghp_old_token",
 	})
 
-	updated, err := svc.UpdateRepository(t.Context(), repo.ID, types.GitRepository{
-		URL:   "https://github.com/acme/private-rotated.git",
-		Token: "ghp_new_token",
-	}, map[string]bool{"url": true, "token": true}, types.Actor{})
+	updated, err := svc.UpdateRepository(t.Context(), repo.ID, RepositoryUpdate{
+		Request: types.GitRepository{
+			URL:   "https://github.com/acme/private-rotated.git",
+			Token: "ghp_new_token",
+		},
+		Submitted: map[string]bool{"url": true, "token": true},
+		Actor:     types.Actor{},
+	})
 	require.NoError(t, err)
 
 	assert.Equal(t, "https://github.com/acme/private-rotated.git", updated.URL)
@@ -198,10 +214,14 @@ func TestGitRepositoryService_UpdateRepository_AllowsURLChangeWhenTokenIsCleared
 		Token:    "ghp_old_token",
 	})
 
-	updated, err := svc.UpdateRepository(t.Context(), repo.ID, types.GitRepository{
-		URL:   "https://github.com/acme/public.git",
-		Token: "",
-	}, map[string]bool{"url": true, "token": true}, types.Actor{})
+	updated, err := svc.UpdateRepository(t.Context(), repo.ID, RepositoryUpdate{
+		Request: types.GitRepository{
+			URL:   "https://github.com/acme/public.git",
+			Token: "",
+		},
+		Submitted: map[string]bool{"url": true, "token": true},
+		Actor:     types.Actor{},
+	})
 	require.NoError(t, err)
 
 	assert.Equal(t, "https://github.com/acme/public.git", updated.URL)
@@ -222,10 +242,14 @@ func TestGitRepositoryService_UpdateRepository_AllowsSameURLWithoutCredentialRes
 		Token:    "ghp_old_token",
 	})
 
-	updated, err := svc.UpdateRepository(t.Context(), repo.ID, types.GitRepository{
-		URL:      "https://github.com/acme/private.git",
-		Username: "deploy-bot",
-	}, map[string]bool{"url": true, "username": true}, types.Actor{})
+	updated, err := svc.UpdateRepository(t.Context(), repo.ID, RepositoryUpdate{
+		Request: types.GitRepository{
+			URL:      "https://github.com/acme/private.git",
+			Username: "deploy-bot",
+		},
+		Submitted: map[string]bool{"url": true, "username": true},
+		Actor:     types.Actor{},
+	})
 	require.NoError(t, err)
 
 	assert.Equal(t, "deploy-bot", updated.Username)

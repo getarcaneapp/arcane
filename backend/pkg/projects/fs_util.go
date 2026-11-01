@@ -160,7 +160,7 @@ func GetTemplatesDirectory(ctx context.Context, templatesDir string) (string, er
 	return resolved, nil
 }
 
-func projectScanSkipDirectorySetInternal(skipDirectories string) map[string]bool {
+func projectScanSkipDirectorySet(skipDirectories string) map[string]bool {
 	dirs := map[string]bool{}
 	for dir := range strings.SplitSeq(skipDirectories, ",") {
 		dir = strings.TrimSpace(dir)
@@ -175,7 +175,7 @@ func projectScanSkipDirectorySetInternal(skipDirectories string) map[string]bool
 	return dirs
 }
 
-func syncedProjectFileMatchesInternal(ctx context.Context, projectPath string, file SyncFile) (bool, error) {
+func syncedProjectFileMatches(ctx context.Context, projectPath string, file SyncFile) (bool, error) {
 	logicalPath := "/" + filepath.ToSlash(file.RelativePath)
 	entry, err := acfs.Root{Path: projectPath}.Stat(ctx, logicalPath, acfstypes.StatOptions{})
 	if err != nil {
@@ -193,9 +193,9 @@ func syncedProjectFileMatchesInternal(ctx context.Context, projectPath string, f
 	return bytes.Equal(existingContent, file.Content), nil
 }
 
-// pathExistsInternal stays on os.*: it probes arbitrary absolute paths,
+// pathExists stays on os.*: it probes arbitrary absolute paths,
 // including imported projects outside any acfs root.
-func pathExistsInternal(path string) (bool, error) {
+func pathExists(path string) (bool, error) {
 	_, err := os.Stat(path)
 	if err == nil {
 		return true, nil
@@ -218,7 +218,7 @@ func DirectorySyncContentsChanged(ctx context.Context, projectPath string, syncF
 	newFileSet := make(map[string]struct{}, len(syncFiles))
 	for _, file := range syncFiles {
 		newFileSet[file.RelativePath] = struct{}{}
-		matches, err := syncedProjectFileMatchesInternal(ctx, projectPath, file)
+		matches, err := syncedProjectFileMatches(ctx, projectPath, file)
 		if err != nil {
 			return false, err
 		}

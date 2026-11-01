@@ -94,7 +94,7 @@ func (m *KeySetManager) KeySet(ctx context.Context, client *http.Client, jwksURL
 			}
 		} else {
 			var cacheErr error
-			managed, cacheErr = m.createManagedCacheLockedInternal(client)
+			managed, cacheErr = m.createManagedCacheLocked(client)
 			if cacheErr != nil {
 				m.mu.Unlock()
 				return nil, cacheErr
@@ -102,7 +102,7 @@ func (m *KeySetManager) KeySet(ctx context.Context, client *http.Client, jwksURL
 		}
 		m.mu.Unlock()
 
-		keySet, initErr := managed.initializeKeySetInternal(ctx, jwksURL)
+		keySet, initErr := managed.initializeKeySet(ctx, jwksURL)
 		if initErr != nil {
 			return nil, initErr
 		}
@@ -125,7 +125,7 @@ func (m *KeySetManager) KeySet(ctx context.Context, client *http.Client, jwksURL
 	return keySet, nil
 }
 
-func (m *managedCache) initializeKeySetInternal(ctx context.Context, jwksURL string) (*keySet, error) {
+func (m *managedCache) initializeKeySet(ctx context.Context, jwksURL string) (*keySet, error) {
 	registerCtx, cancel := context.WithTimeout(ctx, initialReadyTimeout)
 	defer cancel()
 	initialized := false
@@ -164,7 +164,7 @@ func (m *managedCache) initializeKeySetInternal(ctx context.Context, jwksURL str
 	return keySet, nil
 }
 
-func (m *KeySetManager) createManagedCacheLockedInternal(client *http.Client) (*managedCache, error) {
+func (m *KeySetManager) createManagedCacheLocked(client *http.Client) (*managedCache, error) {
 	if m.caches.Len() >= maxHTTPClientPolicies {
 		return nil, errors.New("oidcjwk: too many HTTP client policies")
 	}

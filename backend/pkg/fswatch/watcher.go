@@ -108,7 +108,7 @@ func (fw *Watcher) Start(ctx context.Context) error {
 		return err
 	}
 
-	if err := fw.addExistingDirectoriesRecursiveInternal(ctx, fw.watchedPath, fw.watchedPath, map[string]struct{}{}); err != nil {
+	if err := fw.addExistingDirectoriesRecursive(ctx, fw.watchedPath, fw.watchedPath, map[string]struct{}{}); err != nil {
 		slog.WarnContext(ctx, "Failed to add some existing directories to watcher",
 			"path", fw.watchedPath,
 			"error", err)
@@ -172,7 +172,7 @@ func (fw *Watcher) watchLoopInternal(ctx context.Context) {
 		case <-fw.stopCh:
 			return
 		case event, ok := <-fw.watcher.Events:
-			if fw.processEventInternal(ctx, event, ok, debounceTimer, &debouncePending) {
+			if fw.processEvent(ctx, event, ok, debounceTimer, &debouncePending) {
 				if !fw.reconnect(ctx) {
 					return
 				}
@@ -197,8 +197,8 @@ func (fw *Watcher) watchLoopInternal(ctx context.Context) {
 	}
 }
 
-// processEventInternal handles one fs event; returns true if the watch loop should exit.
-func (fw *Watcher) processEventInternal(ctx context.Context, event fsnotify.Event, ok bool, debounceTimer *time.Timer, debouncePending *bool) bool {
+// processEvent handles one fs event; returns true if the watch loop should exit.
+func (fw *Watcher) processEvent(ctx context.Context, event fsnotify.Event, ok bool, debounceTimer *time.Timer, debouncePending *bool) bool {
 	if !ok {
 		return true
 	}
@@ -212,7 +212,7 @@ func (fw *Watcher) processEventInternal(ctx context.Context, event fsnotify.Even
 	if !fw.shouldHandleEvent(event) {
 		return false
 	}
-	fw.recordPendingPathInternal(event.Name)
+	fw.recordPendingPath(event.Name)
 	debounceTimer.Reset(fw.debounce)
 	*debouncePending = true
 	return false
@@ -275,7 +275,7 @@ func (fw *Watcher) notifyLoop(ctx context.Context) {
 	}
 }
 
-func (fw *Watcher) recordPendingPathInternal(path string) {
+func (fw *Watcher) recordPendingPath(path string) {
 	if path == "" {
 		return
 	}
@@ -308,10 +308,10 @@ func (fw *Watcher) handleEvent(ctx context.Context, event fsnotify.Event) {
 		}
 	}
 	if event.Has(fsnotify.Create) && !projects.IsIgnoredProjectDirName(filepath.Base(event.Name)) {
-		logicalName := fw.logicalPathForWatchEventInternal(event.Name)
+		logicalName := fw.logicalPathForWatchEvent(event.Name)
 		if fw.isWatchableDirectory(event.Name) {
 			if fw.shouldWatchDir(logicalName) {
-				if err := fw.addExistingDirectoriesRecursiveInternal(ctx, event.Name, logicalName, map[string]struct{}{}); err != nil {
+				if err := fw.addExistingDirectoriesRecursive(ctx, event.Name, logicalName, map[string]struct{}{}); err != nil {
 					slog.WarnContext(ctx, "Failed to add new directory to watcher",
 						"path", event.Name,
 						"error", err)
@@ -334,12 +334,12 @@ func (fw *Watcher) shouldHandleEvent(event fsnotify.Event) bool {
 	}
 	// Arcane's own scratch directories (update backups, GitOps staging) churn
 	// compose files that must not re-sync the live projects.
-	rel, err := filepath.Rel(fw.watchedPath, fw.logicalPathForWatchEventInternal(event.Name))
+	rel, err := filepath.Rel(fw.watchedPath, fw.logicalPathForWatchEvent(event.Name))
 	return err != nil || !projects.PathContainsIgnoredDirectory(rel)
 }
 
-func (fw *Watcher) addExistingDirectoriesRecursiveInternal(ctx context.Context, path, logicalPath string, ancestors map[string]struct{}) error {
-	identity, err := projects.ResolveDirectoryIdentityInternal(path)
+func (fw *Watcher) addExistingDirectoriesRecursive(ctx context.Context, path, logicalPath string, ancestors map[string]struct{}) error {
+	identity, err := projects.ResolveDirectoryIdentity(path)
 	if err != nil {
 		if path != fw.watchedPath && errors.Is(err, os.ErrPermission) {
 			slog.WarnContext(ctx, "Skipping unreadable directory for watcher", "path", path, "error", err)
@@ -363,7 +363,7 @@ func (fw *Watcher) addExistingDirectoriesRecursiveInternal(ctx context.Context, 
 			return nil
 		}
 
-		fw.addWatchPathInternal(ctx, path, logicalPath)
+		fw.addWatchPath(ctx, path, logicalPath)
 
 		if fw.maxDepth > 0 && depth == fw.maxDepth {
 			return nil
@@ -388,7 +388,7 @@ func (fw *Watcher) addExistingDirectoriesRecursiveInternal(ctx context.Context, 
 			continue
 		}
 		childLogicalPath := filepath.Join(logicalPath, entry.Name())
-		if addExistingDirectoriesRecursiveErr := fw.addExistingDirectoriesRecursiveInternal(ctx, childPath, childLogicalPath, ancestors); addExistingDirectoriesRecursiveErr != nil {
+		if addExistingDirectoriesRecursiveErr := fw.addExistingDirectoriesRecursive(ctx, childPath, childLogicalPath, ancestors); addExistingDirectoriesRecursiveErr != nil {
 			return addExistingDirectoriesRecursiveErr
 		}
 	}
@@ -396,7 +396,7 @@ func (fw *Watcher) addExistingDirectoriesRecursiveInternal(ctx context.Context, 
 	return nil
 }
 
-func (fw *Watcher) logicalPathForWatchEventInternal(path string) string {
+func (fw *Watcher) logicalPathForWatchEvent(path string) string {
 	cleanPath := filepath.Clean(path)
 	bestWatchPath := ""
 	bestLogicalPath := ""
@@ -425,7 +425,7 @@ func (fw *Watcher) logicalPathForWatchEventInternal(path string) string {
 	return filepath.Join(bestLogicalPath, rel)
 }
 
-func (fw *Watcher) addWatchPathInternal(ctx context.Context, path, logicalPath string) {
+func (fw *Watcher) addWatchPath(ctx context.Context, path, logicalPath string) {
 	watchPaths := []string{path}
 	if fw.followSymlinks {
 		if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
@@ -517,7 +517,7 @@ func (fw *Watcher) reconnect(ctx context.Context) bool {
 			if err == nil {
 				fw.watcher = watcher
 				fw.watchAliases = make(map[string]string)
-				if addExistingDirectoriesErr := fw.addExistingDirectoriesRecursiveInternal(ctx, fw.watchedPath, fw.watchedPath, map[string]struct{}{}); addExistingDirectoriesErr != nil {
+				if addExistingDirectoriesErr := fw.addExistingDirectoriesRecursive(ctx, fw.watchedPath, fw.watchedPath, map[string]struct{}{}); addExistingDirectoriesErr != nil {
 					slog.WarnContext(ctx, "Some filesystem subscriptions could not be restored", "error", addExistingDirectoriesErr)
 				}
 				// Changes while disconnected need a full reconciliation.

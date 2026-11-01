@@ -48,13 +48,13 @@ type StackDeployOptions struct {
 // API call required to reconcile the stack fails.
 func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts StackDeployOptions) error {
 	stackName := strings.TrimSpace(opts.Name)
-	if err := validateStackNameInternal(stackName); err != nil {
-		return invalidStackErrorInternal(err)
+	if err := validateStackName(stackName); err != nil {
+		return invalidStackError(err)
 	}
 	ns := namespace{name: stackName}
 	resolveMode, err := normalizeResolveImageMode(opts.ResolveImage)
 	if err != nil {
-		return invalidStackErrorInternal(err)
+		return invalidStackError(err)
 	}
 
 	project, err := projects.LoadComposeProjectFromContent(ctx, types.ComposeContentOptions{
@@ -66,7 +66,7 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 		PathMapper:      opts.PathMapper,
 	})
 	if err != nil {
-		return invalidStackErrorInternal(err)
+		return invalidStackError(err)
 	}
 	if project.Name == "" {
 		project.Name = stackName
@@ -85,7 +85,7 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 
 	configPlans, err := planConfigs(project, ns)
 	if err != nil {
-		return invalidStackErrorInternal(err)
+		return invalidStackError(err)
 	}
 	configMetaByKey, err := ensurePlannedFileResources(
 		ctx,
@@ -99,7 +99,7 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 
 	secretPlans, err := planSecrets(project, ns)
 	if err != nil {
-		return invalidStackErrorInternal(err)
+		return invalidStackError(err)
 	}
 	secretMetaByKey, err := ensurePlannedFileResources(
 		ctx,
@@ -170,9 +170,9 @@ func reconcileStackServices(
 	for _, key := range slices.Sorted(maps.Keys(project.Services)) {
 		service := project.Services[key]
 		service.Name = cmp.Or(service.Name, key)
-		spec, err := buildServiceSpecInternal(service, ns, stackLabels, networkNameByKey, configMetaByKey, secretMetaByKey, project.Volumes)
+		spec, err := buildServiceSpec(service, ns, stackLabels, networkNameByKey, configMetaByKey, secretMetaByKey, project.Volumes)
 		if err != nil {
-			return nil, invalidStackErrorInternal(fmt.Errorf("service %s: %w", service.Name, err))
+			return nil, invalidStackError(fmt.Errorf("service %s: %w", service.Name, err))
 		}
 		desiredServices[spec.Name] = struct{}{}
 
@@ -218,7 +218,7 @@ func createSwarmService(
 	if err != nil {
 		return err
 	}
-	queryRegistry := encodedRegistryAuth != "" || shouldQueryRegistryOnCreate(resolveMode)
+	queryRegistry := encodedRegistryAuth != "" || (resolveMode == resolveImageAlways || resolveMode == resolveImageChanged)
 	opts := dockerclient.ServiceCreateOptions{
 		Spec:          spec,
 		QueryRegistry: queryRegistry,
@@ -286,10 +286,6 @@ func normalizeResolveImageMode(value string) (string, error) {
 	default:
 		return "", fmt.Errorf("invalid resolve image mode %q: expected always, changed, or never", value)
 	}
-}
-
-func shouldQueryRegistryOnCreate(resolveMode string) bool {
-	return resolveMode == resolveImageAlways || resolveMode == resolveImageChanged
 }
 
 func shouldQueryRegistryOnUpdate(resolveMode string, existing swarm.Service, desired swarm.ServiceSpec) bool {

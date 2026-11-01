@@ -9,7 +9,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/docker"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
@@ -37,7 +37,7 @@ func (s *PortService) ListPortsPaginated(ctx context.Context, params pagination.
 		containerName := primaryContainerName(summary.Names, summary.ID)
 		for _, port := range summary.Ports {
 			items = append(items, types.PortMapping{
-				ID:            buildPortMappingID(summary.ID, port),
+				ID:            fmt.Sprintf("%s:%s:%d:%d:%s", summary.ID, port.IP, port.PublicPort, port.PrivatePort, port.Type),
 				ContainerID:   summary.ID,
 				ContainerName: containerName,
 				HostIP:        port.IP,
@@ -161,10 +161,6 @@ func primaryContainerName(names []string, id string) string {
 		return id[:12]
 	}
 	return id
-}
-
-func buildPortMappingID(containerID string, port types.ContainerPort) string {
-	return fmt.Sprintf("%s:%s:%d:%d:%s", containerID, port.IP, port.PublicPort, port.PrivatePort, port.Type)
 }
 
 func compareOptionalInt(a, b int, fallbackA, fallbackB string) int {

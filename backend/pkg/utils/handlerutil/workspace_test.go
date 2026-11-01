@@ -10,12 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type workspaceUploadFixtureInternal struct {
+type workspaceUploadFixture struct {
 	name    string
 	content []byte
 }
 
-func workspaceMultipartFormInternal(t *testing.T, values map[string][]string, files []workspaceUploadFixtureInternal) multipart.Form {
+func workspaceMultipartForm(t *testing.T, values map[string][]string, files []workspaceUploadFixture) multipart.Form {
 	t.Helper()
 
 	var body bytes.Buffer
@@ -41,7 +41,7 @@ func workspaceMultipartFormInternal(t *testing.T, values map[string][]string, fi
 	return *request.MultipartForm
 }
 
-func requireWorkspaceHTTPStatusInternal(t *testing.T, err error, expected int) {
+func requireWorkspaceHTTPStatus(t *testing.T, err error, expected int) {
 	t.Helper()
 	var statusErr huma.StatusError
 	require.ErrorAs(t, err, &statusErr)
@@ -53,21 +53,21 @@ func TestParseWorkspaceJSONPartInternalRequiresExactlyOnePart(t *testing.T) {
 		Revision string `json:"revision"`
 	}
 
-	_, err := ParseMultipartJSONPart[manifest](workspaceMultipartFormInternal(t, nil, nil), "manifest")
-	requireWorkspaceHTTPStatusInternal(t, err, http.StatusBadRequest)
+	_, err := ParseMultipartJSONPart[manifest](workspaceMultipartForm(t, nil, nil), "manifest")
+	requireWorkspaceHTTPStatus(t, err, http.StatusBadRequest)
 
-	form := workspaceMultipartFormInternal(t, map[string][]string{"manifest": {`{"revision":"one"}`, `{"revision":"two"}`}}, nil)
+	form := workspaceMultipartForm(t, map[string][]string{"manifest": {`{"revision":"one"}`, `{"revision":"two"}`}}, nil)
 	_, err = ParseMultipartJSONPart[manifest](form, "manifest")
-	requireWorkspaceHTTPStatusInternal(t, err, http.StatusBadRequest)
+	requireWorkspaceHTTPStatus(t, err, http.StatusBadRequest)
 
-	form = workspaceMultipartFormInternal(t, map[string][]string{"manifest": {`{"revision":"current"}`}}, nil)
+	form = workspaceMultipartForm(t, map[string][]string{"manifest": {`{"revision":"current"}`}}, nil)
 	parsed, err := ParseMultipartJSONPart[manifest](form, "manifest")
 	require.NoError(t, err)
 	require.Equal(t, "current", parsed.Revision)
 }
 
-func TestReadWorkspaceUploadsInternal(t *testing.T) {
-	form := workspaceMultipartFormInternal(t, nil, []workspaceUploadFixtureInternal{
+func TestReadWorkspaceUploads(t *testing.T) {
+	form := workspaceMultipartForm(t, nil, []workspaceUploadFixture{
 		{name: "one.txt", content: []byte("one")},
 		{name: "two.txt", content: []byte("two")},
 	})
@@ -91,10 +91,10 @@ func TestReadWorkspaceUploadsInternalAcceptsAnyContentAndEnforcesLimit(t *testin
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			form := workspaceMultipartFormInternal(t, nil, []workspaceUploadFixtureInternal{{name: "upload.bin", content: tt.content}})
+			form := workspaceMultipartForm(t, nil, []workspaceUploadFixture{{name: "upload.bin", content: tt.content}})
 			uploads, err := ReadWorkspaceUploads(form, tt.maxBytes)
 			if tt.status != 0 {
-				requireWorkspaceHTTPStatusInternal(t, err, tt.status)
+				requireWorkspaceHTTPStatus(t, err, tt.status)
 				return
 			}
 			require.NoError(t, err)

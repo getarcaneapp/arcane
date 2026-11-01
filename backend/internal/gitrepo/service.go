@@ -191,8 +191,14 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req types.G
 	return &repository, nil
 }
 
-func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, req types.GitRepository, submitted map[string]bool, actor types.Actor) (*GitRepository, error) {
-	if err := normalization.Normalize(&req); err != nil {
+type RepositoryUpdate struct {
+	Request   types.GitRepository
+	Submitted map[string]bool
+	Actor     types.Actor
+}
+
+func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, change RepositoryUpdate) (*GitRepository, error) {
+	if err := normalization.Normalize(&change.Request); err != nil {
 		return nil, err
 	}
 	repository, err := s.GetRepositoryByID(ctx, id)
@@ -203,15 +209,15 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 	if validateCredentialTargetChangeErr := validation.ValidateCredentialTargetChange(
 		"repository URL",
 		repository.URL,
-		kit.Ternary(submitted["url"], &req.URL, nil),
+		kit.Ternary(change.Submitted["url"], &change.Request.URL, nil),
 		nil,
 		map[string]bool{
 			"sshKey": repository.SSHKey != "",
 			"token":  repository.Token != "",
 		},
 		map[string]bool{
-			"sshKey": submitted["sshKey"],
-			"token":  submitted["token"],
+			"sshKey": change.Submitted["sshKey"],
+			"token":  change.Submitted["token"],
 		},
 	); validateCredentialTargetChangeErr != nil {
 		return nil, validateCredentialTargetChangeErr
@@ -222,26 +228,26 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 		value  any
 		column string
 	}{
-		"name":                   {column: "name", value: req.Name},
-		"url":                    {column: "url", value: req.URL},
-		"authType":               {column: "auth_type", value: req.AuthType},
-		"username":               {column: "username", value: req.Username},
-		"description":            {column: "description", value: req.Description},
-		"enabled":                {column: "enabled", value: req.Enabled},
-		"sshHostKeyVerification": {column: "ssh_host_key_verification", value: req.SSHHostKeyVerification},
-		"commitAuthorName":       {column: "commit_author_name", value: req.CommitAuthorName},
-		"commitAuthorEmail":      {column: "commit_author_email", value: req.CommitAuthorEmail},
+		"name":                   {column: "name", value: change.Request.Name},
+		"url":                    {column: "url", value: change.Request.URL},
+		"authType":               {column: "auth_type", value: change.Request.AuthType},
+		"username":               {column: "username", value: change.Request.Username},
+		"description":            {column: "description", value: change.Request.Description},
+		"enabled":                {column: "enabled", value: change.Request.Enabled},
+		"sshHostKeyVerification": {column: "ssh_host_key_verification", value: change.Request.SSHHostKeyVerification},
+		"commitAuthorName":       {column: "commit_author_name", value: change.Request.CommitAuthorName},
+		"commitAuthorEmail":      {column: "commit_author_email", value: change.Request.CommitAuthorEmail},
 	} {
-		if submitted[field] {
+		if change.Submitted[field] {
 			updates[update.column] = update.value
 		}
 	}
 
-	if submitted["token"] {
-		if req.Token == "" {
+	if change.Submitted["token"] {
+		if change.Request.Token == "" {
 			updates["token"] = ""
 		} else {
-			encrypted, encryptErr := crypto.Encrypt(req.Token)
+			encrypted, encryptErr := crypto.Encrypt(change.Request.Token)
 			if encryptErr != nil {
 				return nil, fmt.Errorf("failed to encrypt token: %w", encryptErr)
 			}
@@ -249,11 +255,11 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 		}
 	}
 
-	if submitted["sshKey"] {
-		if req.SSHKey == "" {
+	if change.Submitted["sshKey"] {
+		if change.Request.SSHKey == "" {
 			updates["ssh_key"] = ""
 		} else {
-			encrypted, encryptSSHKeyErr := crypto.Encrypt(req.SSHKey)
+			encrypted, encryptSSHKeyErr := crypto.Encrypt(change.Request.SSHKey)
 			if encryptSSHKeyErr != nil {
 				return nil, fmt.Errorf("failed to encrypt SSH key: %w", encryptSSHKeyErr)
 			}
@@ -261,7 +267,7 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 		}
 	}
 
-	if applySigningKeyUpdateErr := applySigningKeyUpdate(repository, req, submitted, updates); applySigningKeyUpdateErr != nil {
+	if applySigningKeyUpdateErr := applySigningKeyUpdate(repository, change.Request, change.Submitted, updates); applySigningKeyUpdateErr != nil {
 		return nil, applySigningKeyUpdateErr
 	}
 
@@ -279,8 +285,8 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 			ResourceType: new("git_repository"),
 			ResourceID:   new(repository.ID),
 			ResourceName: new(repository.Name),
-			UserID:       new(actor.ID),
-			Username:     new(actor.Username),
+			UserID:       new(change.Actor.ID),
+			Username:     new(change.Actor.Username),
 		})
 	}
 

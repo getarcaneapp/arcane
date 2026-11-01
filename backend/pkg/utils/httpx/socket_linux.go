@@ -9,7 +9,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func setDeadPeerTimeoutInternal(rawConn syscall.RawConn, timeout time.Duration) error {
+func setDeadPeerTimeout(rawConn syscall.RawConn, timeout time.Duration) error {
 	var setErr error
 	if err := rawConn.Control(func(fd uintptr) {
 		setErr = unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_USER_TIMEOUT, int(timeout.Milliseconds()))

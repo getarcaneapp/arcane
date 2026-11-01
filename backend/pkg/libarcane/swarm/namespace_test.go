@@ -14,8 +14,8 @@ func TestNamespaceResolve(t *testing.T) {
 	require.Equal(t, "custom", ns.Resolve("data", " custom "))
 }
 
-func TestValidateStackNameInternal(t *testing.T) {
-	require.NoError(t, validateStackNameInternal("stack-1"))
-	require.Error(t, validateStackNameInternal("Stack-1"))
-	require.Error(t, validateStackNameInternal("../stack"))
+func TestValidateStackName(t *testing.T) {
+	require.NoError(t, validateStackName("stack-1"))
+	require.Error(t, validateStackName("Stack-1"))
+	require.Error(t, validateStackName("../stack"))
 }

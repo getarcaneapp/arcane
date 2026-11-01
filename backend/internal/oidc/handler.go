@@ -1,13 +1,15 @@
 package oidc
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
@@ -142,7 +144,7 @@ func (h *OidcHandler) GetOidcConfig(ctx context.Context, input *GetOidcConfigInp
 	return &GetOidcConfigOutput{
 		Body: types.OidcConfigResponse{
 			ClientID:                    oidcConfig.ClientID,
-			RedirectUri:                 h.oidcService.GetOidcRedirectURL(origin),
+			RedirectUri:                 (cmp.Or(origin, strings.TrimSuffix(h.oidcService.config.GetAppURL(), "/")) + "/auth/oidc/callback"),
 			IssuerUrl:                   oidcConfig.IssuerURL,
 			AuthorizationEndpoint:       oidcConfig.AuthorizationEndpoint,
 			TokenEndpoint:               oidcConfig.TokenEndpoint,
@@ -209,7 +211,13 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 	}
 
 	// Process OIDC callback
-	userInfo, tokenResp, err := h.oidcService.HandleCallback(ctx, input.Body.Code, input.Body.State, input.OidcStateCookie, origin, mobileRedirectURI)
+	userInfo, tokenResp, err := h.oidcService.HandleCallback(ctx, CallbackRequest{
+		Code:              input.Body.Code,
+		State:             input.Body.State,
+		StoredState:       input.OidcStateCookie,
+		Origin:            origin,
+		MobileRedirectURI: mobileRedirectURI,
+	})
 	if err != nil {
 		slog.WarnContext(ctx, "OIDC callback failed", "error", err, "origin", origin, "statePresent", input.Body.State != "", "codePresent", input.Body.Code != "")
 		return nil, huma.Error400BadRequest("OIDC callback failed: " + err.Error())

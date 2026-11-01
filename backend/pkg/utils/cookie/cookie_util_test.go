@@ -38,7 +38,7 @@ func TestBuildTokenCookieStringFor(t *testing.T) {
 			headerBytes += len("Set-Cookie: ") + len(header) + len("\r\n")
 		}
 
-		cookies := readSetCookieHeadersInternal(t, headers...)
+		cookies := readSetCookieHeaders(t, headers...)
 		require.Len(t, cookies, tokenCookieMaxChunks)
 		require.Less(t, headerBytes, 1024)
 		assert.Equal(t, TokenCookieName, cookies[0].Name)
@@ -52,7 +52,7 @@ func TestBuildTokenCookieStringFor(t *testing.T) {
 	t.Run("insecure uses fallback cookie", func(t *testing.T) {
 		headers := BuildTokenCookieStringFor(60, "abc", false)
 
-		cookies := readSetCookieHeadersInternal(t, headers...)
+		cookies := readSetCookieHeaders(t, headers...)
 		require.Len(t, cookies, tokenCookieMaxChunks)
 		assert.Equal(t, InsecureTokenCookieName, cookies[0].Name)
 		assert.False(t, cookies[0].Secure)
@@ -63,7 +63,7 @@ func TestBuildTokenCookieStringFor(t *testing.T) {
 		headers := BuildTokenCookieStringFor(60, token, true)
 
 		req := httptest.NewRequest("GET", "https://example.com/", http.NoBody)
-		for _, c := range readSetCookieHeadersInternal(t, headers...) {
+		for _, c := range readSetCookieHeaders(t, headers...) {
 			if c.MaxAge >= 0 {
 				req.AddCookie(&http.Cookie{Name: c.Name, Value: c.Value})
 			}
@@ -80,8 +80,8 @@ func TestBuildClearTokenCookieStringsFor(t *testing.T) {
 		headers := BuildClearTokenCookieStringsFor(true)
 
 		require.Len(t, headers, 2*tokenCookieMaxChunks)
-		assert.Equal(t, InsecureTokenCookieName, readSetCookieHeadersInternal(t, headers[0])[0].Name)
-		secureCookie := readSetCookieHeadersInternal(t, headers[1])[0]
+		assert.Equal(t, InsecureTokenCookieName, readSetCookieHeaders(t, headers[0])[0].Name)
+		secureCookie := readSetCookieHeaders(t, headers[1])[0]
 		assert.Equal(t, TokenCookieName, secureCookie.Name)
 		assert.True(t, secureCookie.Secure)
 	})
@@ -90,13 +90,13 @@ func TestBuildClearTokenCookieStringsFor(t *testing.T) {
 		headers := BuildClearTokenCookieStringsFor(false)
 
 		require.Len(t, headers, tokenCookieMaxChunks)
-		clearCookie := readSetCookieHeadersInternal(t, headers[0])[0]
+		clearCookie := readSetCookieHeaders(t, headers[0])[0]
 		assert.Equal(t, InsecureTokenCookieName, clearCookie.Name)
 		assert.False(t, clearCookie.Secure)
 	})
 }
 
-func readSetCookieHeadersInternal(t *testing.T, headers ...string) []*http.Cookie {
+func readSetCookieHeaders(t *testing.T, headers ...string) []*http.Cookie {
 	t.Helper()
 
 	resp := &http.Response{

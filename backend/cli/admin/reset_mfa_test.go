@@ -38,17 +38,17 @@ func newResetMFATestDB(t *testing.T) *database.DB {
 }
 
 func TestEnsureMFAResetEnabled(t *testing.T) {
-	require.ErrorContains(t, ensureMFAResetEnabledInternal(&config.Config{}), "ARCANE_ALLOW_CLI_MFA_RESET=true")
-	require.NoError(t, ensureMFAResetEnabledInternal(&config.Config{AllowCLIMFAReset: true}))
+	require.ErrorContains(t, ensureMFAResetEnabled(&config.Config{}), "ARCANE_ALLOW_CLI_MFA_RESET=true")
+	require.NoError(t, ensureMFAResetEnabled(&config.Config{AllowCLIMFAReset: true}))
 }
 
 func TestConfirmMFAReset(t *testing.T) {
 	var output bytes.Buffer
-	require.NoError(t, confirmMFAResetInternal(bytes.NewBufferString("RESET\n"), &output, "alice"))
+	require.NoError(t, confirmMFAReset(bytes.NewBufferString("RESET\n"), &output, "alice"))
 	require.Contains(t, output.String(), "alice")
 
 	output.Reset()
-	require.ErrorContains(t, confirmMFAResetInternal(bytes.NewBufferString("cancel\n"), &output, "alice"), "cancelled")
+	require.ErrorContains(t, confirmMFAReset(bytes.NewBufferString("cancel\n"), &output, "alice"), "cancelled")
 }
 
 func TestResetMFACommandServiceStatePreservesPasskey(t *testing.T) {

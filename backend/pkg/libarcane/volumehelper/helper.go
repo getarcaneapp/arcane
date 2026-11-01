@@ -30,13 +30,13 @@ type RuntimeImage struct {
 }
 
 const (
-	toolsRepoPathInternal = "getarcaneapp/tools"
-	ContainerLabel        = "com.getarcaneapp.volume-helper"
+	toolsRepoPath  = "getarcaneapp/tools"
+	ContainerLabel = "com.getarcaneapp.volume-helper"
 )
 
 // ToolsImage returns the shared Arcane tools image reference hosted on the given registry setting.
 func ToolsImage(registry string) string {
-	return libarcane.ArcaneRegistryHost(registry) + "/" + toolsRepoPathInternal + ":latest"
+	return libarcane.ArcaneRegistryHost(registry) + "/" + toolsRepoPath + ":latest"
 }
 
 // Labels returns the labels used for temporary internal volume helper containers.
@@ -60,7 +60,7 @@ func HostConfig(helperImage string, binds []string, mounts []mount.Mount) *conta
 		AutoRemove: true,
 	}
 
-	if runtime.GOOS == "linux" && isArcaneFallbackImageInternal(helperImage) {
+	if runtime.GOOS == "linux" && isArcaneFallbackImage(helperImage) {
 		hostConfig.Tmpfs = map[string]string{
 			"/app/data": "rw,noexec,nosuid,nodev",
 		}
@@ -111,7 +111,7 @@ func ResolveArcaneRuntimeImage(ctx context.Context, dockerClient *client.Client)
 			dockerClient,
 			hostname,
 			client.ContainerInspectOptions{}); err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
-			return mo.Some(buildRuntimeImageInternal(inspect.Container.Config.Image, inspect.Container.Config.Entrypoint, inspect.Container.Config.Cmd, "hostname"))
+			return mo.Some(buildRuntimeImage(inspect.Container.Config.Image, inspect.Container.Config.Entrypoint, inspect.Container.Config.Cmd, "hostname"))
 		}
 	}
 
@@ -123,10 +123,10 @@ func ResolveArcaneRuntimeImage(ctx context.Context, dockerClient *client.Client)
 			continue
 		}
 
-		if resolved, ok := resolveRuntimeImageFromContainersInternal(ctx, dockerClient, containers.Items, label, true).Get(); ok {
+		if resolved, ok := resolveRuntimeImageFromContainers(ctx, dockerClient, containers.Items, label, true).Get(); ok {
 			return mo.Some(resolved)
 		}
-		if resolved, ok := resolveRuntimeImageFromContainersInternal(ctx, dockerClient, containers.Items, label, false).Get(); ok {
+		if resolved, ok := resolveRuntimeImageFromContainers(ctx, dockerClient, containers.Items, label, false).Get(); ok {
 			return mo.Some(resolved)
 		}
 	}
@@ -134,7 +134,7 @@ func ResolveArcaneRuntimeImage(ctx context.Context, dockerClient *client.Client)
 	return mo.None[RuntimeImage]()
 }
 
-func resolveRuntimeImageFromContainersInternal(ctx context.Context, dockerClient *client.Client, containers []container.Summary, label string, runningOnly bool) mo.Option[RuntimeImage] {
+func resolveRuntimeImageFromContainers(ctx context.Context, dockerClient *client.Client, containers []container.Summary, label string, runningOnly bool) mo.Option[RuntimeImage] {
 	source := kit.Ternary(strings.Contains(label, ".agent="), "arcane-agent-label", "arcane-label")
 
 	for _, c := range containers {
@@ -146,17 +146,17 @@ func resolveRuntimeImageFromContainersInternal(ctx context.Context, dockerClient
 		}
 		inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
 		if err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
-			return mo.Some(buildRuntimeImageInternal(inspect.Container.Config.Image, inspect.Container.Config.Entrypoint, inspect.Container.Config.Cmd, source))
+			return mo.Some(buildRuntimeImage(inspect.Container.Config.Image, inspect.Container.Config.Entrypoint, inspect.Container.Config.Cmd, source))
 		}
 		if strings.TrimSpace(c.Image) != "" {
-			return mo.Some(buildRuntimeImageInternal(c.Image, nil, nil, source))
+			return mo.Some(buildRuntimeImage(c.Image, nil, nil, source))
 		}
 	}
 
 	return mo.None[RuntimeImage]()
 }
 
-func buildRuntimeImageInternal(image string, entrypoint, command []string, source string) RuntimeImage {
+func buildRuntimeImage(image string, entrypoint, command []string, source string) RuntimeImage {
 	return RuntimeImage{
 		Image:      strings.TrimSpace(image),
 		Entrypoint: append([]string(nil), entrypoint...),
@@ -165,7 +165,7 @@ func buildRuntimeImageInternal(image string, entrypoint, command []string, sourc
 	}
 }
 
-func isArcaneFallbackImageInternal(helperImage string) bool {
+func isArcaneFallbackImage(helperImage string) bool {
 	named, err := ref.ParseNormalizedNamed(strings.TrimSpace(helperImage))
-	return err != nil || ref.Path(named) != toolsRepoPathInternal
+	return err != nil || ref.Path(named) != toolsRepoPath
 }

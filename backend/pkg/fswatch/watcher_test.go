@@ -401,8 +401,8 @@ func TestWatcher_Stop_IsIdempotentAfterStart(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, watcher.Start(ctx))
 
-	stopWatcherWithinTimeoutInternal(t, watcher)
-	stopWatcherWithinTimeoutInternal(t, watcher)
+	stopWatcherWithinTimeout(t, watcher)
+	stopWatcherWithinTimeout(t, watcher)
 }
 
 func TestWatcher_Stop_IsSafeBeforeStart(t *testing.T) {
@@ -411,11 +411,11 @@ func TestWatcher_Stop_IsSafeBeforeStart(t *testing.T) {
 	watcher, err := NewWatcher(root, WatcherOptions{})
 	require.NoError(t, err)
 
-	stopWatcherWithinTimeoutInternal(t, watcher)
-	stopWatcherWithinTimeoutInternal(t, watcher)
+	stopWatcherWithinTimeout(t, watcher)
+	stopWatcherWithinTimeout(t, watcher)
 }
 
-func stopWatcherWithinTimeoutInternal(t *testing.T, watcher *Watcher) {
+func stopWatcherWithinTimeout(t *testing.T, watcher *Watcher) {
 	t.Helper()
 
 	done := make(chan error, 1)

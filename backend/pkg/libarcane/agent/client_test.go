@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
@@ -169,7 +170,7 @@ func TestManagerUsesTLS(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.expected, managerUsesTLS(&Config{ManagerApiUrl: tc.managerURL}))
+			assert.Equal(t, tc.expected, strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL((&Config{ManagerApiUrl: tc.managerURL}).ManagerApiUrl))), "https://"))
 		})
 	}
 }

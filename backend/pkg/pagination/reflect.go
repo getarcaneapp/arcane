@@ -35,7 +35,7 @@ func PaginateAndSortDB[M any](params QueryParams, query *gorm.DB, result *[]M) (
 	// missing across pages when the requested column has ties (or no sort was
 	// requested at all) and the database reorders a plain scan. Tie-break on the
 	// primary key whenever the model has one and the caller did not already.
-	if _, hasID := modelType.FieldByName("ID"); hasID && columnName != "id" && !orderedByIDInternal(query) {
+	if _, hasID := modelType.FieldByName("ID"); hasID && columnName != "id" && !orderedByID(query) {
 		orderColumns = append(orderColumns, clause.OrderByColumn{
 			Column: clause.Column{Table: clause.CurrentTable, Name: "id"},
 		})
@@ -62,8 +62,8 @@ func PaginateAndSortDB[M any](params QueryParams, query *gorm.DB, result *[]M) (
 	return paginateDB(params.Start, limit, query, result, params.SkipCount)
 }
 
-// orderedByIDInternal reports whether the query's existing ORDER BY already includes the id column.
-func orderedByIDInternal(query *gorm.DB) bool {
+// orderedByID reports whether the query's existing ORDER BY already includes the id column.
+func orderedByID(query *gorm.DB) bool {
 	existing, ok := query.Statement.Clauses["ORDER BY"]
 	if !ok {
 		return false

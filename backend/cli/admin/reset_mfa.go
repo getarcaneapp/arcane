@@ -44,7 +44,7 @@ func runResetMFACommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	if enabledErr := ensureMFAResetEnabledInternal(cfg); enabledErr != nil {
+	if enabledErr := ensureMFAResetEnabled(cfg); enabledErr != nil {
 		return enabledErr
 	}
 
@@ -52,7 +52,7 @@ func runResetMFACommand(cmd *cobra.Command, _ []string) error {
 	if username == "" {
 		return errors.New("username cannot be empty")
 	}
-	if confirmErr := confirmMFAResetInternal(cmd.InOrStdin(), cmd.OutOrStdout(), username); confirmErr != nil {
+	if confirmErr := confirmMFAReset(cmd.InOrStdin(), cmd.OutOrStdout(), username); confirmErr != nil {
 		return confirmErr
 	}
 
@@ -86,7 +86,7 @@ func runResetMFACommand(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func ensureMFAResetEnabledInternal(cfg *config.Config) error {
+func ensureMFAResetEnabled(cfg *config.Config) error {
 	if cfg == nil {
 		return errors.New("MFA reset config is nil")
 	}
@@ -96,7 +96,7 @@ func ensureMFAResetEnabledInternal(cfg *config.Config) error {
 	return nil
 }
 
-func confirmMFAResetInternal(in io.Reader, out io.Writer, username string) error {
+func confirmMFAReset(in io.Reader, out io.Writer, username string) error {
 	if in == nil || out == nil {
 		return errors.New("confirmation input and output are required")
 	}

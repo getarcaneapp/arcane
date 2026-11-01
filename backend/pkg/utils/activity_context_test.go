@@ -10,7 +10,7 @@ import (
 
 type activityContextTestKey string
 
-func TestActivityRuntimeContextPrefersAppContextInternal(t *testing.T) {
+func TestActivityRuntimeContextPrefersAppContext(t *testing.T) {
 	requestCtx, cancelRequest := context.WithCancel(t.Context())
 	appCtx, cancelApp := context.WithCancel(t.Context())
 	defer cancelApp()
@@ -24,7 +24,7 @@ func TestActivityRuntimeContextPrefersAppContextInternal(t *testing.T) {
 	require.ErrorIs(t, ctx.Err(), context.Canceled)
 }
 
-func TestActivityRuntimeContextPreservesRequestValuesWithAppCancellationInternal(t *testing.T) {
+func TestActivityRuntimeContextPreservesRequestValuesWithAppCancellation(t *testing.T) {
 	requestCtx, cancelRequest := context.WithCancel(context.WithValue(t.Context(), activityContextTestKey("request-id"), "req-123"))
 	appCtx, cancelApp := context.WithCancel(WithAppLifecycleContext(t.Context()))
 	defer cancelApp()
@@ -41,7 +41,7 @@ func TestActivityRuntimeContextPreservesRequestValuesWithAppCancellationInternal
 	require.ErrorIs(t, ctx.Err(), context.Canceled)
 }
 
-func TestActivityRuntimeContextUsesAppDeadlineWithRequestValuesInternal(t *testing.T) {
+func TestActivityRuntimeContextUsesAppDeadlineWithRequestValues(t *testing.T) {
 	requestDeadline := time.Now().Add(time.Hour)
 	appDeadline := time.Now().Add(time.Minute)
 	requestCtx, cancelRequest := context.WithDeadline(context.WithValue(t.Context(), activityContextTestKey("trace-id"), "trace-123"), requestDeadline)
@@ -57,7 +57,7 @@ func TestActivityRuntimeContextUsesAppDeadlineWithRequestValuesInternal(t *testi
 	require.Equal(t, "trace-123", ctx.Value(activityContextTestKey("trace-id")))
 }
 
-func TestActivityRuntimeContextFallsBackToDetachedRequestContextInternal(t *testing.T) {
+func TestActivityRuntimeContextFallsBackToDetachedRequestContext(t *testing.T) {
 	requestCtx, cancelRequest := context.WithCancel(t.Context())
 
 	ctx := ActivityRuntimeContext(requestCtx, nil)
@@ -66,7 +66,7 @@ func TestActivityRuntimeContextFallsBackToDetachedRequestContextInternal(t *test
 	require.NoError(t, ctx.Err())
 }
 
-func TestActivityRuntimeContextPreservesMarkedAppContextInternal(t *testing.T) {
+func TestActivityRuntimeContextPreservesMarkedAppContext(t *testing.T) {
 	appCtx, cancelApp := context.WithCancel(WithAppLifecycleContext(t.Context()))
 
 	ctx := ActivityRuntimeContext(appCtx, nil)
@@ -75,7 +75,7 @@ func TestActivityRuntimeContextPreservesMarkedAppContextInternal(t *testing.T) {
 	require.ErrorIs(t, ctx.Err(), context.Canceled)
 }
 
-func TestWithAppLifecycleContextMarksContextInternal(t *testing.T) {
+func TestWithAppLifecycleContextMarksContext(t *testing.T) {
 	ctx := WithAppLifecycleContext(t.Context())
 
 	require.True(t, IsAppLifecycleContext(ctx))

@@ -21,7 +21,7 @@ import (
 	"github.com/moby/moby/client"
 	"go.getarcane.app/acfs"
 	acfstypes "go.getarcane.app/acfs/types"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
@@ -220,7 +220,7 @@ func (s *Service) DeployStack(ctx context.Context, environmentID string, req typ
 	}
 
 	if upsertStackSourceErr := s.upsertStackSource(ctx, environmentID, stackName, req.ComposeContent, req.OverrideContent, req.EnvContent, req.Files); upsertStackSourceErr != nil {
-		slog.WarnContext(ctx, "failed to persist swarm stack source", "environmentId", normalizeSwarmEnvironmentID(environmentID), "stackName", stackName, "error", upsertStackSourceErr)
+		slog.WarnContext(ctx, "failed to persist swarm stack source", "environmentId", cmp.Or(strings.TrimSpace(environmentID), "0"), "stackName", stackName, "error", upsertStackSourceErr)
 	}
 
 	workingDir := req.WorkingDir
@@ -376,7 +376,12 @@ func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName s
 
 var deployStackAfterSourceUpdate = (*Service).DeployStack
 
-func (s *Service) UpdateStackSource(ctx context.Context, environmentID, stackName string, update types.SwarmStackSource, submitted map[string]bool) (*types.SwarmStackSource, error) {
+type StackSourceUpdate struct {
+	Source    types.SwarmStackSource
+	Submitted map[string]bool
+}
+
+func (s *Service) UpdateStackSource(ctx context.Context, environmentID, stackName string, change StackSourceUpdate) (*types.SwarmStackSource, error) {
 	stackName = strings.TrimSpace(stackName)
 	if stackName == "" {
 		return nil, errors.New("stack name is required")
@@ -390,10 +395,10 @@ func (s *Service) UpdateStackSource(ctx context.Context, environmentID, stackNam
 	current := kit.FromPtr(previous)
 	source := types.SwarmStackSource{
 		Name:            stackName,
-		ComposeContent:  kit.Ternary(submitted["composeContent"], update.ComposeContent, current.ComposeContent),
-		OverrideContent: kit.Ternary(submitted["overrideContent"], update.OverrideContent, current.OverrideContent),
-		EnvContent:      kit.Ternary(submitted["envContent"], update.EnvContent, current.EnvContent),
-		Files:           kit.Ternary(submitted["files"], update.Files, current.Files),
+		ComposeContent:  kit.Ternary(change.Submitted["composeContent"], change.Source.ComposeContent, current.ComposeContent),
+		OverrideContent: kit.Ternary(change.Submitted["overrideContent"], change.Source.OverrideContent, current.OverrideContent),
+		EnvContent:      kit.Ternary(change.Submitted["envContent"], change.Source.EnvContent, current.EnvContent),
+		Files:           kit.Ternary(change.Submitted["files"], change.Source.Files, current.Files),
 	}
 	if strings.TrimSpace(source.ComposeContent) == "" {
 		return nil, errors.New("stack compose source is required")
@@ -429,7 +434,7 @@ func (s *Service) UpdateStackSource(ctx context.Context, environmentID, stackNam
 			restoreErr = s.deleteStackSource(ctx, environmentID, stackName)
 		}
 		if restoreErr != nil {
-			slog.WarnContext(ctx, "failed to restore swarm stack source after deploy failure", "environmentId", normalizeSwarmEnvironmentID(environmentID), "stackName", stackName, "error", restoreErr)
+			slog.WarnContext(ctx, "failed to restore swarm stack source after deploy failure", "environmentId", cmp.Or(strings.TrimSpace(environmentID), "0"), "stackName", stackName, "error", restoreErr)
 		}
 		return nil, fmt.Errorf("failed to redeploy swarm stack from updated source: %w", deployStackAfterSourceUpdateErr)
 	}
@@ -554,7 +559,7 @@ func (s *Service) RemoveStack(ctx context.Context, environmentID, stackName stri
 	}
 
 	if deleteStackSourceErr := s.deleteStackSource(ctx, environmentID, stackName); deleteStackSourceErr != nil {
-		slog.WarnContext(ctx, "failed to remove persisted swarm stack source", "environmentId", normalizeSwarmEnvironmentID(environmentID), "stackName", stackName, "error", deleteStackSourceErr)
+		slog.WarnContext(ctx, "failed to remove persisted swarm stack source", "environmentId", cmp.Or(strings.TrimSpace(environmentID), "0"), "stackName", stackName, "error", deleteStackSourceErr)
 	}
 
 	return nil
@@ -833,10 +838,6 @@ func (s *Service) deleteStackSource(ctx context.Context, environmentID, stackNam
 	return nil
 }
 
-func normalizeSwarmEnvironmentID(environmentID string) string {
-	return cmp.Or(strings.TrimSpace(environmentID), "0")
-}
-
 func (s *Service) resolveSwarmStackSourceDir(ctx context.Context, environmentID, stackName string) (string, string, error) {
 	normalizedStackName := projects.SanitizeProjectName(strings.TrimSpace(stackName))
 	if normalizedStackName == "" || strings.Trim(normalizedStackName, "_") == "" {
@@ -857,7 +858,7 @@ func (s *Service) resolveSwarmStackSourceDir(ctx context.Context, environmentID,
 }
 
 func (s *Service) resolveSwarmStackSourceEnvironmentDir(ctx context.Context, environmentID string) (string, string, error) {
-	normalizedEnvironmentID := projects.SanitizeProjectName(normalizeSwarmEnvironmentID(environmentID))
+	normalizedEnvironmentID := projects.SanitizeProjectName(cmp.Or(strings.TrimSpace(environmentID), "0"))
 	if normalizedEnvironmentID == "" || strings.Trim(normalizedEnvironmentID, "_") == "" {
 		normalizedEnvironmentID = "0"
 	}

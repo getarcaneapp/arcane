@@ -128,7 +128,7 @@ func Load() (*types.Config, error) {
 		if authErr != nil {
 			output.Warning("Ignoring saved sessions: %v", authErr)
 		}
-		tokens := auth[authKey(cfg.ServerURL)]
+		tokens := auth[strings.TrimRight(strings.TrimSpace(cfg.ServerURL), "/")]
 		cfg.JWTToken, cfg.RefreshToken = tokens.AccessToken, tokens.RefreshToken
 	}
 	normalized := cfg.Clone()
@@ -274,7 +274,7 @@ func SwitchServer(ctx context.Context, cfg *types.Config, serverURL string) erro
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if authKey(serverURL) == authKey(cfg.ServerURL) {
+	if strings.TrimRight(strings.TrimSpace(serverURL), "/") == strings.TrimRight(strings.TrimSpace(cfg.ServerURL), "/") {
 		cfg.ServerURL = serverURL
 		return nil
 	}
@@ -286,13 +286,9 @@ func SwitchServer(ctx context.Context, cfg *types.Config, serverURL string) erro
 	if err != nil {
 		return err
 	}
-	tokens := auth[authKey(serverURL)]
+	tokens := auth[strings.TrimRight(strings.TrimSpace(serverURL), "/")]
 	cfg.JWTToken, cfg.RefreshToken = tokens.AccessToken, tokens.RefreshToken
 	return nil
-}
-
-func authKey(serverURL string) string {
-	return strings.TrimRight(strings.TrimSpace(serverURL), "/")
 }
 
 func loadAuth() (map[string]authTokens, error) {
@@ -349,7 +345,7 @@ func SaveTokens(ctx context.Context, cfg *types.Config) (err error) {
 	if err != nil {
 		return err
 	}
-	key := authKey(cfg.ServerURL)
+	key := strings.TrimRight(strings.TrimSpace(cfg.ServerURL), "/")
 	tokens := authTokens{AccessToken: cfg.JWTToken, RefreshToken: cfg.RefreshToken}
 	if auth[key] != tokens {
 		if tokens == (authTokens{}) {

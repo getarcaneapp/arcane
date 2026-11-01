@@ -16,7 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
-func convertServiceMountsInternal(
+func convertServiceMounts(
 	volumes []composegotypes.ServiceVolumeConfig,
 	ns namespace,
 	projectVolumes composegotypes.Volumes,
@@ -27,8 +27,8 @@ func convertServiceMountsInternal(
 	}
 	result := make([]mount.Mount, 0, len(volumes))
 	for _, vol := range volumes {
-		mountType := mapVolumeTypeInternal(vol.Type)
-		source, projectVolume, err := resolveServiceMountSourceInternal(vol.Source, mountType, ns, projectVolumes)
+		mountType := mapVolumeType(vol.Type)
+		source, projectVolume, err := resolveServiceMountSource(vol.Source, mountType, ns, projectVolumes)
 		if err != nil {
 			return nil, err
 		}
@@ -57,7 +57,7 @@ func convertServiceMountsInternal(
 				entry.VolumeOptions = &mount.VolumeOptions{}
 			}
 			if !projectVolume.External {
-				entry.VolumeOptions.Labels = mergeLabelsInternal(entry.VolumeOptions.Labels, mergeLabelsInternal(projectVolume.Labels, stackLabels))
+				entry.VolumeOptions.Labels = mergeLabels(entry.VolumeOptions.Labels, mergeLabels(projectVolume.Labels, stackLabels))
 				entry.VolumeOptions.DriverConfig = &mount.Driver{
 					Name:    projectVolume.Driver,
 					Options: projectVolume.DriverOpts,
@@ -78,7 +78,7 @@ func convertServiceMountsInternal(
 	return result, nil
 }
 
-func resolveServiceMountSourceInternal(
+func resolveServiceMountSource(
 	source string,
 	mountType mount.Type,
 	ns namespace,
@@ -98,7 +98,7 @@ func resolveServiceMountSourceInternal(
 	return ns.Resolve(source, projectVolume.Name), projectVolume, nil
 }
 
-type resolvedFileReferenceInternal struct {
+type resolvedFileReference struct {
 	meta   resourceMeta
 	target string
 	uid    string
@@ -106,23 +106,23 @@ type resolvedFileReferenceInternal struct {
 	mode   os.FileMode
 }
 
-func resolveServiceFileReferencesInternal(
+func resolveServiceFileReferences(
 	references []composegotypes.FileReferenceConfig,
 	metaByKey map[string]resourceMeta,
 	resourceType string,
-) ([]resolvedFileReferenceInternal, error) {
-	resolved := make([]resolvedFileReferenceInternal, 0, len(references))
+) ([]resolvedFileReference, error) {
+	resolved := make([]resolvedFileReference, 0, len(references))
 	for _, reference := range references {
 		meta, ok := metaByKey[reference.Source]
 		if !ok {
 			return nil, fmt.Errorf("undefined %s %q", resourceType, reference.Source)
 		}
 		target := cmp.Or(reference.Target, reference.Source)
-		mode, err := fileModeOrDefaultInternal(reference.Mode)
+		mode, err := fileModeOrDefault(reference.Mode)
 		if err != nil {
 			return nil, fmt.Errorf("invalid %s %q mode: %w", resourceType, reference.Source, err)
 		}
-		resolved = append(resolved, resolvedFileReferenceInternal{
+		resolved = append(resolved, resolvedFileReference{
 			meta:   meta,
 			target: target,
 			uid:    cmp.Or(strings.TrimSpace(reference.UID), "0"),
@@ -136,12 +136,12 @@ func resolveServiceFileReferencesInternal(
 	return resolved, nil
 }
 
-func convertServiceSecretRefsInternal(secrets []composegotypes.ServiceSecretConfig, secretMetaByKey map[string]resourceMeta) ([]*swarm.SecretReference, error) {
+func convertServiceSecretRefs(secrets []composegotypes.ServiceSecretConfig, secretMetaByKey map[string]resourceMeta) ([]*swarm.SecretReference, error) {
 	references := make([]composegotypes.FileReferenceConfig, len(secrets))
 	for i, secret := range secrets {
 		references[i] = composegotypes.FileReferenceConfig(secret)
 	}
-	resolved, err := resolveServiceFileReferencesInternal(references, secretMetaByKey, "secret")
+	resolved, err := resolveServiceFileReferences(references, secretMetaByKey, "secret")
 	if err != nil {
 		return nil, err
 	}
@@ -162,12 +162,12 @@ func convertServiceSecretRefsInternal(secrets []composegotypes.ServiceSecretConf
 	return result, nil
 }
 
-func convertServiceConfigRefsInternal(configs []composegotypes.ServiceConfigObjConfig, configMetaByKey map[string]resourceMeta) ([]*swarm.ConfigReference, error) {
+func convertServiceConfigRefs(configs []composegotypes.ServiceConfigObjConfig, configMetaByKey map[string]resourceMeta) ([]*swarm.ConfigReference, error) {
 	references := make([]composegotypes.FileReferenceConfig, len(configs))
 	for i, config := range configs {
 		references[i] = composegotypes.FileReferenceConfig(config)
 	}
-	resolved, err := resolveServiceFileReferencesInternal(references, configMetaByKey, "config")
+	resolved, err := resolveServiceFileReferences(references, configMetaByKey, "config")
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func convertServiceConfigRefsInternal(configs []composegotypes.ServiceConfigObjC
 	return result, nil
 }
 
-func resolveFileObjectContentInternal(
+func resolveFileObjectContent(
 	fileConfig composegotypes.FileObjectConfig,
 	workingDir string,
 	environment composegotypes.Mapping,
@@ -213,7 +213,7 @@ func resolveFileObjectContentInternal(
 	return nil, errors.New("config or secret content is required")
 }
 
-func fileModeOrDefaultInternal(mode *composegotypes.FileMode) (os.FileMode, error) {
+func fileModeOrDefault(mode *composegotypes.FileMode) (os.FileMode, error) {
 	if mode == nil {
 		return 0o444, nil
 	}
@@ -223,7 +223,7 @@ func fileModeOrDefaultInternal(mode *composegotypes.FileMode) (os.FileMode, erro
 	return os.FileMode(uint32(*mode)), nil
 }
 
-func mapVolumeTypeInternal(value string) mount.Type {
+func mapVolumeType(value string) mount.Type {
 	switch strings.ToLower(value) {
 	case "bind":
 		return mount.TypeBind

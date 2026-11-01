@@ -68,7 +68,13 @@ func (c *composeCoordinator) Deploy(ctx context.Context, request types.ComposeDe
 	}
 	removeOrphans := ResolveRemoveOrphans(request.GitOpsManaged, request.Options)
 	slog.InfoContext(ctx, "starting compose up with health check support", "projectId", request.ProjectID, "projectName", model.Name, "services", len(model.Services), "removeOrphans", removeOrphans)
-	if upErr := c.commands.Up(ctx, request.DockerHost, model, nil, removeOrphans, forceRecreate, recreateVolumes, request.AuthConfigs, request.WaitTimeout); upErr != nil {
+	if upErr := c.commands.Up(ctx, request.DockerHost, model, types.ComposeUpOptions{
+		RemoveOrphans:   removeOrphans,
+		ForceRecreate:   forceRecreate,
+		RecreateVolumes: recreateVolumes,
+		AuthConfigs:     request.AuthConfigs,
+		WaitTimeout:     request.WaitTimeout,
+	}); upErr != nil {
 		slog.ErrorContext(ctx, "compose up failed", "projectName", model.Name, "projectId", request.ProjectID, "error", upErr)
 		if errors.Is(upErr, context.DeadlineExceeded) || strings.Contains(upErr.Error(), "application not healthy after") {
 			return nil,
@@ -106,7 +112,12 @@ func (c *composeCoordinator) UpdateServices(ctx context.Context, request types.C
 	if stopErr := c.commands.Stop(ctx, request.DockerHost, selected, scope); stopErr != nil {
 		slog.WarnContext(ctx, "compose stop failed, continuing", "error", stopErr)
 	}
-	if upErr := c.commands.Up(ctx, request.DockerHost, selected, scope, false, true, false, request.AuthConfigs, request.WaitTimeout); upErr != nil {
+	if upErr := c.commands.Up(ctx, request.DockerHost, selected, types.ComposeUpOptions{
+		Services:      scope,
+		ForceRecreate: true,
+		AuthConfigs:   request.AuthConfigs,
+		WaitTimeout:   request.WaitTimeout,
+	}); upErr != nil {
 		if request.Recover != nil {
 			request.Recover(context.WithoutCancel(ctx))
 		}

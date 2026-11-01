@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"testing"
-	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/types/v3"
@@ -95,10 +94,10 @@ func TestCoordinatorUpdateServicesScopesDependents(t *testing.T) {
 			calls = append(calls, "stop")
 			return nil
 		},
-		Up: func(_ context.Context, _ string, selected *composetypes.Project, services []string, _, force, _ bool, _ map[string]registry.AuthConfig, _ time.Duration) error {
-			upped = services
+		Up: func(_ context.Context, _ string, selected *composetypes.Project, opts types.ComposeUpOptions) error {
+			upped = opts.Services
 			selectedNames = selected.ServiceNames()
-			forceRecreate = force
+			forceRecreate = opts.ForceRecreate
 			calls = append(calls, "up")
 			return nil
 		},

@@ -17,7 +17,7 @@ import (
 func TestBuildHealthURLInternalDefaults(t *testing.T) {
 	t.Run("default_port", func(t *testing.T) {
 		cfg := &config.Config{}
-		healthURL, err := buildHealthURLInternal(cfg)
+		healthURL, err := buildHealthURL(cfg)
 
 		require.NoError(t, err,
 			"build health URL failed: %v", err)
@@ -31,7 +31,7 @@ func TestBuildHealthURLInternalDefaults(t *testing.T) {
 
 	t.Run("explicit_port", func(t *testing.T) {
 		cfg := &config.Config{Port: "8443"}
-		healthURL, err := buildHealthURLInternal(cfg)
+		healthURL, err := buildHealthURL(cfg)
 
 		require.NoError(t, err,
 			"build health URL failed: %v", err)
@@ -43,13 +43,13 @@ func TestBuildHealthURLInternalDefaults(t *testing.T) {
 
 func TestBuildHealthURLInternalInvalidPort(t *testing.T) {
 	cfg := &config.Config{Port: "invalid-port"}
-	_, err := buildHealthURLInternal(cfg)
+	_, err := buildHealthURL(cfg)
 
 	require.Error(t, err,
 		"expected invalid health URL port to fail")
 }
 
-func TestRunHealthCommandInternal(t *testing.T) {
+func TestRunHealthCommand(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !assert.Equal(t, http.MethodHead, r.Method,
 			"expected HEAD request, got: %s", r.Method) {
@@ -80,7 +80,7 @@ func TestRunHealthCommandInternal(t *testing.T) {
 
 	cfg := &config.Config{Port: port}
 	{
-		err := runHealthCommandInternal(t.Context(), cfg, 2*time.Second)
+		err := runHealthCommand(t.Context(), cfg, 2*time.Second)
 		require.NoError(t, err,
 			"health command failed: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestRunHealthCommandInternalNon2xx(t *testing.T) {
 	}
 
 	cfg := &config.Config{Port: port}
-	err := runHealthCommandInternal(t.Context(), cfg, 2*time.Second)
+	err := runHealthCommand(t.Context(), cfg, 2*time.Second)
 
 	require.Error(t, err,
 		"expected non-2xx response to fail")
@@ -112,14 +112,14 @@ func TestRunHealthCommandInternalNon2xx(t *testing.T) {
 }
 
 func TestRunHealthCommandInternalConnectionFailure(t *testing.T) {
-	err := runHealthCommandInternal(t.Context(), &config.Config{Port: "1"}, 200*time.Millisecond)
+	err := runHealthCommand(t.Context(), &config.Config{Port: "1"}, 200*time.Millisecond)
 
 	require.Error(t, err,
 		"expected connection failure")
 }
 
 func TestRunHealthCommandInternalDefaultTimeoutFallback(t *testing.T) {
-	err := runHealthCommandInternal(t.Context(), &config.Config{Port: "1"}, 0)
+	err := runHealthCommand(t.Context(), &config.Config{Port: "1"}, 0)
 
 	require.Error(t, err,
 		"expected connection failure")

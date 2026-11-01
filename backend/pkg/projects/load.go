@@ -338,31 +338,32 @@ func ApplyLenientLoaderOptions(ctx context.Context, opts *loader.Options, compos
 // error aborts the load.
 type PrepareProjectFunc func(ctx context.Context, project *composetypes.Project) error
 
+type LoadOptions struct {
+	ComposeFile       string
+	ProjectName       string
+	ProjectsDirectory string
+	AutoInjectEnv     bool
+	PathMapper        *PathMapper
+	EnvOverride       EnvMap
+	ConfigureLoader   func(*loader.Options)
+	Lenient           bool
+	Dependencies      *types.ComposeDependencies
+	Services          []string
+	Prepare           PrepareProjectFunc
+}
+
 // LoadComposeProject loads a compose project from composeFile. envOverride,
 // configureLoader, and prepare are optional and may be nil. When lenient is true, undefined
 // ${VAR} references are tolerated: instead of substituting them with an empty
 // string (which produces invalid volume/bind specs like ":/path"), they are
 // replaced with a placeholder value so structural validation can succeed. This
 // is useful during GitSync validation where a .env file may not yet exist.
-func LoadComposeProject(
-	ctx context.Context,
-	composeFile string,
-	projectName string,
-	projectsDirectory string,
-	autoInjectEnv bool,
-	pathMapper *PathMapper,
-	envOverride EnvMap,
-	configureLoader func(*loader.Options),
-	lenient bool,
-	dependencies *types.ComposeDependencies,
-	services []string,
-	prepare PrepareProjectFunc,
-) (project *composetypes.Project, err error) {
-	defer recoverComposeLoadPanic(ctx, composeFile, &project, &err)
+func LoadComposeProject(ctx context.Context, opts LoadOptions) (project *composetypes.Project, err error) {
+	defer recoverComposeLoadPanic(ctx, opts.ComposeFile, &project, &err)
 
-	workdir := filepath.Dir(composeFile)
+	workdir := filepath.Dir(opts.ComposeFile)
 
-	envLoader := NewEnvLoader(projectsDirectory, workdir, autoInjectEnv)
+	envLoader := NewEnvLoader(opts.ProjectsDirectory, workdir, opts.AutoInjectEnv)
 
 	// Load full environment (process + global + project .env) for service injection
 	fullEnvMap, injectionVars, err := envLoader.LoadEnvironment(ctx)
@@ -374,7 +375,7 @@ func LoadComposeProject(
 	}
 
 	// Override wins: maps.Copy(dst, src) copies src into dst.
-	maps.Copy(fullEnvMap, envOverride)
+	maps.Copy(fullEnvMap, opts.EnvOverride)
 
 	// Set PWD
 	if absWorkdir, absErr := filepath.Abs(workdir); absErr == nil {
@@ -400,21 +401,21 @@ func LoadComposeProject(
 		for _, f := range envOpts.ConfigFiles {
 			configFiles = append(configFiles, composetypes.ConfigFile{Filename: f})
 		}
-		if !slices.Contains(envOpts.ConfigFiles, composeFile) {
-			slog.DebugContext(ctx, "COMPOSE_FILE selection supersedes resolved compose file", "resolved", composeFile, "selection", envOpts.ConfigFiles)
+		if !slices.Contains(envOpts.ConfigFiles, opts.ComposeFile) {
+			slog.DebugContext(ctx, "COMPOSE_FILE selection supersedes resolved compose file", "resolved", opts.ComposeFile, "selection", envOpts.ConfigFiles)
 		}
 	default:
-		configFiles = []composetypes.ConfigFile{{Filename: composeFile}}
+		configFiles = []composetypes.ConfigFile{{Filename: opts.ComposeFile}}
 		// Merge a Docker Compose override file (compose.override.yaml, etc.) when
 		// present alongside the base file, as `docker compose` does. Only auto-load an
 		// override when the base was discovered by its standard filename: `docker
 		// compose` never auto-loads overrides for an explicit custom `-f` file, and
 		// our custom-YAML fallback scan (e.g. mystack.yaml) is that case. Listing the
 		// override after the base makes it take precedence.
-		if slices.Contains(composeFileCandidates, filepath.Base(composeFile)) {
+		if slices.Contains(composeFileCandidates, filepath.Base(opts.ComposeFile)) {
 			if overrideFile := DetectComposeOverrideFile(workdir); overrideFile != "" {
 				configFiles = append(configFiles, composetypes.ConfigFile{Filename: overrideFile})
-				slog.DebugContext(ctx, "merging compose override file", "base", composeFile, "override", overrideFile)
+				slog.DebugContext(ctx, "merging compose override file", "base", opts.ComposeFile, "override", overrideFile)
 			}
 		}
 	}
@@ -426,32 +427,32 @@ func LoadComposeProject(
 		Environment: composetypes.Mapping(fullEnvMap),
 	}
 
-	loaderOptions := []func(*loader.Options){func(opts *loader.Options) {
+	loaderOptions := []func(*loader.Options){func(loaderOpts *loader.Options) {
 		// A caller-supplied name acts like `docker compose -p`, which outranks
 		// COMPOSE_PROJECT_NAME. Only when no name is forced (e.g. the sync
 		// metadata path passes "") does COMPOSE_PROJECT_NAME take effect.
 		switch {
-		case projectName != "":
-			opts.SetProjectName(projectName, false)
+		case opts.ProjectName != "":
+			loaderOpts.SetProjectName(opts.ProjectName, false)
 		case envOpts.ProjectName != "":
-			opts.SetProjectName(loader.NormalizeProjectName(envOpts.ProjectName), true)
+			loaderOpts.SetProjectName(loader.NormalizeProjectName(envOpts.ProjectName), true)
 		}
 		if len(envOpts.Profiles) > 0 {
-			loader.WithProfiles(envOpts.Profiles)(opts)
+			loader.WithProfiles(envOpts.Profiles)(loaderOpts)
 		}
 		// Discard env_file after folding into environment, as the compose CLI
 		// does, so config-hashes match and both tools stop recreating services.
-		if dependencies == nil {
-			loader.WithDiscardEnvFiles(opts)
+		if opts.Dependencies == nil {
+			loader.WithDiscardEnvFiles(loaderOpts)
 		}
-		if lenient {
-			ApplyLenientLoaderOptions(ctx, opts, composeFile)
+		if opts.Lenient {
+			ApplyLenientLoaderOptions(ctx, loaderOpts, opts.ComposeFile)
 		}
-		if configureLoader != nil {
-			configureLoader(opts)
+		if opts.ConfigureLoader != nil {
+			opts.ConfigureLoader(loaderOpts)
 		}
 		// Select before environment resolution and Arcane resource/path preparation.
-		loader.WithSelectedServices(services)(opts)
+		loader.WithSelectedServices(opts.Services)(loaderOpts)
 	}}
 
 	project, err = loader.LoadWithContext(ctx, cfg, loaderOptions...)
@@ -459,18 +460,18 @@ func LoadComposeProject(
 		return nil, fmt.Errorf("load compose project: %w", err)
 	}
 
-	recordComposeDependencies(project, dependencies)
+	recordComposeDependencies(project, opts.Dependencies)
 
 	for _, configFile := range cfg.ConfigFiles {
 		project.ComposeFiles = append(project.ComposeFiles, configFile.Filename)
 	}
 
 	var rawSources map[string]string
-	if !isNilVolumeSourcePathMapper(pathMapper) {
+	if !isNilVolumeSourcePathMapper(opts.PathMapper) {
 		rawSources = harvestRawSources(ctx, cfg, loaderOptions...)
 	}
 
-	project, err = finishLoadedProject(ctx, project, workdir, pathMapper, true, rawSources, prepare)
+	project, err = finishLoadedProject(ctx, project, workdir, opts.PathMapper, true, rawSources, opts.Prepare)
 	if err != nil {
 		return nil, err
 	}
@@ -548,7 +549,7 @@ func harvestRawSources(ctx context.Context, cfg composetypes.ConfigDetails, load
 	for name, service := range project.Services {
 		for _, volume := range service.Volumes {
 			if volume.Type == composetypes.VolumeTypeBind && volume.Source != "" {
-				rawSources[VolumeSourceKey(name, volume.Target)] = volume.Source
+				rawSources[("volume:" + name + "\x00" + filepath.Clean(volume.Target))] = volume.Source
 			}
 		}
 	}
@@ -626,13 +627,25 @@ func injectServiceConfiguration(project *composetypes.Project, injectionVars Env
 	}
 }
 
-func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *PathMapper) (*composetypes.Project, string, error) {
-	composeFile, err := DetectComposeFile(ctx, projectsDirectory, dir)
+func LoadComposeProjectFromDir(ctx context.Context, dir string, opts LoadOptions) (*composetypes.Project, string, error) {
+	composeFile, err := DetectComposeFile(ctx, opts.ProjectsDirectory, dir)
 	if err != nil {
 		return nil, "", err
 	}
 
-	proj, err := LoadComposeProject(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil, false, nil, nil, nil)
+	proj, err := LoadComposeProject(ctx, LoadOptions{
+		ComposeFile:       composeFile,
+		ProjectName:       opts.ProjectName,
+		ProjectsDirectory: opts.ProjectsDirectory,
+		AutoInjectEnv:     opts.AutoInjectEnv,
+		PathMapper:        opts.PathMapper,
+		EnvOverride:       opts.EnvOverride,
+		ConfigureLoader:   opts.ConfigureLoader,
+		Lenient:           opts.Lenient,
+		Dependencies:      opts.Dependencies,
+		Services:          opts.Services,
+		Prepare:           opts.Prepare,
+	})
 	if err != nil {
 		return nil, "", err
 	}
@@ -696,37 +709,39 @@ func recordComposeDependencies(project *composetypes.Project, dependencies *type
 	}
 }
 
+type ValidateComposeRequest struct {
+	ProjectsDirectory string
+	ProjectPath       string
+	ProjectName       string
+	ComposeContent    string
+	EnvContent        *string
+	OverrideContent   *string
+	OverrideFileName  string
+	Lenient           bool
+}
+
 // ValidateComposeContentForUpdate validates proposed editor content without persisting it.
 // Missing includes are tolerated here; deployment uses strict executable loading.
-func ValidateComposeContentForUpdate(ctx context.Context,
-	projectsDirectory,
-	projectPath,
-	projectName,
-	composeContent string,
-	effectiveEnvContent,
-	overrideContent *string,
-	overrideFileName string,
-	lenient bool,
-) (err error) {
+func ValidateComposeContentForUpdate(ctx context.Context, req ValidateComposeRequest) (err error) {
 	defer func() {
 		if panicErr := utils.PanicToError(recover()); panicErr != nil {
 			err = fmt.Errorf("compose file contains invalid syntax: %w", panicErr)
 		}
 	}()
 
-	fullEnvMap, envErr := BuildValidationEnvironment(ctx, projectsDirectory, projectPath, effectiveEnvContent)
+	fullEnvMap, envErr := BuildValidationEnvironment(ctx, req.ProjectsDirectory, req.ProjectPath, req.EnvContent)
 	if envErr != nil {
 		return envErr
 	}
 
 	// COMPOSE_FILE in the (edited) env selects the exact file set, so validate
 	// against it — a save that introduces a broken selection fails fast.
-	envOpts, envOptsErr := ParseComposeEnvOptions(projectPath, fullEnvMap)
+	envOpts, envOptsErr := ParseComposeEnvOptions(req.ProjectPath, fullEnvMap)
 	if envOptsErr != nil {
 		return envOptsErr
 	}
 
-	validationProjectName := NormalizeProjectName(projectName)
+	validationProjectName := NormalizeProjectName(req.ProjectName)
 	var configFiles []composetypes.ConfigFile
 	switch {
 	case len(envOpts.ConfigFiles) > 0:
@@ -736,54 +751,54 @@ func ValidateComposeContentForUpdate(ctx context.Context,
 		// that exact path is listed in the selection (docker skips auto-overrides
 		// for an explicit file set); a same-named file in a subdirectory is not
 		// the managed override.
-		overrideName := cmp.Or(strings.TrimSpace(overrideFileName), DefaultComposeOverrideFileName)
+		overrideName := cmp.Or(strings.TrimSpace(req.OverrideFileName), DefaultComposeOverrideFileName)
 		overridePath := ""
-		if absProjectPath, absErr := filepath.Abs(filepath.Clean(projectPath)); absErr == nil {
+		if absProjectPath, absErr := filepath.Abs(filepath.Clean(req.ProjectPath)); absErr == nil {
 			overridePath = filepath.Join(absProjectPath, overrideName)
 		}
 		for i, f := range envOpts.ConfigFiles {
 			switch {
 			case i == 0:
-				configFiles = append(configFiles, composetypes.ConfigFile{Filename: f, Content: []byte(composeContent)})
-			case overrideContent != nil && overridePath != "" && f == overridePath:
-				configFiles = append(configFiles, composetypes.ConfigFile{Filename: f, Content: []byte(*overrideContent)})
+				configFiles = append(configFiles, composetypes.ConfigFile{Filename: f, Content: []byte(req.ComposeContent)})
+			case req.OverrideContent != nil && overridePath != "" && f == overridePath:
+				configFiles = append(configFiles, composetypes.ConfigFile{Filename: f, Content: []byte(*req.OverrideContent)})
 			default:
 				configFiles = append(configFiles, composetypes.ConfigFile{Filename: f})
 			}
 		}
 	default:
 		configFiles = []composetypes.ConfigFile{
-			{Filename: filepath.Join(projectPath, "compose.yaml"), Content: []byte(composeContent)},
+			{Filename: filepath.Join(req.ProjectPath, "compose.yaml"), Content: []byte(req.ComposeContent)},
 		}
 		// When an override is supplied, validate the *merged* config as `docker
 		// compose` would deploy it. Overrides can add services and are layered on
 		// top (listed after the base so the override wins).
-		if overrideContent != nil {
-			overrideName := cmp.Or(strings.TrimSpace(overrideFileName), DefaultComposeOverrideFileName)
+		if req.OverrideContent != nil {
+			overrideName := cmp.Or(strings.TrimSpace(req.OverrideFileName), DefaultComposeOverrideFileName)
 			configFiles = append(configFiles, composetypes.ConfigFile{
-				Filename: filepath.Join(projectPath, overrideName),
-				Content:  []byte(*overrideContent),
+				Filename: filepath.Join(req.ProjectPath, overrideName),
+				Content:  []byte(*req.OverrideContent),
 			})
 		}
 	}
 
 	cfg := composetypes.ConfigDetails{
 		Version:     api.ComposeVersion,
-		WorkingDir:  projectPath,
+		WorkingDir:  req.ProjectPath,
 		ConfigFiles: configFiles,
 		Environment: composetypes.Mapping(fullEnvMap),
 	}
 
-	missingIncludeLoader := NewMissingIncludeStubLoader(projectPath)
+	missingIncludeLoader := &MissingIncludeStubLoader{projectPath: req.ProjectPath}
 	defer missingIncludeLoader.Cleanup()
 
-	err = WithTransientValidationEnvFile(ctx, projectPath, effectiveEnvContent, func() error {
+	err = WithTransientValidationEnvFile(ctx, req.ProjectPath, req.EnvContent, func() error {
 		_, loadErr := loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
 			opts.ResourceLoaders = append([]loader.ResourceLoader{missingIncludeLoader}, opts.ResourceLoaders...)
 			if validationProjectName != "" {
 				opts.SetProjectName(validationProjectName, false)
 			}
-			if lenient {
+			if req.Lenient {
 				ApplyLenientLoaderOptions(ctx, opts, cfg.ConfigFiles[0].Filename)
 			}
 		})

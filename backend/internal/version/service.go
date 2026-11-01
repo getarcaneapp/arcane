@@ -17,7 +17,7 @@ import (
 	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.getarcane.app/docker/compat"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/streams/agg"
 	"go.getarcane.app/sys/cgroup"
 	"golang.org/x/mod/semver"
@@ -351,14 +351,14 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *types.VersionIn
 				NewestVersion:   kit.Ternary(next.Version != "" && semver.Compare(next.Version, ver) >= 0, next.Version, ""),
 				UpdateAvailable: digestUpdateAvailable || (next.Version != "" && s.IsNewer(next.Version, ver)),
 			}
-			if !isCommitSHA(s.revision) || !isCommitSHA(next.Revision) || strings.EqualFold(s.revision, next.Revision) {
+			if !commitSHAPattern.MatchString(strings.ToLower(strings.TrimSpace(s.revision))) || !commitSHAPattern.MatchString(strings.ToLower(strings.TrimSpace(next.Revision))) || strings.EqualFold(s.revision, next.Revision) {
 				return info
 			}
 			return types.VersionInfo{
 				NewestDigest:    info.NewestDigest,
 				NewestVersion:   info.NewestVersion,
 				UpdateAvailable: info.UpdateAvailable,
-				ReleaseURL:      compareURL(s.revision, next.Revision),
+				ReleaseURL:      (repoURL + "/compare/" + s.revision + "..." + next.Revision),
 				ReleaseNotes:    s.commitNotes(ctx, s.revision, next.Revision),
 			}
 		case isSemver:

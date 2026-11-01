@@ -10,14 +10,14 @@ import (
 // Docker's RFC3339 timestamp when timestamps=true
 var dockerTimestamp = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s+`)
 
-// stripStreamMetadataInternal removes one leading Arcane stderr marker and one
+// stripStreamMetadata removes one leading Arcane stderr marker and one
 // leading Docker RFC3339 timestamp (in either order) from the front of line.
 // It reports whether the marker was removed and, when allowTimestamp is true
 // and a valid Docker timestamp was found, its normalized value. The transport
 // adds at most one marker and one timestamp per line, so anything past the
 // first of each is application content and stays; timestamps that fail to
 // parse are left in place.
-func stripStreamMetadataInternal(line string, allowTimestamp bool) (rest string, sawStderr bool, timestamp string) {
+func stripStreamMetadata(line string, allowTimestamp bool) (rest string, sawStderr bool, timestamp string) {
 	for {
 		line = strings.TrimLeft(line, " \t")
 
@@ -42,7 +42,7 @@ func stripStreamMetadataInternal(line string, allowTimestamp bool) (rest string,
 	return line, sawStderr, timestamp
 }
 
-func trimTrailingNewlinesInternal(raw string) string {
+func trimTrailingNewlines(raw string) string {
 	end := len(raw)
 	for end > 0 {
 		c := raw[end-1]
@@ -59,7 +59,7 @@ func trimTrailingNewlinesInternal(raw string) string {
 func NormalizeContainerLine(raw string) (level, msg, timestamp string) {
 	level = "stdout"
 
-	line, sawStderr, ts := stripStreamMetadataInternal(trimTrailingNewlinesInternal(raw), true)
+	line, sawStderr, ts := stripStreamMetadata(trimTrailingNewlines(raw), true)
 	if sawStderr {
 		level = "stderr"
 	}
@@ -78,14 +78,14 @@ func NormalizeProjectLine(raw string) (level, service, msg, timestamp string) {
 	level = "stdout"
 	service = ""
 
-	head, sawHeadStderr, headTS := stripStreamMetadataInternal(trimTrailingNewlinesInternal(raw), true)
+	head, sawHeadStderr, headTS := stripStreamMetadata(trimTrailingNewlines(raw), true)
 	timestamp = headTS
 
 	base := head
 	if parts := strings.SplitN(base, " | ", 2); len(parts) == 2 {
 		service = strings.TrimSpace(parts[0])
 
-		message, sawMessageStderr, messageTS := stripStreamMetadataInternal(parts[1], headTS == "")
+		message, sawMessageStderr, messageTS := stripStreamMetadata(parts[1], headTS == "")
 		if sawMessageStderr || sawHeadStderr {
 			level = "stderr"
 		}

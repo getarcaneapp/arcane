@@ -234,7 +234,7 @@ func isLegacyServerLabel(containerLabels map[string]string) bool {
 	return false
 }
 
-func normalizeRecreatedArcaneLabelsInternal(containerLabels map[string]string) map[string]string {
+func normalizeRecreatedArcaneLabels(containerLabels map[string]string) map[string]string {
 	normalized := maps.Clone(containerLabels)
 	if normalized == nil {
 		return nil
@@ -249,7 +249,7 @@ func normalizeRecreatedArcaneLabelsInternal(containerLabels map[string]string) m
 	return normalized
 }
 
-func refreshRecreatedImageLabelsInternal(containerLabels, previousImageLabels, imageLabels map[string]string, imageDigest string) map[string]string {
+func refreshRecreatedImageLabels(containerLabels, previousImageLabels, imageLabels map[string]string, imageDigest string) map[string]string {
 	refreshed := maps.Clone(containerLabels)
 	for key, value := range containerLabels {
 		if !strings.HasPrefix(strings.ToLower(key), "org.opencontainers.image.") {
@@ -288,7 +288,7 @@ func refreshRecreatedImageLabelsInternal(containerLabels, previousImageLabels, i
 	return refreshed
 }
 
-func refreshRecreatedContainerLabelsInternal(ctx context.Context, dockerClient *client.Client, containerLabels map[string]string, previousImage, targetImage string) map[string]string {
+func refreshRecreatedContainerLabels(ctx context.Context, dockerClient *client.Client, containerLabels map[string]string, previousImage, targetImage string) map[string]string {
 	// Manifest data is needed to record the platform manifest digest compose
 	// v5.5.0 expects in com.docker.compose.image; older daemons may reject the
 	// option, so retry without it and fall back to the top-level image ID.
@@ -308,7 +308,7 @@ func refreshRecreatedContainerLabelsInternal(ctx context.Context, dockerClient *
 	previousImageLabels := map[string]string(nil)
 	if imageInspect.Config != nil {
 		imageLabels = imageInspect.Config.Labels
-		if hasOCIImageLabelInternal(containerLabels) && strings.TrimSpace(previousImage) != "" {
+		if hasOCIImageLabel(containerLabels) && strings.TrimSpace(previousImage) != "" {
 			previousImageInspect, previousImageInspectErr := dockerClient.ImageInspect(ctx, previousImage)
 			if previousImageInspectErr != nil {
 				slog.WarnContext(ctx, "Could not inspect previous image labels; preserving existing OCI labels",
@@ -320,10 +320,10 @@ func refreshRecreatedContainerLabelsInternal(ctx context.Context, dockerClient *
 			}
 		}
 	}
-	return refreshRecreatedImageLabelsInternal(containerLabels, previousImageLabels, imageLabels, projects.ComposeImageDigest(imageInspect))
+	return refreshRecreatedImageLabels(containerLabels, previousImageLabels, imageLabels, projects.ComposeImageDigest(imageInspect))
 }
 
-func hasOCIImageLabelInternal(containerLabels map[string]string) bool {
+func hasOCIImageLabel(containerLabels map[string]string) bool {
 	for key := range containerLabels {
 		if strings.HasPrefix(strings.ToLower(key), "org.opencontainers.image.") {
 			return true
@@ -494,10 +494,10 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	// Create new container config
 	containerConfig := *oldContainer.Config
 	containerConfig.Image = newImage
-	containerConfig.Labels = normalizeRecreatedArcaneLabelsInternal(containerConfig.Labels)
+	containerConfig.Labels = normalizeRecreatedArcaneLabels(containerConfig.Labels)
 	containerConfig.Env = applyRecoveredEnvironment(containerConfig.Env, environment)
 
-	containerConfig.Labels = refreshRecreatedContainerLabelsInternal(ctx, dockerClient, containerConfig.Labels, oldContainer.Image, cmp.Or(expectedImageID, newImage))
+	containerConfig.Labels = refreshRecreatedContainerLabels(ctx, dockerClient, containerConfig.Labels, oldContainer.Image, cmp.Or(expectedImageID, newImage))
 
 	hostConfig, sanitizedMemorySwappiness, engineInfo, err := compat.PrepareRecreateHostConfigForEngine(ctx, dockerClient, oldContainer.ID, oldContainer.HostConfig)
 	if err != nil {
