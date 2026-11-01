@@ -28,9 +28,6 @@ formatters:
         - standard
         - default
         - localmodule
-        # - prefix(arena,archive/,bufio,bytes,cmp,compress/,container/,context,crypto,database/,debug/,embed,encoding,errors,expvar,flag,fmt,go/,hash,html,image,index/,io,iter,log,maps,math,mime,net,os,path,plugin,reflect,regexp,runtime,slices,sort,strconv,strings,structs,sync,syscall,testing,text/,time,unicode,unique,unsafe,uuid,weak)
-        # - default
-        # - localmodule
       custom-order: true
     gofumpt:
       extra:
@@ -88,14 +85,8 @@ linters:
       rules:
         main:
           deny:
-            - pkg: io/ioutil
-              desc: io/ioutil package has been deprecated
             - pkg: github.com/docker/docker/errdefs
               desc: use github.com/containerd/errdefs instead.
-            - pkg: golang.org/x/exp/maps
-              desc: use stdlib maps package
-            - pkg: golang.org/x/exp/slices
-              desc: use stdlib slices package
             - pkg: 'github.com/google/uuid'
               desc: Use stdlib uuid instead.
             - pkg: 'gopkg.in/yaml.v3'

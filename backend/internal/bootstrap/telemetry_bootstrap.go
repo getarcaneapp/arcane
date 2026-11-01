@@ -135,7 +135,9 @@ func (t *telemetryProviders) Shutdown(ctx context.Context) error {
 			errs = append(errs, t.tracerProvider.Shutdown(ctx))
 		}
 		if t.meterProvider != nil {
-			errs = append(errs, t.meterProvider.Shutdown(ctx))
+			if err := t.meterProvider.Shutdown(ctx); !errors.Is(err, metric.ErrReaderShutdown) {
+				errs = append(errs, err)
+			}
 		}
 		if t.loggerProvider != nil {
 			errs = append(errs, t.loggerProvider.Shutdown(ctx))

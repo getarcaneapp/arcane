@@ -449,6 +449,7 @@ func TestApplicationOptionsValidate(t *testing.T) {
 		(*database.DB)(nil),
 		"test-encryption-key",
 		cancelApp,
+		&telemetryProviders{},
 	))
 	require.NoError(t, err)
 }

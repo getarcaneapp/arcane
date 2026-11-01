@@ -170,7 +170,7 @@ func Bootstrap(ctx context.Context) error {
 		slog.InfoContext(ctx, "OpenTelemetry export enabled", "traces", providers.tracerProvider != nil, "metrics", providers.meterProvider != nil, "logs", providers.loggerProvider != nil)
 	}
 
-	app := fx.New(applicationOptions(appCtx, cfg, settingsEnv, db, encryptionKey, cancelApp))
+	app := fx.New(applicationOptions(appCtx, cfg, settingsEnv, db, encryptionKey, cancelApp, providers))
 
 	startCtx, cancelStart := context.WithTimeout(ctx, app.StartTimeout())
 	defer cancelStart()
@@ -201,7 +201,15 @@ func Bootstrap(ctx context.Context) error {
 	return runErr
 }
 
-func applicationOptions(appCtx context.Context, cfg *config.Config, settingsEnv settings.Env, db *database.DB, encryptionKey string, cancelApp context.CancelCauseFunc) fx.Option {
+func applicationOptions(
+	appCtx context.Context,
+	cfg *config.Config,
+	settingsEnv settings.Env,
+	db *database.DB,
+	encryptionKey string,
+	cancelApp context.CancelCauseFunc,
+	providers *telemetryProviders,
+) fx.Option {
 	return fx.Options(
 		fx.Supply(
 			cfg,
@@ -317,9 +325,12 @@ func applicationOptions(appCtx context.Context, cfg *config.Config, settingsEnv 
 					},
 				})
 			},
-			func(dashboardService *dashboard.DashboardService) {
+			func(lc fx.Lifecycle, dashboardService *dashboard.DashboardService) {
 				if err := dashboardService.ObserveInventory(otel.Meter(tracing.InstrumentationName)); err != nil {
 					otel.Handle(err)
+				}
+				if providers.meterProvider != nil {
+					lc.Append(fx.Hook{OnStop: providers.meterProvider.Shutdown})
 				}
 			},
 		),
