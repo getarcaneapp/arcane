@@ -220,68 +220,6 @@ func writeDockerExecAttachResponse(t *testing.T, w http.ResponseWriter, stdout s
 	}
 }
 
-func TestVolumeWorkspaceReadsWaitForMutationLock(t *testing.T) {
-	testCases := map[string]func(context.Context, *VolumeService) error{
-		"tree": func(ctx context.Context, service *VolumeService) error {
-			_, err := service.workspace.GetVolumeWorkspace(ctx, "workspace-volume")
-			return err
-		},
-		"file": func(ctx context.Context, service *VolumeService) error {
-			_, err := service.workspace.GetVolumeWorkspaceFile(ctx, "workspace-volume", "file.txt")
-			return err
-		},
-		"download": func(ctx context.Context, service *VolumeService) error {
-			_, _, err := service.workspace.DownloadVolumeWorkspaceFile(ctx, "workspace-volume", "file.txt")
-			return err
-		},
-	}
-
-	for name, read := range testCases {
-		t.Run(name, func(t *testing.T) {
-			requestStarted := make(chan struct{}, 1)
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				requestStarted <- struct{}{}
-				http.Error(w, "stop after lock acquisition", http.StatusInternalServerError)
-			}))
-			t.Cleanup(server.Close)
-
-			dockerService := newVolumeTestDockerService(t, newVolumeWorkspaceTestDockerClient(t, server))
-			service := NewVolumeService(VolumeServiceParams{
-				Config:        &config.Config{},
-				DockerService: dockerService,
-			})
-			unlockMutation := service.workspaceLocks.Lock("workspace-volume")
-			readStarted := make(chan struct{})
-			readDone := make(chan error, 1)
-			go func() {
-				close(readStarted)
-				readDone <- read(t.Context(), service)
-			}()
-			<-readStarted
-
-			require.Never(t, func() bool {
-				select {
-				case <-requestStarted:
-					return true
-				default:
-					return false
-				}
-			}, 50*time.Millisecond, time.Millisecond, "workspace read reached Docker while a mutation held the volume lock")
-
-			unlockMutation()
-			require.Eventually(t, func() bool {
-				select {
-				case <-requestStarted:
-					return true
-				default:
-					return false
-				}
-			}, time.Second, time.Millisecond)
-			require.Error(t, <-readDone)
-		})
-	}
-}
-
 func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {

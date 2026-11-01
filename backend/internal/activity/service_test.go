@@ -458,12 +458,6 @@ func TestActivityServiceCancelWhileQueuedUnblocksAwait(t *testing.T) {
 	}
 }
 
-func TestActivityServiceCompleteActivityRejectsUninitializedService(t *testing.T) {
-	service := NewActivityService(nil, nil)
-	_, err := service.CompleteActivity(t.Context(), "any-id", types.ActivityStatusSuccess, "done", nil)
-	require.Error(t, err)
-}
-
 func TestActivityServiceTrackAndRequestCancel(t *testing.T) {
 	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)

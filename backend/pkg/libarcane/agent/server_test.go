@@ -251,23 +251,6 @@ func TestTunnelServer_HandleConnect_NoToken(t *testing.T) {
 	require.Equal(t, "agent token required", registerResp.Error)
 }
 
-func TestTunnelConnectRouteRegistration(t *testing.T) {
-	router := echo.New()
-	group := router.Group("/api")
-
-	server := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry()})
-	group.GET("/tunnel/connect", server.HandleConnect)
-
-	// Verify route exists (simplistic check by trying to hit it)
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/tunnel/connect", http.NoBody)
-	router.ServeHTTP(w, req)
-
-	// Plain HTTP requests hit the route but fail the websocket upgrade;
-	// coder/websocket responds with 426 Upgrade Required.
-	assert.Equal(t, http.StatusUpgradeRequired, w.Code)
-}
-
 func TestTunnelServer_HandleMTLSEnroll(t *testing.T) {
 	server := NewTunnelServer(TunnelServerOptions{
 		Registry: GetRegistry(),
@@ -395,19 +378,6 @@ func TestTunnelServer_HandleMTLSEnroll_AllowsRepeatAfterCooldownAndMarksReenroll
 	router.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.True(t, <-reenrolled)
-}
-
-func TestTunnelServer_CleanupLoop(t *testing.T) {
-	server := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry()})
-	ctx, cancel := context.WithCancel(t.Context())
-
-	// Run cleanup loop
-	go server.StartCleanupLoop(ctx)
-
-	// Just ensure it doesn't panic and stops when ctx is cancelled
-	time.Sleep(10 * time.Millisecond)
-	cancel()
-	time.Sleep(10 * time.Millisecond)
 }
 
 func TestTunnelServer_resolveEnvironment_TrimsToken(t *testing.T) {

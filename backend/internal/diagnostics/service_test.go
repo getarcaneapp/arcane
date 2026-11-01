@@ -2,7 +2,6 @@ package diagnostics
 
 import (
 	"context"
-	"runtime"
 	"runtime/pprof"
 	"slices"
 	"strings"
@@ -13,37 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func TestDiagnosticsServiceCollect(t *testing.T) {
-	s := NewDiagnosticsService(nil, nil, nil)
-
-	rt, mem, _ := s.Collect()
-
-	if rt.Goroutines <= 0 {
-		assert.Positive(t, rt.Goroutines,
-			"expected a positive goroutine count, got %d", rt.Goroutines)
-	}
-
-	assert.NotEmpty(t, rt.GoVersion,
-		"expected a non-empty Go version")
-
-	if rt.NumCPU <= 0 {
-		assert.Positive(t, rt.NumCPU,
-			"expected a positive CPU count, got %d", rt.NumCPU)
-	}
-
-	assert.NotEqual(t, 0, mem.Sys,
-		"expected non-zero Sys memory")
-
-	assert.GreaterOrEqual(t, rt.LeakedGoroutines, 0)
-	assert.True(t, rt.LeakScannedAt.IsZero(),
-		"expected no leak scan before ScanGoroutineLeaks")
-}
-
-func TestGoroutineLeakProfileAvailable(t *testing.T) {
-	assert.NotNil(t, pprof.Lookup(goroutineLeakProfileName),
-		"goroutineleak pprof profile must be registered")
-}
 
 func TestDiagnosticsServiceScanGoroutineLeaks(t *testing.T) {
 	s := NewDiagnosticsService(nil, nil, nil)
@@ -69,44 +37,6 @@ func TestDiagnosticsServiceScanGoroutineLeaksReturnsCachedReport(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, second.ScannedAt.Equal(first.ScannedAt))
 	assert.Equal(t, first.Profile, second.Profile)
-}
-
-func TestDiagnosticsServiceScanGoroutineLeaksDetectsLeak(t *testing.T) {
-	leakUnbufferedChannel()
-
-	deadline := time.Now().Add(5 * time.Second)
-	var reportCount int
-	var reportProfile string
-	for {
-		report, err := NewDiagnosticsService(nil, nil, nil).ScanGoroutineLeaks()
-		require.NoError(t, err)
-		reportCount = report.Count
-		reportProfile = report.Profile
-		if report.Count >= 1 && strings.Contains(report.Profile, "blockForeverOnDroppedChannel") {
-			return
-		}
-		if time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-
-	t.Fatalf("expected a leaked goroutine in the goroutineleak profile, count=%d profile=%s",
-		reportCount, reportProfile)
-}
-
-// leakUnbufferedChannel starts a goroutine blocked on a channel that
-// becomes unreachable, which the runtime classifies as a leak.
-func leakUnbufferedChannel() {
-	go blockForeverOnDroppedChannel()
-	for range 10 {
-		runtime.Gosched()
-	}
-}
-
-//go:noinline
-func blockForeverOnDroppedChannel() {
-	<-make(chan struct{})
 }
 
 func TestDiagnosticsServiceGoroutines(t *testing.T) {

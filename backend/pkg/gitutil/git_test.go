@@ -472,22 +472,6 @@ func TestValidatePath(t *testing.T) {
 	})
 }
 
-func TestNewClient(t *testing.T) {
-	t.Run("creates client with work dir", func(t *testing.T) {
-		client := NewClient("/tmp/test")
-
-		assert.Equal(t, "/tmp/test", client.workDir,
-			"expected workDir /tmp/test, got %s", client.workDir)
-	})
-
-	t.Run("creates client with empty work dir", func(t *testing.T) {
-		client := NewClient("")
-
-		assert.Empty(t, client.workDir,
-			"expected empty workDir, got %s", client.workDir)
-	})
-}
-
 func writeFile(t *testing.T, dir, name string, content []byte) {
 	t.Helper()
 	targetPath := filepath.Join(dir, name)

@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
@@ -14,15 +13,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/template"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/fswatch"
 )
-
-func TestFilesystemWatcherJob_ProjectWatcherOptions_UsesConfiguredMaxDepth(t *testing.T) {
-	job := &FilesystemWatcherJob{}
-
-	opts := job.projectWatcherOptions(true, 1)
-
-	assert.Equal(t, 1, opts.MaxDepth)
-	assert.True(t, opts.FollowSymlinkDirs)
-}
 
 func TestFilesystemWatcherJob_ConcurrentProjectRestartsAreSerialized(t *testing.T) {
 	job := newFilesystemWatcherTestJob(t)

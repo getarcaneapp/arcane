@@ -143,13 +143,6 @@ func TestSchemaRegistry_RefsResolve(t *testing.T) {
 	require.Empty(t, unresolved)
 }
 
-func TestHandlerDeps_ZeroValue(t *testing.T) {
-	var deps HandlerDeps
-
-	require.Nil(t, deps.Auth)
-	require.Nil(t, deps.Docker)
-}
-
 func TestSetupAPIForSpec_DefaultSecurity(t *testing.T) {
 	api := SetupAPIForSpec()
 

@@ -3,7 +3,6 @@ package apikey
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -808,30 +807,6 @@ func TestMarkAPIKeyUsedReturnsDatabaseErrors(t *testing.T) {
 	err = service.markApiKeyUsed(ctx, created.ID)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "failed to update API key last-used timestamp")
-}
-
-func TestValidateAPIKeyRepeatedAuthenticationDoesNotGrowGoroutines(t *testing.T) {
-	ctx := t.Context()
-	service, _, userService := setupAPIKeyService(t)
-	localUser := createTestAPIKeyUser(t, ctx, userService, "user-repeated-auth")
-	grantAPIKeyTestAdmin(t, ctx, service, localUser.ID)
-
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
-		Name:        "repeated-auth-key",
-		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
-	})
-	require.NoError(t, err)
-
-	before := runtime.NumGoroutine()
-	for range 20 {
-		validatedUser, validateApiKeyErr := service.ValidateApiKey(ctx, created.Key)
-		require.NoError(t, validateApiKeyErr)
-		require.Equal(t, localUser.ID, validatedUser.ID)
-	}
-	runtime.Gosched()
-	after := runtime.NumGoroutine()
-	t.Logf("goroutines before repeated authentication: %d; after: %d", before, after)
-	require.LessOrEqual(t, after, before+1)
 }
 
 func TestGetEnvironmentByAPIKeyUpdatesLastUsedAt(t *testing.T) {

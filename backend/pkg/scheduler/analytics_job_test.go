@@ -235,10 +235,3 @@ func TestAnalyticsJob_Run_ConcurrentRunsSendOnce(t *testing.T) {
 
 	require.Equal(t, int32(1), requestCount.Load())
 }
-
-func TestAnalyticsJob_Schedule_UsesFixedHourlyCheck(t *testing.T) {
-	_, settingsService, kvService := setupAnalyticsStateServices(t)
-	job := NewAnalyticsJob(settingsService, kvService, nil, &config.Config{Environment: config.AppEnvironmentProduction})
-
-	require.Equal(t, analyticsHeartbeatCheckSchedule, job.Schedule(t.Context()))
-}

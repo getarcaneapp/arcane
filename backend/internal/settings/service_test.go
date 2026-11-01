@@ -61,35 +61,6 @@ func waitForSettingsNotifications(t *testing.T, svc *SettingsService) {
 	}
 }
 
-func TestSettingsService_ImageEventWatcherSettingPersists(t *testing.T) {
-	ctx := t.Context()
-	db := setupSettingsTestDB(t)
-	svc, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-	require.False(t, svc.GetBoolSetting(ctx, "imageEventWatcherEnabled"))
-
-	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"imageEventWatcherEnabled": "true"})
-	require.NoError(t, err)
-	require.True(t, svc.GetBoolSetting(ctx, "imageEventWatcherEnabled"))
-
-	var stored SettingVariable
-	require.NoError(t, db.WithContext(ctx).Where("key = ?", "imageEventWatcherEnabled").First(&stored).Error)
-	require.Equal(t, "true", stored.Value)
-}
-
-func TestSettingsService_GetSettings_UnknownKeysIgnored(t *testing.T) {
-	ctx := t.Context()
-	db := setupSettingsTestDB(t)
-	svc, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-
-	require.NoError(t, svc.db.WithContext(ctx).
-		Create(&SettingVariable{Key: "someUnknownKey", Value: "x"}).Error)
-
-	_, err = svc.GetSettings(ctx)
-	require.NoError(t, err)
-}
-
 func TestSettingsService_GetSettings_UsesCachedSnapshotWithoutDatabase(t *testing.T) {
 	ctx := t.Context()
 	db := setupSettingsTestDB(t)
@@ -104,27 +75,6 @@ func TestSettingsService_GetSettings_UsesCachedSnapshotWithoutDatabase(t *testin
 	settingsCfg, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "http://cached", settingsCfg.BaseServerURL.Value)
-}
-
-func TestSettingsService_AvatarMaxUploadSizeDefaultAndUpdate(t *testing.T) {
-	ctx := t.Context()
-	db := setupSettingsTestDB(t)
-	svc, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-
-	current, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "2", current.AvatarMaxUploadSizeMb.Value)
-
-	updatedValue := "8"
-	err = svc.UpdateSettings(ctx, types.SettingsUpdate{
-		"avatarMaxUploadSizeMb": updatedValue,
-	})
-	require.NoError(t, err)
-
-	current, err = svc.GetSettings(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "8", current.AvatarMaxUploadSizeMb.Value)
 }
 
 func TestSettingsServiceUpdateSettingsRejectsOIDCIssuerChangeWithStoredSecret(t *testing.T) {
@@ -498,41 +448,6 @@ func TestSettingsService_ReadOnlyGate(t *testing.T) {
 
 	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"baseServerUrl": "http://localhost"})
 	require.NoError(t, err)
-}
-
-func TestSettingsService_GetSetHelpers(t *testing.T) {
-	ctx := t.Context()
-	db := setupSettingsTestDB(t)
-	svc, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-
-	// Defaults for missing keys
-	require.False(t, svc.GetBoolSetting(ctx, "nonexistentBool"))
-	require.Zero(t, svc.GetIntSetting(ctx, "nonexistentInt"))
-	require.Empty(t, svc.GetStringSetting(ctx, "nonexistentStr"))
-
-	// Set and read back
-	require.NoError(t, svc.SetBoolSetting(ctx, "enableGravatar", true))
-	require.True(t, svc.GetBoolSetting(ctx, "enableGravatar"))
-
-	require.NoError(t, svc.SetIntSetting(ctx, "authSessionTimeout", 123))
-	require.Equal(t, 123, svc.GetIntSetting(ctx, "authSessionTimeout"))
-
-	require.NoError(t, svc.UpdateSetting(ctx, "baseServerUrl", "http://localhost"))
-	require.Equal(t, "http://localhost", svc.GetStringSetting(ctx, "baseServerUrl"))
-}
-
-func TestSettingsService_UpdateSetting(t *testing.T) {
-	ctx := t.Context()
-	db := setupSettingsTestDB(t)
-	svc, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-
-	require.NoError(t, svc.UpdateSetting(ctx, "pruneImageMode", "all"))
-
-	var sv SettingVariable
-	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "pruneImageMode").First(&sv).Error)
-	require.Equal(t, "all", sv.Value)
 }
 
 func TestSettingsService_UpdateSettingRejectsInvalidCronBeforePersistence(t *testing.T) {

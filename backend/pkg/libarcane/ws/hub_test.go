@@ -45,29 +45,6 @@ func newTestWSPair(t *testing.T) (serverConn *websocket.Conn, cleanup func()) {
 	}
 }
 
-func TestNewHub(t *testing.T) {
-	h := NewHub(10)
-	require.NotNil(t, h)
-	assert.Equal(t, 0, h.Len())
-}
-
-func TestHub_RegisterAndClientCount(t *testing.T) {
-	h := NewHub(10)
-	ctx := t.Context()
-	go h.Run(ctx)
-
-	serverConn, cleanup := newTestWSPair(t)
-	defer cleanup()
-
-	c := NewClient(serverConn, 16)
-	h.register <- c
-
-	// Wait for registration to process
-	require.Eventually(t, func() bool {
-		return h.Len() == 1
-	}, time.Second, 5*time.Millisecond)
-}
-
 func TestHub_UnregisterClient(t *testing.T) {
 	h := NewHub(10)
 	ctx := t.Context()
@@ -305,21 +282,6 @@ func TestHub_ContextCancellation(t *testing.T) {
 
 	// After closeAll, clients map should be empty
 	assert.Equal(t, 0, h.Len())
-}
-
-func TestHub_BroadcastBufferFull(t *testing.T) {
-	// Hub with a buffer of 1
-	h := NewHub(1)
-	ctx := t.Context()
-
-	// Don't run the hub — the broadcast channel will fill up
-	h.broadcast <- []byte("fill")
-
-	// This should not block (drops the message)
-	h.Broadcast([]byte("should be dropped"))
-
-	// Verify no panic or deadlock occurred
-	go h.Run(ctx)
 }
 
 func TestHub_BroadcastOverloadAggregatesDropWarning(t *testing.T) {

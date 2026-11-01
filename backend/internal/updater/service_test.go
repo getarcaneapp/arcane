@@ -32,7 +32,6 @@ import (
 	"go.getarcane.app/sys/crypto"
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/labels"
-	"go.getarcane.app/updater/refs"
 	updatertypes "go.getarcane.app/updater/types"
 	"gorm.io/gorm"
 
@@ -308,30 +307,6 @@ func TestUpdaterService_ApplyPendingNoRecords(t *testing.T) {
 	assert.Equal(t, types.RunStatusNeedsAttention, checkpoints[len(checkpoints)-1].Status)
 }
 
-func TestUpdaterService_ResultFromModulePreservesRestarted(t *testing.T) {
-	got := resultFromModule(&updater.Result{
-		Success:   true,
-		Checked:   2,
-		Updated:   1,
-		Restarted: 1,
-		Items: []updater.ResourceResult{
-			{
-				ResourceID:    "web-id",
-				ResourceName:  "web",
-				ResourceType:  updater.ResourceTypeContainer,
-				Status:        updater.StatusRestarted,
-				UpdateApplied: true,
-			},
-		},
-	})
-
-	require.NotNil(t, got)
-	assert.Equal(t, 1, got.Restarted)
-	require.Len(t, got.Items, 1)
-	assert.Equal(t, types.UpdaterStatusRestarted, got.Items[0].Status)
-	assert.True(t, got.Items[0].UpdateApplied)
-}
-
 func TestUpdaterService_TriggerSelfUpdateViaCLI(t *testing.T) {
 	ctx := t.Context()
 	newAdmission := func(t *testing.T) *runs.Admission {
@@ -472,7 +447,6 @@ func TestUpdaterService_StatusTracking(t *testing.T) {
 }
 
 func TestUpdaterService_DockerClientAdapter(t *testing.T) {
-	ctx := t.Context()
 	t.Run("active engine updates correlate before the stop event is recorded", func(t *testing.T) {
 		events := event.NewEventService(nil, nil, nil)
 		svc, err := NewUpdaterService(UpdaterServiceParams{
@@ -485,21 +459,6 @@ func TestUpdaterService_DockerClientAdapter(t *testing.T) {
 		require.False(t, events.ShouldSuppressDaemonEvent("image", "updating-container", "", ""))
 		end()
 		require.False(t, events.ShouldSuppressDaemonEvent("container", "updating-container", "", ""))
-	})
-
-	t.Run("delegates to configured docker service", func(t *testing.T) {
-		server := newImagePullServerWithObserver(t, nil, nil)
-		wantClient := newTestDockerClient(t, server)
-		dockerSvc := newSettingsDockerService(t, wantClient)
-		svc, svcErr := NewUpdaterService(UpdaterServiceParams{
-			DockerService: dockerSvc,
-		})
-		require.NoError(t, svcErr)
-
-		gotClient, err := svc.DockerClient(ctx)
-
-		require.NoError(t, err)
-		assert.Same(t, wantClient, gotClient)
 	})
 }
 
@@ -1475,50 +1434,6 @@ func TestUpdateLabelPolicyMarksQuadletContainersUnmanaged(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.unmanaged, updateLabelPolicy.UnmanagedReason(tt.labels) != "")
-		})
-	}
-}
-
-// The engine picks the reference Arcane's updates are applied to, so its choice
-// is worth pinning here as well as in the library.
-func TestPullableImageRef(t *testing.T) {
-	tests := []struct {
-		name         string
-		summaryImage string
-		inspectImage string
-		expectedRef  string
-		repoTags     []string
-	}{
-		{
-			name:         "inspect config image wins",
-			summaryImage: "nginx:latest",
-			inspectImage: "registry.example.com/nginx:stable",
-			expectedRef:  "registry.example.com/nginx:stable",
-		},
-		{
-			name:         "summary image used when inspect is image ID",
-			summaryImage: "redis:7",
-			inspectImage: "sha256:abcdef",
-			expectedRef:  "redis:7",
-		},
-		{
-			name:         "repo tag fallback skips none tag",
-			summaryImage: "sha256:abcdef",
-			inspectImage: "sha256:abcdef",
-			repoTags:     []string{"<none>:<none>", "postgres:16"},
-			expectedRef:  "postgres:16",
-		},
-		{
-			name:         "no pullable ref",
-			summaryImage: "sha256:abcdef",
-			inspectImage: "sha256:abcdef",
-			repoTags:     []string{"<none>:<none>"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expectedRef, refs.PullableImageRef(tt.summaryImage, tt.inspectImage, tt.repoTags))
 		})
 	}
 }

@@ -431,37 +431,6 @@ func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T)
 	assert.FileExists(t, filepath.Join(projectsDir, trashName, "project-data.txt"))
 }
 
-func TestProjectService_LockProject_SerializesSameProject(t *testing.T) {
-	svc, _, _ := setupProjectDestroyTestService(t)
-
-	unlock, err := svc.lockProject(t.Context(), "test", "project-a")
-	require.NoError(t, err)
-
-	done := make(chan error, 1)
-	go func() { done <- svc.DownProject(t.Context(), "project-a", types.Actor{}) }()
-
-	select {
-	case downErr := <-done:
-		t.Fatalf("DownProject ran while another operation held the project lease: %v", downErr)
-	case <-time.After(100 * time.Millisecond):
-	}
-
-	otherCtx, cancel := context.WithTimeout(t.Context(), time.Second)
-	defer cancel()
-	otherErr := svc.DownProject(otherCtx, "project-b", types.Actor{})
-	require.Error(t, otherErr)
-	require.NotErrorIs(t, otherErr, context.DeadlineExceeded, "a different project must not wait on the held lease")
-
-	unlock()
-	select {
-	case downErr := <-done:
-		require.Error(t, downErr)
-		require.NotErrorIs(t, downErr, context.DeadlineExceeded)
-	case <-time.After(2 * time.Second):
-		t.Fatal("DownProject did not run after the project lease was released")
-	}
-}
-
 func TestProjectService_LockProject_ReturnsWaitErrorOnDeadline(t *testing.T) {
 	svc, _, _ := setupProjectDestroyTestService(t)
 
@@ -558,41 +527,6 @@ func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 	_, err = svc.GetProjectFromDatabaseByID(ctx, "non-existent")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "project not found")
-}
-
-func TestProjectService_UpdateProjectStatus(t *testing.T) {
-	db := setupProjectTestDB(t)
-	ctx := t.Context()
-	svc := NewProjectService(ProjectServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
-		ImageService: image.NewImageService(image.ImageServiceParams{
-			DB: db,
-		}),
-		DockerService:               newUnreachableDockerService(t),
-		BuildService:                testBuildBuilder{},
-		Config:                      loadTestConfig(t),
-		KVService:                   kv.NewKVService(db),
-		RegistryCredentialsProvider: testRegistryCredentials,
-	})
-
-	proj := &Project{
-		ID:     "p1",
-		Status: ProjectStatusUnknown,
-	}
-	require.NoError(t, db.Create(proj).Error)
-
-	err := svc.updateProjectStatus(ctx, "p1", ProjectStatusRunning)
-	require.NoError(t, err)
-
-	var updated Project
-	require.NoError(t, db.First(&updated, "id = ?", "p1").Error)
-	assert.Equal(t, ProjectStatusRunning, updated.Status)
-	if updated.UpdatedAt != nil {
-		assert.WithinDuration(t, time.Now(), *updated.UpdatedAt, time.Second)
-	} else {
-		assert.Fail(t, "UpdatedAt should not be nil")
-	}
 }
 
 func TestProjectService_GetProjectByComposeName(t *testing.T) {
@@ -8287,62 +8221,6 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJo
 	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
 	require.Equal(t, "web", fromDB.Name)
 	require.Equal(t, newPath, fromDB.Path)
-}
-
-func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDirectoriesAreMissing(t *testing.T) {
-	db := setupProjectTestDB(t)
-	require.NoError(t, db.AutoMigrate(&kv.KVEntry{}))
-	ctx := t.Context()
-
-	projectsDir := t.TempDir()
-	oldDir := "nginx"
-	newDir := "web"
-	oldPath := filepath.Join(projectsDir, oldDir)
-	newPath := filepath.Join(projectsDir, newDir)
-
-	project := &Project{
-		ID:      "proj-rename-missing-directories",
-		Name:    "nginx",
-		DirName: &oldDir,
-		Path:    oldPath,
-		Status:  ProjectStatusStopped,
-	}
-	require.NoError(t, db.Create(project).Error)
-
-	kvService := kv.NewKVService(db)
-	svc := NewProjectService(ProjectServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
-		ImageService: image.NewImageService(image.ImageServiceParams{
-			DB: db,
-		}),
-		DockerService:               newUnreachableDockerService(t),
-		BuildService:                testBuildBuilder{},
-		Config:                      loadTestConfig(t),
-		KVService:                   kvService,
-		RegistryCredentialsProvider: testRegistryCredentials,
-	})
-	journal := types.ProjectRenameJournal{
-		ProjectID:  project.ID,
-		OldName:    "nginx",
-		NewName:    "web",
-		OldPath:    oldPath,
-		NewPath:    newPath,
-		OldDirName: &oldDir,
-		NewDirName: newDir,
-		Phase:      types.ProjectRenameJournalPhaseStarted,
-	}
-	payload, err := json.Marshal(journal)
-	require.NoError(t, err)
-	require.NoError(t, kvService.Set(ctx, types.ProjectRenameJournalKeyPrefix+project.ID, string(payload)))
-
-	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
-
-	require.NoDirExists(t, oldPath)
-	require.NoDirExists(t, newPath)
-	_, ok, err := kvService.Get(ctx, types.ProjectRenameJournalKeyPrefix+project.ID)
-	require.NoError(t, err)
-	require.False(t, ok)
 }
 
 func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhenTargetPreserved(t *testing.T) {

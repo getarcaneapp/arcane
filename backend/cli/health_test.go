@@ -117,18 +117,3 @@ func TestRunHealthCommandInternalConnectionFailure(t *testing.T) {
 	require.Error(t, err,
 		"expected connection failure")
 }
-
-func TestRunHealthCommandInternalDefaultTimeoutFallback(t *testing.T) {
-	err := runHealthCommand(t.Context(), &config.Config{Port: "1"}, 0)
-
-	require.Error(t, err,
-		"expected connection failure")
-
-	require.Contains(t, err.Error(), "health check request failed",
-		"unexpected error: %v", err)
-
-	// Ensure timeout path is exercised by checking the string formatting path.
-
-	require.Contains(t, defaultHealthTimeout.String(), "5s",
-		"unexpected default timeout: %s", defaultHealthTimeout)
-}

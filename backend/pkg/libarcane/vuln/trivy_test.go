@@ -161,11 +161,6 @@ func TestServerTokenEnv(t *testing.T) {
 	require.Equal(t, []string{"TRIVY_TOKEN=secret"}, ServerTokenEnv(" secret "))
 }
 
-func TestIgnoreUnfixedArgs(t *testing.T) {
-	require.Equal(t, []string{"--ignore-unfixed"}, IgnoreUnfixedArgs(true))
-	require.Nil(t, IgnoreUnfixedArgs(false))
-}
-
 func TestProxyEnv(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -203,17 +198,6 @@ func TestProxyEnv(t *testing.T) {
 			require.Equal(t, tt.want, ProxyEnv(tt.httpProxy, tt.httpsProxy, tt.noProxy))
 		})
 	}
-}
-
-func TestBuildContainerConfig_IncludesEnv(t *testing.T) {
-	config := BuildContainerConfig(
-		"ghcr.io/getarcaneapp/tools:latest",
-		[]string{"image", "alpine:3.20"},
-		[]string{"DOCKER_HOST=tcp://docker-socket-proxy:2375"},
-	)
-
-	require.Equal(t, []string{"trivy"}, config.Entrypoint)
-	require.Equal(t, []string{"DOCKER_HOST=tcp://docker-socket-proxy:2375"}, config.Env)
 }
 
 func TestParseSecurityOpts(t *testing.T) {

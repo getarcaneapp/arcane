@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json/v2"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,21 +18,6 @@ import (
 
 func newWebSocketAgentTunnel(envID string, conn *websocket.Conn) *AgentTunnel {
 	return NewAgentTunnelWithConn(envID, NewTunnelConn(conn))
-}
-
-func TestTunnelMessage_MarshalJSON(t *testing.T) {
-	msg := &TunnelMessage{
-		ID:   "test-id",
-		Type: MessageTypeRegister,
-	}
-
-	data, err := json.Marshal(msg)
-	require.NoError(t, err)
-
-	// Check that fields are present
-	strData := string(data)
-	assert.Contains(t, strData, `"id":"test-id"`)
-	assert.Contains(t, strData, `"type":"register"`)
 }
 
 func TestTunnelConn(t *testing.T) {

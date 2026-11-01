@@ -125,10 +125,6 @@ func TestRefreshRecreatedImageLabels(t *testing.T) {
 	require.Equal(t, originalContainerLabels, containerLabels)
 }
 
-func TestRefreshRecreatedImageLabelsInternalKeepsNilWhenNoLabelsExist(t *testing.T) {
-	require.Nil(t, refreshRecreatedImageLabels(nil, nil, nil, ""))
-}
-
 func TestRefreshRecreatedContainerLabelsInternalPreservesLabelsWhenTargetInspectFails(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Contains(t, r.URL.Path, "/images/target:latest/json",

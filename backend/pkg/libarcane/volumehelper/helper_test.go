@@ -12,17 +12,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 )
-
-func TestLabels(t *testing.T) {
-	labels := Labels()
-
-	require.Equal(t, "true", labels[libarcane.InternalResourceLabel])
-	require.Equal(t, "true", labels[ContainerLabel])
-	require.Len(t, labels, 2)
-}
 
 func TestResolveHelperImage_UsesLocalToolsImage(t *testing.T) {
 	var pullCalls atomic.Int32

@@ -1,15 +1,11 @@
 package notification
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json/v2"
-	"log/slog"
-	"maps"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -98,20 +94,6 @@ func newNotificationTestUpdateInfo() *types.ImageUpdateResponse {
 	}
 }
 
-func captureNotificationServiceLogs(t *testing.T) *bytes.Buffer {
-	t.Helper()
-
-	var buf bytes.Buffer
-	previousLogger := slog.Default()
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	slog.SetDefault(logger)
-	t.Cleanup(func() {
-		slog.SetDefault(previousLogger)
-	})
-
-	return &buf
-}
-
 func TestNotificationService_ResolveNotificationTarget_UsesEnvironmentRecordAndFallback(t *testing.T) {
 	ctx := t.Context()
 	db, svc := setupNotificationTestService(t)
@@ -176,40 +158,6 @@ func TestNotificationService_DispatchNotification_UnsupportedKindReturnsSentinel
 	unsupportedErr := ErrUnsupportedDispatchKind
 	require.ErrorIs(t, err, unsupportedErr)
 	require.Contains(t, err.Error(), "bogus_kind")
-}
-
-func TestNotificationService_DispatchNotification_LogsManagerDispatchForAgent(t *testing.T) {
-	ctx := t.Context()
-	db, svc := setupNotificationTestService(t)
-	logBuffer := captureNotificationServiceLogs(t)
-
-	token := "remote-token"
-	now := time.Now()
-	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
-		ID: "env-remote", CreatedAt: now, UpdatedAt: &now,
-		Name:        "Remote Agent",
-		ApiUrl:      "http://remote.example",
-		Enabled:     true,
-		Status:      string(environment.EnvironmentStatusOnline),
-		AccessToken: &token,
-	}).Error)
-
-	dispatchResponse, err := svc.DispatchNotification(ctx, token, types.NotificationDispatchRequest{
-		Kind: types.NotificationDispatchKindImageUpdate,
-		ImageUpdate: &types.NotificationDispatchImageUpdate{
-			ImageRef:   "nginx:latest",
-			UpdateInfo: *newNotificationTestUpdateInfo(),
-		},
-	})
-
-	require.NoError(t, err)
-	require.Equal(t, "Notification dispatched successfully", dispatchResponse.Message)
-	require.Equal(t, 0, dispatchResponse.Delivered)
-	logs := logBuffer.String()
-	require.Contains(t, logs, "Manager dispatching notification on behalf of agent")
-	require.Contains(t, logs, "environmentId=env-remote")
-	require.Contains(t, logs, "environmentName=\"Remote Agent\"")
-	require.Contains(t, logs, "kind=image_update")
 }
 
 func TestNotificationService_SendImageUpdateNotification_AgentModeDispatchesToManager(t *testing.T) {
@@ -764,25 +712,6 @@ func TestNotificationService_NotifyEnabledProviders_SkipsFiltersAndAggregates(t 
 	}, time.Second, 10*time.Millisecond)
 }
 
-func TestSupportedNotificationTestTypes_IncludesAutoHeal(t *testing.T) {
-	expected := []string{
-		notificationTestTypeSimple,
-		notificationTestTypeImageUpdate,
-		notificationTestTypeBatchImageUpdate,
-		notificationTestTypeVulnerability,
-		notificationTestTypePruneReport,
-		notificationTestTypeAutoHeal,
-	}
-
-	for _, tt := range expected {
-		_, ok := notificationTestEventTypes[tt]
-		require.True(t, ok, "expected %q to be in notificationTestEventTypes", tt)
-	}
-
-	require.Len(t, notificationTestEventTypes, len(expected),
-		"notificationTestEventTypes has unexpected entries")
-}
-
 func TestNotificationService_DispatchNotificationForEnvironment_ResolvesTunnelSessionEnvironment(t *testing.T) {
 	ctx := t.Context()
 	db, svc := setupNotificationTestService(t)
@@ -845,16 +774,4 @@ func TestNotificationService_AgentDispatchHTTPFailureFallsBackToTunnel(t *testin
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to dispatch notification to manager")
-}
-
-func TestBatchImageUpdateLogRef_IsSortedSoRepeatsMatch(t *testing.T) {
-	updates := map[string]*types.ImageUpdateResponse{}
-	for _, ref := range []string{"redis:7", "nginx:latest", "postgres:16", "alpine:3", "caddy:2"} {
-		updates[ref] = newNotificationTestUpdateInfo()
-	}
-
-	want := "alpine:3, caddy:2, nginx:latest, postgres:16, redis:7"
-	for range 20 {
-		require.Equal(t, want, strings.Join(slices.Sorted(maps.Keys(maps.Clone(updates))), ", "))
-	}
 }

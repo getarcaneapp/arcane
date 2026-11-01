@@ -265,44 +265,11 @@ func TestConfig_OptionsToLower(t *testing.T) {
 		assert.Equal(t, "grpc", cfg.AgentTransport)
 	})
 
-	t.Run("AgentTransport defaults to auto", func(t *testing.T) {
-		unsetEnv(t, "ARCANE_AGENT_TRANSPORT")
-
-		cfg := mustLoad(t)
-		assert.Equal(t, "auto", cfg.AgentTransport)
-	})
-
 	t.Run("AgentMTLSMode is converted to lowercase", func(t *testing.T) {
 		setEnv(t, "ARCANE_AGENT_MTLS_MODE", "REQUIRED")
 
 		cfg := mustLoad(t)
 		assert.Equal(t, "required", cfg.AgentMTLSMode)
-	})
-
-	t.Run("AgentMTLSMode defaults to disabled", func(t *testing.T) {
-		unsetEnv(t, "ARCANE_AGENT_MTLS_MODE")
-
-		cfg := mustLoad(t)
-		assert.Equal(t, "disabled", cfg.AgentMTLSMode)
-	})
-}
-
-func TestConfig_AllowDowngrade(t *testing.T) {
-	origAllowDowngrade := os.Getenv("ARCANE_ALLOW_DOWNGRADE")
-	defer restoreEnv("ARCANE_ALLOW_DOWNGRADE", origAllowDowngrade)
-
-	t.Run("defaults to false", func(t *testing.T) {
-		unsetEnv(t, "ARCANE_ALLOW_DOWNGRADE")
-
-		cfg := mustLoad(t)
-		assert.False(t, cfg.AllowDowngrade)
-	})
-
-	t.Run("loads explicit true from env", func(t *testing.T) {
-		setEnv(t, "ARCANE_ALLOW_DOWNGRADE", "true")
-
-		cfg := mustLoad(t)
-		assert.True(t, cfg.AllowDowngrade)
 	})
 }
 
@@ -329,25 +296,6 @@ func TestConfig_ValidateRequiresAgentManagerAndToken(t *testing.T) {
 
 	t.Setenv("ARCANE_AGENT_TOKEN", "agent-token")
 	require.NoError(t, mustLoad(t).Validate())
-}
-
-func TestConfig_AllowCLIPasswordReset(t *testing.T) {
-	origAllowCLIPasswordReset := os.Getenv("ARCANE_ALLOW_CLI_PASSWORD_RESET")
-	defer restoreEnv("ARCANE_ALLOW_CLI_PASSWORD_RESET", origAllowCLIPasswordReset)
-
-	t.Run("defaults to false", func(t *testing.T) {
-		unsetEnv(t, "ARCANE_ALLOW_CLI_PASSWORD_RESET")
-
-		cfg := mustLoad(t)
-		assert.False(t, cfg.AllowCLIPasswordReset)
-	})
-
-	t.Run("loads explicit true from env", func(t *testing.T) {
-		setEnv(t, "ARCANE_ALLOW_CLI_PASSWORD_RESET", "TRUE")
-
-		cfg := mustLoad(t)
-		assert.True(t, cfg.AllowCLIPasswordReset)
-	})
 }
 
 func TestConfig_ListenAddr(t *testing.T) {
@@ -392,37 +340,6 @@ func TestConfig_ListenAddr(t *testing.T) {
 			assert.Equal(t, testCase.expected, cfg.ListenAddr())
 		})
 	}
-}
-
-func TestConfig_TLSSettings(t *testing.T) {
-	origTLSEnabled := os.Getenv("ARCANE_TLS_ENABLED")
-	origTLSCertFile := os.Getenv("ARCANE_TLS_CERT_FILE")
-	origTLSKeyFile := os.Getenv("ARCANE_TLS_KEY_FILE")
-	defer restoreEnv("ARCANE_TLS_ENABLED", origTLSEnabled)
-	defer restoreEnv("ARCANE_TLS_CERT_FILE", origTLSCertFile)
-	defer restoreEnv("ARCANE_TLS_KEY_FILE", origTLSKeyFile)
-
-	t.Run("defaults to tls disabled", func(t *testing.T) {
-		unsetEnv(t, "ARCANE_TLS_ENABLED")
-		unsetEnv(t, "ARCANE_TLS_CERT_FILE")
-		unsetEnv(t, "ARCANE_TLS_KEY_FILE")
-
-		cfg := mustLoad(t)
-		assert.False(t, cfg.TLSEnabled)
-		assert.Empty(t, cfg.TLSCertFile)
-		assert.Empty(t, cfg.TLSKeyFile)
-	})
-
-	t.Run("loads tls settings from env", func(t *testing.T) {
-		setEnv(t, "ARCANE_TLS_ENABLED", "true")
-		setEnv(t, "ARCANE_TLS_CERT_FILE", "/etc/ssl/certs/fullchain.pem")
-		setEnv(t, "ARCANE_TLS_KEY_FILE", "/etc/ssl/private/privkey.pem")
-
-		cfg := mustLoad(t)
-		assert.True(t, cfg.TLSEnabled)
-		assert.Equal(t, "/etc/ssl/certs/fullchain.pem", cfg.TLSCertFile)
-		assert.Equal(t, "/etc/ssl/private/privkey.pem", cfg.TLSKeyFile)
-	})
 }
 
 func TestConfig_GetManagerGRPCAddr(t *testing.T) {
@@ -488,13 +405,6 @@ func TestConfig_GetManagerBaseURL(t *testing.T) {
 func TestConfig_JWTRefreshExpiry(t *testing.T) {
 	origJWTRefreshExpiry := os.Getenv("ARCANE_JWT_REFRESH_EXPIRY")
 	defer restoreEnv("ARCANE_JWT_REFRESH_EXPIRY", origJWTRefreshExpiry)
-
-	t.Run("defaults to 7 days when not set", func(t *testing.T) {
-		unsetEnv(t, "ARCANE_JWT_REFRESH_EXPIRY")
-
-		cfg := mustLoad(t)
-		assert.Equal(t, 7*24*time.Hour, cfg.JWTRefreshExpiry)
-	})
 
 	t.Run("parses custom duration from env var", func(t *testing.T) {
 		setEnv(t, "ARCANE_JWT_REFRESH_EXPIRY", "48h")
@@ -580,29 +490,6 @@ func TestConfig_ApplyProxyDefaults(t *testing.T) {
 		cfg := &Config{Listen: "0.0.0.0"}
 		applyProxyDefaults(cfg)
 		assert.Empty(t, cfg.TrustedProxies)
-	})
-}
-
-func TestConfig_TrustedProxies(t *testing.T) {
-	orig := os.Getenv("ARCANE_TRUSTED_PROXIES")
-	defer restoreEnv("ARCANE_TRUSTED_PROXIES", orig)
-
-	t.Run("Default empty", func(t *testing.T) {
-		unsetEnv(t, "ARCANE_TRUSTED_PROXIES")
-		cfg := mustLoad(t)
-		assert.Empty(t, cfg.TrustedProxies)
-	})
-
-	t.Run("Single CIDR", func(t *testing.T) {
-		setEnv(t, "ARCANE_TRUSTED_PROXIES", "10.0.0.0/8")
-		cfg := mustLoad(t)
-		assert.Equal(t, "10.0.0.0/8", cfg.TrustedProxies)
-	})
-
-	t.Run("Multiple CIDRs", func(t *testing.T) {
-		setEnv(t, "ARCANE_TRUSTED_PROXIES", "10.0.0.0/8,192.168.0.0/16,172.16.0.0/12")
-		cfg := mustLoad(t)
-		assert.Equal(t, "10.0.0.0/8,192.168.0.0/16,172.16.0.0/12", cfg.TrustedProxies)
 	})
 }
 

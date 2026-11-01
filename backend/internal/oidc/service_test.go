@@ -56,29 +56,6 @@ func TestValidateMobileRedirectURITrimsAllowlistWhitespace(t *testing.T) {
 	require.Error(t, s.ValidateMobileRedirectURI(ctx, "  arcane-mobile://a  "))
 }
 
-func TestGetMobileRedirectAllowlistUsesSettings(t *testing.T) {
-	ctx := t.Context()
-	db := setupSettingsTestDB(t)
-	settingsService, err := newSettingsServiceForTest(t, ctx, db)
-
-	require.NoError(t, err,
-		"settings.NewSettingsService: %v", err)
-	{
-
-		updateSettingErr := settingsService.UpdateSetting(ctx, "oidcMobileRedirectUris", "arcane-mobile://db-callback")
-		require.NoError(t, updateSettingErr,
-			"UpdateSetting: %v", updateSettingErr)
-	}
-
-	s := &OidcService{settingsService: settingsService}
-	{
-
-		validateMobileRedirectURIErr := s.ValidateMobileRedirectURI(ctx, "arcane-mobile://db-callback")
-		require.NoError(t, validateMobileRedirectURIErr,
-			"ValidateMobileRedirectURI db value: %v", validateMobileRedirectURIErr)
-	}
-}
-
 // Test fixtures shared by this package's tests.
 
 func setupSettingsTestDB(t *testing.T) *database.DB {

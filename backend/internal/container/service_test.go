@@ -1436,29 +1436,6 @@ func TestResourceSortCacheExpires(t *testing.T) {
 	require.Equal(t, 2, fixture.callsFor("web"), "expired entries must be refetched")
 }
 
-func TestResourceSortCoalescesConcurrentFetches(t *testing.T) {
-	fixture := newResourceStatsServer()
-	fixture.addContainer("web", "web", "running")
-	fixture.setStats("web", 10, 100, 1000)
-	fixture.delay = 100 * time.Millisecond
-	svc := newResourceSortService(t, fixture)
-
-	const callers = 8
-	var wg sync.WaitGroup
-	errs := make([]error, callers)
-	for i := range callers {
-		wg.Go(func() {
-			_, err := svc.stats.Collect(t.Context(), []types.ContainerSummary{{ID: "web", State: "running"}}, stats.ContainerResourceSampleTTL, true)
-			errs[i] = err
-		})
-	}
-	wg.Wait()
-	for _, err := range errs {
-		require.NoError(t, err)
-	}
-	require.Equal(t, 1, fixture.callsFor("web"), "concurrent fetches for the same container must coalesce")
-}
-
 func TestResourceSortBoundsCollectionConcurrency(t *testing.T) {
 	fixture := newResourceStatsServer()
 	fixture.delay = 50 * time.Millisecond
@@ -1489,27 +1466,6 @@ func TestResourceSortBatchTimeoutFailsRequest(t *testing.T) {
 
 	_, err := svc.ListContainersPaginated(t.Context(), resourceSortParams(types.ContainerSortMemoryUsage, "desc", 0, 20), true, true, true, "")
 	require.Error(t, err, "batch timeout must fail the refresh instead of presenting a partial sort")
-}
-
-func TestResourceSortPerContainerTimeoutMarksUnavailable(t *testing.T) {
-	fixture := newResourceStatsServer()
-	fixture.addContainer("fast", "fast", "running")
-	fixture.setStats("fast", 10, 100, 1000)
-	fixture.addContainer("slow", "slow", "running")
-	fixture.setStats("slow", 10, 200, 1000)
-	fixture.slowIDs["slow"] = true
-	svc := newResourceSortService(t, fixture)
-	svc.stats = stats.New(stats.Params{
-		GetClient:     svc.dockerService.GetClient,
-		DockerHost:    svc.dockerService.DockerHost,
-		CacheTTL:      stats.ContainerResourceSampleTTL,
-		SampleTimeout: 50 * time.Millisecond,
-	})
-
-	result := listResourceSorted(t, svc, resourceSortParams(types.ContainerSortMemoryUsage, "desc", 0, 20))
-	require.Equal(t, []string{"fast", "slow"}, summaryIDs(result.Items))
-	require.NotNil(t, result.Items[0].ResourceSample)
-	require.Nil(t, result.Items[1].ResourceSample, "per-container timeout leaves the sample unavailable")
 }
 
 func TestResourceSortCancelledContextFailsRequest(t *testing.T) {

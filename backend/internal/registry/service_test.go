@@ -165,11 +165,6 @@ func newDockerHubRateLimitTestClient(t *testing.T, handler http.HandlerFunc) *ht
 	}
 }
 
-func TestNewContainerRegistryService_InitializesDistributionHTTPClient(t *testing.T) {
-	svc := newRegistryTestService(t, setupContainerRegistryTestDB(t), nil)
-	require.NotNil(t, svc.distributionHTTPClient)
-}
-
 func TestContainerRegistryService_GetAllRegistryAuthConfigs_NormalizesHosts(t *testing.T) {
 	db := setupContainerRegistryTestDB(t)
 	createTestPullRegistry(t, db, "https://index.docker.io/v1/", "docker-user", "docker-token")

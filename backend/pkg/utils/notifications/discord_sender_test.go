@@ -1,7 +1,6 @@
 package notifications
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -210,73 +209,4 @@ func TestBuildDiscordURL_URLEncoding(t *testing.T) {
 	// Verify URL encoding for special characters
 	assert.Contains(t, gotURL, "username=Bot+with+spaces")
 	assert.Contains(t, gotURL, "avatar=https%3A%2F%2F")
-}
-
-func TestSendDiscord_Validation(t *testing.T) {
-	tests := []struct {
-		name    string
-		config  DiscordConfig
-		wantErr string
-	}{
-		{
-			name: "missing webhook ID",
-			config: DiscordConfig{
-				Token: "token123",
-			},
-			wantErr: "discord webhook ID is empty",
-		},
-		{
-			name: "missing token",
-			config: DiscordConfig{
-				WebhookID: "123456789012345678",
-			},
-			wantErr: "discord token is empty",
-		},
-		{
-			name: "empty webhook ID",
-			config: DiscordConfig{
-				WebhookID: "",
-				Token:     "token123",
-			},
-			wantErr: "discord webhook ID is empty",
-		},
-		{
-			name: "empty token",
-			config: DiscordConfig{
-				WebhookID: "123456789012345678",
-				Token:     "",
-			},
-			wantErr: "discord token is empty",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateDiscordConfig(tt.config)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.wantErr)
-		})
-	}
-}
-
-func TestSendDiscord_ValidConfiguration(t *testing.T) {
-	config := DiscordConfig{
-		WebhookID: "123456789012345678",
-		Token:     "valid-token-123",
-		Username:  "Test Bot",
-	}
-
-	err := validateDiscordConfig(config)
-	assert.NoError(t, err)
-}
-
-// Helper function to extract validation logic for testing
-func validateDiscordConfig(config DiscordConfig) error {
-	if config.WebhookID == "" {
-		return errors.New("discord webhook ID is empty")
-	}
-	if config.Token == "" {
-		return errors.New("discord token is empty")
-	}
-	return nil
 }

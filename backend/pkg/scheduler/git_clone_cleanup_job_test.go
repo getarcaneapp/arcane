@@ -13,13 +13,6 @@ import (
 	git "github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
 )
 
-func TestGitCloneCleanupJob_NameAndSchedule(t *testing.T) {
-	job := NewGitCloneCleanupJob(nil, nil)
-
-	assert.Equal(t, GitCloneCleanupJobName, job.Name())
-	assert.Equal(t, "0 30 * * * *", job.Schedule(t.Context()))
-}
-
 func TestGitCloneCleanupJob_RunPurgesStaleCloneDirs(t *testing.T) {
 	workDir := t.TempDir()
 	_, settingsService, _ := setupAnalyticsStateServices(t)

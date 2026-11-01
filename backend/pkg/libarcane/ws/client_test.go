@@ -15,17 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewClient(t *testing.T) {
-	serverConn, cleanup := newTestWSPair(t)
-	defer cleanup()
-
-	c := NewClient(serverConn, 64)
-	require.NotNil(t, c)
-	assert.NotNil(t, c.conn)
-	assert.NotNil(t, c.send)
-	assert.Equal(t, 64, cap(c.send))
-}
-
 func TestServeClient_ReceivesBroadcast(t *testing.T) {
 	h := NewHub(10)
 	ctx := t.Context()

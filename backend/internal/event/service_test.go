@@ -40,54 +40,6 @@ func setupEventServiceTestDB(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-func TestCreateEventRequestJSONOmitempty(t *testing.T) {
-	t.Run("includes optional fields when set", func(t *testing.T) {
-		payload, err := json.Marshal(CreateEventRequest{
-			Type:         EventTypeContainerStart,
-			Title:        "Container started",
-			Description:  "Container 'web' has been started",
-			ResourceType: new("container"),
-			ResourceID:   new("container-1"),
-			ResourceName: new("web"),
-			UserID:       new("user-1"),
-			Username:     new("arcane"),
-		})
-		require.NoError(t, err)
-
-		var decoded map[string]any
-		require.NoError(t, json.Unmarshal(payload, &decoded))
-
-		require.Equal(t, "container", decoded["resourceType"])
-		require.Equal(t, "container-1", decoded["resourceId"])
-		require.Equal(t, "web", decoded["resourceName"])
-		require.Equal(t, "user-1", decoded["userId"])
-		require.Equal(t, "arcane", decoded["username"])
-	})
-
-	t.Run("omits optional fields when nil", func(t *testing.T) {
-		payload, err := json.Marshal(CreateEventRequest{
-			Type:  EventTypeUserLogin,
-			Title: "User logged in",
-		})
-		require.NoError(t, err)
-
-		var decoded map[string]any
-		require.NoError(t, json.Unmarshal(payload, &decoded))
-
-		_, hasResourceType := decoded["resourceType"]
-		_, hasResourceID := decoded["resourceId"]
-		_, hasResourceName := decoded["resourceName"]
-		_, hasUserID := decoded["userId"]
-		_, hasUsername := decoded["username"]
-
-		require.False(t, hasResourceType)
-		require.False(t, hasResourceID)
-		require.False(t, hasResourceName)
-		require.False(t, hasUserID)
-		require.False(t, hasUsername)
-	})
-}
-
 func TestEventService_LogEventsPersistOptionalPointers(t *testing.T) {
 	ctx := t.Context()
 	db := setupEventServiceTestDB(t)

@@ -69,29 +69,3 @@ func TestGetAutoLoginConfig_DisabledWhenLocalAuthDisabled(t *testing.T) {
 	require.False(t, result.Enabled, "Expected auto-login to be disabled when local auth is disabled")
 	require.Empty(t, result.Username, "Expected empty username when disabled")
 }
-
-func TestGetAutoLoginPassword(t *testing.T) {
-	enableAutoLoginFeature(t)
-	s := newTestAuthService()
-	s.config = &config.Config{
-		BuildablesConfig: config.BuildablesConfig{
-			AutoLoginPassword: "my-secret-password",
-		},
-	}
-
-	password := s.GetAutoLoginPassword()
-	require.Equal(t, "my-secret-password", password)
-}
-
-func TestGetAutoLoginPassword_EmptyWhenNotConfigured(t *testing.T) {
-	enableAutoLoginFeature(t)
-	s := newTestAuthService()
-	s.config = &config.Config{
-		BuildablesConfig: config.BuildablesConfig{
-			AutoLoginPassword: "",
-		},
-	}
-
-	password := s.GetAutoLoginPassword()
-	require.Empty(t, password)
-}

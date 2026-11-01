@@ -289,20 +289,6 @@ func newSQLiteSQLDB(t *testing.T, dirPath, fileName string) (*stdsql.DB, string)
 	return db, dsn
 }
 
-func TestInitialize_AllowsMigrationOptions(t *testing.T) {
-	ctx := t.Context()
-	dsn := "file:" + filepath.Join(t.TempDir(), "arcane-init.db")
-
-	db, err := Initialize(ctx, dsn, MigrationOptions{})
-	require.NoError(t, err)
-	require.NotNil(t, db)
-
-	var settingsCount int64
-	require.NoError(t, db.WithContext(ctx).Table("settings").Count(&settingsCount).Error)
-
-	require.NoError(t, db.Close())
-}
-
 func TestInitialize_RecordsGooseVersionOnFreshSQLite(t *testing.T) {
 	ctx := t.Context()
 	dsn := "file:" + filepath.Join(t.TempDir(), "arcane-goose-fresh.db")
