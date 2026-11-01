@@ -111,7 +111,7 @@ func TestSetRecoveryKeyKeepsCurrentKeyWhenRekeyFails(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&backupengine.SystemBackupRecoveryConfig{}, &s3.S3Destination{}))
-	crypto.InitEncryption(&crypto.Config{EncryptionKey: "system-backup-rekey-test-key-32bytes", Environment: "test"})
+	crypto.InitEncryption(crypto.Config{EncryptionKey: "system-backup-rekey-test-key-32bytes", Environment: "test"})
 	db := &database.DB{DB: gormDB}
 	recoveryKeys := backupengine.NewRecoveryKeyStore(db)
 	oldKey := "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN"

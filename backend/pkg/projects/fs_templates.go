@@ -72,11 +72,11 @@ func EnsureTemplateDir(ctx context.Context, templatesDir, base string) (dir, com
 		return "", "", "", fmt.Errorf("ensure templates dir: %w", derr)
 	}
 	dir = filepath.Join(baseDir, base)
-	dirLogical, err := acfs.LogicalPath(baseDir, dir)
+	dirLogical, err := acfs.Root{Path: baseDir}.LogicalPath(dir)
 	if err != nil {
 		return "", "", "", fmt.Errorf("template directory is outside the templates root: %w", err)
 	}
-	if mkdirAllErr := acfs.MkdirAll(ctx, baseDir, dirLogical, utils.DirPerm); mkdirAllErr != nil {
+	if mkdirAllErr := (acfs.Root{Path: baseDir}).MkdirAll(ctx, dirLogical, utils.DirPerm); mkdirAllErr != nil {
 		return "", "", "", fmt.Errorf("failed to create template directory: %w", mkdirAllErr)
 	}
 	composePath = filepath.Join(dir, "compose.yaml")
@@ -156,7 +156,7 @@ func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) 
 		{"/.env.template", "env", getDefaultEnvTemplate(), retiredDefaultEnvTemplate},
 	}
 	for _, tmpl := range defaults {
-		exists, existsErr := acfs.Exists(ctx, templatesDir, tmpl.path)
+		exists, existsErr := acfs.Root{Path: templatesDir}.Exists(ctx, tmpl.path)
 		if existsErr != nil {
 			return fmt.Errorf("write default %s template: %w", tmpl.name, existsErr)
 		}
@@ -164,7 +164,7 @@ func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) 
 			if tmpl.retired == "" {
 				continue
 			}
-			current, readFileErr := acfs.ReadFile(ctx, templatesDir, tmpl.path)
+			current, readFileErr := acfs.Root{Path: templatesDir}.ReadFile(ctx, tmpl.path)
 			if readFileErr != nil {
 				return fmt.Errorf("read default %s template: %w", tmpl.name, readFileErr)
 			}
@@ -172,7 +172,7 @@ func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) 
 				continue
 			}
 		}
-		if writeErr := acfs.Write(ctx, templatesDir, tmpl.path, []byte(tmpl.content), acfs.WriteOptions{Mode: utils.FilePerm}); writeErr != nil {
+		if writeErr := (acfs.Root{Path: templatesDir}).Write(ctx, tmpl.path, []byte(tmpl.content), acfs.WriteOptions{Mode: utils.FilePerm}); writeErr != nil {
 			return fmt.Errorf("write default %s template: %w", tmpl.name, writeErr)
 		}
 	}

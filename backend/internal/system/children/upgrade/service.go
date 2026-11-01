@@ -185,7 +185,7 @@ func NewService(
 		resolveRuntimeOptions: resolveRuntimeOptions,
 		keepUpgrader:          keepUpgrader,
 		progress:              newProgressFeed(),
-		jobHub:                agg.NewHub[types.UpgradeJob](),
+		jobHub:                &agg.Hub[types.UpgradeJob]{},
 		jobChanged:            make(chan struct{}, 1),
 		agentSlotFreed:        make(chan struct{}),
 	}

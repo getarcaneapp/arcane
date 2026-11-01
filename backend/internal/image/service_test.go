@@ -343,7 +343,7 @@ func setupImageServiceAuthTest(t *testing.T) (*ImageService, *database.DB) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&registry.ContainerRegistry{}, &kv.KVEntry{}, &testProjectRow{}))
 
-	crypto.InitEncryption(&crypto.Config{
+	crypto.InitEncryption(crypto.Config{
 		Environment:   string(config.AppEnvironmentTest),
 		EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
 	})

@@ -27,10 +27,10 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
 	github.com/theupdateframework/go-tuf/v2 v2.4.2
-	go.getarcane.app/acfs v0.6.3
-	go.getarcane.app/builds v0.4.7
-	go.getarcane.app/docker v0.1.3
-	go.getarcane.app/kit v0.4.2
+	go.getarcane.app/acfs v0.6.4
+	go.getarcane.app/builds v0.4.9
+	go.getarcane.app/docker v0.1.4
+	go.getarcane.app/kit v0.4.4
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	google.golang.org/protobuf v1.36.12
 )

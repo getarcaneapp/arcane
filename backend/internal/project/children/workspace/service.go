@@ -104,7 +104,7 @@ func (s *Service) File(ctx context.Context, projectPath, composeFileName, relati
 	if entry.Size > maxFileSizeBytes {
 		return response(types.FileReadOnlyTooLarge, "", ""), nil
 	}
-	reader, _, err := acfs.OpenRead(ctx, projectPath, "/"+rel, maxFileSizeBytes)
+	reader, _, err := acfs.Root{Path: projectPath}.OpenRead(ctx, "/"+rel, maxFileSizeBytes)
 	if err != nil {
 		return nil, classifyACFSError(err, "read project workspace file")
 	}
@@ -132,7 +132,7 @@ func (s *Service) Download(ctx context.Context, projectPath, composeFileName, re
 	if entry.IsDirectory {
 		return nil, 0, "", common.Classify(common.ErrProjectWorkspaceBadRequest, errors.New("workspace path is a directory"))
 	}
-	file, size, err := acfs.OpenRead(ctx, projectPath, "/"+rel, 0)
+	file, size, err := acfs.Root{Path: projectPath}.OpenRead(ctx, "/"+rel, 0)
 	if err != nil {
 		return nil, 0, "", classifyACFSError(err, "open project workspace file")
 	}
@@ -209,7 +209,7 @@ func resolvePath(ctx context.Context, projectPath, composeFileName, relativePath
 		return "", "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, errors.New("project configuration is not part of the workspace"))
 	}
 	fullPath := filepath.Join(projectPath, filepath.FromSlash(rel))
-	entry, err := acfs.Stat(ctx, projectPath, "/"+rel, false)
+	entry, err := acfs.Root{Path: projectPath}.Stat(ctx, "/"+rel, acfstypes.StatOptions{})
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceNotFound, errors.New("project workspace file not found"))

@@ -419,7 +419,7 @@ func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) 
 
 func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, updates map[string]any, userID, username *string) (*Environment, error) {
 	if name, ok := updates["name"].(string); ok {
-		updates["name"] = normalization.Text(name, true, true)
+		updates["name"] = normalization.Text(name, normalization.TextOptions{Trim: true, NFC: true})
 	}
 	if _, err := s.GetEnvironmentByID(ctx, id); err != nil {
 		return nil, err

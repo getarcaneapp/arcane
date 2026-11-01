@@ -74,14 +74,14 @@ func (l *MissingIncludeStubLoader) Load(ctx context.Context, filePath string) (s
 		relPath = filepath.Base(validatedPath)
 	}
 	stubPath := filepath.Join(l.tempDir, relPath)
-	stubLogical, err := acfs.LogicalPath(l.tempDir, stubPath)
+	stubLogical, err := acfs.Root{Path: l.tempDir}.LogicalPath(stubPath)
 	if err != nil {
 		return "", fmt.Errorf("resolve validation include stub path: %w", err)
 	}
-	if mkdirAllErr := acfs.MkdirAll(ctx, l.tempDir, path.Dir(stubLogical), 0o755); mkdirAllErr != nil {
+	if mkdirAllErr := (acfs.Root{Path: l.tempDir}).MkdirAll(ctx, path.Dir(stubLogical), 0o755); mkdirAllErr != nil {
 		return "", fmt.Errorf("create validation include directory: %w", mkdirAllErr)
 	}
-	if writeErr := acfs.Write(ctx, l.tempDir, stubLogical, []byte("services: {}\n"), acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
+	if writeErr := (acfs.Root{Path: l.tempDir}).Write(ctx, stubLogical, []byte("services: {}\n"), acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
 		return "", fmt.Errorf("write validation include stub: %w", writeErr)
 	}
 

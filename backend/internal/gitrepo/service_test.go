@@ -43,7 +43,7 @@ func setupGitRepositoryServiceTest(t *testing.T) *GitRepositoryService {
 	sqlDB.SetMaxOpenConns(1)
 	sqlDB.SetMaxIdleConns(1)
 
-	crypto.InitEncryption(&crypto.Config{
+	crypto.InitEncryption(crypto.Config{
 		EncryptionKey: "test-encryption-key-for-git-repos-32bytes-min",
 		Environment:   "test",
 	})

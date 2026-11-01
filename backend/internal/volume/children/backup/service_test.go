@@ -146,7 +146,7 @@ func TestVolumeBackupPasswordPrefersRecoveryKey(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-password?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&backup.SystemBackupRecoveryConfig{}))
-	crypto.InitEncryption(&crypto.Config{EncryptionKey: "volume-backup-password-test-key-32bytes", Environment: "test"})
+	crypto.InitEncryption(crypto.Config{EncryptionKey: "volume-backup-password-test-key-32bytes", Environment: "test"})
 	recoveryKeys := backup.NewRecoveryKeyStore(&database.DB{DB: gormDB})
 	service := NewService(Dependencies{
 		DB:            &database.DB{DB: gormDB},

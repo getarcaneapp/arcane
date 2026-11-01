@@ -24,6 +24,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"go.getarcane.app/acfs"
+	acfstypes "go.getarcane.app/acfs/types"
 	"go.getarcane.app/docker"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/capture"
@@ -312,7 +313,7 @@ func ValidateScriptPath(ctx context.Context, projectPath, scriptPath string) err
 		return fmt.Errorf("script path %q escapes project directory", scriptPath)
 	}
 
-	entry, err := acfs.Stat(ctx, absProject, "/"+filepath.ToSlash(scriptPath), false)
+	entry, err := acfs.Root{Path: absProject}.Stat(ctx, "/"+filepath.ToSlash(scriptPath), acfstypes.StatOptions{})
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			// The runner image's user may read a path Arcane's uid cannot traverse (#3373); let the run surface real problems.

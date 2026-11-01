@@ -398,7 +398,7 @@ func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts t
 		if vexOutputPath == "" {
 			return nil
 		}
-		data, readErr := acfs.ReadFile(ctx, filepath.Dir(vexOutputPath), "/"+filepath.Base(vexOutputPath))
+		data, readErr := acfs.Root{Path: filepath.Dir(vexOutputPath)}.ReadFile(ctx, "/"+filepath.Base(vexOutputPath))
 		if readErr != nil {
 			return nil
 		}
@@ -518,13 +518,13 @@ func (s *Service) writeRegistryAuthConfig(ctx context.Context) {
 		return
 	}
 
-	if mkdirAllErr := acfs.MkdirAll(ctx, filepath.Dir(configDir), "/"+filepath.Base(configDir), 0o700); mkdirAllErr != nil {
+	if mkdirAllErr := (acfs.Root{Path: filepath.Dir(configDir)}).MkdirAll(ctx, "/"+filepath.Base(configDir), 0o700); mkdirAllErr != nil {
 		slog.WarnContext(ctx, "failed to create docker config directory for image patching", "path", configDir, "error", mkdirAllErr)
 		return
 	}
 
 	merged := map[string]jsontext.Value{}
-	if existing, readFileErr := acfs.ReadFile(ctx, configDir, "/config.json"); readFileErr == nil {
+	if existing, readFileErr := (acfs.Root{Path: configDir}).ReadFile(ctx, "/config.json"); readFileErr == nil {
 		if decodeExistingConfigErr := json.Unmarshal(existing, &merged); decodeExistingConfigErr != nil {
 			slog.WarnContext(ctx, "existing docker config is not valid JSON; leaving it untouched", "path", configDir, "error", decodeExistingConfigErr)
 			return
@@ -548,7 +548,7 @@ func (s *Service) writeRegistryAuthConfig(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	if writeErr := acfs.Write(ctx, configDir, "/config.json", payload, acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
+	if writeErr := (acfs.Root{Path: configDir}).Write(ctx, "/config.json", payload, acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
 		slog.WarnContext(ctx, "failed to write docker config for image patching", "path", configDir, "error", writeErr)
 	}
 }

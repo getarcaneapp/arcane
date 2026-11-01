@@ -514,7 +514,7 @@ func (s *SettingsService) persistSettings(ctx context.Context, values []SettingV
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, setting := range values {
 			if setting.Key == "oidcProviderName" {
-				setting.Value = normalization.Text(setting.Value, true, true)
+				setting.Value = normalization.Text(setting.Value, normalization.TextOptions{Trim: true, NFC: true})
 			}
 			if byKey[setting.Key].isEncrypted && setting.Value != "" {
 				encrypted, encryptErr := crypto.Encrypt(setting.Value)

@@ -15,6 +15,7 @@ import (
 
 	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
+	acfstypes "go.getarcane.app/acfs/types"
 	kit "go.getarcane.app/kit/pkg"
 	"go.yaml.in/yaml/v4"
 
@@ -176,7 +177,7 @@ func projectScanSkipDirectorySetInternal(skipDirectories string) map[string]bool
 
 func syncedProjectFileMatchesInternal(ctx context.Context, projectPath string, file SyncFile) (bool, error) {
 	logicalPath := "/" + filepath.ToSlash(file.RelativePath)
-	entry, err := acfs.Stat(ctx, projectPath, logicalPath, false)
+	entry, err := acfs.Root{Path: projectPath}.Stat(ctx, logicalPath, acfstypes.StatOptions{})
 	if err != nil {
 		return false, kit.Ternary(errors.Is(err, fs.ErrNotExist), nil, err)
 	}
@@ -184,7 +185,7 @@ func syncedProjectFileMatchesInternal(ctx context.Context, projectPath string, f
 		return false, nil
 	}
 
-	existingContent, err := acfs.ReadFile(ctx, projectPath, logicalPath)
+	existingContent, err := acfs.Root{Path: projectPath}.ReadFile(ctx, logicalPath)
 	if err != nil {
 		return false, kit.Ternary(errors.Is(err, fs.ErrNotExist), nil, err)
 	}
@@ -230,7 +231,7 @@ func DirectorySyncContentsChanged(ctx context.Context, projectPath string, syncF
 		if _, exists := newFileSet[oldFile]; exists {
 			continue
 		}
-		exists, err := acfs.Exists(ctx, projectPath, "/"+filepath.ToSlash(oldFile))
+		exists, err := acfs.Root{Path: projectPath}.Exists(ctx, "/"+filepath.ToSlash(oldFile))
 		if err != nil {
 			return false, err
 		}
@@ -246,7 +247,7 @@ func DirectorySyncContentsChanged(ctx context.Context, projectPath string, syncF
 		if _, exists := newFileSet[candidate]; exists {
 			continue
 		}
-		exists, err := acfs.Exists(ctx, projectPath, "/"+candidate)
+		exists, err := acfs.Root{Path: projectPath}.Exists(ctx, "/"+candidate)
 		if err != nil {
 			return false, err
 		}
@@ -268,7 +269,7 @@ func StaleComposeFiles(ctx context.Context, projectPath, composeFileName string,
 		syncedFileSet[file] = struct{}{}
 	}
 
-	entries, err := acfs.List(ctx, projectPath, "/")
+	entries, err := acfs.Root{Path: projectPath}.List(ctx, "/")
 	if err != nil {
 		return nil, kit.Ternary(errors.Is(err, fs.ErrNotExist), nil, err)
 	}
@@ -307,7 +308,7 @@ func RemoveStaleComposeFiles(ctx context.Context, projectPath, composeFileName s
 	}
 
 	for _, name := range stale {
-		if removeErr := acfs.Remove(ctx, projectPath, "/"+name); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
+		if removeErr := (acfs.Root{Path: projectPath}).Remove(ctx, "/"+name); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
 			return removeErr
 		}
 	}
@@ -332,12 +333,12 @@ func CreateUniqueDir(ctx context.Context, projectsRoot, basePath, name string, p
 	folderName = sanitized
 
 	for counter := 1; ; counter++ {
-		logicalPath, logicalErr := acfs.LogicalPath(projectsRoot, candidate)
+		logicalPath, logicalErr := acfs.Root{Path: projectsRoot}.LogicalPath(candidate)
 		if logicalErr != nil {
 			return "", "", false, fmt.Errorf("project directory would be outside allowed projects root: %w", logicalErr)
 		}
 
-		mkErr := acfs.Mkdir(ctx, projectsRoot, logicalPath, perm)
+		mkErr := acfs.Root{Path: projectsRoot}.Mkdir(ctx, logicalPath, perm)
 		if mkErr == nil {
 			return candidate, folderName, false, nil
 		}
@@ -381,12 +382,12 @@ func CreateExactDir(ctx context.Context, projectsRoot, basePath, name string, pe
 		return "", "", errors.New("invalid project name: results in empty directory name")
 	}
 
-	logicalPath, err := acfs.LogicalPath(projectsRoot, basePath)
+	logicalPath, err := acfs.Root{Path: projectsRoot}.LogicalPath(basePath)
 	if err != nil {
 		return "", "", fmt.Errorf("project directory would be outside allowed projects root: %w", err)
 	}
 
-	if mkdirErr := acfs.Mkdir(ctx, projectsRoot, logicalPath, perm); mkdirErr != nil {
+	if mkdirErr := (acfs.Root{Path: projectsRoot}).Mkdir(ctx, logicalPath, perm); mkdirErr != nil {
 		return "", "", kit.Ternary[error](errors.Is(mkdirErr, os.ErrExist), ErrProjectDirExists, projectDirError(projectsRoot, basePath, mkdirErr))
 	}
 

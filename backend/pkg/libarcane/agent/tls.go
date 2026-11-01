@@ -171,7 +171,7 @@ func GenerateManagerClientMTLSAssetsWithContext(ctx context.Context, cfg *Config
 
 	clientLogicalDir := path.Join("/", generatedClientMTLSSubdir, safeEnvID)
 	clientDir := filepath.Join(assetsDir, generatedClientMTLSSubdir, safeEnvID)
-	if mkdirErr := acfs.MkdirAll(ctx, assetsDir, clientLogicalDir, utils.DirPerm); mkdirErr != nil {
+	if mkdirErr := (acfs.Root{Path: assetsDir}).MkdirAll(ctx, clientLogicalDir, utils.DirPerm); mkdirErr != nil {
 		return nil, fmt.Errorf("failed to create client cert dir: %w", mkdirErr)
 	}
 	unlock, err := lockAgentMTLSPath(ctx, clientDir, ".client.lock")
@@ -242,15 +242,15 @@ func GenerateManagerClientMTLSAssetsWithContext(ctx context.Context, cfg *Config
 		}
 	}
 
-	caPEM, err := acfs.ReadFile(ctx, assetsDir, "/"+generatedMTLSCACertFileName)
+	caPEM, err := acfs.Root{Path: assetsDir}.ReadFile(ctx, "/"+generatedMTLSCACertFileName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read generated CA certificate: %w", err)
 	}
-	clientCertPEM, err := acfs.ReadFile(ctx, assetsDir, path.Join(clientLogicalDir, generatedMTLSClientCertName))
+	clientCertPEM, err := acfs.Root{Path: assetsDir}.ReadFile(ctx, path.Join(clientLogicalDir, generatedMTLSClientCertName))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read generated client certificate: %w", err)
 	}
-	clientKeyPEM, err := acfs.ReadFile(ctx, assetsDir, path.Join(clientLogicalDir, generatedMTLSClientKeyName))
+	clientKeyPEM, err := acfs.Root{Path: assetsDir}.ReadFile(ctx, path.Join(clientLogicalDir, generatedMTLSClientKeyName))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read generated client key: %w", err)
 	}
@@ -319,7 +319,7 @@ func EnsureAgentMTLSAssets(ctx context.Context, cfg *Config) error {
 
 	if reason != "" || !fileExists(filepath.Join(assetsDir, generatedMTLSEnrolledName)) {
 		marker := []byte(time.Now().UTC().Format(time.RFC3339) + "\n")
-		if writeErr := acfs.Write(ctx, assetsDir, "/"+generatedMTLSEnrolledName, marker, acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
+		if writeErr := (acfs.Root{Path: assetsDir}).Write(ctx, "/"+generatedMTLSEnrolledName, marker, acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
 			return fmt.Errorf("failed to write agent mTLS enrollment marker: %w", writeErr)
 		}
 	}
@@ -390,7 +390,7 @@ func enrollAgentMTLSAssets(ctx context.Context, cfg *Config, assetsDir, certPath
 	}
 	for _, file := range enrollResp.Files {
 		perm := kit.Ternary(strings.TrimSpace(file.Permissions) == "0600", 0o600, utils.FilePerm)
-		if writeErr := acfs.Write(ctx, assetsDir, "/"+filepath.Base(file.Name), []byte(file.Content), acfs.WriteOptions{Mode: perm}); writeErr != nil {
+		if writeErr := (acfs.Root{Path: assetsDir}).Write(ctx, "/"+filepath.Base(file.Name), []byte(file.Content), acfs.WriteOptions{Mode: perm}); writeErr != nil {
 			return fmt.Errorf("failed to write agent mTLS asset %s: %w", file.Name, writeErr)
 		}
 	}

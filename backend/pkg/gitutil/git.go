@@ -511,7 +511,7 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 	}
 
 	logicalPath := path.Join("/", filepath.ToSlash(targetPath))
-	entry, err := acfs.Stat(ctx, repoPath, logicalPath, true)
+	entry, err := acfs.Root{Path: repoPath}.Stat(ctx, logicalPath, acfstypes.StatOptions{FollowFinal: true})
 	if err != nil {
 		return nil, fmt.Errorf("path not found: %w", err)
 	}
@@ -519,7 +519,7 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 		return nil, errors.New("path is not a directory")
 	}
 
-	entries, err := acfs.List(ctx, repoPath, logicalPath)
+	entries, err := acfs.Root{Path: repoPath}.List(ctx, logicalPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read directory: %w", err)
 	}
@@ -614,7 +614,7 @@ func (c *Client) FileExists(ctx context.Context, repoPath, filePath string) bool
 	if err := ctx.Err(); err != nil {
 		return false
 	}
-	exists, err := acfs.Exists(ctx, repoPath, path.Join("/", filepath.ToSlash(filePath)))
+	exists, err := acfs.Root{Path: repoPath}.Exists(ctx, path.Join("/", filepath.ToSlash(filePath)))
 	return err == nil && exists
 }
 
@@ -623,7 +623,7 @@ func (c *Client) ReadFile(ctx context.Context, repoPath, filePath string) (strin
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	content, err := acfs.ReadFile(ctx, repoPath, path.Join("/", filepath.ToSlash(filePath)))
+	content, err := acfs.Root{Path: repoPath}.ReadFile(ctx, path.Join("/", filepath.ToSlash(filePath)))
 	if err != nil {
 		return "", fmt.Errorf("failed to read file: %w", err)
 	}
@@ -666,71 +666,76 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 	result := &DirectoryWalkResult{
 		Files: make([]SyncFileInfo, 0),
 	}
-	err := acfs.Walk(ctx, syncDir, "/", func(entry acfstypes.Entry) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if entry.IsSymlink {
-			return nil
-		}
-		if entry.IsDirectory {
-			if entry.Name == ".git" {
-				return fs.SkipDir
+	_, err := acfs.Root{Path: syncDir}.Walk(
+		ctx,
+		"/",
+		acfstypes.WalkOptions{},
+		func(entry acfstypes.Entry) error {
+			if err := ctx.Err(); err != nil {
+				return err
 			}
-			return nil
-		}
+			if entry.IsSymlink {
+				return nil
+			}
+			if entry.IsDirectory {
+				if entry.Name == ".git" {
+					return fs.SkipDir
+				}
+				return nil
+			}
 
-		relativePath := strings.TrimPrefix(entry.Path, "/")
-		if maxFiles > 0 && result.TotalFiles >= maxFiles {
-			return fmt.Errorf("file count limit exceeded (max %d files)", maxFiles)
-		}
+			relativePath := strings.TrimPrefix(entry.Path, "/")
+			if maxFiles > 0 && result.TotalFiles >= maxFiles {
+				return fmt.Errorf("file count limit exceeded (max %d files)", maxFiles)
+			}
 
-		if maxBinarySize > 0 && entry.Size > maxBinarySize {
-			reader, _, openErr := acfs.OpenRead(ctx, syncDir, entry.Path, binarySniffBytes)
-			if openErr != nil {
-				return fmt.Errorf("failed to inspect file %s: %w", relativePath, openErr)
+			if maxBinarySize > 0 && entry.Size > maxBinarySize {
+				reader, _, openErr := acfs.Root{Path: syncDir}.OpenRead(ctx, entry.Path, binarySniffBytes)
+				if openErr != nil {
+					return fmt.Errorf("failed to inspect file %s: %w", relativePath, openErr)
+				}
+				buf := make([]byte, binarySniffBytes)
+				n, readErr := reader.Read(buf)
+				closeErr := reader.Close()
+				if readErr != nil && !errors.Is(readErr, io.EOF) {
+					return fmt.Errorf("failed to inspect file %s: %w", relativePath, errors.Join(readErr, closeErr))
+				}
+				if closeErr != nil {
+					return fmt.Errorf("failed to close file %s after inspection: %w", relativePath, closeErr)
+				}
+				if IsBinaryContent(buf[:n]) {
+					result.SkippedBinaries++
+					return nil
+				}
 			}
-			buf := make([]byte, binarySniffBytes)
-			n, readErr := reader.Read(buf)
-			closeErr := reader.Close()
-			if readErr != nil && !errors.Is(readErr, io.EOF) {
-				return fmt.Errorf("failed to inspect file %s: %w", relativePath, errors.Join(readErr, closeErr))
+
+			content, readErr := acfs.Root{Path: syncDir}.ReadFile(ctx, entry.Path)
+			if readErr != nil {
+				return fmt.Errorf("failed to read file %s: %w", relativePath, readErr)
 			}
-			if closeErr != nil {
-				return fmt.Errorf("failed to close file %s after inspection: %w", relativePath, closeErr)
-			}
-			if IsBinaryContent(buf[:n]) {
+
+			fileSize := int64(len(content))
+			isBinary := IsBinaryContent(content)
+			if isBinary && maxBinarySize > 0 && fileSize > maxBinarySize {
 				result.SkippedBinaries++
 				return nil
 			}
-		}
+			if maxTotalSize > 0 && result.TotalSize+fileSize > maxTotalSize {
+				return fmt.Errorf("total size limit exceeded (max %d bytes)", maxTotalSize)
+			}
 
-		content, readErr := acfs.ReadFile(ctx, syncDir, entry.Path)
-		if readErr != nil {
-			return fmt.Errorf("failed to read file %s: %w", relativePath, readErr)
-		}
-
-		fileSize := int64(len(content))
-		isBinary := IsBinaryContent(content)
-		if isBinary && maxBinarySize > 0 && fileSize > maxBinarySize {
-			result.SkippedBinaries++
+			result.Files = append(result.Files, SyncFileInfo{
+				RelativePath: relativePath,
+				Content:      content,
+				Size:         fileSize,
+				IsBinary:     isBinary,
+				Executable:   os.FileMode(entry.UnixMode)&0o111 != 0,
+			})
+			result.TotalFiles++
+			result.TotalSize += fileSize
 			return nil
-		}
-		if maxTotalSize > 0 && result.TotalSize+fileSize > maxTotalSize {
-			return fmt.Errorf("total size limit exceeded (max %d bytes)", maxTotalSize)
-		}
-
-		result.Files = append(result.Files, SyncFileInfo{
-			RelativePath: relativePath,
-			Content:      content,
-			Size:         fileSize,
-			IsBinary:     isBinary,
-			Executable:   os.FileMode(entry.UnixMode)&0o111 != 0,
-		})
-		result.TotalFiles++
-		result.TotalSize += fileSize
-		return nil
-	})
+		},
+	)
 	switch {
 	case err != nil:
 		return nil, err

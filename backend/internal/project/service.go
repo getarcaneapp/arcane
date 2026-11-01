@@ -1418,7 +1418,7 @@ func (s *ProjectService) CreateProject(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create project directory: %w", err)
 	}
-	projectLogical, err := acfs.LogicalPath(projectsDirectory, projectPath)
+	projectLogical, err := acfs.Root{Path: projectsDirectory}.LogicalPath(projectPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve created project directory: %w", err)
 	}
@@ -1429,7 +1429,7 @@ func (s *ProjectService) CreateProject(
 	// what was added. Blank env content keeps an existing .env; different
 	// content conflicts with it.
 	cleanupCtx := context.WithoutCancel(ctx)
-	undo := func() error { return acfs.RemoveAll(cleanupCtx, projectsDirectory, projectLogical) }
+	undo := func() error { return acfs.Root{Path: projectsDirectory}.RemoveAll(cleanupCtx, projectLogical) }
 	if reused {
 		targets := []string{projects.DefaultComposeFileName, projects.EffectiveEnvFileName}
 		for _, change := range manifest.FileChanges {
@@ -1437,7 +1437,7 @@ func (s *ProjectService) CreateProject(
 		}
 		var absentPaths []string
 		for _, target := range targets {
-			entry, statErr := acfs.Stat(ctx, projectPath, "/"+target, false)
+			entry, statErr := acfs.Root{Path: projectPath}.Stat(ctx, "/"+target, acfstypes.StatOptions{})
 			switch {
 			case errors.Is(statErr, os.ErrNotExist):
 				absentPaths = append(absentPaths, target)
@@ -1601,7 +1601,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		slog.DebugContext(ctx, "Removing project files", "path", proj.Path)
 		// An imported project can live anywhere, so the removal is rooted at the
 		// parent directory and names the project directory itself.
-		if removeAllErr := acfs.RemoveAll(ctx, filepath.Dir(proj.Path), "/"+filepath.Base(proj.Path)); removeAllErr != nil {
+		if removeAllErr := (acfs.Root{Path: filepath.Dir(proj.Path)}).RemoveAll(ctx, "/"+filepath.Base(proj.Path)); removeAllErr != nil {
 			slog.ErrorContext(ctx, "Failed to remove project files", "path", proj.Path, "error", removeAllErr)
 			return fmt.Errorf("failed to remove project files: %w", removeAllErr)
 		}
@@ -1620,7 +1620,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		} else if projects.IsSafeSubdirectory(projectsDir, proj.Path) && filepath.Clean(projectsDir) != filepath.Clean(proj.Path) {
 			trashName := fmt.Sprintf("%s%s-%d", projects.ArcaneTrashPrefix, filepath.Base(proj.Path), time.Now().Unix())
 			trashPath := filepath.Join(filepath.Dir(proj.Path), trashName)
-			if renameErr := acfs.Rename(ctx, filepath.Dir(proj.Path), "/"+filepath.Base(proj.Path), "/"+trashName); renameErr != nil {
+			if renameErr := (acfs.Root{Path: filepath.Dir(proj.Path)}).Rename(ctx, "/"+filepath.Base(proj.Path), "/"+trashName); renameErr != nil {
 				slog.WarnContext(ctx, "Failed to quarantine project files", "path", proj.Path, "trashPath", trashPath, "error", renameErr)
 			} else {
 				slog.InfoContext(ctx, "Project files quarantined successfully", "path", proj.Path, "trashPath", trashPath)
@@ -1664,7 +1664,12 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 		projectContainers := listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*proj))
 		if slices.ContainsFunc(projectContainers, func(c container.Summary) bool {
-			return labels.ShouldDisableArcaneServerRedeploy(c.Labels, c.ID, currentContainerID, currentContainerErr)
+			return labels.ShouldDisableArcaneServerRedeploy(labels.RedeployCheck{
+				CurrentErr:         currentContainerErr,
+				Labels:             c.Labels,
+				ContainerID:        c.ID,
+				CurrentContainerID: currentContainerID,
+			})
 		}) {
 			return errors.New("arcane cannot redeploy itself; use the system upgrade flow (Settings -> Updates) instead")
 		}
@@ -3036,16 +3041,16 @@ func (s *ProjectService) applyProjectUpdate(
 		newDirName := projects.SanitizeProjectName(newName)
 		targetPath := filepath.Clean(filepath.Join(projectsDirectory, newDirName))
 		if filepath.Clean(proj.Path) != targetPath {
-			targetLogical, logicalErr := acfs.LogicalPath(projectsDirectory, targetPath)
+			targetLogical, logicalErr := acfs.Root{Path: projectsDirectory}.LogicalPath(targetPath)
 			if logicalErr != nil {
 				return fmt.Errorf("failed to resolve project directory rename target: %w", logicalErr)
 			}
 			// An imported project outside the projects directory crosses roots, so it cannot be a confined rename;
 			// that move checks cancellation itself, as acfs.Rename would.
 			if renameErr := func() error {
-				currentLogical, currentErr := acfs.LogicalPath(projectsDirectory, filepath.Clean(proj.Path))
+				currentLogical, currentErr := acfs.Root{Path: projectsDirectory}.LogicalPath(filepath.Clean(proj.Path))
 				if currentErr == nil {
-					return acfs.Rename(ctx, projectsDirectory, currentLogical, targetLogical)
+					return acfs.Root{Path: projectsDirectory}.Rename(ctx, currentLogical, targetLogical)
 				}
 				if cancellationErr := ctx.Err(); cancellationErr != nil {
 					return cancellationErr
@@ -3238,11 +3243,11 @@ func (s *ProjectService) prepareProjectRenameVolumeMigration(
 		return nil, nameErr
 	}
 	if targetPath := filepath.Clean(filepath.Join(projectsDirectory, newDirName)); filepath.Clean(proj.Path) != targetPath {
-		targetLogical, logicalErr := acfs.LogicalPath(projectsDirectory, targetPath)
+		targetLogical, logicalErr := acfs.Root{Path: projectsDirectory}.LogicalPath(targetPath)
 		if logicalErr != nil {
 			return nil, fmt.Errorf("failed to resolve project directory rename target: %w", logicalErr)
 		}
-		exists, existsErr := acfs.Exists(ctx, projectsDirectory, targetLogical)
+		exists, existsErr := acfs.Root{Path: projectsDirectory}.Exists(ctx, targetLogical)
 		if existsErr != nil {
 			return nil, fmt.Errorf("failed to check project directory rename target: %w", existsErr)
 		}
@@ -3252,7 +3257,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigration(
 	}
 	target := proj
 	if composeContent != nil || envContent != nil || overrideContent != nil {
-		previewLogical, err := acfs.MkdirTemp(ctx, projectsDirectory, "/", ".project-update-preview-*")
+		previewLogical, err := acfs.Root{Path: projectsDirectory}.MkdirTemp(ctx, "/", ".project-update-preview-*")
 		if err != nil {
 			return nil, fmt.Errorf("failed to create project update preview: %w", err)
 		}
@@ -3261,12 +3266,12 @@ func (s *ProjectService) prepareProjectRenameVolumeMigration(
 			// acfs refuses an already-cancelled context, so cleanup runs detached
 			// or a cancelled update leaks the preview directory.
 			cleanupCtx := context.WithoutCancel(ctx)
-			if removeErr := acfs.RemoveAll(cleanupCtx, projectsDirectory, previewLogical); removeErr != nil {
+			if removeErr := (acfs.Root{Path: projectsDirectory}).RemoveAll(cleanupCtx, previewLogical); removeErr != nil {
 				slog.WarnContext(cleanupCtx, "failed to remove project update preview", "path", previewPath, "error", removeErr)
 			}
 		}()
 
-		if _, copyDirErr := acfs.CopyDir(ctx, proj.Path, previewPath, acfstypes.CopyOptions{}); copyDirErr != nil {
+		if _, copyDirErr := (acfs.Root{Path: proj.Path}).CopyTo(ctx, acfs.Root{Path: previewPath}, acfstypes.CopyOptions{}); copyDirErr != nil {
 			return nil, fmt.Errorf("failed to prepare project update preview: %w", copyDirErr)
 		}
 		previewProject := Project{ //exhaustruct:enforce

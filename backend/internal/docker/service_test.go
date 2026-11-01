@@ -19,6 +19,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/streams/bus"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
@@ -228,7 +229,7 @@ func TestDockerClientService_PublishesDaemonImageEvents(t *testing.T) {
 	})
 	svc := newDockerClientServiceForTest(t, server.URL)
 	t.Cleanup(svc.Close)
-	eventCh, unsubscribe := svc.EventBus().Subscribe(events.ImageEventType)
+	eventCh, unsubscribe := svc.EventBus().Subscribe(events.ImageEventType, bus.SubscribeOptions{})
 	t.Cleanup(unsubscribe)
 	stop, err := concurrency.StartSupervised(t.Context(), "Docker event watcher", func(ctx context.Context) error {
 		svc.WatchEvents(ctx)
@@ -270,7 +271,7 @@ func TestDockerClientService_EventActorStopCancelsAndJoinsStream(t *testing.T) {
 	service := newDockerClientServiceForTest(t, server.URL)
 	t.Cleanup(service.Close)
 
-	eventsCh, unsubscribe := service.EventBus().Subscribe(events.ImageEventType)
+	eventsCh, unsubscribe := service.EventBus().Subscribe(events.ImageEventType, bus.SubscribeOptions{})
 	t.Cleanup(unsubscribe)
 	stop, err := concurrency.StartSupervised(t.Context(), "Docker event watcher", func(ctx context.Context) error {
 		service.WatchEvents(ctx)
@@ -516,7 +517,7 @@ func newDockerClientServiceForTest(t *testing.T, host string) *DockerClientServi
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	require.NoError(t, settingsService.UpdateSettings(t.Context(), types.SettingsUpdate{"dockerHost": host}))
-	return NewDockerClientService(t.Context(), db, settingsService)
+	return NewDockerClientService(t.Context(), db, settingsService, bus.Config{})
 }
 
 func newDockerPingTestServer(t *testing.T, apiVersion func() string) *httptest.Server {

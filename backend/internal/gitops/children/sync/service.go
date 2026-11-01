@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"go.getarcane.app/acfs"
+	acfstypes "go.getarcane.app/acfs/types"
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
@@ -476,7 +477,7 @@ func (s *Service) syncProjectDirectory(ctx context.Context, sync *projectpkg.Git
 	if err != nil {
 		return nil, nil, false, false, fmt.Errorf("failed to get projects directory: %w", err)
 	}
-	stageLogical, err := acfs.MkdirTemp(ctx, projectsDir, "/", ".gitops-sync-stage-*")
+	stageLogical, err := acfs.Root{Path: projectsDir}.MkdirTemp(ctx, "/", ".gitops-sync-stage-*")
 	if err != nil {
 		return nil, nil, false, false, fmt.Errorf("failed to create staging directory: %w", err)
 	}
@@ -492,7 +493,7 @@ func (s *Service) syncProjectDirectory(ctx context.Context, sync *projectpkg.Git
 	// The stage must go even after ctx was cancelled: acfs refuses work on a cancelled context.
 	defer func() {
 		if stage.stagePath != "" {
-			_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDir, stageLogical)
+			_ = acfs.Root{Path: projectsDir}.RemoveAll(context.WithoutCancel(ctx), stageLogical)
 		}
 	}()
 
@@ -642,7 +643,7 @@ func (s *Service) recoverProject(ctx context.Context, sync *projectpkg.GitOpsSyn
 	if err != nil {
 		return nil, err
 	}
-	entries, err := acfs.List(ctx, projectsDir, "/")
+	entries, err := acfs.Root{Path: projectsDir}.List(ctx, "/")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list projects directory %s: %w", projectsDir, err)
 	}
@@ -659,7 +660,7 @@ func (s *Service) recoverProject(ctx context.Context, sync *projectpkg.GitOpsSyn
 			continue
 		}
 		candidatePath := filepath.Join(projectsDir, entry.Name)
-		composeEntry, statErr := acfs.Stat(ctx, projectsDir, path.Join(entry.Path, composeFileName), true)
+		composeEntry, statErr := acfs.Root{Path: projectsDir}.Stat(ctx, path.Join(entry.Path, composeFileName), acfstypes.StatOptions{FollowFinal: true})
 		switch {
 		case statErr == nil && !composeEntry.IsDirectory:
 			matches = append(matches, candidatePath)
@@ -805,21 +806,21 @@ func (s *Service) createDirectorySyncProject(ctx context.Context, sync *projectp
 		return nil, fmt.Errorf("failed to create project directory: %w", err)
 	}
 
-	projectLogical, err := acfs.LogicalPath(projectsDir, projectPath)
+	projectLogical, err := acfs.Root{Path: projectsDir}.LogicalPath(projectPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve created project directory: %w", err)
 	}
-	if removeErr := acfs.Remove(ctx, projectsDir, projectLogical); removeErr != nil {
+	if removeErr := (acfs.Root{Path: projectsDir}).Remove(ctx, projectLogical); removeErr != nil {
 		return nil, fmt.Errorf("failed to prepare project directory: %w", removeErr)
 	}
 
-	if renameErr := acfs.Rename(ctx, projectsDir, stage.stageLogical, projectLogical); renameErr != nil {
+	if renameErr := (acfs.Root{Path: projectsDir}).Rename(ctx, stage.stageLogical, projectLogical); renameErr != nil {
 		return nil, fmt.Errorf("failed to promote staged project directory: %w", renameErr)
 	}
 	stage.stagePath = ""
 
 	if chmodErr := os.Chmod(projectPath, utils.DirPerm); chmodErr != nil {
-		_ = acfs.RemoveAll(ctx, projectsDir, projectLogical)
+		_ = acfs.Root{Path: projectsDir}.RemoveAll(ctx, projectLogical)
 		return nil, fmt.Errorf("failed to set project directory permissions: %w", chmodErr)
 	}
 
@@ -833,7 +834,7 @@ func (s *Service) createDirectorySyncProject(ctx context.Context, sync *projectp
 	}
 
 	if createGitOpsManagedProjectErr := s.projectService.CreateGitOpsManagedProject(ctx, sync, project, actor); createGitOpsManagedProjectErr != nil {
-		_ = acfs.RemoveAll(ctx, projectsDir, projectLogical)
+		_ = acfs.Root{Path: projectsDir}.RemoveAll(ctx, projectLogical)
 		return nil, createGitOpsManagedProjectErr
 	}
 
@@ -889,7 +890,7 @@ func (s *Service) updateDirectorySyncProject(ctx context.Context, sync *projectp
 		if existed {
 			restoreErr = projects.RestoreProjectDirectoryBackup(cleanupCtx, stage.projectsDir, projectPath, backup)
 		} else {
-			restoreErr = acfs.RemoveAll(cleanupCtx, filepath.Dir(projectPath), "/"+filepath.Base(projectPath))
+			restoreErr = acfs.Root{Path: filepath.Dir(projectPath)}.RemoveAll(cleanupCtx, "/"+filepath.Base(projectPath))
 		}
 		if restoreErr == nil {
 			return cause

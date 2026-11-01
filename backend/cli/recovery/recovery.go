@@ -177,7 +177,7 @@ func finalizeRestoredBackup(ctx context.Context, environment map[string]string, 
 	if err != nil {
 		return err
 	}
-	crypto.InitEncryption(&crypto.Config{
+	crypto.InitEncryption(crypto.Config{
 		EncryptionKey: encryptionKey,
 		Environment:   environment["ARCANE_ENVIRONMENT"],
 		AgentMode:     environment["ARCANE_AGENT"] == "true",

@@ -510,7 +510,7 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 	t.Run("passes database registry credentials to Arcane image puller", func(t *testing.T) {
 		db := setupProjectTestDB(t)
 		require.NoError(t, db.AutoMigrate(&registry.ContainerRegistry{}, &kv.KVEntry{}))
-		crypto.InitEncryption(&crypto.Config{
+		crypto.InitEncryption(crypto.Config{
 			Environment:   string(config.AppEnvironmentTest),
 			EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
 		})
@@ -789,9 +789,9 @@ func TestUpdaterService_RecordUpdateRunAppendsActivityMessage(t *testing.T) {
 
 	for _, tt := range []struct {
 		name        string
-		result      updater.ResourceResult
 		wantLevel   types.ActivityMessageLevel
 		wantMessage string
+		result      updater.ResourceResult
 	}{
 		{
 			name: "failed with reason",

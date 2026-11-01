@@ -781,7 +781,7 @@ func (s *UpdaterService) AggregateHistory(ctx context.Context, limit int) (types
 
 // RestartContainersUsingOldIDs restarts containers matching old image IDs or refs.
 func (s *UpdaterService) RestartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef, oldRefToNewRef map[string]string) ([]types.UpdaterResourceResult, error) {
-	results, err := s.engine.RestartContainersUsingOldImages(ctx, oldIDToNewRef, oldRefToNewRef)
+	results, err := s.engine.RestartContainersUsingOldImages(ctx, updater.RestartTargets{ByOldID: oldIDToNewRef, ByOldRef: oldRefToNewRef})
 	return resultFromModule(&updater.Result{Items: results}).Items, err
 }
 

@@ -25,6 +25,7 @@ import (
 	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
+	acfstypes "go.getarcane.app/acfs/types"
 	"go.getarcane.app/kit/normalization"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
@@ -364,7 +365,8 @@ func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, req typ
 			return folderErr
 		}
 		if composePath != "" {
-			if updates.Name != normalization.Text(existing.Name, true, true) || updates.Description != normalization.Text(existing.Description, true, true) {
+			trimNFC := normalization.TextOptions{Trim: true, NFC: true}
+			if updates.Name != normalization.Text(existing.Name, trimNFC) || updates.Description != normalization.Text(existing.Description, trimNFC) {
 				return common.Classify(common.ErrValidation, errors.New("the name and description of a template from the templates directory cannot be changed"))
 			}
 			var writeErr error
@@ -415,7 +417,7 @@ func (s *TemplateService) DeleteTemplate(ctx context.Context, id string) error {
 			return err
 		}
 		if composePath != "" {
-			if removeAllErr := acfs.RemoveAll(ctx, baseDir, folder); removeAllErr != nil {
+			if removeAllErr := (acfs.Root{Path: baseDir}).RemoveAll(ctx, folder); removeAllErr != nil {
 				return fmt.Errorf("failed to delete template directory: %w", removeAllErr)
 			}
 		}
@@ -434,7 +436,7 @@ func (s *TemplateService) importedTemplateFolder(ctx context.Context, tpl *Compo
 		return "", "", "", fmt.Errorf("failed to get templates directory: %w", err)
 	}
 
-	entry, statErr := acfs.Stat(ctx, baseDir, "/"+tpl.Name, false)
+	entry, statErr := acfs.Root{Path: baseDir}.Stat(ctx, "/"+tpl.Name, acfstypes.StatOptions{})
 	if statErr != nil || !entry.IsDirectory {
 		return baseDir, "", "", nil
 	}
@@ -509,7 +511,7 @@ func (s *TemplateService) readDefaultTemplate(ctx context.Context, fileName stri
 	if err != nil {
 		return "", fmt.Errorf("failed to get templates directory: %w", err)
 	}
-	content, err := acfs.ReadFile(ctx, baseDir, "/"+fileName)
+	content, err := acfs.Root{Path: baseDir}.ReadFile(ctx, "/"+fileName)
 	if err != nil {
 		return "", err
 	}
@@ -548,7 +550,7 @@ func (s *TemplateService) SaveComposeTemplate(ctx context.Context, content strin
 	if err != nil {
 		return fmt.Errorf("failed to get templates directory: %w", err)
 	}
-	return acfs.Write(ctx, baseDir, "/.compose.template", []byte(content), acfs.WriteOptions{Mode: utils.FilePerm})
+	return acfs.Root{Path: baseDir}.Write(ctx, "/.compose.template", []byte(content), acfs.WriteOptions{Mode: utils.FilePerm})
 }
 
 func (s *TemplateService) GetEnvTemplate(ctx context.Context) string {
@@ -565,7 +567,7 @@ func (s *TemplateService) SaveEnvTemplate(ctx context.Context, content string) e
 	if err != nil {
 		return fmt.Errorf("failed to get templates directory: %w", err)
 	}
-	return acfs.Write(ctx, baseDir, "/.env.template", []byte(content), acfs.WriteOptions{Mode: utils.FilePerm})
+	return acfs.Root{Path: baseDir}.Write(ctx, "/.env.template", []byte(content), acfs.WriteOptions{Mode: utils.FilePerm})
 }
 
 func (s *TemplateService) GetRegistries(ctx context.Context) ([]TemplateRegistry, error) {
@@ -1172,7 +1174,7 @@ func (s *TemplateService) SyncLocalTemplatesFromFilesystem(ctx context.Context) 
 		return fmt.Errorf("ensure templates dir: %w", err)
 	}
 
-	entries, err := acfs.List(ctx, dir, "/")
+	entries, err := acfs.Root{Path: dir}.List(ctx, "/")
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil

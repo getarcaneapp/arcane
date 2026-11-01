@@ -53,7 +53,7 @@ func setupContainerRegistryTestDB(t *testing.T) *database.DB {
 	require.NoError(t, db.AutoMigrate(&ContainerRegistry{}, &kv.KVEntry{}))
 	require.NoError(t, db.Exec("CREATE TABLE IF NOT EXISTS projects (id text PRIMARY KEY, name text, path text)").Error)
 
-	crypto.InitEncryption(&crypto.Config{
+	crypto.InitEncryption(crypto.Config{
 		Environment:   "test",
 		EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
 	})

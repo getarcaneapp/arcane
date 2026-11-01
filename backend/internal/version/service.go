@@ -91,7 +91,7 @@ func NewVersionService(
 		dockerService:            dockerService,
 		imageUpdateService:       imageUpdateService,
 		settingsService:          settingsService,
-		streamHub:                agg.NewHub[types.VersionStreamEvent](),
+		streamHub:                &agg.Hub[types.VersionStreamEvent]{},
 		currentImage:             hot.NewHotCache[struct{}, currentImageInfo](hot.LRU, 1).Build(),
 		commitNotesCache: hot.NewHotCache[string, string](hot.LRU, 16).
 			WithTTL(commitNotesTTL).

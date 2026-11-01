@@ -63,7 +63,7 @@ func NewBuildService(
 	registryService *registry.ContainerRegistryService,
 	gitRepository *gitrepo.GitRepositoryService,
 	eventService *event.EventService,
-) *BuildService {
+) (*BuildService, error) {
 	svc := &BuildService{
 		db:              db,
 		settings:        localSettings,
@@ -84,13 +84,17 @@ func NewBuildService(
 
 	// registry.ContainerRegistryService already implements buildtypes.RegistryAuthProvider,
 	// so the builder consumes it directly instead of through forwarding methods on BuildService.
-	svc.builder = api.NewService(api.Config{
+	builder, err := api.NewService(api.Config{
 		SettingsProvider:     svc,
 		DockerClientProvider: dockerService,
 		RegistryAuthProvider: registryAuthProvider,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("create builder: %w", err)
+	}
+	svc.builder = builder
 
-	return svc
+	return svc, nil
 }
 
 func (s *BuildService) BuildSettings() buildtypes.BuildSettings {

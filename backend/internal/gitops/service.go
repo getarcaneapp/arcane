@@ -914,7 +914,7 @@ func (s *GitOpsSyncService) CleanupLeakedScratchDirsOnStartup(ctx context.Contex
 		return fmt.Errorf("failed to resolve projects directory for gitops scratch cleanup: %w", err)
 	}
 
-	entries, err := acfs.List(ctx, projectsDir, "/")
+	entries, err := acfs.Root{Path: projectsDir}.List(ctx, "/")
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil
@@ -928,7 +928,7 @@ func (s *GitOpsSyncService) CleanupLeakedScratchDirsOnStartup(ctx context.Contex
 			continue
 		}
 		scratchPath := filepath.Join(projectsDir, entry.Name)
-		if rmErr := acfs.RemoveAll(ctx, projectsDir, entry.Path); rmErr != nil {
+		if rmErr := (acfs.Root{Path: projectsDir}).RemoveAll(ctx, entry.Path); rmErr != nil {
 			slog.WarnContext(ctx, "Failed to remove leaked GitOps scratch directory on startup", "path", scratchPath, "error", rmErr)
 			continue
 		}

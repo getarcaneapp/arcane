@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/kit/pkg"
+	"go.getarcane.app/streams/bus"
 	"go.getarcane.app/sys/crypto"
 	"go.getarcane.app/updater/labels"
 	"gorm.io/gorm"
@@ -118,7 +119,7 @@ func setupImageUpdateRegistryTestDB(t *testing.T) *database.DB {
 		&ImageUpdateRecord{},
 		&event.Event{},
 	))
-	crypto.InitEncryption(&crypto.Config{
+	crypto.InitEncryption(crypto.Config{
 		Environment:   "test",
 		EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
 	})
@@ -1126,7 +1127,7 @@ func TestImageUpdateService_GetAllImageRefsUsesDockerAPITimeout(t *testing.T) {
 		db,
 		settingsService,
 		nil,
-		docker.NewDockerClientService(t.Context(), nil, settingsService).WithClient(newImageUpdateTestDockerClient(t, server)),
+		docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(t, server)),
 		nil,
 		newTestNotificationService(t, db),
 		nil,
@@ -1152,7 +1153,7 @@ func TestImageUpdateService_InspectLocalImageSnapshotUsesDockerAPITimeout(t *tes
 		db,
 		settingsService,
 		nil,
-		docker.NewDockerClientService(t.Context(), nil, settingsService).WithClient(newImageUpdateTestDockerClient(t, server)),
+		docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(t, server)),
 		nil,
 		newTestNotificationService(t, db),
 		nil,

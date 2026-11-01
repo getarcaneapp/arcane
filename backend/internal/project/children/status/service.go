@@ -32,7 +32,7 @@ func New(dockerService *dockerInternal.DockerClientService, reconcile func(ctx c
 }
 
 func (s *Service) Run(ctx context.Context) error {
-	messages, unsubscribe := s.dockerService.EventBus().Subscribe(events.ContainerEventType, bus.WithSubscriberBuffer(eventBufferSize))
+	messages, unsubscribe := s.dockerService.EventBus().Subscribe(events.ContainerEventType, bus.SubscribeOptions{Buffer: new(eventBufferSize)})
 	defer unsubscribe()
 	connected := make(chan struct{}, 1)
 	defer s.dockerService.EventStreamConnected().Subscribe(func(struct{}) {
