@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"net/http"
 
+	charmLog "charm.land/log/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 
 	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/config"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
@@ -33,7 +33,7 @@ func Command() *cobra.Command {
 			c, err := cmdutil.ClientFromCommand(cmd)
 			var result types.VersionInfo
 			if err == nil {
-				logger.GetLogger().Debug("Fetching server version", "endpoint", clitypes.AppVersionEndpoint)
+				charmLog.Default().Debug("Fetching server version", "endpoint", clitypes.AppVersionEndpoint)
 				result, err = c.DoJSON[types.VersionInfo](cmd.Context(), http.MethodGet, clitypes.AppVersionEndpoint, nil)
 			}
 			if err != nil {

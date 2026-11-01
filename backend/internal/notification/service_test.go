@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -228,11 +228,11 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeDispatchesToMa
 		if !assert.Equal(t, "agent-token", r.Header.Get("X-API-Key")) {
 			return
 		}
-		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&dispatched)) {
+		if !assert.NoError(t, json.UnmarshalRead(r.Body, &dispatched)) {
 			return
 		}
 		calls.Add(1)
-		if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+		if !assert.NoError(t, json.MarshalWrite(w, map[string]any{
 			"success": true,
 			"data": types.NotificationDispatchResponse{
 				Message:   "Notification dispatched successfully",
@@ -275,10 +275,10 @@ func TestNotificationService_SendBatchImageUpdateNotification_AgentModeUsesManag
 		if !assert.Equal(t, "agent-token", r.Header.Get("X-API-Key")) {
 			return
 		}
-		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&dispatched)) {
+		if !assert.NoError(t, json.UnmarshalRead(r.Body, &dispatched)) {
 			return
 		}
-		if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+		if !assert.NoError(t, json.MarshalWrite(w, map[string]any{
 			"success": true,
 			"data": types.NotificationDispatchResponse{
 				Message:   "Notification dispatched successfully",

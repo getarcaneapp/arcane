@@ -14,13 +14,13 @@ import (
 	"strings"
 	"time"
 
+	charmLog "charm.land/log/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v3/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 	"github.com/getarcaneapp/arcane/cli/v3/pkg/images/updates"
@@ -137,7 +137,7 @@ func newGetCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log := logger.GetLogger()
+			log := charmLog.Default()
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err
@@ -211,7 +211,7 @@ func newRemoveCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log := logger.GetLogger()
+			log := charmLog.Default()
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err
@@ -261,7 +261,7 @@ func newPullCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log := logger.GetLogger()
+			log := charmLog.Default()
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err
@@ -305,7 +305,7 @@ func newPruneCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log := logger.GetLogger()
+			log := charmLog.Default()
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err
@@ -345,7 +345,7 @@ func newCountsCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log := logger.GetLogger()
+			log := charmLog.Default()
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err

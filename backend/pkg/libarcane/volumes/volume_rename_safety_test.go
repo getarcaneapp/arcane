@@ -1,7 +1,7 @@
 package volumes
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -29,7 +29,7 @@ func TestEnsureProjectRenameTargetVolumeAbsentInternal_ReturnsConflictWhenTarget
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/volumes/web_data") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{
 				"Name": "web_data",
 			})) {
 				return
@@ -53,7 +53,7 @@ func TestEnsureProjectRenameSourceVolumeDetachedInternal_ReturnsConflictWhenCont
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/containers/json") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{
 				{
 					ID: "stopped-container",
 					Mounts: []container.MountPoint{
@@ -87,12 +87,12 @@ func TestGetProjectVolumeCopyRuntimeInternal_UsesArcaneAgentLabel(t *testing.T) 
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
 			if listCalls.Add(1) == 1 {
-				if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+				if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 					return
 				}
 				return
 			}
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{
 				{
 					ID:    "agent-container",
 					Image: "arcane-agent:local",
@@ -103,7 +103,7 @@ func TestGetProjectVolumeCopyRuntimeInternal_UsesArcaneAgentLabel(t *testing.T) 
 			}
 		case strings.Contains(r.URL.Path, "/containers/agent-container/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(container.InspectResponse{
+			if !assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
 				ID: "agent-container",
 				Config: &container.Config{
 					Image: "arcane-agent:local",
@@ -133,7 +133,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenS
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Name": "web_data"})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
@@ -177,17 +177,17 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackCleansSafeTargetsWhe
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Name": "web_data"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "nginx_cache"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Name": "nginx_cache"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
@@ -236,12 +236,12 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenS
 			http.Error(w, "temporary docker error", http.StatusInternalServerError)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "nginx_cache"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Name": "nginx_cache"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
@@ -286,12 +286,12 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenT
 			http.Error(w, "temporary docker error", http.StatusInternalServerError)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "nginx_cache"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Name": "nginx_cache"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
@@ -331,12 +331,12 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackRemovesTargetsWhenSo
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "nginx_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Name": "nginx_data"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/containers/copy-holder-"):
@@ -414,22 +414,22 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackAfterPartialCommitCl
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Name": "web_data"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_cache"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Name": "web_cache"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "nginx_cache"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Name": "nginx_cache"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
@@ -487,14 +487,14 @@ func TestDockerProjectVolumeRenameMigrationInternal_CommitPreflightsAllTargetsBe
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Name": "web_data"})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "nginx_cache"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Name": "nginx_cache"})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):

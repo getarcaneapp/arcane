@@ -1,7 +1,8 @@
 package system_test
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -90,8 +91,8 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 				require.NoError(t, runErr, diagnostics)
 			}
 			var result struct {
-				Environments []json.RawMessage `json:"environments"`
-				Success      bool              `json:"success"`
+				Environments []jsontext.Value `json:"environments"`
+				Success      bool             `json:"success"`
 			}
 			require.NoError(t, json.Unmarshal([]byte(out), &result), out)
 			require.Equal(t, !tc.partial, result.Success)

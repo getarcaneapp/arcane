@@ -19,7 +19,7 @@ package flow
 import (
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -39,6 +39,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jsonx"
 )
 
 const (
@@ -366,7 +367,7 @@ func (e *Engine) startInstance(ctx context.Context, wf *Workflow, run types.Sche
 		instanceID = fmt.Sprintf("%s-%s-%d", wf.def.Name, run.ID, run.AttemptCount)
 		binding = Binding{EnvironmentID: run.EnvironmentID, JobID: run.JobID, RunID: run.ID, RootID: instanceID}
 	}
-	encoded, err := json.Marshal(payload)
+	encoded, err := json.Marshal(payload, jsonx.DurationNano)
 	if err != nil {
 		return "", fmt.Errorf("encode %s input: %w", wf.def.Name, err)
 	}

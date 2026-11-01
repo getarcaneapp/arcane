@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/mldsa"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -55,7 +55,7 @@ func newFederatedTestIssuer(t *testing.T) *federatedTestIssuer {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
-		if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+		if !assert.NoError(t, json.MarshalWrite(w, map[string]any{
 			"issuer":                                issuer.IssuerURL,
 			"jwks_uri":                              issuer.IssuerURL + "/jwks",
 			"authorization_endpoint":                issuer.IssuerURL + "/authorize",
@@ -68,7 +68,7 @@ func newFederatedTestIssuer(t *testing.T) *federatedTestIssuer {
 	})
 	mux.HandleFunc("/jwks", func(w http.ResponseWriter, _ *http.Request) {
 		pub := privateKey.PublicKey()
-		if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+		if !assert.NoError(t, json.MarshalWrite(w, map[string]any{
 			"keys": []map[string]any{
 				{
 					"kty": "AKP",

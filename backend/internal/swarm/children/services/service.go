@@ -3,7 +3,6 @@ package services
 import (
 	"cmp"
 	"context"
-	stdjson "encoding/json"
 	"encoding/json/v2"
 	"fmt"
 	"maps"
@@ -24,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jsonx"
 )
 
 // Service manages swarm services.
@@ -293,7 +293,7 @@ func (s *Service) CreateService(ctx context.Context, req types.SwarmServiceCreat
 	// Unmarshal spec from JSON
 	var spec swarm.ServiceSpec
 	// Docker encodes durations as integer nanoseconds.
-	if unmarshalErr := json.Unmarshal(req.Spec, &spec, stdjson.FormatDurationAsNano(true)); unmarshalErr != nil {
+	if unmarshalErr := json.Unmarshal(req.Spec, &spec, jsonx.DurationNano); unmarshalErr != nil {
 		return nil, fmt.Errorf("failed to parse service spec: %w", unmarshalErr)
 	}
 

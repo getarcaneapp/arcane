@@ -2,7 +2,7 @@ package imageupdate
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -462,7 +462,7 @@ func TestImageUpdateService_CheckImages_ComposeBuildMissingLocallySkipsRegistry(
 	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/containers/json") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 			return
@@ -516,7 +516,7 @@ func newArcaneLocalImageUpdateService(t *testing.T, imageExists bool) (*ImageUpd
 	dockerServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/containers/json") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 			return
@@ -524,7 +524,7 @@ func newArcaneLocalImageUpdateService(t *testing.T, imageExists bool) (*ImageUpd
 
 		if imageExists && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
 			w.Header().Set("Content-Type", "application/json")
-			assert.NoError(t, json.NewEncoder(w).Encode(image.InspectResponse{
+			assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{
 				ID:          "sha256:arcane-local-image-id",
 				RepoTags:    []string{"arcane.local/demo-2ab41b29/worker:latest"},
 				RepoDigests: []string{"arcane.local/demo-2ab41b29/worker@" + localDigest},
@@ -618,7 +618,7 @@ func TestImageUpdateService_InspectLocalImageSnapshot_NoRepoDigestsRemainsLocal(
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/containers/json") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 			return
@@ -626,7 +626,7 @@ func TestImageUpdateService_InspectLocalImageSnapshot_NoRepoDigestsRemainsLocal(
 
 		if strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(image.InspectResponse{
+			if !assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{
 				ID:       "sha256:local-only-image",
 				RepoTags: []string{"local-only:latest"},
 			})) {
@@ -676,7 +676,7 @@ func newImageUpdateFallbackServer(t *testing.T, repositoryTag, localDigest, remo
 	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/containers/json") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 			return
@@ -691,7 +691,7 @@ func newImageUpdateFallbackServer(t *testing.T, repositoryTag, localDigest, remo
 			}
 
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(image.InspectResponse{
+			if !assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{
 				ID:          "sha256:local-image-id",
 				RepoTags:    []string{imageRef},
 				RepoDigests: []string{repositoryRef + "@" + localDigest},
@@ -724,7 +724,7 @@ func newImageUpdateRegistryOnlyServer(t *testing.T, repositoryTag, remoteDigest 
 	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/containers/json") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 			return
@@ -755,7 +755,7 @@ func newImageRefResolutionServer(t *testing.T, containers []container.Summary) *
 			return
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(containers)) {
+			if !assert.NoError(t, json.MarshalWrite(w, containers)) {
 				return
 			}
 			return
@@ -952,7 +952,7 @@ func newImageUpdateNoRepoTagsServer(t *testing.T, imageID, localDigest string) *
 	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/containers/json") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 			return
@@ -960,7 +960,7 @@ func newImageUpdateNoRepoTagsServer(t *testing.T, imageID, localDigest string) *
 
 		if strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(image.InspectResponse{
+			if !assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{
 				ID:          imageID,
 				RepoTags:    []string{},
 				RepoDigests: []string{r.Host + "/valkey/valkey@" + localDigest},
@@ -2456,7 +2456,7 @@ func newBlockedDockerAPIServer(t *testing.T, pathContains string) *httptest.Serv
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/containers/json") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 			return
@@ -2483,12 +2483,12 @@ func newImageUpdateDiscoveryServer(
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(images)) {
+			if !assert.NoError(t, json.MarshalWrite(w, images)) {
 				return
 			}
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(containers)) {
+			if !assert.NoError(t, json.MarshalWrite(w, containers)) {
 				return
 			}
 		default:
@@ -2789,7 +2789,7 @@ func TestImageUpdateService_GetAllImageRefsFallsBackWhenContainerDiscoveryFails(
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]image.Summary{
+			if !assert.NoError(t, json.MarshalWrite(w, []image.Summary{
 				{ID: "sha256:first", RepoTags: []string{firstRef}},
 				{ID: "sha256:second", RepoTags: []string{secondRef}},
 			})) {
@@ -2870,7 +2870,7 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 		}
 		tagListings.Add(1)
 		w.Header().Set("Content-Type", "application/json")
-		if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"name": "team/app", "tags": []string{"1.0.0", "1.1.0", "2.0.0"}})) {
+		if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"name": "team/app", "tags": []string{"1.0.0", "1.1.0", "2.0.0"}})) {
 			return
 		}
 	}))
@@ -2889,7 +2889,7 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			if !assert.NoError(
 				t,
-				json.NewEncoder(w).Encode([]container.Summary{
+				json.MarshalWrite(w, []container.Summary{
 					{
 						ID:      "one",
 						Image:   imageRef,
@@ -2909,7 +2909,7 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 		case strings.Contains(r.URL.Path, "/images/"):
 			if !assert.NoError(
 				t,
-				json.NewEncoder(w).Encode(image.InspectResponse{
+				json.MarshalWrite(w, image.InspectResponse{
 					ID:          imageID,
 					RepoTags:    []string{imageRef},
 					RepoDigests: []string{registryURL.Host + "/team/app@" + imageID},
@@ -2921,7 +2921,7 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 			id := kit.Ternary(strings.Contains(r.URL.Path, "/two/"), "two", "one")
 			if !assert.NoError(
 				t,
-				json.NewEncoder(w).Encode(container.InspectResponse{
+				json.MarshalWrite(w, container.InspectResponse{
 					ID:    id,
 					Image: imageID,
 					Config: &container.Config{
@@ -3026,7 +3026,7 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"name": "team/app", "tags": []string{"1.0.0", "1.1.0"}})) {
+		if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"name": "team/app", "tags": []string{"1.0.0", "1.1.0"}})) {
 			return
 		}
 	}))
@@ -3044,7 +3044,7 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{
 				{ID: "install-excluded", Names: []string{"/install-excluded"}, Image: imageRef, ImageID: imageID, Labels: values["install-excluded"]},
 				{ID: "unmonitored", Names: []string{"/unmonitored"}, Image: imageRef, ImageID: imageID, Labels: values["unmonitored"]},
 			})) {
@@ -3055,7 +3055,7 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 			inspected = append(inspected, id)
 			if !assert.NoError(
 				t,
-				json.NewEncoder(w).Encode(container.InspectResponse{
+				json.MarshalWrite(w, container.InspectResponse{
 					ID:    id,
 					Name:  "/" + id,
 					Image: imageID,
@@ -3084,7 +3084,7 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 	})
 	settingsService := newImageUpdateTestSettingsService(t, "5", "5")
 	// The UI exclusion governs installation only; it must not reach the checker.
-	require.NoError(t, settingsService.SetStringSetting(t.Context(), "autoUpdateExcludedContainers", "install-excluded"))
+	require.NoError(t, settingsService.UpdateSetting(t.Context(), "autoUpdateExcludedContainers", "install-excluded"))
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
 		SettingsService:     settingsService,
@@ -3135,7 +3135,7 @@ func TestContainerTagChecksUseRegistryTagTimeout(t *testing.T) {
 		{name: "listing slower than registry timeout succeeds within tag budget", tagTimeout: "30", respond: func(w http.ResponseWriter, _ *http.Request) {
 			time.Sleep(1300 * time.Millisecond)
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"name": "team/app", "tags": []string{"1.0.0", "1.1.0"}})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"name": "team/app", "tags": []string{"1.0.0", "1.1.0"}})) {
 				return
 			}
 		}},
@@ -3166,17 +3166,17 @@ func TestContainerTagChecksUseRegistryTagTimeout(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				switch {
 				case strings.HasSuffix(r.URL.Path, "/containers/json"):
-					if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{{ID: "one", Image: imageRef, ImageID: imageID, Labels: autoLabels}})) {
+					if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{{ID: "one", Image: imageRef, ImageID: imageID, Labels: autoLabels}})) {
 						return
 					}
 				case strings.Contains(r.URL.Path, "/images/"):
-					if !assert.NoError(t, json.NewEncoder(w).Encode(image.InspectResponse{ID: imageID, RepoTags: []string{imageRef}})) {
+					if !assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{ID: imageID, RepoTags: []string{imageRef}})) {
 						return
 					}
 				case strings.Contains(r.URL.Path, "/containers/"):
 					if !assert.NoError(
 						t,
-						json.NewEncoder(w).Encode(container.InspectResponse{
+						json.MarshalWrite(w, container.InspectResponse{
 							ID:    "one",
 							Image: imageID,
 							Config: &container.Config{
@@ -3236,7 +3236,7 @@ func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadline(t *testing.T
 		case registryPing(w, r):
 		case strings.HasSuffix(r.URL.Path, "/team/fast/tags/list"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"name": "team/fast", "tags": []string{"1.0.0", "1.1.0"}})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"name": "team/fast", "tags": []string{"1.0.0", "1.1.0"}})) {
 				return
 			}
 		case strings.HasSuffix(r.URL.Path, "/team/slow/tags/list"):
@@ -3259,20 +3259,20 @@ func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadline(t *testing.T
 		name := nameFor(r.URL.Path)
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{
 				{ID: "fast", Image: imageRefs["fast"], ImageID: imageIDs["fast"], Labels: autoLabels},
 				{ID: "slow", Image: imageRefs["slow"], ImageID: imageIDs["slow"], Labels: autoLabels},
 			})) {
 				return
 			}
 		case strings.Contains(r.URL.Path, "/images/"):
-			if !assert.NoError(t, json.NewEncoder(w).Encode(image.InspectResponse{ID: imageIDs[name], RepoTags: []string{imageRefs[name]}})) {
+			if !assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{ID: imageIDs[name], RepoTags: []string{imageRefs[name]}})) {
 				return
 			}
 		case strings.Contains(r.URL.Path, "/containers/"):
 			if !assert.NoError(
 				t,
-				json.NewEncoder(w).Encode(container.InspectResponse{
+				json.MarshalWrite(w, container.InspectResponse{
 					ID:    name,
 					Image: imageIDs[name],
 					Config: &container.Config{
@@ -3415,13 +3415,13 @@ func newWorkflowCheckService(
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if strings.HasSuffix(r.URL.Path, "/containers/json") {
-			assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+			assert.NoError(t, json.MarshalWrite(w, []container.Summary{}))
 			return
 		}
 		for imageRef, imageID := range localImages {
 			if strings.Contains(r.URL.Path, "/images/"+imageRef+"/json") {
 				repository := imageRef[:strings.LastIndex(imageRef, ":")]
-				assert.NoError(t, json.NewEncoder(w).Encode(image.InspectResponse{
+				assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{
 					ID:          imageID,
 					RepoTags:    []string{imageRef},
 					RepoDigests: []string{repository + "@" + digest.FromString(imageID).String()},

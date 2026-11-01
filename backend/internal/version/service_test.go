@@ -2,7 +2,7 @@ package version
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"log"
@@ -55,7 +55,7 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{
 				{
 					ID:    containerID,
 					State: container.StateRunning,
@@ -68,7 +68,7 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 			}
 		case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(container.InspectResponse{
+			if !assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
 				ID:    containerID,
 				Image: imageID,
 				Config: &container.Config{
@@ -88,7 +88,7 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 			}
 
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(image.InspectResponse{
+			if !assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{
 				ID:          imageID,
 				RepoTags:    []string{imageRef},
 				RepoDigests: []string{"ghcr.io/getarcaneapp/arcane@" + currentDigest},
@@ -282,12 +282,12 @@ func newNextChannelDockerServer(t *testing.T, containerID, imageID, repo, tag, c
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+			assert.NoError(t, json.MarshalWrite(w, []container.Summary{
 				{ID: containerID, State: container.StateRunning, Labels: map[string]string{labels.LabelArcane: "true"}},
 			}))
 		case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			assert.NoError(t, json.NewEncoder(w).Encode(container.InspectResponse{
+			assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
 				ID:    containerID,
 				Image: imageID,
 				Config: &container.Config{
@@ -297,7 +297,7 @@ func newNextChannelDockerServer(t *testing.T, containerID, imageID, repo, tag, c
 			}))
 		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			assert.NoError(t, json.NewEncoder(w).Encode(image.InspectResponse{
+			assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{
 				ID:          imageID,
 				RepoTags:    []string{imageRef},
 				RepoDigests: []string{repo + "@" + currentDigest},

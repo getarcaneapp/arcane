@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json/jsontext"
 	"reflect"
 
 	"github.com/moby/moby/api/types/mount"
@@ -24,6 +25,7 @@ type (
 )
 
 var schemaTypeAliases = map[reflect.Type]reflect.Type{
+	reflect.TypeFor[jsontext.Value]():                reflect.TypeFor[any](),
 	reflect.TypeFor[mount.Driver]():                  reflect.TypeFor[dockerMountDriver](),
 	reflect.TypeFor[network.ConfigReference]():       reflect.TypeFor[dockerNetworkConfigReference](),
 	reflect.TypeFor[registry.ServiceConfig]():        reflect.TypeFor[dockerRegistryServiceConfig](),

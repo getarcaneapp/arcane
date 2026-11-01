@@ -1,7 +1,8 @@
 package containers_test
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -167,7 +168,7 @@ func TestContainersListSendsLimitAndStart(t *testing.T) {
 				wantQuery = "limit=-1"
 			}
 			require.Equal(t, map[string]string{kit.Ternary(tc.single, "/api/environments/0/containers", "/api/environments/0,remote/containers"): wantQuery}, queries)
-			require.True(t, json.Valid([]byte(out)))
+			require.True(t, jsontext.Value([]byte(out)).IsValid())
 			require.Contains(t, out, "pagination")
 		})
 	}
@@ -460,7 +461,7 @@ func TestContainersListJSONContract(t *testing.T) {
 			mu.Unlock()
 			if tc.args == nil && !tc.explicit && !tc.empty {
 				require.Equal(t, []string{"/api/environments", "/api/environments/0,remote/containers"}, paths)
-				require.True(t, json.Valid([]byte(out)), out)
+				require.True(t, jsontext.Value([]byte(out)).IsValid(), out)
 				if tc.unavailable {
 					require.ErrorContains(t, runErr, "Remote (remote): resource denied")
 					require.Contains(t, out, "failedEnvironments")
@@ -472,9 +473,9 @@ func TestContainersListJSONContract(t *testing.T) {
 			}
 			var result struct {
 				Environments []struct {
-					ID     string          `json:"environmentId"`
-					Error  string          `json:"error"`
-					Result json.RawMessage `json:"result"`
+					ID     string         `json:"environmentId"`
+					Error  string         `json:"error"`
+					Result jsontext.Value `json:"result"`
 				} `json:"environments"`
 				Success bool `json:"success"`
 			}

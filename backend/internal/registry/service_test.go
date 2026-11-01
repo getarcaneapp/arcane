@@ -3,7 +3,7 @@ package registry
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"log"
@@ -1291,7 +1291,7 @@ func TestContainerRegistryService_InspectImageDigest_RetriesStoredCredentialsAft
 				if !assert.Empty(t, r.Header.Get("Authorization")) {
 					return
 				}
-				if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+				if !assert.NoError(t, json.MarshalWrite(w, map[string]string{
 					"token": "anonymous-token",
 				})) {
 					return
@@ -1304,7 +1304,7 @@ func TestContainerRegistryService_InspectImageDigest_RetriesStoredCredentialsAft
 			if !assert.Equal(t, "stored-token", password) {
 				return
 			}
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]string{
 				"token": "credential-token",
 			})) {
 				return
@@ -1395,7 +1395,7 @@ func TestContainerRegistryService_InspectImageDigest_PreservesAnonymousUnauthori
 			w.Header().Set("WWW-Authenticate", challenge)
 			w.WriteHeader(http.StatusUnauthorized)
 		case "/token":
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]string{
 				"token": "anonymous-token",
 			})) {
 				return

@@ -2,7 +2,7 @@ package projects
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -50,7 +50,7 @@ func TestComposeLogsMarksStderrWithoutChangingComposeOptions(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		case "/containers/json":
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]map[string]any{
+			if !assert.NoError(t, json.MarshalWrite(w, []map[string]any{
 				summary(composeLogsTestNonTTYContainer, "web", "nginx"),
 				summary(composeLogsTestTTYContainer, "ttyd", "ttyd"),
 			})) {
@@ -107,7 +107,7 @@ func writeComposeInspectJSON(t *testing.T, w http.ResponseWriter, containerID, s
 	t.Helper()
 
 	w.Header().Set("Content-Type", "application/json")
-	require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+	require.NoError(t, json.MarshalWrite(w, map[string]any{
 		"Id":      containerID,
 		"Name":    "/" + composeLogsTestProject + "-" + serviceName + "-1",
 		"Created": "2024-08-26T09:00:00Z",

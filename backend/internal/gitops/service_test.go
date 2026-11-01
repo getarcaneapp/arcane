@@ -3,7 +3,7 @@ package gitops
 import (
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -107,7 +107,7 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 	require.NoError(t, err)
 
 	projectsDir := t.TempDir()
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, loadTestConfig(t), nil)
 	projectService := projectpkg.NewProjectService(projectpkg.ProjectServiceParams{
@@ -179,7 +179,7 @@ func setupGitOpsSyncRemoteTestService(t *testing.T, files map[string]string) (*G
 	require.NoError(t, err)
 
 	projectsDir := t.TempDir()
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, loadTestConfig(t), nil)
 	projectService := projectpkg.NewProjectService(projectpkg.ProjectServiceParams{
@@ -834,7 +834,7 @@ func setupLifecycleValidationService(t *testing.T) (*GitOpsSyncService, context.
 	t.Helper()
 	ctx := t.Context()
 	svc, _, _ := setupGitOpsSyncDirectoryTestService(t)
-	require.NoError(t, svc.settingsService.SetStringSetting(ctx, "lifecycleEnabled", "true"))
+	require.NoError(t, svc.settingsService.UpdateSetting(ctx, "lifecycleEnabled", "true"))
 	return svc, ctx
 }
 
@@ -891,7 +891,7 @@ func TestValidateLifecycleConfig_RejectsOverlongScriptPath(t *testing.T) {
 
 func TestValidateLifecycleConfig_RejectsScriptWithoutRunnerImageOnCreate(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
-	require.NoError(t, svc.settingsService.SetStringSetting(ctx, "lifecycleDefaultRunnerImage", " "))
+	require.NoError(t, svc.settingsService.UpdateSetting(ctx, "lifecycleDefaultRunnerImage", " "))
 	err := svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 		scriptPath: new("scripts/deploy.sh"),
 	})
@@ -901,7 +901,7 @@ func TestValidateLifecycleConfig_RejectsScriptWithoutRunnerImageOnCreate(t *test
 
 func TestValidateLifecycleConfig_AcceptsScriptWithDefaultRunnerImageOnCreate(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
-	require.NoError(t, svc.settingsService.SetStringSetting(ctx, "lifecycleDefaultRunnerImage", "alpine:latest"))
+	require.NoError(t, svc.settingsService.UpdateSetting(ctx, "lifecycleDefaultRunnerImage", "alpine:latest"))
 	require.NoError(t, svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 		targetType:    new("project"),
 		scriptPath:    new("scripts/deploy.sh"),
@@ -931,7 +931,7 @@ func TestValidateLifecycleConfig_RejectsTimeoutZeroOrNegative(t *testing.T) {
 
 func TestValidateLifecycleConfig_RejectsTimeoutAboveSettingCap(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
-	require.NoError(t, svc.settingsService.SetStringSetting(ctx, "lifecycleMaxTimeoutSec", "120"))
+	require.NoError(t, svc.settingsService.UpdateSetting(ctx, "lifecycleMaxTimeoutSec", "120"))
 	err := svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 		timeoutSec: new(300),
 	})
@@ -1162,7 +1162,7 @@ func setupGitOpsBackupTestService(t *testing.T) *backupTestEnv {
 	require.NoError(t, err)
 
 	projectsDir := t.TempDir()
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, loadTestConfig(t), nil)
 	projectService := projectpkg.NewProjectService(projectpkg.ProjectServiceParams{
@@ -1261,7 +1261,7 @@ func (e *backupTestEnv) checkoutRemote(t *testing.T) string {
 	t.Helper()
 	repoPath, err := e.remote.Clone(t.Context(), e.repoURL, "main", git.AuthConfig{AuthType: "none"}, 0)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = e.remote.Cleanup(repoPath) })
+	t.Cleanup(func() { _ = os.RemoveAll(repoPath) })
 	return repoPath
 }
 
@@ -1279,7 +1279,7 @@ func pushRemoteCommit(t *testing.T, remote *git.Client, repoURL, message string,
 	auth := git.AuthConfig{AuthType: "none"}
 	checkout, err := remote.CheckoutForWrite(t.Context(), repoURL, "main", auth)
 	require.NoError(t, err)
-	defer func() { _ = remote.Cleanup(checkout.RepoPath) }()
+	defer func() { _ = os.RemoveAll(checkout.RepoPath) }()
 
 	request := git.CommitRequest{Message: message, AuthorName: "Other", AuthorEmail: "other@localhost"}
 	for path, content := range files {
@@ -1762,7 +1762,7 @@ func TestGitOpsDeploy_LinksExistingProject(t *testing.T) {
 func TestGitOpsImport_ForwardsDeployAndLifecycleFields(t *testing.T) {
 	env := setupGitOpsBackupTestService(t)
 	ctx := t.Context()
-	require.NoError(t, env.service.settingsService.SetStringSetting(ctx, "lifecycleEnabled", "true"))
+	require.NoError(t, env.service.settingsService.UpdateSetting(ctx, "lifecycleEnabled", "true"))
 
 	resp, err := env.service.ImportSyncs(ctx, "0", []types.ImportGitOpsSyncRequest{
 		{
@@ -1824,7 +1824,7 @@ func gitopsScopeContext(t *testing.T, target string, bodies map[string]any) cont
 				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
 				return
 			}
-			_ = json.NewEncoder(w).Encode(body)
+			_ = json.MarshalWrite(w, body)
 		}),
 		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
 			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil

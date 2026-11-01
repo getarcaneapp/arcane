@@ -386,7 +386,7 @@ func (s *BuildService) cleanupGitContext(repoPath string) error {
 	if s.gitCleanupFn != nil {
 		return s.gitCleanupFn(repoPath)
 	}
-	return s.gitRepository.Cleanup(repoPath)
+	return os.RemoveAll(repoPath)
 }
 
 func writeBuildProgressStatus(ctx context.Context, progressWriter io.Writer, serviceName, status string) {

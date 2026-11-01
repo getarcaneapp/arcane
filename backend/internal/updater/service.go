@@ -803,16 +803,6 @@ func (s *UpdaterService) TriggerSelfUpdateViaCLI(ctx context.Context, source, co
 	})
 }
 
-// BeginContainerUpdate marks a container as updating.
-func (s *UpdaterService) BeginContainerUpdate(containerID string) func() {
-	return s.engine.BeginContainerUpdate(containerID)
-}
-
-// BeginProjectUpdate marks a project as updating.
-func (s *UpdaterService) BeginProjectUpdate(projectID string) func() {
-	return s.engine.BeginProjectUpdate(projectID)
-}
-
 func (s *UpdaterService) recordAutoUpdateEvent(ctx context.Context, severity event.EventSeverity, metadata database.JSON) {
 	title, subject := func() (string, string) {
 		phase := kit.As(metadata["phase"], "")

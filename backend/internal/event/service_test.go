@@ -2,7 +2,7 @@ package event
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"maps"
 	"net/http"
@@ -217,7 +217,7 @@ func TestEventService_CreateEvent_ForwardsToManagerAPIOnAgent(t *testing.T) {
 
 		defer func() { _ = r.Body.Close() }()
 		var payload CreateEventRequest
-		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&payload)) {
+		if !assert.NoError(t, json.UnmarshalRead(r.Body, &payload)) {
 			return
 		}
 
@@ -422,7 +422,7 @@ func TestDaemonEventForwardingPreservesMetadata(t *testing.T) {
 	requests := make(chan CreateEventRequest, 4)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req CreateEventRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.UnmarshalRead(r.Body, &req); err != nil {
 			t.Errorf("decode forwarded event: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
 			return

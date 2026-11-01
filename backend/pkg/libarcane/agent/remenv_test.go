@@ -261,11 +261,11 @@ func TestCopyBodyWithFlush_DoesNotRequireFlusher(t *testing.T) {
 func newTestRemenvClient() *remenv.Client {
 	return remenv.NewClient(remenv.TunnelTransportFuncs{
 		EnsureAvailableFunc: func(ctx context.Context, envID string) error {
-			if HasActiveTunnel(envID) {
+			if GetRegistry().Active(envID).IsPresent() {
 				return nil
 			}
 
-			if _, ok := WaitForActiveTunnel(ctx, envID, DefaultTunnelAcquireTimeout).Get(); ok {
+			if _, ok := GetRegistry().WaitForActive(ctx, envID, DefaultTunnelAcquireTimeout).Get(); ok {
 				return nil
 			}
 

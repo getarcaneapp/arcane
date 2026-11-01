@@ -32,21 +32,21 @@ func TestWrapDockerCLIWithInspectCompatibility(t *testing.T) {
 }
 
 func TestPlainComposeClientCachedPerDockerHost(t *testing.T) {
-	first, err := plainComposeClientInternal("tcp://first.example.com:2375")
+	first, err := plainComposeClient("tcp://first.example.com:2375")
 	require.NoError(t, err)
 
-	again, err := plainComposeClientInternal("tcp://first.example.com:2375")
+	again, err := plainComposeClient("tcp://first.example.com:2375")
 	require.NoError(t, err)
 	require.Same(t, first, again)
 
-	other, err := plainComposeClientInternal("tcp://second.example.com:2375")
+	other, err := plainComposeClient("tcp://second.example.com:2375")
 	require.NoError(t, err)
 	require.NotSame(t, first, other)
 
 	// No configured host: the environment-resolved client is shared too.
-	defaultHost, err := plainComposeClientInternal("")
+	defaultHost, err := plainComposeClient("")
 	require.NoError(t, err)
-	defaultAgain, err := plainComposeClientInternal("")
+	defaultAgain, err := plainComposeClient("")
 	require.NoError(t, err)
 	require.Same(t, defaultHost, defaultAgain)
 }

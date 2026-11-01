@@ -1,7 +1,7 @@
 package environments_test
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,7 +18,7 @@ func TestEnvironmentsCreatePrintsAPIKeyAndInstallCommands(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/environments":
-			assert.NoError(t, json.NewDecoder(r.Body).Decode(&createBody))
+			assert.NoError(t, json.UnmarshalRead(r.Body, &createBody))
 			_, _ = w.Write([]byte(`{"success":true,"data":{"id":"env-1","name":"Agent One","apiUrl":"agent://agent-one","status":"pending","enabled":true,"apiKey":"arc_secret"}}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/environments/env-1/deployment":
 			_, _ = w.Write([]byte(`{"success":true,"data":{"dockerRun":"docker run arcane-agent","dockerCompose":"services:\n  arcane-agent: {}"}}`))

@@ -2,7 +2,7 @@ package sync
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"os"
 	"path/filepath"
@@ -52,7 +52,7 @@ func setupSyncTestService(t *testing.T) (*Service, *database.DB, string) {
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 
 	projectsDir := t.TempDir()
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	cfg, err := config.Load()
 	require.NoError(t, err)

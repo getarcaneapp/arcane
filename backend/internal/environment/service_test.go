@@ -3,7 +3,7 @@ package environment
 import (
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -474,7 +474,7 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SyncsEligibleRemo
 		}
 
 		var syncReq types.ContainerRegistrySyncRequest
-		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq)) {
+		if !assert.NoError(t, json.UnmarshalRead(r.Body, &syncReq)) {
 			return
 		}
 		if !assert.Len(t, syncReq.Registries, 1) {
@@ -503,7 +503,7 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SyncsEligibleRemo
 		}
 
 		var syncReq types.ContainerRegistrySyncRequest
-		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq)) {
+		if !assert.NoError(t, json.UnmarshalRead(r.Body, &syncReq)) {
 			return
 		}
 		if !assert.Len(t, syncReq.Registries, 1) {
@@ -544,7 +544,7 @@ func TestEnvironmentService_SyncRegistriesToEnvironment_IncludesECRFields(t *tes
 		}
 
 		var syncReq types.ContainerRegistrySyncRequest
-		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq)) {
+		if !assert.NoError(t, json.UnmarshalRead(r.Body, &syncReq)) {
 			return
 		}
 		if !assert.Len(t, syncReq.Registries, 1) {
@@ -623,7 +623,7 @@ func TestEnvironmentService_SyncS3DestinationsToEnvironment(t *testing.T) {
 		}
 
 		var syncReq types.S3DestinationSyncRequest
-		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq)) {
+		if !assert.NoError(t, json.UnmarshalRead(r.Body, &syncReq)) {
 			return
 		}
 		if !assert.Len(t, syncReq.Destinations, 1) {
@@ -683,7 +683,7 @@ func TestEnvironmentService_SyncRepositoriesToEnvironment_UsesAgentHeaders(t *te
 		}
 
 		var syncReq types.GitRepositorySyncRequest
-		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq)) {
+		if !assert.NoError(t, json.UnmarshalRead(r.Body, &syncReq)) {
 			return
 		}
 		if !assert.Len(t, syncReq.Repositories, 1) {
@@ -1627,7 +1627,7 @@ func TestSyncRepositoriesPreservesEmptyCredentials(t *testing.T) {
 	}).Error)
 	agentHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload types.GitRepositorySyncRequest
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		if err := json.UnmarshalRead(r.Body, &payload); err != nil {
 			t.Error(err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -1759,7 +1759,7 @@ func environmentScopeContext(t *testing.T, target string, bodies map[string]any)
 				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
 				return
 			}
-			_ = json.NewEncoder(w).Encode(body)
+			_ = json.MarshalWrite(w, body)
 		}),
 		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
 			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil

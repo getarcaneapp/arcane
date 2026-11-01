@@ -41,13 +41,6 @@ func NewService(now func() time.Time) *Service {
 	return &Service{now: now}
 }
 
-func (c *Service) timeInternal() time.Time {
-	if c.now != nil {
-		return c.now()
-	}
-	return time.Now()
-}
-
 func (c *Service) prune(now time.Time) {
 	for key, expiry := range c.expectations {
 		if !now.Before(expiry) {
@@ -65,7 +58,7 @@ func (c *Service) prune(now time.Time) {
 func (c *Service) Prune() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.prune(c.timeInternal())
+	c.prune(c.now())
 }
 
 // MarkExpectation correlates subsequent daemon observations with a local Arcane action.
@@ -83,7 +76,7 @@ func (c *Service) MarkExpectation(resourceType, resourceID, resourceName string)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	now := c.timeInternal()
+	now := c.now()
 	c.prune(now)
 	if c.expectations == nil {
 		c.expectations = make(map[expectation]time.Time)
@@ -121,7 +114,7 @@ func (c *Service) BeginTypeWindow(resourceType string) func() {
 
 func (c *Service) beginWindows(keys []windowKey) func() {
 	c.mu.Lock()
-	c.prune(c.timeInternal())
+	c.prune(c.now())
 	if c.windows == nil {
 		c.windows = make(map[windowKey]window)
 	}
@@ -137,7 +130,7 @@ func (c *Service) beginWindows(keys []windowKey) func() {
 		for _, key := range keys {
 			w := c.windows[key]
 			w.active--
-			w.expires = c.timeInternal().Add(suppressionWindowGrace)
+			w.expires = c.now().Add(suppressionWindowGrace)
 			c.windows[key] = w
 		}
 	})
@@ -165,17 +158,17 @@ func (c *Service) ShouldSuppress(resourceType, actorID, actorName, composeProjec
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.prune(c.timeInternal())
+	c.prune(c.now())
 
 	for exp := range c.expectations {
-		if exp.matchesInternal(resourceType, actorID, actorName) {
+		if exp.matches(resourceType, actorID, actorName) {
 			return true
 		}
 	}
 	for key := range c.windows {
 		switch key.kind {
 		case "resource":
-			if key.resource.matchesInternal(resourceType, actorID, actorName) {
+			if key.resource.matches(resourceType, actorID, actorName) {
 				return true
 			}
 		case "compose":
@@ -192,7 +185,7 @@ func (c *Service) ShouldSuppress(resourceType, actorID, actorName, composeProjec
 	return false
 }
 
-func (exp expectation) matchesInternal(resourceType, actorID, actorName string) bool {
+func (exp expectation) matches(resourceType, actorID, actorName string) bool {
 	if exp.resourceType != resourceType {
 		return false
 	}

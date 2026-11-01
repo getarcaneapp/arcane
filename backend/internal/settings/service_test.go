@@ -96,7 +96,7 @@ func TestSettingsService_GetSettings_UsesCachedSnapshotWithoutDatabase(t *testin
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	require.NoError(t, svc.SetStringSetting(ctx, "baseServerUrl", "http://cached"))
+	require.NoError(t, svc.UpdateSetting(ctx, "baseServerUrl", "http://cached"))
 
 	// GetSettings should clone the in-memory snapshot and not touch the database.
 	svc.db = nil
@@ -518,7 +518,7 @@ func TestSettingsService_GetSetHelpers(t *testing.T) {
 	require.NoError(t, svc.SetIntSetting(ctx, "authSessionTimeout", 123))
 	require.Equal(t, 123, svc.GetIntSetting(ctx, "authSessionTimeout"))
 
-	require.NoError(t, svc.SetStringSetting(ctx, "baseServerUrl", "http://localhost"))
+	require.NoError(t, svc.UpdateSetting(ctx, "baseServerUrl", "http://localhost"))
 	require.Equal(t, "http://localhost", svc.GetStringSetting(ctx, "baseServerUrl"))
 }
 

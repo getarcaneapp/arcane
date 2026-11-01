@@ -1,7 +1,7 @@
 package types
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"time"
 
@@ -128,7 +128,7 @@ type SwarmInitRequest struct {
 	ListenAddr       string                 `json:"listenAddr,omitempty"`
 	AdvertiseAddr    string                 `json:"advertiseAddr,omitempty"`
 	DataPathAddr     string                 `json:"dataPathAddr,omitempty"`
-	Spec             json.RawMessage        `json:"spec" doc:"Swarm specification"`
+	Spec             jsontext.Value         `json:"spec" doc:"Swarm specification"`
 	Availability     swarm.NodeAvailability `json:"availability,omitempty"`
 	DefaultAddrPool  []string               `json:"defaultAddrPool,omitempty"`
 	DataPathPort     uint32                 `json:"dataPathPort,omitempty"`
@@ -173,11 +173,11 @@ type SwarmRotateJoinTokensRequest struct {
 }
 
 type SwarmUpdateRequest struct {
-	Spec                   json.RawMessage `json:"spec" doc:"Updated swarm specification"`
-	Version                uint64          `json:"version,omitempty"`
-	RotateWorkerToken      bool            `json:"rotateWorkerToken,omitempty"`
-	RotateManagerToken     bool            `json:"rotateManagerToken,omitempty"`
-	RotateManagerUnlockKey bool            `json:"rotateManagerUnlockKey,omitempty"`
+	Spec                   jsontext.Value `json:"spec" doc:"Updated swarm specification"`
+	Version                uint64         `json:"version,omitempty"`
+	RotateWorkerToken      bool           `json:"rotateWorkerToken,omitempty"`
+	RotateManagerToken     bool           `json:"rotateManagerToken,omitempty"`
+	RotateManagerUnlockKey bool           `json:"rotateManagerUnlockKey,omitempty"`
 }
 
 type NodeAgentReconcileRequest struct{}
@@ -633,7 +633,7 @@ type SwarmServiceCreateRequest struct {
 	// Spec is the service specification as a JSON object.
 	//
 	// Required: true
-	Spec json.RawMessage `json:"spec" doc:"Service specification"`
+	Spec jsontext.Value `json:"spec" doc:"Service specification"`
 }
 
 type SwarmServiceUpdateRequest struct {

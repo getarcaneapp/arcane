@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 
@@ -404,7 +405,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *types.VersionIn
 		DisplayVersion:   kit.Ternary(isSemver, "v"+displayVersion, displayVersion),
 		Revision:         s.revision,
 		ShortRevision:    config.ShortRevision(),
-		GoVersion:        config.GoVersion(),
+		GoVersion:        runtime.Version(),
 		NodeVersion:      config.NodeVersion,
 		SvelteKitVersion: config.SvelteKitVersion,
 		EnabledFeatures:  append(kit.Unique(kit.TrimNonEmpty(strings.Split(strings.ToLower(buildables.EnabledFeatures), ","))), apns.FeatureName),

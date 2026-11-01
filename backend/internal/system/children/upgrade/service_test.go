@@ -349,7 +349,7 @@ func TestResolveSelfUpgradeTargetImage(t *testing.T) {
 			settingsSvc, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settingsEnv)
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, settingsSvc.Stop(context.WithoutCancel(t.Context()))) })
-			require.NoError(t, settingsSvc.SetStringSetting(t.Context(), "projectsDirectory", directory))
+			require.NoError(t, settingsSvc.UpdateSetting(t.Context(), "projectsDirectory", directory))
 			projectPath := filepath.Join(directory, "arcane")
 			if len(tt.files) > 0 {
 				require.NoError(t, os.MkdirAll(projectPath, 0o755))

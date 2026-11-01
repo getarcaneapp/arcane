@@ -2,8 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json/v2"
-	"io"
 	"maps"
 	"net/http"
 
@@ -57,6 +55,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/vulnerability"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/webhook"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jsonx"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
 	"github.com/getarcaneapp/arcane/backend/v3/resources"
 )
@@ -84,15 +83,6 @@ const (
   </body>
 </html>`
 )
-
-var jsonV2Format = huma.Format{
-	Marshal: func(writer io.Writer, value any) error {
-		return json.MarshalWrite(writer, value, jsonV2APIOptions)
-	},
-	Unmarshal: func(data []byte, value any) error {
-		return json.Unmarshal(data, value, jsonV2APIOptions)
-	},
-}
 
 // HandlerDeps contains the services required to register HTTP API handlers.
 // It contains only dependencies consumed by SetupAPI and the authentication middleware.
@@ -144,12 +134,12 @@ type HandlerDeps struct {
 
 // SetupAPI creates and configures the Huma API attached to the Echo router.
 func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityAppContext, cfg *config.Config, deps HandlerDeps) huma.API {
-	e.JSONSerializer = jsonV2Serializer{}
+	e.JSONSerializer = jsonx.Serializer{}
 
 	humaConfig := huma.DefaultConfig("Arcane API", config.Version)
 	humaConfig.Formats = maps.Clone(humaConfig.Formats)
-	humaConfig.Formats["application/json"] = jsonV2Format
-	humaConfig.Formats["json"] = jsonV2Format
+	humaConfig.Formats["application/json"] = jsonx.HumaFormat
+	humaConfig.Formats["json"] = jsonx.HumaFormat
 	humaConfig.Info.Description = "Modern Docker Management, Designed for Everyone"
 	// Disable default docs path - we'll use Scalar instead
 	humaConfig.DocsPath = ""

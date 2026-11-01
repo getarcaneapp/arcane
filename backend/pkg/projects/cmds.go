@@ -162,7 +162,7 @@ func composeUpOptions(proj *composetypes.Project, opts types.ComposeUpOptions, w
 // config-resolved docker host used to reuse the shared read-only compose
 // client; empty uses the environment-resolved host.
 func ComposePs(ctx context.Context, dockerHost string, proj *composetypes.Project, services []string, all bool) ([]api.ContainerSummary, error) {
-	c, err := plainComposeClientInternal(dockerHost)
+	c, err := plainComposeClient(dockerHost)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +171,7 @@ func ComposePs(ctx context.Context, dockerHost string, proj *composetypes.Projec
 }
 
 func ComposeGenerate(ctx context.Context, dockerHost, projectName string, containerIDs []string) (string, error) {
-	c, err := plainComposeClientInternal(dockerHost)
+	c, err := plainComposeClient(dockerHost)
 	if err != nil {
 		return "", err
 	}
@@ -224,7 +224,7 @@ func ComposeLogs(ctx context.Context, dockerHost, projectName string, out io.Wri
 func ListGlobalComposeContainers(ctx context.Context, dockerClient client.APIClient, dockerHost string) ([]container.Summary, error) {
 	cli := dockerClient
 	if cli == nil {
-		c, err := plainComposeClientInternal(dockerHost)
+		c, err := plainComposeClient(dockerHost)
 		if err != nil {
 			return nil, err
 		}

@@ -130,10 +130,10 @@ type plainComposeClientEntry struct {
 	host   string
 }
 
-var plainComposeClient atomic.Pointer[plainComposeClientEntry]
+var plainComposeClientCache atomic.Pointer[plainComposeClientEntry]
 
-func plainComposeClientInternal(dockerHost string) (*Client, error) {
-	current := plainComposeClient.Load()
+func plainComposeClient(dockerHost string) (*Client, error) {
+	current := plainComposeClientCache.Load()
 	if current != nil && current.host == dockerHost {
 		return current.client, nil
 	}
@@ -144,9 +144,9 @@ func plainComposeClientInternal(dockerHost string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !plainComposeClient.CompareAndSwap(current, &plainComposeClientEntry{host: dockerHost, client: c}) {
+	if !plainComposeClientCache.CompareAndSwap(current, &plainComposeClientEntry{host: dockerHost, client: c}) {
 		_ = c.Close()
-		return plainComposeClientInternal(dockerHost)
+		return plainComposeClient(dockerHost)
 	}
 	if current != nil {
 		_ = current.client.Close()

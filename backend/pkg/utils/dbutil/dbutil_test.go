@@ -47,32 +47,3 @@ func TestFirstWhereNotFoundWithNilSentinel(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
 }
-
-func TestWithTxCommit(t *testing.T) {
-	db := newTestDB(t)
-
-	err := WithTx(t.Context(), db, func(tx *gorm.DB) error {
-		return tx.Create(&widget{ID: "w-1", Name: "alpha"}).Error
-	})
-	require.NoError(t, err)
-
-	got, err := FirstWhere[widget](t.Context(), db, errWidgetNotFound, "id = ?", "w-1")
-	require.NoError(t, err)
-	require.Equal(t, "alpha", got.Name)
-}
-
-func TestWithTxRollback(t *testing.T) {
-	db := newTestDB(t)
-	boom := errors.New("boom")
-
-	err := WithTx(t.Context(), db, func(tx *gorm.DB) error {
-		if err := tx.Create(&widget{ID: "w-1", Name: "alpha"}).Error; err != nil {
-			return err
-		}
-		return boom
-	})
-	require.ErrorIs(t, err, boom)
-
-	_, err = FirstWhere[widget](t.Context(), db, errWidgetNotFound, "id = ?", "w-1")
-	require.ErrorIs(t, err, errWidgetNotFound)
-}

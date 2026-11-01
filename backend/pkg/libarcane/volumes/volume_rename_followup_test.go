@@ -1,7 +1,7 @@
 package volumes
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,7 +22,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackExplainsPreservedTar
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Name": "web_data"})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
@@ -58,7 +58,7 @@ func TestRollbackVolume_ExplainsPreservedTargetWhenSourceMissing(t *testing.T) {
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Name": "web_data"})) {
 				return
 			}
 		default:

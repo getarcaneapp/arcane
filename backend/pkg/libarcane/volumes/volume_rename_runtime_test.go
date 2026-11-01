@@ -1,7 +1,7 @@
 package volumes
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,7 +18,7 @@ func TestGetProjectVolumeCopyRuntimeInternal_UsesToolsImageWhenAvailable(t *test
 		switch {
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Id": "tools-image"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Id": "tools-image"})) {
 				return
 			}
 		default:
@@ -38,11 +38,11 @@ func TestCreateProjectVolumeCopyHolderContainerInternal_UsesPassiveHolderCommand
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
-			if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&createBody)) {
+			if !assert.NoError(t, json.UnmarshalRead(r.Body, &createBody)) {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{
 				"Id":       "helper-container",
 				"Warnings": []string{},
 			})) {

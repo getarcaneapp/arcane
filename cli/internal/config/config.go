@@ -47,10 +47,6 @@ var configCache = hot.NewHotCache[string, *types.Config](hot.LRU, 4).
 	WithCopyOnWrite((*types.Config).Clone).
 	Build()
 
-func invalidateCache() {
-	configCache.Purge()
-}
-
 func DefaultConfig() *types.Config {
 	return &types.Config{
 		ServerURL: "http://localhost:3552",
@@ -77,7 +73,7 @@ func ConfigPath() (string, error) {
 func SetConfigPath(path string) error {
 	if strings.TrimSpace(path) == "" {
 		customConfigPath = ""
-		invalidateCache()
+		configCache.Purge()
 		return nil
 	}
 
@@ -97,7 +93,7 @@ func SetConfigPath(path string) error {
 	}
 
 	customConfigPath = absPath
-	invalidateCache()
+	configCache.Purge()
 	return nil
 }
 
@@ -168,7 +164,7 @@ func Save(ctx context.Context, c *types.Config) error {
 		return writeErr
 	}
 
-	invalidateCache()
+	configCache.Purge()
 
 	return nil
 }
@@ -223,7 +219,7 @@ func InitDefaultFile() (bool, error) {
 		return false, writeErr
 	}
 
-	invalidateCache()
+	configCache.Purge()
 	return true, nil
 }
 
@@ -428,6 +424,6 @@ func moveToBackup(path, kind string) (backupPath string, moved bool, err error) 
 		return "", false, fmt.Errorf("failed to move %s file to backup: %w", kind, backupConfigErr)
 	}
 
-	invalidateCache()
+	configCache.Purge()
 	return backupPath, true, nil
 }

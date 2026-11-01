@@ -1,7 +1,7 @@
 package volumes
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,7 +41,7 @@ func TestPlanRenamePreservesStandaloneVolumeConfiguration(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/source-data"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{
+			if !assert.NoError(t, json.MarshalWrite(w, volume.Volume{
 				Name:    "source-data",
 				Driver:  "local",
 				Options: map[string]string{"type": "none", "device": "/srv/data"},
@@ -51,7 +51,7 @@ func TestPlanRenamePreservesStandaloneVolumeConfiguration(t *testing.T) {
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/renamed-data"):

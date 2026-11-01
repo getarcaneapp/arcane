@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net"
@@ -287,10 +287,10 @@ func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/workspace-volume"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(volume.Volume{Name: "workspace-volume", Driver: "local"})
+			_ = json.MarshalWrite(w, volume.Volume{Name: "workspace-volume", Driver: "local"})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/helper/json"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
+			_ = json.MarshalWrite(w, map[string]any{
 				"Id":    "helper",
 				"State": map[string]any{"Running": true},
 			})
@@ -298,7 +298,7 @@ func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 			var request struct {
 				Cmd []string `json:"Cmd"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			if err := json.UnmarshalRead(r.Body, &request); err != nil {
 				t.Errorf("decode exec request: %v", err)
 				return
 			}
@@ -308,7 +308,7 @@ func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"Id": "read-exec"})
+			_ = json.MarshalWrite(w, map[string]string{"Id": "read-exec"})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/exec/read-exec/start"):
 			_, _ = io.Copy(io.Discard, r.Body)
 			content := []byte("content")
@@ -321,7 +321,7 @@ func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 			writeDockerExecAttachResponse(t, w, output.String())
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/exec/read-exec/json"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"Running": false, "ExitCode": 0})
+			_ = json.MarshalWrite(w, map[string]any{"Running": false, "ExitCode": 0})
 		default:
 			http.Error(w, "unexpected Docker request: "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
 		}
@@ -357,26 +357,26 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/workspace-volume"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(volume.Volume{Name: "workspace-volume", Driver: "local"})
+			_ = json.MarshalWrite(w, volume.Volume{Name: "workspace-volume", Driver: "local"})
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"Id": "tools-image"})
+			_ = json.MarshalWrite(w, map[string]string{"Id": "tools-image"})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"Id": "helper", "Warnings": []string{}})
+			_ = json.MarshalWrite(w, map[string]any{"Id": "helper", "Warnings": []string{}})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper/start"):
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper/exec"):
 			var request struct {
 				Cmd []string `json:"Cmd"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			if err := json.UnmarshalRead(r.Body, &request); err != nil {
 				t.Errorf("decode exec request: %v", err)
 				return
 			}
 			execCommands = append(execCommands, request.Cmd)
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"Id": fmt.Sprintf("workspace-exec-%d", len(execCommands)-1)})
+			_ = json.MarshalWrite(w, map[string]string{"Id": fmt.Sprintf("workspace-exec-%d", len(execCommands)-1)})
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/exec/workspace-exec-") && strings.HasSuffix(r.URL.Path, "/start"):
 			_, _ = io.Copy(io.Discard, r.Body)
 			output := kit.Ternary(
@@ -387,7 +387,7 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 			writeDockerExecAttachResponse(t, w, output)
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/exec/workspace-exec-") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"Running": false, "ExitCode": 0})
+			_ = json.MarshalWrite(w, map[string]any{"Running": false, "ExitCode": 0})
 		case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/containers/helper/archive"):
 			archiveCopies++
 			w.WriteHeader(http.StatusOK)
@@ -496,7 +496,7 @@ func volumeScopeContext(t *testing.T, target string, bodies map[string]any) (con
 				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
 				return
 			}
-			_ = json.NewEncoder(w).Encode(body)
+			_ = json.MarshalWrite(w, body)
 		}),
 		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
 			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil

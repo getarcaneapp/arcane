@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	stdjson "encoding/json"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -35,6 +35,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jsonx"
 )
 
 const (
@@ -444,7 +445,7 @@ func (s *SwarmService) AggregateTasks(ctx context.Context, params pagination.Que
 	}, nil
 }
 
-func decodeSwarmSpec(raw stdjson.RawMessage) (swarm.Spec, error) {
+func decodeSwarmSpec(raw jsontext.Value) (swarm.Spec, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
 		return swarm.Spec{}, errors.New("swarm spec is required")
@@ -452,7 +453,7 @@ func decodeSwarmSpec(raw stdjson.RawMessage) (swarm.Spec, error) {
 
 	var spec swarm.Spec
 	// Docker encodes durations as integer nanoseconds.
-	if err := json.Unmarshal(trimmed, &spec, stdjson.FormatDurationAsNano(true)); err != nil {
+	if err := json.Unmarshal(trimmed, &spec, jsonx.DurationNano); err != nil {
 		return swarm.Spec{}, fmt.Errorf("failed to parse swarm spec: %w", err)
 	}
 

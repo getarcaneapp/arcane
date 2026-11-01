@@ -1,7 +1,7 @@
 package settings_test
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -24,7 +24,7 @@ func TestSettingsSetSendsSingleKeyPatch(t *testing.T) {
 		defer mu.Unlock()
 		if r.Method == http.MethodPatch {
 			gotPath = r.URL.Path
-			_ = json.NewDecoder(r.Body).Decode(&gotUpdate)
+			_ = json.UnmarshalRead(r.Body, &gotUpdate)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"settings":[],"runtime":{},"readOnly":false}`))

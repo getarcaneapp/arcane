@@ -2,7 +2,7 @@ package vuln
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"os"
@@ -54,8 +54,7 @@ func TestDecodeTrivyReportFromFileInternal_LargePayload(t *testing.T) {
 		},
 	}
 
-	encoder := json.NewEncoder(tmpFile)
-	require.NoError(t, encoder.Encode(report))
+	require.NoError(t, json.MarshalWrite(tmpFile, report))
 
 	decoded, err := DecodeReportFromFile(tmpFile)
 	require.NoError(t, err)
