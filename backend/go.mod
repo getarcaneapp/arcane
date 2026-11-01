@@ -28,7 +28,6 @@ require (
 	github.com/docker/cli v29.9.2+incompatible
 	github.com/docker/compose/v5 v5.6.1
 	github.com/docker/go-units v0.5.0
-	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getarcaneapp/arcane/cli/v3 v3.0.0
 	github.com/getarcaneapp/arcane/types/v3 v3.0.0
 	github.com/go-git/go-billy/v5 v5.9.2
@@ -102,6 +101,7 @@ require (
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
 	gorm.io/plugin/opentelemetry v0.1.16
+	kit.getarcane.app/tripwire v0.1.0
 	modernc.org/sqlite v1.61.1
 )
 
@@ -172,6 +172,7 @@ require (
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/fogleman/ease v0.0.0-20170301025033-8da417bf1776 // indirect
 	github.com/fsnotify/fsevents v0.2.0 // indirect
+	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/fvbommel/sortorder v1.2.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.6 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
