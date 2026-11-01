@@ -14,13 +14,15 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-// WebSocketMetrics tracks active WebSocket connections and their counts.
-type WebSocketMetrics struct {
-	counters    map[string]*atomic.Int64
-	connections map[string]types.WebSocketConnectionInfo
-	seq         atomic.Uint64
-	mu          sync.RWMutex
-}
+type (
+	// WebSocketMetrics tracks active WebSocket connections and their counts.
+	WebSocketMetrics struct {
+		counters    map[string]*atomic.Int64
+		connections map[string]types.WebSocketConnectionInfo
+		seq         atomic.Uint64
+		mu          sync.RWMutex
+	}
+)
 
 // NewWebSocketMetrics creates a new WebSocketMetrics instance.
 func NewWebSocketMetrics() *WebSocketMetrics {

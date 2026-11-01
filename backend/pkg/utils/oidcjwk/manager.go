@@ -17,6 +17,22 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+type (
+	managedCache struct {
+		cache   *jwkfetch.Cache
+		keySets map[string]*keySet
+	}
+
+	KeySetManager struct {
+		ctx      context.Context
+		group    singleflight.Group
+		caches   *hot.HotCache[*http.Client, *managedCache]
+		active   sync.WaitGroup
+		mu       sync.Mutex
+		shutdown atomic.Bool
+	}
+)
+
 const (
 	maxJWKSBodySize        = 1 << 20
 	maxJWKSKeys            = 100
@@ -27,20 +43,6 @@ const (
 )
 
 var ErrManagerShutdown = errors.New("oidcjwk: key set manager is shut down")
-
-type managedCache struct {
-	cache   *jwkfetch.Cache
-	keySets map[string]*keySet
-}
-
-type KeySetManager struct {
-	ctx      context.Context
-	group    singleflight.Group
-	caches   *hot.HotCache[*http.Client, *managedCache]
-	active   sync.WaitGroup
-	mu       sync.Mutex
-	shutdown atomic.Bool
-}
 
 func NewKeySetManager(ctx context.Context) *KeySetManager { //nolint:contextcheck // cache workers inherit the application lifecycle context, not request contexts.
 	if ctx == nil {

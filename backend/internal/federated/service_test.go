@@ -35,12 +35,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/oidcjwk"
 )
 
-type federatedTestIssuer struct {
-	private   *mldsa.PrivateKey
-	server    *httptest.Server
-	IssuerURL string
-	keyID     string
-}
+type (
+	federatedTestIssuer struct {
+		private   *mldsa.PrivateKey
+		server    *httptest.Server
+		IssuerURL string
+		keyID     string
+	}
+)
 
 func newFederatedTestIssuer(t *testing.T) *federatedTestIssuer {
 	t.Helper()

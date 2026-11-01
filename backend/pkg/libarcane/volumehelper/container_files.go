@@ -10,12 +10,14 @@ import (
 	"github.com/moby/moby/client"
 )
 
-type cleanupReadCloser struct {
-	io.Reader
-	io.Closer
+type (
+	cleanupReadCloser struct {
+		io.Reader
+		io.Closer
 
-	cleanup func()
-}
+		cleanup func()
+	}
+)
 
 func (c *cleanupReadCloser) Close() error {
 	err := c.Closer.Close()

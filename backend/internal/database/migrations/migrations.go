@@ -9,9 +9,11 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-// BaselineVersion is the final Arcane v2 schema version.
-// Older databases must upgrade to Arcane the latest v2 before running v3.
-const BaselineVersion int64 = 94
+const (
+	// BaselineVersion is the final Arcane v2 schema version.
+	// Older databases must upgrade to Arcane the latest v2 before running v3.
+	BaselineVersion int64 = 94
+)
 
 var Dialect goose.Dialect
 

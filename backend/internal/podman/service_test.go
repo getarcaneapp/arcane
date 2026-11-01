@@ -21,11 +21,22 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
-type fakeSystemd struct {
-	availability types.PodmanSystemdAvailability
-	statuses     []types.PodmanUnitStatus
-	calls        []string
-}
+type (
+	fakeSystemd struct {
+		availability types.PodmanSystemdAvailability
+		statuses     []types.PodmanUnitStatus
+		calls        []string
+	}
+
+	testHost struct {
+		systemd  *fakeSystemd
+		routes   map[string]http.HandlerFunc
+		engine   string
+		version  string
+		notified [][]notifications.ContainerUpdateBatchEntry
+		rootless bool
+	}
+)
 
 func (f *fakeSystemd) Availability(context.Context) types.PodmanSystemdAvailability {
 	return f.availability
@@ -57,15 +68,6 @@ func (f *fakeSystemd) UnitStatus(_ context.Context, unit string) (types.PodmanUn
 		ActiveState: status.ActiveState,
 		SubState:    status.SubState,
 	}, nil
-}
-
-type testHost struct {
-	systemd  *fakeSystemd
-	routes   map[string]http.HandlerFunc
-	engine   string
-	version  string
-	notified [][]notifications.ContainerUpdateBatchEntry
-	rootless bool
 }
 
 func newTestService(t *testing.T, host *testHost) *Service {

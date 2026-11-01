@@ -17,45 +17,47 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
-type NotificationHandler struct {
-	notificationService *NotificationService
-	config              *config.Config
-}
+type (
+	NotificationHandler struct {
+		notificationService *NotificationService
+		config              *config.Config
+	}
 
-type GetAllNotificationSettingsOutput struct {
-	Body []types.NotificationSettings
-}
+	GetAllNotificationSettingsOutput struct {
+		Body []types.NotificationSettings
+	}
 
-type GetNotificationSettingsInput struct {
-	Provider string `path:"provider" doc:"Provider"`
-}
+	GetNotificationSettingsInput struct {
+		Provider string `path:"provider" doc:"Provider"`
+	}
 
-type GetNotificationSettingsOutput struct {
-	Body types.NotificationSettings
-}
+	GetNotificationSettingsOutput struct {
+		Body types.NotificationSettings
+	}
 
-type CreateOrUpdateNotificationSettingsInput struct {
-	types.Create[types.NotificationSettings]
-}
+	CreateOrUpdateNotificationSettingsInput struct {
+		types.Create[types.NotificationSettings]
+	}
 
-type CreateOrUpdateNotificationSettingsOutput struct {
-	Body types.NotificationSettings
-}
+	CreateOrUpdateNotificationSettingsOutput struct {
+		Body types.NotificationSettings
+	}
 
-type DeleteNotificationSettingsInput struct {
-	Provider string `path:"provider" doc:"Provider"`
-}
+	DeleteNotificationSettingsInput struct {
+		Provider string `path:"provider" doc:"Provider"`
+	}
 
-type NotificationSettingsActionInput struct {
-	Provider string `path:"provider" doc:"Provider"`
-	Action   string `query:"action" required:"true" enum:"test" doc:"Notification settings action"`
-	Type     string `query:"type" default:"simple"`
-}
+	NotificationSettingsActionInput struct {
+		Provider string `path:"provider" doc:"Provider"`
+		Action   string `query:"action" required:"true" enum:"test" doc:"Notification settings action"`
+		Type     string `query:"type" default:"simple"`
+	}
 
-type DispatchNotificationInput struct {
-	Body   types.NotificationDispatchRequest
-	APIKey string `header:"X-API-Key" doc:"Remote environment access token"`
-}
+	DispatchNotificationInput struct {
+		Body   types.NotificationDispatchRequest
+		APIKey string `header:"X-API-Key" doc:"Remote environment access token"`
+	}
+)
 
 func normalizeNotificationTestType(testType string) string {
 	normalized := strings.TrimSpace(testType)

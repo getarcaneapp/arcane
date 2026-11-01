@@ -13,15 +13,17 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 )
 
+type (
+	// Service issues agent mTLS assets and records their audit events.
+	Service struct {
+		eventService *event.EventService
+	}
+)
+
 const (
 	DeploymentSnippetsDataPath = "/app/data"
 	DeploymentSnippetsMTLSPath = "/app/data/agent-mtls-client"
 )
-
-// Service issues agent mTLS assets and records their audit events.
-type Service struct {
-	eventService *event.EventService
-}
 
 func New(eventService *event.EventService) *Service {
 	return &Service{eventService: eventService}

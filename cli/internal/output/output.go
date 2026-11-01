@@ -15,11 +15,22 @@ import (
 	kit "kit.getarcane.app"
 )
 
+const (
+	// ansiReset closes a styled run re-applied after truncation.
+	ansiReset = "\x1b[0m"
+)
+
 var (
 	arcanePurple, textPrimary, textMuted, statusOnline, statusOffline, statusWarn                  color.Color
 	successStyle, warnStyle, infoStyle, headerStyle, keyStyle, valueStyle                          lipgloss.Style
 	statusOnlineStyle, statusOfflineStyle, statusWarnStyle, statusMutedStyle, enabledStyle         lipgloss.Style
 	tableHeader, tableCell, tableOddRow, tableEvenRow, tableBorder, tablePlainCell, tablePlainHead lipgloss.Style
+
+	ansiRegexp = regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")
+
+	tableWhitespaceReplacer = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ")
+
+	colorEnabled = true
 )
 
 func init() { setTheme(true) }
@@ -47,15 +58,6 @@ func setTheme(dark bool) {
 	tableBorder = lipgloss.NewStyle().Foreground(arcanePurple)
 	tablePlainCell, tablePlainHead = tableCell, tableCell
 }
-
-var ansiRegexp = regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")
-
-// ansiReset closes a styled run re-applied after truncation.
-const ansiReset = "\x1b[0m"
-
-var tableWhitespaceReplacer = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ")
-
-var colorEnabled = true
 
 // Success prints a success message in green.
 // Format specifiers work like fmt.Printf; a leading newline separates messages.

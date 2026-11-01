@@ -13,19 +13,21 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
 )
 
+type (
+	// Service checks the dependencies the manager needs before it can serve traffic.
+	Service struct {
+		db       *database.DB
+		docker   *docker.DockerClientService
+		shutdown <-chan struct{}
+	}
+)
+
 const (
 	readyStatus    = "ready"
 	notReadyStatus = "not_ready"
 	checkOK        = "ok"
 	checkTimeout   = 2 * time.Second
 )
-
-// Service checks the dependencies the manager needs before it can serve traffic.
-type Service struct {
-	db       *database.DB
-	docker   *docker.DockerClientService
-	shutdown <-chan struct{}
-}
 
 // NewService builds the readiness checker over the database, the local Docker client, and the actor runtime's shutdown signal.
 func NewService(db *database.DB, dockerService *docker.DockerClientService, actors *francis.Runtime) *Service {

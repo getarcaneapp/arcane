@@ -25,6 +25,68 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 )
 
+type (
+	EnvMap = map[string]string
+
+	ProjectEnvMode string
+
+	ProjectEnvState struct {
+		Mode             ProjectEnvMode
+		EditableFileName string
+		EditableContent  string
+		EffectiveContent string
+		DirectContent    string
+		GitContent       string
+		OverrideContent  string
+		HasEffective     bool
+		HasGitSource     bool
+		HasOverride      bool
+		// The *Unreadable fields report a file that exists on disk but could not be
+		// read because of a permission error (e.g. a chmod 000 or foreign-owned
+		// file reachable through a bind mount). Such a file is treated as absent
+		// for merge purposes, and callers persisting env state must not attempt to
+		// write or remove it — its contents are unknown, so writing could either
+		// fail (bricking the caller) or silently clobber operator intent.
+		EffectiveUnreadable bool
+		GitSourceUnreadable bool
+		OverrideUnreadable  bool
+	}
+
+	EnvLoader struct {
+		projectsDir   string
+		workdir       string
+		autoInjectEnv bool
+	}
+
+	envFileCacheEntry struct {
+		mtime  time.Time
+		values EnvMap
+		path   string
+		size   int64
+		exists bool
+	}
+
+	// ComposeEnvOptions holds the deployment-relevant Docker Compose pre-defined
+	// environment variables parsed from a project's merged environment.
+	ComposeEnvOptions struct {
+		// ConfigFiles is the resolved, absolute COMPOSE_FILE selection in order (the
+		// first entry is the base file). Nil when COMPOSE_FILE is unset.
+		ConfigFiles []string
+		// Profiles is the COMPOSE_PROFILES selection.
+		Profiles []string
+		// ProjectName is COMPOSE_PROJECT_NAME (not normalized).
+		ProjectName string
+		// EnvFiles is the resolved, absolute COMPOSE_ENV_FILES selection in order.
+		EnvFiles []string
+		// RemoveOrphans is COMPOSE_REMOVE_ORPHANS.
+		RemoveOrphans bool
+		// IgnoreOrphans is COMPOSE_IGNORE_ORPHANS.
+		IgnoreOrphans bool
+		// ParallelLimit is COMPOSE_PARALLEL_LIMIT; 0 means unset.
+		ParallelLimit int
+	}
+)
+
 const (
 	GlobalEnvFileName                     = ".env.global"
 	EffectiveEnvFileName                  = ".env"
@@ -32,56 +94,14 @@ const (
 	OverrideEnvFileName                   = "project.env"
 	ProjectEnvModeDirect   ProjectEnvMode = "direct"
 	ProjectEnvModeOverride ProjectEnvMode = "override"
-
 	// Docker Compose pre-defined variable names that compose-go's consts package
 	// does not export. See https://docs.docker.com/compose/how-tos/environment-variables/envvars.
-	composeEnvFilesKey      = "COMPOSE_ENV_FILES"
-	composeRemoveOrphansKey = "COMPOSE_REMOVE_ORPHANS"
-	composeIgnoreOrphansKey = "COMPOSE_IGNORE_ORPHANS"
-	composeParallelLimitKey = "COMPOSE_PARALLEL_LIMIT"
-
+	composeEnvFilesKey          = "COMPOSE_ENV_FILES"
+	composeRemoveOrphansKey     = "COMPOSE_REMOVE_ORPHANS"
+	composeIgnoreOrphansKey     = "COMPOSE_IGNORE_ORPHANS"
+	composeParallelLimitKey     = "COMPOSE_PARALLEL_LIMIT"
 	defaultComposePathSeparator = ":"
 )
-
-type EnvMap = map[string]string
-
-type ProjectEnvMode string
-
-type ProjectEnvState struct {
-	Mode             ProjectEnvMode
-	EditableFileName string
-	EditableContent  string
-	EffectiveContent string
-	DirectContent    string
-	GitContent       string
-	OverrideContent  string
-	HasEffective     bool
-	HasGitSource     bool
-	HasOverride      bool
-	// The *Unreadable fields report a file that exists on disk but could not be
-	// read because of a permission error (e.g. a chmod 000 or foreign-owned
-	// file reachable through a bind mount). Such a file is treated as absent
-	// for merge purposes, and callers persisting env state must not attempt to
-	// write or remove it — its contents are unknown, so writing could either
-	// fail (bricking the caller) or silently clobber operator intent.
-	EffectiveUnreadable bool
-	GitSourceUnreadable bool
-	OverrideUnreadable  bool
-}
-
-type EnvLoader struct {
-	projectsDir   string
-	workdir       string
-	autoInjectEnv bool
-}
-
-type envFileCacheEntry struct {
-	mtime  time.Time
-	values EnvMap
-	path   string
-	size   int64
-	exists bool
-}
 
 var (
 	globalEnvFileCache  = hot.NewHotCache[string, envFileCacheEntry](hot.LRU, 4096).Build()
@@ -94,6 +114,8 @@ var (
 	// mappings, secrets would be readable from any compose file, and vars like
 	// HOME or PUID carry container-internal values that are wrong for projects.
 	processEnvAllowlist = []string{"TZ", "LANG", "LANGUAGE", "LC_ALL"}
+
+	envKeyLineRegex = regexp.MustCompile(`^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_.-]*)(\s*=)(.*)$`)
 )
 
 func NewEnvLoader(projectsDir, workdir string, autoInjectEnv bool) *EnvLoader {
@@ -437,8 +459,6 @@ func EnvContentChanged(oldContent, newContent string) bool {
 	return !maps.Equal(oldEnv, newEnv)
 }
 
-var envKeyLineRegex = regexp.MustCompile(`^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_.-]*)(\s*=)(.*)$`)
-
 // mergeEnvOverridesInPlace rewrites the value of every gitContent line
 // whose key has an override — keeping line order and trailing inline comments —
 // then appends the override lines whose keys were not rewritten. ok is false when
@@ -778,26 +798,6 @@ func formatEnvValue(value string) string {
 	).Replace(value)
 
 	return `"` + escaped + `"`
-}
-
-// ComposeEnvOptions holds the deployment-relevant Docker Compose pre-defined
-// environment variables parsed from a project's merged environment.
-type ComposeEnvOptions struct {
-	// ConfigFiles is the resolved, absolute COMPOSE_FILE selection in order (the
-	// first entry is the base file). Nil when COMPOSE_FILE is unset.
-	ConfigFiles []string
-	// Profiles is the COMPOSE_PROFILES selection.
-	Profiles []string
-	// ProjectName is COMPOSE_PROJECT_NAME (not normalized).
-	ProjectName string
-	// EnvFiles is the resolved, absolute COMPOSE_ENV_FILES selection in order.
-	EnvFiles []string
-	// RemoveOrphans is COMPOSE_REMOVE_ORPHANS.
-	RemoveOrphans bool
-	// IgnoreOrphans is COMPOSE_IGNORE_ORPHANS.
-	IgnoreOrphans bool
-	// ParallelLimit is COMPOSE_PARALLEL_LIMIT; 0 means unset.
-	ParallelLimit int
 }
 
 // ParseComposeEnvOptions extracts the deployment-relevant COMPOSE_* variables

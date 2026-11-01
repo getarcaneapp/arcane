@@ -6,26 +6,28 @@ import (
 	"sync/atomic"
 )
 
-// KeyedMutex hands out one mutex per key, so unrelated keys proceed
-// concurrently while work on the same key is serialized.
-//
-// Entries are reference counted and dropped once nobody holds or awaits them.
-// The naive version of this — a sync.Map of *sync.Mutex — either grows one
-// entry per key ever seen, or, if entries are deleted on release, hands two
-// callers different mutexes for the same key and silently loses mutual
-// exclusion. The reference count is taken under the map lock, so a key with
-// waiters is never removed.
-//
-// The zero value is ready to use.
-type KeyedMutex struct {
-	locks map[string]*keyedMutexEntry
-	mu    sync.Mutex
-}
+type (
+	// KeyedMutex hands out one mutex per key, so unrelated keys proceed
+	// concurrently while work on the same key is serialized.
+	//
+	// Entries are reference counted and dropped once nobody holds or awaits them.
+	// The naive version of this — a sync.Map of *sync.Mutex — either grows one
+	// entry per key ever seen, or, if entries are deleted on release, hands two
+	// callers different mutexes for the same key and silently loses mutual
+	// exclusion. The reference count is taken under the map lock, so a key with
+	// waiters is never removed.
+	//
+	// The zero value is ready to use.
+	KeyedMutex struct {
+		locks map[string]*keyedMutexEntry
+		mu    sync.Mutex
+	}
 
-type keyedMutexEntry struct {
-	mu   sync.RWMutex
-	refs int
-}
+	keyedMutexEntry struct {
+		mu   sync.RWMutex
+		refs int
+	}
+)
 
 // reserve returns the entry for key with its reference count incremented.
 func (k *KeyedMutex) reserve(key string) *keyedMutexEntry {

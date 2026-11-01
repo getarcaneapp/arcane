@@ -12,10 +12,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Module struct {
-	service     *JobService
-	environment *environment.EnvironmentService
-}
+type (
+	Module struct {
+		service     *JobService
+		environment *environment.EnvironmentService
+	}
+)
 
 func New(service *JobService, localEnvironment *environment.EnvironmentService) *Module {
 	return &Module{service: service, environment: localEnvironment}

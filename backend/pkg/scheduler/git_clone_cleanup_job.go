@@ -11,24 +11,24 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
+type (
+	// GitCloneCleanupJob purges orphaned "gitops-*" clone dirs under the git work
+	// dir. Internal job: no job_metadata entry, invisible in the Jobs UI.
+	GitCloneCleanupJob struct {
+		repoService     *gitrepo.GitRepositoryService
+		settingsService *settings.SettingsService
+	}
+)
+
 const (
 	// GitCloneCleanupJobName identifies the hourly purge of leaked git clone
 	// scratch directories.
 	GitCloneCleanupJobName = "git-clone-scratch-cleanup"
-
 	// gitCloneScratchMinAge is the base mtime cutoff for purging clone scratch dirs.
 	gitCloneScratchMinAge = 2 * time.Hour
-
 	// gitCloneScratchBuildHold pads the configured build timeout.
 	gitCloneScratchBuildHold = 30 * time.Minute
 )
-
-// GitCloneCleanupJob purges orphaned "gitops-*" clone dirs under the git work
-// dir. Internal job: no job_metadata entry, invisible in the Jobs UI.
-type GitCloneCleanupJob struct {
-	repoService     *gitrepo.GitRepositoryService
-	settingsService *settings.SettingsService
-}
 
 // NewGitCloneCleanupJob builds the cleanup job for the scheduler.
 func NewGitCloneCleanupJob(repoService *gitrepo.GitRepositoryService, settingsService *settings.SettingsService) *GitCloneCleanupJob {

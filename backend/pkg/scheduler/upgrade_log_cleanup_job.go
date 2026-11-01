@@ -11,7 +11,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 )
 
-const UpgradeLogCleanupJobName = "upgrade-log-cleanup"
+const (
+	UpgradeLogCleanupJobName = "upgrade-log-cleanup"
+)
 
 // NewUpgradeLogCleanupJob creates the hourly local upgrade log cleanup job.
 func NewUpgradeLogCleanupJob(service *system.SystemService) types.SchedulerJob {

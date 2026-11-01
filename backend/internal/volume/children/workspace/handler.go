@@ -21,28 +21,30 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Handler struct {
-	service         *Service
-	activityService *activity.ActivityService
-	appCtx          context.Context
-}
+type (
+	Handler struct {
+		service         *Service
+		activityService *activity.ActivityService
+		appCtx          context.Context
+	}
 
-type GetVolumeWorkspaceInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-}
+	GetVolumeWorkspaceInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		VolumeName    string `path:"volumeName" doc:"Volume name"`
+	}
 
-type GetVolumeWorkspaceFileInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	RelativePath  string `query:"relativePath" doc:"Path relative to the volume workspace root"`
-}
+	GetVolumeWorkspaceFileInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		VolumeName    string `path:"volumeName" doc:"Volume name"`
+		RelativePath  string `query:"relativePath" doc:"Path relative to the volume workspace root"`
+	}
 
-type UpdateVolumeWorkspaceInput struct {
-	RawBody       multipart.Form `contentType:"multipart/form-data"`
-	EnvironmentID string         `path:"id" doc:"Environment ID"`
-	VolumeName    string         `path:"volumeName" doc:"Volume name"`
-}
+	UpdateVolumeWorkspaceInput struct {
+		RawBody       multipart.Form `contentType:"multipart/form-data"`
+		EnvironmentID string         `path:"id" doc:"Environment ID"`
+		VolumeName    string         `path:"volumeName" doc:"Volume name"`
+	}
+)
 
 func NewHandler(service *Service, activityService *activity.ActivityService, appCtx context.Context) *Handler {
 	return &Handler{service: service, activityService: activityService, appCtx: appCtx}

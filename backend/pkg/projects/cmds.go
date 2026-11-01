@@ -22,10 +22,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
-// defaultComposeTimeout is applied to compose operations that have been
-// detached from the HTTP request context. It must be generous enough to
-// cover large image pulls + health-check waits.
-const defaultComposeTimeout = 30 * time.Minute
+const (
+	// defaultComposeTimeout is applied to compose operations that have been
+	// detached from the HTTP request context. It must be generous enough to
+	// cover large image pulls + health-check waits.
+	defaultComposeTimeout = 30 * time.Minute
+)
 
 // detachFromHTTPContext creates a new context derived from
 // context.WithoutCancel(parent) that carries any values from the parent

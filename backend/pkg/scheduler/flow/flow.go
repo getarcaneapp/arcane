@@ -42,22 +42,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jsonx"
 )
 
-const (
-	defaultMaxPayloadSize = 256 << 10
-	defaultMaxJournalSize = 4 << 20
-	// stepWriteInterval bounds how often step progress rewrites the run record.
-	stepWriteInterval = 500 * time.Millisecond
-	// evidenceActorType stores the target progress of standalone instances, which have no run to hold it.
-	evidenceActorType = "workflow-evidence"
-)
-
-var (
-	// ErrNotResumable reports that a run has no workflow instance this host can serve.
-	ErrNotResumable = errors.New("workflow instance cannot be resumed")
-	// errInstanceFinished releases a root's cancellation once the instance ends.
-	errInstanceFinished = errors.New("workflow instance finished")
-)
-
 type (
 	// Definition declares a workflow. Bump Version and update Fingerprint on any
 	// graph or policy change; flowtest.AssertDefinitions reports the new value.
@@ -76,14 +60,12 @@ type (
 		Concurrency int
 		Timeout     time.Duration
 	}
-
 	// Workflow is a defined workflow registered on the engine's host.
 	Workflow struct {
 		wf  *workflow.Workflow
 		svc *workflow.WorkflowService
 		def Definition
 	}
-
 	// Activities is the activity service surface the engine drives.
 	Activities interface {
 		activitylib.Service
@@ -92,7 +74,6 @@ type (
 		UpdateActivity(ctx context.Context, activityID string, req activitylib.UpdateRequest) (*types.Activity, error)
 		AwaitActivitySlotBounded(ctx context.Context, activityID, environmentID string) error
 	}
-
 	// Engine defines workflows, runs them inside coordinator runs, and owns their activities.
 	Engine struct {
 		activities Activities
@@ -117,12 +98,27 @@ type (
 		readyOnce sync.Once
 		mu        sync.Mutex
 	}
-
 	// rootCancellation interrupts every running task of one root instance.
 	rootCancellation struct {
 		ctx    context.Context
 		cancel context.CancelCauseFunc
 	}
+)
+
+const (
+	defaultMaxPayloadSize = 256 << 10
+	defaultMaxJournalSize = 4 << 20
+	// stepWriteInterval bounds how often step progress rewrites the run record.
+	stepWriteInterval = 500 * time.Millisecond
+	// evidenceActorType stores the target progress of standalone instances, which have no run to hold it.
+	evidenceActorType = "workflow-evidence"
+)
+
+var (
+	// ErrNotResumable reports that a run has no workflow instance this host can serve.
+	ErrNotResumable = errors.New("workflow instance cannot be resumed")
+	// errInstanceFinished releases a root's cancellation once the instance ends.
+	errInstanceFinished = errors.New("workflow instance finished")
 )
 
 // New builds an engine whose monitors live until appCtx ends or Stop is called.

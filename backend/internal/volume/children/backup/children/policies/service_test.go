@@ -16,6 +16,13 @@ import (
 	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
 )
 
+type (
+	volumeBackupPolicyScheduler struct {
+		jobs      map[string]types.SchedulerJob
+		submitted []types.SchedulerRequest
+	}
+)
+
 func noLatestRun(context.Context, string) (*types.VolumeBackupEntry, error) {
 	return nil, nil
 }
@@ -27,11 +34,6 @@ func newVolumeAdmissionForTest(t testing.TB) *runs.Admission {
 	require.NoError(t, gate.Register(runtime))
 	francistest.Start(t, runtime)
 	return gate
-}
-
-type volumeBackupPolicyScheduler struct {
-	jobs      map[string]types.SchedulerJob
-	submitted []types.SchedulerRequest
 }
 
 func (s *volumeBackupPolicyScheduler) AddJob(_ context.Context, job types.SchedulerJob) error {

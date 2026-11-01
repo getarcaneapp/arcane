@@ -30,42 +30,44 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
+type (
+	// Service evaluates container tag policies against registry listings.
+	Service struct {
+		registry *registry.ContainerRegistryService
+		docker   *docker.DockerClientService
+		settings *settings.SettingsService
+		limiter  *ratelimit.RegistryRateLimiter
+	}
+
+	// tagRegistry adapts the registry service for one container tag scan.
+	// Successful tag listings are shared per repository and digest lookups per
+	// reference so replicas of the same image cost one registry request, and the
+	// scan's manager-provided credentials never leak into the service caches.
+	tagRegistry struct {
+		service     *registry.ContainerRegistryService
+		docker      *docker.DockerClientService
+		settings    *settings.SettingsService
+		tags        *scanRegistryMemo[[]string]
+		digests     *scanRegistryMemo[string]
+		credentials []types.ContainerRegistryCredential
+	}
+
+	// scanRegistryMemo memoizes successful registry lookups for one scan
+	// and coalesces concurrent misses for the same key into a single request.
+	scanRegistryMemo[V any] struct {
+		flight      singleflight.Group
+		values      map[string]V
+		failures    map[string]error
+		keepFailure func(error) bool
+		mu          sync.Mutex
+	}
+)
+
 const (
 	// tagCheckWorkers bounds concurrent container policy evaluations per scan; the
 	// registry limiter still caps concurrent requests per registry host.
 	tagCheckWorkers = 10
 )
-
-// Service evaluates container tag policies against registry listings.
-type Service struct {
-	registry *registry.ContainerRegistryService
-	docker   *docker.DockerClientService
-	settings *settings.SettingsService
-	limiter  *ratelimit.RegistryRateLimiter
-}
-
-// tagRegistry adapts the registry service for one container tag scan.
-// Successful tag listings are shared per repository and digest lookups per
-// reference so replicas of the same image cost one registry request, and the
-// scan's manager-provided credentials never leak into the service caches.
-type tagRegistry struct {
-	service     *registry.ContainerRegistryService
-	docker      *docker.DockerClientService
-	settings    *settings.SettingsService
-	tags        *scanRegistryMemo[[]string]
-	digests     *scanRegistryMemo[string]
-	credentials []types.ContainerRegistryCredential
-}
-
-// scanRegistryMemo memoizes successful registry lookups for one scan
-// and coalesces concurrent misses for the same key into a single request.
-type scanRegistryMemo[V any] struct {
-	flight      singleflight.Group
-	values      map[string]V
-	failures    map[string]error
-	keepFailure func(error) bool
-	mu          sync.Mutex
-}
 
 func NewService(
 	registryService *registry.ContainerRegistryService,

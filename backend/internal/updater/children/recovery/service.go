@@ -22,47 +22,47 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
-// errNoFrozenPlan reports a run without a persisted frozen plan.
-var errNoFrozenPlan = errors.New("interrupted update has no frozen target plan")
-
-// Service freezes update targets before any pull, pins pulls to the frozen
-// digests, and confirms or resumes interrupted updates.
-type Service struct {
-	dockerService  *docker.DockerClientService
-	images         remoteDigester
-	pendingUpdates func(ctx context.Context) ([]updater.ImageUpdateRecord, error)
-	activityID     func(ctx context.Context) string
-	acquireUpdate  func(ctx context.Context, ids []string) (context.Context, func(), error)
-	applyPending   func(ctx context.Context, options types.UpdaterOptions) (*types.UpdaterResult, error)
-}
-
-// remoteDigester resolves registry digests; the image service implements it.
-type remoteDigester interface {
-	RemoteDigest(ctx context.Context, imageRef string, credentials []types.ContainerRegistryCredential) (string, error)
-}
-
 type (
+	// Service freezes update targets before any pull, pins pulls to the frozen
+	// digests, and confirms or resumes interrupted updates.
+	Service struct {
+		dockerService  *docker.DockerClientService
+		images         remoteDigester
+		pendingUpdates func(ctx context.Context) ([]updater.ImageUpdateRecord, error)
+		activityID     func(ctx context.Context) string
+		acquireUpdate  func(ctx context.Context, ids []string) (context.Context, func(), error)
+		applyPending   func(ctx context.Context, options types.UpdaterOptions) (*types.UpdaterResult, error)
+	}
+
+	// remoteDigester resolves registry digests; the image service implements it.
+	remoteDigester interface {
+		RemoteDigest(ctx context.Context, imageRef string, credentials []types.ContainerRegistryCredential) (string, error)
+	}
+
 	frozenPendingKey struct{}
 	frozenSingleKey  struct{}
 	frozenUpdatePlan struct {
 		Records []updater.ImageUpdateRecord
 		Targets []types.FrozenUpdateTarget
 	}
+
+	frozenSingle struct {
+		Target  *types.FrozenUpdateTarget
+		Persist func() error
+	}
+
+	ServiceParams struct {
+		DockerService  *docker.DockerClientService
+		Images         remoteDigester
+		PendingUpdates func(ctx context.Context) ([]updater.ImageUpdateRecord, error)
+		ActivityID     func(ctx context.Context) string
+		AcquireUpdate  func(ctx context.Context, ids []string) (context.Context, func(), error)
+		ApplyPending   func(ctx context.Context, options types.UpdaterOptions) (*types.UpdaterResult, error)
+	}
 )
 
-type frozenSingle struct {
-	Target  *types.FrozenUpdateTarget
-	Persist func() error
-}
-
-type ServiceParams struct {
-	DockerService  *docker.DockerClientService
-	Images         remoteDigester
-	PendingUpdates func(ctx context.Context) ([]updater.ImageUpdateRecord, error)
-	ActivityID     func(ctx context.Context) string
-	AcquireUpdate  func(ctx context.Context, ids []string) (context.Context, func(), error)
-	ApplyPending   func(ctx context.Context, options types.UpdaterOptions) (*types.UpdaterResult, error)
-}
+// errNoFrozenPlan reports a run without a persisted frozen plan.
+var errNoFrozenPlan = errors.New("interrupted update has no frozen target plan")
 
 func NewService(p ServiceParams) *Service {
 	return &Service{

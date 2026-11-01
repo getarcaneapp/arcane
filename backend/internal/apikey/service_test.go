@@ -23,6 +23,20 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 )
 
+type (
+	// testEnvironmentRow is a minimal stand-in for environment.Environment: the
+	// environment package imports apikey, so this in-package test cannot import it.
+	testEnvironmentRow struct {
+		database.BaseModel
+		AccessToken *string `gorm:"column:access_token"`
+		ApiKeyID    *string `gorm:"column:api_key_id"`
+		Name        string
+		ApiUrl      string `gorm:"column:api_url"`
+		Status      string
+		Enabled     bool
+	}
+)
+
 func setupAPIKeyServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 
@@ -1067,18 +1081,6 @@ func TestGetEnvironmentByAPIKeyRecentLastUsedAtDoesNotRewriteImmediately(t *test
 	after := fetchAPIKey(t, db, created.ID)
 	require.NotNil(t, after.LastUsedAt)
 	require.Equal(t, before.LastUsedAt.UTC().Unix(), after.LastUsedAt.UTC().Unix())
-}
-
-// testEnvironmentRow is a minimal stand-in for environment.Environment: the
-// environment package imports apikey, so this in-package test cannot import it.
-type testEnvironmentRow struct {
-	database.BaseModel
-	AccessToken *string `gorm:"column:access_token"`
-	ApiKeyID    *string `gorm:"column:api_key_id"`
-	Name        string
-	ApiUrl      string `gorm:"column:api_url"`
-	Status      string
-	Enabled     bool
 }
 
 func (testEnvironmentRow) TableName() string { return "environments" }

@@ -10,9 +10,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var (
-	logrusBridgeOnce sync.Once
+type (
+	logrusSlogHook struct{}
+)
 
+var (
+	logrusBridgeOnce   sync.Once
 	logrusMirrorMu     sync.Mutex
 	logrusMirrorNextID int
 	logrusMirrors      = map[int]io.Writer{}
@@ -46,8 +49,6 @@ func AddLogrusMirror(w io.Writer) func() {
 		logrusMirrorMu.Unlock()
 	}
 }
-
-type logrusSlogHook struct{}
 
 func (logrusSlogHook) Levels() []logrus.Level {
 	return logrus.AllLevels

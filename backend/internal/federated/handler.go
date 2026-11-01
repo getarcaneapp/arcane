@@ -13,41 +13,43 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// FederatedCredentialHandler provides Huma-based federated credential
-// management endpoints.
-type FederatedCredentialHandler struct {
-	federatedCredentialService *FederatedCredentialService
-}
+type (
+	// FederatedCredentialHandler provides Huma-based federated credential
+	// management endpoints.
+	FederatedCredentialHandler struct {
+		federatedCredentialService *FederatedCredentialService
+	}
 
-type federatedTokenExchangeError struct {
-	Error            string `json:"error"`                       //nolint:tagliatelle // RFC 6749 wire shape is snake_case.
-	ErrorDescription string `json:"error_description,omitempty"` //nolint:tagliatelle // RFC 6749 wire shape is snake_case.
-}
+	federatedTokenExchangeError struct {
+		Error            string `json:"error"`                       //nolint:tagliatelle // RFC 6749 wire shape is snake_case.
+		ErrorDescription string `json:"error_description,omitempty"` //nolint:tagliatelle // RFC 6749 wire shape is snake_case.
+	}
 
-type ListFederatedCredentialsInput struct {
-	Search string `query:"search" doc:"Search query for filtering by name, issuer, or subject"`
-	Sort   string `query:"sort" doc:"Column to sort by"`
-	Order  string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start  int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit  int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
+	ListFederatedCredentialsInput struct {
+		Search string `query:"search" doc:"Search query for filtering by name, issuer, or subject"`
+		Sort   string `query:"sort" doc:"Column to sort by"`
+		Order  string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Start  int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit  int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
 
-type CreateFederatedCredentialInput struct {
-	types.Create[types.FederatedCredential]
-}
+	CreateFederatedCredentialInput struct {
+		types.Create[types.FederatedCredential]
+	}
 
-type GetFederatedCredentialInput struct {
-	ID string `path:"id" doc:"Federated credential ID"`
-}
+	GetFederatedCredentialInput struct {
+		ID string `path:"id" doc:"Federated credential ID"`
+	}
 
-type UpdateFederatedCredentialInput struct {
-	ID string `path:"id" doc:"Federated credential ID"`
-	types.Update[types.FederatedCredential]
-}
+	UpdateFederatedCredentialInput struct {
+		ID string `path:"id" doc:"Federated credential ID"`
+		types.Update[types.FederatedCredential]
+	}
 
-type DeleteFederatedCredentialInput struct {
-	ID string `path:"id" doc:"Federated credential ID"`
-}
+	DeleteFederatedCredentialInput struct {
+		ID string `path:"id" doc:"Federated credential ID"`
+	}
+)
 
 func (h *FederatedCredentialHandler) ListFederatedCredentials(ctx context.Context, input *ListFederatedCredentialsInput) (*handlerutil.Page[types.FederatedCredential], error) {
 	credentials, paginationResp, err := h.federatedCredentialService.List(ctx, handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search))

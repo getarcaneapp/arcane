@@ -23,18 +23,47 @@ import (
 	"kit.getarcane.app/docker/types"
 )
 
-type Client struct {
-	svc       api.Compose
-	dockerCli command.Cli
-	logWriter io.WriteCloser
-}
+type (
+	Client struct {
+		svc       api.Compose
+		dockerCli command.Cli
+		logWriter io.WriteCloser
+	}
 
-type composeClientConfig struct {
-	serviceOptions    []compose.Option
-	isLogDemuxEnabled bool
-}
+	composeClientConfig struct {
+		serviceOptions    []compose.Option
+		isLogDemuxEnabled bool
+	}
 
-type composeClientOption func(*composeClientConfig)
+	composeClientOption func(*composeClientConfig)
+
+	plainComposeClientEntry struct {
+		client *Client
+		host   string
+	}
+
+	inspectCompatibleDockerCli struct {
+		command.Cli
+
+		apiClient client.APIClient
+	}
+
+	// writerConsumer serializes compose log events: compose may stream several
+	// containers concurrently into one consumer.
+	writerConsumer struct {
+		out            io.Writer
+		mu             sync.Mutex
+		writeErrLogged bool
+	}
+)
+
+const (
+	// stderrLogLinePrefix marks stderr content so the project-log parser
+	// (pkg/libarcane/ws) can classify lines the same way container logs do.
+	stderrLogLinePrefix = "[STDERR] "
+)
+
+var plainComposeClientCache atomic.Pointer[plainComposeClientEntry]
 
 // streamDemuxedLogs wires the log-parity wrapper so non-TTY container
 // log responses keep stderr metadata as Arcane's [STDERR] marker.
@@ -125,13 +154,6 @@ func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]re
 	return &Client{svc: svc, dockerCli: composeCLI, logWriter: logWriter}, nil
 }
 
-type plainComposeClientEntry struct {
-	client *Client
-	host   string
-}
-
-var plainComposeClientCache atomic.Pointer[plainComposeClientEntry]
-
 func plainComposeClient(dockerHost string) (*Client, error) {
 	current := plainComposeClientCache.Load()
 	if current != nil && current.host == dockerHost {
@@ -181,12 +203,6 @@ func buildComposeAuthConfigs(authConfigs map[string]registry.AuthConfig) map[str
 	return kit.Ternary(len(composeAuthConfigs) == 0, nil, composeAuthConfigs)
 }
 
-type inspectCompatibleDockerCli struct {
-	command.Cli
-
-	apiClient client.APIClient
-}
-
 func (c *inspectCompatibleDockerCli) Client() client.APIClient {
 	return c.apiClient
 }
@@ -218,22 +234,14 @@ func (c *Client) Close() error {
 	return nil
 }
 
-// writerConsumer serializes compose log events: compose may stream several
-// containers concurrently into one consumer.
-type writerConsumer struct {
-	out            io.Writer
-	mu             sync.Mutex
-	writeErrLogged bool
-}
+func (w *writerConsumer) Register(container string) {}
 
-// stderrLogLinePrefix marks stderr content so the project-log parser
-// (pkg/libarcane/ws) can classify lines the same way container logs do.
-const stderrLogLinePrefix = "[STDERR] "
+func (w *writerConsumer) Start(container string) {}
 
-func (w *writerConsumer) Register(container string)    {}
-func (w *writerConsumer) Start(container string)       {}
-func (w *writerConsumer) Stop(container string)        {}
+func (w *writerConsumer) Stop(container string) {}
+
 func (w *writerConsumer) Status(container, msg string) {}
+
 func (w *writerConsumer) Log(container, msg string) {
 	w.write(container, msg)
 }

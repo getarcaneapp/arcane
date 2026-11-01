@@ -11,22 +11,23 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
 )
 
+type (
+	// PruningVolumeHelperJob periodically removes idle volume workspace helper
+	// containers. The run frequency is fixed (every 5 minutes); how stale a helper must
+	// be pruned is driven by the volumeHelperIdleTimeout setting.
+	PruningVolumeHelperJob struct {
+		volumeService   *volume.VolumeService
+		settingsService *settings.SettingsService
+	}
+)
+
 const (
 	PruningVolumeHelperJobName = "pruning-volume-helper"
-
 	// volumeHelperIdleTimeoutSetting is the settings key (in minutes) controlling how
 	// long a volume workspace helper container may sit idle before it is reaped.
 	volumeHelperIdleTimeoutSetting = "volumeHelperIdleTimeout"
 	volumeHelperPruningSchedule    = "*/5 * * * *"
 )
-
-// PruningVolumeHelperJob periodically removes idle volume workspace helper
-// containers. The run frequency is fixed (every 5 minutes); how stale a helper must
-// be pruned is driven by the volumeHelperIdleTimeout setting.
-type PruningVolumeHelperJob struct {
-	volumeService   *volume.VolumeService
-	settingsService *settings.SettingsService
-}
 
 func NewPruningVolumeHelperJob(volumeService *volume.VolumeService, settingsService *settings.SettingsService) *PruningVolumeHelperJob {
 	return &PruningVolumeHelperJob{

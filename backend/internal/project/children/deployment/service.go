@@ -25,18 +25,20 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
-// Builder builds Compose service images.
-type Builder interface {
-	BuildImage(ctx context.Context, environmentID string, req buildtypes.BuildRequest, progressWriter io.Writer, serviceName string, user *types.Actor) (*buildtypes.BuildResult, error)
-	BuildSettings() buildtypes.BuildSettings
-}
+type (
+	// Builder builds Compose service images.
+	Builder interface {
+		BuildImage(ctx context.Context, environmentID string, req buildtypes.BuildRequest, progressWriter io.Writer, serviceName string, user *types.Actor) (*buildtypes.BuildResult, error)
+		BuildSettings() buildtypes.BuildSettings
+	}
 
-// Service runs the image side of deployments: pulls, update reconciliation, builds and dependents.
-type Service struct {
-	imageService  *image.ImageService
-	dockerService *docker.DockerClientService
-	buildService  Builder
-}
+	// Service runs the image side of deployments: pulls, update reconciliation, builds and dependents.
+	Service struct {
+		imageService  *image.ImageService
+		dockerService *docker.DockerClientService
+		buildService  Builder
+	}
+)
 
 func New(imageService *image.ImageService, dockerService *docker.DockerClientService, buildService Builder) *Service {
 	return &Service{

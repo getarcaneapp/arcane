@@ -10,25 +10,29 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
-var DurationNano = json.JoinOptions(
-	json.WithMarshalers(json.MarshalToFunc(func(enc *jsontext.Encoder, d time.Duration) error {
-		return enc.WriteToken(jsontext.Int(int64(d)))
-	})),
-	json.WithUnmarshalers(json.UnmarshalFromFunc(func(dec *jsontext.Decoder, d *time.Duration) error {
-		return json.UnmarshalDecode(dec, (*int64)(d))
-	})),
+type (
+	Serializer struct{}
 )
 
-var HumaFormat = huma.Format{
-	Marshal: func(writer io.Writer, value any) error {
-		return json.MarshalWrite(writer, value, DurationNano)
-	},
-	Unmarshal: func(data []byte, value any) error {
-		return json.Unmarshal(data, value, DurationNano)
-	},
-}
+var (
+	DurationNano = json.JoinOptions(
+		json.WithMarshalers(json.MarshalToFunc(func(enc *jsontext.Encoder, d time.Duration) error {
+			return enc.WriteToken(jsontext.Int(int64(d)))
+		})),
+		json.WithUnmarshalers(json.UnmarshalFromFunc(func(dec *jsontext.Decoder, d *time.Duration) error {
+			return json.UnmarshalDecode(dec, (*int64)(d))
+		})),
+	)
 
-type Serializer struct{}
+	HumaFormat = huma.Format{
+		Marshal: func(writer io.Writer, value any) error {
+			return json.MarshalWrite(writer, value, DurationNano)
+		},
+		Unmarshal: func(data []byte, value any) error {
+			return json.Unmarshal(data, value, DurationNano)
+		},
+	}
+)
 
 func (Serializer) Serialize(c *echo.Context, value any, indent string) error {
 	return json.MarshalWrite(c.Response(), value, DurationNano, jsontext.WithIndent(indent), jsontext.Multiline(indent != ""))

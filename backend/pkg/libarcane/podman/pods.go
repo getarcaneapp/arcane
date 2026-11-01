@@ -12,7 +12,165 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 )
 
-type PodAction string
+type (
+	PodAction string
+
+	PodActionOptions struct {
+		Timeout *int
+		Signal  string
+	}
+
+	PodPortMapping struct {
+		HostIP        string `json:"host_ip,omitempty"`
+		Protocol      string `json:"protocol,omitempty"`
+		ContainerPort uint16 `json:"container_port"`
+		HostPort      uint16 `json:"host_port,omitzero"`
+		Range         uint16 `json:"range,omitzero"`
+	}
+
+	PodNamespace struct {
+		NSMode string `json:"nsmode,omitempty"`
+		Value  string `json:"value,omitempty"`
+	}
+
+	PodNetworkOptions struct {
+		StaticMAC     string   `json:"static_mac,omitempty"`
+		InterfaceName string   `json:"interface_name,omitempty"`
+		StaticIPs     []string `json:"static_ips,omitempty"`
+		Aliases       []string `json:"aliases,omitempty"`
+	}
+
+	PodMount struct {
+		Destination string   `json:"destination"`
+		Type        string   `json:"type"`
+		Source      string   `json:"source"`
+		Options     []string `json:"options,omitempty"`
+	}
+
+	PodNamedVolume struct {
+		Name    string   `json:"Name"`
+		Dest    string   `json:"Dest"`
+		Options []string `json:"Options,omitempty"`
+	}
+
+	PodIDMap struct {
+		ContainerID int `json:"container_id"`
+		HostID      int `json:"host_id"`
+		Size        int `json:"size"`
+	}
+
+	PodIDMappings struct {
+		UIDMap         []PodIDMap `json:"UIDMap,omitempty"`
+		GIDMap         []PodIDMap `json:"GIDMap,omitempty"`
+		HostUIDMapping bool       `json:"HostUIDMapping"`
+		HostGIDMapping bool       `json:"HostGIDMapping"`
+	}
+
+	PodMemoryLimits struct {
+		Limit *int64 `json:"limit,omitzero"`
+		Swap  *int64 `json:"swap,omitzero"`
+	}
+
+	PodCPULimits struct {
+		Shares *uint64 `json:"shares,omitzero"`
+		Quota  *int64  `json:"quota,omitzero"`
+		Period *uint64 `json:"period,omitzero"`
+		Cpus   string  `json:"cpus,omitempty"`
+		Mems   string  `json:"mems,omitempty"`
+	}
+
+	PodWeightDevice struct {
+		Weight *uint16 `json:"weight,omitzero"`
+		Major  int64   `json:"major"`
+		Minor  int64   `json:"minor"`
+	}
+
+	PodThrottleDevice struct {
+		Major int64  `json:"major"`
+		Minor int64  `json:"minor"`
+		Rate  uint64 `json:"rate"`
+	}
+
+	PodBlockIO struct {
+		Weight                 *uint16             `json:"weight,omitzero"`
+		WeightDevice           []PodWeightDevice   `json:"weightDevice,omitempty"`
+		ThrottleReadBpsDevice  []PodThrottleDevice `json:"throttleReadBpsDevice,omitempty"`
+		ThrottleWriteBpsDevice []PodThrottleDevice `json:"throttleWriteBpsDevice,omitempty"`
+	}
+
+	PodResources struct {
+		Memory  *PodMemoryLimits `json:"memory,omitzero"`
+		CPU     *PodCPULimits    `json:"cpu,omitzero"`
+		BlockIO *PodBlockIO      `json:"blockIO,omitzero"`
+	}
+
+	PodSpec struct {
+		Labels             map[string]string            `json:"labels,omitempty"`
+		Ipc                *PodNamespace                `json:"ipcns,omitzero"`
+		RestartRetries     *uint                        `json:"restart_tries,omitzero"`
+		ShareParent        *bool                        `json:"share_parent,omitzero"`
+		Pid                *PodNamespace                `json:"pidns,omitzero"`
+		Userns             *PodNamespace                `json:"userns,omitzero"`
+		Uts                *PodNamespace                `json:"utsns,omitzero"`
+		Sysctl             map[string]string            `json:"sysctl,omitempty"`
+		NetNS              *PodNamespace                `json:"netns,omitzero"`
+		Networks           map[string]PodNetworkOptions `json:"Networks,omitempty"`
+		NetworkOptions     map[string][]string          `json:"network_options,omitempty"`
+		ResourceLimits     *PodResources                `json:"resource_limits,omitzero"`
+		ShmSize            *int64                       `json:"shm_size,omitzero"`
+		ShmSizeSystemd     *int64                       `json:"shm_size_systemd,omitzero"`
+		IDMappings         *PodIDMappings               `json:"idmappings,omitzero"`
+		Name               string                       `json:"name"`
+		Hostname           string                       `json:"hostname,omitempty"`
+		ExitPolicy         string                       `json:"exit_policy,omitempty"`
+		InfraConmonPidFile string                       `json:"infra_conmon_pid_file,omitempty"`
+		InfraImage         string                       `json:"infra_image,omitempty"`
+		InfraName          string                       `json:"infra_name,omitempty"`
+		RestartPolicy      string                       `json:"restart_policy,omitempty"`
+		HostsFile          string                       `json:"hostsFile,omitempty"`
+		CgroupParent       string                       `json:"cgroup_parent,omitempty"`
+		InfraCommand       []string                     `json:"infra_command,omitempty"`
+		SharedNamespaces   []string                     `json:"shared_namespaces,omitempty"`
+		Devices            []string                     `json:"pod_devices,omitempty"`
+		PortMappings       []PodPortMapping             `json:"portmappings,omitempty"`
+		DNSServer          []string                     `json:"dns_server,omitempty"`
+		DNSSearch          []string                     `json:"dns_search,omitempty"`
+		DNSOption          []string                     `json:"dns_option,omitempty"`
+		HostAdd            []string                     `json:"hostadd,omitempty"`
+		Mounts             []PodMount                   `json:"mounts,omitempty"`
+		Volumes            []PodNamedVolume             `json:"volumes,omitempty"`
+		VolumesFrom        []string                     `json:"volumes_from,omitempty"`
+		SecurityOpt        []string                     `json:"security_opt,omitempty"`
+		NoInfra            bool                         `json:"no_infra,omitzero"`
+		NoManageResolvConf bool                         `json:"no_manage_resolv_conf,omitzero"`
+		NoManageHostname   bool                         `json:"no_manage_hostname,omitzero"`
+		NoManageHosts      bool                         `json:"no_manage_hosts,omitzero"`
+	}
+
+	podInfraConfigResponse struct {
+		PidNS string `json:"pid_ns"`
+		UtsNS string `json:"uts_ns"`
+		types.PodInfraConfig
+	}
+
+	podInspectResponse struct {
+		InfraConfig        *podInfraConfigResponse   `json:"InfraConfig"`
+		CPUSetCPUs         string                    `json:"cpuset_cpus"`
+		CPUSetMems         string                    `json:"cpuset_mems"`
+		BlkioWeightDevices []types.PodWeightDevice   `json:"blkio_weight_device"`
+		DeviceReadBps      []types.PodThrottleDevice `json:"device_read_bps"`
+		DeviceWriteBps     []types.PodThrottleDevice `json:"device_write_bps"`
+		VolumesFrom        []string                  `json:"volumes_from"`
+		SecurityOpts       []string                  `json:"security_opt"`
+		types.PodInspect
+		CPUPeriod   uint64 `json:"cpu_period"`
+		CPUQuota    int64  `json:"cpu_quota"`
+		CPUShares   uint64 `json:"cpu_shares"`
+		MemoryLimit uint64 `json:"memory_limit"`
+		MemorySwap  uint64 `json:"memory_swap"`
+		BlkioWeight uint64 `json:"blkio_weight"`
+	}
+)
 
 const (
 	PodActionStart   PodAction = "start"
@@ -22,138 +180,6 @@ const (
 	PodActionUnpause PodAction = "unpause"
 	PodActionKill    PodAction = "kill"
 )
-
-type PodActionOptions struct {
-	Timeout *int
-	Signal  string
-}
-
-type PodPortMapping struct {
-	HostIP        string `json:"host_ip,omitempty"`
-	Protocol      string `json:"protocol,omitempty"`
-	ContainerPort uint16 `json:"container_port"`
-	HostPort      uint16 `json:"host_port,omitzero"`
-	Range         uint16 `json:"range,omitzero"`
-}
-
-type PodNamespace struct {
-	NSMode string `json:"nsmode,omitempty"`
-	Value  string `json:"value,omitempty"`
-}
-
-type PodNetworkOptions struct {
-	StaticMAC     string   `json:"static_mac,omitempty"`
-	InterfaceName string   `json:"interface_name,omitempty"`
-	StaticIPs     []string `json:"static_ips,omitempty"`
-	Aliases       []string `json:"aliases,omitempty"`
-}
-
-type PodMount struct {
-	Destination string   `json:"destination"`
-	Type        string   `json:"type"`
-	Source      string   `json:"source"`
-	Options     []string `json:"options,omitempty"`
-}
-
-type PodNamedVolume struct {
-	Name    string   `json:"Name"`
-	Dest    string   `json:"Dest"`
-	Options []string `json:"Options,omitempty"`
-}
-
-type PodIDMap struct {
-	ContainerID int `json:"container_id"`
-	HostID      int `json:"host_id"`
-	Size        int `json:"size"`
-}
-
-type PodIDMappings struct {
-	UIDMap         []PodIDMap `json:"UIDMap,omitempty"`
-	GIDMap         []PodIDMap `json:"GIDMap,omitempty"`
-	HostUIDMapping bool       `json:"HostUIDMapping"`
-	HostGIDMapping bool       `json:"HostGIDMapping"`
-}
-
-type PodMemoryLimits struct {
-	Limit *int64 `json:"limit,omitzero"`
-	Swap  *int64 `json:"swap,omitzero"`
-}
-
-type PodCPULimits struct {
-	Shares *uint64 `json:"shares,omitzero"`
-	Quota  *int64  `json:"quota,omitzero"`
-	Period *uint64 `json:"period,omitzero"`
-	Cpus   string  `json:"cpus,omitempty"`
-	Mems   string  `json:"mems,omitempty"`
-}
-
-type PodWeightDevice struct {
-	Weight *uint16 `json:"weight,omitzero"`
-	Major  int64   `json:"major"`
-	Minor  int64   `json:"minor"`
-}
-
-type PodThrottleDevice struct {
-	Major int64  `json:"major"`
-	Minor int64  `json:"minor"`
-	Rate  uint64 `json:"rate"`
-}
-
-type PodBlockIO struct {
-	Weight                 *uint16             `json:"weight,omitzero"`
-	WeightDevice           []PodWeightDevice   `json:"weightDevice,omitempty"`
-	ThrottleReadBpsDevice  []PodThrottleDevice `json:"throttleReadBpsDevice,omitempty"`
-	ThrottleWriteBpsDevice []PodThrottleDevice `json:"throttleWriteBpsDevice,omitempty"`
-}
-
-type PodResources struct {
-	Memory  *PodMemoryLimits `json:"memory,omitzero"`
-	CPU     *PodCPULimits    `json:"cpu,omitzero"`
-	BlockIO *PodBlockIO      `json:"blockIO,omitzero"`
-}
-
-type PodSpec struct {
-	Labels             map[string]string            `json:"labels,omitempty"`
-	Ipc                *PodNamespace                `json:"ipcns,omitzero"`
-	RestartRetries     *uint                        `json:"restart_tries,omitzero"`
-	ShareParent        *bool                        `json:"share_parent,omitzero"`
-	Pid                *PodNamespace                `json:"pidns,omitzero"`
-	Userns             *PodNamespace                `json:"userns,omitzero"`
-	Uts                *PodNamespace                `json:"utsns,omitzero"`
-	Sysctl             map[string]string            `json:"sysctl,omitempty"`
-	NetNS              *PodNamespace                `json:"netns,omitzero"`
-	Networks           map[string]PodNetworkOptions `json:"Networks,omitempty"`
-	NetworkOptions     map[string][]string          `json:"network_options,omitempty"`
-	ResourceLimits     *PodResources                `json:"resource_limits,omitzero"`
-	ShmSize            *int64                       `json:"shm_size,omitzero"`
-	ShmSizeSystemd     *int64                       `json:"shm_size_systemd,omitzero"`
-	IDMappings         *PodIDMappings               `json:"idmappings,omitzero"`
-	Name               string                       `json:"name"`
-	Hostname           string                       `json:"hostname,omitempty"`
-	ExitPolicy         string                       `json:"exit_policy,omitempty"`
-	InfraConmonPidFile string                       `json:"infra_conmon_pid_file,omitempty"`
-	InfraImage         string                       `json:"infra_image,omitempty"`
-	InfraName          string                       `json:"infra_name,omitempty"`
-	RestartPolicy      string                       `json:"restart_policy,omitempty"`
-	HostsFile          string                       `json:"hostsFile,omitempty"`
-	CgroupParent       string                       `json:"cgroup_parent,omitempty"`
-	InfraCommand       []string                     `json:"infra_command,omitempty"`
-	SharedNamespaces   []string                     `json:"shared_namespaces,omitempty"`
-	Devices            []string                     `json:"pod_devices,omitempty"`
-	PortMappings       []PodPortMapping             `json:"portmappings,omitempty"`
-	DNSServer          []string                     `json:"dns_server,omitempty"`
-	DNSSearch          []string                     `json:"dns_search,omitempty"`
-	DNSOption          []string                     `json:"dns_option,omitempty"`
-	HostAdd            []string                     `json:"hostadd,omitempty"`
-	Mounts             []PodMount                   `json:"mounts,omitempty"`
-	Volumes            []PodNamedVolume             `json:"volumes,omitempty"`
-	VolumesFrom        []string                     `json:"volumes_from,omitempty"`
-	SecurityOpt        []string                     `json:"security_opt,omitempty"`
-	NoInfra            bool                         `json:"no_infra,omitzero"`
-	NoManageResolvConf bool                         `json:"no_manage_resolv_conf,omitzero"`
-	NoManageHostname   bool                         `json:"no_manage_hostname,omitzero"`
-	NoManageHosts      bool                         `json:"no_manage_hosts,omitzero"`
-}
 
 func (c *Client) PodList(ctx context.Context, filters map[string][]string) ([]types.Pod, error) {
 	query, err := filtersQuery(url.Values{}, filters)
@@ -166,30 +192,6 @@ func (c *Client) PodList(ctx context.Context, filters map[string][]string) ([]ty
 		path:   "/pods/json",
 		query:  query,
 	})
-}
-
-type podInfraConfigResponse struct {
-	PidNS string `json:"pid_ns"`
-	UtsNS string `json:"uts_ns"`
-	types.PodInfraConfig
-}
-
-type podInspectResponse struct {
-	InfraConfig        *podInfraConfigResponse   `json:"InfraConfig"`
-	CPUSetCPUs         string                    `json:"cpuset_cpus"`
-	CPUSetMems         string                    `json:"cpuset_mems"`
-	BlkioWeightDevices []types.PodWeightDevice   `json:"blkio_weight_device"`
-	DeviceReadBps      []types.PodThrottleDevice `json:"device_read_bps"`
-	DeviceWriteBps     []types.PodThrottleDevice `json:"device_write_bps"`
-	VolumesFrom        []string                  `json:"volumes_from"`
-	SecurityOpts       []string                  `json:"security_opt"`
-	types.PodInspect
-	CPUPeriod   uint64 `json:"cpu_period"`
-	CPUQuota    int64  `json:"cpu_quota"`
-	CPUShares   uint64 `json:"cpu_shares"`
-	MemoryLimit uint64 `json:"memory_limit"`
-	MemorySwap  uint64 `json:"memory_swap"`
-	BlkioWeight uint64 `json:"blkio_weight"`
 }
 
 func (c *Client) PodInspect(ctx context.Context, nameOrID string) (types.PodInspect, error) {

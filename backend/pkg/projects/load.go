@@ -29,6 +29,44 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
+type (
+	// PrepareProjectFunc runs against a loaded project after service selection,
+	// include/override merging, and local path resolution, but before Docker host
+	// path translation, so bind sources are still local filesystem paths. It may
+	// mutate the filesystem (e.g. create missing bind directories) and a returned
+	// error aborts the load.
+	PrepareProjectFunc func(ctx context.Context, project *composetypes.Project) error
+
+	LoadOptions struct {
+		PathMapper        *PathMapper
+		EnvOverride       EnvMap
+		ConfigureLoader   func(*loader.Options)
+		Dependencies      *types.ComposeDependencies
+		Prepare           PrepareProjectFunc
+		ComposeFile       string
+		ProjectName       string
+		ProjectsDirectory string
+		Services          []string
+		AutoInjectEnv     bool
+		Lenient           bool
+	}
+
+	ValidateComposeRequest struct {
+		ProjectsDirectory string
+		ProjectPath       string
+		ProjectName       string
+		ComposeContent    string
+		EnvContent        *string
+		OverrideContent   *string
+		OverrideFileName  string
+		Lenient           bool
+	}
+)
+
+const (
+	lenientUndefinedPlaceholder = "/placeholder-undefined"
+)
+
 // ProjectFileCandidates enumerates known project files: base compose names,
 // compose override names, and .env. It is used as a membership set for
 // recognizing and skipping known files during discovery; it is NOT the
@@ -283,8 +321,6 @@ func lenientCastSize(value string) (any, error) {
 	return int(n), nil
 }
 
-const lenientUndefinedPlaceholder = "/placeholder-undefined"
-
 // ApplyLenientLoaderOptions configures a compose loader.Options for tolerant
 // loading: structural validation and consistency checks are skipped, and
 // unresolvable ${VAR} references are substituted with a placeholder instead of
@@ -329,27 +365,6 @@ func ApplyLenientLoaderOptions(ctx context.Context, opts *loader.Options, compos
 			)
 		},
 	}
-}
-
-// PrepareProjectFunc runs against a loaded project after service selection,
-// include/override merging, and local path resolution, but before Docker host
-// path translation, so bind sources are still local filesystem paths. It may
-// mutate the filesystem (e.g. create missing bind directories) and a returned
-// error aborts the load.
-type PrepareProjectFunc func(ctx context.Context, project *composetypes.Project) error
-
-type LoadOptions struct {
-	PathMapper        *PathMapper
-	EnvOverride       EnvMap
-	ConfigureLoader   func(*loader.Options)
-	Dependencies      *types.ComposeDependencies
-	Prepare           PrepareProjectFunc
-	ComposeFile       string
-	ProjectName       string
-	ProjectsDirectory string
-	Services          []string
-	AutoInjectEnv     bool
-	Lenient           bool
 }
 
 // LoadComposeProject loads a compose project from composeFile. envOverride,
@@ -707,17 +722,6 @@ func recordComposeDependencies(project *composetypes.Project, dependencies *type
 			project.Services[name] = service
 		}
 	}
-}
-
-type ValidateComposeRequest struct {
-	ProjectsDirectory string
-	ProjectPath       string
-	ProjectName       string
-	ComposeContent    string
-	EnvContent        *string
-	OverrideContent   *string
-	OverrideFileName  string
-	Lenient           bool
 }
 
 // ValidateComposeContentForUpdate validates proposed editor content without persisting it.

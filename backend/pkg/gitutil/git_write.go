@@ -27,6 +27,74 @@ import (
 	acfstypes "kit.getarcane.app/acfs/types"
 )
 
+type (
+	// WriteCheckout is a scratch clone prepared for committing to one branch.
+	WriteCheckout struct {
+		repo         *git.Repository
+		RepoPath     string
+		Branch       string
+		HeadCommit   string
+		url          string
+		BranchExists bool
+	}
+
+	// CommitFile is one file to write into the checkout, repo-relative.
+	CommitFile struct {
+		Path       string
+		Content    []byte
+		Executable bool
+	}
+
+	// CollectOptions bounds CollectFiles; SkipDir and SkipFile see base names while directories expand.
+	CollectOptions struct {
+		SkipDir      func(name string) bool
+		SkipFile     func(name string) bool
+		MaxFiles     int
+		MaxTotalSize int64
+	}
+
+	fileCollector struct {
+		opts      CollectOptions
+		seen      map[string]struct{}
+		root      string
+		files     []CommitFile
+		totalSize int64
+	}
+
+	// CommitRequest describes the tree mutation to commit and push.
+	CommitRequest struct {
+		SignKey     *openpgp.Entity
+		Message     string
+		AuthorName  string
+		AuthorEmail string
+		Files       []CommitFile
+		Remove      []string
+	}
+
+	// CommitIdentity is the author Arcane commits as for one repository.
+	CommitIdentity struct {
+		SignKey *openpgp.Entity
+		Name    string
+		Email   string
+	}
+
+	// HistoryEntry is one commit touching a directory.
+	HistoryEntry struct {
+		Hash    string
+		Author  string
+		Email   string
+		Message string
+		Date    time.Time
+		Files   []string
+	}
+
+	// FileDiff is the unified diff of one file within a commit.
+	FileDiff struct {
+		Path  string
+		Patch string
+	}
+)
+
 var (
 	// ErrPushRejected reports that the remote branch advanced between checkout and push.
 	ErrPushRejected        = errors.New("push rejected: remote branch was updated by another writer")
@@ -35,39 +103,6 @@ var (
 	ErrSelectionLimits     = errors.New("selection exceeds limits")
 	ErrSelectionInvalid    = errors.New("selection is invalid")
 )
-
-// WriteCheckout is a scratch clone prepared for committing to one branch.
-type WriteCheckout struct {
-	repo         *git.Repository
-	RepoPath     string
-	Branch       string
-	HeadCommit   string
-	url          string
-	BranchExists bool
-}
-
-// CommitFile is one file to write into the checkout, repo-relative.
-type CommitFile struct {
-	Path       string
-	Content    []byte
-	Executable bool
-}
-
-// CollectOptions bounds CollectFiles; SkipDir and SkipFile see base names while directories expand.
-type CollectOptions struct {
-	SkipDir      func(name string) bool
-	SkipFile     func(name string) bool
-	MaxFiles     int
-	MaxTotalSize int64
-}
-
-type fileCollector struct {
-	opts      CollectOptions
-	seen      map[string]struct{}
-	root      string
-	files     []CommitFile
-	totalSize int64
-}
 
 // CollectFiles reads the selected files and directories under root as commit files, sorted by path.
 func CollectFiles(ctx context.Context, root string, selection []string, opts CollectOptions) ([]CommitFile, error) {
@@ -139,23 +174,6 @@ func (c *fileCollector) add(ctx context.Context, entry acfstypes.Entry) error {
 	return nil
 }
 
-// CommitRequest describes the tree mutation to commit and push.
-type CommitRequest struct {
-	SignKey     *openpgp.Entity
-	Message     string
-	AuthorName  string
-	AuthorEmail string
-	Files       []CommitFile
-	Remove      []string
-}
-
-// CommitIdentity is the author Arcane commits as for one repository.
-type CommitIdentity struct {
-	SignKey *openpgp.Entity
-	Name    string
-	Email   string
-}
-
 // ParseSigningKey loads an armored OpenPGP private key and unlocks it with
 // passphrase when the key material is encrypted.
 func ParseSigningKey(armored, passphrase string) (*openpgp.Entity, error) {
@@ -186,22 +204,6 @@ func ParseSigningKey(armored, passphrase string) (*openpgp.Entity, error) {
 		return entity, nil
 	}
 	return nil, errors.New("signing key does not contain a private key")
-}
-
-// HistoryEntry is one commit touching a directory.
-type HistoryEntry struct {
-	Hash    string
-	Author  string
-	Email   string
-	Message string
-	Date    time.Time
-	Files   []string
-}
-
-// FileDiff is the unified diff of one file within a commit.
-type FileDiff struct {
-	Path  string
-	Patch string
 }
 
 // CheckoutForWrite clones url at branch into a scratch directory. A branch that

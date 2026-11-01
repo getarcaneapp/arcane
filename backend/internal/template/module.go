@@ -9,9 +9,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Module struct {
-	service *TemplateService
-}
+type (
+	Module struct {
+		service *TemplateService
+	}
+)
 
 func New(service *TemplateService) *Module {
 	return &Module{service: service}

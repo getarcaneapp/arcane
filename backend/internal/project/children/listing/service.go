@@ -28,13 +28,35 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/iconcatalog"
 )
 
-// Service projects stored projects and live Compose containers into list
-// rows, status counts and update-only rows for untracked Compose projects.
-type Service struct {
-	containers    func(ctx context.Context) ([]container.Summary, error)
-	imageService  *image.ImageService
-	summarizeRuns func(imageRefs []string, services []types.ProjectRuntimeService, scoped map[string]*types.ImageUpdateInfo) *types.ProjectUpdateInfo
-}
+type (
+	// Service projects stored projects and live Compose containers into list
+	// rows, status counts and update-only rows for untracked Compose projects.
+	Service struct {
+		containers    func(ctx context.Context) ([]container.Summary, error)
+		imageService  *image.ImageService
+		summarizeRuns func(imageRefs []string, services []types.ProjectRuntimeService, scoped map[string]*types.ImageUpdateInfo) *types.ProjectUpdateInfo
+	}
+
+	// Snapshot is the compose container listing shared by every row of one list request, grouped by project.
+	Snapshot struct {
+		ContainerIndex
+		Err                 error
+		currentContainerErr error
+		currentContainerID  string
+		Containers          []container.Summary
+	}
+
+	ContainerIndex struct {
+		byProject map[string][]container.Summary
+		byPath    map[string]projectPathContainers
+	}
+
+	projectPathContainers struct {
+		projectName string
+		containers  []container.Summary
+		ambiguous   bool
+	}
+)
 
 func New(
 	containers func(ctx context.Context) ([]container.Summary, error),
@@ -46,15 +68,6 @@ func New(
 		imageService:  imageService,
 		summarizeRuns: summarizeRuns,
 	}
-}
-
-// Snapshot is the compose container listing shared by every row of one list request, grouped by project.
-type Snapshot struct {
-	ContainerIndex
-	Err                 error
-	currentContainerErr error
-	currentContainerID  string
-	Containers          []container.Summary
 }
 
 // Snapshot lists compose containers once for every row of a list request.
@@ -71,17 +84,6 @@ func (s *Service) Snapshot(ctx context.Context) Snapshot {
 		currentContainerID:  currentContainerID,
 		currentContainerErr: currentContainerErr,
 	}
-}
-
-type ContainerIndex struct {
-	byProject map[string][]container.Summary
-	byPath    map[string]projectPathContainers
-}
-
-type projectPathContainers struct {
-	projectName string
-	containers  []container.Summary
-	ambiguous   bool
 }
 
 // ProjectContainers matches names first, then an unambiguous working directory.

@@ -12,10 +12,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Module struct {
-	service *ActivityService
-	handler *ActivityHandler
-}
+type (
+	Module struct {
+		service *ActivityService
+		handler *ActivityHandler
+	}
+)
 
 func New(service *ActivityService, environment EnvironmentDependencies) *Module {
 	return &Module{service: service, handler: NewHandler(service, environment)}

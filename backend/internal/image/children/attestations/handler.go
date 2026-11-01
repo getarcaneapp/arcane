@@ -16,20 +16,24 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-const statusClientClosedRequest = 499
+type (
+	// Handler serves image attestation endpoints.
+	Handler struct {
+		service *Service
+	}
 
-// Handler serves image attestation endpoints.
-type Handler struct {
-	service *Service
-}
+	GetImageAttestationsInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ImageName     string `path:"name" doc:"Image ID or image reference"`
+		Platform      string `query:"platform" doc:"OCI platform selector, for example linux/amd64"`
+		PredicateType string `query:"predicateType" doc:"Exact in-toto predicate type URI to include"`
+		WithStatement bool   `query:"statement" default:"false" doc:"Include verbatim statement JSON bodies"`
+	}
+)
 
-type GetImageAttestationsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ImageName     string `path:"name" doc:"Image ID or image reference"`
-	Platform      string `query:"platform" doc:"OCI platform selector, for example linux/amd64"`
-	PredicateType string `query:"predicateType" doc:"Exact in-toto predicate type URI to include"`
-	WithStatement bool   `query:"statement" default:"false" doc:"Include verbatim statement JSON bodies"`
-}
+const (
+	statusClientClosedRequest = 499
+)
 
 func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}

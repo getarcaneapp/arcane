@@ -20,6 +20,20 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+var jobRef = cmdutil.ResourceRef[types.JobStatus, types.JobStatus]{
+	EnvironmentScoped: true, Singular: "job", Plural: "jobs", IDHint: "the job ID", ListCmd: "arcane-cli jobs list",
+	SearchCandidates: func(ctx context.Context, c *client.Client, identifier string) ([]types.JobStatus, error) {
+		result, err := c.DoJSON[types.JobListResponse](ctx, http.MethodGet, clitypes.Jobs(c.EnvID()), nil)
+		if err != nil {
+			return nil, err
+		}
+		return slices.DeleteFunc(result.Jobs, func(item types.JobStatus) bool { return !strings.EqualFold(item.ID, identifier) }), nil
+	},
+	IdentifierOf: func(item types.JobStatus) string { return item.ID },
+	Label:        func(item types.JobStatus) string { return item.Name + " (" + item.ID + ")" },
+	Promote:      func(item types.JobStatus) *types.JobStatus { return &item },
+}
+
 // Command is the parent command for background jobs and their schedules.
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
@@ -221,18 +235,4 @@ func newRunCmd() *cobra.Command {
 	cmdutil.SetResource(jobRef, cmd)
 	cmd.Flags().StringVar(&opts.requestID, "request-id", "", "Stable request ID to reuse when retrying an uncertain submission")
 	return cmd
-}
-
-var jobRef = cmdutil.ResourceRef[types.JobStatus, types.JobStatus]{
-	EnvironmentScoped: true, Singular: "job", Plural: "jobs", IDHint: "the job ID", ListCmd: "arcane-cli jobs list",
-	SearchCandidates: func(ctx context.Context, c *client.Client, identifier string) ([]types.JobStatus, error) {
-		result, err := c.DoJSON[types.JobListResponse](ctx, http.MethodGet, clitypes.Jobs(c.EnvID()), nil)
-		if err != nil {
-			return nil, err
-		}
-		return slices.DeleteFunc(result.Jobs, func(item types.JobStatus) bool { return !strings.EqualFold(item.ID, identifier) }), nil
-	},
-	IdentifierOf: func(item types.JobStatus) string { return item.ID },
-	Label:        func(item types.JobStatus) string { return item.Name + " (" + item.ID + ")" },
-	Promote:      func(item types.JobStatus) *types.JobStatus { return &item },
 }

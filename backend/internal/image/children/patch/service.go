@@ -53,6 +53,38 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
+type (
+	// Target is one image a scheduled patch run covers.
+	Target struct {
+		ImageID   string `json:"imageId"`
+		ImageName string `json:"imageName"`
+	}
+
+	// Service patches image OS packages in place using the Copacetic
+	// library and records each run in the image_patches table.
+	Service struct {
+		db                   *database.DB
+		dockerService        *docker.DockerClientService
+		settingsService      *settings.SettingsService
+		activityService      *activity.ActivityService
+		registryService      *registry.ContainerRegistryService
+		vulnerabilityService *vulnerability.VulnerabilityService
+
+		// patchSlot serializes patch executions: one BuildKit patch at a time, and
+		// the process-wide logrus mirror only ever carries one run's output.
+		patchSlot chan struct{}
+	}
+
+	ServiceParams struct {
+		DB                   *database.DB
+		DockerService        *docker.DockerClientService
+		SettingsService      *settings.SettingsService
+		ActivityService      *activity.ActivityService
+		RegistryService      *registry.ContainerRegistryService
+		VulnerabilityService *vulnerability.VulnerabilityService
+	}
+)
+
 // scheduledPatchUser is the actor recorded for scheduled patches and their verification scans.
 var (
 	scheduledPatchUser = types.Actor{Username: "System"}
@@ -61,36 +93,6 @@ var (
 	// registryTransport traces platform-manifest lookups; ggcr adds its retry wrappers on top.
 	registryTransport = otelhttp.NewTransport(remote.DefaultTransport)
 )
-
-// Target is one image a scheduled patch run covers.
-type Target struct {
-	ImageID   string `json:"imageId"`
-	ImageName string `json:"imageName"`
-}
-
-// Service patches image OS packages in place using the Copacetic
-// library and records each run in the image_patches table.
-type Service struct {
-	db                   *database.DB
-	dockerService        *docker.DockerClientService
-	settingsService      *settings.SettingsService
-	activityService      *activity.ActivityService
-	registryService      *registry.ContainerRegistryService
-	vulnerabilityService *vulnerability.VulnerabilityService
-
-	// patchSlot serializes patch executions: one BuildKit patch at a time, and
-	// the process-wide logrus mirror only ever carries one run's output.
-	patchSlot chan struct{}
-}
-
-type ServiceParams struct {
-	DB                   *database.DB
-	DockerService        *docker.DockerClientService
-	SettingsService      *settings.SettingsService
-	ActivityService      *activity.ActivityService
-	RegistryService      *registry.ContainerRegistryService
-	VulnerabilityService *vulnerability.VulnerabilityService
-}
 
 func NewService(p ServiceParams) *Service {
 	// Copa logs through the global logrus logger; route it into slog so its

@@ -10,28 +10,30 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Handler struct {
-	service *Service
-	audit   func(ctx context.Context, environmentID, action, resourceType, resourceName string, metadata map[string]any)
-}
+type (
+	Handler struct {
+		service *Service
+		audit   func(ctx context.Context, environmentID, action, resourceType, resourceName string, metadata map[string]any)
+	}
+
+	PlayKubeInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.KubePlayRequest
+	}
+
+	DownKubeInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.KubeDownRequest
+	}
+
+	GenerateKubeInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.KubeGenerateRequest
+	}
+)
 
 func NewHandler(service *Service, audit func(ctx context.Context, environmentID, action, resourceType, resourceName string, metadata map[string]any)) *Handler {
 	return &Handler{service: service, audit: audit}
-}
-
-type PlayKubeInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.KubePlayRequest
-}
-
-type DownKubeInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.KubeDownRequest
-}
-
-type GenerateKubeInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.KubeGenerateRequest
 }
 
 func (h *Handler) Play(ctx context.Context, input *PlayKubeInput) (*handlerutil.Out[types.KubePlayReport], error) {

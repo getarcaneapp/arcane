@@ -8,10 +8,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type mockSettingsPruner struct {
-	pruneErr    error
-	pruneCalled bool
-}
+type (
+	mockSettingsPruner struct {
+		pruneErr    error
+		pruneCalled bool
+	}
+)
 
 func (m *mockSettingsPruner) PruneUnknownSettings(ctx context.Context) error {
 	m.pruneCalled = true

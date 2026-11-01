@@ -34,6 +34,32 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
+type (
+	// Service deploys and manages swarm stacks and their persisted sources.
+	Service struct {
+		docker           *dockerInternal.DockerClientService
+		ensureManager    func(ctx context.Context) error
+		listTasks        func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
+		paginateServices func(ctx context.Context, services []swarm.Service, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error)
+		registryAuth     func(ctx context.Context, imageRef string) (string, error)
+		settingsService  *settings.SettingsService
+	}
+
+	ServiceParams struct {
+		DockerService    *dockerInternal.DockerClientService
+		EnsureManager    func(ctx context.Context) error
+		ListTasks        func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
+		PaginateServices func(ctx context.Context, services []swarm.Service, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error)
+		RegistryAuth     func(ctx context.Context, imageRef string) (string, error)
+		SettingsService  *settings.SettingsService
+	}
+
+	StackSourceUpdate struct {
+		Submitted map[string]bool
+		Source    types.SwarmStackSource
+	}
+)
+
 const (
 	defaultSwarmStackSourceRootDir = "/app/data/swarm/sources"
 	swarmStackComposeFilename      = "compose.yaml"
@@ -41,24 +67,22 @@ const (
 	swarmStackEnvFilename          = ".env"
 )
 
-// Service deploys and manages swarm stacks and their persisted sources.
-type Service struct {
-	docker           *dockerInternal.DockerClientService
-	ensureManager    func(ctx context.Context) error
-	listTasks        func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
-	paginateServices func(ctx context.Context, services []swarm.Service, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error)
-	registryAuth     func(ctx context.Context, imageRef string) (string, error)
-	settingsService  *settings.SettingsService
-}
+var (
+	stackPagination = pagination.Config[types.SwarmStackSummary]{
+		SearchAccessors: []pagination.SearchAccessor[types.SwarmStackSummary]{
+			func(stack types.SwarmStackSummary) (string, error) { return stack.Name, nil },
+			func(stack types.SwarmStackSummary) (string, error) { return stack.Namespace, nil },
+		},
+		SortBindings: []pagination.SortBinding[types.SwarmStackSummary]{
+			{Key: "name", Fn: func(a, b types.SwarmStackSummary) int { return strings.Compare(a.Name, b.Name) }},
+			{Key: "services", Fn: func(a, b types.SwarmStackSummary) int { return cmp.Compare(a.Services, b.Services) }},
+			{Key: "created", Fn: func(a, b types.SwarmStackSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
+			{Key: "updated", Fn: func(a, b types.SwarmStackSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
+		},
+	}
 
-type ServiceParams struct {
-	DockerService    *dockerInternal.DockerClientService
-	EnsureManager    func(ctx context.Context) error
-	ListTasks        func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
-	PaginateServices func(ctx context.Context, services []swarm.Service, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error)
-	RegistryAuth     func(ctx context.Context, imageRef string) (string, error)
-	SettingsService  *settings.SettingsService
-}
+	deployStackAfterSourceUpdate = (*Service).DeployStack
+)
 
 func NewService(p ServiceParams) *Service {
 	return &Service{
@@ -69,19 +93,6 @@ func NewService(p ServiceParams) *Service {
 		registryAuth:     p.RegistryAuth,
 		settingsService:  p.SettingsService,
 	}
-}
-
-var stackPagination = pagination.Config[types.SwarmStackSummary]{
-	SearchAccessors: []pagination.SearchAccessor[types.SwarmStackSummary]{
-		func(stack types.SwarmStackSummary) (string, error) { return stack.Name, nil },
-		func(stack types.SwarmStackSummary) (string, error) { return stack.Namespace, nil },
-	},
-	SortBindings: []pagination.SortBinding[types.SwarmStackSummary]{
-		{Key: "name", Fn: func(a, b types.SwarmStackSummary) int { return strings.Compare(a.Name, b.Name) }},
-		{Key: "services", Fn: func(a, b types.SwarmStackSummary) int { return cmp.Compare(a.Services, b.Services) }},
-		{Key: "created", Fn: func(a, b types.SwarmStackSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
-		{Key: "updated", Fn: func(a, b types.SwarmStackSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
-	},
 }
 
 func (s *Service) ListStacksPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.SwarmStackSummary, pagination.Response, error) {
@@ -374,13 +385,6 @@ func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName s
 		EnvContent:      envContent,
 		Files:           files,
 	}, nil
-}
-
-var deployStackAfterSourceUpdate = (*Service).DeployStack
-
-type StackSourceUpdate struct {
-	Submitted map[string]bool
-	Source    types.SwarmStackSource
 }
 
 func (s *Service) UpdateStackSource(ctx context.Context, environmentID, stackName string, change StackSourceUpdate) (*types.SwarmStackSource, error) {

@@ -22,20 +22,22 @@ import (
 	"github.com/theupdateframework/go-tuf/v2/metadata/fetcher"
 )
 
+type (
+	// Verifier authenticates checksum bytes against the configured release keys and Sigstore infrastructure.
+	Verifier struct {
+		keys []*verify.Verifier
+	}
+
+	trustHTTPClient struct {
+		ctx    context.Context
+		client http.Client
+	}
+)
+
 // For rotation, ship a CLI trusting both keys before signing exclusively with the new key.
 //
 //go:embed cosign.pub
 var cosignPublicKey []byte
-
-// Verifier authenticates checksum bytes against the configured release keys and Sigstore infrastructure.
-type Verifier struct {
-	keys []*verify.Verifier
-}
-
-type trustHTTPClient struct {
-	ctx    context.Context
-	client http.Client
-}
 
 func (c *trustHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	return c.client.Do(req.Clone(c.ctx))

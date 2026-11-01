@@ -18,46 +18,47 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
-type contextKey string
+type (
+	contextKey string
+
+	OutputMode string
+
+	Options struct {
+		EnvOverride    string
+		OutputMode     OutputMode
+		AssumeYes      bool
+		NoColor        bool
+		RequestTimeout time.Duration
+	}
+
+	AppContext struct {
+		environmentsErr error
+
+		clientErr       error
+		unauthClientErr error
+		cfg             *clitypes.Config
+		client          *client.Client
+
+		unauthClient *client.Client
+		selectedEnv  string
+		environments []types.Environment
+		Options
+		environmentsOnce sync.Once
+
+		clientOnce sync.Once
+
+		unauthClientOnce sync.Once
+		AllConfirmed     bool
+	}
+)
 
 const (
 	// AppContextKey is the context key under which the CLI's AppContext is stored;
 	// set it with context.WithValue and read it back with From.
-	AppContextKey contextKey = "arcane_app_context"
-
+	AppContextKey  contextKey = "arcane_app_context"
 	OutputModeText OutputMode = "text"
 	OutputModeJSON OutputMode = "json"
 )
-
-type OutputMode string
-
-type Options struct {
-	EnvOverride    string
-	OutputMode     OutputMode
-	AssumeYes      bool
-	NoColor        bool
-	RequestTimeout time.Duration
-}
-
-type AppContext struct {
-	environmentsErr error
-
-	clientErr       error
-	unauthClientErr error
-	cfg             *clitypes.Config
-	client          *client.Client
-
-	unauthClient *client.Client
-	selectedEnv  string
-	environments []types.Environment
-	Options
-	environmentsOnce sync.Once
-
-	clientOnce sync.Once
-
-	unauthClientOnce sync.Once
-	AllConfirmed     bool
-}
 
 func New(opts Options) (*AppContext, error) {
 	cfg, err := config.Load()

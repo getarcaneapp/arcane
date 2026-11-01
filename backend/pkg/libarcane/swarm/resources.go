@@ -14,37 +14,39 @@ import (
 	dockerclient "github.com/moby/moby/client"
 )
 
-type resourceMeta struct {
-	ID   string
-	Name string
-}
+type (
+	resourceMeta struct {
+		ID   string
+		Name string
+	}
 
-type managedFileResourceSpec struct {
-	Labels         map[string]string
-	DriverOpts     map[string]string
-	Name           string
-	Driver         string
-	TemplateDriver string
-	Data           []byte
-}
+	managedFileResourceSpec struct {
+		Labels         map[string]string
+		DriverOpts     map[string]string
+		Name           string
+		Driver         string
+		TemplateDriver string
+		Data           []byte
+	}
 
-type plannedFileResource struct {
-	Meta       resourceMeta
-	BaseName   string
-	Hash       string
-	Config     composegotypes.FileObjectConfig
-	Labels     map[string]string
-	Data       []byte
-	IsExternal bool
-}
+	plannedFileResource struct {
+		Meta       resourceMeta
+		BaseName   string
+		Hash       string
+		Config     composegotypes.FileObjectConfig
+		Labels     map[string]string
+		Data       []byte
+		IsExternal bool
+	}
 
-type fileResourceAdapter struct {
-	Inspect      func(context.Context, string) (resourceMeta, error)
-	Create       func(context.Context, managedFileResourceSpec) (resourceMeta, error)
-	List         func(context.Context, dockerclient.Filters) ([]staleManagedResource, error)
-	Remove       func(context.Context, string) error
-	ResourceType string
-}
+	fileResourceAdapter struct {
+		Inspect      func(context.Context, string) (resourceMeta, error)
+		Create       func(context.Context, managedFileResourceSpec) (resourceMeta, error)
+		List         func(context.Context, dockerclient.Filters) ([]staleManagedResource, error)
+		Remove       func(context.Context, string) error
+		ResourceType string
+	}
+)
 
 func planNetworks(project *composegotypes.Project, ns namespace) map[string]string {
 	result := make(map[string]string, len(project.Networks))

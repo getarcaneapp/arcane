@@ -20,8 +20,10 @@ import (
 	"kit.getarcane.app"
 )
 
-// genericPayloadTemplateID names the Shoutrrr template a user's payload template is registered under.
-const genericPayloadTemplateID = "arcane"
+const (
+	// genericPayloadTemplateID names the Shoutrrr template a user's payload template is registered under.
+	genericPayloadTemplateID = "arcane"
+)
 
 // genericHTTPClient bounds generic webhook sends; Shoutrrr's default client has no timeout.
 var genericHTTPClient = &http.Client{Timeout: 15 * time.Second}

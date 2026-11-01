@@ -24,12 +24,16 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
-const testDigest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+type (
+	testGitHub struct {
+		releases []githubRelease
+		status   int
+	}
+)
 
-type testGitHub struct {
-	releases []githubRelease
-	status   int
-}
+const (
+	testDigest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+)
 
 func newTestDockerService(t *testing.T, labels map[string]string) *docker.DockerClientService {
 	t.Helper()

@@ -28,6 +28,27 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+type (
+	StatusError struct {
+		Body       string
+		StatusCode int
+	}
+
+	// Client provides authenticated requests, token refresh, and response decoding for the Arcane API.
+	Client struct {
+		baseURLParsed *url.URL
+		httpClient    *http.Client
+		baseURL       string
+		apiKey        string
+		jwtToken      string
+		refreshToken  string
+		envID         string
+		maxAttempts   int
+		baseBackoff   time.Duration
+		maxBackoff    time.Duration
+	}
+)
+
 const (
 	headerAPIKey   = "X-Api-Key" // #nosec G101 -- HTTP header name, not a credential
 	defaultTimeout = 10 * time.Minute
@@ -42,27 +63,8 @@ var retryableStatusCodes = map[int]struct{}{
 	http.StatusGatewayTimeout:     {},
 }
 
-type StatusError struct {
-	Body       string
-	StatusCode int
-}
-
 func (e *StatusError) Error() string {
 	return fmt.Sprintf("request failed with status %d: %s", e.StatusCode, e.Body)
-}
-
-// Client provides authenticated requests, token refresh, and response decoding for the Arcane API.
-type Client struct {
-	baseURLParsed *url.URL
-	httpClient    *http.Client
-	baseURL       string
-	apiKey        string
-	jwtToken      string
-	refreshToken  string
-	envID         string
-	maxAttempts   int
-	baseBackoff   time.Duration
-	maxBackoff    time.Duration
 }
 
 // New validates configuration and creates an authenticated client with the configured environment and a ten-minute timeout.

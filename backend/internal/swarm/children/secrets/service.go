@@ -18,15 +18,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// Service manages swarm secrets.
-type Service struct {
-	docker        *docker.DockerClientService
-	ensureManager func(ctx context.Context) error
-}
-
-func NewService(dockerService *docker.DockerClientService, ensureManager func(ctx context.Context) error) *Service {
-	return &Service{docker: dockerService, ensureManager: ensureManager}
-}
+type (
+	// Service manages swarm secrets.
+	Service struct {
+		docker        *docker.DockerClientService
+		ensureManager func(ctx context.Context) error
+	}
+)
 
 var secretPagination = pagination.Config[types.SwarmSecret]{
 	SearchAccessors: []pagination.SearchAccessor[types.SwarmSecret]{
@@ -48,6 +46,10 @@ var secretPagination = pagination.Config[types.SwarmSecret]{
 			return a.UpdatedAt.Compare(b.UpdatedAt)
 		}},
 	},
+}
+
+func NewService(dockerService *docker.DockerClientService, ensureManager func(ctx context.Context) error) *Service {
+	return &Service{docker: dockerService, ensureManager: ensureManager}
 }
 
 func (s *Service) ListSecrets(ctx context.Context, params pagination.QueryParams) ([]types.SwarmSecret, pagination.Response, error) {

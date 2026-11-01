@@ -19,48 +19,50 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
-// UserHandler handles user management endpoints.
-type UserHandler struct {
-	userService              *UserService
-	invalidateUserTokenCache func(string)
-	settingsService          *settings.SettingsService
-}
+type (
+	// UserHandler handles user management endpoints.
+	UserHandler struct {
+		userService              *UserService
+		invalidateUserTokenCache func(string)
+		settingsService          *settings.SettingsService
+	}
 
-type ListUsersInput struct {
-	Search string `query:"search" doc:"Search query"`
-	Sort   string `query:"sort" doc:"Column to sort by"`
-	Order  string `query:"order" default:"asc" doc:"Sort direction"`
-	Start  int    `query:"start" default:"0" doc:"Start index"`
-	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
-}
+	ListUsersInput struct {
+		Search string `query:"search" doc:"Search query"`
+		Sort   string `query:"sort" doc:"Column to sort by"`
+		Order  string `query:"order" default:"asc" doc:"Sort direction"`
+		Start  int    `query:"start" default:"0" doc:"Start index"`
+		Limit  int    `query:"limit" default:"20" doc:"Items per page"`
+	}
 
-type CreateUserInput struct {
-	types.Create[types.User]
-}
+	CreateUserInput struct {
+		types.Create[types.User]
+	}
 
-type GetUserInput struct {
-	UserID string `path:"userId" doc:"User ID"`
-}
+	GetUserInput struct {
+		UserID string `path:"userId" doc:"User ID"`
+	}
 
-type UpdateUserInput struct {
-	UserID string `path:"userId" doc:"User ID"`
-	types.Update[types.User]
-}
+	UpdateUserInput struct {
+		UserID string `path:"userId" doc:"User ID"`
+		types.Update[types.User]
+	}
 
-type DeleteUserInput struct {
-	UserID string `path:"userId" doc:"User ID"`
-}
+	DeleteUserInput struct {
+		UserID string `path:"userId" doc:"User ID"`
+	}
 
-type GetUserAvatarInput struct {
-	UserID string `path:"userId" doc:"User ID"`
-}
+	GetUserAvatarInput struct {
+		UserID string `path:"userId" doc:"User ID"`
+	}
 
-type GetUserAvatarOutput struct {
-	ContentType         string `header:"Content-Type"`
-	CacheControl        string `header:"Cache-Control"`
-	XContentTypeOptions string `header:"X-Content-Type-Options"`
-	Body                []byte
-}
+	GetUserAvatarOutput struct {
+		ContentType         string `header:"Content-Type"`
+		CacheControl        string `header:"Cache-Control"`
+		XContentTypeOptions string `header:"X-Content-Type-Options"`
+		Body                []byte
+	}
+)
 
 // ListUsers returns a paginated list of users.
 func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*handlerutil.Page[types.User], error) {

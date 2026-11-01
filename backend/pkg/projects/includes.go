@@ -15,27 +15,29 @@ import (
 	"kit.getarcane.app/acfs"
 )
 
-// Security Model for Include Files:
-// - READ: Docker Compose's spec allows include files from anywhere (parent dirs,
-//   absolute paths). ParseIncludes does NOT enforce containment; it returns whatever
-//   the compose file points at. Callers must validate containment and symlinks before
-//   reading include content or returning inc.Content to users.
-// - WRITE/DELETE: Restricted to files within the project directory only for security.
-//   Always go through ValidateIncludePathForWrite.
+type (
+	// Security Model for Include Files:
+	// - READ: Docker Compose's spec allows include files from anywhere (parent dirs,
+	//   absolute paths). ParseIncludes does NOT enforce containment; it returns whatever
+	//   the compose file points at. Callers must validate containment and symlinks before
+	//   reading include content or returning inc.Content to users.
+	// - WRITE/DELETE: Restricted to files within the project directory only for security.
+	//   Always go through ValidateIncludePathForWrite.
 
-type IncludeFile struct {
-	Path         string `json:"path"`
-	RelativePath string `json:"relative_path"`
-	Content      string `json:"content"`
-}
+	IncludeFile struct {
+		Path         string `json:"path"`
+		RelativePath string `json:"relative_path"`
+		Content      string `json:"content"`
+	}
 
-// MissingIncludeStubLoader creates temporary stub compose files for missing
-// include paths during validation.
-type MissingIncludeStubLoader struct {
-	stubs       map[string]string
-	projectPath string
-	tempDir     string
-}
+	// MissingIncludeStubLoader creates temporary stub compose files for missing
+	// include paths during validation.
+	MissingIncludeStubLoader struct {
+		stubs       map[string]string
+		projectPath string
+		tempDir     string
+	}
+)
 
 func (l *MissingIncludeStubLoader) Accept(localPath string) bool {
 	_, ok := l.resolveMissingInclude(localPath).Get()

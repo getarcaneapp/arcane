@@ -38,35 +38,37 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-type BuildService struct {
-	db              *database.DB
-	settings        *settings.SettingsService
-	dockerService   *dockerInternal.DockerClientService
-	registryService *registry.ContainerRegistryService
-	gitRepository   *gitrepo.GitRepositoryService
-	eventService    *event.EventService
-	workspace       *workspace.Service
-	builder         buildtypes.Builder
-	gitProbeFn      func(context.Context, string, git.AuthConfig) error
-	gitCloneFn      func(context.Context, string, string, git.AuthConfig) (string, error)
-	gitCleanupFn    func(string) error
-}
+type (
+	BuildService struct {
+		db              *database.DB
+		settings        *settings.SettingsService
+		dockerService   *dockerInternal.DockerClientService
+		registryService *registry.ContainerRegistryService
+		gitRepository   *gitrepo.GitRepositoryService
+		eventService    *event.EventService
+		workspace       *workspace.Service
+		builder         buildtypes.Builder
+		gitProbeFn      func(context.Context, string, git.AuthConfig) error
+		gitCloneFn      func(context.Context, string, string, git.AuthConfig) (string, error)
+		gitCleanupFn    func(string) error
+	}
+
+	BuildServiceParams struct {
+		fx.In
+
+		DB              *database.DB
+		LocalSettings   *settings.SettingsService
+		DockerService   *dockerInternal.DockerClientService
+		RegistryService *registry.ContainerRegistryService
+		GitRepository   *gitrepo.GitRepositoryService
+		EventService    *event.EventService
+	}
+)
 
 const (
 	buildHistoryOutputLimitBytes = 2 * 1024 * 1024
 	deleteBuildsBatchSize        = 500
 )
-
-type BuildServiceParams struct {
-	fx.In
-
-	DB              *database.DB
-	LocalSettings   *settings.SettingsService
-	DockerService   *dockerInternal.DockerClientService
-	RegistryService *registry.ContainerRegistryService
-	GitRepository   *gitrepo.GitRepositoryService
-	EventService    *event.EventService
-}
 
 func NewBuildService(p BuildServiceParams) (*BuildService, error) {
 	svc := &BuildService{

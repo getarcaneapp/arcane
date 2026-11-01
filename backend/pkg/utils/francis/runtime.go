@@ -29,41 +29,45 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// TablePrefix namespaces the Francis tables in their store.
-const TablePrefix = "arcane_francis"
+type (
+	// Runtime starts one durable actor host and publishes its service after readiness.
+	// Services must wait for Ready before using Service, including during startup retries.
+	Runtime struct {
+		runError      error
+		service       *actor.Service
+		ready         chan struct{}
+		done          chan struct{}
+		cancel        context.CancelFunc
+		store         *gorm.DB
+		actorNames    sync.Map
+		address       string
+		storeURL      string
+		options       []local.HostOption
+		registrations []registration
+		workflows     []*workflow.Workflow
+		mu            sync.Mutex
+		started       bool
+	}
 
-// Runtime starts one durable actor host and publishes its service after readiness.
-// Services must wait for Ready before using Service, including during startup retries.
-type Runtime struct {
-	runError      error
-	service       *actor.Service
-	ready         chan struct{}
-	done          chan struct{}
-	cancel        context.CancelFunc
-	store         *gorm.DB
-	actorNames    sync.Map
-	address       string
-	storeURL      string
-	options       []local.HostOption
-	registrations []registration
-	workflows     []*workflow.Workflow
-	mu            sync.Mutex
-	started       bool
-}
+	registration struct {
+		actorType string
+		factory   actor.Factory
+		options   []local.RegisterActorOption
+	}
 
-type registration struct {
-	actorType string
-	factory   actor.Factory
-	options   []local.RegisterActorOption
-}
+	Config struct {
+		DatabaseURL   string
+		EncryptionKey string
+		InstanceID    string
+		Port          string
+		HostOptions   []local.HostOption
+	}
+)
 
-type Config struct {
-	DatabaseURL   string
-	EncryptionKey string
-	InstanceID    string
-	Port          string
-	HostOptions   []local.HostOption
-}
+const (
+	// TablePrefix namespaces the Francis tables in their store.
+	TablePrefix = "arcane_francis"
+)
 
 func New(cfg Config) (*Runtime, error) {
 	portNumber, err := strconv.Atoi(cmp.Or(cfg.Port, "3551"))
@@ -122,8 +126,10 @@ func (r *Runtime) ConfigureIdentity(encryptionKey, instanceID string) error {
 }
 
 func (r *Runtime) Service() *actor.Service { return r.service }
-func (r *Runtime) Ready() <-chan struct{}  { return r.ready }
-func (r *Runtime) Done() <-chan struct{}   { return r.done }
+
+func (r *Runtime) Ready() <-chan struct{} { return r.ready }
+
+func (r *Runtime) Done() <-chan struct{} { return r.done }
 
 // Store lazily opens a small pool on Francis storage for diagnostics and backups.
 func (r *Runtime) Store() (*gorm.DB, error) {

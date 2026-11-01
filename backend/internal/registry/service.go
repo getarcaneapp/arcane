@@ -57,6 +57,49 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
+type (
+	RegistryDaemonClient interface {
+		RegistryLogin(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error)
+		DistributionInspect(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error)
+	}
+
+	registryDaemonGetter func(context.Context) (RegistryDaemonClient, error)
+
+	resolvedRegistryCredential struct {
+		Username      string
+		Token         string
+		ServerAddress string
+	}
+
+	registryRateLimitCacheEntry struct {
+		CheckedAt time.Time              `json:"checkedAt"`
+		RateLimit registry.RateLimitInfo `json:"rateLimit"`
+	}
+
+	rateLimitRoundTripFunc func(*http.Request) (*http.Response, error)
+
+	ContainerRegistryService struct {
+		db                     *database.DB
+		dockerClient           registryDaemonGetter
+		cache                  *hot.HotCache[string, string]
+		digestFailures         *hot.HotCache[string, error]
+		labelCache             *hot.HotCache[string, map[string]string]
+		ecrRefreshGroup        singleflight.Group
+		distributionHTTPClient *http.Client
+		kvService              *kv.KVService
+		settingsService        *settings.SettingsService
+		browse                 *browse.Service
+	}
+
+	ContainerRegistryServiceParams struct {
+		DB              *database.DB
+		DockerClient    registryDaemonGetter
+		KVService       *kv.KVService
+		SettingsService *settings.SettingsService
+		HTTPClient      *http.Client
+	}
+)
+
 const (
 	registryCacheTTL                    = 30 * time.Minute
 	registryDigestFailureTTL            = time.Minute
@@ -75,49 +118,8 @@ const (
 	versionLabelCacheTTL                = 3 * time.Hour
 )
 
-type RegistryDaemonClient interface {
-	RegistryLogin(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error)
-	DistributionInspect(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error)
-}
-
-type registryDaemonGetter func(context.Context) (RegistryDaemonClient, error)
-
-type resolvedRegistryCredential struct {
-	Username      string
-	Token         string
-	ServerAddress string
-}
-
-type registryRateLimitCacheEntry struct {
-	CheckedAt time.Time              `json:"checkedAt"`
-	RateLimit registry.RateLimitInfo `json:"rateLimit"`
-}
-
-type rateLimitRoundTripFunc func(*http.Request) (*http.Response, error)
-
 func (f rateLimitRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
-}
-
-type ContainerRegistryService struct {
-	db                     *database.DB
-	dockerClient           registryDaemonGetter
-	cache                  *hot.HotCache[string, string]
-	digestFailures         *hot.HotCache[string, error]
-	labelCache             *hot.HotCache[string, map[string]string]
-	ecrRefreshGroup        singleflight.Group
-	distributionHTTPClient *http.Client
-	kvService              *kv.KVService
-	settingsService        *settings.SettingsService
-	browse                 *browse.Service
-}
-
-type ContainerRegistryServiceParams struct {
-	DB              *database.DB
-	DockerClient    registryDaemonGetter
-	KVService       *kv.KVService
-	SettingsService *settings.SettingsService
-	HTTPClient      *http.Client
 }
 
 // NewContainerRegistryService creates a registry service. kvService may be nil

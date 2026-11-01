@@ -10,46 +10,48 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// EventHandler handles event management endpoints.
-type EventHandler struct {
-	eventService *EventService
-}
+type (
+	// EventHandler handles event management endpoints.
+	EventHandler struct {
+		eventService *EventService
+	}
 
-type ListEventsInput struct {
-	Search       string `query:"search" doc:"Search query"`
-	Sort         string `query:"sort" doc:"Column to sort by"`
-	Order        string `query:"order" default:"asc" doc:"Sort direction"`
-	Severity     string `query:"severity" doc:"Filter by severity"`
-	Type         string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
-	Start        int    `query:"start" default:"0" doc:"Start index"`
-	Limit        int    `query:"limit" default:"20" doc:"Limit"`
-	IncludeTotal bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
-}
+	ListEventsInput struct {
+		Search       string `query:"search" doc:"Search query"`
+		Sort         string `query:"sort" doc:"Column to sort by"`
+		Order        string `query:"order" default:"asc" doc:"Sort direction"`
+		Severity     string `query:"severity" doc:"Filter by severity"`
+		Type         string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
+		Start        int    `query:"start" default:"0" doc:"Start index"`
+		Limit        int    `query:"limit" default:"20" doc:"Limit"`
+		IncludeTotal bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
+	}
 
-type GetEventStatsInput struct{}
+	GetEventStatsInput struct{}
 
-type GetEventsByEnvironmentInput struct {
-	EnvironmentID string `path:"environmentId" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction"`
-	Severity      string `query:"severity" doc:"Filter by severity"`
-	Type          string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
-	Start         int    `query:"start" default:"0" doc:"Start index"`
-	Limit         int    `query:"limit" default:"20" doc:"Limit"`
-	IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
-}
+	GetEventsByEnvironmentInput struct {
+		EnvironmentID string `path:"environmentId" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction"`
+		Severity      string `query:"severity" doc:"Filter by severity"`
+		Type          string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
+		Start         int    `query:"start" default:"0" doc:"Start index"`
+		Limit         int    `query:"limit" default:"20" doc:"Limit"`
+		IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
+	}
 
-type WaitForEnvironmentChangesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Epoch         string `query:"epoch" doc:"Epoch from the previous response; a different epoch returns immediately"`
-	Since         uint64 `query:"since" doc:"Highest kind revision already seen; waits until a newer revision exists"`
-	Wait          uint64 `query:"wait" doc:"Maximum seconds to wait for a newer revision; capped at the server limit"`
-}
+	WaitForEnvironmentChangesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Epoch         string `query:"epoch" doc:"Epoch from the previous response; a different epoch returns immediately"`
+		Since         uint64 `query:"since" doc:"Highest kind revision already seen; waits until a newer revision exists"`
+		Wait          uint64 `query:"wait" doc:"Maximum seconds to wait for a newer revision; capped at the server limit"`
+	}
 
-type DeleteEventInput struct {
-	EventID string `path:"eventId" doc:"Event ID"`
-}
+	DeleteEventInput struct {
+		EventID string `path:"eventId" doc:"Event ID"`
+	}
+)
 
 // ListEvents returns a paginated list of events.
 func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (*handlerutil.Page[types.Event], error) {

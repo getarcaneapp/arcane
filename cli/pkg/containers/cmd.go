@@ -23,6 +23,57 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+type (
+	createOptions struct {
+		file       string
+		name       string
+		image      string
+		restart    string
+		hostname   string
+		user       string
+		workdir    string
+		entrypoint string
+		cmd        string
+		env        []string
+		port       []string
+		volume     []string
+		label      []string
+		network    []string
+		memory     int64
+		cpus       float64
+		privileged bool
+	}
+)
+
+var ContainerRef = cmdutil.ResourceRef[types.ContainerDetails, types.ContainerSummary]{
+	EnvironmentScoped: true,
+	Singular:          "container",
+	Plural:            "containers",
+	IDHint:            "the container ID",
+	ListCmd:           "arcane containers list",
+	GetPath:           clitypes.Container,
+	ListPath:          clitypes.Containers,
+	Matches: func(item types.ContainerSummary, identifierLower, original string) bool {
+		return strings.Contains(strings.ToLower(item.ID), identifierLower) ||
+			strings.Contains(strings.ToLower(item.Image), identifierLower) ||
+			slices.ContainsFunc(item.Names, func(name string) bool {
+				trimmedName := strings.TrimPrefix(name, "/")
+				return strings.Contains(strings.ToLower(trimmedName), identifierLower) || strings.EqualFold(trimmedName, original) || strings.EqualFold(name, original)
+			})
+	},
+	Label: func(item types.ContainerSummary) string {
+		name := cmp.Or(docker.ContainerNameFromNames(item.Names), item.ID[:min(len(item.ID), 12)])
+		image := cmp.Or(item.Image, "<unknown>")
+		state := cmp.Or(item.State, "unknown")
+		return fmt.Sprintf("%s (%s, %s)", name, item.ID[:min(len(item.ID), 12)], image+" / "+state)
+	},
+	Promote: func(summary types.ContainerSummary) *types.ContainerDetails {
+		return &types.ContainerDetails{ID: summary.ID, Name: docker.ContainerNameFromNames(summary.Names)}
+	},
+	IDOf:         func(item types.ContainerSummary) string { return item.ID },
+	IdentifierOf: func(details types.ContainerDetails) string { return details.ID },
+}
+
 // Command builds the containers command tree.
 func Command() *cobra.Command {
 	command := &cobra.Command{
@@ -417,26 +468,6 @@ func newCountsCmd() *cobra.Command {
 	}
 }
 
-type createOptions struct {
-	file       string
-	name       string
-	image      string
-	restart    string
-	hostname   string
-	user       string
-	workdir    string
-	entrypoint string
-	cmd        string
-	env        []string
-	port       []string
-	volume     []string
-	label      []string
-	network    []string
-	memory     int64
-	cpus       float64
-	privileged bool
-}
-
 func newCreateCmd() *cobra.Command {
 	opts := &createOptions{}
 	command := &cobra.Command{
@@ -503,35 +534,6 @@ func containerDisplayName(details *types.ContainerDetails) string {
 		return details.Name
 	}
 	return details.ID[:min(len(details.ID), 12)]
-}
-
-var ContainerRef = cmdutil.ResourceRef[types.ContainerDetails, types.ContainerSummary]{
-	EnvironmentScoped: true,
-	Singular:          "container",
-	Plural:            "containers",
-	IDHint:            "the container ID",
-	ListCmd:           "arcane containers list",
-	GetPath:           clitypes.Container,
-	ListPath:          clitypes.Containers,
-	Matches: func(item types.ContainerSummary, identifierLower, original string) bool {
-		return strings.Contains(strings.ToLower(item.ID), identifierLower) ||
-			strings.Contains(strings.ToLower(item.Image), identifierLower) ||
-			slices.ContainsFunc(item.Names, func(name string) bool {
-				trimmedName := strings.TrimPrefix(name, "/")
-				return strings.Contains(strings.ToLower(trimmedName), identifierLower) || strings.EqualFold(trimmedName, original) || strings.EqualFold(name, original)
-			})
-	},
-	Label: func(item types.ContainerSummary) string {
-		name := cmp.Or(docker.ContainerNameFromNames(item.Names), item.ID[:min(len(item.ID), 12)])
-		image := cmp.Or(item.Image, "<unknown>")
-		state := cmp.Or(item.State, "unknown")
-		return fmt.Sprintf("%s (%s, %s)", name, item.ID[:min(len(item.ID), 12)], image+" / "+state)
-	},
-	Promote: func(summary types.ContainerSummary) *types.ContainerDetails {
-		return &types.ContainerDetails{ID: summary.ID, Name: docker.ContainerNameFromNames(summary.Names)}
-	},
-	IDOf:         func(item types.ContainerSummary) string { return item.ID },
-	IdentifierOf: func(details types.ContainerDetails) string { return details.ID },
 }
 
 func (opts *createOptions) request(cmd *cobra.Command) (types.Container, error) {

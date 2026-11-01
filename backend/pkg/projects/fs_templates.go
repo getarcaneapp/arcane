@@ -19,6 +19,50 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
+// Previous built-in templates; unedited on-disk copies are upgraded to the current defaults.
+const (
+	retiredDefaultComposeTemplate = `services:
+  nginx:
+    image: nginx:alpine
+    container_name: nginx_service
+    env_file:
+      - .env
+    ports:
+      - "8080:80"
+    volumes:
+      - nginx_data:/usr/share/nginx/html
+    restart: unless-stopped
+
+volumes:
+  nginx_data:
+    driver: local
+`
+	retiredDefaultEnvTemplate = `# Environment Variables
+# These variables will be available to your project services
+# Format: VARIABLE_NAME=value
+
+# Web Server Configuration
+NGINX_HOST=localhost
+NGINX_PORT=80
+
+# Database Configuration
+POSTGRES_DB=myapp
+POSTGRES_USER=myuser
+POSTGRES_PASSWORD=mypassword
+POSTGRES_PORT=5432
+
+# Example Additional Variables
+# API_KEY=your_api_key_here
+# SECRET_KEY=your_secret_key_here
+# DEBUG=false
+`
+)
+
+var (
+	slugInvalidCharsPattern = regexp.MustCompile(`[^a-z0-9\-_]+`)
+	slugDashRunPattern      = regexp.MustCompile(`-+`)
+)
+
 // ReadFolderComposeTemplate stays on os.* for its reads: template folders are
 // user-managed on disk, so compose/env files may be symlinks resolving outside
 // any confinement root, which acfs cannot follow.
@@ -49,11 +93,6 @@ func ReadFolderComposeTemplate(ctx context.Context, baseDir, folder string) (str
 	desc := "Imported from " + composePath
 	return string(b), envPtr, desc, true, nil
 }
-
-var (
-	slugInvalidCharsPattern = regexp.MustCompile(`[^a-z0-9\-_]+`)
-	slugDashRunPattern      = regexp.MustCompile(`-+`)
-)
 
 func Slugify(in string) string {
 	in = strings.TrimSpace(strings.ToLower(in))
@@ -99,46 +138,6 @@ func WriteTemplateFiles(composePath, envPath, composeContent, envContent string)
 	}
 	return &envContent, nil
 }
-
-// Previous built-in templates; unedited on-disk copies are upgraded to the current defaults.
-const (
-	retiredDefaultComposeTemplate = `services:
-  nginx:
-    image: nginx:alpine
-    container_name: nginx_service
-    env_file:
-      - .env
-    ports:
-      - "8080:80"
-    volumes:
-      - nginx_data:/usr/share/nginx/html
-    restart: unless-stopped
-
-volumes:
-  nginx_data:
-    driver: local
-`
-
-	retiredDefaultEnvTemplate = `# Environment Variables
-# These variables will be available to your project services
-# Format: VARIABLE_NAME=value
-
-# Web Server Configuration
-NGINX_HOST=localhost
-NGINX_PORT=80
-
-# Database Configuration
-POSTGRES_DB=myapp
-POSTGRES_USER=myuser
-POSTGRES_PASSWORD=mypassword
-POSTGRES_PORT=5432
-
-# Example Additional Variables
-# API_KEY=your_api_key_here
-# SECRET_KEY=your_secret_key_here
-# DEBUG=false
-`
-)
 
 // EnsureDefaultTemplates writes missing default templates and upgrades unedited retired defaults.
 func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) error {

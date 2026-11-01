@@ -26,6 +26,19 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+var buildRef = cmdutil.ResourceRef[types.ImageBuildRecord, types.ImageBuildRecord]{
+	EnvironmentScoped: true,
+	Singular:          "build", Plural: "builds",
+	IDHint: "the identifier", ListCmd: "arcane-cli images builds",
+	GetPath: clitypes.ImageBuild, ListPath: clitypes.ImageBuilds,
+	Matches: func(item types.ImageBuildRecord, lower, original string) bool {
+		return strings.EqualFold(item.ID, original)
+	},
+	Label:        func(item types.ImageBuildRecord) string { return item.ID },
+	Promote:      func(item types.ImageBuildRecord) *types.ImageBuildRecord { return &item },
+	IdentifierOf: func(item types.ImageBuildRecord) string { return item.ID },
+}
+
 func newSearchCmd() *cobra.Command {
 	return &cobra.Command{
 		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeRead},
@@ -546,19 +559,6 @@ func truncateCell(value string, limit int) string {
 		return value[:limit-3] + "..."
 	}
 	return value
-}
-
-var buildRef = cmdutil.ResourceRef[types.ImageBuildRecord, types.ImageBuildRecord]{
-	EnvironmentScoped: true,
-	Singular:          "build", Plural: "builds",
-	IDHint: "the identifier", ListCmd: "arcane-cli images builds",
-	GetPath: clitypes.ImageBuild, ListPath: clitypes.ImageBuilds,
-	Matches: func(item types.ImageBuildRecord, lower, original string) bool {
-		return strings.EqualFold(item.ID, original)
-	},
-	Label:        func(item types.ImageBuildRecord) string { return item.ID },
-	Promote:      func(item types.ImageBuildRecord) *types.ImageBuildRecord { return &item },
-	IdentifierOf: func(item types.ImageBuildRecord) string { return item.ID },
 }
 
 func readBuildStream(cmd *cobra.Command, reader io.Reader) error {

@@ -28,25 +28,31 @@ import (
 	kit "kit.getarcane.app"
 )
 
+type (
+	// Configuration contains the credentials and addressing options for an S3 destination.
+	Configuration struct {
+		ID              string
+		Name            string
+		Endpoint        string
+		Bucket          string
+		Region          string
+		AccessKeyID     string
+		SecretAccessKey string
+		Prefix          string
+		UseSSL          bool
+		ForcePathStyle  bool
+	}
+
+	gcsHttpSigner struct {
+		wrapped awss3.HTTPSignerV4
+	}
+)
+
 const (
 	RepositoryReasonMissingBucket     = "missing_bucket"
 	RepositoryReasonMissingRepository = "missing_repository"
 	connectionTestPayload             = "arcane-s3-connection-test"
 )
-
-// Configuration contains the credentials and addressing options for an S3 destination.
-type Configuration struct {
-	ID              string
-	Name            string
-	Endpoint        string
-	Bucket          string
-	Region          string
-	AccessKeyID     string
-	SecretAccessKey string
-	Prefix          string
-	UseSSL          bool
-	ForcePathStyle  bool
-}
 
 // Normalized returns a copy with surrounding whitespace and prefix separators removed.
 func (c Configuration) Normalized() Configuration {
@@ -294,10 +300,6 @@ func isMissingResource(err error, codes ...string) bool {
 		return false
 	}
 	return slices.Contains(codes, apiErr.ErrorCode())
-}
-
-type gcsHttpSigner struct {
-	wrapped awss3.HTTPSignerV4
 }
 
 func (s *gcsHttpSigner) SignHTTP(ctx context.Context, creds aws.Credentials, req *http.Request, payloadHash, service, region string, signingTime time.Time, optFns ...func(*v4.SignerOptions)) error {

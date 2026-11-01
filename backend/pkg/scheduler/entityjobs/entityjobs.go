@@ -11,18 +11,22 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 )
 
-// GitOpsSyncJobPrefix is shared by the GitOps registry and environment cleanup.
-const GitOpsSyncJobPrefix = "gitops-sync:"
+type (
+	// Registry owns one job per entity ID and admits one run per entity at a time.
+	// Without SetScheduler, as in agent mode, every registration is a no-op.
+	Registry struct {
+		lifecycleCtx   context.Context
+		scheduler      types.DynamicScheduler
+		admissionGate  *runs.Admission
+		jobPrefix      string
+		admissionScope string
+	}
+)
 
-// Registry owns one job per entity ID and admits one run per entity at a time.
-// Without SetScheduler, as in agent mode, every registration is a no-op.
-type Registry struct {
-	lifecycleCtx   context.Context
-	scheduler      types.DynamicScheduler
-	admissionGate  *runs.Admission
-	jobPrefix      string
-	admissionScope string
-}
+const (
+	// GitOpsSyncJobPrefix is shared by the GitOps registry and environment cleanup.
+	GitOpsSyncJobPrefix = "gitops-sync:"
+)
 
 // New creates a registry whose job names are jobPrefix+entityID and whose
 // admission keys are scoped to admissionScope.

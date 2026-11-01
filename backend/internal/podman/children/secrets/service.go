@@ -14,13 +14,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-type Service struct {
-	runtime func(context.Context) (podman.Runtime, error)
-}
-
-func NewService(runtime func(context.Context) (podman.Runtime, error)) *Service {
-	return &Service{runtime: runtime}
-}
+type (
+	Service struct {
+		runtime func(context.Context) (podman.Runtime, error)
+	}
+)
 
 var secretPagination = pagination.Config[types.PodmanSecret]{
 	SearchAccessors: []pagination.SearchAccessor[types.PodmanSecret]{
@@ -48,6 +46,10 @@ var secretPagination = pagination.Config[types.PodmanSecret]{
 			return a.UpdatedAt.Compare(b.UpdatedAt)
 		}},
 	},
+}
+
+func NewService(runtime func(context.Context) (podman.Runtime, error)) *Service {
+	return &Service{runtime: runtime}
 }
 
 func (s *Service) List(ctx context.Context) ([]types.PodmanSecret, error) {

@@ -16,19 +16,21 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
-// StackDeployOptions controls how a swarm stack is deployed.
-type StackDeployOptions struct {
-	RegistryAuthForImage func(context.Context, string) (string, error)
-	PathMapper           *projects.PathMapper
-	Name                 string
-	ComposeContent       string
-	OverrideContent      string
-	EnvContent           string
-	ResolveImage         string
-	WorkingDir           string
-	WithRegistryAuth     bool
-	Prune                bool
-}
+type (
+	// StackDeployOptions controls how a swarm stack is deployed.
+	StackDeployOptions struct {
+		RegistryAuthForImage func(context.Context, string) (string, error)
+		PathMapper           *projects.PathMapper
+		Name                 string
+		ComposeContent       string
+		OverrideContent      string
+		EnvContent           string
+		ResolveImage         string
+		WorkingDir           string
+		WithRegistryAuth     bool
+		Prune                bool
+	}
+)
 
 // DeployStack deploys a Compose-defined stack to Docker Swarm using the Engine API.
 //

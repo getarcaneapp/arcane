@@ -17,10 +17,25 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
 )
 
-type chunkReader struct {
-	chunks [][]byte
-	idx    int
-}
+type (
+	chunkReader struct {
+		chunks [][]byte
+		idx    int
+	}
+
+	flushResponseWriter struct {
+		header  http.Header
+		buf     bytes.Buffer
+		status  int
+		flushes int
+	}
+
+	noFlushResponseWriter struct {
+		header http.Header
+		buf    bytes.Buffer
+		status int
+	}
+)
 
 func (r *chunkReader) Read(p []byte) (int, error) {
 	if r.idx >= len(r.chunks) {
@@ -29,13 +44,6 @@ func (r *chunkReader) Read(p []byte) (int, error) {
 	c := r.chunks[r.idx]
 	r.idx++
 	return copy(p, c), nil
-}
-
-type flushResponseWriter struct {
-	header  http.Header
-	buf     bytes.Buffer
-	status  int
-	flushes int
 }
 
 func newFlushResponseWriter() *flushResponseWriter {
@@ -51,12 +59,6 @@ func (w *flushResponseWriter) Write(b []byte) (int, error) {
 func (w *flushResponseWriter) WriteHeader(statusCode int) { w.status = statusCode }
 
 func (w *flushResponseWriter) Flush() { w.flushes++ }
-
-type noFlushResponseWriter struct {
-	header http.Header
-	buf    bytes.Buffer
-	status int
-}
 
 func newNoFlushResponseWriter() *noFlushResponseWriter {
 	return &noFlushResponseWriter{header: make(http.Header)}

@@ -30,56 +30,58 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
+type (
+	// restartRecord tracks restart timestamps for a single container.
+	autoHealPlan struct {
+		Containers    []container.Summary `json:"containers"`
+		MaxRestarts   int                 `json:"maxRestarts"`
+		WindowMinutes int                 `json:"windowMinutes"`
+	}
+
+	autoHealBaseline struct {
+		StartedAt    string `json:"startedAt"`
+		RestartCount int    `json:"restartCount"`
+	}
+
+	restartRecord struct {
+		timestamps []time.Time
+	}
+
+	AutoHealJob struct {
+		dockerClientService *dockerInternal.DockerClientService
+		settingsService     *settings.SettingsService
+		eventService        *event.EventService
+		notificationService *notification.NotificationService
+
+		restarts map[string]*restartRecord
+
+		getDockerClientFn  func() (*client.Client, error)
+		listContainers     func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error)
+		inspectContainerFn func(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error)
+		restartContainerFn func(ctx context.Context, dockerClient *client.Client, containerID string) error
+		getSelfContainerID func() (string, error)
+		selfID             string
+
+		selfIDOnce sync.Once
+
+		mu sync.Mutex
+	}
+
+	AutoHealJobParams struct {
+		fx.In
+
+		DockerClientService *dockerInternal.DockerClientService
+		SettingsService     *settings.SettingsService
+		EventService        *event.EventService
+		NotificationService *notification.NotificationService
+	}
+)
+
 const (
 	AutoHealJobName            = "auto-heal"
 	autoHealDefaultSchedule    = "*/5 * * * *"
 	autoHealInspectConcurrency = 4
 )
-
-// restartRecord tracks restart timestamps for a single container.
-type autoHealPlan struct {
-	Containers    []container.Summary `json:"containers"`
-	MaxRestarts   int                 `json:"maxRestarts"`
-	WindowMinutes int                 `json:"windowMinutes"`
-}
-
-type autoHealBaseline struct {
-	StartedAt    string `json:"startedAt"`
-	RestartCount int    `json:"restartCount"`
-}
-
-type restartRecord struct {
-	timestamps []time.Time
-}
-
-type AutoHealJob struct {
-	dockerClientService *dockerInternal.DockerClientService
-	settingsService     *settings.SettingsService
-	eventService        *event.EventService
-	notificationService *notification.NotificationService
-
-	restarts map[string]*restartRecord
-
-	getDockerClientFn  func() (*client.Client, error)
-	listContainers     func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error)
-	inspectContainerFn func(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error)
-	restartContainerFn func(ctx context.Context, dockerClient *client.Client, containerID string) error
-	getSelfContainerID func() (string, error)
-	selfID             string
-
-	selfIDOnce sync.Once
-
-	mu sync.Mutex
-}
-
-type AutoHealJobParams struct {
-	fx.In
-
-	DockerClientService *dockerInternal.DockerClientService
-	SettingsService     *settings.SettingsService
-	EventService        *event.EventService
-	NotificationService *notification.NotificationService
-}
 
 func NewAutoHealJob(p AutoHealJobParams) (*AutoHealJob, error) {
 	return &AutoHealJob{

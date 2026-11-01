@@ -24,58 +24,60 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-type NetworkHandler struct {
-	networkService  *NetworkService
-	dockerService   *docker.DockerClientService
-	activityService *activity.ActivityService
-	appCtx          context.Context
-}
+type (
+	NetworkHandler struct {
+		networkService  *NetworkService
+		dockerService   *docker.DockerClientService
+		activityService *activity.ActivityService
+		appCtx          context.Context
+	}
 
-type ListNetworksInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
+	ListNetworksInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
 
-type ListNetworksOutput struct {
-	Body types.PaginatedWithCounts[types.NetworkSummary, types.NetworkUsageCounts]
-}
+	ListNetworksOutput struct {
+		Body types.PaginatedWithCounts[types.NetworkSummary, types.NetworkUsageCounts]
+	}
 
-type CreateNetworkInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	types.Create[types.Network]
-}
+	CreateNetworkInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		types.Create[types.Network]
+	}
 
-type GetNetworkInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	NetworkID     string `path:"networkId" doc:"Network ID"`
-	Sort          string `query:"sort" default:"name"`
-	Order         string `query:"order" default:"asc"`
-}
+	GetNetworkInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		NetworkID     string `path:"networkId" doc:"Network ID"`
+		Sort          string `query:"sort" default:"name"`
+		Order         string `query:"order" default:"asc"`
+	}
 
-type DeleteNetworkInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	NetworkID     string `path:"networkId" doc:"Network ID"`
-}
+	DeleteNetworkInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		NetworkID     string `path:"networkId" doc:"Network ID"`
+	}
 
-type NetworkActionInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	NetworkID     string `path:"networkId" doc:"Network ID"`
-	Action        string `query:"action" required:"true" enum:"connect,disconnect" doc:"Container attachment action"`
-	Body          types.NetworkContainerRequest
-}
+	NetworkActionInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		NetworkID     string `path:"networkId" doc:"Network ID"`
+		Action        string `query:"action" required:"true" enum:"connect,disconnect" doc:"Container attachment action"`
+		Body          types.NetworkContainerRequest
+	}
 
-type networkAction struct {
-	Metadata       database.JSON
-	Run            func(context.Context, string, types.NetworkContainerRequest, types.Actor) error
-	Step           string
-	SuccessMessage string
-	ErrorPrefix    string
-}
+	networkAction struct {
+		Metadata       database.JSON
+		Run            func(context.Context, string, types.NetworkContainerRequest, types.Actor) error
+		Step           string
+		SuccessMessage string
+		ErrorPrefix    string
+	}
+)
 
 func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksInput) (*ListNetworksOutput, error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)

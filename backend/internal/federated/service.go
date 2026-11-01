@@ -41,40 +41,47 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
+type (
+	FederatedCredentialService struct {
+		providerGroup   singleflight.Group
+		exchanges       metric.Int64Counter
+		db              *database.DB
+		authService     *auth.AuthService
+		userService     *user.UserService
+		settingsService *settings.SettingsService
+		eventService    *event.EventService
+		roleService     *role.RoleService
+		httpClient      *http.Client
+		keySetManager   *oidcjwk.KeySetManager
+		keySets         map[string]oidc.KeySet
+		providerMu      sync.RWMutex
+	}
+
+	FederatedCredentialServiceParams struct {
+		fx.In
+
+		DB              *database.DB
+		AuthService     *auth.AuthService
+		UserService     *user.UserService
+		SettingsService *settings.SettingsService
+		EventService    *event.EventService
+		HTTPClient      *http.Client
+		KeySetManager   *oidcjwk.KeySetManager
+		RoleService     *role.RoleService
+	}
+
+	CredentialUpdate struct {
+		Submitted map[string]bool
+		Request   types.FederatedCredential
+	}
+)
+
 const (
 	federatedCredentialLastUsedWriteWindow = 5 * time.Minute
 	defaultFederatedSubjectClaim           = "sub"
 )
 
 var errInvalidGrant = common.Classify(common.ErrFederatedCredentialInvalidGrant, errors.New("invalid federated token grant"))
-
-type FederatedCredentialService struct {
-	providerGroup   singleflight.Group
-	exchanges       metric.Int64Counter
-	db              *database.DB
-	authService     *auth.AuthService
-	userService     *user.UserService
-	settingsService *settings.SettingsService
-	eventService    *event.EventService
-	roleService     *role.RoleService
-	httpClient      *http.Client
-	keySetManager   *oidcjwk.KeySetManager
-	keySets         map[string]oidc.KeySet
-	providerMu      sync.RWMutex
-}
-
-type FederatedCredentialServiceParams struct {
-	fx.In
-
-	DB              *database.DB
-	AuthService     *auth.AuthService
-	UserService     *user.UserService
-	SettingsService *settings.SettingsService
-	EventService    *event.EventService
-	HTTPClient      *http.Client
-	KeySetManager   *oidcjwk.KeySetManager
-	RoleService     *role.RoleService
-}
 
 func NewFederatedCredentialService(p FederatedCredentialServiceParams) *FederatedCredentialService {
 	client := httpx.NewHTTPClient(types.HTTPClientOptions{Timeout: 15 * time.Second, TLSHandshakeTimeout: 10 * time.Second})
@@ -204,11 +211,6 @@ func findCredential(query *gorm.DB, id string) (FederatedCredential, error) {
 		return credential, fmt.Errorf("failed to load federated credential: %w", err)
 	}
 	return credential, nil
-}
-
-type CredentialUpdate struct {
-	Submitted map[string]bool
-	Request   types.FederatedCredential
 }
 
 func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID, id string, change CredentialUpdate) (*types.FederatedCredential, error) {

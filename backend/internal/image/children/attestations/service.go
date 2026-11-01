@@ -35,6 +35,39 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
+type (
+	// Service reads in-toto attestations attached to local images and registry references.
+	Service struct {
+		dockerService *docker.DockerClientService
+		registryAuth  func(ctx context.Context, imageRef string) (string, error)
+	}
+
+	Query struct {
+		Platform         string
+		PredicateType    string
+		IncludeStatement bool
+	}
+
+	reference struct {
+		ImageRef      string
+		SubjectDigest string
+		Empty         bool
+		External      bool
+	}
+
+	subject struct {
+		Descriptor v1.Descriptor
+		Digest     string
+		Platform   string
+	}
+
+	attestationStatementEnvelope struct {
+		Type          string                          `json:"_type"`
+		PredicateType string                          `json:"predicateType"`
+		Subject       []types.ImageAttestationSubject `json:"subject"`
+	}
+)
+
 const (
 	dockerAttestationManifestArtifactType = "application/vnd.docker.attestation.manifest.v1+json"
 	inTotoLayerMediaType                  = "application/vnd.in-toto+json"
@@ -42,51 +75,22 @@ const (
 	maxAttestationLayerBytes              = 16 << 20
 )
 
-// zstdDecoder is shared because DecodeAll is safe for concurrent use and a decoder is costly to build.
-var zstdDecoder = sync.OnceValues(func() (*zstd.Decoder, error) {
-	return zstd.NewReader(nil, zstd.WithDecoderMaxMemory(maxAttestationLayerBytes))
-})
+var (
+	// zstdDecoder is shared because DecodeAll is safe for concurrent use and a decoder is costly to build.
+	zstdDecoder = sync.OnceValues(func() (*zstd.Decoder, error) {
+		return zstd.NewReader(nil, zstd.WithDecoderMaxMemory(maxAttestationLayerBytes))
+	})
 
-var safeRegistryTransport = sync.OnceValues(func() (http.RoundTripper, error) {
-	safeClient, err := httpx.NewSafeOutboundHTTPClient(nil, httpx.DefaultLookupIP)
-	if err != nil {
-		return nil, err
-	}
-	return safeClient.Transport, nil
-})
+	safeRegistryTransport = sync.OnceValues(func() (http.RoundTripper, error) {
+		safeClient, err := httpx.NewSafeOutboundHTTPClient(nil, httpx.DefaultLookupIP)
+		if err != nil {
+			return nil, err
+		}
+		return safeClient.Transport, nil
+	})
 
-var errAttestationLayerTooLarge = common.Classify(common.ErrBadRequest, fmt.Errorf("attestation layer exceeds the %d MiB limit", maxAttestationLayerBytes>>20))
-
-// Service reads in-toto attestations attached to local images and registry references.
-type Service struct {
-	dockerService *docker.DockerClientService
-	registryAuth  func(ctx context.Context, imageRef string) (string, error)
-}
-
-type Query struct {
-	Platform         string
-	PredicateType    string
-	IncludeStatement bool
-}
-
-type reference struct {
-	ImageRef      string
-	SubjectDigest string
-	Empty         bool
-	External      bool
-}
-
-type subject struct {
-	Descriptor v1.Descriptor
-	Digest     string
-	Platform   string
-}
-
-type attestationStatementEnvelope struct {
-	Type          string                          `json:"_type"`
-	PredicateType string                          `json:"predicateType"`
-	Subject       []types.ImageAttestationSubject `json:"subject"`
-}
+	errAttestationLayerTooLarge = common.Classify(common.ErrBadRequest, fmt.Errorf("attestation layer exceeds the %d MiB limit", maxAttestationLayerBytes>>20))
+)
 
 func NewService(
 	dockerService *docker.DockerClientService,

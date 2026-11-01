@@ -17,14 +17,51 @@ import (
 	"kit.getarcane.app/docker/compat"
 )
 
-// logsDemuxCompatibleDockerCli exposes an API client that keeps
-// stderr metadata alive in non-TTY container log streams. Used only by
-// ComposeLogs; other compose operations keep the unmodified client.
-type logsDemuxCompatibleDockerCli struct {
-	command.Cli
+type (
+	// logsDemuxCompatibleDockerCli exposes an API client that keeps
+	// stderr metadata alive in non-TTY container log streams. Used only by
+	// ComposeLogs; other compose operations keep the unmodified client.
+	logsDemuxCompatibleDockerCli struct {
+		command.Cli
 
-	apiClient client.APIClient
-}
+		apiClient client.APIClient
+	}
+
+	// logsDemuxDockerClient records each container's TTY state from the
+	// inspect calls Compose already performs, and reworks non-TTY multiplexed log
+	// responses so stderr entries stay identifiable: stderr lines are prefixed
+	// with Arcane's stderr marker and every entry is re-framed as a stdout
+	// stdcopy frame, which Compose merges through its stdout consumer path. TTY
+	// containers pass through untouched because their stream carries no stderr
+	// metadata.
+	logsDemuxDockerClient struct {
+		client.APIClient
+
+		containerTty map[string]bool
+
+		ttyMu sync.RWMutex
+	}
+
+	// stderrMarkedDemuxedStream transforms a multiplexed Docker log
+	// response, pulled frame by frame on demand, into stdout stdcopy frames of
+	// one log line each, with stderr lines prefixed by Arcane's stderr marker.
+	// Lines are assembled per source stream before merging so frames interleaved
+	// mid-line cannot corrupt each other. Closing it closes the upstream
+	// response, which also unblocks any pending read.
+	stderrMarkedDemuxedStream struct {
+		upstream io.ReadCloser
+		err      error
+		src      *bufio.Reader
+		pending  [2][]byte
+		out      bytes.Buffer
+	}
+)
+
+const (
+	// maxLogEntryBytes caps re-framed entries: a newline-less run is
+	// split into cap-sized entries so per-line buffering stays bounded end to end.
+	maxLogEntryBytes = 64 * 1024
+)
 
 func (c *logsDemuxCompatibleDockerCli) Client() client.APIClient {
 	return c.apiClient
@@ -38,21 +75,6 @@ func wrapDockerCLIWithLogsDemux(cli command.Cli) command.Cli {
 		Cli:       cli,
 		apiClient: &logsDemuxDockerClient{APIClient: compat.WrapDockerAPIClientForInspectCompatibility(cli.Client())},
 	}
-}
-
-// logsDemuxDockerClient records each container's TTY state from the
-// inspect calls Compose already performs, and reworks non-TTY multiplexed log
-// responses so stderr entries stay identifiable: stderr lines are prefixed
-// with Arcane's stderr marker and every entry is re-framed as a stdout
-// stdcopy frame, which Compose merges through its stdout consumer path. TTY
-// containers pass through untouched because their stream carries no stderr
-// metadata.
-type logsDemuxDockerClient struct {
-	client.APIClient
-
-	containerTty map[string]bool
-
-	ttyMu sync.RWMutex
 }
 
 func (c *logsDemuxDockerClient) ContainerInspect(ctx context.Context, containerID string, options client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
@@ -93,24 +115,6 @@ func (c *logsDemuxDockerClient) containerTTY(containerID string) (tty, known boo
 	defer c.ttyMu.RUnlock()
 	tty, known = c.containerTty[key]
 	return tty, known
-}
-
-// maxLogEntryBytes caps re-framed entries: a newline-less run is
-// split into cap-sized entries so per-line buffering stays bounded end to end.
-const maxLogEntryBytes = 64 * 1024
-
-// stderrMarkedDemuxedStream transforms a multiplexed Docker log
-// response, pulled frame by frame on demand, into stdout stdcopy frames of
-// one log line each, with stderr lines prefixed by Arcane's stderr marker.
-// Lines are assembled per source stream before merging so frames interleaved
-// mid-line cannot corrupt each other. Closing it closes the upstream
-// response, which also unblocks any pending read.
-type stderrMarkedDemuxedStream struct {
-	upstream io.ReadCloser
-	err      error
-	src      *bufio.Reader
-	pending  [2][]byte
-	out      bytes.Buffer
 }
 
 func (s *stderrMarkedDemuxedStream) Read(p []byte) (int, error) {

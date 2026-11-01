@@ -10,36 +10,38 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// VariableHandler handles manager-level global variables and the separate
-// agent-only materialization channel used to push effective values.
-type VariableHandler struct {
-	variableService *VariableService
-	proxyRemoteJSON handlerutil.RemoteJSONProxy
-}
+type (
+	// VariableHandler handles manager-level global variables and the separate
+	// agent-only materialization channel used to push effective values.
+	VariableHandler struct {
+		variableService *VariableService
+		proxyRemoteJSON handlerutil.RemoteJSONProxy
+	}
 
-type ListGlobalVariablesInput struct{}
+	ListGlobalVariablesInput struct{}
 
-type CreateGlobalVariableInput struct {
-	types.Create[types.GlobalVariable]
-}
+	CreateGlobalVariableInput struct {
+		types.Create[types.GlobalVariable]
+	}
 
-type UpdateGlobalVariableInput struct {
-	ID string `path:"id" doc:"Variable ID"`
-	types.Update[types.GlobalVariable]
-}
+	UpdateGlobalVariableInput struct {
+		ID string `path:"id" doc:"Variable ID"`
+		types.Update[types.GlobalVariable]
+	}
 
-type DeleteGlobalVariableInput struct {
-	ID string `path:"id" doc:"Variable ID"`
-}
+	DeleteGlobalVariableInput struct {
+		ID string `path:"id" doc:"Variable ID"`
+	}
 
-type SyncGlobalVariablesInput struct{}
+	SyncGlobalVariablesInput struct{}
 
-type GetGlobalVariableSyncStatusInput struct{}
+	GetGlobalVariableSyncStatusInput struct{}
 
-type UpdateGlobalVariablesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.EnvSummary
-}
+	UpdateGlobalVariablesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.EnvSummary
+	}
+)
 
 func (h *VariableHandler) ListVariables(ctx context.Context, _ *ListGlobalVariablesInput) (*handlerutil.Out[[]types.GlobalVariable], error) {
 	variables, err := h.variableService.ListVariables(ctx)

@@ -14,6 +14,31 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
 )
 
+type (
+	// TunnelMetadataSnapshot is a consistent copy of a tunnel's mutable metadata.
+	TunnelMetadataSnapshot struct {
+		ConnectedAt   time.Time
+		LastHeartbeat time.Time
+		SessionID     string
+		AgentInstance string
+		SecurityMode  string
+		State         string
+		Capabilities  []string
+	}
+
+	registerSessionResult struct {
+		previous      *AgentTunnel
+		reason        string
+		accepted      bool
+		drainPrevious bool
+	}
+)
+
+var (
+	defaultRegistryMu sync.RWMutex
+	defaultRegistry   = NewTunnelRegistry()
+)
+
 // NewAgentTunnelWithConn creates a new agent tunnel from a transport-agnostic connection. Its mux session
 // exists before registration so callers that find the tunnel mid-handshake wait for it.
 func NewAgentTunnelWithConn(envID string, conn TunnelConnection) *AgentTunnel {
@@ -53,17 +78,6 @@ func (t *AgentTunnel) GetLastHeartbeat() time.Time {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return t.LastHeartbeat
-}
-
-// TunnelMetadataSnapshot is a consistent copy of a tunnel's mutable metadata.
-type TunnelMetadataSnapshot struct {
-	ConnectedAt   time.Time
-	LastHeartbeat time.Time
-	SessionID     string
-	AgentInstance string
-	SecurityMode  string
-	State         string
-	Capabilities  []string
 }
 
 // MetadataSnapshot returns the tunnel's mutable metadata under one read lock, so readers never race
@@ -174,13 +188,6 @@ func (r *TunnelRegistry) Register(envID string, tunnel *AgentTunnel) {
 		_ = previous.CloseWithReason("")
 	}
 	slog.InfoContext(ctx, "Agent tunnel registered")
-}
-
-type registerSessionResult struct {
-	previous      *AgentTunnel
-	reason        string
-	accepted      bool
-	drainPrevious bool
 }
 
 // RegisterSession adds a tunnel with duplicate-session handling.
@@ -347,11 +354,6 @@ func (r *TunnelRegistry) ObserveAgents(meter metric.Meter) (metric.Registration,
 		return nil
 	}, gauge)
 }
-
-var (
-	defaultRegistryMu sync.RWMutex
-	defaultRegistry   = NewTunnelRegistry()
-)
 
 // GetRegistry returns the global tunnel registry
 func GetRegistry() *TunnelRegistry {

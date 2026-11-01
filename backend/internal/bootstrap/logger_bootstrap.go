@@ -19,29 +19,38 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 )
 
-// logLevels maps LOG_LEVEL values to slog levels; unknown values map to the zero value, slog.LevelInfo.
-var logLevels = map[string]slog.Level{
-	"debug":   slog.LevelDebug,
-	"warn":    slog.LevelWarn,
-	"warning": slog.LevelWarn,
-	"error":   slog.LevelError,
-}
+type (
+	requestLogHandler struct {
+		handler slog.Handler
+	}
 
-type requestLogHandler struct {
-	handler slog.Handler
-}
+	attrFilterHandler struct {
+		handler  slog.Handler
+		dropKeys map[string]struct{}
+	}
 
-type attrFilterHandler struct {
-	handler  slog.Handler
-	dropKeys map[string]struct{}
-}
+	// gormLogger omits SQL parameters and drops traces for canceled requests.
+	gormLogger struct {
+		logger.Interface
+	}
 
-// gormLogger omits SQL parameters and drops traces for canceled requests.
-type gormLogger struct {
-	logger.Interface
-}
+	// telemetryLogHandler applies LOG_LEVEL to the OpenTelemetry bridge and strips raw query strings,
+	// URL queries, and webhook trigger tokens before records are exported.
+	telemetryLogHandler struct {
+		handler slog.Handler
+		level   slog.Leveler
+	}
+)
 
 var (
+	// logLevels maps LOG_LEVEL values to slog levels; unknown values map to the zero value, slog.LevelInfo.
+	logLevels = map[string]slog.Level{
+		"debug":   slog.LevelDebug,
+		"warn":    slog.LevelWarn,
+		"warning": slog.LevelWarn,
+		"error":   slog.LevelError,
+	}
+
 	_ logger.Interface  = gormLogger{}
 	_ gorm.ParamsFilter = gormLogger{}
 )
@@ -182,13 +191,6 @@ func (h *attrFilterHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 
 func (h *attrFilterHandler) WithGroup(name string) slog.Handler {
 	return &attrFilterHandler{handler: h.handler.WithGroup(name), dropKeys: h.dropKeys}
-}
-
-// telemetryLogHandler applies LOG_LEVEL to the OpenTelemetry bridge and strips raw query strings,
-// URL queries, and webhook trigger tokens before records are exported.
-type telemetryLogHandler struct {
-	handler slog.Handler
-	level   slog.Leveler
 }
 
 func (h *telemetryLogHandler) Enabled(ctx context.Context, level slog.Level) bool {

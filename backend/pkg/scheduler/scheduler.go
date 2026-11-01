@@ -14,25 +14,28 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 )
 
-var errJobSchedulerStopped = errors.New("job scheduler stopped")
+type (
+	watcherRegistration struct {
+		watcher types.BusWatcher
+		done    chan struct{}
+	}
 
-type watcherRegistration struct {
-	watcher types.BusWatcher
-	done    chan struct{}
-}
-type jobScheduler struct {
-	context     context.Context
-	jobsByID    map[string]types.SchedulerJob
-	watchers    map[string]types.BusWatcher
-	allWatchers map[string]watcherRegistration
-	supervisors map[string]*watcherSupervisor
-	cancel      context.CancelFunc
-	location    *time.Location
-	coordinator *runs.Coordinator
-	mu          sync.RWMutex
-	stopping    bool
-	started     bool
-}
+	jobScheduler struct {
+		context     context.Context
+		jobsByID    map[string]types.SchedulerJob
+		watchers    map[string]types.BusWatcher
+		allWatchers map[string]watcherRegistration
+		supervisors map[string]*watcherSupervisor
+		cancel      context.CancelFunc
+		location    *time.Location
+		coordinator *runs.Coordinator
+		mu          sync.RWMutex
+		stopping    bool
+		started     bool
+	}
+)
+
+var errJobSchedulerStopped = errors.New("job scheduler stopped")
 
 func NewJobScheduler(ctx context.Context, coordinator *runs.Coordinator, location *time.Location) (types.JobScheduler, error) {
 	if ctx == nil || coordinator == nil {
@@ -109,7 +112,9 @@ func (js *jobScheduler) GetJob(id string) (types.SchedulerJob, bool) {
 	job, ok := js.jobsByID[id]
 	return job, ok
 }
+
 func (js *jobScheduler) HasJob(id string) bool { _, ok := js.GetJob(id); return ok }
+
 func (js *jobScheduler) GetJobRuntimeState(id string) (types.JobRuntimeState, bool) {
 	if !js.HasJob(id) {
 		return types.JobRuntimeState{}, false
@@ -195,7 +200,9 @@ func (js *jobScheduler) RemoveJob(ctx context.Context, id string) {
 		}
 	}
 }
+
 func (js *jobScheduler) GetLocation() *time.Location { return js.location }
+
 func (js *jobScheduler) Stop(ctx context.Context) error {
 	js.mu.Lock()
 	js.stopping = true

@@ -21,12 +21,12 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
-// Version and build information - set via ldflags at build time
-var (
-	Version          = "dev"
-	Revision         = "unknown"
-	CLIStableBaseURL = "https://github.com/getarcaneapp/arcane/releases/download"
-	CLINextBaseURL   = "https://bucket.getarcane.app/bin/cli-next"
+type (
+	// authTokens are the session tokens saved for one server.
+	authTokens struct {
+		AccessToken  string `json:"accessToken,omitempty"`
+		RefreshToken string `json:"refreshToken,omitempty"`
+	}
 )
 
 const (
@@ -34,18 +34,20 @@ const (
 	defaultPaginationInitLimit = 20
 )
 
-// authTokens are the session tokens saved for one server.
-type authTokens struct {
-	AccessToken  string `json:"accessToken,omitempty"`
-	RefreshToken string `json:"refreshToken,omitempty"`
-}
+var (
+	// Version and build information - set via ldflags at build time
+	Version          = "dev"
+	Revision         = "unknown"
+	CLIStableBaseURL = "https://github.com/getarcaneapp/arcane/releases/download"
+	CLINextBaseURL   = "https://bucket.getarcane.app/bin/cli-next"
 
-var customConfigPath string
+	customConfigPath string
 
-var configCache = hot.NewHotCache[string, *types.Config](hot.LRU, 4).
-	WithCopyOnRead((*types.Config).Clone).
-	WithCopyOnWrite((*types.Config).Clone).
-	Build()
+	configCache = hot.NewHotCache[string, *types.Config](hot.LRU, 4).
+			WithCopyOnRead((*types.Config).Clone).
+			WithCopyOnWrite((*types.Config).Clone).
+			Build()
+)
 
 func DefaultConfig() *types.Config {
 	return &types.Config{

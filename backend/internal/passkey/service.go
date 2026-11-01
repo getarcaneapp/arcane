@@ -35,23 +35,125 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/resources"
 )
 
+type (
+	// PasskeyChallenge is the public result of a WebAuthn ceremony begin.
+	// The matching SessionData remains in passkey_ceremonies.
+	PasskeyChallenge struct {
+		ExpiresAt     time.Time
+		Options       any
+		CeremonyID    string
+		TransactionID string
+	}
+
+	// PasskeySummary is the safe representation of a stored credential.
+	PasskeySummary struct {
+		CreatedAt               time.Time  `json:"createdAt"`
+		UpdatedAt               *time.Time `json:"updatedAt,omitempty"`
+		LastUsedAt              *time.Time `json:"lastUsedAt,omitempty"`
+		ID                      string     `json:"id"`
+		Name                    string     `json:"name"`
+		RPID                    string     `json:"rpId"`
+		AAGUID                  string     `json:"aaguid,omitempty"`
+		AuthenticatorAttachment string     `json:"authenticatorAttachment,omitempty"`
+		Transports              []string   `json:"transports,omitempty"`
+		BackupEligible          bool       `json:"backupEligible"`
+		BackupState             bool       `json:"backupState"`
+		CloneWarning            bool       `json:"cloneWarning"`
+	}
+
+	// PasskeyCapabilities describes the server-derived authentication choices for
+	// the current account. It deliberately does not trust client-supplied flags.
+	PasskeyCapabilities struct {
+		PasskeyCount               int  `json:"passkeyCount"`
+		PasskeyMFAEnabled          bool `json:"passkeyMfaEnabled"`
+		HasLocalPassword           bool `json:"hasLocalPassword"`
+		HasOIDCFallback            bool `json:"hasOidcFallback"`
+		CanEnrollWithActiveSession bool `json:"canEnrollWithActiveSession"`
+		CanDeleteLastPasskey       bool `json:"canDeleteLastPasskey"`
+		RequiresStepUp             bool `json:"requiresStepUp"`
+	}
+
+	// MFAStatus is the account's passkey MFA state. Recovery codes are counted,
+	// but their plaintext values are never returned after generation.
+	MFAStatus struct {
+		Enabled                bool `json:"enabled"`
+		PasskeyCount           int  `json:"passkeyCount"`
+		RecoveryCodesRemaining int  `json:"recoveryCodesRemaining"`
+	}
+
+	// StepUpGrant is returned after a fresh password or passkey assertion. The
+	// token is hashed in the database and stays usable, for the issuing session
+	// only, until ExpiresAt.
+	StepUpGrant struct {
+		ExpiresAt time.Time `json:"expiresAt"`
+		Token     string    `json:"token"`
+	}
+
+	// AuthenticationCompletion carries the original primary-auth metadata across
+	// an MFA transaction so the eventual session cannot be assigned client-chosen
+	// source or network metadata.
+	AuthenticationCompletion struct {
+		User   *userdomain.User
+		Meta   types.SessionMeta
+		Source string
+	}
+
+	// PasskeyService owns WebAuthn ceremonies, passkey persistence, MFA
+	// transactions, recovery codes, and step-up grants. It intentionally does not
+	// issue JWTs; auth.AuthService remains the single token/session issuer.
+	PasskeyService struct {
+		initErr  error
+		db       *database.DB
+		webAuthn *webauthn.WebAuthn
+		rpID     string
+	}
+
+	webAuthnUser struct {
+		model              userdomain.User
+		credentialModelIDs map[string]string
+		credentials        []webauthn.Credential
+	}
+
+	FinishRegistrationRequest struct {
+		UserID     string
+		SessionID  string
+		CeremonyID string
+		Name       string
+		Payload    []byte
+	}
+
+	RenamePasskeyRequest struct {
+		UserID      string
+		PasskeyID   string
+		Name        string
+		SessionID   string
+		StepUpToken string
+	}
+
+	DeletePasskeyRequest struct {
+		UserID              string
+		PasskeyID           string
+		SessionID           string
+		StepUpToken         string
+		OidcFallbackAllowed bool
+	}
+)
+
 const (
 	passkeyCeremonyPurposeLogin        = "login"
 	passkeyCeremonyPurposeMFA          = "mfa"
 	passkeyCeremonyPurposeRegistration = "registration"
 	passkeyCeremonyPurposeStepUp       = "step_up"
-
-	authTransactionKindMFA           = "mfa"
-	authTransactionKindStepUp        = "step_up"
-	authTransactionKindMobilePasskey = "mobile_passkey"
-	authTransactionPending           = "pending"
-	authTransactionCompleted         = "completed"
-
-	passkeyCeremonyTTL     = 5 * time.Minute
-	passkeyStepUpTTL       = 5 * time.Minute
-	maxPasskeyPayloadBytes = 256 * 1024
-	maxPasskeyNameRunes    = 128
-	recoveryCodeCount      = 10
+	authTransactionKindMFA             = "mfa"
+	authTransactionKindStepUp          = "step_up"
+	authTransactionKindMobilePasskey   = "mobile_passkey"
+	authTransactionPending             = "pending"
+	authTransactionCompleted           = "completed"
+	passkeyCeremonyTTL                 = 5 * time.Minute
+	passkeyStepUpTTL                   = 5 * time.Minute
+	maxPasskeyPayloadBytes             = 256 * 1024
+	maxPasskeyNameRunes                = 128
+	recoveryCodeCount                  = 10
 )
 
 var (
@@ -69,82 +171,9 @@ var (
 	ErrPasskeyLastCredential     = errors.New("cannot remove the last usable authentication method")
 	ErrPasskeyRecoveryCode       = errors.New("invalid recovery code")
 	ErrPasskeyName               = errors.New("invalid passkey name")
-
-	authenticatorNamesOnce sync.Once
-	authenticatorNames     map[string]string
+	authenticatorNamesOnce       sync.Once
+	authenticatorNames           map[string]string
 )
-
-// PasskeyChallenge is the public result of a WebAuthn ceremony begin.
-// The matching SessionData remains in passkey_ceremonies.
-type PasskeyChallenge struct {
-	ExpiresAt     time.Time
-	Options       any
-	CeremonyID    string
-	TransactionID string
-}
-
-// PasskeySummary is the safe representation of a stored credential.
-type PasskeySummary struct {
-	CreatedAt               time.Time  `json:"createdAt"`
-	UpdatedAt               *time.Time `json:"updatedAt,omitempty"`
-	LastUsedAt              *time.Time `json:"lastUsedAt,omitempty"`
-	ID                      string     `json:"id"`
-	Name                    string     `json:"name"`
-	RPID                    string     `json:"rpId"`
-	AAGUID                  string     `json:"aaguid,omitempty"`
-	AuthenticatorAttachment string     `json:"authenticatorAttachment,omitempty"`
-	Transports              []string   `json:"transports,omitempty"`
-	BackupEligible          bool       `json:"backupEligible"`
-	BackupState             bool       `json:"backupState"`
-	CloneWarning            bool       `json:"cloneWarning"`
-}
-
-// PasskeyCapabilities describes the server-derived authentication choices for
-// the current account. It deliberately does not trust client-supplied flags.
-type PasskeyCapabilities struct {
-	PasskeyCount               int  `json:"passkeyCount"`
-	PasskeyMFAEnabled          bool `json:"passkeyMfaEnabled"`
-	HasLocalPassword           bool `json:"hasLocalPassword"`
-	HasOIDCFallback            bool `json:"hasOidcFallback"`
-	CanEnrollWithActiveSession bool `json:"canEnrollWithActiveSession"`
-	CanDeleteLastPasskey       bool `json:"canDeleteLastPasskey"`
-	RequiresStepUp             bool `json:"requiresStepUp"`
-}
-
-// MFAStatus is the account's passkey MFA state. Recovery codes are counted,
-// but their plaintext values are never returned after generation.
-type MFAStatus struct {
-	Enabled                bool `json:"enabled"`
-	PasskeyCount           int  `json:"passkeyCount"`
-	RecoveryCodesRemaining int  `json:"recoveryCodesRemaining"`
-}
-
-// StepUpGrant is returned after a fresh password or passkey assertion. The
-// token is hashed in the database and stays usable, for the issuing session
-// only, until ExpiresAt.
-type StepUpGrant struct {
-	ExpiresAt time.Time `json:"expiresAt"`
-	Token     string    `json:"token"`
-}
-
-// AuthenticationCompletion carries the original primary-auth metadata across
-// an MFA transaction so the eventual session cannot be assigned client-chosen
-// source or network metadata.
-type AuthenticationCompletion struct {
-	User   *userdomain.User
-	Meta   types.SessionMeta
-	Source string
-}
-
-// PasskeyService owns WebAuthn ceremonies, passkey persistence, MFA
-// transactions, recovery codes, and step-up grants. It intentionally does not
-// issue JWTs; auth.AuthService remains the single token/session issuer.
-type PasskeyService struct {
-	initErr  error
-	db       *database.DB
-	webAuthn *webauthn.WebAuthn
-	rpID     string
-}
 
 func NewPasskeyService(db *database.DB, cfg *config.Config) *PasskeyService {
 	s := &PasskeyService{db: db}
@@ -184,12 +213,6 @@ func NewPasskeyService(db *database.DB, cfg *config.Config) *PasskeyService {
 	})
 
 	return s
-}
-
-type webAuthnUser struct {
-	model              userdomain.User
-	credentialModelIDs map[string]string
-	credentials        []webauthn.Credential
 }
 
 func (u *webAuthnUser) WebAuthnID() []byte {
@@ -478,14 +501,6 @@ func (s *PasskeyService) BeginRegistration(ctx context.Context, userID, sessionI
 	}
 
 	return &PasskeyChallenge{CeremonyID: ceremony.ID, Options: creation.Response, ExpiresAt: ceremony.ExpiresAt}, nil
-}
-
-type FinishRegistrationRequest struct {
-	UserID     string
-	SessionID  string
-	CeremonyID string
-	Name       string
-	Payload    []byte
 }
 
 func (s *PasskeyService) FinishRegistration(ctx context.Context, req FinishRegistrationRequest) (*PasskeySummary, error) {
@@ -837,14 +852,6 @@ func (s *PasskeyService) GetCapabilities(ctx context.Context, userID string, oid
 	}, nil
 }
 
-type RenamePasskeyRequest struct {
-	UserID      string
-	PasskeyID   string
-	Name        string
-	SessionID   string
-	StepUpToken string
-}
-
 func (s *PasskeyService) RenamePasskey(ctx context.Context, req RenamePasskeyRequest) (*PasskeySummary, error) {
 	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
@@ -872,14 +879,6 @@ func (s *PasskeyService) RenamePasskey(ctx context.Context, req RenamePasskeyReq
 	row.UpdatedAt = &now
 	summary := passkeySummary(row)
 	return &summary, nil
-}
-
-type DeletePasskeyRequest struct {
-	UserID              string
-	PasskeyID           string
-	SessionID           string
-	StepUpToken         string
-	OidcFallbackAllowed bool
 }
 
 func (s *PasskeyService) DeletePasskey(ctx context.Context, req DeletePasskeyRequest) error {

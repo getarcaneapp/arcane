@@ -19,22 +19,34 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 )
 
-// HostMount is one container→host mount (bind or named volume) from Arcane's own
-// container. It is used for longest-prefix host-path resolution in Docker-in-Docker
-// setups, where independently bind-mounted project directories each map to their own
-// host path rather than a single projects-root prefix.
-type HostMount struct {
-	Destination string // container-side mount path, e.g. "/app/data/projects/homeassistant"
-	Source      string // host-side path, e.g. "/home/user/homeassistant"
-}
+type (
+	// HostMount is one container→host mount (bind or named volume) from Arcane's own
+	// container. It is used for longest-prefix host-path resolution in Docker-in-Docker
+	// setups, where independently bind-mounted project directories each map to their own
+	// host path rather than a single projects-root prefix.
+	HostMount struct {
+		Destination string // container-side mount path, e.g. "/app/data/projects/homeassistant"
+		Source      string // host-side path, e.g. "/home/user/homeassistant"
+	}
 
-// PathMapper handles translation between container and host paths
-type PathMapper struct {
-	containerPrefix string      // e.g., "/app/data/projects" (single-prefix mode)
-	hostPrefix      string      // e.g., "D:/self-hosted/arcane/projects" (single-prefix mode)
-	mounts          []HostMount // when set, sources resolve by longest-prefix match (auto-discovery mode)
-	isNonMatching   bool        // true if a translation can occur
-}
+	// PathMapper handles translation between container and host paths
+	PathMapper struct {
+		containerPrefix string      // e.g., "/app/data/projects" (single-prefix mode)
+		hostPrefix      string      // e.g., "D:/self-hosted/arcane/projects" (single-prefix mode)
+		mounts          []HostMount // when set, sources resolve by longest-prefix match (auto-discovery mode)
+		isNonMatching   bool        // true if a translation can occur
+	}
+
+	// remapTarget is one daemon-side path that may need re-resolving, paired with how
+	// to write the new value back into the project.
+	remapTarget struct {
+		apply   func(hostPath string)
+		kind    string
+		name    string
+		key     string
+		current string
+	}
+)
 
 // NewPathMapper creates a new path mapper
 func NewPathMapper(containerDir, hostDir string) *PathMapper {
@@ -364,16 +376,6 @@ func RemapEscapedRelativeSources(
 			"containerPath", target.current, "hostPath", hostPath,
 		)
 	}
-}
-
-// remapTarget is one daemon-side path that may need re-resolving, paired with how
-// to write the new value back into the project.
-type remapTarget struct {
-	apply   func(hostPath string)
-	kind    string
-	name    string
-	key     string
-	current string
 }
 
 // remapTargets collects every daemon-side path in the project, so that

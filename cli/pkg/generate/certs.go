@@ -24,6 +24,20 @@ import (
 	"kit.getarcane.app/fs/atomic"
 )
 
+type (
+	agentMTLSPaths struct {
+		CACertPath     string `json:"cACertPath"`
+		CAKeyPath      string `json:"cAKeyPath"`
+		ClientCertPath string `json:"clientCertPath"`
+		ClientKeyPath  string `json:"clientKeyPath"`
+	}
+
+	serverTLSPaths struct {
+		CertPath string `json:"certPath"`
+		KeyPath  string `json:"keyPath"`
+	}
+)
+
 const (
 	certValidity = 5 * 365 * 24 * time.Hour
 )
@@ -126,18 +140,6 @@ func generateTLSOutput(cmd *cobra.Command, tlsOutDir, tlsCommonName string, tlsH
 	_, _ = fmt.Fprintln(w, "Manager env")
 	_, _ = fmt.Fprintf(w, "ARCANE_TLS_ENABLED=true\nARCANE_TLS_CERT_FILE=%s\nARCANE_TLS_KEY_FILE=%s\n", paths.CertPath, paths.KeyPath)
 	return nil
-}
-
-type agentMTLSPaths struct {
-	CACertPath     string `json:"cACertPath"`
-	CAKeyPath      string `json:"cAKeyPath"`
-	ClientCertPath string `json:"clientCertPath"`
-	ClientKeyPath  string `json:"clientKeyPath"`
-}
-
-type serverTLSPaths struct {
-	CertPath string `json:"certPath"`
-	KeyPath  string `json:"keyPath"`
 }
 
 func generateAgentMTLSBundle(outDir, envID, appURL string) (*agentMTLSPaths, error) {

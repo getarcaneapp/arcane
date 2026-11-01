@@ -21,6 +21,21 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v3/pkg/images"
 )
 
+var ignoreRef = cmdutil.ResourceRef[types.IgnoredVulnerability, types.IgnoredVulnerability]{
+	EnvironmentScoped: true,
+	Singular:          "ignore", Plural: "ignores",
+	IDHint: "the identifier", ListCmd: "arcane-cli images vulnerabilities ignored",
+	GetPath: nil, ListPath: clitypes.VulnerabilitiesIgnored,
+	Matches: func(item types.IgnoredVulnerability, lower, original string) bool {
+		return strings.EqualFold(item.ID, original)
+	},
+	Label: func(item types.IgnoredVulnerability) string {
+		return item.VulnerabilityID + " (" + item.ID + ")"
+	},
+	Promote:      func(item types.IgnoredVulnerability) *types.IgnoredVulnerability { return &item },
+	IdentifierOf: func(item types.IgnoredVulnerability) string { return item.ID },
+}
+
 // Command builds the vulnerabilities command tree.
 func Command() *cobra.Command {
 	command := &cobra.Command{
@@ -418,19 +433,4 @@ func resolveImageID(ctx context.Context, c *client.Client, identifier string) (s
 		return "", err
 	}
 	return resolved.ID, nil
-}
-
-var ignoreRef = cmdutil.ResourceRef[types.IgnoredVulnerability, types.IgnoredVulnerability]{
-	EnvironmentScoped: true,
-	Singular:          "ignore", Plural: "ignores",
-	IDHint: "the identifier", ListCmd: "arcane-cli images vulnerabilities ignored",
-	GetPath: nil, ListPath: clitypes.VulnerabilitiesIgnored,
-	Matches: func(item types.IgnoredVulnerability, lower, original string) bool {
-		return strings.EqualFold(item.ID, original)
-	},
-	Label: func(item types.IgnoredVulnerability) string {
-		return item.VulnerabilityID + " (" + item.ID + ")"
-	},
-	Promote:      func(item types.IgnoredVulnerability) *types.IgnoredVulnerability { return &item },
-	IdentifierOf: func(item types.IgnoredVulnerability) string { return item.ID },
 }

@@ -16,6 +16,29 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+var volumeRef = cmdutil.ResourceRef[types.Volume, types.Volume]{
+	EnvironmentScoped: true,
+	Singular:          "volume",
+	Plural:            "volumes",
+	IDHint:            "the volume name",
+	ListCmd:           "arcane volumes list",
+	GetPath:           clitypes.Volume,
+	IdentifierOf:      func(data types.Volume) string { return data.Name },
+	ListPath:          clitypes.Volumes,
+	Matches: func(item types.Volume, identifierLower, original string) bool {
+		idLower := strings.ToLower(item.ID)
+		return strings.EqualFold(item.Name, original) || strings.Contains(strings.ToLower(item.Name), identifierLower) ||
+			idLower == identifierLower || (len(identifierLower) >= 4 && strings.HasPrefix(idLower, identifierLower))
+	},
+	Label: func(match types.Volume) string {
+		if match.Driver != "" {
+			return fmt.Sprintf("%s (%s)", match.Name, match.Driver)
+		}
+		return match.Name
+	},
+	Promote: func(match types.Volume) *types.Volume { return &match },
+}
+
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "volumes",
@@ -363,27 +386,4 @@ func newCreateCmd() *cobra.Command {
 	_ = cmd.MarkFlagRequired("name")
 	cmdutil.SetScope(cmdutil.ScopeDestination, cmd)
 	return cmd
-}
-
-var volumeRef = cmdutil.ResourceRef[types.Volume, types.Volume]{
-	EnvironmentScoped: true,
-	Singular:          "volume",
-	Plural:            "volumes",
-	IDHint:            "the volume name",
-	ListCmd:           "arcane volumes list",
-	GetPath:           clitypes.Volume,
-	IdentifierOf:      func(data types.Volume) string { return data.Name },
-	ListPath:          clitypes.Volumes,
-	Matches: func(item types.Volume, identifierLower, original string) bool {
-		idLower := strings.ToLower(item.ID)
-		return strings.EqualFold(item.Name, original) || strings.Contains(strings.ToLower(item.Name), identifierLower) ||
-			idLower == identifierLower || (len(identifierLower) >= 4 && strings.HasPrefix(idLower, identifierLower))
-	},
-	Label: func(match types.Volume) string {
-		if match.Driver != "" {
-			return fmt.Sprintf("%s (%s)", match.Name, match.Driver)
-		}
-		return match.Name
-	},
-	Promote: func(match types.Volume) *types.Volume { return &match },
 }

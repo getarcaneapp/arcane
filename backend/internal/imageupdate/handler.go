@@ -13,32 +13,34 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type ImageUpdateHandler struct {
-	imageUpdateService       *ImageUpdateService
-	getUpdateInfoByImageRefs func(context.Context, []string) (map[string]*types.ImageUpdateInfo, error)
-	appCtx                   context.Context
-}
+type (
+	ImageUpdateHandler struct {
+		imageUpdateService       *ImageUpdateService
+		getUpdateInfoByImageRefs func(context.Context, []string) (map[string]*types.ImageUpdateInfo, error)
+		appCtx                   context.Context
+	}
 
-type CheckImageUpdateInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ImageRef      string `query:"imageRef" doc:"Image reference"`
-}
+	CheckImageUpdateInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ImageRef      string `query:"imageRef" doc:"Image reference"`
+	}
 
-type CheckImageUpdateByIDInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ImageID       string `path:"imageId" doc:"Image ID"`
-}
+	CheckImageUpdateByIDInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ImageID       string `path:"imageId" doc:"Image ID"`
+	}
 
-type CheckImagesActionInput struct {
-	Body          *types.BatchImageUpdateRequest `required:"false"`
-	EnvironmentID string                         `path:"id" doc:"Environment ID"`
-	Action        string                         `query:"action" required:"true" enum:"all,batch" doc:"Check every local image or only the listed image references"`
-}
+	CheckImagesActionInput struct {
+		Body          *types.BatchImageUpdateRequest `required:"false"`
+		EnvironmentID string                         `path:"id" doc:"Environment ID"`
+		Action        string                         `query:"action" required:"true" enum:"all,batch" doc:"Check every local image or only the listed image references"`
+	}
 
-type GetUpdateInfoByRefsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ImageRefs     string `query:"imageRefs" doc:"Comma-separated image references"`
-}
+	GetUpdateInfoByRefsInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ImageRefs     string `query:"imageRefs" doc:"Comma-separated image references"`
+	}
+)
 
 func (h *ImageUpdateHandler) CheckImageUpdate(ctx context.Context, input *CheckImageUpdateInput) (*handlerutil.Out[types.ImageUpdateResponse], error) {
 	if input.ImageRef == "" {

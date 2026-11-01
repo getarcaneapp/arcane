@@ -14,25 +14,27 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
 )
 
-type WebhookHandler struct {
-	webhookService *WebhookService
-}
+type (
+	WebhookHandler struct {
+		webhookService *WebhookService
+	}
 
-type CreateWebhookInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	types.Create[types.Webhook]
-}
+	CreateWebhookInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		types.Create[types.Webhook]
+	}
 
-type DeleteWebhookInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	WebhookID     string `path:"webhookId" doc:"Webhook ID"`
-}
+	DeleteWebhookInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		WebhookID     string `path:"webhookId" doc:"Webhook ID"`
+	}
 
-type UpdateWebhookInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	WebhookID     string `path:"webhookId" doc:"Webhook ID"`
-	types.Update[types.Webhook]
-}
+	UpdateWebhookInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		WebhookID     string `path:"webhookId" doc:"Webhook ID"`
+		types.Update[types.Webhook]
+	}
+)
 
 // ListWebhooks returns all webhooks for an environment (tokens are masked).
 func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.Webhook], error) {

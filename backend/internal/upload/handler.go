@@ -20,36 +20,38 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// UploadHandler provides the Huma-based chunked upload-session endpoints.
-type UploadHandler struct {
-	uploadService *UploadService
-}
+type (
+	// UploadHandler provides the Huma-based chunked upload-session endpoints.
+	UploadHandler struct {
+		uploadService *UploadService
+	}
 
-type CreateUploadSessionInput struct {
-	EnvironmentID string `path:"id"`
-	Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
-	Body          types.CreateUploadSessionRequest
-}
+	CreateUploadSessionInput struct {
+		EnvironmentID string `path:"id"`
+		Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
+		Body          types.CreateUploadSessionRequest
+	}
 
-type UploadChunkInput struct {
-	EnvironmentID string `path:"id"`
-	Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
-	UploadID      string `path:"uploadId"`
-	RawBody       []byte `contentType:"application/octet-stream"`
-	Index         int    `path:"index"`
-}
+	UploadChunkInput struct {
+		EnvironmentID string `path:"id"`
+		Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
+		UploadID      string `path:"uploadId"`
+		RawBody       []byte `contentType:"application/octet-stream"`
+		Index         int    `path:"index"`
+	}
 
-type GetUploadSessionInput struct {
-	EnvironmentID string `path:"id"`
-	Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
-	UploadID      string `path:"uploadId"`
-}
+	GetUploadSessionInput struct {
+		EnvironmentID string `path:"id"`
+		Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
+		UploadID      string `path:"uploadId"`
+	}
 
-type DeleteUploadSessionInput struct {
-	EnvironmentID string `path:"id"`
-	Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
-	UploadID      string `path:"uploadId"`
-}
+	DeleteUploadSessionInput struct {
+		EnvironmentID string `path:"id"`
+		Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
+		UploadID      string `path:"uploadId"`
+	}
+)
 
 // SessionHTTPError maps upload-session errors to HTTP errors for this package
 // and the domain endpoints that consume sessions. It returns nil for errors

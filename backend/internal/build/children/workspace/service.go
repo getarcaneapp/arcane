@@ -23,12 +23,16 @@ import (
 	acfsutils "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/acfs"
 )
 
-const defaultBuildsDirectory = "/builds"
+type (
+	// Service provides file operations for the manual build workspace.
+	Service struct {
+		buildsDirectory func() string
+	}
+)
 
-// Service provides file operations for the manual build workspace.
-type Service struct {
-	buildsDirectory func() string
-}
+const (
+	defaultBuildsDirectory = "/builds"
+)
 
 // NewService builds the workspace service; buildsDirectory reports the configured workspace root.
 func NewService(buildsDirectory func() string) *Service {

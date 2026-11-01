@@ -25,68 +25,70 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
 )
 
-type Handler struct {
-	service            *Service
-	activityService    *activity.ActivityService
-	environmentService *environment.EnvironmentService
-	uploadService      *upload.UploadService
-	appCtx             context.Context
-}
+type (
+	Handler struct {
+		service            *Service
+		activityService    *activity.ActivityService
+		environmentService *environment.EnvironmentService
+		uploadService      *upload.UploadService
+		appCtx             context.Context
+	}
 
-type ListBackupsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction"`
-	Type          string `query:"type" doc:"Management origin filter"`
-	Start         int    `query:"start" default:"0" doc:"Start index"`
-	Limit         int    `query:"limit" default:"20" doc:"Limit"`
-	IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
-}
+	ListBackupsInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		VolumeName    string `path:"volumeName" doc:"Volume name"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction"`
+		Type          string `query:"type" doc:"Management origin filter"`
+		Start         int    `query:"start" default:"0" doc:"Start index"`
+		Limit         int    `query:"limit" default:"20" doc:"Limit"`
+		IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
+	}
 
-type ListBackupsOutput struct {
-	Body types.PaginatedWithWarnings[types.VolumeBackup]
-}
+	ListBackupsOutput struct {
+		Body types.PaginatedWithWarnings[types.VolumeBackup]
+	}
 
-type CreateBackupInput struct {
-	Body          *types.CreateVolumeBackupRequest `json:"body,omitempty"`
-	EnvironmentID string                           `path:"id" doc:"Environment ID"`
-	VolumeName    string                           `path:"volumeName" doc:"Volume name"`
-}
+	CreateBackupInput struct {
+		Body          *types.CreateVolumeBackupRequest `json:"body,omitempty"`
+		EnvironmentID string                           `path:"id" doc:"Environment ID"`
+		VolumeName    string                           `path:"volumeName" doc:"Volume name"`
+	}
 
-type DiscoverVolumeBackupsInput struct {
-	EnvironmentID string                             `path:"id" doc:"Environment ID"`
-	Body          types.DiscoverVolumeBackupsRequest `doc:"Destination to scan"`
-}
+	DiscoverVolumeBackupsInput struct {
+		EnvironmentID string                             `path:"id" doc:"Environment ID"`
+		Body          types.DiscoverVolumeBackupsRequest `doc:"Destination to scan"`
+	}
 
-type DiscoverVolumeBackupsOutput struct {
-	Body types.ApiResponse[types.DiscoverVolumeBackupsResponse]
-}
+	DiscoverVolumeBackupsOutput struct {
+		Body types.ApiResponse[types.DiscoverVolumeBackupsResponse]
+	}
 
-type DeleteBackupInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	BackupID      string `path:"backupId" doc:"Backup ID"`
-}
+	DeleteBackupInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		BackupID      string `path:"backupId" doc:"Backup ID"`
+	}
 
-type DownloadBackupInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	BackupID      string `path:"backupId" doc:"Backup ID"`
-}
+	DownloadBackupInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		BackupID      string `path:"backupId" doc:"Backup ID"`
+	}
 
-type UploadBackupInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	BackupID      string `path:"backupId" doc:"Backup ID"`
-	Body          types.UploadVolumeBackupRequest
-}
+	UploadBackupInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		BackupID      string `path:"backupId" doc:"Backup ID"`
+		Body          types.UploadVolumeBackupRequest
+	}
 
-type HandlerParams struct {
-	Service            *Service
-	ActivityService    *activity.ActivityService
-	EnvironmentService *environment.EnvironmentService
-	UploadService      *upload.UploadService
-	AppCtx             context.Context
-}
+	HandlerParams struct {
+		Service            *Service
+		ActivityService    *activity.ActivityService
+		EnvironmentService *environment.EnvironmentService
+		UploadService      *upload.UploadService
+		AppCtx             context.Context
+	}
+)
 
 func NewHandler(p HandlerParams) *Handler {
 	return &Handler{service: p.Service, activityService: p.ActivityService, environmentService: p.EnvironmentService, uploadService: p.UploadService, appCtx: p.AppCtx}

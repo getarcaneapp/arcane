@@ -28,14 +28,16 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
 )
 
-// volumeHelper tracks a reused helper container and its last use for idle reaping.
-// inUse counts active holds so the reaper never removes a helper mid-request.
-type volumeHelper struct {
-	lastUsedAt time.Time
-	id         string
-	inUse      int
-	protocol   int
-}
+type (
+	// volumeHelper tracks a reused helper container and its last use for idle reaping.
+	// inUse counts active holds so the reaper never removes a helper mid-request.
+	volumeHelper struct {
+		lastUsedAt time.Time
+		id         string
+		inUse      int
+		protocol   int
+	}
+)
 
 func (s *VolumeService) requireVolumeHelperACFS(ctx context.Context, volumeName, containerID string) error {
 	s.helperMu.Lock()

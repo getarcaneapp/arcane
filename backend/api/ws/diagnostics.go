@@ -27,7 +27,6 @@ const (
 	diagnosticsStreamInterval = 2 * time.Second
 	// actorDiagnosticsStreamInterval is slower because each push queries every environment.
 	actorDiagnosticsStreamInterval = 10 * time.Second
-
 	// Keepalive/liveness bounds for the diagnostics sockets, mirroring the system
 	// stats stream. Without them a silently dead peer wedges the writer forever,
 	// which also strands the writer's deferred cleanup (log subscription, conn).
@@ -36,6 +35,8 @@ const (
 	diagnosticsPingWait   = 10 * time.Second
 	diagnosticsPingPeriod = 54 * time.Second
 )
+
+var defaultLogBroadcaster = logs.New(logs.Config{Capacity: 1000})
 
 // buildDiagnostics assembles a snapshot: runtime/memory/GC from the
 // DiagnosticsService plus this package's WebSocket metrics and worker-goroutine count.
@@ -292,8 +293,6 @@ func diagnosticsReadLoop(ctx context.Context, conn *websocket.Conn, onMessage fu
 	}()
 	return done
 }
-
-var defaultLogBroadcaster = logs.New(logs.Config{Capacity: 1000})
 
 // LogBroadcaster returns the backend-wide log broadcaster used by diagnostics.
 func LogBroadcaster() *logs.Broadcaster {

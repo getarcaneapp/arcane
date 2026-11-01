@@ -22,26 +22,67 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-var installableTypes = []types.QuadletType{
-	types.QuadletTypeContainer,
-	types.QuadletTypePod,
-	types.QuadletTypeKube,
-	types.QuadletTypeNetwork,
-	types.QuadletTypeVolume,
-	types.QuadletTypeImage,
-	types.QuadletTypeBuild,
-	types.QuadletTypeArtifact,
-}
+type (
+	Runtime struct {
+		Client        *podman.Client
+		Systemd       podman.Systemd
+		AppsSupported bool
+	}
 
-type Runtime struct {
-	Client        *podman.Client
-	Systemd       podman.Systemd
-	AppsSupported bool
-}
+	Service struct {
+		runtime func(context.Context) (Runtime, error)
+	}
+)
 
-type Service struct {
-	runtime func(context.Context) (Runtime, error)
-}
+var (
+	installableTypes = []types.QuadletType{
+		types.QuadletTypeContainer,
+		types.QuadletTypePod,
+		types.QuadletTypeKube,
+		types.QuadletTypeNetwork,
+		types.QuadletTypeVolume,
+		types.QuadletTypeImage,
+		types.QuadletTypeBuild,
+		types.QuadletTypeArtifact,
+	}
+
+	quadletPagination = pagination.Config[types.QuadletDetail]{
+		SearchAccessors: []pagination.SearchAccessor[types.QuadletDetail]{
+			func(quadlet types.QuadletDetail) (string, error) {
+				return quadlet.Name, nil
+			},
+			func(quadlet types.QuadletDetail) (string, error) {
+				return quadlet.UnitName, nil
+			},
+			func(quadlet types.QuadletDetail) (string, error) {
+				return string(quadlet.Type), nil
+			},
+			func(quadlet types.QuadletDetail) (string, error) {
+				return quadlet.Status, nil
+			},
+			func(quadlet types.QuadletDetail) (string, error) {
+				return quadlet.App, nil
+			},
+		},
+		SortBindings: []pagination.SortBinding[types.QuadletDetail]{
+			{Key: "name", Fn: func(a, b types.QuadletDetail) int {
+				return strings.Compare(a.Name, b.Name)
+			}},
+			{Key: "type", Fn: func(a, b types.QuadletDetail) int {
+				return strings.Compare(string(a.Type), string(b.Type))
+			}},
+			{Key: "status", Fn: func(a, b types.QuadletDetail) int {
+				return strings.Compare(a.Status, b.Status)
+			}},
+			{Key: "unitName", Fn: func(a, b types.QuadletDetail) int {
+				return strings.Compare(a.UnitName, b.UnitName)
+			}},
+			{Key: "app", Fn: func(a, b types.QuadletDetail) int {
+				return strings.Compare(a.App, b.App)
+			}},
+		},
+	}
+)
 
 func NewService(runtime func(context.Context) (Runtime, error)) *Service {
 	return &Service{runtime: runtime}
@@ -63,43 +104,6 @@ func (s *Service) List(ctx context.Context, filters map[string][]string) ([]type
 		out = append(out, describe(entry))
 	}
 	return out, nil
-}
-
-var quadletPagination = pagination.Config[types.QuadletDetail]{
-	SearchAccessors: []pagination.SearchAccessor[types.QuadletDetail]{
-		func(quadlet types.QuadletDetail) (string, error) {
-			return quadlet.Name, nil
-		},
-		func(quadlet types.QuadletDetail) (string, error) {
-			return quadlet.UnitName, nil
-		},
-		func(quadlet types.QuadletDetail) (string, error) {
-			return string(quadlet.Type), nil
-		},
-		func(quadlet types.QuadletDetail) (string, error) {
-			return quadlet.Status, nil
-		},
-		func(quadlet types.QuadletDetail) (string, error) {
-			return quadlet.App, nil
-		},
-	},
-	SortBindings: []pagination.SortBinding[types.QuadletDetail]{
-		{Key: "name", Fn: func(a, b types.QuadletDetail) int {
-			return strings.Compare(a.Name, b.Name)
-		}},
-		{Key: "type", Fn: func(a, b types.QuadletDetail) int {
-			return strings.Compare(string(a.Type), string(b.Type))
-		}},
-		{Key: "status", Fn: func(a, b types.QuadletDetail) int {
-			return strings.Compare(a.Status, b.Status)
-		}},
-		{Key: "unitName", Fn: func(a, b types.QuadletDetail) int {
-			return strings.Compare(a.UnitName, b.UnitName)
-		}},
-		{Key: "app", Fn: func(a, b types.QuadletDetail) int {
-			return strings.Compare(a.App, b.App)
-		}},
-	},
 }
 
 func (s *Service) ListPaginated(ctx context.Context, filters map[string][]string, params pagination.QueryParams) ([]types.QuadletDetail, pagination.Response, error) {

@@ -15,20 +15,28 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
+type (
+	// Store reads and writes one project's tag assignments inside the caller's
+	// transaction.
+	Store interface {
+		CountTag(projectID, name string, source types.ProjectTagSource) (int64, error)
+		CountSource(projectID string, source types.ProjectTagSource) (int64, error)
+		StoredColor(name string) (types.ProjectTagColor, bool, error)
+		Insert(rows []types.ProjectTagAssignment) error
+		InsertIgnoringConflict(row types.ProjectTagAssignment) error
+		DeleteTag(projectID, name string, source types.ProjectTagSource) error
+		DeleteSource(projectID string, source types.ProjectTagSource) error
+	}
+
+	TagUpdate struct {
+		Name     string
+		Color    types.ProjectTagColor
+		Attached bool
+	}
+)
+
 // ErrComposeTagReadOnly rejects UI edits of a tag the Compose file owns.
 var ErrComposeTagReadOnly = errors.New("tag is defined in Compose and can only be changed through x-arcane metadata")
-
-// Store reads and writes one project's tag assignments inside the caller's
-// transaction.
-type Store interface {
-	CountTag(projectID, name string, source types.ProjectTagSource) (int64, error)
-	CountSource(projectID string, source types.ProjectTagSource) (int64, error)
-	StoredColor(name string) (types.ProjectTagColor, bool, error)
-	Insert(rows []types.ProjectTagAssignment) error
-	InsertIgnoringConflict(row types.ProjectTagAssignment) error
-	DeleteTag(projectID, name string, source types.ProjectTagSource) error
-	DeleteSource(projectID string, source types.ProjectTagSource) error
-}
 
 // NormalizeUpdate validates a UI tag change; detached tags keep the neutral color.
 func NormalizeUpdate(name string, color types.ProjectTagColor, attached bool) (string, types.ProjectTagColor, error) {
@@ -44,12 +52,6 @@ func NormalizeUpdate(name string, color types.ProjectTagColor, attached bool) (s
 		return "", "", err
 	}
 	return normalized, normalizedColor, nil
-}
-
-type TagUpdate struct {
-	Name     string
-	Color    types.ProjectTagColor
-	Attached bool
 }
 
 // ApplyUpdate attaches or detaches a normalized UI tag. Compose-owned names are

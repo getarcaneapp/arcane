@@ -20,14 +20,16 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 )
 
-// RuntimeImage describes the Arcane runtime image that can run internal helper
-// commands from inside temporary containers.
-type RuntimeImage struct {
-	Image      string
-	Source     string
-	Entrypoint []string
-	Command    []string
-}
+type (
+	// RuntimeImage describes the Arcane runtime image that can run internal helper
+	// commands from inside temporary containers.
+	RuntimeImage struct {
+		Image      string
+		Source     string
+		Entrypoint []string
+		Command    []string
+	}
+)
 
 const (
 	toolsRepoPath  = "getarcaneapp/tools"

@@ -10,55 +10,57 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// GitRepositoryHandler handles git repository management endpoints.
-type GitRepositoryHandler struct {
-	repoService *GitRepositoryService
-}
+type (
+	// GitRepositoryHandler handles git repository management endpoints.
+	GitRepositoryHandler struct {
+		repoService *GitRepositoryService
+	}
 
-type ListGitRepositoriesInput struct {
-	Search string `query:"search" doc:"Search query"`
-	Sort   string `query:"sort" doc:"Column to sort by"`
-	Order  string `query:"order" default:"asc" doc:"Sort direction"`
-	Start  int    `query:"start" default:"0" doc:"Start index"`
-	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
-}
+	ListGitRepositoriesInput struct {
+		Search string `query:"search" doc:"Search query"`
+		Sort   string `query:"sort" doc:"Column to sort by"`
+		Order  string `query:"order" default:"asc" doc:"Sort direction"`
+		Start  int    `query:"start" default:"0" doc:"Start index"`
+		Limit  int    `query:"limit" default:"20" doc:"Items per page"`
+	}
 
-type CreateGitRepositoryInput struct {
-	types.Create[types.GitRepository]
-}
+	CreateGitRepositoryInput struct {
+		types.Create[types.GitRepository]
+	}
 
-type GetGitRepositoryInput struct {
-	ID string `path:"id" doc:"Repository ID"`
-}
+	GetGitRepositoryInput struct {
+		ID string `path:"id" doc:"Repository ID"`
+	}
 
-type UpdateGitRepositoryInput struct {
-	ID string `path:"id" doc:"Repository ID"`
-	types.Update[types.GitRepository]
-}
+	UpdateGitRepositoryInput struct {
+		ID string `path:"id" doc:"Repository ID"`
+		types.Update[types.GitRepository]
+	}
 
-type DeleteGitRepositoryInput struct {
-	ID string `path:"id" doc:"Repository ID"`
-}
+	DeleteGitRepositoryInput struct {
+		ID string `path:"id" doc:"Repository ID"`
+	}
 
-type GitRepositoryActionInput struct {
-	ID     string `path:"id" doc:"Repository ID"`
-	Action string `query:"action" required:"true" enum:"test" doc:"Repository action"`
-	Branch string `query:"branch" doc:"Branch to test (optional, uses repository default branch when omitted)"`
-}
+	GitRepositoryActionInput struct {
+		ID     string `path:"id" doc:"Repository ID"`
+		Action string `query:"action" required:"true" enum:"test" doc:"Repository action"`
+		Branch string `query:"branch" doc:"Branch to test (optional, uses repository default branch when omitted)"`
+	}
 
-type ListBranchesInput struct {
-	ID string `path:"id" doc:"Repository ID"`
-}
+	ListBranchesInput struct {
+		ID string `path:"id" doc:"Repository ID"`
+	}
 
-type BrowseFilesInput struct {
-	ID     string `path:"id" doc:"Repository ID"`
-	Branch string `query:"branch" doc:"Branch to browse"`
-	Path   string `query:"path" doc:"Path within repository (optional)"`
-}
+	BrowseFilesInput struct {
+		ID     string `path:"id" doc:"Repository ID"`
+		Branch string `query:"branch" doc:"Branch to browse"`
+		Path   string `query:"path" doc:"Path within repository (optional)"`
+	}
 
-type SyncGitRepositoriesInput struct {
-	Body types.GitRepositorySyncRequest
-}
+	SyncGitRepositoriesInput struct {
+		Body types.GitRepositorySyncRequest
+	}
+)
 
 // ListRepositories returns a paginated list of git repositories.
 func (h *GitRepositoryHandler) ListRepositories(ctx context.Context, input *ListGitRepositoriesInput) (*handlerutil.Page[types.GitRepository], error) {

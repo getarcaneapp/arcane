@@ -18,16 +18,39 @@ import (
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
-// TunnelMessageType represents the type of message sent over the tunnel.
-type TunnelMessageType string
+type (
+	// TunnelMessageType represents the type of message sent over the tunnel.
+	TunnelMessageType string
+
+	// TunnelConnection is the transport contract shared by WebSocket and gRPC wrappers.
+	TunnelConnection interface {
+		Send(msg *TunnelMessage) error
+		Receive() (*TunnelMessage, error)
+		Close() error
+		IsClosed() bool
+		Transport() string
+		muxConn(ctx context.Context) io.ReadWriteCloser
+	}
+
+	grpcManagerStream interface {
+		Send(msg *tunnelpb.ManagerMessage) error
+		Recv() (*tunnelpb.AgentMessage, error)
+		Context() context.Context
+	}
+
+	grpcAgentStream interface {
+		Send(msg *tunnelpb.AgentMessage) error
+		Recv() (*tunnelpb.ManagerMessage, error)
+		Context() context.Context
+		CloseSend() error
+	}
+)
 
 const (
 	maxGRPCTunnelMessageSize = 16 * 1024 * 1024
-
 	// maxWebSocketTunnelMessageSize caps inbound websocket tunnel frames at 2x the
 	// gRPC limit, since JSON base64-encodes binary bodies a gRPC peer would accept.
 	maxWebSocketTunnelMessageSize = 2 * maxGRPCTunnelMessageSize
-
 	// MessageTypeRegister is the first message sent by the agent on gRPC transport.
 	MessageTypeRegister TunnelMessageType = "register"
 	// MessageTypeRegisterResponse is sent by manager after register validation.
@@ -41,16 +64,6 @@ var (
 	// It is a variable so tests can shorten it.
 	tunnelReadWait = 3 * DefaultHeartbeatInterval
 )
-
-// TunnelConnection is the transport contract shared by WebSocket and gRPC wrappers.
-type TunnelConnection interface {
-	Send(msg *TunnelMessage) error
-	Receive() (*TunnelMessage, error)
-	Close() error
-	IsClosed() bool
-	Transport() string
-	muxConn(ctx context.Context) io.ReadWriteCloser
-}
 
 // NewTunnelConn creates a new WebSocket tunnel connection wrapper.
 func NewTunnelConn(conn *websocket.Conn) *TunnelConn {
@@ -153,19 +166,6 @@ func (t *TunnelConn) IsClosed() bool {
 // Transport identifies the underlying tunnel transport.
 func (t *TunnelConn) Transport() string {
 	return TransportWebSocket
-}
-
-type grpcManagerStream interface {
-	Send(msg *tunnelpb.ManagerMessage) error
-	Recv() (*tunnelpb.AgentMessage, error)
-	Context() context.Context
-}
-
-type grpcAgentStream interface {
-	Send(msg *tunnelpb.AgentMessage) error
-	Recv() (*tunnelpb.ManagerMessage, error)
-	Context() context.Context
-	CloseSend() error
 }
 
 // NewGRPCManagerTunnelConn creates a manager-side gRPC tunnel wrapper. A nil stream yields a connection

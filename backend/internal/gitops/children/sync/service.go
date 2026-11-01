@@ -38,9 +38,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
-// reservedRootEnvFiles are the project-root env files the override merge owns; git never writes them raw.
-var reservedRootEnvFiles = []string{projects.EffectiveEnvFileName, projects.GitSourceEnvFileName, projects.OverrideEnvFileName, projects.GlobalEnvFileName}
-
 type (
 	// Service runs deployment syncs. Shared sync limits, error events and job
 	// registration stay with the parent and arrive as callbacks.
@@ -54,12 +51,10 @@ type (
 		logError       func(context.Context, *projectpkg.GitOpsSync, types.Actor, string)
 		unregisterJob  func(context.Context, string)
 	}
-
 	// syncRevision is the recovery data a run records so a retry replays the same source revision.
 	syncRevision struct {
 		Commit string `json:"commit"`
 	}
-
 	// preparedSyncSource is the cloned and validated source a sync applies.
 	preparedSyncSource struct {
 		repoPath         string
@@ -71,7 +66,6 @@ type (
 		// replay marks a retry of a pinned revision, which redeploys even when the files are unchanged.
 		replay bool
 	}
-
 	// stagedDirectorySync holds the fully prepared directory-sync result before it
 	// is promoted into the live project path.
 	stagedDirectorySync struct {
@@ -93,18 +87,21 @@ type (
 		serviceCount    int
 		contentsChanged bool
 	}
+
+	Params struct {
+		DB             *database.DB
+		RepoService    *gitrepo.GitRepositoryService
+		ProjectService *projectpkg.ProjectService
+		SwarmService   *swarm.SwarmService
+		EventService   *event.EventService
+		Limits         func(context.Context, *projectpkg.GitOpsSync) (int, int64, int64)
+		LogError       func(context.Context, *projectpkg.GitOpsSync, types.Actor, string)
+		UnregisterJob  func(context.Context, string)
+	}
 )
 
-type Params struct {
-	DB             *database.DB
-	RepoService    *gitrepo.GitRepositoryService
-	ProjectService *projectpkg.ProjectService
-	SwarmService   *swarm.SwarmService
-	EventService   *event.EventService
-	Limits         func(context.Context, *projectpkg.GitOpsSync) (int, int64, int64)
-	LogError       func(context.Context, *projectpkg.GitOpsSync, types.Actor, string)
-	UnregisterJob  func(context.Context, string)
-}
+// reservedRootEnvFiles are the project-root env files the override merge owns; git never writes them raw.
+var reservedRootEnvFiles = []string{projects.EffectiveEnvFileName, projects.GitSourceEnvFileName, projects.OverrideEnvFileName, projects.GlobalEnvFileName}
 
 func New(p Params) *Service {
 	return &Service{

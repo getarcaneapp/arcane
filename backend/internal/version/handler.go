@@ -7,24 +7,26 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 )
 
-// VersionHandler handles version information endpoints.
-type VersionHandler struct {
-	versionService *VersionService
-}
+type (
+	// VersionHandler handles version information endpoints.
+	VersionHandler struct {
+		versionService *VersionService
+	}
 
-type GetVersionInput struct {
-	Current string `query:"current" doc:"Current version to compare against"`
-}
+	GetVersionInput struct {
+		Current string `query:"current" doc:"Current version to compare against"`
+	}
 
-type GetVersionOutput struct {
-	Body types.VersionCheck
-}
+	GetVersionOutput struct {
+		Body types.VersionCheck
+	}
 
-type GetAppVersionInput struct{}
+	GetAppVersionInput struct{}
 
-type GetAppVersionOutput struct {
-	Body types.VersionInfo
-}
+	GetAppVersionOutput struct {
+		Body types.VersionInfo
+	}
+)
 
 // GetVersion returns version information with optional update check.
 func (h *VersionHandler) GetVersion(ctx context.Context, input *GetVersionInput) (*GetVersionOutput, error) {

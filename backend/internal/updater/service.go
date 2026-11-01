@@ -60,77 +60,56 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
 )
 
-var (
-	errUpdateBusy = common.Classify(common.ErrConflict, errors.New("another container update is running"))
-
-	containerEventTypes = map[string]event.EventType{
-		"container_stop":   event.EventTypeContainerStop,
-		"container_delete": event.EventTypeContainerDelete,
-		"container_create": event.EventTypeContainerCreate,
-		"container_start":  event.EventTypeContainerStart,
-		"container_update": event.EventTypeContainerUpdate,
-	}
-
-	updateLabelPolicy = updater.LabelPolicy{
-		UnmanagedReasonFunc: func(l map[string]string) string {
-			return kit.Ternary(types.QuadletUnit(l) != "", "managed by a Podman quadlet; updates run through Podman auto-update", "")
-		},
-	}
-)
-
-// UpdaterService is Arcane's handler-facing service for the standalone updater engine.
-type UpdaterService struct {
-	admission  *runs.Admission
-	engine     *updater.Service
-	execution  *execution.Service
-	recovery   *recovery.Service
-	autoUpdate *flow.Workflow
-	deps       updaterDependencies
-}
-
-type updaterDependencies struct {
-	DB                     *database.DB
-	Docker                 *dockerInternal.DockerClientService
-	Settings               *settings.SettingsService
-	Projects               *projectpkg.ProjectService
-	ImagePuller            *image.ImageService
-	ImageUpdates           *imageupdate.ImageUpdateService
-	RegistryDigestResolver *registry.ContainerRegistryService
-	Events                 *event.EventService
-	Notifications          *notification.NotificationService
-	SelfUpgrade            SelfUpgrader
-	Activity               *activity.ActivityService
-	SystemUser             types.Actor
-}
-
-type SelfUpgrader interface {
-	// TriggerUpgradeViaCLI returns the spawned upgrader container's ID, which this
-	// service does not need — only update-all's manager step uses it.
-	TriggerUpgradeViaCLI(ctx context.Context, user types.Actor, target updater.SelfUpdateTarget) (string, error)
-}
-
 type (
+	// UpdaterService is Arcane's handler-facing service for the standalone updater engine.
+	UpdaterService struct {
+		admission  *runs.Admission
+		engine     *updater.Service
+		execution  *execution.Service
+		recovery   *recovery.Service
+		autoUpdate *flow.Workflow
+		deps       updaterDependencies
+	}
+
+	updaterDependencies struct {
+		DB                     *database.DB
+		Docker                 *dockerInternal.DockerClientService
+		Settings               *settings.SettingsService
+		Projects               *projectpkg.ProjectService
+		ImagePuller            *image.ImageService
+		ImageUpdates           *imageupdate.ImageUpdateService
+		RegistryDigestResolver *registry.ContainerRegistryService
+		Events                 *event.EventService
+		Notifications          *notification.NotificationService
+		SelfUpgrade            SelfUpgrader
+		Activity               *activity.ActivityService
+		SystemUser             types.Actor
+	}
+
+	SelfUpgrader interface {
+		// TriggerUpgradeViaCLI returns the spawned upgrader container's ID, which this
+		// service does not need — only update-all's manager step uses it.
+		TriggerUpgradeViaCLI(ctx context.Context, user types.Actor, target updater.SelfUpdateTarget) (string, error)
+	}
+
 	// containerUpdateBatch accumulates per-container update notifications
 	// so a single update batch produces one batched notification.
 	containerUpdateBatch struct {
 		entries []notifications.ContainerUpdateBatchEntry
 		sync.Mutex
 	}
-
 	containerUpdateBatchContextKey struct{}
 	activityIDContextKey           struct{}
 	updateAdmissionKey             struct{}
 	updateProgressKey              struct{}
 	scopedPendingKey               struct{}
 	ignoreSettingsExclusionsKey    struct{}
-
-	updateProgress struct {
+	updateProgress                 struct {
 		err           error
 		selfID        string
 		mu            sync.Mutex
 		selfTriggered bool
 	}
-
 	// autoUpdateApplied is the apply step's output, read back by finalize.
 	autoUpdateApplied struct {
 		Error          string              `json:"error,omitempty"`
@@ -145,26 +124,42 @@ type (
 		Busy    bool `json:"busy,omitempty"`
 		Started bool `json:"started,omitempty"`
 	}
+
+	UpdaterServiceParams struct {
+		fx.In
+
+		DB                  *database.DB
+		SettingsService     *settings.SettingsService
+		DockerService       *dockerInternal.DockerClientService
+		ProjectService      *projectpkg.ProjectService
+		ImageUpdateService  *imageupdate.ImageUpdateService
+		RegistryService     *registry.ContainerRegistryService
+		EventService        *event.EventService
+		ImageService        *image.ImageService
+		NotificationService *notification.NotificationService
+		SelfUpgrader        SelfUpgrader
+		ActivityService     *activity.ActivityService
+		Config              *config.Config
+		Admission           *runs.Admission
+		RoleService         *role.RoleService
+	}
 )
 
-type UpdaterServiceParams struct {
-	fx.In
-
-	DB                  *database.DB
-	SettingsService     *settings.SettingsService
-	DockerService       *dockerInternal.DockerClientService
-	ProjectService      *projectpkg.ProjectService
-	ImageUpdateService  *imageupdate.ImageUpdateService
-	RegistryService     *registry.ContainerRegistryService
-	EventService        *event.EventService
-	ImageService        *image.ImageService
-	NotificationService *notification.NotificationService
-	SelfUpgrader        SelfUpgrader
-	ActivityService     *activity.ActivityService
-	Config              *config.Config
-	Admission           *runs.Admission
-	RoleService         *role.RoleService
-}
+var (
+	errUpdateBusy       = common.Classify(common.ErrConflict, errors.New("another container update is running"))
+	containerEventTypes = map[string]event.EventType{
+		"container_stop":   event.EventTypeContainerStop,
+		"container_delete": event.EventTypeContainerDelete,
+		"container_create": event.EventTypeContainerCreate,
+		"container_start":  event.EventTypeContainerStart,
+		"container_update": event.EventTypeContainerUpdate,
+	}
+	updateLabelPolicy = updater.LabelPolicy{
+		UnmanagedReasonFunc: func(l map[string]string) string {
+			return kit.Ternary(types.QuadletUnit(l) != "", "managed by a Podman quadlet; updates run through Podman auto-update", "")
+		},
+	}
+)
 
 // NewUpdaterService constructs the Arcane updater facade.
 func NewUpdaterService(p UpdaterServiceParams) (*UpdaterService, error) {

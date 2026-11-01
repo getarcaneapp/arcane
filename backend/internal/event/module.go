@@ -16,10 +16,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// Module owns event persistence and both of the domain's HTTP surfaces.
-type Module struct {
-	service *EventService
-}
+type (
+	// Module owns event persistence and both of the domain's HTTP surfaces.
+	Module struct {
+		service *EventService
+	}
+)
 
 // New assembles the event routes around its service.
 func New(service *EventService) *Module {

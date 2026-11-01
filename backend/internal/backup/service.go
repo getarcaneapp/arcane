@@ -44,6 +44,112 @@ import (
 	s3util "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/s3"
 )
 
+type (
+	Repository struct {
+		ID          string
+		Environment []string
+		Mounts      []mount.Mount
+	}
+
+	Snapshot struct {
+		ID   string `json:"id"`
+		Size int64  `json:"-"`
+	}
+
+	rusticSnapshotOutput struct {
+		ID      string `json:"id"`
+		Summary struct {
+			TotalBytesProcessed int64 `json:"total_bytes_processed"`
+		} `json:"summary"`
+	}
+
+	// RestoreOptions selects what a snapshot restore writes and where.
+	RestoreOptions struct {
+		// SourcePath restores only this path inside the snapshot when non-empty.
+		SourcePath string
+		// DestinationPath overrides the restore target path inside the helper
+		// container; the target mount's path is used when empty.
+		DestinationPath string
+		// ExtraMounts are attached alongside the target, e.g. mounts nested inside it.
+		ExtraMounts []mount.Mount
+		// DeleteExtra removes files in the target that are absent from the snapshot.
+		DeleteExtra bool
+	}
+
+	// CreateSnapshotInput describes what one snapshot captures: the mounts to
+	// attach to the helper and the helper paths to back up. AsPath rewrites the
+	// snapshot path of a single source and cannot combine with several.
+	CreateSnapshotInput struct {
+		Mounts  []mount.Mount
+		Sources []string
+		AsPath  string
+		Tags    []string
+		Globs   []string
+	}
+
+	// Engine owns repository serialization and backup admission.
+	Engine struct {
+		imageService *image.ImageService
+		admission    *runs.Admission
+		repositories map[string]*sync.Mutex
+		// held parks admission a manual start won until the run that won it takes it over.
+		held      map[types.SchedulerAdmissionKey]heldLease
+		authorize func(context.Context, types.BackupRequester) error
+		mu        sync.Mutex
+	}
+
+	// heldLease is a parked lease and the run entitled to take it.
+	heldLease struct {
+		lease *runs.Lease
+		run   string
+	}
+
+	// DiscoveredSnapshot describes one snapshot found in a repository.
+	DiscoveredSnapshot struct {
+		ID      string    `json:"id"`
+		Time    time.Time `json:"time"`
+		Label   string    `json:"label"`
+		Tags    []string  `json:"tags"`
+		Summary struct {
+			TotalBytesProcessed int64 `json:"total_bytes_processed"`
+		} `json:"summary"`
+	}
+
+	// RecoveryKeyStore persists the recovery key shared by the system and volume backup domains.
+	RecoveryKeyStore struct {
+		db *database.DB
+	}
+
+	// PolicyReconciliation reconciles a full set of policy updates against the
+	// existing policies of one backup domain, then swaps the scheduled jobs.
+	PolicyReconciliation[P, U any] struct {
+		DB       *database.DB
+		ID       func(*P) string
+		UpdateID func(U) string
+		// New returns the blank policy for created entries, pre-scoped by the
+		// caller (e.g. with the volume name set).
+		New func() P
+		// Build validates an update and applies it to an existing or new policy.
+		Build func(ctx context.Context, policy *P, update U) error
+		// Persist overrides the default GORM transaction for settings-backed policies.
+		Persist    func(ctx context.Context, policies []P) error
+		Unregister func(ctx context.Context, policyID string)
+		Reschedule func(ctx context.Context, policy *P)
+		// Domain names the backup flavor in validation errors ("volume", "system").
+		Domain string
+		// Existing is every policy currently persisted for the reconciled scope.
+		Existing []P
+	}
+
+	DisableRemoteRequest struct {
+		Model         any
+		ID            string
+		DestinationID string
+		Field         string
+		LocalEnabled  bool
+	}
+)
+
 const (
 	VolumeAdmissionScope = "volume-backup"
 	SystemAdmissionScope = "system-backup"
@@ -53,52 +159,22 @@ const (
 	RunKeyPrefix        = "run:"
 	// VolumeRoot is the S3 prefix under which each instance keeps its volume backup repository.
 	VolumeRoot = "arcane-volume-backups"
-
 	// rusticRepositoryMissingMessage is how Rustic reports an uninitialized repository.
 	rusticRepositoryMissingMessage = "No repository config file found"
+
+	RemoteDisabledMessage = "S3 backup storage is missing. Remote backups were disabled; edit the policy to resume."
 )
 
-type Repository struct {
-	ID          string
-	Environment []string
-	Mounts      []mount.Mount
-}
+var (
+	ErrRecoveryKeyNotConfigured = errors.New("recovery key is not configured")
+	// ErrBackupSettled reports a checkpointed backup whose own attempt already failed it, so there is nothing to
+	// resume; a retry starts a new backup instead.
+	ErrBackupSettled = errors.New("the checkpointed backup already failed")
+	// RecoveryKeyFormat is 8 hyphenated groups of 6 base32 characters, used verbatim as the Rustic password.
+	RecoveryKeyFormat = regexp.MustCompile(`^[A-Z2-7]{6}(-[A-Z2-7]{6}){7}$`)
 
-type Snapshot struct {
-	ID   string `json:"id"`
-	Size int64  `json:"-"`
-}
-
-type rusticSnapshotOutput struct {
-	ID      string `json:"id"`
-	Summary struct {
-		TotalBytesProcessed int64 `json:"total_bytes_processed"`
-	} `json:"summary"`
-}
-
-// RestoreOptions selects what a snapshot restore writes and where.
-type RestoreOptions struct {
-	// SourcePath restores only this path inside the snapshot when non-empty.
-	SourcePath string
-	// DestinationPath overrides the restore target path inside the helper
-	// container; the target mount's path is used when empty.
-	DestinationPath string
-	// ExtraMounts are attached alongside the target, e.g. mounts nested inside it.
-	ExtraMounts []mount.Mount
-	// DeleteExtra removes files in the target that are absent from the snapshot.
-	DeleteExtra bool
-}
-
-// CreateSnapshotInput describes what one snapshot captures: the mounts to
-// attach to the helper and the helper paths to back up. AsPath rewrites the
-// snapshot path of a single source and cannot combine with several.
-type CreateSnapshotInput struct {
-	Mounts  []mount.Mount
-	Sources []string
-	AsPath  string
-	Tags    []string
-	Globs   []string
-}
+	ErrRemoteRepositoryMissing = errors.New("S3 backup storage is missing")
+)
 
 // RootSnapshotInput captures one mount with its contents at the snapshot root.
 func RootSnapshotInput(source mount.Mount, tags ...string) CreateSnapshotInput {
@@ -124,23 +200,6 @@ func snapshotCommand(label string, input CreateSnapshotInput) ([]string, error) 
 	}
 	command = append(command, "--")
 	return append(command, input.Sources...), nil
-}
-
-// Engine owns repository serialization and backup admission.
-type Engine struct {
-	imageService *image.ImageService
-	admission    *runs.Admission
-	repositories map[string]*sync.Mutex
-	// held parks admission a manual start won until the run that won it takes it over.
-	held      map[types.SchedulerAdmissionKey]heldLease
-	authorize func(context.Context, types.BackupRequester) error
-	mu        sync.Mutex
-}
-
-// heldLease is a parked lease and the run entitled to take it.
-type heldLease struct {
-	lease *runs.Lease
-	run   string
 }
 
 // NewRequester captures the user, and API key if any, behind a manual backup request.
@@ -341,17 +400,6 @@ func (e *Engine) ReadSnapshotTextFile(ctx context.Context, dockerClient *client.
 		return "", fmt.Errorf("failed to read Rustic snapshot file: %w", err)
 	}
 	return output, nil
-}
-
-// DiscoveredSnapshot describes one snapshot found in a repository.
-type DiscoveredSnapshot struct {
-	ID      string    `json:"id"`
-	Time    time.Time `json:"time"`
-	Label   string    `json:"label"`
-	Tags    []string  `json:"tags"`
-	Summary struct {
-		TotalBytesProcessed int64 `json:"total_bytes_processed"`
-	} `json:"summary"`
 }
 
 // RunSnapshotTag links committed snapshots to their durable backup record.
@@ -659,16 +707,6 @@ func (e *Engine) runContainer(ctx context.Context, dockerClient *client.Client, 
 	)
 }
 
-var (
-	ErrRecoveryKeyNotConfigured = errors.New("recovery key is not configured")
-	// ErrBackupSettled reports a checkpointed backup whose own attempt already failed it, so there is nothing to
-	// resume; a retry starts a new backup instead.
-	ErrBackupSettled = errors.New("the checkpointed backup already failed")
-
-	// RecoveryKeyFormat is 8 hyphenated groups of 6 base32 characters, used verbatim as the Rustic password.
-	RecoveryKeyFormat = regexp.MustCompile(`^[A-Z2-7]{6}(-[A-Z2-7]{6}){7}$`)
-)
-
 // ValidateRecoveryKey checks that a key has the generated recovery key format.
 func ValidateRecoveryKey(key string) error {
 	if !RecoveryKeyFormat.MatchString(strings.TrimSpace(key)) {
@@ -689,11 +727,6 @@ func GenerateRecoveryKey() (string, error) {
 		groups = append(groups, encoded[i:i+6])
 	}
 	return strings.Join(groups, "-"), nil
-}
-
-// RecoveryKeyStore persists the recovery key shared by the system and volume backup domains.
-type RecoveryKeyStore struct {
-	db *database.DB
 }
 
 // NewRecoveryKeyStore builds the recovery key store.
@@ -792,27 +825,6 @@ func (e *Engine) lockRepository(ctx context.Context, id string) (func(), error) 
 	return lock.Unlock, nil
 }
 
-// PolicyReconciliation reconciles a full set of policy updates against the
-// existing policies of one backup domain, then swaps the scheduled jobs.
-type PolicyReconciliation[P, U any] struct {
-	DB       *database.DB
-	ID       func(*P) string
-	UpdateID func(U) string
-	// New returns the blank policy for created entries, pre-scoped by the
-	// caller (e.g. with the volume name set).
-	New func() P
-	// Build validates an update and applies it to an existing or new policy.
-	Build func(ctx context.Context, policy *P, update U) error
-	// Persist overrides the default GORM transaction for settings-backed policies.
-	Persist    func(ctx context.Context, policies []P) error
-	Unregister func(ctx context.Context, policyID string)
-	Reschedule func(ctx context.Context, policy *P)
-	// Domain names the backup flavor in validation errors ("volume", "system").
-	Domain string
-	// Existing is every policy currently persisted for the reconciled scope.
-	Existing []P
-}
-
 // Run applies updates as the full policy set: it saves them, removes the rest, and reschedules their jobs.
 func (r PolicyReconciliation[P, U]) Run(ctx context.Context, updates []U) error {
 	byID := make(map[string]P, len(r.Existing))
@@ -907,10 +919,6 @@ func ValidatePolicyUpdate(ctx context.Context, domain string, update types.Updat
 	}, nil
 }
 
-var ErrRemoteRepositoryMissing = errors.New("S3 backup storage is missing")
-
-const RemoteDisabledMessage = "S3 backup storage is missing. Remote backups were disabled; edit the policy to resume."
-
 // RemoteSnapshotChecker memoizes targeted checks within one response budget; each lookup names the
 // repository root that holds the snapshot. A nil result means the remote copy could not be verified.
 func RemoteSnapshotChecker(ctx context.Context, destinations *s3.S3DestinationService) func(destinationID, root, snapshotID string) *bool {
@@ -969,14 +977,6 @@ func DisableMissingRemote(remoteErr error, localEnabled bool, s3Enabled, enabled
 	}
 	*kit.Ternary(localEnabled, s3Enabled, enabled) = false
 	return true, nil
-}
-
-type DisableRemoteRequest struct {
-	Model         any
-	ID            string
-	DestinationID string
-	Field         string
-	LocalEnabled  bool
 }
 
 // DisableStoredRemote is DisableMissingRemote's save for a policy table row, which it changes only while the row still

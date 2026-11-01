@@ -13,16 +13,18 @@ import (
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 )
 
+type (
+	Service struct {
+		dockerService *dockerInternal.DockerClientService
+		reconcile     func(ctx context.Context) error
+	}
+)
+
 const (
 	reconcileDelay      = time.Second
 	reconcileRetryDelay = 15 * time.Second
 	eventBufferSize     = 256
 )
-
-type Service struct {
-	dockerService *dockerInternal.DockerClientService
-	reconcile     func(ctx context.Context) error
-}
 
 func New(dockerService *dockerInternal.DockerClientService, reconcile func(ctx context.Context) error) *Service {
 	return &Service{

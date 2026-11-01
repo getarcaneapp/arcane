@@ -18,110 +18,112 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// Handler serves the swarm node endpoints.
-type Handler struct {
-	service            *Service
-	audit              func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
-	mapError           func(err error, fallback string) error
-	environmentService *environment.EnvironmentService
-	cfg                *config.Config
-}
+type (
+	// Handler serves the swarm node endpoints.
+	Handler struct {
+		service            *Service
+		audit              func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
+		mapError           func(err error, fallback string) error
+		environmentService *environment.EnvironmentService
+		cfg                *config.Config
+	}
 
-type HandlerParams struct {
-	Service            *Service
-	Audit              func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
-	MapError           func(err error, fallback string) error
-	EnvironmentService *environment.EnvironmentService
-	Config             *config.Config
-}
+	HandlerParams struct {
+		Service            *Service
+		Audit              func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
+		MapError           func(err error, fallback string) error
+		EnvironmentService *environment.EnvironmentService
+		Config             *config.Config
+	}
+
+	ListSwarmNodesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
+
+	GetSwarmNodeInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		NodeID        string `path:"nodeId" doc:"Node ID"`
+	}
+
+	GetSwarmNodeAgentDeploymentInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		NodeID        string `path:"nodeId" doc:"Node ID"`
+		Body          struct {
+			Rotate bool `json:"rotate,omitempty" doc:"Rotate the environment token before generating snippets"`
+		}
+	}
+
+	SwarmNodeAgentDeployment struct {
+		types.DeploymentSnippet
+
+		EnvironmentID string                `json:"environmentId"`
+		Agent         types.NodeAgentStatus `json:"agent"`
+	}
+
+	ReconcileSwarmNodeAgentsInput struct {
+		Body          types.NodeAgentReconcileRequest
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+	}
+
+	PutSwarmNodeAgentBindingInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		NodeID        string `path:"nodeId" doc:"Node ID"`
+		Body          types.NodeAgentBindingRequest
+	}
+
+	DeleteSwarmNodeAgentBindingInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		NodeID        string `path:"nodeId" doc:"Node ID"`
+	}
+
+	DeleteSwarmNodeAgentDeploymentInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		NodeID        string `path:"nodeId" doc:"Node ID"`
+	}
+
+	GetSwarmNodeIdentityInput struct{}
+
+	UpdateSwarmNodeInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		NodeID        string `path:"nodeId" doc:"Node ID"`
+		types.Update[types.SwarmNode]
+	}
+
+	DeleteSwarmNodeInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		NodeID        string `path:"nodeId" doc:"Node ID"`
+		Force         bool   `query:"force" default:"false" doc:"Force node removal"`
+	}
+
+	SwarmNodeActionInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		NodeID        string `path:"nodeId" doc:"Node ID"`
+		Action        string `query:"action" required:"true" enum:"promote,demote" doc:"Node role action"`
+	}
+
+	ListSwarmNodeTasksInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		NodeID        string `path:"nodeId" doc:"Node ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
+
+	JoinSwarmEnvironmentsInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.SwarmJoinEnvironmentsRequest
+	}
+)
 
 func NewHandler(p HandlerParams) *Handler {
 	return &Handler{service: p.Service, audit: p.Audit, mapError: p.MapError, environmentService: p.EnvironmentService, cfg: p.Config}
-}
-
-type ListSwarmNodesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
-
-type GetSwarmNodeInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	NodeID        string `path:"nodeId" doc:"Node ID"`
-}
-
-type GetSwarmNodeAgentDeploymentInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	NodeID        string `path:"nodeId" doc:"Node ID"`
-	Body          struct {
-		Rotate bool `json:"rotate,omitempty" doc:"Rotate the environment token before generating snippets"`
-	}
-}
-
-type SwarmNodeAgentDeployment struct {
-	types.DeploymentSnippet
-
-	EnvironmentID string                `json:"environmentId"`
-	Agent         types.NodeAgentStatus `json:"agent"`
-}
-
-type ReconcileSwarmNodeAgentsInput struct {
-	Body          types.NodeAgentReconcileRequest
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type PutSwarmNodeAgentBindingInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	NodeID        string `path:"nodeId" doc:"Node ID"`
-	Body          types.NodeAgentBindingRequest
-}
-
-type DeleteSwarmNodeAgentBindingInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	NodeID        string `path:"nodeId" doc:"Node ID"`
-}
-
-type DeleteSwarmNodeAgentDeploymentInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	NodeID        string `path:"nodeId" doc:"Node ID"`
-}
-
-type GetSwarmNodeIdentityInput struct{}
-
-type UpdateSwarmNodeInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	NodeID        string `path:"nodeId" doc:"Node ID"`
-	types.Update[types.SwarmNode]
-}
-
-type DeleteSwarmNodeInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	NodeID        string `path:"nodeId" doc:"Node ID"`
-	Force         bool   `query:"force" default:"false" doc:"Force node removal"`
-}
-
-type SwarmNodeActionInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	NodeID        string `path:"nodeId" doc:"Node ID"`
-	Action        string `query:"action" required:"true" enum:"promote,demote" doc:"Node role action"`
-}
-
-type ListSwarmNodeTasksInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	NodeID        string `path:"nodeId" doc:"Node ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
-
-type JoinSwarmEnvironmentsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.SwarmJoinEnvironmentsRequest
 }
 
 // ListNodes lists swarm nodes for an environment and returns a paginated response.

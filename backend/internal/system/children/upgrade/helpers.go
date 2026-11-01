@@ -21,22 +21,24 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 )
 
+type (
+	progressFeed struct {
+		subscribers map[chan types.UpgradeProgressEvent]struct{}
+		fromVersion string
+		toVersion   string
+		history     []types.UpgradeProgressEvent
+		percent     int
+		mu          sync.Mutex
+		active      bool
+	}
+)
+
 const (
 	upgradeJobLogLimit       = 200
 	progressFeedHistoryLimit = 1000
 	progressFeedBuffer       = 256
 	pullPercentCeiling       = 60
 )
-
-type progressFeed struct {
-	subscribers map[chan types.UpgradeProgressEvent]struct{}
-	fromVersion string
-	toVersion   string
-	history     []types.UpgradeProgressEvent
-	percent     int
-	mu          sync.Mutex
-	active      bool
-}
 
 func (f *progressFeed) start(fromVersion, toVersion string) {
 	f.mu.Lock()

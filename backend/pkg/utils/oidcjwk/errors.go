@@ -2,12 +2,14 @@ package oidcjwk
 
 import "regexp"
 
-var errorURLPattern = regexp.MustCompile(`https?://[^\s"<>]+`)
+type (
+	// Cache errors include endpoint and redirect URLs, which may contain credentials.
+	initializationError struct {
+		cause error
+	}
+)
 
-// Cache errors include endpoint and redirect URLs, which may contain credentials.
-type initializationError struct {
-	cause error
-}
+var errorURLPattern = regexp.MustCompile(`https?://[^\s"<>]+`)
 
 func (e *initializationError) Error() string {
 	return "failed to initialize JWKS: " + errorURLPattern.ReplaceAllString(e.cause.Error(), "[redacted URL]")

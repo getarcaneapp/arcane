@@ -2,10 +2,12 @@ package concurrency
 
 import "sync/atomic"
 
-// Snapshot publishes immutable copies of a value for lock-free readers.
-type Snapshot[T any] struct {
-	value atomic.Pointer[T]
-}
+type (
+	// Snapshot publishes immutable copies of a value for lock-free readers.
+	Snapshot[T any] struct {
+		value atomic.Pointer[T]
+	}
+)
 
 // Store replaces the published value with an immutable copy.
 func (s *Snapshot[T]) Store(value T) {

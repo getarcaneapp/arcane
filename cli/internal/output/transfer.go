@@ -5,11 +5,21 @@ import (
 	"io"
 )
 
-type TransferOptions struct {
-	Label        string
-	Total        int64
-	ShowProgress bool
-}
+type (
+	TransferOptions struct {
+		Label        string
+		Total        int64
+		ShowProgress bool
+	}
+
+	transferReader struct {
+		ctx            context.Context
+		source         io.Reader
+		loading        *tracker
+		label          string
+		current, total int64
+	}
+)
 
 // Copy copies a transfer while reporting bytes, or activity for unknown totals.
 func Copy(ctx context.Context, dst io.Writer, src io.Reader, opts TransferOptions) (int64, error) {
@@ -20,14 +30,6 @@ func Copy(ctx context.Context, dst io.Writer, src io.Reader, opts TransferOption
 	written, err := io.Copy(dst, &transferReader{ctx: ctx, source: src, loading: loading, total: opts.Total, label: opts.Label})
 	loading.Finish("", err)
 	return written, err
-}
-
-type transferReader struct {
-	ctx            context.Context
-	source         io.Reader
-	loading        *tracker
-	label          string
-	current, total int64
 }
 
 func (r *transferReader) Read(p []byte) (int, error) {

@@ -11,19 +11,21 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// Handler serves the system prune endpoint.
-type Handler struct {
-	service *Service
-	appCtx  context.Context
-}
+type (
+	// Handler serves the system prune endpoint.
+	Handler struct {
+		service *Service
+		appCtx  context.Context
+	}
+
+	PruneAllInput struct {
+		Body          types.PruneAllRequest `doc:"Prune options"`
+		EnvironmentID string                `path:"id" doc:"Environment ID"`
+	}
+)
 
 func NewHandler(service *Service, appCtx context.Context) *Handler {
 	return &Handler{service: service, appCtx: appCtx}
-}
-
-type PruneAllInput struct {
-	Body          types.PruneAllRequest `doc:"Prune options"`
-	EnvironmentID string                `path:"id" doc:"Environment ID"`
 }
 
 func (h *Handler) GetDiskUsage(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.SystemDiskUsage], error) {

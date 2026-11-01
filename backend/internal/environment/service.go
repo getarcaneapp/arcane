@@ -60,67 +60,87 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
-type EnvironmentService struct {
-	remoteSyncs remoteSyncQueue
+type (
+	EnvironmentService struct {
+		remoteSyncs remoteSyncQueue
 
-	variableSyncer   VariableSyncer
-	db               *database.DB
-	dockerService    *docker.DockerClientService
-	eventService     *event.EventService
-	settingsService  *settings.SettingsService
-	agentTokens      *agentTokenCache
-	remoteEnvs       *remoteEnvSnapshotCache
-	environmentCache *hot.HotCache[environmentCacheKey, Environment]
-	accessTokens     *hot.HotCache[string, string]
-	accessTokenIndex *accessTokenIndex
-	jobs             *entityjobs.Registry
+		variableSyncer   VariableSyncer
+		db               *database.DB
+		dockerService    *docker.DockerClientService
+		eventService     *event.EventService
+		settingsService  *settings.SettingsService
+		agentTokens      *agentTokenCache
+		remoteEnvs       *remoteEnvSnapshotCache
+		environmentCache *hot.HotCache[environmentCacheKey, Environment]
+		accessTokens     *hot.HotCache[string, string]
+		accessTokenIndex *accessTokenIndex
+		jobs             *entityjobs.Registry
 
-	invalidateUser  func(userID string)
-	syncGate        *utils.SyncGate
-	proxy           *proxy.Service
-	health          *health.Service
-	snippets        *snippets.Service
-	swarm           *swarm.Service
-	runtimeWatchers runtimeWatchers
-	environmentGens [environmentCacheStripes]atomic.Uint64
-}
+		invalidateUser  func(userID string)
+		syncGate        *utils.SyncGate
+		proxy           *proxy.Service
+		health          *health.Service
+		snippets        *snippets.Service
+		swarm           *swarm.Service
+		runtimeWatchers runtimeWatchers
+		environmentGens [environmentCacheStripes]atomic.Uint64
+	}
+
+	// VariableSyncer pushes the effective global-variable set to one environment.
+	VariableSyncer interface {
+		SyncEnvironment(ctx context.Context, envID string) error
+		ForgetSyncState(envID string)
+	}
+
+	resourceSync struct {
+		sync func(ctx context.Context, environmentID string) error
+		kind string
+	}
+
+	// DeploymentSnippets contains deployment configuration snippets for an environment.
+	DeploymentSnippets struct {
+		MTLS          *types.DeploymentSnippetMTLS
+		DockerRun     string
+		DockerCompose string
+	}
+
+	EnvironmentServiceParams struct {
+		fx.In
+
+		DB              *database.DB
+		DockerService   *docker.DockerClientService
+		EventService    *event.EventService
+		SettingsService *settings.SettingsService
+		APIKeyService   *apikey.ApiKeyService
+	}
+)
 
 const (
 	// LocalEnvironmentID is the reserved ID of the environment Arcane manages directly.
 	LocalEnvironmentID           = "0"
 	localEnvironmentFallbackName = "Local"
 	legacyLocalEnvironmentName   = "Local Docker"
-
 	// SyncDeliveryExpiry bounds how long an accepted config push is trusted, so a
 	// rebuilt agent that stayed online is resynced without operator action.
 	SyncDeliveryExpiry = time.Hour
+
+	agentTokenCacheTTL   = time.Minute
+	environmentCacheTTL  = 30 * time.Second
+	remoteSyncTimeout    = time.Minute
+	maxAccessTokenLength = 128
+
+	defaultEnvironmentHealthInterval = "*/2 * * * *"
+	environmentHealthCheckTimeout    = 90 * time.Second
+	environmentHealthJobPrefix       = "environment-health:"
+	environmentHealthAdmissionScope  = "environment-health"
 )
 
 var (
 	ErrEnvironmentAccessTokenRequired = errors.New("environment access token required")
 	ErrInvalidEnvironmentAccessToken  = errors.New("invalid environment access token")
 	ErrEnvironmentNotFound            = common.Classify(common.ErrNotFound, errors.New("environment not found"))
-
-	agentSlugPattern = regexp.MustCompile(`[^a-z0-9]+`)
+	agentSlugPattern                  = regexp.MustCompile(`[^a-z0-9]+`)
 )
-
-// VariableSyncer pushes the effective global-variable set to one environment.
-type VariableSyncer interface {
-	SyncEnvironment(ctx context.Context, envID string) error
-	ForgetSyncState(envID string)
-}
-
-type resourceSync struct {
-	sync func(ctx context.Context, environmentID string) error
-	kind string
-}
-
-// DeploymentSnippets contains deployment configuration snippets for an environment.
-type DeploymentSnippets struct {
-	MTLS          *types.DeploymentSnippetMTLS
-	DockerRun     string
-	DockerCompose string
-}
 
 // ForgetSyncState makes the next sync of every resource group resend regardless of payload changes.
 func (s *EnvironmentService) ForgetSyncState(environmentID string) {
@@ -128,16 +148,6 @@ func (s *EnvironmentService) ForgetSyncState(environmentID string) {
 	if s.variableSyncer != nil {
 		s.variableSyncer.ForgetSyncState(environmentID)
 	}
-}
-
-type EnvironmentServiceParams struct {
-	fx.In
-
-	DB              *database.DB
-	DockerService   *docker.DockerClientService
-	EventService    *event.EventService
-	SettingsService *settings.SettingsService
-	APIKeyService   *apikey.ApiKeyService
 }
 
 func NewEnvironmentService(p EnvironmentServiceParams) *EnvironmentService {
@@ -789,13 +799,6 @@ func DisplayName(environmentID, storedName string) string {
 	return kit.Ternary(id == "" || id == LocalEnvironmentID, localEnvironmentFallbackName, id)
 }
 
-const (
-	agentTokenCacheTTL   = time.Minute
-	environmentCacheTTL  = 30 * time.Second
-	remoteSyncTimeout    = time.Minute
-	maxAccessTokenLength = 128
-)
-
 // GetActiveRemoteEnvironmentSnapshot returns the latest in-process snapshot for
 // an enabled, visible, non-local remote environment.
 func (s *EnvironmentService) GetActiveRemoteEnvironmentSnapshot(environmentID string) mo.Option[Environment] {
@@ -1120,13 +1123,6 @@ func (s *EnvironmentService) NotifyRuntimeStateChanged() {
 		}
 	}
 }
-
-const (
-	defaultEnvironmentHealthInterval = "*/2 * * * *"
-	environmentHealthCheckTimeout    = 90 * time.Second
-	environmentHealthJobPrefix       = "environment-health:"
-	environmentHealthAdmissionScope  = "environment-health"
-)
 
 // SetScheduler injects the job scheduler and app lifecycle context on the manager;
 // agents leave it nil, making health-job registration a no-op.

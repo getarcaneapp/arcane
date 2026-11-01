@@ -20,10 +20,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
-type Module struct {
-	service                  *ImageUpdateService
-	getUpdateInfoByImageRefs func(context.Context, []string) (map[string]*types.ImageUpdateInfo, error)
-}
+type (
+	Module struct {
+		service                  *ImageUpdateService
+		getUpdateInfoByImageRefs func(context.Context, []string) (map[string]*types.ImageUpdateInfo, error)
+	}
+)
 
 // New wires image update routes and registers the arcane.image.updates gauges once.
 func New(service *ImageUpdateService, getUpdateInfo func(context.Context, []string) (map[string]*types.ImageUpdateInfo, error)) *Module {

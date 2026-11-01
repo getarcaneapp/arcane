@@ -4,15 +4,17 @@ import (
 	"strings"
 )
 
-// SearchAccessor extracts a searchable string from T. Return any error to skip
-// the field (e.g. when matching an unknown enum state).
-//
-// Note: returning ("", nil) will match!
-type SearchAccessor[T any] = func(T) (string, error)
+type (
+	// SearchAccessor extracts a searchable string from T. Return any error to skip
+	// the field (e.g. when matching an unknown enum state).
+	//
+	// Note: returning ("", nil) will match!
+	SearchAccessor[T any] = func(T) (string, error)
 
-type SearchQuery struct {
-	Search string
-}
+	SearchQuery struct {
+		Search string
+	}
+)
 
 func searchFn[T any](items []T, params SearchQuery, accessors []SearchAccessor[T]) []T {
 	search := strings.ToLower(strings.TrimSpace(params.Search))

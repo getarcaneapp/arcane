@@ -7,54 +7,56 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
 )
 
-// actorHostModel is a read-only view of a registered Francis host.
-type actorHostModel struct {
-	LastHealthCheck actorTime `gorm:"column:host_last_health_check"`
-	HostID          string    `gorm:"column:host_id"`
-	Address         string    `gorm:"column:host_address"`
-}
+type (
+	// actorHostModel is a read-only view of a registered Francis host.
+	actorHostModel struct {
+		LastHealthCheck actorTime `gorm:"column:host_last_health_check"`
+		HostID          string    `gorm:"column:host_id"`
+		Address         string    `gorm:"column:host_address"`
+	}
+
+	// actorTypeModel is a registered actor type with its concurrency limit.
+	actorTypeModel struct {
+		ActorType        string
+		ConcurrencyLimit int
+	}
+
+	// actorCountModel is one grouped count row from a Francis table.
+	actorCountModel struct {
+		NextDue   actorTime
+		ActorType string
+		Kind      string
+		Count     int
+	}
+
+	// activeActorModel is a read-only view of an activated actor.
+	activeActorModel struct {
+		Activation actorTime `gorm:"column:actor_activation"`
+		ActorType  string    `gorm:"column:actor_type"`
+		ActorID    string    `gorm:"column:actor_id"`
+		HostID     string    `gorm:"column:host_id"`
+	}
+
+	// terminalJobModel is a read-only view of a finished actor job.
+	terminalJobModel struct {
+		EndedAt   actorTime `gorm:"column:ended_at"`
+		LastError *string   `gorm:"column:last_error"`
+		JobID     string    `gorm:"column:job_id"`
+		ActorType string    `gorm:"column:actor_type"`
+		ActorID   string    `gorm:"column:actor_id"`
+		JobMethod string    `gorm:"column:job_method"`
+		Attempts  int       `gorm:"column:attempts"`
+	}
+
+	// actorTime scans Francis timestamps: SQLite stores epoch milliseconds, Postgres a timestamp.
+	actorTime time.Time
+)
 
 func (actorHostModel) TableName() string { return francis.TablePrefix + "_hosts" }
 
-// actorTypeModel is a registered actor type with its concurrency limit.
-type actorTypeModel struct {
-	ActorType        string
-	ConcurrencyLimit int
-}
-
-// actorCountModel is one grouped count row from a Francis table.
-type actorCountModel struct {
-	NextDue   actorTime
-	ActorType string
-	Kind      string
-	Count     int
-}
-
-// activeActorModel is a read-only view of an activated actor.
-type activeActorModel struct {
-	Activation actorTime `gorm:"column:actor_activation"`
-	ActorType  string    `gorm:"column:actor_type"`
-	ActorID    string    `gorm:"column:actor_id"`
-	HostID     string    `gorm:"column:host_id"`
-}
-
 func (activeActorModel) TableName() string { return francis.TablePrefix + "_active_actors" }
 
-// terminalJobModel is a read-only view of a finished actor job.
-type terminalJobModel struct {
-	EndedAt   actorTime `gorm:"column:ended_at"`
-	LastError *string   `gorm:"column:last_error"`
-	JobID     string    `gorm:"column:job_id"`
-	ActorType string    `gorm:"column:actor_type"`
-	ActorID   string    `gorm:"column:actor_id"`
-	JobMethod string    `gorm:"column:job_method"`
-	Attempts  int       `gorm:"column:attempts"`
-}
-
 func (terminalJobModel) TableName() string { return francis.TablePrefix + "_terminal_jobs" }
-
-// actorTime scans Francis timestamps: SQLite stores epoch milliseconds, Postgres a timestamp.
-type actorTime time.Time
 
 func (t *actorTime) Scan(value any) error {
 	switch v := value.(type) {

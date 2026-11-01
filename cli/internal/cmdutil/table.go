@@ -10,20 +10,22 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 )
 
-type tableContextKey struct{}
+type (
+	tableContextKey struct{}
 
-type TableSummary struct {
-	Resource  string
-	Total     int64
-	Paginated bool
-}
+	TableSummary struct {
+		Resource  string
+		Total     int64
+		Paginated bool
+	}
 
-type tableOutput struct {
-	environment string
-	headers     []string
-	rows        [][]string
-	summary     TableSummary
-}
+	tableOutput struct {
+		environment string
+		headers     []string
+		rows        [][]string
+		summary     TableSummary
+	}
+)
 
 func PrintTable(cmd *cobra.Command, headers []string, rows [][]string, summaries ...TableSummary) error {
 	var summary TableSummary

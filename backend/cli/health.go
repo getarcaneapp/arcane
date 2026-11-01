@@ -25,26 +25,33 @@ const (
 	healthPath           = "/api/health"
 )
 
-var healthTimeout time.Duration
+var (
+	healthTimeout time.Duration
 
-var HealthCmd = &cobra.Command{
-	Use:   "health",
-	Short: "Check API health",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := schema.CheckLegacyEnv(cmd.Context()); err != nil {
-			return err
-		}
-		cfg, err := config.Load()
-		if err != nil {
-			return err
-		}
-		timeout := healthTimeout
-		if timeout <= 0 {
-			timeout = defaultHealthTimeout
-		}
+	HealthCmd = &cobra.Command{
+		Use:   "health",
+		Short: "Check API health",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := schema.CheckLegacyEnv(cmd.Context()); err != nil {
+				return err
+			}
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			timeout := healthTimeout
+			if timeout <= 0 {
+				timeout = defaultHealthTimeout
+			}
 
-		return runHealthCommand(cmd.Context(), cfg, timeout)
-	},
+			return runHealthCommand(cmd.Context(), cfg, timeout)
+		},
+	}
+)
+
+func init() {
+	HealthCmd.Flags().DurationVar(&healthTimeout, "timeout", defaultHealthTimeout, "Health check timeout (e.g. 5s)")
+	rootCmd.AddCommand(HealthCmd)
 }
 
 func buildHealthURL(cfg *config.Config) (string, error) {
@@ -97,9 +104,4 @@ func runHealthCommand(ctx context.Context, cfg *config.Config, timeout time.Dura
 	}
 
 	return nil
-}
-
-func init() {
-	HealthCmd.Flags().DurationVar(&healthTimeout, "timeout", defaultHealthTimeout, "Health check timeout (e.g. 5s)")
-	rootCmd.AddCommand(HealthCmd)
 }

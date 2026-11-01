@@ -19,21 +19,23 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Module struct {
-	service *EnvironmentService
-	handler *EnvironmentHandler
-}
+type (
+	Module struct {
+		service *EnvironmentService
+		handler *EnvironmentHandler
+	}
 
-type Params struct {
-	fx.In
+	Params struct {
+		fx.In
 
-	Service         *EnvironmentService
-	SettingsService *settings.SettingsService
-	APIKey          *apikey.ApiKeyService
-	EventService    *event.EventService
-	Config          *config.Config
-	ActivityService activity.Service
-}
+		Service         *EnvironmentService
+		SettingsService *settings.SettingsService
+		APIKey          *apikey.ApiKeyService
+		EventService    *event.EventService
+		Config          *config.Config
+		ActivityService activity.Service
+	}
+)
 
 func New(p Params) *Module {
 	return &Module{

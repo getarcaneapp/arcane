@@ -22,6 +22,18 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
+type (
+	AnalyticsJob struct {
+		settingsService *settings.SettingsService
+		kvService       *kv.KVService
+		httpClient      *http.Client
+		cfg             *config.Config
+		now             func() time.Time
+		heartbeatURL    string
+		runMu           sync.Mutex
+	}
+)
+
 const (
 	AnalyticsJobName                 = "analytics-heartbeat"
 	defaultHeartbeatEndpoint         = "https://checkin.getarcane.app/heartbeat"
@@ -34,16 +46,6 @@ const (
 	analyticsHeartbeatRetryDelay    = time.Hour
 	analyticsHeartbeatCheckSchedule = "0 * * * *"
 )
-
-type AnalyticsJob struct {
-	settingsService *settings.SettingsService
-	kvService       *kv.KVService
-	httpClient      *http.Client
-	cfg             *config.Config
-	now             func() time.Time
-	heartbeatURL    string
-	runMu           sync.Mutex
-}
 
 func NewAnalyticsJob(
 	settingsService *settings.SettingsService,

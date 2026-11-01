@@ -40,51 +40,53 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
-// JobService manages configuration for background job schedules.
-//
-// Intervals are persisted in the existing settings table as individual keys.
-// After updates, the settings.SettingsService cache is reloaded and active jobs are
-// rescheduled through the configured scheduler.
-//
-// NOTE: This is intentionally separate from settings.SettingsService to keep the API
-// surface job-focused and to centralize schedule validation/rescheduling.
-type JobService struct {
-	scheduler    types.JobController
-	lifecycleCtx context.Context
-	runCount     metric.Int64Counter
-	runDuration  metric.Float64Histogram
-	activeRuns   metric.Int64UpDownCounter
+type (
+	// JobService manages configuration for background job schedules.
+	//
+	// Intervals are persisted in the existing settings table as individual keys.
+	// After updates, the settings.SettingsService cache is reloaded and active jobs are
+	// rescheduled through the configured scheduler.
+	//
+	// NOTE: This is intentionally separate from settings.SettingsService to keep the API
+	// surface job-focused and to centralize schedule validation/rescheduling.
+	JobService struct {
+		scheduler    types.JobController
+		lifecycleCtx context.Context
+		runCount     metric.Int64Counter
+		runDuration  metric.Float64Histogram
+		activeRuns   metric.Int64UpDownCounter
 
-	activity    *activity.ActivityService
-	runs        *runs.Coordinator
-	remote      *remote.Service
-	environment *environment.EnvironmentService
-	roles       *role.RoleService
-	db          *database.DB
-	settings    *settings.SettingsService
-	cfg         *config.Config
-	location    *time.Location // Timezone for cron schedule calculations
+		activity    *activity.ActivityService
+		runs        *runs.Coordinator
+		remote      *remote.Service
+		environment *environment.EnvironmentService
+		roles       *role.RoleService
+		db          *database.DB
+		settings    *settings.SettingsService
+		cfg         *config.Config
+		location    *time.Location // Timezone for cron schedule calculations
 
-	// environment-health is no longer a single scheduler job — it fans out to one
-	// dynamic job per environment owned by environment.EnvironmentService. These bridge the Jobs
-	// UI (which addresses jobs by ID) back to that service. Set during bootstrap on
-	// the manager only.
-	OnEnvironmentHealthReschedule func(ctx context.Context)
-	RunEnvironmentHealthNow       func(ctx context.Context) error
-	activityMu                    sync.Mutex
-}
+		// environment-health is no longer a single scheduler job — it fans out to one
+		// dynamic job per environment owned by environment.EnvironmentService. These bridge the Jobs
+		// UI (which addresses jobs by ID) back to that service. Set during bootstrap on
+		// the manager only.
+		OnEnvironmentHealthReschedule func(ctx context.Context)
+		RunEnvironmentHealthNow       func(ctx context.Context) error
+		activityMu                    sync.Mutex
+	}
 
-type JobServiceParams struct {
-	fx.In
+	JobServiceParams struct {
+		fx.In
 
-	DB               *database.DB
-	LocalSettings    *settings.SettingsService
-	Config           *config.Config
-	Coordinator      *runs.Coordinator
-	Roles            *role.RoleService
-	LocalEnvironment *environment.EnvironmentService
-	LocalActivity    *activity.ActivityService
-}
+		DB               *database.DB
+		LocalSettings    *settings.SettingsService
+		Config           *config.Config
+		Coordinator      *runs.Coordinator
+		Roles            *role.RoleService
+		LocalEnvironment *environment.EnvironmentService
+		LocalActivity    *activity.ActivityService
+	}
+)
 
 func NewJobService(p JobServiceParams) *JobService {
 	meter := otel.Meter(tracing.InstrumentationName)

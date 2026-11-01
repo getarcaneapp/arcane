@@ -32,108 +32,110 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// ImageHandler provides Huma-based image management endpoints.
-type ImageHandler struct {
-	dockerService      *docker.DockerClientService
-	imageService       *ImageService
-	imageUpdateService *imageupdate.ImageUpdateService
-	settingsService    *settings.SettingsService
-	buildService       *build.BuildService
-	activityService    *activity.ActivityService
-	uploadService      *upload.UploadService
-	appCtx             context.Context
-}
-
-// ListImagesOutput is the image list response including the upload limit.
-type ListImagesOutput struct {
-	Body types.ImageListResponse
-}
-
-type ListImagesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
-	Updates       string `query:"updates" doc:"Filter by update availability (true/false)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
-
-type GetImageInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ImageID       string `path:"imageId" doc:"Image ID"`
-}
-
-type TagImageInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ImageName     string `path:"name" doc:"Image ID or image reference"`
-	Body          types.ImageTagRequest
-}
-
-type GetImageHistoryInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ImageName     string `path:"name" doc:"Image ID or image reference"`
-}
-
-type SearchImagesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Term          string `query:"term" doc:"Search term"`
-}
-
-type ExportImageInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ImageName     string `path:"name" doc:"Image ID or image reference"`
-}
-
-type RemoveImageInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ImageID       string `path:"imageId" doc:"Image ID"`
-	Force         bool   `query:"force" doc:"Force removal"`
-}
-
-type PullImageInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.ImagePullOptions
-}
-
-type BuildImageInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          buildtypes.BuildRequest
-}
-
-type ListImageBuildsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"desc" doc:"Sort direction (asc or desc)"`
-	Status        string `query:"status" doc:"Filter by status"`
-	Provider      string `query:"provider" doc:"Filter by provider"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-	IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
-}
-
-type GetImageBuildInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	BuildID       string `path:"buildId" doc:"Build ID"`
-}
-
-type PruneImagesInput struct {
-	Body *struct {
-		Mode     *string             `json:"mode,omitempty"`
-		Until    *string             `json:"until,omitempty"`
-		Dangling *bool               `json:"dangling,omitempty"`
-		Filters  map[string][]string `json:"filters,omitempty"`
+type (
+	// ImageHandler provides Huma-based image management endpoints.
+	ImageHandler struct {
+		dockerService      *docker.DockerClientService
+		imageService       *ImageService
+		imageUpdateService *imageupdate.ImageUpdateService
+		settingsService    *settings.SettingsService
+		buildService       *build.BuildService
+		activityService    *activity.ActivityService
+		uploadService      *upload.UploadService
+		appCtx             context.Context
 	}
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Dangling      bool   `query:"dangling" doc:"Only remove dangling images"`
-}
 
-type UploadImageInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.UploadConsumeRequest
-}
+	// ListImagesOutput is the image list response including the upload limit.
+	ListImagesOutput struct {
+		Body types.ImageListResponse
+	}
+
+	ListImagesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
+		Updates       string `query:"updates" doc:"Filter by update availability (true/false)"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
+
+	GetImageInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ImageID       string `path:"imageId" doc:"Image ID"`
+	}
+
+	TagImageInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ImageName     string `path:"name" doc:"Image ID or image reference"`
+		Body          types.ImageTagRequest
+	}
+
+	GetImageHistoryInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ImageName     string `path:"name" doc:"Image ID or image reference"`
+	}
+
+	SearchImagesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Term          string `query:"term" doc:"Search term"`
+	}
+
+	ExportImageInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ImageName     string `path:"name" doc:"Image ID or image reference"`
+	}
+
+	RemoveImageInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ImageID       string `path:"imageId" doc:"Image ID"`
+		Force         bool   `query:"force" doc:"Force removal"`
+	}
+
+	PullImageInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.ImagePullOptions
+	}
+
+	BuildImageInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          buildtypes.BuildRequest
+	}
+
+	ListImageBuildsInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"desc" doc:"Sort direction (asc or desc)"`
+		Status        string `query:"status" doc:"Filter by status"`
+		Provider      string `query:"provider" doc:"Filter by provider"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+		IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
+	}
+
+	GetImageBuildInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		BuildID       string `path:"buildId" doc:"Build ID"`
+	}
+
+	PruneImagesInput struct {
+		Body *struct {
+			Mode     *string             `json:"mode,omitempty"`
+			Until    *string             `json:"until,omitempty"`
+			Dangling *bool               `json:"dangling,omitempty"`
+			Filters  map[string][]string `json:"filters,omitempty"`
+		}
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Dangling      bool   `query:"dangling" doc:"Only remove dangling images"`
+	}
+
+	UploadImageInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.UploadConsumeRequest
+	}
+)
 
 // ListImages returns a paginated list of images.
 func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (*ListImagesOutput, error) {

@@ -20,6 +20,19 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+var activityRef = cmdutil.ResourceRef[types.ActivityDetail, types.Activity]{
+	EnvironmentScoped: true,
+	Singular:          "activity", Plural: "activities",
+	IDHint: "the identifier", ListCmd: "arcane-cli activities list",
+	GetPath: clitypes.Activity, ListPath: clitypes.Activities,
+	Matches: func(item types.Activity, lower, original string) bool {
+		return strings.EqualFold(item.ID, original)
+	},
+	IdentifierOf: func(item types.ActivityDetail) string { return item.Activity.ID },
+	Label:        func(item types.Activity) string { return item.ID },
+	Promote:      func(item types.Activity) *types.ActivityDetail { return &types.ActivityDetail{Activity: item} },
+}
+
 // Command is the parent command for background activity operations.
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
@@ -246,19 +259,6 @@ func newClearCmd() *cobra.Command {
 	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "Clear without confirmation")
 	return cmd
-}
-
-var activityRef = cmdutil.ResourceRef[types.ActivityDetail, types.Activity]{
-	EnvironmentScoped: true,
-	Singular:          "activity", Plural: "activities",
-	IDHint: "the identifier", ListCmd: "arcane-cli activities list",
-	GetPath: clitypes.Activity, ListPath: clitypes.Activities,
-	Matches: func(item types.Activity, lower, original string) bool {
-		return strings.EqualFold(item.ID, original)
-	},
-	IdentifierOf: func(item types.ActivityDetail) string { return item.Activity.ID },
-	Label:        func(item types.Activity) string { return item.ID },
-	Promote:      func(item types.Activity) *types.ActivityDetail { return &types.ActivityDetail{Activity: item} },
 }
 
 func resourceLabel(item types.Activity) string {

@@ -28,6 +28,31 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
+type (
+	Service struct {
+		docker        *docker.DockerClientService
+		remoteLabels  func(context.Context, string) (map[string]string, error)
+		httpClient    *http.Client
+		releases      *hot.HotCache[string, []githubRelease]
+		githubAPIBase string
+	}
+
+	Request struct {
+		ImageRef string
+		Version  string
+		Digest   string
+	}
+
+	githubRelease struct {
+		TagName     string `json:"tag_name"`
+		Name        string `json:"name"`
+		Body        string `json:"body"`
+		HTMLURL     string `json:"html_url"`
+		PublishedAt string `json:"published_at"`
+		Draft       bool   `json:"draft"`
+	}
+)
+
 const (
 	githubAPIBase     = "https://api.github.com"
 	githubURLBase     = "https://github.com/"
@@ -44,29 +69,6 @@ var (
 	prereleasePattern = regexp.MustCompile(`(?i)^(rc|alpha|beta|pre|next|dev|canary|nightly|snapshot)`)
 	githubHosts       = []string{"github.com", "www.github.com"}
 )
-
-type Service struct {
-	docker        *docker.DockerClientService
-	remoteLabels  func(context.Context, string) (map[string]string, error)
-	httpClient    *http.Client
-	releases      *hot.HotCache[string, []githubRelease]
-	githubAPIBase string
-}
-
-type Request struct {
-	ImageRef string
-	Version  string
-	Digest   string
-}
-
-type githubRelease struct {
-	TagName     string `json:"tag_name"`
-	Name        string `json:"name"`
-	Body        string `json:"body"`
-	HTMLURL     string `json:"html_url"`
-	PublishedAt string `json:"published_at"`
-	Draft       bool   `json:"draft"`
-}
 
 func NewService(dockerService *docker.DockerClientService, remoteLabels func(context.Context, string) (map[string]string, error)) *Service {
 	return &Service{

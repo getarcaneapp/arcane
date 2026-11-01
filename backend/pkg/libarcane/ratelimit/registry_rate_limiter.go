@@ -9,12 +9,18 @@ import (
 	kit "kit.getarcane.app"
 )
 
-type RegistryRateLimiter struct {
-	semaphores   map[string]*semaphore.Weighted
-	limits       map[string]int64
-	defaultLimit int64
-	mu           sync.RWMutex
-}
+type (
+	RegistryRateLimiter struct {
+		semaphores   map[string]*semaphore.Weighted
+		limits       map[string]int64
+		defaultLimit int64
+		mu           sync.RWMutex
+	}
+)
+
+const (
+	defaultRegistryConcurrencyLimit int64 = 3
+)
 
 var defaultRegistryLimits = map[string]int64{
 	"ghcr.io":   3,
@@ -22,8 +28,6 @@ var defaultRegistryLimits = map[string]int64{
 	"quay.io":   4,
 	"gcr.io":    4,
 }
-
-const defaultRegistryConcurrencyLimit int64 = 3
 
 func NewRegistryRateLimiter() *RegistryRateLimiter {
 	return &RegistryRateLimiter{

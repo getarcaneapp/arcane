@@ -46,6 +46,89 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
 )
 
+type (
+	// EnvironmentHandler handles environment management endpoints.
+	EnvironmentHandler struct {
+		environmentService *EnvironmentService
+		settingsService    *settings.SettingsService
+		apiKeyService      *apikey.ApiKeyService
+		eventService       *event.EventService
+		cfg                *config.Config
+		streamHub          *agg.Hub[[]types.Environment]
+		changeHub          *agg.Hub[struct{}]
+		changeCursors      *concurrency.StateMap[string, types.EnvironmentChanges]
+		activityService    activity.Service
+		appCtx             context.Context
+		localVersion       func(context.Context) *types.VersionInfo
+	}
+
+	ListEnvironmentsInput struct {
+		Search string `query:"search" doc:"Search query for filtering by name or API URL"`
+		Sort   string `query:"sort" doc:"Column to sort by"`
+		Order  string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Type   string `query:"type" doc:"Filter by environment type (comma-separated: http,agent,websocket,grpc)"`
+		Start  int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit  int    `query:"limit" default:"20" doc:"Items per page"`
+	}
+
+	CreateEnvironmentInput struct {
+		types.Create[types.Environment]
+	}
+
+	GetEnvironmentInput struct {
+		ID string `path:"id" doc:"Environment ID"`
+	}
+
+	UpdateEnvironmentInput struct {
+		ID string `path:"id" doc:"Environment ID"`
+		types.Update[types.Environment]
+	}
+
+	DeleteEnvironmentInput struct {
+		ID string `path:"id" doc:"Environment ID"`
+	}
+
+	TestConnectionInput struct {
+		ID string `path:"id" doc:"Environment ID"`
+	}
+
+	SyncEnvironmentInput struct {
+		ID string `path:"id" doc:"Environment ID"`
+	}
+
+	PairEnvironmentInput struct {
+		XAPIKey string `header:"X-API-Key" doc:"API key for environment pairing"`
+	}
+
+	GetDeploymentSnippetsInput struct {
+		ID string `path:"id" doc:"Environment ID"`
+	}
+
+	GetEnvironmentVersionInput struct {
+		ID string `path:"id" doc:"Environment ID"`
+	}
+
+	DownloadAgentMTLSCAInput struct{}
+
+	DownloadEnvironmentMTLSBundleInput struct {
+		ID string `path:"id" doc:"Environment ID"`
+	}
+
+	DownloadEnvironmentMTLSFileInput struct {
+		ID       string `path:"id" doc:"Environment ID"`
+		FileName string `path:"fileName" doc:"mTLS asset filename"`
+	}
+
+	HandlerParams struct {
+		EnvironmentService *EnvironmentService
+		SettingsService    *settings.SettingsService
+		APIKeyService      *apikey.ApiKeyService
+		EventService       *event.EventService
+		Config             *config.Config
+		ActivityService    activity.Service
+	}
+)
+
 const (
 	// Re-applies runtime state to cached rows so live tunnel metrics stay current.
 	environmentStreamRuntimeInterval = 5 * time.Second
@@ -53,94 +136,14 @@ const (
 	environmentStreamReloadInterval = 60 * time.Second
 	environmentStreamRefreshFloor   = 30 * time.Second
 	environmentStreamHubKey         = "environments"
+	remoteChangeReconcileInterval   = 30 * time.Second
+	remoteChangeMinBackoff          = time.Second
+	remoteChangeMaxBackoff          = 30 * time.Second
+	remoteChangeUnsupportedDelay    = 60 * time.Second
+	remoteChangeWaitMargin          = 5 * time.Second
 
-	remoteChangeReconcileInterval = 30 * time.Second
-	remoteChangeMinBackoff        = time.Second
-	remoteChangeMaxBackoff        = 30 * time.Second
-	remoteChangeUnsupportedDelay  = 60 * time.Second
-	remoteChangeWaitMargin        = 5 * time.Second
+	agentMTLSCertificateExpiryWarningWindow = 30 * 24 * time.Hour
 )
-
-// EnvironmentHandler handles environment management endpoints.
-type EnvironmentHandler struct {
-	environmentService *EnvironmentService
-	settingsService    *settings.SettingsService
-	apiKeyService      *apikey.ApiKeyService
-	eventService       *event.EventService
-	cfg                *config.Config
-	streamHub          *agg.Hub[[]types.Environment]
-	changeHub          *agg.Hub[struct{}]
-	changeCursors      *concurrency.StateMap[string, types.EnvironmentChanges]
-	activityService    activity.Service
-	appCtx             context.Context
-	localVersion       func(context.Context) *types.VersionInfo
-}
-
-type ListEnvironmentsInput struct {
-	Search string `query:"search" doc:"Search query for filtering by name or API URL"`
-	Sort   string `query:"sort" doc:"Column to sort by"`
-	Order  string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Type   string `query:"type" doc:"Filter by environment type (comma-separated: http,agent,websocket,grpc)"`
-	Start  int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
-}
-
-type CreateEnvironmentInput struct {
-	types.Create[types.Environment]
-}
-
-type GetEnvironmentInput struct {
-	ID string `path:"id" doc:"Environment ID"`
-}
-
-type UpdateEnvironmentInput struct {
-	ID string `path:"id" doc:"Environment ID"`
-	types.Update[types.Environment]
-}
-
-type DeleteEnvironmentInput struct {
-	ID string `path:"id" doc:"Environment ID"`
-}
-
-type TestConnectionInput struct {
-	ID string `path:"id" doc:"Environment ID"`
-}
-
-type SyncEnvironmentInput struct {
-	ID string `path:"id" doc:"Environment ID"`
-}
-
-type PairEnvironmentInput struct {
-	XAPIKey string `header:"X-API-Key" doc:"API key for environment pairing"`
-}
-
-type GetDeploymentSnippetsInput struct {
-	ID string `path:"id" doc:"Environment ID"`
-}
-
-type GetEnvironmentVersionInput struct {
-	ID string `path:"id" doc:"Environment ID"`
-}
-
-type DownloadAgentMTLSCAInput struct{}
-
-type DownloadEnvironmentMTLSBundleInput struct {
-	ID string `path:"id" doc:"Environment ID"`
-}
-
-type DownloadEnvironmentMTLSFileInput struct {
-	ID       string `path:"id" doc:"Environment ID"`
-	FileName string `path:"fileName" doc:"mTLS asset filename"`
-}
-
-type HandlerParams struct {
-	EnvironmentService *EnvironmentService
-	SettingsService    *settings.SettingsService
-	APIKeyService      *apikey.ApiKeyService
-	EventService       *event.EventService
-	Config             *config.Config
-	ActivityService    activity.Service
-}
 
 // NewHandler builds the environment HTTP handler and its stream producer.
 func NewHandler(p HandlerParams) *EnvironmentHandler {
@@ -952,5 +955,3 @@ func environmentMTLSAssetDownloadName(env *Environment, fileName string) string 
 		return fileName
 	}
 }
-
-const agentMTLSCertificateExpiryWarningWindow = 30 * 24 * time.Hour

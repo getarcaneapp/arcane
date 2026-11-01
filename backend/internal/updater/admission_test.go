@@ -27,7 +27,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 )
 
-const admissionTestContainers = `[
+const (
+	admissionTestContainers = `[
 	{"Id": "aaa111", "Names": ["/web-1"], "Labels": {"com.docker.compose.project": "Shop"}},
 	{"Id": "bbb222", "Names": ["/db-1"], "Labels": {"com.docker.compose.project": "shop"}},
 	{"Id": "ccc333", "Names": ["/blog-1"], "Labels": {"com.docker.compose.project": "blog"}},
@@ -40,6 +41,7 @@ const admissionTestContainers = `[
 	{"Id": "jjj000", "Names": ["/app/cache", "/cache"]},
 	{"Id": "kkk111", "Names": ["/app"]}
 ]`
+)
 
 func admissionTestSummaries(t *testing.T) []container.Summary {
 	t.Helper()

@@ -13,21 +13,23 @@ import (
 	"github.com/samber/hot"
 )
 
-type composeCache[T any] struct {
-	entries *hot.HotCache[string, composeCacheEntry[T]]
-	clone   func(T) T
-}
+type (
+	composeCache[T any] struct {
+		entries *hot.HotCache[string, composeCacheEntry[T]]
+		clone   func(T) T
+	}
 
-type composeCacheEntry[T any] struct {
-	value       T
-	stamps      map[string]composeCacheStamp
-	fingerprint string
-}
+	composeCacheEntry[T any] struct {
+		value       T
+		stamps      map[string]composeCacheStamp
+		fingerprint string
+	}
 
-type composeCacheStamp struct {
-	modTime time.Time
-	size    int64
-}
+	composeCacheStamp struct {
+		modTime time.Time
+		size    int64
+	}
+)
 
 // NewComposeCache caches Compose-derived values and their file dependencies.
 // clone, when supplied, isolates stored values from mutations by callers.

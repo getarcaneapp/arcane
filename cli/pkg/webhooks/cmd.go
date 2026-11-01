@@ -20,6 +20,19 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+var webhookRef = cmdutil.ResourceRef[types.Webhook, types.Webhook]{
+	EnvironmentScoped: true,
+	Singular:          "webhook", Plural: "webhooks",
+	IDHint: "the identifier", ListCmd: "arcane-cli webhooks list",
+	GetPath: nil, ListPath: clitypes.Webhooks,
+	Matches: func(item types.Webhook, lower, original string) bool {
+		return strings.EqualFold(item.ID, original)
+	},
+	Label:        func(item types.Webhook) string { return item.Name + " (" + item.ID + ")" },
+	Promote:      func(item types.Webhook) *types.Webhook { return &item },
+	IdentifierOf: func(item types.Webhook) string { return item.ID },
+}
+
 // Command is the parent command for webhook operations.
 func Command() *cobra.Command {
 	command := &cobra.Command{
@@ -231,17 +244,4 @@ func newTriggerCmd() *cobra.Command {
 	}
 	cmdutil.SetScope(cmdutil.ScopeGlobal, command)
 	return command
-}
-
-var webhookRef = cmdutil.ResourceRef[types.Webhook, types.Webhook]{
-	EnvironmentScoped: true,
-	Singular:          "webhook", Plural: "webhooks",
-	IDHint: "the identifier", ListCmd: "arcane-cli webhooks list",
-	GetPath: nil, ListPath: clitypes.Webhooks,
-	Matches: func(item types.Webhook, lower, original string) bool {
-		return strings.EqualFold(item.ID, original)
-	},
-	Label:        func(item types.Webhook) string { return item.Name + " (" + item.ID + ")" },
-	Promote:      func(item types.Webhook) *types.Webhook { return &item },
-	IdentifierOf: func(item types.Webhook) string { return item.ID },
 }

@@ -42,7 +42,67 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
-const sessionBootstrapVersionTimeout = 2 * time.Second
+type (
+	TokenPair struct {
+		ExpiresAt        time.Time `json:"expiresAt"`
+		RefreshExpiresAt time.Time `json:"-"`
+		AccessToken      string    `json:"accessToken"`
+		BrowserToken     string    `json:"-"`
+		RefreshToken     string    `json:"refreshToken"`
+		BrowserRefresh   string    `json:"-"`
+	}
+
+	verifiedTokenEntry struct {
+		TokenExpiresAt   time.Time
+		SessionExpiresAt time.Time
+		SessionID        string
+		User             user.User
+	}
+
+	AuthService struct {
+		userService        *user.UserService
+		settingsService    *settings.SettingsService
+		eventService       *event.EventService
+		sessionService     *session.SessionService
+		roleService        *role.RoleService
+		environmentService *environment.EnvironmentService
+		versionService     *version.VersionService
+		signingKey         *mldsa.PrivateKey
+		config             *config.Config
+		tokenCache         *hot.HotCache[string, verifiedTokenEntry]
+		dummyHash          string
+		browserSigningKey  []byte
+		refreshExpiry      time.Duration
+		cacheGen           atomic.Uint64
+		signingKeyMu       sync.Mutex
+		cacheFillMu        sync.Mutex
+		dummyMu            sync.Mutex
+	}
+
+	AuthServiceParams struct {
+		fx.In
+
+		UserService        *user.UserService
+		SettingsService    *settings.SettingsService
+		EventService       *event.EventService
+		SessionService     *session.SessionService
+		RoleService        *role.RoleService
+		EnvironmentService *environment.EnvironmentService
+		VersionService     *version.VersionService
+		Config             *config.Config
+	}
+
+	ChangePasswordRequest struct {
+		UserID           string
+		CurrentPassword  string
+		NewPassword      string
+		CurrentSessionID string
+	}
+)
+
+const (
+	sessionBootstrapVersionTimeout = 2 * time.Second
+)
 
 var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
@@ -51,47 +111,11 @@ var (
 	ErrMFARequired        = errors.New("multi-factor authentication is required")
 )
 
-type TokenPair struct {
-	ExpiresAt        time.Time `json:"expiresAt"`
-	RefreshExpiresAt time.Time `json:"-"`
-	AccessToken      string    `json:"accessToken"`
-	BrowserToken     string    `json:"-"`
-	RefreshToken     string    `json:"refreshToken"`
-	BrowserRefresh   string    `json:"-"`
-}
-
 func (p *TokenPair) CookieHeaders(secure bool) []string {
 	return append(
 		cookie.BuildTokenCookieStringFor(max(int(time.Until(p.ExpiresAt).Seconds()), 0)+60, p.BrowserToken, secure),
 		cookie.BuildRefreshCookieStringFor(int(time.Until(p.RefreshExpiresAt).Seconds()), p.BrowserRefresh, secure),
 	)
-}
-
-type verifiedTokenEntry struct {
-	TokenExpiresAt   time.Time
-	SessionExpiresAt time.Time
-	SessionID        string
-	User             user.User
-}
-
-type AuthService struct {
-	userService        *user.UserService
-	settingsService    *settings.SettingsService
-	eventService       *event.EventService
-	sessionService     *session.SessionService
-	roleService        *role.RoleService
-	environmentService *environment.EnvironmentService
-	versionService     *version.VersionService
-	signingKey         *mldsa.PrivateKey
-	config             *config.Config
-	tokenCache         *hot.HotCache[string, verifiedTokenEntry]
-	dummyHash          string
-	browserSigningKey  []byte
-	refreshExpiry      time.Duration
-	cacheGen           atomic.Uint64
-	signingKeyMu       sync.Mutex
-	cacheFillMu        sync.Mutex
-	dummyMu            sync.Mutex
 }
 
 func (s *AuthService) dummyPasswordHash(ctx context.Context) (string, error) {
@@ -106,19 +130,6 @@ func (s *AuthService) dummyPasswordHash(ctx context.Context) (string, error) {
 	}
 	s.dummyHash = hash
 	return hash, nil
-}
-
-type AuthServiceParams struct {
-	fx.In
-
-	UserService        *user.UserService
-	SettingsService    *settings.SettingsService
-	EventService       *event.EventService
-	SessionService     *session.SessionService
-	RoleService        *role.RoleService
-	EnvironmentService *environment.EnvironmentService
-	VersionService     *version.VersionService
-	Config             *config.Config
 }
 
 func NewAuthService(p AuthServiceParams) *AuthService {
@@ -852,13 +863,6 @@ func (s *AuthService) verifyTokenClaims(ctx context.Context, tokenHash string, c
 	s.cacheFillMu.Unlock()
 
 	return dbUser, userSession.ID, nil
-}
-
-type ChangePasswordRequest struct {
-	UserID           string
-	CurrentPassword  string
-	NewPassword      string
-	CurrentSessionID string
 }
 
 func (s *AuthService) ChangePassword(ctx context.Context, req ChangePasswordRequest) error {

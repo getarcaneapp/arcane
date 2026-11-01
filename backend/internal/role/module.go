@@ -11,10 +11,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// Module owns role persistence and its HTTP surface.
-type Module struct {
-	service *RoleService
-}
+type (
+	// Module owns role persistence and its HTTP surface.
+	Module struct {
+		service *RoleService
+	}
+)
 
 // New assembles the role routes around its service.
 func New(service *RoleService) *Module {

@@ -9,10 +9,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// Module wires the upload domain and mounts its routes.
-type Module struct {
-	service *UploadService
-}
+type (
+	// Module wires the upload domain and mounts its routes.
+	Module struct {
+		service *UploadService
+	}
+)
 
 // New builds the upload module around its session service.
 func New(service *UploadService) *Module {

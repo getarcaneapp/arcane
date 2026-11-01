@@ -51,53 +51,76 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
-// projectIDCacheTTL bounds how long a snapshot of all (name → id) project rows is reused.
-// Dashboard polls frequently; the projects table changes rarely, so a short TTL is safe.
-const projectIDCacheTTL = 5 * time.Second
+type (
+	// patchSlot is one patch task's output; failures travel as task errors.
+	patchSlot struct {
+		Skipped bool `json:"skipped,omitempty"`
+	}
 
-// patchSlot is one patch task's output; failures travel as task errors.
-type patchSlot struct {
-	Skipped bool `json:"skipped,omitempty"`
-}
+	ImageService struct {
+		db                   *database.DB
+		dockerService        *dockerInternal.DockerClientService
+		imageUpdateService   *imageupdate.ImageUpdateService
+		registryService      *registry.ContainerRegistryService
+		vulnerabilityService *vulnerability.VulnerabilityService
+		eventService         *event.EventService
 
-type ImageService struct {
-	db                   *database.DB
-	dockerService        *dockerInternal.DockerClientService
-	imageUpdateService   *imageupdate.ImageUpdateService
-	registryService      *registry.ContainerRegistryService
-	vulnerabilityService *vulnerability.VulnerabilityService
-	eventService         *event.EventService
+		settingsService *settings.SettingsService
+		patch           *patch.Service
+		patchWorkflow   *flow.Workflow
+		projectIDCache  *hot.HotCache[struct{}, map[string]string]
+	}
 
-	settingsService *settings.SettingsService
-	patch           *patch.Service
-	patchWorkflow   *flow.Workflow
-	projectIDCache  *hot.HotCache[struct{}, map[string]string]
-}
+	imageRefUpdateLookup struct {
+		repositoryCandidates map[string]struct{}
+		originalRef          string
+		tag                  string
+	}
 
-type imageRefUpdateLookup struct {
-	repositoryCandidates map[string]struct{}
-	originalRef          string
-	tag                  string
-}
+	imageUpdateRecordKey struct {
+		repository string
+		tag        string
+	}
 
-type imageUpdateRecordKey struct {
-	repository string
-	tag        string
-}
+	ImageServiceParams struct {
+		fx.In
 
-type ImageServiceParams struct {
-	fx.In
+		DB                   *database.DB
+		DockerService        *dockerInternal.DockerClientService
+		RegistryService      *registry.ContainerRegistryService
+		ImageUpdateService   *imageupdate.ImageUpdateService
+		VulnerabilityService *vulnerability.VulnerabilityService
+		EventService         *event.EventService
+		SettingsService      *settings.SettingsService
+		ActivityService      *activity.ActivityService
+		Config               *config.Config
+	}
 
-	DB                   *database.DB
-	DockerService        *dockerInternal.DockerClientService
-	RegistryService      *registry.ContainerRegistryService
-	ImageUpdateService   *imageupdate.ImageUpdateService
-	VulnerabilityService *vulnerability.VulnerabilityService
-	EventService         *event.EventService
-	SettingsService      *settings.SettingsService
-	ActivityService      *activity.ActivityService
-	Config               *config.Config
-}
+	// PullRequest describes one pull through Pull.
+	PullRequest struct {
+		// Ref is the reference pulled from the registry.
+		Ref string
+		// Tag, when set, is the reference Ref is tagged as after the pull; it is the one reconciled.
+		Tag         string
+		Progress    io.Writer
+		User        types.Actor
+		Credentials []types.ContainerRegistryCredential
+	}
+
+	uploadLimitReader struct {
+		reader    io.Reader
+		remaining int64
+		exceeded  atomic.Bool
+	}
+)
+
+const (
+	// projectIDCacheTTL bounds how long a snapshot of all (name → id) project rows is reused.
+	// Dashboard polls frequently; the projects table changes rarely, so a short TTL is safe.
+	projectIDCacheTTL = 5 * time.Second
+)
+
+var errImageUploadTooLarge = errors.New("image upload exceeds the size limit")
 
 func NewImageService(p ImageServiceParams) *ImageService {
 	return &ImageService{
@@ -537,17 +560,6 @@ func (s *ImageService) ImageLastTagTime(ctx context.Context, imageName string) (
 	return inspect.Metadata.LastTagTime, nil
 }
 
-// PullRequest describes one pull through Pull.
-type PullRequest struct {
-	// Ref is the reference pulled from the registry.
-	Ref string
-	// Tag, when set, is the reference Ref is tagged as after the pull; it is the one reconciled.
-	Tag         string
-	Progress    io.Writer
-	User        types.Actor
-	Credentials []types.ContainerRegistryCredential
-}
-
 // Pull pulls req.Ref within the dockerImagePullTimeout setting and reconciles the pulled reference's update state.
 func (s *ImageService) Pull(ctx context.Context, req PullRequest) error {
 	pullCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
@@ -792,14 +804,6 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 	}
 
 	return &types.ImageLoadResult{Stream: responseBuilder.String()}, nil
-}
-
-var errImageUploadTooLarge = errors.New("image upload exceeds the size limit")
-
-type uploadLimitReader struct {
-	reader    io.Reader
-	remaining int64
-	exceeded  atomic.Bool
 }
 
 func (r *uploadLimitReader) Read(p []byte) (int, error) {

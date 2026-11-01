@@ -26,66 +26,68 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
+type (
+	imageUpdateScanner interface {
+		RunImageCheck(ctx context.Context, request types.ImageUpdateCheckRequest) (types.SchedulerOutcome, error)
+	}
+
+	pollingSettingReader interface {
+		GetBoolSetting(ctx context.Context, key string) bool
+		GetStringSetting(ctx context.Context, key string) string
+	}
+
+	dockerEventBusProvider interface {
+		EventBus() *bus.DockerEventBus
+	}
+
+	projectImageRefsBackfiller interface {
+		BackfillProjectImageRefs(ctx context.Context) (int, error)
+	}
+
+	// ImageUpdateWatcher debounces Docker events and admits durable image scans.
+	ImageUpdateWatcher struct {
+		imageUpdateService     imageUpdateScanner
+		settingsService        pollingSettingReader
+		dockerService          dockerEventBusProvider
+		projectService         projectImageRefsBackfiller
+		coordinator            *runs.Coordinator
+		trigger                chan struct{}
+		scheduleRefresh        chan struct{}
+		cancel                 context.CancelFunc
+		done                   chan struct{}
+		metadataReady          chan struct{}
+		stopped                chan struct{}
+		triggerGeneration      atomic.Uint64
+		acknowledgedGeneration atomic.Uint64
+		triggeredAt            atomic.Int64
+		debounce               time.Duration
+		backfillRetry          time.Duration
+		dispatchMu             sync.RWMutex
+		metadataReadyOnce      sync.Once
+		stoppedOnce            sync.Once
+		runMu                  sync.Mutex
+		eventDegraded          atomic.Bool
+		running                atomic.Bool
+		scanRunning            atomic.Bool
+		stopping               atomic.Bool
+	}
+
+	ImageUpdateWatcherParams struct {
+		fx.In
+
+		Config             *config.Config
+		ImageUpdateService *imageupdate.ImageUpdateService
+		SettingsService    *settings.SettingsService
+		DockerService      *docker.DockerClientService
+		ProjectService     *project.ProjectService
+	}
+)
+
 const (
 	imageUpdateWatcherDebounce        = 2 * time.Second
 	imageUpdateWatcherBackfillRetry   = 5 * time.Second
 	imageUpdateWatcherDefaultSchedule = "0 * * * *"
 )
-
-type imageUpdateScanner interface {
-	RunImageCheck(ctx context.Context, request types.ImageUpdateCheckRequest) (types.SchedulerOutcome, error)
-}
-
-type pollingSettingReader interface {
-	GetBoolSetting(ctx context.Context, key string) bool
-	GetStringSetting(ctx context.Context, key string) string
-}
-
-type dockerEventBusProvider interface {
-	EventBus() *bus.DockerEventBus
-}
-
-type projectImageRefsBackfiller interface {
-	BackfillProjectImageRefs(ctx context.Context) (int, error)
-}
-
-// ImageUpdateWatcher debounces Docker events and admits durable image scans.
-type ImageUpdateWatcher struct {
-	imageUpdateService     imageUpdateScanner
-	settingsService        pollingSettingReader
-	dockerService          dockerEventBusProvider
-	projectService         projectImageRefsBackfiller
-	coordinator            *runs.Coordinator
-	trigger                chan struct{}
-	scheduleRefresh        chan struct{}
-	cancel                 context.CancelFunc
-	done                   chan struct{}
-	metadataReady          chan struct{}
-	stopped                chan struct{}
-	triggerGeneration      atomic.Uint64
-	acknowledgedGeneration atomic.Uint64
-	triggeredAt            atomic.Int64
-	debounce               time.Duration
-	backfillRetry          time.Duration
-	dispatchMu             sync.RWMutex
-	metadataReadyOnce      sync.Once
-	stoppedOnce            sync.Once
-	runMu                  sync.Mutex
-	eventDegraded          atomic.Bool
-	running                atomic.Bool
-	scanRunning            atomic.Bool
-	stopping               atomic.Bool
-}
-
-type ImageUpdateWatcherParams struct {
-	fx.In
-
-	Config             *config.Config
-	ImageUpdateService *imageupdate.ImageUpdateService
-	SettingsService    *settings.SettingsService
-	DockerService      *docker.DockerClientService
-	ProjectService     *project.ProjectService
-}
 
 func NewImageUpdateWatcher(p ImageUpdateWatcherParams) *ImageUpdateWatcher {
 	return &ImageUpdateWatcher{

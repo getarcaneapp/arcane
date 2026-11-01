@@ -14,16 +14,18 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v3/internal/runtime"
 )
 
-type checkResult struct {
-	Name    string `json:"name"`
-	Status  string `json:"status"`
-	Details string `json:"details,omitempty"`
-}
+type (
+	checkResult struct {
+		Name    string `json:"name"`
+		Status  string `json:"status"`
+		Details string `json:"details,omitempty"`
+	}
 
-type report struct {
-	Checks  []checkResult `json:"checks"`
-	Healthy bool          `json:"healthy"`
-}
+	report struct {
+		Checks  []checkResult `json:"checks"`
+		Healthy bool          `json:"healthy"`
+	}
+)
 
 // Command runs environment and connection diagnostics.
 func Command() *cobra.Command {

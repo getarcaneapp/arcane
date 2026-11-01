@@ -17,13 +17,15 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
-// Module wires the container domain and mounts its routes.
-type Module struct {
-	service         *ContainerService
-	dockerService   *docker.DockerClientService
-	settingsService *settings.SettingsService
-	activityService *activity.ActivityService
-}
+type (
+	// Module wires the container domain and mounts its routes.
+	Module struct {
+		service         *ContainerService
+		dockerService   *docker.DockerClientService
+		settingsService *settings.SettingsService
+		activityService *activity.ActivityService
+	}
+)
 
 // New wires container routes around an existing service and registers per-container resource metrics once.
 func New(service *ContainerService, dockerService *docker.DockerClientService, settingsService *settings.SettingsService, activityService *activity.ActivityService) *Module {

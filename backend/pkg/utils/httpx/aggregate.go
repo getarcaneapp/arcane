@@ -20,6 +20,41 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
+type (
+	EnvironmentResolver func(ctx context.Context, id string) (types.EnvironmentRef, error)
+
+	EnvironmentScope struct {
+		Handler http.Handler  // the Echo instance, for in-process re-dispatch
+		Request *http.Request // clone of the outer request captured before auth; carries no scope
+		Resolve EnvironmentResolver
+		IDs     []string
+	}
+
+	EnvironmentResult[R any] struct {
+		Value       R
+		Environment types.EnvironmentRef
+	}
+
+	EnvironmentCollection[R any] struct {
+		Results  []EnvironmentResult[R]
+		Failures []types.EnvironmentFailure
+	}
+
+	environmentScopeKey struct{}
+
+	environmentOutcome[R any] struct {
+		value R
+		err   error
+	}
+
+	boundedResponseWriter struct {
+		header   http.Header
+		body     bytes.Buffer
+		status   int
+		overflow bool
+	}
+)
+
 const (
 	environmentsPathPrefix    = "/api/environments/"
 	environmentRequestTimeout = 20 * time.Second
@@ -28,32 +63,6 @@ const (
 )
 
 var errEnvironmentResponseTooLarge = errors.New("response too large")
-
-type EnvironmentResolver func(ctx context.Context, id string) (types.EnvironmentRef, error)
-
-type EnvironmentScope struct {
-	Handler http.Handler  // the Echo instance, for in-process re-dispatch
-	Request *http.Request // clone of the outer request captured before auth; carries no scope
-	Resolve EnvironmentResolver
-	IDs     []string
-}
-
-type EnvironmentResult[R any] struct {
-	Value       R
-	Environment types.EnvironmentRef
-}
-
-type EnvironmentCollection[R any] struct {
-	Results  []EnvironmentResult[R]
-	Failures []types.EnvironmentFailure
-}
-
-type environmentScopeKey struct{}
-
-type environmentOutcome[R any] struct {
-	value R
-	err   error
-}
 
 func WithEnvironmentScope(ctx context.Context, scope *EnvironmentScope) context.Context {
 	return context.WithValue(ctx, environmentScopeKey{}, scope)
@@ -204,13 +213,6 @@ func dispatchEnvironment[R any](ctx context.Context, scope *EnvironmentScope, id
 		return value, fmt.Errorf("invalid response: %w", decodeErr)
 	}
 	return value, nil
-}
-
-type boundedResponseWriter struct {
-	header   http.Header
-	body     bytes.Buffer
-	status   int
-	overflow bool
 }
 
 func (w *boundedResponseWriter) Header() http.Header {

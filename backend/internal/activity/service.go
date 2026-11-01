@@ -37,46 +37,55 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
+type (
+	ActivityService struct {
+		Changes *concurrency.Signal[string]
+		db      *database.DB
+		pubsub  *pubsub.Service
+		slots   *slots.Service
+		sweeps  *sweeps.Service
+
+		// running maps an active activity ID to the cancel function of its work
+		// context, so cancellation requests can interrupt in-flight work. Entries
+		// are added by Track and removed when the activity is completed.
+		running map[string]context.CancelCauseFunc
+
+		// publishLocks serializes the commit→publish window of the non-terminal
+		// snapshot writers (AppendMessages, UpdateActivity) per activity, so their
+		// events reach subscribers in commit order — without it, a batch that
+		// commits first but publishes second would revert progress/step/status
+		// fields a concurrent update already streamed. Terminal snapshots are
+		// ordered separately by the pubsub terminal latch. Striped by activity
+		// ID hash so no per-activity lifecycle management is needed.
+		publishLocks [64]sync.Mutex
+
+		runningMu sync.Mutex
+	}
+
+	StartActivityRequest         = activitylib.StartRequest
+	UpdateActivityRequest        = activitylib.UpdateRequest
+	AppendActivityMessageRequest = activitylib.AppendMessageRequest
+)
+
 const (
 	defaultActivityRetentionDays = 30
 	defaultActivityHistoryLimit  = 1000
 	defaultActivityMessages      = 500
+	cancelledMessage             = "Cancelled by user"
+	deleteActivitiesBatchSize    = 500
 
-	cancelledMessage = "Cancelled by user"
-
-	deleteActivitiesBatchSize = 500
+	// remoteActivityPageCeiling mirrors the agent's page clamp in PaginateAndSortDB.
+	remoteActivityPageCeiling = 100
 )
 
-var ErrActivityNotCancelable = errors.New("activity is not cancelable")
+var (
+	ErrActivityNotCancelable = errors.New("activity is not cancelable")
 
-type ActivityService struct {
-	Changes *concurrency.Signal[string]
-	db      *database.DB
-	pubsub  *pubsub.Service
-	slots   *slots.Service
-	sweeps  *sweeps.Service
-
-	// running maps an active activity ID to the cancel function of its work
-	// context, so cancellation requests can interrupt in-flight work. Entries
-	// are added by Track and removed when the activity is completed.
-	running map[string]context.CancelCauseFunc
-
-	// publishLocks serializes the commit→publish window of the non-terminal
-	// snapshot writers (AppendMessages, UpdateActivity) per activity, so their
-	// events reach subscribers in commit order — without it, a batch that
-	// commits first but publishes second would revert progress/step/status
-	// fields a concurrent update already streamed. Terminal snapshots are
-	// ordered separately by the pubsub terminal latch. Striped by activity
-	// ID hash so no per-activity lifecycle management is needed.
-	publishLocks [64]sync.Mutex
-
-	runningMu sync.Mutex
-}
-
-type (
-	StartActivityRequest         = activitylib.StartRequest
-	UpdateActivityRequest        = activitylib.UpdateRequest
-	AppendActivityMessageRequest = activitylib.AppendMessageRequest
+	terminalActivityStatuses = []types.ActivityStatus{
+		types.ActivityStatusSuccess,
+		types.ActivityStatusFailed,
+		types.ActivityStatusCancelled,
+	}
 )
 
 func NewActivityService(db *database.DB, settingsService *settings.SettingsService) *ActivityService {
@@ -1111,12 +1120,6 @@ func cloneJSON(input database.JSON) database.JSON {
 	return out
 }
 
-var terminalActivityStatuses = []types.ActivityStatus{
-	types.ActivityStatusSuccess,
-	types.ActivityStatusFailed,
-	types.ActivityStatusCancelled,
-}
-
 func deleteActivitiesByID(tx *gorm.DB, activityIDs []string) (int64, error) {
 	if len(activityIDs) == 0 {
 		return 0, nil
@@ -1342,9 +1345,6 @@ func jobActivity(run types.SchedulerRun, name string) Activity {
 		},
 	}
 }
-
-// remoteActivityPageCeiling mirrors the agent's page clamp in PaginateAndSortDB.
-const remoteActivityPageCeiling = 100
 
 // normalizeRemoteActivityParams applies the agent's paging bounds so both
 // sources are cut the same way; -1 stays the explicit "show all" sentinel.

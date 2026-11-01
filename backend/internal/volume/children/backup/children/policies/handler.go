@@ -21,23 +21,25 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
 )
 
-type Handler struct {
-	service            *Service
-	activityService    *activity.ActivityService
-	environmentService *environment.EnvironmentService
-	appCtx             context.Context
-}
+type (
+	Handler struct {
+		service            *Service
+		activityService    *activity.ActivityService
+		environmentService *environment.EnvironmentService
+		appCtx             context.Context
+	}
 
-type GetVolumeBackupPolicyInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-}
+	GetVolumeBackupPolicyInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		VolumeName    string `path:"volumeName" doc:"Volume name"`
+	}
 
-type UpdateVolumeBackupPolicyInput struct {
-	EnvironmentID string                           `path:"id" doc:"Environment ID"`
-	VolumeName    string                           `path:"volumeName" doc:"Volume name"`
-	Body          types.UpdateVolumeBackupPolicies `doc:"Scheduled volume backup policies"`
-}
+	UpdateVolumeBackupPolicyInput struct {
+		EnvironmentID string                           `path:"id" doc:"Environment ID"`
+		VolumeName    string                           `path:"volumeName" doc:"Volume name"`
+		Body          types.UpdateVolumeBackupPolicies `doc:"Scheduled volume backup policies"`
+	}
+)
 
 func NewHandler(service *Service, activityService *activity.ActivityService, environmentService *environment.EnvironmentService, appCtx context.Context) *Handler {
 	return &Handler{service: service, activityService: activityService, environmentService: environmentService, appCtx: appCtx}

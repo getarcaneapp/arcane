@@ -21,11 +21,27 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
 )
 
-type settingsSubscriptionStub struct {
-	pollingCallback  func([]libarcane.SettingUpdate)
-	timeoutCallback  func([]libarcane.SettingUpdate)
-	featureCallbacks []func([]libarcane.SettingUpdate)
-}
+type (
+	settingsSubscriptionStub struct {
+		pollingCallback  func([]libarcane.SettingUpdate)
+		timeoutCallback  func([]libarcane.SettingUpdate)
+		featureCallbacks []func([]libarcane.SettingUpdate)
+	}
+
+	settingsSubscriptionSchedulerStub struct {
+		rescheduled chan struct{}
+		jobs        []string
+	}
+
+	timeoutSyncEnvironmentStub struct {
+		started chan struct{}
+	}
+
+	agentSettingsSyncStub struct {
+		snapshots map[string][]byte
+		patches   map[string]types.SettingsUpdate
+	}
+)
 
 func (s *settingsSubscriptionStub) SubscribeSettingsChanges(keys []string, callback func([]libarcane.SettingUpdate)) func() {
 	if slices.Contains(keys, types.FeatureVulnerabilityManagementSettingKey) {
@@ -40,11 +56,6 @@ func (s *settingsSubscriptionStub) SubscribeSettingsChanges(keys []string, callb
 	return func() {}
 }
 
-type settingsSubscriptionSchedulerStub struct {
-	rescheduled chan struct{}
-	jobs        []string
-}
-
 func (s *settingsSubscriptionSchedulerStub) RescheduleJob(_ context.Context, job types.SchedulerJob) error {
 	if job != nil {
 		s.jobs = append(s.jobs, job.Name())
@@ -55,10 +66,6 @@ func (s *settingsSubscriptionSchedulerStub) RescheduleJob(_ context.Context, job
 		close(s.rescheduled)
 	}
 	return nil
-}
-
-type timeoutSyncEnvironmentStub struct {
-	started chan struct{}
 }
 
 func (s *timeoutSyncEnvironmentStub) ListRemoteEnvironments(context.Context) ([]environment.Environment, error) {
@@ -76,11 +83,6 @@ func (s *timeoutSyncEnvironmentStub) ProxyRequest(ctx context.Context, _, _, _ s
 	}
 	<-ctx.Done()
 	return nil, 0, ctx.Err()
-}
-
-type agentSettingsSyncStub struct {
-	snapshots map[string][]byte
-	patches   map[string]types.SettingsUpdate
 }
 
 func (s *agentSettingsSyncStub) ListRemoteEnvironments(context.Context) ([]environment.Environment, error) {

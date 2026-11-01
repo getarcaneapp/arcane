@@ -26,39 +26,41 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
+type (
+	Config struct {
+		Engine        func(context.Context) (compat.EngineCompatibilityInfo, error)
+		NewSystemd    func(rootless bool) libpodman.Systemd
+		NotifyUpdates func(context.Context, []notifications.ContainerUpdateBatchEntry) error
+		Host          string
+	}
+
+	Service struct {
+		*detector
+
+		pods     *pods.Service
+		quadlets *quadlets.Service
+		kube     *kube.Service
+		secrets  *secrets.Service
+	}
+
+	detector struct {
+		cachedAt  time.Time
+		clientErr error
+
+		client *libpodman.Client
+
+		config Config
+		cached libpodman.Runtime
+
+		mu sync.Mutex
+	}
+)
+
 const (
 	detectionTTL           = 30 * time.Second
 	autoUpdateUnit         = "podman-auto-update.service"
 	autoUpdatePollInterval = time.Second
 )
-
-type Config struct {
-	Engine        func(context.Context) (compat.EngineCompatibilityInfo, error)
-	NewSystemd    func(rootless bool) libpodman.Systemd
-	NotifyUpdates func(context.Context, []notifications.ContainerUpdateBatchEntry) error
-	Host          string
-}
-
-type Service struct {
-	*detector
-
-	pods     *pods.Service
-	quadlets *quadlets.Service
-	kube     *kube.Service
-	secrets  *secrets.Service
-}
-
-type detector struct {
-	cachedAt  time.Time
-	clientErr error
-
-	client *libpodman.Client
-
-	config Config
-	cached libpodman.Runtime
-
-	mu sync.Mutex
-}
 
 func NewService(cfg Config) *Service {
 	client, clientErr := libpodman.NewClient(cfg.Host)

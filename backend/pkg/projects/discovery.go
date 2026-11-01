@@ -18,10 +18,43 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 )
 
-type DiscoveredProjectDir struct {
-	DirName string
-	Path    string
-}
+type (
+	DiscoveredProjectDir struct {
+		DirName string
+		Path    string
+	}
+)
+
+const (
+	// ArcaneTrashPrefix is the prefix Arcane uses when quarantining (soft-deleting) a
+	// project's files, e.g. ".arcane-trash-<name>-<unix>". Trash directories are
+	// Arcane-managed and must never be discovered or imported as user projects.
+	ArcaneTrashPrefix = ".arcane-trash-"
+)
+
+var (
+	// gitOpsScratchEmbeddedNameRe matches the legacy name-embedded gitops scratch
+	// directory form, e.g. "Makerra.gitops-backup-1780656786384743013". That form always
+	// used a time.Now().UnixNano() suffix (≥18 digits), so a long digit run is required:
+	// it keeps a real user project ending in "<base>.gitops-backup-notes" (non-numeric) or
+	// "<base>.gitops-backup-2024" (short, year-like) from being mistaken for Arcane scratch.
+	// The hidden os.MkdirTemp forms (".gitops-backup-*", ".gitops-sync-stage-*") are matched
+	// by prefix, not by this regex.
+	gitOpsScratchEmbeddedNameRe = regexp.MustCompile(`\.gitops-(?:backup|sync-stage)-\d{10,}$`)
+
+	// filesystemSnapshotDirNames are directory names used by filesystems and NAS
+	// appliances for read-only snapshots or trash. They contain point-in-time
+	// copies of real project directories and must never be discovered as projects:
+	// #snapshot/#recycle (Synology BTRFS), .snapshot (NetApp), .snapshots
+	// (snapper/btrbk), .zfs (ZFS snapdir).
+	filesystemSnapshotDirNames = map[string]bool{
+		"#snapshot":  true,
+		"#recycle":   true,
+		".snapshot":  true,
+		".snapshots": true,
+		".zfs":       true,
+	}
+)
 
 // IsProjectDirectoryEntry reports whether a directory entry should be treated as a project directory.
 // Regular directories are always accepted. Symlinked directories are accepted only when enabled.
@@ -206,15 +239,6 @@ func walkProjectDirectories(ctx context.Context,
 	return nil
 }
 
-// gitOpsScratchEmbeddedNameRe matches the legacy name-embedded gitops scratch
-// directory form, e.g. "Makerra.gitops-backup-1780656786384743013". That form always
-// used a time.Now().UnixNano() suffix (≥18 digits), so a long digit run is required:
-// it keeps a real user project ending in "<base>.gitops-backup-notes" (non-numeric) or
-// "<base>.gitops-backup-2024" (short, year-like) from being mistaken for Arcane scratch.
-// The hidden os.MkdirTemp forms (".gitops-backup-*", ".gitops-sync-stage-*") are matched
-// by prefix, not by this regex.
-var gitOpsScratchEmbeddedNameRe = regexp.MustCompile(`\.gitops-(?:backup|sync-stage)-\d{10,}$`)
-
 // IsGitOpsScratchDirName reports whether name is an Arcane GitOps scratch directory:
 // the hidden staging/backup temp dirs (".gitops-sync-stage-*", ".gitops-backup-*")
 // or the legacy name-embedded backup form ("<name>.gitops-backup-<digits>"). These are
@@ -228,19 +252,6 @@ func IsGitOpsScratchDirName(name string) bool {
 		return true
 	}
 	return gitOpsScratchEmbeddedNameRe.MatchString(name)
-}
-
-// filesystemSnapshotDirNames are directory names used by filesystems and NAS
-// appliances for read-only snapshots or trash. They contain point-in-time
-// copies of real project directories and must never be discovered as projects:
-// #snapshot/#recycle (Synology BTRFS), .snapshot (NetApp), .snapshots
-// (snapper/btrbk), .zfs (ZFS snapdir).
-var filesystemSnapshotDirNames = map[string]bool{
-	"#snapshot":  true,
-	"#recycle":   true,
-	".snapshot":  true,
-	".snapshots": true,
-	".zfs":       true,
 }
 
 // IsFilesystemSnapshotDirName reports whether name is a well-known filesystem
@@ -270,11 +281,6 @@ func pathHasSegment(relPath string, match func(string) bool) bool {
 	}
 	return false
 }
-
-// ArcaneTrashPrefix is the prefix Arcane uses when quarantining (soft-deleting) a
-// project's files, e.g. ".arcane-trash-<name>-<unix>". Trash directories are
-// Arcane-managed and must never be discovered or imported as user projects.
-const ArcaneTrashPrefix = ".arcane-trash-"
 
 // IsInternalScratchDirName reports whether name is any Arcane-managed scratch
 // directory that must never be discovered or imported as a user project: the

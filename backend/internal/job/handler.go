@@ -17,50 +17,52 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type GetJobSchedulesInput struct {
-	ID string `path:"id" doc:"Environment ID"`
-}
+type (
+	GetJobSchedulesInput struct {
+		ID string `path:"id" doc:"Environment ID"`
+	}
 
-type GetJobSchedulesOutput struct {
-	Body types.JobScheduleConfig
-}
+	GetJobSchedulesOutput struct {
+		Body types.JobScheduleConfig
+	}
 
-type UpdateJobSchedulesInput struct {
-	ID string `path:"id" doc:"Environment ID"`
-	types.Update[types.JobScheduleConfig]
-}
+	UpdateJobSchedulesInput struct {
+		ID string `path:"id" doc:"Environment ID"`
+		types.Update[types.JobScheduleConfig]
+	}
 
-type ListJobsInput struct {
-	ID string `path:"id" doc:"Environment ID"`
-}
+	ListJobsInput struct {
+		ID string `path:"id" doc:"Environment ID"`
+	}
 
-type GetJobsOutput struct {
-	Body types.JobListResponse
-}
+	GetJobsOutput struct {
+		Body types.JobListResponse
+	}
 
-type JobActionInput struct {
-	Body      *types.JobSubmitRunInput `required:"false"`
-	ID        string                   `path:"id" doc:"Environment ID"`
-	JobID     string                   `path:"jobId" minLength:"1" doc:"Job ID"`
-	Action    string                   `query:"action" required:"true" enum:"run,restart" doc:"Job action"`
-	RequestID string                   `header:"Idempotency-Key"`
-}
+	JobActionInput struct {
+		Body      *types.JobSubmitRunInput `required:"false"`
+		ID        string                   `path:"id" doc:"Environment ID"`
+		JobID     string                   `path:"jobId" minLength:"1" doc:"Job ID"`
+		Action    string                   `query:"action" required:"true" enum:"run,restart" doc:"Job action"`
+		RequestID string                   `header:"Idempotency-Key"`
+	}
 
-type JobRunActionInput struct {
-	ID     string `path:"id"`
-	JobID  string `path:"jobId" minLength:"1"`
-	RunID  string `path:"runId" format:"uuid"`
-	Action string `query:"action" required:"true" enum:"retry,cancel,ack" doc:"Job run action"`
-}
+	JobRunActionInput struct {
+		ID     string `path:"id"`
+		JobID  string `path:"jobId" minLength:"1"`
+		RunID  string `path:"runId" format:"uuid"`
+		Action string `query:"action" required:"true" enum:"retry,cancel,ack" doc:"Job run action"`
+	}
 
-type RunJobOutput struct {
-	Body types.JobRunResponse
-}
+	RunJobOutput struct {
+		Body types.JobRunResponse
+	}
 
-type JobSchedulesHandler struct {
-	jobService      *JobService
-	proxyRemoteJSON handlerutil.RemoteJSONProxy
-}
+	JobSchedulesHandler struct {
+		jobService      *JobService
+		proxyRemoteJSON handlerutil.RemoteJSONProxy
+	}
+)
 
 func (h *JobSchedulesHandler) ListJobs(ctx context.Context, input *ListJobsInput) (*GetJobsOutput, error) {
 	jobs, err := func() (*types.JobListResponse, error) {

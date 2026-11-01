@@ -12,47 +12,49 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-type Handler struct {
-	service *Service
-	audit   func(ctx context.Context, environmentID, action, resourceType, resourceName string, metadata map[string]any)
-}
+type (
+	Handler struct {
+		service *Service
+		audit   func(ctx context.Context, environmentID, action, resourceType, resourceName string, metadata map[string]any)
+	}
+
+	ListQuadletsInput struct {
+		EnvironmentID string   `path:"id" doc:"Environment ID"`
+		Search        string   `query:"search" doc:"Search query"`
+		Sort          string   `query:"sort" doc:"Column to sort by"`
+		Order         string   `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Name          []string `query:"name,explode" doc:"Filter by quadlet name"`
+		Pod           []string `query:"pod,explode" doc:"Filter by pod (Podman 6.0+)"`
+		Status        []string `query:"status,explode" doc:"Filter by status (Podman 6.0+)"`
+		Start         int      `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int      `query:"limit" default:"20" doc:"Number of items per page"`
+	}
+
+	QuadletInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Name          string `path:"name" doc:"Quadlet file name"`
+	}
+
+	InstallQuadletInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.QuadletInstallRequest
+	}
+
+	UpdateQuadletInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Name          string `path:"name" doc:"Quadlet file name"`
+		Body          types.QuadletUpdateRequest
+	}
+
+	QuadletActionInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Name          string `path:"name" doc:"Quadlet file name"`
+		Action        string `query:"action" required:"true" enum:"start,stop,restart" doc:"systemd lifecycle action"`
+	}
+)
 
 func NewHandler(service *Service, audit func(ctx context.Context, environmentID, action, resourceType, resourceName string, metadata map[string]any)) *Handler {
 	return &Handler{service: service, audit: audit}
-}
-
-type ListQuadletsInput struct {
-	EnvironmentID string   `path:"id" doc:"Environment ID"`
-	Search        string   `query:"search" doc:"Search query"`
-	Sort          string   `query:"sort" doc:"Column to sort by"`
-	Order         string   `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Name          []string `query:"name,explode" doc:"Filter by quadlet name"`
-	Pod           []string `query:"pod,explode" doc:"Filter by pod (Podman 6.0+)"`
-	Status        []string `query:"status,explode" doc:"Filter by status (Podman 6.0+)"`
-	Start         int      `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int      `query:"limit" default:"20" doc:"Number of items per page"`
-}
-
-type QuadletInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Name          string `path:"name" doc:"Quadlet file name"`
-}
-
-type InstallQuadletInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.QuadletInstallRequest
-}
-
-type UpdateQuadletInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Name          string `path:"name" doc:"Quadlet file name"`
-	Body          types.QuadletUpdateRequest
-}
-
-type QuadletActionInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Name          string `path:"name" doc:"Quadlet file name"`
-	Action        string `query:"action" required:"true" enum:"start,stop,restart" doc:"systemd lifecycle action"`
 }
 
 func (h *Handler) List(ctx context.Context, input *ListQuadletsInput) (*handlerutil.Page[types.QuadletDetail], error) {

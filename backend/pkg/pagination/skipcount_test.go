@@ -9,10 +9,12 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-type widget struct {
-	ID   string `gorm:"primaryKey"`
-	Name string `sortable:"true"`
-}
+type (
+	widget struct {
+		ID   string `gorm:"primaryKey"`
+		Name string `sortable:"true"`
+	}
+)
 
 func newSkipCountTestDB(t *testing.T) *gorm.DB {
 	t.Helper()

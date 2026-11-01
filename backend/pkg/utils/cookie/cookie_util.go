@@ -9,14 +9,11 @@ import (
 	kit "kit.getarcane.app"
 )
 
-var (
-	TokenCookieName         = "__Host-token" // #nosec G101: cookie name label, not a credential
-	InsecureTokenCookieName = "token"        // #nosec G101: cookie name label, not a credential
-	OidcStateCookieName     = "oidc_state"
-
-	RefreshCookieName         = "__Secure-refresh"
-	InsecureRefreshCookieName = "refresh"
-	RefreshCookiePath         = "/api/auth"
+type (
+	// SecureCookieContextKey is the context key under which router middleware
+	// records its trusted secure-cookie decision (a bool derived from TLS or
+	// trusted proxy headers).
+	SecureCookieContextKey struct{}
 )
 
 // Legacy ML-DSA browser tokens exceed the 4096-byte cookie limit, so readers
@@ -26,17 +23,21 @@ const (
 	tokenCookieMaxChunks = 4
 )
 
+var (
+	TokenCookieName           = "__Host-token" // #nosec G101: cookie name label, not a credential
+	InsecureTokenCookieName   = "token"        // #nosec G101: cookie name label, not a credential
+	OidcStateCookieName       = "oidc_state"
+	RefreshCookieName         = "__Secure-refresh"
+	InsecureRefreshCookieName = "refresh"
+	RefreshCookiePath         = "/api/auth"
+)
+
 func tokenCookieChunkName(base string, index int) string {
 	if index == 0 {
 		return base
 	}
 	return fmt.Sprintf("%s.%d", base, index)
 }
-
-// SecureCookieContextKey is the context key under which router middleware
-// records its trusted secure-cookie decision (a bool derived from TLS or
-// trusted proxy headers).
-type SecureCookieContextKey struct{}
 
 // SecureCookieFromContext returns the secure-cookie decision that router
 // middleware derived from TLS or trusted proxy headers.

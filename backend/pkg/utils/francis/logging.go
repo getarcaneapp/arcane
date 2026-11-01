@@ -8,6 +8,20 @@ import (
 	"sync"
 )
 
+type (
+	actorLogHandler struct {
+		slog.Handler
+
+		names *sync.Map
+		steps []actorLogStep
+	}
+
+	actorLogStep struct {
+		group string
+		attrs []slog.Attr
+	}
+)
+
 // NameActor changes only the log display; durable actor IDs remain unchanged.
 func (r *Runtime) NameActor(actorID, name string) {
 	r.actorNames.Store(actorID, name)
@@ -18,18 +32,6 @@ func (r *Runtime) ActorName(actorID string) string {
 	name, _ := r.actorNames.Load(actorID)
 	displayName, _ := name.(string)
 	return displayName
-}
-
-type actorLogHandler struct {
-	slog.Handler
-
-	names *sync.Map
-	steps []actorLogStep
-}
-
-type actorLogStep struct {
-	group string
-	attrs []slog.Attr
 }
 
 func (h *actorLogHandler) Handle(ctx context.Context, record slog.Record) error {

@@ -9,10 +9,12 @@ import (
 	"gorm.io/gorm"
 )
 
-type widget struct {
-	ID   string `gorm:"primaryKey"`
-	Name string
-}
+type (
+	widget struct {
+		ID   string `gorm:"primaryKey"`
+		Name string
+	}
+)
 
 var errWidgetNotFound = errors.New("widget not found")
 

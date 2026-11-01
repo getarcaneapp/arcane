@@ -22,16 +22,18 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 )
 
+type (
+	volumeBackupPolicyScheduler struct {
+		jobs map[string]types.SchedulerJob
+	}
+)
+
 func newVolumeBackupTestDB(t *testing.T, name string) *gorm.DB {
 	t.Helper()
 	db, err := database.Initialize(t.Context(), "file:"+name+"?mode=memory&cache=shared", database.MigrationOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	return db.DB
-}
-
-type volumeBackupPolicyScheduler struct {
-	jobs map[string]types.SchedulerJob
 }
 
 func (s *volumeBackupPolicyScheduler) AddJob(_ context.Context, job types.SchedulerJob) error {

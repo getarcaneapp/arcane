@@ -6,14 +6,16 @@ import (
 	"time"
 )
 
-type LogMessage struct {
-	Level       string `json:"level,omitempty"`
-	Message     string `json:"message"`
-	Timestamp   string `json:"timestamp"` // RFC3339(9) string
-	Service     string `json:"service,omitempty"`
-	ContainerID string `json:"containerId,omitempty"`
-	Seq         uint64 `json:"seq"`
-}
+type (
+	LogMessage struct {
+		Level       string `json:"level,omitempty"`
+		Message     string `json:"message"`
+		Timestamp   string `json:"timestamp"` // RFC3339(9) string
+		Service     string `json:"service,omitempty"`
+		ContainerID string `json:"containerId,omitempty"`
+		Seq         uint64 `json:"seq"`
+	}
+)
 
 // ForwardLines forwards plain text lines to the hub.
 func ForwardLines(ctx context.Context, hub *Hub, lines <-chan string) {

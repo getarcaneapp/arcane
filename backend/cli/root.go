@@ -30,6 +30,13 @@ var rootCmd = &cobra.Command{
 	CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 }
 
+func init() {
+	rootCmd.AddCommand(admin.AdminCmd)
+	rootCmd.AddCommand(upgrade.UpgradeCmd)
+	rootCmd.AddCommand(recovery.RestoreCmd)
+	rootCmd.AddCommand(generate.Command())
+}
+
 func Execute() {
 	ctx := signals.SignalContext(context.Background()) //nolint:forbidigo // Process entry point creates the signal-controlled application context.
 
@@ -37,11 +44,4 @@ func Execute() {
 	if err != nil {
 		os.Exit(1)
 	}
-}
-
-func init() {
-	rootCmd.AddCommand(admin.AdminCmd)
-	rootCmd.AddCommand(upgrade.UpgradeCmd)
-	rootCmd.AddCommand(recovery.RestoreCmd)
-	rootCmd.AddCommand(generate.Command())
 }

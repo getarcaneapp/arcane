@@ -12,7 +12,20 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/buildables"
 )
 
-const unlimitedGCPercent = 50
+type (
+	SettingsPruner interface {
+		PruneUnknownSettings(ctx context.Context) error
+	}
+)
+
+const (
+	unlimitedGCPercent = 50
+)
+
+var deprecatedImageReplacements = map[string]string{
+	"ghcr.io/getarcaneapp/arcane":          "ghcr.io/getarcaneapp/manager",
+	"ghcr.io/getarcaneapp/arcane-headless": "ghcr.io/getarcaneapp/agent",
+}
 
 // ApplyMemoryLimit sets the Go soft memory limit to 90% of the cgroup memory
 // limit so the GC tightens before the container is OOM-killed. Without a cgroup
@@ -35,10 +48,6 @@ func ApplyMemoryLimit(ctx context.Context) {
 	slog.InfoContext(ctx, "Set Go memory limit from cgroup", "cgroupLimitBytes", limits.MemoryLimit, "goMemoryLimitBytes", limit)
 }
 
-type SettingsPruner interface {
-	PruneUnknownSettings(ctx context.Context) error
-}
-
 func CleanupUnknownSettings(ctx context.Context, settingsMgr SettingsPruner) {
 	if err := settingsMgr.PruneUnknownSettings(ctx); err != nil {
 		slog.ErrorContext(ctx, "Failed to prune unknown settings", "error", err.Error())
@@ -49,11 +58,6 @@ func TestDockerConnection(ctx context.Context, testFunc func(context.Context) er
 	if err := testFunc(ctx); err != nil {
 		slog.WarnContext(ctx, "Docker connection failed during init, local Docker features may be unavailable", "error", err.Error())
 	}
-}
-
-var deprecatedImageReplacements = map[string]string{
-	"ghcr.io/getarcaneapp/arcane":          "ghcr.io/getarcaneapp/manager",
-	"ghcr.io/getarcaneapp/arcane-headless": "ghcr.io/getarcaneapp/agent",
 }
 
 func WarnDeprecatedImage(ctx context.Context, imageFunc func(context.Context) (string, error)) {

@@ -12,10 +12,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// Module wires the webhook domain and mounts its routes.
-type Module struct {
-	service *WebhookService
-}
+type (
+	// Module wires the webhook domain and mounts its routes.
+	Module struct {
+		service *WebhookService
+	}
+)
 
 // New assembles webhook routes around the provided service.
 func New(service *WebhookService) *Module {

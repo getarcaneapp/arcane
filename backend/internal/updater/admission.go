@@ -21,12 +21,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 )
 
-type updateLeases struct {
-	leases map[types.SchedulerAdmissionKey]*runs.Lease
-	retain map[types.SchedulerAdmissionKey]<-chan struct{}
-	keys   []types.SchedulerAdmissionKey
-	mu     sync.Mutex
-}
+type (
+	updateLeases struct {
+		leases map[types.SchedulerAdmissionKey]*runs.Lease
+		retain map[types.SchedulerAdmissionKey]<-chan struct{}
+		keys   []types.SchedulerAdmissionKey
+		mu     sync.Mutex
+	}
+)
 
 func updateAdmissionKeys(containers []container.Summary) func(targetIDs []string) []types.SchedulerAdmissionKey {
 	identity := func(summary container.Summary) string {

@@ -65,66 +65,68 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/oidcjwk"
 )
 
-type graphParams struct {
-	fx.In
+type (
+	graphParams struct {
+		fx.In
 
-	AppImages         *appimages.ApplicationImagesService
-	User              *user.UserService
-	Project           *project.ProjectService
-	Environment       *environment.EnvironmentService
-	Settings          *settings.SettingsService
-	KV                *kv.KVService
-	JobSchedule       *job.JobService
-	Search            *search.Module
-	Container         *container.Module
-	Image             *image.ImageService
-	Build             *build.BuildService
-	Lifecycle         *project.LifecycleService
-	Volume            *volume.Module
-	BackupEngine      *backup.Engine
-	S3Destination     *s3domain.Module
-	Network           *network.NetworkService
-	Port              *port.PortService
-	Swarm             *swarm.SwarmService
-	ImageUpdate       *imageupdate.ImageUpdateService
-	Session           *session.SessionService
-	Auth              *auth.AuthService
-	Oidc              *oidc.OidcService
-	Docker            *docker.DockerClientService
-	Template          *template.TemplateService
-	ContainerRegistry *registry.ContainerRegistryService
-	System            *system.Module
-	Diagnostics       *diagnostics.DiagnosticsService
-	Updater           *updater.Module
-	Event             *event.EventService
-	Activity          *activity.ActivityService
-	Version           *version.VersionService
-	Notification      *notification.NotificationService
-	ApiKey            *apikey.ApiKeyService
-	Federated         *federated.FederatedCredentialService
-	GitRepository     *gitrepo.GitRepositoryService
-	GitOpsSync        *gitops.GitOpsSyncService
-	Webhook           *webhook.Module
-	Vulnerability     *vulnerability.VulnerabilityService
-	Dashboard         *dashboard.DashboardService
-	Podman            *podman.Module
-	Role              *role.RoleService
-	Variable          *variable.VariableService
-	AuthMiddleware    *auth.AuthMiddleware
-	JWKSetManager     *oidcjwk.KeySetManager
+		AppImages         *appimages.ApplicationImagesService
+		User              *user.UserService
+		Project           *project.ProjectService
+		Environment       *environment.EnvironmentService
+		Settings          *settings.SettingsService
+		KV                *kv.KVService
+		JobSchedule       *job.JobService
+		Search            *search.Module
+		Container         *container.Module
+		Image             *image.ImageService
+		Build             *build.BuildService
+		Lifecycle         *project.LifecycleService
+		Volume            *volume.Module
+		BackupEngine      *backup.Engine
+		S3Destination     *s3domain.Module
+		Network           *network.NetworkService
+		Port              *port.PortService
+		Swarm             *swarm.SwarmService
+		ImageUpdate       *imageupdate.ImageUpdateService
+		Session           *session.SessionService
+		Auth              *auth.AuthService
+		Oidc              *oidc.OidcService
+		Docker            *docker.DockerClientService
+		Template          *template.TemplateService
+		ContainerRegistry *registry.ContainerRegistryService
+		System            *system.Module
+		Diagnostics       *diagnostics.DiagnosticsService
+		Updater           *updater.Module
+		Event             *event.EventService
+		Activity          *activity.ActivityService
+		Version           *version.VersionService
+		Notification      *notification.NotificationService
+		ApiKey            *apikey.ApiKeyService
+		Federated         *federated.FederatedCredentialService
+		GitRepository     *gitrepo.GitRepositoryService
+		GitOpsSync        *gitops.GitOpsSyncService
+		Webhook           *webhook.Module
+		Vulnerability     *vulnerability.VulnerabilityService
+		Dashboard         *dashboard.DashboardService
+		Podman            *podman.Module
+		Role              *role.RoleService
+		Variable          *variable.VariableService
+		AuthMiddleware    *auth.AuthMiddleware
+		JWKSetManager     *oidcjwk.KeySetManager
 
-	AutoUpdate             *flow.Job `name:"auto-update"`
-	ImageUpdateWatcher     *scheduler.ImageUpdateWatcher
-	DockerClientRefresh    *scheduler.DockerClientRefreshJob
-	Analytics              *scheduler.AnalyticsJob
-	EventCleanup           *scheduler.EventCleanupJob
-	PruningVolumeHelper    *scheduler.PruningVolumeHelperJob
-	ExpiredSessionsCleanup *scheduler.ExpiredSessionsCleanupJob
-	ScheduledPrune         *scheduler.ScheduledPruneJob
-	FilesystemWatcher      *scheduler.FilesystemWatcherJob
-	VulnerabilityScan      *flow.Job `name:"vulnerability-scan"`
-	AutoHeal               *scheduler.AutoHealJob
-}
+		AutoUpdate             *flow.Job `name:"auto-update"`
+		ImageUpdateWatcher     *scheduler.ImageUpdateWatcher
+		DockerClientRefresh    *scheduler.DockerClientRefreshJob
+		Analytics              *scheduler.AnalyticsJob
+		EventCleanup           *scheduler.EventCleanupJob
+		PruningVolumeHelper    *scheduler.PruningVolumeHelperJob
+		ExpiredSessionsCleanup *scheduler.ExpiredSessionsCleanupJob
+		ScheduledPrune         *scheduler.ScheduledPruneJob
+		FilesystemWatcher      *scheduler.FilesystemWatcherJob
+		VulnerabilityScan      *flow.Job `name:"vulnerability-scan"`
+		AutoHeal               *scheduler.AutoHealJob
+	}
+)
 
 func TestOptionsValidate(t *testing.T) {
 	_, cancel := context.WithCancelCause(t.Context())

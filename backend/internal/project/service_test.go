@@ -72,7 +72,31 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
-var testRegistryCredentials = func(context.Context) ([]types.ContainerRegistryCredential, error) { return nil, nil }
+type (
+	testBuildBuilder struct {
+		err error
+	}
+
+	fakeProjectVolumeRenameMigration struct {
+		applyErr       error
+		commitErr      error
+		rollbackErr    error
+		applyCalled    bool
+		commitCalled   bool
+		rollbackCalled bool
+	}
+
+	serviceTagTransport struct {
+		tags  []string
+		calls int
+	}
+)
+
+var (
+	testRegistryCredentials = func(context.Context) ([]types.ContainerRegistryCredential, error) { return nil, nil }
+
+	_ builder = testBuildBuilder{}
+)
 
 func newUnreachableDockerService(t *testing.T) *docker.DockerClientService {
 	t.Helper()
@@ -80,10 +104,6 @@ func newUnreachableDockerService(t *testing.T) *docker.DockerClientService {
 	cli, err := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
 	require.NoError(t, err)
 	return newSettingsDockerService(t, cli)
-}
-
-type testBuildBuilder struct {
-	err error
 }
 
 func (b testBuildBuilder) BuildImage(_ context.Context, _ string, _ buildtypes.BuildRequest, _ io.Writer, _ string, _ *types.Actor) (*buildtypes.BuildResult, error) {
@@ -96,8 +116,6 @@ func (b testBuildBuilder) BuildImage(_ context.Context, _ string, _ buildtypes.B
 func (testBuildBuilder) BuildSettings() buildtypes.BuildSettings {
 	return buildtypes.BuildSettings{}
 }
-
-var _ builder = testBuildBuilder{}
 
 func loadTestConfig(t testing.TB) *config.Config {
 	t.Helper()
@@ -1427,15 +1445,6 @@ func TestProjectService_UpdateProjectServicesForcesRecreate(t *testing.T) {
 	assert.True(t, upCalled)
 	assert.Equal(t, []string{"app", "sidecar"}, stopped)
 	assert.True(t, forceRecreate, "service updates must force recreate after pulling the updated image")
-}
-
-type fakeProjectVolumeRenameMigration struct {
-	applyErr       error
-	commitErr      error
-	rollbackErr    error
-	applyCalled    bool
-	commitCalled   bool
-	rollbackCalled bool
 }
 
 func (m *fakeProjectVolumeRenameMigration) Apply(context.Context) error {
@@ -9094,11 +9103,6 @@ func TestCountProjectsWithPendingTagUpdatesUsesRuntimeContainers(t *testing.T) {
 	containers[3].Labels[imageref.UpdateCheckLabel] = "false"
 	count = service.CountProjectsWithPendingUpdates(t.Context(), containers, allProjects)
 	require.Zero(t, count, "disabling update checks on every replica suppresses the project")
-}
-
-type serviceTagTransport struct {
-	tags  []string
-	calls int
 }
 
 func (s *serviceTagTransport) RoundTrip(request *http.Request) (*http.Response, error) {

@@ -35,11 +35,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
-// Service runs pre-deploy scripts in throwaway runner containers.
-type Service struct {
-	dockerService *dockerInternal.DockerClientService
-	imageService  *image.ImageService
-}
+type (
+	// Service runs pre-deploy scripts in throwaway runner containers.
+	Service struct {
+		dockerService *dockerInternal.DockerClientService
+		imageService  *image.ImageService
+	}
+)
 
 const (
 	// lifecycleWorkspaceMount is where the project dir is mounted; scripts run there.
@@ -48,7 +50,6 @@ const (
 	lifecycleMaxOutputBytes = 16 * 1024
 	// lifecycleStreamDrainTimeout bounds the post-exit log drain, matching vulnerability scanning.
 	lifecycleStreamDrainTimeout = 30 * time.Second
-
 	// Last-run status values written to GitOpsSync.PreDeployLastRunStatus.
 	LifecycleStatusSuccess = "success"
 	LifecycleStatusFailed  = "failed"

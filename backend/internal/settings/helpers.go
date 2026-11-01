@@ -19,7 +19,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
-type Env map[string]string
+type (
+	Env map[string]string
+)
 
 // EnsureInstanceID returns this installation's persisted instance ID, creating it on first start.
 func EnsureInstanceID(ctx context.Context, db *database.DB) (string, error) {

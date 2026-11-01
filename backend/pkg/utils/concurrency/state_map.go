@@ -8,17 +8,19 @@ import (
 	"sync/atomic"
 )
 
-// StateMap owns mutable keyed state while publishing immutable snapshots for readers.
-type StateMap[K comparable, V any] struct {
-	values   map[K]V
-	snapshot atomic.Pointer[map[K]V]
-	mu       sync.Mutex
-}
+type (
+	// StateMap owns mutable keyed state while publishing immutable snapshots for readers.
+	StateMap[K comparable, V any] struct {
+		values   map[K]V
+		snapshot atomic.Pointer[map[K]V]
+		mu       sync.Mutex
+	}
 
-type stateMapValue[V any] struct {
-	value V
-	found bool
-}
+	stateMapValue[V any] struct {
+		value V
+		found bool
+	}
+)
 
 // NewStateMap creates a locally serialized state map for process-local state.
 func NewStateMap[K comparable, V any]() *StateMap[K, V] {

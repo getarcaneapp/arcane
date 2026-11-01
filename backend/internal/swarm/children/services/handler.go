@@ -11,12 +11,66 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// Handler serves the swarm service endpoints.
-type Handler struct {
-	service  *Service
-	audit    func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
-	mapError func(err error, fallback string) error
-}
+type (
+	// Handler serves the swarm service endpoints.
+	Handler struct {
+		service  *Service
+		audit    func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
+		mapError func(err error, fallback string) error
+	}
+
+	ListSwarmServicesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
+
+	GetSwarmServiceInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ServiceID     string `path:"serviceId" doc:"Service ID"`
+	}
+
+	CreateSwarmServiceInput struct {
+		EnvironmentID string                          `path:"id" doc:"Environment ID"`
+		Body          types.SwarmServiceCreateRequest `doc:"Service creation request"`
+	}
+
+	UpdateSwarmServiceInput struct {
+		Body          types.SwarmServiceUpdateRequest
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ServiceID     string `path:"serviceId" doc:"Service ID"`
+	}
+
+	DeleteSwarmServiceInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ServiceID     string `path:"serviceId" doc:"Service ID"`
+	}
+
+	ListSwarmServiceTasksInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ServiceID     string `path:"serviceId" doc:"Service ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
+
+	SwarmServiceActionInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ServiceID     string `path:"serviceId" doc:"Service ID"`
+		Action        string `query:"action" required:"true" enum:"rollback" doc:"Service action"`
+	}
+
+	ScaleSwarmServiceInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ServiceID     string `path:"serviceId" doc:"Service ID"`
+		Body          types.SwarmServiceScaleRequest
+	}
+)
 
 func NewHandler(
 	service *Service,
@@ -24,58 +78,6 @@ func NewHandler(
 	mapError func(err error, fallback string) error,
 ) *Handler {
 	return &Handler{service: service, audit: audit, mapError: mapError}
-}
-
-type ListSwarmServicesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
-
-type GetSwarmServiceInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ServiceID     string `path:"serviceId" doc:"Service ID"`
-}
-
-type CreateSwarmServiceInput struct {
-	EnvironmentID string                          `path:"id" doc:"Environment ID"`
-	Body          types.SwarmServiceCreateRequest `doc:"Service creation request"`
-}
-
-type UpdateSwarmServiceInput struct {
-	Body          types.SwarmServiceUpdateRequest
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ServiceID     string `path:"serviceId" doc:"Service ID"`
-}
-
-type DeleteSwarmServiceInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ServiceID     string `path:"serviceId" doc:"Service ID"`
-}
-
-type ListSwarmServiceTasksInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ServiceID     string `path:"serviceId" doc:"Service ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
-
-type SwarmServiceActionInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ServiceID     string `path:"serviceId" doc:"Service ID"`
-	Action        string `query:"action" required:"true" enum:"rollback" doc:"Service action"`
-}
-
-type ScaleSwarmServiceInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ServiceID     string `path:"serviceId" doc:"Service ID"`
-	Body          types.SwarmServiceScaleRequest
 }
 
 // ListServices lists swarm services for an environment and returns a paginated response.

@@ -13,34 +13,36 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// Handler serves the system-managed volume backup endpoints.
-type Handler struct {
-	service *Service
-	appCtx  context.Context
-}
+type (
+	// Handler serves the system-managed volume backup endpoints.
+	Handler struct {
+		service *Service
+		appCtx  context.Context
+	}
+
+	SystemVolumeBackupConfigOutput struct {
+		Body types.SystemVolumeBackupPolicyCollection
+	}
+
+	UpdateSystemVolumeBackupConfigInput struct {
+		Body types.UpdateSystemVolumeBackupPolicies
+	}
+
+	SystemVolumeBackupOptionsOutput struct {
+		Body []types.SystemVolumeBackupOption
+	}
+
+	SystemVolumeBackupRunOutput struct {
+		Body types.BackupRunAccepted
+	}
+
+	RunSystemVolumeBackupsInput struct {
+		Body *types.RunSystemVolumeBackupsRequest `json:"body,omitempty"`
+	}
+)
 
 func NewHandler(service *Service, appCtx context.Context) *Handler {
 	return &Handler{service: service, appCtx: appCtx}
-}
-
-type SystemVolumeBackupConfigOutput struct {
-	Body types.SystemVolumeBackupPolicyCollection
-}
-
-type UpdateSystemVolumeBackupConfigInput struct {
-	Body types.UpdateSystemVolumeBackupPolicies
-}
-
-type SystemVolumeBackupOptionsOutput struct {
-	Body []types.SystemVolumeBackupOption
-}
-
-type SystemVolumeBackupRunOutput struct {
-	Body types.BackupRunAccepted
-}
-
-type RunSystemVolumeBackupsInput struct {
-	Body *types.RunSystemVolumeBackupsRequest `json:"body,omitempty"`
 }
 
 func (h *Handler) GetSystemVolumeConfig(ctx context.Context, _ *struct{}) (*SystemVolumeBackupConfigOutput, error) {

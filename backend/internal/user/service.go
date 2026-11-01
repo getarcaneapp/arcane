@@ -30,13 +30,52 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
-type Argon2Params struct {
-	memory      uint32
-	iterations  uint32
-	parallelism uint8
-	saltLength  uint32
-	keyLength   uint32
-}
+type (
+	Argon2Params struct {
+		memory      uint32
+		iterations  uint32
+		parallelism uint8
+		saltLength  uint32
+		keyLength   uint32
+	}
+
+	UserService struct {
+		db                   *database.DB
+		roleService          *role.RoleService
+		argon2Params         *Argon2Params
+		argon2Slots          chan struct{}
+		revokeSessionsExcept func(context.Context, *gorm.DB, string, string) error
+	}
+)
+
+const (
+	dashboardColumns = 12
+)
+
+var (
+	ErrCannotRemoveLastAdmin = errors.New("cannot remove the last admin user")
+	ErrUsernameRequired      = errors.New("username is required")
+	ErrUsernameTaken         = errors.New("username already in use")
+	ErrEmailTaken            = common.Classify(common.ErrConflict, errors.New("email already in use"))
+	// ErrInsufficientPrivilege is returned when a caller attempts to modify a
+	// target whose effective privilege is equal to or higher than the caller's
+	// (e.g. a delegated users:update holder trying to edit a global admin).
+	ErrInsufficientPrivilege = errors.New("insufficient privilege to modify this user")
+
+	dashboardWidgetSizes = map[string]struct{ minW, minH, maxH int }{
+		"healthy":          {minW: 2, minH: 2, maxH: 4},
+		"attentionCount":   {minW: 2, minH: 2, maxH: 4},
+		"updates":          {minW: 2, minH: 2, maxH: 4},
+		"risk":             {minW: 2, minH: 2, maxH: 4},
+		"reclaimableTotal": {minW: 2, minH: 2, maxH: 4},
+		"environments":     {minW: 6, minH: 3, maxH: 12},
+		"attention":        {minW: 4, minH: 4, maxH: 12},
+		"activity":         {minW: 4, minH: 4, maxH: 12},
+		"jobs":             {minW: 3, minH: 3, maxH: 12},
+		"reclaimable":      {minW: 3, minH: 3, maxH: 12},
+		"memory":           {minW: 3, minH: 3, maxH: 12},
+	}
+)
 
 func DefaultArgon2Params() *Argon2Params {
 	return &Argon2Params{
@@ -46,42 +85,6 @@ func DefaultArgon2Params() *Argon2Params {
 		saltLength:  16,
 		keyLength:   32,
 	}
-}
-
-type UserService struct {
-	db                   *database.DB
-	roleService          *role.RoleService
-	argon2Params         *Argon2Params
-	argon2Slots          chan struct{}
-	revokeSessionsExcept func(context.Context, *gorm.DB, string, string) error
-}
-
-var (
-	ErrCannotRemoveLastAdmin = errors.New("cannot remove the last admin user")
-	ErrUsernameRequired      = errors.New("username is required")
-	ErrUsernameTaken         = errors.New("username already in use")
-	ErrEmailTaken            = common.Classify(common.ErrConflict, errors.New("email already in use"))
-
-	// ErrInsufficientPrivilege is returned when a caller attempts to modify a
-	// target whose effective privilege is equal to or higher than the caller's
-	// (e.g. a delegated users:update holder trying to edit a global admin).
-	ErrInsufficientPrivilege = errors.New("insufficient privilege to modify this user")
-)
-
-const dashboardColumns = 12
-
-var dashboardWidgetSizes = map[string]struct{ minW, minH, maxH int }{
-	"healthy":          {minW: 2, minH: 2, maxH: 4},
-	"attentionCount":   {minW: 2, minH: 2, maxH: 4},
-	"updates":          {minW: 2, minH: 2, maxH: 4},
-	"risk":             {minW: 2, minH: 2, maxH: 4},
-	"reclaimableTotal": {minW: 2, minH: 2, maxH: 4},
-	"environments":     {minW: 6, minH: 3, maxH: 12},
-	"attention":        {minW: 4, minH: 4, maxH: 12},
-	"activity":         {minW: 4, minH: 4, maxH: 12},
-	"jobs":             {minW: 3, minH: 3, maxH: 12},
-	"reclaimable":      {minW: 3, minH: 3, maxH: 12},
-	"memory":           {minW: 3, minH: 3, maxH: 12},
 }
 
 func NewUserService(db *database.DB, roleService *role.RoleService, revokeSessionsExcept func(context.Context, *gorm.DB, string, string) error) *UserService {

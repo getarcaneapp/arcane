@@ -22,12 +22,30 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jsonx"
 )
 
-type normalizationTestBody struct {
-	Name     string  `json:"name" minLength:"1" maxLength:"1" unorm:"nfc" trim:"true"`
-	Optional *string `json:"optional,omitempty" unorm:"nfc" trim:"true"`
-	Password string  `json:"password,omitempty"`
-	Number   uint64  `json:"number,omitempty"`
-}
+type (
+	normalizationTestBody struct {
+		Name     string  `json:"name" minLength:"1" maxLength:"1" unorm:"nfc" trim:"true"`
+		Optional *string `json:"optional,omitempty" unorm:"nfc" trim:"true"`
+		Password string  `json:"password,omitempty"`
+		Number   uint64  `json:"number,omitempty"`
+	}
+
+	normalizationTimeoutReader struct {
+		body     *strings.Reader
+		closeErr error
+		closed   bool
+	}
+
+	normalizationResponseRecorder struct {
+		*httptest.ResponseRecorder
+
+		setupErr error
+		resetErr error
+		calls    int
+	}
+
+	normalizationTimeoutError struct{}
+)
 
 func TestNormalizationBeforeHumaValidation(t *testing.T) {
 	for _, tc := range []struct {
@@ -152,12 +170,6 @@ func TestNormalizationBodyLimits(t *testing.T) {
 	}
 }
 
-type normalizationTimeoutReader struct {
-	body     *strings.Reader
-	closeErr error
-	closed   bool
-}
-
 func (r *normalizationTimeoutReader) Read(data []byte) (int, error) {
 	if r.body != nil {
 		return r.body.Read(data)
@@ -168,14 +180,6 @@ func (r *normalizationTimeoutReader) Read(data []byte) (int, error) {
 func (r *normalizationTimeoutReader) Close() error {
 	r.closed = true
 	return r.closeErr
-}
-
-type normalizationResponseRecorder struct {
-	*httptest.ResponseRecorder
-
-	setupErr error
-	resetErr error
-	calls    int
 }
 
 func (r *normalizationResponseRecorder) SetReadDeadline(deadline time.Time) error {
@@ -189,10 +193,10 @@ func (r *normalizationResponseRecorder) SetReadDeadline(deadline time.Time) erro
 	return nil
 }
 
-type normalizationTimeoutError struct{}
+func (normalizationTimeoutError) Error() string { return "read timed out" }
 
-func (normalizationTimeoutError) Error() string   { return "read timed out" }
-func (normalizationTimeoutError) Timeout() bool   { return true }
+func (normalizationTimeoutError) Timeout() bool { return true }
+
 func (normalizationTimeoutError) Temporary() bool { return true }
 
 func TestNormalizationReadTimeout(t *testing.T) {

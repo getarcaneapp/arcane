@@ -14,56 +14,58 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-type Handler struct {
-	service *Service
-	audit   func(ctx context.Context, environmentID, action, resourceType, resourceName string, metadata map[string]any)
-}
+type (
+	Handler struct {
+		service *Service
+		audit   func(ctx context.Context, environmentID, action, resourceType, resourceName string, metadata map[string]any)
+	}
+
+	ListPodsInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
+
+	GetPodInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		PodID         string `path:"podId" doc:"Pod name or ID"`
+	}
+
+	CreatePodInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.PodCreateRequest
+	}
+
+	PodActionInput struct {
+		Body          *types.PodActionRequest
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		PodID         string `path:"podId" doc:"Pod name or ID"`
+		Action        string `query:"action" required:"true" enum:"start,stop,restart,pause,unpause,kill" doc:"Lifecycle action"`
+	}
+
+	DeletePodInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		PodID         string `path:"podId" doc:"Pod name or ID"`
+		Force         bool   `query:"force" doc:"Stop and remove running containers"`
+	}
+
+	PodTopInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		PodID         string `path:"podId" doc:"Pod name or ID"`
+		PsArgs        string `query:"psArgs" doc:"Arguments passed to ps"`
+	}
+
+	PodStatsInput struct {
+		EnvironmentID string   `path:"id" doc:"Environment ID"`
+		Names         []string `query:"names" doc:"Pod names or IDs; empty reports every pod"`
+	}
+)
 
 func NewHandler(service *Service, audit func(ctx context.Context, environmentID, action, resourceType, resourceName string, metadata map[string]any)) *Handler {
 	return &Handler{service: service, audit: audit}
-}
-
-type ListPodsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
-
-type GetPodInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	PodID         string `path:"podId" doc:"Pod name or ID"`
-}
-
-type CreatePodInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.PodCreateRequest
-}
-
-type PodActionInput struct {
-	Body          *types.PodActionRequest
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	PodID         string `path:"podId" doc:"Pod name or ID"`
-	Action        string `query:"action" required:"true" enum:"start,stop,restart,pause,unpause,kill" doc:"Lifecycle action"`
-}
-
-type DeletePodInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	PodID         string `path:"podId" doc:"Pod name or ID"`
-	Force         bool   `query:"force" doc:"Stop and remove running containers"`
-}
-
-type PodTopInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	PodID         string `path:"podId" doc:"Pod name or ID"`
-	PsArgs        string `query:"psArgs" doc:"Arguments passed to ps"`
-}
-
-type PodStatsInput struct {
-	EnvironmentID string   `path:"id" doc:"Environment ID"`
-	Names         []string `query:"names" doc:"Pod names or IDs; empty reports every pod"`
 }
 
 func (h *Handler) List(ctx context.Context, input *ListPodsInput) (*handlerutil.Page[types.Pod], error) {

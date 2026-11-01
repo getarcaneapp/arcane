@@ -15,10 +15,12 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v3/internal/runtime"
 )
 
-type confirmationInput struct {
-	io.Reader
-	terminal *os.File
-}
+type (
+	confirmationInput struct {
+		io.Reader
+		terminal *os.File
+	}
+)
 
 func (input confirmationInput) Fd() uintptr { return input.terminal.Fd() }
 

@@ -10,13 +10,17 @@ import (
 	kit "kit.getarcane.app"
 )
 
-const DefaultMaxFileSizeMB = 10
+type (
+	UploadReference struct {
+		UploadIndex   *int
+		BaselineIndex *int
+		Operation     string
+	}
+)
 
-type UploadReference struct {
-	UploadIndex   *int
-	BaselineIndex *int
-	Operation     string
-}
+const (
+	DefaultMaxFileSizeMB = 10
+)
 
 func MaxFileSizeBytes(configuredMB int) int64 {
 	return int64(kit.Ternary(configuredMB <= 0, DefaultMaxFileSizeMB, configuredMB)) * 1024 * 1024

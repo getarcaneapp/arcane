@@ -10,22 +10,24 @@ import (
 	kit "kit.getarcane.app"
 )
 
+type (
+	IconSet struct {
+		Icon  string
+		Light string
+		Dark  string
+	}
+
+	ResolvedIconSet struct {
+		IconLightURL string
+		IconDarkURL  string
+	}
+)
+
 const (
 	CatalogSelfhst        = "selfhst"
 	CatalogDashboardIcons = "dashboard-icons"
 	DefaultCatalog        = CatalogSelfhst
 )
-
-type IconSet struct {
-	Icon  string
-	Light string
-	Dark  string
-}
-
-type ResolvedIconSet struct {
-	IconLightURL string
-	IconDarkURL  string
-}
 
 func (s IconSet) IsEmpty() bool {
 	return strings.TrimSpace(s.Icon) == "" &&

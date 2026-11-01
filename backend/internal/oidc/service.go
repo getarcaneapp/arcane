@@ -35,38 +35,48 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
-type OidcService struct {
-	authService        *auth.AuthService
-	settingsService    *settings.SettingsService
-	config             *config.Config
-	httpClient         *http.Client
-	insecureHttpClient *http.Client
-	providerCache      *hot.HotCache[oidcProviderKey, *oidc.Provider]
-	keySetManager      *oidcjwk.KeySetManager
-}
+type (
+	OidcService struct {
+		authService        *auth.AuthService
+		settingsService    *settings.SettingsService
+		config             *config.Config
+		httpClient         *http.Client
+		insecureHttpClient *http.Client
+		providerCache      *hot.HotCache[oidcProviderKey, *oidc.Provider]
+		keySetManager      *oidcjwk.KeySetManager
+	}
 
-type oidcProviderKey struct {
-	issuer  string
-	skipTLS bool
-}
+	oidcProviderKey struct {
+		issuer  string
+		skipTLS bool
+	}
 
-type OidcState struct {
-	CreatedAt    time.Time `json:"created_at"`
-	State        string    `json:"state"`
-	Nonce        string    `json:"nonce"`
-	CodeVerifier string    `json:"code_verifier"`
-	RedirectTo   string    `json:"redirect_to"`
-}
+	OidcState struct {
+		CreatedAt    time.Time `json:"created_at"`
+		State        string    `json:"state"`
+		Nonce        string    `json:"nonce"`
+		CodeVerifier string    `json:"code_verifier"`
+		RedirectTo   string    `json:"redirect_to"`
+	}
 
-type OidcServiceParams struct {
-	fx.In
+	OidcServiceParams struct {
+		fx.In
 
-	AuthService     *auth.AuthService
-	SettingsService *settings.SettingsService
-	Config          *config.Config
-	HTTPClient      *http.Client
-	KeySetManager   *oidcjwk.KeySetManager
-}
+		AuthService     *auth.AuthService
+		SettingsService *settings.SettingsService
+		Config          *config.Config
+		HTTPClient      *http.Client
+		KeySetManager   *oidcjwk.KeySetManager
+	}
+
+	CallbackRequest struct {
+		Code              string
+		State             string
+		StoredState       string
+		Origin            string
+		MobileRedirectURI string
+	}
+)
 
 func NewOidcService(p OidcServiceParams) *OidcService {
 	if p.HTTPClient == nil {
@@ -276,14 +286,6 @@ func (s *OidcService) discoverProvider(ctx context.Context, key oidcProviderKey)
 	span.SetAttributes(attribute.String("arcane.oidc.effective_issuer", altIssuer))
 	slog.DebugContext(ctx, "getOrDiscoverProvider: provider cached", "issuer", key.issuer, "effectiveIssuer", altIssuer, "skipTls", key.skipTLS)
 	return provider, nil
-}
-
-type CallbackRequest struct {
-	Code              string
-	State             string
-	StoredState       string
-	Origin            string
-	MobileRedirectURI string
 }
 
 func (s *OidcService) HandleCallback(ctx context.Context, req CallbackRequest) (_ *types.OidcUserInfo, _ *types.OidcTokenResponse, err error) {

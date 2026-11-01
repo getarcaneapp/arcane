@@ -26,19 +26,21 @@ import (
 	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
 )
 
-type fakeJobScheduler struct {
-	jobs               map[string]types.SchedulerJob
-	runtimeStates      map[string]types.JobRuntimeState
-	rescheduled        []string
-	rescheduleContexts []context.Context
-	rescheduleErr      error
-	busWatcherRuns     []string
-	busWatcherContexts []context.Context
-}
+type (
+	fakeJobScheduler struct {
+		jobs               map[string]types.SchedulerJob
+		runtimeStates      map[string]types.JobRuntimeState
+		rescheduled        []string
+		rescheduleContexts []context.Context
+		rescheduleErr      error
+		busWatcherRuns     []string
+		busWatcherContexts []context.Context
+	}
 
-type fakeJob struct {
-	name string
-}
+	fakeJob struct {
+		name string
+	}
+)
 
 func setupSettingsTestDB(t *testing.T) *database.DB {
 	t.Helper()

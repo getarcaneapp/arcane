@@ -18,15 +18,17 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-type Handler struct {
-	service      *Service
-	eventService *event.EventService
-}
+type (
+	Handler struct {
+		service      *Service
+		eventService *event.EventService
+	}
 
-type RunPodmanAutoUpdateInput struct {
-	Body          *types.PodmanAutoUpdateOptions
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
+	RunPodmanAutoUpdateInput struct {
+		Body          *types.PodmanAutoUpdateOptions
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+	}
+)
 
 func (h *Handler) GetStatus(ctx context.Context, _ *types.EnvironmentInput) (*handlerutil.Out[types.PodmanStatus], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {

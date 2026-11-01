@@ -19,8 +19,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/vuln"
 )
 
-// trustBundleDir is the directory the Rustic binary probes for system roots.
-const trustBundleDir = "/etc/ssl/certs"
+const (
+	// trustBundleDir is the directory the Rustic binary probes for system roots.
+	trustBundleDir = "/etc/ssl/certs"
+)
 
 // Same lookup order as Go's crypto/x509 on Linux.
 var (

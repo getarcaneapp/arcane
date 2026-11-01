@@ -45,48 +45,48 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
-type registryFetchMeta struct {
-	LastModified string
-	Templates    []ComposeTemplate
-}
+type (
+	registryFetchMeta struct {
+		LastModified string
+		Templates    []ComposeTemplate
+	}
 
-// templateFileSnapshot is a folder template file's state before a save overwrote it.
-type templateFileSnapshot struct {
-	path    string
-	content string
-	perm    os.FileMode
-	existed bool
-}
+	// templateFileSnapshot is a folder template file's state before a save overwrote it.
+	templateFileSnapshot struct {
+		path    string
+		content string
+		perm    os.FileMode
+		existed bool
+	}
 
-type TemplateService struct {
-	lastFsSync      time.Time
-	db              *database.DB
-	httpClient      *http.Client
-	safeHTTPClient  *http.Client
-	lookupIP        httpx.LookupIPFunc
-	settingsService *settings.SettingsService
+	TemplateService struct {
+		lastFsSync      time.Time
+		db              *database.DB
+		httpClient      *http.Client
+		safeHTTPClient  *http.Client
+		lookupIP        httpx.LookupIPFunc
+		settingsService *settings.SettingsService
 
-	remoteCache       *hot.HotCache[uint64, []ComposeTemplate]
-	registryFetchMeta map[string]*registryFetchMeta
-	registryErrors    map[string]string // last fetch error per registry ID, cleared on success
+		remoteCache       *hot.HotCache[uint64, []ComposeTemplate]
+		registryFetchMeta map[string]*registryFetchMeta
+		registryErrors    map[string]string // last fetch error per registry ID, cleared on success
 
-	remoteGeneration atomic.Uint64
+		remoteGeneration atomic.Uint64
 
-	registryMu sync.RWMutex
+		registryMu sync.RWMutex
 
-	// fsMu serializes folder template writes and deletes with the filesystem sync, and guards lastFsSync.
-	fsMu sync.Mutex
-}
+		// fsMu serializes folder template writes and deletes with the filesystem sync, and guards lastFsSync.
+		fsMu sync.Mutex
+	}
+)
 
 const (
-	remoteCacheDuration = 5 * time.Minute
-	fsSyncInterval      = 1 * time.Minute
-
+	remoteCacheDuration      = 5 * time.Minute
+	fsSyncInterval           = 1 * time.Minute
 	maxDownloadSlugAttempts  = 100
 	maxTemplateFileBytes     = 4 << 20
 	maxTemplateRegistryBytes = 32 << 20
-
-	remoteIDPrefix = "remote"
+	remoteIDPrefix           = "remote"
 )
 
 var errRemoteCacheInvalidated = errors.New("remote template cache invalidated")

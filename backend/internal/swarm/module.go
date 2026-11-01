@@ -19,12 +19,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Module struct {
-	service     *SwarmService
-	environment *environment.EnvironmentService
-	event       *event.EventService
-	config      *config.Config
-}
+type (
+	Module struct {
+		service     *SwarmService
+		environment *environment.EnvironmentService
+		event       *event.EventService
+		config      *config.Config
+	}
+)
 
 func New(service *SwarmService, environmentService *environment.EnvironmentService, eventService *event.EventService, cfg *config.Config) *Module {
 	return &Module{service: service, environment: environmentService, event: eventService, config: cfg}

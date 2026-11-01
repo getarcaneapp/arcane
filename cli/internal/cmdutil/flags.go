@@ -9,11 +9,13 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// EnumValue implements a string flag restricted to the choices registered by EnumVarP.
-type EnumValue[T ~string] struct {
-	value   *T
-	allowed []string
-}
+type (
+	// EnumValue implements a string flag restricted to the choices registered by EnumVarP.
+	EnumValue[T ~string] struct {
+		value   *T
+		allowed []string
+	}
+)
 
 // String returns the current flag value.
 func (v *EnumValue[T]) String() string { return string(*v.value) }

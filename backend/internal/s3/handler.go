@@ -12,63 +12,65 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
+type (
+	s3DestinationHandler struct {
+		service                *S3DestinationService
+		syncRemoteDestinations func(context.Context)
+	}
+
+	listS3DestinationsInput struct {
+		Search string `query:"search" doc:"Search query"`
+		Sort   string `query:"sort" doc:"Column to sort by"`
+		Order  string `query:"order" default:"asc" doc:"Sort direction"`
+		Start  int    `query:"start" default:"0" doc:"Start index"`
+		Limit  int    `query:"limit" default:"20" doc:"Limit"`
+	}
+
+	listAllS3DestinationsOutput struct {
+		Body []types.S3Destination
+	}
+
+	s3DestinationIDInput struct {
+		ID string `path:"id" doc:"S3 destination ID"`
+	}
+
+	createS3DestinationInput struct {
+		types.Create[types.S3Destination]
+	}
+
+	updateS3DestinationInput struct {
+		ID string `path:"id" doc:"S3 destination ID"`
+		types.Update[types.S3Destination]
+	}
+
+	s3DestinationOutput struct {
+		Body types.S3Destination
+	}
+
+	s3DestinationActionInput struct {
+		Body   *types.S3Destination `json:"body,omitempty"`
+		ID     string               `path:"id" doc:"S3 destination ID"`
+		Action string               `query:"action" required:"true" enum:"test" doc:"S3 destination action"`
+	}
+
+	testS3DestinationConfigurationInput struct {
+		Body types.S3Destination
+	}
+
+	syncS3DestinationsInput struct {
+		Body types.S3DestinationSyncRequest
+	}
+
+	s3DestinationUsageOutput struct {
+		Body types.S3DestinationUsage
+	}
+)
+
 const (
 	s3DestinationPath       = "/backups/s3"
 	s3DestinationTag        = "S3 Destinations"
 	s3ConnectionTestSuccess = "S3 connection test succeeded"
 )
-
-type s3DestinationHandler struct {
-	service                *S3DestinationService
-	syncRemoteDestinations func(context.Context)
-}
-
-type listS3DestinationsInput struct {
-	Search string `query:"search" doc:"Search query"`
-	Sort   string `query:"sort" doc:"Column to sort by"`
-	Order  string `query:"order" default:"asc" doc:"Sort direction"`
-	Start  int    `query:"start" default:"0" doc:"Start index"`
-	Limit  int    `query:"limit" default:"20" doc:"Limit"`
-}
-
-type listAllS3DestinationsOutput struct {
-	Body []types.S3Destination
-}
-
-type s3DestinationIDInput struct {
-	ID string `path:"id" doc:"S3 destination ID"`
-}
-
-type createS3DestinationInput struct {
-	types.Create[types.S3Destination]
-}
-
-type updateS3DestinationInput struct {
-	ID string `path:"id" doc:"S3 destination ID"`
-	types.Update[types.S3Destination]
-}
-
-type s3DestinationOutput struct {
-	Body types.S3Destination
-}
-
-type s3DestinationActionInput struct {
-	Body   *types.S3Destination `json:"body,omitempty"`
-	ID     string               `path:"id" doc:"S3 destination ID"`
-	Action string               `query:"action" required:"true" enum:"test" doc:"S3 destination action"`
-}
-
-type testS3DestinationConfigurationInput struct {
-	Body types.S3Destination
-}
-
-type syncS3DestinationsInput struct {
-	Body types.S3DestinationSyncRequest
-}
-
-type s3DestinationUsageOutput struct {
-	Body types.S3DestinationUsage
-}
 
 func (h *s3DestinationHandler) inUse(ctx context.Context, input *s3DestinationIDInput) (*s3DestinationUsageOutput, error) {
 	inUse, err := h.service.DestinationInUse(ctx, input.ID)

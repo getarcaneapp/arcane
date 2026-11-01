@@ -13,39 +13,41 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// ApiKeyHandler provides Huma-based API key management endpoints.
-type ApiKeyHandler struct {
-	apiKeyService *ApiKeyService
-}
+type (
+	// ApiKeyHandler provides Huma-based API key management endpoints.
+	ApiKeyHandler struct {
+		apiKeyService *ApiKeyService
+	}
 
-type ListApiKeysInput struct {
-	Search string `query:"search" doc:"Search query for filtering by name or description"`
-	Sort   string `query:"sort" doc:"Column to sort by"`
-	Order  string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start  int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit  int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
+	ListApiKeysInput struct {
+		Search string `query:"search" doc:"Search query for filtering by name or description"`
+		Sort   string `query:"sort" doc:"Column to sort by"`
+		Order  string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Start  int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit  int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
 
-type CreateApiKeyInput struct {
-	types.Create[types.ApiKey]
-}
+	CreateApiKeyInput struct {
+		types.Create[types.ApiKey]
+	}
 
-type CreateMyApiKeyInput struct {
-	types.Create[types.ApiKey]
-}
+	CreateMyApiKeyInput struct {
+		types.Create[types.ApiKey]
+	}
 
-type GetApiKeyInput struct {
-	ID string `path:"id" doc:"API key ID"`
-}
+	GetApiKeyInput struct {
+		ID string `path:"id" doc:"API key ID"`
+	}
 
-type UpdateApiKeyInput struct {
-	ID string `path:"id" doc:"API key ID"`
-	types.Update[types.ApiKey]
-}
+	UpdateApiKeyInput struct {
+		ID string `path:"id" doc:"API key ID"`
+		types.Update[types.ApiKey]
+	}
 
-type DeleteApiKeyInput struct {
-	ID string `path:"id" doc:"API key ID"`
-}
+	DeleteApiKeyInput struct {
+		ID string `path:"id" doc:"API key ID"`
+	}
+)
 
 // ListApiKeys returns a paginated list of API keys.
 func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput) (*handlerutil.Page[types.ApiKey], error) {

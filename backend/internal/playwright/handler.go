@@ -10,22 +10,24 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/federated"
 )
 
-type playwrightHandler struct {
-	service   *PlaywrightService
-	federated *federated.FederatedCredentialService
-}
+type (
+	playwrightHandler struct {
+		service   *PlaywrightService
+		federated *federated.FederatedCredentialService
+	}
 
-type createTestAPIKeysRequest struct {
-	Count int `json:"count"`
-}
+	createTestAPIKeysRequest struct {
+		Count int `json:"count"`
+	}
 
-type createTestFederatedCredentialRequest struct {
-	IssuerURL       string   `json:"issuerUrl"`
-	Subject         string   `json:"subject"`
-	RoleID          string   `json:"roleId"`
-	Audiences       []string `json:"audiences"`
-	TokenTTLSeconds int      `json:"tokenTtlSeconds"`
-}
+	createTestFederatedCredentialRequest struct {
+		IssuerURL       string   `json:"issuerUrl"`
+		Subject         string   `json:"subject"`
+		RoleID          string   `json:"roleId"`
+		Audiences       []string `json:"audiences"`
+		TokenTTLSeconds int      `json:"tokenTtlSeconds"`
+	}
+)
 
 // SetupRoutes registers endpoints used by the Playwright end-to-end suite.
 func SetupRoutes(api *echo.Group, service *PlaywrightService, federatedService *federated.FederatedCredentialService) {

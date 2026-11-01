@@ -14,15 +14,17 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
+type (
+	Module struct {
+		service *Service
+		event   *event.EventService
+	}
+)
+
 const (
 	podmanPath = "/environments/{id}/podman"
 	podmanTag  = "Podman"
 )
-
-type Module struct {
-	service *Service
-	event   *event.EventService
-}
 
 func New(service *Service, eventService *event.EventService) *Module {
 	return &Module{service: service, event: eventService}

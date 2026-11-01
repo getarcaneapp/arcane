@@ -23,18 +23,20 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
 )
 
-type activitiesFake struct {
-	statuses  map[string]types.ActivityStatus
-	completed map[string]int
-	tracked   map[string]context.CancelCauseFunc
-	mu        sync.Mutex
-}
+type (
+	activitiesFake struct {
+		statuses  map[string]types.ActivityStatus
+		completed map[string]int
+		tracked   map[string]context.CancelCauseFunc
+		mu        sync.Mutex
+	}
 
-type hostFixture struct {
-	harness *flowtest.Harness
-	job     *flow.Job
-	cancel  context.CancelFunc
-}
+	hostFixture struct {
+		harness *flowtest.Harness
+		job     *flow.Job
+		cancel  context.CancelFunc
+	}
+)
 
 func TestRestartBetweenStepsReattachesSQLite(t *testing.T) {
 	testRestartBetweenSteps(t, "file:"+filepath.ToSlash(filepath.Join(t.TempDir(), "actors.db")))

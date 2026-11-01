@@ -14,45 +14,47 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// ContainerRegistryHandler handles container registry management endpoints.
-type ContainerRegistryHandler struct {
-	registryService      *ContainerRegistryService
-	syncRemoteRegistries func(context.Context)
-}
+type (
+	// ContainerRegistryHandler handles container registry management endpoints.
+	ContainerRegistryHandler struct {
+		registryService      *ContainerRegistryService
+		syncRemoteRegistries func(context.Context)
+	}
 
-type ListContainerRegistriesInput struct {
-	Search string `query:"search" doc:"Search query"`
-	Sort   string `query:"sort" doc:"Column to sort by"`
-	Order  string `query:"order" default:"asc" doc:"Sort direction"`
-	Start  int    `query:"start" default:"0" doc:"Start index"`
-	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
-}
+	ListContainerRegistriesInput struct {
+		Search string `query:"search" doc:"Search query"`
+		Sort   string `query:"sort" doc:"Column to sort by"`
+		Order  string `query:"order" default:"asc" doc:"Sort direction"`
+		Start  int    `query:"start" default:"0" doc:"Start index"`
+		Limit  int    `query:"limit" default:"20" doc:"Items per page"`
+	}
 
-type CreateContainerRegistryInput struct {
-	types.Create[types.ContainerRegistry]
-}
+	CreateContainerRegistryInput struct {
+		types.Create[types.ContainerRegistry]
+	}
 
-type GetContainerRegistryInput struct {
-	ID string `path:"id" doc:"Registry ID"`
-}
+	GetContainerRegistryInput struct {
+		ID string `path:"id" doc:"Registry ID"`
+	}
 
-type UpdateContainerRegistryInput struct {
-	ID string `path:"id" doc:"Registry ID"`
-	types.Update[types.ContainerRegistry]
-}
+	UpdateContainerRegistryInput struct {
+		ID string `path:"id" doc:"Registry ID"`
+		types.Update[types.ContainerRegistry]
+	}
 
-type DeleteContainerRegistryInput struct {
-	ID string `path:"id" doc:"Registry ID"`
-}
+	DeleteContainerRegistryInput struct {
+		ID string `path:"id" doc:"Registry ID"`
+	}
 
-type ContainerRegistryActionInput struct {
-	ID     string `path:"id" doc:"Registry ID"`
-	Action string `query:"action" required:"true" enum:"test" doc:"Registry action"`
-}
+	ContainerRegistryActionInput struct {
+		ID     string `path:"id" doc:"Registry ID"`
+		Action string `query:"action" required:"true" enum:"test" doc:"Registry action"`
+	}
 
-type SyncContainerRegistriesInput struct {
-	Body types.ContainerRegistrySyncRequest
-}
+	SyncContainerRegistriesInput struct {
+		Body types.ContainerRegistrySyncRequest
+	}
+)
 
 // NewHandler builds the container registry HTTP handler.
 func NewHandler(registryService *ContainerRegistryService, syncRemoteRegistries func(context.Context)) *ContainerRegistryHandler {

@@ -34,6 +34,46 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
+type (
+	// Dependencies are the services and system admission volume backups run on.
+	Dependencies struct {
+		DB             *database.DB
+		Engine         *backup.Engine
+		Volumes        *volume.VolumeService
+		S3Destinations *s3.S3DestinationService
+		Activity       *activity.ActivityService
+		Settings       *settings.SettingsService
+		Jobs           *entityjobs.Registry
+		AlreadyRunning error
+	}
+
+	// Service owns system-managed volume backup policies and their runs.
+	Service struct {
+		db             *database.DB
+		engine         *backup.Engine
+		volumes        *volume.VolumeService
+		s3Destinations *s3.S3DestinationService
+		activity       *activity.ActivityService
+		settings       *settings.SettingsService
+		jobs           *entityjobs.Registry
+		alreadyRunning error
+		flow           *flow.Engine
+		// backupWorkflow runs the selections Start accepted; policyWorkflow runs scheduled policies.
+		backupWorkflow *flow.Workflow
+		policyWorkflow *flow.Workflow
+	}
+
+	// selectionInput freezes the policy and volumes one run backs up; a manual run also carries its requester.
+	selectionInput struct {
+		Requester *types.BackupRequester `json:"requester,omitempty"`
+		// Claim names the manual run that parked the system admission for its own task.
+		Claim        string                           `json:"claim,omitempty"`
+		Candidates   []types.SystemVolumeBackupOption `json:"candidates"`
+		Policy       types.SystemVolumeBackupPolicy   `json:"policy"`
+		ManualPolicy bool                             `json:"manualPolicy"`
+	}
+)
+
 const (
 	systemVolumeBackupConfigKey = "systemVolumeBackupConfig"
 	systemVolumeBackupJobPrefix = "volumes:"
@@ -41,44 +81,6 @@ const (
 	systemVolumePlanTarget      = "system-volume-plan"
 	defaultSystemVolumeSchedule = "0 2 * * *"
 )
-
-// Dependencies are the services and system admission volume backups run on.
-type Dependencies struct {
-	DB             *database.DB
-	Engine         *backup.Engine
-	Volumes        *volume.VolumeService
-	S3Destinations *s3.S3DestinationService
-	Activity       *activity.ActivityService
-	Settings       *settings.SettingsService
-	Jobs           *entityjobs.Registry
-	AlreadyRunning error
-}
-
-// Service owns system-managed volume backup policies and their runs.
-type Service struct {
-	db             *database.DB
-	engine         *backup.Engine
-	volumes        *volume.VolumeService
-	s3Destinations *s3.S3DestinationService
-	activity       *activity.ActivityService
-	settings       *settings.SettingsService
-	jobs           *entityjobs.Registry
-	alreadyRunning error
-	flow           *flow.Engine
-	// backupWorkflow runs the selections Start accepted; policyWorkflow runs scheduled policies.
-	backupWorkflow *flow.Workflow
-	policyWorkflow *flow.Workflow
-}
-
-// selectionInput freezes the policy and volumes one run backs up; a manual run also carries its requester.
-type selectionInput struct {
-	Requester *types.BackupRequester `json:"requester,omitempty"`
-	// Claim names the manual run that parked the system admission for its own task.
-	Claim        string                           `json:"claim,omitempty"`
-	Candidates   []types.SystemVolumeBackupOption `json:"candidates"`
-	Policy       types.SystemVolumeBackupPolicy   `json:"policy"`
-	ManualPolicy bool                             `json:"manualPolicy"`
-}
 
 func NewService(deps Dependencies) *Service {
 	return &Service{

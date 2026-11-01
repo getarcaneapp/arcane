@@ -8,7 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type activityContextTestKey string
+type (
+	activityContextTestKey string
+)
 
 func TestActivityRuntimeContextPrefersAppContext(t *testing.T) {
 	requestCtx, cancelRequest := context.WithCancel(t.Context())

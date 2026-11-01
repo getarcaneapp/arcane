@@ -10,10 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type workspaceUploadFixture struct {
-	name    string
-	content []byte
-}
+type (
+	workspaceUploadFixture struct {
+		name    string
+		content []byte
+	}
+)
 
 func workspaceMultipartForm(t *testing.T, values map[string][]string, files []workspaceUploadFixture) multipart.Form {
 	t.Helper()

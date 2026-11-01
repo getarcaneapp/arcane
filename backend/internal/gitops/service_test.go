@@ -51,6 +51,37 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
+type (
+	gitOpsSyncTestScheduler struct {
+		submitted []types.SchedulerRequest
+		added     []string
+		removed   []string
+	}
+
+	// backupTestEnv is one wired-up backup fixture: a bare remote, a git
+	// repository row, a project directory and the sync service under test.
+	backupTestEnv struct {
+		service     *GitOpsSyncService
+		db          *database.DB
+		scheduler   *gitOpsBackupTestScheduler
+		project     *projectpkg.Project
+		remote      *git.Client
+		projectsDir string
+		projectPath string
+		repoURL     string
+	}
+
+	// gitOpsBackupTestScheduler runs a submitted job body inline so the
+	// save-debounce path reaches PerformSync the way the real scheduler does.
+	gitOpsBackupTestScheduler struct {
+		jobs      map[string]types.SchedulerJob
+		submitted []types.SchedulerRequest
+		mu        sync.Mutex
+	}
+)
+
+var installBackupTestTransportOnce sync.Once
+
 func newGitOpsTestDockerService(t *testing.T, settingsService *settings.SettingsService) *dockerInternal.DockerClientService {
 	t.Helper()
 	cli, err := mobyclient.New(mobyclient.WithHost("tcp://127.0.0.1:1"), mobyclient.WithAPIVersion("1.41"))
@@ -153,12 +184,6 @@ func TestGitOpsSyncService_OverlappingSyncWaitsThenRuns(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		require.FailNow(t, "sync did not run after admission was released")
 	}
-}
-
-type gitOpsSyncTestScheduler struct {
-	submitted []types.SchedulerRequest
-	added     []string
-	removed   []string
 }
 
 func (s *gitOpsSyncTestScheduler) AddJob(_ context.Context, job types.SchedulerJob) error {
@@ -1088,35 +1113,12 @@ func (s *gitOpsSyncTestScheduler) Submit(_ context.Context, request types.Schedu
 	return types.SchedulerRun{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Status: types.RunStatusQueued}, nil
 }
 
-var installBackupTestTransportOnce sync.Once
-
 // installBackupTestTransport serves bare repositories on disk over the
 // "http" scheme so backups push without a network or the git binary.
 func installBackupTestTransport() {
 	installBackupTestTransportOnce.Do(func() {
 		client.InstallProtocol("http", server.NewClient(server.NewFilesystemLoader(osfs.New("/"))))
 	})
-}
-
-// backupTestEnv is one wired-up backup fixture: a bare remote, a git
-// repository row, a project directory and the sync service under test.
-type backupTestEnv struct {
-	service     *GitOpsSyncService
-	db          *database.DB
-	scheduler   *gitOpsBackupTestScheduler
-	project     *projectpkg.Project
-	remote      *git.Client
-	projectsDir string
-	projectPath string
-	repoURL     string
-}
-
-// gitOpsBackupTestScheduler runs a submitted job body inline so the
-// save-debounce path reaches PerformSync the way the real scheduler does.
-type gitOpsBackupTestScheduler struct {
-	jobs      map[string]types.SchedulerJob
-	submitted []types.SchedulerRequest
-	mu        sync.Mutex
 }
 
 func (s *gitOpsBackupTestScheduler) AddJob(_ context.Context, job types.SchedulerJob) error {

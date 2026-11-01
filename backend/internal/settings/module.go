@@ -12,13 +12,15 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// Module joins the settings service with its route dependencies.
-type Module struct {
-	service         *SettingsService
-	search          *SettingsSearchService
-	proxyRemoteJSON handlerutil.RemoteJSONProxy
-	config          *config.Config
-}
+type (
+	// Module joins the settings service with its route dependencies.
+	Module struct {
+		service         *SettingsService
+		search          *SettingsSearchService
+		proxyRemoteJSON handlerutil.RemoteJSONProxy
+		config          *config.Config
+	}
+)
 
 // New builds the settings domain around its initialized service.
 func New(service *SettingsService, search *SettingsSearchService, proxyRemoteJSON handlerutil.RemoteJSONProxy, cfg *config.Config) *Module {

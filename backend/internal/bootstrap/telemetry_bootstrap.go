@@ -25,16 +25,29 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/telemetry"
 )
 
-// telemetryProviders owns the providers enabled through the standard OTEL_*
-// exporter variables. A nil provider means that signal is off.
-type telemetryProviders struct {
-	shutdownErr    error
-	tracerProvider *trace.TracerProvider
-	meterProvider  *metric.MeterProvider
-	loggerProvider *log.LoggerProvider
+type (
+	// telemetryProviders owns the providers enabled through the standard OTEL_*
+	// exporter variables. A nil provider means that signal is off.
+	telemetryProviders struct {
+		shutdownErr    error
+		tracerProvider *trace.TracerProvider
+		meterProvider  *metric.MeterProvider
+		loggerProvider *log.LoggerProvider
 
-	shutdownOnce sync.Once
-}
+		shutdownOnce sync.Once
+	}
+
+	// redactingExporter strips URL queries and fragments from span attributes, events, and statuses before export.
+	redactingExporter struct{ trace.SpanExporter }
+
+	redactedSpan struct{ trace.ReadOnlySpan }
+)
+
+var (
+	urlUserinfo  = regexp.MustCompile(`(https?://)[^@/\s"']*@`)
+	urlQuery     = regexp.MustCompile(`(https?://[^\s?#"']*)[?#][^\s"']*`)
+	webhookToken = regexp.MustCompile(`(/webhooks/trigger/)[^/?#\s"']+`)
+)
 
 // setupTelemetry installs global providers for each OTEL_*_EXPORTER that is set
 // to something other than none. Exporter failures are reported to errorLogger.
@@ -132,20 +145,11 @@ func (t *telemetryProviders) Shutdown(ctx context.Context) error {
 	return t.shutdownErr
 }
 
-var (
-	urlUserinfo  = regexp.MustCompile(`(https?://)[^@/\s"']*@`)
-	urlQuery     = regexp.MustCompile(`(https?://[^\s?#"']*)[?#][^\s"']*`)
-	webhookToken = regexp.MustCompile(`(/webhooks/trigger/)[^/?#\s"']+`)
-)
-
 // redactSecrets strips URL credentials, queries, and fragments, and masks webhook trigger tokens, which travel in the path.
 func redactSecrets(s string) string {
 	s = urlUserinfo.ReplaceAllString(s, "$1")
 	return webhookToken.ReplaceAllString(urlQuery.ReplaceAllString(s, "$1"), "${1}:token")
 }
-
-// redactingExporter strips URL queries and fragments from span attributes, events, and statuses before export.
-type redactingExporter struct{ trace.SpanExporter }
 
 func (e redactingExporter) ExportSpans(ctx context.Context, spans []trace.ReadOnlySpan) error {
 	redacted := make([]trace.ReadOnlySpan, len(spans))
@@ -154,8 +158,6 @@ func (e redactingExporter) ExportSpans(ctx context.Context, spans []trace.ReadOn
 	}
 	return e.SpanExporter.ExportSpans(ctx, redacted)
 }
-
-type redactedSpan struct{ trace.ReadOnlySpan }
 
 func (s redactedSpan) Attributes() []attribute.KeyValue {
 	return redactAttributes(s.ReadOnlySpan.Attributes())

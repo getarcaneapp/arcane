@@ -11,9 +11,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Module struct {
-	service *GitOpsSyncService
-}
+type (
+	Module struct {
+		service *GitOpsSyncService
+	}
+)
 
 func New(service *GitOpsSyncService) *Module {
 	return &Module{service: service}

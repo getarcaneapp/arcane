@@ -10,10 +10,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// Module owns the customization search index and mounts the customization search routes.
-type Module struct {
-	customize *CustomizeSearchService
-}
+type (
+	// Module owns the customization search index and mounts the customization search routes.
+	Module struct {
+		customize *CustomizeSearchService
+	}
+)
 
 // New builds the customization search index.
 func New() *Module {

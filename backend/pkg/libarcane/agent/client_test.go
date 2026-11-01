@@ -25,17 +25,27 @@ import (
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
-type stallingTunnelService struct {
-	tunnelpb.UnimplementedTunnelServiceServer
-	connectCount atomic.Int32
-}
+type (
+	stallingTunnelService struct {
+		tunnelpb.UnimplementedTunnelServiceServer
+		connectCount atomic.Int32
+	}
 
-type blockingRegistrationConn struct {
-	closedCh         chan struct{}
-	receiveStarted   chan struct{}
-	receiveStartOnce sync.Once
-	closeCount       atomic.Int32
-}
+	blockingRegistrationConn struct {
+		closedCh         chan struct{}
+		receiveStarted   chan struct{}
+		receiveStartOnce sync.Once
+		closeCount       atomic.Int32
+	}
+
+	fakeTunnelConn struct {
+		sendErr    error
+		receiveErr error
+		transport  string
+		mu         sync.Mutex
+		closed     bool
+	}
+)
 
 func newBlockingRegistrationConn() *blockingRegistrationConn {
 	return &blockingRegistrationConn{
@@ -797,14 +807,6 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoDoesNotFallbackWhenEstabl
 	}
 	assert.Zero(t, client.grpcFailureStreak)
 	cancel()
-}
-
-type fakeTunnelConn struct {
-	sendErr    error
-	receiveErr error
-	transport  string
-	mu         sync.Mutex
-	closed     bool
 }
 
 func (f *fakeTunnelConn) Send(*TunnelMessage) error {

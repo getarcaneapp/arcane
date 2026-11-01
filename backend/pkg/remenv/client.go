@@ -10,6 +10,49 @@ import (
 	"strings"
 )
 
+type (
+	Request struct {
+		EnvironmentID string
+		Method        string
+		Path          string
+		Headers       map[string]string
+		Body          []byte
+	}
+
+	Response struct {
+		Headers    map[string]string
+		Body       []byte
+		StatusCode int
+	}
+
+	TunnelTransport interface {
+		EnsureAvailable(ctx context.Context, envID string) error
+		Do(ctx context.Context, envID, method, path string, headers map[string]string, body []byte) (*Response, error)
+	}
+
+	TunnelTransportFuncs struct {
+		EnsureAvailableFunc func(ctx context.Context, envID string) error
+		DoFunc              func(ctx context.Context, envID, method, path string, headers map[string]string, body []byte) (*Response, error)
+	}
+
+	Client struct {
+		tunnel TunnelTransport
+	}
+
+	TransportError struct {
+		Err error
+	}
+
+	StatusError struct {
+		Body       []byte
+		StatusCode int
+	}
+
+	DecodeError struct {
+		Err error
+	}
+)
+
 const (
 	HeaderAPIKey        = "X-Api-Key"            // #nosec G101: header name, not a credential
 	HeaderAgentToken    = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
@@ -41,30 +84,6 @@ func RedactedTokenFingerprint(token string) string {
 	return token[:6] + "..." + token[len(token)-4:]
 }
 
-type Request struct {
-	EnvironmentID string
-	Method        string
-	Path          string
-	Headers       map[string]string
-	Body          []byte
-}
-
-type Response struct {
-	Headers    map[string]string
-	Body       []byte
-	StatusCode int
-}
-
-type TunnelTransport interface {
-	EnsureAvailable(ctx context.Context, envID string) error
-	Do(ctx context.Context, envID, method, path string, headers map[string]string, body []byte) (*Response, error)
-}
-
-type TunnelTransportFuncs struct {
-	EnsureAvailableFunc func(ctx context.Context, envID string) error
-	DoFunc              func(ctx context.Context, envID, method, path string, headers map[string]string, body []byte) (*Response, error)
-}
-
 func (t TunnelTransportFuncs) EnsureAvailable(ctx context.Context, envID string) error {
 	if t.EnsureAvailableFunc == nil {
 		return errors.New("agent transport unavailable")
@@ -77,10 +96,6 @@ func (t TunnelTransportFuncs) Do(ctx context.Context, envID, method, path string
 		return nil, errors.New("agent transport unavailable")
 	}
 	return t.DoFunc(ctx, envID, method, path, headers, body)
-}
-
-type Client struct {
-	tunnel TunnelTransport
 }
 
 func NewClient(tunnel TunnelTransport) *Client {
@@ -112,10 +127,6 @@ func (r *Response) RequireSuccess() error {
 	return &StatusError{StatusCode: r.StatusCode, Body: r.Body}
 }
 
-type TransportError struct {
-	Err error
-}
-
 // Unavailable reports connection failures that permit using locally stored data.
 // Invalid requests and failures reading an established response are not outages.
 func (e *TransportError) Unavailable() bool {
@@ -143,11 +154,6 @@ func (e *TransportError) Unwrap() error {
 	return e.Err
 }
 
-type StatusError struct {
-	Body       []byte
-	StatusCode int
-}
-
 func (e *StatusError) Error() string {
 	if e == nil {
 		return "unexpected status code"
@@ -156,10 +162,6 @@ func (e *StatusError) Error() string {
 		return fmt.Sprintf("unexpected status code %d: %s", e.StatusCode, body)
 	}
 	return fmt.Sprintf("unexpected status code %d", e.StatusCode)
-}
-
-type DecodeError struct {
-	Err error
 }
 
 func (e *DecodeError) Error() string {

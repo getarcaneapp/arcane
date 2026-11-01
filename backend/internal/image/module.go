@@ -21,29 +21,31 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Module struct {
-	service     *ImageService
-	docker      *docker.DockerClientService
-	imageUpdate *imageupdate.ImageUpdateService
-	settings    *settings.SettingsService
-	build       *build.BuildService
-	activity    *activity.ActivityService
-	upload      *upload.UploadService
+type (
+	Module struct {
+		service     *ImageService
+		docker      *docker.DockerClientService
+		imageUpdate *imageupdate.ImageUpdateService
+		settings    *settings.SettingsService
+		build       *build.BuildService
+		activity    *activity.ActivityService
+		upload      *upload.UploadService
 
-	attestationsHandler *attestations.Handler
-}
+		attestationsHandler *attestations.Handler
+	}
 
-type Params struct {
-	fx.In
+	Params struct {
+		fx.In
 
-	Service         *ImageService
-	DockerService   *docker.DockerClientService
-	ImageUpdate     *imageupdate.ImageUpdateService
-	SettingsService *settings.SettingsService
-	BuildService    *build.BuildService
-	ActivityService *activity.ActivityService
-	UploadService   *upload.UploadService
-}
+		Service         *ImageService
+		DockerService   *docker.DockerClientService
+		ImageUpdate     *imageupdate.ImageUpdateService
+		SettingsService *settings.SettingsService
+		BuildService    *build.BuildService
+		ActivityService *activity.ActivityService
+		UploadService   *upload.UploadService
+	}
+)
 
 func New(p Params) *Module {
 	return &Module{

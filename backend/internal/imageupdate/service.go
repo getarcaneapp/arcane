@@ -48,6 +48,98 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
+type (
+	ImageUpdateService struct {
+		db                  *database.DB
+		settingsService     *settings.SettingsService
+		registryService     *registry.ContainerRegistryService
+		dockerService       *docker.DockerClientService
+		eventService        *event.EventService
+		notificationService *notification.NotificationService
+		registryLimiter     *ratelimit.RegistryRateLimiter
+		tags                *tags.Service
+		releaseNotes        *releasenotes.Service
+		activityService     *activity.ActivityService
+		engine              *flow.Engine
+		checkWorkflow       *flow.Workflow
+		credentials         *hot.HotCache[string, []types.ContainerRegistryCredential]
+		// requestCredentials holds credentials a caller supplied for one check, by its input's CredentialsKey,
+		// so they never reach the workflow journal. They expire with the check's timeout if nothing deletes them.
+		requestCredentials *hot.HotCache[string, []types.ContainerRegistryCredential]
+		notifyMu           sync.Mutex
+	}
+
+	ImageParts struct {
+		Registry   string
+		Repository string
+		Tag        string
+	}
+
+	// imageCheckResult is a check task's output; failures travel as errors.
+	imageCheckResult struct {
+		// Result is the ref's own result, kept when the caller reports results; tags sharing an image share its stored row.
+		Result *types.ImageUpdateResponse `json:"result,omitempty"`
+		// Failure is a reported check's error, which keeps its Result instead of failing the slot.
+		Failure string `json:"failure,omitempty"`
+		Local   bool   `json:"local,omitempty"`
+	}
+
+	// imageCheckInput is an image-check payload; Report keeps every ref's result in the output for the caller.
+	imageCheckInput struct {
+		CredentialsKey string `json:"credentialsKey,omitempty"`
+		types.ImageUpdateCheckRequest
+		Report bool `json:"report,omitempty"`
+	}
+
+	// imageCheckOutput is the image-check outcome plus, when reported, each ref's result and the current
+	// container tag results, failed checks included.
+	imageCheckOutput struct {
+		Results          types.ImageUpdateBatchResponse        `json:"results,omitempty"`
+		ContainerUpdates map[string]*types.ImageUpdateResponse `json:"containerUpdates,omitempty"`
+		types.SchedulerOutcome
+	}
+
+	// tagCheckOutput is the tags step's output: failed container checks and, when reported, every container's result.
+	tagCheckOutput struct {
+		Updates  map[string]*types.ImageUpdateResponse `json:"updates,omitempty"`
+		Failures []types.TargetOutcome                 `json:"failures"`
+	}
+
+	localImageSnapshot struct {
+		ImageID           string
+		Repository        string
+		Tag               string
+		PrimaryDigest     string
+		AllDigests        []string
+		RepositoryDigests []string
+		IsLocalBuild      bool
+	}
+
+	// monitoringEligibility records, per image ID and normalized
+	// reference, whether at least one consuming container still permits update
+	// checks. Only the update-check label is consulted: containers excluded from
+	// automatic installation keep being monitored.
+	monitoringEligibility struct {
+		// True when at least one container using the image ID or reference has
+		// not opted out; present but false when every such container opted out.
+		byImageID   map[string]bool
+		byRef       map[string]bool
+		byContainer map[string]bool
+	}
+
+	ImageUpdateServiceParams struct {
+		fx.In
+
+		DB                  *database.DB
+		SettingsService     *settings.SettingsService
+		RegistryService     *registry.ContainerRegistryService
+		DockerService       *docker.DockerClientService
+		EventService        *event.EventService
+		NotificationService *notification.NotificationService
+		ActivityService     *activity.ActivityService
+	}
+)
+
 const (
 	imageCheckConcurrency = 10
 	imageCheckAttempts    = 3
@@ -62,96 +154,6 @@ var (
 	imageCheckRetryBackoff    = 30 * time.Second
 	imageCheckRetryBackoffMax = 2 * time.Minute
 )
-
-type ImageUpdateService struct {
-	db                  *database.DB
-	settingsService     *settings.SettingsService
-	registryService     *registry.ContainerRegistryService
-	dockerService       *docker.DockerClientService
-	eventService        *event.EventService
-	notificationService *notification.NotificationService
-	registryLimiter     *ratelimit.RegistryRateLimiter
-	tags                *tags.Service
-	releaseNotes        *releasenotes.Service
-	activityService     *activity.ActivityService
-	engine              *flow.Engine
-	checkWorkflow       *flow.Workflow
-	credentials         *hot.HotCache[string, []types.ContainerRegistryCredential]
-	// requestCredentials holds credentials a caller supplied for one check, by its input's CredentialsKey,
-	// so they never reach the workflow journal. They expire with the check's timeout if nothing deletes them.
-	requestCredentials *hot.HotCache[string, []types.ContainerRegistryCredential]
-	notifyMu           sync.Mutex
-}
-
-type ImageParts struct {
-	Registry   string
-	Repository string
-	Tag        string
-}
-
-// imageCheckResult is a check task's output; failures travel as errors.
-type imageCheckResult struct {
-	// Result is the ref's own result, kept when the caller reports results; tags sharing an image share its stored row.
-	Result *types.ImageUpdateResponse `json:"result,omitempty"`
-	// Failure is a reported check's error, which keeps its Result instead of failing the slot.
-	Failure string `json:"failure,omitempty"`
-	Local   bool   `json:"local,omitempty"`
-}
-
-// imageCheckInput is an image-check payload; Report keeps every ref's result in the output for the caller.
-type imageCheckInput struct {
-	CredentialsKey string `json:"credentialsKey,omitempty"`
-	types.ImageUpdateCheckRequest
-	Report bool `json:"report,omitempty"`
-}
-
-// imageCheckOutput is the image-check outcome plus, when reported, each ref's result and the current
-// container tag results, failed checks included.
-type imageCheckOutput struct {
-	Results          types.ImageUpdateBatchResponse        `json:"results,omitempty"`
-	ContainerUpdates map[string]*types.ImageUpdateResponse `json:"containerUpdates,omitempty"`
-	types.SchedulerOutcome
-}
-
-// tagCheckOutput is the tags step's output: failed container checks and, when reported, every container's result.
-type tagCheckOutput struct {
-	Updates  map[string]*types.ImageUpdateResponse `json:"updates,omitempty"`
-	Failures []types.TargetOutcome                 `json:"failures"`
-}
-
-type localImageSnapshot struct {
-	ImageID           string
-	Repository        string
-	Tag               string
-	PrimaryDigest     string
-	AllDigests        []string
-	RepositoryDigests []string
-	IsLocalBuild      bool
-}
-
-// monitoringEligibility records, per image ID and normalized
-// reference, whether at least one consuming container still permits update
-// checks. Only the update-check label is consulted: containers excluded from
-// automatic installation keep being monitored.
-type monitoringEligibility struct {
-	// True when at least one container using the image ID or reference has
-	// not opted out; present but false when every such container opted out.
-	byImageID   map[string]bool
-	byRef       map[string]bool
-	byContainer map[string]bool
-}
-
-type ImageUpdateServiceParams struct {
-	fx.In
-
-	DB                  *database.DB
-	SettingsService     *settings.SettingsService
-	RegistryService     *registry.ContainerRegistryService
-	DockerService       *docker.DockerClientService
-	EventService        *event.EventService
-	NotificationService *notification.NotificationService
-	ActivityService     *activity.ActivityService
-}
 
 func NewImageUpdateService(p ImageUpdateServiceParams) *ImageUpdateService {
 	registryLimiter := ratelimit.NewRegistryRateLimiter()

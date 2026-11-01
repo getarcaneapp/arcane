@@ -14,9 +14,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
 )
 
-type fakeSystemd struct {
-	calls []string
-}
+type (
+	fakeSystemd struct {
+		calls []string
+	}
+)
 
 func (f *fakeSystemd) Availability(context.Context) types.PodmanSystemdAvailability {
 	return types.PodmanSystemdAvailability{Available: true}

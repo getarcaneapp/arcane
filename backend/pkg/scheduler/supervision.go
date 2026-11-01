@@ -12,13 +12,15 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 )
 
-type watcherSupervisor struct {
-	watcher types.BusWatcher
-	restart chan struct{}
-	cancel  context.CancelFunc
-	health  types.SchedulerWorkerHealth
-	mu      sync.Mutex
-}
+type (
+	watcherSupervisor struct {
+		watcher types.BusWatcher
+		restart chan struct{}
+		cancel  context.CancelFunc
+		health  types.SchedulerWorkerHealth
+		mu      sync.Mutex
+	}
+)
 
 func (s *watcherSupervisor) setHealth(status string, err error, next *time.Time) {
 	s.mu.Lock()

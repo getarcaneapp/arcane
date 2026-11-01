@@ -40,6 +40,25 @@ import (
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
+type (
+	// EnvironmentResolver resolves an agent token to an environment ID.
+	EnvironmentResolver func(ctx context.Context, token string) (environmentID string, err error)
+
+	// EnvironmentNameResolver resolves a display name for an environment ID.
+	EnvironmentNameResolver func(ctx context.Context, environmentID string) (environmentName string, err error)
+
+	// StatusUpdateCallback is called when an agent connects or disconnects.
+	// The connected parameter is true on connect, false on disconnect.
+	StatusUpdateCallback func(ctx context.Context, environmentID string, connected bool)
+
+	// EventCallback is called when an agent publishes an event.
+	EventCallback func(ctx context.Context, environmentID string, event *TunnelEvent) error
+
+	// EnrollmentCallback is called after a successful manager-side agent mTLS enrollment.
+	// reenrolled is true when the environment had already enrolled before the cooldown.
+	EnrollmentCallback func(ctx context.Context, environmentID, remoteAddr string, certIssued, caGenerated, reenrolled bool)
+)
+
 const (
 	// TunnelStaleTimeout is how long before a tunnel is considered stale.
 	TunnelStaleTimeout = 2 * time.Minute
@@ -49,23 +68,6 @@ const (
 
 // observeAgentsOnce registers the connected-agents gauge for the first (manager) tunnel server.
 var observeAgentsOnce sync.Once
-
-// EnvironmentResolver resolves an agent token to an environment ID.
-type EnvironmentResolver func(ctx context.Context, token string) (environmentID string, err error)
-
-// EnvironmentNameResolver resolves a display name for an environment ID.
-type EnvironmentNameResolver func(ctx context.Context, environmentID string) (environmentName string, err error)
-
-// StatusUpdateCallback is called when an agent connects or disconnects.
-// The connected parameter is true on connect, false on disconnect.
-type StatusUpdateCallback func(ctx context.Context, environmentID string, connected bool)
-
-// EventCallback is called when an agent publishes an event.
-type EventCallback func(ctx context.Context, environmentID string, event *TunnelEvent) error
-
-// EnrollmentCallback is called after a successful manager-side agent mTLS enrollment.
-// reenrolled is true when the environment had already enrolled before the cooldown.
-type EnrollmentCallback func(ctx context.Context, environmentID, remoteAddr string, certIssued, caGenerated, reenrolled bool)
 
 // NewTunnelServer creates a new tunnel server. A nil Registry gets a fresh one.
 func NewTunnelServer(opts TunnelServerOptions) *TunnelServer {

@@ -7,7 +7,35 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 )
 
-type APIErrorCode string
+type (
+	APIErrorCode string
+
+	APIErrorResponse struct {
+		Details any          `json:"details,omitempty"`
+		Error   string       `json:"error"`
+		Code    APIErrorCode `json:"code"`
+		Success bool         `json:"success"`
+	}
+
+	APISuccessResponse struct {
+		Data    any    `json:"data,omitempty"`
+		Message string `json:"message,omitempty"`
+		Success bool   `json:"success"`
+	}
+
+	APIError struct {
+		Details    any          `json:"details,omitempty"`
+		Message    string       `json:"message"`
+		Code       APIErrorCode `json:"code"`
+		StatusCode int          `json:"statusCode"`
+	}
+
+	DockerAPIError struct {
+		Details    any
+		Message    string
+		StatusCode int
+	}
+)
 
 const (
 	APIErrorCodeBadRequest          APIErrorCode = "BAD_REQUEST"
@@ -21,26 +49,6 @@ const (
 	APIErrorCodeValidationError     APIErrorCode = "VALIDATION_ERROR"
 	APIErrorCodeTimeout             APIErrorCode = "TIMEOUT"
 )
-
-type APIErrorResponse struct {
-	Details any          `json:"details,omitempty"`
-	Error   string       `json:"error"`
-	Code    APIErrorCode `json:"code"`
-	Success bool         `json:"success"`
-}
-
-type APISuccessResponse struct {
-	Data    any    `json:"data,omitempty"`
-	Message string `json:"message,omitempty"`
-	Success bool   `json:"success"`
-}
-
-type APIError struct {
-	Details    any          `json:"details,omitempty"`
-	Message    string       `json:"message"`
-	Code       APIErrorCode `json:"code"`
-	StatusCode int          `json:"statusCode"`
-}
 
 func (e *APIError) Error() string {
 	return e.Message
@@ -69,12 +77,6 @@ func NewAPIErrorWithDetails(message string, code APIErrorCode, statusCode int, d
 		StatusCode: statusCode,
 		Details:    details,
 	}
-}
-
-type DockerAPIError struct {
-	Details    any
-	Message    string
-	StatusCode int
 }
 
 func (e *DockerAPIError) Error() string {

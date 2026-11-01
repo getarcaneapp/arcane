@@ -12,9 +12,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-type Module struct {
-	service *ApiKeyService
-}
+type (
+	Module struct {
+		service *ApiKeyService
+	}
+)
 
 func New(service *ApiKeyService) *Module {
 	return &Module{service: service}

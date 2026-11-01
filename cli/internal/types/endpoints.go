@@ -11,6 +11,12 @@ import (
 	"net/url"
 )
 
+// Version
+const (
+	VersionEndpoint    = "/api/version"
+	AppVersionEndpoint = "/api/app/version"
+)
+
 // pathf formats an API path, path-escaping every string argument.
 func pathf(format string, args ...any) string {
 	escaped := make([]any, len(args))
@@ -24,65 +30,76 @@ func pathf(format string, args ...any) string {
 	return fmt.Sprintf(format, escaped...)
 }
 
-// Version
-const (
-	VersionEndpoint    = "/api/version"
-	AppVersionEndpoint = "/api/app/version"
-)
-
 // Auth endpoints
 
-func AuthLogout() string    { return "/api/auth/logout" }
-func AuthMe() string        { return "/api/auth/me" }
-func AuthPassword() string  { return "/api/auth/password" }
-func AuthRefresh() string   { return "/api/auth/refresh" }
+func AuthLogout() string { return "/api/auth/logout" }
+
+func AuthMe() string { return "/api/auth/me" }
+
+func AuthPassword() string { return "/api/auth/password" }
+
+func AuthRefresh() string { return "/api/auth/refresh" }
+
 func AuthFederated() string { return "/api/auth/federated/token" }
 
 // OIDC endpoints
 
-func OIDCDeviceCode() string  { return "/api/oidc/device/code" }
+func OIDCDeviceCode() string { return "/api/oidc/device/code" }
+
 func OIDCDeviceToken() string { return "/api/oidc/device/token" }
-func OIDCStatus() string      { return "/api/oidc/status" }
+
+func OIDCStatus() string { return "/api/oidc/status" }
 
 // API key endpoints
 
-func ApiKeys() string         { return "/api/apikeys" }
+func ApiKeys() string { return "/api/apikeys" }
+
 func ApiKey(id string) string { return pathf("/api/apikeys/%s", id) }
 
 // Self-service API key endpoints
 
-func AuthMeApiKeys() string         { return "/api/auth/me/apikeys" }
+func AuthMeApiKeys() string { return "/api/auth/me/apikeys" }
+
 func AuthMeApiKey(id string) string { return pathf("/api/auth/me/apikeys/%s", id) }
 
 // User endpoints
 
-func Users() string         { return "/api/users" }
+func Users() string { return "/api/users" }
+
 func User(id string) string { return pathf("/api/users/%s", id) }
+
 func UserRoleAssignments(userID string) string {
 	return pathf("/api/users/%s/roles", userID)
 }
 
 // Role (RBAC) endpoints
 
-func Roles() string                     { return "/api/roles" }
-func Role(id string) string             { return pathf("/api/roles/%s", id) }
+func Roles() string { return "/api/roles" }
+
+func Role(id string) string { return pathf("/api/roles/%s", id) }
+
 func RolesAvailablePermissions() string { return "/api/roles/permissions" }
 
 // OIDC role mapping endpoints
 
-func OidcRoleMappings() string         { return "/api/oidc/mappings" }
+func OidcRoleMappings() string { return "/api/oidc/mappings" }
+
 func OidcRoleMapping(id string) string { return pathf("/api/oidc/mappings/%s", id) }
 
 // Federated credential endpoints
 
-func FederatedCredentials() string         { return "/api/federated/credentials" }
+func FederatedCredentials() string { return "/api/federated/credentials" }
+
 func FederatedCredential(id string) string { return pathf("/api/federated/credentials/%s", id) }
 
 // Environment endpoints
 
-func Environments() string                { return "/api/environments" }
-func Environment(id string) string        { return pathf("/api/environments/%s", id) }
+func Environments() string { return "/api/environments" }
+
+func Environment(id string) string { return pathf("/api/environments/%s", id) }
+
 func EnvironmentTest(envID string) string { return pathf("/api/environments/%s/test", envID) }
+
 func EnvironmentDeployment(envID string) string {
 	return pathf("/api/environments/%s/deployment", envID)
 }
@@ -134,11 +151,17 @@ func Images(envID string) string { return pathf("/api/environments/%s/images", e
 func Image(envID, imageID string) string {
 	return pathf("/api/environments/%s/images/%s", envID, imageID)
 }
-func ImagesPull(envID string) string   { return pathf("/api/environments/%s/images/pull", envID) }
-func ImagesPrune(envID string) string  { return pathf("/api/environments/%s/images/prune", envID) }
+
+func ImagesPull(envID string) string { return pathf("/api/environments/%s/images/pull", envID) }
+
+func ImagesPrune(envID string) string { return pathf("/api/environments/%s/images/prune", envID) }
+
 func ImagesCounts(envID string) string { return pathf("/api/environments/%s/images/counts", envID) }
+
 func ImagesUpload(envID string) string { return pathf("/api/environments/%s/images/upload", envID) }
+
 func ImagesSearch(envID string) string { return pathf("/api/environments/%s/images/search", envID) }
+
 func ImageHistory(envID, name string) string {
 	return pathf("/api/environments/%s/images/%s/history", envID, name)
 }
@@ -154,8 +177,11 @@ func ImageExport(envID, name string) string {
 func ImageAttestations(envID, name string) string {
 	return pathf("/api/environments/%s/images/%s/attestations", envID, name)
 }
+
 func ImagesBuild(envID string) string { return pathf("/api/environments/%s/images/build", envID) }
+
 func ImageBuilds(envID string) string { return pathf("/api/environments/%s/images/builds", envID) }
+
 func ImageBuild(envID, buildID string) string {
 	return pathf("/api/environments/%s/images/builds/%s", envID, buildID)
 }
@@ -295,7 +321,9 @@ func Project(envID, projectID string) string {
 func ProjectsCounts(envID string) string {
 	return pathf("/api/environments/%s/projects/counts", envID)
 }
+
 func ProjectsTags(envID string) string { return pathf("/api/environments/%s/projects/tags", envID) }
+
 func ProjectTags(envID, projectID string) string {
 	return pathf("/api/environments/%s/projects/%s/tags", envID, projectID)
 }
@@ -355,7 +383,9 @@ func SystemUpgradeJobCurrent(envID string) string {
 // Updater endpoints
 
 func UpdaterStatus(envID string) string { return pathf("/api/environments/%s/updater/status", envID) }
-func UpdaterRun(envID string) string    { return pathf("/api/environments/%s/updater/run", envID) }
+
+func UpdaterRun(envID string) string { return pathf("/api/environments/%s/updater/run", envID) }
+
 func UpdaterHistory(envID string) string {
 	return pathf("/api/environments/%s/updater/history", envID)
 }
@@ -363,7 +393,9 @@ func UpdaterHistory(envID string) string {
 // Job endpoints
 
 func JobSchedules(envID string) string { return pathf("/api/environments/%s/jobs/schedules", envID) }
-func Jobs(envID string) string         { return pathf("/api/environments/%s/jobs", envID) }
+
+func Jobs(envID string) string { return pathf("/api/environments/%s/jobs", envID) }
+
 func JobAction(envID, jobID, action string) string {
 	return pathf("/api/environments/%s/jobs/%s", envID, jobID) + "?" + url.Values{"action": {action}}.Encode()
 }
@@ -392,65 +424,92 @@ func NotificationSettingsProviderAction(provider, action string) string {
 
 // Container registry endpoints
 
-func ContainerRegistries() string        { return "/api/registries" }
+func ContainerRegistries() string { return "/api/registries" }
+
 func ContainerRegistry(id string) string { return pathf("/api/registries/%s", id) }
+
 func ContainerRegistryAction(id, action string) string {
 	return ContainerRegistry(id) + "?" + url.Values{"action": {action}}.Encode()
 }
+
 func ContainerRegistriesPullUsage() string { return "/api/registries/usage" }
 
 // Event endpoints
 
-func Events() string         { return "/api/events" }
+func Events() string { return "/api/events" }
+
 func Event(id string) string { return pathf("/api/events/%s", id) }
+
 func EventsEnvironment(envID string) string {
 	return pathf("/api/events/environment/%s", envID)
 }
+
 func EventsStats() string { return "/api/events/stats" }
 
 // Template endpoints
 
-func Templates() string           { return "/api/templates" }
-func Template(id string) string   { return pathf("/api/templates/%s", id) }
-func TemplatesAll() string        { return "/api/templates/all" }
-func TemplatesDefault() string    { return "/api/templates/default" }
+func Templates() string { return "/api/templates" }
+
+func Template(id string) string { return pathf("/api/templates/%s", id) }
+
+func TemplatesAll() string { return "/api/templates/all" }
+
+func TemplatesDefault() string { return "/api/templates/default" }
+
 func TemplatesRegistries() string { return "/api/templates/registries" }
+
 func TemplateRegistry(id string) string {
 	return pathf("/api/templates/registries/%s", id)
 }
+
 func TemplateContent(id string) string { return pathf("/api/templates/%s/content", id) }
-func TemplateFetch() string            { return "/api/templates/fetch" }
+
+func TemplateFetch() string { return "/api/templates/fetch" }
+
 func TemplateAction(id, action string) string {
 	return pathf("/api/templates/%s", id) + "?" + url.Values{"action": {action}}.Encode()
 }
 
 // Variable endpoints
 
-func Variables() string         { return "/api/variables" }
+func Variables() string { return "/api/variables" }
+
 func Variable(id string) string { return pathf("/api/variables/%s", id) }
-func VariablesSync() string     { return "/api/variables/sync" }
+
+func VariablesSync() string { return "/api/variables/sync" }
 
 // System backup endpoints (admin-only)
 
-func Backups() string                    { return "/api/backups" }
-func Backup(id string) string            { return pathf("/api/backups/%s", id) }
-func BackupsPolicies() string            { return "/api/backups/policies" }
-func BackupsRecoveryKey() string         { return "/api/backups/recovery/key" }
+func Backups() string { return "/api/backups" }
+
+func Backup(id string) string { return pathf("/api/backups/%s", id) }
+
+func BackupsPolicies() string { return "/api/backups/policies" }
+
+func BackupsRecoveryKey() string { return "/api/backups/recovery/key" }
+
 func BackupsRecoveryKeyGenerate() string { return "/api/backups/recovery/key?action=generate" }
-func BackupsDiscover() string            { return "/api/backups/discover" }
-func BackupUpload(id string) string      { return pathf("/api/backups/%s/upload", id) }
+
+func BackupsDiscover() string { return "/api/backups/discover" }
+
+func BackupUpload(id string) string { return pathf("/api/backups/%s/upload", id) }
+
 func BackupAction(id, action string) string {
 	return Backup(id) + "?" + url.Values{"action": {action}}.Encode()
 }
 
 // S3 backup destination endpoints (admin-only)
 
-func BackupsS3() string        { return "/api/backups/s3" }
+func BackupsS3() string { return "/api/backups/s3" }
+
 func BackupsS3Options() string { return "/api/backups/s3/options" }
+
 func BackupsS3Destination(id string) string {
 	return pathf("/api/backups/s3/%s", id)
 }
+
 func BackupsS3Test() string { return "/api/backups/s3/test" }
+
 func BackupsS3DestinationAction(id, action string) string {
 	return BackupsS3Destination(id) + "?" + url.Values{"action": {action}}.Encode()
 }
@@ -524,13 +583,17 @@ func Webhooks(envID string) string { return pathf("/api/environments/%s/webhooks
 func Webhook(envID, webhookID string) string {
 	return pathf("/api/environments/%s/webhooks/%s", envID, webhookID)
 }
+
 func WebhookTrigger(token string) string { return pathf("/api/webhooks/trigger/%s", token) }
 
 func PodmanStatus(envID string) string { return pathf("/api/environments/%s/podman/status", envID) }
+
 func PodmanAutoUpdate(envID string) string {
 	return pathf("/api/environments/%s/podman/autoupdate", envID)
 }
+
 func PodmanPods(envID string) string { return pathf("/api/environments/%s/podman/pods", envID) }
+
 func PodmanPod(envID, podID string) string {
 	return pathf("/api/environments/%s/podman/pods/%s", envID, podID)
 }
@@ -587,8 +650,10 @@ func GitOpsSyncsImport(envID string) string {
 
 // Git repository endpoints
 
-func GitRepositories() string        { return "/api/customize/git/repositories" }
+func GitRepositories() string { return "/api/customize/git/repositories" }
+
 func GitRepository(id string) string { return pathf("/api/customize/git/repositories/%s", id) }
+
 func GitRepositoryAction(id, action string) string {
 	return GitRepository(id) + "?" + url.Values{"action": {action}}.Encode()
 }

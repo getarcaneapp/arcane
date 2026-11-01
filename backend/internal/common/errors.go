@@ -8,63 +8,30 @@ import (
 	"github.com/moby/moby/client"
 )
 
+type (
+	classified struct {
+		kind error
+		err  error
+	}
+)
+
 const (
 	// ConfigurationErrorCodeEnvFileUnreadable is the ConfigurationError code reported
 	// alongside ErrProjectEnvUnreadable.
 	ConfigurationErrorCodeEnvFileUnreadable = "env_file_unreadable"
 )
 
-type classified struct {
-	kind error
-	err  error
-}
-
-// Classify gives err a stable semantic identity without changing its message.
-func Classify(kind, err error) error {
-	if err == nil {
-		return nil
-	}
-	if kind == nil {
-		return err
-	}
-	return &classified{kind: kind, err: err}
-}
-
-func ClassifyDockerError(err error) error {
-	switch {
-	case errdefs.IsNotFound(err):
-		return Classify(ErrNotFound, err)
-	case errdefs.IsConflict(err):
-		return Classify(ErrConflict, err)
-	case errdefs.IsInvalidArgument(err):
-		return Classify(ErrBadRequest, err)
-	case errdefs.IsUnavailable(err), client.IsErrConnectionFailed(err):
-		return Classify(ErrUnavailable, err)
-	case errors.Is(err, context.DeadlineExceeded):
-		return Classify(ErrTimeout, err)
-	default:
-		return err
-	}
-}
-
-func (e *classified) Error() string { return e.err.Error() }
-
-func (e *classified) Unwrap() error { return e.err }
-
-func (e *classified) Is(target error) bool { return errors.Is(e.kind, target) }
-
 //nolint:staticcheck // Preserve existing API error messages.
 var (
-	ErrBadRequest          = errors.New("kind: bad request")
-	ErrValidation          = errors.New("kind: validation failed")
-	ErrUnauthorized        = errors.New("kind: unauthorized")
-	ErrForbidden           = errors.New("kind: forbidden")
-	ErrNotFound            = errors.New("kind: not found")
-	ErrConflict            = errors.New("kind: conflict")
-	ErrTimeout             = errors.New("kind: timeout")
-	ErrUnavailable         = errors.New("kind: service unavailable")
-	ErrInsufficientStorage = errors.New("kind: insufficient storage")
-
+	ErrBadRequest                        = errors.New("kind: bad request")
+	ErrValidation                        = errors.New("kind: validation failed")
+	ErrUnauthorized                      = errors.New("kind: unauthorized")
+	ErrForbidden                         = errors.New("kind: forbidden")
+	ErrNotFound                          = errors.New("kind: not found")
+	ErrConflict                          = errors.New("kind: conflict")
+	ErrTimeout                           = errors.New("kind: timeout")
+	ErrUnavailable                       = errors.New("kind: service unavailable")
+	ErrInsufficientStorage               = errors.New("kind: insufficient storage")
 	ErrFeatureDisabled                   = Classify(ErrForbidden, errors.New("feature disabled"))
 	ErrInvalidToken                      = errors.New("invalid token")
 	ErrExpiredToken                      = errors.New("token expired")
@@ -151,3 +118,37 @@ var (
 	ErrUploadChunkInvalid                      = Classify(ErrValidation, errors.New("Invalid upload chunk"))
 	ErrUploadSessionInvalid                    = Classify(ErrValidation, errors.New("Invalid upload session request"))
 )
+
+// Classify gives err a stable semantic identity without changing its message.
+func Classify(kind, err error) error {
+	if err == nil {
+		return nil
+	}
+	if kind == nil {
+		return err
+	}
+	return &classified{kind: kind, err: err}
+}
+
+func ClassifyDockerError(err error) error {
+	switch {
+	case errdefs.IsNotFound(err):
+		return Classify(ErrNotFound, err)
+	case errdefs.IsConflict(err):
+		return Classify(ErrConflict, err)
+	case errdefs.IsInvalidArgument(err):
+		return Classify(ErrBadRequest, err)
+	case errdefs.IsUnavailable(err), client.IsErrConnectionFailed(err):
+		return Classify(ErrUnavailable, err)
+	case errors.Is(err, context.DeadlineExceeded):
+		return Classify(ErrTimeout, err)
+	default:
+		return err
+	}
+}
+
+func (e *classified) Error() string { return e.err.Error() }
+
+func (e *classified) Unwrap() error { return e.err }
+
+func (e *classified) Is(target error) bool { return errors.Is(e.kind, target) }

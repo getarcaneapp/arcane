@@ -22,13 +22,15 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 )
 
-// Service talks to agents through the environment proxy and persists delivery
-// state in the shared run coordinator.
-type Service struct {
-	runs         *runs.Coordinator
-	store        *kv.KVService
-	environments *environment.EnvironmentService
-}
+type (
+	// Service talks to agents through the environment proxy and persists delivery
+	// state in the shared run coordinator.
+	Service struct {
+		runs         *runs.Coordinator
+		store        *kv.KVService
+		environments *environment.EnvironmentService
+	}
+)
 
 func New(coordinator *runs.Coordinator, store *kv.KVService, environments *environment.EnvironmentService) *Service {
 	return &Service{

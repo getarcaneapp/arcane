@@ -11,17 +11,19 @@ import (
 	scheduleutil "github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
 )
 
+type (
+	// DockerClientRefreshJob keeps the cached Docker client aligned with the daemon
+	// API version after daemon restarts or upgrades.
+	DockerClientRefreshJob struct {
+		dockerClientService *docker.DockerClientService
+		settingsService     *settings.SettingsService
+	}
+)
+
 const (
 	DockerClientRefreshJobName         = "docker-client-refresh"
 	dockerClientRefreshDefaultSchedule = "*/5 * * * *"
 )
-
-// DockerClientRefreshJob keeps the cached Docker client aligned with the daemon
-// API version after daemon restarts or upgrades.
-type DockerClientRefreshJob struct {
-	dockerClientService *docker.DockerClientService
-	settingsService     *settings.SettingsService
-}
 
 // NewDockerClientRefreshJob creates the scheduled Docker client refresh job.
 func NewDockerClientRefreshJob(dockerClientService *docker.DockerClientService, settingsService *settings.SettingsService) *DockerClientRefreshJob {

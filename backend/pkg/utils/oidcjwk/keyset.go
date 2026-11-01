@@ -14,17 +14,21 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-const forcedRefreshInterval = 30 * time.Second
+type (
+	keySet struct {
+		set         jwk.Set
+		group       singleflight.Group
+		cache       *jwkfetch.Cache
+		jwksURL     string
+		nextRefresh atomic.Int64
+	}
+)
+
+const (
+	forcedRefreshInterval = 30 * time.Second
+)
 
 var errForcedRefreshThrottled = errors.New("oidcjwk: forced refresh throttled")
-
-type keySet struct {
-	set         jwk.Set
-	group       singleflight.Group
-	cache       *jwkfetch.Cache
-	jwksURL     string
-	nextRefresh atomic.Int64
-}
 
 func (k *keySet) VerifySignature(ctx context.Context, rawToken string) ([]byte, error) {
 	if err := validateTokenAlgorithm(rawToken); err != nil {

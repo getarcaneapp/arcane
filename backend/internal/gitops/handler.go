@@ -15,95 +15,99 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// GitOpsSyncHandler handles GitOps sync management endpoints.
-type GitOpsSyncHandler struct {
-	syncService *GitOpsSyncService
-}
+type (
+	// GitOpsSyncHandler handles GitOps sync management endpoints.
+	GitOpsSyncHandler struct {
+		syncService *GitOpsSyncService
+	}
 
-type ListGitOpsSyncsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction"`
-	Mode          string `query:"mode" doc:"Filter by direction (deploy or backup)"`
-	ProjectID     string `query:"projectId" doc:"Filter by linked project ID"`
-	RepositoryID  string `query:"repositoryId" doc:"Filter by repository ID"`
-	AutoSync      string `query:"autoSync" doc:"Filter by automatic sync (true or false)"`
-	Start         int    `query:"start" default:"0" doc:"Start index"`
-	Limit         int    `query:"limit" default:"20" doc:"Items per page"`
-}
+	ListGitOpsSyncsInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction"`
+		Mode          string `query:"mode" doc:"Filter by direction (deploy or backup)"`
+		ProjectID     string `query:"projectId" doc:"Filter by linked project ID"`
+		RepositoryID  string `query:"repositoryId" doc:"Filter by repository ID"`
+		AutoSync      string `query:"autoSync" doc:"Filter by automatic sync (true or false)"`
+		Start         int    `query:"start" default:"0" doc:"Start index"`
+		Limit         int    `query:"limit" default:"20" doc:"Items per page"`
+	}
 
-type ListGitOpsSyncsOutput struct {
-	Body types.PaginatedWithCounts[types.GitOpsSync, types.GitOpsSyncCounts]
-}
+	ListGitOpsSyncsOutput struct {
+		Body types.PaginatedWithCounts[types.GitOpsSync, types.GitOpsSyncCounts]
+	}
 
-type CreateGitOpsSyncInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	types.Create[types.GitOpsSync]
-}
+	CreateGitOpsSyncInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		types.Create[types.GitOpsSync]
+	}
 
-type GetGitOpsSyncInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	SyncID        string `path:"syncId" doc:"Sync ID"`
-}
+	GetGitOpsSyncInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		SyncID        string `path:"syncId" doc:"Sync ID"`
+	}
 
-type UpdateGitOpsSyncInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	SyncID        string `path:"syncId" doc:"Sync ID"`
-	types.Update[types.GitOpsSync]
-}
+	UpdateGitOpsSyncInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		SyncID        string `path:"syncId" doc:"Sync ID"`
+		types.Update[types.GitOpsSync]
+	}
 
-type DeleteGitOpsSyncInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	SyncID        string `path:"syncId" doc:"Sync ID"`
-}
+	DeleteGitOpsSyncInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		SyncID        string `path:"syncId" doc:"Sync ID"`
+	}
 
-type GitOpsSyncActionInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	SyncID        string `path:"syncId" doc:"Sync ID"`
-	Action        string `query:"action" required:"true" enum:"sync" doc:"Sync action"`
-}
+	GitOpsSyncActionInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		SyncID        string `path:"syncId" doc:"Sync ID"`
+		Action        string `query:"action" required:"true" enum:"sync" doc:"Sync action"`
+	}
 
-type GetSyncStatusInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	SyncID        string `path:"syncId" doc:"Sync ID"`
-}
+	GetSyncStatusInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		SyncID        string `path:"syncId" doc:"Sync ID"`
+	}
 
-type BrowseSyncFilesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	SyncID        string `path:"syncId" doc:"Sync ID"`
-	Path          string `query:"path" doc:"Path to browse (optional)"`
-}
+	BrowseSyncFilesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		SyncID        string `path:"syncId" doc:"Sync ID"`
+		Path          string `query:"path" doc:"Path to browse (optional)"`
+	}
 
-type ImportGitOpsSyncsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          []types.ImportGitOpsSyncRequest
-}
+	ImportGitOpsSyncsInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          []types.ImportGitOpsSyncRequest
+	}
 
-const maxBackupHistoryLimit = 200
+	BackupPreviewInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		SyncID        string `path:"syncId" doc:"Sync ID"`
+	}
 
-type BackupPreviewInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	SyncID        string `path:"syncId" doc:"Sync ID"`
-}
+	BackupHistoryInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		SyncID        string `path:"syncId" doc:"Sync ID"`
+		Limit         int    `query:"limit" default:"20" doc:"Maximum number of revisions"`
+	}
 
-type BackupHistoryInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	SyncID        string `path:"syncId" doc:"Sync ID"`
-	Limit         int    `query:"limit" default:"20" doc:"Maximum number of revisions"`
-}
+	BackupRevisionInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		SyncID        string `path:"syncId" doc:"Sync ID"`
+		Commit        string `path:"commit" doc:"Commit hash"`
+	}
 
-type BackupRevisionInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	SyncID        string `path:"syncId" doc:"Sync ID"`
-	Commit        string `path:"commit" doc:"Commit hash"`
-}
+	ResolveBackupConflictInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		SyncID        string `path:"syncId" doc:"Sync ID"`
+		Body          types.GitOpsResolveBackupConflictRequest
+	}
+)
 
-type ResolveBackupConflictInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	SyncID        string `path:"syncId" doc:"Sync ID"`
-	Body          types.GitOpsResolveBackupConflictRequest
-}
+const (
+	maxBackupHistoryLimit = 200
+)
 
 // requireLifecyclePermission rejects callers lacking gitops:lifecycle
 // for the target environment when a create/update request configures the

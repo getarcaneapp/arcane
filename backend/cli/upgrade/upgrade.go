@@ -34,16 +34,15 @@ var (
 	targetImage   string
 	pullImageRef  string
 	autoDetect    bool
-)
 
-// UpgradeCmd recreates a running Arcane container with a newer image while
-// preserving its configuration.
-var UpgradeCmd = &cobra.Command{
-	Use:   "upgrade",
-	Short: "Upgrade an Arcane container to the latest version",
-	Long: `Upgrade an Arcane container by pulling the latest image and recreating the container.
+	// UpgradeCmd recreates a running Arcane container with a newer image while
+	// preserving its configuration.
+	UpgradeCmd = &cobra.Command{
+		Use:   "upgrade",
+		Short: "Upgrade an Arcane container to the latest version",
+		Long: `Upgrade an Arcane container by pulling the latest image and recreating the container.
 This command should be run from outside the container (e.g., from the host or another container).`,
-	Example: `  # Auto-detect and upgrade the Arcane container
+		Example: `  # Auto-detect and upgrade the Arcane container
   arcane upgrade --auto
 
   # Upgrade a specific container
@@ -51,10 +50,11 @@ This command should be run from outside the container (e.g., from the host or an
 
   # Upgrade to a specific image tag
   arcane upgrade --container arcane --image ghcr.io/getarcaneapp/manager:v1.2.3`,
-	// Use background context to ignore signals during upgrade
-	// This prevents the upgrade from being interrupted when the target container stops
-	RunE: runUpgrade,
-}
+		// Use background context to ignore signals during upgrade
+		// This prevents the upgrade from being interrupted when the target container stops
+		RunE: runUpgrade,
+	}
+)
 
 func init() {
 	UpgradeCmd.Flags().StringVarP(&containerName, "container", "c", "", "Name of the container to upgrade")

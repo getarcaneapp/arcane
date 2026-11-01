@@ -25,31 +25,35 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 )
 
-const defaultSchedule = "0 2 * * *"
+type (
+	// Dependencies are the backup operations scheduled policies run through.
+	Dependencies struct {
+		DB             *database.DB
+		S3Destinations *s3.S3DestinationService
+		Settings       *settings.SettingsService
+		AlreadyRunning error
+		LatestRun      func(ctx context.Context, policyID string) (*types.VolumeBackupEntry, error)
+		CreateBackup   func(ctx context.Context, volumeName, policyID string) (*types.VolumeBackup, error)
+		Reconcile      func(ctx context.Context, previous types.SchedulerRun, volumeName string) (types.SchedulerOutcome, error)
+	}
 
-// Dependencies are the backup operations scheduled policies run through.
-type Dependencies struct {
-	DB             *database.DB
-	S3Destinations *s3.S3DestinationService
-	Settings       *settings.SettingsService
-	AlreadyRunning error
-	LatestRun      func(ctx context.Context, policyID string) (*types.VolumeBackupEntry, error)
-	CreateBackup   func(ctx context.Context, volumeName, policyID string) (*types.VolumeBackup, error)
-	Reconcile      func(ctx context.Context, previous types.SchedulerRun, volumeName string) (types.SchedulerOutcome, error)
-}
+	// Service owns per-volume backup policies and their scheduled jobs.
+	Service struct {
+		deps     Dependencies
+		jobs     *entityjobs.Registry
+		flow     *flow.Engine
+		workflow *flow.Workflow
+	}
 
-// Service owns per-volume backup policies and their scheduled jobs.
-type Service struct {
-	deps     Dependencies
-	jobs     *entityjobs.Registry
-	flow     *flow.Engine
-	workflow *flow.Workflow
-}
+	// scheduledBackupInput is the policy a scheduled backup job runs for.
+	scheduledBackupInput struct {
+		PolicyID string `json:"policyId"`
+	}
+)
 
-// scheduledBackupInput is the policy a scheduled backup job runs for.
-type scheduledBackupInput struct {
-	PolicyID string `json:"policyId"`
-}
+const (
+	defaultSchedule = "0 2 * * *"
+)
 
 func NewService(deps Dependencies) *Service {
 	return &Service{deps: deps, jobs: entityjobs.New("volume-backup:", backup.VolumeAdmissionScope)}

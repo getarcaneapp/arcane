@@ -14,6 +14,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type (
+	fakeResponseBody struct {
+		io.Reader
+		closed bool
+	}
+
+	stubLogAPIClient struct {
+		client.APIClient
+
+		resp io.ReadCloser
+	}
+)
+
 func frameLogEntry(fd stdcopy.StdType, payload []byte) []byte {
 	header := make([]byte, 8)
 	header[0] = byte(fd)
@@ -50,20 +63,9 @@ func TestDemultiplexedLogStreamWithStderrMarking(t *testing.T) {
 		"[STDERR] final\n", decodeDemuxedStream(t, stream))
 }
 
-type fakeResponseBody struct {
-	io.Reader
-	closed bool
-}
-
 func (b *fakeResponseBody) Close() error {
 	b.closed = true
 	return nil
-}
-
-type stubLogAPIClient struct {
-	client.APIClient
-
-	resp io.ReadCloser
 }
 
 func (s *stubLogAPIClient) ContainerLogs(ctx context.Context, containerID string, options client.ContainerLogsOptions) (client.ContainerLogsResult, error) {

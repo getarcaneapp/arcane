@@ -17,6 +17,25 @@ import (
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
+var gitopsSyncRef = cmdutil.ResourceRef[types.GitOpsSync, types.GitOpsSync]{
+	EnvironmentScoped: true,
+	Singular:          "gitops sync",
+	Plural:            "gitops syncs",
+	IDHint:            "the sync ID",
+	ListCmd:           "arcane gitops list",
+	GetPath:           clitypes.GitOpsSync,
+	IdentifierOf:      func(item types.GitOpsSync) string { return item.ID },
+	ListPath:          clitypes.GitOpsSyncs,
+	Matches: func(item types.GitOpsSync, identifierLower, original string) bool {
+		return strings.Contains(strings.ToLower(item.ID), identifierLower) ||
+			strings.Contains(strings.ToLower(item.Name), identifierLower) || strings.EqualFold(item.Name, original)
+	},
+	Label: func(match types.GitOpsSync) string {
+		return fmt.Sprintf("%s (%s, %s)", match.Name, match.ID, cmp.Or(kit.FromPtr(match.LastSyncStatus), "-"))
+	},
+	Promote: func(match types.GitOpsSync) *types.GitOpsSync { return &match },
+}
+
 // Command is the parent command for gitops sync operations
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
@@ -479,25 +498,6 @@ func newImportCmd() *cobra.Command {
 	_ = cmd.MarkFlagRequired("branch")
 	_ = cmd.MarkFlagRequired("compose-path")
 	return cmd
-}
-
-var gitopsSyncRef = cmdutil.ResourceRef[types.GitOpsSync, types.GitOpsSync]{
-	EnvironmentScoped: true,
-	Singular:          "gitops sync",
-	Plural:            "gitops syncs",
-	IDHint:            "the sync ID",
-	ListCmd:           "arcane gitops list",
-	GetPath:           clitypes.GitOpsSync,
-	IdentifierOf:      func(item types.GitOpsSync) string { return item.ID },
-	ListPath:          clitypes.GitOpsSyncs,
-	Matches: func(item types.GitOpsSync, identifierLower, original string) bool {
-		return strings.Contains(strings.ToLower(item.ID), identifierLower) ||
-			strings.Contains(strings.ToLower(item.Name), identifierLower) || strings.EqualFold(item.Name, original)
-	},
-	Label: func(match types.GitOpsSync) string {
-		return fmt.Sprintf("%s (%s, %s)", match.Name, match.ID, cmp.Or(kit.FromPtr(match.LastSyncStatus), "-"))
-	},
-	Promote: func(match types.GitOpsSync) *types.GitOpsSync { return &match },
 }
 
 func flattenFileTree(nodes []types.FileTreeNode, depth int) [][]string {
