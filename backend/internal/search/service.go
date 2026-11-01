@@ -81,18 +81,13 @@ func BuildCategories[T any](profile types.SearchProfile) []types.Category {
 			continue
 		}
 
-		keywords := utils.ParseKeywords(catMeta["keywords"])
-		if keywords == nil {
-			keywords = []string{}
-		}
-
 		results = append(results, types.Category{
 			ID:          catMeta["id"],
 			Title:       catMeta["title"],
 			Description: catMeta["description"],
 			Icon:        catMeta["icon"],
 			URL:         catMeta["url"],
-			Keywords:    keywords,
+			Keywords:    utils.ParseKeywords(catMeta["keywords"]),
 			Settings:    categories[catID],
 		})
 	}

@@ -173,7 +173,7 @@ func PrepareServiceBuildRequest(
 	if updated && effectiveProvider == "depot" {
 		return buildtypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s must define an image when using depot build provider", serviceName)
 	}
-	if updated && options.Push != nil && *options.Push {
+	if updated && kit.FromPtr(options.Push) {
 		return buildtypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s must define an image when push is enabled", serviceName)
 	}
 

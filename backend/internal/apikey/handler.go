@@ -6,6 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
+	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
@@ -222,7 +223,7 @@ func (h *ApiKeyHandler) DeleteMyApiKey(ctx context.Context, input *DeleteApiKeyI
 	if err != nil {
 		return nil, huma.Error404NotFound("API key not found")
 	}
-	if existing.UserID == nil || *existing.UserID != user.ID {
+	if kit.FromPtr(existing.UserID) != user.ID {
 		return nil, huma.Error404NotFound("API key not found")
 	}
 

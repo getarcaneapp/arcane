@@ -634,7 +634,7 @@ func (s *RoleService) ResolveExecutionPermissions(ctx context.Context, userID, k
 	if err := db.Table("api_keys").Select("id, kind, user_id, environment_id, expires_at").Where("id = ?", keyID).Take(&key).Error; err != nil {
 		return nil, fmt.Errorf("failed to load requesting API key: %w", err)
 	}
-	if key.UserID == nil || *key.UserID != userID || (key.ExpiresAt != nil && !key.ExpiresAt.After(time.Now())) {
+	if mo.PointerToOption(key.UserID) != mo.Some(userID) || (key.ExpiresAt != nil && !key.ExpiresAt.After(time.Now())) {
 		return nil, errors.New("requesting API key is no longer valid")
 	}
 	var permissions *authz.PermissionSet

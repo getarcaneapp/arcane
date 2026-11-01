@@ -135,10 +135,6 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 		return nil, huma.Error500InternalServerError("Failed to list volumes: " + err.Error())
 	}
 
-	if volumes == nil {
-		volumes = []types.Volume{}
-	}
-
 	return &ListVolumesOutput{
 		Body: types.PaginatedWithCounts[types.Volume, VolumeUsageCountsData]{
 			Success: true,

@@ -103,9 +103,6 @@ func (h *Handler) ListServices(ctx context.Context, input *ListSwarmServicesInpu
 	if err != nil {
 		return nil, h.mapError(err, "Failed to list swarm services: "+err.Error())
 	}
-	if items == nil {
-		items = []types.SwarmServiceSummary{}
-	}
 
 	return &handlerutil.Page[types.SwarmServiceSummary]{Body: types.Paginated[types.SwarmServiceSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
@@ -217,9 +214,6 @@ func (h *Handler) ListServiceTasks(ctx context.Context, input *ListSwarmServiceT
 	items, paginationResp, err := h.service.ListServiceTasksPaginated(ctx, input.ServiceID, params)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to list swarm tasks: "+err.Error())
-	}
-	if items == nil {
-		items = []types.SwarmTaskSummary{}
 	}
 
 	return &handlerutil.Page[types.SwarmTaskSummary]{Body: types.Paginated[types.SwarmTaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil

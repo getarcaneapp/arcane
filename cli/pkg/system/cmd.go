@@ -352,7 +352,7 @@ func renderUpgradeResults(job types.UpgradeJob) error {
 	if job.ManagerTargetVersion != "" {
 		output.KeyValue("Target Version", job.ManagerTargetVersion)
 	}
-	if job.Error != nil && *job.Error != "" {
+	if kit.FromPtr(job.Error) != "" {
 		output.KeyValue("Error", *job.Error)
 	}
 	if job.CompletedAt != nil {

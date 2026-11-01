@@ -559,7 +559,7 @@ func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID
 		}
 
 		// If already linked to a different subject, abort
-		if u.OidcSubjectId != nil && *u.OidcSubjectId != "" && *u.OidcSubjectId != subject {
+		if current := kit.FromPtr(u.OidcSubjectId); current != "" && current != subject {
 			return common.Classify(common.ErrConflict, errors.New("user already linked to another OIDC subject"))
 		}
 

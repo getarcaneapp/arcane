@@ -82,8 +82,6 @@ func registerAutoLoginRoutes(apiGroup *echo.Group, authService *auth.AuthService
 			return c.JSON(http.StatusInternalServerError, types.ErrorResponse{Error: "Failed to map user"})
 		}
 
-		expiresAt := tokenPair.ExpiresAt
-
 		for _, tokenCookie := range tokenPair.CookieHeaders(cookie.SecureCookieFromRequest(c.Request())) {
 			c.Response().Header().Add("Set-Cookie", tokenCookie)
 		}
@@ -93,7 +91,7 @@ func registerAutoLoginRoutes(apiGroup *echo.Group, authService *auth.AuthService
 				Status:       types.AuthenticationStatusAuthenticated,
 				Token:        tokenPair.AccessToken,
 				RefreshToken: tokenPair.RefreshToken,
-				ExpiresAt:    new(expiresAt),
+				ExpiresAt:    new(tokenPair.ExpiresAt),
 				User:         new(userResp),
 			},
 		})

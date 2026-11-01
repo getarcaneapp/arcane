@@ -108,10 +108,8 @@ func Header(format string, a ...any) {
 // KeyValue prints a key-value pair with the muted aligned labels and neutral values.
 // Use it for structured details and configuration values.
 func KeyValue(key string, value any) {
-	keyText := key
-	valueText := fmt.Sprint(value)
 	defer SuspendProgress()()
-	_, _ = fmt.Fprintf(humanWriter(), "  %s %s\n", render(keyStyle, fmt.Sprintf("%-18s", keyText)), render(valueStyle, valueText))
+	_, _ = fmt.Fprintf(humanWriter(), "  %s %s\n", render(keyStyle, fmt.Sprintf("%-18s", key)), render(valueStyle, fmt.Sprint(value)))
 }
 
 // Showing prints a pagination summary in the form "Showing: shown/total label".

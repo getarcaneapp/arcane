@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -241,10 +242,7 @@ func (c *Client) CheckoutForWrite(ctx context.Context, url, branch string, auth 
 }
 
 func (c *Client) initEmptyCheckoutInternal(url, branch string) (*WriteCheckout, error) {
-	workDir := c.workDir
-	if workDir == "" {
-		workDir = os.TempDir()
-	}
+	workDir := cmp.Or(c.workDir, os.TempDir())
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create work dir: %w", err)
 	}
@@ -525,9 +523,6 @@ func directoryPrefixInternal(directory string) string {
 
 func historyEntryInternal(commit *object.Commit, files []string) HistoryEntry {
 	sort.Strings(files)
-	if files == nil {
-		files = []string{}
-	}
 	return HistoryEntry{
 		Hash:    commit.Hash.String(),
 		Author:  commit.Author.Name,

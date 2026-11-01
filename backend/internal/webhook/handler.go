@@ -5,6 +5,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
+	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
@@ -57,10 +58,7 @@ func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *types.Environm
 
 // CreateWebhook creates a new webhook and returns the raw token (shown once only).
 func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhookInput) (*handlerutil.Out[types.WebhookCreated], error) {
-	actor := types.Actor{}
-	if currentUser, exists := userctx.CurrentUserFromContext(ctx); exists && currentUser != nil {
-		actor = *currentUser
-	}
+	currentUser, _ := userctx.CurrentUserFromContext(ctx)
 
 	callerPerms, _ := middleware.PermissionsFromContext(ctx)
 	wh, rawToken, err := h.webhookService.CreateWebhook(
@@ -70,7 +68,7 @@ func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhook
 		input.Body.ActionType,
 		input.Body.TargetID,
 		input.EnvironmentID,
-		actor,
+		kit.FromPtr(currentUser),
 		callerPerms,
 	)
 	if err != nil {
@@ -101,13 +99,10 @@ func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhook
 		return nil, huma.Error400BadRequest("invalid webhook update body")
 	}
 
-	actor := types.Actor{}
-	if currentUser, exists := userctx.CurrentUserFromContext(ctx); exists && currentUser != nil {
-		actor = *currentUser
-	}
+	currentUser, _ := userctx.CurrentUserFromContext(ctx)
 
 	callerPerms, _ := middleware.PermissionsFromContext(ctx)
-	wh, err := h.webhookService.UpdateWebhook(ctx, input.WebhookID, input.EnvironmentID, input.Body, submitted, actor, callerPerms)
+	wh, err := h.webhookService.UpdateWebhook(ctx, input.WebhookID, input.EnvironmentID, input.Body, submitted, kit.FromPtr(currentUser), callerPerms)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
@@ -121,12 +116,9 @@ func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhook
 
 // DeleteWebhook removes a webhook.
 func (h *WebhookHandler) DeleteWebhook(ctx context.Context, input *DeleteWebhookInput) (*handlerutil.Out[any], error) {
-	actor := types.Actor{}
-	if currentUser, exists := userctx.CurrentUserFromContext(ctx); exists && currentUser != nil {
-		actor = *currentUser
-	}
+	currentUser, _ := userctx.CurrentUserFromContext(ctx)
 
-	if err := h.webhookService.DeleteWebhook(ctx, input.WebhookID, input.EnvironmentID, actor); err != nil {
+	if err := h.webhookService.DeleteWebhook(ctx, input.WebhookID, input.EnvironmentID, kit.FromPtr(currentUser)); err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}

@@ -813,10 +813,6 @@ func NewSwarmServiceSummary(service swarm.Service, nodeNames []string, networkNa
 		}
 	}
 
-	if nodeNames == nil {
-		nodeNames = []string{}
-	}
-
 	return SwarmServiceSummary{
 		ID:              service.ID,
 		Name:            spec.Name,

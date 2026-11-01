@@ -94,9 +94,6 @@ func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to list swarm tasks: "+err.Error())
 	}
-	if items == nil {
-		items = []types.SwarmTaskSummary{}
-	}
 
 	return &handlerutil.Page[types.SwarmTaskSummary]{Body: types.Paginated[types.SwarmTaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }

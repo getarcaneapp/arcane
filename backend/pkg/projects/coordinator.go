@@ -62,10 +62,7 @@ func (c *composeCoordinator) Deploy(ctx context.Context, request types.ComposeDe
 		pullPolicy = NormalizeDeployPullPolicy(request.Options.PullPolicy)
 		forceRecreate, recreateVolumes, build = request.Options.ForceRecreate, request.Options.RecreateVolumes, request.Options.Build
 	}
-	if pullPolicy == "" {
-		pullPolicy = NormalizeDeployPullPolicy(request.DefaultPullPolicy)
-	}
-	pullPolicy = cmp.Or(pullPolicy, "missing")
+	pullPolicy = cmp.Or(pullPolicy, NormalizeDeployPullPolicy(request.DefaultPullPolicy), "missing")
 	if prepareImagesForDeployErr := c.PrepareImagesForDeploy(ctx, request.ProjectID, model, request.Progress, operations, pullPolicy, build); prepareImagesForDeployErr != nil {
 		return nil, fmt.Errorf("failed to prepare project images for deploy: %w", prepareImagesForDeployErr)
 	}

@@ -989,10 +989,7 @@ func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *
 		return nil, errors.New("template is not remote")
 	}
 
-	base := projects.Slugify(remoteTemplate.Name)
-	if base == "" {
-		base = cmp.Or(projects.Slugify(remoteTemplate.ID[strings.LastIndex(remoteTemplate.ID, ":")+1:]), "template-"+uuid.New().String())
-	}
+	base := cmp.Or(projects.Slugify(remoteTemplate.Name), projects.Slugify(remoteTemplate.ID[strings.LastIndex(remoteTemplate.ID, ":")+1:]), "template-"+uuid.New().String())
 
 	templatesDir, err := s.getTemplatesDirectory(ctx)
 	if err != nil {

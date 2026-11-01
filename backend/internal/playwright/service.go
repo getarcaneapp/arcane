@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
+	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops"
@@ -135,7 +136,7 @@ func (ps *PlaywrightService) CreateTestGitOpsProject(ctx context.Context) error 
 		return err
 	}
 	// CreateSync already ran the initial sync; retry only if it failed.
-	if !created || sync.LastSyncStatus == nil || *sync.LastSyncStatus != "success" || sync.LastSyncError != nil {
+	if !created || kit.FromPtr(sync.LastSyncStatus) != "success" || sync.LastSyncError != nil {
 		result, performSyncErr := ps.syncService.PerformSync(ctx, "0", sync.ID, actor)
 		if performSyncErr != nil {
 			return fmt.Errorf("failed to sync GitOps test project: %w", performSyncErr)
@@ -148,7 +149,7 @@ func (ps *PlaywrightService) CreateTestGitOpsProject(ctx context.Context) error 
 			return performSyncErr
 		}
 	}
-	if sync.ProjectID == nil || sync.LastSyncCommit == nil || *sync.LastSyncCommit == "" || sync.LastSyncStatus == nil || *sync.LastSyncStatus != "success" || sync.LastSyncError != nil {
+	if sync.ProjectID == nil || kit.FromPtr(sync.LastSyncCommit) == "" || kit.FromPtr(sync.LastSyncStatus) != "success" || sync.LastSyncError != nil {
 		return errors.New("GitOps test sync did not bind a managed project and commit")
 	}
 	details, err := ps.projectService.GetProjectDetails(ctx, *sync.ProjectID, types.ProjectDetailsOptions{})

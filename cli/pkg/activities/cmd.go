@@ -156,7 +156,7 @@ func newGetCmd() *cobra.Command {
 					if item.DurationMs != nil {
 						output.KeyValue("Duration", (time.Duration(*item.DurationMs) * time.Millisecond).String())
 					}
-					if item.Error != nil && *item.Error != "" {
+					if kit.FromPtr(item.Error) != "" {
 						output.KeyValue("Error", *item.Error)
 					}
 

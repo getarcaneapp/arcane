@@ -140,8 +140,6 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
-	expiresAt := tokenPair.ExpiresAt
-
 	return &LoginOutput{
 		SetCookie: tokenPair.CookieHeaders(cookie.SecureCookieFromContext(ctx)),
 		Body: types.ApiResponse[types.AuthenticationResponse]{
@@ -151,7 +149,7 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 				Status:       types.AuthenticationStatusAuthenticated,
 				Token:        tokenPair.AccessToken,
 				RefreshToken: tokenPair.RefreshToken,
-				ExpiresAt:    &expiresAt,
+				ExpiresAt:    new(tokenPair.ExpiresAt),
 				User:         &userResp,
 			},
 		},
@@ -351,7 +349,7 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 		// Huma's enum tags cannot express these checks. The "default" accent
 		// sentinel means "no override"; anything else must be a color literal
 		// safe to inject into CSS.
-		if v := p.AccentColor; v != nil && *v != "" && *v != "default" && !types.SafeAccentColor.MatchString(*v) {
+		if v := kit.FromPtr(p.AccentColor); v != "" && v != "default" && !types.SafeAccentColor.MatchString(v) {
 			return nil, huma.Error400BadRequest("invalid accentColor value")
 		}
 		// Keys are environment IDs; the caps keep one user's preferences from growing without bound.

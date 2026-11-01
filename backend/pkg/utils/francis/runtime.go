@@ -2,6 +2,7 @@
 package francis
 
 import (
+	"cmp"
 	"context"
 	"crypto/hkdf"
 	"crypto/sha256"
@@ -57,10 +58,7 @@ type registration struct {
 }
 
 func New(databaseURL, encryptionKey, instanceID, port string, options ...local.HostOption) (*Runtime, error) {
-	if port == "" {
-		port = "3551"
-	}
-	portNumber, err := strconv.Atoi(port)
+	portNumber, err := strconv.Atoi(cmp.Or(port, "3551"))
 	if err != nil || portNumber < 1 || portNumber > 65535 {
 		return nil, errors.New("ARCANE_ACTOR_PORT must be between 1 and 65535")
 	}
@@ -74,7 +72,7 @@ func New(databaseURL, encryptionKey, instanceID, port string, options ...local.H
 		// Setenv only fails for keys containing '=' or NUL, which this constant key cannot.
 		_ = os.Setenv("QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING", "true")
 	}
-	address := net.JoinHostPort("127.0.0.1", port)
+	address := net.JoinHostPort("127.0.0.1", strconv.Itoa(portNumber))
 	runtime := &Runtime{
 		service: &actor.Service{}, ready: make(chan struct{}), done: make(chan struct{}), address: address, storeURL: storeURL,
 		options: []local.HostOption{

@@ -901,7 +901,7 @@ func (s *VolumeService) AggregateVolumes(ctx context.Context, params pagination.
 	}
 
 	pages := make([]pagination.EnvironmentPage[types.Volume], 0, len(collection.Results))
-	counts := VolumeUsageCountsData{}
+	var counts VolumeUsageCountsData
 	for _, result := range collection.Results {
 		page := result.Value
 		pages = append(pages, pagination.EnvironmentPage[types.Volume]{
@@ -909,9 +909,11 @@ func (s *VolumeService) AggregateVolumes(ctx context.Context, params pagination.
 			Items:          page.Data,
 			TotalAvailable: cmp.Or(page.Pagination.GrandTotalItems, page.Pagination.TotalItems),
 		})
-		counts.Inuse += page.Counts.Inuse
-		counts.Unused += page.Counts.Unused
-		counts.Total += page.Counts.Total
+		counts = VolumeUsageCountsData{
+			Inuse:  counts.Inuse + page.Counts.Inuse,
+			Unused: counts.Unused + page.Counts.Unused,
+			Total:  counts.Total + page.Counts.Total,
+		}
 	}
 	data, resp := pagination.MergeEnvironmentPages(s.buildVolumePaginationConfig(), pages, params)
 
