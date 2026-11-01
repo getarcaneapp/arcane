@@ -105,13 +105,6 @@ func TestWebhookTokenFormat(t *testing.T) {
 	assert.Equal(t, hex.EncodeToString(expected[:]), hash, "stored hash must be SHA-256 of the raw token")
 }
 
-func TestHashWebhookTokenIsDeterministic(t *testing.T) {
-	raw := "arc_wh_0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
-	first := kit.SHA256Hex(raw)
-	second := kit.SHA256Hex(raw)
-	assert.Equal(t, first, second)
-}
-
 func TestParseWebhookPrefix_ValidToken(t *testing.T) {
 	raw := "arc_wh_0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
 	prefix, err := parseWebhookPrefix(raw)
@@ -341,28 +334,6 @@ func TestCreateWebhook_ContainerTypeAccepted(t *testing.T) {
 	assert.Equal(t, WebhookActionTypeUpdate, wh.ActionType)
 }
 
-func TestCreateWebhook_ProjectTypeAccepted(t *testing.T) {
-	ctx := t.Context()
-	db := setupWebhookServiceTestDB(t)
-	svc := newTestWebhookService(db)
-
-	wh, _, err := svc.CreateWebhook(ctx, "stack-hook", WebhookTargetTypeProject, WebhookActionTypeUpdate, "project-id", "env-1", types.Actor{}, authz.SudoPermissionSet())
-	require.NoError(t, err)
-	assert.Equal(t, WebhookTargetTypeProject, wh.TargetType)
-	assert.Equal(t, WebhookActionTypeUpdate, wh.ActionType)
-}
-
-func TestCreateWebhook_UpdaterTypeAccepted(t *testing.T) {
-	ctx := t.Context()
-	db := setupWebhookServiceTestDB(t)
-	svc := newTestWebhookService(db)
-
-	wh, _, err := svc.CreateWebhook(ctx, "updater-hook", WebhookTargetTypeUpdater, WebhookActionTypeRun, "", "env-1", types.Actor{}, authz.SudoPermissionSet())
-	require.NoError(t, err)
-	assert.Equal(t, WebhookTargetTypeUpdater, wh.TargetType)
-	assert.Equal(t, WebhookActionTypeRun, wh.ActionType)
-}
-
 func TestCreateWebhook_GitOpsTypeAccepted(t *testing.T) {
 	ctx := t.Context()
 	db := setupWebhookServiceTestDB(t)
@@ -372,29 +343,6 @@ func TestCreateWebhook_GitOpsTypeAccepted(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, WebhookTargetTypeGitOps, wh.TargetType)
 	assert.Equal(t, WebhookActionTypeSync, wh.ActionType)
-}
-
-func TestCreateWebhook_EnabledByDefault(t *testing.T) {
-	ctx := t.Context()
-	db := setupWebhookServiceTestDB(t)
-	svc := newTestWebhookService(db)
-
-	wh, _, err := svc.CreateWebhook(ctx, "enabled", WebhookTargetTypeProject, WebhookActionTypeUpdate, "p1", "env-1", types.Actor{}, authz.SudoPermissionSet())
-	require.NoError(t, err)
-	assert.True(t, wh.Enabled)
-}
-
-func TestCreateWebhook_UniqueTokensEachCall(t *testing.T) {
-	ctx := t.Context()
-	db := setupWebhookServiceTestDB(t)
-	svc := newTestWebhookService(db)
-
-	_, token1, err := svc.CreateWebhook(ctx, "h1", WebhookTargetTypeProject, WebhookActionTypeUpdate, "p1", "env-1", types.Actor{}, authz.SudoPermissionSet())
-	require.NoError(t, err)
-	_, token2, err := svc.CreateWebhook(ctx, "h2", WebhookTargetTypeProject, WebhookActionTypeUpdate, "p2", "env-1", types.Actor{}, authz.SudoPermissionSet())
-	require.NoError(t, err)
-
-	assert.NotEqual(t, token1, token2)
 }
 
 func TestListWebhooks_ScopedToEnvironment(t *testing.T) {

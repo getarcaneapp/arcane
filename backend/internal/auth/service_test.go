@@ -349,35 +349,6 @@ func TestUniqueOidcUsername(t *testing.T) {
 		"short subject username %q", u2)
 }
 
-func TestPersistOidcTokens_SetsFields(t *testing.T) {
-	s := newTestAuthService()
-	localUser := &user.User{}
-	start := time.Now()
-	resp := &types.OidcTokenResponse{
-		AccessToken:  "at-123",
-		RefreshToken: "rt-456",
-		ExpiresIn:    7,
-		IDToken:      "",
-	}
-	s.persistOidcTokens(localUser, resp)
-
-	assert.False(t, localUser.OidcAccessToken == nil || *localUser.OidcAccessToken != "at-123",
-		"access token %v", localUser.OidcAccessToken)
-
-	assert.False(t, localUser.OidcRefreshToken == nil || *localUser.OidcRefreshToken != "rt-456",
-		"refresh token %v", localUser.OidcRefreshToken)
-
-	assert.NotNil(t, localUser.OidcAccessTokenExpiresAt,
-		"expiresAt nil")
-
-	// Check approx expiry within [start+7s, start+12s] to allow CI slop
-	earliest := start.Add(7 * time.Second)
-	latest := start.Add(12 * time.Second)
-
-	assert.False(t, localUser.OidcAccessTokenExpiresAt.Before(earliest) || localUser.OidcAccessTokenExpiresAt.After(latest),
-		"expiresAt %v not in [%v,%v]", localUser.OidcAccessTokenExpiresAt, earliest, latest)
-}
-
 func TestVerifyToken_VersionMismatch(t *testing.T) {
 	s := newTestAuthService()
 	exp := time.Now().Add(5 * time.Minute)

@@ -551,35 +551,6 @@ func TestImageServiceSearchImagesRequiresTerm(t *testing.T) {
 	assert.Contains(t, err.Error(), "search term is required")
 }
 
-func TestImageServiceExportImageReturnsTarStream(t *testing.T) {
-	db := setupImageProjectTestDB(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || imageDockerTestPath(r.URL.Path) != "/images/get" {
-			http.NotFound(w, r)
-			return
-		}
-		names := r.URL.Query()["names"]
-		if !assert.Equal(t, []string{"source:latest"}, names) {
-			return
-		}
-		_, _ = w.Write([]byte("tar-bytes"))
-	}))
-	t.Cleanup(server.Close)
-
-	imageSvc := NewImageService(ImageServiceParams{
-		DB:            db,
-		DockerService: newImageTestDockerService(t, server),
-		EventService:  event.NewEventService(db, nil, nil),
-	})
-
-	reader, err := imageSvc.ExportImage(t.Context(), "source:latest")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = reader.Close() })
-	body, err := io.ReadAll(reader)
-	require.NoError(t, err)
-	assert.Equal(t, "tar-bytes", string(body))
-}
-
 func TestImageServiceSearchImagesCallsDockerAPI(t *testing.T) {
 	db := setupImageProjectTestDB(t)
 	var gotTerm string

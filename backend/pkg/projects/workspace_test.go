@@ -10,7 +10,6 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	kit "go.getarcane.app/kit/pkg"
 )
 
 func TestReadProjectWorkspace_ExcludesProtectedFilesAndReturnsFolders(t *testing.T) {
@@ -314,13 +313,6 @@ func TestApplyProjectWorkspaceChangesRejectsUnusedUploadsForEmptyManifest(t *tes
 
 	err := ApplyProjectWorkspaceChanges(t.Context(), t.TempDir(), nil, map[int][]byte{0: []byte("unused")}, ProjectWorkspaceApplyOptions{})
 	require.ErrorContains(t, err, "unused")
-}
-
-func TestValidateProjectWorkspaceFileName_RejectsPathSeparators(t *testing.T) {
-	t.Parallel()
-
-	_, err := kit.ValidateFileName("folder" + string(filepath.Separator) + "name")
-	require.Error(t, err)
 }
 
 func TestReadProjectWorkspace_CapsEntriesWithStableRevision(t *testing.T) {

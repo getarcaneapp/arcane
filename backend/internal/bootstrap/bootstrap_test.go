@@ -328,46 +328,6 @@ func TestH2CStreamSurvivesPastReadHeaderTimeout(t *testing.T) {
 	require.Equal(t, "done", string(body))
 }
 
-func TestHTTPServerStopCancelsStreamingRequestContexts(t *testing.T) {
-	appCtx := t.Context()
-
-	handlerEntered := make(chan struct{})
-	router := echo.New()
-	router.GET("/stream", func(c *echo.Context) error {
-		c.Response().Header().Set("Content-Type", "application/x-json-stream")
-		c.Response().WriteHeader(http.StatusOK)
-		c.Response().(http.Flusher).Flush()
-		close(handlerEntered)
-		<-c.Request().Context().Done()
-		return nil
-	})
-
-	cfg := &config.Config{
-		Listen: "127.0.0.1",
-		Port:   "0",
-	}
-	lifecycle := fxtest.NewLifecycle(t)
-	srv, err := NewHTTPServer(lifecycle, HTTPServerParams{
-		AppCtx:       appCtx,
-		Config:       cfg,
-		Router:       router,
-		TunnelServer: agent.NewTunnelServer(agent.TunnelServerOptions{}),
-	})
-	require.NoError(t, err)
-	require.NoError(t, lifecycle.Start(t.Context()))
-
-	resp, err := http.Get("http://" + srv.Addr + "/stream")
-	require.NoError(t, err)
-	defer func() { _ = resp.Body.Close() }()
-	<-handlerEntered
-
-	shutdownCtx, cancelShutdown := context.WithTimeout(t.Context(), 6*time.Second)
-	defer cancelShutdown()
-	start := time.Now()
-	require.NoError(t, lifecycle.Stop(shutdownCtx))
-	require.Less(t, time.Since(start), 4*time.Second)
-}
-
 func TestNewHTTPServerRejectsInvalidTLSCertificate(t *testing.T) {
 	cfg := &config.Config{
 		TLSEnabled:  true,

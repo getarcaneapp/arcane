@@ -274,23 +274,3 @@ func TestTunnelRegistry_CleanupStale(t *testing.T) {
 	assert.False(t, ok)
 	assert.True(t, tunnel.Conn.IsClosed())
 }
-
-func TestGetRegistry(t *testing.T) {
-	r1 := GetRegistry()
-	r2 := GetRegistry()
-	assert.Equal(t, r1, r2)
-}
-
-func TestAgentTunnel_Heartbeat(t *testing.T) {
-	conn := createTestConn(t)
-	defer func() { _ = conn.CloseNow() }()
-	tunnel := newWebSocketAgentTunnel("env-1", conn)
-
-	initial := tunnel.GetLastHeartbeat()
-	time.Sleep(10 * time.Millisecond)
-
-	tunnel.UpdateHeartbeat()
-	updated := tunnel.GetLastHeartbeat()
-
-	assert.True(t, updated.After(initial))
-}

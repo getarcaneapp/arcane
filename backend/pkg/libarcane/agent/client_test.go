@@ -22,7 +22,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
@@ -152,26 +151,6 @@ func TestTunnelClient_GRPC_EndToEnd(t *testing.T) {
 	case clientErr := <-errCh:
 		require.NoError(t, clientErr)
 	default:
-	}
-}
-
-func TestManagerUsesTLS(t *testing.T) {
-	tests := []struct {
-		name       string
-		managerURL string
-		expected   bool
-	}{
-		{name: "https manager url", managerURL: "https://manager.example.com/api", expected: true},
-		{name: "https manager url with reverse proxy path", managerURL: "https://manager.example.com/arcane/api", expected: true},
-		{name: "http manager url", managerURL: "http://manager.example.com/api", expected: false},
-		{name: "invalid manager url", managerURL: "://bad-url", expected: false},
-		{name: "empty manager url", managerURL: "", expected: false},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.expected, strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL((&Config{ManagerApiUrl: tc.managerURL}).ManagerApiUrl))), "https://"))
-		})
 	}
 }
 

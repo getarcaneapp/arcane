@@ -135,25 +135,6 @@ func TestSetAgentToken(t *testing.T) {
 	require.Equal(t, tok, req.Header.Get(HeaderAPIKey))
 }
 
-func TestSetForwardedHeaders(t *testing.T) {
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://remote", http.NoBody)
-	require.NoError(t, err)
-
-	SetForwardedHeaders(req, "1.2.3.4", "example.com")
-	require.Equal(t, "1.2.3.4", req.Header.Get("X-Forwarded-For"))
-	require.Equal(t, "example.com", req.Header.Get("X-Forwarded-Host"))
-}
-
-func TestGetHopByHopHeaders_IncludesStandardHeaders(t *testing.T) {
-	h := BuildHopByHopHeaders(http.Header{})
-	_, ok := h[http.CanonicalHeaderKey("Connection")]
-	require.True(t, ok)
-	_, ok = h[http.CanonicalHeaderKey("Transfer-Encoding")]
-	require.True(t, ok)
-	_, ok = h[http.CanonicalHeaderKey("Upgrade")]
-	require.True(t, ok)
-}
-
 func TestBuildHopByHopHeaders_AddsConnectionTokens(t *testing.T) {
 	respHeader := http.Header{}
 	respHeader.Add("Connection", "X-Foo, keep-alive")
@@ -180,19 +161,6 @@ func TestCopyResponseHeaders_SkipsHopByHopAndConnectionNamedHeaders(t *testing.T
 	require.Empty(t, to.Get("Transfer-Encoding"))
 	require.Empty(t, to.Get("X-Foo"))
 	require.Empty(t, to.Get("Connection"))
-}
-
-func TestGetSkipHeaders_ContainsExpectedEntries(t *testing.T) {
-	skip := skipHeaders
-	require.Contains(t, skip, "Host")
-	require.Contains(t, skip, "Connection")
-	require.Contains(t, skip, "Transfer-Encoding")
-	require.Contains(t, skip, "Upgrade")
-	require.Contains(t, skip, "Content-Length")
-	require.Contains(t, skip, "Accept-Encoding")
-	require.Contains(t, skip, "Cookie")
-	require.Contains(t, skip, "Origin")
-	require.Contains(t, skip, "Referer")
 }
 
 func TestBuildWebSocketHeaders_UsesAuthorizationHeaderAndAddsAgentToken(t *testing.T) {

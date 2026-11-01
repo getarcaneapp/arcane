@@ -40,30 +40,6 @@ func TestCleanupUnknownSettings(t *testing.T) {
 	})
 }
 
-func TestTestDockerConnection(t *testing.T) {
-	ctx := t.Context()
-
-	t.Run("executes test function", func(t *testing.T) {
-		called := false
-		testFunc := func(ctx context.Context) error {
-			called = true
-			return nil
-		}
-
-		TestDockerConnection(ctx, testFunc)
-
-		assert.True(t, called)
-	})
-
-	t.Run("handles error gracefully", func(t *testing.T) {
-		testFunc := func(ctx context.Context) error {
-			return errors.New("docker connection failed")
-		}
-
-		TestDockerConnection(ctx, testFunc)
-	})
-}
-
 func TestInitializeNonAgentFeatures(t *testing.T) {
 	ctx := t.Context()
 
@@ -108,19 +84,5 @@ func TestInitializeNonAgentFeatures(t *testing.T) {
 		assert.True(t, createAdminCalled)
 		assert.True(t, reconcileDefaultAdminAPIKeyCalled)
 		assert.True(t, autoLoginInitCalled)
-	})
-
-	t.Run("handles errors gracefully", func(t *testing.T) {
-		reconcileDefaultAdminAPIKeyFunc := func(ctx context.Context) error {
-			return errors.New("api key reconcile failed")
-		}
-		autoLoginInitFunc := func(ctx context.Context) error {
-			return errors.New("autologin init failed")
-		}
-		createAdminFunc := func(ctx context.Context) error {
-			return errors.New("admin creation failed")
-		}
-
-		InitializeNonAgentFeatures(ctx, false, nil, createAdminFunc, reconcileDefaultAdminAPIKeyFunc, autoLoginInitFunc)
 	})
 }

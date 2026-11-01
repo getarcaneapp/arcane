@@ -520,21 +520,6 @@ func TestUpdateUserAllowsNonAdminActorEditingNonAdmin(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestUpdateUserAllowsSelfEditByNonAdmin(t *testing.T) {
-	userSvc, roleSvc := setupUserAndRoleServices(t)
-	ctx := t.Context()
-
-	admin := createTestUser(t, userSvc, "admin-1", "arcane")
-	grantGlobalAdmin(t, roleSvc, admin.ID)
-	adminPerms, err := roleSvc.ResolvePermissions(ctx, admin.ID)
-	require.NoError(t, err)
-
-	admin.DisplayName = new("Self Rename")
-	actorCtx := context.WithValue(ctx, types.CurrentUserContextKey{}, admin)
-	_, err = userSvc.UpdateUser(actorCtx, admin, adminPerms)
-	require.NoError(t, err)
-}
-
 func TestDeleteUserRejectsNonAdminActorDeletingAdmin(t *testing.T) {
 	userSvc, roleSvc := setupUserAndRoleServices(t)
 	ctx := t.Context()

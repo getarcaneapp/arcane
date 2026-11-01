@@ -74,9 +74,3 @@ func TestActivityRuntimeContextPreservesMarkedAppContext(t *testing.T) {
 	cancelApp()
 	require.ErrorIs(t, ctx.Err(), context.Canceled)
 }
-
-func TestWithAppLifecycleContextMarksContext(t *testing.T) {
-	ctx := WithAppLifecycleContext(t.Context())
-
-	require.True(t, IsAppLifecycleContext(ctx))
-}

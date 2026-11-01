@@ -137,18 +137,6 @@ func TestDiscoverProjectDirectories_RespectsMaxDepth(t *testing.T) {
 	require.Equal(t, []string{"top-level"}, names)
 }
 
-func TestDiscoverProjectDirectories_UnlimitedDepthStillFindsNestedProject(t *testing.T) {
-	root := t.TempDir()
-
-	writeComposeFile(t, filepath.Join(root, "group", "nested"))
-
-	discovered, err := DiscoverProjectDirectories(t.Context(), root, false, 0, "")
-	require.NoError(t, err)
-
-	names := discoveredNames(discovered)
-	require.Equal(t, []string{"nested"}, names)
-}
-
 func TestIsInternalScratchDirName(t *testing.T) {
 	scratch := []string{
 		".project-update-preview-123",

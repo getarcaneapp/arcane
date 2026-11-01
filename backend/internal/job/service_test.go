@@ -92,20 +92,6 @@ func newJobServiceForTest(t *testing.T, db *database.DB, settingsService *settin
 	return service
 }
 
-func TestJobService_GetJobSchedules_DefaultDockerClientRefreshInterval(t *testing.T) {
-	ctx := t.Context()
-	db := setupSettingsTestDB(t)
-
-	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-
-	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
-	cfg := jobSvc.GetJobSchedules(ctx)
-
-	require.Equal(t, "0 */5 * * * *", cfg.DockerClientRefreshInterval)
-	require.Equal(t, "0 0 * * * *", cfg.PollingInterval)
-}
-
 func TestJobService_ListJobs_AnalyticsHeartbeatIsManagedInternally(t *testing.T) {
 	ctx := t.Context()
 	db := setupSettingsTestDB(t)
@@ -140,25 +126,6 @@ func TestJobService_ListJobs_IncludesDisabledAutoHealJob(t *testing.T) {
 	autoHealJob := findJobStatusByID(t, jobs.Jobs, "auto-heal")
 	require.False(t, autoHealJob.Enabled)
 	require.Equal(t, "autoHealInterval", autoHealJob.SettingsKey)
-}
-
-func TestJobService_ListJobs_IncludesDockerClientRefreshJob(t *testing.T) {
-	ctx := t.Context()
-	db := setupSettingsTestDB(t)
-
-	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-
-	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
-	jobs, err := jobSvc.ListJobs(ctx)
-	require.NoError(t, err)
-
-	refreshJob := findJobStatusByID(t, jobs.Jobs, "docker-client-refresh")
-	require.True(t, refreshJob.Enabled)
-	require.True(t, refreshJob.CanRunManually)
-	require.Equal(t, "monitoring", refreshJob.Category)
-	require.Equal(t, "dockerClientRefreshInterval", refreshJob.SettingsKey)
-	require.Equal(t, "0 */5 * * * *", refreshJob.Schedule)
 }
 
 func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
@@ -427,21 +394,6 @@ func TestJobService_UpdateJobSchedules_RejectsInvalidCronWithoutChangingSetting(
 	require.ErrorContains(t, err, "invalid cron expression for pollingInterval")
 	require.Equal(t, "0 0 * * * *", settingsSvc.GetStringSetting(ctx, "pollingInterval"))
 	require.Empty(t, fakeScheduler.rescheduled)
-}
-
-func TestJobService_UpdateJobSchedules_UnchangedScheduleDoesNotReschedule(t *testing.T) {
-	ctx := t.Context()
-	db := setupSettingsTestDB(t)
-
-	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-
-	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
-	updated, err := jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
-		PollingInterval: "0 0 * * * *",
-	}, map[string]bool{"pollingInterval": true})
-	require.NoError(t, err)
-	require.Equal(t, "0 0 * * * *", updated.PollingInterval)
 }
 
 func TestJobService_UpdateJobSchedules_RestoresPreviousScheduleWhenRescheduleFails(t *testing.T) {

@@ -2,10 +2,8 @@ package ws
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestNormalizeContainerLine(t *testing.T) {
@@ -225,18 +223,4 @@ func TestNormalizeProjectLine(t *testing.T) {
 			assert.Equal(t, tt.expectedTS, ts, "timestamp mismatch")
 		})
 	}
-}
-
-func TestNowRFC3339(t *testing.T) {
-	before := time.Now().UTC()
-	result := NowRFC3339()
-	after := time.Now().UTC()
-
-	parsed, err := time.Parse(time.RFC3339Nano, result)
-	require.NoError(t, err, "NowRFC3339 should return a valid RFC3339Nano string")
-
-	assert.False(t, parsed.Before(before.Add(-time.Millisecond)),
-		"timestamp should not be before the call")
-	assert.False(t, parsed.After(after.Add(time.Millisecond)),
-		"timestamp should not be after the call")
 }

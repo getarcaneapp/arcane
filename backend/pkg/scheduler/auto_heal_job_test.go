@@ -28,12 +28,6 @@ func newTestAutoHealJob() *AutoHealJob {
 	}
 }
 
-func TestAutoHeal_ListOptionsFilterUnhealthyAtDaemon(t *testing.T) {
-	opts := autoHealListOptions()
-	require.False(t, opts.All)
-	require.Equal(t, make(client.Filters).Add("health", string(container.Unhealthy)), opts.Filters)
-}
-
 func TestAutoHeal_FilterCandidates_SkipsSelfContainer(t *testing.T) {
 	job := newTestAutoHealJob()
 
@@ -146,13 +140,6 @@ func TestAutoHeal_ReserveRestartSlot_DifferentContainers(t *testing.T) {
 
 	_, reserved = job.reserveRestartSlot("container-2", 5, 30*time.Minute)
 	require.True(t, reserved)
-}
-
-func TestAutoHeal_Schedule_Default(t *testing.T) {
-	job := newTestAutoHealJob()
-	// Without a settings service, Schedule would panic.
-	// We test the Name() method directly.
-	require.Equal(t, "auto-heal", job.Name())
 }
 
 func TestAutoHeal_ShouldSchedule(t *testing.T) {

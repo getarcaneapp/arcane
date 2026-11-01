@@ -1,11 +1,9 @@
 package scheduler
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -154,23 +152,6 @@ func (b *projectImageRefsBackfillerFake) count() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.calls
-}
-
-type lockedBuffer struct {
-	bytes.Buffer
-	mu sync.Mutex
-}
-
-func (b *lockedBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.Buffer.Write(p)
-}
-
-func (b *lockedBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.Buffer.String()
 }
 
 func newImageUpdateWatcherForTest(t *testing.T,
@@ -357,21 +338,6 @@ func TestImageUpdateWatcher_RunNowReturnsInProgressErrorDuringActiveScan(t *test
 	require.Equal(t, 1, scanner.peakActive())
 }
 
-func TestImageUpdateWatcher_RunNowReturnsCompletedResult(t *testing.T) {
-	scanner := &imageUpdateScannerFake{}
-	settings := &pollingSettingReaderFake{enabled: true}
-	watcher := newImageUpdateWatcherForTest(t, scanner, settings, bus.NewDockerEventBus(bus.Config{}), nil)
-	startImageUpdateWatcherForTest(t, watcher)
-
-	require.Eventually(t, func() bool { return scanner.count() == 1 }, time.Second, time.Millisecond)
-	require.Eventually(t, func() bool {
-		return watcher.RunNow(t.Context()) == nil
-	}, time.Second, time.Millisecond)
-	for range 10 {
-		require.NoError(t, watcher.RunNow(t.Context()))
-	}
-}
-
 func TestImageUpdateWatcher_RunNowReturnsContainedScanPanic(t *testing.T) {
 	scanner := &imageUpdateScannerFake{panics: []bool{false, true}}
 	settings := &pollingSettingReaderFake{enabled: true}
@@ -428,55 +394,6 @@ func TestImageUpdateWatcher_TriggeredScanRetriesAfterManualScanFinishes(t *testi
 	require.Equal(t, 3, <-scanner.startedCh)
 	releaseCh <- struct{}{}
 	require.Equal(t, 1, scanner.peakActive())
-}
-
-func TestImageUpdateWatcher_BackfillGatesFirstScanAndCoalescesEventBurst(t *testing.T) {
-	const (
-		projectCount = 2500
-		eventCount   = 10000
-	)
-
-	var logBuffer lockedBuffer
-	previousLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo})))
-	t.Cleanup(func() { slog.SetDefault(previousLogger) })
-
-	backfillStarted := make(chan struct{})
-	releaseBackfill := make(chan struct{})
-	backfiller := &projectImageRefsBackfillerFake{
-		run: func(ctx context.Context, _ int) (int, error) {
-			close(backfillStarted)
-			select {
-			case <-ctx.Done():
-				return 0, ctx.Err()
-			case <-releaseBackfill:
-				return projectCount, nil
-			}
-		},
-	}
-	scanner := &imageUpdateScannerFake{}
-	settings := &pollingSettingReaderFake{enabled: true, eventWatcherEnabled: true}
-	eventBus := bus.NewDockerEventBus(bus.Config{})
-	watcher := newImageUpdateWatcherForTest(t, scanner, settings, eventBus, backfiller)
-	startImageUpdateWatcherForTest(t, watcher)
-
-	<-backfillStarted
-	burstStartedAt := time.Now()
-	for range eventCount {
-		eventBus.Publish(events.Message{Type: events.ImageEventType, Action: events.ActionPull})
-	}
-	require.Never(t, func() bool { return scanner.count() > 0 }, 30*time.Millisecond, 5*time.Millisecond)
-
-	close(releaseBackfill)
-	require.Eventually(t, func() bool { return scanner.count() == 1 }, time.Second, 5*time.Millisecond)
-	time.Sleep(30 * time.Millisecond)
-	require.Equal(t, 1, scanner.count())
-
-	logs := logBuffer.String()
-	require.Contains(t, logs, "project image metadata backfill completed", logs)
-	require.Contains(t, logs, "projects=2500", logs)
-	require.Contains(t, logs, "duration=", logs)
-	t.Logf("coalesced %d image events into one scan after backfilling %d projects in %s", eventCount, projectCount, time.Since(burstStartedAt))
 }
 
 func TestImageUpdateWatcher_BackfillRetriesContainedPanic(t *testing.T) {

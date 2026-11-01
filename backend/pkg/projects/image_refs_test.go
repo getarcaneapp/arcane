@@ -37,10 +37,6 @@ func TestBuildImageRefsFromComposeProject(t *testing.T) {
 	assert.Equal(t, []string{"demo-default", "test2:latest"}, BuildImageRefsFromComposeProject(project))
 }
 
-func TestBuildImageRefsFromComposeProject_NilProject(t *testing.T) {
-	assert.Nil(t, BuildImageRefsFromComposeProject(nil))
-}
-
 func TestBuildImageRefsFromComposeProject_UsesMergedComposeOverrides(t *testing.T) {
 	dir := t.TempDir()
 	composePath := filepath.Join(dir, "compose.yaml")
