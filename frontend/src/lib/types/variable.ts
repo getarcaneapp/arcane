@@ -6,12 +6,13 @@ export interface GlobalVariable {
 	value: string; // '' when isSecret (server redacts)
 	isSecret: boolean;
 	allEnvironments: boolean;
+	injectIntoContainers: boolean; // false = only available for ${VAR} interpolation
 	environmentIds: string[];
 	createdAt: string;
 	updatedAt?: string;
 }
 
-export type GlobalVariableWritable = 'key' | 'value' | 'isSecret' | 'allEnvironments' | 'environmentIds';
+export type GlobalVariableWritable = 'key' | 'value' | 'isSecret' | 'allEnvironments' | 'injectIntoContainers' | 'environmentIds';
 
 export type GlobalVariableCreate = CreateRequest<GlobalVariable, GlobalVariableWritable, 'key' | 'value'>;
 

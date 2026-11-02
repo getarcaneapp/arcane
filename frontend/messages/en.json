@@ -4372,5 +4372,8 @@
   "podman_pids": "PIDs",
   "whole_number_range": "Enter a whole number from {min} to {max}.",
   "bytes_per_second": "{value}/s",
-  "no_cpu_limit": "No CPU limit"
+  "no_cpu_limit": "No CPU limit",
+  "inject_into_all_containers": "Inject into all containers",
+  "inject_into_all_containers_description": "Add the variable to every container's environment. When off, it is only available for variable substitution in compose files",
+  "injected": "Injected"
 }

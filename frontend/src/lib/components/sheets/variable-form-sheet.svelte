@@ -53,6 +53,7 @@
 	let scopeError = $state<string | null>(null);
 	let bulkText = $state('');
 	let bulkSecret = $state(false);
+	let bulkInject = $state(false);
 	let bulkError = $state<string | null>(null);
 
 	// Mirrors the backend conflict rule: a key may exist once per overlapping
@@ -80,7 +81,8 @@
 					.min(1, m.common_field_required({ field: m.key() }))
 					.refine((key) => !scopeConflicts(key), m.variables_duplicate_keys_error()),
 				value: z.string(),
-				isSecret: z.boolean()
+				isSecret: z.boolean(),
+				injectIntoContainers: z.boolean()
 			})
 			.superRefine((data, ctx) => {
 				// A stored secret is never sent back to the client, so turning the
@@ -94,7 +96,12 @@
 	const formData = untrack(() => {
 		let value = '';
 		if (variableToEdit && !variableToEdit.isSecret) value = variableToEdit.value;
-		return { key: variableToEdit?.key ?? '', value, isSecret: variableToEdit?.isSecret ?? false };
+		return {
+			key: variableToEdit?.key ?? '',
+			value,
+			isSecret: variableToEdit?.isSecret ?? false,
+			injectIntoContainers: variableToEdit?.injectIntoContainers ?? false
+		};
 	});
 
 	const form = createForm<typeof formSchema>(formSchema, formData);
@@ -143,6 +150,7 @@
 					key: entry.key,
 					value: entry.value,
 					isSecret: bulkSecret,
+					injectIntoContainers: bulkInject,
 					...scopeDto()
 				}))
 			});
@@ -153,7 +161,13 @@
 		const data = form.validate();
 		if (!data || !scopeValid) return;
 
-		const variable = { key: data.key, value: data.value, isSecret: data.isSecret, ...scopeDto() };
+		const variable = {
+			key: data.key,
+			value: data.value,
+			isSecret: data.isSecret,
+			injectIntoContainers: data.injectIntoContainers,
+			...scopeDto()
+		};
 		const error =
 			isEditMode && variableToEdit
 				? await onSubmit({ mode: 'edit', id: variableToEdit.id, variable: changedFields(variableToEdit, variable) })
@@ -246,6 +260,13 @@
 					bind:checked={bulkSecret}
 				/>
 
+				<SwitchWithLabel
+					id="variable-bulk-inject"
+					label={m.inject_into_all_containers()}
+					description={m.inject_into_all_containers_description()}
+					bind:checked={bulkInject}
+				/>
+
 				{@render scopeSelector()}
 			{:else}
 				<div>
@@ -284,6 +305,13 @@
 					label={m.secret()}
 					description={m.secret_description()}
 					bind:checked={inputs.isSecret.value}
+				/>
+
+				<SwitchWithLabel
+					id="variable-inject"
+					label={m.inject_into_all_containers()}
+					description={m.inject_into_all_containers_description()}
+					bind:checked={inputs.injectIntoContainers.value}
 				/>
 
 				{@render scopeSelector()}
