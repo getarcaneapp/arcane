@@ -339,19 +339,6 @@ export interface PodmanPodCreateResponse {
 	id: string;
 }
 
-export interface PodmanPodStats {
-	pod: string;
-	cid: string;
-	name: string;
-	cpu: string;
-	memUsage: string;
-	memUsageBytes: string;
-	mem: string;
-	netIo: string;
-	blockIo: string;
-	pids: string;
-}
-
 export interface PodmanPodTop {
 	titles: string[] | null;
 	processes: string[][] | null;

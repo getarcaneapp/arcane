@@ -275,6 +275,40 @@ func TestBuildContainerFilterAccessors_FiltersByLabel(t *testing.T) {
 	}
 }
 
+func TestBuildContainerFilterAccessors_FiltersByStatus(t *testing.T) {
+	items := []types.ContainerSummary{
+		{ID: "running", State: "running", Status: "Up 2 hours (healthy)"},
+		{ID: "sick", State: "running", Status: "Up 5 minutes (unhealthy)"},
+		{ID: "exited", State: "exited", Status: "Exited (0) 1 hour ago"},
+		{ID: "paused", State: "paused", Status: "Up 1 hour (Paused)"},
+		{ID: "created", State: "created", Status: "Created"},
+	}
+	paginationConfig := pagination.Config[types.ContainerSummary]{FilterAccessors: (&ContainerService{}).buildContainerPaginationConfig().FilterAccessors}
+
+	tests := []struct {
+		name   string
+		filter string
+		want   []string
+	}{
+		{name: "running", filter: "running", want: []string{"running", "sick"}},
+		{name: "exited", filter: "exited", want: []string{"exited"}},
+		{name: "stopped", filter: "stopped", want: []string{"exited", "paused", "created"}},
+		{name: "unhealthy", filter: "unhealthy", want: []string{"sick"}},
+		{name: "alternatives", filter: "paused,created", want: []string{"paused", "created"}},
+		{name: "dead", filter: "dead", want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := paginationConfig.SearchOrderAndPaginate(items, pagination.QueryParams{Filters: map[string]string{"status": tt.filter}})
+			var got []string
+			for _, item := range result.Items {
+				got = append(got, item.ID)
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestBuildCleanNetworkingConfigPreservesEndpointSettings(t *testing.T) {
 	containerInspect := container.InspectResponse{
 		NetworkSettings: &container.NetworkSettings{

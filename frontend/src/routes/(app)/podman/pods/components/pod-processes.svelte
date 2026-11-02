@@ -26,7 +26,6 @@
 		queryKey: queryKeys.podman.podTop(envId, podId),
 		queryFn: () => podmanService.getPodTop(podId, envId),
 		enabled: isRunning,
-		refetchInterval: 5000,
 		retry: false
 	}));
 

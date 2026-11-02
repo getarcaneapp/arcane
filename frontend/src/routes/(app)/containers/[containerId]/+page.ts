@@ -1,7 +1,8 @@
 import { error } from '@sveltejs/kit';
 
+import { containerDetailQuery } from '#lib/query/containers.js';
+import { projectDetailQuery } from '#lib/query/projects.js';
 import { queryKeys } from '#lib/query/query-keys.js';
-import { containerService } from '#lib/services/container-service.js';
 import { projectService } from '#lib/services/project-service.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
@@ -15,12 +16,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 	const envId = await resolveDetailEnvironmentId(url);
 	const containerId = params.containerId;
 
-	const containerResult = await tryCatch(
-		queryClient.query({
-			queryKey: queryKeys.containers.detail(envId, containerId),
-			queryFn: () => containerService.getContainerForEnvironment(envId, containerId)
-		})
-	);
+	const containerResult = await tryCatch(queryClient.query(containerDetailQuery(envId, containerId)));
 	if (containerResult.error !== null) {
 		throwPageLoadError(containerResult.error, 'Failed to load container details');
 	}
@@ -46,10 +42,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 					(await findByName({ filters: { name: composeProjectName }, pagination: { page: 1, limit: 1 } })) ??
 					(await findByName({ search: composeProjectName, pagination: { page: 1, limit: 100 } }));
 				if (matched) {
-					return await queryClient.query({
-						queryKey: queryKeys.projects.detail(envId, matched.id),
-						queryFn: () => projectService.getProjectForEnvironment(envId, matched.id)
-					});
+					return await queryClient.query(projectDetailQuery(envId, matched.id));
 				}
 				return null;
 			})()

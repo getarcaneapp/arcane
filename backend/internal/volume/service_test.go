@@ -557,3 +557,34 @@ func TestAggregateVolumeCountsSumsEnvironments(t *testing.T) {
 	require.Len(t, body.Environments, 2)
 	require.Len(t, body.FailedEnvironments, 1)
 }
+
+func TestVolumePaginationConfig_FiltersByLabel(t *testing.T) {
+	items := []types.Volume{
+		{Name: "tagged", Labels: map[string]string{"backup": "daily", "tags": "a,b"}},
+		{Name: "other", Labels: map[string]string{"backup": "weekly"}},
+		{Name: "bare", Labels: map[string]string{}},
+	}
+	paginationConfig := pagination.Config[types.Volume]{FilterAccessors: (&VolumeService{}).buildVolumePaginationConfig().FilterAccessors}
+
+	tests := []struct {
+		name   string
+		filter string
+		want   []string
+	}{
+		{name: "key only", filter: "backup", want: []string{"tagged", "other"}},
+		{name: "key and value", filter: "backup=daily", want: []string{"tagged"}},
+		{name: "value containing comma", filter: "tags=a,b", want: []string{"tagged"}},
+		{name: "missing key", filter: "missing", want: nil},
+		{name: "blank is a no-op", filter: " ", want: []string{"tagged", "other", "bare"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := paginationConfig.SearchOrderAndPaginate(items, pagination.QueryParams{Filters: map[string]string{"label": tt.filter}})
+			var got []string
+			for _, item := range result.Items {
+				got = append(got, item.Name)
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
+}

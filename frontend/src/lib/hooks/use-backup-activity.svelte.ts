@@ -21,8 +21,6 @@ export function useBackupActivity(
 	const activeQuery = createQuery(() => {
 		const environmentId = getEnvironmentId();
 		const discover = getDiscovery();
-		// Discovery has no activity stream; otherwise idle polling only runs while the stream is down.
-		const poll = !!discover || !clientStream.streamConnected;
 		return {
 			queryKey,
 			queryFn: async ({ signal }): Promise<string[]> => {
@@ -46,8 +44,6 @@ export function useBackupActivity(
 				}
 				return activities.filter(matches).map((activity) => activity.id);
 			},
-			// A running backup keeps polling as a fallback for missed stream events.
-			refetchInterval: (query) => (poll || query.state.data?.length ? 5000 : false),
 			staleTime: 0
 		};
 	});

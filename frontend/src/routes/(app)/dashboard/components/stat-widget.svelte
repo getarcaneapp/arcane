@@ -13,7 +13,7 @@
 		UpdateIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { DashboardWidgetId } from '#lib/types/auth.js';
+	import type { BuiltinDashboardWidgetType } from '#lib/types/auth.js';
 	import { bytes } from '#lib/utils/formatting.js';
 
 	let {
@@ -24,7 +24,7 @@
 		risk,
 		reclaimable
 	}: {
-		id: Extract<DashboardWidgetId, 'healthy' | 'attentionCount' | 'updates' | 'risk' | 'reclaimableTotal'>;
+		id: Extract<BuiltinDashboardWidgetType, 'healthy' | 'attentionCount' | 'updates' | 'risk' | 'reclaimableTotal'>;
 		healthy: { online: number; total: number; offlineNames: string[] };
 		attention: { count: number; critical: number; loading: boolean };
 		updates: { pending: number; checking: boolean };

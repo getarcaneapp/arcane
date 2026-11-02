@@ -15,6 +15,7 @@
 	import type { VolumeCreate, VolumeUsageCounts } from '#lib/types/docker.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { pinViewAction } from '#lib/utils/dashboard-layout.js';
 	import { hasShownPermission, readableEnvironments } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 
@@ -86,6 +87,7 @@
 				disabled: !resourcesReady || createVolumeMutation.isPending
 			});
 		}
+		buttons.push(pinViewAction('volumes', pageState.requestOptions, readableEnvironments('volumes:list')));
 		buttons.push({
 			id: 'refresh',
 			action: 'refresh',

@@ -46,7 +46,6 @@
 		queryKey: queryKeys.podman.pod(envId, data.pod.id),
 		queryFn: () => podmanService.getPod(data.pod.id, envId),
 		initialData: data.pod,
-		refetchInterval: 10000,
 		retry: false
 	}));
 	const pod = $derived(podQuery.data ?? data.pod);
@@ -160,7 +159,7 @@
 
 			<Tabs.Content value="stats" class="h-full">
 				{#if activeTab === 'stats'}
-					<PodStats podName={pod.name} {envId} {isRunning} />
+					<PodStats containers={pod.containers ?? []} {envId} {isRunning} />
 				{/if}
 			</Tabs.Content>
 

@@ -738,6 +738,9 @@ func (s *VolumeService) buildVolumePaginationConfig() pagination.Config[types.Vo
 					return kit.Ternary(filterValue == "true", v.InUse, filterValue != "false" || !v.InUse)
 				},
 			},
+			pagination.LabelFilter(func(v types.Volume) map[string]string {
+				return v.Labels
+			}),
 		},
 	}
 }

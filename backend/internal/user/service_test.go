@@ -3,6 +3,8 @@ package user_test
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -307,40 +309,206 @@ func TestUpdateUserNormalizesDashboardLayout(t *testing.T) {
 	userSvc, _ := setupUserAndRoleServices(t)
 	ctx := t.Context()
 
-	u := createTestUser(t, userSvc, "user-1", "dashboard-layout-user")
-	u.Preferences.DashboardLayout = &[]types.DashboardWidgetLayout{
-		{ID: "attention", X: 10, Y: -2, W: 20, H: 30},
-		{ID: "unknown", W: 6, H: 4},
-		{ID: "healthy", X: 11, W: 1, H: 1},
-		{ID: "attention", W: 4, H: 4},
-		{ID: "jobs"},
+	tooManyWidgets := make([]types.DashboardWidgetLayout, 0, 55)
+	cappedWidgets := make([]types.DashboardWidgetLayout, 0, 50)
+	for i := range 55 {
+		tooManyWidgets = append(tooManyWidgets, types.DashboardWidgetLayout{
+			ID:   fmt.Sprintf("query-%d", i),
+			Type: "resourceQuery",
+		})
+		if i < 50 {
+			cappedWidgets = append(cappedWidgets, types.DashboardWidgetLayout{
+				ID:   fmt.Sprintf("query-%d", i),
+				Type: "resourceQuery",
+				W:    2,
+				H:    2,
+			})
+		}
+	}
+	manyFilters := make(map[string]string, 25)
+	for i := range 25 {
+		manyFilters[fmt.Sprintf("key-%02d", i)] = "value"
+	}
+	cappedFilters := make(map[string]string, 20)
+	for i := range 20 {
+		cappedFilters[fmt.Sprintf("key-%02d", i)] = "value"
+	}
+
+	tests := []struct {
+		name         string
+		layout       []types.DashboardWidgetLayout
+		want         []types.DashboardWidgetLayout
+		generatedIDs []int
+	}{
 		{
-			ID:     "memory",
-			X:      2,
-			Y:      3,
-			W:      5,
-			H:      6,
-			Hidden: true,
+			name: "legacy built-ins resolve type from id and clamp",
+			layout: []types.DashboardWidgetLayout{
+				{ID: "attention", X: 10, Y: -2, W: 20, H: 30},
+				{ID: "unknown", W: 6, H: 4},
+				{ID: "healthy", X: 11, W: 1, H: 1},
+				{ID: "attention", W: 4, H: 4},
+				{ID: "jobs"},
+				{
+					ID:     "memory",
+					X:      2,
+					Y:      3,
+					W:      5,
+					H:      6,
+					Hidden: true,
+				},
+			},
+			want: []types.DashboardWidgetLayout{
+				{ID: "attention", Type: "attention", W: 12, H: 12},
+				{ID: "healthy", Type: "healthy", X: 10, W: 2, H: 2},
+				{ID: "jobs", Type: "jobs", W: 3, H: 3},
+				{
+					ID:     "memory",
+					Type:   "memory",
+					X:      2,
+					Y:      3,
+					W:      5,
+					H:      6,
+					Hidden: true,
+				},
+			},
+		},
+		{
+			name: "multi instances kept and invalid entries dropped",
+			layout: []types.DashboardWidgetLayout{
+				{ID: "q1", Type: "resourceQuery", Title: "  Running  ", W: 4, H: 3},
+				{ID: "q2", Type: "resourceQuery", W: 4, H: 3},
+				{ID: "q1", Type: "resourceQuery", W: 4, H: 3},
+				{ID: "jobs", Type: "jobs"},
+				{ID: "jobs-2", Type: "jobs"},
+				{ID: "jobs", Type: "jobs"},
+				{ID: "w1", Type: "bogus"},
+			},
+			want: []types.DashboardWidgetLayout{
+				{ID: "q1", Type: "resourceQuery", Title: "Running", W: 4, H: 3},
+				{ID: "q2", Type: "resourceQuery", W: 4, H: 3},
+				{ID: "jobs", Type: "jobs", W: 3, H: 3},
+			},
+		},
+		{
+			name: "multi widgets without id get unique ids and built-ins without id are dropped",
+			layout: []types.DashboardWidgetLayout{
+				{Type: "resourceQuery", W: 4, H: 3},
+				{Type: "containerStats"},
+				{Type: "healthy"},
+				{ID: "q1", Type: "resourceQuery", W: 4, H: 3},
+			},
+			want: []types.DashboardWidgetLayout{
+				{Type: "resourceQuery", W: 4, H: 3},
+				{Type: "containerStats", W: 4, H: 5},
+				{ID: "q1", Type: "resourceQuery", W: 4, H: 3},
+			},
+			generatedIDs: []int{0, 1},
+		},
+		{
+			name: "title capped at 80 runes",
+			layout: []types.DashboardWidgetLayout{
+				{ID: "q1", Type: "resourceQuery", Title: strings.Repeat("é", 90)},
+			},
+			want: []types.DashboardWidgetLayout{
+				{ID: "q1", Type: "resourceQuery", Title: strings.Repeat("é", 80), W: 2, H: 2},
+			},
+		},
+		{
+			name:   "layout capped at 50 widgets",
+			layout: tooManyWidgets,
+			want:   cappedWidgets,
+		},
+		{
+			name: "config sanitized on multi types and dropped on built-ins",
+			layout: []types.DashboardWidgetLayout{
+				{
+					ID:   "q1",
+					Type: "resourceQuery",
+					Config: &types.DashboardWidgetConfig{
+						EnvironmentIDs: []string{"0", "", "env-1", "0"},
+						ResourceKind:   "pods",
+						Search:         strings.Repeat("s", 300),
+						Filters:        manyFilters,
+						Display:        "grid",
+						Limit:          500,
+					},
+				},
+				{
+					ID:   "q2",
+					Type: "resourceQuery",
+					Config: &types.DashboardWidgetConfig{
+						ResourceKind: "containers",
+						Filters:      map[string]string{" ": "dropped", "status": "running"},
+						Display:      "list",
+					},
+				},
+				{
+					ID: "healthy",
+					Config: &types.DashboardWidgetConfig{
+						ResourceKind: "containers",
+					},
+				},
+			},
+			want: []types.DashboardWidgetLayout{
+				{
+					ID:   "q1",
+					Type: "resourceQuery",
+					W:    2,
+					H:    2,
+					Config: &types.DashboardWidgetConfig{
+						EnvironmentIDs: []string{"0", "env-1"},
+						Search:         strings.Repeat("s", 256),
+						Filters:        cappedFilters,
+						Display:        "count",
+						Limit:          50,
+					},
+				},
+				{
+					ID:   "q2",
+					Type: "resourceQuery",
+					W:    2,
+					H:    2,
+					Config: &types.DashboardWidgetConfig{
+						ResourceKind: "containers",
+						Filters:      map[string]string{"status": "running"},
+						Display:      "list",
+						Limit:        5,
+					},
+				},
+				{ID: "healthy", Type: "healthy", W: 2, H: 2},
+			},
 		},
 	}
-	_, err := userSvc.UpdateUser(ctx, u, nil)
-	require.NoError(t, err)
 
-	reloaded, err := userSvc.GetUserByID(ctx, u.ID)
-	require.NoError(t, err)
-	require.Equal(t, &[]types.DashboardWidgetLayout{
-		{ID: "attention", W: 12, H: 12},
-		{ID: "healthy", X: 10, W: 2, H: 2},
-		{ID: "jobs", W: 3, H: 3},
-		{
-			ID:     "memory",
-			X:      2,
-			Y:      3,
-			W:      5,
-			H:      6,
-			Hidden: true,
-		},
-	}, reloaded.Preferences.DashboardLayout)
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			u := createTestUser(t, userSvc, fmt.Sprintf("user-%d", i), fmt.Sprintf("dashboard-layout-user-%d", i))
+			u.Preferences.DashboardLayout = &tt.layout
+			_, err := userSvc.UpdateUser(ctx, u, nil)
+			require.NoError(t, err)
+
+			reloaded, err := userSvc.GetUserByID(ctx, u.ID)
+			require.NoError(t, err)
+			got := slices.Clone(*reloaded.Preferences.DashboardLayout)
+			ids := make([]string, 0, len(tt.generatedIDs))
+			for _, i := range tt.generatedIDs {
+				require.NotEmpty(t, got[i].ID)
+				ids = append(ids, got[i].ID)
+				got[i] = types.DashboardWidgetLayout{
+					Type:   got[i].Type,
+					Title:  got[i].Title,
+					X:      got[i].X,
+					Y:      got[i].Y,
+					W:      got[i].W,
+					H:      got[i].H,
+					Hidden: got[i].Hidden,
+					Config: got[i].Config,
+				}
+			}
+			require.Len(t, slices.Compact(slices.Sorted(slices.Values(ids))), len(ids))
+			require.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func themePalette(color string) types.ThemePalette {

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { createQuery, createMutation } from '@tanstack/svelte-query';
+	import { onMount } from 'svelte';
+
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -11,19 +13,15 @@
 	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
-	import {
-		isJobRunPending,
-		jobStatusLabel,
-		jobStatusTone,
-		jobStepLabel,
-	} from './job-status';
+
+	import { jobStatusLabel, jobStatusTone, jobStepLabel } from './job-status';
 
 	let {
 		jobId,
 		environmentId,
 		initialRunId,
 		onUpdate,
-		onOpenActivity,
+		onOpenActivity
 	}: {
 		jobId: string;
 		environmentId: string;
@@ -37,102 +35,95 @@
 		activityStore.openCenter(activityId, undefined, activityEnvironmentId);
 	}
 	let page = $state(1);
-	let selected = $state<string | undefined>(initialRunId);
+	let selected = $derived<string | undefined>(initialRunId);
 	const runs = createQuery(() => ({
 		queryKey: queryKeys.jobs.runs(environmentId, jobId, page),
-		queryFn: () => jobScheduleService.listRuns(jobId, environmentId, page),
-		// Idle polling still picks up scheduled runs.
-		refetchInterval: (query) =>
-			query.state.data?.runs.some((run) => isJobRunPending(run.status))
-				? 5000
-				: 30_000,
+		queryFn: () => jobScheduleService.listRuns(jobId, environmentId, page)
 	}));
 	const activeRunId = $derived(selected ?? runs.data?.runs[0]?.id);
 	const detail = createQuery(() => ({
 		queryKey: queryKeys.jobs.run(environmentId, jobId, activeRunId),
-		queryFn: () =>
-			jobScheduleService.getRun(jobId, activeRunId!, environmentId),
-		enabled: !!activeRunId,
-		refetchInterval: (query) =>
-			isJobRunPending(query.state.data?.status) ? 5000 : false,
+		queryFn: () => jobScheduleService.getRun(jobId, activeRunId!, environmentId),
+		enabled: !!activeRunId
 	}));
+	onMount(() => {
+		let seen: string | undefined;
+		return activityStore.subscribeActivities((activities) => {
+			const next = activities
+				.filter(
+					(activity) =>
+						activity.resourceType === 'job' &&
+						activity.resourceId === jobId &&
+						(activity.environmentId === environmentId || activity.sourceEnvironmentId === environmentId)
+				)
+				.map((activity) => `${activity.id}:${activity.status}:${activity.updatedAt}`)
+				.join('|');
+			if (seen !== undefined && next !== seen) {
+				void runs.refetch();
+				void detail.refetch();
+			}
+			seen = next;
+		});
+	});
 	const action = createMutation(() => ({
-		mutationFn: ({
-			runId,
-			action,
-		}: {
-			runId: string;
-			action: 'retry' | 'cancel';
-		}) => jobScheduleService.updateRun(jobId, runId, action, environmentId),
+		mutationFn: ({ runId, action }: { runId: string; action: 'retry' | 'cancel' }) =>
+			jobScheduleService.updateRun(jobId, runId, action, environmentId),
 		onSuccess: () => {
 			void runs.refetch();
 			void detail.refetch();
 			void activityStore.refresh();
 			onUpdate?.();
-		},
+		}
 	}));
 	const selectedRun = $derived(activeRunId ? detail.data : undefined);
 	// The workflow target only links a run to its workflow instance.
-	const targets = $derived(
-		selectedRun?.outcome.targets?.filter(
-			(target) => target.resourceType !== 'workflow',
-		) ?? [],
-	);
+	const targets = $derived(selectedRun?.outcome.targets?.filter((target) => target.resourceType !== 'workflow') ?? []);
 	const hasPrev = $derived(page > 1);
-	const hasNext = $derived(
-		!!runs.data && page * runs.data.limit < runs.data.total,
-	);
+	const hasNext = $derived(!!runs.data && page * runs.data.limit < runs.data.total);
 	const metadata = $derived(
 		[
 			{
 				id: 'remote',
-				visible:
-					selectedRun?.status === 'waiting' &&
-					selectedRun.remoteOutcome,
+				visible: selectedRun?.status === 'waiting' && selectedRun.remoteOutcome,
 				label: m.jobs_remote_status(),
-				value: jobStatusLabel(selectedRun?.remoteOutcome?.status ?? ''),
+				value: jobStatusLabel(selectedRun?.remoteOutcome?.status ?? '')
 			},
 			{
 				id: 'message',
 				visible: selectedRun?.outcome.message,
 				label: '',
 				value: selectedRun?.outcome.message,
-				class: 'break-words whitespace-pre-wrap',
+				class: 'break-words whitespace-pre-wrap'
 			},
 			{
 				id: 'confirmed',
 				visible: selectedRun?.lastConfirmedAt,
 				label: m.jobs_last_confirmed(),
-				value: formatDateTimeShort(selectedRun?.lastConfirmedAt),
+				value: formatDateTimeShort(selectedRun?.lastConfirmedAt)
 			},
 			{
 				id: 'retry',
 				visible: selectedRun?.nextAttempt,
 				label: m.jobs_next_retry(),
-				value: formatDateTimeShort(selectedRun?.nextAttempt),
-			},
-		].filter((item) => item.visible),
+				value: formatDateTimeShort(selectedRun?.nextAttempt)
+			}
+		].filter((item) => item.visible)
 	);
 	const availableActions = $derived(
 		[
 			{
 				id: 'retry' as const,
-				visible: ['failed', 'partial', 'needs_attention'].includes(
-					selectedRun?.status ?? '',
-				),
+				visible: ['failed', 'partial', 'needs_attention'].includes(selectedRun?.status ?? ''),
 				variant: 'default' as const,
-				label: m.jobs_retry_run(),
+				label: m.jobs_retry_run()
 			},
 			{
 				id: 'cancel' as const,
-				visible:
-					selectedRun?.status === 'queued' &&
-					selectedRun.attemptCount === 0 &&
-					!selectedRun.remoteDeliveryAttempted,
+				visible: selectedRun?.status === 'queued' && selectedRun.attemptCount === 0 && !selectedRun.remoteDeliveryAttempted,
 				variant: 'outline' as const,
-				label: m.jobs_cancel_run(),
-			},
-		].filter((item) => item.visible),
+				label: m.jobs_cancel_run()
+			}
+		].filter((item) => item.visible)
 	);
 
 	function changePage(delta: number) {
@@ -142,9 +133,7 @@
 </script>
 
 {#snippet outcomeMessage(message: string | undefined)}
-	{#if message}<p
-			class="break-words whitespace-pre-wrap text-muted-foreground"
-		>
+	{#if message}<p class="break-words whitespace-pre-wrap text-muted-foreground">
 			{message}
 		</p>{/if}
 {/snippet}
@@ -152,12 +141,9 @@
 {#snippet outcomeActivity(
 	activityId: string | undefined,
 	label = m.jobs_activity_output(),
-	activityEnvironmentId = environmentId,
+	activityEnvironmentId = environmentId
 )}
-	{#if activityId}<Button
-			variant="link"
-			size="inline"
-			onclick={() => openActivity(activityId, activityEnvironmentId)}
+	{#if activityId}<Button variant="link" size="inline" onclick={() => openActivity(activityId, activityEnvironmentId)}
 			>{label}</Button
 		>{/if}
 {/snippet}
@@ -170,142 +156,87 @@
 					{extractApiErrorMessage(runs.error)}
 				</p>
 			{/if}
-			<div
-				class="divide-y divide-border/50 overflow-hidden rounded-lg border border-border/60"
-			>
+			<div class="divide-y divide-border/50 overflow-hidden rounded-lg border border-border/60">
 				{#each runs.data?.runs ?? [] as run (run.id)}
 					<button
 						type="button"
 						class={cn(
 							'flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/40',
-							activeRunId === run.id && 'bg-muted/50',
+							activeRunId === run.id && 'bg-muted/50'
 						)}
 						aria-pressed={activeRunId === run.id}
 						onclick={() => (selected = run.id)}
 					>
 						<span class="flex min-w-0 flex-col">
-							<span class="truncate tabular-nums"
-								>{formatDateTimeShort(run.createdAt)}</span
-							>
-							<span class="truncate text-xs text-muted-foreground"
-								>{m.volume_backup_trigger()}: {run.trigger}</span
-							>
+							<span class="truncate tabular-nums">{formatDateTimeShort(run.createdAt)}</span>
+							<span class="truncate text-xs text-muted-foreground">{m.volume_backup_trigger()}: {run.trigger}</span>
 						</span>
-						<Badge variant={jobStatusTone(run.status)} size="sm"
-							>{jobStatusLabel(run.status)}</Badge
-						>
+						<Badge variant={jobStatusTone(run.status)} size="sm">{jobStatusLabel(run.status)}</Badge>
 					</button>
 				{:else}
-					<p
-						class="px-3 py-6 text-center text-sm text-muted-foreground"
-					>
-						{#if runs.isPending}<Spinner
-								class="mx-auto size-4"
-							/>{:else}{m.jobs_run_empty()}{/if}
+					<p class="px-3 py-6 text-center text-sm text-muted-foreground">
+						{#if runs.isPending}<Spinner class="mx-auto size-4" />{:else}{m.jobs_run_empty()}{/if}
 					</p>
 				{/each}
 			</div>
 			{#if hasPrev || hasNext}
 				<div class="flex justify-between gap-2">
-					<Button
-						variant="outline"
-						size="sm"
-						disabled={!hasPrev || runs.isFetching}
-						onclick={() => changePage(-1)}
+					<Button variant="outline" size="sm" disabled={!hasPrev || runs.isFetching} onclick={() => changePage(-1)}
 						>{m.jobs_run_previous()}</Button
 					>
-					<Button
-						variant="outline"
-						size="sm"
-						disabled={!hasNext || runs.isFetching}
-						onclick={() => changePage(1)}
+					<Button variant="outline" size="sm" disabled={!hasNext || runs.isFetching} onclick={() => changePage(1)}
 						>{m.jobs_run_next()}</Button
 					>
 				</div>
 			{/if}
 		</div>
-		<div
-			class="order-first flex min-w-0 flex-col gap-4 @3xl:sticky @3xl:top-4 @3xl:order-none @3xl:self-start"
-		>
+		<div class="order-first flex min-w-0 flex-col gap-4 @3xl:sticky @3xl:top-4 @3xl:order-none @3xl:self-start">
 			{#if detail.error}<p class="text-sm text-destructive">
 					{extractApiErrorMessage(detail.error)}
 				</p>{/if}
 			{#if selectedRun}
 				{@const run = selectedRun}
-				<div
-					class="space-y-3 rounded-lg border border-border/60 p-4 text-sm"
-				>
+				<div class="space-y-3 rounded-lg border border-border/60 p-4 text-sm">
 					<div class="flex flex-wrap items-center gap-2">
-						<Badge variant={jobStatusTone(run.status)}
-							>{jobStatusLabel(run.status)}</Badge
-						>
-						<span
-							class="font-mono text-xs break-all text-muted-foreground"
-							>{run.id}</span
-						>
+						<Badge variant={jobStatusTone(run.status)}>{jobStatusLabel(run.status)}</Badge>
+						<span class="font-mono text-xs break-all text-muted-foreground">{run.id}</span>
 					</div>
 					{#each metadata as item (item.id)}<p class={item.class}>
 							{item.label ? `${item.label}: ` : ''}{item.value}
 						</p>{/each}
 					<div class="flex flex-wrap gap-4">
-						{@render outcomeActivity(
-							run.activityId,
-							m.jobs_activity_summary(),
-							run.activityEnvironmentId ?? environmentId,
-						)}
+						{@render outcomeActivity(run.activityId, m.jobs_activity_summary(), run.activityEnvironmentId ?? environmentId)}
 						{@render outcomeActivity(run.outcome.activityId)}
 					</div>
 					<h4 class="font-medium">
 						{m.jobs_run_attempts()}: {run.attemptCount}
 					</h4>
 					{#each run.attempts ?? [] as attempt (attempt.number)}
-						<div
-							class="space-y-1 rounded-lg border border-border/60 p-2"
-						>
+						<div class="space-y-1 rounded-lg border border-border/60 p-2">
 							<p>
-								{attempt.number} · {formatDateTimeShort(
-									attempt.startedAt,
-								)} · {jobStatusLabel(attempt.outcome.status)}
+								{attempt.number} · {formatDateTimeShort(attempt.startedAt)} · {jobStatusLabel(attempt.outcome.status)}
 							</p>
 							{@render outcomeMessage(attempt.outcome.message)}
 						</div>
 					{/each}
 					{#if run.outcome.steps?.length}
 						<h4 class="font-medium">{m.jobs_run_steps()}</h4>
-						<ol
-							class="divide-y divide-border/50 rounded-lg border border-border/60"
-						>
+						<ol class="divide-y divide-border/50 rounded-lg border border-border/60">
 							{#each run.outcome.steps as step (step.name)}
 								<li class="space-y-1 px-2 py-1.5">
-									<div
-										class="flex flex-wrap items-center justify-between gap-2"
-									>
+									<div class="flex flex-wrap items-center justify-between gap-2">
 										<span>{jobStepLabel(step.name)}</span>
-										<span
-											class="flex items-center gap-2 text-xs text-muted-foreground tabular-nums"
-										>
-											{#if step.total}{m.jobs_step_progress(
-													{
-														completed:
-															step.completed ?? 0,
-														total: step.total,
-													},
-												)}{/if}
-											{#if step.failed}<span
-													class="text-destructive"
+										<span class="flex items-center gap-2 text-xs text-muted-foreground tabular-nums">
+											{#if step.total}{m.jobs_step_progress({
+													completed: step.completed ?? 0,
+													total: step.total
+												})}{/if}
+											{#if step.failed}<span class="text-destructive"
 													>{m.jobs_step_failed({
-														count: step.failed,
+														count: step.failed
 													})}</span
 												>{/if}
-											<Badge
-												variant={jobStatusTone(
-													step.status,
-												)}
-												size="sm"
-												>{jobStatusLabel(
-													step.status,
-												)}</Badge
-											>
+											<Badge variant={jobStatusTone(step.status)} size="sm">{jobStatusLabel(step.status)}</Badge>
 										</span>
 									</div>
 									{@render outcomeMessage(step.message)}
@@ -316,13 +247,9 @@
 					{#if targets.length}
 						<h4 class="font-medium">{m.jobs_run_targets()}</h4>
 						{#each targets as target (target.id)}
-							<div
-								class="space-y-1 rounded-lg border border-border/60 p-2"
-							>
+							<div class="space-y-1 rounded-lg border border-border/60 p-2">
 								<p class="break-all">
-									{target.id} · {jobStatusLabel(
-										target.status,
-									)}
+									{target.id} · {jobStatusLabel(target.status)}
 								</p>
 								{@render outcomeMessage(target.message)}
 								{@render outcomeActivity(target.activityId)}
@@ -342,7 +269,7 @@
 									onclick={() =>
 										action.mutate({
 											runId: run.id,
-											action: item.id,
+											action: item.id
 										})}>{item.label}</Button
 								>
 							{/each}

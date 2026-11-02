@@ -1531,6 +1531,9 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[types.ImageS
 					}
 				},
 			},
+			pagination.LabelFilter(func(i types.ImageSummary) map[string]any {
+				return i.Labels
+			}),
 		},
 	}
 }

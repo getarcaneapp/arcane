@@ -14,7 +14,6 @@ import type {
 	PodmanPodCreateResponse,
 	PodmanPodInspect,
 	PodmanPodPruneReport,
-	PodmanPodStats,
 	PodmanPodTop,
 	PodmanQuadletDetail,
 	PodmanQuadletFile,
@@ -60,11 +59,6 @@ class PodmanService extends BaseAPIService {
 
 	async getPod(podId: string, environmentId: string): Promise<PodmanPodInspect> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/podman/pods/${encodeURIComponent(podId)}`));
-	}
-
-	async getPodStats(names: string[], environmentId: string): Promise<PodmanPodStats[]> {
-		const params = names.length > 0 ? { names: names.join(',') } : undefined;
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/podman/pods/stats`, { params }));
 	}
 
 	async getPodTop(podId: string, environmentId: string): Promise<PodmanPodTop> {

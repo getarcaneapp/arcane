@@ -98,3 +98,47 @@ func TestCollectMaxAge(t *testing.T) {
 		})
 	}
 }
+
+func TestCollectReportsIOAndPIDs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/containers/web/stats") {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = io.WriteString(w, `{
+			"read":"2026-01-01T00:00:00Z",
+			"memory_stats":{"usage":100,"limit":1000},
+			"pids_stats":{"current":7},
+			"networks":{"eth0":{"rx_bytes":10,"tx_bytes":20},"eth1":{"rx_bytes":1,"tx_bytes":2}},
+			"blkio_stats":{"io_service_bytes_recursive":[
+				{"major":8,"minor":0,"op":"Read","value":300},
+				{"major":8,"minor":16,"op":"read","value":5},
+				{"major":8,"minor":0,"op":"Write","value":400},
+				{"major":8,"minor":0,"op":"Total","value":705}
+			]}
+		}`)
+	}))
+	t.Cleanup(server.Close)
+	dockerClient, err := client.New(
+		client.WithHost(server.URL),
+		client.WithAPIVersion("1.41"),
+		client.WithHTTPClient(server.Client()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = dockerClient.Close() })
+
+	svc := New(Params{
+		GetClient:  func(context.Context) (*client.Client, error) { return dockerClient, nil },
+		DockerHost: func() string { return "test" },
+		CacheTTL:   ContainerResourceSampleTTL,
+	})
+	samples, err := svc.Collect(t.Context(), []types.ContainerSummary{{ID: "web", State: "running"}}, ContainerResourceSampleTTL, false)
+	require.NoError(t, err)
+	require.Contains(t, samples, "web")
+	sample := samples["web"]
+	require.Equal(t, uint64(305), sample.BlockReadBytes)
+	require.Equal(t, uint64(400), sample.BlockWriteBytes)
+	require.Equal(t, uint64(11), sample.NetworkRxBytes)
+	require.Equal(t, uint64(22), sample.NetworkTxBytes)
+	require.Equal(t, uint64(7), sample.PIDs)
+}

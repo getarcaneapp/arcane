@@ -663,6 +663,9 @@ func (s *NetworkService) buildNetworkPaginationConfig() pagination.Config[types.
 					return kit.Ternary(filterValue == "true", n.InUse || n.IsDefault, filterValue != "false" || (!n.InUse && !n.IsDefault))
 				},
 			},
+			pagination.LabelFilter(func(n types.NetworkSummary) map[string]string {
+				return n.Labels
+			}),
 		},
 	}
 }

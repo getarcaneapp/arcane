@@ -205,6 +205,11 @@ export interface ContainerResourceSample {
 	memoryUsageBytes: number;
 	memoryLimitBytes: number;
 	sampleTime: string;
+	blockReadBytes: number;
+	blockWriteBytes: number;
+	networkRxBytes: number;
+	networkTxBytes: number;
+	pids: number;
 }
 
 export interface ContainerResourceSampleSubscription {

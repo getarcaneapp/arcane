@@ -7,6 +7,7 @@ import type { ReconnectingWebSocket } from '#lib/utils/ws.js';
 
 /** The server samples at most this many containers per environment stream. */
 const MAX_SUBSCRIBED_CONTAINERS = 500;
+export const SAMPLE_HISTORY_LIMIT = 60;
 
 interface EnvironmentStream {
 	ws: ReconnectingWebSocket<ContainerResourceSampleBatch>;
@@ -18,6 +19,7 @@ interface EnvironmentStream {
 export class ContainerStatsManager {
 	private streams = new Map<string, EnvironmentStream>();
 	private samples = new SvelteMap<string, ContainerResourceSample>();
+	private history = new SvelteMap<string, ContainerResourceSample[]>();
 	private loadingStates = new SvelteMap<string, boolean>();
 	private errorStates = new SvelteMap<string, boolean>();
 
@@ -29,6 +31,14 @@ export class ContainerStatsManager {
 		const sample = this.samples.get(containerId);
 		if (!sample) return undefined;
 		return { usage: sample.memoryUsageBytes, limit: sample.memoryLimitBytes };
+	}
+
+	getSample(containerId: string): ContainerResourceSample | undefined {
+		return this.samples.get(containerId);
+	}
+
+	getHistory(containerId: string): ContainerResourceSample[] {
+		return this.history.get(containerId) ?? [];
 	}
 
 	isLoading(containerId: string): boolean {
@@ -80,6 +90,7 @@ export class ContainerStatsManager {
 		for (const stream of this.streams.values()) stream.ws.close();
 		this.streams.clear();
 		this.samples.clear();
+		this.history.clear();
 		this.loadingStates.clear();
 		this.errorStates.clear();
 	}
@@ -120,10 +131,15 @@ export class ContainerStatsManager {
 		for (const [id, key] of stream.rowKeys) {
 			const sample = batch.samples?.[id];
 			if (sample) {
+				const history = this.history.get(key) ?? [];
+				if (history.at(-1)?.sampleTime !== sample.sampleTime) {
+					this.history.set(key, [...history.slice(1 - SAMPLE_HISTORY_LIMIT), sample]);
+				}
 				this.samples.set(key, sample);
 				this.errorStates.delete(key);
 			} else {
 				this.samples.delete(key);
+				this.history.delete(key);
 			}
 			this.loadingStates.set(key, false);
 		}
@@ -132,6 +148,7 @@ export class ContainerStatsManager {
 	private markUnavailable(stream: EnvironmentStream): void {
 		for (const key of stream.rowKeys.values()) {
 			this.samples.delete(key);
+			this.history.delete(key);
 			this.loadingStates.set(key, false);
 			this.errorStates.set(key, true);
 		}
@@ -140,6 +157,7 @@ export class ContainerStatsManager {
 	private forget(keys: Iterable<string>): void {
 		for (const key of keys) {
 			this.samples.delete(key);
+			this.history.delete(key);
 			this.loadingStates.delete(key);
 			this.errorStates.delete(key);
 		}

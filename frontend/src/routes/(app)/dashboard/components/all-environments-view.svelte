@@ -42,7 +42,7 @@
 	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { DashboardWidgetId, DashboardWidgetLayout } from '#lib/types/auth.js';
+	import type { BuiltinDashboardWidgetType } from '#lib/types/auth.js';
 	import type { PruneType, SystemPruneRequest } from '#lib/types/automation.js';
 	import type { ContainerStatusCounts, ImageUsageCounts } from '#lib/types/docker.js';
 	import type { Environment, EnvironmentVulnerabilitySummary } from '#lib/types/environment.js';
@@ -54,6 +54,15 @@
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasAnyPermission, hasPermission } from '#lib/utils/auth.js';
+	import {
+		addDashboardWidget,
+		DASHBOARD_WIDGET_TYPES,
+		type DashboardWidget,
+		defaultDashboardLayout,
+		MAX_DASHBOARD_WIDGETS,
+		resolveDashboardLayout,
+		showWidget
+	} from '#lib/utils/dashboard-layout.js';
 	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 	import {
 		limitEnvironments,
@@ -76,7 +85,6 @@
 		type AttentionItem,
 		type EnvironmentJob
 	} from '../overview.helpers';
-	import { DASHBOARD_WIDGETS, defaultDashboardLayout, resolveDashboardLayout, showWidget } from '../widgets';
 	import ActivityList from './activity-list.svelte';
 	import AttentionList from './attention-list.svelte';
 	import DashboardPanel from './dashboard-panel.svelte';
@@ -88,6 +96,8 @@
 	import TopMemory from './top-memory.svelte';
 	import UpcomingJobs from './upcoming-jobs.svelte';
 	import WidgetGrid from './widget-grid.svelte';
+	import CustomWidget from './widgets/custom-widget.svelte';
+	import WidgetSheet from './widgets/widget-sheet.svelte';
 
 	let {
 		heroGreeting,
@@ -136,7 +146,7 @@
 		pagination: { page: 1, limit: 5 },
 		sort: { column: 'memoryUsage', direction: 'desc' as const }
 	};
-	const ATTENTION_WIDGETS: DashboardWidgetId[] = ['attention', 'attentionCount', 'environments'];
+	const ATTENTION_WIDGETS: BuiltinDashboardWidgetType[] = ['attention', 'attentionCount', 'environments'];
 	const API_KEY_EXPIRY_WINDOW_HOURS = 14 * 24;
 
 	let isRefreshing = $state(false);
@@ -173,15 +183,17 @@
 	const loadableEnvironmentIds = $derived(new Set(loadableEnvironmentCards.map(({ environment }) => environment.id)));
 
 	let editingLayout = $state(false);
-	let draftLayout = $state.raw<DashboardWidgetLayout[]>([]);
+	let draftLayout = $state.raw<DashboardWidget[]>([]);
 	const savedLayout = $derived(resolveDashboardLayout(userStore.current?.preferences?.dashboardLayout, environmentCards.length));
 	const layout = $derived(editingLayout ? draftLayout : savedLayout);
-	const hiddenWidgets = $derived(layout.filter((widget) => widget.hidden));
+	const hiddenWidgets = $derived(layout.filter((widget) => widget.hidden && !DASHBOARD_WIDGET_TYPES[widget.type].multi));
+	const widgetLimitReached = $derived(draftLayout.length >= MAX_DASHBOARD_WIDGETS);
+	let widgetSheet = $state<WidgetSheet>();
 	const layoutHasChanges = $derived(editingLayout && JSON.stringify(draftLayout) !== JSON.stringify(savedLayout));
-	const visibleWidgets = $derived(new Set(layout.filter((widget) => !widget.hidden).map((widget) => widget.id)));
+	const visibleWidgets = $derived(new Set(layout.filter((widget) => !widget.hidden).map((widget) => widget.type)));
 
-	function anyWidgetVisible(ids: DashboardWidgetId[]): boolean {
-		return ids.some((id) => visibleWidgets.has(id));
+	function anyWidgetVisible(types: BuiltinDashboardWidgetType[]): boolean {
+		return types.some((type) => visibleWidgets.has(type));
 	}
 
 	function loadableEnvironments(permission: string): EnvironmentRef[] {
@@ -765,6 +777,33 @@
 	}
 </script>
 
+{#snippet environmentCard(environment: Environment)}
+	{@const overview = overviewById.get(environment.id) ?? createBaseEnvironmentOverview(environment)}
+	<svelte:boundary>
+		<EnvironmentCard
+			{overview}
+			systemStats={liveStats.get(environment.id)?.stats ?? null}
+			liveStatsStatus={liveStats.status(environment)}
+			countsLoading={isEnvironmentCountsLoading(environment.id)}
+			menuButtons={getEnvironmentActionButtons(overview)}
+			{debugUpgrade}
+			debugVersionInfo={DEBUG_VERSION_INFO}
+			canUpgrade={canUpgradeEnvironment(environment.id)}
+			onRefreshRequested={refreshOverview}
+			bind:upgradeOpen={upgradeDialogOpenById[environment.id]}
+			bind:upgradeLoading={upgradeDialogUpgradingById[environment.id]}
+		/>
+
+		{#snippet failed(_renderError: unknown, reset: () => void)}
+			<Alert.Root variant="destructive" icon={AlertIcon} heading={m.error_generic()}>
+				<div class="mt-3">
+					<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onclick={reset} />
+				</div>
+			</Alert.Root>
+		{/snippet}
+	</svelte:boundary>
+{/snippet}
+
 <div class="flex flex-col gap-4 pb-6">
 	<header class="flex flex-wrap items-start justify-between gap-4">
 		<h1 class="min-w-0 text-xl font-semibold tracking-tight sm:text-2xl">{heroGreeting}</h1>
@@ -772,17 +811,30 @@
 		<div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
 			{#if editingLayout}
 				<DropdownMenu.Root>
-					<DropdownMenu.Trigger disabled={hiddenWidgets.length === 0}>
+					<DropdownMenu.Trigger>
 						{#snippet child({ props })}
 							<ArcaneButton {...props} action="base" size="sm" icon={AddIcon} customLabel={m.add_widget()} />
 						{/snippet}
 					</DropdownMenu.Trigger>
-					<DropdownMenu.Content align="end">
-						{#each hiddenWidgets as widget (widget.id)}
-							<DropdownMenu.Item onclick={() => (draftLayout = showWidget(draftLayout, widget.id))}>
-								{DASHBOARD_WIDGETS[widget.id].label()}
-							</DropdownMenu.Item>
-						{/each}
+					<DropdownMenu.Content align="end" class="max-w-64">
+						{#if hiddenWidgets.length > 0}
+							<DropdownMenu.Group>
+								{#each hiddenWidgets as widget (widget.id)}
+									<DropdownMenu.Item onclick={() => (draftLayout = showWidget(draftLayout, widget.id))}>
+										{DASHBOARD_WIDGET_TYPES[widget.type].label()}
+									</DropdownMenu.Item>
+								{/each}
+							</DropdownMenu.Group>
+							<DropdownMenu.Separator />
+						{/if}
+						<DropdownMenu.Item disabled={widgetLimitReached} onclick={() => widgetSheet?.show()}>
+							{m.new_widget_ellipsis()}
+						</DropdownMenu.Item>
+						{#if widgetLimitReached}
+							<p class="px-2 py-1.5 text-xs text-muted-foreground">
+								{m.widget_limit_reached({ max: MAX_DASHBOARD_WIDGETS })}
+							</p>
+						{/if}
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
 				<ArcaneButton
@@ -891,11 +943,16 @@
 		</section>
 	{/if}
 
-	<WidgetGrid {layout} editing={editingLayout} onChange={(next) => (draftLayout = next)}>
-		{#snippet widget(id)}
-			{#if id === 'healthy' || id === 'attentionCount' || id === 'updates' || id === 'risk' || id === 'reclaimableTotal'}
+	<WidgetGrid
+		{layout}
+		editing={editingLayout}
+		onChange={(next) => (draftLayout = next)}
+		onConfigure={(widget) => widgetSheet?.show(widget)}
+	>
+		{#snippet widget(item)}
+			{#if item.type === 'healthy' || item.type === 'attentionCount' || item.type === 'updates' || item.type === 'risk' || item.type === 'reclaimableTotal'}
 				<StatWidget
-					{id}
+					id={item.type}
 					healthy={{
 						online: environmentCards.length - offlineEnvironments.length,
 						total: environmentCards.length,
@@ -919,7 +976,7 @@
 						loading: loadableEnvironmentIds.size > 0 && diskUsageQuery.isPending
 					}}
 				/>
-			{:else if id === 'environments'}
+			{:else if item.type === 'environments'}
 				<DashboardPanel title={m.environments_title()}>
 					{#snippet actions()}
 						<div class="inline-flex items-center gap-0.5 rounded-lg border border-border/60 bg-muted/40 p-0.5">
@@ -953,65 +1010,41 @@
 					{:else}
 						<div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
 							{#each environmentCards as item (item.environment.id)}
-								{@const environment = item.environment}
-								{@const overview = overviewById.get(environment.id) ?? createBaseEnvironmentOverview(environment)}
-								{@const systemStats = liveStats.get(environment.id)?.stats ?? null}
-								{@const liveStatsStatus = liveStats.status(environment)}
-								<svelte:boundary>
-									<EnvironmentCard
-										{overview}
-										{systemStats}
-										{liveStatsStatus}
-										countsLoading={isEnvironmentCountsLoading(environment.id)}
-										menuButtons={getEnvironmentActionButtons(overview)}
-										{debugUpgrade}
-										debugVersionInfo={DEBUG_VERSION_INFO}
-										canUpgrade={canUpgradeEnvironment(environment.id)}
-										onRefreshRequested={refreshOverview}
-										bind:upgradeOpen={upgradeDialogOpenById[environment.id]}
-										bind:upgradeLoading={upgradeDialogUpgradingById[environment.id]}
-									/>
-
-									{#snippet failed(_renderError: unknown, reset: () => void)}
-										<Alert.Root variant="destructive" icon={AlertIcon} heading={m.error_generic()}>
-											<div class="mt-3">
-												<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onclick={reset} />
-											</div>
-										</Alert.Root>
-									{/snippet}
-								</svelte:boundary>
+								{@render environmentCard(item.environment)}
 							{/each}
 						</div>
 					{/if}
 				</DashboardPanel>
-			{:else if id === 'attention'}
+			{:else if item.type === 'attention'}
 				<AttentionList
 					items={attentionItems}
 					loading={boardSummaryLoading}
 					failed={attentionFailed}
 					onAction={handleAttentionAction}
 				/>
-			{:else if id === 'activity'}
+			{:else if item.type === 'activity'}
 				<ActivityList groups={activityGroups} loading={activityStore.loading} unavailable={activityStore.streamError} />
-			{:else if id === 'jobs'}
+			{:else if item.type === 'jobs'}
 				<UpcomingJobs
 					jobs={environmentJobs}
 					loading={jobsQuery.isPending && loadableEnvironmentIds.size > 0}
 					failed={jobsQuery.isError}
 				/>
-			{:else if id === 'reclaimable'}
+			{:else if item.type === 'reclaimable'}
 				<ReclaimableSpace
 					usage={diskUsage}
 					loading={diskUsageQuery.isPending && loadableEnvironmentIds.size > 0}
 					failed={diskUsageQuery.isError}
 					onPrune={prunableEnvironments.length > 0 ? () => void openPruneDialog('all') : undefined}
 				/>
-			{:else}
+			{:else if item.type === 'memory'}
 				<TopMemory
 					containers={topMemoryQuery.data.byEnvironment.flatMap(({ data }) => data.data)}
 					loading={topMemoryQuery.isPending && loadableEnvironmentIds.size > 0}
 					failed={topMemoryQuery.isError}
 				/>
+			{:else}
+				<CustomWidget widget={item} {environmentCard} />
 			{/if}
 		{/snippet}
 	</WidgetGrid>
@@ -1032,6 +1065,19 @@
 		/>
 	{/if}
 {/each}
+
+<WidgetSheet
+	bind:this={widgetSheet}
+	onSave={async (widget) => {
+		const { id } = widget;
+		if (id) {
+			draftLayout = draftLayout.map((entry) => (entry.id === id ? { ...widget, id } : entry));
+			return;
+		}
+		await saveUserPreferences({ dashboardLayout: addDashboardWidget(draftLayout, widget) });
+		draftLayout = savedLayout;
+	}}
+/>
 
 <PruneConfirmationDialog
 	open={isPruneDialogOpen}
