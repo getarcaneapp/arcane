@@ -6,12 +6,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
+	"getarcane.dev/cli/v3/internal/cmdutil"
 )
 
 // NewCommand returns an explicit shell completion command.
 func NewCommand(root *cobra.Command) *cobra.Command {
 	return &cobra.Command{
+		Annotations:           map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
 		Use:                   "completion <bash|zsh|fish|powershell>",
 		Short:                 "Generate shell completion scripts",
 		Long:                  "Generate shell completion scripts for bash, zsh, fish, or powershell.",

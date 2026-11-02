@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
 )
 
 func TestApplyCPUAffinityLimit(t *testing.T) {
@@ -24,8 +25,8 @@ func TestApplyCPUAffinityLimit(t *testing.T) {
 
 func TestSystemStatsSamplerEffectiveInterval(t *testing.T) {
 	tests := []struct {
-		name      string
 		intervals map[time.Duration]int
+		name      string
 		want      time.Duration
 	}{
 		{
@@ -71,12 +72,12 @@ func TestSystemStatsSamplerRearmsOnFasterSubscriber(t *testing.T) {
 	h := &WebSocketHandler{
 		ctx:            t.Context(),
 		cpuUsageReader: func(time.Duration) (float64, bool) { return 0, true },
-		systemStatsCollector: func(context.Context) systemtypes.SystemStats {
+		systemStatsCollector: func(context.Context) types.SystemStats {
 			select {
 			case collections <- struct{}{}:
 			default:
 			}
-			return systemtypes.SystemStats{}
+			return types.SystemStats{}
 		},
 	}
 

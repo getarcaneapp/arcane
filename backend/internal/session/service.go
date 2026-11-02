@@ -10,25 +10,27 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/samber/mo"
-	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/types/v3"
 )
 
-type SessionService struct {
-	db *database.DB
-}
+type (
+	SessionService struct {
+		db *database.DB
+	}
+)
 
 func NewSessionService(db *database.DB) *SessionService {
 	return &SessionService{db: db}
 }
 
-func (s *SessionService) CreateSession(ctx context.Context, userID string, expiresAt time.Time, meta auth.SessionMeta) (*UserSession, string, error) {
+func (s *SessionService) CreateSession(ctx context.Context, userID string, expiresAt time.Time, meta types.SessionMeta) (*UserSession, string, error) {
 	refreshJTI := uuid.New().String()
 	refreshHash := kit.SHA256Hex(refreshJTI)
 
@@ -84,7 +86,7 @@ func (s *SessionService) GetSessionByID(ctx context.Context, sessionID string) (
 	return &session, nil
 }
 
-func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID, refreshJTI string, meta auth.SessionMeta) (*UserSession, string, error) {
+func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID, refreshJTI string, meta types.SessionMeta) (*UserSession, string, error) {
 	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(refreshJTI) == "" {
 		return nil, "", common.ErrInvalidToken
 	}
@@ -95,7 +97,7 @@ func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID, refr
 	now := time.Now()
 	var rotated UserSession
 
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var session UserSession
 		if err := tx.Where("id = ?", sessionID).First(&session).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {

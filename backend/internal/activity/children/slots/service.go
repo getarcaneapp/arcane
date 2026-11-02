@@ -9,41 +9,41 @@ import (
 
 	"github.com/samber/mo"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"getarcane.dev/arcane/v3/internal/settings"
+)
+
+type (
+	// Service reads the limit from settings on every acquisition attempt, while
+	// held slots are counted independently of it — so changing the limit
+	// mid-flight never miscounts running work: existing holders keep occupying
+	// capacity until they release, and waiters are re-evaluated against the new
+	// limit.
+	Service struct {
+		settings *settings.SettingsService
+
+		state map[string]*environmentSlots
+
+		// releases maps an activity ID to the release func of the slot it holds;
+		// the slot is freed when the activity completes.
+		releases map[string]func()
+
+		mu         sync.Mutex
+		releasesMu sync.Mutex
+	}
+
+	environmentSlots struct {
+		// wake is closed (and replaced) on every release to broadcast to waiters;
+		// each re-checks against the current limit, so a raised limit can admit
+		// more than one of them.
+		wake chan struct{}
+		held int
+	}
 )
 
 const (
 	maxConcurrentActivitiesSettingKey = "maxConcurrentActivities"
-	defaultMaxConcurrentActivities    = 5
-	// slotWaitRecheckInterval bounds how long a queued waiter can miss a limit
-	// increase made while no slots were being released.
-	slotWaitRecheckInterval = 2 * time.Second
+	slotWaitRecheckInterval           = 2 * time.Second
 )
-
-// Service reads the limit from settings on every acquisition attempt, while
-// held slots are counted independently of it — so changing the limit
-// mid-flight never miscounts running work: existing holders keep occupying
-// capacity until they release, and waiters are re-evaluated against the new
-// limit.
-type Service struct {
-	settings *settings.SettingsService
-
-	mu    sync.Mutex
-	state map[string]*environmentSlots
-
-	// releases maps an activity ID to the release func of the slot it holds;
-	// the slot is freed when the activity completes.
-	releasesMu sync.Mutex
-	releases   map[string]func()
-}
-
-type environmentSlots struct {
-	held int
-	// wake is closed (and replaced) on every release to broadcast to waiters;
-	// each re-checks against the current limit, so a raised limit can admit
-	// more than one of them.
-	wake chan struct{}
-}
 
 // NewService returns a slot limiter sized from the local settings.
 func NewService(localSettings *settings.SettingsService) *Service {
@@ -67,10 +67,7 @@ func (s *Service) stateLocked(environmentID string) *environmentSlots {
 // queue and block via Await. Held slots are counted even while the limit is
 // unlimited, so enabling a limit later still sees the work already running.
 func (s *Service) TryAcquire(ctx context.Context, environmentID string) mo.Option[func()] {
-	if s.settings == nil {
-		return mo.Some(func() {})
-	}
-	limit := s.settings.GetIntSetting(ctx, maxConcurrentActivitiesSettingKey, defaultMaxConcurrentActivities)
+	limit := s.settings.GetIntSetting(ctx, maxConcurrentActivitiesSettingKey)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -93,8 +90,8 @@ func (s *Service) Await(ctx context.Context, activityID, environmentID string) (
 		return false, nil
 	}
 
-	for s.settings != nil {
-		limit := s.settings.GetIntSetting(ctx, maxConcurrentActivitiesSettingKey, defaultMaxConcurrentActivities)
+	for {
+		limit := s.settings.GetIntSetting(ctx, maxConcurrentActivitiesSettingKey)
 		s.mu.Lock()
 		slots := s.stateLocked(environmentID)
 		if limit <= 0 || slots.held < limit {
@@ -116,8 +113,6 @@ func (s *Service) Await(ctx context.Context, activityID, environmentID string) (
 		}
 		timer.Stop()
 	}
-	s.Register(activityID, func() {})
-	return true, nil
 }
 
 // Register records release as the slot held by activityID, freeing any slot

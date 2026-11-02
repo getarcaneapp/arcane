@@ -6,7 +6,32 @@ import (
 	"sync"
 	"time"
 
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
+)
+
+type (
+	expectation struct {
+		resourceType, resourceID, resourceName string
+	}
+
+	windowKey struct {
+		kind, name string
+		resource   expectation
+	}
+
+	window struct {
+		expires time.Time
+		active  int
+	}
+
+	// Service correlates Docker daemon observations with local Arcane actions.
+	Service struct {
+		expectations       map[expectation]time.Time
+		windows            map[windowKey]window
+		now                func() time.Time
+		updatingContainers func() []string
+		mu                 sync.Mutex
+	}
 )
 
 const (
@@ -14,41 +39,11 @@ const (
 	suppressionWindowGrace = 10 * time.Second
 )
 
-type expectation struct {
-	resourceType, resourceID, resourceName string
-}
-
-type windowKey struct {
-	kind, name string
-	resource   expectation
-}
-
-type window struct {
-	active  int
-	expires time.Time
-}
-
-// Service correlates Docker daemon observations with local Arcane actions.
-type Service struct {
-	mu                 sync.Mutex
-	expectations       map[expectation]time.Time
-	windows            map[windowKey]window
-	now                func() time.Time
-	updatingContainers func() []string
-}
-
 func NewService(now func() time.Time) *Service {
 	return &Service{now: now}
 }
 
-func (c *Service) timeInternal() time.Time {
-	if c.now != nil {
-		return c.now()
-	}
-	return time.Now()
-}
-
-func (c *Service) pruneInternal(now time.Time) {
+func (c *Service) prune(now time.Time) {
 	for key, expiry := range c.expectations {
 		if !now.Before(expiry) {
 			delete(c.expectations, key)
@@ -65,7 +60,7 @@ func (c *Service) pruneInternal(now time.Time) {
 func (c *Service) Prune() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.pruneInternal(c.timeInternal())
+	c.prune(c.now())
 }
 
 // MarkExpectation correlates subsequent daemon observations with a local Arcane action.
@@ -83,8 +78,8 @@ func (c *Service) MarkExpectation(resourceType, resourceID, resourceName string)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	now := c.timeInternal()
-	c.pruneInternal(now)
+	now := c.now()
+	c.prune(now)
 	if c.expectations == nil {
 		c.expectations = make(map[expectation]time.Time)
 	}
@@ -97,7 +92,7 @@ func (c *Service) BeginComposeWindow(composeProject string) func() {
 	if composeProject == "" {
 		return func() {}
 	}
-	return c.beginWindowsInternal([]windowKey{{kind: "compose", name: composeProject}})
+	return c.beginWindows([]windowKey{{kind: "compose", name: composeProject}})
 }
 
 // BeginResourceWindow covers a mutation for its full duration and cleanup grace.
@@ -108,7 +103,7 @@ func (c *Service) BeginResourceWindow(resourceType, resourceID, resourceName str
 	if resourceID == "" && resourceName == "" {
 		return func() {}
 	}
-	return c.beginWindowsInternal([]windowKey{{kind: "resource", resource: expectation{resourceType, resourceID, resourceName}}})
+	return c.beginWindows([]windowKey{{kind: "resource", resource: expectation{resourceType, resourceID, resourceName}}})
 }
 
 // BeginTypeWindow covers bulk daemon operations whose per-item IDs are unknown until they finish.
@@ -116,12 +111,12 @@ func (c *Service) BeginTypeWindow(resourceType string) func() {
 	if resourceType == "" {
 		return func() {}
 	}
-	return c.beginWindowsInternal([]windowKey{{kind: "type", name: resourceType}})
+	return c.beginWindows([]windowKey{{kind: "type", name: resourceType}})
 }
 
-func (c *Service) beginWindowsInternal(keys []windowKey) func() {
+func (c *Service) beginWindows(keys []windowKey) func() {
 	c.mu.Lock()
-	c.pruneInternal(c.timeInternal())
+	c.prune(c.now())
 	if c.windows == nil {
 		c.windows = make(map[windowKey]window)
 	}
@@ -137,7 +132,7 @@ func (c *Service) beginWindowsInternal(keys []windowKey) func() {
 		for _, key := range keys {
 			w := c.windows[key]
 			w.active--
-			w.expires = c.timeInternal().Add(suppressionWindowGrace)
+			w.expires = c.now().Add(suppressionWindowGrace)
 			c.windows[key] = w
 		}
 	})
@@ -158,24 +153,24 @@ func (c *Service) ShouldSuppress(resourceType, actorID, actorName, composeProjec
 	// The updater records stop after Docker returns, so active updates also need correlation.
 	if resourceType == "container" && updating != nil {
 		for _, id := range updating() {
-			if id != "" && (id == actorID || idMatchesInternal(resourceType, id, actorID)) {
+			if id != "" && (id == actorID || idMatches(resourceType, id, actorID)) {
 				return true
 			}
 		}
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.pruneInternal(c.timeInternal())
+	c.prune(c.now())
 
 	for exp := range c.expectations {
-		if exp.matchesInternal(resourceType, actorID, actorName) {
+		if exp.matches(resourceType, actorID, actorName) {
 			return true
 		}
 	}
 	for key := range c.windows {
 		switch key.kind {
 		case "resource":
-			if key.resource.matchesInternal(resourceType, actorID, actorName) {
+			if key.resource.matches(resourceType, actorID, actorName) {
 				return true
 			}
 		case "compose":
@@ -192,17 +187,17 @@ func (c *Service) ShouldSuppress(resourceType, actorID, actorName, composeProjec
 	return false
 }
 
-func (exp expectation) matchesInternal(resourceType, actorID, actorName string) bool {
+func (exp expectation) matches(resourceType, actorID, actorName string) bool {
 	if exp.resourceType != resourceType {
 		return false
 	}
 	actors := kit.TrimNonEmpty([]string{actorID, actorName})
 	return slices.Contains(actors, exp.resourceID) ||
 		slices.Contains(actors, exp.resourceName) ||
-		idMatchesInternal(resourceType, exp.resourceID, actorID)
+		idMatches(resourceType, exp.resourceID, actorID)
 }
 
-func idMatchesInternal(resourceType, expected, actual string) bool {
+func idMatches(resourceType, expected, actual string) bool {
 	if resourceType == "volume" {
 		return false
 	}

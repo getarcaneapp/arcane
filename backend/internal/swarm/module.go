@@ -6,25 +6,27 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm/children/configs"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm/children/nodes"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm/children/secrets"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm/children/services"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm/children/stacks"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/swarm/children/configs"
+	"getarcane.dev/arcane/v3/internal/swarm/children/nodes"
+	"getarcane.dev/arcane/v3/internal/swarm/children/secrets"
+	"getarcane.dev/arcane/v3/internal/swarm/children/services"
+	"getarcane.dev/arcane/v3/internal/swarm/children/stacks"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-type Module struct {
-	service     *SwarmService
-	environment *environment.EnvironmentService
-	event       *event.EventService
-	config      *config.Config
-}
+type (
+	Module struct {
+		service     *SwarmService
+		environment *environment.EnvironmentService
+		event       *event.EventService
+		config      *config.Config
+	}
+)
 
 func New(service *SwarmService, environmentService *environment.EnvironmentService, eventService *event.EventService, cfg *config.Config) *Module {
 	return &Module{service: service, environment: environmentService, event: eventService, config: cfg}
@@ -48,11 +50,17 @@ func (m *Module) RegisterRoutes(api huma.API) {
 
 	h := NewHandler(m.service, m.event)
 	RegisterSwarm(api, h)
-	services.RegisterRoutes(api, services.NewHandler(service.services, h.auditSwarmMutation, mapSwarmServiceErrorInternal))
-	nodes.RegisterRoutes(api, nodes.NewHandler(service.nodes, h.auditSwarmMutation, mapSwarmServiceErrorInternal, m.environment, m.config))
-	stacks.RegisterRoutes(api, stacks.NewHandler(service.stacks, h.auditSwarmMutation, mapSwarmServiceErrorInternal))
-	configs.RegisterRoutes(api, configs.NewHandler(service.configs, h.auditSwarmMutation, mapSwarmServiceErrorInternal))
-	secrets.RegisterRoutes(api, secrets.NewHandler(service.secrets, h.auditSwarmMutation, mapSwarmServiceErrorInternal))
+	services.RegisterRoutes(api, services.NewHandler(service.services, h.auditSwarmMutation, mapSwarmServiceError))
+	nodes.RegisterRoutes(api, nodes.NewHandler(nodes.HandlerParams{
+		Service:            service.nodes,
+		Audit:              h.auditSwarmMutation,
+		MapError:           mapSwarmServiceError,
+		EnvironmentService: m.environment,
+		Config:             m.config,
+	}))
+	stacks.RegisterRoutes(api, stacks.NewHandler(service.stacks, h.auditSwarmMutation, mapSwarmServiceError))
+	configs.RegisterRoutes(api, configs.NewHandler(service.configs, h.auditSwarmMutation, mapSwarmServiceError))
+	secrets.RegisterRoutes(api, secrets.NewHandler(service.secrets, h.auditSwarmMutation, mapSwarmServiceError))
 }
 
 // RegisterSwarm registers the swarm task and cluster lifecycle operations.
@@ -68,6 +76,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 				"Swarm",
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
+			Metadata: map[string]any{authz.MetaEnvironmentAggregate: true},
 		},
 		authz.PermSwarmRead,
 		h.ListTasks,
@@ -84,6 +93,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 				"Swarm",
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
+			Metadata: map[string]any{authz.MetaEnvironmentAggregate: true},
 		},
 		authz.PermSwarmRead,
 		h.GetSwarmStatus,
@@ -168,7 +178,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 		huma.Operation{
 			OperationID: "get-swarm-unlock-key",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/unlock-key",
+			Path:        "/environments/{id}/swarm/unlock/key",
 			Summary:     "Get swarm unlock key",
 			Tags: []string{
 				"Swarm",
@@ -183,7 +193,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 		huma.Operation{
 			OperationID: "get-swarm-join-tokens",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/join-tokens",
+			Path:        "/environments/{id}/swarm/join/tokens",
 			Summary:     "Get swarm join tokens",
 			Tags: []string{
 				"Swarm",
@@ -193,19 +203,22 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 		authz.PermSwarmUnlock,
 		h.GetJoinTokens,
 	)
-	middleware.RegisterWithPermission(
+	middleware.RegisterWithActionPermissions(
 		api,
 		huma.Operation{
-			OperationID: "rotate-swarm-join-tokens",
+			OperationID: "swarm-join-tokens-action",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/join-tokens/rotate",
+			Path:        "/environments/{id}/swarm/join/tokens",
 			Summary:     "Rotate swarm join tokens",
 			Tags: []string{
 				"Swarm",
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmUnlock,
+		"action",
+		map[string]string{
+			"rotate": authz.PermSwarmUnlock,
+		},
 		h.RotateJoinTokens,
 	)
 	middleware.RegisterWithPermission(

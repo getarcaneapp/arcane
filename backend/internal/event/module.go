@@ -8,18 +8,20 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/labstack/echo/v5"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
-// Module owns event persistence and both of the domain's HTTP surfaces.
-type Module struct {
-	service *EventService
-}
+type (
+	// Module owns event persistence and both of the domain's HTTP surfaces.
+	Module struct {
+		service *EventService
+	}
+)
 
 // New assembles the event routes around its service.
 func New(service *EventService) *Module {
@@ -43,7 +45,7 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	RegisterEvents(api, m.service)
 }
 
-// RegisterAgentRoutes mounts the token-authenticated direct-agent ingestion endpoint.
+// RegisterAgentRoutes mounts the token-authenticated agent event ingestion endpoint.
 func (m *Module) RegisterAgentRoutes(group *echo.Group, resolveEnvironment func(context.Context, string) (string, error)) {
 	if m == nil {
 		RegisterAgentEventIngestion(group, nil, nil)
@@ -52,56 +54,56 @@ func (m *Module) RegisterAgentRoutes(group *echo.Group, resolveEnvironment func(
 	RegisterAgentEventIngestion(group, m.service, resolveEnvironment)
 }
 
-// RegisterAgentEventIngestion registers the manager ingestion endpoint used by
-// direct agents when no edge tunnel is active. This route is not part of the
+// RegisterAgentEventIngestion registers the manager ingestion endpoint agent
+// agents fall back to over HTTP when no tunnel is active. This route is not part of the
 // Huma/OpenAPI surface and authenticates with the originating environment token.
 func RegisterAgentEventIngestion(g *echo.Group, eventService *EventService, resolveEnvironment func(context.Context, string) (string, error)) {
 	g.POST("/events", func(c *echo.Context) error {
 		if eventService == nil {
-			return c.JSON(http.StatusInternalServerError, base.ApiResponse[base.MessageResponse]{
+			return c.JSON(http.StatusInternalServerError, types.ApiResponse[types.MessageResponse]{
 				Success: false,
-				Data:    base.MessageResponse{Message: "service not available"},
+				Data:    types.MessageResponse{Message: "service not available"},
 			})
 		}
 
 		if resolveEnvironment == nil {
-			return c.JSON(http.StatusServiceUnavailable, base.ApiResponse[base.MessageResponse]{
+			return c.JSON(http.StatusServiceUnavailable, types.ApiResponse[types.MessageResponse]{
 				Success: false,
-				Data:    base.MessageResponse{Message: "agent event ingestion is not configured"},
+				Data:    types.MessageResponse{Message: "agent event ingestion is not configured"},
 			})
 		}
 		environmentID, err := resolveEnvironment(c.Request().Context(), c.Request().Header.Get(middleware.HeaderAgentToken))
 		if err != nil || environmentID == "" || environmentID == "0" {
-			return c.JSON(http.StatusUnauthorized, base.ApiResponse[base.MessageResponse]{
+			return c.JSON(http.StatusUnauthorized, types.ApiResponse[types.MessageResponse]{
 				Success: false,
-				Data:    base.MessageResponse{Message: "invalid agent token"},
+				Data:    types.MessageResponse{Message: "invalid agent token"},
 			})
 		}
 
 		var input CreateEventRequest
 		if unmarshalReadErr := json.UnmarshalRead(http.MaxBytesReader(c.Response(), c.Request().Body, 1<<20), &input); unmarshalReadErr != nil {
-			return c.JSON(http.StatusBadRequest, base.ApiResponse[base.MessageResponse]{
+			return c.JSON(http.StatusBadRequest, types.ApiResponse[types.MessageResponse]{
 				Success: false,
-				Data:    base.MessageResponse{Message: "invalid event payload"},
+				Data:    types.MessageResponse{Message: "invalid event payload"},
 			})
 		}
 		if strings.TrimSpace(string(input.Type)) == "" || strings.TrimSpace(input.Title) == "" {
-			return c.JSON(http.StatusBadRequest, base.ApiResponse[base.MessageResponse]{
+			return c.JSON(http.StatusBadRequest, types.ApiResponse[types.MessageResponse]{
 				Success: false,
-				Data:    base.MessageResponse{Message: "event type and title are required"},
+				Data:    types.MessageResponse{Message: "event type and title are required"},
 			})
 		}
 
 		if _, ingestAgentEventErr := eventService.IngestAgentEvent(c.Request().Context(), environmentID, input); ingestAgentEventErr != nil {
-			return c.JSON(http.StatusInternalServerError, base.ApiResponse[base.MessageResponse]{
+			return c.JSON(http.StatusInternalServerError, types.ApiResponse[types.MessageResponse]{
 				Success: false,
-				Data:    base.MessageResponse{Message: "Failed to create event: " + ingestAgentEventErr.Error()},
+				Data:    types.MessageResponse{Message: "Failed to create event: " + ingestAgentEventErr.Error()},
 			})
 		}
 
-		return c.JSON(http.StatusAccepted, base.ApiResponse[base.MessageResponse]{
+		return c.JSON(http.StatusAccepted, types.ApiResponse[types.MessageResponse]{
 			Success: true,
-			Data:    base.MessageResponse{Message: "event ingested"},
+			Data:    types.MessageResponse{Message: "event ingested"},
 		})
 	})
 }
@@ -155,4 +157,14 @@ func RegisterEvents(api huma.API, eventService *EventService) {
 		Security:    handlerutil.DefaultOperationSecurity(),
 		Middlewares: middleware.RequirePermission(api, authz.PermEventsRead),
 	}, h.GetEventsByEnvironment)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "waitForEnvironmentChanges",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/events/changes",
+		Summary:     "Wait for environment changes",
+		Description: "Long-poll the latest revision of each changed resource kind in an environment",
+		Tags:        []string{"Events"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermEventsRead, h.WaitForEnvironmentChanges)
 }

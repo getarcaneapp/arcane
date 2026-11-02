@@ -8,8 +8,22 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+)
+
+type (
+	// CSRFMiddleware rejects cross-origin state-changing requests to the cookie-backed
+	// API. It complements the SameSite=Lax session cookie with server-side origin
+	// verification (Sec-Fetch-Site, with an Origin/Host fallback) via the standard
+	// library's net/http.CrossOriginProtection.
+	//
+	// Header-credentialed requests (Bearer / X-API-Key / agent token) are not CSRF-able
+	// — a browser cannot attach those headers to a forged cross-origin request — so they
+	// are left untouched, as are non-browser clients that send no Origin header.
+	CSRFMiddleware struct {
+		cfg *config.Config
+	}
 )
 
 // publicCrossOriginBypassPaths are endpoints intentionally reachable cross-origin
@@ -22,34 +36,22 @@ var publicCrossOriginBypassPaths = []string{
 	"/api/auth/federated/token",
 }
 
-// CSRFMiddleware rejects cross-origin state-changing requests to the cookie-backed
-// API. It complements the SameSite=Lax session cookie with server-side origin
-// verification (Sec-Fetch-Site, with an Origin/Host fallback) via the standard
-// library's net/http.CrossOriginProtection.
-//
-// Header-credentialed requests (Bearer / X-API-Key / agent token) are not CSRF-able
-// — a browser cannot attach those headers to a forged cross-origin request — so they
-// are left untouched, as are non-browser clients that send no Origin header.
-type CSRFMiddleware struct {
-	cfg *config.Config
-}
-
 func NewCSRFMiddleware(cfg *config.Config) *CSRFMiddleware {
 	return &CSRFMiddleware{cfg: cfg}
 }
 
 func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
-	// Edge Agent mode: skip. The agent only receives server-to-server requests
-	// through the edge tunnel from the manager — never from browsers. Mirrors CORSMiddleware.
-	if m.cfg != nil && m.cfg.EdgeAgent {
+	// Agent mode: skip. The agent only receives server-to-server requests
+	// through the agent tunnel from the manager — never from browsers. Mirrors CORSMiddleware.
+	if m.cfg != nil && m.cfg.AgentEnabled {
 		return func(next echo.HandlerFunc) echo.HandlerFunc {
 			return func(c *echo.Context) error { return next(c) }
 		}
 	}
 
 	cop := http.NewCrossOriginProtection()
-	for _, origin := range deriveAllowedOriginsInternal(m.cfg, nil) {
-		// AddTrustedOrigin expects scheme://host[:port]; deriveAllowedOriginsInternal
+	for _, origin := range deriveAllowedOrigins(m.cfg, nil) {
+		// AddTrustedOrigin expects scheme://host[:port]; deriveAllowedOrigins
 		// already produces that form (shared with CORS). Skip anything malformed.
 		if err := cop.AddTrustedOrigin(origin); err != nil {
 			slog.WarnContext(context.Background(), "CSRF: ignoring invalid trusted origin", //nolint:forbidigo // Middleware configuration is derived at startup without a request context.
@@ -63,7 +65,7 @@ func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			req := c.Request()
-			if hasHeaderCredentialInternal(req) {
+			if hasHeaderCredential(req) {
 				return next(c)
 			}
 			if err := cop.Check(req); err != nil {
@@ -83,10 +85,10 @@ func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
 	}
 }
 
-// hasHeaderCredentialInternal reports whether the request carries a credential in a
+// hasHeaderCredential reports whether the request carries a credential in a
 // header that a browser cannot forge on a cross-origin request, meaning it is not
 // susceptible to CSRF and should bypass the cross-origin check.
-func hasHeaderCredentialInternal(req *http.Request) bool {
+func hasHeaderCredential(req *http.Request) bool {
 	return strings.HasPrefix(req.Header.Get("Authorization"), "Bearer ") ||
 		req.Header.Get(HeaderApiKey) != "" ||
 		req.Header.Get(HeaderAgentToken) != ""

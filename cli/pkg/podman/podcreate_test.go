@@ -3,18 +3,19 @@ package podman
 import (
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/podman"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
 )
 
 func TestPodCreateOptionsRequest(t *testing.T) {
 	tests := []struct {
 		name    string
-		opts    podCreateOptions
-		want    podman.PodCreateRequest
 		wantErr string
+		opts    podCreateOptions
+		want    types.PodCreateRequest
 	}{
 		{
 			name: "network modes, named networks, and limits",
@@ -40,7 +41,7 @@ func TestPodCreateOptionsRequest(t *testing.T) {
 				hostsFile:      "none",
 				shmSizeSystemd: "32m",
 			},
-			want: podman.PodCreateRequest{
+			want: types.PodCreateRequest{
 				Name:             "web",
 				Labels:           map[string]string{"tier": "front"},
 				RestartPolicy:    "on-failure",
@@ -49,14 +50,14 @@ func TestPodCreateOptionsRequest(t *testing.T) {
 				SharedNamespaces: []string{"ipc", "net", "uts", "pid"},
 				NetworkMode:      "pasta",
 				NetworkOptions:   []string{"--ipv4-only"},
-				Networks: []podman.PodNetwork{{
+				Networks: []types.PodNetwork{{
 					Name:          "backend",
 					Aliases:       []string{"api"},
 					StaticIPs:     []string{"10.89.0.10"},
 					StaticMAC:     "92:d0:c6:0a:29:33",
 					InterfaceName: "eth1",
 				}},
-				PortMappings: []podman.PodPortMapping{{
+				PortMappings: []types.PodPortMapping{{
 					ContainerPort: 80,
 					HostPort:      8080,
 					Protocol:      "tcp",
@@ -67,10 +68,10 @@ func TestPodCreateOptionsRequest(t *testing.T) {
 				CPUs:               1.5,
 				Memory:             "512m",
 				BlkioWeight:        300,
-				BlkioWeightDevices: []podman.PodDeviceLimit{},
-				DeviceReadBps:      []podman.PodDeviceLimit{{Device: "8:0", Value: "1mb"}},
-				DeviceWriteBps:     []podman.PodDeviceLimit{},
-				Volumes: []podman.PodVolume{
+				BlkioWeightDevices: []types.PodDeviceLimit{},
+				DeviceReadBps:      []types.PodDeviceLimit{{Device: "8:0", Value: "1mb"}},
+				DeviceWriteBps:     []types.PodDeviceLimit{},
+				Volumes: []types.PodVolume{
 					{
 						Source:      "/srv/data",
 						Destination: "/data",

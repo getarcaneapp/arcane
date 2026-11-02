@@ -8,24 +8,24 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
-	"github.com/getarcaneapp/arcane/types/v2/notification"
-	"github.com/getarcaneapp/arcane/types/v2/system"
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	"getarcane.dev/arcane/v3/pkg/notifications"
+	"getarcane.dev/types/v3"
 )
 
-// Service builds the per-event notification content and renders email templates.
-type Service struct {
-	appURL func() string
-}
+type (
+	// Service builds the per-event notification content and renders email templates.
+	Service struct {
+		appURL func() string
+	}
+)
 
 func NewService(appURL func() string) *Service {
 	return &Service{appURL: appURL}
 }
 
-func (s *Service) ImageUpdate(environmentName, imageRef string, updateInfo *imageupdate.Response) notifications.Content {
+func (s *Service) ImageUpdate(environmentName, imageRef string, updateInfo *types.ImageUpdateResponse) notifications.Content {
 	return notifications.Content{
 		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {
 			return notifications.BuildImageUpdateNotificationMessage(format, environmentName, imageRef, updateInfo)
@@ -87,7 +87,7 @@ func (s *Service) ContainerUpdate(environmentName, containerName, imageRef, oldD
 	}
 }
 
-func (s *Service) Vulnerability(environmentName string, payload notification.DispatchVulnerabilityFound) notifications.Content {
+func (s *Service) Vulnerability(environmentName string, payload types.NotificationDispatchVulnerabilityFound) notifications.Content {
 	defaultTitle := notifications.BuildEmailSubject(environmentName, "Daily Vulnerability Summary")
 	return notifications.Content{
 		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {
@@ -128,7 +128,7 @@ func (s *Service) Vulnerability(environmentName string, payload notification.Dis
 	}
 }
 
-func (s *Service) BatchImageUpdate(environmentName string, updates map[string]*imageupdate.Response) notifications.Content {
+func (s *Service) BatchImageUpdate(environmentName string, updates map[string]*types.ImageUpdateResponse, includeReleaseLinks bool) notifications.Content {
 	ntfyTitle := fmt.Sprintf("📦 %d Container Image Updates", len(updates))
 	if len(updates) == 1 {
 		ntfyTitle = "📦 1 Container Image Update"
@@ -136,7 +136,7 @@ func (s *Service) BatchImageUpdate(environmentName string, updates map[string]*i
 
 	return notifications.Content{
 		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {
-			return notifications.BuildBatchImageUpdateNotificationMessage(format, environmentName, updates)
+			return notifications.BuildBatchImageUpdateNotificationMessage(format, environmentName, updates, includeReleaseLinks)
 		}),
 		Title:     "Container Image Updates Available",
 		NtfyTitle: ntfyTitle,
@@ -147,6 +147,12 @@ func (s *Service) BatchImageUpdate(environmentName string, updates map[string]*i
 					Label: imageRef,
 					Value: updates[imageRef].UpdateType,
 				})
+				if includeReleaseLinks && updates[imageRef].ReleaseURL != "" {
+					rows = append(rows, emailRow{
+						Label: imageRef + " release notes",
+						Value: updates[imageRef].ReleaseURL,
+					})
+				}
 			}
 			updateCount := len(updates)
 			plural := kit.Ternary(updateCount > 1, "s", "")
@@ -207,7 +213,7 @@ func (s *Service) BatchContainerUpdate(environmentName string, entries []notific
 	}
 }
 
-func (s *Service) PruneReport(environmentName string, result *system.PruneAllResult) notifications.Content {
+func (s *Service) PruneReport(environmentName string, result *types.PruneAllResult) notifications.Content {
 	defaultTitle := notifications.BuildEmailSubject(environmentName, "System Prune Report")
 	return notifications.Content{
 		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {

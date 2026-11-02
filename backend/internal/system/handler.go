@@ -6,62 +6,52 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/container"
-	"github.com/getarcaneapp/arcane/types/v2/dockerinfo"
-	"github.com/getarcaneapp/arcane/types/v2/system"
-	"go.getarcane.app/docker/convert"
-	"go.getarcane.app/docker/convert/types"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"kit.getarcane.app/docker/convert"
+	converttypes "kit.getarcane.app/docker/convert/types"
+
+	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
-// SystemHandler handles system management endpoints.
-type SystemHandler struct {
-	systemService *SystemService
-	appCtx        context.Context
-}
+type (
+	// SystemHandler handles system management endpoints.
+	SystemHandler struct {
+		systemService *SystemService
+		appCtx        context.Context
+	}
 
-type SystemHealthInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
+	GetDockerInfoOutput struct {
+		Body types.DockerInfo
+	}
 
-type GetDockerInfoInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
+	ContainersActionInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Action        string `query:"action" required:"true" enum:"startall,startstopped,stopall" doc:"Bulk container action"`
+	}
 
-type GetDockerInfoOutput struct {
-	Body dockerinfo.Info
-}
+	containersAction struct {
+		Run   func(context.Context, string) (*types.ContainerActionResult, error)
+		Error string
+	}
 
-type StartAllContainersInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
+	ConvertDockerRunInput struct {
+		EnvironmentID string                        `path:"id" doc:"Environment ID"`
+		Body          types.ConvertDockerRunRequest `doc:"Docker run command"`
+	}
 
-type StartAllStoppedContainersInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type StopAllContainersInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type ConvertDockerRunInput struct {
-	EnvironmentID string                         `path:"id" doc:"Environment ID"`
-	Body          system.ConvertDockerRunRequest `doc:"Docker run command"`
-}
-
-type ConvertDockerRunOutput struct {
-	Body system.ConvertDockerRunResponse
-}
+	ConvertDockerRunOutput struct {
+		Body types.ConvertDockerRunResponse
+	}
+)
 
 func NewHandler(systemService *SystemService, appCtx context.Context) *SystemHandler {
 	return &SystemHandler{systemService: systemService, appCtx: appCtx}
 }
 
 // Health checks if the Docker daemon is responsive.
-func (h *SystemHandler) Health(ctx context.Context, input *SystemHealthInput) (*struct{}, error) {
+func (h *SystemHandler) Health(ctx context.Context, input *types.EnvironmentInput) (*struct{}, error) {
 	if err := h.systemService.PingDocker(ctx); err != nil {
 		return nil, huma.Error503ServiceUnavailable("Docker is not responsive: " + err.Error())
 	}
@@ -70,7 +60,7 @@ func (h *SystemHandler) Health(ctx context.Context, input *SystemHealthInput) (*
 }
 
 // GetDockerInfo returns Docker daemon version and system information.
-func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *GetDockerInfoInput) (*GetDockerInfoOutput, error) {
+func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *types.EnvironmentInput) (*GetDockerInfoOutput, error) {
 	info, err := h.systemService.GetDockerInfo(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get Docker info: " + err.Error())
@@ -79,48 +69,28 @@ func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *GetDockerInfoI
 	return &GetDockerInfoOutput{Body: info}, nil
 }
 
-// StartAllContainers starts all Docker containers.
-func (h *SystemHandler) StartAllContainers(ctx context.Context, input *StartAllContainersInput) (*handlerutil.Out[container.ActionResult], error) {
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	result, err := h.systemService.StartAllContainers(runtimeCtx, input.EnvironmentID)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to start containers: " + err.Error())
-	}
-
-	return &handlerutil.Out[container.ActionResult]{
-		Body: base.ApiResponse[container.ActionResult]{
-			Success: true,
-			Data:    *result,
+func (h *SystemHandler) RunContainersAction(ctx context.Context, input *ContainersActionInput) (*handlerutil.Out[types.ContainerActionResult], error) {
+	action := map[string]containersAction{
+		"startall": {
+			Run:   h.systemService.StartAllContainers,
+			Error: "Failed to start containers: ",
 		},
-	}, nil
-}
-
-// StartAllStoppedContainers starts all stopped Docker containers.
-func (h *SystemHandler) StartAllStoppedContainers(ctx context.Context, input *StartAllStoppedContainersInput) (*handlerutil.Out[container.ActionResult], error) {
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	result, err := h.systemService.StartAllStoppedContainers(runtimeCtx, input.EnvironmentID)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to start stopped containers: " + err.Error())
-	}
-
-	return &handlerutil.Out[container.ActionResult]{
-		Body: base.ApiResponse[container.ActionResult]{
-			Success: true,
-			Data:    *result,
+		"startstopped": {
+			Run:   h.systemService.StartAllStoppedContainers,
+			Error: "Failed to start stopped containers: ",
 		},
-	}, nil
-}
-
-// StopAllContainers stops all running Docker containers.
-func (h *SystemHandler) StopAllContainers(ctx context.Context, input *StopAllContainersInput) (*handlerutil.Out[container.ActionResult], error) {
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	result, err := h.systemService.StopAllContainers(runtimeCtx, input.EnvironmentID)
+		"stopall": {
+			Run:   h.systemService.StopAllContainers,
+			Error: "Failed to stop containers: ",
+		},
+	}[input.Action]
+	result, err := action.Run(activity.ActivityRuntimeContext(ctx, h.appCtx), input.EnvironmentID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to stop containers: " + err.Error())
+		return nil, huma.Error500InternalServerError(action.Error + err.Error())
 	}
 
-	return &handlerutil.Out[container.ActionResult]{
-		Body: base.ApiResponse[container.ActionResult]{
+	return &handlerutil.Out[types.ContainerActionResult]{
+		Body: types.ApiResponse[types.ContainerActionResult]{
 			Success: true,
 			Data:    *result,
 		},
@@ -129,16 +99,16 @@ func (h *SystemHandler) StopAllContainers(ctx context.Context, input *StopAllCon
 
 // ConvertDockerRun converts a docker run command to docker-compose format.
 func (h *SystemHandler) ConvertDockerRun(ctx context.Context, input *ConvertDockerRunInput) (*ConvertDockerRunOutput, error) {
-	result, err := convert.Convert(input.Body.DockerRunCommand, types.Options{})
+	result, err := convert.Convert(input.Body.DockerRunCommand, converttypes.Options{})
 	if err != nil {
-		if errors.Is(err, types.ErrParse) {
+		if errors.Is(err, converttypes.ErrParse) {
 			return nil, huma.Error400BadRequest("Failed to parse docker run command. Please check the syntax.")
 		}
 		return nil, huma.Error500InternalServerError("Failed to convert to Docker Compose format.")
 	}
 
 	return &ConvertDockerRunOutput{
-		Body: system.ConvertDockerRunResponse{
+		Body: types.ConvertDockerRunResponse{
 			Success:       true,
 			DockerCompose: string(result.YAML),
 			EnvVars:       strings.TrimSuffix(string(result.EnvFile), "\n"),

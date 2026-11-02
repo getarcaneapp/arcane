@@ -7,19 +7,19 @@ import (
 	"reflect"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/updater"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
-// Module wires the updater domain and mounts its routes.
-type Module struct {
-	service *UpdaterService
-}
+type (
+	// Module wires the updater domain and mounts its routes.
+	Module struct {
+		service *UpdaterService
+	}
+)
 
 // New assembles updater routes around the provided service.
 func New(service *UpdaterService) *Module {
@@ -84,10 +84,11 @@ func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handle
 		Description: "Get the history of update operations",
 		Tags:        []string{"Updater"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermImageUpdatesRead, h.GetUpdaterHistory)
 
-	acceptedSchema := huma.SchemaFromType(api.OpenAPI().Components.Schemas, reflect.TypeFor[base.ApiResponse[activity.Activity]]())
-	completedSchema := huma.SchemaFromType(api.OpenAPI().Components.Schemas, reflect.TypeFor[base.ApiResponse[*updater.Result]]())
+	acceptedSchema := huma.SchemaFromType(api.OpenAPI().Components.Schemas, reflect.TypeFor[types.ApiResponse[types.Activity]]())
+	completedSchema := huma.SchemaFromType(api.OpenAPI().Components.Schemas, reflect.TypeFor[types.ApiResponse[*types.UpdaterResult]]())
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-container",
 		Method:      http.MethodPost,

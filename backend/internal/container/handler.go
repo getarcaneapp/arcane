@@ -8,142 +8,137 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/container"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/samber/mo"
-	"go.getarcane.app/docker/types"
-	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container/children/stats"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"kit.getarcane.app"
+	dockertypes "kit.getarcane.app/docker/types"
+
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/container/children/stats"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/settings"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
-type ContainerHandler struct {
-	containerService *ContainerService
-	dockerService    *docker.DockerClientService
-	settingsService  *settings.SettingsService
-	activityService  *activity.ActivityService
-	appCtx           context.Context
-}
+type (
+	ContainerHandler struct {
+		containerService *ContainerService
+		dockerService    *docker.DockerClientService
+		settingsService  *settings.SettingsService
+		activityService  *activity.ActivityService
+		appCtx           context.Context
+	}
 
-// ContainerPaginatedResponse is the paginated list response for containers.
-type ContainerPaginatedResponse struct {
-	Success               bool                      `json:"success"`
-	Data                  []container.Summary       `json:"data"`
-	Groups                []container.SummaryGroup  `json:"groups,omitempty"`
-	Counts                container.StatusCounts    `json:"counts"`
-	Pagination            base.PaginationResponse   `json:"pagination"`
-	ResourceSortSupported bool                      `json:"resourceSortSupported"`
-	FailedEnvironments    []base.EnvironmentFailure `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
-}
+	// ContainerPaginatedResponse is the paginated list response for containers.
+	ContainerPaginatedResponse struct {
+		Data                  []types.ContainerSummary      `json:"data"`
+		Groups                []types.ContainerSummaryGroup `json:"groups,omitempty"`
+		FailedEnvironments    []types.EnvironmentFailure    `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
+		Pagination            types.PaginationResponse      `json:"pagination"`
+		Counts                types.ContainerStatusCounts   `json:"counts"`
+		Success               bool                          `json:"success"`
+		ResourceSortSupported bool                          `json:"resourceSortSupported"`
+	}
 
-type ListContainersInput struct {
-	EnvironmentID   string `path:"id" doc:"Environment ID"`
-	Search          string `query:"search" doc:"Search query"`
-	Sort            string `query:"sort" doc:"Column to sort by"`
-	Order           string `query:"order" default:"asc" doc:"Sort direction"`
-	Start           int    `query:"start" default:"0" doc:"Start index"`
-	Limit           int    `query:"limit" default:"20" doc:"Limit"`
-	GroupBy         string `query:"groupBy" doc:"Optional grouping mode (for example: project)"`
-	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
-	IncludeHidden   bool   `query:"includeHidden" default:"false" doc:"Include hidden containers"`
-	Updates         string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
-	Standalone      string `query:"standalone" doc:"Filter standalone containers only (true/false)"`
-	Label           string `query:"label" doc:"Filter by label key or key=value"`
-}
+	ListContainersInput struct {
+		EnvironmentID   string `path:"id" doc:"Environment ID"`
+		Search          string `query:"search" doc:"Search query"`
+		Sort            string `query:"sort" doc:"Column to sort by"`
+		Order           string `query:"order" default:"asc" doc:"Sort direction"`
+		GroupBy         string `query:"groupBy" doc:"Optional grouping mode (for example: project)"`
+		Updates         string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
+		Standalone      string `query:"standalone" doc:"Filter standalone containers only (true/false)"`
+		Label           string `query:"label" doc:"Filter by label key or key=value"`
+		Status          string `query:"status" doc:"Filter by state (running, exited, paused, restarting, created, dead, stopped, unhealthy)"`
+		Start           int    `query:"start" default:"0" doc:"Start index"`
+		Limit           int    `query:"limit" default:"20" doc:"Limit"`
+		IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
+		IncludeHidden   bool   `query:"includeHidden" default:"false" doc:"Include hidden containers"`
+	}
 
-type ListContainersOutput struct {
-	Body ContainerPaginatedResponse
-}
+	ListContainersOutput struct {
+		Body ContainerPaginatedResponse
+	}
 
-type GetContainerStatusCountsInput struct {
-	EnvironmentID   string `path:"id" doc:"Environment ID"`
-	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
-	IncludeHidden   bool   `query:"includeHidden" default:"false" doc:"Include hidden containers"`
-}
+	GetContainerStatusCountsInput struct {
+		EnvironmentID   string `path:"id" doc:"Environment ID"`
+		IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
+		IncludeHidden   bool   `query:"includeHidden" default:"false" doc:"Include hidden containers"`
+	}
 
-type CreateContainerInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          container.Create
-}
+	CreateContainerInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		types.Create[types.Container]
+	}
 
-type GetContainerInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ContainerID   string `path:"containerId" doc:"Container ID"`
-}
+	GetContainerInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ContainerID   string `path:"containerId" doc:"Container ID"`
+	}
 
-type ContainerActionInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ContainerID   string `path:"containerId" doc:"Container ID"`
-}
+	ContainerActionInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ContainerID   string `path:"containerId" doc:"Container ID"`
+		Action        string `query:"action" required:"true" enum:"start,stop,restart,kill,pause,unpause" doc:"Lifecycle action"`
+		Signal        string `query:"signal" doc:"Signal to send for kill (for example SIGTERM, SIGKILL). Defaults to SIGKILL."`
+	}
 
-type DeleteContainerInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ContainerID   string `path:"containerId" doc:"Container ID"`
-	Force         bool   `query:"force" default:"false" doc:"Force delete running container"`
-	RemoveVolumes bool   `query:"volumes" default:"false" doc:"Remove associated volumes"`
-}
+	DeleteContainerInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ContainerID   string `path:"containerId" doc:"Container ID"`
+		Force         bool   `query:"force" default:"false" doc:"Force delete running container"`
+		RemoveVolumes bool   `query:"volumes" default:"false" doc:"Remove associated volumes"`
+	}
 
-// SetAutoUpdateInput is the request input for toggling container auto-update.
-type SetAutoUpdateInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ContainerID   string `path:"containerId" doc:"Container ID"`
-	Body          container.SetAutoUpdateRequest
-}
+	// SetAutoUpdateInput is the request input for toggling container auto-update.
+	SetAutoUpdateInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ContainerID   string `path:"containerId" doc:"Container ID"`
+		Body          types.ContainerSetAutoUpdateRequest
+	}
 
-// KillContainerInput carries the optional signal for a container kill.
-type KillContainerInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ContainerID   string `path:"containerId" doc:"Container ID"`
-	Signal        string `query:"signal" doc:"Signal to send (for example SIGTERM, SIGKILL). Defaults to SIGKILL."`
-}
+	CommitContainerInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ContainerID   string `path:"containerId" doc:"Container ID"`
+		Body          types.ContainerCommitRequest
+	}
 
-type CommitContainerInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ContainerID   string `path:"containerId" doc:"Container ID"`
-	Body          container.CommitRequest
-}
+	GetContainerEditConfigInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ContainerID   string `path:"containerId" doc:"Container ID"`
+	}
 
-type GetContainerEditConfigInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ContainerID   string `path:"containerId" doc:"Container ID"`
-}
+	EditContainerInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ContainerID   string `path:"containerId" doc:"Container ID"`
+		Body          types.ContainerEdit
+	}
 
-type EditContainerInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ContainerID   string `path:"containerId" doc:"Container ID"`
-	Body          container.Edit
-}
+	GenerateComposeInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.ContainerGenerateComposeRequest
+	}
 
-type GenerateComposeInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          container.GenerateComposeRequest
-}
-
-type containerActionConfig struct {
-	ActivityType    activitytypes.Type
-	Step            string
-	StartMessage    string
-	CompleteMessage string
-	SuccessMessage  string
-	Action          func(context.Context, string, usertypes.Actor) error
-	Error           func(error) error
-}
+	containerActionConfig struct {
+		Action          func(context.Context, string, types.Actor) error
+		ActivityType    types.ActivityType
+		Verb            string
+		Step            string
+		StartMessage    string
+		CompleteMessage string
+		SuccessMessage  string
+	}
+)
 
 func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContainersInput) (*ListContainersOutput, error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
@@ -155,6 +150,9 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 	}
 	if input.Label != "" {
 		params.Filters["label"] = input.Label
+	}
+	if input.Status != "" {
+		params.Filters["status"] = input.Status
 	}
 
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
@@ -186,34 +184,32 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 	}, nil
 }
 
-func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *GetContainerStatusCountsInput) (*handlerutil.Out[container.StatusCounts], error) {
-	containers, _, _, _, err := h.dockerService.GetAllContainers(ctx)
+func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *GetContainerStatusCountsInput) (*handlerutil.Out[types.ContainerStatusCounts], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.containerService.AggregateContainerCounts(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to get container counts: " + err.Error())
+		}
+		return &handlerutil.Out[types.ContainerStatusCounts]{Body: body}, nil
+	}
+
+	counts, err := h.containerService.GetContainerStatusCounts(ctx, StatusCountOptions{
+		IncludeInternal: input.IncludeInternal,
+		IncludeHidden:   input.IncludeHidden,
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get container counts: " + err.Error())
 	}
 
-	containers = FilterExcludedContainers(containers, input.IncludeInternal, input.IncludeHidden)
-
-	running := 0
-	for _, c := range containers {
-		if c.State == "running" {
-			running++
-		}
-	}
-
-	return &handlerutil.Out[container.StatusCounts]{
-		Body: base.ApiResponse[container.StatusCounts]{
+	return &handlerutil.Out[types.ContainerStatusCounts]{
+		Body: types.ApiResponse[types.ContainerStatusCounts]{
 			Success: true,
-			Data: container.StatusCounts{
-				RunningContainers: running,
-				StoppedContainers: len(containers) - running,
-				TotalContainers:   len(containers),
-			},
+			Data:    counts,
 		},
 	}, nil
 }
 
-func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateContainerInput) (*handlerutil.Out[container.Created], error) {
+func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateContainerInput) (*handlerutil.Out[types.ContainerCreated], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -319,13 +315,13 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 		input.Body.Credentials,
 	)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to create container: " + err.Error())
+		return nil, handlerutil.APIError(err)
 	}
 
-	return &handlerutil.Out[container.Created]{
-		Body: base.ApiResponse[container.Created]{
+	return &handlerutil.Out[types.ContainerCreated]{
+		Body: types.ApiResponse[types.ContainerCreated]{
 			Success: true,
-			Data: container.Created{
+			Data: types.ContainerCreated{
 				ID:      containerJSON.ID,
 				Name:    containerJSON.Name,
 				Image:   containerJSON.Config.Image,
@@ -336,30 +332,30 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 	}, nil
 }
 
-func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainerInput) (*handlerutil.Out[container.Details], error) {
+func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainerInput) (*handlerutil.Out[types.ContainerDetails], error) {
 	details, err := h.containerService.GetContainerDetails(ctx, input.ContainerID)
 	if err != nil {
 		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve container: "+apiErr.Message)
 	}
 
-	return &handlerutil.Out[container.Details]{
-		Body: base.ApiResponse[container.Details]{
+	return &handlerutil.Out[types.ContainerDetails]{
+		Body: types.ApiResponse[types.ContainerDetails]{
 			Success: true,
 			Data:    details,
 		},
 	}, nil
 }
 
-func (h *ContainerHandler) GetContainerProcesses(ctx context.Context, input *GetContainerInput) (*handlerutil.Out[container.Processes], error) {
+func (h *ContainerHandler) GetContainerProcesses(ctx context.Context, input *GetContainerInput) (*handlerutil.Out[types.ContainerProcesses], error) {
 	processes, err := h.containerService.GetContainerProcesses(ctx, input.ContainerID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve container processes: "+apiErr.Message)
 	}
 
-	return &handlerutil.Out[container.Processes]{
-		Body: base.ApiResponse[container.Processes]{
+	return &handlerutil.Out[types.ContainerProcesses]{
+		Body: types.ApiResponse[types.ContainerProcesses]{
 			Success: true,
 			Data:    processes,
 		},
@@ -375,167 +371,125 @@ func (h *ContainerHandler) DownloadContainerLogs(ctx context.Context, input *Get
 	return handlerutil.DownloadResponse(reader, -1, filename), nil
 }
 
-func (h *ContainerHandler) GenerateCompose(ctx context.Context, input *GenerateComposeInput) (*handlerutil.Out[container.GenerateComposeResponse], error) {
+func (h *ContainerHandler) GenerateCompose(ctx context.Context, input *GenerateComposeInput) (*handlerutil.Out[types.ContainerGenerateComposeResponse], error) {
 	composeContent, err := projects.ComposeGenerate(ctx, h.dockerService.DockerHost(), "", input.Body.ContainerIDs)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to generate compose file: " + err.Error())
 	}
 
-	return &handlerutil.Out[container.GenerateComposeResponse]{
-		Body: base.ApiResponse[container.GenerateComposeResponse]{
+	return &handlerutil.Out[types.ContainerGenerateComposeResponse]{
+		Body: types.ApiResponse[types.ContainerGenerateComposeResponse]{
 			Success: true,
-			Data:    container.GenerateComposeResponse{ComposeContent: composeContent},
+			Data:    types.ContainerGenerateComposeResponse{ComposeContent: composeContent},
 		},
 	}, nil
 }
 
-func (h *ContainerHandler) StartContainer(ctx context.Context, input *ContainerActionInput) (*handlerutil.Out[base.MessageResponse], error) {
-	return h.runContainerAction(ctx, input, containerActionConfig{
-		ActivityType:    activitytypes.TypeContainerStart,
-		Step:            "Starting container",
-		StartMessage:    "Container start requested",
-		CompleteMessage: "Container started",
-		SuccessMessage:  "Container started successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user usertypes.Actor) error {
-			return h.containerService.StartContainer(runtimeCtx, containerID, user)
+func (h *ContainerHandler) RunContainerAction(ctx context.Context, input *ContainerActionInput) (*handlerutil.Out[types.MessageResponse], error) {
+	cfg := map[string]containerActionConfig{
+		"start": {
+			ActivityType:    types.ActivityTypeContainerStart,
+			Verb:            "start",
+			Step:            "Starting container",
+			StartMessage:    "Container start requested",
+			CompleteMessage: "Container started",
+			SuccessMessage:  "Container started successfully",
+			Action:          h.containerService.StartContainer,
 		},
-		Error: func(err error) error {
-			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
-			return huma.NewError(apiErr.HTTPStatus(), "Failed to start container: "+apiErr.Message)
+		"stop": {
+			ActivityType:    types.ActivityTypeContainerStop,
+			Verb:            "stop",
+			Step:            "Stopping container",
+			StartMessage:    "Container stop requested",
+			CompleteMessage: "Container stopped",
+			SuccessMessage:  "Container stopped successfully",
+			Action:          h.containerService.StopContainer,
 		},
-	})
-}
-
-func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerActionInput) (*handlerutil.Out[base.MessageResponse], error) {
-	return h.runContainerAction(ctx, input, containerActionConfig{
-		ActivityType:    activitytypes.TypeContainerStop,
-		Step:            "Stopping container",
-		StartMessage:    "Container stop requested",
-		CompleteMessage: "Container stopped",
-		SuccessMessage:  "Container stopped successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user usertypes.Actor) error {
-			return h.containerService.StopContainer(runtimeCtx, containerID, user)
+		"restart": {
+			ActivityType:    types.ActivityTypeContainerRestart,
+			Verb:            "restart",
+			Step:            "Restarting container",
+			StartMessage:    "Container restart requested",
+			CompleteMessage: "Container restarted",
+			SuccessMessage:  "Container restarted successfully",
+			Action:          h.containerService.RestartContainer,
 		},
-		Error: func(err error) error {
-			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
-			return huma.NewError(apiErr.HTTPStatus(), "Failed to stop container: "+apiErr.Message)
+		"kill": {
+			ActivityType:    types.ActivityTypeContainerKill,
+			Verb:            "kill",
+			Step:            "Killing container",
+			StartMessage:    "Container kill requested",
+			CompleteMessage: "Container killed",
+			SuccessMessage:  "Container killed successfully",
+			Action: func(runtimeCtx context.Context, containerID string, user types.Actor) error {
+				return h.containerService.KillContainer(runtimeCtx, containerID, strings.TrimSpace(input.Signal), user)
+			},
 		},
-	})
-}
-
-func (h *ContainerHandler) RestartContainer(ctx context.Context, input *ContainerActionInput) (*handlerutil.Out[base.MessageResponse], error) {
-	return h.runContainerAction(ctx, input, containerActionConfig{
-		ActivityType:    activitytypes.TypeContainerRestart,
-		Step:            "Restarting container",
-		StartMessage:    "Container restart requested",
-		CompleteMessage: "Container restarted",
-		SuccessMessage:  "Container restarted successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user usertypes.Actor) error {
-			return h.containerService.RestartContainer(runtimeCtx, containerID, user)
+		"pause": {
+			ActivityType:    types.ActivityTypeContainerPause,
+			Verb:            "pause",
+			Step:            "Pausing container",
+			StartMessage:    "Container pause requested",
+			CompleteMessage: "Container paused",
+			SuccessMessage:  "Container paused successfully",
+			Action:          h.containerService.PauseContainer,
 		},
-		Error: func(err error) error {
-			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
-			return huma.NewError(apiErr.HTTPStatus(), "Failed to restart container: "+apiErr.Message)
+		"unpause": {
+			ActivityType:    types.ActivityTypeContainerUnpause,
+			Verb:            "unpause",
+			Step:            "Unpausing container",
+			StartMessage:    "Container unpause requested",
+			CompleteMessage: "Container unpaused",
+			SuccessMessage:  "Container unpaused successfully",
+			Action:          h.containerService.UnpauseContainer,
 		},
-	})
-}
-
-func (h *ContainerHandler) KillContainer(ctx context.Context, input *KillContainerInput) (*handlerutil.Out[base.MessageResponse], error) {
-	return h.runContainerAction(ctx, &ContainerActionInput{EnvironmentID: input.EnvironmentID, ContainerID: input.ContainerID}, containerActionConfig{
-		ActivityType:    activitytypes.TypeContainerKill,
-		Step:            "Killing container",
-		StartMessage:    "Container kill requested",
-		CompleteMessage: "Container killed",
-		SuccessMessage:  "Container killed successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user usertypes.Actor) error {
-			return h.containerService.KillContainer(runtimeCtx, containerID, strings.TrimSpace(input.Signal), user)
-		},
-		Error: func(err error) error {
-			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
-			return huma.NewError(apiErr.HTTPStatus(), "Failed to kill container: "+apiErr.Message)
-		},
-	})
-}
-
-func (h *ContainerHandler) PauseContainer(ctx context.Context, input *ContainerActionInput) (*handlerutil.Out[base.MessageResponse], error) {
-	return h.runContainerAction(ctx, input, containerActionConfig{
-		ActivityType:    activitytypes.TypeContainerPause,
-		Step:            "Pausing container",
-		StartMessage:    "Container pause requested",
-		CompleteMessage: "Container paused",
-		SuccessMessage:  "Container paused successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user usertypes.Actor) error {
-			return h.containerService.PauseContainer(runtimeCtx, containerID, user)
-		},
-		Error: func(err error) error {
-			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
-			return huma.NewError(apiErr.HTTPStatus(), "Failed to pause container: "+apiErr.Message)
-		},
-	})
-}
-
-func (h *ContainerHandler) UnpauseContainer(ctx context.Context, input *ContainerActionInput) (*handlerutil.Out[base.MessageResponse], error) {
-	return h.runContainerAction(ctx, input, containerActionConfig{
-		ActivityType:    activitytypes.TypeContainerUnpause,
-		Step:            "Unpausing container",
-		StartMessage:    "Container unpause requested",
-		CompleteMessage: "Container unpaused",
-		SuccessMessage:  "Container unpaused successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user usertypes.Actor) error {
-			return h.containerService.UnpauseContainer(runtimeCtx, containerID, user)
-		},
-		Error: func(err error) error {
-			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
-			return huma.NewError(apiErr.HTTPStatus(), "Failed to unpause container: "+apiErr.Message)
-		},
-	})
+	}[input.Action]
+	return h.runContainerAction(ctx, input, cfg)
 }
 
 // containerActivityName returns the container's name for activity records, falling back to its ID.
 func (h *ContainerHandler) containerActivityName(ctx context.Context, containerID string) string {
-	name, err := h.containerService.GetContainerNameByID(ctx, containerID)
+	name, err := h.containerService.GetContainerNameByReference(ctx, containerID)
 	if err != nil || name == "" {
 		return containerID
 	}
 	return name
 }
 
-func (h *ContainerHandler) runContainerAction(ctx context.Context, input *ContainerActionInput, cfg containerActionConfig) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *ContainerHandler) runContainerAction(ctx context.Context, input *ContainerActionInput, cfg containerActionConfig) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivity(
-		runtimeCtx,
-		h.activityService,
-		input.EnvironmentID,
-		cfg.ActivityType,
-		"container",
-		input.ContainerID,
-		h.containerActivityName(
+	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID: input.EnvironmentID,
+		Type:          cfg.ActivityType,
+		ResourceType:  "container",
+		ResourceID:    input.ContainerID,
+		ResourceName: h.containerActivityName(
 			runtimeCtx,
 			input.ContainerID,
 		),
-		user,
-		cfg.Step,
-		cfg.StartMessage,
-		database.JSON{
+		User:    user,
+		Step:    cfg.Step,
+		Message: cfg.StartMessage,
+		Metadata: database.JSON{
 			"containerID": input.ContainerID,
 		},
-		false,
-	)
+	})
 	if actionErr := cfg.Action(runtimeCtx, input.ContainerID, *user); actionErr != nil {
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.CompleteMessage, actionErr)
-		return nil, cfg.Error(actionErr)
+		apiErr := common.ToAPIError(common.ClassifyDockerError(actionErr))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to "+cfg.Verb+" container: "+apiErr.Message)
 	}
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.CompleteMessage, nil)
 
 	return handlerutil.MessageOutput(cfg.SuccessMessage, activityID), nil
 }
 
-func (h *ContainerHandler) CommitContainer(ctx context.Context, input *CommitContainerInput) (*handlerutil.Out[container.CommitResult], error) {
+func (h *ContainerHandler) CommitContainer(ctx context.Context, input *CommitContainerInput) (*handlerutil.Out[types.ContainerCommitResult], error) {
 	if strings.TrimSpace(input.ContainerID) == "" {
 		return nil, huma.Error400BadRequest("container ID is required")
 	}
@@ -550,43 +504,46 @@ func (h *ContainerHandler) CommitContainer(ctx context.Context, input *CommitCon
 		return nil, huma.NewError(common.ToAPIError(common.ClassifyDockerError(err)).HTTPStatus(), fmt.Sprintf("failed to commit container: %v", err))
 	}
 
-	return &handlerutil.Out[container.CommitResult]{
-		Body: base.ApiResponse[container.CommitResult]{
+	return &handlerutil.Out[types.ContainerCommitResult]{
+		Body: types.ApiResponse[types.ContainerCommitResult]{
 			Success: true,
 			Data:    *out,
 		},
 	}, nil
 }
 
-func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *ContainerActionInput) (*handlerutil.Out[container.Details], error) {
+func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *GetContainerInput) (*handlerutil.Out[types.ContainerDetails], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivity(
-		runtimeCtx,
-		h.activityService,
-		input.EnvironmentID,
-		activitytypes.TypeContainerRedeploy,
-		"container",
-		input.ContainerID,
-		h.containerActivityName(
+	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID: input.EnvironmentID,
+		Type:          types.ActivityTypeContainerRedeploy,
+		ResourceType:  "container",
+		ResourceID:    input.ContainerID,
+		ResourceName: h.containerActivityName(
 			runtimeCtx,
 			input.ContainerID,
 		),
-		user,
-		"Starting redeploy",
-		"Container redeploy requested",
-		database.JSON{
+		User:    user,
+		Step:    "Starting redeploy",
+		Message: "Container redeploy requested",
+		Metadata: database.JSON{
 			"containerID": input.ContainerID,
 		},
-		true,
-	)
+		Queue: true,
+	})
 	activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
-	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Redeploying container")
-	redeployCtx := context.WithValue(runtimeCtx, types.ProgressWriterKey{}, activityWriter)
+	activityWriter := activitylib.NewWriter(runtimeCtx, activitylib.WriterOptions{
+		Service:     h.activityService,
+		ActivityID:  activityID,
+		Output:      io.Discard,
+		DefaultStep: "Redeploying container",
+	})
+	redeployCtx := context.WithValue(runtimeCtx, dockertypes.ProgressWriterKey{}, activityWriter)
 	newContainerID, err := h.containerService.RedeployContainer(redeployCtx, input.ContainerID, *user)
 	if err != nil {
 		activitylib.FlushWriter(activityWriter)
@@ -602,10 +559,10 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	if inspectErr != nil {
 		// Container was redeployed successfully, but we couldn't fetch full details.
 		// Return minimal response with just the ID so frontend can still navigate.
-		return &handlerutil.Out[container.Details]{
-			Body: base.ApiResponse[container.Details]{
+		return &handlerutil.Out[types.ContainerDetails]{
+			Body: types.ApiResponse[types.ContainerDetails]{
 				Success: true,
-				Data: container.Details{
+				Data: types.ContainerDetails{
 					ID:         newContainerID,
 					ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 				},
@@ -613,10 +570,10 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 		}, nil
 	}
 
-	return &handlerutil.Out[container.Details]{
-		Body: base.ApiResponse[container.Details]{
+	return &handlerutil.Out[types.ContainerDetails]{
+		Body: types.ApiResponse[types.ContainerDetails]{
 			Success: true,
-			Data: container.Details{ //exhaustruct:enforce
+			Data: types.ContainerDetails{ //exhaustruct:enforce
 				ID:                details.ID,
 				Name:              details.Name,
 				Image:             details.Image,
@@ -641,56 +598,58 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	}, nil
 }
 
-func (h *ContainerHandler) GetContainerEditConfig(ctx context.Context, input *GetContainerEditConfigInput) (*handlerutil.Out[container.EditConfig], error) {
+func (h *ContainerHandler) GetContainerEditConfig(ctx context.Context, input *GetContainerEditConfigInput) (*handlerutil.Out[types.ContainerEditConfig], error) {
 	editConfig, err := h.containerService.GetContainerEditConfig(ctx, input.ContainerID)
 	if err != nil {
 		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve container: "+apiErr.Message)
 	}
 
-	return &handlerutil.Out[container.EditConfig]{
-		Body: base.ApiResponse[container.EditConfig]{
+	return &handlerutil.Out[types.ContainerEditConfig]{
+		Body: types.ApiResponse[types.ContainerEditConfig]{
 			Success: true,
 			Data:    editConfig,
 		},
 	}, nil
 }
 
-func (h *ContainerHandler) EditContainer(ctx context.Context, input *EditContainerInput) (*handlerutil.Out[container.Details], error) {
+func (h *ContainerHandler) EditContainer(ctx context.Context, input *EditContainerInput) (*handlerutil.Out[types.ContainerDetails], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivity(
-		runtimeCtx,
-		h.activityService,
-		input.EnvironmentID,
-		activitytypes.TypeContainerEdit,
-		"container",
-		input.ContainerID,
-		h.containerActivityName(
+	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID: input.EnvironmentID,
+		Type:          types.ActivityTypeContainerEdit,
+		ResourceType:  "container",
+		ResourceID:    input.ContainerID,
+		ResourceName: h.containerActivityName(
 			runtimeCtx,
 			input.ContainerID,
 		),
-		user,
-		"Starting edit",
-		"Container edit requested",
-		database.JSON{
+		User:    user,
+		Step:    "Starting edit",
+		Message: "Container edit requested",
+		Metadata: database.JSON{
 			"containerID": input.ContainerID,
 		},
-		true,
-	)
+		Queue: true,
+	})
 	activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
-	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Editing container")
-	editCtx := context.WithValue(runtimeCtx, types.ProgressWriterKey{}, activityWriter)
+	activityWriter := activitylib.NewWriter(runtimeCtx, activitylib.WriterOptions{
+		Service:     h.activityService,
+		ActivityID:  activityID,
+		Output:      io.Discard,
+		DefaultStep: "Editing container",
+	})
+	editCtx := context.WithValue(runtimeCtx, dockertypes.ProgressWriterKey{}, activityWriter)
 	newContainerID, err := h.containerService.EditContainer(editCtx, input.ContainerID, input.Body, *user)
 	if err != nil {
 		activitylib.FlushWriter(activityWriter)
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container edit failed", err)
-		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
-		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		return nil, handlerutil.APIError(common.ClassifyDockerError(err))
 	}
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container edited", nil)
@@ -700,10 +659,10 @@ func (h *ContainerHandler) EditContainer(ctx context.Context, input *EditContain
 	if inspectErr != nil {
 		// Container was recreated successfully, but we couldn't fetch full details.
 		// Return minimal response with just the ID so frontend can still navigate.
-		return &handlerutil.Out[container.Details]{
-			Body: base.ApiResponse[container.Details]{
+		return &handlerutil.Out[types.ContainerDetails]{
+			Body: types.ApiResponse[types.ContainerDetails]{
 				Success: true,
-				Data: container.Details{
+				Data: types.ContainerDetails{
 					ID:         newContainerID,
 					ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 				},
@@ -711,10 +670,10 @@ func (h *ContainerHandler) EditContainer(ctx context.Context, input *EditContain
 		}, nil
 	}
 
-	return &handlerutil.Out[container.Details]{
-		Body: base.ApiResponse[container.Details]{
+	return &handlerutil.Out[types.ContainerDetails]{
+		Body: types.ApiResponse[types.ContainerDetails]{
 			Success: true,
-			Data: container.Details{ //exhaustruct:enforce
+			Data: types.ContainerDetails{ //exhaustruct:enforce
 				ID:                details.ID,
 				Name:              details.Name,
 				Image:             details.Image,
@@ -739,35 +698,35 @@ func (h *ContainerHandler) EditContainer(ctx context.Context, input *EditContain
 	}, nil
 }
 
-func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteContainerInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteContainerInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivity(
-		runtimeCtx,
-		h.activityService,
-		input.EnvironmentID,
-		activitytypes.TypeContainerDelete,
-		"container",
-		input.ContainerID,
-		h.containerActivityName(
+	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID: input.EnvironmentID,
+		Type:          types.ActivityTypeContainerDelete,
+		ResourceType:  "container",
+		ResourceID:    input.ContainerID,
+		ResourceName: h.containerActivityName(
 			runtimeCtx,
 			input.ContainerID,
 		),
-		user,
-		"Deleting container",
-		"Container delete requested",
-		database.JSON{
+		User:    user,
+		Step:    "Deleting container",
+		Message: "Container delete requested",
+		Metadata: database.JSON{
 			"containerID":   input.ContainerID,
 			"force":         input.Force,
 			"removeVolumes": input.RemoveVolumes,
 		},
-		false,
-	)
-	if deleteContainerErr := h.containerService.DeleteContainer(runtimeCtx, input.ContainerID, input.Force, input.RemoveVolumes, *user); deleteContainerErr != nil {
+	})
+	if deleteContainerErr := h.containerService.DeleteContainer(runtimeCtx, input.ContainerID, DeleteContainerOptions{
+		Force:         input.Force,
+		RemoveVolumes: input.RemoveVolumes,
+	}, *user); deleteContainerErr != nil {
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container deleted", deleteContainerErr)
 		apiErr := common.ToAPIError(common.ClassifyDockerError(deleteContainerErr))
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete container: "+apiErr.Message)
@@ -777,14 +736,14 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 	return handlerutil.MessageOutput("Container deleted successfully", activityID), nil
 }
 
-func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpdateInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpdateInput) (*handlerutil.Out[types.MessageResponse], error) {
 	// Resolve container name from ID
-	containerName, err := h.containerService.GetContainerNameByID(ctx, input.ContainerID)
+	containerName, err := h.containerService.GetContainerNameByReference(ctx, input.ContainerID)
 	if err != nil {
 		return nil, huma.Error404NotFound("container not found")
 	}
 
-	if setContainerAutoUpdateExclusionErr := h.settingsService.SetContainerAutoUpdateExclusionInternal(ctx, containerName, !input.Body.Enabled); setContainerAutoUpdateExclusionErr != nil {
+	if setContainerAutoUpdateExclusionErr := h.settingsService.SetContainerAutoUpdateExclusion(ctx, containerName, !input.Body.Enabled); setContainerAutoUpdateExclusionErr != nil {
 		return nil, huma.Error500InternalServerError("failed to update auto-update setting")
 	}
 

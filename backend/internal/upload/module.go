@@ -4,15 +4,17 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/upload"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
-// Module wires the upload domain and mounts its routes.
-type Module struct {
-	service *UploadService
-}
+type (
+	// Module wires the upload domain and mounts its routes.
+	Module struct {
+		service *UploadService
+	}
+)
 
 // New builds the upload module around its session service.
 func New(service *UploadService) *Module {
@@ -64,7 +66,7 @@ func RegisterUploads(api huma.API, service *UploadService) {
 		Description:  "Upload one chunk of an upload session; re-sending a chunk is idempotent",
 		Tags:         []string{"Uploads"},
 		Security:     handlerutil.DefaultOperationSecurity(),
-		MaxBodyBytes: upload.MaxChunkSize,
+		MaxBodyBytes: types.UploadMaxChunkSize,
 	}, h.UploadChunk)
 
 	huma.Register(api, huma.Operation{

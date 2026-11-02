@@ -7,70 +7,64 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
-	import type { JobStatus } from '#lib/types/settings.js';
+	import { extractApiErrorField, extractApiErrorMessage } from '#lib/utils/api.js';
 
 	let {
-		job,
-		environmentId = '0',
+		name,
+		settingsKey,
+		schedule,
+		mixed = false,
 		open = $bindable(false),
+		save,
 		onUpdate
 	}: {
-		job: JobStatus;
-		environmentId?: string;
+		name: string;
+		settingsKey?: string;
+		schedule: string;
+		mixed?: boolean;
 		open?: boolean;
+		save: (update: Record<string, string>) => Promise<unknown>;
 		onUpdate?: () => void;
 	} = $props();
 
 	let scheduleValue = $state('');
 	let error = $state<string | null>(null);
 	const saveMutation = createMutation(() => ({
-		mutationFn: (update: Record<string, string>) => jobScheduleService.updateJobSchedules(update, environmentId),
+		mutationFn: save,
 		onSuccess: () => {
 			toast.success(m.jobs_schedule_updated());
 			onUpdate?.();
 		},
 		onError: (err) => {
-			toast.error(err instanceof Error ? err.message : m.jobs_schedule_update_failed());
+			if (extractApiErrorField(err) === settingsKey) error = extractApiErrorMessage(err);
+			else toast.error(m.jobs_schedule_update_failed(), { description: extractApiErrorMessage(err) });
 		}
 	}));
 	const isLoading = $derived(saveMutation.isPending);
 
 	const cronExamples = [
-		{ label: m.jobs_cron_example_every_15min(), value: '0 */15 * * * *' },
-		{ label: m.jobs_cron_example_hourly(), value: '0 0 * * * *' },
-		{ label: m.jobs_cron_example_every_6hours(), value: '0 0 */6 * * *' },
-		{ label: m.jobs_cron_example_daily(), value: '0 0 0 * * *' }
+		{ label: m.jobs_cron_example_every_15min(), value: '*/15 * * * *' },
+		{ label: m.jobs_cron_example_hourly(), value: '0 * * * *' },
+		{ label: m.jobs_cron_example_every_6hours(), value: '0 */6 * * *' },
+		{ label: m.jobs_cron_example_daily(), value: '0 0 * * *' }
 	];
 
 	function validateCron(value: string): boolean {
-		if (!value.trim()) {
-			error = m.jobs_cron_required();
-			return false;
-		}
-
-		const parts = value.trim().split(/\s+/);
-		if (parts.length !== 6) {
-			error = m.jobs_cron_invalid();
-			return false;
-		}
-
-		error = null;
-		return true;
+		error = value.trim() ? null : m.jobs_cron_required();
+		return !error;
 	}
 
-	function save() {
+	function submit() {
 		if (!validateCron(scheduleValue)) {
 			return;
 		}
 
-		if (!job.settingsKey) {
+		if (!settingsKey) {
 			toast.error(m.jobs_schedule_update_unavailable());
 			return;
 		}
 
-		const update = { [job.settingsKey]: scheduleValue };
-		saveMutation.mutate(update);
+		saveMutation.mutate({ [settingsKey]: scheduleValue });
 	}
 
 	function useCronExample(value: string) {
@@ -80,7 +74,7 @@
 
 	function handleOpenChange(isOpen: boolean) {
 		if (isOpen) {
-			scheduleValue = job.schedule;
+			scheduleValue = schedule;
 			error = null;
 		}
 	}
@@ -92,13 +86,14 @@
 	bind:open
 	onOpenChange={handleOpenChange}
 	title={m.jobs_edit_schedule()}
-	description={job.name}
+	description={name}
+	variant="sheet"
 	contentClass="sm:max-w-125"
 >
 	<div class="space-y-4 py-4">
 		<div class="space-y-2">
 			<Label for="schedule">{m.jobs_cron_expression()}</Label>
-			<Input id="schedule" bind:value={scheduleValue} placeholder="0 */15 * * * *" aria-invalid={!!error} />
+			<Input id="schedule" bind:value={scheduleValue} placeholder={mixed ? m.mixed() : '*/15 * * * *'} aria-invalid={!!error} />
 			{#if error}
 				<p class="text-sm text-destructive">{error}</p>
 			{:else}
@@ -129,7 +124,7 @@
 		<Button variant="outline" onclick={() => (open = false)} disabled={isLoading}>
 			{m.common_cancel()}
 		</Button>
-		<Button onclick={save} disabled={isLoading}>
+		<Button onclick={submit} disabled={isLoading}>
 			{isLoading ? m.common_saving() : m.common_save()}
 		</Button>
 	{/snippet}

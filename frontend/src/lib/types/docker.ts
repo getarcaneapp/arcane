@@ -1,4 +1,5 @@
 import type { VulnerabilityScanSummary } from './environment';
+import type { CreateRequest, UpdateRequest } from './shared';
 
 // --- Container DTOs ---
 
@@ -70,28 +71,58 @@ export interface NetworkingConfig {
 	endpointsConfig?: Record<string, EndpointSettingsCreate>;
 }
 
-export interface ContainerCreateRequest {
+export interface ContainerRegistryCredential {
+	url: string;
+	username: string;
+	token: string;
+	enabled: boolean;
+}
+
+export interface Container {
 	name: string;
 	image: string;
+	command?: string[];
 	cmd?: string[];
 	entrypoint?: string[];
+	workingDir?: string;
+	user?: string;
+	environment?: string[];
 	env?: string[];
+	labels?: Record<string, string>;
 	exposedPorts?: Record<string, {}>;
 	healthcheck?: ContainerHealthcheckCreate;
 	hostConfig?: HostConfigCreate;
 	networkingConfig?: NetworkingConfig;
-	labels?: Record<string, string>;
-	workingDir?: string;
-	user?: string;
 	hostname?: string;
 	domainname?: string;
 	attachStdout?: boolean;
 	attachStderr?: boolean;
 	attachStdin?: boolean;
-	networkDisabled?: boolean;
 	tty?: boolean;
 	openStdin?: boolean;
 	stdinOnce?: boolean;
+	networkDisabled?: boolean;
+	ports?: Record<string, string>;
+	volumes?: string[];
+	networks?: string[];
+	restartPolicy?: string;
+	privileged?: boolean;
+	autoRemove?: boolean;
+	memory?: number;
+	cpus?: number;
+	credentials?: ContainerRegistryCredential[];
+}
+
+export type ContainerWritable = keyof Container;
+
+export type ContainerCreate = CreateRequest<Container, ContainerWritable, 'name' | 'image'>;
+
+export interface ContainerCreated {
+	id: string;
+	name: string;
+	image: string;
+	status: string;
+	created: string;
 }
 
 export interface ContainerHostConfigEdit {
@@ -174,14 +205,17 @@ export interface ContainerResourceSample {
 	memoryUsageBytes: number;
 	memoryLimitBytes: number;
 	sampleTime: string;
+	blockReadBytes: number;
+	blockWriteBytes: number;
+	networkRxBytes: number;
+	networkTxBytes: number;
+	pids: number;
 }
 
-/** Client frame on the batched container stats stream; each frame replaces the previous set. */
 export interface ContainerResourceSampleSubscription {
 	containerIds: string[];
 }
 
-/** Server frame on the batched container stats stream. Stopped, unknown and unsampled containers are omitted. */
 export interface ContainerResourceSampleBatch {
 	samples: Record<string, ContainerResourceSample>;
 	error?: string;
@@ -239,7 +273,7 @@ export interface ContainerMounts {
 }
 
 export interface ContainerNetwork {
-	ipamConfig: any | null;
+	ipamConfig: unknown;
 	links: string[] | null;
 	aliases: string[] | null;
 	macAddress: string;
@@ -260,6 +294,8 @@ export interface ContainerStatusCounts {
 	runningContainers: number;
 	stoppedContainers: number;
 	totalContainers: number;
+	unhealthyContainers: number;
+	updatesAvailable: number;
 }
 
 export interface ContainerHealthLogEntry {
@@ -548,7 +584,7 @@ export interface ImageDetailSummaryDto {
 	os: string;
 	size: number;
 	graphDriver: {
-		data: unknown | null;
+		data: unknown;
 		name: string;
 	};
 	rootFs: {
@@ -619,6 +655,17 @@ export interface ImageAttestationRequestOptions {
 
 export type ImageUpdateData = ImageUpdateInfoDto;
 
+export interface ImageReleaseNotesDto {
+	imageRef: string;
+	version?: string;
+	status: 'found' | 'not_found' | 'unavailable' | 'link' | 'no_source';
+	sourceUrl?: string;
+	releaseUrl?: string;
+	releaseName?: string;
+	notes?: string;
+	publishedAt?: string;
+}
+
 export type ImagePatchMode = 'update-all' | 'report';
 export type ImagePatchStatus = 'patching' | 'completed' | 'failed';
 
@@ -665,6 +712,15 @@ export interface ImagePatchTargetDto {
 	lastPatchScan?: ImagePatchScanSummaryDto;
 }
 
+export interface ImagePruneReport {
+	imagesDeleted: string[];
+	spaceReclaimed: number;
+}
+
+export interface ImageLoadResult {
+	stream: string;
+}
+
 export type ImageBuildStatus = 'running' | 'success' | 'failed';
 
 export interface ImageBuildRecord {
@@ -703,6 +759,32 @@ export interface ImageBuildRecord {
 	createdAt: string;
 }
 
+export type ImageBuildRequest = {
+	provider: 'local' | 'depot';
+} & Pick<
+	ImageBuildRecord,
+	| 'contextDir'
+	| 'dockerfile'
+	| 'tags'
+	| 'target'
+	| 'buildArgs'
+	| 'labels'
+	| 'cacheFrom'
+	| 'cacheTo'
+	| 'noCache'
+	| 'pull'
+	| 'network'
+	| 'isolation'
+	| 'shmSize'
+	| 'ulimits'
+	| 'entitlements'
+	| 'privileged'
+	| 'extraHosts'
+	| 'platforms'
+	| 'push'
+	| 'load'
+>;
+
 // --- Networks ---
 
 export interface IPAMConfig {
@@ -730,9 +812,19 @@ export interface NetworkCreateOptions {
 	labels?: Record<string, string>;
 }
 
-export interface NetworkCreateRequest {
+export interface Network {
 	name: string;
 	options: NetworkCreateOptions;
+}
+
+export type NetworkWritable = keyof Network;
+
+export type NetworkCreate = CreateRequest<Network, NetworkWritable, 'name'>;
+
+export interface NetworkCreateResponse {
+	id: string;
+	warning?: string;
+	activityId?: string;
 }
 
 export interface NetworkUsageCounts {
@@ -836,6 +928,8 @@ export interface TopologyNodeDto {
 	name: string;
 	type: TopologyNodeType;
 	metadata: TopologyNodeMetadata;
+	environmentId: string;
+	environmentName: string;
 }
 
 export interface TopologyEdgeDto {
@@ -858,18 +952,11 @@ export interface VolumeUsageData {
 	refCount: number;
 }
 
-export interface VolumeCreateRequest {
-	name: string;
-	driver?: string;
-	driverOpts?: Record<string, string>;
-	labels?: Record<string, string>;
-}
-
 export interface VolumeRenameRequest {
 	name: string;
 }
 
-export interface VolumeSummaryDto {
+export interface Volume {
 	id: string;
 	name: string;
 	driver: string;
@@ -881,12 +968,13 @@ export interface VolumeSummaryDto {
 	inUse: boolean;
 	usageData?: VolumeUsageData;
 	size: number;
+	containers: string[];
 	activityId?: string;
 }
 
-export interface VolumeDetailDto extends VolumeSummaryDto {
-	containers: string[];
-}
+export type VolumeWritable = 'name' | 'driver' | 'options' | 'labels';
+
+export type VolumeCreate = CreateRequest<Volume, VolumeWritable, 'name'>;
 
 export interface VolumeUsageDto {
 	inUse: boolean;
@@ -1017,49 +1105,41 @@ export interface Commit {
 
 export type RegistryType = 'generic' | 'ecr';
 
-export interface ContainerRegistryCreateDto {
-	url: string;
-	username?: string;
-	token?: string;
-	description?: string;
-	insecure?: boolean;
-	enabled?: boolean;
-	registryType?: RegistryType;
-	repositoryNames?: string[];
-	awsAccessKeyId?: string;
-	awsSecretAccessKey?: string;
-	awsRegion?: string;
-}
-
-export interface ContainerRegistryUpdateDto {
-	url?: string;
-	username?: string;
-	token?: string;
-	description?: string;
-	insecure?: boolean;
-	enabled?: boolean;
-	registryType?: RegistryType;
-	repositoryNames?: string[];
-	awsAccessKeyId?: string;
-	awsSecretAccessKey?: string;
-	awsRegion?: string;
-}
-
 export interface ContainerRegistry {
 	id: string;
 	url: string;
+	host: string;
+	namespace: string;
 	username: string;
-	token: string;
 	description?: string;
-	insecure?: boolean;
-	enabled?: boolean;
-	registryType?: RegistryType;
-	repositoryNames?: string[];
+	insecure: boolean;
+	enabled: boolean;
+	registryType: RegistryType;
+	repositoryNames: string[];
 	awsAccessKeyId?: string;
 	awsRegion?: string;
-	createdAt?: string;
-	updatedAt?: string;
+	createdAt: string;
+	updatedAt: string;
+	token?: string;
+	awsSecretAccessKey?: string;
 }
+
+export type ContainerRegistryWritable =
+	| 'url'
+	| 'username'
+	| 'description'
+	| 'insecure'
+	| 'enabled'
+	| 'registryType'
+	| 'repositoryNames'
+	| 'awsAccessKeyId'
+	| 'awsRegion'
+	| 'token'
+	| 'awsSecretAccessKey';
+
+export type ContainerRegistryCreate = CreateRequest<ContainerRegistry, ContainerRegistryWritable, 'url'>;
+
+export type ContainerRegistryUpdate = UpdateRequest<ContainerRegistry, ContainerRegistryWritable>;
 
 export interface RegistryRepository {
 	id: string;

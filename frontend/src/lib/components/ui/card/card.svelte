@@ -6,7 +6,6 @@
 	let {
 		ref = $bindable(null),
 		class: className,
-		variant = 'default',
 		size = 'default',
 		interactive = false,
 		selected = false,
@@ -15,11 +14,10 @@
 		...restProps
 	}: WithElementRef<
 		HTMLAttributes<HTMLDivElement> & {
-			variant?: 'default' | 'subtle' | 'outlined' | 'transparent';
 			/** `sm` tightens the content padding for dense tiles. */
 			size?: 'default' | 'sm';
 			/** Hover affordance for cards that act as links or choices. */
-			interactive?: boolean;
+			interactive?: boolean | 'subtle';
 			/** Highlights the current or chosen card. */
 			selected?: boolean;
 			onclick?: (e: MouseEvent) => void;
@@ -37,21 +35,6 @@
 			}
 		}
 	}
-
-	function getVariantClasses(variant: 'default' | 'subtle' | 'outlined' | 'transparent') {
-		switch (variant) {
-			case 'default':
-				return 'backdrop-blur-md bg-card/60 shadow-xs dark:bg-surface/40';
-			case 'subtle':
-				return 'bg-muted/40 dark:bg-surface/30';
-			case 'transparent':
-				return 'border-border bg-transparent shadow-none';
-			case 'outlined':
-				return 'bg-card/50 backdrop-blur-md border-border/70';
-			default:
-				return 'backdrop-blur-md bg-card/60 shadow-xs dark:bg-surface/40';
-		}
-	}
 </script>
 
 <div
@@ -59,12 +42,13 @@
 	data-slot="card"
 	data-size={size}
 	class={cn(
-		'group relative isolate gap-0 overflow-hidden rounded-xl border border-border/70 p-0 text-card-foreground transition-colors duration-200',
-		getVariantClasses(variant),
-		onclick
-			? 'cursor-pointer [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:bg-muted/60 [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:shadow-sm'
-			: '',
-		interactive && 'transition hover:border-primary/30 hover:shadow-md',
+		'group relative isolate gap-0 overflow-hidden rounded-xl border border-border/70 bg-card/10 p-0 text-card-foreground shadow-none transition-colors duration-200',
+		onclick && 'cursor-pointer',
+		onclick &&
+			!interactive &&
+			'[&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:bg-muted/60 [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:shadow-sm',
+		interactive === true && 'hover-glow-card',
+		interactive === 'subtle' && 'hover-glow-card-subtle',
 		selected && 'border-primary/40 bg-primary/5',
 		className
 	)}

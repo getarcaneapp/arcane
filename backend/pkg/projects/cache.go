@@ -9,38 +9,36 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/samber/hot"
+
+	"getarcane.dev/types/v3"
 )
 
-type composeCacheInternal[T any] struct {
-	entries *hot.HotCache[string, composeCacheEntryInternal[T]]
-	clone   func(T) T
-}
+type (
+	composeCache[T any] struct {
+		entries *hot.HotCache[string, composeCacheEntry[T]]
+		clone   func(T) T
+	}
 
-type composeCacheEntryInternal[T any] struct {
-	fingerprint string
-	stamps      map[string]composeCacheStampInternal
-	value       T
-}
+	composeCacheEntry[T any] struct {
+		value       T
+		stamps      map[string]composeCacheStamp
+		fingerprint string
+	}
 
-type composeCacheStampInternal struct {
-	modTime time.Time
-	size    int64
-}
+	composeCacheStamp struct {
+		modTime time.Time
+		size    int64
+	}
+)
 
 // NewComposeCache caches Compose-derived values and their file dependencies.
 // clone, when supplied, isolates stored values from mutations by callers.
-func NewComposeCache[T any](capacity int, clone func(T) T) projecttypes.ComposeCache[T] {
-	return &composeCacheInternal[T]{entries: hot.NewHotCache[string, composeCacheEntryInternal[T]](hot.LRU, capacity).Build(), clone: clone}
+func NewComposeCache[T any](capacity int, clone func(T) T) types.ComposeCache[T] {
+	return &composeCache[T]{entries: hot.NewHotCache[string, composeCacheEntry[T]](hot.LRU, capacity).Build(), clone: clone}
 }
 
-// NewParsedComposeCache keeps operation-local models separate from cached state.
-func NewParsedComposeCache() projecttypes.ComposeCache[*composetypes.Project] {
-	return NewComposeCache(2048, cloneComposeProjectInternal)
-}
-
-func cloneComposeProjectInternal(project *composetypes.Project) *composetypes.Project {
+func CloneComposeProject(project *composetypes.Project) *composetypes.Project {
 	if project == nil {
 		return nil
 	}
@@ -48,9 +46,9 @@ func cloneComposeProjectInternal(project *composetypes.Project) *composetypes.Pr
 	return project.WithServicesDisabled()
 }
 
-func (c *composeCacheInternal[T]) Get(projectID, fingerprint string) (T, bool) {
+func (c *composeCache[T]) Get(projectID, fingerprint string) (T, bool) {
 	entry, found := c.entries.Peek(projectID)
-	if found && entry.fingerprint == fingerprint && validComposeCacheEntryInternal(entry.stamps) {
+	if found && entry.fingerprint == fingerprint && validComposeCacheEntry(entry.stamps) {
 		if c.clone != nil {
 			return c.clone(entry.value), true
 		}
@@ -60,11 +58,11 @@ func (c *composeCacheInternal[T]) Get(projectID, fingerprint string) (T, bool) {
 	return zero, false
 }
 
-func (c *composeCacheInternal[T]) Set(projectID, fingerprint, projectPath, projectsDirectory, composePath string, composeFiles, envFiles []string, loadedAt time.Time, value T) error {
+func (c *composeCache[T]) Set(projectID, fingerprint, projectPath, projectsDirectory, composePath string, composeFiles, envFiles []string, loadedAt time.Time, value T) error {
 	if strings.TrimSpace(projectID) == "" {
 		return nil
 	}
-	stamps := make(map[string]composeCacheStampInternal)
+	stamps := make(map[string]composeCacheStamp)
 	for _, path := range append([]string{composePath}, composeFiles...) {
 		if path == "" {
 			continue
@@ -76,14 +74,14 @@ func (c *composeCacheInternal[T]) Set(projectID, fingerprint, projectPath, proje
 		if !info.ModTime().Before(loadedAt) {
 			return nil
 		}
-		stamps[path] = composeCacheStampInternal{modTime: info.ModTime(), size: info.Size()}
+		stamps[path] = composeCacheStamp{modTime: info.ModTime(), size: info.Size()}
 	}
 	dependencies := append([]string{filepath.Join(projectPath, EffectiveEnvFileName)}, envFiles...)
 	if projectsDirectory != "" {
 		dependencies = append(dependencies, filepath.Join(projectsDirectory, GlobalEnvFileName))
 	}
 	// A later standard override must invalidate a model loaded before it existed.
-	for _, name := range composeOverrideFileCandidates {
+	for _, name := range ComposeOverrideFileCandidates {
 		dependencies = append(dependencies, filepath.Join(filepath.Dir(composePath), name))
 	}
 	for _, path := range dependencies {
@@ -92,26 +90,26 @@ func (c *composeCacheInternal[T]) Set(projectID, fingerprint, projectPath, proje
 			if !info.ModTime().Before(loadedAt) {
 				return nil
 			}
-			stamps[path] = composeCacheStampInternal{modTime: info.ModTime(), size: info.Size()}
+			stamps[path] = composeCacheStamp{modTime: info.ModTime(), size: info.Size()}
 			continue
 		}
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("stat compose dependency %s: %w", path, err)
 		}
-		stamps[path] = composeCacheStampInternal{}
+		stamps[path] = composeCacheStamp{}
 	}
 	if c.clone != nil {
 		value = c.clone(value)
 	}
-	c.entries.Set(projectID, composeCacheEntryInternal[T]{fingerprint: fingerprint, stamps: stamps, value: value})
+	c.entries.Set(projectID, composeCacheEntry[T]{fingerprint: fingerprint, stamps: stamps, value: value})
 	return nil
 }
 
-func (c *composeCacheInternal[T]) Invalidate(projectID string) {
+func (c *composeCache[T]) Invalidate(projectID string) {
 	c.entries.Delete(projectID)
 }
 
-func validComposeCacheEntryInternal(stamps map[string]composeCacheStampInternal) bool {
+func validComposeCacheEntry(stamps map[string]composeCacheStamp) bool {
 	for path, stamp := range stamps {
 		info, err := os.Stat(path)
 		if err != nil {
@@ -137,7 +135,7 @@ func validComposeCacheEntryInternal(stamps map[string]composeCacheStampInternal)
 
 // LoadCachedComposeProject resolves an executable model with isolated cached state.
 func LoadCachedComposeProject(ctx context.Context,
-	cache projecttypes.ComposeCache[*composetypes.Project],
+	cache types.ComposeCache[*composetypes.Project],
 	projectID,
 	projectPath,
 	composePath,
@@ -153,9 +151,16 @@ func LoadCachedComposeProject(ctx context.Context,
 			return cached, nil
 		}
 	}
-	dependencies := projecttypes.ComposeDependencies{}
+	dependencies := types.ComposeDependencies{}
 	loadedAt := time.Now()
-	model, err := LoadComposeProject(ctx, composePath, projectName, projectsDirectory, autoInject, pathMapper, nil, nil, false, &dependencies, nil, nil)
+	model, err := LoadComposeProject(ctx, LoadOptions{
+		ComposeFile:       composePath,
+		ProjectName:       projectName,
+		ProjectsDirectory: projectsDirectory,
+		AutoInjectEnv:     autoInject,
+		PathMapper:        pathMapper,
+		Dependencies:      &dependencies,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +183,7 @@ func LoadCachedComposeProject(ctx context.Context,
 func ComposeCacheDependencies(
 	ctx context.Context,
 	model *composetypes.Project,
-	dependencies projecttypes.ComposeDependencies,
+	dependencies types.ComposeDependencies,
 	composePath, projectsDirectory string,
 	autoInject bool,
 ) ([]string, []string, bool) {

@@ -5,40 +5,41 @@ import (
 	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/base"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
-type Handler struct {
-	service *Service
-}
+type (
+	Handler struct {
+		service *Service
+	}
 
-type BackupHasPathInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	BackupID      string `path:"backupId" doc:"Backup ID"`
-	Path          string `query:"path" doc:"Path to check"`
-}
+	BackupHasPathInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		BackupID      string `path:"backupId" doc:"Backup ID"`
+		Path          string `query:"path" doc:"Path to check"`
+	}
 
-type BackupHasPathResponse struct {
-	Exists bool `json:"exists"`
-}
+	BackupHasPathResponse struct {
+		Exists bool `json:"exists"`
+	}
 
-type ListBackupFilesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	BackupID      string `path:"backupId" doc:"Backup ID"`
-}
+	ListBackupFilesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		BackupID      string `path:"backupId" doc:"Backup ID"`
+	}
 
-type BrowseBackupFilesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	BackupID      string `path:"backupId" doc:"Backup ID"`
-	Path          string `query:"path" doc:"Folder path relative to the backup root"`
-	Search        string `query:"search" doc:"Case-insensitive full-path search"`
-	Start         int    `query:"start" default:"0" doc:"Start index for the page"`
-	Limit         int    `query:"limit" default:"20" doc:"Requested page size"`
-}
+	BrowseBackupFilesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		BackupID      string `path:"backupId" doc:"Backup ID"`
+		Path          string `query:"path" doc:"Folder path relative to the backup root"`
+		Search        string `query:"search" doc:"Case-insensitive full-path search"`
+		Start         int    `query:"start" default:"0" doc:"Start index for the page"`
+		Limit         int    `query:"limit" default:"20" doc:"Requested page size"`
+	}
+)
 
 func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
@@ -55,7 +56,7 @@ func (h *Handler) BackupHasPath(ctx context.Context, input *BackupHasPathInput) 
 	}
 
 	return &handlerutil.Out[BackupHasPathResponse]{
-		Body: base.ApiResponse[BackupHasPathResponse]{
+		Body: types.ApiResponse[BackupHasPathResponse]{
 			Success: true,
 			Data:    BackupHasPathResponse{Exists: exists},
 		},
@@ -69,14 +70,14 @@ func (h *Handler) ListBackupFiles(ctx context.Context, input *ListBackupFilesInp
 	}
 
 	return &handlerutil.Out[[]string]{
-		Body: base.ApiResponse[[]string]{
+		Body: types.ApiResponse[[]string]{
 			Success: true,
 			Data:    files,
 		},
 	}, nil
 }
 
-func (h *Handler) BrowseBackupFiles(ctx context.Context, input *BrowseBackupFilesInput) (*handlerutil.Page[backup.BackupFileEntry], error) {
+func (h *Handler) BrowseBackupFiles(ctx context.Context, input *BrowseBackupFilesInput) (*handlerutil.Page[types.BackupFileEntry], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, "", "", input.Search)
 	items, page, err := h.service.BrowseBackupFiles(ctx, input.BackupID, input.Path, params)
 	if errors.Is(err, common.ErrBadRequest) {
@@ -85,7 +86,7 @@ func (h *Handler) BrowseBackupFiles(ctx context.Context, input *BrowseBackupFile
 	if err != nil {
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
-	return &handlerutil.Page[backup.BackupFileEntry]{Body: base.Paginated[backup.BackupFileEntry]{
+	return &handlerutil.Page[types.BackupFileEntry]{Body: types.Paginated[types.BackupFileEntry]{
 		Success: true, Data: items, Pagination: handlerutil.PaginationResponse(page),
 	}}, nil
 }

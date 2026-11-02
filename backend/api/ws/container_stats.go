@@ -10,10 +10,14 @@ import (
 	"sync"
 	"time"
 
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/labstack/echo/v5"
 
-	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
+	wshub "getarcane.dev/arcane/v3/pkg/ws"
+	"getarcane.dev/types/v3"
+)
+
+const (
+	streamEndDrainGrace = 2 * time.Second
 )
 
 // ============================================================================
@@ -34,7 +38,7 @@ func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
 	}
 
-	conn, onRemove, ok := h.acceptWS(c, systemtypes.WSKindContainerStats, containerID)
+	conn, onRemove, ok := h.acceptWS(c, types.WSKindContainerStats, containerID)
 	if !ok {
 		return nil
 	}
@@ -62,8 +66,6 @@ func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 	onRemove()
 	return nil
 }
-
-const streamEndDrainGrace = 2 * time.Second
 
 func (h *WebSocketHandler) runContainerStatsHub(containerID string, hub *wshub.Hub) {
 	ctx, cancel := context.WithCancel(h.ctx)
@@ -119,7 +121,7 @@ func (h *WebSocketHandler) runContainerStatsHub(containerID string, hub *wshub.H
 		slog.WarnContext(ctx, "container stats stream failed", "containerId", containerID, "error", err)
 		if b, marshalErr := json.Marshal(map[string]any{
 			"error":     "Failed to stream container stats: " + err.Error(),
-			"timestamp": wshub.NowRFC3339(),
+			"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 		}); marshalErr == nil {
 			hub.Broadcast(b)
 		}

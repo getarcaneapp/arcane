@@ -15,27 +15,31 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/getarcaneapp/arcane/types/v2/workspace"
-	"go.getarcane.app/acfs"
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	acfsutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/acfs"
+	"getarcane.dev/arcane/v3/internal/common"
+	workspacepkg "getarcane.dev/arcane/v3/pkg/workspace"
+	"getarcane.dev/types/v3"
 )
 
-const defaultBuildsDirectory = "/builds"
+type (
+	// Service provides file operations for the manual build workspace.
+	Service struct {
+		buildsDirectory func() string
+	}
+)
 
-// Service provides file operations for the manual build workspace.
-type Service struct {
-	buildsDirectory func() string
-}
+const (
+	defaultBuildsDirectory = "/builds"
+)
 
 // NewService builds the workspace service; buildsDirectory reports the configured workspace root.
 func NewService(buildsDirectory func() string) *Service {
 	return &Service{buildsDirectory: buildsDirectory}
 }
 
-func (s *Service) ListDirectory(ctx context.Context, dirPath string) ([]workspace.FileEntry, error) {
+func (s *Service) ListDirectory(ctx context.Context, dirPath string) ([]types.WorkspaceFileEntry, error) {
 	slog.DebugContext(ctx, "build workspace: list directory", "path", dirPath)
 	root, err := s.resolveRoot()
 	if err != nil {
@@ -47,14 +51,14 @@ func (s *Service) ListDirectory(ctx context.Context, dirPath string) ([]workspac
 		return nil, common.Classify(common.ErrForbidden, fmt.Errorf("invalid path: %w", err))
 	}
 
-	entries, err := acfs.List(ctx, root, cleaned)
+	entries, err := acfs.Root{Path: root}.List(ctx, cleaned)
 	if err != nil {
-		return nil, classifyWorkspaceErrorInternal(fmt.Errorf("failed to list directory: %w", err))
+		return nil, classifyWorkspaceError(fmt.Errorf("failed to list directory: %w", err))
 	}
 
-	results := make([]workspace.FileEntry, 0, len(entries))
+	results := make([]types.WorkspaceFileEntry, 0, len(entries))
 	for _, entry := range entries {
-		results = append(results, acfsutils.FileEntry(entry))
+		results = append(results, workspacepkg.FileEntry(entry))
 	}
 
 	return results, nil
@@ -76,9 +80,9 @@ func (s *Service) GetFileContent(ctx context.Context, filePath string, maxBytes 
 		maxBytes = 1048576
 	}
 
-	file, _, err := acfs.OpenRead(ctx, root, cleaned, maxBytes)
+	file, _, err := acfs.Root{Path: root}.OpenRead(ctx, cleaned, maxBytes)
 	if err != nil {
-		return nil, "", classifyWorkspaceErrorInternal(fmt.Errorf("failed to open file: %w", err))
+		return nil, "", classifyWorkspaceError(fmt.Errorf("failed to open file: %w", err))
 	}
 	defer func() { _ = file.Close() }()
 
@@ -103,9 +107,9 @@ func (s *Service) DownloadFile(ctx context.Context, filePath string) (io.ReadClo
 		return nil, 0, common.Classify(common.ErrForbidden, fmt.Errorf("invalid path: %w", err))
 	}
 
-	file, size, err := acfs.OpenRead(ctx, root, cleaned, 0)
+	file, size, err := acfs.Root{Path: root}.OpenRead(ctx, cleaned, 0)
 	if err != nil {
-		return nil, 0, classifyWorkspaceErrorInternal(fmt.Errorf("failed to open file: %w", err))
+		return nil, 0, classifyWorkspaceError(fmt.Errorf("failed to open file: %w", err))
 	}
 
 	return file, size, nil
@@ -118,7 +122,7 @@ func (s *Service) UploadFile(ctx context.Context, destPath string, content io.Re
 		return err
 	}
 
-	safeFilename, err := sanitizeUploadFilenameInternal(filename)
+	safeFilename, err := sanitizeUploadFilename(filename)
 	if err != nil {
 		return common.Classify(common.ErrBadRequest, err)
 	}
@@ -128,13 +132,13 @@ func (s *Service) UploadFile(ctx context.Context, destPath string, content io.Re
 		return common.Classify(common.ErrForbidden, fmt.Errorf("invalid path: %w", err))
 	}
 
-	if mkdirAllErr := acfs.MkdirAll(ctx, root, cleaned, 0o755); mkdirAllErr != nil {
-		return classifyWorkspaceErrorInternal(fmt.Errorf("failed to create directory: %w", mkdirAllErr))
+	if mkdirAllErr := (acfs.Root{Path: root}).MkdirAll(ctx, cleaned, 0o755); mkdirAllErr != nil {
+		return classifyWorkspaceError(fmt.Errorf("failed to create directory: %w", mkdirAllErr))
 	}
 
 	targetFile := path.Join(cleaned, safeFilename)
-	if _, writeFromErr := acfs.WriteFrom(ctx, root, targetFile, content, size, 0o644); writeFromErr != nil {
-		return classifyWorkspaceErrorInternal(fmt.Errorf("failed to write file: %w", writeFromErr))
+	if _, writeFromErr := (acfs.Root{Path: root}).WriteFrom(ctx, targetFile, content, acfs.WriteFromOptions{Size: size, Mode: 0o644}); writeFromErr != nil {
+		return classifyWorkspaceError(fmt.Errorf("failed to write file: %w", writeFromErr))
 	}
 
 	return nil
@@ -156,8 +160,8 @@ func (s *Service) CreateDirectory(ctx context.Context, dirPath string) error {
 		return nil
 	}
 
-	if mkdirAllErr := acfs.MkdirAll(ctx, root, cleaned, 0o755); mkdirAllErr != nil {
-		return classifyWorkspaceErrorInternal(fmt.Errorf("failed to create directory: %w", mkdirAllErr))
+	if mkdirAllErr := (acfs.Root{Path: root}).MkdirAll(ctx, cleaned, 0o755); mkdirAllErr != nil {
+		return classifyWorkspaceError(fmt.Errorf("failed to create directory: %w", mkdirAllErr))
 	}
 
 	return nil
@@ -179,8 +183,8 @@ func (s *Service) DeleteFile(ctx context.Context, filePath string) error {
 		return common.Classify(common.ErrBadRequest, errors.New("cannot delete root directory"))
 	}
 
-	if removeAllErr := acfs.RemoveAll(ctx, root, cleaned); removeAllErr != nil {
-		return classifyWorkspaceErrorInternal(fmt.Errorf("failed to delete path: %w", removeAllErr))
+	if removeAllErr := (acfs.Root{Path: root}).RemoveAll(ctx, cleaned); removeAllErr != nil {
+		return classifyWorkspaceError(fmt.Errorf("failed to delete path: %w", removeAllErr))
 	}
 
 	return nil
@@ -205,7 +209,7 @@ func (s *Service) resolveRoot() (string, error) {
 	return cleaned, nil
 }
 
-func classifyWorkspaceErrorInternal(err error) error {
+func classifyWorkspaceError(err error) error {
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return common.Classify(common.ErrNotFound, err)
@@ -222,7 +226,7 @@ func classifyWorkspaceErrorInternal(err error) error {
 	}
 }
 
-func sanitizeUploadFilenameInternal(filename string) (string, error) {
+func sanitizeUploadFilename(filename string) (string, error) {
 	name := strings.TrimSpace(filename)
 	if name == "" {
 		return "", errors.New("invalid filename")

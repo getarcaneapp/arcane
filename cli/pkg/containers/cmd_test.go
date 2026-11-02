@@ -1,7 +1,8 @@
 package containers_test
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,9 +11,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/testutil"
+	"kit.getarcane.app"
+
+	"getarcane.dev/cli/v3/internal/testutil"
 )
 
 func TestContainerStartSurfacesServerError(t *testing.T) {
@@ -22,7 +24,7 @@ func TestContainerStartSurfacesServerError(t *testing.T) {
 			// Resolution succeeds so the action POST below is reached.
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"success":true,"data":{"id":"abc123","name":"nginx"}}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/environments/0/containers/abc123/start":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/environments/0/containers/abc123" && r.URL.Query().Get("action") == "start":
 			w.WriteHeader(http.StatusForbidden)
 			_, _ = w.Write([]byte(`{"success":false,"data":{"error":"permission denied: containers:start"}}`))
 		default:
@@ -35,7 +37,7 @@ func TestContainerStartSurfacesServerError(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "containers", "start", "abc123"},
+		[]string{"--config", configPath, "--env", "0", "containers", "start", "abc123"},
 	)
 
 	require.Error(t, err,
@@ -73,7 +75,7 @@ func TestContainerStartSurfacesServerError(t *testing.T) {
 				}
 				if r.Method == http.MethodPost {
 					mu.Lock()
-					mutations = append(mutations, r.URL.Path)
+					mutations = append(mutations, r.URL.RequestURI())
 					mu.Unlock()
 					_, _ = w.Write([]byte(`{"success":true,"data":{"message":"started"}}`))
 					return
@@ -99,7 +101,7 @@ func TestContainerStartSurfacesServerError(t *testing.T) {
 				_, _ = w.Write([]byte(`{"success":false,"error":"not found"}`))
 			}))
 			defer server.Close()
-			path := testutil.WriteConfig(t, server.URL, true)
+			path := testutil.WriteConfig(t, server.URL)
 			args := []string{"--config", path, "--json", "--yes"}
 			if tc.explicit {
 				args = append(args, "--env", "remote")
@@ -119,7 +121,7 @@ func TestContainerStartSurfacesServerError(t *testing.T) {
 			if tc.search || tc.prefix {
 				resourceID = "abcd1234"
 			}
-			require.Equal(t, []string{"/api/environments/remote/containers/" + resourceID + "/start"}, paths)
+			require.Equal(t, []string{"/api/environments/remote/containers/" + resourceID + "?action=start"}, paths)
 			var result map[string]any
 			require.NoError(t, json.Unmarshal([]byte(out), &result), out)
 			require.NotContains(t, result, "environments")
@@ -129,10 +131,10 @@ func TestContainerStartSurfacesServerError(t *testing.T) {
 
 func TestContainersListSendsLimitAndStart(t *testing.T) {
 	for _, tc := range []struct {
-		name         string
-		preview, all bool
+		name        string
+		single, all bool
 	}{
-		{name: "saved environment"}, {name: "preview pagination", preview: true}, {name: "preview all", preview: true, all: true},
+		{name: "explicit environment", single: true}, {name: "pagination"}, {name: "all items", all: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var mu sync.Mutex
@@ -149,7 +151,10 @@ func TestContainersListSendsLimitAndStart(t *testing.T) {
 				_, _ = w.Write([]byte(`{"success":true,"data":[],"pagination":{"totalPages":4,"totalItems":20,"currentPage":3,"itemsPerPage":5}}`))
 			}))
 			defer server.Close()
-			args := []string{"--config", testutil.WriteConfig(t, server.URL, tc.preview), "containers", "list", "--json"}
+			args := []string{"--config", testutil.WriteConfig(t, server.URL), "containers", "list", "--json"}
+			if tc.single {
+				args = append(args, "--env", "0")
+			}
 			if tc.all {
 				args = append(args, "--all")
 			} else {
@@ -163,8 +168,8 @@ func TestContainersListSendsLimitAndStart(t *testing.T) {
 			if tc.all {
 				wantQuery = "limit=-1"
 			}
-			require.Equal(t, map[string]string{kit.Ternary(tc.preview, "/api/environments/0,remote/containers", "/api/environments/0/containers"): wantQuery}, queries)
-			require.True(t, json.Valid([]byte(out)))
+			require.Equal(t, map[string]string{kit.Ternary(tc.single, "/api/environments/0/containers", "/api/environments/0,remote/containers"): wantQuery}, queries)
+			require.True(t, jsontext.Value([]byte(out)).IsValid())
 			require.Contains(t, out, "pagination")
 		})
 	}
@@ -195,7 +200,7 @@ func TestContainersListExplicitStartZeroSendsStartZero(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	_, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "containers", "list", "--json", "--start", "0"},
+		[]string{"--config", configPath, "--env", "0", "containers", "list", "--json", "--start", "0"},
 	)
 
 	require.NoError(t, err,
@@ -214,18 +219,21 @@ func TestContainersListExplicitStartZeroSendsStartZero(t *testing.T) {
 func TestContainersListTextShowsShowingSummary(t *testing.T) {
 	const localRow = `{"environmentId":"0","environmentName":"Local","id":"same-id","names":["/nginx"],"image":"nginx:latest","state":"running","status":"Up 1 hour"}`
 	for _, tc := range []struct {
-		name                                  string
-		command                               []string
-		preview, unavailable, empty, explicit bool
-		summary                               string
+		name        string
+		summary     string
+		command     []string
+		single      bool
+		unavailable bool
+		empty       bool
+		explicit    bool
 	}{
-		{name: "single environment", summary: "Showing: 1/26 containers"},
-		{name: "combined environments", preview: true, summary: "Showing: 2/52 containers"},
-		{name: "partial failure", preview: true, unavailable: true, summary: "Showing: 1/26 containers"},
-		{name: "empty resources", preview: true, empty: true, summary: "Showing: 0/0 containers"},
-		{name: "explicit override", preview: true, explicit: true, summary: "Showing: 1/26 containers"},
-		{name: "custom jobs", preview: true, command: []string{"jobs", "list"}, summary: "Total: 2 jobs"},
-		{name: "custom settings", preview: true, command: []string{"settings", "list"}, summary: "Total: 2 settings"},
+		{name: "single environment", single: true, summary: "Showing: 1/26 containers"},
+		{name: "combined environments", summary: "Showing: 2/52 containers"},
+		{name: "partial failure", unavailable: true, summary: "Showing: 1/26 containers"},
+		{name: "empty resources", empty: true, summary: "Showing: 0/0 containers"},
+		{name: "explicit override", explicit: true, summary: "Showing: 1/26 containers"},
+		{name: "custom jobs", command: []string{"jobs", "list"}, summary: "Total: 2 jobs"},
+		{name: "custom settings", command: []string{"settings", "list"}, summary: "Total: 2 settings"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -244,16 +252,19 @@ func TestContainersListTextShowsShowingSummary(t *testing.T) {
 				case strings.HasSuffix(r.URL.Path, "/jobs"):
 					_, _ = w.Write([]byte(`{"jobs":[{"id":"same-id","name":"nginx"}],"isAgent":false,"durableRuns":true}`))
 				case strings.HasSuffix(r.URL.Path, "/settings"):
-					_, _ = w.Write([]byte(`[{"key":"nginx","value":"dark","type":"string"}]`))
+					_, _ = w.Write([]byte(`{"settings":[{"key":"nginx","value":"dark","type":"string"}]}`))
 				default:
 					_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"same-id","names":["/nginx"],"image":"nginx:latest","state":"running","status":"Up 1 hour"}],"pagination":{"totalItems":26}}`))
 				}
 			}))
 			defer srv.Close()
-			configPath := testutil.WriteConfig(t, srv.URL, tc.preview)
+			configPath := testutil.WriteConfig(t, srv.URL)
 			args := []string{"--config", configPath, "--no-color"}
 			if tc.explicit {
 				args = append(args, "--env", "remote")
+			}
+			if tc.single {
+				args = append(args, "--env", "0")
 			}
 			command := tc.command
 			if command == nil {
@@ -268,7 +279,7 @@ func TestContainersListTextShowsShowingSummary(t *testing.T) {
 			require.Contains(t, out, tc.summary)
 			require.Equal(t, 1, strings.Count(out, tc.summary))
 			require.NotContains(t, out, "\x1b")
-			if !tc.preview || tc.explicit {
+			if tc.single || tc.explicit {
 				require.NotContains(t, out, "ENVIRONMENT")
 				return
 			}
@@ -317,7 +328,7 @@ func TestContainersListAllRequestsEveryItem(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	_, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "containers", "list", "--json", "--all"},
+		[]string{"--config", configPath, "--env", "0", "containers", "list", "--json", "--all"},
 	)
 
 	require.NoError(t, err,
@@ -355,7 +366,7 @@ func TestContainersListJSONContract(t *testing.T) {
 
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--log-level", "debug", "containers", "list", "--json"},
+		[]string{"--config", configPath, "--env", "0", "--log-level", "debug", "containers", "list", "--json"},
 	)
 
 	require.NoError(t, err,
@@ -382,13 +393,13 @@ func TestContainersListJSONContract(t *testing.T) {
 		discoveryFailure bool
 		explicit         bool
 	}{
-		{name: "preview retains envelopes"},
-		{name: "preview partial failure", unavailable: true},
-		{name: "preview empty", empty: true},
-		{name: "preview discovery failure", discoveryFailure: true},
-		{name: "preview explicit override", explicit: true},
-		{name: "preview custom job response", args: []string{"jobs", "list"}},
-		{name: "preview settings response", args: []string{"settings", "list"}},
+		{name: "all environments retain envelopes"},
+		{name: "partial failure", unavailable: true},
+		{name: "no environments", empty: true},
+		{name: "discovery failure", discoveryFailure: true},
+		{name: "explicit override", explicit: true},
+		{name: "custom job response", args: []string{"jobs", "list"}},
+		{name: "settings response", args: []string{"settings", "list"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var mu sync.Mutex
@@ -420,13 +431,13 @@ func TestContainersListJSONContract(t *testing.T) {
 				case strings.HasSuffix(r.URL.Path, "/jobs"):
 					_, _ = w.Write([]byte(`{"jobs":[],"isAgent":false,"durableRuns":true}`))
 				case strings.HasSuffix(r.URL.Path, "/settings"):
-					_, _ = w.Write([]byte(`[{"key":"theme","value":"dark","type":"string"}]`))
+					_, _ = w.Write([]byte(`{"settings":[{"key":"theme","value":"dark","type":"string"}]}`))
 				default:
 					_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"same-id","names":["/nginx"]}],"pagination":{"totalItems":1},"counts":{"running":1},"groups":["preserved"]}`))
 				}
 			}))
 			defer server.Close()
-			path := testutil.WriteConfig(t, server.URL, true)
+			path := testutil.WriteConfig(t, server.URL)
 			args := []string{"--config", path, "--json"}
 			if tc.explicit {
 				args = append(args, "--env", "remote")
@@ -437,7 +448,7 @@ func TestContainersListJSONContract(t *testing.T) {
 			}
 			out, diagnostics, runErr := testutil.Execute(t, append(args, command...))
 			if tc.discoveryFailure {
-				require.ErrorContains(t, runErr, "discovery denied")
+				require.ErrorContains(t, runErr, "pass --env <id>")
 				require.Empty(t, out)
 				return
 			}
@@ -451,7 +462,7 @@ func TestContainersListJSONContract(t *testing.T) {
 			mu.Unlock()
 			if tc.args == nil && !tc.explicit && !tc.empty {
 				require.Equal(t, []string{"/api/environments", "/api/environments/0,remote/containers"}, paths)
-				require.True(t, json.Valid([]byte(out)), out)
+				require.True(t, jsontext.Value([]byte(out)).IsValid(), out)
 				if tc.unavailable {
 					require.ErrorContains(t, runErr, "Remote (remote): resource denied")
 					require.Contains(t, out, "failedEnvironments")
@@ -462,12 +473,12 @@ func TestContainersListJSONContract(t *testing.T) {
 				return
 			}
 			var result struct {
-				Success      bool `json:"success"`
 				Environments []struct {
-					ID     string          `json:"environmentId"`
-					Result json.RawMessage `json:"result"`
-					Error  string          `json:"error"`
+					ID     string         `json:"environmentId"`
+					Error  string         `json:"error"`
+					Result jsontext.Value `json:"result"`
 				} `json:"environments"`
+				Success bool `json:"success"`
 			}
 			require.NoError(t, json.Unmarshal([]byte(out), &result), out)
 			if tc.explicit {
@@ -523,7 +534,7 @@ func TestContainersListUpdatesJSONContract(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "containers", "list", "--updates", "has_update", "--json"},
+		[]string{"--config", configPath, "--env", "0", "containers", "list", "--updates", "has_update", "--json"},
 	)
 
 	require.NoError(t, err,
@@ -580,7 +591,7 @@ func TestContainersUpdatesCommandUsesHasUpdateFilter(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--output", "text", "containers", "updates"},
+		[]string{"--config", configPath, "--env", "0", "--output", "text", "containers", "updates"},
 	)
 
 	require.NoError(t, err,

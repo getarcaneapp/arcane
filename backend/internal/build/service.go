@@ -14,93 +14,92 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/image"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
-	"go.getarcane.app/builds/api"
-	"go.getarcane.app/builds/pkg/contextsource"
-	"go.getarcane.app/builds/types"
-	"go.getarcane.app/docker"
-	"go.getarcane.app/kit/pkg"
-	"go.getarcane.app/kit/pkg/capture"
-	gitkit "go.getarcane.app/kit/pkg/git"
+	"go.uber.org/fx"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/build/children/workspace"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"kit.getarcane.app"
+	"kit.getarcane.app/builds/api"
+	"kit.getarcane.app/builds/pkg/contextsource"
+	buildtypes "kit.getarcane.app/builds/types"
+	"kit.getarcane.app/capture"
+	"kit.getarcane.app/docker"
+	gitkit "kit.getarcane.app/git"
+
+	"getarcane.dev/arcane/v3/internal/build/children/workspace"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/gitrepo"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/gitutil"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
-type BuildService struct {
-	db              *database.DB
-	settings        *settings.SettingsService
-	dockerService   *dockerInternal.DockerClientService
-	registryService *registry.ContainerRegistryService
-	gitRepository   *gitrepo.GitRepositoryService
-	eventService    *event.EventService
-	workspace       *workspace.Service
-	builder         types.Builder
-	gitProbeFn      func(context.Context, string, git.AuthConfig) error
-	gitCloneFn      func(context.Context, string, string, git.AuthConfig) (string, error)
-	gitCleanupFn    func(string) error
-}
+type (
+	BuildService struct {
+		db              *database.DB
+		settings        *settings.SettingsService
+		dockerService   *dockerInternal.DockerClientService
+		registryService *registry.ContainerRegistryService
+		gitRepository   *gitrepo.GitRepositoryService
+		eventService    *event.EventService
+		workspace       *workspace.Service
+		builder         buildtypes.Builder
+		gitProbeFn      func(context.Context, string, git.AuthConfig) error
+		gitCloneFn      func(context.Context, string, string, git.AuthConfig) (string, error)
+		gitCleanupFn    func(string) error
+	}
+
+	BuildServiceParams struct {
+		fx.In
+
+		DB              *database.DB
+		LocalSettings   *settings.SettingsService
+		DockerService   *dockerInternal.DockerClientService
+		RegistryService *registry.ContainerRegistryService
+		GitRepository   *gitrepo.GitRepositoryService
+		EventService    *event.EventService
+	}
+)
 
 const (
 	buildHistoryOutputLimitBytes = 2 * 1024 * 1024
 	deleteBuildsBatchSize        = 500
 )
 
-func NewBuildService(
-	db *database.DB,
-	localSettings *settings.SettingsService,
-	dockerService *dockerInternal.DockerClientService,
-	registryService *registry.ContainerRegistryService,
-	gitRepository *gitrepo.GitRepositoryService,
-	eventService *event.EventService,
-) *BuildService {
+func NewBuildService(p BuildServiceParams) (*BuildService, error) {
 	svc := &BuildService{
-		db:              db,
-		settings:        localSettings,
-		dockerService:   dockerService,
-		registryService: registryService,
-		gitRepository:   gitRepository,
-		eventService:    eventService,
+		db:              p.DB,
+		settings:        p.LocalSettings,
+		dockerService:   p.DockerService,
+		registryService: p.RegistryService,
+		gitRepository:   p.GitRepository,
+		eventService:    p.EventService,
 	}
-	var buildsDirectory func() string
-	if localSettings != nil {
-		buildsDirectory = func() string { return localSettings.GetSettingsConfig().BuildsDirectory.Value }
-	}
-	svc.workspace = workspace.NewService(buildsDirectory)
-	var registryAuthProvider types.RegistryAuthProvider
-	if registryService != nil {
-		registryAuthProvider = registryService
-	}
+	svc.workspace = workspace.NewService(func() string { return p.LocalSettings.GetSettingsConfig().BuildsDirectory.Value })
 
 	// registry.ContainerRegistryService already implements buildtypes.RegistryAuthProvider,
 	// so the builder consumes it directly instead of through forwarding methods on BuildService.
-	svc.builder = api.NewService(api.Config{
+	builder, err := api.NewService(api.Config{
 		SettingsProvider:     svc,
-		DockerClientProvider: dockerService,
-		RegistryAuthProvider: registryAuthProvider,
+		DockerClientProvider: p.DockerService,
+		RegistryAuthProvider: p.RegistryService,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("create builder: %w", err)
+	}
+	svc.builder = builder
 
-	return svc
+	return svc, nil
 }
 
-func (s *BuildService) BuildSettings() types.BuildSettings {
-	if s.settings == nil {
-		return types.BuildSettings{}
-	}
+func (s *BuildService) BuildSettings() buildtypes.BuildSettings {
 	localSettings := s.settings.GetSettingsConfig()
-	return types.BuildSettings{
+	return buildtypes.BuildSettings{
 		DepotProjectID:   localSettings.DepotProjectId.Value,
 		DepotToken:       localSettings.DepotToken.Value,
 		BuildProvider:    localSettings.BuildProvider.Value,
@@ -113,12 +112,12 @@ func (
 ) BuildImage(
 	ctx context.Context,
 	environmentID string,
-	req types.BuildRequest,
+	req buildtypes.BuildRequest,
 	progressWriter io.Writer,
 	serviceName string,
-	user *usertypes.Actor,
+	user *types.Actor,
 ) (
-	*types.BuildResult,
+	*buildtypes.BuildResult,
 	error,
 ) {
 	if s.builder == nil {
@@ -136,7 +135,7 @@ func (
 	}
 
 	buildRecordID := ""
-	if s.db != nil && strings.TrimSpace(environmentID) != "" {
+	if strings.TrimSpace(environmentID) != "" {
 		if record, err := s.createBuildRecord(ctx, environmentID, req, user); err != nil {
 			slog.WarnContext(ctx, "failed to create build history record", "error", err)
 		} else {
@@ -152,11 +151,11 @@ func (
 		}
 	}()
 	var (
-		result *types.BuildResult
+		result *buildtypes.BuildResult
 		err    error
 	)
 
-	if resolvedReq, cleanupFn, resolveErr := s.resolveBuildRequestInternal(ctx, req, writer, serviceName); resolveErr != nil {
+	if resolvedReq, cleanupFn, resolveErr := s.resolveBuildRequest(ctx, req, writer, serviceName); resolveErr != nil {
 		err = resolveErr
 	} else {
 		cleanupResolvedContext = cleanupFn
@@ -168,14 +167,14 @@ func (
 		_ = logWriter.Close()
 	}
 
-	if s.db != nil && buildRecordID != "" {
+	if buildRecordID != "" {
 		output := logCapture.String()
 		var outputPtr *string
 		if output != "" {
 			outputPtr = &output
 		}
 
-		provider := s.effectiveBuildProviderInternal(req.Provider)
+		provider := s.effectiveBuildProvider(req.Provider)
 		var digest *string
 		if result != nil {
 			if result.Provider != "" {
@@ -212,38 +211,24 @@ func (
 			slog.WarnContext(ctx, "failed to update build history record", "error", updateErr)
 		}
 	}
+	s.eventService.PublishChange(environmentID, "build")
 
 	if err != nil {
-		s.logBuildFailureEventInternal(ctx, environmentID, req, serviceName, buildRecordID, err, user)
+		s.logBuildFailureEvent(ctx, environmentID, req, serviceName, buildRecordID, err, user)
 	}
 
 	return result, err
 }
 
-func (s *BuildService) logBuildFailureEventInternal(ctx context.Context, environmentID string, req types.BuildRequest, serviceName, buildRecordID string, err error, user *usertypes.Actor) {
-	if s.eventService == nil || err == nil {
+func (s *BuildService) logBuildFailureEvent(ctx context.Context, environmentID string, req buildtypes.BuildRequest, serviceName, buildRecordID string, err error, user *types.Actor) {
+	if err == nil {
 		return
-	}
-
-	resourceName := cmp.Or(kit.TrimNonEmpty(req.Tags)...)
-	if resourceName == "" {
-		resourceName = strings.TrimSpace(serviceName)
-	}
-	if resourceName == "" {
-		resourceName = sanitizeBuildContextForEventInternal(req.ContextDir)
-	}
-
-	userID := ""
-	username := ""
-	if user != nil {
-		userID = user.ID
-		username = user.Username
 	}
 
 	metadata := database.JSON{
 		"action":     "build",
-		"provider":   s.effectiveBuildProviderInternal(req.Provider),
-		"contextDir": sanitizeBuildContextForEventInternal(req.ContextDir),
+		"provider":   s.effectiveBuildProvider(req.Provider),
+		"contextDir": sanitizeBuildContextForEvent(req.ContextDir),
 		"dockerfile": req.Dockerfile,
 		"tags":       append([]string(nil), req.Tags...),
 	}
@@ -254,10 +239,18 @@ func (s *BuildService) logBuildFailureEventInternal(ctx context.Context, environ
 		metadata["buildRecordId"] = buildRecordID
 	}
 
-	s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", resourceName, userID, username, environmentID, err, metadata)
+	s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeImageError,
+		ResourceType:  "image",
+		ResourceName:  cmp.Or(cmp.Or(kit.TrimNonEmpty(req.Tags)...), strings.TrimSpace(serviceName), sanitizeBuildContextForEvent(req.ContextDir)),
+		UserID:        kit.FromPtr(user).ID,
+		Username:      kit.FromPtr(user).Username,
+		EnvironmentID: environmentID,
+		Metadata:      metadata,
+	}, err)
 }
 
-func sanitizeBuildContextForEventInternal(raw string) string {
+func sanitizeBuildContextForEvent(raw string) string {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return ""
@@ -280,60 +273,58 @@ func sanitizeBuildContextForEventInternal(raw string) string {
 	return sanitized
 }
 
-func (s *BuildService) effectiveBuildProviderInternal(provider string) string {
+func (s *BuildService) effectiveBuildProvider(provider string) string {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	if provider != "" {
 		return provider
 	}
-	if s.settings != nil {
-		provider = strings.ToLower(strings.TrimSpace(s.settings.GetSettingsConfig().BuildProvider.Value))
-	}
+	provider = strings.ToLower(strings.TrimSpace(s.settings.GetSettingsConfig().BuildProvider.Value))
 	return kit.Ternary(provider == "", "local", provider)
 }
 
-func (s *BuildService) resolveBuildRequestInternal(
+func (s *BuildService) resolveBuildRequest(
 	ctx context.Context,
-	req types.BuildRequest,
+	req buildtypes.BuildRequest,
 	progressWriter io.Writer,
 	serviceName string,
-) (types.BuildRequest, func() error, error) {
+) (buildtypes.BuildRequest, func() error, error) {
 	source, ok, err := contextsource.ParseGitBuildContextSource(req.ContextDir)
 	if err != nil {
-		return types.BuildRequest{}, func() error { return nil }, err
+		return buildtypes.BuildRequest{}, func() error { return nil }, err
 	}
 	if !ok || source == nil {
 		if contextsource.IsPotentialRemoteBuildContextSource(req.ContextDir) {
-			return types.BuildRequest{}, func() error { return nil }, fmt.Errorf("unsupported remote build context source %q: only git repository URLs are supported", req.ContextDir)
+			return buildtypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("unsupported remote build context source %q: only git repository URLs are supported", req.ContextDir)
 		}
 		return req, func() error { return nil }, nil
 	}
 
-	writeBuildProgressStatusInternal(ctx, progressWriter, serviceName, "resolving remote git context "+source.RepositoryURL)
+	writeBuildProgressStatus(ctx, progressWriter, serviceName, "resolving remote git context "+source.RepositoryURL)
 
-	authConfig, matchedRepository, err := s.resolveGitBuildAuthInternal(ctx, source.RepositoryURL)
+	authConfig, matchedRepository, err := s.resolveGitBuildAuth(ctx, source.RepositoryURL)
 	if err != nil {
-		return types.BuildRequest{}, func() error { return nil }, err
+		return buildtypes.BuildRequest{}, func() error { return nil }, err
 	}
 	if matchedRepository {
-		writeBuildProgressStatusInternal(ctx, progressWriter, serviceName, "using saved git credentials for "+source.RepositoryURL)
+		writeBuildProgressStatus(ctx, progressWriter, serviceName, "using saved git credentials for "+source.RepositoryURL)
 	}
 	if gitkit.RequiresRemoteProbe(source.RepositoryURL) {
-		writeBuildProgressStatusInternal(ctx, progressWriter, serviceName, "verifying remote git repository "+source.RepositoryURL)
-		if probeGitContextErr := s.probeGitContextInternal(ctx, source.RepositoryURL, authConfig); probeGitContextErr != nil {
-			return types.BuildRequest{}, func() error { return nil }, fmt.Errorf("failed to verify remote git repository %q: %w", source.RepositoryURL, probeGitContextErr)
+		writeBuildProgressStatus(ctx, progressWriter, serviceName, "verifying remote git repository "+source.RepositoryURL)
+		if probeGitContextErr := s.probeGitContext(ctx, source.RepositoryURL, authConfig); probeGitContextErr != nil {
+			return buildtypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("failed to verify remote git repository %q: %w", source.RepositoryURL, probeGitContextErr)
 		}
 	}
 
-	repoPath, err := s.cloneGitContextInternal(ctx, source.RepositoryURL, source.Ref, authConfig)
+	repoPath, err := s.cloneGitContext(ctx, source.RepositoryURL, source.Ref, authConfig)
 	if err != nil {
-		return types.BuildRequest{}, func() error { return nil }, err
+		return buildtypes.BuildRequest{}, func() error { return nil }, err
 	}
 
 	contextDir := repoPath
 	if source.Subdir != "" {
 		if validatePathErr := git.ValidatePath(repoPath, filepath.FromSlash(source.Subdir)); validatePathErr != nil {
-			_ = s.cleanupGitContextInternal(repoPath)
-			return types.BuildRequest{}, func() error { return nil }, fmt.Errorf("invalid git build context subdir: %w", validatePathErr)
+			_ = s.cleanupGitContext(repoPath)
+			return buildtypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("invalid git build context subdir: %w", validatePathErr)
 		}
 		contextDir = filepath.Join(repoPath, filepath.FromSlash(source.Subdir))
 	}
@@ -342,27 +333,23 @@ func (s *BuildService) resolveBuildRequestInternal(
 	// source and may point anywhere on the host, so no confinement root exists.
 	info, err := os.Stat(contextDir)
 	if err != nil {
-		_ = s.cleanupGitContextInternal(repoPath)
-		return types.BuildRequest{}, func() error { return nil }, fmt.Errorf("failed to stat resolved git build context: %w", err)
+		_ = s.cleanupGitContext(repoPath)
+		return buildtypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("failed to stat resolved git build context: %w", err)
 	}
 	if !info.IsDir() {
-		_ = s.cleanupGitContextInternal(repoPath)
-		return types.BuildRequest{}, func() error { return nil }, errors.New("resolved git build context is not a directory")
+		_ = s.cleanupGitContext(repoPath)
+		return buildtypes.BuildRequest{}, func() error { return nil }, errors.New("resolved git build context is not a directory")
 	}
 
-	writeBuildProgressStatusInternal(ctx, progressWriter, serviceName, "using remote build context "+source.Raw)
+	writeBuildProgressStatus(ctx, progressWriter, serviceName, "using remote build context "+source.Raw)
 
 	resolvedReq := req
 	resolvedReq.ContextDir = contextDir
 
-	return resolvedReq, func() error { return s.cleanupGitContextInternal(repoPath) }, nil
+	return resolvedReq, func() error { return s.cleanupGitContext(repoPath) }, nil
 }
 
-func (s *BuildService) resolveGitBuildAuthInternal(ctx context.Context, rawURL string) (git.AuthConfig, bool, error) {
-	if s.gitRepository == nil {
-		return git.AuthConfig{}, false, nil
-	}
-
+func (s *BuildService) resolveGitBuildAuth(ctx context.Context, rawURL string) (git.AuthConfig, bool, error) {
 	repository, err := s.gitRepository.FindEnabledRepositoryByURL(ctx, rawURL)
 	if err != nil {
 		return git.AuthConfig{}, false, fmt.Errorf("failed to resolve git repository credentials: %w", err)
@@ -379,45 +366,33 @@ func (s *BuildService) resolveGitBuildAuthInternal(ctx context.Context, rawURL s
 	return authConfig, true, nil
 }
 
-func (s *BuildService) probeGitContextInternal(ctx context.Context, repositoryURL string, authConfig git.AuthConfig) error {
+func (s *BuildService) probeGitContext(ctx context.Context, repositoryURL string, authConfig git.AuthConfig) error {
 	if s.gitProbeFn != nil {
 		return s.gitProbeFn(ctx, repositoryURL, authConfig)
 	}
 
-	if s.gitRepository != nil && s.gitRepository.Client != nil {
-		return s.gitRepository.ProbeRemote(ctx, repositoryURL, authConfig)
-	}
-
-	return errors.New("git repository service not available")
+	return s.gitRepository.ProbeRemote(ctx, repositoryURL, authConfig)
 }
 
-func (s *BuildService) cloneGitContextInternal(ctx context.Context, repositoryURL, ref string, authConfig git.AuthConfig) (string, error) {
+func (s *BuildService) cloneGitContext(ctx context.Context, repositoryURL, ref string, authConfig git.AuthConfig) (string, error) {
 	if s.gitCloneFn != nil {
 		return s.gitCloneFn(ctx, repositoryURL, ref, authConfig)
 	}
 
-	if s.gitRepository != nil && s.gitRepository.Client != nil {
-		// Builds may run git describe or count commits, so they keep full history.
-		return s.gitRepository.Clone(ctx, repositoryURL, ref, authConfig, 0)
-	}
-
-	return "", errors.New("git repository service not available")
+	return s.gitRepository.Clone(ctx, repositoryURL, ref, authConfig, 0)
 }
 
-func (s *BuildService) cleanupGitContextInternal(repoPath string) error {
+func (s *BuildService) cleanupGitContext(repoPath string) error {
 	if repoPath == "" {
 		return nil
 	}
 	if s.gitCleanupFn != nil {
 		return s.gitCleanupFn(repoPath)
 	}
-	if s.gitRepository != nil && s.gitRepository.Client != nil {
-		return s.gitRepository.Cleanup(repoPath)
-	}
-	return errors.New("git repository service not available")
+	return os.RemoveAll(repoPath)
 }
 
-func writeBuildProgressStatusInternal(ctx context.Context, progressWriter io.Writer, serviceName, status string) {
+func writeBuildProgressStatus(ctx context.Context, progressWriter io.Writer, serviceName, status string) {
 	if progressWriter == nil || strings.TrimSpace(status) == "" {
 		return
 	}
@@ -431,11 +406,7 @@ func writeBuildProgressStatusInternal(ctx context.Context, progressWriter io.Wri
 	}
 }
 
-func (s *BuildService) ListImageBuildsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]image.BuildRecord, pagination.Response, error) {
-	if s.db == nil {
-		return nil, pagination.Response{}, errors.New("build history not available")
-	}
-
+func (s *BuildService) ListImageBuildsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.ImageBuildRecord, pagination.Response, error) {
 	var builds []ImageBuild
 	// The list DTO never includes the build output (buildToRecord with
 	// includeOutput=false), so skip reading the up-to-2-MiB output column.
@@ -459,7 +430,7 @@ func (s *BuildService) ListImageBuildsByEnvironmentPaginated(ctx context.Context
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate builds: %w", err)
 	}
 
-	records := make([]image.BuildRecord, 0, len(builds))
+	records := make([]types.ImageBuildRecord, 0, len(builds))
 	for _, build := range builds {
 		records = append(records, buildToRecord(build, false))
 	}
@@ -467,41 +438,41 @@ func (s *BuildService) ListImageBuildsByEnvironmentPaginated(ctx context.Context
 	return records, paginationResp, nil
 }
 
-func (s *BuildService) AggregateImageBuilds(ctx context.Context, params pagination.QueryParams) (base.Paginated[image.BuildRecord], error) {
-	collection, err := httpx.CollectEnvironments[base.Paginated[image.BuildRecord]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+func (s *BuildService) AggregateImageBuilds(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.ImageBuildRecord], error) {
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.ImageBuildRecord]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
 	if err != nil {
-		return base.Paginated[image.BuildRecord]{}, err
+		return types.Paginated[types.ImageBuildRecord]{}, err
 	}
 
-	pages := make([]pagination.EnvironmentPage[image.BuildRecord], 0, len(collection.Results))
+	pages := make([]pagination.EnvironmentPage[types.ImageBuildRecord], 0, len(collection.Results))
 	for _, result := range collection.Results {
-		pages = append(pages, pagination.EnvironmentPage[image.BuildRecord]{
+		pages = append(pages, pagination.EnvironmentPage[types.ImageBuildRecord]{
 			Environment:    result.Environment,
 			Items:          result.Value.Data,
 			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
 		})
 	}
 
-	config := pagination.Config[image.BuildRecord]{SortBindings: []pagination.SortBinding[image.BuildRecord]{
+	config := pagination.Config[types.ImageBuildRecord]{SortBindings: []pagination.SortBinding[types.ImageBuildRecord]{
 		{
 			Key: "createdAt",
-			Fn: func(a, b image.BuildRecord) int {
+			Fn: func(a, b types.ImageBuildRecord) int {
 				return cmp.Or(a.CreatedAt.Compare(b.CreatedAt), strings.Compare(a.ID, b.ID))
 			},
-			DescFn: func(a, b image.BuildRecord) int {
+			DescFn: func(a, b types.ImageBuildRecord) int {
 				return cmp.Or(b.CreatedAt.Compare(a.CreatedAt), strings.Compare(a.ID, b.ID))
 			},
 		},
-		{Key: "completedAt", Fn: func(a, b image.BuildRecord) int {
+		{Key: "completedAt", Fn: func(a, b types.ImageBuildRecord) int {
 			return kit.FromPtr(a.CompletedAt).Compare(kit.FromPtr(b.CompletedAt))
 		}},
-		{Key: "status", Fn: func(a, b image.BuildRecord) int {
+		{Key: "status", Fn: func(a, b types.ImageBuildRecord) int {
 			return strings.Compare(a.Status, b.Status)
 		}},
 	}}
 	data, resp := pagination.MergeEnvironmentPages(config, pages, params)
 
-	return base.Paginated[image.BuildRecord]{
+	return types.Paginated[types.ImageBuildRecord]{
 		Success:            true,
 		Data:               data,
 		Pagination:         handlerutil.PaginationResponse(resp),
@@ -509,11 +480,7 @@ func (s *BuildService) AggregateImageBuilds(ctx context.Context, params paginati
 	}, nil
 }
 
-func (s *BuildService) GetImageBuildByID(ctx context.Context, environmentID, buildID string) (*image.BuildRecord, error) {
-	if s.db == nil {
-		return nil, errors.New("build history not available")
-	}
-
+func (s *BuildService) GetImageBuildByID(ctx context.Context, environmentID, buildID string) (*types.ImageBuildRecord, error) {
 	var build ImageBuild
 	if err := s.db.WithContext(ctx).First(&build, "id = ? AND environment_id = ?", buildID, environmentID).Error; err != nil {
 		return nil, err
@@ -522,7 +489,7 @@ func (s *BuildService) GetImageBuildByID(ctx context.Context, environmentID, bui
 	return new(buildToRecord(build, true)), nil
 }
 
-func (s *BuildService) createBuildRecord(ctx context.Context, environmentID string, req types.BuildRequest, user *usertypes.Actor) (*ImageBuild, error) {
+func (s *BuildService) createBuildRecord(ctx context.Context, environmentID string, req buildtypes.BuildRequest, user *types.Actor) (*ImageBuild, error) {
 	buildArgs := mapToJSON(req.BuildArgs)
 	labels := mapToJSON(req.Labels)
 	ulimits := mapToJSON(req.Ulimits)
@@ -580,10 +547,6 @@ func (s *BuildService) completeBuildRecord(
 	completedAt time.Time,
 	durationMs *int64,
 ) error {
-	if s.db == nil {
-		return nil
-	}
-
 	updates := map[string]any{
 		"status":           status,
 		"completed_at":     completedAt,
@@ -610,7 +573,7 @@ func (s *BuildService) completeBuildRecord(
 // PruneHistory deletes finished and failed builds completed before the
 // retention window. Running builds are never pruned.
 func (s *BuildService) PruneHistory(ctx context.Context, retentionDays int) (int64, error) {
-	if s.db == nil || retentionDays <= 0 {
+	if retentionDays <= 0 {
 		return 0, nil
 	}
 
@@ -636,7 +599,7 @@ func (s *BuildService) PruneHistory(ctx context.Context, retentionDays int) (int
 	return deleted, err
 }
 
-func buildToRecord(build ImageBuild, includeOutput bool) image.BuildRecord {
+func buildToRecord(build ImageBuild, includeOutput bool) types.ImageBuildRecord {
 	buildArgs := jsonToStringMap(build.BuildArgs)
 	labels := jsonToStringMap(build.Labels)
 	ulimits := jsonToStringMap(build.Ulimits)
@@ -646,7 +609,7 @@ func buildToRecord(build ImageBuild, includeOutput bool) image.BuildRecord {
 		output = build.Output
 	}
 
-	return image.BuildRecord{
+	return types.ImageBuildRecord{
 		ID:              build.ID,
 		EnvironmentID:   build.EnvironmentID,
 		UserID:          build.UserID,

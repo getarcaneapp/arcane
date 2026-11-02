@@ -14,14 +14,21 @@ import (
 	"strings"
 
 	"github.com/samber/mo"
-	"go.getarcane.app/acfs"
-	kit "go.getarcane.app/kit/pkg"
 	"go.yaml.in/yaml/v4"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
+	kitfs "kit.getarcane.app/fs"
+
+	"getarcane.dev/arcane/v3/internal/common"
 )
+
+// ErrProjectDirExists is returned by CreateExactDir when the target directory
+// already exists. Callers that must not auto-rename (e.g. GitOps creates, which
+// must never mint "-N" duplicate projects on a broken binding) use this to fail
+// loudly instead of suffixing.
+var ErrProjectDirExists = errors.New("project directory already exists")
 
 func ResolveConfiguredContainerDirectory(configuredPath, defaultPath string) string {
 	directory := cmp.Or(strings.TrimSpace(configuredPath), defaultPath)
@@ -42,7 +49,7 @@ func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, erro
 	// os.* rather than acfs: this creates the confinement root itself, which
 	// has to exist before acfs can open it.
 	if _, err := os.Stat(projectsDirectory); os.IsNotExist(err) {
-		if mkdirAllErr := os.MkdirAll(projectsDirectory, utils.DirPerm); mkdirAllErr != nil {
+		if mkdirAllErr := os.MkdirAll(projectsDirectory, kitfs.DirPerm); mkdirAllErr != nil {
 			return "", mkdirAllErr
 		}
 		slog.InfoContext(ctx, "Created projects directory", "path", projectsDirectory)
@@ -152,7 +159,7 @@ func GetTemplatesDirectory(ctx context.Context, templatesDir string) (string, er
 	// os.* rather than acfs: this creates the confinement root itself, which
 	// has to exist before acfs can open it.
 	if _, err := os.Stat(resolved); os.IsNotExist(err) {
-		if mkdirAllErr := os.MkdirAll(resolved, utils.DirPerm); mkdirAllErr != nil {
+		if mkdirAllErr := os.MkdirAll(resolved, kitfs.DirPerm); mkdirAllErr != nil {
 			return "", mkdirAllErr
 		}
 		slog.InfoContext(ctx, "Created templates directory", "path", resolved)
@@ -160,11 +167,7 @@ func GetTemplatesDirectory(ctx context.Context, templatesDir string) (string, er
 	return resolved, nil
 }
 
-func projectScanSkipDirectorySetInternal(skipDirectories string) map[string]bool {
-	if strings.TrimSpace(skipDirectories) == "" {
-		skipDirectories = config.LoadProjectWorkspaceConfig().ProjectScanSkipDirs
-	}
-
+func projectScanSkipDirectorySet(skipDirectories string) map[string]bool {
 	dirs := map[string]bool{}
 	for dir := range strings.SplitSeq(skipDirectories, ",") {
 		dir = strings.TrimSpace(dir)
@@ -179,9 +182,9 @@ func projectScanSkipDirectorySetInternal(skipDirectories string) map[string]bool
 	return dirs
 }
 
-func syncedProjectFileMatchesInternal(ctx context.Context, projectPath string, file SyncFile) (bool, error) {
+func syncedProjectFileMatches(ctx context.Context, projectPath string, file SyncFile) (bool, error) {
 	logicalPath := "/" + filepath.ToSlash(file.RelativePath)
-	entry, err := acfs.Stat(ctx, projectPath, logicalPath, false)
+	entry, err := acfs.Root{Path: projectPath}.Stat(ctx, logicalPath, acfstypes.StatOptions{})
 	if err != nil {
 		return false, kit.Ternary(errors.Is(err, fs.ErrNotExist), nil, err)
 	}
@@ -189,7 +192,7 @@ func syncedProjectFileMatchesInternal(ctx context.Context, projectPath string, f
 		return false, nil
 	}
 
-	existingContent, err := acfs.ReadFile(ctx, projectPath, logicalPath)
+	existingContent, err := acfs.Root{Path: projectPath}.ReadFile(ctx, logicalPath)
 	if err != nil {
 		return false, kit.Ternary(errors.Is(err, fs.ErrNotExist), nil, err)
 	}
@@ -197,9 +200,9 @@ func syncedProjectFileMatchesInternal(ctx context.Context, projectPath string, f
 	return bytes.Equal(existingContent, file.Content), nil
 }
 
-// pathExistsInternal stays on os.*: it probes arbitrary absolute paths,
+// pathExists stays on os.*: it probes arbitrary absolute paths,
 // including imported projects outside any acfs root.
-func pathExistsInternal(path string) (bool, error) {
+func pathExists(path string) (bool, error) {
 	_, err := os.Stat(path)
 	if err == nil {
 		return true, nil
@@ -222,7 +225,7 @@ func DirectorySyncContentsChanged(ctx context.Context, projectPath string, syncF
 	newFileSet := make(map[string]struct{}, len(syncFiles))
 	for _, file := range syncFiles {
 		newFileSet[file.RelativePath] = struct{}{}
-		matches, err := syncedProjectFileMatchesInternal(ctx, projectPath, file)
+		matches, err := syncedProjectFileMatches(ctx, projectPath, file)
 		if err != nil {
 			return false, err
 		}
@@ -235,7 +238,7 @@ func DirectorySyncContentsChanged(ctx context.Context, projectPath string, syncF
 		if _, exists := newFileSet[oldFile]; exists {
 			continue
 		}
-		exists, err := acfs.Exists(ctx, projectPath, "/"+filepath.ToSlash(oldFile))
+		exists, err := acfs.Root{Path: projectPath}.Exists(ctx, "/"+filepath.ToSlash(oldFile))
 		if err != nil {
 			return false, err
 		}
@@ -244,14 +247,14 @@ func DirectorySyncContentsChanged(ctx context.Context, projectPath string, syncF
 		}
 	}
 
-	for _, candidate := range ComposeFileCandidates() {
+	for _, candidate := range ComposeFileCandidates {
 		if candidate == composeFileName {
 			continue
 		}
 		if _, exists := newFileSet[candidate]; exists {
 			continue
 		}
-		exists, err := acfs.Exists(ctx, projectPath, "/"+candidate)
+		exists, err := acfs.Root{Path: projectPath}.Exists(ctx, "/"+candidate)
 		if err != nil {
 			return false, err
 		}
@@ -273,7 +276,7 @@ func StaleComposeFiles(ctx context.Context, projectPath, composeFileName string,
 		syncedFileSet[file] = struct{}{}
 	}
 
-	entries, err := acfs.List(ctx, projectPath, "/")
+	entries, err := acfs.Root{Path: projectPath}.List(ctx, "/")
 	if err != nil {
 		return nil, kit.Ternary(errors.Is(err, fs.ErrNotExist), nil, err)
 	}
@@ -287,7 +290,7 @@ func StaleComposeFiles(ctx context.Context, projectPath, composeFileName string,
 		if _, exists := syncedFileSet[name]; exists {
 			continue
 		}
-		if slices.Contains(ComposeFileCandidates(), name) {
+		if slices.Contains(ComposeFileCandidates, name) {
 			stale = append(stale, name)
 			continue
 		}
@@ -312,7 +315,7 @@ func RemoveStaleComposeFiles(ctx context.Context, projectPath, composeFileName s
 	}
 
 	for _, name := range stale {
-		if removeErr := acfs.Remove(ctx, projectPath, "/"+name); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
+		if removeErr := (acfs.Root{Path: projectPath}).Remove(ctx, "/"+name); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
 			return removeErr
 		}
 	}
@@ -337,12 +340,12 @@ func CreateUniqueDir(ctx context.Context, projectsRoot, basePath, name string, p
 	folderName = sanitized
 
 	for counter := 1; ; counter++ {
-		logicalPath, logicalErr := acfs.LogicalPath(projectsRoot, candidate)
+		logicalPath, logicalErr := acfs.Root{Path: projectsRoot}.LogicalPath(candidate)
 		if logicalErr != nil {
 			return "", "", false, fmt.Errorf("project directory would be outside allowed projects root: %w", logicalErr)
 		}
 
-		mkErr := acfs.Mkdir(ctx, projectsRoot, logicalPath, perm)
+		mkErr := acfs.Root{Path: projectsRoot}.Mkdir(ctx, logicalPath, perm)
 		if mkErr == nil {
 			return candidate, folderName, false, nil
 		}
@@ -371,12 +374,6 @@ func CreateUniqueDir(ctx context.Context, projectsRoot, basePath, name string, p
 	}
 }
 
-// ErrProjectDirExists is returned by CreateExactDir when the target directory
-// already exists. Callers that must not auto-rename (e.g. GitOps creates, which
-// must never mint "-N" duplicate projects on a broken binding) use this to fail
-// loudly instead of suffixing.
-var ErrProjectDirExists = errors.New("project directory already exists")
-
 // CreateExactDir creates basePath (the sanitized project directory) under
 // projectsRoot WITHOUT any "-N" collision suffixing. It returns ErrProjectDirExists
 // when the directory already exists, leaving the caller to decide how to proceed.
@@ -386,12 +383,12 @@ func CreateExactDir(ctx context.Context, projectsRoot, basePath, name string, pe
 		return "", "", errors.New("invalid project name: results in empty directory name")
 	}
 
-	logicalPath, err := acfs.LogicalPath(projectsRoot, basePath)
+	logicalPath, err := acfs.Root{Path: projectsRoot}.LogicalPath(basePath)
 	if err != nil {
 		return "", "", fmt.Errorf("project directory would be outside allowed projects root: %w", err)
 	}
 
-	if mkdirErr := acfs.Mkdir(ctx, projectsRoot, logicalPath, perm); mkdirErr != nil {
+	if mkdirErr := (acfs.Root{Path: projectsRoot}).Mkdir(ctx, logicalPath, perm); mkdirErr != nil {
 		return "", "", kit.Ternary[error](errors.Is(mkdirErr, os.ErrExist), ErrProjectDirExists, projectDirError(projectsRoot, basePath, mkdirErr))
 	}
 

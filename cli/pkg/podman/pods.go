@@ -2,21 +2,51 @@ package podman
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/podman"
 	"github.com/spf13/cobra"
-	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"kit.getarcane.app"
+
+	"getarcane.dev/cli/v3/internal/client"
+	"getarcane.dev/cli/v3/internal/cmdutil"
+	"getarcane.dev/cli/v3/internal/output"
+	internaltypes "getarcane.dev/cli/v3/internal/types"
+	"getarcane.dev/types/v3"
 )
+
+var podRef = cmdutil.ResourceRef[types.PodInspect, types.Pod]{
+	EnvironmentScoped: true,
+	Singular:          "pod",
+	Plural:            "pods",
+	IDHint:            "the pod ID",
+	ListCmd:           "arcane podman pods list",
+	SearchCandidates: func(ctx context.Context, c *client.Client, identifier string) ([]types.Pod, error) {
+		return searchPodman(ctx, c, internaltypes.PodmanPods(c.EnvID()), func(pod types.Pod) bool {
+			return strings.EqualFold(pod.Name, identifier) || cmdutil.LooksLikeIDPrefix(strings.ToLower(identifier)) && strings.HasPrefix(pod.ID, strings.ToLower(identifier))
+		})
+	},
+	Label: func(pod types.Pod) string {
+		return fmt.Sprintf("%s (%s)", pod.Name, pod.ID[:min(len(pod.ID), 12)])
+	},
+	Promote: func(pod types.Pod) *types.PodInspect {
+		return &types.PodInspect{
+			ID:   pod.ID,
+			Name: pod.Name,
+		}
+	},
+	IdentifierOf: func(pod types.PodInspect) string {
+		return pod.Name
+	},
+	Exact: func(pod types.Pod, identifierLower, original string) bool {
+		return strings.EqualFold(pod.Name, original) || pod.ID == identifierLower
+	},
+}
 
 func newPodsCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -47,18 +77,19 @@ func newPodsCmd() *cobra.Command {
 					return err
 				}
 
-				return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+				return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 					Method:         http.MethodPost,
-					Path:           types.PodmanPodAction(c.EnvID(), args[0], action.name),
-					Body:           podman.PodActionRequest{Timeout: kit.Ternary(cmd.Flags().Changed("timeout"), new(timeout), nil)},
+					Path:           internaltypes.PodmanPodAction(c.EnvID(), args[0], action.name),
+					Body:           types.PodActionRequest{Timeout: kit.Ternary(cmd.Flags().Changed("timeout"), new(timeout), nil)},
 					FailureMessage: "failed to " + action.name + " pod",
-					Render: func(base.MessageResponse) error {
+					Render: func(types.MessageResponse) error {
 						output.Success("Pod %s: %s completed", args[0], action.name)
 						return nil
 					},
 				})
 			},
 		}
+		cmdutil.SetResource(podRef, actionCmd)
 		if action.name == "stop" {
 			actionCmd.Flags().IntVarP(&timeout, "timeout", "t", 10, "Seconds to wait before killing the pod")
 		}
@@ -85,9 +116,9 @@ func newPodListCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[podman.Pod]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.Pod]{
 				Resource: "pods",
-				Endpoint: types.PodmanPods(c.EnvID()),
+				Endpoint: internaltypes.PodmanPods(c.EnvID()),
 				Params: cmdutil.ListParams{
 					Resource:        "pods",
 					Limit:           opts.limit,
@@ -96,7 +127,7 @@ func newPodListCmd() *cobra.Command {
 					All:             opts.all,
 				},
 				Headers: []string{"ID", "NAME", "STATUS", "CONTAINERS", "CREATED"},
-				Row: func(pod podman.Pod) []string {
+				Row: func(pod types.Pod) []string {
 					return []string{
 						pod.ID[:min(len(pod.ID), 12)],
 						pod.Name,
@@ -116,7 +147,7 @@ func newPodListCmd() *cobra.Command {
 }
 
 func newPodInspectCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:          "inspect <pod>",
 		Aliases:      []string{"get"},
 		Short:        "Show pod details",
@@ -128,11 +159,11 @@ func newPodInspectCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.PodInspect]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.PodInspect]{
 				Method:         http.MethodGet,
-				Path:           types.PodmanPod(c.EnvID(), args[0]),
+				Path:           internaltypes.PodmanPod(c.EnvID(), args[0]),
 				FailureMessage: "failed to inspect pod",
-				Render: func(data podman.PodInspect) error {
+				Render: func(data types.PodInspect) error {
 					output.Header("Pod Details")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Name", data.Name)
@@ -154,6 +185,8 @@ func newPodInspectCmd() *cobra.Command {
 			})
 		},
 	}
+	cmdutil.SetResource(podRef, cmd)
+	return cmd
 }
 
 func newPodDeleteCmd() *cobra.Command {
@@ -175,12 +208,13 @@ func newPodDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete pod %s?", args[0]),
-				Path:           cmdutil.AppendQuery(types.PodmanPod(c.EnvID(), args[0]), url.Values{"force": []string{strconv.FormatBool(opts.force)}}),
+				Path:           cmdutil.AppendQuery(internaltypes.PodmanPod(c.EnvID(), args[0]), url.Values{"force": []string{strconv.FormatBool(opts.force)}}),
 				FailureMessage: "failed to delete pod",
 				SuccessMessage: fmt.Sprintf("Pod %s deleted successfully", args[0]),
 			})
 		},
 	}
+	cmdutil.SetResource(podRef, cmd)
 	cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "Stop and remove running containers and skip the confirmation prompt")
 	return cmd
 }

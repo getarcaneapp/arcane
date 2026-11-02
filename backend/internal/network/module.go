@@ -5,11 +5,11 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
 // RegisterNetworks registers network endpoints.
@@ -38,6 +38,7 @@ func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docke
 		Summary:     "Network counts",
 		Tags:        []string{"Networks"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermNetworksList, h.GetNetworkCounts)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
@@ -56,6 +57,7 @@ func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docke
 		Summary:     "Get network topology",
 		Tags:        []string{"Networks"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermNetworksRead, h.GetNetworkTopology)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
@@ -85,21 +87,16 @@ func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docke
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermNetworksPrune, h.PruneNetworks)
 
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "connect-network-container",
+	middleware.RegisterWithActionPermissions(api, huma.Operation{
+		OperationID: "network-container-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/networks/{networkId}/connect",
-		Summary:     "Connect container to network",
+		Path:        "/environments/{id}/networks/{networkId}",
+		Summary:     "Connect or disconnect a container",
+		Description: "Connect a container to the network or disconnect it. Aliases and static addresses apply to connect; force applies to disconnect.",
 		Tags:        []string{"Networks"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermNetworksConnect, h.ConnectContainer)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "disconnect-network-container",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/networks/{networkId}/disconnect",
-		Summary:     "Disconnect container from network",
-		Tags:        []string{"Networks"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermNetworksDisconnect, h.DisconnectContainer)
+	}, "action", map[string]string{
+		"connect":    authz.PermNetworksConnect,
+		"disconnect": authz.PermNetworksDisconnect,
+	}, h.RunNetworkAction)
 }

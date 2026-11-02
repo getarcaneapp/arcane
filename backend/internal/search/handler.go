@@ -5,39 +5,40 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/category"
-	"github.com/getarcaneapp/arcane/types/v2/search"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/types/v3"
 )
 
-// CustomizeHandler handles customization search endpoints.
-type CustomizeHandler struct {
-	customizeSearchService *CustomizeSearchService
-}
-
-type SearchCustomizeInput struct {
-	Body search.Request
-}
-
-type SearchCustomizeOutput struct {
-	Body search.Response
-}
-
-type GetCustomizeCategoriesInput struct{}
-
-type GetCustomizeCategoriesOutput struct {
-	Body []category.Category
-}
-
-func filterCustomizeCategoriesInternal(ps *authz.PermissionSet, categories []category.Category) []category.Category {
-	if ps == nil {
-		return []category.Category{}
+type (
+	// CustomizeHandler handles customization search endpoints.
+	CustomizeHandler struct {
+		customizeSearchService *CustomizeSearchService
 	}
-	filtered := make([]category.Category, 0, len(categories))
+
+	SearchCustomizeInput struct {
+		Body types.SearchRequest
+	}
+
+	SearchCustomizeOutput struct {
+		Body types.SearchResponse
+	}
+
+	GetCustomizeCategoriesInput struct{}
+
+	GetCustomizeCategoriesOutput struct {
+		Body []types.Category
+	}
+)
+
+func filterCustomizeCategories(ps *authz.PermissionSet, categories []types.Category) []types.Category {
+	if ps == nil {
+		return []types.Category{}
+	}
+	filtered := make([]types.Category, 0, len(categories))
 	for _, cat := range categories {
-		if authz.CanAccessCustomizeCategory(ps, cat.ID, "") {
+		if authz.CanAccessSurface(ps, "customize.category."+cat.ID, "") {
 			filtered = append(filtered, cat)
 		}
 	}
@@ -51,8 +52,8 @@ func (h *CustomizeHandler) Search(ctx context.Context, input *SearchCustomizeInp
 	}
 
 	ps, _ := middleware.PermissionsFromContext(ctx)
-	results := Search(h.customizeSearchService.GetCustomizeCategories(), input.Body.Query, search.CustomizeProfile)
-	results.Results = filterCustomizeCategoriesInternal(ps, results.Results)
+	results := Search(h.customizeSearchService.GetCustomizeCategories(), input.Body.Query, types.SearchProfileCustomize)
+	results.Results = filterCustomizeCategories(ps, results.Results)
 	results.Count = len(results.Results)
 
 	return &SearchCustomizeOutput{
@@ -63,7 +64,7 @@ func (h *CustomizeHandler) Search(ctx context.Context, input *SearchCustomizeInp
 // GetCategories returns all available customization categories.
 func (h *CustomizeHandler) GetCategories(ctx context.Context, input *GetCustomizeCategoriesInput) (*GetCustomizeCategoriesOutput, error) {
 	ps, _ := middleware.PermissionsFromContext(ctx)
-	categories := filterCustomizeCategoriesInternal(ps, h.customizeSearchService.GetCustomizeCategories())
+	categories := filterCustomizeCategories(ps, h.customizeSearchService.GetCustomizeCategories())
 
 	return &GetCustomizeCategoriesOutput{
 		Body: categories,

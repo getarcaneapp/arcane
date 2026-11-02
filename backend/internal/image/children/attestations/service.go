@@ -16,7 +16,6 @@ import (
 	"sync"
 
 	"github.com/containerd/platforms"
-	"github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1"
@@ -26,13 +25,48 @@ import (
 	"github.com/moby/buildkit/util/attestation"
 	"github.com/moby/moby/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/registry"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	// Service reads in-toto attestations attached to local images and registry references.
+	Service struct {
+		dockerService *docker.DockerClientService
+		registryAuth  func(ctx context.Context, imageRef string) (string, error)
+	}
+
+	Query struct {
+		Platform         string
+		PredicateType    string
+		IncludeStatement bool
+	}
+
+	reference struct {
+		ImageRef      string
+		SubjectDigest string
+		Empty         bool
+		External      bool
+	}
+
+	subject struct {
+		Descriptor v1.Descriptor
+		Digest     string
+		Platform   string
+	}
+
+	attestationStatementEnvelope struct {
+		Type          string                          `json:"_type"`
+		PredicateType string                          `json:"predicateType"`
+		Subject       []types.ImageAttestationSubject `json:"subject"`
+	}
 )
 
 const (
@@ -42,51 +76,22 @@ const (
 	maxAttestationLayerBytes              = 16 << 20
 )
 
-// zstdDecoder is shared because DecodeAll is safe for concurrent use and a decoder is costly to build.
-var zstdDecoder = sync.OnceValues(func() (*zstd.Decoder, error) {
-	return zstd.NewReader(nil, zstd.WithDecoderMaxMemory(maxAttestationLayerBytes))
-})
+var (
+	// zstdDecoder is shared because DecodeAll is safe for concurrent use and a decoder is costly to build.
+	zstdDecoder = sync.OnceValues(func() (*zstd.Decoder, error) {
+		return zstd.NewReader(nil, zstd.WithDecoderMaxMemory(maxAttestationLayerBytes))
+	})
 
-var safeRegistryTransport = sync.OnceValues(func() (http.RoundTripper, error) {
-	safeClient, err := httpx.NewSafeOutboundHTTPClient(nil, httpx.DefaultLookupIP)
-	if err != nil {
-		return nil, err
-	}
-	return safeClient.Transport, nil
-})
+	safeRegistryTransport = sync.OnceValues(func() (http.RoundTripper, error) {
+		safeClient, err := httpx.NewSafeOutboundHTTPClient(nil, nil)
+		if err != nil {
+			return nil, err
+		}
+		return safeClient.Transport, nil
+	})
 
-var errAttestationLayerTooLarge = common.Classify(common.ErrBadRequest, fmt.Errorf("attestation layer exceeds the %d MiB limit", maxAttestationLayerBytes>>20))
-
-// Service reads in-toto attestations attached to local images and registry references.
-type Service struct {
-	dockerService *docker.DockerClientService
-	registryAuth  func(ctx context.Context, imageRef string) (string, error)
-}
-
-type Query struct {
-	Platform         string
-	PredicateType    string
-	IncludeStatement bool
-}
-
-type reference struct {
-	ImageRef      string
-	SubjectDigest string
-	Empty         bool
-	External      bool
-}
-
-type subject struct {
-	Descriptor v1.Descriptor
-	Digest     string
-	Platform   string
-}
-
-type attestationStatementEnvelope struct {
-	Type          string                     `json:"_type"`
-	PredicateType string                     `json:"predicateType"`
-	Subject       []image.AttestationSubject `json:"subject"`
-}
+	errAttestationLayerTooLarge = common.Classify(common.ErrBadRequest, fmt.Errorf("attestation layer exceeds the %d MiB limit", maxAttestationLayerBytes>>20))
+)
 
 func NewService(
 	dockerService *docker.DockerClientService,
@@ -96,7 +101,7 @@ func NewService(
 }
 
 // GetImageAttestations returns in-toto attestations attached to a local image or registry reference.
-func (s *Service) GetImageAttestations(ctx context.Context, imageName string, query Query) (*image.AttestationList, error) {
+func (s *Service) GetImageAttestations(ctx context.Context, imageName string, query Query) (*types.ImageAttestationList, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeouts.DefaultRegistry)
 	defer cancel()
 
@@ -105,11 +110,11 @@ func (s *Service) GetImageAttestations(ctx context.Context, imageName string, qu
 		return nil, err
 	}
 	if resolution.Empty {
-		return &image.AttestationList{
+		return &types.ImageAttestationList{
 			ImageRef:      resolution.ImageRef,
 			SubjectDigest: resolution.SubjectDigest,
 			Platform:      strings.TrimSpace(query.Platform),
-			Attestations:  []image.Attestation{},
+			Attestations:  []types.ImageAttestation{},
 		}, nil
 	}
 
@@ -147,7 +152,7 @@ func (s *Service) GetImageAttestations(ctx context.Context, imageName string, qu
 		return nil, err
 	}
 
-	attestations := make([]image.Attestation, 0)
+	attestations := make([]types.ImageAttestation, 0)
 	for _, target := range targets {
 		referrerAttestations, readReferrerAttestationsErr := s.readReferrerAttestations(ctx, ref.Context(), target, remoteOptions, query)
 		if readReferrerAttestationsErr != nil {
@@ -189,7 +194,7 @@ func (s *Service) GetImageAttestations(ctx context.Context, imageName string, qu
 	}
 
 	seen := make(map[string]struct{}, len(attestations))
-	return &image.AttestationList{
+	return &types.ImageAttestationList{
 		ImageRef: resolution.ImageRef,
 		SubjectDigest: func() string {
 			if hasPlatform && len(targets) > 0 {
@@ -203,7 +208,7 @@ func (s *Service) GetImageAttestations(ctx context.Context, imageName string, qu
 			}
 			return strings.TrimSpace(query.Platform)
 		}(),
-		Attestations: slices.DeleteFunc(attestations, func(item image.Attestation) bool {
+		Attestations: slices.DeleteFunc(attestations, func(item types.ImageAttestation) bool {
 			key := strings.Join([]string{
 				item.Digest,
 				item.PredicateType,
@@ -279,7 +284,7 @@ func (s *Service) remoteOptionsForImageRef(ctx context.Context, resolution refer
 		return options, nil
 	}
 
-	dockerAuth, err := registryauth.DecodeAuthHeader(encodedAuth)
+	dockerAuth, err := registry.DecodeAuthHeader(encodedAuth)
 	if err != nil {
 		slog.DebugContext(ctx, "registry auth decode failed for attestation request", "image", imageRef, "error", err)
 		return options, nil
@@ -379,7 +384,7 @@ func (s *Service) readReferrerAttestations(
 	target subject,
 	remoteOptions []remote.Option,
 	query Query,
-) ([]image.Attestation, error) {
+) ([]types.ImageAttestation, error) {
 	referrers, err := remote.Referrers(repository.Digest(target.Digest), remoteOptions...)
 	if err != nil {
 		if transportErr, ok := errors.AsType[*transport.Error](err); ok &&
@@ -394,7 +399,7 @@ func (s *Service) readReferrerAttestations(
 		return nil, fmt.Errorf("read image referrers for %s: %w", target.Digest, err)
 	}
 
-	attestations := make([]image.Attestation, 0, len(manifest.Manifests))
+	attestations := make([]types.ImageAttestation, 0, len(manifest.Manifests))
 	for _, referrer := range manifest.Manifests {
 		referrerDescriptor, getErr := remote.Get(repository.Digest(referrer.Digest.String()), remoteOptions...)
 		if getErr != nil {
@@ -435,13 +440,13 @@ func (s *Service) readReferrerAttestations(
 	return attestations, nil
 }
 
-func readAttestationImage(ctx context.Context, attestationImage v1.Image, artifactDescriptor v1.Descriptor, platform string, query Query) ([]image.Attestation, error) {
+func readAttestationImage(ctx context.Context, attestationImage v1.Image, artifactDescriptor v1.Descriptor, platform string, query Query) ([]types.ImageAttestation, error) {
 	manifest, err := attestationImage.Manifest()
 	if err != nil {
 		return nil, fmt.Errorf("read attestation manifest %s: %w", artifactDescriptor.Digest.String(), err)
 	}
 
-	attestations := make([]image.Attestation, 0, len(manifest.Layers))
+	attestations := make([]types.ImageAttestation, 0, len(manifest.Layers))
 	for _, layerDescriptor := range manifest.Layers {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
@@ -470,13 +475,13 @@ func readAttestationImage(ctx context.Context, attestationImage v1.Image, artifa
 			continue
 		}
 
-		attestations = append(attestations, image.Attestation{
+		attestations = append(attestations, types.ImageAttestation{
 			Digest:        layerDescriptor.Digest.String(),
 			MediaType:     string(layerDescriptor.MediaType),
 			ArtifactType:  cmp.Or(artifactDescriptor.ArtifactType, manifest.ArtifactType),
 			PredicateType: cmp.Or(statement.PredicateType, annotationPredicate),
 			StatementType: statement.Type,
-			Subject:       kit.Ternary(statement.Subject == nil, []image.AttestationSubject{}, statement.Subject),
+			Subject:       kit.Ternary(statement.Subject == nil, []types.ImageAttestationSubject{}, statement.Subject),
 			Platform:      platform,
 			Size:          cmp.Or(layerDescriptor.Size, int64(len(rawStatement))),
 			Statement: func() []byte {

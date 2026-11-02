@@ -3,19 +3,22 @@ package pagination
 import (
 	"cmp"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	kit "go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
+
+	"getarcane.dev/types/v3"
 )
 
-type Environmental interface {
-	Environment() base.EnvironmentRef
-}
+type (
+	Environmental interface {
+		Environment() types.EnvironmentRef
+	}
 
-type EnvironmentPage[T any] struct {
-	Environment    base.EnvironmentRef
-	Items          []T
-	TotalAvailable int64
-}
+	EnvironmentPage[T any] struct {
+		Environment    types.EnvironmentRef
+		Items          []T
+		TotalAvailable int64
+	}
+)
 
 func WithEnvironment[T Environmental](c Config[T]) Config[T] {
 	byEnvironment := func(a, b T) int {
@@ -42,7 +45,7 @@ func WithEnvironment[T Environmental](c Config[T]) Config[T] {
 
 func MergeEnvironmentPages[T Environmental, PT interface {
 	*T
-	SetEnvironment(base.EnvironmentRef)
+	SetEnvironment(types.EnvironmentRef)
 }](config Config[T], pages []EnvironmentPage[T], params QueryParams) ([]T, Response) {
 	all := make([]T, 0)
 	var totalAvailable int64

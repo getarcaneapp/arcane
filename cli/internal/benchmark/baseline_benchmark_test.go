@@ -1,7 +1,7 @@
 package benchmark
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
-	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"getarcane.dev/cli/v3/internal/client"
+	clitypes "getarcane.dev/cli/v3/internal/types"
 )
 
 func BenchmarkClientListMediumPayload(b *testing.B) {
@@ -47,7 +47,7 @@ func BenchmarkClientListMediumPayload(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		resp, getErr := c.Get(b.Context(), "/api/environments/0/containers?limit=200")
+		resp, getErr := c.Request(b.Context(), http.MethodGet, "/api/environments/0/containers?limit=200", nil)
 		if getErr != nil {
 			require.FailNowf(b, "benchmark request failed", "request: %v", getErr)
 		}

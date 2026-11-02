@@ -1,15 +1,21 @@
 <script lang="ts">
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
+
 	import SwarmKvFormSheet from '#lib/components/sheets/swarm-kv-form-sheet.svelte';
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
+	import { swarmEnvironmentsQueryOptions, type SwarmEnvironments } from '#lib/components/swarm/swarm-environments.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { swarmKvListQuery } from '#lib/query/swarm.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { SwarmKvSummary } from '#lib/types/swarm.js';
-	import { handleApiResultWithCallbacks, simpleRefresh } from '#lib/utils/api.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { destinationEnvironmentId, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import type { SwarmKvResource } from '#lib/utils/swarm-kv.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -17,35 +23,44 @@
 
 	let {
 		resource,
+		initialSwarm,
 		initialItems,
 		initialRequestOptions
 	}: {
 		resource: SwarmKvResource;
-		initialItems: Paginated<SwarmKvSummary>;
+		initialSwarm: SwarmEnvironments;
+		initialItems: EnvironmentPage<Paginated<SwarmKvSummary>>;
 		initialRequestOptions: SearchPaginationSortRequest;
 	} = $props();
 
-	let items = $derived(initialItems);
-	let requestOptions = $derived(initialRequestOptions);
-	let refreshing = $state(false);
+	const queryClient = useQueryClient();
+	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm:read'));
+	const swarm = $derived(swarmQuery.data ?? initialSwarm);
+
+	const pageState = new ResourceListPageState<SearchPaginationSortRequest>(untrack(() => initialRequestOptions));
 	let isSheetOpen = $state(false);
 	let sheetSession = $state(0);
 	let itemToEdit = $state<SwarmKvSummary | null>(null);
 	let sheetEnvironmentId = $state('');
 
-	async function refresh() {
-		await simpleRefresh(
-			() => swarmService.getKvItems(resource.kind, requestOptions),
-			(data) => (items = data),
-			m.common_refresh_failed({ resource: resource.title() }),
-			(loading) => (refreshing = loading)
-		);
-	}
-
-	useEnvironmentRefresh(async () => {
-		isSheetOpen = false;
-		await refresh();
+	const itemsQuery = createQuery(() => {
+		const scope = swarm.scope;
+		return {
+			...swarmKvListQuery(swarm, resource.kind, pageState.requestOptions),
+			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
+			select: (value) => ({ envId: scope, value })
+		};
 	});
+	const items = $derived(itemsQuery.data?.value ?? initialItems);
+	const refreshing = $derived(itemsQuery.isFetching && !itemsQuery.isPending);
+
+	async function refresh() {
+		await swarmQuery.refetch();
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(itemsQuery.refetch({ throwOnError: true })),
+			message: m.common_refresh_failed({ resource: resource.title() })
+		});
+	}
 
 	function openSheet(item: SwarmKvSummary | null, environmentId: string) {
 		itemToEdit = item;
@@ -54,28 +69,25 @@
 		isSheetOpen = true;
 	}
 
-	async function openEditSheet(item: SwarmKvSummary) {
-		const environmentId = await environmentStore.getCurrentEnvironmentId();
-		const result = await tryCatch(swarmService.getKvItem(resource.kind, item.id, environmentId));
-		if ((await environmentStore.getCurrentEnvironmentId()) !== environmentId) return;
+	async function openEditSheet(item: EnvironmentRow<SwarmKvSummary>) {
 		await handleApiResultWithCallbacks({
-			result,
+			result: await tryCatch(swarmService.getKvItem(resource.kind, item.id, item.environmentId)),
 			message: m.common_load_failed({ resource: `${resource.resource()} "${item.spec.Name}"` }),
-			onSuccess: (latest) => openSheet(latest, environmentId)
+			onSuccess: (latest) => openSheet(latest, item.environmentId)
 		});
 	}
 
 	async function handleSaved() {
 		isSheetOpen = false;
-		await refresh();
+		await queryClient.invalidateQueries({ queryKey: queryKeys.swarm.listPrefix(swarm.scope, resource.kind) });
 	}
 
 	const actionButtons = $derived(
 		createRefreshActionButtons({
 			create: {
-				allowed: hasPermission(resource.permission, environmentStore.selected?.id),
+				allowed: swarm.managers.some((env) => hasPermission(resource.permission, env.id)),
 				label: resource.createLabel(),
-				onclick: async () => openSheet(null, await environmentStore.getCurrentEnvironmentId())
+				onclick: () => openSheet(null, destinationEnvironmentId(sheetEnvironmentId, resource.permission, swarm.managers))
 			},
 			refreshLabel: m.common_refresh(),
 			onRefresh: refresh,
@@ -93,9 +105,16 @@
 	]);
 </script>
 
-<ResourcePageLayout title={resource.title()} subtitle={resource.subtitle()} {actionButtons} {statCards} environmentPicker>
+<ResourcePageLayout title={resource.title()} subtitle={resource.subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<SwarmKvTable {resource} bind:items bind:requestOptions onEdit={openEditSheet} />
+		<SwarmKvTable
+			{resource}
+			{items}
+			scope={swarm.scope}
+			bind:requestOptions={pageState.requestOptions}
+			onRetry={() => itemsQuery.refetch()}
+			onEdit={openEditSheet}
+		/>
 	{/snippet}
 
 	{#snippet additionalContent()}
@@ -104,7 +123,8 @@
 				<SwarmKvFormSheet
 					bind:open={isSheetOpen}
 					{resource}
-					environmentId={sheetEnvironmentId}
+					bind:environmentId={sheetEnvironmentId}
+					environments={itemToEdit ? undefined : swarm.managers}
 					existing={itemToEdit}
 					onSaved={handleSaved}
 				/>

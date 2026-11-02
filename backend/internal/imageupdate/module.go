@@ -8,26 +8,29 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/image"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
+	"getarcane.dev/arcane/v3/internal/imageupdate/children/releasenotes"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/types/v3"
 )
 
-type Module struct {
-	service                  *ImageUpdateService
-	getUpdateInfoByImageRefs func(context.Context, []string) (map[string]*image.UpdateInfo, error)
-}
+type (
+	Module struct {
+		service                  *ImageUpdateService
+		getUpdateInfoByImageRefs func(context.Context, []string) (map[string]*types.ImageUpdateInfo, error)
+	}
+)
 
 // New wires image update routes and registers the arcane.image.updates gauges once.
-func New(service *ImageUpdateService, getUpdateInfo func(context.Context, []string) (map[string]*image.UpdateInfo, error)) *Module {
+func New(service *ImageUpdateService, getUpdateInfo func(context.Context, []string) (map[string]*types.ImageUpdateInfo, error)) *Module {
 	if service != nil {
-		meter := otel.Meter(tracing.InstrumentationName)
+		meter := otel.Meter(logging.InstrumentationName)
 		updates, updatesErr := meter.Int64ObservableGauge("arcane.image.updates",
 			metric.WithDescription("Local images with an available update by update type"), metric.WithUnit("{image}"))
 		checkErrors, checkErrorsErr := meter.Int64ObservableGauge("arcane.image.update.check_errors",
@@ -63,16 +66,18 @@ func (m *Module) Service() *ImageUpdateService {
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
 	if m == nil {
 		RegisterImageUpdates(api, nil, nil, appCtx)
+		releasenotes.RegisterRoutes(api, releasenotes.NewHandler(nil))
 		return
 	}
 	RegisterImageUpdates(api, m.service, m.getUpdateInfoByImageRefs, appCtx)
+	releasenotes.RegisterRoutes(api, releasenotes.NewHandler(m.service.releaseNotes))
 }
 
 // RegisterImageUpdates registers image update endpoints.
 func RegisterImageUpdates(
 	api huma.API,
 	imageUpdateSvc *ImageUpdateService,
-	getUpdateInfoByImageRefs func(context.Context, []string) (map[string]*image.UpdateInfo, error),
+	getUpdateInfoByImageRefs func(context.Context, []string) (map[string]*types.ImageUpdateInfo, error),
 	appCtx handlerutil.ActivityAppContext,
 ) {
 	h := &ImageUpdateHandler{
@@ -84,7 +89,7 @@ func RegisterImageUpdates(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-image-update",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/image-updates/check",
+		Path:        "/environments/{id}/images/updates/check",
 		Summary:     "Check image update by reference",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -93,7 +98,7 @@ func RegisterImageUpdates(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-image-update-by-id",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/image-updates/check/{imageId}",
+		Path:        "/environments/{id}/images/updates/check/{imageId}",
 		Summary:     "Check image update by ID",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -102,34 +107,28 @@ func RegisterImageUpdates(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-image-update-by-id-post",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/image-updates/check/{imageId}",
+		Path:        "/environments/{id}/images/updates/check/{imageId}",
 		Summary:     "Check image update by ID (POST)",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermImageUpdatesCheck, h.CheckImageUpdateByID)
 
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "check-multiple-images",
+	middleware.RegisterWithActionPermissions(api, huma.Operation{
+		OperationID: "check-images",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/image-updates/check-batch",
-		Summary:     "Check multiple images",
+		Path:        "/environments/{id}/images/updates/check",
+		Summary:     "Check all or multiple images",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermImageUpdatesCheck, h.CheckMultipleImages)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "check-all-images",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/image-updates/check-all",
-		Summary:     "Check all images",
-		Tags:        []string{"Image Updates"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermImageUpdatesCheck, h.CheckAllImages)
+	}, "action", map[string]string{
+		"all":   authz.PermImageUpdatesCheck,
+		"batch": authz.PermImageUpdatesCheck,
+	}, h.CheckImages)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-update-info-by-refs",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/image-updates/by-refs",
+		Path:        "/environments/{id}/images/updates/refs",
 		Summary:     "Get persisted update info for image references",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -138,7 +137,7 @@ func RegisterImageUpdates(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-update-summary",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/image-updates/summary",
+		Path:        "/environments/{id}/images/updates/summary",
 		Summary:     "Get update summary",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),

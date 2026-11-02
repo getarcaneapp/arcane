@@ -19,14 +19,34 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/auth"
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	charmLog "charm.land/log/v2"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/runstate"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"getarcane.dev/cli/v3/internal/config"
+	"getarcane.dev/cli/v3/internal/output"
+	"getarcane.dev/cli/v3/internal/runstate"
+	clitypes "getarcane.dev/cli/v3/internal/types"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	StatusError struct {
+		Body       string
+		StatusCode int
+	}
+
+	// Client provides authenticated requests, token refresh, and response decoding for the Arcane API.
+	Client struct {
+		baseURLParsed *url.URL
+		httpClient    *http.Client
+		baseURL       string
+		apiKey        string
+		jwtToken      string
+		refreshToken  string
+		envID         string
+		maxAttempts   int
+		baseBackoff   time.Duration
+		maxBackoff    time.Duration
+	}
 )
 
 const (
@@ -43,22 +63,12 @@ var retryableStatusCodes = map[int]struct{}{
 	http.StatusGatewayTimeout:     {},
 }
 
-// Client provides authenticated requests, token refresh, and response decoding for the Arcane API.
-type Client struct {
-	baseURL       string
-	baseURLParsed *url.URL
-	apiKey        string
-	jwtToken      string
-	refreshToken  string
-	envID         string
-	httpClient    *http.Client
-	maxAttempts   int
-	baseBackoff   time.Duration
-	maxBackoff    time.Duration
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("request failed with status %d: %s", e.StatusCode, e.Body)
 }
 
 // New validates configuration and creates an authenticated client with the configured environment and a ten-minute timeout.
-func New(cfg *types.Config) (*Client, error) {
+func New(cfg *clitypes.Config) (*Client, error) {
 	cfg = cfg.Clone()
 	if token := strings.TrimSpace(os.Getenv("ARCANE_TOKEN")); token != "" {
 		cfg.JWTToken = token
@@ -80,7 +90,7 @@ func New(cfg *types.Config) (*Client, error) {
 
 // NewUnauthenticated creates a client that can call unauthenticated endpoints
 // (e.g. /api/auth/login). It only validates that server_url is configured.
-func NewUnauthenticated(cfg *types.Config) (*Client, error) {
+func NewUnauthenticated(cfg *clitypes.Config) (*Client, error) {
 	cfg = cfg.Clone()
 	if strings.TrimSpace(os.Getenv("ARCANE_TOKEN")) != "" {
 		cfg.RefreshToken = ""
@@ -101,7 +111,7 @@ func NewUnauthenticated(cfg *types.Config) (*Client, error) {
 	return &Client{
 		baseURL:       cfg.ServerURL,
 		baseURLParsed: parsedURL,
-		envID:         cmp.Or(cfg.DefaultEnvironment, defaultEnvID),
+		envID:         defaultEnvID,
 		refreshToken:  cfg.RefreshToken,
 		httpClient:    httpClient,
 		maxAttempts:   3,
@@ -116,14 +126,12 @@ func NewFromConfig() (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
-	state := runstate.Get()
-	if strings.TrimSpace(state.EnvOverride) != "" {
-		cfg.DefaultEnvironment = strings.TrimSpace(state.EnvOverride)
-	}
 	c, err := New(cfg)
 	if err != nil {
 		return nil, err
 	}
+	state := runstate.Get()
+	c.SetEnvironment(cmp.Or(strings.TrimSpace(state.EnvOverride), defaultEnvID))
 	if state.RequestTimeout > 0 {
 		c.SetTimeout(state.RequestTimeout)
 	}
@@ -136,14 +144,12 @@ func NewFromConfigUnauthenticated() (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
-	state := runstate.Get()
-	if strings.TrimSpace(state.EnvOverride) != "" {
-		cfg.DefaultEnvironment = strings.TrimSpace(state.EnvOverride)
-	}
 	c, err := NewUnauthenticated(cfg)
 	if err != nil {
 		return nil, err
 	}
+	state := runstate.Get()
+	c.SetEnvironment(cmp.Or(strings.TrimSpace(state.EnvOverride), defaultEnvID))
 	if state.RequestTimeout > 0 {
 		c.SetTimeout(state.RequestTimeout)
 	}
@@ -203,13 +209,13 @@ func (c *Client) Request(ctx context.Context, method, path string, body any, hea
 			}
 
 			start := time.Now()
-			logger.GetLogger().Debug("Sending request", "method", method, "url", fullURL, "env_id", c.envID, "streaming_body", true)
+			charmLog.Default().Debug("Sending request", "method", method, "url", fullURL, "env_id", c.envID, "streaming_body", true)
 			resp, newRequestWithContextErr := c.httpClient.Do(req)
 			if newRequestWithContextErr != nil {
-				logger.GetLogger().Debug("Request failed", "method", method, "url", fullURL, "env_id", c.envID, "duration", time.Since(start).String(), "error", newRequestWithContextErr)
+				charmLog.Default().Debug("Request failed", "method", method, "url", fullURL, "env_id", c.envID, "duration", time.Since(start).String(), "error", newRequestWithContextErr)
 				return nil, fmt.Errorf("request failed: %w", newRequestWithContextErr)
 			}
-			logger.GetLogger().Debug("Response received", "method", method, "url", fullURL, "env_id", c.envID, "status", resp.Status, "duration", time.Since(start).String())
+			charmLog.Default().Debug("Response received", "method", method, "url", fullURL, "env_id", c.envID, "status", resp.Status, "duration", time.Since(start).String())
 			return resp, nil
 		default:
 			jsonBody, marshalErr := json.Marshal(body)
@@ -245,13 +251,13 @@ func (c *Client) RequestRaw(ctx context.Context, method, path string, body io.Re
 	}
 
 	start := time.Now()
-	logger.GetLogger().Debug("Sending raw request", "method", method, "url", fullURL, "env_id", c.envID)
+	charmLog.Default().Debug("Sending raw request", "method", method, "url", fullURL, "env_id", c.envID)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		logger.GetLogger().Debug("Raw request failed", "method", method, "url", fullURL, "env_id", c.envID, "duration", time.Since(start).String(), "error", err)
+		charmLog.Default().Debug("Raw request failed", "method", method, "url", fullURL, "env_id", c.envID, "duration", time.Since(start).String(), "error", err)
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	logger.GetLogger().Debug("Raw response received", "method", method, "url", fullURL, "env_id", c.envID, "status", resp.Status, "duration", time.Since(start).String())
+	charmLog.Default().Debug("Raw response received", "method", method, "url", fullURL, "env_id", c.envID, "status", resp.Status, "duration", time.Since(start).String())
 
 	return resp, nil
 }
@@ -298,12 +304,12 @@ func (c *Client) doRequest(ctx context.Context, method, fullURL string, bodyByte
 		}
 
 		start := time.Now()
-		logger.GetLogger().Debug("Sending request", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "max_attempts", attempts, "body_bytes", len(bodyBytes))
+		charmLog.Default().Debug("Sending request", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "max_attempts", attempts, "body_bytes", len(bodyBytes))
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			logger.GetLogger().Debug("Request failed", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "duration", time.Since(start).String(), "error", err)
+			charmLog.Default().Debug("Request failed", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "duration", time.Since(start).String(), "error", err)
 			if attempt < attempts && c.shouldRetry(method, 0, err) {
-				logger.GetLogger().Debug("Retrying request after transport error", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "max_attempts", attempts)
+				charmLog.Default().Debug("Retrying request after transport error", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "max_attempts", attempts)
 				if backoffErr := c.waitRetry(ctx, attempt); backoffErr != nil {
 					return nil, backoffErr
 				}
@@ -311,10 +317,10 @@ func (c *Client) doRequest(ctx context.Context, method, fullURL string, bodyByte
 			}
 			return nil, fmt.Errorf("request failed: %w", err)
 		}
-		logger.GetLogger().Debug("Response received", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "status", resp.Status, "duration", time.Since(start).String())
+		charmLog.Default().Debug("Response received", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "status", resp.Status, "duration", time.Since(start).String())
 
 		if resp.StatusCode == http.StatusUnauthorized && allowRefresh && c.jwtToken != "" && c.refreshToken != "" {
-			logger.GetLogger().Debug("Refreshing access token after unauthorized response", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt)
+			charmLog.Default().Debug("Refreshing access token after unauthorized response", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt)
 			_ = resp.Body.Close()
 			if refreshAccessTokenErr := c.refreshAccessToken(ctx); refreshAccessTokenErr != nil {
 				return nil, refreshAccessTokenErr
@@ -324,7 +330,7 @@ func (c *Client) doRequest(ctx context.Context, method, fullURL string, bodyByte
 		}
 
 		if attempt < attempts && c.shouldRetry(method, resp.StatusCode, nil) {
-			logger.GetLogger().Debug("Retrying request after retryable status",
+			charmLog.Default().Debug("Retrying request after retryable status",
 				"method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "max_attempts", attempts, "status", resp.Status)
 			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxErrorBody))
 			_ = resp.Body.Close()
@@ -407,8 +413,8 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 	if c.baseURLParsed == nil {
 		return errors.New("invalid base URL")
 	}
-	refreshURL := c.baseURLParsed.ResolveReference(&url.URL{Path: types.AuthRefresh()}).String()
-	logger.GetLogger().Debug("Sending token refresh request", "url", refreshURL)
+	refreshURL := c.baseURLParsed.ResolveReference(&url.URL{Path: clitypes.AuthRefresh()}).String()
+	charmLog.Default().Debug("Sending token refresh request", "url", refreshURL)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, refreshURL, bytes.NewReader(bodyBytes))
 	if err != nil {
@@ -420,11 +426,11 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 	start := time.Now()
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		logger.GetLogger().Debug("Token refresh request failed", "url", refreshURL, "duration", time.Since(start).String(), "error", err)
+		charmLog.Default().Debug("Token refresh request failed", "url", refreshURL, "duration", time.Since(start).String(), "error", err)
 		return fmt.Errorf("token refresh failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	logger.GetLogger().Debug("Token refresh response received", "url", refreshURL, "status", resp.Status, "duration", time.Since(start).String())
+	charmLog.Default().Debug("Token refresh response received", "url", refreshURL, "status", resp.Status, "duration", time.Since(start).String())
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -435,7 +441,7 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 		return fmt.Errorf("token refresh failed (status %d): %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
-	var result base.ApiResponse[auth.TokenRefreshResponse]
+	var result types.ApiResponse[types.TokenRefreshResponse]
 	if unmarshalErr := json.Unmarshal(respBody, &result); unmarshalErr != nil {
 		return fmt.Errorf("failed to parse refresh response: %w", unmarshalErr)
 	}
@@ -447,7 +453,7 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 
 	c.jwtToken = result.Data.Token
 	c.refreshToken = newRefresh
-	logger.GetLogger().Debug("Access token refreshed successfully")
+	charmLog.Default().Debug("Access token refreshed successfully")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -463,35 +469,6 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 	return nil
 }
 
-// Get makes a GET request to the specified path.
-// It is a convenience wrapper around Request for retrieving resources.
-func (c *Client) Get(ctx context.Context, path string) (*http.Response, error) {
-	return c.Request(ctx, http.MethodGet, path, nil)
-}
-
-// Post makes a POST request to the specified path with a JSON body.
-// It is a convenience wrapper around Request for creating resources.
-func (c *Client) Post(ctx context.Context, path string, body any) (*http.Response, error) {
-	return c.Request(ctx, http.MethodPost, path, body)
-}
-
-// Put makes a PUT request to the specified path with a JSON body.
-// It is a convenience wrapper around Request for updating resources.
-func (c *Client) Put(ctx context.Context, path string, body any) (*http.Response, error) {
-	return c.Request(ctx, http.MethodPut, path, body)
-}
-
-// Delete makes a DELETE request to the specified path.
-// It is a convenience wrapper around Request for removing resources.
-func (c *Client) Delete(ctx context.Context, path string) (*http.Response, error) {
-	return c.Request(ctx, http.MethodDelete, path, nil)
-}
-
-// DeleteWithBody sends a DELETE request with a JSON options body.
-func (c *Client) DeleteWithBody(ctx context.Context, path string, body any) (*http.Response, error) {
-	return c.Request(ctx, http.MethodDelete, path, body)
-}
-
 // DoJSON enforces HTTP success and decodes a response without requiring the standard API envelope.
 func (c *Client) DoJSON[T any](ctx context.Context, method, path string, body any, headers ...http.Header) (T, error) {
 	loading := output.StartLoading(ctx)
@@ -505,7 +482,7 @@ func (c *Client) DoJSON[T any](ctx context.Context, method, path string, body an
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return out, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return out, &StatusError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(b))}
 	}
 
 	if unmarshalReadErr := json.UnmarshalRead(resp.Body, &out); unmarshalReadErr != nil {
@@ -515,7 +492,7 @@ func (c *Client) DoJSON[T any](ctx context.Context, method, path string, body an
 }
 
 // DoEnvelope sends a request and decodes the shared envelope, enforcing HTTP and API success.
-func (c *Client) DoEnvelope[T any](ctx context.Context, method, path string, body any) (*base.ApiResponse[T], error) {
+func (c *Client) DoEnvelope[T any](ctx context.Context, method, path string, body any) (*types.ApiResponse[T], error) {
 	loading := output.StartLoading(ctx)
 	defer loading.Stop()
 	resp, err := c.Request(ctx, method, path, body)
@@ -528,13 +505,13 @@ func (c *Client) DoEnvelope[T any](ctx context.Context, method, path string, bod
 
 // GetJSON performs a GET and decodes the standard API envelope, enforcing
 // HTTP and API success.
-func (c *Client) GetJSON[T any](ctx context.Context, path string) (*base.ApiResponse[T], error) {
+func (c *Client) GetJSON[T any](ctx context.Context, path string) (*types.ApiResponse[T], error) {
 	return c.DoEnvelope[T](ctx, http.MethodGet, path, nil)
 }
 
 // PostJSON performs a POST with a JSON body and decodes the standard API
 // envelope, enforcing HTTP and API success.
-func (c *Client) PostJSON[T any](ctx context.Context, path string, body any) (*base.ApiResponse[T], error) {
+func (c *Client) PostJSON[T any](ctx context.Context, path string, body any) (*types.ApiResponse[T], error) {
 	return c.DoEnvelope[T](ctx, http.MethodPost, path, body)
 }
 
@@ -550,7 +527,7 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, body any) ([]by
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return nil, &StatusError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(b))}
 	}
 
 	b, err := io.ReadAll(resp.Body)
@@ -562,21 +539,21 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, body any) ([]by
 
 // PutJSON performs a PUT with a JSON body and decodes the standard API
 // envelope, enforcing HTTP and API success.
-func (c *Client) PutJSON[T any](ctx context.Context, path string, body any) (*base.ApiResponse[T], error) {
+func (c *Client) PutJSON[T any](ctx context.Context, path string, body any) (*types.ApiResponse[T], error) {
 	return c.DoEnvelope[T](ctx, http.MethodPut, path, body)
 }
 
 // DeleteJSON performs a DELETE and decodes the standard API envelope,
 // enforcing HTTP and API success.
-func (c *Client) DeleteJSON[T any](ctx context.Context, path string) (*base.ApiResponse[T], error) {
+func (c *Client) DeleteJSON[T any](ctx context.Context, path string) (*types.ApiResponse[T], error) {
 	return c.DoEnvelope[T](ctx, http.MethodDelete, path, nil)
 }
 
 // decodeResponseStrict enforces HTTP and API success while decoding the response. The caller owns the response body.
-func decodeResponseStrict[T any](resp *http.Response) (*base.ApiResponse[T], error) {
+func decodeResponseStrict[T any](resp *http.Response) (*types.ApiResponse[T], error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, &StatusError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(body))}
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -585,8 +562,8 @@ func decodeResponseStrict[T any](resp *http.Response) (*base.ApiResponse[T], err
 	}
 
 	var result struct {
-		base.ApiResponse[T]
-		base.ErrorResponse
+		types.ErrorResponse
+		types.ApiResponse[T]
 	}
 	if unmarshalErr := json.Unmarshal(body, &result); unmarshalErr != nil {
 		return nil, fmt.Errorf("failed to decode response (body: %s): %w", string(body), unmarshalErr)
@@ -604,7 +581,7 @@ func decodeResponseStrict[T any](resp *http.Response) (*base.ApiResponse[T], err
 
 // TestConnection checks the API version endpoint and returns transport or status failures.
 func (c *Client) TestConnection(ctx context.Context) error {
-	resp, err := c.Get(ctx, "/api/version")
+	resp, err := c.Request(ctx, http.MethodGet, "/api/version", nil)
 	if err != nil {
 		return err
 	}

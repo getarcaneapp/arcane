@@ -14,127 +14,128 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
-	"go.getarcane.app/docker"
-	kit "go.getarcane.app/kit/pkg"
+	"go.uber.org/fx"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	containerdomain "github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	volumebackup "github.com/getarcaneapp/arcane/backend/v2/internal/volume/children/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume/children/workspace"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
+	"kit.getarcane.app/docker"
+
+	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	containerdomain "getarcane.dev/arcane/v3/internal/container"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/s3"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	volumebackup "getarcane.dev/arcane/v3/internal/volume/children/backup"
+	"getarcane.dev/arcane/v3/internal/volume/children/workspace"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/arcane/v3/pkg/volumes"
+	"getarcane.dev/types/v3"
 )
 
-type VolumeService struct {
-	db               *database.DB
-	dockerService    *dockerInternal.DockerClientService
-	eventService     *event.EventService
-	settingsService  *settings.SettingsService
-	imageService     *image.ImageService
-	backupVolumeName string
-	workspaceLocks   utils.KeyedMutex
-	helperMu         sync.Mutex
-	helperByVolume   map[string]*volumeHelper
-	// helperGroup deduplicates concurrent read-only helper creation per volume.
-	// Without it two simultaneous browse requests each create a helper and the
-	// second overwrites the first in helperByVolume, orphaning a `sleep infinity`
-	// container that pins the volume until restart.
-	helperGroup singleflight.Group
-	backup      *volumebackup.Service
-	workspace   *workspace.Service
-}
-
-var ErrVolumeBackupAlreadyRunning = errors.New("a backup is already running for this volume")
-
-const internalVolumePruneFilterValue = libarcane.InternalResourceLabel + "=true"
-
-func NewVolumeService(
-	db *database.DB,
-	dockerService *dockerInternal.DockerClientService,
-	eventService *event.EventService,
-	settingsService *settings.SettingsService,
-	containerService *containerdomain.ContainerService,
-	imageService *image.ImageService,
-	engine *backup.Engine,
-	s3Destinations *s3.S3DestinationService,
-	cfg *config.Config,
-	recoveryKeys *backup.RecoveryKeyStore,
-) *VolumeService {
-	backupVolumeName := ""
-	encryptionKey := ""
-	workspaceMaxDepth := 50
-	workspaceMaxEntries := 10000
-	workspaceMaxFileSizeMB := workspacepkg.DefaultMaxFileSizeMB
-	if cfg != nil {
-		backupVolumeName = cfg.BackupVolumeName
-		encryptionKey = cfg.EncryptionKey
-		workspaceMaxDepth = cfg.VolumeWorkspaceMaxDepth
-		workspaceMaxEntries = cfg.VolumeWorkspaceMaxEntries
-		workspaceMaxFileSizeMB = cfg.VolumeWorkspaceMaxFileSizeMB
+type (
+	VolumeService struct {
+		workspaceLocks concurrency.KeyedMutex
+		// helperGroup deduplicates concurrent read-only helper creation per volume.
+		// Without it two simultaneous browse requests each create a helper and the
+		// second overwrites the first in helperByVolume, orphaning a `sleep infinity`
+		// container that pins the volume until restart.
+		helperGroup      singleflight.Group
+		db               *database.DB
+		dockerService    *dockerInternal.DockerClientService
+		eventService     *event.EventService
+		settingsService  *settings.SettingsService
+		imageService     *image.ImageService
+		helperByVolume   map[string]*volumeHelper
+		backup           *volumebackup.Service
+		workspace        *workspace.Service
+		backupVolumeName string
+		helperMu         sync.Mutex
 	}
-	if strings.TrimSpace(backupVolumeName) == "" {
-		backupVolumeName = "arcane-backups"
+
+	VolumeServiceParams struct {
+		fx.In
+
+		DB               *database.DB
+		DockerService    *dockerInternal.DockerClientService
+		EventService     *event.EventService
+		SettingsService  *settings.SettingsService
+		ContainerService *containerdomain.ContainerService
+		ImageService     *image.ImageService
+		Engine           *backup.Engine
+		S3Destinations   *s3.S3DestinationService
+		Config           *config.Config
+		RecoveryKeys     *backup.RecoveryKeyStore
 	}
+
+	// VolumeSizeData holds size information for a volume.
+	VolumeSizeData struct {
+		Size     int64
+		RefCount int64
+	}
+)
+
+const (
+	internalVolumePruneFilterValue = selfcontainer.InternalResourceLabel + "=true"
+	legacyDefaultEncryptionKey     = "arcane-dev-key-32-characters!!!"
+)
+
+var (
+	ErrVolumeBackupAlreadyRunning = errors.New("a backup is already running for this volume")
+
+	generatedAnonymousVolumeName = regexp.MustCompile(`^[a-f0-9]{64}$`)
+)
+
+func NewVolumeService(p VolumeServiceParams) *VolumeService {
+	backupVolumeName := cmp.Or(strings.TrimSpace(p.Config.BackupVolumeName), "arcane-backups")
 	service := &VolumeService{
-		db:               db,
-		dockerService:    dockerService,
-		eventService:     eventService,
-		settingsService:  settingsService,
-		imageService:     imageService,
+		db:               p.DB,
+		dockerService:    p.DockerService,
+		eventService:     p.EventService,
+		settingsService:  p.SettingsService,
+		imageService:     p.ImageService,
 		backupVolumeName: backupVolumeName,
 		helperByVolume:   make(map[string]*volumeHelper),
 	}
 	backupDeps := volumebackup.Dependencies{
 		Store:            service.backupStore(),
-		DB:               db,
-		Docker:           dockerService,
-		Events:           eventService,
-		Settings:         settingsService,
-		Engine:           engine,
-		S3Destinations:   s3Destinations,
-		RecoveryKeys:     recoveryKeys,
+		DB:               p.DB,
+		Docker:           p.DockerService,
+		Events:           p.EventService,
+		Settings:         p.SettingsService,
+		Engine:           p.Engine,
+		S3Destinations:   p.S3Destinations,
+		RecoveryKeys:     p.RecoveryKeys,
 		Locks:            &service.workspaceLocks,
 		AlreadyRunning:   ErrVolumeBackupAlreadyRunning,
 		HelperImage:      service.getVolumeHelperImage,
 		AcquireHelper:    service.acquireVolumeHelper,
 		Exec:             service.execInContainer,
 		BackupVolumeName: backupVolumeName,
-		EncryptionKey:    encryptionKey,
-	}
-	if containerService != nil {
-		backupDeps.StopContainer, backupDeps.StartContainer = containerService.StopContainer, containerService.StartContainer
+		EncryptionKey:    cmp.Or(p.Config.EncryptionKey, legacyDefaultEncryptionKey),
+		StopContainer:    p.ContainerService.StopContainer,
+		StartContainer:   p.ContainerService.StartContainer,
 	}
 	service.backup = volumebackup.NewService(backupDeps)
 	service.workspace = workspace.NewService(workspace.Dependencies{
-		Docker:                dockerService,
-		Events:                eventService,
+		Docker:                p.DockerService,
+		Events:                p.EventService,
 		Locks:                 &service.workspaceLocks,
 		AcquireHelper:         service.acquireVolumeHelper,
 		RequireACFS:           service.requireVolumeHelperACFS,
@@ -143,16 +144,14 @@ func NewVolumeService(
 		BackupStorageMount:    service.backup.StorageMount,
 		ArchiveFileTarget:     service.backup.ArchiveFileTarget,
 		RestoreArchiveMembers: service.backup.RestoreArchiveMembers,
-		MaxDepth:              workspaceMaxDepth,
-		MaxEntries:            workspaceMaxEntries,
-		MaxFileSizeBytes:      workspacepkg.MaxFileSizeBytes(workspaceMaxFileSizeMB),
+		Settings:              p.SettingsService,
 	})
 	return service
 }
 
 // SetScheduler injects the dynamic scheduler and admission gate for per-policy
 // backup jobs. Agent mode passes them too: agents run their own volume backups.
-func (s *VolumeService) SetScheduler(ctx context.Context, dynamicScheduler scheduler.DynamicScheduler, admissionGate *runs.Admission) error {
+func (s *VolumeService) SetScheduler(ctx context.Context, dynamicScheduler types.DynamicScheduler, admissionGate *runs.Admission) error {
 	return s.backup.SetScheduler(ctx, dynamicScheduler, admissionGate)
 }
 
@@ -174,19 +173,19 @@ func (s *VolumeService) HasEnabledBackupPolicy(ctx context.Context, volumeName s
 func (s *VolumeService) CreateSystemManagedBackup(
 	ctx context.Context,
 	volumeName string,
-	user usertypes.Actor,
+	user types.Actor,
 	trigger VolumeBackupTrigger,
 	policyID string,
-	policy backuptypes.UpdateBackupPolicy,
+	policy types.UpdateBackupPolicy,
 ) (*VolumeBackup, error) {
 	entry, err := s.backup.CreateSystemManagedBackup(ctx, volumeName, user, string(trigger), policyID, policy)
 	if entry == nil {
 		return nil, err
 	}
-	return volumeBackupFromRecordInternal(entry), err
+	return volumeBackupFromRecord(entry), err
 }
 
-func (s *VolumeService) ReconcileBackup(ctx context.Context, previous scheduler.Run, volumeName string) (scheduler.Outcome, error) {
+func (s *VolumeService) ReconcileBackup(ctx context.Context, previous types.SchedulerRun, volumeName string) (types.SchedulerOutcome, error) {
 	return s.backup.ReconcileBackup(ctx, previous, volumeName)
 }
 
@@ -221,16 +220,16 @@ func (s *VolumeService) MigrateRepositoryPasswords(ctx context.Context, previous
 
 func (s *VolumeService) backupStore() volumebackup.Store {
 	return volumebackup.Store{
-		Create: func(ctx context.Context, record *volumetypes.Backup) error {
-			entry := volumeBackupFromRecordInternal(record)
+		Create: func(ctx context.Context, record *types.VolumeBackup) error {
+			entry := volumeBackupFromRecord(record)
 			if err := s.db.WithContext(ctx).Create(entry).Error; err != nil {
 				return err
 			}
 			record.ID, record.UpdatedAt = entry.ID, entry.UpdatedAt
 			return nil
 		},
-		Save: func(ctx context.Context, record *volumetypes.Backup) error {
-			entry := volumeBackupFromRecordInternal(record)
+		Save: func(ctx context.Context, record *types.VolumeBackup) error {
+			entry := volumeBackupFromRecord(record)
 			if err := s.db.WithContext(ctx).Save(entry).Error; err != nil {
 				return err
 			}
@@ -243,7 +242,7 @@ func (s *VolumeService) backupStore() volumebackup.Store {
 		Delete: func(ctx context.Context, backupID string) error {
 			return s.db.WithContext(ctx).Where("id = ?", backupID).Delete(&VolumeBackup{}).Error
 		},
-		Run: func(ctx context.Context, backupID string) (*volumetypes.Backup, error) {
+		Run: func(ctx context.Context, backupID string) (*types.VolumeBackup, error) {
 			var entry VolumeBackup
 			if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -251,20 +250,20 @@ func (s *VolumeService) backupStore() volumebackup.Store {
 				}
 				return nil, err
 			}
-			return entry.recordInternal(), nil
+			return entry.record(), nil
 		},
-		Runs: func(ctx context.Context, backupIDs []string) ([]*volumetypes.Backup, error) {
+		Runs: func(ctx context.Context, backupIDs []string) ([]*types.VolumeBackup, error) {
 			var entries []VolumeBackup
 			if err := s.db.WithContext(ctx).Where("id IN ?", backupIDs).Find(&entries).Error; err != nil {
 				return nil, err
 			}
-			records := make([]*volumetypes.Backup, 0, len(entries))
+			records := make([]*types.VolumeBackup, 0, len(entries))
 			for i := range entries {
-				records = append(records, entries[i].recordInternal())
+				records = append(records, entries[i].record())
 			}
 			return records, nil
 		},
-		Latest: func(ctx context.Context, policyID string) (*volumetypes.Backup, error) {
+		Latest: func(ctx context.Context, policyID string) (*types.VolumeBackup, error) {
 			var entry VolumeBackup
 			err := s.db.WithContext(ctx).Where("policy_id = ?", policyID).Order("created_at DESC").First(&entry).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -273,7 +272,7 @@ func (s *VolumeService) backupStore() volumebackup.Store {
 			if err != nil {
 				return nil, err
 			}
-			return entry.recordInternal(), nil
+			return entry.record(), nil
 		},
 		List: s.listBackups,
 		RemoteSnapshotIDs: func(ctx context.Context, destinationID string) ([]string, error) {
@@ -292,22 +291,22 @@ func (s *VolumeService) backupStore() volumebackup.Store {
 }
 
 // listBackups pages one volume's backup history; both or neither management type selected means no type filter.
-func (s *VolumeService) listBackups(ctx context.Context, volumeName string, params pagination.QueryParams) ([]volumetypes.Backup, int64, error) {
+func (s *VolumeService) listBackups(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, pagination.Response, error) {
 	query := s.db.WithContext(ctx).Model(&VolumeBackup{}).Where("volume_name = ?", volumeName)
 	var system, managed bool
 	for value := range strings.SplitSeq(params.Filters["type"], ",") {
-		switch backuptypes.ManagementType(strings.TrimSpace(value)) {
-		case backuptypes.ManagementTypeSystem:
+		switch types.BackupManagementType(strings.TrimSpace(value)) {
+		case types.BackupManagementTypeSystem:
 			system = true
-		case backuptypes.ManagementTypeVolume:
+		case types.BackupManagementTypeVolume:
 			managed = true
 		}
 	}
 	if system != managed {
 		if system {
-			query = query.Where("policy_id LIKE ?", backuptypes.SystemVolumePolicyPrefix+"%")
+			query = query.Where("policy_id LIKE ?", types.SystemVolumePolicyPrefix+"%")
 		} else {
-			query = query.Where("policy_id NOT LIKE ? OR policy_id IS NULL", backuptypes.SystemVolumePolicyPrefix+"%")
+			query = query.Where("policy_id NOT LIKE ? OR policy_id IS NULL", types.SystemVolumePolicyPrefix+"%")
 		}
 	}
 
@@ -324,11 +323,6 @@ func (s *VolumeService) listBackups(ctx context.Context, volumeName string, para
 			pattern,
 			pattern,
 		)
-	}
-
-	var totalItems int64
-	if err := query.Count(&totalItems).Error; err != nil {
-		return nil, 0, err
 	}
 
 	sortCol := "created_at"
@@ -357,24 +351,21 @@ func (s *VolumeService) listBackups(ctx context.Context, volumeName string, para
 	}
 	query = query.Order(fmt.Sprintf("%s %s", sortCol, sortOrder))
 
-	if params.Limit > 0 {
-		query = query.Offset(params.Start).Limit(params.Limit)
-	}
-
 	var entries []VolumeBackup
-	if err := query.Find(&entries).Error; err != nil {
-		return nil, 0, err
+	page, err := pagination.PaginateAndSortDB(pagination.QueryParams{Params: params.Params}, query, &entries)
+	if err != nil {
+		return nil, pagination.Response{}, err
 	}
-	records := make([]volumetypes.Backup, 0, len(entries))
+	records := make([]types.VolumeBackup, 0, len(entries))
 	for i := range entries {
-		record := entries[i].recordInternal()
-		record.Type = backuptypes.ManagementTypeForPolicy(record.PolicyID)
+		record := entries[i].record()
+		record.Type = types.BackupManagementTypeForPolicy(record.PolicyID)
 		records = append(records, *record)
 	}
-	return records, totalItems, nil
+	return records, page, nil
 }
 
-func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volumetypes.Volume, error) {
+func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*types.Volume, error) {
 	slog.DebugContext(ctx, "volume service: get volume", "volume", name)
 	volResult, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
 		return dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
@@ -385,7 +376,7 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 	usage, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (mo.Option[[]volume.Volume], error) {
 		return docker.GetVolumeUsageDataStaleWhileRevalidate(ctx, dockerClient), nil
 	})
-	v := volumetypes.NewSummary(enrichVolumesWithUsageData([]volume.Volume{volResult.Volume}, usage.OrEmpty())[0])
+	v := types.NewVolume(enrichVolumesWithUsageData([]volume.Volume{volResult.Volume}, usage.OrEmpty())[0])
 
 	containerIDs, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) ([]string, error) {
 		return docker.GetContainersUsingVolume(ctx, dockerClient, name)
@@ -402,11 +393,22 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 	return &v, nil
 }
 
-func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeCreateOptions, user usertypes.Actor) (*volumetypes.Volume, error) {
+func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeCreateOptions, user types.Actor) (*types.Volume, error) {
 	slog.DebugContext(ctx, "volume service: create volume", "volume", options.Name, "driver", options.Driver, "user", user.ID)
+	if strings.TrimSpace(options.Name) == "" {
+		return nil, common.Classify(common.ErrBadRequest, errors.New("volume name is required"))
+	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeVolumeError,
+			ResourceType:  "volume",
+			ResourceName:  options.Name,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "create", "driver": options.Driver},
+		}, err)
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
@@ -415,7 +417,15 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 		return dockerClient.VolumeCreate(ctx, options)
 	})
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeVolumeError,
+			ResourceType:  "volume",
+			ResourceName:  options.Name,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "create", "driver": options.Driver},
+		}, err)
 		return nil, fmt.Errorf("failed to create volume: %w", err)
 	}
 
@@ -424,22 +434,20 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 		return dockerClient.VolumeInspect(ctx, created.Volume.Name, client.VolumeInspectOptions{})
 	})
 	if err != nil {
-		s.eventService.LogErrorEvent(
-			ctx,
-			event.EventTypeVolumeError,
-			"volume",
-			created.Volume.Name,
-			created.Volume.Name,
-			user.ID,
-			user.Username,
-			"0",
-			err,
-			database.JSON{
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeVolumeError,
+			ResourceType:  "volume",
+			ResourceID:    created.Volume.Name,
+			ResourceName:  created.Volume.Name,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
 				"action": "create",
 				"driver": options.Driver,
 				"step":   "inspect",
 			},
-		)
+		}, err)
 		return nil, fmt.Errorf("failed to inspect created volume: %w", err)
 	}
 
@@ -448,16 +456,25 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 		"driver": vol.Volume.Driver,
 		"name":   vol.Volume.Name,
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeCreate, vol.Volume.Name, vol.Volume.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeVolumeCreate,
+		ResourceType:  "volume",
+		ResourceID:    vol.Volume.Name,
+		ResourceName:  vol.Volume.Name,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume creation action", "volume", vol.Volume.Name, "error", logErr.Error())
 	}
 
 	docker.InvalidateVolumeUsageCache(dockerClient)
 
-	return new(volumetypes.NewSummary(vol.Volume)), nil
+	return new(types.NewVolume(vol.Volume)), nil
 }
 
-func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force bool, user usertypes.Actor) error {
+func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force bool, user types.Actor) error {
 	slog.DebugContext(ctx, "volume service: delete volume", "volume", name, "force", force, "user", user.ID)
 	// Clients may not know this environment's backup volume name, so its removal is refused here.
 	if s.IsBackupVolume(name) {
@@ -465,7 +482,16 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeVolumeError,
+			ResourceType:  "volume",
+			ResourceID:    name,
+			ResourceName:  name,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "delete", "force": force},
+		}, err)
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
@@ -479,7 +505,16 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 	if _, volumeRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeRemoveResult, error) {
 		return dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{Force: force})
 	}); volumeRemoveErr != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", volumeRemoveErr, database.JSON{"action": "delete", "force": force})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeVolumeError,
+			ResourceType:  "volume",
+			ResourceID:    name,
+			ResourceName:  name,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "delete", "force": force},
+		}, volumeRemoveErr)
 		return fmt.Errorf("failed to remove volume: %w", volumeRemoveErr)
 	}
 
@@ -487,7 +522,16 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 		"action": "delete",
 		"name":   name,
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeDelete, name, name, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeVolumeDelete,
+		ResourceType:  "volume",
+		ResourceID:    name,
+		ResourceName:  name,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume deletion action", "volume", name, "error", logErr.Error())
 	}
 
@@ -497,7 +541,7 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 	return nil
 }
 
-func (s *VolumeService) PruneVolumes(ctx context.Context) (*volumetypes.PruneReport, error) {
+func (s *VolumeService) PruneVolumes(ctx context.Context) (*types.VolumePruneReport, error) {
 	slog.DebugContext(ctx, "volume service: prune volumes")
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -529,7 +573,15 @@ func (s *VolumeService) PruneVolumes(ctx context.Context) (*volumetypes.PruneRep
 		"spaceReclaimed":            volumePruneResult.Report.SpaceReclaimed,
 		"internalVolumeFilterLabel": internalVolumePruneFilterValue,
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeDelete, "", "bulk_prune", usertypes.SystemUser.ID, usertypes.SystemUser.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeVolumeDelete,
+		ResourceType:  "volume",
+		ResourceName:  "bulk_prune",
+		UserID:        types.SystemUser.ID,
+		Username:      types.SystemUser.Username,
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume prune action", "error", logErr.Error())
 	}
 
@@ -540,7 +592,7 @@ func (s *VolumeService) PruneVolumes(ctx context.Context) (*volumetypes.PruneRep
 
 	docker.InvalidateVolumeUsageCache(dockerClient)
 
-	return &volumetypes.PruneReport{
+	return &types.VolumePruneReport{
 		VolumesDeleted: volumePruneResult.Report.VolumesDeleted,
 		SpaceReclaimed: volumePruneResult.Report.SpaceReclaimed,
 	}, nil
@@ -564,12 +616,6 @@ func (s *VolumeService) GetVolumeUsage(ctx context.Context, name string) (bool, 
 
 	inUse := len(containerIDs) > 0
 	return inUse, containerIDs, nil
-}
-
-// VolumeSizeData holds size information for a volume.
-type VolumeSizeData struct {
-	Size     int64
-	RefCount int64
 }
 
 // GetVolumeSizes returns disk usage data for all volumes.
@@ -617,8 +663,8 @@ func enrichVolumesWithUsageData(dockerVolumes, usageVolumes []volume.Volume) []v
 	return result
 }
 
-func (s *VolumeService) buildVolumePaginationConfig() pagination.Config[volumetypes.Volume] {
-	createdSortFn := func(a, b volumetypes.Volume) int {
+func (s *VolumeService) buildVolumePaginationConfig() pagination.Config[types.Volume] {
+	createdSortFn := func(a, b types.Volume) int {
 		parseCreatedAt := func(createdAt string) (time.Time, bool) {
 			for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
 				if parsed, err := time.Parse(layout, createdAt); err == nil {
@@ -635,29 +681,29 @@ func (s *VolumeService) buildVolumePaginationConfig() pagination.Config[volumety
 		return strings.Compare(a.CreatedAt, b.CreatedAt)
 	}
 
-	return pagination.Config[volumetypes.Volume]{
-		SearchAccessors: []pagination.SearchAccessor[volumetypes.Volume]{
-			func(v volumetypes.Volume) (string, error) { return v.Name, nil },
-			func(v volumetypes.Volume) (string, error) { return v.Driver, nil },
-			func(v volumetypes.Volume) (string, error) { return v.Mountpoint, nil },
-			func(v volumetypes.Volume) (string, error) { return v.Scope, nil },
+	return pagination.Config[types.Volume]{
+		SearchAccessors: []pagination.SearchAccessor[types.Volume]{
+			func(v types.Volume) (string, error) { return v.Name, nil },
+			func(v types.Volume) (string, error) { return v.Driver, nil },
+			func(v types.Volume) (string, error) { return v.Mountpoint, nil },
+			func(v types.Volume) (string, error) { return v.Scope, nil },
 		},
-		SortBindings: []pagination.SortBinding[volumetypes.Volume]{
+		SortBindings: []pagination.SortBinding[types.Volume]{
 			{
 				Key: "name",
-				Fn:  func(a, b volumetypes.Volume) int { return strings.Compare(a.Name, b.Name) },
+				Fn:  func(a, b types.Volume) int { return strings.Compare(a.Name, b.Name) },
 			},
 			{
 				Key: "driver",
-				Fn:  func(a, b volumetypes.Volume) int { return strings.Compare(a.Driver, b.Driver) },
+				Fn:  func(a, b types.Volume) int { return strings.Compare(a.Driver, b.Driver) },
 			},
 			{
 				Key: "mountpoint",
-				Fn:  func(a, b volumetypes.Volume) int { return strings.Compare(a.Mountpoint, b.Mountpoint) },
+				Fn:  func(a, b types.Volume) int { return strings.Compare(a.Mountpoint, b.Mountpoint) },
 			},
 			{
 				Key: "scope",
-				Fn:  func(a, b volumetypes.Volume) int { return strings.Compare(a.Scope, b.Scope) },
+				Fn:  func(a, b types.Volume) int { return strings.Compare(a.Scope, b.Scope) },
 			},
 			{
 				Key: "created",
@@ -669,7 +715,7 @@ func (s *VolumeService) buildVolumePaginationConfig() pagination.Config[volumety
 			},
 			{
 				Key: "inUse",
-				Fn: func(a, b volumetypes.Volume) int {
+				Fn: func(a, b types.Volume) int {
 					if a.InUse == b.InUse {
 						return 0
 					}
@@ -678,27 +724,30 @@ func (s *VolumeService) buildVolumePaginationConfig() pagination.Config[volumety
 			},
 			{
 				Key: "size",
-				Fn: func(a, b volumetypes.Volume) int {
+				Fn: func(a, b types.Volume) int {
 					aSize := cmp.Or(a.Size, kit.FromPtr(a.UsageData).Size)
 					bSize := cmp.Or(b.Size, kit.FromPtr(b.UsageData).Size)
 					return cmp.Or(cmp.Compare(aSize, bSize), strings.Compare(a.Name, b.Name))
 				},
 			},
 		},
-		FilterAccessors: []pagination.FilterAccessor[volumetypes.Volume]{
+		FilterAccessors: []pagination.FilterAccessor[types.Volume]{
 			{
 				Key: "inUse",
-				Fn: func(v volumetypes.Volume, filterValue string) bool {
+				Fn: func(v types.Volume, filterValue string) bool {
 					return kit.Ternary(filterValue == "true", v.InUse, filterValue != "false" || !v.InUse)
 				},
 			},
+			pagination.LabelFilter(func(v types.Volume) map[string]string {
+				return v.Labels
+			}),
 		},
 	}
 }
 
 // CountUsageFromSnapshot derives usage counts from fetched volumes and containers with ListVolumesPaginated's
 // semantics (internal volumes excluded, mounted means in use) so dashboard tiles match the volumes page.
-func (s *VolumeService) CountUsageFromSnapshot(dockerVolumes []volume.Volume, containers []container.Summary) volumetypes.UsageCounts {
+func (s *VolumeService) CountUsageFromSnapshot(dockerVolumes []volume.Volume, containers []container.Summary) types.VolumeUsageCounts {
 	inUse := make(map[string]struct{})
 	for _, c := range containers {
 		for _, m := range c.Mounts {
@@ -708,9 +757,9 @@ func (s *VolumeService) CountUsageFromSnapshot(dockerVolumes []volume.Volume, co
 		}
 	}
 
-	counts := volumetypes.UsageCounts{}
+	counts := types.VolumeUsageCounts{}
 	for _, v := range dockerVolumes {
-		if s.isInternalVolume(volumetypes.NewSummary(v)) {
+		if s.isInternalVolume(types.NewVolume(v)) {
 			continue
 		}
 		counts.Total++
@@ -728,39 +777,37 @@ func (s *VolumeService) IsBackupVolume(name string) bool {
 	return strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(s.backupVolumeName))
 }
 
-func (s *VolumeService) isInternalVolume(v volumetypes.Volume) bool {
+func (s *VolumeService) isInternalVolume(v types.Volume) bool {
 	if s.IsBackupVolume(v.Name) {
 		return true
 	}
 
-	internal, _ := kit.ParseBool(v.Labels[libarcane.InternalResourceLabel])
+	internal, _ := kit.ParseBool(v.Labels[selfcontainer.InternalResourceLabel])
 	return internal
 }
 
-var generatedAnonymousVolumeName = regexp.MustCompile(`^[a-f0-9]{64}$`)
-
 // ListBackupVolumeOptions returns the current non-internal volumes used by centralized backup selection.
-func (s *VolumeService) ListBackupVolumeOptions(ctx context.Context) ([]backuptypes.SystemVolumeBackupOption, error) {
+func (s *VolumeService) ListBackupVolumeOptions(ctx context.Context) ([]types.SystemVolumeBackupOption, error) {
 	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeListResult, error) {
 		return dockerClient.VolumeList(ctx, client.VolumeListOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Docker volumes: %w", err)
 	}
-	inspect, inspectErr := s.dockerService.Call(ctx, libarcane.InspectCurrentArcaneContainer)
+	inspect, inspectErr := s.dockerService.Call(ctx, selfcontainer.InspectCurrentArcaneContainer)
 	if inspectErr != nil {
 		slog.DebugContext(ctx, "volume service: could not identify Arcane-mounted volumes for centralized backups", "error", inspectErr)
 	}
 	arcaneMounts := kit.FromPtr(inspect).Mounts
-	options := make([]backuptypes.SystemVolumeBackupOption, 0, len(result.Items))
+	options := make([]types.SystemVolumeBackupOption, 0, len(result.Items))
 	for _, item := range result.Items {
-		if s.isInternalVolume(volumetypes.NewSummary(item)) || slices.ContainsFunc(arcaneMounts, func(m container.MountPoint) bool {
+		if s.isInternalVolume(types.NewVolume(item)) || slices.ContainsFunc(arcaneMounts, func(m container.MountPoint) bool {
 			return m.Type == mount.TypeVolume && cmp.Or(strings.TrimSpace(m.Name), strings.TrimSpace(m.Source)) == item.Name
 		}) {
 			continue
 		}
 		_, anonymousLabel := item.Labels["com.docker.volume.anonymous"]
-		options = append(options, backuptypes.SystemVolumeBackupOption{
+		options = append(options, types.SystemVolumeBackupOption{
 			Name:      item.Name,
 			Anonymous: anonymousLabel || generatedAnonymousVolumeName.MatchString(item.Name),
 			Available: true,
@@ -769,7 +816,7 @@ func (s *VolumeService) ListBackupVolumeOptions(ctx context.Context) ([]backupty
 	return options, nil
 }
 
-func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params pagination.QueryParams, includeInternal bool) ([]volumetypes.Volume, pagination.Response, volumetypes.UsageCounts, error) {
+func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params pagination.QueryParams, includeInternal bool) ([]types.Volume, pagination.Response, types.VolumeUsageCounts, error) {
 	startedAt := time.Now()
 	slog.DebugContext(
 		ctx,
@@ -790,8 +837,8 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 
 	// Run volume list and container list in parallel for better performance
 	type volumeListResult struct {
-		volumes []volume.Volume
 		err     error
+		volumes []volume.Volume
 	}
 	type containerMapResult struct {
 		containerMap map[string][]string
@@ -809,7 +856,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	}()
 
 	go func() {
-		containers, listErr := s.dockerService.ListContainers(ctx)
+		containers, listErr := s.dockerService.ListContainers(ctx, false)
 		if listErr != nil {
 			containerChan <- containerMapResult{err: fmt.Errorf("failed to list containers: %w", listErr)}
 			return
@@ -828,7 +875,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	// Wait for both results
 	volResult := <-volChan
 	if volResult.err != nil {
-		return nil, pagination.Response{}, volumetypes.UsageCounts{}, fmt.Errorf("failed to list Docker volumes: %w", volResult.err)
+		return nil, pagination.Response{}, types.VolumeUsageCounts{}, fmt.Errorf("failed to list Docker volumes: %w", volResult.err)
 	}
 
 	containerResult := <-containerChan
@@ -860,9 +907,9 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 
 	enrichedVolumes := enrichVolumesWithUsageData(volResult.volumes, usageVolumes)
 
-	items := make([]volumetypes.Volume, 0, len(enrichedVolumes))
+	items := make([]types.Volume, 0, len(enrichedVolumes))
 	for _, v := range enrichedVolumes {
-		volDto := volumetypes.NewSummary(v)
+		volDto := types.NewVolume(v)
 		if !includeInternal && s.isInternalVolume(volDto) {
 			continue
 		}
@@ -880,7 +927,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	for _, v := range items {
 		inUseCount += kit.Ternary(v.InUse, 1, 0)
 	}
-	counts := volumetypes.UsageCounts{
+	counts := types.VolumeUsageCounts{
 		Inuse:  inUseCount,
 		Unused: len(items) - inUseCount,
 		Total:  len(items),
@@ -909,28 +956,30 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	return result.Items, paginationResp, counts, nil
 }
 
-func (s *VolumeService) AggregateVolumes(ctx context.Context, params pagination.QueryParams) (base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData], error) {
-	collection, err := httpx.CollectEnvironments[base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+func (s *VolumeService) AggregateVolumes(ctx context.Context, params pagination.QueryParams) (types.PaginatedWithCounts[types.Volume, VolumeUsageCountsData], error) {
+	collection, err := httpx.CollectEnvironments[types.PaginatedWithCounts[types.Volume, VolumeUsageCountsData]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
 	if err != nil {
-		return base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData]{}, err
+		return types.PaginatedWithCounts[types.Volume, VolumeUsageCountsData]{}, err
 	}
 
-	pages := make([]pagination.EnvironmentPage[volumetypes.Volume], 0, len(collection.Results))
-	counts := VolumeUsageCountsData{}
+	pages := make([]pagination.EnvironmentPage[types.Volume], 0, len(collection.Results))
+	var counts VolumeUsageCountsData
 	for _, result := range collection.Results {
 		page := result.Value
-		pages = append(pages, pagination.EnvironmentPage[volumetypes.Volume]{
+		pages = append(pages, pagination.EnvironmentPage[types.Volume]{
 			Environment:    result.Environment,
 			Items:          page.Data,
 			TotalAvailable: cmp.Or(page.Pagination.GrandTotalItems, page.Pagination.TotalItems),
 		})
-		counts.Inuse += page.Counts.Inuse
-		counts.Unused += page.Counts.Unused
-		counts.Total += page.Counts.Total
+		counts = VolumeUsageCountsData{
+			Inuse:  counts.Inuse + page.Counts.Inuse,
+			Unused: counts.Unused + page.Counts.Unused,
+			Total:  counts.Total + page.Counts.Total,
+		}
 	}
 	data, resp := pagination.MergeEnvironmentPages(s.buildVolumePaginationConfig(), pages, params)
 
-	return base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData]{
+	return types.PaginatedWithCounts[types.Volume, VolumeUsageCountsData]{
 		Success:            true,
 		Data:               data,
 		Counts:             counts,
@@ -939,10 +988,24 @@ func (s *VolumeService) AggregateVolumes(ctx context.Context, params pagination.
 	}, nil
 }
 
-func (s *VolumeService) AggregateVolumeSizes(ctx context.Context) (base.ApiResponse[[]VolumeSizeInfo], error) {
-	collection, err := httpx.CollectEnvironments[base.ApiResponse[[]VolumeSizeInfo]](ctx, nil)
+func (s *VolumeService) AggregateVolumeCounts(ctx context.Context) (types.ApiResponse[VolumeUsageCountsData], error) {
+	return httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[VolumeUsageCountsData]) VolumeUsageCountsData {
+		var counts VolumeUsageCountsData
+		for _, environment := range environments {
+			counts = VolumeUsageCountsData{
+				Inuse:  counts.Inuse + environment.Data.Inuse,
+				Unused: counts.Unused + environment.Data.Unused,
+				Total:  counts.Total + environment.Data.Total,
+			}
+		}
+		return counts
+	})
+}
+
+func (s *VolumeService) AggregateVolumeSizes(ctx context.Context) (types.ApiResponse[[]VolumeSizeInfo], error) {
+	collection, err := httpx.CollectEnvironments[types.ApiResponse[[]VolumeSizeInfo]](ctx, nil)
 	if err != nil {
-		return base.ApiResponse[[]VolumeSizeInfo]{}, err
+		return types.ApiResponse[[]VolumeSizeInfo]{}, err
 	}
 
 	sizes := make([]VolumeSizeInfo, 0)
@@ -953,11 +1016,11 @@ func (s *VolumeService) AggregateVolumeSizes(ctx context.Context) (base.ApiRespo
 		}
 	}
 
-	return base.ApiResponse[[]VolumeSizeInfo]{Success: true, Data: sizes, FailedEnvironments: collection.Failures}, nil
+	return types.ApiResponse[[]VolumeSizeInfo]{Success: true, Data: sizes, FailedEnvironments: collection.Failures}, nil
 }
 
 // RenameVolume copies an unused volume to a new name and removes the source.
-func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName string, user usertypes.Actor) (*volumetypes.Volume, error) {
+func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName string, user types.Actor) (*types.Volume, error) {
 	oldName = strings.TrimSpace(oldName)
 	newName = strings.TrimSpace(newName)
 	if oldName == "" || newName == "" || oldName == newName {
@@ -985,7 +1048,7 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 		s.logVolumeRenameError(ctx, oldName, newName, user, "inspect", err)
 		return nil, fmt.Errorf("inspect source volume: %w", err)
 	}
-	if s.isInternalVolume(volumetypes.NewSummary(source.Volume)) {
+	if s.isInternalVolume(types.NewVolume(source.Volume)) {
 		return nil, common.ErrVolumeRenameProtected
 	}
 
@@ -995,7 +1058,7 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 		slog.WarnContext(ctx, "could not stop volume browse helper before rename", "volume", oldName, "error", stopErr.Error())
 	}
 
-	migration, err := volumes.PlanRename(ctx, dockerClient, oldName, newName, s.toolsImage())
+	migration, err := volumes.PlanRename(ctx, dockerClient, oldName, newName, volumes.ToolsImage(s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value))
 	if err != nil {
 		s.logVolumeRenameError(ctx, oldName, newName, user, "plan", err)
 		return nil, err
@@ -1015,9 +1078,9 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 		return nil, combinedErr
 	}
 
-	if committer, ok := migration.(volumetypes.Committer); ok {
+	if committer, ok := migration.(types.VolumeRenameCommitter); ok {
 		if commitErr := committer.Commit(ctx); commitErr != nil {
-			if _, localOk := errors.AsType[*volumetypes.SourceCleanupError](commitErr); localOk {
+			if _, localOk := errors.AsType[*types.SourceCleanupError](commitErr); localOk {
 				// The copy and metadata are committed; only removing the source
 				// failed, so the rename itself succeeded.
 				slog.WarnContext(ctx, "volume renamed but source volume could not be removed", "oldVolume", oldName, "newVolume", newName, "error", commitErr.Error())
@@ -1041,7 +1104,16 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 	}
 
 	metadata := database.JSON{"action": "rename", "oldName": oldName, "newName": newName}
-	if logErr := s.eventService.LogVolumeEvent(ctx, event.EventTypeVolumeRename, newName, newName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeVolumeRename,
+		ResourceType:  "volume",
+		ResourceID:    newName,
+		ResourceName:  newName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume rename action", "oldVolume", oldName, "newVolume", newName, "error", logErr)
 	}
 
@@ -1066,11 +1138,20 @@ func (s *VolumeService) renameVolumeMetadata(ctx context.Context, oldName, newNa
 	})
 }
 
-func (s *VolumeService) logVolumeRenameError(ctx context.Context, oldName, newName string, user usertypes.Actor, step string, err error) {
-	s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", oldName, oldName, user.ID, user.Username, "0", err, database.JSON{
-		"action":  "rename",
-		"step":    step,
-		"oldName": oldName,
-		"newName": newName,
-	})
+func (s *VolumeService) logVolumeRenameError(ctx context.Context, oldName, newName string, user types.Actor, step string, err error) {
+	s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeVolumeError,
+		ResourceType:  "volume",
+		ResourceID:    oldName,
+		ResourceName:  oldName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":  "rename",
+			"step":    step,
+			"oldName": oldName,
+			"newName": newName,
+		},
+	}, err)
 }

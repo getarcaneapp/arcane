@@ -49,35 +49,39 @@ test.describe('Workspace restore', () => {
 	}
 
 	async function mockAppShell(page: Page) {
-		await page.addInitScript(() => localStorage.removeItem('selectedEnvironmentId'));
-		await page.route(/\/api\/auth\/me$/, async (route) => {
+		const user = {
+			id: 'backup-picker-admin',
+			username: 'arcane',
+			roleAssignments: [],
+			permissionsByEnv: { global: ['*'] },
+			isGlobalAdmin: true,
+			createdAt: new Date().toISOString()
+		};
+		const environments = {
+			success: true,
+			data: [{ id: '0', name: 'Local', apiUrl: '', status: 'online', enabled: true }],
+			pagination: { currentPage: 1, totalPages: 1, totalItems: 1, itemsPerPage: 1000 }
+		};
+		const version = { currentVersion: 'e2e', displayVersion: 'e2e', enabledFeatures: [] };
+		await page.route(/\/api\/auth\/bootstrap(?:\?.*)?$/, async (route) => {
+			const bootstrap = await route.fetch();
+			const body = await bootstrap.json();
 			await route.fulfill({
-				json: response({
-					id: 'backup-picker-admin',
-					username: 'arcane',
-					roleAssignments: [],
-					permissionsByEnv: { global: ['*'] },
-					isGlobalAdmin: true,
-					createdAt: new Date().toISOString()
-				})
+				response: bootstrap,
+				json: { ...body, data: { ...body.data, user, environments, version } }
 			});
 		});
-		await page.route(/\/api\/auth\/auto-login-config$/, async (route) => {
+		await page.route(/\/api\/auth\/me$/, async (route) => {
+			await route.fulfill({ json: response(user) });
+		});
+		await page.route(/\/api\/auth\/autologin$/, async (route) => {
 			await route.fulfill({ json: response({ enabled: false }) });
 		});
 		await page.route(/\/api\/environments(?:\?.*)?$/, async (route) => {
-			await route.fulfill({
-				json: {
-					success: true,
-					data: [
-						{ id: '0', name: 'Local', apiUrl: '', status: 'online', enabled: true, isEdge: false }
-					],
-					pagination: { currentPage: 1, totalPages: 1, totalItems: 1, itemsPerPage: 1000 }
-				}
-			});
+			await route.fulfill({ json: environments });
 		});
 		await page.route(/\/api\/environments\/0\/settings$/, async (route) => {
-			await route.fulfill({ json: {} });
+			await route.fulfill({ json: { settings: [], runtime: {}, readOnly: false } });
 		});
 		await page.route(/\/api\/environments\/0\/swarm\/status$/, async (route) => {
 			await route.fulfill({ json: response({ enabled: false }) });
@@ -85,21 +89,17 @@ test.describe('Workspace restore', () => {
 		await page.route(/\/api\/oidc\/status$/, async (route) => {
 			await route.fulfill({
 				json: response({
-					envForced: false,
-					envConfigured: false,
 					mergeAccounts: false,
 					providerName: '',
 					providerLogoUrl: ''
 				})
 			});
 		});
-		await page.route(/\/api\/roles\/available-permissions$/, async (route) => {
+		await page.route(/\/api\/roles\/permissions$/, async (route) => {
 			await route.fulfill({ status: 503, json: { message: 'not needed for global admin' } });
 		});
-		await page.route(/\/api\/app-version$/, async (route) => {
-			await route.fulfill({
-				json: { currentVersion: 'e2e', displayVersion: 'e2e', enabledFeatures: [] }
-			});
+		await page.route(/\/api\/app\/version$/, async (route) => {
+			await route.fulfill({ json: version });
 		});
 		await page.route(/\/api\/stream(?:\?.*)?$/, async (route) => {
 			await route.fulfill({ contentType: 'text/event-stream', body: '' });
@@ -133,7 +133,7 @@ test.describe('Workspace restore', () => {
 			});
 		});
 		await page.route(
-			new RegExp(`/api/environments/0/volumes/${encodedVolume}/backup-policy$`),
+			new RegExp(`/api/environments/0/volumes/${encodedVolume}/backups/policy$`),
 			async (route) => {
 				await route.fulfill({ json: response({ policies: [], s3Available: false }) });
 			}
@@ -178,7 +178,7 @@ test.describe('Workspace restore', () => {
 			}
 		);
 
-		await page.goto(`/volumes/${encodedVolume}?tab=backups`);
+		await page.goto(`/volumes/${encodedVolume}?tab=backups&env=0`);
 		await openVolumeRestoreFilesDialog(page);
 	}
 
@@ -238,7 +238,7 @@ test.describe('Workspace restore', () => {
 		);
 		await page.route(
 			new RegExp(
-				`/api/environments/0/volumes/${encodedVolume}/backups/${BACKUP_ID}/restore-files$`
+				`/api/environments/0/volumes/${encodedVolume}/backups/${BACKUP_ID}\\?action=restorefiles$`
 			),
 			async (route) => {
 				state.restoreBodies.push(route.request().postDataJSON() as Record<string, unknown>);
@@ -252,7 +252,9 @@ test.describe('Workspace restore', () => {
 			}
 		);
 		await page.route(
-			new RegExp(`/api/environments/0/volumes/${encodedVolume}/backups/${BACKUP_ID}/restore$`),
+			new RegExp(
+				`/api/environments/0/volumes/${encodedVolume}/backups/${BACKUP_ID}\\?action=restore$`
+			),
 			async (route) => {
 				state.fullRestoreRequests += 1;
 				state.content = state.restoredContent;
@@ -437,14 +439,14 @@ test.describe('Workspace restore', () => {
 			}
 		);
 		await page.route(
-			new RegExp(`/api/backups/${SYSTEM_BACKUP_ID}/restore-files$`),
+			new RegExp(`/api/backups/${SYSTEM_BACKUP_ID}\\?action=restorefiles$`),
 			async (route) => {
 				await restore(route.request().postDataJSON() as Record<string, unknown>, route);
 			}
 		);
 		if (!openPage) return;
 
-		await page.goto('/settings/backups');
+		await page.goto('/system/backups');
 		await openSystemRestoreDialog(page);
 	}
 
@@ -639,7 +641,7 @@ test.describe('Workspace restore', () => {
 			const restoreBodies: Array<Record<string, unknown>> = [];
 			await mockProjectWorkspacePage(page, () => workspaceState);
 
-			await page.goto(`/projects/${PROJECT_ID}?tab=compose`);
+			await page.goto(`/projects/${PROJECT_ID}?tab=compose&env=0`);
 			await page
 				.locator('[data-path="workspace.txt"]')
 				.getByRole('button', { name: 'workspace.txt', exact: true })
@@ -669,7 +671,7 @@ test.describe('Workspace restore', () => {
 				},
 				false
 			);
-			await navigateInApp(page, '/settings/backups');
+			await navigateInApp(page, '/system/backups');
 			await openSystemRestoreDialog(page);
 
 			const dialog = page.getByRole('dialog', { name: 'Restore files' });
@@ -680,7 +682,7 @@ test.describe('Workspace restore', () => {
 			await dialog.getByRole('button', { name: 'Restore files' }).click();
 			await expect.poll(() => restoreBodies.length).toBe(1);
 
-			await navigateInApp(page, `/projects/${PROJECT_ID}?tab=compose`);
+			await navigateInApp(page, `/projects/${PROJECT_ID}?tab=compose&env=0`);
 			await page
 				.locator('[data-path="workspace.txt"]')
 				.getByRole('button', { name: 'workspace.txt', exact: true })
@@ -782,7 +784,7 @@ test.describe('Workspace restore', () => {
 			const restoreBodies: Array<Record<string, unknown>> = [];
 			await page.route(
 				new RegExp(
-					`/api/environments/0/volumes/${VOLUME_NAME}/backups/${BACKUP_ID}/restore-files$`
+					`/api/environments/0/volumes/${VOLUME_NAME}/backups/${BACKUP_ID}\\?action=restorefiles$`
 				),
 				async (route) => {
 					restoreBodies.push(route.request().postDataJSON() as Record<string, unknown>);
@@ -996,7 +998,7 @@ test.describe('S3 storage', () => {
 		operation: 'create_file' | 'update_file' = 'create_file'
 	) {
 		const fileTreeRevision = await getVolumeWorkspaceRevision(page, volumeName);
-		const response = await page.request.put(
+		const response = await page.request.patch(
 			`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/workspace`,
 			{
 				multipart: {
@@ -1091,7 +1093,7 @@ test.describe('S3 storage', () => {
 			let destinationId: string | undefined;
 
 			try {
-				await page.goto('/settings/backups/s3');
+				await page.goto('/system/backups/s3');
 				await page.getByRole('button', { name: 'Add destination', exact: true }).first().click();
 
 				let dialog = page.getByRole('dialog');
@@ -1184,7 +1186,7 @@ test.describe('S3 storage', () => {
 				expect(destination.secretConfigured).toBe(true);
 
 				// Uploads, downloads, and deletes a probe object in the bucket.
-				const test = await page.request.post(`/api/backups/s3/${destination.id}/test`);
+				const test = await page.request.post(`/api/backups/s3/${destination.id}?action=test`);
 				expect(test.status(), await test.text()).toBe(200);
 			} finally {
 				await deleteDestinationViaApi(page, destination.id);
@@ -1194,7 +1196,7 @@ test.describe('S3 storage', () => {
 		test('refuses the stored secret once connection settings change', async ({ page }) => {
 			const destination = await createDestinationViaApi(page);
 			try {
-				const withoutSecret = await page.request.put(`/api/backups/s3/${destination.id}`, {
+				const withoutSecret = await page.request.patch(`/api/backups/s3/${destination.id}`, {
 					data: destinationPayload({
 						name: destination.name,
 						bucket: 'someone-elses-bucket',
@@ -1205,7 +1207,7 @@ test.describe('S3 storage', () => {
 				expect(await withoutSecret.text()).toContain('re-enter the secret access key');
 
 				// The same edit is accepted once the secret is supplied again.
-				const withSecret = await page.request.put(`/api/backups/s3/${destination.id}`, {
+				const withSecret = await page.request.patch(`/api/backups/s3/${destination.id}`, {
 					data: destinationPayload({ name: destination.name, prefix: `e2e/${Date.now()}-moved` })
 				});
 				expect(withSecret.status(), await withSecret.text()).toBe(200);
@@ -1252,7 +1254,7 @@ test.describe('S3 storage', () => {
 				expect(await readVolumeFile(page, volumeName, '/payload.txt')).toBe(replacementContent);
 
 				const restore = await page.request.post(
-					`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/backups/${created.id}/restore`,
+					`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/backups/${created.id}?action=restore`,
 					{ data: {}, timeout: 180000 }
 				);
 				expect(restore.status(), await restore.text()).toBe(200);
@@ -1348,7 +1350,7 @@ test.describe('System and volume restore', () => {
 	const defaultPolicy: SystemVolumeBackupPolicy = {
 		id: 'volume-nightly',
 		enabled: false,
-		schedule: '0 0 2 * * *',
+		schedule: '0 2 * * *',
 		retentionCount: 7,
 		stopContainers: false,
 		localEnabled: true,
@@ -1437,7 +1439,7 @@ test.describe('System and volume restore', () => {
 						{
 							id: 'system-nightly',
 							enabled: true,
-							schedule: '0 0 3 * * *',
+							schedule: '0 3 * * *',
 							retentionCount: 7,
 							localEnabled: true,
 							s3Enabled: false
@@ -1471,6 +1473,22 @@ test.describe('System and volume restore', () => {
 					: history;
 			return route.fulfill({ json: paginated(rows) });
 		});
+		let resolveCompleted: (activity: Activity) => void = () => undefined;
+		const completed = new Promise<Activity>((resolve) => {
+			resolveCompleted = resolve;
+		});
+		await page.route(/\/api\/stream(?:\?.*)?$/, async (route) => {
+			const activity = await completed;
+			const timestamp = new Date().toISOString();
+			const event = {
+				channel: 'activities',
+				activity: { type: 'activity', environmentId: '0', activity, timestamp },
+				timestamp
+			};
+			await route
+				.fulfill({ contentType: 'text/event-stream', body: `data: ${JSON.stringify(event)}\n\n` })
+				.catch(() => undefined);
+		});
 
 		return {
 			savedCollection: () => savedCollection,
@@ -1493,6 +1511,7 @@ test.describe('System and volume restore', () => {
 					id: activity.id,
 					trigger: 'manual'
 				});
+				resolveCompleted(activity);
 			}
 		};
 	}
@@ -1521,7 +1540,7 @@ test.describe('System and volume restore', () => {
 				]
 			);
 
-			await page.goto('/settings/backups');
+			await page.goto('/system/backups');
 			const systemCard = page.getByTestId('backup-policy-system-system-nightly');
 			const volumeCard = page.getByTestId('backup-policy-volume-volume-nightly');
 			await expect(systemCard.getByText('System')).toHaveClass(/(^|\s)text-purple(\s|$)/);
@@ -1546,7 +1565,7 @@ test.describe('System and volume restore', () => {
 			const createSchedule = page.getByRole('dialog', { name: 'Create schedule' });
 			await createSchedule.getByLabel('Backup type').click();
 			await page.getByRole('option', { name: 'Volume' }).click();
-			await createSchedule.getByLabel('Schedule', { exact: true }).fill('0 30 4 * * *');
+			await createSchedule.getByLabel('Schedule', { exact: true }).fill('30 4 * * *');
 			await createSchedule.getByRole('button', { name: 'Save' }).click();
 			await expect(createSchedule).toBeHidden();
 			expect(mock.savedCollection().policies).toHaveLength(2);
@@ -1559,7 +1578,7 @@ test.describe('System and volume restore', () => {
 			await createBackup.getByLabel('Backup type').click();
 			await page.getByRole('option', { name: 'Volume' }).click();
 			await createBackup.getByLabel('Backup configuration').click();
-			await page.getByRole('option', { name: '0 0 2 * * *' }).click();
+			await page.getByRole('option', { name: '0 2 * * *' }).click();
 			await createBackup.getByRole('button', { name: 'Create Backup' }).click();
 			await expect(createBackup).toBeHidden();
 			await expect(page.getByText('Backup started', { exact: true })).toBeVisible();
@@ -1613,7 +1632,7 @@ test.describe('System and volume restore', () => {
 					[],
 					[historyEntry('central-volume', 'system'), historyEntry(volumeName, 'volume')]
 				);
-				await page.goto('/settings/backups');
+				await page.goto('/system/backups');
 
 				await page.getByTestId('facet-type-trigger').click();
 				await page.getByTestId('facet-type-option-system').click();

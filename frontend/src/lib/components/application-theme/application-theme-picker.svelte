@@ -1,16 +1,26 @@
 <script lang="ts">
 	import { mode } from 'mode-watcher';
-	import { onDestroy } from 'svelte';
 
-	import * as Card from '#lib/components/ui/card/index.js';
 	import type { CarouselAPI } from '#lib/components/ui/carousel/context.js';
 	import * as Carousel from '#lib/components/ui/carousel/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
+	import { AddIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { ApplicationTheme } from '#lib/types/settings.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
+	import type { ApplicationTheme, ThemeDefinition } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
-	import { APPLICATION_THEME_OPTIONS, applyApplicationTheme, resolveApplicationTheme } from '#lib/utils/theme.svelte.js';
+	import {
+		type ApplicationThemeOption,
+		applyApplicationTheme,
+		findApplicationTheme,
+		getApplicationThemeOptions,
+		resolveApplicationTheme
+	} from '#lib/utils/theme.svelte.js';
+	import { saveUserPreferences } from '#lib/utils/user-preferences.js';
+
+	import ApplicationThemeCardMenu from './application-theme-card-menu.svelte';
+	import ApplicationThemeImportDialog from './application-theme-import-dialog.svelte';
 
 	let {
 		selectedTheme = $bindable(),
@@ -21,11 +31,10 @@
 		selectedTheme: ApplicationTheme;
 		accentColor?: string;
 		disabled?: boolean;
-		/** Called whenever the user picks a different theme. */
 		onSelect?: (theme: ApplicationTheme) => void;
 	} = $props();
 
-	const themeCopy: Record<ApplicationTheme, { label: string; description: string }> = {
+	const themeCopy: Partial<Record<ApplicationTheme, { label: string; description: string }>> = {
 		default: {
 			label: m.application_theme_default(),
 			description: m.application_theme_default_description()
@@ -61,59 +70,57 @@
 		rosepine: {
 			label: m.application_theme_rosepine(),
 			description: m.application_theme_rosepine_description()
+		},
+		abyss: {
+			label: m.application_theme_abyss(),
+			description: m.application_theme_abyss_description()
+		},
+		twilight: {
+			label: m.application_theme_twilight(),
+			description: m.application_theme_twilight_description()
+		},
+		neon: {
+			label: m.application_theme_neon(),
+			description: m.application_theme_neon_description()
+		},
+		mono: {
+			label: m.application_theme_mono(),
+			description: m.application_theme_mono_description()
 		}
 	};
 
-	let carouselApi = $state<CarouselAPI | undefined>(undefined);
-	let hasInitializedCarouselPosition = false;
-	const isDarkMode = $derived(mode.current === 'dark');
+	const themeOptions = $derived(getApplicationThemeOptions());
+	const customThemes = $derived(userStore.current?.preferences?.customThemes ?? []);
+	let importOpen = $state(false);
 
-	$effect(() => {
-		const selectedIndex = APPLICATION_THEME_OPTIONS.findIndex((theme) => theme.value === selectedTheme);
+	function themeDescription(theme: ApplicationThemeOption): string {
+		return themeCopy[theme.id]?.description ?? theme.description ?? '';
+	}
 
-		if (!carouselApi || selectedIndex < 0) {
-			return;
-		}
-
-		if (carouselApi.selectedScrollSnap() === selectedIndex) {
-			hasInitializedCarouselPosition = true;
-			return;
-		}
-
-		carouselApi.scrollTo(selectedIndex, !hasInitializedCarouselPosition);
-		hasInitializedCarouselPosition = true;
+	async function importTheme(theme: ThemeDefinition): Promise<boolean> {
+		await saveUserPreferences({
+			customThemes: [...customThemes, theme],
+			applicationTheme: theme.id
+		});
+		return customThemes.some((item) => item.id === theme.id);
+	}
+	const selectedDescription = $derived.by(() => {
+		const selected = themeOptions.find((theme) => theme.id === selectedTheme);
+		return selected ? themeDescription(selected) : '';
 	});
 
-	let releaseCarouselListeners: (() => void) | undefined;
-	onDestroy(() => releaseCarouselListeners?.());
+	function themeLabel(theme: ApplicationThemeOption): string {
+		return themeCopy[theme.id]?.label ?? theme.name ?? theme.id;
+	}
+
+	const isDarkMode = $derived(mode.current === 'dark');
+	const customAccent = $derived(accentColor.trim() === '' || accentColor.trim() === 'theme' ? null : accentColor);
 
 	function setCarouselApi(api: CarouselAPI | undefined) {
-		releaseCarouselListeners?.();
-		releaseCarouselListeners = undefined;
-		carouselApi = api;
-		if (!api) {
-			return;
-		}
-
-		const syncCenteredTheme = () => {
-			const centeredTheme = APPLICATION_THEME_OPTIONS[api.selectedScrollSnap()]?.value;
-
-			if (!centeredTheme || centeredTheme === selectedTheme) {
-				return;
-			}
-
-			selectedTheme = centeredTheme;
-			applyApplicationTheme(centeredTheme);
-			onSelect?.(centeredTheme);
-		};
-
-		api.on('select', syncCenteredTheme);
-		api.on('reInit', syncCenteredTheme);
-
-		releaseCarouselListeners = () => {
-			api.off('select', syncCenteredTheme);
-			api.off('reInit', syncCenteredTheme);
-		};
+		api?.scrollTo(
+			themeOptions.findIndex((theme) => theme.id === selectedTheme),
+			true
+		);
 	}
 
 	function handleThemeChange(value: string) {
@@ -129,77 +136,79 @@
 </script>
 
 <RadioGroup.Root value={selectedTheme} onValueChange={handleThemeChange}>
-	<div class="grid gap-6">
-		<div class="overflow-hidden rounded-xl border border-dashed bg-background/30 p-2 sm:p-3">
-			<Carousel.Root class="w-full" opts={{ align: 'center', loop: true }} setApi={setCarouselApi}>
-				<Carousel.Content>
-					{#each APPLICATION_THEME_OPTIONS as theme (theme.value)}
-						{@const option = themeCopy[theme.value]}
-						{@const preview = isDarkMode ? theme.preview.dark : theme.preview.light}
-						{@const previewAccentColor =
-							accentColor.trim() === '' || accentColor.trim() === 'theme' ? preview.primary : accentColor}
-						<Carousel.Item class="basis-23/25 sm:basis-22/25 lg:basis-21/25 xl:basis-4/5">
-							<div class="h-full p-1">
-								<RadioGroup.Item id={`application-theme-${theme.value}`} value={theme.value} class="sr-only" {disabled} />
-								<Label for={`application-theme-${theme.value}`} class={disabled ? 'cursor-not-allowed' : 'cursor-pointer'}>
-									<div class={cn('h-full', selectedTheme !== theme.value && 'opacity-85 saturate-75', disabled && 'opacity-60')}>
-										<Card.Root variant="outlined" interactive selected={selectedTheme === theme.value} class="h-full">
-											<Card.Content class="h-full">
-												<div class="flex h-full flex-col gap-4">
-													<div
-														class="rounded-md border border-(color:--preview-border) bg-(--preview-bg) p-3"
-														style={`--preview-bg: ${preview.background}; --preview-border: ${preview.border}; --preview-sidebar: ${preview.sidebar}; --preview-fg: ${preview.foreground}; --preview-card: ${preview.card};`}
-													>
-														<div class="flex gap-3">
-															<div class="h-16 w-4 rounded-sm bg-(--preview-sidebar)"></div>
-															<div class="min-w-0 flex-1 space-y-3">
-																<div class="flex items-center justify-between gap-3">
-																	<div class="h-2 w-18 rounded-full bg-(--preview-fg) opacity-80"></div>
-																	<div
-																		class="h-2 w-7 rounded-full bg-(--preview-accent)"
-																		style={`--preview-accent: ${previewAccentColor}`}
-																	></div>
-																</div>
-																<div class="grid grid-cols-2 gap-2">
-																	<div class="h-10 rounded-sm border border-(color:--preview-border) bg-(--preview-card)"></div>
-																	<div class="h-10 rounded-sm border border-(color:--preview-border) bg-(--preview-card)"></div>
-																</div>
-																<div class="flex gap-2">
-																	<div class="h-2 flex-1 rounded-full bg-(--preview-fg) opacity-60"></div>
-																	<div class="h-2 w-10 rounded-full bg-(--preview-fg) opacity-70"></div>
-																</div>
-															</div>
-														</div>
-													</div>
-
-													<div class="space-y-1">
-														<div class="flex items-center gap-2">
-															<div
-																class="size-2 rounded-full bg-(--preview-accent)"
-																style={`--preview-accent: ${previewAccentColor}`}
-															></div>
-															<div class="text-sm font-medium">{option.label}</div>
-														</div>
-														<p class="text-xs leading-5 text-muted-foreground">{option.description}</p>
-													</div>
-												</div>
-											</Card.Content>
-										</Card.Root>
+	<Carousel.Root
+		class="flex w-full items-center"
+		opts={{ align: 'start', dragFree: true, containScroll: 'trimSnaps' }}
+		setApi={setCarouselApi}
+	>
+		<Carousel.Previous class="static me-2 hidden shrink-0 translate-y-0 md:inline-flex" />
+		<Carousel.Content>
+			{#each themeOptions as theme (theme.id)}
+				{@const preview = isDarkMode ? theme.dark : theme.light}
+				{@const definition = findApplicationTheme(theme.id)}
+				<Carousel.Item class="basis-32">
+					<div class="group relative h-full">
+						<RadioGroup.Item id={`application-theme-${theme.id}`} value={theme.id} class="sr-only" {disabled} />
+						<Label for={`application-theme-${theme.id}`} class={disabled ? 'cursor-not-allowed' : 'cursor-pointer'}>
+							<div
+								class={cn(
+									'flex w-full flex-col gap-1.5 rounded-lg border p-1.5 transition-colors',
+									selectedTheme === theme.id ? 'border-primary ring-1 ring-primary' : 'hover:border-muted-foreground/40',
+									disabled && 'opacity-60'
+								)}
+							>
+								<div
+									class="flex h-11 gap-1 rounded-md border border-(color:--preview-border) bg-(--preview-bg) p-1.5"
+									style={`--preview-bg: ${preview.background}; --preview-border: ${preview.border}; --preview-sidebar: ${preview.sidebar}; --preview-fg: ${preview.foreground}; --preview-card: ${preview.card};`}
+								>
+									<div class="w-1.5 rounded-xs bg-(--preview-sidebar)"></div>
+									<div class="flex min-w-0 flex-1 flex-col gap-1">
+										<div class="h-0.75 w-1/2 rounded-full bg-(--preview-fg) opacity-70"></div>
+										<div class="flex flex-1 gap-0.75">
+											<div class="flex-1 rounded-xs bg-(--preview-card)"></div>
+											<div class="flex-1 rounded-xs bg-(--preview-card)"></div>
+										</div>
 									</div>
-								</Label>
+								</div>
+								<div class="flex items-center gap-1.5 px-0.5 text-xs font-medium">
+									<span
+										class="size-1.5 shrink-0 rounded-full bg-(--preview-accent)"
+										style={`--preview-accent: ${customAccent ?? preview.primary}`}
+									></span>
+									<span class="truncate">{themeLabel(theme)}</span>
+								</div>
 							</div>
-						</Carousel.Item>
-					{/each}
-				</Carousel.Content>
-				<div
-					class="pointer-events-none absolute inset-y-2 start-0 z-(--arcane-z-raised) w-10 bg-gradient-to-r from-background/95 via-background/55 to-transparent backdrop-blur-2xs sm:w-14"
-				></div>
-				<div
-					class="pointer-events-none absolute inset-y-2 end-0 z-(--arcane-z-raised) w-10 bg-gradient-to-l from-background/95 via-background/55 to-transparent backdrop-blur-2xs sm:w-14"
-				></div>
-				<Carousel.Previous class="start-3 z-(--arcane-z-sticky) hidden md:inline-flex" />
-				<Carousel.Next class="end-3 z-(--arcane-z-sticky) hidden md:inline-flex" />
-			</Carousel.Root>
-		</div>
-	</div>
+						</Label>
+						{#if definition}
+							<div
+								class="absolute top-1 right-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
+							>
+								<ApplicationThemeCardMenu
+									theme={definition}
+									label={themeLabel(theme)}
+									description={themeDescription(theme)}
+									custom={customThemes.some((item) => item.id === theme.id)}
+								/>
+							</div>
+						{/if}
+					</div>
+				</Carousel.Item>
+			{/each}
+			<Carousel.Item class="basis-32">
+				<button
+					type="button"
+					class="flex h-full w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed p-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-muted-foreground/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+					{disabled}
+					onclick={() => (importOpen = true)}
+				>
+					<AddIcon class="size-4" />
+					{m.import_theme()}
+				</button>
+			</Carousel.Item>
+		</Carousel.Content>
+		<Carousel.Next class="static ms-2 hidden shrink-0 translate-y-0 md:inline-flex" />
+	</Carousel.Root>
+	<p class="text-xs text-muted-foreground">{selectedDescription}</p>
 </RadioGroup.Root>
+
+<ApplicationThemeImportDialog bind:open={importOpen} {customThemes} onSubmit={importTheme} />

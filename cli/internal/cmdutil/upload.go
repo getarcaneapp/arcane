@@ -10,21 +10,24 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/upload"
-	kit "go.getarcane.app/kit/pkg"
+	charmLog "charm.land/log/v2"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"kit.getarcane.app"
+
+	"getarcane.dev/cli/v3/internal/client"
+	"getarcane.dev/cli/v3/internal/output"
+	clitypes "getarcane.dev/cli/v3/internal/types"
+	"getarcane.dev/types/v3"
 )
 
-const uploadChunkAttempts = 3
+const (
+	uploadChunkAttempts = 3
+)
 
 // UploadFileInChunks sends retried chunks with optional progress and aborts the session on failure.
 // It returns the completed upload session ID.
 func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath string, showProgress bool) (string, error) {
-	log := logger.GetLogger()
+	log := charmLog.Default()
 
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -39,7 +42,7 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 	loading := output.StartTracker(ctx, output.Stderr(), showProgress, "Creating upload session", "Uploading chunks")
 	loading.NextStep()
 	defer loading.Stop()
-	created, err := c.PostJSON[upload.Session](ctx, types.UploadSessions(c.EnvID(), kind), upload.CreateSessionRequest{
+	created, err := c.PostJSON[types.UploadSession](ctx, clitypes.UploadSessions(c.EnvID(), kind), types.CreateUploadSessionRequest{
 		Filename: filepath.Base(filePath),
 		Size:     fileInfo.Size(),
 	})
@@ -62,7 +65,7 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 			return "", fmt.Errorf("failed to read file: %w", readFullErr)
 		}
 
-		chunkPath := types.UploadSessionChunk(c.EnvID(), kind, session.ID, index)
+		chunkPath := clitypes.UploadSessionChunk(c.EnvID(), kind, session.ID, index)
 		for attempt := 1; ; attempt++ {
 			resp, chunkErr := c.RequestRaw(ctx, http.MethodPut, chunkPath, bytes.NewReader(buf[:expected]), map[string]string{"Content-Type": "application/octet-stream"})
 			if chunkErr == nil {
@@ -93,7 +96,7 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 // AbortUploadSession deletes a chunked upload session, ignoring errors. Use it
 // when the consume step after a completed upload fails.
 func AbortUploadSession(ctx context.Context, c *client.Client, kind, sessionID string) {
-	if resp, err := c.Delete(context.WithoutCancel(ctx), types.UploadSession(c.EnvID(), kind, sessionID)); err == nil {
+	if resp, err := c.Request(context.WithoutCancel(ctx), http.MethodDelete, clitypes.UploadSession(c.EnvID(), kind, sessionID), nil); err == nil {
 		_ = resp.Body.Close()
 	}
 }

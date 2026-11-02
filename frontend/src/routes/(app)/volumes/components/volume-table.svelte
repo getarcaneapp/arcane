@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import type { ColumnVisibilityState } from '@tanstack/table-core';
 	import { onMount } from 'svelte';
@@ -19,10 +20,8 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { volumeService, type VolumesPaginatedResponse } from '#lib/services/volume-service.js';
-	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { VolumeSizeInfo, VolumeSummaryDto } from '#lib/types/docker.js';
+	import type { VolumeSizeInfo, Volume } from '#lib/types/docker.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks, extractApiErrorMessage } from '#lib/utils/api.js';
@@ -30,16 +29,15 @@
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import {
 		collectAcrossEnvironments,
-		environmentHref,
+		type EnvironmentPage,
+		type EnvironmentRow,
 		environmentRows,
-		fetchAcrossEnvironments,
 		hasShownPermission,
 		parseRowKey,
+		readableEnvironments,
 		readAcrossEnvironments,
 		rowKey,
-		withFailedEnvironments,
-		type EnvironmentPage,
-		type EnvironmentRow
+		withFailedEnvironments
 	} from '#lib/utils/environments.js';
 	import { formatDateTimeShort, truncateString } from '#lib/utils/formatting.js';
 	import { bytes } from '#lib/utils/formatting.js';
@@ -48,21 +46,21 @@
 
 	import RenameVolumeDialog from './rename-volume-dialog.svelte';
 
-	type VolumeRow = EnvironmentRow<VolumeSummaryDto>;
+	type VolumeRow = EnvironmentRow<Volume>;
 
 	let {
-		volumes = $bindable(),
+		volumes,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		onRefreshData
+		onRetry
 	}: {
 		volumes: EnvironmentPage<VolumesPaginatedResponse>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
-		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
+		onRetry: () => Promise<unknown>;
 	} = $props();
 
-	let isLoading = $state({
+	const isLoading = $state({
 		removing: false,
 		renaming: false
 	});
@@ -72,37 +70,25 @@
 	let renameEnvironmentId = $state('0');
 
 	const scope = $derived(environmentStore.shownKey);
-	// Track the user store: hasPermission reads it non-reactively, so without
-	// this the derived would cache a pre-hydration false forever.
-	const canDeleteVolume = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('volumes:delete');
-	});
-	const canRenameVolume = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('volumes:rename');
-	});
+	const canDeleteVolume = $derived(hasShownPermission('volumes:delete'));
+	const canRenameVolume = $derived(hasShownPermission('volumes:rename'));
 	let tablePreferences = $state<{ persistCustomSettings(settings: Record<string, unknown>): void }>();
 	let customSettings = $state<Record<string, unknown>>({});
-	let showInternal = $derived.by(() => {
-		return (customSettings['showInternalVolumes'] as boolean) ?? false;
-	});
+	let showInternal = $derived((customSettings['showInternalVolumes'] as boolean) ?? false);
 
-	async function refreshVolumes(options: SearchPaginationSortRequest = requestOptions, refreshSizes = true) {
-		if (onRefreshData) {
-			await onRefreshData(options);
-		} else {
-			volumes = await fetchAcrossEnvironments(environmentStore.shown, options, (id, request, config) =>
-				volumeService.getVolumesForEnvironment(id, request, config)
-			);
-		}
-		if (refreshSizes && sizesEnabled) {
-			await sizesQuery.refetch({ cancelRefetch: false });
-		}
-		// A retry also reloads backup volume names an environment failed to return.
-		if (backupVolumeNamesQuery.isError || backupVolumeNamesQuery.data?.failures.length) {
-			await backupVolumeNamesQuery.refetch();
-		}
+	async function invalidateVolumes() {
+		await Promise.all([
+			queryClient.invalidateQueries({ queryKey: queryKeys.volumes.listPrefix(scope) }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.volumes.sizes(scope) })
+		]);
+	}
+
+	async function retryFailedEnvironments() {
+		await Promise.all([
+			onRetry(),
+			sizesEnabled && sizesQuery.refetch({ cancelRefetch: false }),
+			(backupVolumeNamesQuery.isError || backupVolumeNamesQuery.data?.failures.length) && backupVolumeNamesQuery.refetch()
+		]);
 	}
 
 	function getCurrentLimit() {
@@ -116,63 +102,48 @@
 
 		customSettings = { ...customSettings, showInternalVolumes: value };
 		tablePreferences?.persistCustomSettings(customSettings);
-		const nextOptions: SearchPaginationSortRequest = {
+		requestOptions = {
 			...requestOptions,
 			includeInternal: value,
 			pagination: { page: 1, limit: getCurrentLimit() }
 		};
-		requestOptions = nextOptions;
-		refreshVolumes(nextOptions);
 	}
 
 	let columnVisibility = $state<ColumnVisibilityState>({});
 	let tablePreferencesReady = $state(false);
 	const queryClient = useQueryClient();
 
-	// Each environment names its own backup volume; other shown environments' names come from their settings.
 	const backupVolumeNamesQuery = createQuery(() => {
-		const selectedId = environmentStore.selected?.id;
-		const others = environmentStore.shown.filter((env) => env.id !== selectedId);
+		const environments = readableEnvironments('volumes:list');
 		return {
-			// The selected environment is left out, so it is part of the key.
-			queryKey: queryKeys.volumes.backupVolumeNames(`${scope}|${selectedId}`),
+			queryKey: queryKeys.volumes.backupVolumeNames(scope),
 			queryFn: async () => {
-				const { values, failures } = await collectAcrossEnvironments(others, (id) =>
+				const { values, failures } = await collectAcrossEnvironments(environments, (id) =>
 					queryClient.ensureQueryData({
 						queryKey: queryKeys.settings.byEnvironment(id),
 						queryFn: () => settingsService.getReadableSettings(id)
 					})
 				);
 				const names = new Map(
-					values.map(({ environment, value }) => [environment.id, value.backupVolumeName || 'arcane-backups'])
+					values.map(({ environment, value }) => [environment.id, value.runtime.backupVolumeName || 'arcane-backups'])
 				);
 				return { names, failures };
 			},
-			enabled: others.length > 0,
+			enabled: environments.length > 0,
 			refetchOnWindowFocus: false
 		};
 	});
-	const isBackupVolumeName = (name: string, environmentId = environmentStore.selected?.id) => {
-		if (environmentId === environmentStore.selected?.id) {
-			return name === (settingsStore.current?.backupVolumeName || 'arcane-backups');
-		}
-		// Until another environment's backup volume name is known, none of its volumes can be removed or renamed.
-		const configured = backupVolumeNamesQuery.data?.names.get(environmentId ?? '');
+	const isBackupVolumeName = (name: string, environmentId: string) => {
+		const configured = backupVolumeNamesQuery.data?.names.get(environmentId);
 		return configured === undefined || name === configured;
 	};
 	const isBackupVolume = (item: VolumeRow) => isBackupVolumeName(item.name, item.environmentId);
-	const sizesEnabled = $derived.by(() => {
-		userStore.current;
-		return (
-			tablePreferencesReady &&
-			!!environmentStore.selected?.id &&
-			columnVisibility['size'] !== false &&
-			hasShownPermission('volumes:read')
-		);
-	});
+	const sizesEnabled = $derived(
+		tablePreferencesReady && columnVisibility['size'] !== false && hasShownPermission('volumes:read')
+	);
 	const sizesQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('volumes:list');
 		return {
 			queryKey: queryKeys.volumes.sizes(queryScope),
 			queryFn: async () => {
@@ -200,7 +171,9 @@
 			if (event.type !== 'updated') return;
 			if (event.query !== cache.find({ queryKey: queryKeys.volumes.sizes(scope), exact: true })) return;
 			if (event.action.type === 'success' && sizesEnabled && requestOptions?.sort?.column === 'size') {
-				void tryCatch(refreshVolumes(requestOptions, false)).then((result) =>
+				void tryCatch(
+					queryClient.invalidateQueries({ queryKey: queryKeys.volumes.listPrefix(scope) }, { throwOnError: true })
+				).then((result) =>
 					handleApiResultWithCallbacks({ result, message: m.common_refresh_failed({ resource: m.resource_volumes_cap() }) })
 				);
 			}
@@ -227,7 +200,7 @@
 								m.common_remove_success({ resource: `${m.resource_volume()} "${safeName}"` }),
 								activityToastOptions(extractActivityId(data))
 							);
-							await refreshVolumes();
+							await invalidateVolumes();
 						}
 					});
 				}
@@ -253,7 +226,7 @@
 			onSuccess: async (data) => {
 				toast.success(m.volumes_rename_success({ oldName, newName }), activityToastOptions(extractActivityId(data)));
 				renameDialogOpen = false;
-				if (environmentStore.shown.some((env) => env.id === renameEnvironmentId)) await refreshVolumes();
+				await invalidateVolumes();
 			}
 		});
 	}
@@ -264,7 +237,7 @@
 		// would break for selections carried across pages.
 		const idsToDelete = ids.filter((key) => {
 			const { environmentId, id } = parseRowKey(key);
-			return !isBackupVolumeName(id, environmentId);
+			return environmentId !== undefined && !isBackupVolumeName(id, environmentId);
 		});
 
 		bulkConfirmAndRun({
@@ -273,7 +246,7 @@
 			message: m.volumes_remove_selected_message({ count: idsToDelete.length }),
 			confirmLabel: m.common_remove(),
 			destructive: true,
-			run: (id, environmentId) => volumeService.deleteVolume(id, environmentId),
+			runInEnvironment: (id, environmentId) => volumeService.deleteVolume(id, environmentId),
 			messages: {
 				success: (count) => m.common_bulk_remove_success({ count, resource: m.resource_volumes_cap() }),
 				partial: (success, total, failed) =>
@@ -282,7 +255,7 @@
 			},
 			setLoading: (loading) => (isLoading.removing = loading),
 			onComplete: async (result) => {
-				if (result.success > 0) await refreshVolumes();
+				if (result.success > 0) await invalidateVolumes();
 			},
 			clearSelection: () => (selectedIds = [])
 		});
@@ -310,7 +283,7 @@
 	const deletableSelectedIds = $derived(
 		(selectedIds ?? []).filter((key) => {
 			const { environmentId, id } = parseRowKey(key);
-			return !isBackupVolumeName(id, environmentId);
+			return environmentId !== undefined && !isBackupVolumeName(id, environmentId);
 		})
 	);
 
@@ -319,7 +292,7 @@
 			id: 'remove',
 			label: m.common_remove_selected_count({ count: deletableSelectedIds.length }),
 			action: 'remove',
-			onClick: () => handleDeleteSelected(deletableSelectedIds),
+			onclick: () => handleDeleteSelected(deletableSelectedIds),
 			loading: isLoading.removing,
 			disabled: !canDeleteVolume || isLoading.removing || deletableSelectedIds.length === 0,
 			icon: TrashIcon
@@ -330,7 +303,11 @@
 </script>
 
 {#snippet NameCell({ item }: { item: VolumeRow })}
-	<a class="font-medium hover:underline" href={environmentHref(`/volumes/${item.id}`, item.environmentId)} title={item.name}>
+	<a
+		class="font-medium hover:underline"
+		href={resolve(`/(app)/volumes/[volumeName]?env=${encodeURIComponent(item.environmentId)}`, { volumeName: item.id })}
+		title={item.name}
+	>
 		{truncateString(item.name, 40)}
 	</a>
 {/snippet}
@@ -401,13 +378,17 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={() => goto(environmentHref(`/volumes/${item.id}`, item.environmentId))}
+		onclick={() =>
+			goto(resolve(`/(app)/volumes/[volumeName]?env=${encodeURIComponent(item.environmentId)}`, { volumeName: item.id }))}
 	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: VolumeRow })}
 	<RowActionsMenu>
-		<DropdownMenu.Item onclick={() => goto(environmentHref(`/volumes/${item.id}`, item.environmentId))}>
+		<DropdownMenu.Item
+			onclick={() =>
+				goto(resolve(`/(app)/volumes/[volumeName]?env=${encodeURIComponent(item.environmentId)}`, { volumeName: item.id }))}
+		>
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
@@ -460,11 +441,7 @@
 	}
 	hiddenSortFallback={{ column: 'name', direction: 'asc' }}
 	{bulkActions}
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await refreshVolumes(options);
-		return volumes;
-	}}
+	onRetry={retryFailedEnvironments}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

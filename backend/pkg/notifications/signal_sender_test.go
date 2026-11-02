@@ -1,0 +1,204 @@
+package notifications
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestBuildSignalURL(t *testing.T) {
+	tests := []struct {
+		check  func(string) bool
+		name   string
+		config SignalConfig
+	}{
+		{
+			name: "basic auth configuration",
+			config: SignalConfig{
+				Host:       "signal.example.com",
+				Port:       8080,
+				User:       "admin",
+				Password:   "secret",
+				Source:     "+1234567890",
+				Recipients: []string{"+0987654321"},
+			},
+			check: func(url string) bool {
+				return assert.Contains(t, url, "signal://admin:secret@signal.example.com:8080/+1234567890/+0987654321")
+			},
+		},
+		{
+			name: "token auth configuration",
+			config: SignalConfig{
+				Host:       "signal.example.com",
+				Port:       8080,
+				Token:      "auth-token-123",
+				Source:     "+1234567890",
+				Recipients: []string{"+0987654321"},
+			},
+			check: func(url string) bool {
+				return assert.Contains(t, url, "signal://signal.example.com:8080/+1234567890/+0987654321") &&
+					assert.Contains(t, url, "token=auth-token-123")
+			},
+		},
+		{
+			name: "multiple recipients",
+			config: SignalConfig{
+				Host:       "signal.example.com",
+				Port:       8080,
+				Token:      "token123",
+				Source:     "+1111111111",
+				Recipients: []string{"+2222222222", "+3333333333", "+4444444444"},
+			},
+			check: func(url string) bool {
+				return assert.Contains(t, url, "/+1111111111/+2222222222/+3333333333/+4444444444")
+			},
+		},
+		{
+			name: "with DisableTLS",
+			config: SignalConfig{
+				Host:       "signal.example.com",
+				Port:       8080,
+				Token:      "token123",
+				Source:     "+1234567890",
+				Recipients: []string{"+0987654321"},
+				DisableTLS: true,
+			},
+			check: func(url string) bool {
+				return assert.Contains(t, url, "disabletls=Yes")
+			},
+		},
+		{
+			name: "custom port",
+			config: SignalConfig{
+				Host:       "signal-api.local",
+				Port:       9443,
+				User:       "user",
+				Password:   "pass",
+				Source:     "+1234567890",
+				Recipients: []string{"+0987654321"},
+			},
+			check: func(url string) bool {
+				return assert.Contains(t, url, "signal://user:pass@signal-api.local:9443/+1234567890/+0987654321")
+			},
+		},
+		{
+			name: "NotifySelf defaults to true (omitted in shoutrrr URL)",
+			config: SignalConfig{
+				Host:       "signal.example.com",
+				Port:       8080,
+				Token:      "token123",
+				Source:     "+1234567890",
+				Recipients: []string{"+0987654321"},
+			},
+			check: func(url string) bool {
+				return assert.NotContains(t, url, "notifyself=")
+			},
+		},
+		{
+			name: "NotifySelf explicitly true (omitted in shoutrrr URL)",
+			config: SignalConfig{
+				Host:       "signal.example.com",
+				Port:       8080,
+				Token:      "token123",
+				Source:     "+1234567890",
+				Recipients: []string{"+0987654321"},
+				NotifySelf: new(true),
+			},
+			check: func(url string) bool {
+				return assert.NotContains(t, url, "notifyself=")
+			},
+		},
+		{
+			name: "NotifySelf explicitly false (included as notifyself=No)",
+			config: SignalConfig{
+				Host:       "signal.example.com",
+				Port:       8080,
+				Token:      "token123",
+				Source:     "+1234567890",
+				Recipients: []string{"+0987654321"},
+				NotifySelf: new(false),
+			},
+			check: func(url string) bool {
+				return assert.Contains(t, url, "notifyself=No")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotURL, err := BuildSignalURL(tt.config)
+			require.NoError(t, err)
+			tt.check(gotURL)
+		})
+	}
+}
+
+func TestBuildSignalURL_AuthenticationMethods(t *testing.T) {
+	tests := []struct {
+		name     string
+		wantAuth string
+		config   SignalConfig
+	}{
+		{
+			name: "basic auth only",
+			config: SignalConfig{
+				Host:       "signal.example.com",
+				Port:       8080,
+				User:       "testuser",
+				Password:   "testpass",
+				Source:     "+1234567890",
+				Recipients: []string{"+0987654321"},
+			},
+			wantAuth: "testuser:testpass@",
+		},
+		{
+			name: "token auth only",
+			config: SignalConfig{
+				Host:       "signal.example.com",
+				Port:       8080,
+				Token:      "my-secure-token",
+				Source:     "+1234567890",
+				Recipients: []string{"+0987654321"},
+			},
+			wantAuth: "token=my-secure-token",
+		},
+		{
+			name: "both basic and token auth provided",
+			config: SignalConfig{
+				Host:       "signal.example.com",
+				Port:       8080,
+				User:       "user",
+				Password:   "pass",
+				Token:      "token",
+				Source:     "+1234567890",
+				Recipients: []string{"+0987654321"},
+			},
+			wantAuth: "user:pass@",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotURL, err := BuildSignalURL(tt.config)
+			require.NoError(t, err)
+			assert.Contains(t, gotURL, tt.wantAuth)
+		})
+	}
+}
+
+func TestBuildSignalURL_PhoneNumberEncoding(t *testing.T) {
+	config := SignalConfig{
+		Host:       "signal.example.com",
+		Port:       8080,
+		Token:      "token",
+		Source:     "+1 (555) 123-4567", // Phone with special chars
+		Recipients: []string{"+1 (555) 987-6543"},
+	}
+
+	gotURL, err := BuildSignalURL(config)
+	require.NoError(t, err)
+
+	// Phone numbers should be in the URL path
+	assert.Contains(t, gotURL, "/+1%20%28555%29%20123-4567/+1%20%28555%29%20987-6543")
+}

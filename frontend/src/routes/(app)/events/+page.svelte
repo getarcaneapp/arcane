@@ -1,14 +1,13 @@
 <script lang="ts">
 	import { createQuery, keepPreviousData } from '@tanstack/svelte-query';
-	import { onMount, tick } from 'svelte';
+	import { untrack } from 'svelte';
 
 	import { AlertIcon, CheckIcon, CloseIcon, EventsIcon, InfoIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
+	import { eventListQuery, eventStatsQuery } from '#lib/query/events.js';
 	import { eventService } from '#lib/services/event-service.js';
-	import { STREAM_CHANNEL_EVENTS } from '#lib/services/stream-service.js';
-	import { clientStream } from '#lib/stores/client-stream.svelte.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 
@@ -17,22 +16,17 @@
 	let { data } = $props();
 
 	let selectedIds = $state<string[]>([]);
-	let requestOptions = $derived(data.eventRequestOptions);
+	let requestOptions = $state(untrack(() => data.eventRequestOptions));
 	let isDeleting = $state(false);
 
 	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
-	const eventsQuery = createQuery(() => {
-		const options = requestOptions;
-		return {
-			queryKey: queryKeys.events.listGlobal(options),
-			queryFn: () => eventService.getEvents(options),
-			placeholderData: keepPreviousData
-		};
-	});
+	const eventsQuery = createQuery(() => ({
+		...eventListQuery(requestOptions),
+		placeholderData: keepPreviousData
+	}));
 
 	const statsQuery = createQuery(() => ({
-		queryKey: queryKeys.events.statsGlobal(),
-		queryFn: () => eventService.getEventStats(),
+		...eventStatsQuery(),
 		initialData: data.eventStats
 	}));
 
@@ -43,45 +37,6 @@
 	async function refresh() {
 		await Promise.all([eventsQuery.refetch(), statsQuery.refetch()]);
 	}
-
-	onMount(() => {
-		let disposed = false;
-		let refreshing = false;
-		let refreshPending = false;
-
-		async function refreshFromStream() {
-			if (disposed) return;
-			refreshPending = true;
-			if (refreshing) return;
-			refreshing = true;
-			let alreadyFetching = eventsQuery.isFetching || statsQuery.isFetching;
-			try {
-				while (refreshPending && !disposed) {
-					refreshPending = false;
-					// An existing request may predate the notification; follow it with a fresh request.
-					await Promise.all([eventsQuery.refetch({ cancelRefetch: false }), statsQuery.refetch({ cancelRefetch: false })]);
-					refreshPending ||= alreadyFetching;
-					alreadyFetching = false;
-				}
-			} finally {
-				refreshing = false;
-			}
-		}
-
-		const unsubscribe = clientStream.subscribe(STREAM_CHANNEL_EVENTS, {
-			onConnected: () => void refreshFromStream(),
-			onEvent: (event) => {
-				if (typeof event === 'object' && event !== null && 'type' in event && event.type === 'changed') {
-					void refreshFromStream();
-				}
-			}
-		});
-
-		return () => {
-			disposed = true;
-			unsubscribe();
-		};
-	});
 
 	const activeSeverities = $derived.by(() => {
 		const value = requestOptions.filters?.['severity'];
@@ -133,7 +88,7 @@
 		});
 	}
 
-	const canManageEvents = $derived(hasPermission('events:delete'));
+	const canManageEvents = $derived(hasPermission('events:delete', GLOBAL_SCOPE));
 
 	const actionButtons: ActionButton[] = $derived([
 		...(selectedIds.length > 0 && canManageEvents
@@ -205,16 +160,6 @@
 
 <ResourcePageLayout title={m.events_title()} subtitle={m.events_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<EventTable
-			{events}
-			bind:selectedIds
-			bind:requestOptions
-			onRefreshData={async (options) => {
-				requestOptions = options;
-				// Let the query switch to the new options first; the refetch then joins its fetch.
-				await tick();
-				await Promise.all([eventsQuery.refetch({ cancelRefetch: false }), statsQuery.refetch()]);
-			}}
-		/>
+		<EventTable {events} bind:selectedIds bind:requestOptions />
 	{/snippet}
 </ResourcePageLayout>

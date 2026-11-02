@@ -19,14 +19,73 @@ import (
 	"strconv"
 	"strings"
 
-	kit "go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
+	"kit.getarcane.app/normalization"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"getarcane.dev/arcane/v3/internal/settings"
+)
+
+type (
+	// SchemaDocument is the canonical JSON artifact consumed by the docs site.
+	SchemaDocument struct {
+		RenamedEnv    map[string]string `json:"renamedEnv"`
+		EnvConfig     []ConfigEntry     `json:"envConfig"`
+		Settings      []SettingEntry    `json:"settings"`
+		RetiredEnv    []string          `json:"retiredEnv"`
+		SchemaVersion int               `json:"schemaVersion"`
+	}
+
+	// ConfigEntry describes an environment-backed runtime config value.
+	ConfigEntry struct {
+		Env          string   `json:"env"`
+		Field        string   `json:"field"`
+		Type         string   `json:"type"`
+		DefaultValue string   `json:"defaultValue,omitempty"`
+		Description  string   `json:"description,omitempty"`
+		Source       string   `json:"source"`
+		SourceFile   string   `json:"sourceFile"`
+		SourceSymbol string   `json:"sourceSymbol"`
+		Options      []string `json:"options,omitempty"`
+		BuildTags    []string `json:"buildTags,omitempty"`
+		SupportsFile bool     `json:"supportsFile,omitempty"`
+		Conditional  bool     `json:"conditional,omitempty"`
+	}
+
+	SettingEntry struct {
+		Min          *float64 `json:"min,omitempty"`
+		Max          *float64 `json:"max,omitempty"`
+		Env          string   `json:"env"`
+		Key          string   `json:"key"`
+		Type         string   `json:"type"`
+		Default      string   `json:"default,omitempty"`
+		Scope        string   `json:"scope"`
+		Description  string   `json:"description,omitempty"`
+		Category     string   `json:"category,omitempty"`
+		Requires     string   `json:"requires,omitempty"`
+		Note         string   `json:"note,omitempty"`
+		Source       string   `json:"source"`
+		SourceFile   string   `json:"sourceFile"`
+		SourceSymbol string   `json:"sourceSymbol"`
+		Values       []string `json:"values,omitempty"`
+		Sensitive    bool     `json:"sensitive"`
+		Public       bool     `json:"public"`
+	}
+
+	envFieldOptions struct {
+		sourceFile  string
+		sourceType  string
+		buildTags   []string
+		conditional bool
+	}
+
+	overrideDocRule struct {
+		requires string
+		note     string
+	}
 )
 
 const (
-	schemaVersion                = 1
+	schemaVersion                = 2
 	sourceFileConfig             = "backend/internal/config/config.go"
 	sourceFileBuildablesConfig   = "backend/internal/config/buildables_config.go"
 	sourceFileSettings           = "backend/internal/settings/model.go"
@@ -34,103 +93,42 @@ const (
 	sourceSymbolBuildablesConfig = "config.BuildablesConfig"
 )
 
-var documentNotes = []string{
-	"When AGENT_MODE=true or UI_CONFIGURATION_DISABLED=true, Arcane manages non-internal settings through environment variables more broadly than the always-on envOverride path.",
-	"The settingEnvOverrides section includes stable envOverride settings plus non-internal settings that are env-managed in env-only modes.",
-}
-
-// SchemaDocument is the canonical JSON artifact consumed by the docs site.
-type SchemaDocument struct {
-	SchemaVersion       int                    `json:"schemaVersion"`
-	Notes               []string               `json:"notes,omitempty"`
-	EnvConfig           []ConfigEntry          `json:"envConfig"`
-	SettingEnvOverrides []SettingOverrideEntry `json:"settingEnvOverrides"`
-}
-
-// ConfigEntry describes an environment-backed runtime config value.
-type ConfigEntry struct {
-	Env          string   `json:"env"`
-	Field        string   `json:"field"`
-	Type         string   `json:"type"`
-	DefaultValue string   `json:"defaultValue,omitempty"`
-	Description  string   `json:"description,omitempty"`
-	Options      []string `json:"options,omitempty"`
-	SupportsFile bool     `json:"supportsFile,omitempty"`
-	Deprecated   bool     `json:"deprecated,omitempty"`
-	Conditional  bool     `json:"conditional,omitempty"`
-	BuildTags    []string `json:"buildTags,omitempty"`
-	Source       string   `json:"source"`
-	SourceFile   string   `json:"sourceFile"`
-	SourceSymbol string   `json:"sourceSymbol"`
-}
-
-// SettingOverrideEntry describes a database-backed setting that can be controlled by env vars.
-type SettingOverrideEntry struct {
-	Env          string `json:"env"`
-	SettingKey   string `json:"settingKey"`
-	Description  string `json:"description,omitempty"`
-	DefaultValue string `json:"defaultValue,omitempty"`
-	Type         string `json:"type"`
-	Category     string `json:"category,omitempty"`
-	Requires     string `json:"requires,omitempty"`
-	Note         string `json:"note,omitempty"`
-	Source       string `json:"source"`
-	SourceFile   string `json:"sourceFile"`
-	SourceSymbol string `json:"sourceSymbol"`
-	Sensitive    bool   `json:"sensitive"`
-	Deprecated   bool   `json:"deprecated"`
-	Public       bool   `json:"public"`
-}
-
-type envFieldOptions struct {
-	conditional bool
-	buildTags   []string
-	sourceFile  string
-	sourceType  string
-}
-
-type overrideDocRule struct {
-	requires   string
-	note       string
-	deprecated bool
-}
-
 var overrideDocRules = map[string]overrideDocRule{
 	"autoUpdateInterval": {
-		requires: "AUTO_UPDATE=true to have effect at runtime.",
+		requires: "ARCANE_AUTO_UPDATE=true to have effect at runtime.",
 	},
 	"autoUpdateDelay": {
-		requires: "AUTO_UPDATE=true to have effect at runtime.",
+		requires: "ARCANE_AUTO_UPDATE=true to have effect at runtime.",
 	},
 	"scheduledPruneInterval": {
-		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+		requires: "ARCANE_SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
 	},
 	"pruneContainerMode": {
-		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+		requires: "ARCANE_SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
 	},
 	"pruneContainerUntil": {
-		requires: "SCHEDULED_PRUNE_ENABLED=true and PRUNE_CONTAINER_MODE=olderThan to have effect at runtime.",
+		requires: "ARCANE_SCHEDULED_PRUNE_ENABLED=true and ARCANE_PRUNE_CONTAINER_MODE=olderThan to have effect at runtime.",
 	},
 	"pruneImageMode": {
-		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+		requires: "ARCANE_SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
 	},
 	"pruneImageUntil": {
-		requires: "SCHEDULED_PRUNE_ENABLED=true and PRUNE_IMAGE_MODE=olderThan to have effect at runtime.",
+		requires: "ARCANE_SCHEDULED_PRUNE_ENABLED=true and ARCANE_PRUNE_IMAGE_MODE=olderThan to have effect at runtime.",
 	},
 	"pruneVolumeMode": {
-		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+		requires: "ARCANE_SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
 	},
 	"pruneNetworkMode": {
-		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+		requires: "ARCANE_SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
 	},
 	"pruneNetworkUntil": {
-		requires: "SCHEDULED_PRUNE_ENABLED=true and PRUNE_NETWORK_MODE=olderThan to have effect at runtime.",
+		requires: "ARCANE_SCHEDULED_PRUNE_ENABLED=true and ARCANE_PRUNE_NETWORK_MODE=olderThan to have effect at runtime.",
 	},
 	"pruneBuildCacheMode": {
-		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+		requires: "ARCANE_SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
 	},
 	"pruneBuildCacheUntil": {
-		requires: "SCHEDULED_PRUNE_ENABLED=true and PRUNE_BUILD_CACHE_MODE=olderThan to have effect at runtime.",
+		requires: "ARCANE_SCHEDULED_PRUNE_ENABLED=true and ARCANE_PRUNE_BUILD_CACHE_MODE=olderThan to have effect at runtime.",
 	},
 	"featureVulnerabilityManagementEnabled": {
 		note: "Disabling retains existing reports and scanner settings, allows active work to finish, and leaves standalone image patching available.",
@@ -139,45 +137,39 @@ var overrideDocRules = map[string]overrideDocRule{
 		note: "An active swarm cluster keeps Swarm enabled regardless of this value.",
 	},
 	"vulnerabilityScanInterval": {
-		requires: "FEATURE_VULNERABILITY_MANAGEMENT_ENABLED=true and VULNERABILITY_SCAN_ENABLED=true to have effect at runtime.",
+		requires: "ARCANE_FEATURE_VULNERABILITY_MANAGEMENT_ENABLED=true and ARCANE_VULNERABILITY_SCAN_ENABLED=true to have effect at runtime.",
 	},
 	"vulnerabilityThreatIntelEnabled": {
-		requires: "FEATURE_VULNERABILITY_MANAGEMENT_ENABLED=true to have effect at runtime.",
+		requires: "ARCANE_FEATURE_VULNERABILITY_MANAGEMENT_ENABLED=true to have effect at runtime.",
 	},
 	"autoHealInterval": {
-		requires: "AUTO_HEAL_ENABLED=true to have effect at runtime.",
+		requires: "ARCANE_AUTO_HEAL_ENABLED=true to have effect at runtime.",
 	},
 	"autoHealExcludedContainers": {
-		requires: "AUTO_HEAL_ENABLED=true to have effect at runtime.",
+		requires: "ARCANE_AUTO_HEAL_ENABLED=true to have effect at runtime.",
 	},
 	"autoHealMaxRestarts": {
-		requires: "AUTO_HEAL_ENABLED=true to have effect at runtime.",
+		requires: "ARCANE_AUTO_HEAL_ENABLED=true to have effect at runtime.",
 	},
 	"autoHealRestartWindow": {
-		requires: "AUTO_HEAL_ENABLED=true to have effect at runtime.",
+		requires: "ARCANE_AUTO_HEAL_ENABLED=true to have effect at runtime.",
 	},
 }
 
 // GenerateWithSourceRoot builds the canonical schema document for config and settings docs.
 func GenerateWithSourceRoot(sourceRoot string) (*SchemaDocument, error) {
-	envConfig, err := collectEnvConfigInternal(sourceRoot)
+	envConfig, err := collectEnvConfig(sourceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("collect env config: %w", err)
 	}
 
-	settingOverrides, err := collectSettingEnvOverridesInternal()
-	if err != nil {
-		return nil, fmt.Errorf("collect setting env overrides: %w", err)
-	}
-
-	doc := &SchemaDocument{
-		SchemaVersion:       schemaVersion,
-		Notes:               slices.Clone(documentNotes),
-		EnvConfig:           envConfig,
-		SettingEnvOverrides: settingOverrides,
-	}
-
-	return doc, nil
+	return &SchemaDocument{
+		SchemaVersion: schemaVersion,
+		EnvConfig:     envConfig,
+		Settings:      collectSettings(),
+		RenamedEnv:    RenamedEnv(),
+		RetiredEnv:    slices.Sorted(slices.Values(RetiredEnv)),
+	}, nil
 }
 
 // MarshalJSON returns a stable, indented JSON encoding of the schema document.
@@ -191,13 +183,13 @@ func MarshalJSON(doc *SchemaDocument) ([]byte, error) {
 	return output, nil
 }
 
-func collectEnvConfigInternal(sourceRoot string) ([]ConfigEntry, error) {
-	root, err := resolveSourceRootInternal(sourceRoot)
+func collectEnvConfig(sourceRoot string) ([]ConfigEntry, error) {
+	root, err := resolveSourceRoot(sourceRoot)
 	if err != nil {
 		return nil, err
 	}
 
-	configEntries, err := parseStructEnvFieldsInternal(
+	configEntries, err := parseStructEnvFields(
 		filepath.Join(root, "internal", "config", "config.go"),
 		"Config",
 		envFieldOptions{
@@ -209,7 +201,7 @@ func collectEnvConfigInternal(sourceRoot string) ([]ConfigEntry, error) {
 		return nil, err
 	}
 
-	buildablesEntries, err := parseStructEnvFieldsInternal(
+	buildablesEntries, err := parseStructEnvFields(
 		filepath.Join(root, "internal", "config", "buildables_config.go"),
 		"BuildablesConfig",
 		envFieldOptions{
@@ -231,14 +223,14 @@ func collectEnvConfigInternal(sourceRoot string) ([]ConfigEntry, error) {
 	return configEntries, nil
 }
 
-func parseStructEnvFieldsInternal(filename, structName string, opts envFieldOptions) ([]ConfigEntry, error) {
+func parseStructEnvFields(filename, structName string, opts envFieldOptions) ([]ConfigEntry, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, filename, nil, parser.ParseComments)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", filename, err)
 	}
 
-	structType, err := findStructTypeInternal(file, structName)
+	structType, err := findStructType(file, structName)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +253,7 @@ func parseStructEnvFieldsInternal(filename, structName string, opts envFieldOpti
 		}
 
 		options := kit.TrimNonEmpty(strings.Split(structTag.Get("options"), ","))
-		typeName, unquoteErr := exprStringInternal(field.Type)
+		typeName, unquoteErr := exprString(field.Type)
 		if unquoteErr != nil {
 			return nil, fmt.Errorf("render type for %s.%s: %w", structName, field.Names[0].Name, unquoteErr)
 		}
@@ -277,7 +269,6 @@ func parseStructEnvFieldsInternal(filename, structName string, opts envFieldOpti
 				Description:  description,
 				Options:      options,
 				SupportsFile: slices.Contains(options, "file"),
-				Deprecated:   slices.Contains(options, "deprecated"),
 				Conditional:  opts.conditional,
 				BuildTags:    slices.Clone(opts.buildTags),
 				Source:       opts.sourceType,
@@ -290,58 +281,38 @@ func parseStructEnvFieldsInternal(filename, structName string, opts envFieldOpti
 	return entries, nil
 }
 
-func collectSettingEnvOverridesInternal() ([]SettingOverrideEntry, error) {
-	defaults := settings.DefaultSettingsConfig()
+func collectSettings() []SettingEntry {
 	settingsType := reflect.TypeFor[settings.Settings]()
-	entries := make([]SettingOverrideEntry, 0, settingsType.NumField())
+	entries := make([]SettingEntry, 0, settingsType.NumField())
 
 	for field := range settingsType.Fields() {
-		keyTag := field.Tag.Get("key")
-		if keyTag == "" {
+		key, attrTag, _ := strings.Cut(field.Tag.Get("key"), ",")
+		attrs := kit.TrimNonEmpty(strings.Split(attrTag, ","))
+		if key == "" || slices.Contains(attrs, "internal") {
 			continue
 		}
 
-		tagParts := kit.TrimNonEmpty(strings.Split(keyTag, ","))
-		if len(tagParts) == 0 {
-			continue
-		}
+		meta := normalization.ParseMetaTag(field.Tag.Get("meta"))
+		minValue, minErr := strconv.ParseFloat(meta["min"], 64)
+		maxValue, maxErr := strconv.ParseFloat(meta["max"], 64)
+		isSensitive := slices.Contains(attrs, "sensitive")
 
-		key := tagParts[0]
-		attrs := tagParts[1:]
-		hasEnvOverride := slices.Contains(attrs, "envOverride")
-		isInternal := slices.Contains(attrs, "internal")
-		if !hasEnvOverride && isInternal {
-			continue
-		}
-
-		defaultValue, isPublic, isSensitive, err := defaults.FieldByKey(key)
-		if err != nil {
-			return nil, fmt.Errorf("lookup default value for %q: %w", key, err)
-		}
-		if isSensitive {
-			defaultValue = ""
-		}
-
-		meta := utils.ParseMetaTag(field.Tag.Get("meta"))
-		rule := overrideDocRules[key]
-		requires := rule.requires
-		if !hasEnvOverride {
-			requires = strings.Join(kit.TrimNonEmpty([]string{"AGENT_MODE=true or UI_CONFIGURATION_DISABLED=true to manage this setting via env.", requires}), " ")
-		}
-
-		entries = append(entries, SettingOverrideEntry{
-			Env:          strings.ToUpper(kit.SnakeCase(key)),
-			SettingKey:   key,
-			Description:  meta["description"],
-			DefaultValue: defaultValue,
-			Type:         kit.Ternary(strings.TrimSpace(meta["type"]) == "", "text", meta["type"]),
+		entries = append(entries, SettingEntry{
+			Env:          settings.EnvName(key, field.Tag.Get("env")),
+			Key:          key,
+			Type:         cmp.Or(strings.TrimSpace(meta["type"]), "text"),
+			Default:      kit.Ternary(isSensitive, "", field.Tag.Get("default")),
+			Values:       kit.TrimNonEmpty(strings.Split(meta["values"], "|")),
+			Min:          kit.Ternary(minErr == nil, new(minValue), nil),
+			Max:          kit.Ternary(maxErr == nil, new(maxValue), nil),
+			Scope:        kit.Ternary(slices.Contains(attrs, "manager"), "manager", "environment"),
 			Sensitive:    isSensitive,
-			Deprecated:   rule.deprecated || slices.Contains(attrs, "deprecated"),
+			Public:       slices.Contains(attrs, "public"),
+			Description:  meta["description"],
 			Category:     meta["category"],
-			Public:       isPublic,
-			Requires:     requires,
-			Note:         rule.note,
-			Source:       "settings.Settings + settings.DefaultSettingsConfig",
+			Requires:     overrideDocRules[key].requires,
+			Note:         overrideDocRules[key].note,
+			Source:       "settings.Settings",
 			SourceFile:   sourceFileSettings,
 			SourceSymbol: "settings.Settings." + field.Name,
 		})
@@ -354,10 +325,10 @@ func collectSettingEnvOverridesInternal() ([]SettingOverrideEntry, error) {
 		return entries[i].Category < entries[j].Category
 	})
 
-	return entries, nil
+	return entries
 }
 
-func findStructTypeInternal(file *ast.File, structName string) (*ast.StructType, error) {
+func findStructType(file *ast.File, structName string) (*ast.StructType, error) {
 	for _, decl := range file.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
 		if !ok || genDecl.Tok != token.TYPE {
@@ -382,7 +353,7 @@ func findStructTypeInternal(file *ast.File, structName string) (*ast.StructType,
 	return nil, fmt.Errorf("struct %s not found", structName)
 }
 
-func exprStringInternal(expr ast.Expr) (string, error) {
+func exprString(expr ast.Expr) (string, error) {
 	var buf bytes.Buffer
 	if err := format.Node(&buf, token.NewFileSet(), expr); err != nil {
 		return "", err
@@ -390,7 +361,7 @@ func exprStringInternal(expr ast.Expr) (string, error) {
 	return buf.String(), nil
 }
 
-func resolveSourceRootInternal(sourceRoot string) (string, error) {
+func resolveSourceRoot(sourceRoot string) (string, error) {
 	candidates := make([]string, 0, 2)
 	if strings.TrimSpace(sourceRoot) != "" {
 		candidates = append(candidates, sourceRoot)
@@ -403,7 +374,7 @@ func resolveSourceRootInternal(sourceRoot string) (string, error) {
 	}
 
 	for _, candidate := range candidates {
-		resolved, err := resolveSourceRootCandidateInternal(candidate)
+		resolved, err := resolveSourceRootCandidate(candidate)
 		if err == nil {
 			return resolved, nil
 		}
@@ -416,19 +387,19 @@ func resolveSourceRootInternal(sourceRoot string) (string, error) {
 	return "", errors.New("resolve source root: run from the repository root/backend directory or pass --source-root")
 }
 
-func resolveSourceRootCandidateInternal(candidate string) (string, error) {
+func resolveSourceRootCandidate(candidate string) (string, error) {
 	candidate, err := filepath.Abs(candidate)
 	if err != nil {
 		return "", fmt.Errorf("abs path for %q: %w", candidate, err)
 	}
 
 	for current := candidate; ; current = filepath.Dir(current) {
-		if hasSchemaSourceFilesInternal(current) {
+		if hasSchemaSourceFiles(current) {
 			return current, nil
 		}
 
 		backendRoot := filepath.Join(current, "backend")
-		if hasSchemaSourceFilesInternal(backendRoot) {
+		if hasSchemaSourceFiles(backendRoot) {
 			return backendRoot, nil
 		}
 
@@ -441,7 +412,7 @@ func resolveSourceRootCandidateInternal(candidate string) (string, error) {
 	return "", fmt.Errorf("schema sources not found from %q", candidate)
 }
 
-func hasSchemaSourceFilesInternal(root string) bool {
+func hasSchemaSourceFiles(root string) bool {
 	required := []string{
 		filepath.Join(root, "internal", "config", "config.go"),
 		filepath.Join(root, "internal", "config", "buildables_config.go"),

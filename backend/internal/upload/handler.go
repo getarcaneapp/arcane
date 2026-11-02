@@ -12,45 +12,46 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/upload"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
-// UploadHandler provides the Huma-based chunked upload-session endpoints.
-type UploadHandler struct {
-	uploadService *UploadService
-}
+type (
+	// UploadHandler provides the Huma-based chunked upload-session endpoints.
+	UploadHandler struct {
+		uploadService *UploadService
+	}
 
-type CreateUploadSessionInput struct {
-	EnvironmentID string `path:"id"`
-	Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
-	Body          upload.CreateSessionRequest
-}
+	CreateUploadSessionInput struct {
+		EnvironmentID string `path:"id"`
+		Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
+		Body          types.CreateUploadSessionRequest
+	}
 
-type UploadChunkInput struct {
-	EnvironmentID string `path:"id"`
-	Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
-	UploadID      string `path:"uploadId"`
-	Index         int    `path:"index"`
-	RawBody       []byte `contentType:"application/octet-stream"`
-}
+	UploadChunkInput struct {
+		EnvironmentID string `path:"id"`
+		Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
+		UploadID      string `path:"uploadId"`
+		RawBody       []byte `contentType:"application/octet-stream"`
+		Index         int    `path:"index"`
+	}
 
-type GetUploadSessionInput struct {
-	EnvironmentID string `path:"id"`
-	Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
-	UploadID      string `path:"uploadId"`
-}
+	GetUploadSessionInput struct {
+		EnvironmentID string `path:"id"`
+		Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
+		UploadID      string `path:"uploadId"`
+	}
 
-type DeleteUploadSessionInput struct {
-	EnvironmentID string `path:"id"`
-	Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
-	UploadID      string `path:"uploadId"`
-}
+	DeleteUploadSessionInput struct {
+		EnvironmentID string `path:"id"`
+		Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
+		UploadID      string `path:"uploadId"`
+	}
+)
 
 // SessionHTTPError maps upload-session errors to HTTP errors for this package
 // and the domain endpoints that consume sessions. It returns nil for errors
@@ -69,11 +70,11 @@ func SessionHTTPError(err error) error {
 	return nil
 }
 
-// requireUploadPermissionInternal enforces the kind-derived permission for the
+// requireUploadPermission enforces the kind-derived permission for the
 // target environment. Registration cannot use middleware.RegisterWithPermission
 // because the required permission depends on the {kind} path parameter; the
 // manager-side proxy applies the same mapping for remote environments.
-func requireUploadPermissionInternal(ctx context.Context, kind, environmentID string) error {
+func requireUploadPermission(ctx context.Context, kind, environmentID string) error {
 	perm, known := authz.UploadKindPermission(kind)
 	if !known {
 		return huma.Error403Forbidden("permission denied: unknown upload kind " + kind)
@@ -85,17 +86,17 @@ func requireUploadPermissionInternal(ctx context.Context, kind, environmentID st
 	return nil
 }
 
-func sessionResponseInternal(session *upload.Session) *handlerutil.Out[upload.Session] {
-	return &handlerutil.Out[upload.Session]{
-		Body: base.ApiResponse[upload.Session]{
+func sessionResponse(session *types.UploadSession) *handlerutil.Out[types.UploadSession] {
+	return &handlerutil.Out[types.UploadSession]{
+		Body: types.ApiResponse[types.UploadSession]{
 			Success: true,
 			Data:    *session,
 		},
 	}
 }
 
-func (h *UploadHandler) CreateSession(ctx context.Context, input *CreateUploadSessionInput) (*handlerutil.Out[upload.Session], error) {
-	if err := requireUploadPermissionInternal(ctx, input.Kind, input.EnvironmentID); err != nil {
+func (h *UploadHandler) CreateSession(ctx context.Context, input *CreateUploadSessionInput) (*handlerutil.Out[types.UploadSession], error) {
+	if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID); err != nil {
 		return nil, err
 	}
 	session, err := h.uploadService.CreateSession(ctx, input.Kind, input.Body)
@@ -105,11 +106,11 @@ func (h *UploadHandler) CreateSession(ctx context.Context, input *CreateUploadSe
 		}
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return sessionResponseInternal(session), nil
+	return sessionResponse(session), nil
 }
 
-func (h *UploadHandler) UploadChunk(ctx context.Context, input *UploadChunkInput) (*handlerutil.Out[upload.Session], error) {
-	if err := requireUploadPermissionInternal(ctx, input.Kind, input.EnvironmentID); err != nil {
+func (h *UploadHandler) UploadChunk(ctx context.Context, input *UploadChunkInput) (*handlerutil.Out[types.UploadSession], error) {
+	if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID); err != nil {
 		return nil, err
 	}
 	session, err := h.uploadService.WriteChunk(ctx, input.Kind, input.UploadID, input.Index, input.RawBody)
@@ -119,11 +120,11 @@ func (h *UploadHandler) UploadChunk(ctx context.Context, input *UploadChunkInput
 		}
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return sessionResponseInternal(session), nil
+	return sessionResponse(session), nil
 }
 
-func (h *UploadHandler) GetSession(ctx context.Context, input *GetUploadSessionInput) (*handlerutil.Out[upload.Session], error) {
-	if err := requireUploadPermissionInternal(ctx, input.Kind, input.EnvironmentID); err != nil {
+func (h *UploadHandler) GetSession(ctx context.Context, input *GetUploadSessionInput) (*handlerutil.Out[types.UploadSession], error) {
+	if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID); err != nil {
 		return nil, err
 	}
 	session, err := h.uploadService.GetSession(ctx, input.Kind, input.UploadID)
@@ -133,11 +134,11 @@ func (h *UploadHandler) GetSession(ctx context.Context, input *GetUploadSessionI
 		}
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return sessionResponseInternal(session), nil
+	return sessionResponse(session), nil
 }
 
-func (h *UploadHandler) DeleteSession(ctx context.Context, input *DeleteUploadSessionInput) (*handlerutil.Out[base.MessageResponse], error) {
-	if err := requireUploadPermissionInternal(ctx, input.Kind, input.EnvironmentID); err != nil {
+func (h *UploadHandler) DeleteSession(ctx context.Context, input *DeleteUploadSessionInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID); err != nil {
 		return nil, err
 	}
 	if err := h.uploadService.DeleteSession(ctx, input.Kind, input.UploadID); err != nil {
@@ -169,7 +170,7 @@ func LegacyMultipartMiddleware(api huma.API, service *UploadService, kind string
 				slog.WarnContext(ctx.Context(), "failed to write legacy upload error response", "error", err)
 			}
 		}
-		if err := requireUploadPermissionInternal(ctx.Context(), kind, authz.EnvIDFromPath(ctx.URL().Path)); err != nil {
+		if err := requireUploadPermission(ctx.Context(), kind, authz.EnvIDFromPath(ctx.URL().Path)); err != nil {
 			writeErr(http.StatusForbidden, "permission denied")
 			return
 		}
@@ -202,7 +203,7 @@ func LegacyMultipartMiddleware(api huma.API, service *UploadService, kind string
 			return
 		}
 
-		payload, err := json.Marshal(upload.ConsumeRequest{UploadID: session.ID})
+		payload, err := json.Marshal(types.UploadConsumeRequest{UploadID: session.ID})
 		if err != nil {
 			writeErr(http.StatusInternalServerError, err.Error())
 			return

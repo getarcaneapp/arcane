@@ -1,5 +1,4 @@
 <script lang="ts">
-	import CodeEditor from '#lib/components/code-editor/editor.svelte';
 	import { ComposeEditorSplit } from '#lib/components/compose/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { CodeIcon, VariableIcon } from '#lib/icons/index.js';
@@ -64,22 +63,28 @@
 			</Card.Header>
 			<div class="flex min-h-0 min-w-0 flex-1 flex-col">
 				<div class="min-h-0 min-w-0 flex-1 rounded-b-xl">
-					<CodeEditor
-						bind:value={composeValue}
-						language="yaml"
-						{readOnly}
-						fontSize="13px"
-						bind:hasErrors={validation.composeHasErrors}
-						bind:validationReady={validation.composeValidationReady}
-						fileId="{fileIdPrefix}:compose"
-						originalValue={originalCompose}
-						enableDiff={true}
-						editorContext={{
-							envContent: envValue,
-							composeContents: [composeValue],
-							globalVariables: globalVariableMap
-						}}
-					/>
+					{#await import('#lib/components/code-editor/editor.svelte')}
+						<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
+					{:then { default: CodeEditor }}
+						<CodeEditor
+							bind:value={composeValue}
+							language="yaml"
+							{readOnly}
+							fontSize="13px"
+							bind:hasErrors={validation.composeHasErrors}
+							bind:validationReady={validation.composeValidationReady}
+							fileId="{fileIdPrefix}:compose"
+							originalValue={originalCompose}
+							enableDiff={true}
+							editorContext={{
+								envContent: envValue,
+								composeContents: [composeValue],
+								globalVariables: globalVariableMap
+							}}
+						/>
+					{:catch}
+						<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
+					{/await}
 				</div>
 			</div>
 			{#if composeError}
@@ -102,22 +107,28 @@
 			</Card.Header>
 			<div class="flex min-h-0 min-w-0 flex-1 flex-col">
 				<div class="min-h-0 min-w-0 flex-1 rounded-b-xl">
-					<CodeEditor
-						bind:value={envValue}
-						language="env"
-						{readOnly}
-						fontSize="13px"
-						bind:hasErrors={validation.envHasErrors}
-						bind:validationReady={validation.envValidationReady}
-						fileId="{fileIdPrefix}:env"
-						originalValue={originalEnv}
-						enableDiff={true}
-						editorContext={{
-							envContent: envValue,
-							composeContents: [composeValue],
-							globalVariables: globalVariableMap
-						}}
-					/>
+					{#await import('#lib/components/code-editor/editor.svelte')}
+						<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
+					{:then { default: CodeEditor }}
+						<CodeEditor
+							bind:value={envValue}
+							language="env"
+							{readOnly}
+							fontSize="13px"
+							bind:hasErrors={validation.envHasErrors}
+							bind:validationReady={validation.envValidationReady}
+							fileId="{fileIdPrefix}:env"
+							originalValue={originalEnv}
+							enableDiff={true}
+							editorContext={{
+								envContent: envValue,
+								composeContents: [composeValue],
+								globalVariables: globalVariableMap
+							}}
+						/>
+					{:catch}
+						<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
+					{/await}
 				</div>
 			</div>
 			{#if envError}

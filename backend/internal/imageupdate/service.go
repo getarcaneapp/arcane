@@ -15,39 +15,130 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
-	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
-	kit "go.getarcane.app/kit/pkg"
-	"go.getarcane.app/sys/crypto"
-	"go.getarcane.app/updater/digest"
-	"go.getarcane.app/updater/refs"
+	"go.uber.org/fx"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate/children/tags"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ratelimit"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
+	"kit.getarcane.app"
+	kitregistry "kit.getarcane.app/registry"
+	"kit.getarcane.app/sys/crypto"
+	"kit.getarcane.app/updater/digest"
+	"kit.getarcane.app/updater/refs"
+
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/imageupdate/children/releasenotes"
+	"getarcane.dev/arcane/v3/internal/imageupdate/children/tags"
+	"getarcane.dev/arcane/v3/internal/notification"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/settings"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	arcaneregistry "getarcane.dev/arcane/v3/pkg/registry"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	ImageUpdateService struct {
+		db                  *database.DB
+		settingsService     *settings.SettingsService
+		registryService     *registry.ContainerRegistryService
+		dockerService       *docker.DockerClientService
+		eventService        *event.EventService
+		notificationService *notification.NotificationService
+		registryLimiter     *arcaneregistry.RegistryRateLimiter
+		tags                *tags.Service
+		releaseNotes        *releasenotes.Service
+		activityService     *activity.ActivityService
+		engine              *flow.Engine
+		checkWorkflow       *flow.Workflow
+		credentials         *hot.HotCache[string, []types.ContainerRegistryCredential]
+		// requestCredentials holds credentials a caller supplied for one check, by its input's CredentialsKey,
+		// so they never reach the workflow journal. They expire with the check's timeout if nothing deletes them.
+		requestCredentials *hot.HotCache[string, []types.ContainerRegistryCredential]
+		notifyMu           sync.Mutex
+	}
+
+	ImageParts struct {
+		Registry   string
+		Repository string
+		Tag        string
+	}
+
+	// imageCheckResult is a check task's output; failures travel as errors.
+	imageCheckResult struct {
+		// Result is the ref's own result, kept when the caller reports results; tags sharing an image share its stored row.
+		Result *types.ImageUpdateResponse `json:"result,omitempty"`
+		// Failure is a reported check's error, which keeps its Result instead of failing the slot.
+		Failure string `json:"failure,omitempty"`
+		Local   bool   `json:"local,omitempty"`
+	}
+
+	// imageCheckInput is an image-check payload; Report keeps every ref's result in the output for the caller.
+	imageCheckInput struct {
+		CredentialsKey string `json:"credentialsKey,omitempty"`
+		types.ImageUpdateCheckRequest
+		Report bool `json:"report,omitempty"`
+	}
+
+	// imageCheckOutput is the image-check outcome plus, when reported, each ref's result and the current
+	// container tag results, failed checks included.
+	imageCheckOutput struct {
+		Results          types.ImageUpdateBatchResponse        `json:"results,omitempty"`
+		ContainerUpdates map[string]*types.ImageUpdateResponse `json:"containerUpdates,omitempty"`
+		types.SchedulerOutcome
+	}
+
+	// tagCheckOutput is the tags step's output: failed container checks and, when reported, every container's result.
+	tagCheckOutput struct {
+		Updates  map[string]*types.ImageUpdateResponse `json:"updates,omitempty"`
+		Failures []types.TargetOutcome                 `json:"failures"`
+	}
+
+	localImageSnapshot struct {
+		ImageID           string
+		Repository        string
+		Tag               string
+		PrimaryDigest     string
+		AllDigests        []string
+		RepositoryDigests []string
+		IsLocalBuild      bool
+	}
+
+	// monitoringEligibility records, per image ID and normalized
+	// reference, whether at least one consuming container still permits update
+	// checks. Only the update-check label is consulted: containers excluded from
+	// automatic installation keep being monitored.
+	monitoringEligibility struct {
+		// True when at least one container using the image ID or reference has
+		// not opted out; present but false when every such container opted out.
+		byImageID   map[string]bool
+		byRef       map[string]bool
+		byContainer map[string]bool
+	}
+
+	ImageUpdateServiceParams struct {
+		fx.In
+
+		DB                  *database.DB
+		SettingsService     *settings.SettingsService
+		RegistryService     *registry.ContainerRegistryService
+		DockerService       *docker.DockerClientService
+		EventService        *event.EventService
+		NotificationService *notification.NotificationService
+		ActivityService     *activity.ActivityService
+	}
 )
 
 const (
@@ -65,121 +156,30 @@ var (
 	imageCheckRetryBackoffMax = 2 * time.Minute
 )
 
-type ImageUpdateService struct {
-	db                  *database.DB
-	settingsService     *settings.SettingsService
-	registryService     *registry.ContainerRegistryService
-	dockerService       *docker.DockerClientService
-	eventService        *event.EventService
-	notificationService *notification.NotificationService
-	registryLimiter     *ratelimit.RegistryRateLimiter
-	tags                *tags.Service
-	activityService     *activity.ActivityService
-	engine              *flow.Engine
-	checkWorkflow       *flow.Workflow
-	credentials         *hot.HotCache[string, []containerregistry.Credential]
-	// requestCredentials holds credentials a caller supplied for one check, by its input's CredentialsKey,
-	// so they never reach the workflow journal. They expire with the check's timeout if nothing deletes them.
-	requestCredentials *hot.HotCache[string, []containerregistry.Credential]
-	notifyMu           sync.Mutex
-}
-
-type ImageParts struct {
-	Registry   string
-	Repository string
-	Tag        string
-}
-
-// imageCheckResult is a check task's output; failures travel as errors.
-type imageCheckResult struct {
-	Local bool `json:"local,omitempty"`
-	// Result is the ref's own result, kept when the caller reports results; tags sharing an image share its stored row.
-	Result *imageupdate.Response `json:"result,omitempty"`
-	// Failure is a reported check's error, which keeps its Result instead of failing the slot.
-	Failure string `json:"failure,omitempty"`
-}
-
-// imageCheckInput is an image-check payload; Report keeps every ref's result in the output for the caller.
-type imageCheckInput struct {
-	imageupdate.CheckRequest
-	Report         bool   `json:"report,omitempty"`
-	CredentialsKey string `json:"credentialsKey,omitempty"`
-}
-
-// imageCheckOutput is the image-check outcome plus, when reported, each ref's result and the current
-// container tag results, failed checks included.
-type imageCheckOutput struct {
-	scheduler.Outcome
-	Results          imageupdate.BatchResponse        `json:"results,omitempty"`
-	ContainerUpdates map[string]*imageupdate.Response `json:"containerUpdates,omitempty"`
-}
-
-// tagCheckOutput is the tags step's output: failed container checks and, when reported, every container's result.
-type tagCheckOutput struct {
-	Failures []scheduler.TargetOutcome        `json:"failures"`
-	Updates  map[string]*imageupdate.Response `json:"updates,omitempty"`
-}
-
-type localImageSnapshot struct {
-	ImageID           string
-	Repository        string
-	Tag               string
-	PrimaryDigest     string
-	AllDigests        []string
-	RepositoryDigests []string
-	IsLocalBuild      bool
-}
-
-// monitoringEligibility records, per image ID and normalized
-// reference, whether at least one consuming container still permits update
-// checks. Only the update-check label is consulted: containers excluded from
-// automatic installation keep being monitored.
-type monitoringEligibility struct {
-	// True when at least one container using the image ID or reference has
-	// not opted out; present but false when every such container opted out.
-	byImageID   map[string]bool
-	byRef       map[string]bool
-	byContainer map[string]bool
-}
-
-func NewImageUpdateService(
-	db *database.DB,
-	settingsService *settings.SettingsService,
-	registryService *registry.ContainerRegistryService,
-	dockerService *docker.DockerClientService,
-	eventService *event.EventService,
-	notificationService *notification.NotificationService,
-	activityService *activity.ActivityService,
-) *ImageUpdateService {
-	registryLimiter := ratelimit.NewRegistryRateLimiter()
+func NewImageUpdateService(p ImageUpdateServiceParams) *ImageUpdateService {
+	registryLimiter := arcaneregistry.NewRegistryRateLimiter()
 	return &ImageUpdateService{
-		db:                  db,
-		settingsService:     settingsService,
-		registryService:     registryService,
-		dockerService:       dockerService,
-		eventService:        eventService,
-		notificationService: notificationService,
+		db:                  p.DB,
+		settingsService:     p.SettingsService,
+		registryService:     p.RegistryService,
+		dockerService:       p.DockerService,
+		eventService:        p.EventService,
+		notificationService: p.NotificationService,
 		registryLimiter:     registryLimiter,
-		tags:                tags.NewService(registryService, dockerService, settingsService, registryLimiter),
-		activityService:     activityService,
-		credentials:         hot.NewHotCache[string, []containerregistry.Credential](hot.LRU, 8).WithTTL(time.Minute).Build(),
+		tags:                tags.NewService(p.RegistryService, p.DockerService, p.SettingsService, registryLimiter),
+		releaseNotes:        releasenotes.NewService(p.DockerService, p.RegistryService.ImageLabels),
+		activityService:     p.ActivityService,
+		credentials:         hot.NewHotCache[string, []types.ContainerRegistryCredential](hot.LRU, 8).WithTTL(time.Minute).Build(),
 		// They outlive the longest check: its slot wait plus its workflow timeout.
-		requestCredentials: hot.NewHotCache[string, []containerregistry.Credential](hot.LRU, 64).
+		requestCredentials: hot.NewHotCache[string, []types.ContainerRegistryCredential](hot.LRU, 64).
 			WithTTL(timeouts.DefaultActivitySlotWait + timeouts.DefaultImageUpdateScan).Build(),
 	}
 }
 
-func (s *ImageUpdateService) registryContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	if s.settingsService == nil {
-		return context.WithTimeout(ctx, timeouts.DefaultRegistry)
-	}
-	return context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
-}
-
 func (s *ImageUpdateService) composeBuildImageRefs(ctx context.Context) (map[string]struct{}, error) {
 	var projectRows []struct {
-		ID                 string
 		BuildImageRefsJSON *string `gorm:"column:build_image_refs_json"`
+		ID                 string
 	}
 	if err := s.db.WithContext(ctx).
 		Table("projects").
@@ -216,12 +216,12 @@ func (s *ImageUpdateService) composeBuildImageRefs(ctx context.Context) (map[str
 
 // appendImageUpdateActivityMessage appends a check message; a nil
 // progress leaves progress to the activity's owner, such as the workflow engine.
-func (s *ImageUpdateService) appendImageUpdateActivityMessage(ctx context.Context, activityID string, level activitytypes.MessageLevel, message string, progress *int, step string) {
+func (s *ImageUpdateService) appendImageUpdateActivityMessage(ctx context.Context, activityID string, level types.ActivityMessageLevel, message string, progress *int, step string) {
 	if activityID == "" || strings.TrimSpace(message) == "" {
 		return
 	}
 	if _, err := s.activityService.AppendMessage(ctx, activityID, activity.AppendActivityMessageRequest{
-		Level:    cmp.Or(level, activitytypes.MessageLevelInfo),
+		Level:    cmp.Or(level, types.ActivityMessageLevelInfo),
 		Message:  message,
 		Progress: progress,
 		Step:     step,
@@ -234,14 +234,14 @@ func (s *ImageUpdateService) completeImageUpdateActivity(ctx context.Context, ac
 	if activityID == "" {
 		return
 	}
-	status, errMessage, finalMessage := func() (activitytypes.Status, *string, string) {
+	status, errMessage, finalMessage := func() (types.ActivityStatus, *string, string) {
 		switch {
 		case success:
-			return activitytypes.StatusSuccess, nil, cmp.Or(message, "Image update check completed")
-		case activitylib.CancelledByContext(ctx):
-			return activitytypes.StatusCancelled, nil, "Image update check cancelled"
+			return types.ActivityStatusSuccess, nil, cmp.Or(message, "Image update check completed")
+		case errors.Is(context.Cause(ctx), activitylib.ErrCanceled):
+			return types.ActivityStatusCancelled, nil, "Image update check cancelled"
 		default:
-			return activitytypes.StatusFailed, mo.EmptyableToOption(strings.TrimSpace(message)).ToPointer(), cmp.Or(message, "Image update check completed")
+			return types.ActivityStatusFailed, mo.EmptyableToOption(strings.TrimSpace(message)).ToPointer(), cmp.Or(message, "Image update check completed")
 		}
 	}()
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
@@ -253,12 +253,12 @@ func (s *ImageUpdateService) completeImageUpdateActivity(ctx context.Context, ac
 	}
 }
 
-func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef string) (*imageupdate.Response, error) {
+func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef string) (*types.ImageUpdateResponse, error) {
 	startTime := time.Now()
 	activityID := func() string {
 		localActivity, err := s.activityService.StartActivity(ctx, activity.StartActivityRequest{
 			EnvironmentID: "0",
-			Type:          activitytypes.TypeImageUpdateCheck,
+			Type:          types.ActivityTypeImageUpdateCheck,
 			Queue:         true,
 			ResourceType:  new("image"),
 			ResourceName:  mo.EmptyableToOption(strings.TrimSpace(imageRef)).ToPointer(),
@@ -279,15 +279,23 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 
 	if result, ok := digestPinnedImageUpdateResult(imageRef, activityID, int(time.Since(startTime).Milliseconds())).Get(); ok {
 		s.recordDigestPinnedSkip(ctx, activityID, imageRef, result, new(100))
-		if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageScan, "", imageRef, user.SystemUser.ID, user.SystemUser.Username, "0", database.JSON{
-			"action":         "check_update",
-			"imageRef":       imageRef,
-			"hasUpdate":      false,
-			"updateType":     UpdateTypeDigest,
-			"currentDigest":  result.CurrentDigest,
-			"latestDigest":   result.LatestDigest,
-			"responseTimeMs": result.ResponseTimeMs,
-			"skippedReason":  "digest_pinned",
+		if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageScan,
+			ResourceType:  "image",
+			ResourceName:  imageRef,
+			UserID:        types.SystemUser.ID,
+			Username:      types.SystemUser.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
+				"action":         "check_update",
+				"imageRef":       imageRef,
+				"hasUpdate":      false,
+				"updateType":     UpdateTypeDigest,
+				"currentDigest":  result.CurrentDigest,
+				"latestDigest":   result.LatestDigest,
+				"responseTimeMs": result.ResponseTimeMs,
+				"skippedReason":  "digest_pinned",
+			},
 		}); logErr != nil {
 			slog.WarnContext(ctx, "Failed to log digest-pinned image update check event", "imageRef", imageRef, "error", logErr.Error())
 		}
@@ -295,11 +303,11 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 		return result, nil
 	}
 
-	s.appendImageUpdateActivityMessage(ctx, activityID, activitytypes.MessageLevelInfo, "Checking "+imageRef, new(20), "Checking remote digest")
+	s.appendImageUpdateActivityMessage(ctx, activityID, types.ActivityMessageLevelInfo, "Checking "+imageRef, new(20), "Checking remote digest")
 
 	parts := s.parseImageReference(imageRef)
 	if parts == nil {
-		result := &imageupdate.Response{
+		result := &types.ImageUpdateResponse{
 			Error:          "Invalid image reference format",
 			CheckTime:      time.Now(),
 			ResponseTimeMs: int(time.Since(startTime).Milliseconds()),
@@ -309,10 +317,10 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 		return result, nil
 	}
 
-	digestResult, snapshot, err := func() (*imageupdate.Response, *localImageSnapshot, error) {
+	digestResult, snapshot, err := func() (*types.ImageUpdateResponse, *localImageSnapshot, error) {
 		composeBuildRefs, composeErr := s.composeBuildImageRefs(ctx)
 		if composeErr != nil {
-			return &imageupdate.Response{Error: composeErr.Error(), CheckTime: time.Now()}, nil, composeErr
+			return &types.ImageUpdateResponse{Error: composeErr.Error(), CheckTime: time.Now()}, nil, composeErr
 		}
 		return s.checkSingleImageInBatch(ctx, nil, parts, composeBuildRefs, activityID, startTime)
 	}()
@@ -327,24 +335,32 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 		return digestResult, tagErr
 	}
 	if err != nil {
-		result := &imageupdate.Response{
+		result := &types.ImageUpdateResponse{
 			Error:          err.Error(),
 			CheckTime:      time.Now(),
 			ResponseTimeMs: int(time.Since(startTime).Milliseconds()),
 			ActivityID:     mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 		}
-		if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageScan, "", imageRef, user.SystemUser.ID, user.SystemUser.Username, "0", database.JSON{
-			"action":    "check_update",
-			"imageRef":  imageRef,
-			"error":     err.Error(),
-			"checkType": "digest",
+		if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageScan,
+			ResourceType:  "image",
+			ResourceName:  imageRef,
+			UserID:        types.SystemUser.ID,
+			Username:      types.SystemUser.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
+				"action":    "check_update",
+				"imageRef":  imageRef,
+				"error":     err.Error(),
+				"checkType": "digest",
+			},
 		}); logErr != nil {
 			slog.WarnContext(ctx, "Failed to log image update check error event", "imageRef", imageRef, "error", logErr.Error())
 		}
 		if saveErr := s.saveUpdateResultWithSnapshot(ctx, imageRef, result, snapshot); saveErr != nil {
 			slog.WarnContext(ctx, "Failed to save update result", "imageRef", imageRef, "error", saveErr.Error())
 		}
-		attached := tags.AttachContainerUpdates(map[string]*imageupdate.Response{imageRef: result}, containerUpdates)[imageRef]
+		attached := tags.AttachContainerUpdates(map[string]*types.ImageUpdateResponse{imageRef: result}, containerUpdates)[imageRef]
 		s.completeImageUpdateActivity(ctx, activityID, false, attached.Error)
 		if attached.HasUpdate {
 			// A failed flush is already logged; the records stay pending for the next one.
@@ -355,16 +371,24 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	}
 
 	if digestResult.UpdateType == UpdateTypeLocal {
-		s.appendImageUpdateActivityMessage(ctx, activityID, activitytypes.MessageLevelInfo, imageRef+" — local build, registry check skipped", new(100), "Skipping image update check")
+		s.appendImageUpdateActivityMessage(ctx, activityID, types.ActivityMessageLevelInfo, imageRef+" — local build, registry check skipped", new(100), "Skipping image update check")
 	}
-	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageScan, "", imageRef, user.SystemUser.ID, user.SystemUser.Username, "0", database.JSON{
-		"action":         "check_update",
-		"imageRef":       imageRef,
-		"hasUpdate":      digestResult.HasUpdate,
-		"updateType":     digestResult.UpdateType,
-		"currentDigest":  digestResult.CurrentDigest,
-		"latestDigest":   digestResult.LatestDigest,
-		"responseTimeMs": digestResult.ResponseTimeMs,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeImageScan,
+		ResourceType:  "image",
+		ResourceName:  imageRef,
+		UserID:        types.SystemUser.ID,
+		Username:      types.SystemUser.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":         "check_update",
+			"imageRef":       imageRef,
+			"hasUpdate":      digestResult.HasUpdate,
+			"updateType":     digestResult.UpdateType,
+			"currentDigest":  digestResult.CurrentDigest,
+			"latestDigest":   digestResult.LatestDigest,
+			"responseTimeMs": digestResult.ResponseTimeMs,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "Failed to log image update check event", "imageRef", imageRef, "error", logErr.Error())
 	}
@@ -372,7 +396,7 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 		slog.WarnContext(ctx, "Failed to save update result", "imageRef", imageRef, "error", saveErr.Error())
 	}
 
-	result := tags.AttachContainerUpdates(map[string]*imageupdate.Response{imageRef: digestResult}, containerUpdates)[imageRef]
+	result := tags.AttachContainerUpdates(map[string]*types.ImageUpdateResponse{imageRef: digestResult}, containerUpdates)[imageRef]
 	if digestResult.HasUpdate || len(containerUpdates) > 0 {
 		// A failed flush is already logged; the records stay pending for the next one.
 		_ = s.SendBatchUpdateNotifications(ctx)
@@ -382,10 +406,10 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	return result, nil
 }
 
-func digestPinnedImageUpdateResult(imageRef, activityID string, responseTimeMs int) mo.Option[*imageupdate.Response] {
+func digestPinnedImageUpdateResult(imageRef, activityID string, responseTimeMs int) mo.Option[*types.ImageUpdateResponse] {
 	pinnedDigest, ok := digest.FromReferenceSuffix(strings.TrimSpace(imageRef))
 	if !ok {
-		return mo.None[*imageupdate.Response]()
+		return mo.None[*types.ImageUpdateResponse]()
 	}
 
 	tag := func() string {
@@ -397,7 +421,7 @@ func digestPinnedImageUpdateResult(imageRef, activityID string, responseTimeMs i
 		return "latest"
 	}()
 
-	return mo.Some(&imageupdate.Response{
+	return mo.Some(&types.ImageUpdateResponse{
 		UpdateType:     UpdateTypeDigest,
 		CurrentVersion: tag,
 		LatestVersion:  tag,
@@ -411,7 +435,7 @@ func digestPinnedImageUpdateResult(imageRef, activityID string, responseTimeMs i
 
 func isLocalBuildImageRef(imageRef string, composeBuildRefs map[string]struct{}) bool {
 	if named, err := reference.ParseNormalizedNamed(strings.TrimSpace(imageRef)); err == nil &&
-		registryauth.NormalizeRegistryForComparison(reference.Domain(named)) == imageref.LocalBuildRegistry {
+		kitregistry.Normalize(reference.Domain(named)) == imageref.LocalBuildRegistry {
 		return true
 	}
 	_, ok := composeBuildRefs[refs.NormalizeImageUpdateRef(imageRef)]
@@ -422,7 +446,7 @@ func (s *ImageUpdateService) parseImageReference(imageRef string) *ImageParts {
 	// Use the official Docker reference parser to handle all edge cases
 	if named, err := reference.ParseNormalizedNamed(imageRef); err == nil {
 		return &ImageParts{
-			Registry:   registryauth.NormalizeRegistryForComparison(reference.Domain(named)),
+			Registry:   kitregistry.Normalize(reference.Domain(named)),
 			Repository: reference.Path(named),
 			// Extract tag or default to latest
 			Tag: func() string {
@@ -450,13 +474,13 @@ func (s *ImageUpdateService) parseImageReference(imageRef string) *ImageParts {
 		parts := strings.Split(digestParts[0], "/")
 		if strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":") {
 			return &ImageParts{
-				Registry:   registryauth.NormalizeRegistryForComparison(parts[0]),
+				Registry:   kitregistry.Normalize(parts[0]),
 				Repository: strings.Join(parts[1:], "/"),
 				Tag:        "latest",
 			}
 		}
 		return &ImageParts{
-			Registry:   registryauth.NormalizeRegistryForComparison("docker.io"),
+			Registry:   kitregistry.Normalize("docker.io"),
 			Repository: kit.Ternary(len(parts) == 1, "library/"+parts[0], digestParts[0]),
 			Tag:        "latest",
 		}
@@ -466,21 +490,21 @@ func (s *ImageUpdateService) parseImageReference(imageRef string) *ImageParts {
 	case len(parts) == 1:
 		repository, tag := splitTag(parts[0])
 		return &ImageParts{
-			Registry:   registryauth.NormalizeRegistryForComparison("docker.io"),
+			Registry:   kitregistry.Normalize("docker.io"),
 			Repository: "library/" + repository,
 			Tag:        tag,
 		}
 	case strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":"):
 		repository, tag := splitTag(strings.Join(parts[1:], "/"))
 		return &ImageParts{
-			Registry:   registryauth.NormalizeRegistryForComparison(parts[0]),
+			Registry:   kitregistry.Normalize(parts[0]),
 			Repository: repository,
 			Tag:        tag,
 		}
 	default:
 		repository, tag := splitTag(imageRef)
 		return &ImageParts{
-			Registry:   registryauth.NormalizeRegistryForComparison("docker.io"),
+			Registry:   kitregistry.Normalize("docker.io"),
 			Repository: repository,
 			Tag:        tag,
 		}
@@ -516,13 +540,11 @@ func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string
 	// Fallback: if the image was pruned, look up the image reference from
 	// running containers that were started from this image ID.
 	if imageRef, ok := func() (string, bool) {
-		containers, listErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-			return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
-		})
+		containers, listErr := s.dockerService.ListContainers(ctx, false)
 		if listErr != nil {
 			return "", false
 		}
-		for _, c := range containers.Items {
+		for _, c := range containers {
 			if c.ImageID != "sha256:"+imageID && c.ImageID != imageID {
 				continue
 			}
@@ -544,7 +566,7 @@ func (s *ImageUpdateService) getAllImageRefs(ctx context.Context, limit int) ([]
 		return nil, fmt.Errorf("failed to list Docker images: %w", err)
 	}
 
-	containers, err := s.dockerService.ListContainers(ctx)
+	containers, err := s.dockerService.ListContainers(ctx, false)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to list Docker containers; continuing without update-check opt-out filtering", "error", err.Error())
 	}
@@ -671,13 +693,21 @@ func (s *ImageUpdateService) inspectLocalImageSnapshot(ctx context.Context, imag
 	}, nil
 }
 
-func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID string) (*imageupdate.Response, error) {
+func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID string) (*types.ImageUpdateResponse, error) {
 	imageRef, err := s.getImageRefByID(ctx, imageID)
 	if err != nil {
-		if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageScan, imageID, "", user.SystemUser.ID, user.SystemUser.Username, "0", database.JSON{
-			"action":  "check_update_by_id",
-			"imageID": imageID,
-			"error":   err.Error(),
+		if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageScan,
+			ResourceType:  "image",
+			ResourceID:    imageID,
+			UserID:        types.SystemUser.ID,
+			Username:      types.SystemUser.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
+				"action":  "check_update_by_id",
+				"imageID": imageID,
+				"error":   err.Error(),
+			},
 		}); logErr != nil {
 			slog.WarnContext(ctx, "Failed to log image update check by ID error event", "imageId", imageID, "error", logErr.Error())
 		}
@@ -705,7 +735,7 @@ func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID s
 	return result, nil
 }
 
-func (s *ImageUpdateService) saveUpdateResultWithSnapshot(ctx context.Context, imageRef string, result *imageupdate.Response, snapshot *localImageSnapshot) error {
+func (s *ImageUpdateService) saveUpdateResultWithSnapshot(ctx context.Context, imageRef string, result *types.ImageUpdateResponse, snapshot *localImageSnapshot) error {
 	if kit.FromPtr(snapshot).ImageID != "" {
 		return s.savePreparedUpdateResult(ctx, snapshot.ImageID, snapshot.Repository, snapshot.Tag, result)
 	}
@@ -769,7 +799,7 @@ func extractRepoAndTagFromImage(dockerImage image.InspectResponse, fallback *Ima
 	return "<none>", untagged
 }
 
-func buildImageUpdateRecord(imageID, repo, tag string, result *imageupdate.Response, notificationSent bool, latestSeenAt *time.Time, carried *ImageUpdateRecord) *ImageUpdateRecord {
+func buildImageUpdateRecord(imageID, repo, tag string, result *types.ImageUpdateResponse, notificationSent bool, latestSeenAt *time.Time, carried *ImageUpdateRecord) *ImageUpdateRecord {
 	return &ImageUpdateRecord{ //exhaustruct:enforce
 		BaseModel: database.BaseModel{
 			ID:        "",
@@ -802,7 +832,7 @@ func buildImageUpdateRecord(imageID, repo, tag string, result *imageupdate.Respo
 	}
 }
 
-func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, result *imageupdate.Response) error {
+func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, result *types.ImageUpdateResponse) error {
 	// Check if there's an existing record to compare state changes
 	var existingRecord ImageUpdateRecord
 	hasExisting := tx.Where("id = ?", imageID).First(&existingRecord).Error == nil
@@ -846,10 +876,14 @@ func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, resu
 	)).Error
 }
 
-func (s *ImageUpdateService) savePreparedUpdateResult(ctx context.Context, imageID, repo, tag string, result *imageupdate.Response) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+func (s *ImageUpdateService) savePreparedUpdateResult(ctx context.Context, imageID, repo, tag string, result *types.ImageUpdateResponse) error {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return savePreparedUpdateResultWithTx(tx, imageID, repo, tag, result)
-	})
+	}); err != nil {
+		return err
+	}
+	s.eventService.PublishChange("0", "image_update")
+	return nil
 }
 
 func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, imageRef string) error {
@@ -883,22 +917,20 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 		// Digests have no ordering. Confirm a moved tag without using the digest cache.
 		// A registry failure leaves the differing previews untouched rather than
 		// blocking the reconciliation of the pulled image state.
-		if s.registryService != nil {
-			registryCtx, cancel := s.registryContext(ctx)
-			defer cancel()
-			latest, inspectErr := s.registryService.InspectImageDigest(registryCtx, imageRef, nil)
-			if inspectErr != nil {
-				slog.WarnContext(ctx, "Failed to verify pulled image against project previews", "imageRef", imageRef, "error", inspectErr.Error())
-			} else if slices.Contains(snapshot.RepositoryDigests, kit.FromPtr(latest).Digest) {
-				return records, latest.Digest, nil
-			}
+		registryCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
+		defer cancel()
+		latest, inspectErr := s.registryService.InspectImageDigest(registryCtx, imageRef, nil)
+		if inspectErr != nil {
+			slog.WarnContext(ctx, "Failed to verify pulled image against project previews", "imageRef", imageRef, "error", inspectErr.Error())
+		} else if slices.Contains(snapshot.RepositoryDigests, kit.FromPtr(latest).Digest) {
+			return records, latest.Digest, nil
 		}
 		return slices.DeleteFunc(records, digestMismatch), "", nil
 	}()
 	if err != nil {
 		return err
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if hasLookup && len(repositoryCandidates) > 0 {
 			// Only clear synthetic ref:: records, not real sha256 image ID records.
 			// Clearing sha256 records would incorrectly mark containers that are still
@@ -942,7 +974,7 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 			}
 		}
 
-		if savePreparedUpdateResultWithTxErr := savePreparedUpdateResultWithTx(tx, snapshot.ImageID, snapshot.Repository, snapshot.Tag, &imageupdate.Response{
+		if savePreparedUpdateResultWithTxErr := savePreparedUpdateResultWithTx(tx, snapshot.ImageID, snapshot.Repository, snapshot.Tag, &types.ImageUpdateResponse{
 			UpdateType:     UpdateTypeDigest,
 			CurrentVersion: snapshot.Tag,
 			LatestVersion:  snapshot.Tag,
@@ -954,7 +986,11 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 		}
 
 		return nil
-	})
+	}); transactionErr != nil {
+		return transactionErr
+	}
+	s.eventService.PublishChange("0", "image_update")
+	return nil
 }
 
 func (s *ImageUpdateService) StoredUpdateByImageID(ctx context.Context, imageID string) (*ImageUpdateRecord, bool, error) {
@@ -1036,16 +1072,16 @@ func (s *ImageUpdateService) groupImageRefs(imageRefs []string) [][]string {
 
 func (s *ImageUpdateService) checkSingleImageInBatch(
 	ctx context.Context,
-	externalCreds []containerregistry.Credential,
+	externalCreds []types.ContainerRegistryCredential,
 	parts *ImageParts,
 	composeBuildRefs map[string]struct{},
 	activityID string,
 	start time.Time,
-) (*imageupdate.Response, *localImageSnapshot, error) {
+) (*types.ImageUpdateResponse, *localImageSnapshot, error) {
 	imageRef := fmt.Sprintf("%s/%s:%s", parts.Registry, parts.Repository, parts.Tag)
 	snapshot, ldErr := s.inspectLocalImageSnapshot(ctx, imageRef, composeBuildRefs)
 	if ldErr == nil && snapshot.IsLocalBuild {
-		return &imageupdate.Response{
+		return &types.ImageUpdateResponse{
 			UpdateType:     UpdateTypeLocal,
 			CurrentVersion: snapshot.Tag,
 			CurrentDigest:  snapshot.PrimaryDigest,
@@ -1057,7 +1093,7 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 	// A compose build ref whose image is not present locally has no registry to
 	// check against, so the registry lookup is skipped entirely.
 	if ldErr != nil && errdefs.IsNotFound(ldErr) && isLocalBuildImageRef(imageRef, composeBuildRefs) {
-		return &imageupdate.Response{
+		return &types.ImageUpdateResponse{
 			UpdateType:     UpdateTypeLocal,
 			CurrentVersion: parts.Tag,
 			CheckTime:      time.Now(),
@@ -1066,12 +1102,12 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 		}, nil, nil
 	}
 
-	registryCtx, registryCancel := s.registryContext(ctx)
+	registryCtx, registryCancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
 	digestResult, digestErr := s.registryService.InspectImageDigest(registryCtx, imageRef, externalCreds)
 	registryCancel()
 	if digestErr != nil {
 		// digestResult may contain auth metadata even on error
-		return &imageupdate.Response{
+		return &types.ImageUpdateResponse{
 			Error:          digestErr.Error(),
 			CheckTime:      time.Now(),
 			ResponseTimeMs: int(time.Since(start).Milliseconds()),
@@ -1091,7 +1127,7 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 				// stopped project whose compose pin changed): there is nothing
 				// local to compare, so report a distinct not-pulled state rather
 				// than a failed check or an available update.
-				return &imageupdate.Response{
+				return &types.ImageUpdateResponse{
 					UpdateType:     UpdateTypeNotPulled,
 					LatestDigest:   digestResult.Digest,
 					CheckTime:      time.Now(),
@@ -1103,7 +1139,7 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 					UsedCredential: digestResult.UsedCredential,
 				}, nil, nil
 			}
-			return &imageupdate.Response{
+			return &types.ImageUpdateResponse{
 				Error:          ldErr.Error(),
 				CheckTime:      time.Now(),
 				ResponseTimeMs: int(time.Since(start).Milliseconds()),
@@ -1125,7 +1161,7 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 		"remoteDigest", digestResult.Digest,
 		"hasUpdate", !slices.Contains(snapshot.AllDigests, digestResult.Digest))
 
-	return &imageupdate.Response{
+	return &types.ImageUpdateResponse{
 		HasUpdate:      !slices.Contains(snapshot.AllDigests, digestResult.Digest),
 		UpdateType:     UpdateTypeDigest,
 		CurrentDigest:  kit.Ternary(slices.Contains(snapshot.AllDigests, digestResult.Digest), digestResult.Digest, snapshot.PrimaryDigest),
@@ -1143,20 +1179,17 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 // resolveBatchCredentials returns the caller's credentials for the check, or else the enabled stored
 // registry credentials, cached per scan so its tasks decrypt them once while each new scan sees registry edits.
 // Failures are not cached. Caller credentials live only in memory, so a check resumed after a restart uses the stored ones.
-func (s *ImageUpdateService) resolveBatchCredentials(ctx context.Context, t flow.Task, input imageCheckInput) []containerregistry.Credential {
+func (s *ImageUpdateService) resolveBatchCredentials(ctx context.Context, t flow.Task, input imageCheckInput) []types.ContainerRegistryCredential {
 	if supplied, ok, _ := s.requestCredentials.Get(input.CredentialsKey); ok && input.CredentialsKey != "" {
 		return supplied
 	}
-	if s.registryService == nil {
-		return nil
-	}
-	credentials, _, err := s.credentials.GetWithLoaders(t.ActivityID(), func([]string) (map[string][]containerregistry.Credential, error) {
+	credentials, _, err := s.credentials.GetWithLoaders(t.ActivityID(), func([]string) (map[string][]types.ContainerRegistryCredential, error) {
 		// Decrypt the enabled stored registry credentials.
 		registries, loadErr := s.registryService.GetEnabledRegistries(ctx)
 		if loadErr != nil {
 			return nil, loadErr
 		}
-		loaded := make([]containerregistry.Credential, 0, len(registries))
+		loaded := make([]types.ContainerRegistryCredential, 0, len(registries))
 		for _, reg := range registries {
 			if strings.TrimSpace(reg.URL) == "" || strings.TrimSpace(reg.Username) == "" || reg.Token == "" {
 				continue
@@ -1171,14 +1204,14 @@ func (s *ImageUpdateService) resolveBatchCredentials(ctx context.Context, t flow
 				continue
 			}
 
-			loaded = append(loaded, containerregistry.Credential{
+			loaded = append(loaded, types.ContainerRegistryCredential{
 				URL:      reg.URL,
 				Username: reg.Username,
 				Token:    strings.TrimSpace(token),
 				Enabled:  reg.Enabled,
 			})
 		}
-		return map[string][]containerregistry.Credential{t.ActivityID(): loaded}, nil
+		return map[string][]types.ContainerRegistryCredential{t.ActivityID(): loaded}, nil
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "failed to load enabled registries for batch check", "error", err.Error())
@@ -1189,8 +1222,8 @@ func (s *ImageUpdateService) resolveBatchCredentials(ctx context.Context, t flow
 
 // recordDigestPinnedSkip notes a digest-pinned ref as skipped on the
 // activity stream and persists its unchanged result.
-func (s *ImageUpdateService) recordDigestPinnedSkip(ctx context.Context, activityID, imageRef string, result *imageupdate.Response, progress *int) {
-	s.appendImageUpdateActivityMessage(ctx, activityID, activitytypes.MessageLevelInfo, imageRef+" — digest pinned, skipped", progress, kit.Ternary(progress != nil, "Skipping image update check", ""))
+func (s *ImageUpdateService) recordDigestPinnedSkip(ctx context.Context, activityID, imageRef string, result *types.ImageUpdateResponse, progress *int) {
+	s.appendImageUpdateActivityMessage(ctx, activityID, types.ActivityMessageLevelInfo, imageRef+" — digest pinned, skipped", progress, kit.Ternary(progress != nil, "Skipping image update check", ""))
 	if err := s.saveUpdateResultWithSnapshot(ctx, imageRef, result, nil); err != nil {
 		slog.WarnContext(ctx, "Failed to save digest-pinned update result", "imageRef", imageRef, "error", err.Error())
 	}
@@ -1205,7 +1238,7 @@ func (s *ImageUpdateService) RegisterWorkflows(engine *flow.Engine) error {
 		Concurrency: imageCheckConcurrency,
 		Timeout:     timeouts.DefaultImageUpdateScan,
 		Activity: activity.StartActivityRequest{
-			Type:          activitytypes.TypeImageUpdateCheck,
+			Type:          types.ActivityTypeImageUpdateCheck,
 			Queue:         true,
 			ResourceType:  new("images"),
 			Step:          "Checking image updates",
@@ -1248,23 +1281,23 @@ func (s *ImageUpdateService) CheckWorkflow() *flow.Workflow { return s.checkWork
 
 // RunImageCheck checks the requested images and returns the check outcome;
 // failed images are reported as failed targets.
-func (s *ImageUpdateService) RunImageCheck(ctx context.Context, request imageupdate.CheckRequest) (scheduler.Outcome, error) {
+func (s *ImageUpdateService) RunImageCheck(ctx context.Context, request types.ImageUpdateCheckRequest) (types.SchedulerOutcome, error) {
 	return s.engine.Run(ctx, s.checkWorkflow, request, activitylib.StartRequest{}, nil)
 }
 
 // CheckImages checks the requested images and returns each ref's result. Usable credentials replace the stored
 // registries for this check, as they always have.
-func (s *ImageUpdateService) CheckImages(ctx context.Context, request imageupdate.CheckRequest, credentials []containerregistry.Credential) (imageupdate.BatchResponse, error) {
+func (s *ImageUpdateService) CheckImages(ctx context.Context, request types.ImageUpdateCheckRequest, credentials []types.ContainerRegistryCredential) (types.ImageUpdateBatchResponse, error) {
 	if !request.All && len(request.ImageRefs) == 0 {
-		return imageupdate.BatchResponse{}, nil
+		return types.ImageUpdateBatchResponse{}, nil
 	}
-	credentials = slices.DeleteFunc(slices.Clone(credentials), func(credential containerregistry.Credential) bool {
+	credentials = slices.DeleteFunc(slices.Clone(credentials), func(credential types.ContainerRegistryCredential) bool {
 		return !credential.Enabled || strings.TrimSpace(credential.URL) == "" || strings.TrimSpace(credential.Username) == "" || strings.TrimSpace(credential.Token) == ""
 	})
 	input := imageCheckInput{
-		CheckRequest:   request,
-		Report:         true,
-		CredentialsKey: kit.Ternary(len(credentials) > 0, uuid.NewV7().String(), ""),
+		ImageUpdateCheckRequest: request,
+		Report:                  true,
+		CredentialsKey:          kit.Ternary(len(credentials) > 0, uuid.NewV7().String(), ""),
 	}
 	if input.CredentialsKey != "" {
 		s.requestCredentials.Set(input.CredentialsKey, credentials)
@@ -1276,7 +1309,7 @@ func (s *ImageUpdateService) CheckImages(ctx context.Context, request imageupdat
 		return nil, err
 	}
 	s.requestCredentials.Delete(input.CredentialsKey)
-	if outcome.Status == scheduler.Failed || outcome.Status == scheduler.Canceled {
+	if outcome.Status == types.RunStatusFailed || outcome.Status == types.RunStatusCanceled {
 		return nil, errors.New(cmp.Or(outcome.Message, "image update check failed"))
 	}
 	failures := map[string]string{}
@@ -1285,11 +1318,11 @@ func (s *ImageUpdateService) CheckImages(ctx context.Context, request imageupdat
 			failures[target.ID] = target.Message
 		}
 	}
-	results := make(imageupdate.BatchResponse, len(output.Results)+len(failures))
+	results := make(types.ImageUpdateBatchResponse, len(output.Results)+len(failures))
 	for _, imageRef := range slices.Concat(slices.Collect(maps.Keys(output.Results)), slices.Collect(maps.Keys(failures))) {
-		result := cmp.Or(output.Results[imageRef], &imageupdate.Response{CheckTime: time.Now()})
+		result := cmp.Or(output.Results[imageRef], &types.ImageUpdateResponse{CheckTime: time.Now()})
 		message, failed := failures[imageRef]
-		results[imageRef] = &imageupdate.Response{ //exhaustruct:enforce
+		results[imageRef] = &types.ImageUpdateResponse{ //exhaustruct:enforce
 			ImageUpdate:      result.ImageUpdate,
 			ImageRef:         result.ImageRef,
 			ContainerUpdates: result.ContainerUpdates,
@@ -1307,6 +1340,7 @@ func (s *ImageUpdateService) CheckImages(ctx context.Context, request imageupdat
 			ResponseTimeMs:   result.ResponseTimeMs,
 			HasUpdate:        result.HasUpdate,
 			UsedCredential:   result.UsedCredential,
+			ReleaseURL:       result.ReleaseURL,
 		}
 	}
 	// Failed images get their entries first, so their containers' tag results still attach.
@@ -1315,13 +1349,11 @@ func (s *ImageUpdateService) CheckImages(ctx context.Context, request imageupdat
 
 // MonitoredImageRefs keeps the refs whose containers still permit update checks.
 func (s *ImageUpdateService) MonitoredImageRefs(ctx context.Context, imageRefs []string) ([]string, error) {
-	listed, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
-	})
+	listed, err := s.dockerService.ListContainers(ctx, false)
 	if err != nil {
 		return nil, fmt.Errorf("list containers for update-check eligibility: %w", err)
 	}
-	eligibility := newMonitoringEligibility(listed.Items)
+	eligibility := newMonitoringEligibility(listed)
 	return slices.DeleteFunc(slices.Clone(imageRefs), func(imageRef string) bool {
 		return !eligibility.imageEligible("", refs.NormalizeImageUpdateRef(imageRef))
 	}), nil
@@ -1350,7 +1382,7 @@ func (s *ImageUpdateService) discoverImages(ctx context.Context, t flow.Task) (a
 	if err != nil {
 		return nil, common.Classify(common.ErrUnavailable, fmt.Errorf("list image references: %w", err))
 	}
-	s.appendImageUpdateActivityMessage(ctx, t.ActivityID(), activitytypes.MessageLevelInfo, fmt.Sprintf("Checking %d image references", len(imageRefs)), nil, "")
+	s.appendImageUpdateActivityMessage(ctx, t.ActivityID(), types.ActivityMessageLevelInfo, fmt.Sprintf("Checking %d image references", len(imageRefs)), nil, "")
 	return s.groupImageRefs(imageRefs), nil
 }
 
@@ -1376,7 +1408,7 @@ func (s *ImageUpdateService) checkImage(ctx context.Context, t flow.Task) (any, 
 	parts := s.parseImageReference(group[0])
 	if parts == nil {
 		err := common.Classify(common.ErrValidation, errors.New("invalid image reference format"))
-		s.appendImageUpdateActivityMessage(ctx, t.ActivityID(), activitytypes.MessageLevelError, group[0]+": "+err.Error(), nil, "")
+		s.appendImageUpdateActivityMessage(ctx, t.ActivityID(), types.ActivityMessageLevelError, group[0]+": "+err.Error(), nil, "")
 		return nil, err
 	}
 	if err := s.registryLimiter.Acquire(ctx, parts.Registry); err != nil {
@@ -1402,18 +1434,18 @@ func (s *ImageUpdateService) checkImage(ctx context.Context, t flow.Task) (any, 
 	}
 	// Save the result and report it on the activity: errors become ERROR, available updates
 	// become SUCCESS, and up-to-date images stay INFO.
-	level, message := func() (activitytypes.MessageLevel, string) {
+	level, message := func() (types.ActivityMessageLevel, string) {
 		switch {
 		case strings.TrimSpace(res.Error) != "":
-			return activitytypes.MessageLevelError, fmt.Sprintf("%s: %s", group[0], strings.TrimSpace(res.Error))
+			return types.ActivityMessageLevelError, fmt.Sprintf("%s: %s", group[0], strings.TrimSpace(res.Error))
 		case res.UpdateType == UpdateTypeLocal:
-			return activitytypes.MessageLevelInfo, group[0] + " — local build, registry check skipped"
+			return types.ActivityMessageLevelInfo, group[0] + " — local build, registry check skipped"
 		case res.UpdateType == UpdateTypeNotPulled:
-			return activitytypes.MessageLevelInfo, group[0] + " — not pulled locally, no local digest to compare"
+			return types.ActivityMessageLevelInfo, group[0] + " — not pulled locally, no local digest to compare"
 		case res.HasUpdate:
-			return activitytypes.MessageLevelSuccess, group[0] + " — update available"
+			return types.ActivityMessageLevelSuccess, group[0] + " — update available"
 		default:
-			return activitytypes.MessageLevelInfo, group[0] + " — up to date"
+			return types.ActivityMessageLevelInfo, group[0] + " — up to date"
 		}
 	}()
 	s.appendImageUpdateActivityMessage(ctx, t.ActivityID(), level, message, nil, "")
@@ -1447,19 +1479,19 @@ func (s *ImageUpdateService) checkTagPolicies(ctx context.Context, t flow.Task) 
 		return nil, payloadErr
 	}
 	if input.Report && t.Recovered() {
-		return tagCheckOutput{Failures: []scheduler.TargetOutcome{}}, nil
+		return tagCheckOutput{Failures: []types.TargetOutcome{}}, nil
 	}
 	containerUpdates, err := s.checkContainerTagUpdates(ctx, tagRefs, s.resolveBatchCredentials(ctx, t, input))
 	if err != nil {
 		return nil, common.Classify(common.ErrUnavailable, err)
 	}
-	failures := []scheduler.TargetOutcome{}
+	failures := []types.TargetOutcome{}
 	for containerID, update := range containerUpdates {
 		if update.Error != "" {
-			failures = append(failures, scheduler.TargetOutcome{
+			failures = append(failures, types.TargetOutcome{
 				ResourceType: "container",
 				ID:           containerID,
-				Status:       scheduler.Failed,
+				Status:       types.RunStatusFailed,
 				Message:      update.Error,
 			})
 		}
@@ -1486,7 +1518,7 @@ func (s *ImageUpdateService) finalizeImageCheck(ctx context.Context, t flow.Task
 		return nil, decodeErr
 	}
 	checked, failed := 0, 0
-	var targets []scheduler.TargetOutcome
+	var targets []types.TargetOutcome
 	for index, group := range groups {
 		checked += len(group)
 		if results[index].Err == "" {
@@ -1494,10 +1526,10 @@ func (s *ImageUpdateService) finalizeImageCheck(ctx context.Context, t flow.Task
 		}
 		failed += len(group)
 		for _, imageRef := range group {
-			targets = append(targets, scheduler.TargetOutcome{
+			targets = append(targets, types.TargetOutcome{
 				ResourceType: "image",
 				ID:           imageRef,
-				Status:       scheduler.Failed,
+				Status:       types.RunStatusFailed,
 				Message:      results[index].Err,
 			})
 		}
@@ -1510,8 +1542,8 @@ func (s *ImageUpdateService) finalizeImageCheck(ctx context.Context, t flow.Task
 			slog.WarnContext(ctx, "failed to cleanup orphaned image update records after check-all", "error", cleanupErr.Error())
 		}
 	}
-	outcome := scheduler.Outcome{
-		Status: kit.Ternary(len(targets) > 0, scheduler.Partial, scheduler.Succeeded),
+	outcome := types.SchedulerOutcome{
+		Status: kit.Ternary(len(targets) > 0, types.RunStatusPartial, types.RunStatusSucceeded),
 		Message: fmt.Sprintf("Image update check completed: %d checked, %d errors", checked, failed) +
 			kit.Ternary(len(tagged.Failures) > 0, fmt.Sprintf(", %d tag policy errors", len(tagged.Failures)), ""),
 		Targets: targets,
@@ -1520,7 +1552,7 @@ func (s *ImageUpdateService) finalizeImageCheck(ctx context.Context, t flow.Task
 	if !request.Report {
 		return outcome, nil
 	}
-	reported := imageupdate.BatchResponse{}
+	reported := types.ImageUpdateBatchResponse{}
 	for index, group := range groups {
 		if result := results[index].Value.Result; result != nil {
 			for _, imageRef := range group {
@@ -1529,7 +1561,7 @@ func (s *ImageUpdateService) finalizeImageCheck(ctx context.Context, t flow.Task
 		}
 	}
 	return imageCheckOutput{
-		Outcome:          outcome,
+		SchedulerOutcome: outcome,
 		Results:          reported,
 		ContainerUpdates: tagged.Updates,
 	}, nil
@@ -1590,13 +1622,11 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) e
 		// Records for resources that opted out of monitoring since the check, or
 		// whose container is gone, stay unnotified: they resurface if monitoring
 		// is re-enabled and are otherwise removed by orphan cleanup.
-		listed, listErr := s.dockerService.Call(notifCtx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-			return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
-		})
+		listed, listErr := s.dockerService.ListContainers(notifCtx, false)
 		if listErr != nil {
 			return records, fmt.Errorf("list containers for update-check eligibility: %w", listErr)
 		}
-		eligibility := newMonitoringEligibility(listed.Items)
+		eligibility := newMonitoringEligibility(listed)
 		maps.DeleteFunc(records, func(id string, record *ImageUpdateRecord) bool {
 			// Results scoped to a container that no longer exists are stale and not eligible.
 			if kit.Ternary(record.ContainerID != "",
@@ -1614,10 +1644,17 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) e
 		slog.WarnContext(ctx, "Failed to get unnotified updates", "error", err.Error())
 		return fmt.Errorf("flush pending update notifications: %w", err)
 	case len(unnotifiedUpdates) > 0:
-		updatesToNotify := make(map[string]*imageupdate.Response)
+		updatesToNotify := make(map[string]*types.ImageUpdateResponse)
+		links := map[string]string{}
+		linkCtx, cancelLinks := context.WithTimeout(notifCtx, 5*time.Second)
+		defer cancelLinks()
 
 		for _, record := range unnotifiedUpdates {
-			updatesToNotify[record.Repository+":"+record.Tag+kit.Ternary(record.ContainerID != "", " (container "+record.ContainerID+")", "")] = &imageupdate.Response{
+			ref := record.Repository + ":" + record.Tag
+			if _, ok := links[ref]; !ok {
+				links[ref] = s.releaseNotes.ReleaseLink(linkCtx, ref)
+			}
+			updatesToNotify[ref+kit.Ternary(record.ContainerID != "", " (container "+record.ContainerID+")", "")] = &types.ImageUpdateResponse{
 				HasUpdate:      record.HasUpdate,
 				UpdateType:     record.UpdateType,
 				CurrentVersion: record.CurrentVersion,
@@ -1631,6 +1668,7 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) e
 				AuthUsername:   kit.FromPtr(record.AuthUsername),
 				AuthRegistry:   kit.FromPtr(record.AuthRegistry),
 				UsedCredential: record.UsedCredential,
+				ReleaseURL:     links[ref],
 			}
 		}
 
@@ -1687,7 +1725,7 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 		return fmt.Errorf("failed to delete orphaned records: %w", imageResult.Error)
 	}
 
-	containers, err := s.dockerService.ListContainers(ctx)
+	containers, err := s.dockerService.ListContainers(ctx, false)
 	if err != nil {
 		return err
 	}
@@ -1712,7 +1750,7 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 	return nil
 }
 
-func (s *ImageUpdateService) GetUpdateSummary(ctx context.Context) (*imageupdate.Summary, error) {
+func (s *ImageUpdateService) GetUpdateSummary(ctx context.Context) (*types.ImageUpdateSummary, error) {
 	if s == nil {
 		return nil, errors.New("docker service unavailable")
 	}
@@ -1730,9 +1768,9 @@ func (s *ImageUpdateService) GetUpdateSummary(ctx context.Context) (*imageupdate
 	return s.getUpdateSummaryForImageIDs(ctx, liveImageIDs)
 }
 
-func (s *ImageUpdateService) getUpdateSummaryForImageIDs(ctx context.Context, imageIDs []string) (*imageupdate.Summary, error) {
+func (s *ImageUpdateService) getUpdateSummaryForImageIDs(ctx context.Context, imageIDs []string) (*types.ImageUpdateSummary, error) {
 	if len(imageIDs) == 0 {
-		return &imageupdate.Summary{}, nil
+		return &types.ImageUpdateSummary{}, nil
 	}
 
 	var aggregate struct {
@@ -1752,7 +1790,7 @@ func (s *ImageUpdateService) getUpdateSummaryForImageIDs(ctx context.Context, im
 		return nil, err
 	}
 
-	return &imageupdate.Summary{
+	return &types.ImageUpdateSummary{
 		TotalImages:       len(imageIDs),
 		ImagesWithUpdates: int(aggregate.ImagesWithUpdates),
 		DigestUpdates:     int(aggregate.DigestUpdates),
@@ -1760,7 +1798,7 @@ func (s *ImageUpdateService) getUpdateSummaryForImageIDs(ctx context.Context, im
 	}, nil
 }
 
-func (s *ImageUpdateService) checkContainerTagUpdates(ctx context.Context, imageRefs []string, credentials []containerregistry.Credential) (map[string]*imageupdate.Response, error) {
+func (s *ImageUpdateService) checkContainerTagUpdates(ctx context.Context, imageRefs []string, credentials []types.ContainerRegistryCredential) (map[string]*types.ImageUpdateResponse, error) {
 	wanted := map[string]bool{}
 	for _, imageRef := range imageRefs {
 		if normalized := refs.NormalizeImageUpdateRef(imageRef); normalized != "" {
@@ -1768,15 +1806,13 @@ func (s *ImageUpdateService) checkContainerTagUpdates(ctx context.Context, image
 		}
 	}
 	if len(wanted) == 0 {
-		return map[string]*imageupdate.Response{}, nil
+		return map[string]*types.ImageUpdateResponse{}, nil
 	}
-	listed, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
-	})
+	listed, err := s.dockerService.ListContainers(ctx, false)
 	if err != nil {
-		return map[string]*imageupdate.Response{}, fmt.Errorf("list containers for tag update checks: %w", err)
+		return map[string]*types.ImageUpdateResponse{}, fmt.Errorf("list containers for tag update checks: %w", err)
 	}
-	return s.tags.Check(ctx, listed.Items, wanted, credentials, func(deleteCtx context.Context, containerIDs []string) error {
+	return s.tags.Check(ctx, listed, wanted, credentials, func(deleteCtx context.Context, containerIDs []string) error {
 		// Clear the stored results of containers whose policy no longer tracks tags, in bounded IN-list chunks.
 		for chunk := range slices.Chunk(containerIDs, staleDigestRecordDeleteChunk) {
 			if deleteErr := s.db.WithContext(deleteCtx).Where("container_id IN ?", chunk).Delete(&ImageUpdateRecord{}).Error; deleteErr != nil {
@@ -1787,12 +1823,12 @@ func (s *ImageUpdateService) checkContainerTagUpdates(ctx context.Context, image
 	}, s.saveContainerTagResult)
 }
 
-func (s *ImageUpdateService) saveContainerTagResult(ctx context.Context, cnt container.Summary, result *imageupdate.Response) error {
+func (s *ImageUpdateService) saveContainerTagResult(ctx context.Context, cnt container.Summary, result *types.ImageUpdateResponse) error {
 	parsed, err := refs.NormalizeReference(cnt.Image)
 	if err != nil {
 		return err
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// A previous good result must not survive a rate limit under a different policy.
 		if deleteStaleUpdatesErr := tx.Where("id = ? AND policy_key <> ?", "container::"+cnt.ID, imageref.UpdatePolicyKey(cnt.Image, cnt.Labels)).
 			Delete(&ImageUpdateRecord{}).Error; deleteStaleUpdatesErr != nil {
@@ -1812,5 +1848,9 @@ func (s *ImageUpdateService) saveContainerTagResult(ctx context.Context, cnt con
 			"image_id":     cnt.ImageID,
 			"policy_key":   imageref.UpdatePolicyKey(cnt.Image, cnt.Labels),
 		}).Error
-	})
+	}); transactionErr != nil {
+		return transactionErr
+	}
+	s.eventService.PublishChange("0", "image_update")
+	return nil
 }

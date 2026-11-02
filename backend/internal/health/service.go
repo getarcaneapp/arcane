@@ -5,12 +5,21 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/moby/moby/client"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/pkg/francis"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	// Service checks the dependencies the manager needs before it can serve traffic.
+	Service struct {
+		db       *database.DB
+		docker   *docker.DockerClientService
+		shutdown <-chan struct{}
+	}
 )
 
 const (
@@ -19,13 +28,6 @@ const (
 	checkOK        = "ok"
 	checkTimeout   = 2 * time.Second
 )
-
-// Service checks the dependencies the manager needs before it can serve traffic.
-type Service struct {
-	db       *database.DB
-	docker   *docker.DockerClientService
-	shutdown <-chan struct{}
-}
 
 // NewService builds the readiness checker over the database, the local Docker client, and the actor runtime's shutdown signal.
 func NewService(db *database.DB, dockerService *docker.DockerClientService, actors *francis.Runtime) *Service {
@@ -37,10 +39,10 @@ func NewService(db *database.DB, dockerService *docker.DockerClientService, acto
 }
 
 // Ready pings the database and local Docker daemon; it is never ready while shutting down.
-func (s *Service) Ready(ctx context.Context) system.ReadinessResponse {
+func (s *Service) Ready(ctx context.Context) types.ReadinessResponse {
 	select {
 	case <-s.shutdown:
-		return system.ReadinessResponse{
+		return types.ReadinessResponse{
 			Status: notReadyStatus,
 			Checks: map[string]string{"shutdown": "in progress"},
 		}
@@ -49,7 +51,7 @@ func (s *Service) Ready(ctx context.Context) system.ReadinessResponse {
 
 	checks := map[string]string{
 		"database": func() string {
-			sqlDB, err := s.db.SQLDB()
+			sqlDB, err := s.db.DB.DB()
 			if err != nil {
 				return fmt.Sprintf("get database handle: %v", err)
 			}
@@ -75,8 +77,8 @@ func (s *Service) Ready(ctx context.Context) system.ReadinessResponse {
 	}
 	for _, result := range checks {
 		if result != checkOK {
-			return system.ReadinessResponse{Status: notReadyStatus, Checks: checks}
+			return types.ReadinessResponse{Status: notReadyStatus, Checks: checks}
 		}
 	}
-	return system.ReadinessResponse{Status: readyStatus, Checks: checks}
+	return types.ReadinessResponse{Status: readyStatus, Checks: checks}
 }

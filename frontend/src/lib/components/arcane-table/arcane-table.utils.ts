@@ -7,7 +7,7 @@ import type { TableDisplayEntry } from '#lib/types/table-display.js';
 import type { PersistedPreferencesSnapshot } from '#lib/types/table-preferences.js';
 import { ENVIRONMENT_FILTER, environmentFilterIds, rowKey } from '#lib/utils/environments.js';
 
-import type { CompactTablePrefs, GroupedData } from './arcane-table.types.svelte';
+import type { CardSlot, CompactTablePrefs, GroupedData } from './arcane-table.types.svelte';
 import { decodeFilters, decodeSort } from './arcane-table.types.svelte';
 import type { ArcaneRow } from './table-features';
 
@@ -26,7 +26,7 @@ export function toFilterMap(filters: ColumnFiltersState): FilterMap {
 		if (Array.isArray(value)) {
 			if (value.length === 0) continue;
 			out[id] = value as FilterValue;
-		} else if (value !== undefined && value !== null && String(value).trim() !== '') {
+		} else if (typeof value === 'number' || typeof value === 'boolean' || (typeof value === 'string' && value.trim() !== '')) {
 			out[id] = value as FilterValue;
 		}
 	}
@@ -56,17 +56,17 @@ export function fromFilterMap(map?: FilterMap): ColumnFiltersState {
 	return out;
 }
 
-function filterValuesEqual(a: unknown, b: unknown): boolean {
+function filterValuesEqual(a: FilterValue | undefined, b: FilterValue | undefined): boolean {
 	if (Array.isArray(a) || Array.isArray(b)) {
 		return (
 			Array.isArray(a) &&
 			Array.isArray(b) &&
 			a.length === b.length &&
-			Array.from(a).every((value, index) => `${value}` === `${b[index]}`)
+			a.every((value, index) => String(value) === String(b[index]))
 		);
 	}
 	if (a === b) return true;
-	return a != null && b != null && `${a}` === `${b}`;
+	return a !== undefined && b !== undefined && String(a) === String(b);
 }
 
 function filterMapsEqual(a?: FilterMap, b?: FilterMap): boolean {
@@ -119,6 +119,7 @@ export function extractPersistedPreferences(
 		sort,
 		limit,
 		mobileVisibility: prefs.m,
+		viewMode: prefs.d,
 		customSettings: prefs.c
 	};
 }
@@ -165,4 +166,44 @@ export function getTableDisplayEntries<T extends RowData & { id: string }>(
 		appendRows(rows);
 	}
 	return entries;
+}
+
+const BADGE_COLUMNS = new Set([
+	'status',
+	'state',
+	'updates',
+	'update',
+	'enabled',
+	'inUse',
+	'severity',
+	'vulnSeverity',
+	'vulnerabilities',
+	'lastSyncStatus',
+	'availability',
+	'desiredState',
+	'currentState',
+	'backupState',
+	'isPublished',
+	'builtIn'
+]);
+const FOOTER_COLUMNS = new Set([
+	'createdAt',
+	'created',
+	'updatedAt',
+	'checkedAt',
+	'lastUsedAt',
+	'timestamp',
+	'scanTime',
+	'lastSyncAt',
+	'lastTriggeredAt',
+	'expiresAt'
+]);
+
+/** Where a column lands on a grid card. Titles are picked separately from the remaining fields. */
+export function getCardSlot(columnId: string, explicit?: CardSlot): CardSlot {
+	if (explicit) return explicit;
+	if (columnId === ENVIRONMENT_FILTER) return 'context';
+	if (BADGE_COLUMNS.has(columnId)) return 'badge';
+	if (FOOTER_COLUMNS.has(columnId)) return 'footer';
+	return 'field';
 }

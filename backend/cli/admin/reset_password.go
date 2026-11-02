@@ -10,48 +10,60 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/term"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/config/schema"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/session"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/arcane/v3/pkg/validation"
 )
 
-const defaultAdminUsername = "arcane"
+const (
+	defaultAdminUsername = "arcane"
+)
 
-var resetPasswordUsername string
+var (
+	resetPasswordUsername string
 
-// AdminCmd contains administration commands that run inside the Arcane
-// container without starting the HTTP server.
-var AdminCmd = &cobra.Command{
-	Use:   "admin",
-	Short: "Manage Arcane administration",
-}
+	// AdminCmd contains administration commands that run inside the Arcane
+	// container without starting the HTTP server.
+	AdminCmd = &cobra.Command{
+		Use:   "admin",
+		Short: "Manage Arcane administration",
+	}
 
-var resetPasswordCmd = &cobra.Command{
-	Use:          "reset-password",
-	Short:        "Reset the password for a global administrator",
-	Long:         "Reset the password for a global administrator. This command must be explicitly enabled with ALLOW_CLI_PASSWORD_RESET=true.",
-	Args:         cobra.NoArgs,
-	SilenceUsage: true,
-	RunE:         runResetPasswordCommandInternal,
-}
+	resetPasswordCmd = &cobra.Command{
+		Use:          "reset-password",
+		Short:        "Reset the password for a global administrator",
+		Long:         "Reset the password for a global administrator. This command must be explicitly enabled with ARCANE_ALLOW_CLI_PASSWORD_RESET=true.",
+		Args:         cobra.NoArgs,
+		SilenceUsage: true,
+		RunE:         runResetPasswordCommand,
+	}
+)
 
 func init() {
 	resetPasswordCmd.Flags().StringVar(&resetPasswordUsername, "username", defaultAdminUsername, "Username of the global administrator")
 	AdminCmd.AddCommand(resetPasswordCmd)
 }
 
-func runResetPasswordCommandInternal(cmd *cobra.Command, _ []string) error {
-	cfg := config.Load()
-	if err := ensurePasswordResetEnabledInternal(cfg); err != nil {
+func runResetPasswordCommand(cmd *cobra.Command, _ []string) error {
+	if err := schema.CheckLegacyEnv(cmd.Context()); err != nil {
 		return err
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	if enabledErr := ensurePasswordResetEnabled(cfg); enabledErr != nil {
+		return enabledErr
 	}
 
 	username := strings.TrimSpace(resetPasswordUsername)
@@ -71,14 +83,14 @@ func runResetPasswordCommandInternal(cmd *cobra.Command, _ []string) error {
 		}
 	}()
 
-	policy := passwordPolicyFromDBInternal(cmd.Context(), db)
+	policy := passwordPolicyFromDB(cmd.Context(), db)
 
-	password, err := readNewPasswordInternal(cmd.OutOrStdout(), policy)
+	password, err := readNewPassword(cmd.OutOrStdout(), policy)
 	if err != nil {
 		return err
 	}
 
-	if resetPasswordErr := resetPasswordInternal(cmd.Context(), db, username, password, policy); resetPasswordErr != nil {
+	if resetPasswordErr := resetPassword(cmd.Context(), db, username, password, policy); resetPasswordErr != nil {
 		return resetPasswordErr
 	}
 
@@ -88,34 +100,34 @@ func runResetPasswordCommandInternal(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func ensurePasswordResetEnabledInternal(cfg *config.Config) error {
+func ensurePasswordResetEnabled(cfg *config.Config) error {
 	if cfg == nil {
 		return errors.New("password reset config is nil")
 	}
 	if !cfg.AllowCLIPasswordReset {
-		return errors.New("CLI password reset is disabled; set ALLOW_CLI_PASSWORD_RESET=true to enable it")
+		return errors.New("CLI password reset is disabled; set ARCANE_ALLOW_CLI_PASSWORD_RESET=true to enable it")
 	}
 	return nil
 }
 
-func readNewPasswordInternal(out io.Writer, policy string) (string, error) {
-	password, err := readPasswordInternal(out, "New password: ")
+func readNewPassword(out io.Writer, policy string) (string, error) {
+	password, err := readPassword(out, "New password: ")
 	if err != nil {
 		return "", fmt.Errorf("failed to read new password: %w", err)
 	}
 
-	confirmation, err := readPasswordInternal(out, "Confirm new password: ")
+	confirmation, err := readPassword(out, "Confirm new password: ")
 	if err != nil {
 		return "", fmt.Errorf("failed to read password confirmation: %w", err)
 	}
 
-	if validatePasswordPairErr := validatePasswordPairInternal(password, confirmation, policy); validatePasswordPairErr != nil {
+	if validatePasswordPairErr := validatePasswordPair(password, confirmation, policy); validatePasswordPairErr != nil {
 		return "", validatePasswordPairErr
 	}
 	return password, nil
 }
 
-func readPasswordInternal(out io.Writer, prompt string) (string, error) {
+func readPassword(out io.Writer, prompt string) (string, error) {
 	if _, err := fmt.Fprint(out, prompt); err != nil {
 		return "", err
 	}
@@ -129,7 +141,7 @@ func readPasswordInternal(out io.Writer, prompt string) (string, error) {
 	return string(password), nil
 }
 
-func validatePasswordPairInternal(password, confirmation, policy string) error {
+func validatePasswordPair(password, confirmation, policy string) error {
 	if err := validation.ValidatePasswordPolicy(password, policy); err != nil {
 		return err
 	}
@@ -139,13 +151,13 @@ func validatePasswordPairInternal(password, confirmation, policy string) error {
 	return nil
 }
 
-func passwordPolicyFromDBInternal(ctx context.Context, db *database.DB) string {
+func passwordPolicyFromDB(ctx context.Context, db *database.DB) string {
 	var setting settings.SettingVariable
 	err := db.WithContext(ctx).First(&setting, "key = ?", "authPasswordPolicy").Error
 	return kit.Ternary(err != nil || strings.TrimSpace(setting.Value) == "", validation.PasswordPolicyStrong, setting.Value)
 }
 
-func resetPasswordInternal(ctx context.Context, db *database.DB, username, password, policy string) error {
+func resetPassword(ctx context.Context, db *database.DB, username, password, policy string) error {
 	if db == nil {
 		return errors.New("database is nil")
 	}

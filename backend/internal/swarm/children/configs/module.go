@@ -5,9 +5,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
 // RegisterRoutes registers the swarm config endpoints.
@@ -23,6 +23,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 				"Swarm",
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
+			Metadata: map[string]any{authz.MetaEnvironmentAggregate: true},
 		},
 		authz.PermSwarmRead,
 		h.ListConfigs,

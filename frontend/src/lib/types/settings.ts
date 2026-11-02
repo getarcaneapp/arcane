@@ -1,18 +1,58 @@
-import type { JobRun, JobRunStatus, WorkerHealth } from './job';
-import type { TemplateRegistryConfig } from './swarm';
+import type { JobRun, WorkerHealth } from './job';
+import type { UpdateRequest } from './shared';
 
 // --- Application settings ---
 
-export type ApplicationTheme =
-	| 'default'
-	| 'graphite'
-	| 'carbon'
-	| 'ocean'
-	| 'amber'
-	| 'github'
-	| 'nord'
-	| 'everforest'
-	| 'rosepine';
+export type ApplicationTheme = string;
+
+export const THEME_TOKENS = [
+	'background',
+	'foreground',
+	'card',
+	'card-foreground',
+	'popover',
+	'popover-foreground',
+	'primary',
+	'primary-foreground',
+	'secondary',
+	'secondary-foreground',
+	'muted',
+	'muted-foreground',
+	'accent',
+	'accent-foreground',
+	'border',
+	'input',
+	'ring',
+	'sidebar',
+	'sidebar-foreground',
+	'sidebar-primary',
+	'sidebar-primary-foreground',
+	'sidebar-accent',
+	'sidebar-accent-foreground',
+	'sidebar-border',
+	'sidebar-ring',
+	'surface',
+	'glass-shadow-color',
+	'syntax-comment',
+	'syntax-keyword',
+	'syntax-property',
+	'syntax-string',
+	'syntax-number',
+	'syntax-operator'
+] as const;
+
+export type ThemeToken = (typeof THEME_TOKENS)[number];
+
+export type ThemePalette = Record<ThemeToken, string>;
+
+export type ThemeDefinition = {
+	id: string;
+	name?: string;
+	description?: string;
+	light: ThemePalette;
+	dark: ThemePalette;
+};
+
 export type IconCatalog = 'selfhst' | 'dashboard-icons';
 
 export type UpdateCheckRegistry = 'auto' | 'ghcr.io' | 'docker.io' | 'public.ecr.aws';
@@ -34,6 +74,7 @@ export type Settings = {
 	environmentHealthInterval: number;
 	activityHistoryRetentionDays: number;
 	upgradeLogRetentionDays: number;
+	upgradeMaxParallelAgents: number;
 	activityHistoryMaxEntries: number;
 	maxConcurrentActivities: number;
 	defaultDeployPullPolicy: 'missing' | 'always' | 'never';
@@ -62,29 +103,23 @@ export type Settings = {
 	autoHealMaxRestarts?: number;
 	autoHealRestartWindow?: number;
 	volumeHelperIdleTimeout?: number;
-	projectWorkspaceMaxFileSizeMb?: number;
-	volumeWorkspaceMaxFileSizeMb?: number;
 	maxImageUploadSize: number;
 	gitSyncMaxFiles: number;
 	gitSyncMaxTotalSizeMb: number;
 	gitSyncMaxBinarySizeMb: number;
+	projectWorkspaceMaxFileSizeMb?: number;
+	volumeWorkspaceMaxFileSizeMb?: number;
 	baseServerUrl: string;
 	enableGravatar: boolean;
-	enableGravatarEnvForced?: boolean;
 	experimentalFeaturesEnabled: boolean;
 	developmentBrandingEnabled: boolean;
 	apnsEnabled?: boolean;
+	notificationsIncludeReleaseLinks?: boolean;
 	avatarMaxUploadSizeMb: number;
 	allEnvironmentsLimit: number;
-	uiConfigDisabled: boolean;
 	defaultShell: string;
 	dockerHost: string;
 	autoInjectEnv: boolean;
-	backupVolumeName?: string;
-	edgeMTLSManagerCAAvailable?: boolean;
-	frontendTracingEnabled?: boolean;
-	frontendMetricsEnabled?: boolean;
-	frontendLogsEnabled?: boolean;
 
 	authLocalEnabled: boolean;
 	authSessionTimeout: number;
@@ -142,21 +177,52 @@ export type Settings = {
 	buildHistoryRetentionDays?: number;
 	depotProjectId: string;
 	depotToken?: string;
-	depotConfigured?: boolean;
-
-	registryCredentials: RegistryCredential[];
-	templateRegistries: TemplateRegistryConfig[];
 };
 
-export interface RegistryCredential {
-	url: string;
-	username: string;
-	password: string;
+export type SettingKey = keyof Settings;
+
+export interface SettingState {
+	key: string;
+	value: string;
+	type: string;
+	default: string;
+	source: 'default' | 'db' | 'env';
+	locked: boolean;
+	lockReason?: 'env' | 'readOnly';
+	sensitive: boolean;
+	scope: 'manager' | 'environment';
+	envName: string;
+}
+
+export type MixedSettingValue = {
+	label: string;
+	environments: string[];
+	apply: () => void;
+};
+
+export interface SettingsRuntime {
+	frontendTracingEnabled?: boolean;
+	frontendMetricsEnabled?: boolean;
+	frontendLogsEnabled?: boolean;
+	backupVolumeName?: string;
+	agentMTLSManagerCAAvailable?: boolean;
+	depotConfigured?: boolean;
+}
+
+export interface SettingsSnapshot {
+	settings: SettingState[];
+	runtime: SettingsRuntime;
+	readOnly: boolean;
+}
+
+export interface ResolvedSettings {
+	values: Settings;
+	meta: Partial<Record<SettingKey, SettingState>>;
+	runtime: SettingsRuntime;
+	readOnly: boolean;
 }
 
 export interface OidcStatusInfo {
-	envForced: boolean;
-	envConfigured: boolean;
 	mergeAccounts: boolean;
 	providerName: string;
 	providerLogoUrl: string;
@@ -177,6 +243,7 @@ export interface AppVersionInformation {
 	enabledFeatures?: string[];
 	buildTime?: string;
 	isSemverVersion: boolean;
+	isStableVersion: boolean;
 	newestVersion?: string;
 	newestDigest?: string;
 	updateAvailable?: boolean;
@@ -187,7 +254,7 @@ export interface AppVersionInformation {
 
 // --- Job schedules ---
 
-export type JobSchedules = {
+export type JobScheduleConfig = {
 	environmentHealthInterval: string;
 	eventCleanupInterval: string;
 	expiredSessionsCleanupInterval: string;
@@ -200,13 +267,12 @@ export type JobSchedules = {
 	autoHealInterval: string;
 };
 
-export type JobSchedulesUpdate = Partial<JobSchedules>;
+export type JobScheduleConfigUpdate = UpdateRequest<JobScheduleConfig, keyof JobScheduleConfig>;
 
 export type JobPrerequisite = {
 	settingKey: string;
 	label: string;
 	isMet: boolean;
-	settingsUrl?: string;
 };
 
 export type JobStatus = {
@@ -236,11 +302,4 @@ export type JobListResponse = {
 	offline?: boolean;
 	jobs: JobStatus[];
 	isAgent: boolean;
-};
-
-export type JobRunResponse = {
-	runId: string;
-	status: JobRunStatus;
-	success: boolean;
-	message: string;
 };

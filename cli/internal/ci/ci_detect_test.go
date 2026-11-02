@@ -1,7 +1,7 @@
 package ci
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,7 +18,7 @@ func TestDetectFederatedTokenFromGitHubActions(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAudience = r.URL.Query().Get("audience")
 		gotAuth = r.Header.Get("Authorization")
-		assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{"value": "github.jwt"}))
+		assert.NoError(t, json.MarshalWrite(w, map[string]string{"value": "github.jwt"}))
 	}))
 	t.Cleanup(server.Close)
 

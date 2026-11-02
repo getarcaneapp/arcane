@@ -12,13 +12,18 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/term"
-	kit "go.getarcane.app/kit/pkg"
+
+	"kit.getarcane.app"
 )
 
-// fileDescriptor supplies a writer's descriptor for terminal detection and sizing.
-type fileDescriptor interface {
-	Fd() uintptr
-}
+type (
+	// fileDescriptor supplies a writer's descriptor for terminal detection and sizing.
+	fileDescriptor interface {
+		Fd() uintptr
+	}
+
+	coordinatedWriter struct{ out io.Writer }
+)
 
 var (
 	sessionMu        sync.RWMutex
@@ -105,8 +110,6 @@ func StartLoading(ctx context.Context) *tracker {
 
 // CoordinatedWriter clears loading while another writer uses the terminal.
 func CoordinatedWriter(w io.Writer) io.Writer { return coordinatedWriter{out: w} }
-
-type coordinatedWriter struct{ out io.Writer }
 
 func (w coordinatedWriter) Write(p []byte) (int, error) {
 	defer SuspendProgress()()

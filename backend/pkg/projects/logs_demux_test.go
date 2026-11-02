@@ -14,14 +14,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func frameLogEntryInternal(fd stdcopy.StdType, payload []byte) []byte {
+type (
+	fakeResponseBody struct {
+		io.Reader
+		closed bool
+	}
+
+	stubLogAPIClient struct {
+		client.APIClient
+
+		resp io.ReadCloser
+	}
+)
+
+func frameLogEntry(fd stdcopy.StdType, payload []byte) []byte {
 	header := make([]byte, 8)
 	header[0] = byte(fd)
 	binary.BigEndian.PutUint32(header[4:], uint32(len(payload)))
 	return append(header, payload...)
 }
 
-func decodeDemuxedStreamInternal(t *testing.T, stream io.Reader) string {
+func decodeDemuxedStream(t *testing.T, stream io.Reader) string {
 	t.Helper()
 	decoded := &bytes.Buffer{}
 	sinkErr := &bytes.Buffer{}
@@ -32,48 +45,37 @@ func decodeDemuxedStreamInternal(t *testing.T, stream io.Reader) string {
 }
 
 func TestDemultiplexedLogStreamWithStderrMarking(t *testing.T) {
-	longRun := strings.Repeat("x", maxLogEntryBytesInternal+100)
+	longRun := strings.Repeat("x", maxLogEntryBytes+100)
 	source := bytes.Join([][]byte{
-		frameLogEntryInternal(stdcopy.Stdout, []byte("line-one\npar")),
-		frameLogEntryInternal(stdcopy.Stderr, []byte("boom\n")),
-		frameLogEntryInternal(stdcopy.Stdout, []byte("tial\n")),
-		frameLogEntryInternal(stdcopy.Stderr, []byte(longRun)),
-		frameLogEntryInternal(stdcopy.Stderr, []byte("\nfinal")),
+		frameLogEntry(stdcopy.Stdout, []byte("line-one\npar")),
+		frameLogEntry(stdcopy.Stderr, []byte("boom\n")),
+		frameLogEntry(stdcopy.Stdout, []byte("tial\n")),
+		frameLogEntry(stdcopy.Stderr, []byte(longRun)),
+		frameLogEntry(stdcopy.Stderr, []byte("\nfinal")),
 	}, nil)
 
 	resp := io.NopCloser(bytes.NewReader(source))
-	stream := &stderrMarkedDemuxedStreamInternal{upstream: resp, src: bufio.NewReader(resp)}
+	stream := &stderrMarkedDemuxedStream{upstream: resp, src: bufio.NewReader(resp)}
 
 	require.Equal(t, "line-one\n[STDERR] boom\npartial\n[STDERR] "+
-		longRun[:maxLogEntryBytesInternal]+"\n"+
-		"[STDERR] "+longRun[maxLogEntryBytesInternal:]+"\n"+
-		"[STDERR] final\n", decodeDemuxedStreamInternal(t, stream))
+		longRun[:maxLogEntryBytes]+"\n"+
+		"[STDERR] "+longRun[maxLogEntryBytes:]+"\n"+
+		"[STDERR] final\n", decodeDemuxedStream(t, stream))
 }
 
-type fakeResponseBodyInternal struct {
-	io.Reader
-	closed bool
-}
-
-func (b *fakeResponseBodyInternal) Close() error {
+func (b *fakeResponseBody) Close() error {
 	b.closed = true
 	return nil
 }
 
-type stubLogAPIClientInternal struct {
-	client.APIClient
-
-	resp io.ReadCloser
-}
-
-func (s *stubLogAPIClientInternal) ContainerLogs(ctx context.Context, containerID string, options client.ContainerLogsOptions) (client.ContainerLogsResult, error) {
+func (s *stubLogAPIClient) ContainerLogs(ctx context.Context, containerID string, options client.ContainerLogsOptions) (client.ContainerLogsResult, error) {
 	return s.resp, nil
 }
 
-func TestLogsDemuxClientContainerLogsDecisionInternal(t *testing.T) {
+func TestLogsDemuxClientContainerLogsDecision(t *testing.T) {
 	muxed := bytes.Join([][]byte{
-		frameLogEntryInternal(stdcopy.Stdout, []byte("out\n")),
-		frameLogEntryInternal(stdcopy.Stderr, []byte("err\n")),
+		frameLogEntry(stdcopy.Stdout, []byte("out\n")),
+		frameLogEntry(stdcopy.Stderr, []byte("err\n")),
 	}, nil)
 
 	tests := []struct {
@@ -92,10 +94,10 @@ func TestLogsDemuxClientContainerLogsDecisionInternal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body := &fakeResponseBodyInternal{Reader: bytes.NewReader(muxed)}
-			inner := &logsDemuxDockerClientInternal{APIClient: &stubLogAPIClientInternal{resp: body}}
+			body := &fakeResponseBody{Reader: bytes.NewReader(muxed)}
+			inner := &logsDemuxDockerClient{APIClient: &stubLogAPIClient{resp: body}}
 			if tt.containerKnown {
-				inner.recordContainerTTYInternal(" CTR-1 ", tt.ttyRecorded)
+				inner.recordContainerTTY(" CTR-1 ", tt.ttyRecorded)
 			}
 
 			got, err := inner.ContainerLogs(t.Context(), "ctr-1", client.ContainerLogsOptions{ShowStdout: tt.showStdout, ShowStderr: tt.showStderr})
@@ -106,7 +108,7 @@ func TestLogsDemuxClientContainerLogsDecisionInternal(t *testing.T) {
 				return
 			}
 
-			require.Equal(t, "out\n[STDERR] err\n", decodeDemuxedStreamInternal(t, got))
+			require.Equal(t, "out\n[STDERR] err\n", decodeDemuxedStream(t, got))
 			require.NoError(t, got.Close())
 			require.True(t, body.closed, "closing the wrapped stream must close the upstream response")
 		})

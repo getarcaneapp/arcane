@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -14,14 +16,16 @@
 		type MobileFieldVisibility
 	} from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import ImageReleaseNotesDialog from '#lib/components/dialogs/image-release-notes-dialog.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { ContainersIcon, UpdateIcon, EyeOffIcon, EyeOnIcon } from '#lib/icons/index.js';
+	import { ContainersIcon, UpdateIcon, EyeOffIcon, EyeOnIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
-	import type { ContainersPaginatedResponse, ContainerListRequestOptions } from '#lib/services/container-service.js';
+	import type { ContainersPaginatedResponse } from '#lib/services/container-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ContainerSummaryDto } from '#lib/types/docker.js';
@@ -33,14 +37,7 @@
 	import { confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
 	import { isAutoUpdateLabelDisabled, UPDATE_CHECK_LABEL } from '#lib/utils/container-auto-update.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
-	import {
-		environmentHref,
-		hasShownPermission,
-		listScopes,
-		rowKey,
-		type EnvironmentPage,
-		type EnvironmentRow
-	} from '#lib/utils/environments.js';
+	import { hasShownPermission, listScopes, rowKey, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
 	import { quadletUnitHref } from '#lib/utils/podman.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -73,18 +70,19 @@
 	interface Props {
 		containers: EnvironmentPage<ContainersPaginatedResponse>;
 		requestOptions: SearchPaginationSortRequest;
-		// Refreshed rows arrive through the `containers` prop once the parent's query updates.
-		onRefreshData: (options: ContainerListRequestOptions) => Promise<void>;
+		onRetry: () => Promise<unknown>;
 		onAutoUpdateChanged?: () => Promise<unknown> | unknown;
 	}
 
-	let { containers, requestOptions = $bindable(), onRefreshData, onAutoUpdateChanged }: Props = $props();
+	let { containers, requestOptions = $bindable(), onRetry, onAutoUpdateChanged }: Props = $props();
 
 	let selectedIds = $state<string[]>([]);
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
 	let updatingContainerIds = $state<Record<string, boolean>>({});
 	let togglingAutoUpdateIds = $state<Record<string, boolean>>({});
 	let bulkUpdating = $state(false);
+	let releaseNotesTarget = $state<ContainerUpdateRow | null>(null);
+	let releaseNotesOpen = $state(false);
 	let updateTableMounted = false;
 	const queryClient = useQueryClient();
 	const scope = $derived(environmentStore.shownKey);
@@ -95,10 +93,10 @@
 			void refreshRows();
 			// Compose containers also drive the project update badges.
 			for (const listScope of listScopes(environmentStore.shown.map((env) => env.id))) {
-				void queryClient.invalidateQueries({ queryKey: ['projects', listScope] });
+				void queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(listScope) });
 			}
 			for (const env of environmentStore.shown) {
-				void queryClient.invalidateQueries({ queryKey: ['project', env.id] });
+				void queryClient.invalidateQueries({ queryKey: queryKeys.projects.environment(env.id) });
 			}
 		}
 	);
@@ -170,7 +168,7 @@
 	];
 
 	async function refreshRows() {
-		await onRefreshData(requestOptions as ContainerListRequestOptions);
+		await queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(scope) }, { throwOnError: true });
 	}
 
 	async function handleUpdateContainer(container: ContainerRow) {
@@ -229,7 +227,7 @@
 			title: m.updates_bulk_update_confirm_title({ count: ids.length }),
 			message: m.updates_bulk_update_confirm_message({ count: ids.length }),
 			confirmLabel: m.common_update(),
-			run: (id, environmentId) => containerService.updateContainer(id, environmentId),
+			runInEnvironment: (id, environmentId) => containerService.updateContainer(id, environmentId),
 			messages: {
 				success: (count) => m.containers_bulk_update_accepted({ count }),
 				partial: (success, total, failed) => m.containers_bulk_update_accept_partial({ success, total, failed }),
@@ -253,7 +251,7 @@
 						id: 'update',
 						label: m.updates_bulk_update({ count: selectedIds.length }),
 						action: 'update',
-						onClick: handleBulkUpdate,
+						onclick: handleBulkUpdate,
 						loading: bulkUpdating,
 						disabled: bulkUpdating,
 						icon: UpdateIcon
@@ -267,7 +265,9 @@
 	<div class="flex items-center gap-2">
 		<a
 			class="font-medium hover:underline {item.autoUpdateDisabled ? 'text-muted-foreground' : ''}"
-			href={environmentHref(`/containers/${item.containerId}`, item.environmentId)}
+			href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, {
+				containerId: item.containerId
+			})}
 		>
 			{item.name}
 		</a>
@@ -295,31 +295,47 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ContainerUpdateRow })}
-	<IfPermitted perm="containers:autoupdate" envId={item.environmentId}>
+	<IfPermitted perm={['image-updates:read', 'containers:autoupdate']} envId={item.environmentId}>
 		<RowActionsMenu>
-			<DropdownMenu.Item onclick={() => handleUpdateContainer(item.container)} disabled={!!updatingContainerIds[rowKey(item)]}>
-				{#if updatingContainerIds[rowKey(item)]}
-					<Spinner class="size-4" />
-				{:else}
-					<UpdateIcon class="size-4" />
-				{/if}
-				{m.update_container()}
-			</DropdownMenu.Item>
+			{#if item.updateInfo?.hasUpdate}
+				<IfPermitted perm="image-updates:read" envId={item.environmentId}>
+					<DropdownMenu.Item
+						onclick={() => {
+							releaseNotesTarget = item;
+							releaseNotesOpen = true;
+						}}
+					>
+						<FileTextIcon class="size-4" />
+						{m.image_update_release_notes_button()}
+					</DropdownMenu.Item>
+				</IfPermitted>
+			{/if}
 
-			<DropdownMenu.Item
-				onclick={() => handleToggleAutoUpdate(item)}
-				disabled={item.labelControlled || !item.statusAvailable || !!togglingAutoUpdateIds[rowKey(item)]}
-				title={item.autoUpdateTitle}
-			>
-				{#if togglingAutoUpdateIds[rowKey(item)]}
-					<Spinner class="size-4" />
-				{:else if item.autoUpdateDisabled}
-					<EyeOnIcon class="size-4" />
-				{:else}
-					<EyeOffIcon class="size-4" />
-				{/if}
-				{item.autoUpdateDisabled ? m.updates_enable_auto_update() : m.updates_disable_auto_update()}
-			</DropdownMenu.Item>
+			<IfPermitted perm="containers:autoupdate" envId={item.environmentId}>
+				<DropdownMenu.Item onclick={() => handleUpdateContainer(item.container)} disabled={!!updatingContainerIds[rowKey(item)]}>
+					{#if updatingContainerIds[rowKey(item)]}
+						<Spinner class="size-4" />
+					{:else}
+						<UpdateIcon class="size-4" />
+					{/if}
+					{m.update_container()}
+				</DropdownMenu.Item>
+
+				<DropdownMenu.Item
+					onclick={() => handleToggleAutoUpdate(item)}
+					disabled={item.labelControlled || !item.statusAvailable || !!togglingAutoUpdateIds[rowKey(item)]}
+					title={item.autoUpdateTitle}
+				>
+					{#if togglingAutoUpdateIds[rowKey(item)]}
+						<Spinner class="size-4" />
+					{:else if item.autoUpdateDisabled}
+						<EyeOnIcon class="size-4" />
+					{:else}
+						<EyeOffIcon class="size-4" />
+					{/if}
+					{item.autoUpdateDisabled ? m.updates_enable_auto_update() : m.updates_disable_auto_update()}
+				</DropdownMenu.Item>
+			</IfPermitted>
 		</RowActionsMenu>
 	</IfPermitted>
 {/snippet}
@@ -353,7 +369,11 @@
 		]}
 		rowActions={RowActions}
 		onclick={(item: ContainerUpdateRow) => {
-			window.location.href = environmentHref(`/containers/${item.containerId}`, item.environmentId);
+			goto(
+				resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, {
+					containerId: item.containerId
+				})
+			);
 		}}
 	/>
 {/snippet}
@@ -364,11 +384,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await onRefreshData(options as ContainerListRequestOptions);
-		return tableItems;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	{bulkActions}
@@ -376,3 +392,13 @@
 	mobileCard={ContainerUpdatesMobileCard}
 	withoutFilters
 />
+
+{#if releaseNotesTarget}
+	<ImageReleaseNotesDialog
+		bind:open={releaseNotesOpen}
+		environmentId={releaseNotesTarget.environmentId}
+		imageRef={releaseNotesTarget.imageRef}
+		version={releaseNotesTarget.updateInfo?.updateType === 'tag' ? releaseNotesTarget.updateInfo.latestVersion : undefined}
+		digest={releaseNotesTarget.updateInfo?.latestDigest}
+	/>
+{/if}

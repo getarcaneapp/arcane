@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -17,18 +18,19 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { WorkspaceDraftState } from '#lib/components/workspace-editor/workspace-draft-state.svelte.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
+	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { ArrowLeftIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { SwarmSyncFile } from '#lib/types/swarm.js';
+	import type { SwarmStackSourceUpdate, SwarmStackSourceWritable, SwarmSyncFile } from '#lib/types/swarm.js';
 	import {
 		createComposeEditorSchema,
 		createComposeTemplateDialogFlow,
 		submitComposeResourceForm,
 		templateNameSlug
 	} from '#lib/utils/compose-flow.js';
+	import { environmentHref } from '#lib/utils/environments.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { preventDefault, createForm } from '#lib/utils/settings.svelte.js';
 	import { globalVariablesToMap } from '#lib/utils/template-load.js';
 	import {
@@ -43,9 +45,11 @@
 	import EditableName from '../../../projects/components/editable-name.svelte';
 
 	let { data } = $props();
-	const workspaceMaxFileSizeMb = $derived(settingsStore.current?.projectWorkspaceMaxFileSizeMb ?? 10);
+	let destinationId = $state(untrack(() => data.envId));
+	const destinationSettings = useEnvironmentSettings(() => destinationId);
+	const workspaceMaxFileSizeMb = $derived(destinationSettings.current?.values.projectWorkspaceMaxFileSizeMb ?? 10);
 
-	let ui = $state({
+	const ui = $state({
 		saving: false,
 		converting: false,
 		creatingTemplate: false,
@@ -76,7 +80,9 @@
 	}
 
 	const initialName = $derived(getInitialName());
-	const backHref = $derived(isEditMode ? `/swarm/stacks/${encodeURIComponent(initialName)}` : '/swarm/stacks');
+	const backHref = $derived(
+		isEditMode ? environmentHref(`/swarm/stacks/${encodeURIComponent(initialName)}`, destinationId) : '/swarm/stacks'
+	);
 	const submitLabel = $derived(isEditMode ? m.common_save() : m.common_create_button({ resource: m.swarm_stack() }));
 	const submitLoadingLabel = $derived(isEditMode ? m.common_saving() : m.common_action_creating());
 
@@ -85,10 +91,11 @@
 
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
+	let envActive = $state(untrack(() => (data.envTemplate || '').trim().length > 0));
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 	let overrideContent = $state(untrack(() => data.overrideTemplate || ''));
 	let overrideActive = $state(untrack(() => (data.overrideTemplate || '').trim().length > 0));
-	let deployOptions = $state({
+	const deployOptions = $state({
 		prune: false,
 		withRegistryAuth: false,
 		resolveImage: 'always'
@@ -125,7 +132,7 @@
 		pendingEntries: false,
 		allowBinary: false,
 		isFixedTab: (key) => key === 'compose' || key === 'env' || key === 'override',
-		isTabAvailable: (key) => key !== 'override' || overrideActive,
+		isTabAvailable: (key) => (key !== 'override' || overrideActive) && (key !== 'env' || envActive),
 		planCreate: planWorkspaceFileCreate,
 		planRename: planWorkspaceFileRename,
 		planMove: planWorkspaceFileMove
@@ -134,9 +141,32 @@
 	const stackWorkspaceLeadingRows = $derived.by(() => [
 		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-info', locked: true },
 		...(overrideActive
-			? [{ key: 'override', label: 'compose.override.yaml', iconClass: 'text-purple', locked: true }]
+			? [
+					{
+						key: 'override',
+						label: 'compose.override.yaml',
+						iconClass: 'text-purple',
+						locked: true,
+						menuItems: [
+							{
+								id: 'remove',
+								label: m.compose_override_remove(),
+								icon: TrashIcon,
+								destructive: true,
+								onSelect: removeOverride
+							}
+						]
+					}
+				]
 			: [{ key: 'add-override', label: m.compose_override_add(), action: true, onSelect: addOverride }]),
-		{ key: 'env', label: '.env', iconClass: 'text-success', locked: true }
+		envActive
+			? {
+					key: 'env',
+					label: '.env',
+					iconClass: 'text-success',
+					menuItems: [{ id: 'remove', label: m.common_delete(), icon: TrashIcon, destructive: true, onSelect: removeEnv }]
+				}
+			: { key: 'add-env', label: m.add_env_file(), action: true, onSelect: addEnv }
 	]);
 
 	let stackTreeWidth = $state<number | null>(null);
@@ -144,27 +174,22 @@
 	let treeCommandPaletteOpen = $state(false);
 	const stackOpenTabs = $derived(stackWorkspace.validOpenTabs);
 	const activeStackTab = $derived(stackWorkspace.activeTab);
+	const fixedTabNames: Record<string, string> = {
+		compose: 'compose.yaml',
+		override: 'compose.override.yaml',
+		env: '.env'
+	};
+	const fixedTabIconClass: Record<string, string> = {
+		compose: 'text-info',
+		override: 'text-purple',
+		env: 'text-success'
+	};
 	const stackTabs = $derived(
 		stackOpenTabs.map((key) => ({
 			key,
-			label:
-				key === 'compose'
-					? 'compose.yaml'
-					: key === 'override'
-						? 'compose.override.yaml'
-						: key === 'env'
-							? '.env'
-							: workspaceFileBasename(key.slice(5)),
-			title:
-				key === 'compose' ? 'compose.yaml' : key === 'override' ? 'compose.override.yaml' : key === 'env' ? '.env' : key.slice(5),
-			iconClass:
-				key === 'compose'
-					? 'text-info'
-					: key === 'override'
-						? 'text-purple'
-						: key === 'env'
-							? 'text-success'
-							: 'text-muted-foreground',
+			label: fixedTabNames[key] ?? workspaceFileBasename(key.slice(5)),
+			title: fixedTabNames[key] ?? key.slice(5),
+			iconClass: fixedTabIconClass[key] ?? 'text-muted-foreground',
 			pending: false
 		}))
 	);
@@ -172,6 +197,17 @@
 	function addOverride() {
 		overrideActive = true;
 		stackWorkspace.openTab('override');
+	}
+
+	function addEnv() {
+		envActive = true;
+		stackWorkspace.openTab('env');
+	}
+
+	function removeEnv() {
+		form.setValue('envContent', '');
+		envActive = false;
+		stackWorkspace.closeTab('env');
 	}
 
 	function removeOverride() {
@@ -209,20 +245,23 @@
 			validate: form.validate,
 			setLoading: (value) => (ui.saving = value),
 			submit: ({ name, composeContent, envContent }) =>
-				swarmService.deployStack({
-					name,
-					composeContent,
-					overrideContent,
-					envContent,
-					files: buildStackFilePayload(),
-					prune: deployOptions.prune,
-					withRegistryAuth: deployOptions.withRegistryAuth,
-					resolveImage: deployOptions.resolveImage
-				}),
+				swarmService.deployStack(
+					{
+						name,
+						composeContent,
+						overrideContent,
+						envContent,
+						files: buildStackFilePayload(),
+						prune: deployOptions.prune,
+						withRegistryAuth: deployOptions.withRegistryAuth,
+						resolveImage: deployOptions.resolveImage
+					},
+					destinationId
+				),
 			failureMessage: (name) => m.common_create_failed({ resource: `${m.swarm_stack()} "${name}"` }),
 			onSuccess: async (_result, { name }) => {
 				toast.success(m.common_create_success({ resource: `${m.swarm_stack()} "${name}"` }));
-				goto('/swarm/stacks', { refreshAll: true });
+				goto(resolve('/(app)/swarm/stacks'), { refreshAll: true });
 			}
 		});
 	}
@@ -232,23 +271,40 @@
 			validate: form.validate,
 			setLoading: (value) => (ui.saving = value),
 			submit: ({ name, composeContent, envContent }) =>
-				swarmService.updateStackSource(name, {
-					composeContent,
-					overrideContent,
-					envContent,
-					files: buildStackFilePayload()
-				}),
+				swarmService.updateStackSource(
+					name,
+					changedFields<SwarmStackSourceUpdate, SwarmStackSourceWritable>(
+						{
+							composeContent: data.defaultTemplate,
+							overrideContent: data.overrideTemplate,
+							envContent: data.envTemplate,
+							files: data.sourceFiles
+						},
+						{
+							composeContent,
+							overrideContent,
+							envContent,
+							files: buildStackFilePayload()
+						}
+					),
+					destinationId
+				),
 			failureMessage: (name) => m.common_update_failed({ resource: `${m.swarm_stack()} "${name}"` }),
 			onSuccess: async (_result, { name }) => {
 				toast.success(m.common_update_success({ resource: `${m.swarm_stack()} "${name}"` }));
-				goto(`/swarm/stacks/${encodeURIComponent(name)}`, { refreshAll: true });
+				goto(resolve(`/(app)/swarm/stacks/[name]?env=${encodeURIComponent(destinationId)}`, { name: encodeURIComponent(name) }), {
+					refreshAll: true
+				});
 			}
 		});
 	}
 
 	const { composeHandlers, handleCreateTemplate } = createComposeTemplateDialogFlow({
 		getInputs: () => inputs,
-		setInputValue: (key, value) => form.setValue(key, value),
+		setInputValue: (key, value) => {
+			if (key === 'envContent' && value.trim()) envActive = true;
+			form.setValue(key, value);
+		},
 		closeTemplateDialog: () => (ui.showTemplateDialog = false),
 		validate: form.validate,
 		setLoading: (value) => (ui.creatingTemplate = value)
@@ -273,7 +329,14 @@
 					customLabel={m.common_back()}
 				/>
 				<div class="hidden h-4 w-px bg-border sm:block"></div>
-				<div class="hidden items-center gap-3 sm:flex">
+				<div class="hidden items-center sm:flex">
+					<EnvironmentDestinationSelect
+						bind:value={destinationId}
+						permission="swarm:stacks"
+						environments={data.environments}
+						variant="prefix"
+						readonly={isEditMode}
+					/>
 					<EditableName
 						bind:value={inputs.name.value}
 						bind:ref={nameInputRef}
@@ -288,9 +351,6 @@
 			</div>
 
 			<div class="flex items-center gap-2">
-				{#if !isEditMode}
-					<EnvironmentDestinationSelect />
-				{/if}
 				<ComposeCreateMenu
 					tooltipOpen={!inputs.name.value && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}
 					tooltipVisible={inputs.name.value === ''}
@@ -308,8 +368,8 @@
 					convertLabel={m.compose_convert_from_docker_run()}
 					onConvert={() => (ui.showConverterDialog = true)}
 					fromGitLabel={m.git_from_git_repo()}
-					onFromGit={async () =>
-						goto(`/environments/${await environmentStore.getCurrentEnvironmentId()}/gitops?action=create&targetType=swarm_stack`)}
+					onFromGit={() =>
+						goto(resolve(`/(app)/gitops?action=create&targetType=swarm_stack&env=${encodeURIComponent(destinationId)}`))}
 					createTemplateLabel={m.templates_create_template()}
 					createTemplateDisabled={!canSubmit || ui.creatingTemplate}
 					createTemplateLoading={ui.creatingTemplate}
@@ -322,7 +382,14 @@
 	<div class="flex min-h-0 flex-1 overflow-hidden">
 		<div class="mx-auto h-full w-full max-w-full min-w-0">
 			<div class="flex h-full min-h-0 flex-col">
-				<div class="block flex-shrink-0 px-2 py-4 sm:hidden sm:px-6">
+				<div class="flex flex-shrink-0 items-center px-2 py-4 sm:hidden sm:px-6">
+					<EnvironmentDestinationSelect
+						bind:value={destinationId}
+						permission="swarm:stacks"
+						environments={data.environments}
+						variant="prefix"
+						readonly={isEditMode}
+					/>
 					<EditableName
 						bind:value={inputs.name.value}
 						bind:ref={nameInputRef}
@@ -358,11 +425,13 @@
 								<Select.Root type="single" bind:value={deployOptions.resolveImage}>
 									<Select.Trigger id="swarm-stack-resolve-image" class="h-8 min-w-32">
 										<span class="truncate">
-											{deployOptions.resolveImage === 'changed'
-												? m.swarm_stack_resolve_image_changed()
-												: deployOptions.resolveImage === 'never'
-													? m.common_never()
-													: m.common_always()}
+											{#if deployOptions.resolveImage === 'changed'}
+												{m.swarm_stack_resolve_image_changed()}
+											{:else if deployOptions.resolveImage === 'never'}
+												{m.common_never()}
+											{:else}
+												{m.common_always()}
+											{/if}
 										</span>
 									</Select.Trigger>
 									<Select.Content>
@@ -385,6 +454,7 @@
 							maxSize={480}
 							minSecondSize={360}
 							defaultRatio={0.2}
+							fitFirst
 							stackBelow={1024}
 							ariaLabel={m.compose_editor_resize_files_panel()}
 							persistKey="arcane.swarm.split:new"
@@ -507,6 +577,7 @@
 
 <DockerRunConverterDialog
 	bind:open={ui.showConverterDialog}
+	environmentId={destinationId}
 	bind:converting={ui.converting}
 	onConverted={composeHandlers.handleDockerRunConverted}
 />

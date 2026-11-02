@@ -16,7 +16,37 @@ import (
 	"time"
 )
 
-const maxPayloadBytes = 512 << 10
+type (
+	otlpAttribute struct {
+		Key   string `json:"key"`
+		Value struct {
+			StringValue string `json:"stringValue"`
+		} `json:"value"`
+	}
+
+	// otlpEnvelope decodes only the resource identities of an OTLP/JSON export.
+	otlpEnvelope map[string][]struct {
+		Resource struct {
+			Attributes []otlpAttribute `json:"attributes"`
+		} `json:"resource"`
+	}
+
+	// Service relays browser OTLP/JSON payloads to the configured collector so the
+	// collector and its credentials stay server-side.
+	Service struct {
+		destinations map[string]destination
+		client       *http.Client
+	}
+
+	destination struct {
+		headers  http.Header
+		endpoint string
+	}
+)
+
+const (
+	maxPayloadBytes = 512 << 10
+)
 
 var (
 	ErrPayloadTooLarge = errors.New("telemetry payload exceeds 512 KiB")
@@ -24,32 +54,6 @@ var (
 	// resourceKeys names each signal's top-level OTLP/JSON resource list.
 	resourceKeys = map[string]string{"traces": "resourceSpans", "metrics": "resourceMetrics", "logs": "resourceLogs"}
 )
-
-type otlpAttribute struct {
-	Key   string `json:"key"`
-	Value struct {
-		StringValue string `json:"stringValue"`
-	} `json:"value"`
-}
-
-// otlpEnvelope decodes only the resource identities of an OTLP/JSON export.
-type otlpEnvelope map[string][]struct {
-	Resource struct {
-		Attributes []otlpAttribute `json:"attributes"`
-	} `json:"resource"`
-}
-
-// Service relays browser OTLP/JSON payloads to the configured collector so the
-// collector and its credentials stay server-side.
-type Service struct {
-	destinations map[string]destination
-	client       *http.Client
-}
-
-type destination struct {
-	endpoint string
-	headers  http.Header
-}
 
 // SDKDisabled reports whether OTEL_SDK_DISABLED turns all telemetry off.
 func SDKDisabled() bool {

@@ -5,9 +5,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
 // RegisterRoutes registers the swarm service endpoints.
@@ -23,6 +23,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 				"Swarm",
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
+			Metadata: map[string]any{authz.MetaEnvironmentAggregate: true},
 		},
 		authz.PermSwarmRead,
 		h.ListServices,
@@ -102,27 +103,30 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		authz.PermSwarmRead,
 		h.ListServiceTasks,
 	)
-	middleware.RegisterWithPermission(
+	middleware.RegisterWithActionPermissions(
 		api,
 		huma.Operation{
-			OperationID: "rollback-swarm-service",
+			OperationID: "swarm-service-action",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/services/{serviceId}/rollback",
+			Path:        "/environments/{id}/swarm/services/{serviceId}",
 			Summary:     "Rollback a swarm service",
 			Tags: []string{
 				"Swarm",
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmServices,
+		"action",
+		map[string]string{
+			"rollback": authz.PermSwarmServices,
+		},
 		h.RollbackService,
 	)
 	middleware.RegisterWithPermission(
 		api,
 		huma.Operation{
 			OperationID: "scale-swarm-service",
-			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/services/{serviceId}/scale",
+			Method:      http.MethodPatch,
+			Path:        "/environments/{id}/swarm/services/{serviceId}",
 			Summary:     "Scale a swarm service",
 			Tags: []string{
 				"Swarm",

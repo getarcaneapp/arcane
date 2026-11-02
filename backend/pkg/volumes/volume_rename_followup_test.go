@@ -1,0 +1,81 @@
+package volumes
+
+import (
+	"encoding/json/v2"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
+)
+
+func TestDockerProjectVolumeRenameMigrationInternal_RollbackExplainsPreservedTargetWhenSourceMissing(t *testing.T) {
+	var targetRemoved atomic.Bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			w.Header().Set("Content-Type", "application/json")
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Name": "web_data"})) {
+				return
+			}
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			targetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	migration := &dockerProjectVolumeRenameMigration{
+		dockerClient: newTestDockerClient(t, server),
+		createdNew: []types.VolumeRenameEntry{
+			{OldName: "nginx_data", NewName: "web_data"},
+		},
+	}
+
+	err := migration.Rollback(t.Context())
+
+	require.Error(t, err)
+	var preserved *types.TargetPreservedDuringRollbackError
+	require.ErrorAs(t, err, &preserved)
+	require.Contains(t, err.Error(), "avoid data loss")
+	require.Contains(t, err.Error(), "only remaining data copy")
+	require.False(t, targetRemoved.Load())
+}
+
+func TestRollbackVolume_ExplainsPreservedTargetWhenSourceMissing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			w.Header().Set("Content-Type", "application/json")
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Name": "web_data"})) {
+				return
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	err := RollbackVolume(t.Context(), newTestDockerClient(t, server), types.VolumeJournalVolume{
+		OldName: "nginx_data",
+		NewName: "web_data",
+	})
+
+	require.Error(t, err)
+	var preserved *types.TargetPreservedDuringRollbackError
+	require.ErrorAs(t, err, &preserved)
+	require.Contains(t, err.Error(), "avoid data loss")
+	require.Contains(t, err.Error(), "only remaining data copy")
+}

@@ -1,20 +1,26 @@
 package volume
 
 import (
-	"encoding/json"
+	"context"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
+	"kit.getarcane.app/docker/streams/bus"
+
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/settings"
 )
 
 func newVolumeServiceTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
@@ -32,24 +38,24 @@ func newVolumeServiceTestDockerClient(t *testing.T, server *httptest.Server) *cl
 func TestCreateTempContainerReusesWritableHelper(t *testing.T) {
 	var createCalls, startCalls, removeCalls int
 	var createRequest struct {
-		NetworkDisabled bool                  `json:"NetworkDisabled"`
 		HostConfig      *container.HostConfig `json:"HostConfig"`
+		NetworkDisabled bool                  `json:"NetworkDisabled"`
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]string{"Id": "tools-image"}); err != nil {
+			if err := json.MarshalWrite(w, map[string]string{"Id": "tools-image"}); err != nil {
 				t.Errorf("encode image inspect response: %v", err)
 			}
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
 			createCalls++
-			if err := json.NewDecoder(r.Body).Decode(&createRequest); err != nil {
+			if err := json.UnmarshalRead(r.Body, &createRequest); err != nil {
 				t.Errorf("decode container create request: %v", err)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]any{"Id": "helper-1", "Warnings": []string{}}); err != nil {
+			if err := json.MarshalWrite(w, map[string]any{"Id": "helper-1", "Warnings": []string{}}); err != nil {
 				t.Errorf("encode container create response: %v", err)
 			}
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper-1/start"):
@@ -57,7 +63,7 @@ func TestCreateTempContainerReusesWritableHelper(t *testing.T) {
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/helper-1/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(container.InspectResponse{
+			if err := json.MarshalWrite(w, container.InspectResponse{
 				ID:    "helper-1",
 				State: &container.State{Running: true},
 			}); err != nil {
@@ -73,8 +79,9 @@ func TestCreateTempContainerReusesWritableHelper(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	service := &VolumeService{
-		dockerService:  docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeServiceTestDockerClient(t, server)),
-		helperByVolume: make(map[string]*volumeHelper),
+		settingsService: newVolumeTestSettingsService(t),
+		dockerService:   newVolumeTestDockerService(t, newVolumeServiceTestDockerClient(t, server)),
+		helperByVolume:  make(map[string]*volumeHelper),
 	}
 
 	firstID, releaseFirst, err := service.acquireVolumeHelper(t.Context(), "workspace-volume")
@@ -99,97 +106,6 @@ func TestCreateTempContainerReusesWritableHelper(t *testing.T) {
 	releaseFirst()
 	releaseSecond()
 	require.Zero(t, service.helperByVolume["workspace-volume"].inUse)
-}
-
-func TestIsUnlabeledVolumeHelperContainer(t *testing.T) {
-	tests := []struct {
-		name    string
-		summary container.Summary
-		want    bool
-	}{
-		{
-			name: "unlabeled helper signature matches",
-			summary: container.Summary{
-				Labels: map[string]string{
-					libarcane.InternalResourceLabel: "true",
-				},
-				Command: "sleep infinity",
-				Mounts: []container.MountPoint{
-					{Destination: "/volume"},
-				},
-			},
-			want: true,
-		},
-		{
-			name: "internal trivy-like helper is not treated as an unlabeled volume helper",
-			summary: container.Summary{
-				Labels: map[string]string{
-					libarcane.InternalResourceLabel: "true",
-				},
-				Command: "trivy image --quiet alpine:latest",
-				Mounts: []container.MountPoint{
-					{Destination: "/var/run/docker.sock"},
-				},
-			},
-			want: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, isUnlabeledVolumeHelperContainer(tt.summary))
-		})
-	}
-}
-
-func TestIsVolumeHelperContainer_UsesExplicitHelperLabel(t *testing.T) {
-	tests := []struct {
-		name    string
-		summary container.Summary
-		want    bool
-	}{
-		{
-			name: "new helper label matches",
-			summary: container.Summary{
-				Labels: map[string]string{
-					libarcane.InternalResourceLabel: "true",
-					volumehelper.ContainerLabel:     "true",
-				},
-			},
-			want: true,
-		},
-		{
-			name: "generic internal volume mount does not match",
-			summary: container.Summary{
-				Labels: map[string]string{
-					libarcane.InternalResourceLabel: "true",
-				},
-				Mounts: []container.MountPoint{
-					{Destination: "/volume"},
-				},
-			},
-			want: false,
-		},
-		{
-			name: "unlabeled helper still matches",
-			summary: container.Summary{
-				Labels: map[string]string{
-					libarcane.InternalResourceLabel: "true",
-				},
-				Command: "sleep infinity",
-				Mounts: []container.MountPoint{
-					{Destination: "/volume"},
-				},
-			},
-			want: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, isVolumeHelperContainer(tt.summary))
-		})
-	}
 }
 
 func TestCollectStaleHelperIDs(t *testing.T) {
@@ -274,4 +190,22 @@ func TestTouchHelper(t *testing.T) {
 	// Missing volume is a no-op (must not panic or create an entry).
 	s.touchHelper("missing")
 	require.NotContains(t, s.helperByVolume, "missing")
+}
+
+func newVolumeTestSettingsService(t *testing.T) *settings.SettingsService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	settingsService, err := settings.NewSettingsService(t.Context(), &database.DB{DB: gormDB}, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return settingsService
+}
+
+func newVolumeTestDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	return docker.NewDockerClientService(t.Context(), nil, newVolumeTestSettingsService(t), bus.Config{}).WithClient(dockerClient)
 }

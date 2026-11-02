@@ -1,18 +1,24 @@
 package authz
 
-import "strings"
+import (
+	"maps"
+	"slices"
+	"strings"
+)
 
-// PermissionSet is the effective permission set for one caller in one request.
-// Built once by the auth bridge and stashed in the request context.
-//
-// Global permissions apply to every environment and to org-level endpoints.
-// PerEnv permissions apply only when the caller is acting on that specific
-// environment. Sudo bypasses all checks (used for the agent token path).
-type PermissionSet struct {
-	Global map[string]struct{}
-	PerEnv map[string]map[string]struct{}
-	Sudo   bool
-}
+type (
+	// PermissionSet is the effective permission set for one caller in one request.
+	// Built once by the auth bridge and stashed in the request context.
+	//
+	// Global permissions apply to every environment and to org-level endpoints.
+	// PerEnv permissions apply only when the caller is acting on that specific
+	// environment. Sudo bypasses all checks (used for the agent token path).
+	PermissionSet struct {
+		Global map[string]struct{}
+		PerEnv map[string]map[string]struct{}
+		Sudo   bool
+	}
+)
 
 // Allows reports whether the caller may perform `perm`. For env-scoped
 // permissions, envID is the target environment's ID. For org-level
@@ -54,6 +60,22 @@ func (ps *PermissionSet) AllowsAny(perm string) bool {
 		}
 	}
 	return false
+}
+
+// AccessibleEnvironmentIDs returns nil when the caller may list every environment,
+// otherwise the sorted IDs it holds at least one permission on.
+func (ps *PermissionSet) AccessibleEnvironmentIDs() []string {
+	switch {
+	case ps == nil:
+		return []string{}
+	case ps.Allows(PermEnvironmentsList, ""):
+		return nil
+	default:
+		// Never nil: callers treat nil as unrestricted, so a user without grants must get an empty list.
+		ids := slices.AppendSeq(make([]string, 0, len(ps.PerEnv)), maps.Keys(ps.PerEnv))
+		slices.Sort(ids)
+		return ids
+	}
 }
 
 // IsGlobalAdmin reports whether the caller holds enough global permissions to

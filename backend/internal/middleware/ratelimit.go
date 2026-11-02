@@ -11,32 +11,35 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
-	"go.getarcane.app/kit/pkg"
 	"golang.org/x/time/rate"
+
+	"kit.getarcane.app"
 )
 
-// ipRateLimiter tracks per-client token bucket limiters keyed by client IP.
-type ipRateLimiter struct {
-	mu         sync.Mutex
-	limiters   map[string]*limiterEntry
-	rate       rate.Limit
-	burst      int
-	ttl        time.Duration
-	lastSweep  time.Time
-	maxEntries int
-}
+type (
+	// ipRateLimiter tracks per-client token bucket limiters keyed by client IP.
+	ipRateLimiter struct {
+		lastSweep  time.Time
+		limiters   map[string]*limiterEntry
+		rate       rate.Limit
+		burst      int
+		ttl        time.Duration
+		maxEntries int
+		mu         sync.Mutex
+	}
 
-type limiterAge struct {
-	key  string
-	seen time.Time
-}
+	limiterAge struct {
+		seen time.Time
+		key  string
+	}
 
-type limiterEntry struct {
-	limiter *rate.Limiter
-	seen    time.Time
-}
+	limiterEntry struct {
+		limiter *rate.Limiter
+		seen    time.Time
+	}
+)
 
-func newIPRateLimiterInternal(r rate.Limit, burst int) *ipRateLimiter {
+func newIPRateLimiter(r rate.Limit, burst int) *ipRateLimiter {
 	return &ipRateLimiter{
 		limiters:   make(map[string]*limiterEntry),
 		rate:       r,
@@ -57,13 +60,13 @@ func (l *ipRateLimiter) allow(key string) bool {
 				delete(l.limiters, k)
 			}
 		}
-		l.trimToMaxEntriesInternal(key)
+		l.trimToMaxEntries(key)
 		l.lastSweep = now
 	}
 
 	entry, ok := l.limiters[key]
 	if !ok {
-		l.trimForNewEntryInternal(key)
+		l.trimForNewEntry(key)
 		entry = &limiterEntry{limiter: rate.NewLimiter(l.rate, l.burst)}
 		l.limiters[key] = entry
 	}
@@ -71,21 +74,21 @@ func (l *ipRateLimiter) allow(key string) bool {
 	return entry.limiter.Allow()
 }
 
-func (l *ipRateLimiter) trimForNewEntryInternal(key string) {
+func (l *ipRateLimiter) trimForNewEntry(key string) {
 	if l.maxEntries <= 0 || len(l.limiters) < l.maxEntries {
 		return
 	}
-	l.evictOldestEntriesInternal(max(len(l.limiters)-l.maxEntries+1, l.maxEntries/10), key)
+	l.evictOldestEntries(max(len(l.limiters)-l.maxEntries+1, l.maxEntries/10), key)
 }
 
-func (l *ipRateLimiter) trimToMaxEntriesInternal(protectedKey string) {
+func (l *ipRateLimiter) trimToMaxEntries(protectedKey string) {
 	if l.maxEntries <= 0 || len(l.limiters) <= l.maxEntries {
 		return
 	}
-	l.evictOldestEntriesInternal(len(l.limiters)-l.maxEntries, protectedKey)
+	l.evictOldestEntries(len(l.limiters)-l.maxEntries, protectedKey)
 }
 
-func (l *ipRateLimiter) evictOldestEntriesInternal(count int, protectedKey string) {
+func (l *ipRateLimiter) evictOldestEntries(count int, protectedKey string) {
 	if count <= 0 {
 		return
 	}
@@ -116,11 +119,11 @@ func PerIPRateLimit(perMinute, burst int) echo.MiddlewareFunc {
 	if burst <= 0 {
 		burst = perMinute
 	}
-	limiter := newIPRateLimiterInternal(rate.Every(time.Minute/time.Duration(perMinute)), burst)
+	limiter := newIPRateLimiter(rate.Every(time.Minute/time.Duration(perMinute)), burst)
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
-			key := clientIPForRateLimitInternal(c)
+			key := clientIPForRateLimit(c)
 			if !limiter.allow(key) {
 				c.Response().Header().Set("Retry-After", "60")
 				return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
@@ -131,7 +134,7 @@ func PerIPRateLimit(perMinute, burst int) echo.MiddlewareFunc {
 }
 
 // PerAgentTokenRateLimit returns an Echo middleware that limits requests per
-// edge agent token to the given rate and burst.
+// agent token to the given rate and burst.
 func PerAgentTokenRateLimit(perMinute, burst int) echo.MiddlewareFunc {
 	if perMinute <= 0 {
 		perMinute = 10
@@ -139,7 +142,7 @@ func PerAgentTokenRateLimit(perMinute, burst int) echo.MiddlewareFunc {
 	if burst <= 0 {
 		burst = perMinute
 	}
-	limiter := newIPRateLimiterInternal(rate.Every(time.Minute/time.Duration(perMinute)), burst)
+	limiter := newIPRateLimiter(rate.Every(time.Minute/time.Duration(perMinute)), burst)
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
@@ -173,8 +176,8 @@ func PerTokenRateLimitForPaths(
 	if burst <= 0 {
 		burst = perMinute
 	}
-	ipLimiter := newIPRateLimiterInternal(rate.Every(time.Minute/time.Duration(perMinute)), burst)
-	tokenLimiter := newIPRateLimiterInternal(rate.Every(time.Minute/time.Duration(perMinute)), burst)
+	ipLimiter := newIPRateLimiter(rate.Every(time.Minute/time.Duration(perMinute)), burst)
+	tokenLimiter := newIPRateLimiter(rate.Every(time.Minute/time.Duration(perMinute)), burst)
 
 	pathSet := make(map[string]struct{}, len(paths))
 	for _, p := range paths {
@@ -196,7 +199,7 @@ func PerTokenRateLimitForPaths(
 				return next(c)
 			}
 
-			if !ipLimiter.allow(clientIPForRateLimitInternal(c)) {
+			if !ipLimiter.allow(clientIPForRateLimit(c)) {
 				c.Response().Header().Set("Retry-After", "60")
 				return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
 			}
@@ -243,7 +246,7 @@ func WarnUntrustedForwardedFor(trustedProxyNets []*net.IPNet) echo.MiddlewareFun
 			if ip == nil || !slices.ContainsFunc(trustedProxyNets, func(n *net.IPNet) bool { return n.Contains(ip) }) {
 				once.Do(func() {
 					slog.WarnContext(req.Context(),
-						"X-Forwarded-For received from an untrusted peer; clients behind this proxy share one rate-limit bucket. Set TRUSTED_PROXIES to the proxy's address range.",
+						"X-Forwarded-For received from an untrusted peer; clients behind this proxy share one rate-limit bucket. Set ARCANE_TRUSTED_PROXIES to the proxy's address range.",
 						"peer", req.RemoteAddr)
 				})
 			}
@@ -252,7 +255,7 @@ func WarnUntrustedForwardedFor(trustedProxyNets []*net.IPNet) echo.MiddlewareFun
 	}
 }
 
-func clientIPForRateLimitInternal(c *echo.Context) string {
+func clientIPForRateLimit(c *echo.Context) string {
 	host := strings.TrimSpace(c.RealIP())
 	if host == "" {
 		var err error

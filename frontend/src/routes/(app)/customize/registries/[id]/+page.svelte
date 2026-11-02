@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -23,10 +24,10 @@
 	import type { RegistryTag } from '#lib/types/docker.js';
 	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
-	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { bytes, formatRelativeTime } from '#lib/utils/formatting.js';
-	import { buildImageReference, splitRegistryUrl } from '#lib/utils/registry.js';
+	import { buildImageReference } from '#lib/utils/registry.js';
 	import { debounced } from '#lib/utils/ws.js';
 
 	let { data } = $props();
@@ -36,10 +37,9 @@
 	const registry = $derived(data.registry);
 	const registryLabel = $derived(registry.url || 'docker.io');
 	// Repository names already carry any namespace from the registry URL.
-	const { host: registryHost, namespace: registryNamespace } = $derived(splitRegistryUrl(registry.url));
 	const repository = $derived(data.repository);
 	const tags = $derived(data.tags);
-	const canDeleteTags = $derived(hasPermission('registries:delete-tags'));
+	const canDeleteTags = $derived(hasShownPermission('registries:delete-tags'));
 
 	let selecting = $state(false);
 	let selected = $state<string[]>([]);
@@ -49,7 +49,7 @@
 
 	// Configured names are relative to the registry URL namespace, like the build flow.
 	const configuredNames = $derived(
-		(registry.repositoryNames ?? []).map((name) => (registryNamespace ? `${registryNamespace}/${name}` : name))
+		(registry.repositoryNames ?? []).map((name) => (registry.namespace ? `${registry.namespace}/${name}` : name))
 	);
 	const repositories = $derived(data.catalog?.data.map((item) => item.name) ?? configuredNames);
 
@@ -62,16 +62,18 @@
 		if ((patch.page ?? 1) > 1) params.set('page', String(patch.page));
 		selecting = false;
 		selected = [];
-		goto(`/customize/registries/${registry.id}?${params}`, { reset: false });
+		const href =
+			params.size > 0
+				? resolve(`/(app)/customize/registries/[id]?${params}`, { id: registry.id })
+				: resolve('/(app)/customize/registries/[id]', { id: registry.id });
+		goto(href, { reset: false });
 	}
 
 	const search = debounced((value: string) => navigate({ search: value.trim(), page: 1 }), 300);
 
 	function submitRepositoryQuery(event: SubmitEvent) {
 		event.preventDefault();
-		const value = String(new FormData(event.currentTarget as HTMLFormElement).get('query') ?? '')
-			.trim()
-			.replace(/^\/+|\/+$/g, '');
+		const value = String(new FormData(event.currentTarget as HTMLFormElement).get('query') ?? '').trim();
 		if (data.catalog) {
 			navigate({ search: value, page: 1 });
 		} else if (value) {
@@ -80,7 +82,7 @@
 	}
 
 	function tagReference(tag: string) {
-		return buildImageReference(registryHost, repository, tag);
+		return buildImageReference(registry.host, '', repository, tag);
 	}
 
 	function platformLabel(platform: RegistryTag['platforms'][number]) {
@@ -206,7 +208,7 @@
 				{:else}
 					<InputGroup.Input
 						name="query"
-						placeholder={m.registries_open_repository_placeholder({ namespace: registryNamespace })}
+						placeholder={m.registries_open_repository_placeholder({ namespace: registry.namespace })}
 					/>
 				{/if}
 			</InputGroup.Root>
@@ -224,7 +226,7 @@
 				{#each repositories as name (name)}
 					<button
 						type="button"
-						class="group flex items-center gap-3 rounded-xl border border-border/50 bg-card/30 p-4 text-left transition-colors hover:bg-muted/40"
+						class="group flex items-center gap-3 rounded-xl border border-border/70 bg-card/10 p-4 text-left transition-colors hover:bg-muted/40"
 						onclick={() => navigate({ repository: name, search: '', page: 1 })}
 					>
 						<span
@@ -234,7 +236,7 @@
 						</span>
 						<span class="min-w-0 flex-1">
 							<span class="block truncate font-medium">{name}</span>
-							<span class="block truncate text-xs text-muted-foreground">{registryHost}/{name}</span>
+							<span class="block truncate text-xs text-muted-foreground">{registry.host}/{name}</span>
 						</span>
 						<ArrowRightIcon class="size-4 shrink-0 text-muted-foreground" />
 					</button>
@@ -278,7 +280,7 @@
 					</Breadcrumb.Item>
 				</Breadcrumb.List>
 			</Breadcrumb.Root>
-			<CopyButton text={`${registryHost}/${repository}`} class="size-7" title={m.registries_copy_reference()} />
+			<CopyButton text={`${registry.host}/${repository}`} class="size-7" title={m.registries_copy_reference()} />
 		</div>
 
 		<div class="flex flex-wrap items-center gap-2">

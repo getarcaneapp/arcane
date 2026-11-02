@@ -5,15 +5,16 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
 	"github.com/spf13/cobra"
-	"go.getarcane.app/kit/pkg/signals"
 
-	"github.com/getarcaneapp/arcane/backend/v2/cli/admin"
-	"github.com/getarcaneapp/arcane/backend/v2/cli/recovery"
-	"github.com/getarcaneapp/arcane/backend/v2/cli/upgrade"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/bootstrap"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"kit.getarcane.app/signals"
+
+	"getarcane.dev/arcane/v3/cli/admin"
+	"getarcane.dev/arcane/v3/cli/recovery"
+	"getarcane.dev/arcane/v3/cli/upgrade"
+	"getarcane.dev/arcane/v3/internal/bootstrap"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/cli/v3/pkg/generate"
 )
 
 var rootCmd = &cobra.Command{
@@ -30,6 +31,13 @@ var rootCmd = &cobra.Command{
 	CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 }
 
+func init() {
+	rootCmd.AddCommand(admin.AdminCmd)
+	rootCmd.AddCommand(upgrade.UpgradeCmd)
+	rootCmd.AddCommand(recovery.RestoreCmd)
+	rootCmd.AddCommand(generate.Command())
+}
+
 func Execute() {
 	ctx := signals.SignalContext(context.Background()) //nolint:forbidigo // Process entry point creates the signal-controlled application context.
 
@@ -37,11 +45,4 @@ func Execute() {
 	if err != nil {
 		os.Exit(1)
 	}
-}
-
-func init() {
-	rootCmd.AddCommand(admin.AdminCmd)
-	rootCmd.AddCommand(upgrade.UpgradeCmd)
-	rootCmd.AddCommand(recovery.RestoreCmd)
-	rootCmd.AddCommand(generate.Command())
 }

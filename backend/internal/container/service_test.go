@@ -5,7 +5,8 @@ import (
 	"cmp"
 	"context"
 	"encoding/binary"
-	"encoding/json"
+	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -22,54 +23,64 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
-	"github.com/getarcaneapp/arcane/types/v2/image"
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
-	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/docker/compat"
-	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container/children/stats"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	imagedomain "github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	libpodman "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/podman"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"kit.getarcane.app"
+	"kit.getarcane.app/docker/compat"
+	"kit.getarcane.app/docker/streams/bus"
+	"kit.getarcane.app/updater/labels"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/container/children/stats"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	imagedomain "getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/podman"
+	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	libpodman "getarcane.dev/arcane/v3/pkg/podman"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
-type resourceStatsServer struct {
-	mu          sync.Mutex
-	containers  []container.Summary
-	stats       map[string]container.StatsResponse
-	statsStatus map[string]int
-	statsCalls  map[string]int
-	delay       time.Duration
-	slowIDs     map[string]bool
+type (
+	resourceStatsServer struct {
+		stats       map[string]container.StatsResponse
+		statsStatus map[string]int
+		statsCalls  map[string]int
+		slowIDs     map[string]bool
 
-	current atomic.Int32
-	maxSeen atomic.Int32
-}
+		containers []container.Summary
+		delay      time.Duration
+		mu         sync.Mutex
+
+		current atomic.Int32
+		maxSeen atomic.Int32
+	}
+
+	quadletTestSystemd struct {
+		calls []string
+		mu    sync.Mutex
+	}
+)
+
+var dockerAPIVersionPrefix = regexp.MustCompile(`^/v\d+\.\d+`)
 
 func TestPaginateContainerProjectGroupsKeepsProjectWhole(t *testing.T) {
-	items := []containertypes.Summary{
+	items := []types.ContainerSummary{
 		newGroupedContainerSummary("other-1", "other-1"),
 		newGroupedContainerSummary("other-2", "other-2"),
 		newGroupedContainerSummary("other-3", "other-3"),
@@ -95,7 +106,7 @@ func TestPaginateContainerProjectGroupsKeepsProjectWhole(t *testing.T) {
 	}
 
 	groupedItems, resp := paginateContainerProjectGroups(
-		pagination.FilterResult[containertypes.Summary]{Items: items, TotalCount: int64(len(items)), TotalAvailable: int64(len(items))},
+		pagination.FilterResult[types.ContainerSummary]{Items: items, TotalCount: int64(len(items)), TotalAvailable: int64(len(items))},
 		pagination.QueryParams{Start: 0, Limit: 20},
 	)
 
@@ -118,7 +129,7 @@ func TestPaginateContainerProjectGroupsKeepsProjectWhole(t *testing.T) {
 func TestPaginateContainerProjectGroupsSelectsRequestedPage(t *testing.T) {
 	// With Limit=4 the groups partition into three pages:
 	// page 1: proj-a (4), page 2: proj-b (3) + solo-1 (1), page 3: proj-c (2) + solo-2 (1).
-	items := []containertypes.Summary{
+	items := []types.ContainerSummary{
 		newGroupedContainerSummary("a-1", "proj-a"),
 		newGroupedContainerSummary("a-2", "proj-a"),
 		newGroupedContainerSummary("a-3", "proj-a"),
@@ -131,7 +142,7 @@ func TestPaginateContainerProjectGroupsSelectsRequestedPage(t *testing.T) {
 		newGroupedContainerSummary("c-2", "proj-c"),
 		newGroupedContainerSummary("solo-2", "solo-2"),
 	}
-	result := pagination.FilterResult[containertypes.Summary]{Items: items, TotalCount: int64(len(items)), TotalAvailable: int64(len(items))}
+	result := pagination.FilterResult[types.ContainerSummary]{Items: items, TotalCount: int64(len(items)), TotalAvailable: int64(len(items))}
 
 	pageGroups, resp := paginateContainerProjectGroups(result, pagination.QueryParams{Start: 4, Limit: 4})
 
@@ -149,9 +160,15 @@ func TestPaginateContainerProjectGroupsSelectsRequestedPage(t *testing.T) {
 
 func TestContainerSummaryIconsAppliedAfterGrouping(t *testing.T) {
 	db := setupProjectTestDB(t)
-	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
-	service := NewContainerService(nil, nil, nil, settingsService, project.NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, nil, nil, nil), nil, nil)
+	service := NewContainerService(ContainerServiceParams{
+		SettingsService: settingsService,
+		ProjectService: project.NewProjectService(project.ProjectServiceParams{
+			DB:              db,
+			SettingsService: settingsService,
+		}),
+	})
 	dockerContainers := []container.Summary{
 		{ID: "app", Names: []string{"/app"}, Labels: map[string]string{
 			"com.docker.compose.project": "media",
@@ -169,7 +186,7 @@ func TestContainerSummaryIconsAppliedAfterGrouping(t *testing.T) {
 	}
 
 	groups, _ := paginateContainerProjectGroups(
-		pagination.FilterResult[containertypes.Summary]{Items: items, TotalCount: int64(len(items)), TotalAvailable: int64(len(items))},
+		pagination.FilterResult[types.ContainerSummary]{Items: items, TotalCount: int64(len(items)), TotalAvailable: int64(len(items))},
 		pagination.QueryParams{Start: 0, Limit: 20},
 	)
 	for gi := range groups {
@@ -185,7 +202,7 @@ func TestContainerSummaryIconsAppliedAfterGrouping(t *testing.T) {
 	}
 }
 
-func groupNamesOf(groups []containertypes.SummaryGroup) []string {
+func groupNamesOf(groups []types.ContainerSummaryGroup) []string {
 	names := make([]string, 0, len(groups))
 	for _, group := range groups {
 		names = append(names, group.GroupName)
@@ -194,7 +211,7 @@ func groupNamesOf(groups []containertypes.SummaryGroup) []string {
 }
 
 func TestGroupContainersByProjectUsesNoProjectBucket(t *testing.T) {
-	groups := groupContainersByProject([]containertypes.Summary{
+	groups := groupContainersByProject([]types.ContainerSummary{
 		{ID: "1", Labels: map[string]string{"com.docker.compose.project": "alpha"}},
 		{ID: "2", Labels: map[string]string{}},
 		{ID: "3", Labels: nil},
@@ -209,14 +226,14 @@ func TestGroupContainersByProjectUsesNoProjectBucket(t *testing.T) {
 
 func TestBuildContainerFilterAccessors_FiltersStandaloneContainers(t *testing.T) {
 	service := &ContainerService{}
-	updateInfo := &image.UpdateInfo{HasUpdate: true}
-	items := []containertypes.Summary{
+	updateInfo := &types.ImageUpdateInfo{HasUpdate: true}
+	items := []types.ContainerSummary{
 		{ID: "standalone", Labels: map[string]string{}, UpdateInfo: updateInfo},
 		{ID: "compose", Labels: map[string]string{"com.docker.compose.project": "alpha"}, UpdateInfo: updateInfo},
 		{ID: "swarm-task", Labels: map[string]string{"com.docker.swarm.service.name": "web"}, UpdateInfo: updateInfo},
 	}
 
-	result := pagination.Config[containertypes.Summary]{FilterAccessors: service.buildContainerPaginationConfig().FilterAccessors}.SearchOrderAndPaginate(
+	result := pagination.Config[types.ContainerSummary]{FilterAccessors: service.buildContainerPaginationConfig().FilterAccessors}.SearchOrderAndPaginate(
 		items,
 		pagination.QueryParams{Filters: map[string]string{"standalone": "true", "updates": "has_update"}},
 	)
@@ -228,12 +245,12 @@ func TestBuildContainerFilterAccessors_FiltersStandaloneContainers(t *testing.T)
 
 func TestBuildContainerFilterAccessors_FiltersByLabel(t *testing.T) {
 	service := &ContainerService{}
-	items := []containertypes.Summary{
+	items := []types.ContainerSummary{
 		{ID: "tagged", Labels: map[string]string{"heal": "true", "tags": "a,b"}},
 		{ID: "other", Labels: map[string]string{"heal": "false"}},
 		{ID: "bare", Labels: map[string]string{}},
 	}
-	paginationConfig := pagination.Config[containertypes.Summary]{FilterAccessors: service.buildContainerPaginationConfig().FilterAccessors}
+	paginationConfig := pagination.Config[types.ContainerSummary]{FilterAccessors: service.buildContainerPaginationConfig().FilterAccessors}
 
 	tests := []struct {
 		name   string
@@ -249,6 +266,40 @@ func TestBuildContainerFilterAccessors_FiltersByLabel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := paginationConfig.SearchOrderAndPaginate(items, pagination.QueryParams{Filters: map[string]string{"label": tt.filter}})
+			var got []string
+			for _, item := range result.Items {
+				got = append(got, item.ID)
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestBuildContainerFilterAccessors_FiltersByStatus(t *testing.T) {
+	items := []types.ContainerSummary{
+		{ID: "running", State: "running", Status: "Up 2 hours (healthy)"},
+		{ID: "sick", State: "running", Status: "Up 5 minutes (unhealthy)"},
+		{ID: "exited", State: "exited", Status: "Exited (0) 1 hour ago"},
+		{ID: "paused", State: "paused", Status: "Up 1 hour (Paused)"},
+		{ID: "created", State: "created", Status: "Created"},
+	}
+	paginationConfig := pagination.Config[types.ContainerSummary]{FilterAccessors: (&ContainerService{}).buildContainerPaginationConfig().FilterAccessors}
+
+	tests := []struct {
+		name   string
+		filter string
+		want   []string
+	}{
+		{name: "running", filter: "running", want: []string{"running", "sick"}},
+		{name: "exited", filter: "exited", want: []string{"exited"}},
+		{name: "stopped", filter: "stopped", want: []string{"exited", "paused", "created"}},
+		{name: "unhealthy", filter: "unhealthy", want: []string{"sick"}},
+		{name: "alternatives", filter: "paused,created", want: []string{"paused", "created"}},
+		{name: "dead", filter: "dead", want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := paginationConfig.SearchOrderAndPaginate(items, pagination.QueryParams{Filters: map[string]string{"status": tt.filter}})
 			var got []string
 			for _, item := range result.Items {
 				got = append(got, item.ID)
@@ -280,23 +331,23 @@ func TestBuildCleanNetworkingConfigPreservesEndpointSettings(t *testing.T) {
 }
 
 func TestCompareContainerPortsForSortDesc_KeepsContainersWithoutPortsLast(t *testing.T) {
-	withPublished := containertypes.Summary{
+	withPublished := types.ContainerSummary{
 		ID:    "published",
 		Names: []string{"/published"},
-		Ports: []containertypes.Port{{PublicPort: 8080, PrivatePort: 80, Type: "tcp"}},
+		Ports: []types.ContainerPort{{PublicPort: 8080, PrivatePort: 80, Type: "tcp"}},
 	}
-	withPrivateOnly := containertypes.Summary{
+	withPrivateOnly := types.ContainerSummary{
 		ID:    "private",
 		Names: []string{"/private"},
-		Ports: []containertypes.Port{{PrivatePort: 3000, Type: "tcp"}},
+		Ports: []types.ContainerPort{{PrivatePort: 3000, Type: "tcp"}},
 	}
-	withoutPorts := containertypes.Summary{
+	withoutPorts := types.ContainerSummary{
 		ID:    "none",
 		Names: []string{"/none"},
 	}
 
 	sortBindings := (&ContainerService{}).buildContainerPaginationConfig().SortBindings
-	comparePortsDesc := sortBindings[slices.IndexFunc(sortBindings, func(binding pagination.SortBinding[containertypes.Summary]) bool {
+	comparePortsDesc := sortBindings[slices.IndexFunc(sortBindings, func(binding pagination.SortBinding[types.ContainerSummary]) bool {
 		return binding.Key == "ports"
 	})].DescFn
 
@@ -320,26 +371,21 @@ func TestContainerServiceCommitContainerCallsDockerAPI(t *testing.T) {
 			"comment":   r.URL.Query().Get("comment"),
 			"author":    r.URL.Query().Get("author"),
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"ID": "sha256:new-image"})
+		_ = json.MarshalWrite(w, map[string]string{"ID": "sha256:new-image"})
 	}))
 	t.Cleanup(server.Close)
 
-	svc := NewContainerService(
-		event.NewEventService(db, nil, nil),
-		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)),
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-	)
+	svc := NewContainerService(ContainerServiceParams{
+		EventService:  event.NewEventService(db, nil, nil),
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+	})
 
-	out, err := svc.CommitContainer(t.Context(), "container-1", containertypes.CommitRequest{
+	out, err := svc.CommitContainer(t.Context(), "container-1", types.ContainerCommitRequest{
 		Repository: "registry.example.com/team/app",
 		Tag:        "snapshot",
 		Comment:    "manual snapshot",
 		Author:     "arcane",
-	}, user.SystemUser)
+	}, types.SystemUser)
 	require.NoError(t, err)
 	require.NotNil(t, out)
 	require.Equal(t, "sha256:new-image", out.ID)
@@ -369,23 +415,18 @@ func TestContainerServiceCommitContainerOmitsReferenceWhenRepositoryEmpty(t *tes
 			"repo":      r.URL.Query().Get("repo"),
 			"tag":       r.URL.Query().Get("tag"),
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"ID": "sha256:new-image"})
+		_ = json.MarshalWrite(w, map[string]string{"ID": "sha256:new-image"})
 	}))
 	t.Cleanup(server.Close)
 
-	svc := NewContainerService(
-		event.NewEventService(db, nil, nil),
-		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)),
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-	)
+	svc := NewContainerService(ContainerServiceParams{
+		EventService:  event.NewEventService(db, nil, nil),
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+	})
 
-	out, err := svc.CommitContainer(t.Context(), "container-1", containertypes.CommitRequest{
+	out, err := svc.CommitContainer(t.Context(), "container-1", types.ContainerCommitRequest{
 		Tag: "latest",
-	}, user.SystemUser)
+	}, types.SystemUser)
 	require.NoError(t, err)
 	require.NotNil(t, out)
 	require.Equal(t, "sha256:new-image", out.ID)
@@ -396,14 +437,14 @@ func TestContainerServiceCommitContainerOmitsReferenceWhenRepositoryEmpty(t *tes
 	}, gotRequest)
 }
 
-func newGroupedContainerSummary(name, localProject string) containertypes.Summary {
-	labels := map[string]string{}
-	labels["com.docker.compose.project"] = cmp.Or(localProject, labels["com.docker.compose.project"])
+func newGroupedContainerSummary(name, localProject string) types.ContainerSummary {
+	containerLabels := map[string]string{}
+	containerLabels["com.docker.compose.project"] = cmp.Or(localProject, containerLabels["com.docker.compose.project"])
 
-	return containertypes.Summary{
+	return types.ContainerSummary{
 		ID:     name,
 		Names:  []string{name},
-		Labels: labels,
+		Labels: containerLabels,
 		State:  "running",
 	}
 }
@@ -442,8 +483,6 @@ func setupProjectTestDB(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-var dockerAPIVersionPrefix = regexp.MustCompile(`^/v\d+\.\d+`)
-
 func TestApplyEditPreservesUnmanagedSettings(t *testing.T) {
 	cfg := container.Config{
 		Image:        "nginx:1.25",
@@ -461,7 +500,7 @@ func TestApplyEditPreservesUnmanagedSettings(t *testing.T) {
 	}
 
 	env := []string{"NEW=1"}
-	req := containertypes.Edit{Environment: &env}
+	req := types.ContainerEdit{Environment: &env}
 
 	cfg, err := applyEditToContainerConfig(cfg, hc.PortBindings, req)
 	require.NoError(t, err)
@@ -488,7 +527,7 @@ func TestMergeEditMountsPreservesMountOptions(t *testing.T) {
 	}
 
 	// Round-trip the volume mount (toggling read-only) and drop the tmpfs one.
-	requested := []containertypes.MountCreate{{Type: "volume", Source: "data", Target: "/data", ReadOnly: true}}
+	requested := []types.ContainerMountCreate{{Type: "volume", Source: "data", Target: "/data", ReadOnly: true}}
 
 	out := mergeEditMounts(existing, requested)
 	require.Len(t, out, 1)
@@ -515,7 +554,7 @@ func TestMergeEditMountsAppliesSourceChange(t *testing.T) {
 
 	// Same type and target but a different source must honor the new source
 	// while retaining the original driver options.
-	requested := []containertypes.MountCreate{
+	requested := []types.ContainerMountCreate{
 		{Type: "volume", Source: "new-volume", Target: "/data"},
 		{Type: "bind", Source: "/new/path", Target: "/config", ReadOnly: true},
 	}
@@ -542,8 +581,8 @@ func TestApplyEditRecomputesExposedPorts(t *testing.T) {
 		PortBindings: network.PortMap{network.MustParsePort("80/tcp"): {{HostPort: "8080"}}},
 	}
 
-	newBindings := map[string][]containertypes.PortBindingCreate{"443/tcp": {{HostPort: "8443"}}}
-	req := containertypes.Edit{HostConfig: &containertypes.HostConfigEdit{PortBindings: &newBindings}}
+	newBindings := map[string][]types.ContainerPortBindingCreate{"443/tcp": {{HostPort: "8443"}}}
+	req := types.ContainerEdit{HostConfig: &types.ContainerHostConfigEdit{PortBindings: &newBindings}}
 
 	cfg, err := applyEditToContainerConfig(cfg, hc.PortBindings, req)
 	require.NoError(t, err)
@@ -558,18 +597,58 @@ func TestApplyEditRecomputesExposedPorts(t *testing.T) {
 
 func TestApplyEditHostname(t *testing.T) {
 	// nil preserves the existing hostname
-	cfg, err := applyEditToContainerConfig(container.Config{Hostname: "old-host"}, nil, containertypes.Edit{})
+	cfg, err := applyEditToContainerConfig(container.Config{Hostname: "old-host"}, nil, types.ContainerEdit{})
 	require.NoError(t, err)
 	require.Equal(t, "old-host", cfg.Hostname)
 
-	cfg, err = applyEditToContainerConfig(cfg, nil, containertypes.Edit{Hostname: new(" new-host ")})
+	cfg, err = applyEditToContainerConfig(cfg, nil, types.ContainerEdit{Hostname: new(" new-host ")})
 	require.NoError(t, err)
 	require.Equal(t, "new-host", cfg.Hostname)
 
 	// empty clears it so Docker assigns its default on recreate
-	cfg, err = applyEditToContainerConfig(cfg, nil, containertypes.Edit{Hostname: new("")})
+	cfg, err = applyEditToContainerConfig(cfg, nil, types.ContainerEdit{Hostname: new("")})
 	require.NoError(t, err)
 	require.Empty(t, cfg.Hostname)
+}
+
+func TestApplyEditRejectsInvalidChangedHostname(t *testing.T) {
+	_, err := applyEditToContainerConfig(container.Config{Hostname: "old-host"}, nil, types.ContainerEdit{Hostname: new("bad_host")})
+	require.ErrorIs(t, err, common.ErrValidation)
+	fieldErr, ok := errors.AsType[*types.FieldError](err)
+	require.True(t, ok)
+	require.Equal(t, "hostname", fieldErr.Field)
+
+	cfg, err := applyEditToContainerConfig(container.Config{Hostname: "legacy_host"}, nil, types.ContainerEdit{Hostname: new("legacy_host")})
+	require.NoError(t, err)
+	require.Equal(t, "legacy_host", cfg.Hostname)
+}
+
+func TestCreateContainerValidatesHostname(t *testing.T) {
+	tests := []struct {
+		name     string
+		hostname string
+	}{
+		{name: "leading hyphen", hostname: "-web"},
+		{name: "trailing hyphen", hostname: "web-"},
+		{name: "underscore", hostname: "web_app"},
+		{name: "empty label", hostname: "web..local"},
+		{name: "label too long", hostname: strings.Repeat("a", 64)},
+		{name: "name too long", hostname: strings.Repeat(strings.Repeat("a", 63)+".", 4) + "a"},
+		{name: "ipv4 address", hostname: "10.0.0.1"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := (&ContainerService{}).CreateContainer(t.Context(), &container.Config{Image: "nginx:latest", Hostname: test.hostname}, nil, nil, "web", types.Actor{}, nil)
+			require.ErrorIs(t, err, common.ErrValidation)
+			fieldErr, ok := errors.AsType[*types.FieldError](err)
+			require.True(t, ok)
+			require.Equal(t, "hostname", fieldErr.Field)
+		})
+	}
+
+	for _, hostname := range []string{"", "web", "Web-01", "db.internal.example", "1.2.3", strings.Repeat("a", 63)} {
+		require.NoError(t, validateContainerHostname(hostname))
+	}
 }
 
 func TestBuildEditNetworkingConfig(t *testing.T) {
@@ -589,8 +668,8 @@ func TestBuildEditNetworkingConfig(t *testing.T) {
 	require.Contains(t, out.EndpointsConfig, "my-net")
 
 	// explicit desired set: keep my-net with new alias + static IP, add other-net
-	req := &containertypes.NetworkingConfigCreate{
-		EndpointsConfig: map[string]containertypes.EndpointSettingsCreate{
+	req := &types.ContainerNetworkingConfigCreate{
+		EndpointsConfig: map[string]types.ContainerEndpointSettingsCreate{
 			"my-net":    {Aliases: []string{"renamed"}, IPv4Address: "10.5.0.9"},
 			"other-net": {},
 		},
@@ -648,15 +727,10 @@ func TestContainerServiceResizeExec(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	svc := NewContainerService(
-		event.NewEventService(db, nil, nil),
-		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)),
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-	)
+	svc := NewContainerService(ContainerServiceParams{
+		EventService:  event.NewEventService(db, nil, nil),
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+	})
 
 	require.NoError(t, svc.ResizeExec(t.Context(), "exec-1", 120, 40))
 	require.Equal(t, "POST /exec/exec-1/resize", gotPath)
@@ -692,7 +766,7 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 		if path == "/containers/create" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
-			if err := json.NewEncoder(w).Encode(map[string]any{"Id": "new-id", "Warnings": []string{}}); err != nil {
+			if err := json.MarshalWrite(w, map[string]any{"Id": "new-id", "Warnings": []string{}}); err != nil {
 				t.Errorf("encode container creation response: %v", err)
 			}
 			return
@@ -701,7 +775,11 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	kvService := kv.NewKVService(db)
-	svc := NewContainerService(events, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
+	svc := NewContainerService(ContainerServiceParams{
+		EventService:  events,
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+		KVService:     kvService,
+	})
 	info := container.InspectResponse{
 		ID:         "old-id",
 		Name:       "/web",
@@ -719,7 +797,7 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 		nil,
 		"1.41",
 		event.EventTypeContainerDeploy,
-		user.SystemUser,
+		types.SystemUser,
 	)
 	require.NoError(t, err)
 	require.Equal(t, "new-id", id)
@@ -768,7 +846,7 @@ func TestRecreateContainerRollsBackAfterRequestCancellation(t *testing.T) {
 		case "/containers/create":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
-			if err := json.NewEncoder(w).Encode(map[string]any{"Id": "new-id", "Warnings": []string{}}); err != nil {
+			if err := json.MarshalWrite(w, map[string]any{"Id": "new-id", "Warnings": []string{}}); err != nil {
 				t.Errorf("encode container creation response: %v", err)
 			}
 		case "/containers/new-id/start":
@@ -780,7 +858,11 @@ func TestRecreateContainerRollsBackAfterRequestCancellation(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	kvService := kv.NewKVService(db)
-	svc := NewContainerService(event.NewEventService(db, nil, nil), docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
+	svc := NewContainerService(ContainerServiceParams{
+		EventService:  event.NewEventService(db, nil, nil),
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+		KVService:     kvService,
+	})
 	info := container.InspectResponse{
 		ID:         "old-id",
 		Name:       "/web",
@@ -789,7 +871,7 @@ func TestRecreateContainerRollsBackAfterRequestCancellation(t *testing.T) {
 		HostConfig: &container.HostConfig{},
 	}
 
-	_, err := svc.recreateContainer(ctx, info, "redeploy", "web", info.Config, info.HostConfig, nil, "1.41", event.EventTypeContainerDeploy, user.SystemUser)
+	_, err := svc.recreateContainer(ctx, info, "redeploy", "web", info.Config, info.HostConfig, nil, "1.41", event.EventTypeContainerDeploy, types.SystemUser)
 	require.Error(t, err)
 	require.ErrorIs(t, ctx.Err(), context.Canceled)
 
@@ -884,7 +966,7 @@ func TestRecoverInterruptedRedeploys(t *testing.T) {
 				path := dockerTestPath(r.URL.Path)
 				if path == "/containers/json" {
 					w.Header().Set("Content-Type", "application/json")
-					if err := json.NewEncoder(w).Encode(tt.containers); err != nil {
+					if err := json.MarshalWrite(w, tt.containers); err != nil {
 						t.Errorf("encode container list: %v", err)
 					}
 					return
@@ -895,7 +977,10 @@ func TestRecoverInterruptedRedeploys(t *testing.T) {
 				w.WriteHeader(http.StatusNoContent)
 			}))
 			t.Cleanup(server.Close)
-			svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
+			svc := NewContainerService(ContainerServiceParams{
+				DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+				KVService:     kvService,
+			})
 
 			require.NoError(t, svc.RecoverInterruptedRedeploys(t.Context()))
 
@@ -910,9 +995,11 @@ func TestRecoverInterruptedRedeploys(t *testing.T) {
 }
 
 func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
-	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{})
+	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{}, settings.Env{})
 	require.NoError(t, err)
-	service := NewContainerService(nil, nil, nil, settingsService, nil, nil, nil)
+	service := NewContainerService(ContainerServiceParams{
+		SettingsService: settingsService,
+	})
 	strategyLabel := "com.getarcaneapp.arcane.updater.strategy"
 	containers := []container.Summary{
 		{ID: "first", Image: "app:3.1.0", ImageID: "shared-image"},
@@ -923,7 +1010,7 @@ func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 		{ID: "unmonitored", Image: "app:3.1.0", ImageID: "shared-image", Labels: map[string]string{"com.getarcaneapp.arcane.update-check": "false"}},
 	}
 	// The lookup keys results by container ID; containers opted out of checks have no entry.
-	updates := map[string]*image.UpdateInfo{
+	updates := map[string]*types.ImageUpdateInfo{
 		"first":     {HasUpdate: true, UpdateType: "digest"},
 		"second":    {HasUpdate: true, UpdateType: "tag", LatestVersion: "4.0.0"},
 		"digest":    {HasUpdate: true, UpdateType: "digest"},
@@ -950,16 +1037,16 @@ func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 
 func TestContainerServiceGetContainerProcesses(t *testing.T) {
 	tests := []struct {
-		name     string
-		status   int
-		body     string
 		fallback *struct {
-			status int
 			body   string
+			status int
 		}
+		wantErr    func(error) bool
+		name       string
+		body       string
 		wantTitles []string
 		wantRows   [][]string
-		wantErr    func(error) bool
+		status     int
 	}{
 		{
 			name:   "docker snapshot",
@@ -995,9 +1082,9 @@ func TestContainerServiceGetContainerProcesses(t *testing.T) {
 			status: http.StatusInternalServerError,
 			body:   `{"message":"ps: bad -o argument '%cpu', supported arguments: user,group,comm,args,pid,ppid,pgid,etime,nice,rgroup,ruser,time,tty,vsz,stat,rss"}`,
 			fallback: &struct {
-				status int
 				body   string
-			}{http.StatusOK, `{"Titles":["PID","USER","ELAPSED","COMMAND"],"Processes":[["1","root","01:02:03","nginx: master process nginx -g daemon off;"]]}`},
+				status int
+			}{status: http.StatusOK, body: `{"Titles":["PID","USER","ELAPSED","COMMAND"],"Processes":[["1","root","01:02:03","nginx: master process nginx -g daemon off;"]]}`},
 			wantTitles: []string{"PID", "USER", "ELAPSED", "COMMAND"},
 			wantRows:   [][]string{{"1", "root", "01:02:03", "nginx: master process nginx -g daemon off;"}},
 		},
@@ -1022,9 +1109,12 @@ func TestContainerServiceGetContainerProcesses(t *testing.T) {
 				}
 			}))
 			t.Cleanup(server.Close)
-			settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{})
+			settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{}, settings.Env{})
 			require.NoError(t, err)
-			svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil, nil, nil)
+			svc := NewContainerService(ContainerServiceParams{
+				DockerService:   newSettingsDockerService(t, newTestDockerClient(t, server)),
+				SettingsService: settingsService,
+			})
 
 			processes, err := svc.GetContainerProcesses(t.Context(), "container-1")
 			wantArgs := []string{strings.Join(containerProcessesPsArgs[0], " ")}
@@ -1050,9 +1140,12 @@ func TestContainerServiceGetContainerProcessesPropagatesContext(t *testing.T) {
 		close(requestDone)
 	}))
 	t.Cleanup(server.Close)
-	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{})
+	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{}, settings.Env{})
 	require.NoError(t, err)
-	svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil, nil, nil)
+	svc := NewContainerService(ContainerServiceParams{
+		DockerService:   newSettingsDockerService(t, newTestDockerClient(t, server)),
+		SettingsService: settingsService,
+	})
 
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
@@ -1074,12 +1167,12 @@ func newResourceStatsServer() *resourceStatsServer {
 	}
 }
 
-func (f *resourceStatsServer) addContainer(id, name, state string, labels ...map[string]string) {
+func (f *resourceStatsServer) addContainer(id, name, state string, containerLabels ...map[string]string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var l map[string]string
-	if len(labels) > 0 {
-		l = labels[0]
+	if len(containerLabels) > 0 {
+		l = containerLabels[0]
 	}
 	f.containers = append(f.containers, container.Summary{ID: id, Names: []string{"/" + name}, State: container.ContainerState(state), Image: "img:latest", Labels: l})
 }
@@ -1119,7 +1212,7 @@ func (f *resourceStatsServer) handler() http.Handler {
 			f.mu.Lock()
 			list := append([]container.Summary{}, f.containers...)
 			f.mu.Unlock()
-			_ = json.NewEncoder(w).Encode(list)
+			_ = json.MarshalWrite(w, list)
 		case strings.HasPrefix(path, "/containers/") && strings.HasSuffix(path, "/json"):
 			id := strings.TrimSuffix(strings.TrimPrefix(path, "/containers/"), "/json")
 			f.mu.Lock()
@@ -1136,7 +1229,7 @@ func (f *resourceStatsServer) handler() http.Handler {
 						},
 						State: &container.State{Status: summary.State},
 					}
-					if err := json.NewEncoder(w).Encode(inspect); err != nil {
+					if err := json.MarshalWrite(w, inspect); err != nil {
 						http.Error(w, err.Error(), http.StatusInternalServerError)
 					}
 					return
@@ -1178,7 +1271,7 @@ func (f *resourceStatsServer) handler() http.Handler {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(statsData)
+			_ = json.MarshalWrite(w, statsData)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1191,18 +1284,18 @@ func newResourceSortService(t *testing.T, fixture *resourceStatsServer) *Contain
 	t.Cleanup(server.Close)
 
 	db := setupProjectTestDB(t)
-	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
-	return NewContainerService(
-		nil,
-		dockerService,
-		imagedomain.NewImageService(db, dockerService, nil, nil, nil, nil, settingsService, nil),
-		settingsService,
-		nil,
-		nil,
-		nil,
-	)
+	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
+	return NewContainerService(ContainerServiceParams{
+		DockerService: dockerService,
+		ImageService: imagedomain.NewImageService(imagedomain.ImageServiceParams{
+			DB:              db,
+			DockerService:   dockerService,
+			SettingsService: settingsService,
+		}),
+		SettingsService: settingsService,
+	})
 }
 
 func resourceSortParams(sort, order string, start, limit int) pagination.QueryParams {
@@ -1215,7 +1308,7 @@ func resourceSortParams(sort, order string, start, limit int) pagination.QueryPa
 	}
 }
 
-func summaryIDs(items []containertypes.Summary) []string {
+func summaryIDs(items []types.ContainerSummary) []string {
 	ids := make([]string, 0, len(items))
 	for _, item := range items {
 		ids = append(ids, item.ID)
@@ -1241,12 +1334,12 @@ func TestResourceSortRanksMemoryByBytesNotPercent(t *testing.T) {
 	fixture.setStats("opted-out", 10, 100, 10000)
 	svc := newResourceSortService(t, fixture)
 
-	result := listResourceSorted(t, svc, resourceSortParams(containertypes.SortMemoryUsage, "desc", 0, 20))
+	result := listResourceSorted(t, svc, resourceSortParams(types.ContainerSortMemoryUsage, "desc", 0, 20))
 	require.Equal(t, []string{"high-bytes", "high-percent", "opted-out"}, summaryIDs(result.Items))
 	require.True(t, result.Items[0].AutoUpdateEnabled)
 	require.False(t, result.Items[2].AutoUpdateEnabled)
 
-	result = listResourceSorted(t, svc, resourceSortParams(containertypes.SortMemoryUsage, "asc", 0, 20))
+	result = listResourceSorted(t, svc, resourceSortParams(types.ContainerSortMemoryUsage, "asc", 0, 20))
 	require.Equal(t, []string{"opted-out", "high-percent", "high-bytes"}, summaryIDs(result.Items))
 
 	flat, err := svc.ListContainersPaginated(t.Context(), resourceSortParams("name", "asc", 0, 20), true, true, true, "")
@@ -1275,8 +1368,8 @@ func TestResourceSortOrdersAcrossPages(t *testing.T) {
 	tests := []struct {
 		name  string
 		order string
-		start int
 		want  []string
+		start int
 	}{
 		{name: "desc page 1", order: "desc", start: 0, want: []string{"c5", "c4"}},
 		{name: "desc page 2", order: "desc", start: 2, want: []string{"c3", "c2"}},
@@ -1286,7 +1379,7 @@ func TestResourceSortOrdersAcrossPages(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := listResourceSorted(t, svc, resourceSortParams(containertypes.SortMemoryUsage, tt.order, tt.start, 2))
+			result := listResourceSorted(t, svc, resourceSortParams(types.ContainerSortMemoryUsage, tt.order, tt.start, 2))
 			require.Equal(t, tt.want, summaryIDs(result.Items))
 			require.Equal(t, int64(5), result.Pagination.TotalItems)
 		})
@@ -1301,7 +1394,7 @@ func TestResourceSortOrdersByCPUPercent(t *testing.T) {
 	fixture.setStats("idle", 5, 100, 1000)
 	svc := newResourceSortService(t, fixture)
 
-	result := listResourceSorted(t, svc, resourceSortParams(containertypes.SortCPUUsage, "desc", 0, 20))
+	result := listResourceSorted(t, svc, resourceSortParams(types.ContainerSortCPUUsage, "desc", 0, 20))
 	require.Equal(t, []string{"busy", "idle"}, summaryIDs(result.Items))
 	require.InDelta(t, 90, result.Items[0].ResourceSample.CPUPercent, 0.2)
 	require.InDelta(t, 5, result.Items[1].ResourceSample.CPUPercent, 0.2)
@@ -1315,14 +1408,14 @@ func TestResourceSortAppliesSearchAndFiltersBeforeCollectingStats(t *testing.T) 
 	fixture.setStats("db", 20, 200, 1000)
 	svc := newResourceSortService(t, fixture)
 
-	params := resourceSortParams(containertypes.SortMemoryUsage, "desc", 0, 20)
+	params := resourceSortParams(types.ContainerSortMemoryUsage, "desc", 0, 20)
 	params.Search = "web"
 	result := listResourceSorted(t, svc, params)
 	require.Equal(t, []string{"web"}, summaryIDs(result.Items))
 	require.Equal(t, 1, fixture.callsFor("web"))
 	require.Equal(t, 0, fixture.callsFor("db"), "filtered-out containers must not trigger stats collection")
 
-	params = resourceSortParams(containertypes.SortMemoryUsage, "desc", 0, 20)
+	params = resourceSortParams(types.ContainerSortMemoryUsage, "desc", 0, 20)
 	params.Filters["label"] = "team=backend"
 	result = listResourceSorted(t, svc, params)
 	require.Equal(t, []string{"web"}, summaryIDs(result.Items))
@@ -1342,14 +1435,14 @@ func TestResourceSortHandlesZeroUnavailableStoppedAndTies(t *testing.T) {
 	fixture.addContainer("stopped", "stopped", "exited")
 	svc := newResourceSortService(t, fixture)
 
-	asc := listResourceSorted(t, svc, resourceSortParams(containertypes.SortMemoryUsage, "asc", 0, 20))
+	asc := listResourceSorted(t, svc, resourceSortParams(types.ContainerSortMemoryUsage, "asc", 0, 20))
 	require.Equal(t, []string{"zero", "tie-a", "tie-b", "broken", "stopped"}, summaryIDs(asc.Items),
 		"zeros first, unavailable and stopped last, ties by name then ID")
 	require.NotNil(t, asc.Items[0].ResourceSample, "zero usage is a valid sample, not unavailable")
 	require.Nil(t, asc.Items[3].ResourceSample)
 	require.Nil(t, asc.Items[4].ResourceSample)
 
-	desc := listResourceSorted(t, svc, resourceSortParams(containertypes.SortMemoryUsage, "desc", 0, 20))
+	desc := listResourceSorted(t, svc, resourceSortParams(types.ContainerSortMemoryUsage, "desc", 0, 20))
 	require.Equal(t, []string{"tie-a", "tie-b", "zero", "broken", "stopped"}, summaryIDs(desc.Items),
 		"unavailable stays last in descending order too")
 
@@ -1363,7 +1456,7 @@ func TestResourceSortCachesSamples(t *testing.T) {
 	svc := newResourceSortService(t, fixture)
 
 	for range 2 {
-		listResourceSorted(t, svc, resourceSortParams(containertypes.SortMemoryUsage, "desc", 0, 20))
+		listResourceSorted(t, svc, resourceSortParams(types.ContainerSortMemoryUsage, "desc", 0, 20))
 	}
 	require.Equal(t, 1, fixture.callsFor("web"), "second list within the TTL must reuse the cached sample")
 }
@@ -1373,35 +1466,16 @@ func TestResourceSortCacheExpires(t *testing.T) {
 	fixture.addContainer("web", "web", "running")
 	fixture.setStats("web", 10, 100, 1000)
 	svc := newResourceSortService(t, fixture)
-	svc.stats = stats.New(svc.dockerService.GetClient, svc.dockerService.DockerHost, 50*time.Millisecond, 0, 0)
+	svc.stats = stats.New(stats.Params{
+		GetClient:  svc.dockerService.GetClient,
+		DockerHost: svc.dockerService.DockerHost,
+		CacheTTL:   50 * time.Millisecond,
+	})
 
-	listResourceSorted(t, svc, resourceSortParams(containertypes.SortMemoryUsage, "desc", 0, 20))
+	listResourceSorted(t, svc, resourceSortParams(types.ContainerSortMemoryUsage, "desc", 0, 20))
 	time.Sleep(100 * time.Millisecond)
-	listResourceSorted(t, svc, resourceSortParams(containertypes.SortMemoryUsage, "desc", 0, 20))
+	listResourceSorted(t, svc, resourceSortParams(types.ContainerSortMemoryUsage, "desc", 0, 20))
 	require.Equal(t, 2, fixture.callsFor("web"), "expired entries must be refetched")
-}
-
-func TestResourceSortCoalescesConcurrentFetches(t *testing.T) {
-	fixture := newResourceStatsServer()
-	fixture.addContainer("web", "web", "running")
-	fixture.setStats("web", 10, 100, 1000)
-	fixture.delay = 100 * time.Millisecond
-	svc := newResourceSortService(t, fixture)
-
-	const callers = 8
-	var wg sync.WaitGroup
-	errs := make([]error, callers)
-	for i := range callers {
-		wg.Go(func() {
-			_, err := svc.stats.Collect(t.Context(), []containertypes.Summary{{ID: "web", State: "running"}}, stats.ContainerResourceSampleTTL)
-			errs[i] = err
-		})
-	}
-	wg.Wait()
-	for _, err := range errs {
-		require.NoError(t, err)
-	}
-	require.Equal(t, 1, fixture.callsFor("web"), "concurrent fetches for the same container must coalesce")
 }
 
 func TestResourceSortBoundsCollectionConcurrency(t *testing.T) {
@@ -1414,7 +1488,7 @@ func TestResourceSortBoundsCollectionConcurrency(t *testing.T) {
 	}
 	svc := newResourceSortService(t, fixture)
 
-	result := listResourceSorted(t, svc, resourceSortParams(containertypes.SortMemoryUsage, "desc", 0, 40))
+	result := listResourceSorted(t, svc, resourceSortParams(types.ContainerSortMemoryUsage, "desc", 0, 40))
 	require.Len(t, result.Items, 32)
 	require.LessOrEqual(t, fixture.maxSeen.Load(), int32(stats.ContainerResourceCollectConcurrency))
 }
@@ -1425,26 +1499,15 @@ func TestResourceSortBatchTimeoutFailsRequest(t *testing.T) {
 	fixture.setStats("slow", 10, 100, 1000)
 	fixture.delay = time.Second
 	svc := newResourceSortService(t, fixture)
-	svc.stats = stats.New(svc.dockerService.GetClient, svc.dockerService.DockerHost, stats.ContainerResourceSampleTTL, 0, 50*time.Millisecond)
+	svc.stats = stats.New(stats.Params{
+		GetClient:    svc.dockerService.GetClient,
+		DockerHost:   svc.dockerService.DockerHost,
+		CacheTTL:     stats.ContainerResourceSampleTTL,
+		BatchTimeout: 50 * time.Millisecond,
+	})
 
-	_, err := svc.ListContainersPaginated(t.Context(), resourceSortParams(containertypes.SortMemoryUsage, "desc", 0, 20), true, true, true, "")
+	_, err := svc.ListContainersPaginated(t.Context(), resourceSortParams(types.ContainerSortMemoryUsage, "desc", 0, 20), true, true, true, "")
 	require.Error(t, err, "batch timeout must fail the refresh instead of presenting a partial sort")
-}
-
-func TestResourceSortPerContainerTimeoutMarksUnavailable(t *testing.T) {
-	fixture := newResourceStatsServer()
-	fixture.addContainer("fast", "fast", "running")
-	fixture.setStats("fast", 10, 100, 1000)
-	fixture.addContainer("slow", "slow", "running")
-	fixture.setStats("slow", 10, 200, 1000)
-	fixture.slowIDs["slow"] = true
-	svc := newResourceSortService(t, fixture)
-	svc.stats = stats.New(svc.dockerService.GetClient, svc.dockerService.DockerHost, stats.ContainerResourceSampleTTL, 50*time.Millisecond, 0)
-
-	result := listResourceSorted(t, svc, resourceSortParams(containertypes.SortMemoryUsage, "desc", 0, 20))
-	require.Equal(t, []string{"fast", "slow"}, summaryIDs(result.Items))
-	require.NotNil(t, result.Items[0].ResourceSample)
-	require.Nil(t, result.Items[1].ResourceSample, "per-container timeout leaves the sample unavailable")
 }
 
 func TestResourceSortCancelledContextFailsRequest(t *testing.T) {
@@ -1460,7 +1523,7 @@ func TestResourceSortCancelledContextFailsRequest(t *testing.T) {
 		cancel()
 	}()
 
-	_, err := svc.ListContainersPaginated(ctx, resourceSortParams(containertypes.SortMemoryUsage, "desc", 0, 20), true, true, true, "")
+	_, err := svc.ListContainersPaginated(ctx, resourceSortParams(types.ContainerSortMemoryUsage, "desc", 0, 20), true, true, true, "")
 	require.Error(t, err)
 }
 
@@ -1539,29 +1602,24 @@ func newLogsTestService(t *testing.T, tty bool, logsBody []byte, gotQuery *url.V
 	}))
 	t.Cleanup(server.Close)
 
-	return NewContainerService(
-		event.NewEventService(setupProjectTestDB(t), nil, nil),
-		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)),
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-	)
+	return NewContainerService(ContainerServiceParams{
+		EventService:  event.NewEventService(setupProjectTestDB(t), nil, nil),
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+	})
 }
 
 func TestContainerServiceDownloadLogsDemultiplexesNonTTY(t *testing.T) {
 	var frames bytes.Buffer
 	longLine := strings.Repeat("x", 70*1024) + "\n"
 	for _, frame := range []struct {
-		stream  byte
 		payload string
+		stream  byte
 	}{
-		{1, "out one\n"},
-		{2, "err one\n"},
-		{1, "\n"},
-		{1, longLine},
-		{2, "err two\n"},
+		{stream: 1, payload: "out one\n"},
+		{stream: 2, payload: "err one\n"},
+		{stream: 1, payload: "\n"},
+		{stream: 1, payload: longLine},
+		{stream: 2, payload: "err two\n"},
 	} {
 		header := make([]byte, 8)
 		header[0] = frame.stream
@@ -1621,10 +1679,10 @@ func containerScopeContext(t *testing.T, target string, bodies map[string]any) (
 				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
 				return
 			}
-			_ = json.NewEncoder(w).Encode(body)
+			_ = json.MarshalWrite(w, body)
 		}),
-		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
-			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
 		},
 	}), &queries
 }
@@ -1633,19 +1691,19 @@ func TestAggregateContainersMergesEnvironments(t *testing.T) {
 	bodies := map[string]any{
 		"a": ContainerPaginatedResponse{
 			Success:               true,
-			Data:                  []containertypes.Summary{newGroupedContainerSummary("alpha", "shop"), newGroupedContainerSummary("Delta", "web")},
-			Counts:                containertypes.StatusCounts{RunningContainers: 1, StoppedContainers: 1, TotalContainers: 2},
-			Pagination:            base.PaginationResponse{TotalItems: 2, GrandTotalItems: 3},
+			Data:                  []types.ContainerSummary{newGroupedContainerSummary("alpha", "shop"), newGroupedContainerSummary("Delta", "web")},
+			Counts:                types.ContainerStatusCounts{RunningContainers: 1, StoppedContainers: 1, TotalContainers: 2},
+			Pagination:            types.PaginationResponse{TotalItems: 2, GrandTotalItems: 3},
 			ResourceSortSupported: true,
 		},
 		"b": ContainerPaginatedResponse{
 			Success:    true,
-			Data:       []containertypes.Summary{newGroupedContainerSummary("bravo", "shop"), newGroupedContainerSummary("delta", "")},
-			Counts:     containertypes.StatusCounts{RunningContainers: 2, TotalContainers: 2},
-			Pagination: base.PaginationResponse{TotalItems: 2},
+			Data:       []types.ContainerSummary{newGroupedContainerSummary("bravo", "shop"), newGroupedContainerSummary("delta", "")},
+			Counts:     types.ContainerStatusCounts{RunningContainers: 2, TotalContainers: 2},
+			Pagination: types.PaginationResponse{TotalItems: 2},
 		},
 	}
-	rowLabels := func(items []containertypes.Summary) []string {
+	rowLabels := func(items []types.ContainerSummary) []string {
 		out := make([]string, 0, len(items))
 		for _, item := range items {
 			out = append(out, item.EnvironmentID+"/"+item.Names[0])
@@ -1667,9 +1725,9 @@ func TestAggregateContainersMergesEnvironments(t *testing.T) {
 		require.Equal(t, int64(5), body.Pagination.GrandTotalItems)
 		require.Equal(t, int64(2), body.Pagination.TotalPages)
 		require.Equal(t, 2, body.Pagination.CurrentPage)
-		require.Equal(t, containertypes.StatusCounts{RunningContainers: 3, StoppedContainers: 1, TotalContainers: 4}, body.Counts)
+		require.Equal(t, types.ContainerStatusCounts{RunningContainers: 3, StoppedContainers: 1, TotalContainers: 4}, body.Counts)
 		require.False(t, body.ResourceSortSupported)
-		require.Equal(t, []base.EnvironmentFailure{{Environment: base.EnvironmentRef{ID: "c", Name: "c"}, Message: "environment offline"}}, body.FailedEnvironments)
+		require.Equal(t, []types.EnvironmentFailure{{Environment: types.EnvironmentRef{ID: "c", Name: "c"}, Message: "environment offline"}}, body.FailedEnvironments)
 		for _, id := range []string{"a", "b", "c"} {
 			stored, ok := queries.Load(id)
 			require.True(t, ok)
@@ -1727,13 +1785,8 @@ func TestAggregateContainersMergesEnvironments(t *testing.T) {
 	})
 }
 
-type quadletTestSystemd struct {
-	mu    sync.Mutex
-	calls []string
-}
-
-func (f *quadletTestSystemd) Availability(context.Context) podmantypes.SystemdAvailability {
-	return podmantypes.SystemdAvailability{Available: true}
+func (f *quadletTestSystemd) Availability(context.Context) types.PodmanSystemdAvailability {
+	return types.PodmanSystemdAvailability{Available: true}
 }
 
 func (f *quadletTestSystemd) Start(_ context.Context, unit string) error {
@@ -1748,8 +1801,8 @@ func (f *quadletTestSystemd) Restart(_ context.Context, unit string) error {
 	return f.record("restart " + unit)
 }
 
-func (f *quadletTestSystemd) UnitStatus(_ context.Context, unit string) (podmantypes.UnitStatus, error) {
-	return podmantypes.UnitStatus{Name: unit, ActiveState: "active"}, nil
+func (f *quadletTestSystemd) UnitStatus(_ context.Context, unit string) (types.PodmanUnitStatus, error) {
+	return types.PodmanUnitStatus{Name: unit, ActiveState: "active"}, nil
 }
 
 func (f *quadletTestSystemd) record(call string) error {
@@ -1771,11 +1824,11 @@ func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTe
 		mu.Unlock()
 		if r.Method == http.MethodGet && path == "/containers/quadlet-id/json" {
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(container.InspectResponse{
+			if err := json.MarshalWrite(w, container.InspectResponse{
 				ID:         "quadlet-id",
 				Name:       "/web",
 				State:      &container.State{Running: true},
-				Config:     &container.Config{Image: "nginx:latest", Labels: map[string]string{podmantypes.SystemdUnitLabel: "web.service"}},
+				Config:     &container.Config{Image: "nginx:latest", Labels: map[string]string{types.PodmanSystemdUnitLabel: "web.service"}},
 				HostConfig: &container.HostConfig{},
 			}); err != nil {
 				t.Errorf("encode inspect response: %v", err)
@@ -1804,14 +1857,10 @@ func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTe
 	t.Cleanup(libpodServer.Close)
 
 	systemd := &quadletTestSystemd{}
-	svc := NewContainerService(
-		event.NewEventService(setupProjectTestDB(t), nil, nil),
-		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, dockerServer)),
-		nil,
-		nil,
-		nil,
-		nil,
-		podman.NewService(podman.Config{
+	svc := NewContainerService(ContainerServiceParams{
+		EventService:  event.NewEventService(setupProjectTestDB(t), nil, nil),
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, dockerServer)),
+		PodmanService: podman.NewService(podman.Config{
 			Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
 				return compat.EngineCompatibilityInfo{Name: "podman"}, nil
 			},
@@ -1820,7 +1869,7 @@ func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTe
 				return systemd
 			},
 		}),
-	)
+	})
 	return svc, systemd, func() []string {
 		mu.Lock()
 		defer mu.Unlock()
@@ -1830,7 +1879,7 @@ func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTe
 
 func TestContainerLifecycleRoutesQuadletContainersThroughSystemd(t *testing.T) {
 	svc, systemd, dockerCalls := newQuadletTestContainerService(t)
-	actor := user.Actor{ID: "user-1", Username: "tester"}
+	actor := types.Actor{ID: "user-1", Username: "tester"}
 
 	require.NoError(t, svc.StartContainer(t.Context(), "quadlet-id", actor))
 	require.NoError(t, svc.StopContainer(t.Context(), "quadlet-id", actor))
@@ -1845,13 +1894,16 @@ func TestContainerLifecycleRoutesQuadletContainersThroughSystemd(t *testing.T) {
 
 func TestContainerMutationsRefuseQuadletContainers(t *testing.T) {
 	svc, systemd, dockerCalls := newQuadletTestContainerService(t)
-	actor := user.Actor{ID: "user-1", Username: "tester"}
+	actor := types.Actor{ID: "user-1", Username: "tester"}
 
-	_, err := svc.EditContainer(t.Context(), "quadlet-id", containertypes.Edit{}, actor)
+	_, err := svc.EditContainer(t.Context(), "quadlet-id", types.ContainerEdit{}, actor)
 	require.ErrorIs(t, err, common.ErrContainerQuadletManaged)
 	_, err = svc.RedeployContainer(t.Context(), "quadlet-id", actor)
 	require.ErrorIs(t, err, common.ErrContainerQuadletManaged)
-	require.ErrorIs(t, svc.DeleteContainer(t.Context(), "quadlet-id", true, true, actor), common.ErrContainerQuadletManaged)
+	require.ErrorIs(t, svc.DeleteContainer(t.Context(), "quadlet-id", DeleteContainerOptions{
+		Force:         true,
+		RemoveVolumes: true,
+	}, actor), common.ErrContainerQuadletManaged)
 
 	require.Equal(t, []string{
 		"GET /containers/quadlet-id/json",
@@ -1859,4 +1911,103 @@ func TestContainerMutationsRefuseQuadletContainers(t *testing.T) {
 		"GET /containers/quadlet-id/json",
 	}, dockerCalls())
 	require.Empty(t, systemd.calls)
+}
+
+func TestPendingContainerCountUsesScopedTagRecords(t *testing.T) {
+	db := setupProjectTestDB(t)
+	tagLabels := map[string]string{labels.LabelUpdateStrategy: "auto"}
+	records := []imageupdate.ImageUpdateRecord{
+		{ID: "shared", Repository: "docker.io/library/app", Tag: "stable", HasUpdate: true, UpdateType: "digest"},
+		{ID: "container::first", PolicyKey: imageref.UpdatePolicyKey("app:1.2.3", tagLabels), ContainerID: "first", ImageID: "shared", HasUpdate: true, UpdateType: "tag"},
+		{
+			ID: "container::other-project",
+			PolicyKey: imageref.UpdatePolicyKey(
+				"app:1.2.3",
+				tagLabels,
+			),
+			ContainerID: "other-project",
+			ImageID:     "shared",
+			HasUpdate:   true,
+			UpdateType:  "tag",
+		},
+	}
+	require.NoError(t, db.Create(&records).Error)
+	service := &ContainerService{imageService: imagedomain.NewImageService(imagedomain.ImageServiceParams{
+		DB: db,
+	})}
+	containers := []container.Summary{
+		{ID: "first", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{labels.LabelUpdateStrategy: "auto"}},
+		{ID: "unchecked", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{labels.LabelUpdateStrategy: "auto"}},
+	}
+	count, err := service.CountPendingUpdates(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+	containers = append(containers, container.Summary{ID: "digest", Image: "app:latest", ImageID: "shared"})
+	count, err = service.CountPendingUpdates(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 2, count, "a digest record under another tag of the running image counts")
+	containers = append(containers, container.Summary{ID: "digest-twin", Image: "app:latest", ImageID: "shared"})
+	count, err = service.CountPendingUpdates(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 3, count, "separate containers sharing one image each count once")
+	containers[0].Labels[labels.LabelUpdater] = "off"
+	count, err = service.CountPendingUpdates(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 3, count, "disabling automatic installation keeps the pending update visible")
+	containers[0].Labels[imageref.UpdateCheckLabel] = "false"
+	count, err = service.CountPendingUpdates(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 2, count, "disabling update checks suppresses the result")
+	containers[2].ImageID = ""
+	count, err = service.CountPendingUpdates(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 1, count, "a missing runtime image ID inherits no digest check")
+}
+
+func TestAggregateContainerCountsSumsEnvironments(t *testing.T) {
+	ctx, _ := containerScopeContext(t, "/api/environments/a,b,c/containers/counts", map[string]any{
+		"a": types.ApiResponse[types.ContainerStatusCounts]{
+			Success: true,
+			Data: types.ContainerStatusCounts{
+				RunningContainers: 2,
+				StoppedContainers: 1,
+				TotalContainers:   3,
+				UpdatesAvailable:  1,
+			},
+		},
+		"b": types.ApiResponse[types.ContainerStatusCounts]{
+			Success: true,
+			Data: types.ContainerStatusCounts{
+				RunningContainers: 1,
+				TotalContainers:   1,
+				UpdatesAvailable:  2,
+			},
+		},
+	})
+
+	body, err := (&ContainerService{}).AggregateContainerCounts(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, types.ContainerStatusCounts{
+		RunningContainers: 3,
+		StoppedContainers: 1,
+		TotalContainers:   4,
+		UpdatesAvailable:  3,
+	}, body.Data)
+	require.Len(t, body.Environments, 2)
+	require.Equal(t, 2, body.Environments[1].Data.UpdatesAvailable)
+	require.Len(t, body.FailedEnvironments, 1)
+}
+
+func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/env';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import {
 		Background,
 		BackgroundVariant,
@@ -17,12 +18,15 @@
 	import { onMount } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { EyeOnIcon } from '#lib/icons/index.js';
+	import { AlertIcon, EyeOnIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { NetworkTopologyDto, TopologyEdgeDto, TopologyNodeDto } from '#lib/types/docker.js';
+	import type { TopologyEdgeDto } from '#lib/types/docker.js';
 	import { cn } from '#lib/utils.js';
+
+	import type { EnvironmentTopology } from './topology.js';
 
 	import '@xyflow/svelte/dist/style.css';
 
@@ -30,9 +34,16 @@
 		topology,
 		class: className = ''
 	}: {
-		topology: NetworkTopologyDto;
+		topology: Pick<EnvironmentTopology, 'nodes' | 'edges'>;
 		class?: string;
 	} = $props();
+
+	type TopologyNodeDto = EnvironmentTopology['nodes'][number];
+
+	function nodeResourceId(node: TopologyNodeDto): string {
+		const prefix = `${node.environmentId}/`;
+		return node.id.startsWith(prefix) ? node.id.slice(prefix.length) : node.id;
+	}
 
 	let isReady = $state(false);
 
@@ -41,7 +52,8 @@
 	});
 
 	type DiagramNodeData = {
-		href: string;
+		resourceId: string;
+		environmentId: string;
 		kind: 'network' | 'container';
 		label: string;
 	};
@@ -185,6 +197,7 @@
 		if (node.type === 'network') {
 			return [
 				node.name,
+				node.environmentName,
 				node.metadata.driver ? `Driver: ${node.metadata.driver}` : null,
 				node.metadata.scope ? `Scope: ${node.metadata.scope}` : null,
 				node.metadata.isDefault ? 'Default Docker network' : null
@@ -193,7 +206,12 @@
 				.join('\n');
 		}
 
-		return [node.name, node.metadata.status ? `Status: ${node.metadata.status}` : null, node.metadata.image ?? null]
+		return [
+			node.name,
+			node.environmentName,
+			node.metadata.status ? `Status: ${node.metadata.status}` : null,
+			node.metadata.image ?? null
+		]
 			.filter(Boolean)
 			.join('\n');
 	}
@@ -364,7 +382,8 @@
 					'font-weight: 600'
 				].join('; '),
 				data: {
-					href: `/networks/${node.id}`,
+					resourceId: nodeResourceId(node),
+					environmentId: node.environmentId,
 					kind: 'network',
 					label: nodeLabel(node)
 				},
@@ -381,7 +400,8 @@
 				id: node.id,
 				position: layout.containerPositions[node.id] ?? { x: 440, y: 0 },
 				data: {
-					href: `/containers/${node.id}`,
+					resourceId: nodeResourceId(node),
+					environmentId: node.environmentId,
 					kind: 'container',
 					label: containerLabel(node, connectionsByContainer[node.id] ?? [])
 				},
@@ -436,10 +456,14 @@
 	}
 
 	function handleNodeClick({ node }: { node: Node }) {
-		const href = (node.data as DiagramNodeData | undefined)?.href;
-		if (href) {
-			void goto(href);
-		}
+		const data = node.data as DiagramNodeData | undefined;
+		if (!data) return;
+		const env = encodeURIComponent(data.environmentId);
+		void goto(
+			data.kind === 'network'
+				? resolve(`/(app)/networks/[networkId]?env=${env}`, { networkId: data.resourceId })
+				: resolve(`/(app)/containers/[containerId]?env=${env}`, { containerId: data.resourceId })
+		);
 	}
 </script>
 
@@ -472,7 +496,7 @@
 								onCheckedChange={(checked) =>
 									(visibleDefaults.current = { ...visibleDefaults.current, [node.id]: checked === true })}
 							>
-								{node.name}
+								{node.name} · {node.environmentName}
 							</DropdownMenu.CheckboxItem>
 						{/each}
 					</DropdownMenu.Content>
@@ -486,35 +510,45 @@
 			<p class="text-base font-medium text-foreground">{m.networks_topology_empty()}</p>
 		</div>
 	{:else if browser && isReady}
-		<div class="network-diagram-shell overflow-hidden rounded-3xl border">
-			<SvelteFlow
-				nodes={diagramNodes}
-				edges={diagramEdges}
-				colorMode={isDarkMode ? 'dark' : 'light'}
-				fitView
-				minZoom={0.35}
-				maxZoom={1.75}
-				zoomOnScroll
-				zoomOnPinch
-				panOnDrag
-				nodesDraggable
-				nodesConnectable={false}
-				elementsSelectable
-				attributionPosition="bottom-left"
-				class="network-diagram-flow"
-				onnodeclick={handleNodeClick}
-			>
-				<Controls showLock={false} />
-				<MiniMap
-					bgColor={canvasTheme.minimapBackground}
-					maskColor={canvasTheme.minimapMask}
-					maskStrokeColor={canvasTheme.minimapMaskStroke}
-					nodeColor={miniMapColor}
-					nodeStrokeColor={miniMapColor}
-				/>
-				<Background variant={BackgroundVariant.Dots} gap={18} size={1.2} bgColor={canvasTheme.backgroundDots} />
-			</SvelteFlow>
-		</div>
+		<svelte:boundary>
+			<div class="network-diagram-shell overflow-hidden rounded-3xl border">
+				<SvelteFlow
+					nodes={diagramNodes}
+					edges={diagramEdges}
+					colorMode={isDarkMode ? 'dark' : 'light'}
+					fitView
+					minZoom={0.35}
+					maxZoom={1.75}
+					zoomOnScroll
+					zoomOnPinch
+					panOnDrag
+					nodesDraggable
+					nodesConnectable={false}
+					elementsSelectable
+					attributionPosition="bottom-left"
+					class="network-diagram-flow"
+					onnodeclick={handleNodeClick}
+				>
+					<Controls showLock={false} />
+					<MiniMap
+						bgColor={canvasTheme.minimapBackground}
+						maskColor={canvasTheme.minimapMask}
+						maskStrokeColor={canvasTheme.minimapMaskStroke}
+						nodeColor={miniMapColor}
+						nodeStrokeColor={miniMapColor}
+					/>
+					<Background variant={BackgroundVariant.Dots} gap={18} size={1.2} bgColor={canvasTheme.backgroundDots} />
+				</SvelteFlow>
+			</div>
+
+			{#snippet failed(_renderError: unknown, reset: () => void)}
+				<Alert.Root variant="destructive" icon={AlertIcon} heading={m.error_generic()}>
+					<div class="mt-3">
+						<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onclick={reset} />
+					</div>
+				</Alert.Root>
+			{/snippet}
+		</svelte:boundary>
 	{/if}
 </div>
 

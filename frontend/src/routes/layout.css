@@ -3,7 +3,6 @@
 @import 'shadcn-svelte/tailwind.css';
 @import '@fontsource-variable/montserrat';
 @import '@fontsource-variable/geist-mono';
-@import './themes.css';
 
 @custom-variant dark (&:is(.dark *));
 @custom-variant desktop-layout (&:where([data-layout='desktop'], [data-layout='desktop'] *));
@@ -159,6 +158,24 @@
 		0 24px 48px -24px color-mix(in oklch, var(--glass-shadow-color) 50%, transparent);
 }
 
+.dark.oled:not([data-app-theme]) {
+	--background: oklch(0 0 0);
+	--card: oklch(0 0 0 / 0.5);
+	--popover: oklch(0.04 0.002 285);
+	--secondary: oklch(0.1 0.004 286 / 0.55);
+	--muted: oklch(0.1 0.004 286 / 0.55);
+	--accent: oklch(0.1 0.004 286 / 0.55);
+	--border: oklch(1 0 0 / 18%);
+	--input: oklch(1 0 0 / 18%);
+	--sidebar: oklch(0.02 0.001 285 / 0.8);
+	--sidebar-border: oklch(1 0 0 / 18%);
+	--sidebar-accent: oklch(0.1 0.004 286 / 0.55);
+	--surface: oklch(0.045 0.002 285.9);
+	--bg-surface: oklch(0.02 0.001 285);
+	--glass-base: oklch(0.02 0.001 285);
+	--glass-shadow-color: oklch(0 0 0 / 0.6);
+}
+
 html.no-blur *,
 html.no-blur *::before,
 html.no-blur *::after {
@@ -209,13 +226,14 @@ html.reduce-effects *::after {
 }
 
 @theme inline {
-	--radius-sm: calc(var(--radius) * 0.6);
-	--radius-md: calc(var(--radius) * 0.8);
-	--radius-lg: var(--radius);
 	--radius-xl: calc(var(--radius) * 1.4);
-	--radius-2xl: calc(var(--radius) * 1.8);
-	--radius-3xl: calc(var(--radius) * 2.2);
-	--radius-4xl: calc(var(--radius) * 2.6);
+	--radius-xs: var(--radius-xl);
+	--radius-sm: var(--radius-xl);
+	--radius-md: var(--radius-xl);
+	--radius-lg: var(--radius-xl);
+	--radius-2xl: var(--radius-xl);
+	--radius-3xl: var(--radius-xl);
+	--radius-4xl: var(--radius-xl);
 
 	--color-background: var(--background);
 	--color-row-hover: color-mix(in oklab, var(--primary) 6%, var(--background));
@@ -308,6 +326,9 @@ html.reduce-effects *::after {
 	--width-full-inset: calc(100% - 2rem);
 	--width-full-outset: calc(100% + 1rem);
 	--width-panel: min(94vw, 47.5rem);
+	--width-activity-tray: min(calc(100vw - 2rem), 26rem);
+	--width-activity-inspector: min(calc(100vw - 1rem), 62rem);
+	--max-height-activity-tray: min(calc(100vh - 2rem), 42rem);
 	--max-width-crumb: 28ch;
 	--max-width-7-10: 70%;
 	--max-width-tooltip: min(calc(100vw - 2rem), 20rem);
@@ -327,6 +348,7 @@ html.reduce-effects *::after {
 	--font-sans: 'Montserrat Variable', sans-serif;
 	--font-heading: 'Geist Mono Variable', monospace;
 	--font-mono: 'Geist Mono Variable', monospace;
+	--font-code: 'Mona Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'Courier New', monospace;
 }
 
 @layer base {
@@ -570,6 +592,124 @@ input:autofill:active {
 	border-radius: inherit;
 }
 
+@utility dashboard-grid {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+	@media (width >= 64rem) {
+		display: block;
+		position: relative;
+		height: calc(var(--grid-rows) * 4rem - 1rem);
+		transition: height 150ms ease-out;
+	}
+}
+
+@utility dashboard-widget {
+	@media (width >= 64rem) {
+		position: absolute;
+		top: calc(var(--widget-y) * 4rem);
+		left: calc((100% + 1rem) * var(--widget-x) / 12);
+		width: calc((100% + 1rem) * var(--widget-w) / 12 - 1rem);
+		height: calc(var(--widget-h) * 4rem - 1rem);
+		translate: var(--widget-dx, 0) var(--widget-dy, 0);
+		&:not([data-moving]) {
+			transition:
+				top 150ms ease-out,
+				left 150ms ease-out,
+				width 150ms ease-out,
+				height 150ms ease-out,
+				translate 150ms ease-out;
+		}
+	}
+}
+
+@utility hover-glow {
+	transition:
+		background-color 150ms ease-out,
+		box-shadow 150ms ease-out;
+	&:hover {
+		background-color: color-mix(in oklab, var(--color-primary) 6%, transparent);
+		box-shadow:
+			inset 0 0 0 1px color-mix(in oklab, var(--color-primary) 14%, transparent),
+			0 0 14px -6px color-mix(in oklab, var(--color-primary) 45%, transparent);
+	}
+}
+
+@utility hover-glow-card {
+	transition:
+		color 200ms ease-out,
+		background-color 200ms ease-out,
+		border-color 200ms ease-out,
+		box-shadow 200ms ease-out;
+	&:hover {
+		border-color: color-mix(in oklab, var(--color-primary) 30%, var(--color-border));
+		box-shadow: 0 0 24px -10px color-mix(in oklab, var(--color-primary) 40%, transparent);
+	}
+}
+
+@utility hover-glow-card-subtle {
+	transition:
+		color 200ms ease-out,
+		background-color 200ms ease-out,
+		border-color 200ms ease-out,
+		box-shadow 200ms ease-out;
+	&:hover {
+		border-color: color-mix(in oklab, var(--color-primary) 20%, var(--color-border));
+		box-shadow: 0 0 16px -10px color-mix(in oklab, var(--color-primary) 25%, transparent);
+	}
+}
+
+@utility widget-scaled {
+	@media (width >= 64rem) {
+		width: calc(100% / 0.9);
+		height: calc(100% / 0.9);
+		transform: scale(0.9);
+		transform-origin: top left;
+	}
+}
+
 @utility transition-stroke-dashoffset {
 	transition-property: stroke-dashoffset;
+}
+
+/* Skips layout and paint for off-screen rows in long lists. */
+@utility content-visibility-auto {
+	content-visibility: auto;
+	contain-intrinsic-size: auto 4rem;
+}
+
+@property --border-beam-angle {
+	syntax: '<angle>';
+	initial-value: -45deg;
+	inherits: false;
+}
+
+@keyframes border-beam-spin {
+	to {
+		--border-beam-angle: 315deg;
+	}
+}
+
+@utility border-beam {
+	padding: 1px;
+	background: conic-gradient(
+		from var(--border-beam-angle),
+		transparent 0deg,
+		var(--border-beam-color, var(--primary)) 50deg,
+		transparent 100deg,
+		transparent 180deg,
+		color-mix(in oklab, var(--border-beam-color, var(--primary)) 60%, transparent) 230deg,
+		transparent 280deg
+	);
+	mask:
+		linear-gradient(#000 0 0) content-box exclude,
+		linear-gradient(#000 0 0);
+}
+
+@utility animate-border-beam {
+	animation: border-beam-spin 6s linear infinite;
+
+	@media (prefers-reduced-motion: reduce) {
+		animation: none;
+	}
 }

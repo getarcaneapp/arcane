@@ -1,0 +1,72 @@
+package notifications
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/url"
+	"strconv"
+	"strings"
+
+	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
+)
+
+// BuildGotifyURL converts GotifyConfig to Shoutrrr URL format
+// URL example: gotify://host[:port][/path]/token[?query]
+func BuildGotifyURL(config GotifyConfig) (string, error) {
+	if config.Host == "" {
+		return "", errors.New("gotify host is required")
+	}
+
+	if config.Token == "" {
+		return "", errors.New("gotify token is required")
+	}
+
+	u := &url.URL{
+		Scheme: "gotify",
+	}
+
+	host := config.Host
+	if config.Port > 0 {
+		u.Host = fmt.Sprintf("%s:%d", host, config.Port)
+	} else {
+		u.Host = host
+	}
+
+	path := config.Path
+	if path != "" && !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	path = strings.TrimSuffix(path, "/")
+	u.Path = path + "/" + config.Token
+
+	q := u.Query()
+	// Always set priority if it's within valid range, 0 is a valid priority
+	q.Set("priority", strconv.Itoa(config.Priority))
+
+	if config.Title != "" {
+		q.Set("title", config.Title)
+	}
+	if config.DisableTLS {
+		q.Set("disabletls", "yes")
+	}
+	if config.InsecureSkipVerify {
+		q.Set("insecureskipverify", "yes")
+	}
+	if config.UseHeader {
+		q.Set("useheader", "yes")
+	}
+
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
+// SendGotify sends a message via Shoutrrr Gotify using proper service configuration
+func SendGotify(ctx context.Context, config GotifyConfig, message string) error {
+	shoutrrrURL, err := BuildGotifyURL(config)
+	if err != nil {
+		return fmt.Errorf("failed to build shoutrrr Gotify URL: %w", err)
+	}
+
+	return sendShoutrrr("Gotify", shoutrrrURL, message, &shoutrrrTypes.Params{})
+}

@@ -1,14 +1,14 @@
 package backup
 
 import (
-	"encoding/json"
+	"context"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -17,24 +17,28 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	containerdomain "github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman"
+	"kit.getarcane.app/docker/streams/bus"
+
+	"getarcane.dev/arcane/v3/internal/config"
+	containerdomain "getarcane.dev/arcane/v3/internal/container"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/podman"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/types/v3"
 )
 
 func TestResolveBackupStorageMountFromMounts(t *testing.T) {
 	tests := []struct {
 		name         string
-		mounts       []container.MountPoint
 		target       string
-		readOnly     bool
-		wantResolved bool
 		wantType     mount.Type
 		wantSource   string
 		wantTarget   string
+		mounts       []container.MountPoint
+		readOnly     bool
+		wantResolved bool
 		wantReadOnly bool
 	}{
 		{
@@ -112,8 +116,8 @@ func TestResolveBackupStorageMountFromMounts(t *testing.T) {
 func TestBackupMountWarningFromArcaneMounts(t *testing.T) {
 	tests := []struct {
 		name   string
-		mounts []container.MountPoint
 		want   string
+		mounts []container.MountPoint
 	}{
 		{
 			name: "bind mount at backups suppresses warning",
@@ -179,9 +183,13 @@ func setupVolumeBackupLifecycleTest(t *testing.T, handler http.Handler) *Service
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&event.Event{}))
 	db := &database.DB{DB: gormDB}
-	dockerService := docker.NewDockerClientService(t.Context(), db, &config.Config{}, nil).WithClient(dockerClient)
+	dockerService := newVolumeTestDockerService(t, dockerClient)
 	eventService := event.NewEventService(db, &config.Config{}, nil)
-	containerService := containerdomain.NewContainerService(eventService, dockerService, nil, nil, nil, nil, podman.NewService(podman.Config{Engine: dockerService.Engine}))
+	containerService := containerdomain.NewContainerService(containerdomain.ContainerServiceParams{
+		EventService:  eventService,
+		DockerService: dockerService,
+		PodmanService: podman.NewService(podman.Config{Engine: dockerService.Engine}),
+	})
 	return NewService(Dependencies{
 		Docker:         dockerService,
 		StopContainer:  containerService.StopContainer,
@@ -196,7 +204,7 @@ func TestVolumeBackupContainerLifecycleStopsAndRestartsOnlyRunningContainersUsin
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+			assert.NoError(t, json.MarshalWrite(w, []container.Summary{
 				{ID: "uses-volume", Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}}},
 				{ID: "other-volume", Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "other-data"}}},
 				{ID: "arcane", Labels: map[string]string{"com.getarcaneapp.arcane": "true"}, Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}}},
@@ -217,7 +225,7 @@ func TestVolumeBackupContainerLifecycleStopsAndRestartsOnlyRunningContainersUsin
 	})
 
 	service := setupVolumeBackupLifecycleTest(t, serverHandler)
-	actor := user.Actor{ID: "user-1", Username: "tester"}
+	actor := types.Actor{ID: "user-1", Username: "tester"}
 	stopped, err := service.stopRunningContainersForBackup(t.Context(), "app-data", actor, false)
 	require.NoError(t, err)
 	require.Len(t, stopped, 1)
@@ -236,7 +244,7 @@ func TestVolumeBackupContainerLifecycleRollsBackStoppedContainersOnStopFailure(t
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+			assert.NoError(t, json.MarshalWrite(w, []container.Summary{
 				{ID: "first", Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}}},
 				{ID: "second", Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}}},
 			}))
@@ -261,7 +269,7 @@ func TestVolumeBackupContainerLifecycleRollsBackStoppedContainersOnStopFailure(t
 	})
 
 	service := setupVolumeBackupLifecycleTest(t, serverHandler)
-	actor := user.Actor{ID: "user-1", Username: "tester"}
+	actor := types.Actor{ID: "user-1", Username: "tester"}
 	stillStopped, err := service.stopRunningContainersForBackup(t.Context(), "app-data", actor, false)
 	require.ErrorContains(t, err, "failed to stop container second")
 	require.Empty(t, stillStopped)
@@ -281,7 +289,7 @@ func TestVolumeBackupContainerLifecycleWaitsForRunningComposeReplacement(t *test
 			call := listCalls
 			mu.Unlock()
 			if call == 1 {
-				assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+				assert.NoError(t, json.MarshalWrite(w, []container.Summary{
 					{
 						ID:     "old-id",
 						Names:  []string{"/old-name"},
@@ -293,10 +301,10 @@ func TestVolumeBackupContainerLifecycleWaitsForRunningComposeReplacement(t *test
 				return
 			}
 			if call == 2 {
-				assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+				assert.NoError(t, json.MarshalWrite(w, []container.Summary{}))
 				return
 			}
-			assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+			assert.NoError(t, json.MarshalWrite(w, []container.Summary{
 				{
 					ID:     "new-id",
 					Names:  []string{"/new-name"},
@@ -321,7 +329,7 @@ func TestVolumeBackupContainerLifecycleWaitsForRunningComposeReplacement(t *test
 	})
 
 	service := setupVolumeBackupLifecycleTest(t, serverHandler)
-	actor := user.Actor{ID: "user-1", Username: "tester"}
+	actor := types.Actor{ID: "user-1", Username: "tester"}
 	stopped, err := service.stopRunningContainersForBackup(t.Context(), "app-data", actor, false)
 	require.NoError(t, err)
 	require.Len(t, stopped, 1)
@@ -331,4 +339,17 @@ func TestVolumeBackupContainerLifecycleWaitsForRunningComposeReplacement(t *test
 	require.NoError(t, err)
 	require.Empty(t, remaining)
 	require.Equal(t, []string{"stop:old-id"}, operations)
+}
+
+func newVolumeTestDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }

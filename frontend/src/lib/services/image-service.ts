@@ -1,14 +1,19 @@
 import { m } from '#lib/paraglide/messages.js';
-import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import type { AutoUpdateCheck, AutoUpdateResult } from '#lib/types/automation.js';
 import type { PruneImagesOptions } from '#lib/types/automation.js';
 import type {
+	ContainerRegistryCredential,
+	ImageBuildRequest,
+	ImageDetailSummaryDto,
+	ImageLoadResult,
+	ImagePruneReport,
 	ImageSummaryDto,
 	ImageUsageCounts,
 	ImageUpdateInfoDto,
 	ImageBuildRecord,
 	ImageAttestationListDto,
 	ImageAttestationRequestOptions,
+	ImageReleaseNotesDto,
 	ImageHistoryItemDto,
 	ImageSearchResultDto,
 	ImageTagRequest,
@@ -16,12 +21,18 @@ import type {
 	ImagePatchRecordDto,
 	ImagePatchTargetDto
 } from '#lib/types/docker.js';
-import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest, Paginated, MessageResponse } from '#lib/types/shared.js';
+import type { OperationStreamFrame } from '#lib/types/stream.js';
 import { readNdjsonStream } from '#lib/utils/streaming.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
-import BaseAPIService, { type APIRequestConfig, isSessionCancelledError, withSessionSignal } from './api-service';
+import BaseAPIService, {
+	type APIRequestConfig,
+	extractServerMessage,
+	isSessionCancelledError,
+	withSessionSignal
+} from './api-service';
 import { uploadService, type UploadProgressCallback } from './upload-service';
 
 export type ImagePullResult = {
@@ -38,15 +49,6 @@ export type ImagesPaginatedResponse = Paginated<ImageSummaryDto> & {
 };
 
 class ImageService extends BaseAPIService {
-	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
-		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
-	}
-
-	async getImages(options?: SearchPaginationSortRequest): Promise<ImagesPaginatedResponse> {
-		const envId = await this.resolveEnvironmentId();
-		return this.getImagesForEnvironment(envId, options);
-	}
-
 	async getImagesForEnvironment(
 		environmentId: string,
 		options?: SearchPaginationSortRequest,
@@ -57,22 +59,12 @@ class ImageService extends BaseAPIService {
 		return res.data;
 	}
 
-	async getImageUsageCounts(): Promise<ImageUsageCounts> {
-		const envId = await this.resolveEnvironmentId();
-		return this.getImageUsageCountsForEnvironment(envId);
-	}
-
 	async getImageUsageCountsForEnvironment(environmentId: string, config?: APIRequestConfig): Promise<ImageUsageCounts> {
 		const res = await this.api.get(`/environments/${environmentId}/images/counts`, config);
 		return res.data.data;
 	}
 
-	async getImage(imageId: string): Promise<any> {
-		const envId = await this.resolveEnvironmentId();
-		return this.getImageForEnvironment(envId, imageId);
-	}
-
-	async getImageForEnvironment(environmentId: string, imageId: string): Promise<any> {
+	async getImageForEnvironment(environmentId: string, imageId: string): Promise<ImageDetailSummaryDto> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/${imageId}`));
 	}
 
@@ -93,62 +85,54 @@ class ImageService extends BaseAPIService {
 		);
 	}
 
-	async tagImage(imageId: string, request: ImageTagRequest, environmentId?: string): Promise<any> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/images/${encodeURIComponent(imageId)}/tag`, request));
+	async getImageReleaseNotes(
+		environmentId: string,
+		imageRef: string,
+		options?: { version?: string; digest?: string }
+	): Promise<ImageReleaseNotesDto> {
+		const params: Record<string, string> = { imageRef };
+		if (options?.version) params['version'] = options.version;
+		if (options?.digest) params['digest'] = options.digest;
+
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/updates/releasenotes`, { params }));
 	}
 
-	async getImageHistory(imageId: string, environmentId?: string): Promise<ImageHistoryItemDto[]> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.get(`/environments/${envId}/images/${encodeURIComponent(imageId)}/history`));
+	async tagImage(imageId: string, request: ImageTagRequest, environmentId: string): Promise<MessageResponse> {
+		return this.handleResponse(
+			this.api.post(`/environments/${environmentId}/images/${encodeURIComponent(imageId)}/tag`, request)
+		);
 	}
 
-	async searchImages(term: string, environmentId?: string): Promise<ImageSearchResultDto[]> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.get(`/environments/${envId}/images/search`, { params: { term } }));
+	async getImageHistory(imageId: string, environmentId: string): Promise<ImageHistoryItemDto[]> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/${encodeURIComponent(imageId)}/history`));
 	}
 
-	async getImageExportUrl(imageId: string, environmentId?: string): Promise<string> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return `/api/environments/${envId}/images/${encodeURIComponent(imageId)}/export`;
+	async searchImages(term: string, environmentId: string): Promise<ImageSearchResultDto[]> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/search`, { params: { term } }));
 	}
 
-	async pullImageStream(imageName: string, onLine?: (data: any) => void, environmentId?: string): Promise<ImagePullResult> {
-		const envId = await this.resolveEnvironmentId(environmentId);
+	async getImageExportUrl(imageId: string, environmentId: string): Promise<string> {
+		return `/api/environments/${environmentId}/images/${encodeURIComponent(imageId)}/export`;
+	}
 
+	async pullImageStream(
+		imageName: string,
+		onLine: ((data: unknown) => void) | undefined,
+		environmentId: string
+	): Promise<ImagePullResult> {
 		const operationResult = await tryCatch(
 			(async () => {
-				const response = await fetch(`/api/environments/${envId}/images/pull`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ imageName }),
-					signal: withSessionSignal()
-				});
-
-				if (!response.ok || !response.body) {
-					const errorData = await tryCatch(response.json()).then((result) => {
-						if (result.error !== null) {
-							return {
-								data: { message: m.images_pull_server_error() }
-							};
-						} else {
-							return result.data;
-						}
-					});
-					const errorMessage =
-						errorData.data?.message ||
-						errorData.error ||
-						errorData.message ||
-						`${m.images_pull_server_error()}: HTTP ${response.status}`;
-					throw new Error(errorMessage);
-				}
-
-				await readNdjsonStream(response.body, (parsed) => {
+				const body = await this.postStreamInternal(
+					`/api/environments/${environmentId}/images/pull`,
+					{ imageName },
+					(status) => `${m.images_pull_server_error()}: HTTP ${status}`
+				);
+				await readNdjsonStream(body, (parsed: OperationStreamFrame) => {
 					onLine?.(parsed);
 					if (parsed?.error) {
-						const message =
-							typeof parsed.error === 'string' ? parsed.error : parsed.error.message || m.images_pull_stream_failed();
-						throw new Error(message);
+						throw new Error(
+							typeof parsed.error === 'string' ? parsed.error : parsed.error.message || m.images_pull_stream_failed()
+						);
 					}
 					// The terminal frame marks success; don't wait on the network EOF.
 					return parsed?.done === true;
@@ -171,85 +155,124 @@ class ImageService extends BaseAPIService {
 		}
 	}
 
-	async pullImage(imageName: string, tag: string = 'latest', auth?: any, environmentId?: string): Promise<any> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/images/pull`, { imageName, tag, auth }));
+	async buildImageStream(request: ImageBuildRequest, environmentId: string, onLine: (line: string) => boolean): Promise<void> {
+		const body = await this.postStreamInternal(`/api/environments/${environmentId}/images/build`, request, (status) =>
+			m.build_request_failed_http({ status })
+		);
+		const reader = body.getReader();
+		const decoder = new TextDecoder();
+		let buffer = '';
+		let streamComplete = false;
+
+		while (!streamComplete) {
+			const { done, value } = await reader.read();
+			if (done) {
+				break;
+			}
+
+			buffer += decoder.decode(value, { stream: true });
+			const lines = buffer.split('\n');
+			buffer = lines.pop() || '';
+
+			streamComplete = lines.some(onLine);
+		}
+		if (streamComplete) {
+			await tryCatch(reader.cancel());
+		}
 	}
 
-	async deleteImage(imageId: string, options?: { force?: boolean; noprune?: boolean }, environmentId?: string): Promise<any> {
-		// Resolve the env id synchronously when possible so bulk deletes start
-		// their request inside the runWithActivityBatchId scope (see api-service).
-		const envId =
-			environmentId ??
-			(environmentStore.isInitialized()
-				? (environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID)
-				: await environmentStore.getCurrentEnvironmentId());
-		return this.handleResponse(this.api.delete(`/environments/${envId}/images/${imageId}`, { params: options }));
+	private async postStreamInternal(
+		url: string,
+		body: unknown,
+		failedMessage: (status: number) => string
+	): Promise<ReadableStream<Uint8Array>> {
+		const response = await fetch(url, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+			signal: withSessionSignal()
+		});
+		if (response.ok && response.body) {
+			return response.body;
+		}
+		const errorBody = await tryCatch(response.json());
+		throw new Error(extractServerMessage(errorBody.data, true) ?? failedMessage(response.status));
 	}
 
-	async pruneImages(options: PruneImagesOptions, environmentId?: string): Promise<any> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/images/prune`, options));
+	async pullImage(
+		imageName: string,
+		tag: string = 'latest',
+		auth: ContainerRegistryCredential | undefined,
+		environmentId: string
+	): Promise<string> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/images/pull`, { imageName, tag, auth }));
 	}
 
-	async patchImage(imageId: string, options?: ImagePatchOptions, environmentId?: string): Promise<ImagePatchRecordDto> {
-		const envId = await this.resolveEnvironmentId(environmentId);
+	async deleteImage(
+		imageId: string,
+		options: { force?: boolean; noprune?: boolean } | undefined,
+		environmentId: string
+	): Promise<MessageResponse> {
+		return this.handleResponse(this.api.delete(`/environments/${environmentId}/images/${imageId}`, { params: options }));
+	}
+
+	async pruneImages(options: PruneImagesOptions, environmentId: string): Promise<ImagePruneReport> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/images/prune`, options));
+	}
+
+	async patchImage(imageId: string, options: ImagePatchOptions | undefined, environmentId: string): Promise<ImagePatchRecordDto> {
 		return this.handleResponse(
-			this.api.post(`/environments/${envId}/images/${encodeURIComponent(imageId)}/patch`, options ?? {})
+			this.api.post(`/environments/${environmentId}/images/${encodeURIComponent(imageId)}/patch`, options ?? {})
 		);
 	}
 
 	async listPatchTargets(
-		options?: SearchPaginationSortRequest,
-		environmentId?: string,
+		options: SearchPaginationSortRequest | undefined,
+		environmentId: string,
 		config?: APIRequestConfig
 	): Promise<Paginated<ImagePatchTargetDto>> {
-		const envId = await this.resolveEnvironmentId(environmentId);
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${envId}/images/patch-targets`, { ...config, params });
+		const res = await this.api.get(`/environments/${environmentId}/images/patches/targets`, { ...config, params });
 		return res.data;
 	}
 
-	async checkImageUpdateByID(imageId: string, environmentId?: string): Promise<ImageUpdateInfoDto> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/image-updates/check/${imageId}`, {}));
+	async checkImageUpdateByID(imageId: string, environmentId: string): Promise<ImageUpdateInfoDto> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/images/updates/check/${imageId}`, {}));
 	}
 
-	async checkAllImages(environmentId?: string): Promise<Record<string, ImageUpdateInfoDto>> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/image-updates/check-all`, {}));
+	async checkAllImages(environmentId: string): Promise<Record<string, ImageUpdateInfoDto>> {
+		return this.handleResponse(
+			this.api.post(`/environments/${environmentId}/images/updates/check`, {}, { params: { action: 'all' } })
+		);
 	}
 
-	async checkMultipleImages(imageRefs: string[], environmentId?: string): Promise<Record<string, ImageUpdateInfoDto>> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/image-updates/check-batch`, { imageRefs }));
+	async checkMultipleImages(imageRefs: string[], environmentId: string): Promise<Record<string, ImageUpdateInfoDto>> {
+		return this.handleResponse(
+			this.api.post(`/environments/${environmentId}/images/updates/check`, { imageRefs }, { params: { action: 'batch' } })
+		);
 	}
 
-	async runAutoUpdate(options?: AutoUpdateCheck, environmentId?: string): Promise<AutoUpdateResult> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/updater/run`, options));
+	async runAutoUpdate(options: AutoUpdateCheck | undefined, environmentId: string): Promise<AutoUpdateResult> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/updater/run`, options));
 	}
 
-	async uploadImage(file: File, environmentId?: string, onProgress?: UploadProgressCallback): Promise<any> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		const uploadId = await uploadService.uploadFile(envId, 'image', file, onProgress);
-		return this.handleResponse(this.api.post(`/environments/${envId}/images/upload`, { uploadId }));
+	async uploadImage(file: File, environmentId: string, onProgress?: UploadProgressCallback): Promise<ImageLoadResult> {
+		const uploadId = await uploadService.uploadFile(environmentId, 'image', file, onProgress);
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/images/upload`, { uploadId }));
 	}
 
 	async getImageBuilds(
-		options?: SearchPaginationSortRequest,
-		environmentId?: string,
+		options: SearchPaginationSortRequest | undefined,
+		environmentId: string,
 		config?: APIRequestConfig
 	): Promise<Paginated<ImageBuildRecord>> {
-		const envId = await this.resolveEnvironmentId(environmentId);
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${envId}/images/builds`, { ...config, params });
+		const res = await this.api.get(`/environments/${environmentId}/images/builds`, { ...config, params });
 		return res.data;
 	}
 
-	async getImageBuild(buildId: string, environmentId?: string): Promise<ImageBuildRecord> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.get(`/environments/${envId}/images/builds/${buildId}`));
+	async getImageBuild(buildId: string, environmentId: string): Promise<ImageBuildRecord> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/builds/${buildId}`));
 	}
 }
 

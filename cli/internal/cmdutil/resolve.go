@@ -12,68 +12,70 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/environment"
-
-	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
+	"getarcane.dev/cli/v3/internal/client"
+	"getarcane.dev/cli/v3/internal/output"
+	"getarcane.dev/cli/v3/internal/prompt"
+	"getarcane.dev/cli/v3/internal/runtime"
+	"getarcane.dev/types/v3"
 )
 
-// MaxPromptOptions caps how many search matches the resolver offers
-// interactively before asking the user to refine the query instead.
-const MaxPromptOptions = 20
+type (
+	// ResourceRef resolves a resource from a name, ID, or prefix.
+	// D is the detail shape and S is the list summary.
+	ResourceRef[D any, S any] struct {
+		// GetPath builds the GET-by-identifier path; ListPath the list endpoint
+		// that Resolve queries with ?search=<identifier>&limit=-1.
+		GetPath  func(envID, identifier string) string
+		ListPath func(envID string) string
+		// SearchCandidates replaces the standard list search for resources with
+		// specialized matching rules.
+		SearchCandidates func(context.Context, *client.Client, string) ([]S, error)
+		// SelectCandidate replaces the standard ambiguity handling while keeping
+		// direct lookup and not-found behavior in Resolve.
+		SelectCandidate func([]S, string, bool) (*S, error)
+		// Validate checks a successful direct lookup before Resolve returns it.
+		Validate func(D, string) error
 
-// ResourceRef resolves a resource from a name, ID, or prefix.
-// D is the detail shape and S is the list summary.
-type ResourceRef[D any, S any] struct {
-	EnvironmentScoped bool
-	// Singular and Plural name the resource in prompts and error messages
-	// ("container", "containers").
-	Singular string
-	Plural   string
-	// IDHint completes "use <IDHint> or run `<ListCmd>`" guidance
-	// ("the container ID", "the volume name").
-	IDHint  string
-	ListCmd string
+		// Matches reports whether a listed item matches the identifier.
+		Matches func(item S, identifierLower, original string) bool
+		// Label renders one match as an interactive prompt option.
+		Label func(S) string
+		// Promote converts a selected summary into the detail shape.
+		Promote func(S) *D
 
-	// GetPath builds the GET-by-identifier path; ListPath the list endpoint
-	// that Resolve queries with ?search=<identifier>&limit=-1.
-	GetPath  func(envID, identifier string) string
-	ListPath func(envID string) string
-	// SearchCandidates replaces the standard list search for resources with
-	// specialized matching rules.
-	SearchCandidates func(context.Context, *client.Client, string) ([]S, error)
-	// SelectCandidate replaces the standard ambiguity handling while keeping
-	// direct lookup and not-found behavior in Resolve.
-	SelectCandidate func([]S, string, bool) (*S, error)
-	// Validate checks a successful direct lookup before Resolve returns it.
-	Validate func(D, string) error
+		// IDOf enables an ID-prefix scan over the full list. Leave nil for resources without opaque IDs.
+		IDOf func(S) string
+		// IdentifierOf supplies the canonical identifier for commands accepting raw IDs.
+		IdentifierOf func(D) string
 
-	// Matches reports whether a listed item matches the identifier.
-	Matches func(item S, identifierLower, original string) bool
-	// Label renders one match as an interactive prompt option.
-	Label func(S) string
-	// Promote converts a selected summary into the detail shape.
-	Promote func(S) *D
+		// Exact identifies exact matches so a unique exact search result wins over substring matches.
+		Exact func(item S, identifierLower, original string) bool
+		// Singular and Plural name the resource in prompts and error messages
+		// ("container", "containers").
+		Singular string
+		Plural   string
+		// IDHint completes "use <IDHint> or run `<ListCmd>`" guidance
+		// ("the container ID", "the volume name").
+		IDHint  string
+		ListCmd string
 
-	// IDOf enables an ID-prefix scan over the full list. Leave nil for resources without opaque IDs.
-	IDOf func(S) string
-	// IdentifierOf supplies the canonical identifier for commands accepting raw IDs.
-	IdentifierOf func(D) string
+		EnvironmentScoped bool
+	}
 
-	// Exact identifies exact matches so a unique exact search result wins over substring matches.
-	Exact func(item S, identifierLower, original string) bool
-}
+	resourceCandidate[D any] struct {
+		details  *D
+		envID    string
+		label    string
+		complete bool
+		exact    bool
+	}
+)
 
-type resourceCandidate[D any] struct {
-	details  *D
-	complete bool
-	exact    bool
-	envID    string
-	label    string
-}
+const (
+	// MaxPromptOptions caps how many search matches the resolver offers
+	// interactively before asking the user to refine the query instead.
+	MaxPromptOptions = 20
+)
 
 // Fetch resolves an identifier and retrieves full detail when resolution returned only a summary.
 func (ref ResourceRef[D, S]) Fetch(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (*D, error) {
@@ -103,9 +105,9 @@ func (ref ResourceRef[D, S]) Resolve(ctx context.Context, c *client.Client, iden
 		return nil, false, fmt.Errorf("%s identifier is required", ref.Singular)
 	}
 	app, _ := runtime.From(ctx)
-	preview := app.PreviewEnabled() && ref.EnvironmentScoped
-	environments := []environment.Environment{{ID: c.EnvID()}}
-	if preview {
+	allEnvironments := app.AllEnvironments() && ref.EnvironmentScoped
+	environments := []types.Environment{{ID: c.EnvID()}}
+	if allEnvironments {
 		var discoveryErr error
 		environments, discoveryErr = app.Environments(ctx)
 		if discoveryErr != nil {
@@ -115,7 +117,7 @@ func (ref ResourceRef[D, S]) Resolve(ctx context.Context, c *client.Client, iden
 	}
 	originalEnv := c.EnvID()
 	defer func() {
-		if preview && app.PreviewEnabled() {
+		if allEnvironments && app.AllEnvironments() {
 			c.SetEnvironment(originalEnv)
 		}
 	}()
@@ -126,16 +128,16 @@ func (ref ResourceRef[D, S]) Resolve(ctx context.Context, c *client.Client, iden
 			return nil, false, cancelErr
 		}
 		c.SetEnvironment(env.ID)
-		matches, lookupErr := ref.candidates(ctx, c, identifier, allowPrompt, preview)
+		matches, lookupErr := ref.candidates(ctx, c, identifier, allowPrompt, allEnvironments)
 		switch {
-		case lookupErr != nil && !preview:
+		case lookupErr != nil && !allEnvironments:
 			return nil, false, lookupErr
 		case lookupErr != nil:
 			failures = append(failures, fmt.Errorf("%s (%s): %w", cmp.Or(env.Name, env.ID), env.ID, lookupErr))
 		}
 		for i := range matches {
 			matches[i].envID = env.ID
-			if preview {
+			if allEnvironments {
 				matches[i].label = fmt.Sprintf("%s — %s (%s)", matches[i].label, cmp.Or(env.Name, env.ID), env.ID)
 			}
 		}
@@ -144,17 +146,17 @@ func (ref ResourceRef[D, S]) Resolve(ctx context.Context, c *client.Client, iden
 	if slices.ContainsFunc(candidates, func(item resourceCandidate[D]) bool { return item.exact }) {
 		candidates = slices.DeleteFunc(candidates, func(item resourceCandidate[D]) bool { return !item.exact })
 	}
-	for _, failure := range failures {
-		output.Warning("%v", failure)
-	}
 	if len(candidates) == 0 {
 		return nil, false, errors.Join(append(failures, fmt.Errorf("%s %q not found; use %s or run `%s`", ref.Singular, identifier, ref.IDHint, ref.ListCmd))...)
+	}
+	for _, failure := range failures {
+		output.Warning("%v", failure)
 	}
 	choice := 0
 	prompted := false
 	if len(candidates) > 1 || len(failures) > 0 {
 		if !allowPrompt {
-			if preview {
+			if allEnvironments {
 				return nil, false, fmt.Errorf("%s %q requires an environment selection; pass --env <id> or run `%s`", ref.Singular, identifier, ref.ListCmd)
 			}
 			return nil, false, fmt.Errorf("multiple %s match %q; use %s or run `%s`", ref.Plural, identifier, ref.IDHint, ref.ListCmd)
@@ -174,11 +176,11 @@ func (ref ResourceRef[D, S]) Resolve(ctx context.Context, c *client.Client, iden
 		}
 	}
 	selected := candidates[choice]
-	if preview {
+	if allEnvironments {
 		app.SelectEnvironment(selected.envID)
 		c.SetEnvironment(selected.envID)
 	}
-	if preview && !prompted {
+	if allEnvironments && !prompted {
 		_, _ = fmt.Fprintf(output.Stderr(), "Selected %s: %s\n", ref.Singular, selected.label)
 	}
 	return selected.details, selected.complete, nil
@@ -236,7 +238,7 @@ func (ref ResourceRef[D, S]) fetchByIdentifier(ctx context.Context, c *client.Cl
 	if ref.GetPath == nil {
 		return nil, false, nil
 	}
-	resp, err := c.Get(ctx, ref.GetPath(c.EnvID(), identifier))
+	resp, err := c.Request(ctx, http.MethodGet, ref.GetPath(c.EnvID(), identifier), nil)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to resolve %s %q: %w", ref.Singular, identifier, err)
 	}
@@ -249,8 +251,8 @@ func (ref ResourceRef[D, S]) fetchByIdentifier(ctx context.Context, c *client.Cl
 
 	if resp.StatusCode == http.StatusOK {
 		var result struct {
-			base.ApiResponse[D]
-			base.ErrorResponse
+			types.ErrorResponse
+			types.ApiResponse[D]
 		}
 		if unmarshalErr := json.Unmarshal(body, &result); unmarshalErr != nil {
 			return nil, false, fmt.Errorf("failed to parse %s response: %w", ref.Singular, unmarshalErr)
@@ -305,7 +307,7 @@ func (ref ResourceRef[D, S]) fallbackByIDPrefix(ctx context.Context, c *client.C
 }
 
 func (ref ResourceRef[D, S]) listItems(ctx context.Context, c *client.Client, path string) ([]S, error) {
-	resp, err := c.Get(ctx, path)
+	resp, err := c.Request(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search %s: %w", ref.Plural, err)
 	}
@@ -321,8 +323,8 @@ func (ref ResourceRef[D, S]) listItems(ctx context.Context, c *client.Client, pa
 	}
 
 	var result struct {
-		base.ApiResponse[[]S]
-		base.ErrorResponse
+		types.ErrorResponse
+		types.ApiResponse[[]S]
 	}
 	if unmarshalErr := json.Unmarshal(body, &result); unmarshalErr != nil {
 		return nil, fmt.Errorf("failed to parse %s response: %w", ref.Plural, unmarshalErr)

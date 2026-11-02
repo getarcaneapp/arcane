@@ -14,19 +14,20 @@ import (
 
 	"github.com/gofrs/flock"
 	"github.com/samber/hot"
-	"go.getarcane.app/acfs/atomic"
 	"go.yaml.in/yaml/v4"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"kit.getarcane.app/fs/atomic"
+
+	"getarcane.dev/cli/v3/internal/output"
+	"getarcane.dev/cli/v3/internal/types"
 )
 
-// Version and build information - set via ldflags at build time
-var (
-	Version          = "dev"
-	Revision         = "unknown"
-	CLIStableBaseURL = "https://github.com/getarcaneapp/arcane/releases/download"
-	CLINextBaseURL   = "https://bucket.getarcane.app/bin/cli-next"
+type (
+	// authTokens are the session tokens saved for one server.
+	authTokens struct {
+		AccessToken  string `json:"accessToken,omitempty"`
+		RefreshToken string `json:"refreshToken,omitempty"`
+	}
 )
 
 const (
@@ -34,29 +35,25 @@ const (
 	defaultPaginationInitLimit = 20
 )
 
-// authTokens are the session tokens saved for one server.
-type authTokens struct {
-	AccessToken  string `json:"accessToken,omitempty"`
-	RefreshToken string `json:"refreshToken,omitempty"`
-}
+var (
+	// Version and build information - set via ldflags at build time
+	Version          = "dev"
+	Revision         = "unknown"
+	CLIStableBaseURL = "https://github.com/getarcaneapp/arcane/releases/download"
+	CLINextBaseURL   = "https://bucket.getarcane.app/bin/cli-next"
 
-var customConfigPath string
+	customConfigPath string
 
-var configCache = hot.NewHotCache[string, *types.Config](hot.LRU, 4).
-	WithCopyOnRead((*types.Config).Clone).
-	WithCopyOnWrite((*types.Config).Clone).
-	Build()
+	configCache = hot.NewHotCache[string, *types.Config](hot.LRU, 4).
+			WithCopyOnRead((*types.Config).Clone).
+			WithCopyOnWrite((*types.Config).Clone).
+			Build()
+)
 
-func invalidateCache() {
-	configCache.Purge()
-}
-
-// DefaultConfig uses localhost:3552, local environment "0", and info logging.
 func DefaultConfig() *types.Config {
 	return &types.Config{
-		ServerURL:          "http://localhost:3552",
-		DefaultEnvironment: "0",
-		LogLevel:           "info",
+		ServerURL: "http://localhost:3552",
+		LogLevel:  "info",
 	}
 }
 
@@ -79,7 +76,7 @@ func ConfigPath() (string, error) {
 func SetConfigPath(path string) error {
 	if strings.TrimSpace(path) == "" {
 		customConfigPath = ""
-		invalidateCache()
+		configCache.Purge()
 		return nil
 	}
 
@@ -99,7 +96,7 @@ func SetConfigPath(path string) error {
 	}
 
 	customConfigPath = absPath
-	invalidateCache()
+	configCache.Purge()
 	return nil
 }
 
@@ -127,17 +124,11 @@ func Load() (*types.Config, error) {
 	// API key configs ignore saved sessions so they keep authenticating as the key.
 	if cfg.APIKey == "" {
 		auth, authErr := loadAuth()
-		tokens, saved := auth[authKey(cfg.ServerURL)]
-		switch {
-		case authErr != nil:
+		if authErr != nil {
 			output.Warning("Ignoring saved sessions: %v", authErr)
-		case saved:
-			cfg.JWTToken, cfg.RefreshToken = tokens.AccessToken, tokens.RefreshToken
-		case cfg.JWTToken != "" || cfg.RefreshToken != "":
-			// TODO(v3): remove the jwt_token and refresh_token config fallback.
-			output.Warning("jwt_token and refresh_token in %s are deprecated and stop working in v3. "+
-				"Run `arcane-cli auth refresh` to move the session to ~/.arcanecli/auth.json.", path)
 		}
+		tokens := auth[strings.TrimRight(strings.TrimSpace(cfg.ServerURL), "/")]
+		cfg.JWTToken, cfg.RefreshToken = tokens.AccessToken, tokens.RefreshToken
 	}
 	normalized := cfg.Clone()
 	if normalized.Pagination.Resources == nil {
@@ -172,28 +163,11 @@ func Save(ctx context.Context, c *types.Config) error {
 		}
 	}
 
-	cfg.JWTToken, cfg.RefreshToken = "", ""
-	// Preserve existing legacy credentials on settings saves; explicit token saves remove them.
-	if c != nil && c.APIKey == "" && (c.JWTToken != "" || c.RefreshToken != "") {
-		data, readErr := os.ReadFile(path)
-		if readErr != nil && !os.IsNotExist(readErr) {
-			return fmt.Errorf("failed to read config file: %w", readErr)
-		}
-		if readErr == nil {
-			legacy := DefaultConfig()
-			if parseErr := yaml.Unmarshal(data, legacy); parseErr != nil {
-				return fmt.Errorf("failed to parse config file: %w", parseErr)
-			}
-			if authKey(legacy.ServerURL) == authKey(cfg.ServerURL) {
-				cfg.JWTToken, cfg.RefreshToken = legacy.JWTToken, legacy.RefreshToken
-			}
-		}
-	}
 	if writeErr := writeConfig(path, cfg, false); writeErr != nil {
 		return writeErr
 	}
 
-	invalidateCache()
+	configCache.Purge()
 
 	return nil
 }
@@ -248,7 +222,7 @@ func InitDefaultFile() (bool, error) {
 		return false, writeErr
 	}
 
-	invalidateCache()
+	configCache.Purge()
 	return true, nil
 }
 
@@ -299,7 +273,7 @@ func SwitchServer(ctx context.Context, cfg *types.Config, serverURL string) erro
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if authKey(serverURL) == authKey(cfg.ServerURL) {
+	if strings.TrimRight(strings.TrimSpace(serverURL), "/") == strings.TrimRight(strings.TrimSpace(cfg.ServerURL), "/") {
 		cfg.ServerURL = serverURL
 		return nil
 	}
@@ -311,13 +285,9 @@ func SwitchServer(ctx context.Context, cfg *types.Config, serverURL string) erro
 	if err != nil {
 		return err
 	}
-	tokens := auth[authKey(serverURL)]
+	tokens := auth[strings.TrimRight(strings.TrimSpace(serverURL), "/")]
 	cfg.JWTToken, cfg.RefreshToken = tokens.AccessToken, tokens.RefreshToken
 	return nil
-}
-
-func authKey(serverURL string) string {
-	return strings.TrimRight(strings.TrimSpace(serverURL), "/")
 }
 
 func loadAuth() (map[string]authTokens, error) {
@@ -374,7 +344,7 @@ func SaveTokens(ctx context.Context, cfg *types.Config) (err error) {
 	if err != nil {
 		return err
 	}
-	key := authKey(cfg.ServerURL)
+	key := strings.TrimRight(strings.TrimSpace(cfg.ServerURL), "/")
 	tokens := authTokens{AccessToken: cfg.JWTToken, RefreshToken: cfg.RefreshToken}
 	if auth[key] != tokens {
 		if tokens == (authTokens{}) {
@@ -400,9 +370,7 @@ func SaveTokens(ctx context.Context, cfg *types.Config) (err error) {
 			}
 		}
 	}
-	settings := cfg.Clone()
-	settings.JWTToken, settings.RefreshToken = "", ""
-	return Save(ctx, settings)
+	return Save(ctx, cfg)
 }
 
 // BackupFile moves the active config to .bak, returning moved=false when no config exists.
@@ -459,6 +427,6 @@ func moveToBackup(path, kind string) (backupPath string, moved bool, err error) 
 		return "", false, fmt.Errorf("failed to move %s file to backup: %w", kind, backupConfigErr)
 	}
 
-	invalidateCache()
+	configCache.Purge()
 	return backupPath, true, nil
 }

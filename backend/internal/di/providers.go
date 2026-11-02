@@ -5,64 +5,119 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"time"
 	"uuid"
 
-	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/moby/moby/api/types/events"
-	"go.getarcane.app/streams/bus"
 	"go.uber.org/fx"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
+	"kit.getarcane.app/concurrency"
+	"kit.getarcane.app/docker/streams/bus"
+
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/apikey"
+	"getarcane.dev/arcane/v3/internal/auth"
+	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/gitops"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/scheduler"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/system"
+	"getarcane.dev/arcane/v3/internal/template"
+	"getarcane.dev/arcane/v3/internal/updater"
+	"getarcane.dev/arcane/v3/internal/volume"
+	"getarcane.dev/arcane/v3/internal/vulnerability"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/francis"
+	"getarcane.dev/arcane/v3/pkg/oidc"
+	"getarcane.dev/types/v3"
 )
 
-func provideBackupEngine(lc fx.Lifecycle, admission *runs.Admission, imageService *image.ImageService, roles *role.RoleService, cfg *config.Config) *backup.Engine {
-	engine := backup.NewEngine(admission, imageService)
-	engine.SetAuthorize(func(ctx context.Context, requester backuptypes.Requester) error {
-		if cfg.AgentMode && requester.UserID == "agent" && requester.APIKeyID == "" {
+type (
+	backupEngineParams struct {
+		fx.In
+
+		Lifecycle    fx.Lifecycle
+		Admission    *runs.Admission
+		ImageService *image.ImageService
+		Roles        *role.RoleService
+		Config       *config.Config
+	}
+
+	actorRuntimeParams struct {
+		fx.In
+
+		AppCtx          context.Context
+		Config          *config.Config
+		SettingsService *settings.SettingsService
+		Lifecycle       fx.Lifecycle
+		CancelApp       context.CancelCauseFunc
+		EncryptionKey   string `name:"encryptionKey"`
+	}
+
+	workflowEngineParams struct {
+		fx.In
+
+		AppCtx      context.Context
+		Runtime     *francis.Runtime
+		Coordinator *runs.Coordinator
+		Activities  *activity.ActivityService
+		Lifecycle   fx.Lifecycle
+	}
+
+	dockerClientServiceParams struct {
+		fx.In
+
+		Ctx           context.Context
+		Lifecycle     fx.Lifecycle
+		DB            *database.DB
+		LocalSettings *settings.SettingsService
+		EventService  *event.EventService
+	}
+
+	authMiddlewareParams struct {
+		fx.In
+
+		AuthService *auth.AuthService
+		APIKey      *apikey.ApiKeyService
+		Env         *environment.EnvironmentService
+		LocalRole   *role.RoleService
+		Config      *config.Config
+	}
+
+	filesystemWatcherJobParams struct {
+		fx.In
+
+		Ctx           context.Context
+		Lifecycle     fx.Lifecycle
+		LocalProject  *project.ProjectService
+		LocalTemplate *template.TemplateService
+		LocalSettings *settings.SettingsService
+	}
+)
+
+func provideBackupEngine(p backupEngineParams) *backup.Engine {
+	engine := backup.NewEngine(p.Admission, p.ImageService)
+	engine.SetAuthorize(func(ctx context.Context, requester types.BackupRequester) error {
+		if p.Config.AgentEnabled && requester.UserID == "agent" && requester.APIKeyID == "" {
 			return nil
 		}
 		if requester.UserID == "" {
 			return errors.New("requesting user unavailable")
 		}
-		permissions, err := roles.ResolveExecutionPermissions(ctx, requester.UserID, requester.APIKeyID)
+		permissions, err := p.Roles.ResolveExecutionPermissions(ctx, requester.UserID, requester.APIKeyID)
 		if err != nil {
 			return err
 		}
@@ -74,36 +129,25 @@ func provideBackupEngine(lc fx.Lifecycle, admission *runs.Admission, imageServic
 		}
 		return nil
 	})
-	lc.Append(fx.Hook{OnStop: engine.Stop})
+	p.Lifecycle.Append(fx.Hook{OnStop: engine.Stop})
 	return engine
 }
 
-func provideActorRuntime(
-	appCtx context.Context,
-	cfg *config.Config,
-	db *database.DB,
-	settingsService *settings.SettingsService,
-	lc fx.Lifecycle,
-	cancelApp context.CancelCauseFunc,
-) (*francis.Runtime, error) {
-	runtime, err := francis.New(cfg.DatabaseURL, "", "", cfg.ActorPort)
+func provideActorRuntime(p actorRuntimeParams) (*francis.Runtime, error) {
+	runtime, err := francis.New(francis.Config{
+		DatabaseURL: p.Config.DatabaseURL,
+		Port:        p.Config.ActorPort,
+	})
 	if err != nil {
 		return nil, err
 	}
-	lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {
-		sqlDB, sqlDBErr := db.SQLDB()
-		if sqlDBErr != nil {
-			return sqlDBErr
-		}
-		if migrateErr := francis.MigrateLegacyStore(ctx, sqlDB, cfg.DatabaseURL); migrateErr != nil {
-			return migrateErr
-		}
-		if configureIdentityErr := runtime.ConfigureIdentity(cfg.EncryptionKey, settingsService.GetSettingsConfig().InstanceID.Value); configureIdentityErr != nil {
+	p.Lifecycle.Append(fx.Hook{OnStart: func(ctx context.Context) error {
+		if configureIdentityErr := runtime.ConfigureIdentity(p.EncryptionKey, p.SettingsService.GetSettingsConfig().InstanceID.Value); configureIdentityErr != nil {
 			return configureIdentityErr
 		}
-		return runtime.Start(ctx, appCtx, func(err error) {
-			slog.ErrorContext(appCtx, "Francis host failed", "error", err)
-			cancelApp(fmt.Errorf("francis host failed: %w", err))
+		return runtime.Start(ctx, p.AppCtx, func(err error) {
+			slog.ErrorContext(p.AppCtx, "Francis host failed", "error", err)
+			p.CancelApp(fmt.Errorf("francis host failed: %w", err))
 		})
 	}, OnStop: runtime.Stop})
 	return runtime, nil
@@ -119,12 +163,12 @@ func provideRunCoordinator(runtime *francis.Runtime, store *kv.KVService, cfg *c
 
 // provideWorkflowEngine starts monitoring after the host is ready; its
 // hook follows the runtime's because the engine depends on it.
-func provideWorkflowEngine(appCtx context.Context, runtime *francis.Runtime, coordinator *runs.Coordinator, activities *activity.ActivityService, lc fx.Lifecycle) (*flow.Engine, error) {
-	engine, err := flow.New(appCtx, runtime, coordinator, activities)
+func provideWorkflowEngine(p workflowEngineParams) (*flow.Engine, error) {
+	engine, err := flow.New(p.AppCtx, p.Runtime, p.Coordinator, p.Activities)
 	if err != nil {
 		return nil, err
 	}
-	lc.Append(fx.Hook{OnStart: engine.Start, OnStop: engine.Stop})
+	p.Lifecycle.Append(fx.Hook{OnStart: engine.Start, OnStop: engine.Stop})
 	return engine, nil
 }
 
@@ -136,11 +180,11 @@ func provideAdmissionGate(runtime *francis.Runtime) (*runs.Admission, error) {
 	return admission, nil
 }
 
-func provideTunnelRegistry(lc fx.Lifecycle) *edge.TunnelRegistry {
-	localRegistry := edge.NewTunnelRegistry()
-	edge.SetDefaultRegistry(localRegistry)
+func provideTunnelRegistry(lc fx.Lifecycle) *agent.TunnelRegistry {
+	localRegistry := agent.NewTunnelRegistry()
+	agent.SetDefaultRegistry(localRegistry)
 	lc.Append(fx.Hook{OnStop: func(ctx context.Context) error {
-		defer edge.ClearDefaultRegistry(localRegistry)
+		defer agent.ClearDefaultRegistry(localRegistry)
 		stopCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 		return localRegistry.Stop(stopCtx)
@@ -148,39 +192,29 @@ func provideTunnelRegistry(lc fx.Lifecycle) *edge.TunnelRegistry {
 	return localRegistry
 }
 
-func provideDockerClientService(
-	ctx context.Context,
-	lc fx.Lifecycle,
-	db *database.DB,
-	cfg *config.Config,
-	localSettings *settings.SettingsService,
-	eventService *event.EventService,
-) *docker.DockerClientService {
-	service := docker.NewDockerClientService(ctx, db, cfg, localSettings, bus.WithDroppedEventCallback(func(message events.Message) {
+func provideDockerClientService(p dockerClientServiceParams) *docker.DockerClientService {
+	service := docker.NewDockerClientService(p.Ctx, p.DB, p.LocalSettings, bus.Config{OnDrop: func(message events.Message) {
 		// Overflow is recovered synchronously, applying backpressure instead of losing log entries.
-		eventService.RecordDockerEvent(ctx, message)
-	}))
+		p.EventService.RecordDockerEvent(p.Ctx, message)
+	}})
 	var stopStream, stopLog func(context.Context) error
 	var unsubscribe func()
-	lc.Append(fx.Hook{
+	p.Lifecycle.Append(fx.Hook{
 		OnStart: func(startCtx context.Context) error {
-			run, cleanup := eventService.SubscribeDockerEvents(service.EventBus())
+			run, cleanup := p.EventService.SubscribeDockerEvents(service.EventBus())
 			unsubscribe = cleanup
-			var err error
-			stopLog, err = concurrency.StartSupervised(ctx, "Docker event log", run)
-			if err != nil {
-				cleanup()
-				return err
-			}
-			stopStream, err = concurrency.StartSupervised(ctx, "Docker event watcher", func(runCtx context.Context) error {
-				service.WatchEvents(runCtx)
-				return nil
-			})
-			if err != nil {
-				err = errors.Join(err, stopLog(startCtx))
-				cleanup()
-			}
-			return err
+			stopLog = concurrency.Supervise(p.Ctx, concurrency.SuperviseConfig{
+				Run:  run,
+				Name: "Docker event log",
+			}).Stop
+			stopStream = concurrency.Supervise(p.Ctx, concurrency.SuperviseConfig{
+				Run: func(runCtx context.Context) error {
+					service.WatchEvents(runCtx)
+					return nil
+				},
+				Name: "Docker event watcher",
+			}).Stop
+			return nil
 		},
 		OnStop: func(stopCtx context.Context) error {
 			var err error
@@ -200,39 +234,9 @@ func provideDockerClientService(
 	return service
 }
 
-// updaterServiceParams includes actor registration and worker lifecycle dependencies.
-type updaterServiceParams struct {
-	fx.In
-
-	Config       *config.Config
-	Workflows    *flow.Engine
-	Admission    *runs.Admission
-	Roles        *role.RoleService
-	DB           *database.DB
-	Settings     *settings.SettingsService
-	Docker       *docker.DockerClientService
-	Project      *project.ProjectService
-	ImageUpdate  *imageupdate.ImageUpdateService
-	Registry     *registry.ContainerRegistryService
-	Event        *event.EventService
-	Image        *image.ImageService
-	Notification *notification.NotificationService
-	System       *system.SystemService
-	Activity     *activity.ActivityService
-}
-
 // provideImageUpdateService registers the image-check workflow while the host is still unstarted.
-func provideImageUpdateService(
-	db *database.DB,
-	settingsService *settings.SettingsService,
-	registryService *registry.ContainerRegistryService,
-	dockerService *docker.DockerClientService,
-	eventService *event.EventService,
-	notificationService *notification.NotificationService,
-	activityService *activity.ActivityService,
-	engine *flow.Engine,
-) (*imageupdate.ImageUpdateService, error) {
-	service := imageupdate.NewImageUpdateService(db, settingsService, registryService, dockerService, eventService, notificationService, activityService)
+func provideImageUpdateService(p imageupdate.ImageUpdateServiceParams, engine *flow.Engine) (*imageupdate.ImageUpdateService, error) {
+	service := imageupdate.NewImageUpdateService(p)
 	if err := service.RegisterWorkflows(engine); err != nil {
 		return nil, err
 	}
@@ -240,18 +244,8 @@ func provideImageUpdateService(
 }
 
 // provideImageService registers the auto-patch workflow while the host is still unstarted.
-func provideImageService(
-	db *database.DB,
-	dockerService *docker.DockerClientService,
-	registryService *registry.ContainerRegistryService,
-	imageUpdateService *imageupdate.ImageUpdateService,
-	vulnerabilityService *vulnerability.VulnerabilityService,
-	eventService *event.EventService,
-	settingsService *settings.SettingsService,
-	activityService *activity.ActivityService,
-	engine *flow.Engine,
-) (*image.ImageService, error) {
-	service := image.NewImageService(db, dockerService, registryService, imageUpdateService, vulnerabilityService, eventService, settingsService, activityService)
+func provideImageService(p image.ImageServiceParams, engine *flow.Engine) (*image.ImageService, error) {
+	service := image.NewImageService(p)
 	if err := service.RegisterWorkflows(engine); err != nil {
 		return nil, err
 	}
@@ -259,94 +253,54 @@ func provideImageService(
 }
 
 // provideVulnerabilityService registers the scheduled scan workflow while the host is still unstarted.
-func provideVulnerabilityService(
-	db *database.DB,
-	cfg *config.Config,
-	dockerService *docker.DockerClientService,
-	eventService *event.EventService,
-	settingsService *settings.SettingsService,
-	notificationService *notification.NotificationService,
-	activityService *activity.ActivityService,
-	registryService *registry.ContainerRegistryService,
-	kvService *kv.KVService,
-	httpClient *http.Client,
-	engine *flow.Engine,
-) (*vulnerability.VulnerabilityService, error) {
-	service := vulnerability.NewVulnerabilityService(db, cfg, dockerService, eventService, settingsService, notificationService, activityService, registryService, kvService, httpClient)
+func provideVulnerabilityService(p vulnerability.VulnerabilityServiceParams, engine *flow.Engine) (*vulnerability.VulnerabilityService, error) {
+	service := vulnerability.NewVulnerabilityService(p)
 	if err := service.RegisterWorkflows(engine); err != nil {
 		return nil, err
 	}
 	return service, nil
 }
 
-func provideUpdaterService(p updaterServiceParams) (*updater.UpdaterService, error) {
-	service, err := updater.NewUpdaterService(
-		p.DB,
-		p.Settings,
-		p.Docker,
-		p.Project,
-		p.ImageUpdate,
-		p.Registry,
-		p.Event,
-		p.Image,
-		p.Notification,
-		p.System,
-		p.Activity,
-		p.Config,
-		p.Admission,
-		p.Roles,
-	)
+func provideUpdaterService(p updater.UpdaterServiceParams, engine *flow.Engine) (*updater.UpdaterService, error) {
+	service, err := updater.NewUpdaterService(p)
 	if err != nil {
 		return nil, err
 	}
-	if registerWorkflowsErr := service.RegisterWorkflows(p.Workflows); registerWorkflowsErr != nil {
+	if registerWorkflowsErr := service.RegisterWorkflows(engine); registerWorkflowsErr != nil {
 		return nil, registerWorkflowsErr
 	}
 	return service, nil
 }
 
-func provideJWKSetManager(ctx context.Context, lc fx.Lifecycle) *oidcjwk.KeySetManager {
-	manager := oidcjwk.NewKeySetManager(ctx)
+func provideJWKSetManager(ctx context.Context, lc fx.Lifecycle) *oidc.KeySetManager {
+	manager := oidc.NewKeySetManager(ctx)
 	lc.Append(fx.Hook{OnStop: manager.Shutdown})
 	return manager
 }
 
-func provideAuthMiddleware(
-	authService *auth.AuthService,
-	apiKey *apikey.ApiKeyService,
-	env *environment.EnvironmentService,
-	localRole *role.RoleService,
-	cfg *config.Config,
-) *auth.AuthMiddleware {
-	return auth.NewAuthMiddleware(authService, cfg).
-		WithApiKeyValidator(apiKey).
-		WithEnvironmentAccessTokenResolver(env).
-		WithPermissionResolver(localRole)
+func provideAuthMiddleware(p authMiddlewareParams) *auth.AuthMiddleware {
+	return auth.NewAuthMiddleware(p.AuthService, p.Config).
+		WithApiKeyValidator(p.APIKey).
+		WithEnvironmentAccessTokenResolver(p.Env).
+		WithPermissionResolver(p.LocalRole)
 }
 
-func provideFilesystemWatcherJob(
-	ctx context.Context,
-	lc fx.Lifecycle,
-	localProject *project.ProjectService,
-	localTemplate *template.TemplateService,
-	localSettings *settings.SettingsService,
-	cfg *config.Config,
-) (
+func provideFilesystemWatcherJob(p filesystemWatcherJobParams) (
 	*scheduler.FilesystemWatcherJob,
 	error,
 ) {
-	job, err := scheduler.NewFilesystemWatcherJob(ctx, localProject, localTemplate, localSettings, cfg.ProjectScanMaxDepth)
+	job, err := scheduler.NewFilesystemWatcherJob(p.Ctx, p.LocalProject, p.LocalTemplate, p.LocalSettings)
 	if err != nil {
 		return nil, err
 	}
 	var stop func(context.Context) error
-	lc.Append(fx.Hook{
+	p.Lifecycle.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			stop, err = concurrency.StartSupervised(ctx, "filesystem watcher", job.Supervise)
-			if err != nil {
-				return err
-			}
-			slog.InfoContext(ctx, "Filesystem watcher job registered")
+			stop = concurrency.Supervise(p.Ctx, concurrency.SuperviseConfig{
+				Run:  job.Supervise,
+				Name: "filesystem watcher",
+			}).Stop
+			slog.InfoContext(p.Ctx, "Filesystem watcher job registered")
 			return nil
 		},
 		OnStop: func(stopCtx context.Context) error {
@@ -361,16 +315,8 @@ func provideFilesystemWatcherJob(
 }
 
 // provideGitOpsSyncService registers the gitops-sync workflow while the host is still unstarted.
-func provideGitOpsSyncService(
-	db *database.DB,
-	repoService *gitrepo.GitRepositoryService,
-	projectService *project.ProjectService,
-	swarmService *swarm.SwarmService,
-	eventService *event.EventService,
-	settingsService *settings.SettingsService,
-	engine *flow.Engine,
-) (*gitops.GitOpsSyncService, error) {
-	service := gitops.NewGitOpsSyncService(db, repoService, projectService, swarmService, eventService, settingsService)
+func provideGitOpsSyncService(p gitops.GitOpsSyncServiceParams, engine *flow.Engine) (*gitops.GitOpsSyncService, error) {
+	service := gitops.NewGitOpsSyncService(p)
 	if err := service.RegisterWorkflows(engine); err != nil {
 		return nil, err
 	}
@@ -378,21 +324,8 @@ func provideGitOpsSyncService(
 }
 
 // provideVolumeService registers the volume backup workflows while the host is still unstarted.
-func provideVolumeService(
-	lc fx.Lifecycle,
-	db *database.DB,
-	dockerService *docker.DockerClientService,
-	eventService *event.EventService,
-	settingsService *settings.SettingsService,
-	containerService *container.ContainerService,
-	imageService *image.ImageService,
-	backupEngine *backup.Engine,
-	s3Destinations *s3domain.S3DestinationService,
-	cfg *config.Config,
-	recoveryKeys *backup.RecoveryKeyStore,
-	engine *flow.Engine,
-) (*volume.VolumeService, error) {
-	service := volume.NewVolumeService(db, dockerService, eventService, settingsService, containerService, imageService, backupEngine, s3Destinations, cfg, recoveryKeys)
+func provideVolumeService(lc fx.Lifecycle, p volume.VolumeServiceParams, engine *flow.Engine) (*volume.VolumeService, error) {
+	service := volume.NewVolumeService(p)
 	if err := service.RegisterWorkflows(engine); err != nil {
 		return nil, err
 	}
@@ -407,31 +340,12 @@ func provideVolumeService(
 
 // provideSystemService registers the system backup workflows while the host is still unstarted.
 func provideSystemService(
-	db *database.DB,
-	dockerService *docker.DockerClientService,
-	containerService *container.ContainerService,
-	imageUpdateService *imageupdate.ImageUpdateService,
-	volumeService *volume.VolumeService,
-	networkService *network.NetworkService,
-	settingsService *settings.SettingsService,
-	activityService *activity.ActivityService,
-	versionService *version.VersionService,
-	eventService *event.EventService,
-	projectService *project.ProjectService,
-	registryService *registry.ContainerRegistryService,
-	backupEngine *backup.Engine,
-	s3Destinations *s3domain.S3DestinationService,
-	recoveryKeys *backup.RecoveryKeyStore,
-	actors *francis.Runtime,
-	cfg *config.Config,
+	p system.SystemServiceParams,
 	environments *environment.EnvironmentService,
 	engine *flow.Engine,
 	roles *role.RoleService,
 ) (*system.SystemService, error) {
-	service := system.NewSystemService(
-		db, dockerService, containerService, imageUpdateService, volumeService, networkService, settingsService, activityService,
-		versionService, eventService, projectService, registryService, backupEngine, s3Destinations, recoveryKeys, actors, cfg,
-	)
+	service := system.NewSystemService(p)
 	if err := service.RegisterWorkflows(engine, environments, roles); err != nil {
 		return nil, err
 	}

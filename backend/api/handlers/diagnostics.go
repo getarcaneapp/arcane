@@ -5,35 +5,29 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/system"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/diagnostics"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
-// DiagnosticsHandler serves the environment-scoped actor and goroutine diagnostics.
-// The live diagnostics snapshots use the api/ws streams.
-type DiagnosticsHandler struct {
-	diag *diagnostics.DiagnosticsService
-}
+type (
+	// DiagnosticsHandler serves the environment-scoped actor and goroutine diagnostics.
+	// The live diagnostics snapshots use the api/ws streams.
+	DiagnosticsHandler struct {
+		diag *diagnostics.DiagnosticsService
+	}
 
-type GetEnvironmentActorDiagnosticsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
+	GetEnvironmentActorDiagnosticsOutput struct {
+		Body types.ActorDiagnostics
+	}
 
-type GetEnvironmentActorDiagnosticsOutput struct {
-	Body system.ActorDiagnostics
-}
-
-type GetEnvironmentGoroutineDiagnosticsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type GetEnvironmentGoroutineDiagnosticsOutput struct {
-	Body system.GoroutineProfile
-}
+	GetEnvironmentGoroutineDiagnosticsOutput struct {
+		Body types.GoroutineProfile
+	}
+)
 
 // RegisterDiagnostics registers the Huma diagnostics REST endpoints.
 func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
@@ -60,7 +54,7 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 	}, authz.PermDiagnosticsRead, h.GetEnvironmentGoroutineDiagnostics)
 }
 
-func (h *DiagnosticsHandler) GetEnvironmentActorDiagnostics(ctx context.Context, _ *GetEnvironmentActorDiagnosticsInput) (*GetEnvironmentActorDiagnosticsOutput, error) {
+func (h *DiagnosticsHandler) GetEnvironmentActorDiagnostics(ctx context.Context, _ *types.EnvironmentInput) (*GetEnvironmentActorDiagnosticsOutput, error) {
 	d, err := h.diag.CollectActors(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to collect actor diagnostics: " + err.Error())
@@ -68,7 +62,7 @@ func (h *DiagnosticsHandler) GetEnvironmentActorDiagnostics(ctx context.Context,
 	return &GetEnvironmentActorDiagnosticsOutput{Body: d}, nil
 }
 
-func (h *DiagnosticsHandler) GetEnvironmentGoroutineDiagnostics(_ context.Context, _ *GetEnvironmentGoroutineDiagnosticsInput) (*GetEnvironmentGoroutineDiagnosticsOutput, error) {
+func (h *DiagnosticsHandler) GetEnvironmentGoroutineDiagnostics(_ context.Context, _ *types.EnvironmentInput) (*GetEnvironmentGoroutineDiagnosticsOutput, error) {
 	profile, err := h.diag.Goroutines()
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to collect goroutine diagnostics: " + err.Error())

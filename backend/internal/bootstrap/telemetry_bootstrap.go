@@ -9,7 +9,6 @@ import (
 	"slices"
 	"sync"
 
-	kit "go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/contrib/exporters/autoexport"
 	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
@@ -21,20 +20,35 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.19.0"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/telemetry"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/telemetry"
 )
 
-// telemetryProviders owns the providers enabled through the standard OTEL_*
-// exporter variables. A nil provider means that signal is off.
-type telemetryProviders struct {
-	tracerProvider *trace.TracerProvider
-	meterProvider  *metric.MeterProvider
-	loggerProvider *log.LoggerProvider
+type (
+	// telemetryProviders owns the providers enabled through the standard OTEL_*
+	// exporter variables. A nil provider means that signal is off.
+	telemetryProviders struct {
+		shutdownErr    error
+		tracerProvider *trace.TracerProvider
+		meterProvider  *metric.MeterProvider
+		loggerProvider *log.LoggerProvider
 
-	shutdownOnce sync.Once
-	shutdownErr  error
-}
+		shutdownOnce sync.Once
+	}
+
+	// redactingExporter strips URL queries and fragments from span attributes, events, and statuses before export.
+	redactingExporter struct{ trace.SpanExporter }
+
+	redactedSpan struct{ trace.ReadOnlySpan }
+)
+
+var (
+	urlUserinfo  = regexp.MustCompile(`(https?://)[^@/\s"']*@`)
+	urlQuery     = regexp.MustCompile(`(https?://[^\s?#"']*)[?#][^\s"']*`)
+	webhookToken = regexp.MustCompile(`(/webhooks/trigger/)[^/?#\s"']+`)
+)
 
 // setupTelemetry installs global providers for each OTEL_*_EXPORTER that is set
 // to something other than none. Exporter failures are reported to errorLogger.
@@ -47,17 +61,13 @@ func setupTelemetry(ctx context.Context, cfg *config.Config, errorLogger *slog.L
 		return nil, errors.Join(err, tel.Shutdown(context.WithoutCancel(ctx)))
 	}
 
-	mode := "manager"
-	if cfg.AgentMode {
-		mode = kit.Ternary(cfg.EdgeAgent, "edge", "agent")
-	}
 	// OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES may override the defaults, but never the
 	// persisted instance ID or mode that identify this installation.
 	res, err := resource.New(ctx,
 		resource.WithTelemetrySDK(),
 		resource.WithAttributes(semconv.ServiceName("arcane"), semconv.ServiceVersion(config.Version)),
 		resource.WithFromEnv(),
-		resource.WithAttributes(semconv.ServiceInstanceID(instanceID), attribute.String("arcane.mode", mode)),
+		resource.WithAttributes(semconv.ServiceInstanceID(instanceID), attribute.String("arcane.mode", kit.Ternary(cfg.AgentEnabled, "agent", "manager"))),
 	)
 	if err != nil {
 		return fail(fmt.Errorf("create telemetry resource: %w", err))
@@ -126,7 +136,9 @@ func (t *telemetryProviders) Shutdown(ctx context.Context) error {
 			errs = append(errs, t.tracerProvider.Shutdown(ctx))
 		}
 		if t.meterProvider != nil {
-			errs = append(errs, t.meterProvider.Shutdown(ctx))
+			if err := t.meterProvider.Shutdown(ctx); !errors.Is(err, metric.ErrReaderShutdown) {
+				errs = append(errs, err)
+			}
 		}
 		if t.loggerProvider != nil {
 			errs = append(errs, t.loggerProvider.Shutdown(ctx))
@@ -136,20 +148,11 @@ func (t *telemetryProviders) Shutdown(ctx context.Context) error {
 	return t.shutdownErr
 }
 
-var (
-	urlUserinfo  = regexp.MustCompile(`(https?://)[^@/\s"']*@`)
-	urlQuery     = regexp.MustCompile(`(https?://[^\s?#"']*)[?#][^\s"']*`)
-	webhookToken = regexp.MustCompile(`(/webhooks/trigger/)[^/?#\s"']+`)
-)
-
 // redactSecrets strips URL credentials, queries, and fragments, and masks webhook trigger tokens, which travel in the path.
 func redactSecrets(s string) string {
 	s = urlUserinfo.ReplaceAllString(s, "$1")
 	return webhookToken.ReplaceAllString(urlQuery.ReplaceAllString(s, "$1"), "${1}:token")
 }
-
-// redactingExporter strips URL queries and fragments from span attributes, events, and statuses before export.
-type redactingExporter struct{ trace.SpanExporter }
 
 func (e redactingExporter) ExportSpans(ctx context.Context, spans []trace.ReadOnlySpan) error {
 	redacted := make([]trace.ReadOnlySpan, len(spans))
@@ -158,8 +161,6 @@ func (e redactingExporter) ExportSpans(ctx context.Context, spans []trace.ReadOn
 	}
 	return e.SpanExporter.ExportSpans(ctx, redacted)
 }
-
-type redactedSpan struct{ trace.ReadOnlySpan }
 
 func (s redactedSpan) Attributes() []attribute.KeyValue {
 	return redactAttributes(s.ReadOnlySpan.Attributes())

@@ -12,135 +12,131 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/image"
-	"github.com/getarcaneapp/arcane/types/v2/system"
-	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
 	"github.com/samber/mo"
-	"go.getarcane.app/builds/types"
-	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"kit.getarcane.app"
+	buildtypes "kit.getarcane.app/builds/types"
+
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/build"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/upload"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/types/v3"
 )
 
-// ImageHandler provides Huma-based image management endpoints.
-type ImageHandler struct {
-	dockerService      *docker.DockerClientService
-	imageService       *ImageService
-	imageUpdateService *imageupdate.ImageUpdateService
-	settingsService    *settings.SettingsService
-	buildService       *build.BuildService
-	activityService    *activity.ActivityService
-	uploadService      *upload.UploadService
-	appCtx             context.Context
-}
-
-// ListImagesOutput is the image list response including the upload limit.
-type ListImagesOutput struct {
-	Body image.ListResponse
-}
-
-type ListImagesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-	InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
-	Updates       string `query:"updates" doc:"Filter by update availability (true/false)"`
-}
-
-type GetImageInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ImageID       string `path:"imageId" doc:"Image ID"`
-}
-
-type TagImageInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ImageName     string `path:"name" doc:"Image ID or image reference"`
-	Body          image.TagRequest
-}
-
-type GetImageHistoryInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ImageName     string `path:"name" doc:"Image ID or image reference"`
-}
-
-type SearchImagesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Term          string `query:"term" doc:"Search term"`
-}
-
-type ExportImageInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ImageName     string `path:"name" doc:"Image ID or image reference"`
-}
-
-type RemoveImageInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ImageID       string `path:"imageId" doc:"Image ID"`
-	Force         bool   `query:"force" doc:"Force removal"`
-}
-
-type PullImageInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          image.PullOptions
-}
-
-type BuildImageInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.BuildRequest
-}
-
-type ListImageBuildsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"desc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-	Status        string `query:"status" doc:"Filter by status"`
-	Provider      string `query:"provider" doc:"Filter by provider"`
-}
-
-type GetImageBuildInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	BuildID       string `path:"buildId" doc:"Build ID"`
-}
-
-type PruneImagesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Dangling      bool   `query:"dangling" doc:"Only remove dangling images"`
-	Body          *struct {
-		Mode     *string             `json:"mode,omitempty"`
-		Until    *string             `json:"until,omitempty"`
-		Dangling *bool               `json:"dangling,omitempty"`
-		Filters  map[string][]string `json:"filters,omitempty"`
+type (
+	// ImageHandler provides Huma-based image management endpoints.
+	ImageHandler struct {
+		dockerService      *docker.DockerClientService
+		imageService       *ImageService
+		imageUpdateService *imageupdate.ImageUpdateService
+		settingsService    *settings.SettingsService
+		buildService       *build.BuildService
+		activityService    *activity.ActivityService
+		uploadService      *upload.UploadService
+		appCtx             context.Context
 	}
-}
 
-type GetImageUsageCountsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
+	// ListImagesOutput is the image list response including the upload limit.
+	ListImagesOutput struct {
+		Body types.ImageListResponse
+	}
 
-type UploadImageInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          uploadtypes.ConsumeRequest
-}
+	ListImagesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
+		Updates       string `query:"updates" doc:"Filter by update availability (true/false)"`
+		Label         string `query:"label" doc:"Filter by label key or key=value"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
+
+	GetImageInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ImageID       string `path:"imageId" doc:"Image ID"`
+	}
+
+	TagImageInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ImageName     string `path:"name" doc:"Image ID or image reference"`
+		Body          types.ImageTagRequest
+	}
+
+	GetImageHistoryInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ImageName     string `path:"name" doc:"Image ID or image reference"`
+	}
+
+	SearchImagesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Term          string `query:"term" doc:"Search term"`
+	}
+
+	ExportImageInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ImageName     string `path:"name" doc:"Image ID or image reference"`
+	}
+
+	RemoveImageInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ImageID       string `path:"imageId" doc:"Image ID"`
+		Force         bool   `query:"force" doc:"Force removal"`
+	}
+
+	PullImageInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.ImagePullOptions
+	}
+
+	BuildImageInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          buildtypes.BuildRequest
+	}
+
+	ListImageBuildsInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"desc" doc:"Sort direction (asc or desc)"`
+		Status        string `query:"status" doc:"Filter by status"`
+		Provider      string `query:"provider" doc:"Filter by provider"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+		IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
+	}
+
+	GetImageBuildInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		BuildID       string `path:"buildId" doc:"Build ID"`
+	}
+
+	PruneImagesInput struct {
+		Body *struct {
+			Mode     *string             `json:"mode,omitempty"`
+			Until    *string             `json:"until,omitempty"`
+			Dangling *bool               `json:"dangling,omitempty"`
+			Filters  map[string][]string `json:"filters,omitempty"`
+		}
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Dangling      bool   `query:"dangling" doc:"Only remove dangling images"`
+	}
+
+	UploadImageInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.UploadConsumeRequest
+	}
+)
 
 // ListImages returns a paginated list of images.
 func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (*ListImagesOutput, error) {
@@ -150,6 +146,9 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 	}
 	if input.Updates != "" {
 		params.Filters["updates"] = input.Updates
+	}
+	if input.Label != "" {
+		params.Filters["label"] = input.Label
 	}
 
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
@@ -165,22 +164,18 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 		return nil, huma.Error500InternalServerError("Failed to list images: " + err.Error())
 	}
 
-	if images == nil {
-		images = []image.Summary{}
-	}
-
 	return &ListImagesOutput{
-		Body: image.ListResponse{
+		Body: types.ImageListResponse{
 			Success:            true,
 			Data:               images,
 			Pagination:         handlerutil.PaginationResponse(paginationResp),
-			MaxImageUploadSize: h.settingsService.GetIntSetting(ctx, "maxImageUploadSize", 500),
+			MaxImageUploadSize: h.settingsService.GetIntSetting(ctx, "maxImageUploadSize"),
 		},
 	}, nil
 }
 
 // GetImage returns an image by ID.
-func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*handlerutil.Out[image.DetailSummary], error) {
+func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*handlerutil.Out[types.ImageDetailSummary], error) {
 	out, err := h.imageService.GetImageDetail(ctx, input.ImageID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -189,8 +184,8 @@ func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*han
 		return nil, huma.Error500InternalServerError("Failed to get image: " + err.Error())
 	}
 
-	return &handlerutil.Out[image.DetailSummary]{
-		Body: base.ApiResponse[image.DetailSummary]{
+	return &handlerutil.Out[types.ImageDetailSummary]{
+		Body: types.ApiResponse[types.ImageDetailSummary]{
 			Success: true,
 			Data:    *out,
 		},
@@ -198,7 +193,7 @@ func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*han
 }
 
 // TagImage adds a repository tag to an image.
-func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*handlerutil.Out[types.MessageResponse], error) {
 	imageName, err := validateImageName(input.ImageName)
 	if err != nil {
 		return nil, err
@@ -220,7 +215,7 @@ func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*han
 }
 
 // GetImageHistory returns Docker image layer history.
-func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHistoryInput) (*handlerutil.Out[[]image.HistoryItem], error) {
+func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHistoryInput) (*handlerutil.Out[[]types.ImageHistoryItem], error) {
 	imageName, err := validateImageName(input.ImageName)
 	if err != nil {
 		return nil, err
@@ -230,12 +225,9 @@ func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHisto
 	if err != nil {
 		return nil, huma.NewError(common.ToAPIError(common.ClassifyDockerError(err)).HTTPStatus(), fmt.Sprintf("failed to get image history: %v", err))
 	}
-	if history == nil {
-		history = []image.HistoryItem{}
-	}
 
-	return &handlerutil.Out[[]image.HistoryItem]{
-		Body: base.ApiResponse[[]image.HistoryItem]{
+	return &handlerutil.Out[[]types.ImageHistoryItem]{
+		Body: types.ApiResponse[[]types.ImageHistoryItem]{
 			Success: true,
 			Data:    history,
 		},
@@ -243,7 +235,7 @@ func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHisto
 }
 
 // SearchImages searches Docker Hub images.
-func (h *ImageHandler) SearchImages(ctx context.Context, input *SearchImagesInput) (*handlerutil.Out[[]image.SearchResult], error) {
+func (h *ImageHandler) SearchImages(ctx context.Context, input *SearchImagesInput) (*handlerutil.Out[[]types.ImageSearchResult], error) {
 	results, err := h.imageService.SearchImages(ctx, input.Term)
 	if err != nil {
 		if strings.Contains(err.Error(), "term is required") {
@@ -251,12 +243,9 @@ func (h *ImageHandler) SearchImages(ctx context.Context, input *SearchImagesInpu
 		}
 		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to search images: %v", err))
 	}
-	if results == nil {
-		results = []image.SearchResult{}
-	}
 
-	return &handlerutil.Out[[]image.SearchResult]{
-		Body: base.ApiResponse[[]image.SearchResult]{
+	return &handlerutil.Out[[]types.ImageSearchResult]{
+		Body: types.ApiResponse[[]types.ImageSearchResult]{
 			Success: true,
 			Data:    results,
 		},
@@ -301,7 +290,7 @@ func validateImageName(raw string) (string, error) {
 }
 
 // RemoveImage removes a Docker image.
-func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -340,29 +329,31 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
 			httpx.SetJSONStreamHeaders(humaCtx)
 
-			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
+			runtimeCtx := activitylib.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()
-			activityID, runtimeCtx := activitylib.StartHandlerActivity(
-				runtimeCtx,
-				h.activityService,
-				input.EnvironmentID,
-				activitytypes.TypeImagePull,
-				"image",
-				"",
-				fullImageName,
-				user,
-				"Pulling image",
-				"Image pull started",
-				database.JSON{"imageName": fullImageName},
-				true,
-			)
+			activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+				EnvironmentID: input.EnvironmentID,
+				Type:          types.ActivityTypeImagePull,
+				ResourceType:  "image",
+				ResourceName:  fullImageName,
+				User:          user,
+				Step:          "Pulling image",
+				Message:       "Image pull started",
+				Metadata:      database.JSON{"imageName": fullImageName},
+				Queue:         true,
+			})
 			activitylib.WriteStartedLine(rawWriter, activityID)
 			if f, ok := rawWriter.(http.Flusher); ok {
 				f.Flush()
 			}
 			activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 
-			writer := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, rawWriter, "Pulling image")
+			writer := activitylib.NewWriter(runtimeCtx, activitylib.WriterOptions{
+				Service:     h.activityService,
+				ActivityID:  activityID,
+				Output:      rawWriter,
+				DefaultStep: "Pulling image",
+			})
 			if pullImageErr := h.imageService.Pull(runtimeCtx, PullRequest{
 				Ref:         fullImageName,
 				Progress:    writer,
@@ -396,29 +387,31 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
 			httpx.SetJSONStreamHeaders(humaCtx)
 
-			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
+			runtimeCtx := activitylib.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()
-			activityID, runtimeCtx := activitylib.StartHandlerActivity(
-				runtimeCtx,
-				h.activityService,
-				input.EnvironmentID,
-				activitytypes.TypeImageBuild,
-				"image",
-				"",
-				kit.Ternary(strings.TrimSpace(strings.Join(input.Body.Tags, ", ")) == "", input.Body.ContextDir, strings.Join(input.Body.Tags, ", ")),
-				user,
-				"Building image",
-				"Image build started",
-				database.JSON{"contextDir": input.Body.ContextDir, "tags": input.Body.Tags},
-				true,
-			)
+			activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+				EnvironmentID: input.EnvironmentID,
+				Type:          types.ActivityTypeImageBuild,
+				ResourceType:  "image",
+				ResourceName:  kit.Ternary(strings.TrimSpace(strings.Join(input.Body.Tags, ", ")) == "", input.Body.ContextDir, strings.Join(input.Body.Tags, ", ")),
+				User:          user,
+				Step:          "Building image",
+				Message:       "Image build started",
+				Metadata:      database.JSON{"contextDir": input.Body.ContextDir, "tags": input.Body.Tags},
+				Queue:         true,
+			})
 			activitylib.WriteStartedLine(rawWriter, activityID)
 			if f, ok := rawWriter.(http.Flusher); ok {
 				f.Flush()
 			}
 			activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 
-			writer := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, rawWriter, "Building image")
+			writer := activitylib.NewWriter(runtimeCtx, activitylib.WriterOptions{
+				Service:     h.activityService,
+				ActivityID:  activityID,
+				Output:      rawWriter,
+				DefaultStep: "Building image",
+			})
 			if _, buildImageErr := h.buildService.BuildImage(runtimeCtx, input.EnvironmentID, input.Body, writer, "", user); buildImageErr != nil {
 				activitylib.FlushWriter(writer)
 				activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Image build failed", buildImageErr)
@@ -433,12 +426,13 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 }
 
 // ListImageBuilds returns a paginated list of image build history entries.
-func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuildsInput) (*handlerutil.Page[image.BuildRecord], error) {
+func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuildsInput) (*handlerutil.Page[types.ImageBuildRecord], error) {
 	if input.EnvironmentID == "" {
 		return nil, huma.Error400BadRequest("Environment ID is required")
 	}
 
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params.SkipCount = !input.IncludeTotal
 	if input.Status != "" {
 		params.Filters["status"] = input.Status
 	}
@@ -451,7 +445,7 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to list build history: " + err.Error())
 		}
-		return &handlerutil.Page[image.BuildRecord]{Body: body}, nil
+		return &handlerutil.Page[types.ImageBuildRecord]{Body: body}, nil
 	}
 
 	builds, paginationResp, err := h.buildService.ListImageBuildsByEnvironmentPaginated(ctx, input.EnvironmentID, params)
@@ -459,12 +453,8 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 		return nil, huma.Error500InternalServerError("Failed to list build history: " + err.Error())
 	}
 
-	if builds == nil {
-		builds = []image.BuildRecord{}
-	}
-
-	return &handlerutil.Page[image.BuildRecord]{
-		Body: base.Paginated[image.BuildRecord]{
+	return &handlerutil.Page[types.ImageBuildRecord]{
+		Body: types.Paginated[types.ImageBuildRecord]{
 			Success:    true,
 			Data:       builds,
 			Pagination: handlerutil.PaginationResponse(paginationResp),
@@ -473,7 +463,7 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 }
 
 // GetImageBuild returns a single build history entry.
-func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildInput) (*handlerutil.Out[image.BuildRecord], error) {
+func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildInput) (*handlerutil.Out[types.ImageBuildRecord], error) {
 	if input.EnvironmentID == "" {
 		return nil, huma.Error400BadRequest("Environment ID is required")
 	}
@@ -490,8 +480,8 @@ func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildIn
 		return nil, huma.Error500InternalServerError("Failed to retrieve build history: " + err.Error())
 	}
 
-	return &handlerutil.Out[image.BuildRecord]{
-		Body: base.ApiResponse[image.BuildRecord]{
+	return &handlerutil.Out[types.ImageBuildRecord]{
+		Body: types.ApiResponse[types.ImageBuildRecord]{
 			Success: true,
 			Data:    *buildRecord,
 		},
@@ -499,9 +489,9 @@ func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildIn
 }
 
 // PruneImages removes unused Docker images.
-func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput) (*handlerutil.Out[image.PruneReport], error) {
-	report, err := h.imageService.PruneImages(ctx, system.PruneImagesOptions{
-		Mode: system.PruneImageMode(func() string {
+func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput) (*handlerutil.Out[types.ImagePruneReport], error) {
+	report, err := h.imageService.PruneImages(ctx, types.PruneImagesOptions{
+		Mode: types.PruneImageMode(func() string {
 			if mode := strings.TrimSpace(kit.FromPtr(kit.FromPtr(input.Body).Mode)); mode != "" {
 				return mode
 			}
@@ -529,22 +519,22 @@ func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput)
 		return nil, huma.Error500InternalServerError("Failed to prune images: " + err.Error())
 	}
 
-	return &handlerutil.Out[image.PruneReport]{
-		Body: base.ApiResponse[image.PruneReport]{
+	return &handlerutil.Out[types.ImagePruneReport]{
+		Body: types.ApiResponse[types.ImagePruneReport]{
 			Success: true,
-			Data:    image.NewPruneReport(*report),
+			Data:    types.NewImagePruneReport(*report),
 		},
 	}, nil
 }
 
 // GetImageUsageCounts returns counts of images by usage status.
-func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageUsageCountsInput) (*handlerutil.Out[image.UsageCounts], error) {
+func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.ImageUsageCounts], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.imageService.AggregateImageCounts(ctx)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to get image usage counts: " + err.Error())
 		}
-		return &handlerutil.Out[image.UsageCounts]{Body: body}, nil
+		return &handlerutil.Out[types.ImageUsageCounts]{Body: body}, nil
 	}
 
 	_, counts, err := h.dockerService.GetAllImages(ctx)
@@ -552,8 +542,8 @@ func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageU
 		return nil, huma.Error500InternalServerError("Failed to get image usage counts: " + err.Error())
 	}
 
-	return &handlerutil.Out[image.UsageCounts]{
-		Body: base.ApiResponse[image.UsageCounts]{
+	return &handlerutil.Out[types.ImageUsageCounts]{
+		Body: types.ApiResponse[types.ImageUsageCounts]{
 			Success: true,
 			Data:    counts,
 		},
@@ -561,13 +551,13 @@ func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageU
 }
 
 // UploadImage uploads a Docker image from a tar archive.
-func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput) (*handlerutil.Out[image.LoadResult], error) {
+func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput) (*handlerutil.Out[types.ImageLoadResult], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	file, session, cleanup, err := h.uploadService.Consume(ctx, uploadtypes.KindImage, input.Body.UploadID)
+	file, session, cleanup, err := h.uploadService.Consume(ctx, types.UploadKindImage, input.Body.UploadID)
 	if err != nil {
 		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
 			return nil, httpErr
@@ -576,7 +566,7 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 	}
 	defer cleanup()
 
-	result, err := h.imageService.LoadImageFromReader(ctx, file, session.Filename, *user, int64(h.settingsService.GetIntSetting(ctx, "maxImageUploadSize", 500))*1024*1024)
+	result, err := h.imageService.LoadImageFromReader(ctx, file, session.Filename, *user, int64(h.settingsService.GetIntSetting(ctx, "maxImageUploadSize"))*1024*1024)
 	if err != nil {
 		if errors.Is(err, common.ErrBadRequest) {
 			return nil, huma.Error413RequestEntityTooLarge("Failed to load image: " + err.Error())
@@ -584,8 +574,8 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 		return nil, huma.Error500InternalServerError("Failed to load image: " + err.Error())
 	}
 
-	return &handlerutil.Out[image.LoadResult]{
-		Body: base.ApiResponse[image.LoadResult]{
+	return &handlerutil.Out[types.ImageLoadResult]{
+		Body: types.ApiResponse[types.ImageLoadResult]{
 			Success: true,
 			Data:    *result,
 		},

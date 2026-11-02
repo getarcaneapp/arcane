@@ -15,60 +15,86 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
-	"github.com/getarcaneapp/arcane/types/v2/notification"
-	"github.com/getarcaneapp/arcane/types/v2/system"
-	"go.getarcane.app/kit/pkg"
-	"go.getarcane.app/sys/crypto"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/notification/children/templates"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
+	"kit.getarcane.app/sys/crypto"
+
+	"getarcane.dev/arcane/v3/internal/apns"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/notification/children/templates"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/arcane/v3/pkg/notifications"
+	"getarcane.dev/arcane/v3/pkg/validation"
+	"getarcane.dev/types/v3"
 )
 
-var notificationCredentialFieldsByProvider = map[notifications.NotificationProvider][]string{
-	notifications.NotificationProviderDiscord:  {"token"},
-	notifications.NotificationProviderEmail:    {"smtpPassword"},
-	notifications.NotificationProviderTelegram: {"botToken"},
-	notifications.NotificationProviderSignal:   {"password", "token"},
-	notifications.NotificationProviderSlack:    {"token"},
-	notifications.NotificationProviderNtfy:     {"password"},
-	notifications.NotificationProviderPushover: {"token"},
-	notifications.NotificationProviderGotify:   {"token"},
-	notifications.NotificationProviderMatrix:   {"password"},
-	// The Google Chat webhook URL embeds its key and token, so the whole URL is a credential.
-	notifications.NotificationProviderGoogleChat: {"webhookUrl"},
-}
+type (
+	NotificationService struct {
+		db              *database.DB
+		config          *config.Config
+		environmentSvc  *environment.EnvironmentService
+		eventSvc        *event.EventService
+		apnsSvc         *apns.ApnsService
+		settingsService *settings.SettingsService
+		templates       *templates.Service
+		httpClient      *http.Client
+	}
 
-var notificationTargetFieldByProvider = map[notifications.NotificationProvider]string{
-	notifications.NotificationProviderEmail:  "smtpHost",
-	notifications.NotificationProviderSignal: "host",
-	notifications.NotificationProviderNtfy:   "host",
-	notifications.NotificationProviderGotify: "host",
-	notifications.NotificationProviderMatrix: "host",
-}
+	NotificationTarget struct {
+		EnvironmentID   string
+		EnvironmentName string
+	}
+
+	NotificationServiceParams struct {
+		fx.In
+
+		DB              *database.DB
+		Config          *config.Config
+		EnvironmentSvc  *environment.EnvironmentService
+		EventSvc        *event.EventService
+		APNSSvc         *apns.ApnsService
+		SettingsService *settings.SettingsService
+	}
+
+	// VulnerabilityNotificationPayload is the data sent to all providers for vulnerability_found events.
+	// Only vulnerabilities with a fixed version should trigger this notification.
+	VulnerabilityNotificationPayload struct {
+		CVEID            string // e.g. CVE-2024-1234
+		CVELink          string // e.g. https://nvd.nist.gov/vuln/detail/CVE-2024-1234
+		Severity         string // CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN
+		ImageName        string // e.g. nginx:latest
+		FixedVersion     string
+		PkgName          string // optional
+		InstalledVersion string // optional
+	}
+
+	ContainerUpdateEvent struct {
+		ContainerName string
+		ImageRef      string
+		OldDigest     string
+		NewDigest     string
+	}
+)
 
 const (
-	notificationDispatchConcurrency = 4
-
+	notificationDispatchConcurrency      = 4
 	notificationTestTypeSimple           = "simple"
 	notificationTestTypeImageUpdate      = "image-update"
 	notificationTestTypeBatchImageUpdate = "batch-image-update"
@@ -77,46 +103,53 @@ const (
 	notificationTestTypeAutoHeal         = "auto-heal"
 )
 
-// notificationTestEventTypes lists supported test types and the event a real notification of that kind is gated on ("" = none).
-var notificationTestEventTypes = map[string]notifications.NotificationEventType{
-	notificationTestTypeSimple:           "",
-	notificationTestTypeImageUpdate:      notifications.NotificationEventImageUpdate,
-	notificationTestTypeBatchImageUpdate: notifications.NotificationEventImageUpdate,
-	notificationTestTypeVulnerability:    notifications.NotificationEventVulnerabilityFound,
-	notificationTestTypePruneReport:      notifications.NotificationEventPruneReport,
-	notificationTestTypeAutoHeal:         notifications.NotificationEventAutoHeal,
-}
-
 var (
+	notificationCredentialFieldsByProvider = map[notifications.NotificationProvider][]string{
+		notifications.NotificationProviderDiscord:  {"token"},
+		notifications.NotificationProviderEmail:    {"smtpPassword"},
+		notifications.NotificationProviderTelegram: {"botToken"},
+		notifications.NotificationProviderSignal:   {"password", "token"},
+		notifications.NotificationProviderSlack:    {"token"},
+		notifications.NotificationProviderNtfy:     {"password"},
+		notifications.NotificationProviderPushover: {"token"},
+		notifications.NotificationProviderGotify:   {"token"},
+		notifications.NotificationProviderMatrix:   {"password"},
+		// The Google Chat webhook URL embeds its key and token, so the whole URL is a credential.
+		notifications.NotificationProviderGoogleChat: {"webhookUrl"},
+	}
+
+	notificationTargetFieldByProvider = map[notifications.NotificationProvider]string{
+		notifications.NotificationProviderEmail:  "smtpHost",
+		notifications.NotificationProviderSignal: "host",
+		notifications.NotificationProviderNtfy:   "host",
+		notifications.NotificationProviderGotify: "host",
+		notifications.NotificationProviderMatrix: "host",
+	}
+
+	// notificationTestEventTypes lists supported test types and the event a real notification of that kind is gated on ("" = none).
+	notificationTestEventTypes = map[string]notifications.NotificationEventType{
+		notificationTestTypeSimple:           "",
+		notificationTestTypeImageUpdate:      notifications.NotificationEventImageUpdate,
+		notificationTestTypeBatchImageUpdate: notifications.NotificationEventImageUpdate,
+		notificationTestTypeVulnerability:    notifications.NotificationEventVulnerabilityFound,
+		notificationTestTypePruneReport:      notifications.NotificationEventPruneReport,
+		notificationTestTypeAutoHeal:         notifications.NotificationEventAutoHeal,
+	}
+
 	ErrUnauthorizedNotificationDispatch = errors.New("unauthorized notification dispatch")
 	ErrUnsupportedDispatchKind          = errors.New("unsupported notification dispatch kind")
+
+	notificationsSent = func() metric.Int64Counter {
+		counter, err := otel.Meter(logging.InstrumentationName).Int64Counter("arcane.notifications.sent",
+			metric.WithDescription("Notification provider sends by outcome"), metric.WithUnit("{notification}"))
+		if err != nil {
+			otel.Handle(err)
+		}
+		return counter
+	}()
 )
 
-var notificationsSent = func() metric.Int64Counter {
-	counter, err := otel.Meter(tracing.InstrumentationName).Int64Counter("arcane.notifications.sent",
-		metric.WithDescription("Notification provider sends by outcome"), metric.WithUnit("{notification}"))
-	if err != nil {
-		otel.Handle(err)
-	}
-	return counter
-}()
-
-type NotificationService struct {
-	db             *database.DB
-	config         *config.Config
-	environmentSvc *environment.EnvironmentService
-	eventSvc       *event.EventService
-	apnsSvc        *apns.ApnsService
-	templates      *templates.Service
-	httpClient     *http.Client
-}
-
-type NotificationTarget struct {
-	EnvironmentID   string
-	EnvironmentName string
-}
-
-func logManagerDispatchNotification(ctx context.Context, target NotificationTarget, kind notification.DispatchKind) {
+func logManagerDispatchNotification(ctx context.Context, target NotificationTarget, kind types.NotificationDispatchKind) {
 	slog.InfoContext(ctx,
 		"Manager dispatching notification on behalf of agent",
 		"environmentId", target.EnvironmentID,
@@ -125,38 +158,37 @@ func logManagerDispatchNotification(ctx context.Context, target NotificationTarg
 	)
 }
 
-func NewNotificationService(db *database.DB, cfg *config.Config, environmentSvc *environment.EnvironmentService, eventSvc *event.EventService, apnsSvc *apns.ApnsService) *NotificationService {
+func NewNotificationService(p NotificationServiceParams) *NotificationService {
 	return &NotificationService{
-		db:             db,
-		config:         cfg,
-		environmentSvc: environmentSvc,
-		eventSvc:       eventSvc,
-		apnsSvc:        apnsSvc,
-		templates:      templates.NewService(cfg.GetAppURL),
-		httpClient:     &http.Client{Timeout: 15 * time.Second},
+		db:              p.DB,
+		config:          p.Config,
+		environmentSvc:  p.EnvironmentSvc,
+		eventSvc:        p.EventSvc,
+		apnsSvc:         p.APNSSvc,
+		settingsService: p.SettingsService,
+		templates:       templates.NewService(p.Config.GetAppURL),
+		httpClient:      &http.Client{Timeout: 15 * time.Second},
 	}
 }
 
 func (s *NotificationService) ResolveNotificationTarget(ctx context.Context, environmentID string) (NotificationTarget, error) {
 	trimmedEnvironmentID := cmp.Or(strings.TrimSpace(environmentID), "0")
 
-	if s.environmentSvc != nil {
-		env, err := s.environmentSvc.GetEnvironmentByID(ctx, trimmedEnvironmentID)
-		if err == nil && env != nil {
-			return NotificationTarget{
-				EnvironmentID:   env.ID,
-				EnvironmentName: cmp.Or(strings.TrimSpace(env.Name), kit.Ternary(env.ID == "0", "Local Docker", "")),
-			}, nil
-		}
-		if trimmedEnvironmentID != "0" {
-			if err != nil {
-				return NotificationTarget{}, fmt.Errorf("failed to resolve notification environment: %w", err)
-			}
-			return NotificationTarget{}, nil
-		}
+	env, err := s.environmentSvc.GetEnvironmentByID(ctx, trimmedEnvironmentID)
+	if err == nil && env != nil {
+		return NotificationTarget{
+			EnvironmentID:   env.ID,
+			EnvironmentName: cmp.Or(strings.TrimSpace(env.Name), kit.Ternary(env.ID == "0", "Local Docker", "")),
+		}, nil
+	}
+	if trimmedEnvironmentID != "0" {
 		if err != nil {
-			slog.WarnContext(ctx, "Failed to resolve local environment, falling back to 'Local Docker'", "error", err)
+			return NotificationTarget{}, fmt.Errorf("failed to resolve notification environment: %w", err)
 		}
+		return NotificationTarget{}, nil
+	}
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to resolve local environment, falling back to 'Local Docker'", "error", err)
 	}
 
 	return NotificationTarget{
@@ -165,74 +197,72 @@ func (s *NotificationService) ResolveNotificationTarget(ctx context.Context, env
 	}, nil
 }
 
-func (s *NotificationService) dispatchNotificationToManager(ctx context.Context, payload notification.DispatchRequest) (notification.DispatchResponse, error) {
+func (s *NotificationService) dispatchNotificationToManager(ctx context.Context, payload types.NotificationDispatchRequest) (types.NotificationDispatchResponse, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return notification.DispatchResponse{}, fmt.Errorf("failed to marshal notification dispatch payload: %w", err)
+		return types.NotificationDispatchResponse{}, fmt.Errorf("failed to marshal notification dispatch payload: %w", err)
 	}
 
 	publishViaTunnel := func() error {
-		return edge.PublishEventToManager(ctx, &edge.TunnelEvent{
-			Type:         edge.TunnelEventTypeNotificationDispatch,
+		return agent.PublishEventToManager(ctx, &agent.TunnelEvent{
+			Type:         agent.TunnelEventTypeNotificationDispatch,
 			Title:        string(payload.Kind),
 			MetadataJSON: body,
 		})
 	}
 
-	// Tunnel-connected edge agents often lack MANAGER_API_URL/AGENT_TOKEN, so they dispatch over the tunnel (#3002).
-	if s.config == nil || strings.TrimSpace(httpx.ManagerBaseURL(s.config.ManagerApiUrl)) == "" || strings.TrimSpace(s.config.AgentToken) == "" {
+	// Tunnel-connected agents often lack MANAGER_API_URL/AGENT_TOKEN, so they dispatch over the tunnel (#3002).
+	agentToken := strings.TrimSpace(s.config.AgentToken)
+	if strings.TrimSpace(httpx.ManagerBaseURL(s.config.ManagerApiUrl)) == "" || agentToken == "" {
 		if publishViaTunnelErr := publishViaTunnel(); publishViaTunnelErr != nil {
-			return notification.DispatchResponse{}, fmt.Errorf("notification dispatch needs either MANAGER_API_URL + AGENT_TOKEN or a connected edge tunnel: %w", publishViaTunnelErr)
+			return types.NotificationDispatchResponse{}, fmt.Errorf("notification dispatch needs either ARCANE_MANAGER_API_URL + ARCANE_AGENT_TOKEN or a connected agent tunnel: %w", publishViaTunnelErr)
 		}
-		return notification.DispatchResponse{Message: "notification dispatched via edge tunnel", Delivered: 1}, nil
+		return types.NotificationDispatchResponse{Message: "notification dispatched via agent tunnel", Delivered: 1}, nil
 	}
 
 	dispatchURL := strings.TrimRight(httpx.ManagerBaseURL(s.config.ManagerApiUrl), "/") + "/api/notifications/dispatch"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, dispatchURL, bytes.NewReader(body))
 	if err != nil {
-		return notification.DispatchResponse{}, fmt.Errorf("failed to create notification dispatch request: %w", err)
+		return types.NotificationDispatchResponse{}, fmt.Errorf("failed to create notification dispatch request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(middleware.HeaderApiKey, s.config.AgentToken)
+	req.Header.Set(middleware.HeaderApiKey, agentToken)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		// An agent configured for HTTP may still hold a healthy edge tunnel, so try it before giving up.
+		// An agent configured for HTTP may still hold a healthy agent tunnel, so try it before giving up.
 		if tunnelErr := publishViaTunnel(); tunnelErr == nil {
-			return notification.DispatchResponse{Message: "notification dispatched via edge tunnel", Delivered: 1}, nil
+			return types.NotificationDispatchResponse{Message: "notification dispatched via agent tunnel", Delivered: 1}, nil
 		}
-		return notification.DispatchResponse{}, fmt.Errorf("failed to dispatch notification to manager: %w", err)
+		return types.NotificationDispatchResponse{}, fmt.Errorf("failed to dispatch notification to manager: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
 		var apiResponse struct {
-			Data notification.DispatchResponse `json:"data"`
+			Data types.NotificationDispatchResponse `json:"data"`
 		}
 		if unmarshalReadErr := json.UnmarshalRead(resp.Body, &apiResponse); unmarshalReadErr != nil {
-			return notification.DispatchResponse{}, fmt.Errorf("failed to decode manager notification dispatch response: %w", unmarshalReadErr)
+			return types.NotificationDispatchResponse{}, fmt.Errorf("failed to decode manager notification dispatch response: %w", unmarshalReadErr)
 		}
 		return apiResponse.Data, nil
 	}
 
 	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
-	return notification.DispatchResponse{}, fmt.Errorf("manager notification dispatch failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(responseBody)))
+	return types.NotificationDispatchResponse{}, fmt.Errorf("manager notification dispatch failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(responseBody)))
 }
 
-func (s *NotificationService) DispatchNotification(ctx context.Context, accessToken string, payload notification.DispatchRequest) (notification.DispatchResponse, error) {
-	if s.config != nil && s.config.AgentMode {
-		return notification.DispatchResponse{}, errors.New("notification dispatch is manager-only")
-	}
-	if s.environmentSvc == nil {
-		return notification.DispatchResponse{}, errors.New("environment service not initialized")
+func (s *NotificationService) DispatchNotification(ctx context.Context, accessToken string, payload types.NotificationDispatchRequest) (types.NotificationDispatchResponse, error) {
+	if s.config != nil && s.config.AgentEnabled {
+		return types.NotificationDispatchResponse{}, errors.New("notification dispatch is manager-only")
 	}
 
 	env, err := s.environmentSvc.ResolveEnvironmentByAccessToken(ctx, accessToken)
 	if err != nil {
 		if errors.Is(err, environment.ErrEnvironmentAccessTokenRequired) || errors.Is(err, environment.ErrInvalidEnvironmentAccessToken) {
-			return notification.DispatchResponse{}, ErrUnauthorizedNotificationDispatch
+			return types.NotificationDispatchResponse{}, ErrUnauthorizedNotificationDispatch
 		}
-		return notification.DispatchResponse{}, err
+		return types.NotificationDispatchResponse{}, err
 	}
 
 	target := NotificationTarget{
@@ -242,61 +272,61 @@ func (s *NotificationService) DispatchNotification(ctx context.Context, accessTo
 	return s.dispatchForTarget(ctx, target, payload)
 }
 
-// DispatchNotificationForEnvironment dispatches for an agent already identified by its edge tunnel session (#3002).
-func (s *NotificationService) DispatchNotificationForEnvironment(ctx context.Context, environmentID string, payload notification.DispatchRequest) (notification.DispatchResponse, error) {
-	if s.config != nil && s.config.AgentMode {
-		return notification.DispatchResponse{}, errors.New("notification dispatch is manager-only")
+// DispatchNotificationForEnvironment dispatches for an agent already identified by its agent tunnel session (#3002).
+func (s *NotificationService) DispatchNotificationForEnvironment(ctx context.Context, environmentID string, payload types.NotificationDispatchRequest) (types.NotificationDispatchResponse, error) {
+	if s.config != nil && s.config.AgentEnabled {
+		return types.NotificationDispatchResponse{}, errors.New("notification dispatch is manager-only")
 	}
 
 	target, err := s.ResolveNotificationTarget(ctx, environmentID)
 	if err != nil {
-		return notification.DispatchResponse{}, err
+		return types.NotificationDispatchResponse{}, err
 	}
 
 	return s.dispatchForTarget(ctx, target, payload)
 }
 
-func (s *NotificationService) dispatchForTarget(ctx context.Context, target NotificationTarget, payload notification.DispatchRequest) (notification.DispatchResponse, error) {
+func (s *NotificationService) dispatchForTarget(ctx context.Context, target NotificationTarget, payload types.NotificationDispatchRequest) (types.NotificationDispatchResponse, error) {
 	delivered, err := s.deliverForTarget(ctx, target, payload)
 	if err != nil && delivered == 0 {
-		return notification.DispatchResponse{}, err
+		return types.NotificationDispatchResponse{}, err
 	}
 	if err != nil {
 		slog.WarnContext(ctx, "Notification dispatch partially failed", "kind", payload.Kind, "delivered", delivered, "error", err)
-		return notification.DispatchResponse{
+		return types.NotificationDispatchResponse{
 			Message:   "Notification dispatched with errors: " + err.Error(),
 			Delivered: delivered,
 		}, nil
 	}
-	return notification.DispatchResponse{
+	return types.NotificationDispatchResponse{
 		Message:   "Notification dispatched successfully",
 		Delivered: delivered,
 	}, nil
 }
 
-func (s *NotificationService) deliverForTarget(ctx context.Context, target NotificationTarget, payload notification.DispatchRequest) (int, error) {
+func (s *NotificationService) deliverForTarget(ctx context.Context, target NotificationTarget, payload types.NotificationDispatchRequest) (int, error) {
 	switch payload.Kind {
-	case notification.DispatchKindImageUpdate:
+	case types.NotificationDispatchKindImageUpdate:
 		if payload.ImageUpdate == nil {
 			return 0, common.Classify(common.ErrValidation, errors.New("image update payload is required"))
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
 		imageUpdate := payload.ImageUpdate
 		return s.sendImageUpdateNotificationForTarget(ctx, target, imageUpdate.ImageRef, &imageUpdate.UpdateInfo, notifications.NotificationEventImageUpdate)
-	case notification.DispatchKindBatchImageUpdate:
+	case types.NotificationDispatchKindBatchImageUpdate:
 		if payload.BatchImageUpdate == nil {
 			return 0, common.Classify(common.ErrValidation, errors.New("batch image update payload is required"))
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
 		return s.sendBatchImageUpdateNotificationForTarget(ctx, target, payload.BatchImageUpdate.Updates)
-	case notification.DispatchKindContainerUpdate:
+	case types.NotificationDispatchKindContainerUpdate:
 		if payload.ContainerUpdate == nil {
 			return 0, common.Classify(common.ErrValidation, errors.New("container update payload is required"))
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
 		update := payload.ContainerUpdate
 		return s.sendContainerUpdateNotificationForTarget(ctx, target, update.ContainerName, update.ImageRef, update.OldDigest, update.NewDigest)
-	case notification.DispatchKindBatchContainerUpdate:
+	case types.NotificationDispatchKindBatchContainerUpdate:
 		if payload.BatchContainerUpdate == nil {
 			return 0, common.Classify(common.ErrValidation, errors.New("batch container update payload is required"))
 		}
@@ -311,19 +341,19 @@ func (s *NotificationService) deliverForTarget(ctx context.Context, target Notif
 			})
 		}
 		return s.sendBatchContainerUpdateNotificationForTarget(ctx, target, entries)
-	case notification.DispatchKindVulnerabilityFound:
+	case types.NotificationDispatchKindVulnerabilityFound:
 		if payload.VulnerabilityFound == nil {
 			return 0, common.Classify(common.ErrValidation, errors.New("vulnerability payload is required"))
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
 		return s.sendVulnerabilityNotificationForTarget(ctx, target, VulnerabilityNotificationPayload(*payload.VulnerabilityFound))
-	case notification.DispatchKindPruneReport:
+	case types.NotificationDispatchKindPruneReport:
 		if payload.PruneReport == nil {
 			return 0, common.Classify(common.ErrValidation, errors.New("prune report payload is required"))
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
 		return s.sendPruneReportNotificationForTarget(ctx, target, &payload.PruneReport.Result)
-	case notification.DispatchKindAutoHeal:
+	case types.NotificationDispatchKindAutoHeal:
 		if payload.AutoHeal == nil {
 			return 0, common.Classify(common.ErrValidation, errors.New("auto-heal payload is required"))
 		}
@@ -335,11 +365,11 @@ func (s *NotificationService) deliverForTarget(ctx context.Context, target Notif
 }
 
 func (s *NotificationService) GetAllSettings(ctx context.Context) ([]NotificationSettings, error) {
-	var settings []NotificationSettings
-	if err := s.db.WithContext(ctx).Find(&settings).Error; err != nil {
+	var notificationSettings []NotificationSettings
+	if err := s.db.WithContext(ctx).Find(&notificationSettings).Error; err != nil {
 		return nil, fmt.Errorf("failed to get notification settings: %w", err)
 	}
-	return settings, nil
+	return notificationSettings, nil
 }
 
 func (s *NotificationService) GetSettingsByProvider(ctx context.Context, provider notifications.NotificationProvider) (*NotificationSettings, error) {
@@ -351,7 +381,8 @@ func (s *NotificationService) GetSettingsByProvider(ctx context.Context, provide
 }
 
 func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provider notifications.NotificationProvider, enabled bool, localConfig database.JSON) (*NotificationSettings, error) {
-	if provider == notifications.NotificationProviderGeneric {
+	switch {
+	case provider == notifications.NotificationProviderGeneric:
 		genericConfig, decodeErr := notifications.DecodeConfig[notifications.GenericConfig](localConfig, "Generic")
 		if decodeErr != nil {
 			return nil, decodeErr
@@ -361,6 +392,22 @@ func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provid
 		// the user's own configuration instead of as an opaque send failure.
 		if validateErr := notifications.ValidateGenericPayloadTemplate(genericConfig); validateErr != nil {
 			return nil, common.Classify(common.ErrInvalidNotificationPayloadTemplate, validateErr)
+		}
+	case enabled && provider == notifications.NotificationProviderEmail:
+		emailConfig, decodeErr := notifications.DecodeConfig[notifications.EmailConfig](localConfig, "email")
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		if validateErr := notifications.ValidateEmailAddresses(emailConfig); validateErr != nil {
+			return nil, common.Classify(common.ErrValidation, validateErr)
+		}
+	case enabled && provider == notifications.NotificationProviderTelegram:
+		telegramConfig, decodeErr := notifications.DecodeConfig[notifications.TelegramConfig](localConfig, "Telegram")
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		if validateErr := notifications.ValidateTelegramChatIDs(telegramConfig); validateErr != nil {
+			return nil, common.Classify(common.ErrValidation, validateErr)
 		}
 	}
 
@@ -380,21 +427,15 @@ func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provid
 		}
 	}
 
-	if err != nil {
-		setting = NotificationSettings{
-			Provider: provider,
-			Enabled:  enabled,
-			Config:   localConfig,
-		}
-		if createSettingsErr := s.db.WithContext(ctx).Create(&setting).Error; createSettingsErr != nil {
-			return nil, fmt.Errorf("failed to create notification settings: %w", createSettingsErr)
-		}
-	} else {
-		setting.Enabled = enabled
-		setting.Config = localConfig
-		if updateSettingsErr := s.db.WithContext(ctx).Save(&setting).Error; updateSettingsErr != nil {
-			return nil, fmt.Errorf("failed to update notification settings: %w", updateSettingsErr)
-		}
+	setting = NotificationSettings{
+		CreatedAt: setting.CreatedAt,
+		Config:    localConfig,
+		Provider:  provider,
+		ID:        setting.ID,
+		Enabled:   enabled,
+	}
+	if saveErr := s.db.WithContext(ctx).Save(&setting).Error; saveErr != nil {
+		return nil, fmt.Errorf("failed to save notification settings: %w", saveErr)
 	}
 
 	return &setting, nil
@@ -530,7 +571,7 @@ func (s *NotificationService) send(
 	content notifications.Content,
 ) (handled bool, err error) {
 	providerAttr := attribute.String("arcane.notification.provider", string(setting.Provider))
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "notification.send", trace.WithAttributes(
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "notification.send", trace.WithAttributes(
 		providerAttr,
 		attribute.String("arcane.notification.kind", string(eventType)),
 		attribute.String("arcane.environment.id", target.EnvironmentID),
@@ -563,13 +604,13 @@ func (s *NotificationService) notifyEnabledProviders(
 	metadata database.JSON,
 	content notifications.Content,
 ) (int, error) {
-	settings, err := s.GetAllSettings(ctx)
+	notificationSettings, err := s.GetAllSettings(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get notification settings: %w", err)
 	}
 
-	eligible := make([]NotificationSettings, 0, len(settings))
-	for _, setting := range settings {
+	eligible := make([]NotificationSettings, 0, len(notificationSettings))
+	for _, setting := range notificationSettings {
 		if setting.Enabled && s.isEventEnabled(setting.Config, eventType) {
 			eligible = append(eligible, setting)
 		}
@@ -581,7 +622,7 @@ func (s *NotificationService) notifyEnabledProviders(
 	g.SetLimit(notificationDispatchConcurrency)
 	for i := range eligible {
 		g.Go(func() error {
-			defer utils.RecoverToError(&sendErrs[i], "notification dispatch", "provider", eligible[i].Provider)
+			defer concurrency.RecoverToError(&sendErrs[i], "notification dispatch", "provider", eligible[i].Provider)
 			handled[i] = true
 			handled[i], sendErrs[i] = s.send(ctx, target, eventType, &eligible[i], content)
 			return nil
@@ -623,13 +664,10 @@ func (s *NotificationService) notifyEnabledProviders(
 			req.Metadata["status"] = "failed"
 		}
 
-		if s.eventSvc == nil {
-			continue
-		}
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			defer utils.RecoverToError(nil, "notification event logging", "provider", providerName)
+			defer concurrency.RecoverToError(nil, "notification event logging", "provider", providerName)
 			logCtx, cancelLog := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 			defer cancelLog()
 			if _, createErr := s.eventSvc.CreateEvent(logCtx, req); createErr != nil {
@@ -643,34 +681,20 @@ func (s *NotificationService) notifyEnabledProviders(
 		}
 	}
 
-	if s.apnsSvc != nil {
-		// A queued push counts as a delivery, so push-only setups still mark
-		// updates notified instead of re-sending them on every poll.
-		enqueued, enqueueErr := s.apnsSvc.Enqueue(ctx, target.EnvironmentID, target.EnvironmentName, eventType, logRef, metadata)
-		if enqueueErr != nil {
-			slog.WarnContext(ctx, "Failed to enqueue mobile push notification", "error", enqueueErr)
-		}
-		if enqueued {
-			delivered++
-		}
+	// A queued push counts as a delivery, so push-only setups still mark
+	// updates notified instead of re-sending them on every poll.
+	enqueued, enqueueErr := s.apnsSvc.Enqueue(ctx, target.EnvironmentID, target.EnvironmentName, eventType, logRef, metadata)
+	if enqueueErr != nil {
+		slog.WarnContext(ctx, "Failed to enqueue mobile push notification", "error", enqueueErr)
+	}
+	if enqueued {
+		delivered++
 	}
 
 	if len(errs) > 0 {
 		return delivered, fmt.Errorf("notification errors: %s", strings.Join(errs, "; "))
 	}
 	return delivered, nil
-}
-
-// VulnerabilityNotificationPayload is the data sent to all providers for vulnerability_found events.
-// Only vulnerabilities with a fixed version should trigger this notification.
-type VulnerabilityNotificationPayload struct {
-	CVEID            string // e.g. CVE-2024-1234
-	CVELink          string // e.g. https://nvd.nist.gov/vuln/detail/CVE-2024-1234
-	Severity         string // CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN
-	ImageName        string // e.g. nginx:latest
-	FixedVersion     string
-	PkgName          string // optional
-	InstalledVersion string // optional
 }
 
 // --- Event entry points ---
@@ -681,19 +705,19 @@ func (s *NotificationService) SendBatchContainerUpdateNotification(ctx context.C
 		return nil
 	}
 
-	if s.config != nil && s.config.AgentMode {
-		updates := make([]notification.DispatchContainerUpdate, 0, len(entries))
+	if s.config != nil && s.config.AgentEnabled {
+		updates := make([]types.NotificationDispatchContainerUpdate, 0, len(entries))
 		for _, entry := range entries {
-			updates = append(updates, notification.DispatchContainerUpdate{
+			updates = append(updates, types.NotificationDispatchContainerUpdate{
 				ContainerName: entry.ContainerName,
 				ImageRef:      entry.ImageRef,
 				OldDigest:     entry.OldDigest,
 				NewDigest:     entry.NewDigest,
 			})
 		}
-		_, err := s.dispatchNotificationToManager(ctx, notification.DispatchRequest{
-			Kind:                 notification.DispatchKindBatchContainerUpdate,
-			BatchContainerUpdate: &notification.DispatchBatchContainerUpdate{Updates: updates},
+		_, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
+			Kind:                 types.NotificationDispatchKindBatchContainerUpdate,
+			BatchContainerUpdate: &types.NotificationDispatchBatchContainerUpdate{Updates: updates},
 		})
 		return err
 	}
@@ -727,15 +751,15 @@ func (s *NotificationService) sendBatchContainerUpdateNotificationForTarget(ctx 
 
 // SendImageUpdateNotification returns how many providers the notification was delivered to.
 // Zero means no provider has this event enabled, so callers must not mark the update notified.
-func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, eventType notifications.NotificationEventType) (int, error) {
+func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, imageRef string, updateInfo *types.ImageUpdateResponse, eventType notifications.NotificationEventType) (int, error) {
 	if updateInfo == nil {
 		return 0, errors.New("updateInfo is required")
 	}
 
-	if s.config != nil && s.config.AgentMode {
-		dispatchResponse, err := s.dispatchNotificationToManager(ctx, notification.DispatchRequest{
-			Kind: notification.DispatchKindImageUpdate,
-			ImageUpdate: &notification.DispatchImageUpdate{
+	if s.config != nil && s.config.AgentEnabled {
+		dispatchResponse, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
+			Kind: types.NotificationDispatchKindImageUpdate,
+			ImageUpdate: &types.NotificationDispatchImageUpdate{
 				ImageRef:   imageRef,
 				UpdateInfo: *updateInfo,
 			},
@@ -758,7 +782,7 @@ func (s *NotificationService) sendImageUpdateNotificationForTarget(
 	ctx context.Context,
 	target NotificationTarget,
 	imageRef string,
-	updateInfo *imageupdate.Response,
+	updateInfo *types.ImageUpdateResponse,
 	eventType notifications.NotificationEventType,
 ) (int, error) {
 	metadata := database.JSON{
@@ -773,15 +797,15 @@ func (s *NotificationService) sendImageUpdateNotificationForTarget(
 	return s.notifyEnabledProviders(ctx, target, eventType, imageRef, metadata, content)
 }
 
-func (s *NotificationService) SendContainerUpdateNotification(ctx context.Context, containerName, imageRef, oldDigest, newDigest string) error {
-	if s.config != nil && s.config.AgentMode {
-		_, err := s.dispatchNotificationToManager(ctx, notification.DispatchRequest{
-			Kind: notification.DispatchKindContainerUpdate,
-			ContainerUpdate: &notification.DispatchContainerUpdate{
-				ContainerName: containerName,
-				ImageRef:      imageRef,
-				OldDigest:     oldDigest,
-				NewDigest:     newDigest,
+func (s *NotificationService) SendContainerUpdateNotification(ctx context.Context, update ContainerUpdateEvent) error {
+	if s.config != nil && s.config.AgentEnabled {
+		_, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
+			Kind: types.NotificationDispatchKindContainerUpdate,
+			ContainerUpdate: &types.NotificationDispatchContainerUpdate{
+				ContainerName: update.ContainerName,
+				ImageRef:      update.ImageRef,
+				OldDigest:     update.OldDigest,
+				NewDigest:     update.NewDigest,
 			},
 		})
 		return err
@@ -792,7 +816,7 @@ func (s *NotificationService) SendContainerUpdateNotification(ctx context.Contex
 		return err
 	}
 
-	_, err = s.sendContainerUpdateNotificationForTarget(ctx, target, containerName, imageRef, oldDigest, newDigest)
+	_, err = s.sendContainerUpdateNotificationForTarget(ctx, target, update.ContainerName, update.ImageRef, update.OldDigest, update.NewDigest)
 	return err
 }
 
@@ -816,10 +840,10 @@ func (s *NotificationService) SendVulnerabilityNotification(ctx context.Context,
 		return nil
 	}
 
-	if s.config != nil && s.config.AgentMode {
-		_, err := s.dispatchNotificationToManager(ctx, notification.DispatchRequest{
-			Kind: notification.DispatchKindVulnerabilityFound,
-			VulnerabilityFound: &notification.DispatchVulnerabilityFound{
+	if s.config != nil && s.config.AgentEnabled {
+		_, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
+			Kind: types.NotificationDispatchKindVulnerabilityFound,
+			VulnerabilityFound: &types.NotificationDispatchVulnerabilityFound{
 				CVEID:            payload.CVEID,
 				CVELink:          payload.CVELink,
 				Severity:         payload.Severity,
@@ -848,24 +872,24 @@ func (s *NotificationService) sendVulnerabilityNotificationForTarget(ctx context
 		"fixedVersion": payload.FixedVersion,
 		"eventType":    string(notifications.NotificationEventVulnerabilityFound),
 	}
-	content := s.templates.Vulnerability(target.EnvironmentName, notification.DispatchVulnerabilityFound(payload))
+	content := s.templates.Vulnerability(target.EnvironmentName, types.NotificationDispatchVulnerabilityFound(payload))
 	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, notifications.NotificationEventVulnerabilityFound)
 	return s.notifyEnabledProviders(ctx, target, notifications.NotificationEventVulnerabilityFound, payload.ImageName, metadata, content)
 }
 
 // SendBatchImageUpdateNotification returns how many providers the notification was delivered to.
 // Zero means no provider has this event enabled, so callers must not mark the updates notified.
-func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Context, updates map[string]*imageupdate.Response) (int, error) {
+func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Context, updates map[string]*types.ImageUpdateResponse) (int, error) {
 	updatesWithChanges := maps.Clone(updates)
-	maps.DeleteFunc(updatesWithChanges, func(_ string, update *imageupdate.Response) bool { return update == nil || !update.HasUpdate })
+	maps.DeleteFunc(updatesWithChanges, func(_ string, update *types.ImageUpdateResponse) bool { return update == nil || !update.HasUpdate })
 	if len(updatesWithChanges) == 0 {
 		return 0, nil
 	}
 
-	if s.config != nil && s.config.AgentMode {
-		dispatchResponse, err := s.dispatchNotificationToManager(ctx, notification.DispatchRequest{
-			Kind: notification.DispatchKindBatchImageUpdate,
-			BatchImageUpdate: &notification.DispatchBatchImageUpdate{
+	if s.config != nil && s.config.AgentEnabled {
+		dispatchResponse, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
+			Kind: types.NotificationDispatchKindBatchImageUpdate,
+			BatchImageUpdate: &types.NotificationDispatchBatchImageUpdate{
 				Updates: updatesWithChanges,
 			},
 		})
@@ -883,9 +907,9 @@ func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Conte
 	return s.sendBatchImageUpdateNotificationForTarget(ctx, target, updatesWithChanges)
 }
 
-func (s *NotificationService) sendBatchImageUpdateNotificationForTarget(ctx context.Context, target NotificationTarget, updates map[string]*imageupdate.Response) (int, error) {
+func (s *NotificationService) sendBatchImageUpdateNotificationForTarget(ctx context.Context, target NotificationTarget, updates map[string]*types.ImageUpdateResponse) (int, error) {
 	updatesWithChanges := maps.Clone(updates)
-	maps.DeleteFunc(updatesWithChanges, func(_ string, update *imageupdate.Response) bool { return update == nil || !update.HasUpdate })
+	maps.DeleteFunc(updatesWithChanges, func(_ string, update *types.ImageUpdateResponse) bool { return update == nil || !update.HasUpdate })
 	if len(updatesWithChanges) == 0 {
 		return 0, nil
 	}
@@ -895,18 +919,16 @@ func (s *NotificationService) sendBatchImageUpdateNotificationForTarget(ctx cont
 		"eventType":   string(notifications.NotificationEventImageUpdate),
 		"batch":       true,
 	}
-	content := s.templates.BatchImageUpdate(target.EnvironmentName, updatesWithChanges)
+	content := s.templates.BatchImageUpdate(
+		target.EnvironmentName,
+		updatesWithChanges,
+		s.settingsService.GetSettingsConfig().NotificationsIncludeReleaseLinks.IsTrue(),
+	)
 	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, notifications.NotificationEventImageUpdate)
-	return s.notifyEnabledProviders(ctx, target, notifications.NotificationEventImageUpdate, batchImageUpdateLogRefInternal(updatesWithChanges), metadata, content)
+	return s.notifyEnabledProviders(ctx, target, notifications.NotificationEventImageUpdate, strings.Join(slices.Sorted(maps.Keys(updatesWithChanges)), ", "), metadata, content)
 }
 
-// batchImageUpdateLogRefInternal lists the image refs in sorted order. The push body is built
-// from it, and the relay dedupes on that body, so a repeat of the same set must read the same.
-func batchImageUpdateLogRefInternal(updates map[string]*imageupdate.Response) string {
-	return strings.Join(slices.Sorted(maps.Keys(updates)), ", ")
-}
-
-func (s *NotificationService) SendPruneReportNotification(ctx context.Context, result *system.PruneAllResult) error {
+func (s *NotificationService) SendPruneReportNotification(ctx context.Context, result *types.PruneAllResult) error {
 	if result == nil {
 		slog.InfoContext(ctx, "skipping prune report notification because no prune result was reported")
 		return nil
@@ -926,10 +948,10 @@ func (s *NotificationService) SendPruneReportNotification(ctx context.Context, r
 		slog.WarnContext(ctx, "sending prune report notification with errors but no resources were pruned", "errorCount", len(result.Errors))
 	}
 
-	if s.config != nil && s.config.AgentMode {
-		_, err := s.dispatchNotificationToManager(ctx, notification.DispatchRequest{
-			Kind: notification.DispatchKindPruneReport,
-			PruneReport: &notification.DispatchPruneReport{
+	if s.config != nil && s.config.AgentEnabled {
+		_, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
+			Kind: types.NotificationDispatchKindPruneReport,
+			PruneReport: &types.NotificationDispatchPruneReport{
 				Result: *result,
 			},
 		})
@@ -945,7 +967,7 @@ func (s *NotificationService) SendPruneReportNotification(ctx context.Context, r
 	return err
 }
 
-func (s *NotificationService) sendPruneReportNotificationForTarget(ctx context.Context, target NotificationTarget, result *system.PruneAllResult) (int, error) {
+func (s *NotificationService) sendPruneReportNotificationForTarget(ctx context.Context, target NotificationTarget, result *types.PruneAllResult) (int, error) {
 	metadata := database.JSON{
 		"spaceReclaimed": result.SpaceReclaimed,
 		"eventType":      string(notifications.NotificationEventPruneReport),
@@ -957,10 +979,10 @@ func (s *NotificationService) sendPruneReportNotificationForTarget(ctx context.C
 
 // SendAutoHealNotification sends a notification when a container is auto-healed.
 func (s *NotificationService) SendAutoHealNotification(ctx context.Context, containerName, containerID string) error {
-	if s.config != nil && s.config.AgentMode {
-		_, err := s.dispatchNotificationToManager(ctx, notification.DispatchRequest{
-			Kind: notification.DispatchKindAutoHeal,
-			AutoHeal: &notification.DispatchAutoHeal{
+	if s.config != nil && s.config.AgentEnabled {
+		_, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
+			Kind: types.NotificationDispatchKindAutoHeal,
+			AutoHeal: &types.NotificationDispatchAutoHeal{
 				ContainerName: containerName,
 				ContainerID:   containerID,
 			},
@@ -991,7 +1013,7 @@ func (s *NotificationService) sendAutoHealNotificationForTarget(ctx context.Cont
 
 // TestNotification sends a test message even to a disabled provider (testing before enabling is legitimate)
 // and returns a warning when a real notification of the tested kind would not send.
-func (s *NotificationService) TestNotification(ctx context.Context, environmentID string, provider notifications.NotificationProvider, testType string) (string, error) {
+func (s *NotificationService) TestNotification(ctx context.Context, provider notifications.NotificationProvider, testType string) (string, error) {
 	setting, err := s.GetSettingsByProvider(ctx, provider)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return "", common.Classify(common.ErrBadRequest, fmt.Errorf("please save your %s settings before testing", provider))
@@ -1017,7 +1039,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 		warning = fmt.Sprintf("no events are subscribed for %s, so real notifications will not send", setting.Provider)
 	}
 
-	target, err := s.ResolveNotificationTarget(ctx, environmentID)
+	target, err := s.ResolveNotificationTarget(ctx, "0")
 	if err != nil {
 		return "", err
 	}
@@ -1027,7 +1049,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 	case provider == notifications.NotificationProviderEmail && testType == notificationTestTypeSimple:
 		content = s.templates.TestEmail(target.EnvironmentName)
 	case testType == notificationTestTypeVulnerability:
-		content = s.templates.Vulnerability(target.EnvironmentName, notification.DispatchVulnerabilityFound{
+		content = s.templates.Vulnerability(target.EnvironmentName, types.NotificationDispatchVulnerabilityFound{
 			CVEID:        "Daily Summary - " + time.Now().UTC().Format("2006-01-02"),
 			Severity:     "Critical:1 High:3 Medium:2 Low:1 Unknown:0",
 			ImageName:    "5 image(s) scanned, 2 with fixable vulnerabilities",
@@ -1037,7 +1059,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 	case testType == notificationTestTypeAutoHeal:
 		content = s.templates.AutoHeal(target.EnvironmentName, "test-container")
 	case testType == notificationTestTypePruneReport:
-		content = s.templates.PruneReport(target.EnvironmentName, &system.PruneAllResult{
+		content = s.templates.PruneReport(target.EnvironmentName, &types.PruneAllResult{
 			Success:                  true,
 			ContainersPruned:         []string{"a1b2c3d4e5f6", "f6e5d4c3b2a1"},
 			ImagesDeleted:            []string{"sha256:1111111111111111111111111111111111111111111111111111111111111111"},
@@ -1051,7 +1073,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 			Errors:                   []string{},
 		})
 	case testType == notificationTestTypeBatchImageUpdate:
-		content = s.templates.BatchImageUpdate(target.EnvironmentName, map[string]*imageupdate.Response{
+		content = s.templates.BatchImageUpdate(target.EnvironmentName, map[string]*types.ImageUpdateResponse{
 			"nginx:latest": {
 				HasUpdate:      true,
 				UpdateType:     "digest",
@@ -1059,6 +1081,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 				LatestDigest:   "sha256:xyz789ghi012345678901234567890123456",
 				CheckTime:      time.Now(),
 				ResponseTimeMs: 100,
+				ReleaseURL:     "https://github.com/nginx/nginx/releases",
 			},
 			"postgres:16-alpine": {
 				HasUpdate:      true,
@@ -1076,10 +1099,10 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 				CheckTime:      time.Now(),
 				ResponseTimeMs: 95,
 			},
-		})
+		}, true)
 	default: // simple and image-update
 		imageRef := kit.Ternary(testType == notificationTestTypeSimple, "test/image:latest", "nginx:latest")
-		content = s.templates.ImageUpdate(target.EnvironmentName, imageRef, &imageupdate.Response{
+		content = s.templates.ImageUpdate(target.EnvironmentName, imageRef, &types.ImageUpdateResponse{
 			HasUpdate:      true,
 			UpdateType:     "digest",
 			CurrentDigest:  "sha256:abc123def456789012345678901234567890",

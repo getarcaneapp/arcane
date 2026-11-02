@@ -18,7 +18,11 @@ const (
 
 	MetaEnvironmentAggregate = "arcane:environmentAggregate"
 
-	envPathPrefixInternal = "/environments/{id}"
+	MetaActionParam = "arcane:actionParam"
+
+	MetaActionPermissions = "arcane:actionPermissions"
+
+	envPathPrefix = "/environments/{id}"
 )
 
 // CollectFromHumaAPI walks every operation registered on humaAPI and records,
@@ -38,11 +42,11 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 		if item == nil {
 			continue
 		}
-		suffix, ok := envResourceSuffixInternal(path).Get()
+		suffix, ok := envResourceSuffix(path).Get()
 		if !ok {
 			continue
 		}
-		for method, op := range operationsByMethodInternal(item) {
+		for method, op := range operationsByMethod(item) {
 			if op == nil {
 				continue
 			}
@@ -52,7 +56,13 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 				}
 				m.aggregates[method+" "+suffix] = struct{}{}
 			}
-			if perm, localOk := requiredPermissionInternal(op).Get(); localOk {
+			param, hasParam := op.Metadata[MetaActionParam].(string)
+			perms, hasPerms := op.Metadata[MetaActionPermissions].(map[string]string)
+			if hasParam && hasPerms {
+				m.AddActions(method, suffix, param, perms)
+				continue
+			}
+			if perm, localOk := requiredPermission(op).Get(); localOk {
 				m.Add(method, suffix, perm)
 				continue
 			}
@@ -60,25 +70,25 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 			// permission is only allowed through the proxy when it is an
 			// explicitly public endpoint (empty Security). Anything else is
 			// left unmapped and denied by default.
-			if isPublicOperationInternal(op) {
+			if op.Security != nil && len(op.Security) == 0 {
 				m.AddPublic(method, suffix)
 			}
 		}
 	}
 }
 
-// envResourceSuffixInternal returns the resource path after /environments/{id}
+// envResourceSuffix returns the resource path after /environments/{id}
 // for environment-scoped operation paths, e.g. "/containers" for
 // "/environments/{id}/containers". It returns None for paths that are not
 // environment-scoped resource paths (including the bare "/environments/{id}").
-func envResourceSuffixInternal(path string) mo.Option[string] {
-	if !strings.HasPrefix(path, envPathPrefixInternal+"/") {
+func envResourceSuffix(path string) mo.Option[string] {
+	if !strings.HasPrefix(path, envPathPrefix+"/") {
 		return mo.None[string]()
 	}
-	return mo.Some(strings.TrimPrefix(path, envPathPrefixInternal))
+	return mo.Some(strings.TrimPrefix(path, envPathPrefix))
 }
 
-func requiredPermissionInternal(op *huma.Operation) mo.Option[string] {
+func requiredPermission(op *huma.Operation) mo.Option[string] {
 	if op.Metadata == nil {
 		return mo.None[string]()
 	}
@@ -89,16 +99,7 @@ func requiredPermissionInternal(op *huma.Operation) mo.Option[string] {
 	return mo.Some(perm)
 }
 
-// isPublicOperationInternal reports whether op explicitly opts out of all
-// security requirements (an empty, non-nil Security list). Such operations are
-// intentionally public and are allowed through the proxy without a permission
-// check. A nil Security list means the operation inherits the global security
-// requirement and is therefore NOT public.
-func isPublicOperationInternal(op *huma.Operation) bool {
-	return op.Security != nil && len(op.Security) == 0
-}
-
-func operationsByMethodInternal(item *huma.PathItem) map[string]*huma.Operation {
+func operationsByMethod(item *huma.PathItem) map[string]*huma.Operation {
 	return map[string]*huma.Operation{
 		http.MethodGet:     item.Get,
 		http.MethodPost:    item.Post,

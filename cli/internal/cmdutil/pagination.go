@@ -8,19 +8,35 @@ import (
 	"strconv"
 
 	"github.com/spf13/cobra"
-	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
+	"kit.getarcane.app"
+
+	"getarcane.dev/cli/v3/internal/config"
+	"getarcane.dev/cli/v3/internal/runtime"
+)
+
+type (
+	// ListParams describes how a list command wants its results paginated.
+	ListParams struct {
+		// Resource is the canonical resource name used to look up a configured
+		// per-resource limit.
+		Resource string
+		// Limit is the value of the command's --limit flag.
+		Limit int
+		// FallbackDefault applies when neither the flag nor config supplies a limit.
+		FallbackDefault int
+		// Start is the value of the command's --start flag.
+		Start int
+		// All requests every item, ignoring pagination entirely.
+		All bool
+	}
 )
 
 const (
 	// ShowAllLimit requests every item without the server pagination clamp.
 	ShowAllLimit = -1
-
 	// AllFlagUsage is the shared help text for the --all flag on list commands.
 	AllFlagUsage = "Return every item, ignoring pagination"
-
 	// StartFlagUsage documents offset rounding for database-backed resources.
 	StartFlagUsage = "Offset for pagination (rounded down to a multiple of --limit on database-backed resources)"
 )
@@ -40,21 +56,6 @@ func AppendQuery(path string, extra url.Values) string {
 	}
 	parsed.RawQuery = query.Encode()
 	return parsed.String()
-}
-
-// ListParams describes how a list command wants its results paginated.
-type ListParams struct {
-	// Resource is the canonical resource name used to look up a configured
-	// per-resource limit.
-	Resource string
-	// Limit is the value of the command's --limit flag.
-	Limit int
-	// FallbackDefault applies when neither the flag nor config supplies a limit.
-	FallbackDefault int
-	// Start is the value of the command's --start flag.
-	Start int
-	// All requests every item, ignoring pagination entirely.
-	All bool
 }
 
 // ApplyPaginationParams appends limit and start query params to a list path.

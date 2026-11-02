@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import type { ResolvedPathname } from '$app/types';
 	import type { Snippet } from 'svelte';
 
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
@@ -19,12 +20,12 @@
 		label: string;
 		items: {
 			title: string;
-			url: string;
+			url: ResolvedPathname;
 			icon?: typeof ArrowRightIcon;
 			shortcut?: ShortcutKey[];
 			items?: {
 				title: string;
-				url: string;
+				url: ResolvedPathname;
 				icon?: typeof ArrowRightIcon;
 				shortcut?: ShortcutKey[];
 			}[];
@@ -34,10 +35,6 @@
 	const sidebar = useSidebar();
 
 	function isActiveItem(url: string): boolean {
-		// Special case: Don't highlight "Environments" when on GitOps page
-		if (url === '/environments' && page.url.pathname.includes('/gitops')) {
-			return false;
-		}
 		return page.url.pathname === url || (page.url.pathname.startsWith(url) && url !== '/');
 	}
 
@@ -45,7 +42,7 @@
 		return items?.some((child) => isActiveItem(child.url)) ?? false;
 	}
 
-	let openStates = $state<Record<string, boolean>>({});
+	const openStates = $state<Record<string, boolean>>({});
 	let hoveredGroup = $state<string | null>(null);
 
 	const enhancedItems = $derived(
@@ -77,7 +74,10 @@
 	const shortcutsEnabled = $derived(userStore.current?.preferences?.keyboardShortcutsEnabled ?? true);
 </script>
 
-{#snippet itemAnchor(entry: { title: string; url: string; icon?: typeof ArrowRightIcon }, props: Record<string, unknown>)}
+{#snippet itemAnchor(
+	entry: { title: string; url: ResolvedPathname; icon?: typeof ArrowRightIcon },
+	props: Record<string, unknown>
+)}
 	{@const Icon = entry.icon}
 	<a href={entry.url} {...props}>
 		{#if entry.icon}
@@ -88,7 +88,7 @@
 {/snippet}
 
 {#snippet menuEntry(
-	entry: { title: string; url: string; icon?: typeof ArrowRightIcon; isActive: boolean },
+	entry: { title: string; url: ResolvedPathname; icon?: typeof ArrowRightIcon; isActive: boolean },
 	tooltip: Snippet | undefined
 )}
 	<Sidebar.MenuItem>

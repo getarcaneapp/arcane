@@ -3,98 +3,103 @@
 
 	interface Props {
 		active?: boolean;
-		delay?: number;
-		minDuration?: number;
 		thickness?: string;
 		class?: string;
 	}
 
-	let { active = false, delay = 80, minDuration = 350, thickness = 'h-2', class: className = '' }: Props = $props();
-
-	let visible = $state(false);
-	let startedAt = 0;
-	let showTO: ReturnType<typeof setTimeout> | undefined;
-	let hideTO: ReturnType<typeof setTimeout> | undefined;
-
-	function clearTimers() {
-		clearTimeout(showTO);
-		clearTimeout(hideTO);
-	}
-
-	$effect(() => {
-		clearTimers();
-		if (active) {
-			showTO = setTimeout(() => {
-				visible = true;
-				startedAt = performance.now();
-			}, delay);
-		} else {
-			const elapsed = performance.now() - startedAt;
-			const remaining = Math.max(0, minDuration - elapsed);
-			hideTO = setTimeout(() => (visible = false), remaining);
-		}
-		return clearTimers;
-	});
+	let { active = false, thickness = 'h-2', class: className = '' }: Props = $props();
 </script>
 
-{#if visible}
-	<div
-		class={`pointer-events-none fixed inset-x-0 top-0 z-(--arcane-z-loading) ${thickness} ${className}`}
-		role="progressbar"
-		aria-busy="true"
-		aria-label={m.common_loading()}
-	>
-		<div class="relative h-full w-full overflow-hidden">
-			<div class="absolute inset-0 bg-primary/25"></div>
-
-			<div class="bar absolute inset-y-0 left-0 w-1/3">
-				<div class="peg absolute top-0 right-0 h-full w-3"></div>
-			</div>
-
-			<div class="bar bar-offset absolute inset-y-0 left-0 w-1/3">
-				<div class="peg absolute top-0 right-0 h-full w-3"></div>
-			</div>
-
-			<span class="sr-only">{m.common_loading()}</span>
-		</div>
-	</div>
-{/if}
+<div
+	class={`loading pointer-events-none fixed inset-x-0 top-0 z-(--arcane-z-loading) ${thickness} ${className}`}
+	class:active
+	role="progressbar"
+	aria-hidden={!active}
+	aria-busy={active}
+	aria-label={m.common_loading()}
+>
+	<div class="track absolute inset-0"></div>
+	<div class="wave absolute inset-0"></div>
+	<div class="wave absolute inset-0"></div>
+	<div class="wave absolute inset-0"></div>
+	{#if active}
+		<span class="sr-only">{m.common_loading()}</span>
+	{/if}
+</div>
 
 <style>
-	.bar {
-		background: var(--primary);
-		animation: arcane-slide 2s linear infinite;
-		box-shadow:
-			0 0 12px var(--primary),
-			0 0 2px var(--primary);
-		opacity: 0.95;
+	.loading {
+		opacity: 0;
+		visibility: hidden;
+		transition:
+			opacity 250ms ease-out 100ms,
+			visibility 0s linear 350ms;
 	}
 
-	.bar-offset {
-		animation-delay: -1s;
+	.loading.active {
+		opacity: 1;
+		visibility: visible;
+		transition:
+			opacity 120ms ease-out,
+			visibility 0s;
 	}
 
-	.peg {
+	.track {
+		background: color-mix(in oklab, var(--primary) 18%, transparent);
+		backdrop-filter: blur(6px);
+	}
+
+	.wave {
+		transform-origin: center;
+		transform: scaleX(0);
+		opacity: 0;
 		background: linear-gradient(
 			to right,
 			color-mix(in oklab, var(--primary) 0%, transparent),
-			color-mix(in oklab, var(--primary) 90%, transparent)
+			color-mix(in oklab, var(--primary) 90%, transparent) 8%,
+			color-mix(in oklab, var(--primary) 0%, transparent) 26%,
+			color-mix(in oklab, var(--primary) 0%, transparent) 74%,
+			color-mix(in oklab, var(--primary) 90%, transparent) 92%,
+			color-mix(in oklab, var(--primary) 0%, transparent)
 		);
-		filter: blur(2px);
+		filter: drop-shadow(0 0 6px color-mix(in oklab, var(--primary) 55%, transparent));
+		will-change: transform, opacity;
+		animation: arcane-wave 1.8s cubic-bezier(0.2, 0.6, 0.35, 1) infinite;
+		animation-play-state: paused;
 	}
 
-	@keyframes arcane-slide {
+	.wave:nth-of-type(3) {
+		animation-delay: 0.6s;
+	}
+
+	.wave:nth-of-type(4) {
+		animation-delay: 1.2s;
+	}
+
+	.loading.active .wave {
+		animation-play-state: running;
+	}
+
+	@keyframes arcane-wave {
 		0% {
-			transform: translateX(-100%);
+			transform: scaleX(0);
+			opacity: 0;
+		}
+		15% {
+			opacity: 1;
+		}
+		70% {
+			opacity: 0.85;
 		}
 		100% {
-			transform: translateX(300%);
+			transform: scaleX(1);
+			opacity: 0;
 		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.bar {
-			animation-duration: 4s;
+		.wave {
+			animation-duration: 3.6s;
 		}
 	}
 </style>

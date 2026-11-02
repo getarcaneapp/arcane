@@ -8,7 +8,6 @@
 	import { onMount } from 'svelte';
 
 	import ConfirmDialog from '#lib/components/confirm-dialog/confirm-dialog.svelte';
-	import FirstLoginPasswordDialog from '#lib/components/dialogs/first-login-password-dialog.svelte';
 	import Error from '#lib/components/error.svelte';
 	import LoadingIndicator from '#lib/components/loading-indicator.svelte';
 	import { Toaster } from '#lib/components/ui/sonner/index.js';
@@ -19,7 +18,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { isAuthPagePath } from '#lib/services/api-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { environmentName } from '#lib/utils/environments.js';
 	import { finishNavigation, startPageView } from '#lib/utils/telemetry.js';
 
@@ -44,6 +43,14 @@
 	const isMobile = new IsMobile();
 	const isTablet = new IsTablet();
 
+	const toastPosition = $derived.by(() => {
+		const preferred = userStore.current?.preferences?.toastPosition;
+		if (!preferred || preferred === 'auto') {
+			return isMobile.current || isTablet.current ? 'top-center' : 'bottom-right';
+		}
+		return preferred;
+	});
+
 	// Mirror the per-device layout onto <html> for CSS; `$effect.pre` sets it before first paint.
 	$effect.pre(() => {
 		document.documentElement.setAttribute('data-layout', isMobile.current ? 'mobile' : 'desktop');
@@ -60,7 +67,7 @@
 			case '/(app)/projects/[projectId]':
 				return page.data['project']?.name;
 			case '/(app)/containers/[containerId]':
-				return page.data['container']?.name?.replace(/^\/+/, '');
+				return page.data['container']?.name;
 			case '/(app)/volumes/[volumeName]':
 				return page.params['volumeName'];
 			case '/(app)/networks/[networkId]':
@@ -72,10 +79,7 @@
 		}
 	});
 
-	// Detail pages opened with `?env=` return their own envId, which can differ from the selected environment.
-	const titleEnvironmentName = $derived(
-		typeof page.data['envId'] === 'string' ? environmentName(page.data['envId']) : environmentStore.selected?.name
-	);
+	const titleEnvironmentName = $derived(typeof page.data['envId'] === 'string' ? environmentName(page.data['envId']) : undefined);
 
 	// Root layout owns the document title; nested <title> tags are never restored on unmount.
 	const pageTitle = $derived(
@@ -98,7 +102,11 @@
 		{:else}
 			<Tooltip.Provider>
 				{@render children()}
-				<FirstLoginPasswordDialog open={showPasswordChangeDialog} onSuccess={() => refreshAll()} />
+				{#if showPasswordChangeDialog}
+					{#await import('#lib/components/dialogs/first-login-password-dialog.svelte') then { default: FirstLoginPasswordDialog }}
+						<FirstLoginPasswordDialog open={showPasswordChangeDialog} onSuccess={() => refreshAll()} />
+					{/await}
+				{/if}
 				{#if dev}
 					<SvelteQueryDevtools />
 				{/if}
@@ -108,7 +116,7 @@
 
 	<ModeWatcher disableTransitions={false} />
 	<Toaster
-		position={isMobile.current || isTablet.current ? 'top-center' : 'bottom-right'}
+		position={toastPosition}
 		toastOptions={{
 			classes: {
 				toast: 'border border-primary/30!',

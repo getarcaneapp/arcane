@@ -5,17 +5,19 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry/children/browse"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/registry/children/browse"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-type Module struct {
-	service       *ContainerRegistryService
-	handler       *ContainerRegistryHandler
-	browseHandler *browse.Handler
-}
+type (
+	Module struct {
+		service       *ContainerRegistryService
+		handler       *ContainerRegistryHandler
+		browseHandler *browse.Handler
+	}
+)
 
 func New(service *ContainerRegistryService, syncRemoteRegistries func(context.Context)) *Module {
 	return &Module{
@@ -53,7 +55,7 @@ func RegisterContainerRegistries(api huma.API, h *ContainerRegistryHandler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "listContainerRegistries",
 		Method:      "GET",
-		Path:        "/container-registries",
+		Path:        "/registries",
 		Summary:     "List container registries",
 		Description: "Get a paginated list of container registries",
 		Tags:        []string{"Container Registries"},
@@ -64,7 +66,7 @@ func RegisterContainerRegistries(api huma.API, h *ContainerRegistryHandler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "createContainerRegistry",
 		Method:      "POST",
-		Path:        "/container-registries",
+		Path:        "/registries",
 		Summary:     "Create a container registry",
 		Description: "Create a new container registry",
 		Tags:        []string{"Container Registries"},
@@ -75,7 +77,7 @@ func RegisterContainerRegistries(api huma.API, h *ContainerRegistryHandler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "syncContainerRegistries",
 		Method:      "POST",
-		Path:        "/container-registries/sync",
+		Path:        "/registries/sync",
 		Summary:     "Sync container registries",
 		Description: "Sync container registries from a remote source",
 		Tags:        []string{"Container Registries"},
@@ -86,7 +88,7 @@ func RegisterContainerRegistries(api huma.API, h *ContainerRegistryHandler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "getContainerRegistryPullUsage",
 		Method:      "GET",
-		Path:        "/container-registries/pull-usage",
+		Path:        "/registries/usage",
 		Summary:     "Get container registry pull usage",
 		Description: "Get configured registry pull usage and rate limit visibility",
 		Tags:        []string{"Container Registries"},
@@ -97,7 +99,7 @@ func RegisterContainerRegistries(api huma.API, h *ContainerRegistryHandler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "getContainerRegistry",
 		Method:      "GET",
-		Path:        "/container-registries/{id}",
+		Path:        "/registries/{id}",
 		Summary:     "Get a container registry",
 		Description: "Get a container registry by ID",
 		Tags:        []string{"Container Registries"},
@@ -107,8 +109,8 @@ func RegisterContainerRegistries(api huma.API, h *ContainerRegistryHandler) {
 
 	huma.Register(api, huma.Operation{
 		OperationID: "updateContainerRegistry",
-		Method:      "PUT",
-		Path:        "/container-registries/{id}",
+		Method:      "PATCH",
+		Path:        "/registries/{id}",
 		Summary:     "Update a container registry",
 		Description: "Update an existing container registry",
 		Tags:        []string{"Container Registries"},
@@ -119,7 +121,7 @@ func RegisterContainerRegistries(api huma.API, h *ContainerRegistryHandler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "deleteContainerRegistry",
 		Method:      "DELETE",
-		Path:        "/container-registries/{id}",
+		Path:        "/registries/{id}",
 		Summary:     "Delete a container registry",
 		Description: "Delete a container registry by ID",
 		Tags:        []string{"Container Registries"},
@@ -127,14 +129,15 @@ func RegisterContainerRegistries(api huma.API, h *ContainerRegistryHandler) {
 		Middlewares: middleware.RequirePermission(api, authz.PermRegistriesDelete),
 	}, h.DeleteRegistry)
 
-	huma.Register(api, huma.Operation{
-		OperationID: "testContainerRegistry",
+	middleware.RegisterWithActionPermissions(api, huma.Operation{
+		OperationID: "containerRegistryAction",
 		Method:      "POST",
-		Path:        "/container-registries/{id}/test",
+		Path:        "/registries/{id}",
 		Summary:     "Test a container registry",
 		Description: "Test connectivity and authentication to a container registry",
 		Tags:        []string{"Container Registries"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermRegistriesTest),
+	}, "action", map[string]string{
+		"test": authz.PermRegistriesTest,
 	}, h.TestRegistry)
 }

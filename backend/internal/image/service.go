@@ -16,101 +16,131 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
-	"github.com/getarcaneapp/arcane/types/v2"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
-	"github.com/getarcaneapp/arcane/types/v2/features"
-	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/getarcaneapp/arcane/types/v2/system"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
-	vulnerabilitytypes "github.com/getarcaneapp/arcane/types/v2/vulnerability"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
-	"go.getarcane.app/docker"
-	"go.getarcane.app/kit/pkg"
-	"go.getarcane.app/updater"
-	"go.getarcane.app/updater/pkg/utils/tagpolicy"
+	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image/children/patch"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
+	"kit.getarcane.app/docker"
+	kitregistry "kit.getarcane.app/registry"
+	"kit.getarcane.app/updater"
+	"kit.getarcane.app/updater/pkg/utils/tagpolicy"
+
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/image/children/patch"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/vulnerability"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	arcaneregistry "getarcane.dev/arcane/v3/pkg/registry"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
 )
 
-// projectIDCacheTTL bounds how long a snapshot of all (name → id) project rows is reused.
-// Dashboard polls frequently; the projects table changes rarely, so a short TTL is safe.
-const projectIDCacheTTL = 5 * time.Second
+type (
+	// patchSlot is one patch task's output; failures travel as task errors.
+	patchSlot struct {
+		Skipped bool `json:"skipped,omitempty"`
+	}
 
-// patchSlot is one patch task's output; failures travel as task errors.
-type patchSlot struct {
-	Skipped bool `json:"skipped,omitempty"`
-}
+	ImageService struct {
+		db                   *database.DB
+		dockerService        *dockerInternal.DockerClientService
+		imageUpdateService   *imageupdate.ImageUpdateService
+		registryService      *registry.ContainerRegistryService
+		vulnerabilityService *vulnerability.VulnerabilityService
+		eventService         *event.EventService
 
-type ImageService struct {
-	db                   *database.DB
-	dockerService        *dockerInternal.DockerClientService
-	imageUpdateService   *imageupdate.ImageUpdateService
-	registryService      *registry.ContainerRegistryService
-	vulnerabilityService *vulnerability.VulnerabilityService
-	eventService         *event.EventService
+		settingsService *settings.SettingsService
+		patch           *patch.Service
+		patchWorkflow   *flow.Workflow
+		projectIDCache  *hot.HotCache[struct{}, map[string]string]
+	}
 
-	settingsService *settings.SettingsService
-	patch           *patch.Service
-	patchWorkflow   *flow.Workflow
-	projectIDCache  *hot.HotCache[struct{}, map[string]string]
-}
+	imageRefUpdateLookup struct {
+		repositoryCandidates map[string]struct{}
+		originalRef          string
+		tag                  string
+	}
 
-type imageRefUpdateLookup struct {
-	originalRef          string
-	tag                  string
-	repositoryCandidates map[string]struct{}
-}
+	imageUpdateRecordKey struct {
+		repository string
+		tag        string
+	}
 
-type imageUpdateRecordKey struct {
-	repository string
-	tag        string
-}
+	ImageServiceParams struct {
+		fx.In
 
-func NewImageService(
-	db *database.DB,
-	dockerService *dockerInternal.DockerClientService,
-	registryService *registry.ContainerRegistryService,
-	imageUpdateService *imageupdate.ImageUpdateService,
-	vulnerabilityService *vulnerability.VulnerabilityService,
-	eventService *event.EventService,
-	settingsService *settings.SettingsService,
-	activityService *activity.ActivityService,
-) *ImageService {
+		DB                   *database.DB
+		DockerService        *dockerInternal.DockerClientService
+		RegistryService      *registry.ContainerRegistryService
+		ImageUpdateService   *imageupdate.ImageUpdateService
+		VulnerabilityService *vulnerability.VulnerabilityService
+		EventService         *event.EventService
+		SettingsService      *settings.SettingsService
+		ActivityService      *activity.ActivityService
+		Config               *config.Config
+	}
+
+	// PullRequest describes one pull through Pull.
+	PullRequest struct {
+		// Ref is the reference pulled from the registry.
+		Ref string
+		// Tag, when set, is the reference Ref is tagged as after the pull; it is the one reconciled.
+		Tag         string
+		Progress    io.Writer
+		User        types.Actor
+		Credentials []types.ContainerRegistryCredential
+	}
+
+	uploadLimitReader struct {
+		reader    io.Reader
+		remaining int64
+		exceeded  atomic.Bool
+	}
+)
+
+const (
+	// projectIDCacheTTL bounds how long a snapshot of all (name → id) project rows is reused.
+	// Dashboard polls frequently; the projects table changes rarely, so a short TTL is safe.
+	projectIDCacheTTL = 5 * time.Second
+)
+
+var errImageUploadTooLarge = errors.New("image upload exceeds the size limit")
+
+func NewImageService(p ImageServiceParams) *ImageService {
 	return &ImageService{
-		db:                   db,
-		dockerService:        dockerService,
-		registryService:      registryService,
-		imageUpdateService:   imageUpdateService,
-		vulnerabilityService: vulnerabilityService,
-		eventService:         eventService,
-		settingsService:      settingsService,
-		patch:                patch.NewService(db, dockerService, settingsService, activityService, registryService, vulnerabilityService),
+		db:                   p.DB,
+		dockerService:        p.DockerService,
+		registryService:      p.RegistryService,
+		imageUpdateService:   p.ImageUpdateService,
+		vulnerabilityService: p.VulnerabilityService,
+		eventService:         p.EventService,
+		settingsService:      p.SettingsService,
+		patch: patch.NewService(patch.ServiceParams{
+			DB:                   p.DB,
+			DockerService:        p.DockerService,
+			SettingsService:      p.SettingsService,
+			ActivityService:      p.ActivityService,
+			RegistryService:      p.RegistryService,
+			VulnerabilityService: p.VulnerabilityService,
+		}),
 		projectIDCache: hot.NewHotCache[struct{}, map[string]string](hot.LRU, 1).
 			WithTTL(projectIDCacheTTL).
 			Build(),
@@ -128,7 +158,7 @@ func (s *ImageService) RegisterWorkflows(engine *flow.Engine) error {
 		Concurrency: 1,
 		Timeout:     12 * time.Hour,
 		Activity: activitylib.StartRequest{
-			Type:          activitytypes.TypeImagePatch,
+			Type:          types.ActivityTypeImagePatch,
 			ResourceType:  new("images"),
 			ResourceName:  new("Scheduled image patch"),
 			Step:          "Finding patchable images",
@@ -141,7 +171,7 @@ func (s *ImageService) RegisterWorkflows(engine *flow.Engine) error {
 		},
 		Steps: []workflow.StepSpec{
 			workflow.Step("discover", engine.Handler(func(ctx context.Context, _ flow.Task) (any, error) {
-				if !s.settingsService.IsFeatureEnabled(ctx, features.VulnerabilityManagement) {
+				if !s.settingsService.IsFeatureEnabled(ctx, types.FeatureVulnerabilityManagement) {
 					return []patch.Target{}, nil
 				}
 				targets, err := s.patch.Targets(ctx, types.LocalDockerEnvironmentID)
@@ -158,7 +188,7 @@ func (s *ImageService) RegisterWorkflows(engine *flow.Engine) error {
 				if err := t.DecodeItem(&target); err != nil {
 					return nil, err
 				}
-				if !s.settingsService.IsFeatureEnabled(ctx, features.VulnerabilityManagement) {
+				if !s.settingsService.IsFeatureEnabled(ctx, types.FeatureVulnerabilityManagement) {
 					return patchSlot{Skipped: true}, nil
 				}
 				// The record ID is stable per task, so a redelivery resumes its own patch.
@@ -178,15 +208,15 @@ func (s *ImageService) RegisterWorkflows(engine *flow.Engine) error {
 				if err != nil {
 					return nil, err
 				}
-				var failed []scheduler.TargetOutcome
+				var failed []types.TargetOutcome
 				patched, skipped := 0, 0
 				for index, slot := range slots {
 					switch {
 					case slot.Err != "":
-						failed = append(failed, scheduler.TargetOutcome{
+						failed = append(failed, types.TargetOutcome{
 							ResourceType: "image",
 							ID:           targets[index].ImageName,
-							Status:       scheduler.Failed,
+							Status:       types.RunStatusFailed,
 							Message:      slot.Err,
 						})
 					case slot.Value.Skipped:
@@ -195,18 +225,18 @@ func (s *ImageService) RegisterWorkflows(engine *flow.Engine) error {
 						patched++
 					}
 				}
-				status, message := func() (scheduler.RunStatus, string) {
+				status, message := func() (types.RunStatus, string) {
 					switch {
-					case skipped > 0 || (len(targets) == 0 && !s.settingsService.IsFeatureEnabled(ctx, features.VulnerabilityManagement)):
-						return kit.Ternary(patched > 0, scheduler.Partial, scheduler.Skipped),
-							fmt.Sprintf("Remaining patches stopped because feature %s was disabled", features.VulnerabilityManagement)
+					case skipped > 0 || (len(targets) == 0 && !s.settingsService.IsFeatureEnabled(ctx, types.FeatureVulnerabilityManagement)):
+						return kit.Ternary(patched > 0, types.RunStatusPartial, types.RunStatusSkipped),
+							fmt.Sprintf("Remaining patches stopped because feature %s was disabled", types.FeatureVulnerabilityManagement)
 					case len(failed) > 0:
-						return scheduler.Partial, fmt.Sprintf("Image patch completed: %d patched, %d failed", patched, len(failed))
+						return types.RunStatusPartial, fmt.Sprintf("Image patch completed: %d patched, %d failed", patched, len(failed))
 					default:
-						return scheduler.Succeeded, fmt.Sprintf("Image patch completed: %d patched, %d failed", patched, len(failed))
+						return types.RunStatusSucceeded, fmt.Sprintf("Image patch completed: %d patched, %d failed", patched, len(failed))
 					}
 				}()
-				return scheduler.Outcome{
+				return types.SchedulerOutcome{
 					Status:  status,
 					Message: message,
 					Targets: failed,
@@ -231,7 +261,7 @@ func (s *ImageService) PatchWorkflow() *flow.Workflow { return s.patchWorkflow }
 // GetImageDetail returns a DetailSummary for the given image ID. It fetches ImageInspect
 // and ImageList concurrently so the size field reflects the same metric shown in the
 // image table (docker image ls / docker system df).
-func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetypes.DetailSummary, error) {
+func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.ImageDetailSummary, error) {
 	var (
 		inspect    image.InspectResponse
 		listSize   int64
@@ -241,7 +271,7 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 	g, gctx := errgroup.WithContext(ctx)
 
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "image worker")
+		defer concurrency.RecoverToError(&workerErr, "image worker")
 
 		inspectResult, inspectImageErr := s.dockerService.Call(gctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
 			return dockerClient.ImageInspect(ctx, id)
@@ -249,12 +279,32 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 		if inspectImageErr != nil {
 			return fmt.Errorf("inspect not found: %w", inspectImageErr)
 		}
-		inspect = inspectResult.InspectResponse
+		repoTags, repoDigests := imageref.SplitRepositoryReferences(inspectResult.RepoTags, inspectResult.RepoDigests)
+		inspect = image.InspectResponse{ //exhaustruct:enforce
+			ID:           inspectResult.ID,
+			RepoTags:     repoTags,
+			RepoDigests:  repoDigests,
+			Comment:      inspectResult.Comment,
+			Created:      inspectResult.Created,
+			Author:       inspectResult.Author,
+			Config:       inspectResult.Config,
+			Architecture: inspectResult.Architecture,
+			Variant:      inspectResult.Variant,
+			Os:           inspectResult.Os,
+			OsVersion:    inspectResult.OsVersion,
+			Size:         inspectResult.Size,
+			GraphDriver:  inspectResult.GraphDriver,
+			RootFS:       inspectResult.RootFS,
+			Metadata:     inspectResult.Metadata,
+			Descriptor:   inspectResult.Descriptor,
+			Manifests:    inspectResult.Manifests,
+			Identity:     inspectResult.Identity,
+		}
 		return nil
 	})
 
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "image worker")
+		defer concurrency.RecoverToError(&workerErr, "image worker")
 
 		images, imageListErr := s.dockerService.ListImages(gctx)
 		if imageListErr != nil {
@@ -270,9 +320,9 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 	})
 
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "image worker")
+		defer concurrency.RecoverToError(&workerErr, "image worker")
 
-		containerList, listContainersErr := s.dockerService.ListContainers(gctx)
+		containerList, listContainersErr := s.dockerService.ListContainers(gctx, false)
 		if listContainersErr != nil {
 			slog.DebugContext(gctx, "failed to list containers for image detail pinned references", "id", id, "error", listContainersErr)
 			return nil
@@ -285,7 +335,7 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 		return nil, waitErr
 	}
 
-	out := imagetypes.NewDetailSummary(&inspect)
+	out := types.NewImageDetailSummary(&inspect)
 	if listSize > 0 {
 		out.Size = listSize            // keep: DetailSummary is mapped from the inspect response by imagetypes.NewDetailSummary
 		out.Descriptor.Size = listSize // keep: DetailSummary is mapped from the inspect response by imagetypes.NewDetailSummary
@@ -296,7 +346,7 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 	return &out, nil
 }
 
-func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, user usertypes.Actor) error {
+func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, user types.Actor) error {
 	imageDetails, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, id)
 	})
@@ -327,16 +377,34 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 		})
 	})
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", id, imageName, user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "image",
+			ResourceID:    id,
+			ResourceName:  imageName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "delete", "force": force},
+		}, err)
 		return fmt.Errorf("failed to remove image: %w", err)
 	}
 
 	s.cleanupRemovedImages(ctx, removed.Items, id)
 
-	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageDelete, id, imageName, user.ID, user.Username, "0", database.JSON{
-		"action":  "delete",
-		"imageId": id,
-		"force":   force,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeImageDelete,
+		ResourceType:  "image",
+		ResourceID:    id,
+		ResourceName:  imageName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":  "delete",
+			"imageId": id,
+			"force":   force,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log image deletion action", "err", logErr, "image", imageName, "imageId", id)
 	}
@@ -367,10 +435,18 @@ func (s *ImageService) cleanupRemovedImages(ctx context.Context, deleted []image
 	}
 }
 
-func (s *ImageService) PullImage(ctx context.Context, imageName string, progressWriter io.Writer, user usertypes.Actor, externalCreds []containerregistry.Credential) error {
+func (s *ImageService) PullImage(ctx context.Context, imageName string, progressWriter io.Writer, user types.Actor, externalCreds []types.ContainerRegistryCredential) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, database.JSON{"action": "pull"})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "image",
+			ResourceName:  imageName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "pull"},
+		}, err)
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
@@ -408,7 +484,15 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 			"error",
 			err.Error(),
 		)
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, database.JSON{"action": "pull"})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "image",
+			ResourceName:  imageName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "pull"},
+		}, err)
 		return fmt.Errorf("failed to initiate image pull for %s: %w", imageName, err)
 	}
 	defer func() { _ = reader.Close() }()
@@ -419,25 +503,47 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	if streamErr != nil {
 		if errors.Is(streamErr, context.Canceled) || strings.Contains(streamErr.Error(), "context canceled") {
 			slog.DebugContext(ctx, "image pull stream canceled", "image", imageName, "err", streamErr)
-			s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, database.JSON{"action": "pull", "step": "canceled"})
+			s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+				Type:          event.EventTypeImageError,
+				ResourceType:  "image",
+				ResourceName:  imageName,
+				UserID:        user.ID,
+				Username:      user.Username,
+				EnvironmentID: "0",
+				Metadata:      database.JSON{"action": "pull", "step": "canceled"},
+			}, streamErr)
 			return fmt.Errorf("image pull stream canceled for %s: %w", imageName, streamErr)
 		}
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, database.JSON{"action": "pull", "step": "read_stream"})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "image",
+			ResourceName:  imageName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "pull", "step": "read_stream"},
+		}, streamErr)
 		return fmt.Errorf("error reading image pull stream for %s: %w", imageName, streamErr)
 	}
 
 	slog.DebugContext(ctx, "image pull stream completed", "image", imageName)
 
-	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImagePull, "", imageName, user.ID, user.Username, "0", database.JSON{
-		"action":    "pull",
-		"imageName": imageName,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeImagePull,
+		ResourceType:  "image",
+		ResourceName:  imageName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":    "pull",
+			"imageName": imageName,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log image pull action", "err", logErr, "image", imageName)
 	}
-	if s.registryService != nil {
-		if recordImagePullErr := s.registryService.RecordImagePull(ctx, imageName); recordImagePullErr != nil {
-			slog.WarnContext(ctx, "failed to record registry pull count", "image", imageName, "error", recordImagePullErr)
-		}
+	if recordImagePullErr := s.registryService.RecordImagePull(ctx, imageName); recordImagePullErr != nil {
+		slog.WarnContext(ctx, "failed to record registry pull count", "image", imageName, "error", recordImagePullErr)
 	}
 
 	return nil
@@ -454,17 +560,6 @@ func (s *ImageService) ImageLastTagTime(ctx context.Context, imageName string) (
 		return time.Time{}, fmt.Errorf("failed to inspect image %s: %w", imageName, err)
 	}
 	return inspect.Metadata.LastTagTime, nil
-}
-
-// PullRequest describes one pull through Pull.
-type PullRequest struct {
-	// Ref is the reference pulled from the registry.
-	Ref string
-	// Tag, when set, is the reference Ref is tagged as after the pull; it is the one reconciled.
-	Tag         string
-	Progress    io.Writer
-	User        usertypes.Actor
-	Credentials []containerregistry.Credential
 }
 
 // Pull pulls req.Ref within the dockerImagePullTimeout setting and reconciles the pulled reference's update state.
@@ -501,7 +596,7 @@ func (s *ImageService) Pull(ctx context.Context, req PullRequest) error {
 }
 
 // RemoteDigest resolves imageRef's registry digest within the registry timeout setting.
-func (s *ImageService) RemoteDigest(ctx context.Context, imageRef string, credentials []containerregistry.Credential) (string, error) {
+func (s *ImageService) RemoteDigest(ctx context.Context, imageRef string, credentials []types.ContainerRegistryCredential) (string, error) {
 	digestCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
 	defer cancel()
 
@@ -513,7 +608,7 @@ func (s *ImageService) RemoteDigest(ctx context.Context, imageRef string, creden
 }
 
 // TagImage adds a repository tag to an existing image.
-func (s *ImageService) TagImage(ctx context.Context, source string, req imagetypes.TagRequest, user usertypes.Actor) error {
+func (s *ImageService) TagImage(ctx context.Context, source string, req types.ImageTagRequest, user types.Actor) error {
 	source = strings.TrimSpace(source)
 	repository := strings.TrimSpace(req.Repository)
 	tag := strings.TrimSpace(req.Tag)
@@ -531,16 +626,32 @@ func (s *ImageService) TagImage(ctx context.Context, source string, req imagetyp
 		return dockerClient.ImageTag(ctx, client.ImageTagOptions{Source: source, Target: target})
 	})
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", source, user.ID, user.Username, "0", err, database.JSON{"action": "tag", "target": target})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "image",
+			ResourceName:  source,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "tag", "target": target},
+		}, err)
 		return fmt.Errorf("failed to tag image: %w", err)
 	}
 
-	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageTag, "", source, user.ID, user.Username, "0", database.JSON{
-		"action":     "tag",
-		"imageName":  source,
-		"repository": repository,
-		"tag":        tag,
-		"target":     target,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeImageTag,
+		ResourceType:  "image",
+		ResourceName:  source,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":     "tag",
+			"imageName":  source,
+			"repository": repository,
+			"tag":        tag,
+			"target":     target,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log image tag action", "err", logErr, "image", source, "target", target)
 	}
@@ -549,7 +660,7 @@ func (s *ImageService) TagImage(ctx context.Context, source string, req imagetyp
 }
 
 // GetImageHistory returns layer history for an image.
-func (s *ImageService) GetImageHistory(ctx context.Context, imageName string) ([]imagetypes.HistoryItem, error) {
+func (s *ImageService) GetImageHistory(ctx context.Context, imageName string) ([]types.ImageHistoryItem, error) {
 	imageName = strings.TrimSpace(imageName)
 	if imageName == "" {
 		return nil, errors.New("image name is required")
@@ -562,9 +673,9 @@ func (s *ImageService) GetImageHistory(ctx context.Context, imageName string) ([
 		return nil, fmt.Errorf("failed to get image history: %w", err)
 	}
 
-	items := make([]imagetypes.HistoryItem, 0, len(result.Items))
+	items := make([]types.ImageHistoryItem, 0, len(result.Items))
 	for _, item := range result.Items {
-		items = append(items, imagetypes.HistoryItem{
+		items = append(items, types.ImageHistoryItem{
 			ID:        item.ID,
 			Created:   item.Created,
 			CreatedBy: item.CreatedBy,
@@ -577,7 +688,7 @@ func (s *ImageService) GetImageHistory(ctx context.Context, imageName string) ([
 }
 
 // SearchImages searches the configured Docker registry for images.
-func (s *ImageService) SearchImages(ctx context.Context, term string) ([]imagetypes.SearchResult, error) {
+func (s *ImageService) SearchImages(ctx context.Context, term string) ([]types.ImageSearchResult, error) {
 	term = strings.TrimSpace(term)
 	if term == "" {
 		return nil, errors.New("search term is required")
@@ -590,9 +701,9 @@ func (s *ImageService) SearchImages(ctx context.Context, term string) ([]imagety
 		return nil, fmt.Errorf("failed to search images: %w", err)
 	}
 
-	items := make([]imagetypes.SearchResult, 0, len(result.Items))
+	items := make([]types.ImageSearchResult, 0, len(result.Items))
 	for _, item := range result.Items {
-		items = append(items, imagetypes.SearchResult{
+		items = append(items, types.ImageSearchResult{
 			Name:        item.Name,
 			Description: item.Description,
 			StarCount:   item.StarCount,
@@ -621,12 +732,20 @@ func (s *ImageService) ExportImage(ctx context.Context, imageName string) (io.Re
 	return reader, nil
 }
 
-func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader, fileName string, user usertypes.Actor, maxSizeBytes int64) (*imagetypes.LoadResult, error) {
+func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader, fileName string, user types.Actor, maxSizeBytes int64) (*types.ImageLoadResult, error) {
 	limitedReader := &uploadLimitReader{reader: reader, remaining: maxSizeBytes + 1}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, database.JSON{"action": "load"})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "image",
+			ResourceName:  fileName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "load"},
+		}, err)
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
@@ -636,7 +755,15 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 		if limitedReader.exceeded.Load() {
 			return nil, common.Classify(common.ErrBadRequest, fmt.Errorf("file size exceeds maximum allowed size of %d MB", maxSizeBytes/(1024*1024)))
 		}
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, database.JSON{"action": "load", "file": fileName})
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "image",
+			ResourceName:  fileName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata:      database.JSON{"action": "load", "file": fileName},
+		}, err)
 		return nil, fmt.Errorf("failed to load image from tar: %w", err)
 	}
 	defer func() { _ = loadResp.Close() }()
@@ -647,41 +774,38 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 		return nil, common.Classify(common.ErrBadRequest, fmt.Errorf("file size exceeds maximum allowed size of %d MB", maxSizeBytes/(1024*1024)))
 	}
 	if streamErr != nil {
-		s.eventService.LogErrorEvent(
-			ctx,
-			event.EventTypeImageError,
-			"image",
-			"",
-			fileName,
-			user.ID,
-			user.Username,
-			"0",
-			streamErr,
-			database.JSON{
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Type:          event.EventTypeImageError,
+			ResourceType:  "image",
+			ResourceName:  fileName,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+			Metadata: database.JSON{
 				"action": "load",
 				"file":   fileName,
 				"step":   "read_response",
 			},
-		)
+		}, streamErr)
 		return nil, fmt.Errorf("failed to read load response: %w", streamErr)
 	}
 
-	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageLoad, "", fileName, user.ID, user.Username, "0", database.JSON{
-		"action":   "load",
-		"fileName": fileName,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeImageLoad,
+		ResourceType:  "image",
+		ResourceName:  fileName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":   "load",
+			"fileName": fileName,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log image load action", "err", logErr, "file", fileName)
 	}
 
-	return &imagetypes.LoadResult{Stream: responseBuilder.String()}, nil
-}
-
-var errImageUploadTooLarge = errors.New("image upload exceeds the size limit")
-
-type uploadLimitReader struct {
-	reader    io.Reader
-	remaining int64
-	exceeded  atomic.Bool
+	return &types.ImageLoadResult{Stream: responseBuilder.String()}, nil
 }
 
 func (r *uploadLimitReader) Read(p []byte) (int, error) {
@@ -712,8 +836,8 @@ func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string)
 	return false, fmt.Errorf("failed to inspect image %s: %w", imageName, err)
 }
 
-func (s *ImageService) PullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (client.ImagePullOptions, error) {
-	registryHost := registryauth.ExtractRegistryHost(imageRef)
+func (s *ImageService) PullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []types.ContainerRegistryCredential) (client.ImagePullOptions, error) {
+	registryHost := arcaneregistry.ExtractRegistryHost(imageRef)
 
 	// Check external credentials first
 	for _, cred := range externalCreds {
@@ -721,8 +845,8 @@ func (s *ImageService) PullOptionsWithAuth(ctx context.Context, imageRef string,
 			continue
 		}
 
-		if registryauth.IsRegistryMatch(cred.URL, registryHost) {
-			authStr, err := registryauth.EncodeAuthHeader(cred.Username, cred.Token, registryauth.NormalizeRegistryURL(cred.URL))
+		if kitregistry.Normalize(cred.URL) == kitregistry.Normalize(registryHost) {
+			authStr, err := arcaneregistry.EncodeAuthHeader(cred.Username, cred.Token, arcaneregistry.NormalizeRegistryURL(cred.URL))
 			if err != nil {
 				return client.ImagePullOptions{}, fmt.Errorf("failed to create auth header: %w", err)
 			}
@@ -756,16 +880,16 @@ func ShouldRetryAnonymousPull(pullOptions client.ImagePullOptions, pullErr error
 	}, func(indicator string) bool { return strings.Contains(strings.ToLower(pullErr.Error()), indicator) })
 }
 
-func (s *ImageService) PruneImages(ctx context.Context, options system.PruneImagesOptions) (*image.PruneReport, error) {
+func (s *ImageService) PruneImages(ctx context.Context, options types.PruneImagesOptions) (*image.PruneReport, error) {
 	filterArgs, err := func() (client.Filters, error) {
 		switch options.Mode {
-		case system.PruneImageModeNone:
+		case types.PruneImageModeNone:
 			return nil, errors.New("image prune mode none is not allowed")
-		case system.PruneImageModeDangling:
+		case types.PruneImageModeDangling:
 			return make(client.Filters).Add("dangling", "true"), nil
-		case system.PruneImageModeAll:
+		case types.PruneImageModeAll:
 			return make(client.Filters).Add("dangling", "false"), nil
-		case system.PruneImageModeOlderThan:
+		case types.PruneImageModeOlderThan:
 			if strings.TrimSpace(options.Until) == "" {
 				return nil, errors.New("image prune mode olderThan requires until")
 			}
@@ -789,12 +913,20 @@ func (s *ImageService) PruneImages(ctx context.Context, options system.PruneImag
 
 	s.cleanupRemovedImages(ctx, report.Report.ImagesDeleted)
 
-	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageDelete, "", "bulk_prune", usertypes.SystemUser.ID, usertypes.SystemUser.Username, "0", database.JSON{
-		"action":         "prune",
-		"mode":           options.Mode,
-		"until":          options.Until,
-		"imagesDeleted":  len(report.Report.ImagesDeleted),
-		"spaceReclaimed": report.Report.SpaceReclaimed,
+	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeImageDelete,
+		ResourceType:  "image",
+		ResourceName:  "bulk_prune",
+		UserID:        types.SystemUser.ID,
+		Username:      types.SystemUser.Username,
+		EnvironmentID: "0",
+		Metadata: database.JSON{
+			"action":         "prune",
+			"mode":           options.Mode,
+			"until":          options.Until,
+			"imagesDeleted":  len(report.Report.ImagesDeleted),
+			"spaceReclaimed": report.Report.SpaceReclaimed,
+		},
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log image prune action", "err", logErr)
 	}
@@ -804,9 +936,9 @@ func (s *ImageService) PruneImages(ctx context.Context, options system.PruneImag
 
 // GetUpdateInfoByImageIDs returns a map of image ID to UpdateInfo for the given image IDs.
 // This is used by the container service to populate update info for containers.
-func (s *ImageService) GetUpdateInfoByImageIDs(ctx context.Context, imageIDs []string) (map[string]*imagetypes.UpdateInfo, error) {
+func (s *ImageService) GetUpdateInfoByImageIDs(ctx context.Context, imageIDs []string) (map[string]*types.ImageUpdateInfo, error) {
 	if len(imageIDs) == 0 {
-		return make(map[string]*imagetypes.UpdateInfo), nil
+		return make(map[string]*types.ImageUpdateInfo), nil
 	}
 
 	var updateRecords []imageupdate.ImageUpdateRecord
@@ -814,7 +946,7 @@ func (s *ImageService) GetUpdateInfoByImageIDs(ctx context.Context, imageIDs []s
 		return nil, fmt.Errorf("failed to fetch update records: %w", err)
 	}
 
-	result := make(map[string]*imagetypes.UpdateInfo, len(updateRecords))
+	result := make(map[string]*types.ImageUpdateInfo, len(updateRecords))
 	for i := range updateRecords {
 		result[updateRecords[i].ID] = updateRecords[i].UpdateInfo()
 	}
@@ -828,8 +960,8 @@ func (s *ImageService) GetUpdateInfoByImageIDs(ctx context.Context, imageIDs []s
 // local tag of the same image still applies. Tag policies read the container's
 // own record and require an exact policy key. Containers that opted out of update
 // checks are omitted; disabling automatic installation does not hide results.
-func (s *ImageService) GetUpdateInfoByContainers(ctx context.Context, containers []container.Summary) (map[string]*imagetypes.UpdateInfo, error) {
-	result := make(map[string]*imagetypes.UpdateInfo)
+func (s *ImageService) GetUpdateInfoByContainers(ctx context.Context, containers []container.Summary) (map[string]*types.ImageUpdateInfo, error) {
+	result := make(map[string]*types.ImageUpdateInfo)
 	if len(containers) == 0 {
 		return result, nil
 	}
@@ -881,8 +1013,8 @@ func (s *ImageService) GetUpdateInfoByContainers(ctx context.Context, containers
 
 // GetUpdateInfoByImageRefs returns persisted update information keyed by the
 // original image reference string.
-func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs []string) (map[string]*imagetypes.UpdateInfo, error) {
-	result := make(map[string]*imagetypes.UpdateInfo)
+func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs []string) (map[string]*types.ImageUpdateInfo, error) {
+	result := make(map[string]*types.ImageUpdateInfo)
 	if len(imageRefs) == 0 {
 		return result, nil
 	}
@@ -963,7 +1095,7 @@ func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs [
 	return result, nil
 }
 
-func (s *ImageService) ListImagesPaginated(ctx context.Context, params pagination.QueryParams) ([]imagetypes.Summary, pagination.Response, error) {
+func (s *ImageService) ListImagesPaginated(ctx context.Context, params pagination.QueryParams) ([]types.ImageSummary, pagination.Response, error) {
 	var (
 		dockerImages  []image.Summary
 		containers    []container.Summary
@@ -974,7 +1106,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 
 	// Fetch Docker images
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "image worker")
+		defer concurrency.RecoverToError(&workerErr, "image worker")
 
 		imageList, err := s.dockerService.ListImages(groupCtx)
 		if err != nil {
@@ -986,9 +1118,9 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 
 	// Fetch containers to determine usage
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "image worker")
+		defer concurrency.RecoverToError(&workerErr, "image worker")
 
-		containerList, err := s.dockerService.ListContainers(groupCtx)
+		containerList, err := s.dockerService.ListContainers(groupCtx, false)
 		if err != nil {
 			return fmt.Errorf("failed to list containers: %w", err)
 		}
@@ -1011,7 +1143,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 		}
 	}
 
-	vulnerabilityMap, err := func() (map[string]*vulnerabilitytypes.ScanSummary, error) {
+	vulnerabilityMap, err := func() (map[string]*types.VulnerabilityScanSummary, error) {
 		if len(imageIDs) == 0 {
 			return nil, nil
 		}
@@ -1032,15 +1164,15 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
 }
 
-func (s *ImageService) AggregateImages(ctx context.Context, params pagination.QueryParams) (imagetypes.ListResponse, error) {
-	collection, err := httpx.CollectEnvironments[imagetypes.ListResponse](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+func (s *ImageService) AggregateImages(ctx context.Context, params pagination.QueryParams) (types.ImageListResponse, error) {
+	collection, err := httpx.CollectEnvironments[types.ImageListResponse](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
 	if err != nil {
-		return imagetypes.ListResponse{}, err
+		return types.ImageListResponse{}, err
 	}
 
-	pages := make([]pagination.EnvironmentPage[imagetypes.Summary], 0, len(collection.Results))
+	pages := make([]pagination.EnvironmentPage[types.ImageSummary], 0, len(collection.Results))
 	for _, result := range collection.Results {
-		pages = append(pages, pagination.EnvironmentPage[imagetypes.Summary]{
+		pages = append(pages, pagination.EnvironmentPage[types.ImageSummary]{
 			Environment:    result.Environment,
 			Items:          result.Value.Data,
 			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
@@ -1048,7 +1180,7 @@ func (s *ImageService) AggregateImages(ctx context.Context, params pagination.Qu
 	}
 	data, resp := pagination.MergeEnvironmentPages(s.getImagePaginationConfig(), pages, params)
 
-	return imagetypes.ListResponse{
+	return types.ImageListResponse{
 		Success:    true,
 		Data:       data,
 		Pagination: handlerutil.PaginationResponse(resp),
@@ -1062,30 +1194,19 @@ func (s *ImageService) AggregateImages(ctx context.Context, params pagination.Qu
 	}, nil
 }
 
-func (s *ImageService) AggregateImageCounts(ctx context.Context) (base.ApiResponse[imagetypes.UsageCounts], error) {
-	collection, err := httpx.CollectEnvironments[base.ApiResponse[imagetypes.UsageCounts]](ctx, nil)
-	if err != nil {
-		return base.ApiResponse[imagetypes.UsageCounts]{}, err
-	}
-
-	inuse, unused, total, totalSize := 0, 0, 0, int64(0)
-	for _, result := range collection.Results {
-		inuse += result.Value.Data.Inuse
-		unused += result.Value.Data.Unused
-		total += result.Value.Data.Total
-		totalSize += result.Value.Data.TotalSize
-	}
-
-	return base.ApiResponse[imagetypes.UsageCounts]{
-		Success: true,
-		Data: imagetypes.UsageCounts{
-			Inuse:     inuse,
-			Unused:    unused,
-			Total:     total,
-			TotalSize: totalSize,
-		},
-		FailedEnvironments: collection.Failures,
-	}, nil
+func (s *ImageService) AggregateImageCounts(ctx context.Context) (types.ApiResponse[types.ImageUsageCounts], error) {
+	return httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[types.ImageUsageCounts]) types.ImageUsageCounts {
+		var counts types.ImageUsageCounts
+		for _, environment := range environments {
+			counts = types.ImageUsageCounts{
+				Inuse:     counts.Inuse + environment.Data.Inuse,
+				Unused:    counts.Unused + environment.Data.Unused,
+				Total:     counts.Total + environment.Data.Total,
+				TotalSize: counts.TotalSize + environment.Data.TotalSize,
+			}
+		}
+		return counts
+	})
 }
 
 // BuildProjectIDMap returns a map of compose project name → project ID for any
@@ -1131,8 +1252,8 @@ func (s *ImageService) BuildProjectIDMap(ctx context.Context, containers []conta
 	return projectIDs
 }
 
-func BuildVolumeUsageMap(containers []container.Summary, projectIDByName map[string]string) map[string][]imagetypes.UsedBy {
-	usageMap := make(map[string][]imagetypes.UsedBy)
+func BuildVolumeUsageMap(containers []container.Summary, projectIDByName map[string]string) map[string][]types.ImageUsedBy {
+	usageMap := make(map[string][]types.ImageUsedBy)
 	projectSeen := make(map[string]map[string]bool)
 	containerSeen := make(map[string]map[string]bool)
 
@@ -1148,7 +1269,7 @@ func BuildVolumeUsageMap(containers []container.Summary, projectIDByName map[str
 				projectSeen[c.ImageID] = make(map[string]bool)
 			}
 			if !projectSeen[c.ImageID][projectName] {
-				usageMap[c.ImageID] = append(usageMap[c.ImageID], imagetypes.UsedBy{
+				usageMap[c.ImageID] = append(usageMap[c.ImageID], types.ImageUsedBy{
 					Type: "project",
 					Name: projectName,
 					ID:   projectIDByName[projectName],
@@ -1162,7 +1283,7 @@ func BuildVolumeUsageMap(containers []container.Summary, projectIDByName map[str
 			containerSeen[c.ImageID] = make(map[string]bool)
 		}
 		if !containerSeen[c.ImageID][c.ID] {
-			usageMap[c.ImageID] = append(usageMap[c.ImageID], imagetypes.UsedBy{
+			usageMap[c.ImageID] = append(usageMap[c.ImageID], types.ImageUsedBy{
 				Type: "container",
 				Name: cmp.Or(docker.ContainerNameFromNames(c.Names), c.ID),
 				ID:   c.ID,
@@ -1246,39 +1367,40 @@ func collectPinnedReferencesByImageID(containers []container.Summary) map[string
 func MapDockerImagesToDTOs(
 	dockerImages []image.Summary,
 	containers []container.Summary,
-	usageMap map[string][]imagetypes.UsedBy,
+	usageMap map[string][]types.ImageUsedBy,
 	updateMap map[string]*imageupdate.ImageUpdateRecord,
-	vulnerabilityMap map[string]*vulnerabilitytypes.ScanSummary,
-) []imagetypes.Summary {
+	vulnerabilityMap map[string]*types.VulnerabilityScanSummary,
+) []types.ImageSummary {
 	pinnedRefsByImageID := collectPinnedReferencesByImageID(containers)
-	items := make([]imagetypes.Summary, 0, len(dockerImages))
+	items := make([]types.ImageSummary, 0, len(dockerImages))
 	for _, di := range dockerImages {
+		repoTags, repoDigests := imageref.SplitRepositoryReferences(di.RepoTags, di.RepoDigests)
 		repo, tag := func() (string, string) {
-			if len(di.RepoTags) > 0 {
-				if named, err := reference.ParseNormalizedNamed(di.RepoTags[0]); err == nil {
+			if len(repoTags) > 0 {
+				if named, err := reference.ParseNormalizedNamed(repoTags[0]); err == nil {
 					if tagged, ok := named.(reference.NamedTagged); ok {
 						return reference.FamiliarName(named), tagged.Tag()
 					}
 					return reference.FamiliarName(named), "latest"
 				}
-				if before, after, found := strings.CutLast(di.RepoTags[0], ":"); found {
+				if before, after, found := strings.CutLast(repoTags[0], ":"); found {
 					return before, after
 				}
-				return di.RepoTags[0], "latest"
+				return repoTags[0], "latest"
 			}
-			if candidateRepo, found := imageref.RepoDigestRepository(di.RepoDigests); found {
+			if candidateRepo, found := imageref.RepoDigestRepository(repoDigests); found {
 				return candidateRepo, "<none>"
 			}
 			return "<none>", "<none>"
 		}()
 
 		usedBy := usageMap[di.ID]
-		items = append(items, imagetypes.Summary{
+		items = append(items, types.ImageSummary{
 			ID:               di.ID,
 			Repo:             repo,
 			Tag:              tag,
-			RepoTags:         di.RepoTags,
-			RepoDigests:      di.RepoDigests,
+			RepoTags:         repoTags,
+			RepoDigests:      repoDigests,
 			PinnedReferences: pinnedRefsByImageID[di.ID],
 			Created:          di.Created,
 			Size:             di.Size,
@@ -1292,7 +1414,7 @@ func MapDockerImagesToDTOs(
 			}(),
 			InUse:  len(usedBy) > 0,
 			UsedBy: usedBy,
-			UpdateInfo: func() *imagetypes.UpdateInfo {
+			UpdateInfo: func() *types.ImageUpdateInfo {
 				if updateRecord, exists := updateMap[di.ID]; exists {
 					return updateRecord.UpdateInfo()
 				}
@@ -1304,26 +1426,26 @@ func MapDockerImagesToDTOs(
 	return items
 }
 
-func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.Summary] {
-	return pagination.Config[imagetypes.Summary]{
-		SearchAccessors: []pagination.SearchAccessor[imagetypes.Summary]{
-			func(i imagetypes.Summary) (string, error) { return i.Repo, nil },
-			func(i imagetypes.Summary) (string, error) { return i.Tag, nil },
-			func(i imagetypes.Summary) (string, error) { return i.ID, nil },
-			func(i imagetypes.Summary) (string, error) {
+func (s *ImageService) getImagePaginationConfig() pagination.Config[types.ImageSummary] {
+	return pagination.Config[types.ImageSummary]{
+		SearchAccessors: []pagination.SearchAccessor[types.ImageSummary]{
+			func(i types.ImageSummary) (string, error) { return i.Repo, nil },
+			func(i types.ImageSummary) (string, error) { return i.Tag, nil },
+			func(i types.ImageSummary) (string, error) { return i.ID, nil },
+			func(i types.ImageSummary) (string, error) {
 				if len(i.RepoTags) > 0 {
 					return i.RepoTags[0], nil
 				}
 				return "", nil
 			},
-			func(i imagetypes.Summary) (string, error) {
+			func(i types.ImageSummary) (string, error) {
 				return strings.Join(i.PinnedReferences, " "), nil
 			},
 		},
-		SortBindings: []pagination.SortBinding[imagetypes.Summary]{
+		SortBindings: []pagination.SortBinding[types.ImageSummary]{
 			{
 				Key: "repo",
-				Fn: func(a, b imagetypes.Summary) int {
+				Fn: func(a, b types.ImageSummary) int {
 					if localCmp := strings.Compare(a.Repo, b.Repo); localCmp != 0 {
 						return localCmp
 					}
@@ -1335,13 +1457,13 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 			},
 			{
 				Key: "tag",
-				Fn: func(a, b imagetypes.Summary) int {
+				Fn: func(a, b types.ImageSummary) int {
 					return strings.Compare(a.Tag, b.Tag)
 				},
 			},
 			{
 				Key: "size",
-				Fn: func(a, b imagetypes.Summary) int {
+				Fn: func(a, b types.ImageSummary) int {
 					if a.Size < b.Size {
 						return -1
 					}
@@ -1350,7 +1472,7 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 			},
 			{
 				Key: "created",
-				Fn: func(a, b imagetypes.Summary) int {
+				Fn: func(a, b types.ImageSummary) int {
 					if a.Created < b.Created {
 						return -1
 					}
@@ -1359,7 +1481,7 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 			},
 			{
 				Key: "inUse",
-				Fn: func(a, b imagetypes.Summary) int {
+				Fn: func(a, b types.ImageSummary) int {
 					if a.InUse == b.InUse {
 						return 0
 					}
@@ -1368,10 +1490,10 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 			},
 			{
 				Key: "vulnerabilities",
-				Fn: func(a, b imagetypes.Summary) int {
-					counts := func(i imagetypes.Summary) vulnerabilitytypes.SeveritySummary {
-						if kit.FromPtr(i.VulnerabilityScan).Status != vulnerabilitytypes.ScanStatusCompleted || kit.FromPtr(i.VulnerabilityScan).Summary == nil {
-							return vulnerabilitytypes.SeveritySummary{Total: -1}
+				Fn: func(a, b types.ImageSummary) int {
+					counts := func(i types.ImageSummary) types.VulnerabilitySeveritySummary {
+						if kit.FromPtr(i.VulnerabilityScan).Status != types.VulnerabilityScanStatusCompleted || kit.FromPtr(i.VulnerabilityScan).Summary == nil {
+							return types.VulnerabilitySeveritySummary{Total: -1}
 						}
 						return *i.VulnerabilityScan.Summary
 					}
@@ -1384,16 +1506,16 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 				},
 			},
 		},
-		FilterAccessors: []pagination.FilterAccessor[imagetypes.Summary]{
+		FilterAccessors: []pagination.FilterAccessor[types.ImageSummary]{
 			{
 				Key: "inUse",
-				Fn: func(i imagetypes.Summary, filterValue string) bool {
+				Fn: func(i types.ImageSummary, filterValue string) bool {
 					return kit.Ternary(filterValue == "true", i.InUse, filterValue != "false" || !i.InUse)
 				},
 			},
 			{
 				Key: "updates",
-				Fn: func(i imagetypes.Summary, filterValue string) bool {
+				Fn: func(i types.ImageSummary, filterValue string) bool {
 					switch filterValue {
 					case "has_update":
 						return kit.FromPtr(i.UpdateInfo).HasUpdate
@@ -1409,6 +1531,9 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 					}
 				},
 			},
+			pagination.LabelFilter(func(i types.ImageSummary) map[string]any {
+				return i.Labels
+			}),
 		},
 	}
 }

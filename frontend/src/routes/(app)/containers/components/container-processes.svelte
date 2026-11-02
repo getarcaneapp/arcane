@@ -12,6 +12,7 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { withOccurrenceKeys } from '#lib/utils/formatting.js';
 
 	interface Props {
 		containerId: string;
@@ -30,8 +31,7 @@
 		gcTime: 0,
 		retry: false,
 		refetchOnWindowFocus: false,
-		refetchOnReconnect: false,
-		refetchInterval: 5000
+		refetchOnReconnect: false
 	}));
 
 	const titles = $derived(processesQuery.data?.titles ?? []);
@@ -75,16 +75,16 @@
 			<Table.Root aria-label={m.containers_processes_title()}>
 				<Table.Header>
 					<Table.Row>
-						{#each titles as title}
-							<Table.Head scope="col">{title}</Table.Head>
+						{#each withOccurrenceKeys(titles) as title (title.key)}
+							<Table.Head scope="col">{title.value}</Table.Head>
 						{/each}
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
 					{#each processes as cells (pidIndex >= 0 ? cells[pidIndex] : cells)}
 						<Table.Row>
-							{#each cells as cell}
-								<Table.Cell><MonoCell value={cell} /></Table.Cell>
+							{#each withOccurrenceKeys(cells) as cell (cell.key)}
+								<Table.Cell><MonoCell value={cell.value} /></Table.Cell>
 							{/each}
 						</Table.Row>
 					{/each}

@@ -20,12 +20,39 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/selfupdate"
+	"kit.getarcane.app"
+
+	"getarcane.dev/cli/v3/internal/cmdutil"
+	"getarcane.dev/cli/v3/internal/config"
+	"getarcane.dev/cli/v3/internal/output"
+	"getarcane.dev/cli/v3/internal/selfupdate"
+)
+
+type (
+	cliUpdateOptions struct {
+		version, target string
+		dryRun, verbose bool
+	}
+
+	cliUpdatePlan struct {
+		Channel           string `json:"channel"`
+		Version           string `json:"version"`
+		ArtifactName      string `json:"artifactName"`
+		ArtifactURL       string `json:"artifactUrl"`
+		ChecksumURL       string `json:"checksumUrl"`
+		BundleURL         string `json:"bundleUrl,omitempty"`
+		ArtifactSHA       string `json:"artifactSha"`
+		ExpectedSHA       string `json:"expectedSha,omitempty"`
+		CurrentSHA        string `json:"currentSha"`
+		TargetPath        string `json:"targetPath"`
+		SignatureVerified bool   `json:"signatureVerified"`
+		UpdateNeeded      bool   `json:"updateNeeded"`
+	}
+
+	githubLatestRelease struct {
+		TagName string `json:"tag_name"`
+	}
 )
 
 const (
@@ -40,35 +67,14 @@ const (
 
 var errCLIUpdateNotFound = errors.New("HTTP 404 Not Found")
 
-type cliUpdateOptions struct {
-	version, target string
-	dryRun, verbose bool
-}
-
-type cliUpdatePlan struct {
-	Channel           string `json:"channel"`
-	Version           string `json:"version"`
-	ArtifactName      string `json:"artifactName"`
-	ArtifactURL       string `json:"artifactUrl"`
-	ChecksumURL       string `json:"checksumUrl"`
-	BundleURL         string `json:"bundleUrl,omitempty"`
-	SignatureVerified bool   `json:"signatureVerified"`
-	ArtifactSHA       string `json:"artifactSha"`
-	ExpectedSHA       string `json:"expectedSha,omitempty"`
-	CurrentSHA        string `json:"currentSha"`
-	TargetPath        string `json:"targetPath"`
-	UpdateNeeded      bool   `json:"updateNeeded"`
-}
-
-type githubLatestRelease struct {
-	TagName string `json:"tag_name"`
-}
-
 // Command updates the arcane-cli executable.
 func Command() *cobra.Command {
 	var opts cliUpdateOptions
 	cmd := &cobra.Command{
-		Use: "self-update", Aliases: []string{"self", "cli"}, Short: "Update arcane-cli",
+		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
+		Use:         "self-update",
+		Aliases:     []string{"self", "cli"},
+		Short:       "Update arcane-cli",
 		Long: `Update arcane-cli using the configured release channel.
 
 Enable Sigstore verification with arcane-cli config set previews.newSelfUpdater true.
@@ -615,7 +621,11 @@ func (opts cliUpdateOptions) downloadFile(ctx context.Context, url, outputPath s
 		return fmt.Errorf("failed to create download file: %w", err)
 	}
 	limitedBody := &io.LimitedReader{R: resp.Body, N: maxCLIDownloadSize + 1}
-	written, err := output.Copy(ctx, out, limitedBody, resp.ContentLength, "Downloading artifact", !jsonMode)
+	written, err := output.Copy(ctx, out, limitedBody, output.TransferOptions{
+		Total:        resp.ContentLength,
+		Label:        "Downloading artifact",
+		ShowProgress: !jsonMode,
+	})
 	if err != nil {
 		_ = out.Close()
 		return fmt.Errorf("failed to write download file: %w", err)

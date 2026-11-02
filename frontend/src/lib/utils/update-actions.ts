@@ -3,45 +3,25 @@ import { toast } from 'svelte-sonner';
 import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 import { m } from '#lib/paraglide/messages.js';
 import BaseAPIService from '#lib/services/api-service.js';
-import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 import { imageService } from '#lib/services/image-service.js';
 import { userService } from '#lib/services/user-service.js';
 import type { AutoUpdateResourceType, AutoUpdateResult } from '#lib/types/automation.js';
 import { activityToastOptions } from '#lib/utils/activity-toast.js';
-import { toastUpgradeError } from '#lib/utils/api.js';
 import { acrossEnvironmentsNote, actionEnvironments, settleAcrossEnvironments } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
-/**
- * Helpers around the updater run endpoint (`POST /environments/{id}/updater/run`),
- * so the row actions, the bulk actions and Update All all summarize an
- * `AutoUpdateResult` the same way.
- */
-
-/** Applies pending updates for a single resource via a scoped updater run. */
 export function applyScopedUpdate(
 	type: Extract<AutoUpdateResourceType, 'container' | 'project'>,
 	id: string,
-	environmentId?: string
+	environmentId: string
 ) {
 	return imageService.runAutoUpdate({ type, resourceIds: [id] }, environmentId);
 }
 
 type ThrowOnUpdateFailureOptions = {
-	/**
-	 * Also reject a result whose resource was skipped. A skipped container was
-	 * not updated, so a selected-container bulk action must not count it as one.
-	 * Project runs keep their default: a skip there is a normal partial outcome.
-	 */
 	rejectSkipped?: boolean;
 };
 
-/**
- * The updater reports per-resource failures in the body of a 200, so a resolved
- * promise alone does not mean the update landed. Bulk runners tally by
- * rejection, so surface those failures as a throw before they get counted as
- * successes.
- */
 export function throwOnUpdateFailure<T extends Pick<AutoUpdateResult, 'failed' | 'items'>>(
 	result: T,
 	{ rejectSkipped = false }: ThrowOnUpdateFailureOptions = {}
@@ -78,32 +58,13 @@ export function summarizeUpdateResult(result: AutoUpdateResult) {
 
 type ConfirmAndApplyAllUpdatesOptions = {
 	setLoading?: (loading: boolean) => void;
-	onRefresh?: () => Promise<unknown> | unknown;
+	onRefresh?: () => unknown;
 };
 
 const MANAGER_ENVIRONMENT_ID = '0';
 const SELF_UPGRADE_PROBE_INTERVAL_MS = 2000;
-/** Backstop so a backend that never returns can't leave the flag armed all session. */
 const SELF_UPGRADE_MAX_WAIT_MS = 5 * 60 * 1000;
 
-/**
- * Disarms the upgrade flag as soon as this backend answers an *authenticated*
- * request again.
- *
- * A queued Arcane self-update fires last, so the restart's version-mismatch
- * 401s land after the response — and the engine reports a self-update as an
- * ordinary `updated` item, so the payload can't say whether one happened.
- * Probing settles it: when nothing restarted, the first probe succeeds and the
- * recovery window closes in about one request instead of masking an unrelated
- * expired session for minutes. While the backend is down the probe throws, so
- * the flag stays armed for exactly as long as it is needed.
- *
- * The probe must be authenticated. A public endpoint (`/app-version`) answers
- * 200 the instant the new backend binds its port, which would disarm before
- * any authenticated request could trigger recovery. `/auth/me` instead returns
- * the version-mismatch 401 itself, and — because it is not in the API client's
- * skip-auth paths — that 401 drives the refresh-and-reload while still armed.
- */
 async function disarmWhenBackendResponds() {
 	const deadline = Date.now() + SELF_UPGRADE_MAX_WAIT_MS;
 	for (;;) {
@@ -114,10 +75,6 @@ async function disarmWhenBackendResponds() {
 	BaseAPIService.setUpgradeInProgress(false);
 }
 
-/**
- * Confirms, then applies every pending update on each shown host (an empty-body
- * updater run — the same path the nightly auto-update job takes).
- */
 export function confirmAndApplyAllUpdates({ setLoading, onRefresh }: ConfirmAndApplyAllUpdatesOptions) {
 	const environments = actionEnvironments('image-updates:check');
 	openConfirmDialog({
@@ -160,22 +117,4 @@ export function summarizeUpdateCheckResult(result: { errorMessage?: string }) {
 	const firstError = result.errorMessage?.trim();
 	if (firstError) toast.error(firstError || m.containers_check_updates_failed());
 	else toast.success(m.images_update_check_completed());
-}
-
-export async function applyEnvironmentUpgrade(
-	environmentId: string,
-	failureMessage: () => string,
-	onRefresh?: () => Promise<unknown> | unknown,
-	useResponseMessage = false
-) {
-	try {
-		const result = await systemUpgradeService.triggerUpgrade(environmentId);
-		if (!result.success) throw new Error(result.error || (useResponseMessage && result.message) || failureMessage());
-		toast.success(m.upgrade_success());
-		await onRefresh?.();
-		return { upToDate: result.upToDate };
-	} catch (error) {
-		toastUpgradeError(error, m.upgrade_failed);
-		throw error;
-	}
 }

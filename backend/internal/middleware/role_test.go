@@ -12,8 +12,8 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 )
 
 func TestRequirePermission_RejectsCallerMissingPermission(t *testing.T) {
@@ -121,7 +121,7 @@ func TestRequirePermission_EnvScopedDoesNotLeakAcrossEnvs(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, rec.Code)
 }
 
-func TestRequirePermissionEnvironmentGrantCannotManageGlobalNotificationsInternal(t *testing.T) {
+func TestRequirePermissionEnvironmentGrantCannotManageGlobalNotifications(t *testing.T) {
 	router := echo.New()
 	api := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
 
@@ -134,17 +134,14 @@ func TestRequirePermissionEnvironmentGrantCannotManageGlobalNotificationsInterna
 	huma.Register(api, huma.Operation{
 		OperationID: "guarded-global-notifications",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/notifications/settings",
+		Path:        "/notifications/settings",
 		Middlewares: RequirePermission(api, authz.PermNotificationsManage),
-	}, func(_ context.Context, _ *struct {
-		ID string `path:"id"`
-	},
-	) (*struct{}, error) {
+	}, func(_ context.Context, _ *struct{}) (*struct{}, error) {
 		require.FailNow(t, "handler must not run for an environment-scoped grant on global notification settings")
 		return nil, nil
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-1/notifications/settings", http.NoBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/notifications/settings", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -183,8 +180,8 @@ func TestRequirePermission_SudoCallerAllowed(t *testing.T) {
 
 func TestRequireSudoRejectsHumanAdminAndAllowsAgent(t *testing.T) {
 	tests := []struct {
-		name       string
 		permission *authz.PermissionSet
+		name       string
 		wantStatus int
 		wantRan    bool
 	}{
@@ -269,4 +266,60 @@ func TestRequirePermissionAllowsScopeWhenAnyEnvironmentAllows(t *testing.T) {
 			require.Equal(t, http.StatusForbidden, rec.Code)
 		})
 	}
+}
+
+func TestRequireActionPermission(t *testing.T) {
+	router := echo.New()
+	api := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
+
+	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
+		ps := authz.NewPermissionSet()
+		ps.AddEnv("env-1", authz.PermContainersStart)
+		next(huma.WithContext(ctx, context.WithValue(ctx.Context(), ContextKeyUserPermissions, ps)))
+	})
+
+	handlerRan := false
+	RegisterWithActionPermissions(api, huma.Operation{
+		OperationID: "container-action",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/containers/{cid}",
+	}, "action", map[string]string{
+		"start": authz.PermContainersStart,
+		"kill":  authz.PermContainersKill,
+	}, func(_ context.Context, _ *struct {
+		ID     string `path:"id"`
+		CID    string `path:"cid"`
+		Action string `query:"action"`
+	},
+	) (*struct{}, error) {
+		handlerRan = true
+		return &struct{}{}, nil
+	})
+
+	tests := []struct {
+		name       string
+		query      string
+		wantStatus int
+		wantRan    bool
+	}{
+		{name: "allowed", query: "?action=start", wantStatus: http.StatusNoContent, wantRan: true},
+		{name: "denied", query: "?action=kill", wantStatus: http.StatusForbidden},
+		{name: "unknown", query: "?action=explode", wantStatus: http.StatusBadRequest},
+		{name: "missing", query: "", wantStatus: http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handlerRan = false
+			req := httptest.NewRequest(http.MethodPost, "/api/environments/env-1/containers/c"+tt.query, http.NoBody)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, tt.wantStatus, rec.Code)
+			require.Equal(t, tt.wantRan, handlerRan)
+		})
+	}
+
+	op := api.OpenAPI().Paths["/environments/{id}/containers/{cid}"].Post
+	require.Equal(t, "action", op.Metadata[authz.MetaActionParam])
+	require.NotContains(t, op.Metadata, authz.MetaRequiredPermission)
 }

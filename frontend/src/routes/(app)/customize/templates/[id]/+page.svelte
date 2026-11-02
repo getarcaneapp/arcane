@@ -1,16 +1,19 @@
 <script lang="ts">
-	import { goto, refreshAll } from '$app/navigation';
+	import { afterNavigate, goto, refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import CodeEditor from '#lib/components/code-editor/editor.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import {
 		EllipsisIcon,
 		CodeIcon,
@@ -26,8 +29,9 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { templateService } from '#lib/services/template-service.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 	import {
 		createNamedTemplateSchema,
@@ -48,7 +52,7 @@
 	let envVars = $derived(data.templateData.envVariables);
 
 	// Edit state (custom templates only)
-	let status = $state({
+	const status = $state({
 		saving: false,
 		isDeleting: false,
 		isDownloading: false
@@ -70,21 +74,33 @@
 	let originalCompose = $derived(data.templateData.content);
 	let originalEnv = $derived(data.templateData.envContent);
 
-	let formData = $derived({
-		name: originalName,
-		description: originalDescription,
-		composeContent: originalCompose,
-		envContent: originalEnv
-	});
+	function formValues() {
+		return {
+			name: originalName,
+			description: originalDescription,
+			composeContent: originalCompose,
+			envContent: originalEnv
+		};
+	}
 
-	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
+	const form = createForm<typeof formSchema>(formSchema, untrack(formValues));
+
+	afterNavigate(() => form.reset(formValues()));
+
+	const remoteComposeLines = useHighlightedCode(
+		() => data.templateData.content,
+		() => 'yaml'
+	);
+	const remoteEnvLines = useHighlightedCode(
+		() => data.templateData.envContent ?? '',
+		() => 'env'
+	);
 
 	const hasChanges = $derived(
-		inputs.name.value !== originalName ||
-			inputs.description.value !== originalDescription ||
-			inputs.composeContent.value !== originalCompose ||
-			inputs.envContent.value !== originalEnv
+		form.inputs.name.value !== originalName ||
+			form.inputs.description.value !== originalDescription ||
+			form.inputs.composeContent.value !== originalCompose ||
+			form.inputs.envContent.value !== originalEnv
 	);
 	// fallow-ignore-next-line code-duplication -- template editor form wiring (createForm + getTemplateEditorSaveState); hasChanges fields differ per page
 	const saveState = $derived(getTemplateEditorSaveState(validation, hasChanges));
@@ -96,12 +112,18 @@
 			validationState,
 			validate: form.validate,
 			save: (validated) =>
-				templateService.updateTemplate(template.id, {
-					name: validated.name,
-					description: validated.description,
-					content: validated.composeContent,
-					envContent: validated.envContent
-				}),
+				templateService.updateTemplate(
+					template.id,
+					changedFields(
+						{ name: originalName, description: originalDescription, content: originalCompose, envContent: originalEnv },
+						{
+							name: validated.name,
+							description: validated.description,
+							content: validated.composeContent,
+							envContent: validated.envContent
+						}
+					)
+				),
 			failureMessage: m.templates_save_template_failed(),
 			setLoading: (value) => (status.saving = value),
 			onSuccess: async (validated) => {
@@ -126,19 +148,19 @@
 	function handleReset() {
 		resetTemplateEditorFields([
 			{
-				set: (value) => (inputs.name.value = value),
+				set: (value) => (form.inputs.name.value = value),
 				value: originalName
 			},
 			{
-				set: (value) => (inputs.description.value = value),
+				set: (value) => (form.inputs.description.value = value),
 				value: originalDescription
 			},
 			{
-				set: (value) => (inputs.composeContent.value = value),
+				set: (value) => (form.inputs.composeContent.value = value),
 				value: originalCompose
 			},
 			{
-				set: (value) => (inputs.envContent.value = value),
+				set: (value) => (form.inputs.envContent.value = value),
 				value: originalEnv
 			}
 		]);
@@ -150,7 +172,7 @@
 		return data.allTemplates.find((t) => !t.isRemote && t.metadata?.remoteUrl === template.metadata?.remoteUrl);
 	});
 
-	const canDownload = $derived(template.isRemote && !localVersionOfRemote && hasPermission('templates:create'));
+	const canDownload = $derived(template.isRemote && !localVersionOfRemote && hasShownPermission('templates:create'));
 
 	async function handleDownload() {
 		if (status.isDownloading || !canDownload) return;
@@ -161,7 +183,7 @@
 					const downloadedTemplate = await templateService.download(template.id);
 					toast.success(m.templates_downloaded_success({ name: template.name }));
 					if (downloadedTemplate?.id) {
-						await goto(`/customize/templates/${downloadedTemplate.id}`, { replace: true });
+						await goto(resolve('/(app)/customize/templates/[id]', { id: downloadedTemplate.id }), { replace: true });
 					} else {
 						await Promise.all([
 							queryClient.invalidateQueries({
@@ -206,7 +228,7 @@
 									resource: `${m.resource_template()} "${template.name}"`
 								})
 							);
-							await goto('/customize/templates');
+							await goto(resolve('/(app)/customize/templates'));
 						})()
 					);
 					if (operationResult.error !== null) {
@@ -234,7 +256,7 @@
 				action: 'create',
 				placement: 'primary',
 				label: m.compose_create_project(),
-				onclick: () => goto(`/projects/new?templateId=${template.id}`)
+				onclick: () => goto(resolve(`/(app)/projects/new?templateId=${encodeURIComponent(template.id)}`))
 			}
 		];
 		if (canDownload) {
@@ -254,7 +276,7 @@
 				action: 'base',
 				placement: 'secondary',
 				label: m.templates_view_local_version(),
-				onclick: () => goto(`/customize/templates/${localVersionOfRemote?.id}`)
+				onclick: () => goto(resolve('/(app)/customize/templates/[id]', { id: localVersionOfRemote.id }))
 			});
 		}
 		return actions;
@@ -273,7 +295,7 @@
 
 {#if !template.isRemote}
 	<TemplateEditorWorkspace
-		bind:inputs
+		bind:inputs={form.inputs}
 		bind:validation
 		{originalName}
 		{originalCompose}
@@ -306,7 +328,7 @@
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="end">
 					<IfPermitted perm="projects:create">
-						<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${template.id}`)}>
+						<DropdownMenu.Item onclick={() => goto(resolve(`/(app)/projects/new?templateId=${encodeURIComponent(template.id)}`))}>
 							<MoveToFolderIcon class="size-4" />
 							{m.compose_create_project()}
 						</DropdownMenu.Item>
@@ -353,11 +375,13 @@
 						<CodeIcon class="size-4 text-muted-foreground" />
 						<h2 class="font-mono text-sm font-medium">compose.yaml</h2>
 					</div>
-					<div class="relative h-120 overflow-hidden rounded-lg border border-border/50 sm:h-140">
-						<div class="absolute inset-0">
-							<CodeEditor bind:value={data.templateData.content} language="yaml" readOnly={true} fontSize="13px" />
-						</div>
-					</div>
+					<CodeBlock.Root class="h-120 sm:h-140">
+						<CodeBlock.Content lineNumbers class="flex-1">
+							{#each remoteComposeLines.current as line, index (index)}
+								<CodeBlock.Line code={line} />
+							{/each}
+						</CodeBlock.Content>
+					</CodeBlock.Root>
 				</section>
 
 				{#if data.templateData.envContent}
@@ -366,11 +390,13 @@
 							<FileTextIcon class="size-4 text-muted-foreground" />
 							<h2 class="font-mono text-sm font-medium">.env</h2>
 						</div>
-						<div class="relative h-70 overflow-hidden rounded-lg border border-border/50">
-							<div class="absolute inset-0">
-								<CodeEditor bind:value={data.templateData.envContent} language="env" readOnly={true} fontSize="13px" />
-							</div>
-						</div>
+						<CodeBlock.Root class="h-70">
+							<CodeBlock.Content lineNumbers class="flex-1">
+								{#each remoteEnvLines.current as line, index (index)}
+									<CodeBlock.Line code={line} />
+								{/each}
+							</CodeBlock.Content>
+						</CodeBlock.Root>
 					</section>
 				{/if}
 			</div>
@@ -430,7 +456,7 @@
 									<a
 										href={template.metadata.documentationUrl}
 										target="_blank"
-										rel="noopener noreferrer"
+										rel="external noopener noreferrer"
 										class="inline-flex items-center gap-1 font-medium break-all text-primary hover:underline"
 									>
 										{documentationHost}

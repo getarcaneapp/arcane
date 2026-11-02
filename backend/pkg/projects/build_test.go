@@ -4,9 +4,10 @@ import (
 	"testing"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
 )
 
 func TestResolveBuildContext_AllowsRemoteGitContext(t *testing.T) {
@@ -31,11 +32,6 @@ func TestResolveBuildContext_AllowsRemoteGitContextWithoutGitSuffix(t *testing.T
 	contextDir, err := ResolveBuildContext("/projects/demo", svc, "web")
 	require.NoError(t, err)
 	assert.Equal(t, "https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app", contextDir)
-}
-
-func TestMergeBuildTags(t *testing.T) {
-	tags := MergeBuildTags("example/app:latest", []string{"example/app:sha", "example/app:latest", " "})
-	assert.Equal(t, []string{"example/app:latest", "example/app:sha"}, tags)
 }
 
 func TestBuildPlatformsFromCompose(t *testing.T) {
@@ -106,7 +102,7 @@ func TestPrepareServiceBuildRequest_MapsComposeFields(t *testing.T) {
 		proj,
 		"web",
 		serviceCfg,
-		projecttypes.BuildOptions{}, "",
+		types.ProjectBuildOptions{}, "",
 	)
 	require.NoError(t, err)
 
@@ -155,7 +151,7 @@ func TestPrepareServiceBuildRequest_KeepsContainerPaths(t *testing.T) {
 		proj,
 		"web",
 		serviceCfg,
-		projecttypes.BuildOptions{}, "",
+		types.ProjectBuildOptions{}, "",
 	)
 	require.NoError(t, err)
 
@@ -185,7 +181,7 @@ func TestPrepareServiceBuildRequest_BuildDotKeepsContainerPath(t *testing.T) {
 		proj,
 		"caddy",
 		serviceCfg,
-		projecttypes.BuildOptions{}, "",
+		types.ProjectBuildOptions{}, "",
 	)
 	require.NoError(t, err)
 
@@ -210,7 +206,7 @@ func TestPrepareServiceBuildRequest_UsesInlineDockerfile(t *testing.T) {
 		proj,
 		"web",
 		serviceCfg,
-		projecttypes.BuildOptions{}, "",
+		types.ProjectBuildOptions{}, "",
 	)
 	require.NoError(t, err)
 
@@ -234,7 +230,7 @@ func TestPrepareServiceBuildRequest_GeneratedImageProviderGuardrails(t *testing.
 		proj,
 		"web",
 		serviceCfg,
-		projecttypes.BuildOptions{Provider: "depot"}, "",
+		types.ProjectBuildOptions{Provider: "depot"}, "",
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must define an image when using depot")
@@ -244,7 +240,7 @@ func TestPrepareServiceBuildRequest_GeneratedImageProviderGuardrails(t *testing.
 		proj,
 		"web",
 		serviceCfg,
-		projecttypes.BuildOptions{Provider: "local", Push: new(true)}, "",
+		types.ProjectBuildOptions{Provider: "local", Push: new(true)}, "",
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must define an image when push is enabled")

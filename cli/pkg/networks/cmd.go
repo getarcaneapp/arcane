@@ -7,17 +7,46 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/network"
 	"github.com/spf13/cobra"
-	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/containers"
+	"kit.getarcane.app"
+
+	"getarcane.dev/cli/v3/internal/cmdutil"
+	"getarcane.dev/cli/v3/internal/output"
+	"getarcane.dev/cli/v3/internal/runtime"
+	clitypes "getarcane.dev/cli/v3/internal/types"
+	"getarcane.dev/cli/v3/pkg/containers"
+	"getarcane.dev/types/v3"
 )
+
+var networkRef = cmdutil.ResourceRef[types.NetworkInspect, types.NetworkSummary]{
+	EnvironmentScoped: true,
+	Singular:          "network",
+	Plural:            "networks",
+	IDHint:            "the network ID",
+	ListCmd:           "arcane networks list",
+	GetPath:           clitypes.Network,
+	IdentifierOf:      func(data types.NetworkInspect) string { return data.ID },
+	ListPath:          clitypes.Networks,
+	Matches: func(item types.NetworkSummary, identifierLower, original string) bool {
+		return strings.Contains(strings.ToLower(item.ID), identifierLower) ||
+			strings.Contains(strings.ToLower(item.Name), identifierLower) || strings.EqualFold(item.Name, original)
+	},
+	Label: func(match types.NetworkSummary) string {
+		return fmt.Sprintf("%s (%s)", match.Name, match.ID[:min(len(match.ID), 12)])
+	},
+	Promote: func(match types.NetworkSummary) *types.NetworkInspect {
+		return &types.NetworkInspect{
+			ID:      match.ID,
+			Name:    match.Name,
+			Driver:  match.Driver,
+			Scope:   match.Scope,
+			Created: match.Created,
+			Options: match.Options,
+			Labels:  match.Labels,
+		}
+	},
+}
 
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
@@ -70,9 +99,9 @@ func newListCmd() *cobra.Command {
 				query.Set("inUse", "false")
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[network.Summary]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.NetworkSummary]{
 				Resource: "networks",
-				Endpoint: types.Networks(c.EnvID()),
+				Endpoint: clitypes.Networks(c.EnvID()),
 				Params: cmdutil.ListParams{
 					Resource:        "networks",
 					Limit:           opts.limitFlag,
@@ -82,7 +111,7 @@ func newListCmd() *cobra.Command {
 				},
 				Query:   query,
 				Headers: []string{"ID", "NAME", "DRIVER", "SCOPE", "CREATED", "IN USE"},
-				Row: func(net network.Summary) []string {
+				Row: func(net types.NetworkSummary) []string {
 					return []string{
 						net.ID[:min(len(net.ID), 12)],
 						net.Name,
@@ -167,7 +196,7 @@ func newDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.forceFlag,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete network %s?", display),
-				Path:           types.Network(c.EnvID(), resolved.ID),
+				Path:           clitypes.Network(c.EnvID(), resolved.ID),
 				FailureMessage: "failed to delete network",
 				SuccessMessage: fmt.Sprintf("Network %s deleted successfully", display),
 			})
@@ -189,11 +218,11 @@ func newCountsCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[network.UsageCounts]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.NetworkUsageCounts]{
 				Method:         http.MethodGet,
-				Path:           types.NetworksCounts(c.EnvID()),
+				Path:           clitypes.NetworksCounts(c.EnvID()),
 				FailureMessage: "failed to get network counts",
-				Render: func(data network.UsageCounts) error {
+				Render: func(data types.NetworkUsageCounts) error {
 					output.Header("Network Usage Counts")
 					output.KeyValue("Total networks", data.Total)
 					output.KeyValue("In use", data.Inuse)
@@ -217,7 +246,7 @@ func newPruneCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, opts.forceFlag, "Are you sure you want to prune unused networks?")
+			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: "Are you sure you want to prune unused networks?", Force: opts.forceFlag})
 			if confirmationErr != nil || !confirmed {
 				return confirmationErr
 			}
@@ -227,12 +256,12 @@ func newPruneCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[network.PruneReport]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.NetworkPruneReport]{
 				Method:         http.MethodPost,
-				Path:           types.NetworksPrune(c.EnvID()),
+				Path:           clitypes.NetworksPrune(c.EnvID()),
 				Body:           nil,
 				FailureMessage: "failed to prune networks",
-				Render: func(data network.PruneReport) error {
+				Render: func(data types.NetworkPruneReport) error {
 					output.Success("Networks pruned successfully")
 					output.KeyValue("Deleted networks", len(data.NetworksDeleted))
 					output.KeyValue("Space Reclaimed", output.UnsignedBytes(data.SpaceReclaimed))
@@ -242,7 +271,7 @@ func newPruneCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&opts.forceFlag, "force", "f", false, "Force prune without confirmation")
-	cmdutil.SetScope(cmdutil.ScopeFleet, cmd)
+	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	return cmd
 }
 
@@ -253,11 +282,11 @@ func newCreateCmd() *cobra.Command {
 		networkCreateSubnet     string
 		networkCreateGateway    string
 		networkCreateIPRange    string
+		networkCreateLabels     []string
+		networkCreateOpts       []string
 		networkCreate           bool
 		networkCreateAttachable bool
 		networkCreateIPv6       bool
-		networkCreateLabels     []string
-		networkCreateOpts       []string
 	}
 	cmd := &cobra.Command{
 		Use:          "create",
@@ -270,12 +299,12 @@ func newCreateCmd() *cobra.Command {
 				return err
 			}
 
-			var ipam *network.IPAM
+			var ipam *types.NetworkIPAM
 			var options, labels map[string]string
 
 			if opts.networkCreateSubnet != "" || opts.networkCreateGateway != "" || opts.networkCreateIPRange != "" {
-				ipam = &network.IPAM{
-					Config: []network.IPAMConfig{{
+				ipam = &types.NetworkIPAM{
+					Config: []types.NetworkIPAMConfig{{
 						Subnet:  opts.networkCreateSubnet,
 						Gateway: opts.networkCreateGateway,
 						IPRange: opts.networkCreateIPRange,
@@ -303,12 +332,12 @@ func newCreateCmd() *cobra.Command {
 				}
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[network.CreateResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.NetworkCreateResponse]{
 				Method: http.MethodPost,
-				Path:   types.Networks(c.EnvID()),
-				Body: network.CreateRequest{
+				Path:   clitypes.Networks(c.EnvID()),
+				Body: types.Network{
 					Name: opts.networkCreateName,
-					Options: network.CreateOptions{
+					Options: types.NetworkCreateOptions{
 						Driver:     opts.networkCreateDriver,
 						Internal:   opts.networkCreate,
 						Attachable: opts.networkCreateAttachable,
@@ -319,7 +348,7 @@ func newCreateCmd() *cobra.Command {
 					},
 				},
 				FailureMessage: "failed to create network",
-				Render: func(data network.CreateResponse) error {
+				Render: func(data types.NetworkCreateResponse) error {
 					output.Success("Network %s created successfully", opts.networkCreateName)
 					output.KeyValue("ID", data.ID)
 					if data.Warning != "" {
@@ -347,9 +376,9 @@ func newCreateCmd() *cobra.Command {
 
 func newConnectCmd() *cobra.Command {
 	var opts struct {
-		connectAliases []string
 		connectIPv4    string
 		connectIPv6    string
+		connectAliases []string
 	}
 	cmd := &cobra.Command{
 		Use:          "connect <network-id|name> <container-id|name>",
@@ -363,7 +392,7 @@ func newConnectCmd() *cobra.Command {
 			}
 
 			app, _ := runtime.From(cmd.Context())
-			preview := app.PreviewEnabled()
+			allEnvironments := app.AllEnvironments()
 			allowPrompt := cmdutil.AllowPrompt(cmd)
 			resolved, _, err := networkRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 			if err != nil {
@@ -371,7 +400,7 @@ func newConnectCmd() *cobra.Command {
 			}
 
 			containerID := args[1]
-			if preview {
+			if allEnvironments {
 				dependent, _, resolveErr := containers.ContainerRef.Resolve(cmd.Context(), c, args[1], allowPrompt)
 				if resolveErr != nil {
 					return resolveErr
@@ -379,19 +408,19 @@ func newConnectCmd() *cobra.Command {
 				containerID = dependent.ID
 			}
 
-			req := network.ConnectContainerRequest{
+			req := types.NetworkContainerRequest{
 				ContainerID: containerID,
 				Aliases:     opts.connectAliases,
 				IPv4Address: opts.connectIPv4,
 				IPv6Address: opts.connectIPv6,
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.NetworkConnect(c.EnvID(), resolved.ID),
+				Path:           clitypes.NetworkAction(c.EnvID(), resolved.ID, "connect"),
 				Body:           req,
 				FailureMessage: "failed to connect container to network",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					display := cmp.Or(resolved.Name, resolved.ID[:min(len(resolved.ID), 12)])
 					output.Success("Container %s connected to network %s", args[1], display)
 					return nil
@@ -421,7 +450,7 @@ func newDisconnectCmd() *cobra.Command {
 			}
 
 			app, _ := runtime.From(cmd.Context())
-			preview := app.PreviewEnabled()
+			allEnvironments := app.AllEnvironments()
 			allowPrompt := cmdutil.AllowPrompt(cmd)
 			resolved, _, err := networkRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 			if err != nil {
@@ -429,7 +458,7 @@ func newDisconnectCmd() *cobra.Command {
 			}
 
 			containerID := args[1]
-			if preview {
+			if allEnvironments {
 				dependent, _, resolveErr := containers.ContainerRef.Resolve(cmd.Context(), c, args[1], allowPrompt)
 				if resolveErr != nil {
 					return resolveErr
@@ -437,17 +466,17 @@ func newDisconnectCmd() *cobra.Command {
 				containerID = dependent.ID
 			}
 
-			req := network.DisconnectContainerRequest{
+			req := types.NetworkContainerRequest{
 				ContainerID: containerID,
 				Force:       opts.disconnectForce,
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.NetworkDisconnect(c.EnvID(), resolved.ID),
+				Path:           clitypes.NetworkAction(c.EnvID(), resolved.ID, "disconnect"),
 				Body:           req,
 				FailureMessage: "failed to disconnect container from network",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					display := cmp.Or(resolved.Name, resolved.ID[:min(len(resolved.ID), 12)])
 					output.Success("Container %s disconnected from network %s", args[1], display)
 					return nil
@@ -471,20 +500,20 @@ func newTopologyCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[network.Topology]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.NetworkTopology]{
 				Method:         http.MethodGet,
-				Path:           types.NetworksTopology(c.EnvID()),
+				Path:           clitypes.NetworksTopology(c.EnvID()),
 				FailureMessage: "failed to get network topology",
-				Render: func(data network.Topology) error {
+				Render: func(data types.NetworkTopology) error {
 					nodeNames := make(map[string]string, len(data.Nodes))
 					networkCount := 0
 					containerCount := 0
 					for _, node := range data.Nodes {
 						nodeNames[node.ID] = cmp.Or(node.Name, node.ID[:min(len(node.ID), 12)])
 						switch node.Type {
-						case network.TopologyNodeTypeNetwork:
+						case types.NetworkTopologyNodeTypeNetwork:
 							networkCount++
-						case network.TopologyNodeTypeContainer:
+						case types.NetworkTopologyNodeTypeContainer:
 							containerCount++
 						}
 					}
@@ -512,33 +541,4 @@ func newTopologyCmd() *cobra.Command {
 	}
 	cmdutil.SetScope(cmdutil.ScopeRead, cmd)
 	return cmd
-}
-
-var networkRef = cmdutil.ResourceRef[network.Inspect, network.Summary]{
-	EnvironmentScoped: true,
-	Singular:          "network",
-	Plural:            "networks",
-	IDHint:            "the network ID",
-	ListCmd:           "arcane networks list",
-	GetPath:           types.Network,
-	IdentifierOf:      func(data network.Inspect) string { return data.ID },
-	ListPath:          types.Networks,
-	Matches: func(item network.Summary, identifierLower, original string) bool {
-		return strings.Contains(strings.ToLower(item.ID), identifierLower) ||
-			strings.Contains(strings.ToLower(item.Name), identifierLower) || strings.EqualFold(item.Name, original)
-	},
-	Label: func(match network.Summary) string {
-		return fmt.Sprintf("%s (%s)", match.Name, match.ID[:min(len(match.ID), 12)])
-	},
-	Promote: func(match network.Summary) *network.Inspect {
-		return &network.Inspect{
-			ID:      match.ID,
-			Name:    match.Name,
-			Driver:  match.Driver,
-			Scope:   match.Scope,
-			Created: match.Created,
-			Options: match.Options,
-			Labels:  match.Labels,
-		}
-	},
 }

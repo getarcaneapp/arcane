@@ -11,8 +11,10 @@
 	import { refreshLogViewerStream, startLogViewerStream, stopLogViewerStream } from '#lib/utils/log-viewer.js';
 
 	let {
+		environmentId,
 		serviceId
 	}: {
+		environmentId: string;
 		serviceId: string | undefined;
 	} = $props();
 
@@ -21,6 +23,7 @@
 	let autoScroll = $state(true);
 	const preferences = new UseLogPreferences();
 	let logSearchTerm = $state('');
+	let hasAutoStarted = false;
 
 	function handleStart() {
 		startLogViewerStream(viewer);
@@ -43,7 +46,8 @@
 	}
 
 	$effect(() => {
-		if (preferences.autoStartLogs && serviceId && viewer) {
+		if (preferences.autoStartLogs && !hasAutoStarted && !isStreaming && serviceId && viewer) {
+			hasAutoStarted = true;
 			untrack(handleStart);
 		}
 	});
@@ -68,12 +72,13 @@
 		</div>
 	</Card.Header>
 	<div>
-		<div class="rounded-lg border bg-card/90 p-0 backdrop-blur-sm">
+		<div class="rounded-lg border border-border/70 bg-card/10 p-0">
 			<LogViewer
 				searchTerm={logSearchTerm}
 				bind:this={viewer}
 				bind:autoScroll
 				type="service"
+				{environmentId}
 				{serviceId}
 				bind:showParsedJson={preferences.showParsedJson}
 				showStreamLabels={preferences.showStreamLabels}

@@ -3,7 +3,7 @@ package workspace
 import (
 	"archive/tar"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"net/http"
@@ -16,19 +16,24 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
-	"github.com/getarcaneapp/arcane/types/v2/workspace"
+	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/acfs/types"
+	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
+	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/docker/streams/bus"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/volumes"
+	"getarcane.dev/types/v3"
 )
 
 func newVolumeWorkspaceTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
@@ -53,13 +58,13 @@ func TestValidateVolumeHelperSupport(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(volume.Volume{Name: "workspace-volume", Driver: "local", Options: options}); err != nil {
+		if err := json.MarshalWrite(w, volume.Volume{Name: "workspace-volume", Driver: "local", Options: options}); err != nil {
 			t.Errorf("encode volume inspect response: %v", err)
 		}
 	}))
 	t.Cleanup(server.Close)
 
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeWorkspaceTestDockerClient(t, server))
+	dockerService := newVolumeTestDockerService(t, newVolumeWorkspaceTestDockerClient(t, server))
 	service := NewService(Dependencies{Docker: dockerService})
 
 	require.NoError(t, service.validateVolumeHelperSupport(t.Context(), "workspace-volume"))
@@ -77,9 +82,9 @@ func TestUpdateVolumeWorkspaceValidationFailureReturnsNoWorkspace(t *testing.T) 
 	tree, err := (&Service{}).UpdateVolumeWorkspace(
 		t.Context(),
 		"volume",
-		volumetypes.WorkspaceUpdateManifest{},
+		types.VolumeWorkspaceUpdateManifest{},
 		nil,
-		usertypes.Actor{},
+		types.Actor{},
 	)
 
 	require.Nil(t, tree)
@@ -101,53 +106,53 @@ func TestVolumeWorkspaceFileContentResponse(t *testing.T) {
 	above, err := volumeWorkspaceFileContentResponse("notes.txt", "regular", maxFileSizeBytes+1, text, maxFileSizeBytes)
 	require.NoError(t, err)
 	require.False(t, above.Editable)
-	require.Equal(t, workspace.FileReadOnlyTooLarge, above.ReadOnlyReason)
+	require.Equal(t, types.FileReadOnlyTooLarge, above.ReadOnlyReason)
 
 	binaryContent, err := volumeWorkspaceFileContentResponse("data.bin", "regular", 2, []byte{0xff, 0x00}, maxFileSizeBytes)
 	require.NoError(t, err)
-	require.Equal(t, workspace.FileReadOnlyBinary, binaryContent.ReadOnlyReason)
+	require.Equal(t, types.FileReadOnlyBinary, binaryContent.ReadOnlyReason)
 
 	special, err := volumeWorkspaceFileContentResponse("pipe", "special", 0, nil, maxFileSizeBytes)
 	require.NoError(t, err)
-	require.Equal(t, workspace.FileReadOnlySpecial, special.ReadOnlyReason)
+	require.Equal(t, types.FileReadOnlySpecial, special.ReadOnlyReason)
 }
 
 func TestValidateVolumeWorkspaceFileChangeOperationsAndMultipartMapping(t *testing.T) {
 	first := 0
 	second := 1
-	tests := []volumetypes.WorkspaceFileChange{
-		{Operation: volumetypes.FileOpCreateFile, RelativePath: "empty.txt", UploadIndex: &first},
-		{Operation: volumetypes.FileOpUpdateFile, RelativePath: "first.bin", UploadIndex: &first},
-		{Operation: volumetypes.FileOpCreateFile, RelativePath: "second.bin", UploadIndex: &second},
-		{Operation: volumetypes.FileOpCreateFolder, RelativePath: "folder"},
-		{Operation: volumetypes.FileOpRename, RelativePath: "old.txt", NewName: "new.txt"},
-		{Operation: volumetypes.FileOpMove, RelativePath: "new.txt", NewParentPath: "folder"},
-		{Operation: volumetypes.FileOpDelete, RelativePath: "folder", Recursive: true},
-		{Operation: volumetypes.FileOpRestoreFile, RelativePath: "restored.txt", BackupID: "backup-id"},
+	tests := []types.VolumeWorkspaceFileChange{
+		{Operation: types.FileOpCreateFile, RelativePath: "empty.txt", UploadIndex: &first},
+		{Operation: types.FileOpUpdateFile, RelativePath: "first.bin", UploadIndex: &first},
+		{Operation: types.FileOpCreateFile, RelativePath: "second.bin", UploadIndex: &second},
+		{Operation: types.FileOpCreateFolder, RelativePath: "folder"},
+		{Operation: types.FileOpRename, RelativePath: "old.txt", NewName: "new.txt"},
+		{Operation: types.FileOpMove, RelativePath: "new.txt", NewParentPath: "folder"},
+		{Operation: types.FileOpDelete, RelativePath: "folder", Recursive: true},
+		{Operation: types.FileOpRestoreFile, RelativePath: "restored.txt", BackupID: "backup-id"},
 	}
 	for _, change := range tests {
 		require.NoError(t, validateVolumeWorkspaceFileChange(change), change.Operation)
 	}
 
-	require.Error(t, validateVolumeWorkspaceFileChange(volumetypes.WorkspaceFileChange{
-		Operation: volumetypes.FileOpUpdateFile, RelativePath: "missing.bin",
+	require.Error(t, validateVolumeWorkspaceFileChange(types.VolumeWorkspaceFileChange{
+		Operation: types.FileOpUpdateFile, RelativePath: "missing.bin",
 	}))
-	require.Error(t, validateVolumeWorkspaceFileChange(volumetypes.WorkspaceFileChange{
-		Operation: volumetypes.FileOpRestoreFile, RelativePath: "file.txt",
+	require.Error(t, validateVolumeWorkspaceFileChange(types.VolumeWorkspaceFileChange{
+		Operation: types.FileOpRestoreFile, RelativePath: "file.txt",
 	}))
-	require.Error(t, validateVolumeWorkspaceFileChange(volumetypes.WorkspaceFileChange{
+	require.Error(t, validateVolumeWorkspaceFileChange(types.VolumeWorkspaceFileChange{
 		Operation: "unknown", RelativePath: "file.txt",
 	}))
-	require.Error(t, validateVolumeWorkspaceFileChange(volumetypes.WorkspaceFileChange{
-		Operation: volumetypes.FileOpDelete, RelativePath: "../escape",
+	require.Error(t, validateVolumeWorkspaceFileChange(types.VolumeWorkspaceFileChange{
+		Operation: types.FileOpDelete, RelativePath: "../escape",
 	}))
 }
 
 func TestVolumeWorkspaceBackupScopeCoversSourcesAndDestinations(t *testing.T) {
-	changes := []volumetypes.WorkspaceFileChange{
-		{Operation: volumetypes.FileOpRename, RelativePath: "docs/a.txt", NewName: "b.txt"},
-		{Operation: volumetypes.FileOpMove, RelativePath: "cache", NewParentPath: "docs"},
-		{Operation: volumetypes.FileOpCreateFile, RelativePath: "docs/a.txt/child", UploadIndex: new(0)},
+	changes := []types.VolumeWorkspaceFileChange{
+		{Operation: types.FileOpRename, RelativePath: "docs/a.txt", NewName: "b.txt"},
+		{Operation: types.FileOpMove, RelativePath: "cache", NewParentPath: "docs"},
+		{Operation: types.FileOpCreateFile, RelativePath: "docs/a.txt/child", UploadIndex: new(0)},
 	}
 	scope, err := volumeWorkspaceBackupScope(changes)
 	require.NoError(t, err)
@@ -264,7 +269,7 @@ func TestStageVolumeWorkspaceChangesClearsAndCopiesContentsInOneArchive(t *testi
 
 	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
 	service := NewService(Dependencies{
-		Docker: docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient),
+		Docker: newVolumeTestDockerService(t, dockerClient),
 		Exec: func(_ context.Context, containerID, _ string, cmd []string) (string, string, error) {
 			require.Equal(t, "helper", containerID)
 			execCommands = append(execCommands, cmd)
@@ -273,7 +278,7 @@ func TestStageVolumeWorkspaceChangesClearsAndCopiesContentsInOneArchive(t *testi
 	})
 	firstUpload := 0
 	secondUpload := 1
-	firstStaged, err := service.stageVolumeWorkspaceChanges(t.Context(), dockerClient, "helper", []volumetypes.WorkspaceFileChange{
+	firstStaged, err := service.stageVolumeWorkspaceChanges(t.Context(), dockerClient, "helper", []types.VolumeWorkspaceFileChange{
 		{UploadIndex: &firstUpload},
 		{},
 		{UploadIndex: &secondUpload},
@@ -286,7 +291,7 @@ func TestStageVolumeWorkspaceChangesClearsAndCopiesContentsInOneArchive(t *testi
 		t.Context(),
 		dockerClient,
 		"helper",
-		[]volumetypes.WorkspaceFileChange{
+		[]types.VolumeWorkspaceFileChange{
 			{
 				UploadIndex: &firstUpload,
 			},
@@ -357,10 +362,10 @@ func TestVolumeWorkspaceWritesUseRuntimeIdentity(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
-	applyResponse, err := json.Marshal(types.ApplyResponse{Version: types.ProtocolVersion, Applied: 1})
+	applyResponse, err := json.Marshal(acfstypes.ApplyResponse{Version: acfstypes.ProtocolVersion, Applied: 1})
 	require.NoError(t, err)
 	service := NewService(Dependencies{
-		Docker: docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient),
+		Docker: newVolumeTestDockerService(t, dockerClient),
 		Exec: func(_ context.Context, _, execUser string, cmd []string) (string, string, error) {
 			execRequests = append(execRequests, execRequest{user: execUser, cmd: cmd})
 			return string(applyResponse), "", nil
@@ -368,7 +373,7 @@ func TestVolumeWorkspaceWritesUseRuntimeIdentity(t *testing.T) {
 	})
 	identity := volumeWorkspaceWriteIdentityFromConfigUser("1000:1000")
 	uploadIndex := 0
-	changes := []volumetypes.WorkspaceFileChange{{Operation: volumetypes.FileOpCreateFile, RelativePath: "config.txt", UploadIndex: &uploadIndex}}
+	changes := []types.VolumeWorkspaceFileChange{{Operation: types.FileOpCreateFile, RelativePath: "config.txt", UploadIndex: &uploadIndex}}
 	stagedFiles, err := service.stageVolumeWorkspaceChanges(t.Context(), dockerClient, "helper", changes, map[int][]byte{0: []byte("content")}, identity)
 	require.NoError(t, err)
 	require.NoError(t, service.executeVolumeWorkspaceACFSBatch(t.Context(), dockerClient, "helper", changes, stagedFiles, 0, identity))
@@ -395,12 +400,12 @@ func TestCreateVolumeWorkspaceMutationContainerUsesDedicatedBackupHelper(t *test
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
 			createCalls++
-			if err := json.NewDecoder(r.Body).Decode(&createRequest); err != nil {
+			if err := json.UnmarshalRead(r.Body, &createRequest); err != nil {
 				t.Errorf("decode container create request: %v", err)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"Id": "restore-helper", "Warnings": []string{}})
+			_ = json.MarshalWrite(w, map[string]any{"Id": "restore-helper", "Warnings": []string{}})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/restore-helper/start"):
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/containers/restore-helper"):
@@ -415,13 +420,13 @@ func TestCreateVolumeWorkspaceMutationContainerUsesDedicatedBackupHelper(t *test
 	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
 	acquireCalls := 0
 	service := NewService(Dependencies{
-		Docker: docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient),
+		Docker: newVolumeTestDockerService(t, dockerClient),
 		AcquireHelper: func(context.Context, string) (string, func(), error) {
 			acquireCalls++
 			return "cached-helper", func() {}, nil
 		},
 		HelperImage: func(context.Context) (string, error) {
-			return volumehelper.ToolsImage(""), nil
+			return volumes.ToolsImage(""), nil
 		},
 		BackupStorageMount: func(_ context.Context, _ *client.Client, target string, readOnly bool) (mount.Mount, error) {
 			return mount.Mount{Type: mount.TypeVolume, Source: "arcane-backups", Target: target, ReadOnly: readOnly}, nil
@@ -461,7 +466,7 @@ func TestVolumeWorkspaceScriptsAgainstToolsImage(t *testing.T) {
 	}
 	runInVolume := func(volumeName, outerScript string, args ...string) string {
 		t.Helper()
-		dockerArgs := []string{"run", "--rm", "-v", volumeName + ":/volume", volumehelper.ToolsImage(""), "sh", "-c", outerScript, "sh"}
+		dockerArgs := []string{"run", "--rm", "-v", volumeName + ":/volume", volumes.ToolsImage(""), "sh", "-c", outerScript, "sh"}
 		dockerArgs = append(dockerArgs, args...)
 		return runDocker(dockerArgs...)
 	}
@@ -524,4 +529,17 @@ if stat -c '%A' -- /tmp/missing-backup.tar >/dev/null 2>&1; then exit 1; fi`, vo
 sh -c "$1" sh "New Folder/test.txt" /tmp/missing-nested-backup.tar
 if stat -c '%A' -- /tmp/missing-nested-backup.tar >/dev/null 2>&1; then exit 1; fi`, volumeWorkspaceBackupCreateScript)
 	require.Equal(t, "absent\x00New Folder\x00", missingNested)
+}
+
+func newVolumeTestDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }

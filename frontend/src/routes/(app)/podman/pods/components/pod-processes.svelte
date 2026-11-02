@@ -26,11 +26,11 @@
 		queryKey: queryKeys.podman.podTop(envId, podId),
 		queryFn: () => podmanService.getPodTop(podId, envId),
 		enabled: isRunning,
-		refetchInterval: 5000,
 		retry: false
 	}));
 
 	const processes = $derived(topQuery.data?.processes ?? []);
+	const pidIndex = $derived((topQuery.data?.titles ?? []).findIndex((title) => title.toUpperCase() === 'PID'));
 </script>
 
 <Card.Root>
@@ -75,7 +75,7 @@
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
-					{#each processes as cells (JSON.stringify(cells))}
+					{#each processes as cells (pidIndex >= 0 ? cells[pidIndex] : cells)}
 						<Table.Row>
 							{#each withOccurrenceKeys(cells) as cell (cell.key)}
 								<Table.Cell><MonoCell value={cell.value} /></Table.Cell>

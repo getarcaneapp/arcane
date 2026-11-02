@@ -5,51 +5,58 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
+	"go.uber.org/fx"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image/children/attestations"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image/children/patch"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/build"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/image/children/attestations"
+	"getarcane.dev/arcane/v3/internal/image/children/patch"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/upload"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
-type Module struct {
-	service     *ImageService
-	docker      *docker.DockerClientService
-	imageUpdate *imageupdate.ImageUpdateService
-	settings    *settings.SettingsService
-	build       *build.BuildService
-	activity    *activity.ActivityService
-	upload      *upload.UploadService
+type (
+	Module struct {
+		service     *ImageService
+		docker      *docker.DockerClientService
+		imageUpdate *imageupdate.ImageUpdateService
+		settings    *settings.SettingsService
+		build       *build.BuildService
+		activity    *activity.ActivityService
+		upload      *upload.UploadService
 
-	attestationsHandler *attestations.Handler
-}
+		attestationsHandler *attestations.Handler
+	}
 
-func New(
-	service *ImageService,
-	dockerService *docker.DockerClientService,
-	imageUpdate *imageupdate.ImageUpdateService,
-	settingsService *settings.SettingsService,
-	buildService *build.BuildService,
-	activityService *activity.ActivityService,
-	uploadService *upload.UploadService,
-) *Module {
+	Params struct {
+		fx.In
+
+		Service         *ImageService
+		DockerService   *docker.DockerClientService
+		ImageUpdate     *imageupdate.ImageUpdateService
+		SettingsService *settings.SettingsService
+		BuildService    *build.BuildService
+		ActivityService *activity.ActivityService
+		UploadService   *upload.UploadService
+	}
+)
+
+func New(p Params) *Module {
 	return &Module{
-		service:             service,
-		docker:              dockerService,
-		imageUpdate:         imageUpdate,
-		settings:            settingsService,
-		build:               buildService,
-		activity:            activityService,
-		upload:              uploadService,
-		attestationsHandler: attestations.NewHandler(attestations.NewService(service.dockerService, service.registryService.GetRegistryAuthForImage)),
+		service:             p.Service,
+		docker:              p.DockerService,
+		imageUpdate:         p.ImageUpdate,
+		settings:            p.SettingsService,
+		build:               p.BuildService,
+		activity:            p.ActivityService,
+		upload:              p.UploadService,
+		attestationsHandler: attestations.NewHandler(attestations.NewService(p.Service.dockerService, p.Service.registryService.GetRegistryAuthForImage)),
 	}
 }
 
@@ -238,6 +245,6 @@ func RegisterImages(
 			"future release.",
 		Tags:        []string{"Images"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: upload.LegacyMultipartMiddleware(api, h.uploadService, uploadtypes.KindImage),
+		Middlewares: upload.LegacyMultipartMiddleware(api, h.uploadService, types.UploadKindImage),
 	}, authz.PermImagesUpload, h.UploadImage)
 }

@@ -92,7 +92,7 @@
 	);
 
 	// Image suggestions (debounced registry search); free text stays valid.
-	let imageSuggestions = $state<ImageSearchResultDto[]>([]);
+	let imageSuggestions = $state.raw<ImageSearchResultDto[]>([]);
 	let imageSearchTimer: ReturnType<typeof setTimeout> | undefined;
 	function onImageInput() {
 		clearTimeout(imageSearchTimer);

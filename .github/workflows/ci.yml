@@ -34,17 +34,14 @@ jobs:
             timeout: 10
             gcc: false
             cgo_enabled: '1'
-          - name: types
-            path: types
-            timeout: 10
-            gcc: false
-            cgo_enabled: '1'
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Just
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: just
 
       - name: Set up Depot CLI
         if: matrix.module.gcc
@@ -135,7 +132,9 @@ jobs:
           run-install: true
 
       - name: Setup Just
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: just
 
       - name: Add svelte-check problem matcher
         run: echo "::add-matcher::.github/matchers/svelte-check-matcher.json"

@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/types/v3"
 )
 
 func TestResourceSortPermissionCheck(t *testing.T) {
@@ -23,33 +23,33 @@ func TestResourceSortPermissionCheck(t *testing.T) {
 	full := authz.NewPermissionSet()
 	full.AddEnv("env-1", authz.PermContainersList, authz.PermContainersRead)
 
-	require.True(t, ContainerResourceSortPermissionDenied(listOnly, "env-1", container.SortCPUUsage))
-	require.True(t, ContainerResourceSortPermissionDenied(listOnly, "env-1", container.SortMemoryUsage))
-	require.False(t, ContainerResourceSortPermissionDenied(full, "env-1", container.SortMemoryUsage))
+	require.True(t, ContainerResourceSortPermissionDenied(listOnly, "env-1", types.ContainerSortCPUUsage))
+	require.True(t, ContainerResourceSortPermissionDenied(listOnly, "env-1", types.ContainerSortMemoryUsage))
+	require.False(t, ContainerResourceSortPermissionDenied(full, "env-1", types.ContainerSortMemoryUsage))
 	require.False(t, ContainerResourceSortPermissionDenied(listOnly, "env-1", "name"),
 		"non-resource sorts keep the endpoint's containers:list requirement")
-	require.False(t, ContainerResourceSortPermissionDenied(authz.SudoPermissionSet(), "env-1", container.SortCPUUsage))
+	require.False(t, ContainerResourceSortPermissionDenied(authz.SudoPermissionSet(), "env-1", types.ContainerSortCPUUsage))
 }
 
 func TestResourceSortComparatorKeepsUnavailableLast(t *testing.T) {
-	asc := ContainerResourceSampleSort(container.SortMemoryUsage, false)
-	desc := ContainerResourceSampleSort(container.SortMemoryUsage, true)
-	sampled := container.Summary{
+	asc := ContainerResourceSampleSort(types.ContainerSortMemoryUsage, false)
+	desc := ContainerResourceSampleSort(types.ContainerSortMemoryUsage, true)
+	sampled := types.ContainerSummary{
 		ID:             "b",
 		Names:          []string{"b"},
-		ResourceSample: &container.ResourceSample{MemoryUsageBytes: 1},
+		ResourceSample: &types.ContainerResourceSample{MemoryUsageBytes: 1},
 	}
-	unsampled := container.Summary{ID: "a", Names: []string{"a"}}
+	unsampled := types.ContainerSummary{ID: "a", Names: []string{"a"}}
 
 	require.Equal(t, 1, asc(unsampled, sampled))
 	require.Equal(t, -1, asc(sampled, unsampled))
 	require.Equal(t, 1, desc(unsampled, sampled))
 	require.Equal(t, -1, desc(sampled, unsampled))
 
-	zero := container.Summary{
+	zero := types.ContainerSummary{
 		ID:             "z",
 		Names:          []string{"z"},
-		ResourceSample: &container.ResourceSample{MemoryUsageBytes: 0},
+		ResourceSample: &types.ContainerResourceSample{MemoryUsageBytes: 0},
 	}
 	require.Equal(t, -1, asc(zero, unsampled), "zero is a valid value, not unavailable")
 	require.Equal(t, -1, asc(zero, sampled))
@@ -84,19 +84,61 @@ func TestCollectMaxAge(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = dockerClient.Close() })
 
-			svc := New(
-				func(context.Context) (*client.Client, error) { return dockerClient, nil },
-				func() string { return "test" },
-				ContainerResourceSampleTTL,
-				0,
-				0,
-			)
+			svc := New(Params{
+				GetClient:  func(context.Context) (*client.Client, error) { return dockerClient, nil },
+				DockerHost: func() string { return "test" },
+				CacheTTL:   ContainerResourceSampleTTL,
+			})
 			for range 2 {
-				samples, collectErr := svc.Collect(t.Context(), []container.Summary{{ID: "web", State: "running"}}, tt.maxAge)
+				samples, collectErr := svc.Collect(t.Context(), []types.ContainerSummary{{ID: "web", State: "running"}}, tt.maxAge, true)
 				require.NoError(t, collectErr)
 				require.Contains(t, samples, "web")
 			}
 			require.Equal(t, tt.wantCalls, calls.Load())
 		})
 	}
+}
+
+func TestCollectReportsIOAndPIDs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/containers/web/stats") {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = io.WriteString(w, `{
+			"read":"2026-01-01T00:00:00Z",
+			"memory_stats":{"usage":100,"limit":1000},
+			"pids_stats":{"current":7},
+			"networks":{"eth0":{"rx_bytes":10,"tx_bytes":20},"eth1":{"rx_bytes":1,"tx_bytes":2}},
+			"blkio_stats":{"io_service_bytes_recursive":[
+				{"major":8,"minor":0,"op":"Read","value":300},
+				{"major":8,"minor":16,"op":"read","value":5},
+				{"major":8,"minor":0,"op":"Write","value":400},
+				{"major":8,"minor":0,"op":"Total","value":705}
+			]}
+		}`)
+	}))
+	t.Cleanup(server.Close)
+	dockerClient, err := client.New(
+		client.WithHost(server.URL),
+		client.WithAPIVersion("1.41"),
+		client.WithHTTPClient(server.Client()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = dockerClient.Close() })
+
+	svc := New(Params{
+		GetClient:  func(context.Context) (*client.Client, error) { return dockerClient, nil },
+		DockerHost: func() string { return "test" },
+		CacheTTL:   ContainerResourceSampleTTL,
+	})
+	samples, err := svc.Collect(t.Context(), []types.ContainerSummary{{ID: "web", State: "running"}}, ContainerResourceSampleTTL, false)
+	require.NoError(t, err)
+	require.Contains(t, samples, "web")
+	sample := samples["web"]
+	require.Equal(t, uint64(305), sample.BlockReadBytes)
+	require.Equal(t, uint64(400), sample.BlockWriteBytes)
+	require.Equal(t, uint64(11), sample.NetworkRxBytes)
+	require.Equal(t, uint64(22), sample.NetworkTxBytes)
+	require.Equal(t, uint64(7), sample.PIDs)
 }

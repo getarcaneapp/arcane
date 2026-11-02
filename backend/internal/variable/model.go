@@ -1,22 +1,24 @@
 package variable
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/environment"
 )
 
-// GlobalVariable is a manager-level key/value variable materialized into each
-// environment's .env.global file. Value holds ciphertext when IsSecret is true.
-type GlobalVariable struct {
-	database.BaseModel
+type (
+	// GlobalVariable is a manager-level key/value variable materialized into each
+	// environment's .env.global file. Value holds ciphertext when IsSecret is true.
+	GlobalVariable struct {
+		database.BaseModel
 
-	Key      string `json:"key" gorm:"column:key" sortable:"true"`
-	Value    string `json:"-" gorm:"column:value"`
-	IsSecret bool   `json:"isSecret" gorm:"column:is_secret"`
-	// No gorm default tag: a default:true tag would make GORM omit false on
-	// insert and the column default would silently win.
-	AllEnvironments bool                      `json:"allEnvironments" gorm:"column:all_environments"`
-	Environments    []environment.Environment `json:"-" gorm:"many2many:global_variable_environments;joinForeignKey:GlobalVariableID;joinReferences:EnvironmentID"`
-}
+		Key          string                    `json:"key" gorm:"column:key" sortable:"true"`
+		Value        string                    `json:"-" gorm:"column:value"`
+		Environments []environment.Environment `json:"-" gorm:"many2many:global_variable_environments;joinForeignKey:GlobalVariableID;joinReferences:EnvironmentID"`
+		IsSecret     bool                      `json:"isSecret" gorm:"column:is_secret"`
+		// No gorm default tag: a default:true tag would make GORM omit false on
+		// insert and the column default would silently win.
+		AllEnvironments bool `json:"allEnvironments" gorm:"column:all_environments"`
+	}
+)
 
 func (GlobalVariable) TableName() string { return "global_variables" }

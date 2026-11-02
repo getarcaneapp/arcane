@@ -6,7 +6,6 @@
 	} from '@simplewebauthn/browser';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { Temporal } from 'temporal-polyfill';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
@@ -23,7 +22,7 @@
 	import MFADialog from './mfa-dialog.svelte';
 	import StepUpDialog from './step-up-dialog.svelte';
 
-	let passkeys = $state<Passkey[]>([]);
+	let passkeys = $state.raw<Passkey[]>([]);
 	let capabilities = $state<PasskeyCapabilities | null>(null);
 	let mfaStatus = $state<MFAStatus | null>(null);
 	let loading = $state(true);
@@ -372,7 +371,7 @@
 				<Alert.Description>
 					<p>{m.account_passkey_mfa_recovery_codes_description()}</p>
 					<p class="mt-2 font-medium">{m.account_passkey_mfa_codes_warning()}</p>
-					<ul class="mt-3 grid gap-1 rounded border bg-background p-3 font-mono text-xs leading-6 sm:grid-cols-2">
+					<ul class="mt-3 grid gap-1 rounded-xl border bg-background p-3 font-mono text-xs leading-6 sm:grid-cols-2">
 						{#each recoveryCodes as code (code)}
 							<li>{code}</li>
 						{/each}
@@ -417,7 +416,7 @@
 			</Alert.Root>
 		{/if}
 
-		<div class="overflow-hidden rounded-xl border border-border/60 bg-card/30">
+		<div class="overflow-hidden rounded-xl border border-border/70 bg-card/10">
 			{#if loading}
 				<div class="p-6 text-center text-sm text-muted-foreground">{m.common_loading()}</div>
 			{:else if passkeys.length === 0}

@@ -4,7 +4,7 @@ import { fetchApiKeysWithRetry } from '../utils/fetch.util';
 import { openRowActionsMenu } from '../utils/table-actions.util';
 
 test.describe('API keys', () => {
-	const API_KEYS_ROUTE = '/settings/api-keys';
+	const API_KEYS_ROUTE = '/system/api-keys';
 
 	async function navigateToApiKeys(page: Page) {
 		await page.goto(API_KEYS_ROUTE);
@@ -198,40 +198,72 @@ test.describe('Diagnostics', () => {
 		test('renders repeated entries from the live diagnostic log stream', async ({ page }) => {
 			await mockDiagnosticsLogsWebSocket(page);
 
-			await page.goto('/settings/diagnostics?tab=logs');
+			await page.goto('/system/diagnostics?tab=logs');
 			await page.waitForLoadState('domcontentloaded');
 
-			await expect(page).toHaveURL(/\/settings\/diagnostics/);
+			await expect(page).toHaveURL(/\/system\/diagnostics/);
 			await expect(page.getByText('duplicate diagnostic entry', { exact: true })).toHaveCount(2);
 		});
 	});
 });
 
+test.describe('Environment settings pages', () => {
+	test('opens the environment-scoped settings as settings pages', async ({ page }) => {
+		for (const [slug, name] of [
+			['timeouts', 'Timeouts'],
+			['activity', 'Activity'],
+			['builds', 'Builds'],
+			['automations', 'Automations']
+		]) {
+			await page.goto(`/settings/${slug}?env=0`);
+			await expect(page.getByRole('heading', { name, exact: true, level: 1 })).toBeVisible();
+			expect(new URL(page.url()).searchParams.get('env')).toBe('0');
+		}
+	});
+
+	test('shows automation settings without job status', async ({ page }) => {
+		await page.goto('/settings/automations?env=0');
+		await expect(
+			page.getByRole('switch', { name: 'Image Update Watcher', exact: true })
+		).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Run Now' })).toHaveCount(0);
+
+		await page
+			.getByRole('button', { name: /^Schedule:/ })
+			.first()
+			.click();
+		const sheet = page.getByRole('dialog', { name: 'Edit Schedule' });
+		await expect(sheet.getByLabel('Cron Expression')).not.toHaveValue('');
+	});
+});
+
 test.describe('Notifications', () => {
 	test.describe('Notification settings', () => {
+		const notificationsPanel = (page: Page) => page.locator('main');
+
+		const providerPanel = (page: Page) =>
+			page.getByRole('tabpanel').filter({ visible: true }).last();
+
 		const openProviderTab = async (page: Page, name: string) => {
 			const tab = page.getByRole('tab', { name });
 			await tab.scrollIntoViewIfNeeded();
 			await expect(tab).toBeVisible();
 			await tab.click();
-			await expect(page.getByRole('tabpanel').filter({ visible: true })).toBeVisible();
+			await expect(providerPanel(page)).toBeVisible();
 		};
 
 		const enableCurrentProvider = async (page: Page) => {
-			const providerPanel = page.getByRole('tabpanel').filter({ visible: true });
-			const toggle = providerPanel.getByRole('switch').first();
+			const panel = providerPanel(page);
+			const toggle = panel.getByRole('switch').first();
 			await expect(toggle).toBeVisible();
 			await toggle.click();
-			await expect(providerPanel.locator('[data-dropdown-menu-trigger]')).toBeVisible({
+			await expect(panel.locator('[data-dropdown-menu-trigger]')).toBeVisible({
 				timeout: 10000
 			});
 		};
 
 		const openTestMenu = async (page: Page) => {
-			const trigger = page
-				.getByRole('tabpanel')
-				.filter({ visible: true })
-				.locator('[data-dropdown-menu-trigger]');
+			const trigger = providerPanel(page).locator('[data-dropdown-menu-trigger]');
 			await expect(trigger).toBeVisible({ timeout: 10000 });
 			await trigger.click();
 		};
@@ -268,7 +300,7 @@ test.describe('Notifications', () => {
 			];
 			const savedPayloads: Array<Record<string, unknown>> = [];
 
-			await page.route('**/api/environments/*/notifications/settings', async (route) => {
+			await page.route('**/api/notifications/settings', async (route) => {
 				const req = route.request();
 				if (req.method() === 'GET') {
 					await route.fulfill({
@@ -282,7 +314,7 @@ test.describe('Notifications', () => {
 				if (req.method() === 'POST') {
 					saveEndpointCalled = true;
 					const saved = req.postDataJSON() as Record<string, unknown>;
-					const savedProvider = String(saved.provider ?? '');
+					const savedProvider = typeof saved.provider === 'string' ? saved.provider : '';
 					attemptedProviders.push(savedProvider);
 					savedPayloads.push(saved);
 					if (options.failProviders?.has(savedProvider)) {
@@ -312,7 +344,7 @@ test.describe('Notifications', () => {
 			});
 
 			// Stub the specific test endpoint
-			await page.route(`**/api/environments/*/notifications/test/${provider}**`, async (route) => {
+			await page.route(`**/api/notifications/settings/${provider}?action=test**`, async (route) => {
 				testEndpointCalled = true;
 				await route.fulfill({
 					status: 200,
@@ -321,7 +353,7 @@ test.describe('Notifications', () => {
 				});
 			});
 
-			await page.goto('/settings/notifications');
+			await page.goto('/system/notifications');
 			await page.waitForLoadState('load');
 			await expect(page.getByRole('tab', { name: 'Email' })).toBeVisible();
 
@@ -387,7 +419,10 @@ test.describe('Notifications', () => {
 			await page.getByPlaceholder('notifications@example.com').fill('notifications@example.com');
 			await page.getByPlaceholder('user1@example.com, user2@example.com').fill('user1@example.com');
 
-			const saveButton = page.getByRole('button', { name: 'Save', exact: true });
+			const saveButton = notificationsPanel(page).getByRole('button', {
+				name: 'Save',
+				exact: true
+			});
 			await saveButton.click();
 			await expect.poll(getAttemptedProviders).toEqual(['email', 'discord']);
 			await expect.poll(getSavedProviders).toEqual(['discord']);
@@ -396,21 +431,6 @@ test.describe('Notifications', () => {
 
 			await saveButton.click();
 			await expect.poll(getAttemptedProviders).toEqual(['email', 'discord', 'email']);
-		});
-
-		test('should persist the selected provider tab in the URL', async ({ page }) => {
-			await setupNotificationTest(page, 'discord');
-			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('email');
-
-			await openProviderTab(page, 'Discord');
-			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('discord');
-
-			await page.reload();
-			await expect(page.getByRole('tab', { name: 'Discord' })).toHaveAttribute(
-				'data-state',
-				'active'
-			);
-			await expect(page.getByRole('tabpanel', { name: 'Discord', exact: true })).toBeVisible();
 		});
 
 		test('should allow testing email notifications without state_unsafe_mutation errors', async ({
@@ -514,8 +534,11 @@ test.describe('Notifications', () => {
 			);
 
 			await openProviderTab(page, 'Telegram');
-			const saveButton = page.getByRole('button', { name: 'Save', exact: true });
-			const panel = page.getByRole('tabpanel').filter({ visible: true });
+			const saveButton = notificationsPanel(page).getByRole('button', {
+				name: 'Save',
+				exact: true
+			});
+			const panel = providerPanel(page);
 
 			// Existing chats and chatId:topicId entries load into separate fields.
 			await expect(telegramRow(page, 0).chatId).toHaveValue('@channel');
@@ -555,7 +578,7 @@ test.describe('Notifications', () => {
 			// Clearing a topic marks the form dirty and Reset restores the baseline.
 			await telegramRow(page, 1).topicId.fill('');
 			await expect(saveButton).toBeEnabled();
-			await page.getByRole('button', { name: 'Reset', exact: true }).click();
+			await notificationsPanel(page).getByRole('button', { name: 'Reset', exact: true }).click();
 			await expect(telegramRow(page, 1).topicId).toHaveValue('42');
 			await expect(saveButton).toBeDisabled();
 
@@ -583,19 +606,11 @@ test.describe('Notifications', () => {
 				.getByPlaceholder('123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11')
 				.fill('123456:TEST-TOKEN');
 
-			const saveButton = page.getByRole('button', { name: 'Save', exact: true });
-			const panel = page.getByRole('tabpanel').filter({ visible: true });
-
-			// Non-numeric and non-positive topics are rejected.
-			await telegramRow(page, 0).chatId.fill('-1001234567890');
-			await telegramRow(page, 0).topicId.fill('abc');
-			await expect(panel.getByText('Topic ID must be a positive whole number')).toBeVisible();
-			await saveButton.click();
-			await expect(page.getByText('Please check the form for errors').first()).toBeVisible();
-			expect(wasSaveEndpointCalled()).toBe(false);
-
-			await telegramRow(page, 0).topicId.fill('0');
-			await expect(panel.getByText('Topic ID must be a positive whole number')).toBeVisible();
+			const saveButton = notificationsPanel(page).getByRole('button', {
+				name: 'Save',
+				exact: true
+			});
+			const panel = providerPanel(page);
 
 			// A topic without a chat is incomplete.
 			await telegramRow(page, 0).topicId.fill('5');

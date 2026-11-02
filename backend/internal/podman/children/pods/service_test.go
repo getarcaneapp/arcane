@@ -2,35 +2,36 @@ package pods
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/podman"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/podman"
+	"getarcane.dev/types/v3"
 )
 
 func TestCreateMapsRequestToPodSpec(t *testing.T) {
 	tests := []struct {
-		name string
-		req  podmantypes.PodCreateRequest
 		want map[string]any
+		name string
+		req  types.PodCreateRequest
 	}{
 		{
 			name: "named network with ports",
-			req: podmantypes.PodCreateRequest{
+			req: types.PodCreateRequest{
 				Name:             " web ",
 				Hostname:         "web-host",
 				Labels:           map[string]string{"tier": "front"},
-				Networks:         []podmantypes.PodNetwork{{Name: "frontend"}},
+				Networks:         []types.PodNetwork{{Name: "frontend"}},
 				SharedNamespaces: []string{"net", "ipc"},
-				PortMappings: []podmantypes.PodPortMapping{
+				PortMappings: []types.PodPortMapping{
 					{
 						ContainerPort: 80,
 						HostPort:      8080,
@@ -57,7 +58,7 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 		},
 		{
 			name: "host network without infra",
-			req: podmantypes.PodCreateRequest{
+			req: types.PodCreateRequest{
 				Name:        "host-pod",
 				NetworkMode: "host",
 				NoInfra:     true,
@@ -71,7 +72,7 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 		},
 		{
 			name: "every option",
-			req: podmantypes.PodCreateRequest{
+			req: types.PodCreateRequest{
 				Name:               "full",
 				ExitPolicy:         "stop",
 				RestartPolicy:      "on-failure",
@@ -88,7 +89,7 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 				UIDMap:             []string{"0:100000:65536"},
 				NetworkMode:        "pasta",
 				NetworkOptions:     []string{"--ipv4-only"},
-				Networks: []podmantypes.PodNetwork{{
+				Networks: []types.PodNetwork{{
 					Name:          "backend",
 					Aliases:       []string{"api"},
 					StaticIPs:     []string{"10.89.0.10"},
@@ -111,12 +112,12 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 				Memory:             "512m",
 				MemorySwap:         "-1",
 				BlkioWeight:        300,
-				BlkioWeightDevices: []podmantypes.PodDeviceLimit{{Device: "8:0", Value: "200"}},
-				DeviceReadBps:      []podmantypes.PodDeviceLimit{{Device: "8:0", Value: "1mb"}},
-				DeviceWriteBps:     []podmantypes.PodDeviceLimit{{Device: "8:16", Value: "2mb"}},
+				BlkioWeightDevices: []types.PodDeviceLimit{{Device: "8:0", Value: "200"}},
+				DeviceReadBps:      []types.PodDeviceLimit{{Device: "8:0", Value: "1mb"}},
+				DeviceWriteBps:     []types.PodDeviceLimit{{Device: "8:16", Value: "2mb"}},
 				Devices:            []string{"/dev/fuse"},
 				GPUs:               []string{"all"},
-				Volumes: []podmantypes.PodVolume{
+				Volumes: []types.PodVolume{
 					{
 						Source:      "/srv/data",
 						Destination: "/data",
@@ -237,7 +238,7 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 			var got map[string]any
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				assert.Equal(t, "/v4.0.0/libpod/pods/create", r.URL.Path)
-				assert.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+				assert.NoError(t, json.UnmarshalRead(r.Body, &got))
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{"Id":"pod-1"}`))
 			}))
@@ -258,13 +259,21 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 
 func TestCreateRejectsInvalidOptions(t *testing.T) {
 	tests := []struct {
-		name string
-		req  podmantypes.PodCreateRequest
+		name  string
+		field string
+		req   types.PodCreateRequest
 	}{
-		{name: "memory", req: podmantypes.PodCreateRequest{Name: "bad", Memory: "lots"}},
-		{name: "device", req: podmantypes.PodCreateRequest{Name: "bad", DeviceReadBps: []podmantypes.PodDeviceLimit{{Device: "/dev/sda", Value: "1mb"}}}},
-		{name: "weight", req: podmantypes.PodCreateRequest{Name: "bad", BlkioWeightDevices: []podmantypes.PodDeviceLimit{{Device: "8:0", Value: "heavy"}}}},
-		{name: "id map", req: podmantypes.PodCreateRequest{Name: "bad", GIDMap: []string{"0:100000"}}},
+		{name: "memory", field: "memory", req: types.PodCreateRequest{Name: "bad", Memory: "lots"}},
+		{name: "terabyte memory", field: "memory", req: types.PodCreateRequest{Name: "bad", Memory: "1t"}},
+		{name: "device", field: "deviceReadBps", req: types.PodCreateRequest{Name: "bad", DeviceReadBps: []types.PodDeviceLimit{{Device: "/dev/sda", Value: "1mb"}}}},
+		{name: "signed device", field: "deviceWriteBps", req: types.PodCreateRequest{Name: "bad", DeviceWriteBps: []types.PodDeviceLimit{{Device: "+8:0", Value: "1mb"}}}},
+		{name: "weight", field: "blkioWeightDevices", req: types.PodCreateRequest{Name: "bad", BlkioWeightDevices: []types.PodDeviceLimit{{Device: "8:0", Value: "heavy"}}}},
+		{name: "id map", field: "gidMap", req: types.PodCreateRequest{Name: "bad", GIDMap: []string{"0:100000"}}},
+		{name: "id map trailing text", field: "uidMap", req: types.PodCreateRequest{Name: "bad", UIDMap: []string{"0:100000:65536x"}}},
+		{name: "invalid name", field: "name", req: types.PodCreateRequest{Name: "-bad"}},
+		{name: "name with slash", field: "name", req: types.PodCreateRequest{Name: "bad/pod"}},
+		{name: "cpuset cpus", field: "cpusetCpus", req: types.PodCreateRequest{Name: "bad", CPUSetCPUs: "0-"}},
+		{name: "cpuset mems", field: "cpusetMems", req: types.PodCreateRequest{Name: "bad", CPUSetMems: "0,,1"}},
 	}
 
 	for _, tt := range tests {
@@ -274,22 +283,29 @@ func TestCreateRejectsInvalidOptions(t *testing.T) {
 				return podman.Runtime{}, nil
 			})
 			_, err := svc.Create(t.Context(), tt.req)
-			require.ErrorIs(t, err, common.ErrBadRequest)
+			require.ErrorIs(t, err, common.ErrValidation)
+			fieldErr, ok := errors.AsType[*types.FieldError](err)
+			require.True(t, ok)
+			require.Equal(t, tt.field, fieldErr.Field)
 		})
 	}
+}
+
+func TestValidatePodRequestAcceptsValidNameAndCpusets(t *testing.T) {
+	require.NoError(t, validatePodRequest(types.PodCreateRequest{Name: "web_pod.v1-2", CPUSetCPUs: "0-3,5", CPUSetMems: "0"}))
 }
 
 func TestInspectMergesContainerDetails(t *testing.T) {
 	tests := []struct {
 		name       string
+		want       []types.PodInspectContainer
 		listStatus int
-		want       []podmantypes.PodInspectContainer
 		wantErr    bool
 	}{
 		{
 			name:       "merges list details by id",
 			listStatus: http.StatusOK,
-			want: []podmantypes.PodInspectContainer{
+			want: []types.PodInspectContainer{
 				{
 					ID:      "infra1",
 					Name:    "web-infra",
@@ -298,7 +314,7 @@ func TestInspectMergesContainerDetails(t *testing.T) {
 					Status:  "Up 2 minutes",
 					Created: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC),
 					IsInfra: true,
-					Ports: []podmantypes.PodPortMapping{
+					Ports: []types.PodPortMapping{
 						{
 							ContainerPort: 80,
 							HostPort:      8080,
@@ -315,7 +331,7 @@ func TestInspectMergesContainerDetails(t *testing.T) {
 					Status:   "Exited (1) 1 minute ago",
 					Created:  time.Date(2026, 10, 1, 12, 1, 0, 0, time.UTC),
 					ExitCode: 1,
-					Ports:    []podmantypes.PodPortMapping{},
+					Ports:    []types.PodPortMapping{},
 				},
 				{
 					ID:    "gone1",

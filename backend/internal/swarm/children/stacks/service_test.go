@@ -2,20 +2,40 @@ package stacks
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/swarm"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
+
+type (
+	stackSourceDeployRecorder struct {
+		lastReq types.SwarmStackDeployRequest
+		calls   int
+	}
+)
+
+var fullStackSourceSubmitted = map[string]bool{
+	"composeContent":  true,
+	"overrideContent": true,
+	"envContent":      true,
+	"files":           true,
+}
 
 func setupSwarmServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
@@ -27,16 +47,13 @@ func setupSwarmServiceTestDB(t *testing.T) *database.DB {
 
 func newSettingsServiceForSwarmTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	svc, err := settings.NewSettingsService(ctx, db, &config.Config{})
+	settingsEnv, err := settings.LoadEnv()
+	require.NoError(t, err)
+	svc, err := settings.NewSettingsService(ctx, db, &config.Config{}, settingsEnv)
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}
 	return svc, err
-}
-
-type stackSourceDeployRecorder struct {
-	calls   int
-	lastReq swarm.StackDeployRequest
 }
 
 func stubStackSourceUpdateDeploy(t *testing.T) *stackSourceDeployRecorder {
@@ -44,10 +61,10 @@ func stubStackSourceUpdateDeploy(t *testing.T) *stackSourceDeployRecorder {
 	original := deployStackAfterSourceUpdate
 	t.Cleanup(func() { deployStackAfterSourceUpdate = original })
 	rec := &stackSourceDeployRecorder{}
-	deployStackAfterSourceUpdate = func(_ *Service, _ context.Context, _ string, req swarm.StackDeployRequest) (*swarm.StackDeployResponse, error) {
+	deployStackAfterSourceUpdate = func(_ *Service, _ context.Context, _ string, req types.SwarmStackDeployRequest) (*types.SwarmStackDeployResponse, error) {
 		rec.calls++
 		rec.lastReq = req
-		return &swarm.StackDeployResponse{Name: req.Name}, nil
+		return &types.SwarmStackDeployResponse{Name: req.Name}, nil
 	}
 	return rec
 }
@@ -56,17 +73,22 @@ func TestService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager(t *t
 	ctx := t.Context()
 	db := setupSwarmServiceTestDB(t)
 	rootDir := t.TempDir()
-	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
+	t.Setenv("ARCANE_SWARM_STACK_SOURCES_DIRECTORY", rootDir)
 
 	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
 	require.NoError(t, err)
 
-	svc := NewService(nil, nil, nil, nil, nil, settingsSvc)
+	svc := NewService(ServiceParams{
+		SettingsService: settingsSvc,
+	})
 	deployRec := stubStackSourceUpdateDeploy(t)
 
-	updated, err := svc.UpdateStackSource(ctx, "0", "demo-stack", swarm.StackSourceUpdateRequest{
-		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
-		EnvContent:     "FOO=bar\n",
+	updated, err := svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source: types.SwarmStackSource{
+			ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+			EnvContent:     "FOO=bar\n",
+		},
+		Submitted: fullStackSourceSubmitted,
 	})
 	require.NoError(t, err)
 	require.Equal(t, "demo-stack", updated.Name)
@@ -87,12 +109,15 @@ func TestService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager(t *t
 	require.Equal(t, updated.EnvContent, source.EnvContent)
 
 	// Test with additional files
-	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", swarm.StackSourceUpdateRequest{
-		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
-		Files: []swarm.SyncFile{
-			{RelativePath: "config/nginx.conf", Content: []byte("worker_processes 1;")},
-			{RelativePath: "scripts/setup.sh", Content: []byte("#!/bin/sh")},
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source: types.SwarmStackSource{
+			ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+			Files: []types.SwarmSyncFile{
+				{RelativePath: "config/nginx.conf", Content: []byte("worker_processes 1;")},
+				{RelativePath: "scripts/setup.sh", Content: []byte("#!/bin/sh")},
+			},
 		},
+		Submitted: fullStackSourceSubmitted,
 	})
 	require.NoError(t, err)
 	require.FileExists(t, filepath.Join(rootDir, "0", "demo-stack", "config", "nginx.conf"))
@@ -102,11 +127,14 @@ func TestService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager(t *t
 	require.NoError(t, err)
 	require.Len(t, source.Files, 2)
 
-	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", swarm.StackSourceUpdateRequest{
-		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
-		Files: []swarm.SyncFile{
-			{RelativePath: "config/nginx.conf", Content: []byte("worker_processes auto;")},
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source: types.SwarmStackSource{
+			ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+			Files: []types.SwarmSyncFile{
+				{RelativePath: "config/nginx.conf", Content: []byte("worker_processes auto;")},
+			},
 		},
+		Submitted: fullStackSourceSubmitted,
 	})
 	require.NoError(t, err)
 	require.NoFileExists(t, filepath.Join(rootDir, "0", "demo-stack", "scripts", "setup.sh"))
@@ -120,19 +148,24 @@ func TestService_UpdateAndGetStackSource_RoundTripsOverride(t *testing.T) {
 	ctx := t.Context()
 	db := setupSwarmServiceTestDB(t)
 	rootDir := t.TempDir()
-	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
+	t.Setenv("ARCANE_SWARM_STACK_SOURCES_DIRECTORY", rootDir)
 
 	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
 	require.NoError(t, err)
 
-	svc := NewService(nil, nil, nil, nil, nil, settingsSvc)
+	svc := NewService(ServiceParams{
+		SettingsService: settingsSvc,
+	})
 	stubStackSourceUpdateDeploy(t)
 
 	overridePath := filepath.Join(rootDir, "0", "demo-stack", "compose.override.yaml")
 
-	updated, err := svc.UpdateStackSource(ctx, "0", "demo-stack", swarm.StackSourceUpdateRequest{
-		ComposeContent:  "services:\n  web:\n    image: nginx:alpine\n",
-		OverrideContent: "services:\n  web:\n    image: busybox:latest\n",
+	updated, err := svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source: types.SwarmStackSource{
+			ComposeContent:  "services:\n  web:\n    image: nginx:alpine\n",
+			OverrideContent: "services:\n  web:\n    image: busybox:latest\n",
+		},
+		Submitted: fullStackSourceSubmitted,
 	})
 	require.NoError(t, err)
 	require.Equal(t, "services:\n  web:\n    image: busybox:latest\n", updated.OverrideContent)
@@ -145,8 +178,11 @@ func TestService_UpdateAndGetStackSource_RoundTripsOverride(t *testing.T) {
 	require.Empty(t, source.Files)
 
 	// Clearing the override removes the file so a UI redeploy stops merging it.
-	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", swarm.StackSourceUpdateRequest{
-		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source: types.SwarmStackSource{
+			ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+		},
+		Submitted: fullStackSourceSubmitted,
 	})
 	require.NoError(t, err)
 	require.NoFileExists(t, overridePath)
@@ -160,28 +196,33 @@ func TestService_UpdateStackSource_PrunesAndRestoresOnDeployFailure(t *testing.T
 	ctx := t.Context()
 	db := setupSwarmServiceTestDB(t)
 	rootDir := t.TempDir()
-	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
+	t.Setenv("ARCANE_SWARM_STACK_SOURCES_DIRECTORY", rootDir)
 
 	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
 	require.NoError(t, err)
 
-	svc := NewService(nil, nil, nil, nil, nil, settingsSvc)
+	svc := NewService(ServiceParams{
+		SettingsService: settingsSvc,
+	})
 
 	original := deployStackAfterSourceUpdate
 	t.Cleanup(func() { deployStackAfterSourceUpdate = original })
-	var lastReq swarm.StackDeployRequest
+	var lastReq types.SwarmStackDeployRequest
 	var deployErr error
-	deployStackAfterSourceUpdate = func(_ *Service, _ context.Context, _ string, req swarm.StackDeployRequest) (*swarm.StackDeployResponse, error) {
+	deployStackAfterSourceUpdate = func(_ *Service, _ context.Context, _ string, req types.SwarmStackDeployRequest) (*types.SwarmStackDeployResponse, error) {
 		lastReq = req
 		if deployErr != nil {
 			return nil, deployErr
 		}
-		return &swarm.StackDeployResponse{Name: req.Name}, nil
+		return &types.SwarmStackDeployResponse{Name: req.Name}, nil
 	}
 
 	firstCompose := "services:\n  web:\n    image: nginx:alpine\n"
-	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", swarm.StackSourceUpdateRequest{
-		ComposeContent: firstCompose,
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source: types.SwarmStackSource{
+			ComposeContent: firstCompose,
+		},
+		Submitted: fullStackSourceSubmitted,
 	})
 	require.NoError(t, err)
 	// The saved source is the full stack spec: services removed from it must
@@ -189,8 +230,11 @@ func TestService_UpdateStackSource_PrunesAndRestoresOnDeployFailure(t *testing.T
 	require.True(t, lastReq.Prune)
 
 	deployErr = errors.New("deploy failed")
-	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", swarm.StackSourceUpdateRequest{
-		ComposeContent: "services:\n  web:\n    image: nginx:broken\n",
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source: types.SwarmStackSource{
+			ComposeContent: "services:\n  web:\n    image: nginx:broken\n",
+		},
+		Submitted: fullStackSourceSubmitted,
 	})
 	require.ErrorContains(t, err, "deploy failed")
 
@@ -198,4 +242,80 @@ func TestService_UpdateStackSource_PrunesAndRestoresOnDeployFailure(t *testing.T
 	source, err := svc.GetStackSource(ctx, "0", "demo-stack")
 	require.NoError(t, err)
 	require.Equal(t, firstCompose, source.ComposeContent)
+}
+
+func stacksScopeContext(t *testing.T, target string, bodies map[string]any) context.Context {
+	t.Helper()
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.MarshalWrite(w, body)
+		}),
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	})
+}
+
+func TestAggregateMergesEnvironments(t *testing.T) {
+	ctx := stacksScopeContext(t, "/api/environments/a,b,c/swarm/stacks", map[string]any{
+		"a": types.Paginated[types.SwarmStackSummary]{
+			Success: true,
+			Data:    []types.SwarmStackSummary{{ID: "web", Name: "web"}},
+		},
+		"b": types.Paginated[types.SwarmStackSummary]{
+			Success: true,
+			Data:    []types.SwarmStackSummary{{ID: "api", Name: "api"}},
+		},
+	})
+
+	body, err := (&Service{}).Aggregate(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
+	require.NoError(t, err)
+
+	require.Len(t, body.Data, 2)
+	require.ElementsMatch(t, []string{"Env a", "Env b"}, []string{body.Data[0].Environment().Name, body.Data[1].Environment().Name})
+	require.EqualValues(t, 2, body.Pagination.TotalItems)
+	require.Len(t, body.FailedEnvironments, 1)
+	require.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
+}
+
+func TestAggregateKeepsSourceOwningManagerPerCluster(t *testing.T) {
+	ctx := stacksScopeContext(t, "/api/environments/a,b,c/swarm/stacks", map[string]any{
+		"a": types.Paginated[types.SwarmStackSummary]{
+			Success: true,
+			Data: []types.SwarmStackSummary{
+				{ID: "web", Name: "web", ClusterID: "cluster-1"},
+				{ID: "api", Name: "api", ClusterID: "cluster-1"},
+			},
+		},
+		"b": types.Paginated[types.SwarmStackSummary]{
+			Success: true,
+			Data: []types.SwarmStackSummary{
+				{ID: "web", Name: "web", ClusterID: "cluster-1", HasSource: true},
+				{ID: "api", Name: "api", ClusterID: "cluster-1"},
+				{ID: "saved", Name: "saved", HasSource: true},
+			},
+		},
+		"c": types.Paginated[types.SwarmStackSummary]{
+			Success: true,
+			Data:    []types.SwarmStackSummary{{ID: "web", Name: "web", ClusterID: "cluster-2"}},
+		},
+	})
+
+	body, err := (&Service{}).Aggregate(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
+	require.NoError(t, err)
+
+	rows := make([]string, 0, len(body.Data))
+	for _, item := range body.Data {
+		rows = append(rows, item.Environment().ID+"/"+item.Name)
+	}
+	require.ElementsMatch(t, []string{"a/api", "b/web", "b/saved", "c/web"}, rows)
+	require.EqualValues(t, 4, body.Pagination.TotalItems)
 }

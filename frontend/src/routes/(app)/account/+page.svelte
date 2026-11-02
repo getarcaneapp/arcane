@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
-	import { Temporal } from 'temporal-polyfill';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
@@ -11,7 +10,7 @@
 	import * as ImageCropper from '#lib/components/ui/image-cropper/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
-	import { UserIcon, SettingsIcon, TestIcon } from '#lib/icons/index.js';
+	import { UserIcon, SettingsIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { userService } from '#lib/services/user-service.js';
@@ -21,21 +20,20 @@
 	import { avatarUploadLimitBytes, prepareAvatarUploadFile } from '#lib/utils/avatar-upload.js';
 	import { getDefaultProfilePicture } from '#lib/utils/docker.js';
 	import { formatDate, formatRelativeTime } from '#lib/utils/formatting.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import AccountApiKeysPanel from './components/account-api-keys-panel.svelte';
 	import AccountPreferencesPanel from './components/account-preferences-panel.svelte';
 	import AccountSecurityPanel from './components/account-security-panel.svelte';
-	import AllEnvironmentsPreferences from './components/all-environments-preferences.svelte';
 
-	type AccountTab = 'account' | 'preferences' | 'previews';
+	type AccountTab = 'account' | 'preferences';
 
 	const accountTabItems = $derived.by(
 		() =>
 			[
 				{ value: 'account', label: m.common_account(), icon: UserIcon },
-				{ value: 'preferences', label: m.account_preferences(), icon: SettingsIcon },
-				{ value: 'previews', label: m.previews(), icon: TestIcon }
+				{ value: 'preferences', label: m.account_preferences(), icon: SettingsIcon }
 			] satisfies TabItem[]
 	);
 	const urlTab = useUrlTab<AccountTab>({
@@ -52,7 +50,7 @@
 	};
 
 	function prettyRoleName(roleId: string): string {
-		return BUILT_IN_ROLE_LABELS[roleId]?.() ?? roleId.replace(/^role_/, '').replace(/_/g, ' ');
+		return BUILT_IN_ROLE_LABELS[roleId]?.() ?? roleId.replace('role_', '').replaceAll('_', ' ');
 	}
 
 	const queryClient = useQueryClient();
@@ -75,7 +73,7 @@
 	const profileEmail = $derived(activeProfileDraft?.email ?? currentUser?.email ?? '');
 	let profileSaving = $state(false);
 
-	const avatarUrl = $derived(updateAvatar(currentUser?.email, gravatarEnabled));
+	const avatarUrl = $derived(updateAvatar(currentUser?.email ?? undefined, gravatarEnabled));
 	let avatarCacheBuster = $state(Temporal.Now.instant().epochMilliseconds);
 	const avatarSrc = $derived(currentUser?.avatarUrl ? `${currentUser.avatarUrl}?t=${avatarCacheBuster}` : '');
 	let cropperAvatarSrc = $state('');
@@ -117,10 +115,12 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const updated = await userService.updateMyProfile({
-						displayName: profileDisplayName.trim(),
-						email: profileEmail.trim()
-					});
+					const updated = await userService.updateMyProfile(
+						changedFields(
+							{ ...currentUser, displayName: currentUser.displayName || null, email: currentUser.email || null },
+							{ displayName: profileDisplayName.trim() || null, email: profileEmail.trim() || null }
+						)
+					);
 					await userStore.setUser(updated);
 					await queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
 					if (profileDraft === submittedDraft) profileDraft = null;
@@ -388,10 +388,6 @@
 
 			<Tabs.Content value="preferences" class="mt-6">
 				<AccountPreferencesPanel />
-			</Tabs.Content>
-
-			<Tabs.Content value="previews" class="mt-6">
-				<AllEnvironmentsPreferences />
 			</Tabs.Content>
 		</Tabs.Root>
 	{:else}

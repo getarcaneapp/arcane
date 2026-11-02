@@ -1,14 +1,13 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { hasAnyPermission } from '#lib/utils/auth.js';
 
-	let { environmentId: targetEnvironmentId }: { environmentId?: string } = $props();
-	const environmentId = $derived(targetEnvironmentId ?? environmentStore.selected?.id ?? '0');
+	let { environmentId }: { environmentId: string } = $props();
 </script>
 
 <div class="flex flex-col items-start gap-4 p-6" role="status">
@@ -23,7 +22,7 @@
 		<ArcaneButton
 			action="base"
 			customLabel={m.features_title()}
-			onclick={() => goto(`/environments/${environmentId}?tab=features#features`)}
+			onclick={() => goto(resolve(`/(app)/environments/[id]?tab=features#features`, { id: environmentId }))}
 		/>
 	{/if}
 </div>

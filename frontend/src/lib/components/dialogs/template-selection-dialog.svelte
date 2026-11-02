@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -28,7 +29,8 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { templateService } from '#lib/services/template-service.js';
 	import type { Template } from '#lib/types/swarm.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
+	import { withOccurrenceKeys } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	interface Props {
@@ -42,7 +44,7 @@
 	void open;
 
 	const loadingStates = new SvelteSet<string>();
-	const canCreateTemplate = $derived(hasPermission('templates:create'));
+	const canCreateTemplate = $derived(hasShownPermission('templates:create'));
 	let sortBy = $state<'name-asc' | 'name-desc'>('name-asc');
 	let groupByRegistry = $state(true);
 	let searchQuery = $state('');
@@ -249,9 +251,8 @@
 
 			{#if normalizeTags(template.metadata?.tags).length > 0}
 				<div class="mb-3 flex flex-wrap gap-1">
-					<!-- Template metadata may contain duplicate tags; badges have no local state. -->
-					{#each normalizeTags(template.metadata?.tags) as tag}
-						<Badge variant="outline" size="sm">{tag}</Badge>
+					{#each withOccurrenceKeys(normalizeTags(template.metadata?.tags)) as tag (tag.key)}
+						<Badge variant="outline" size="sm">{tag.value}</Badge>
 					{/each}
 				</div>
 			{/if}
@@ -349,7 +350,9 @@
 						<p class="mb-2">{m.templates_no_templates()}</p>
 						<p class="text-sm">
 							{m.templates_add_registry_prompt_part1()}
-							<a href="/customize/templates" class="text-primary hover:underline">{m.templates_template_settings()}</a>
+							<a href={resolve('/(app)/customize/templates')} class="text-primary hover:underline"
+								>{m.templates_template_settings()}</a
+							>
 							{m.templates_add_registry_prompt_part2()}
 						</p>
 					</div>

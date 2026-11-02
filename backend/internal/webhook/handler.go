@@ -2,52 +2,56 @@ package webhook
 
 import (
 	"context"
-	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/user"
-	"github.com/getarcaneapp/arcane/types/v2/webhook"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/userctx"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/types/v3"
 )
 
-type WebhookHandler struct {
-	webhookService *WebhookService
-}
+type (
+	WebhookHandler struct {
+		webhookService *WebhookService
+	}
 
-type ListWebhooksInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
+	CreateWebhookInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		types.Create[types.Webhook]
+	}
 
-type CreateWebhookInput struct {
-	EnvironmentID string               `path:"id" doc:"Environment ID"`
-	Body          *webhook.CreateInput `required:"true"`
-}
+	DeleteWebhookInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		WebhookID     string `path:"webhookId" doc:"Webhook ID"`
+	}
 
-type DeleteWebhookInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	WebhookID     string `path:"webhookId" doc:"Webhook ID"`
-}
-
-type UpdateWebhookInput struct {
-	EnvironmentID string               `path:"id" doc:"Environment ID"`
-	WebhookID     string               `path:"webhookId" doc:"Webhook ID"`
-	Body          *webhook.UpdateInput `required:"true"`
-}
+	UpdateWebhookInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		WebhookID     string `path:"webhookId" doc:"Webhook ID"`
+		types.Update[types.Webhook]
+	}
+)
 
 // ListWebhooks returns all webhooks for an environment (tokens are masked).
-func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *ListWebhooksInput) (*handlerutil.Out[[]webhook.Summary], error) {
+func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.Webhook], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.webhookService.AggregateWebhookSummaries(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to list webhooks")
+		}
+		return &handlerutil.Out[[]types.Webhook]{Body: body}, nil
+	}
 	webhooks, err := h.webhookService.ListWebhookSummaries(ctx, input.EnvironmentID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list webhooks")
 	}
 
-	return &handlerutil.Out[[]webhook.Summary]{
-		Body: base.ApiResponse[[]webhook.Summary]{
+	return &handlerutil.Out[[]types.Webhook]{
+		Body: types.ApiResponse[[]types.Webhook]{
 			Success: true,
 			Data:    webhooks,
 		},
@@ -55,15 +59,8 @@ func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *ListWebhooksIn
 }
 
 // CreateWebhook creates a new webhook and returns the raw token (shown once only).
-func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhookInput) (*handlerutil.Out[webhook.Created], error) {
-	if input.Body == nil {
-		return nil, huma.Error400BadRequest("request body is required")
-	}
-
-	actor := user.Actor{}
-	if currentUser, exists := userctx.CurrentUserFromContext(ctx); exists && currentUser != nil {
-		actor = *currentUser
-	}
+func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhookInput) (*handlerutil.Out[types.WebhookCreated], error) {
+	currentUser, _ := handlerutil.CurrentUserFromContext(ctx)
 
 	callerPerms, _ := middleware.PermissionsFromContext(ctx)
 	wh, rawToken, err := h.webhookService.CreateWebhook(
@@ -73,32 +70,18 @@ func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhook
 		input.Body.ActionType,
 		input.Body.TargetID,
 		input.EnvironmentID,
-		actor,
+		kit.FromPtr(currentUser),
 		callerPerms,
 	)
 	if err != nil {
-		if errors.Is(err, ErrWebhookForbidden) {
-			return nil, huma.Error403Forbidden(ErrWebhookForbidden.Error())
-		}
-		if errors.Is(err, ErrWebhookInvalidType) {
-			return nil, huma.Error400BadRequest("invalid target type, must be 'container', 'project', 'updater', or 'gitops'")
-		}
-		if errors.Is(err, ErrWebhookMissingTarget) {
-			return nil, huma.Error400BadRequest("target ID is required for container, project, and gitops webhook types")
-		}
-		if errors.Is(err, ErrWebhookInvalidAction) {
-			return nil, huma.Error400BadRequest("invalid action type for target type")
-		}
-		if errors.Is(err, common.ErrBadRequest) {
-			return nil, huma.Error400BadRequest(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("failed to create webhook")
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
-	return &handlerutil.Out[webhook.Created]{
-		Body: base.ApiResponse[webhook.Created]{
+	return &handlerutil.Out[types.WebhookCreated]{
+		Body: types.ApiResponse[types.WebhookCreated]{
 			Success: true,
-			Data: webhook.Created{
+			Data: types.WebhookCreated{
 				ID:         wh.ID,
 				Name:       wh.Name,
 				Token:      rawToken,
@@ -113,49 +96,37 @@ func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhook
 
 // UpdateWebhook updates a webhook's enabled state.
 func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhookInput) (*handlerutil.Out[any], error) {
-	if input.Body == nil {
-		return nil, huma.Error400BadRequest("request body is required")
+	submitted, err := input.SubmittedFields()
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid webhook update body")
 	}
 
-	actor := user.Actor{}
-	if currentUser, exists := userctx.CurrentUserFromContext(ctx); exists && currentUser != nil {
-		actor = *currentUser
-	}
+	currentUser, _ := handlerutil.CurrentUserFromContext(ctx)
 
 	callerPerms, _ := middleware.PermissionsFromContext(ctx)
-	wh, err := h.webhookService.UpdateWebhook(ctx, input.WebhookID, input.EnvironmentID, input.Body.Enabled, actor, callerPerms)
+	wh, err := h.webhookService.UpdateWebhook(ctx, input.WebhookID, input.EnvironmentID, input.Body, submitted, kit.FromPtr(currentUser), callerPerms)
 	if err != nil {
-		if errors.Is(err, ErrWebhookForbidden) {
-			return nil, huma.Error403Forbidden(ErrWebhookForbidden.Error())
-		}
-		if errors.Is(err, ErrWebhookNotFound) {
-			return nil, huma.Error404NotFound("webhook not found")
-		}
-		return nil, huma.Error500InternalServerError("failed to update webhook")
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
 	_ = wh // updated record available if needed in future
 	return &handlerutil.Out[any]{
-		Body: base.ApiResponse[any]{Success: true},
+		Body: types.ApiResponse[any]{Success: true},
 	}, nil
 }
 
 // DeleteWebhook removes a webhook.
 func (h *WebhookHandler) DeleteWebhook(ctx context.Context, input *DeleteWebhookInput) (*handlerutil.Out[any], error) {
-	actor := user.Actor{}
-	if currentUser, exists := userctx.CurrentUserFromContext(ctx); exists && currentUser != nil {
-		actor = *currentUser
-	}
+	currentUser, _ := handlerutil.CurrentUserFromContext(ctx)
 
-	if err := h.webhookService.DeleteWebhook(ctx, input.WebhookID, input.EnvironmentID, actor); err != nil {
-		if errors.Is(err, ErrWebhookNotFound) {
-			return nil, huma.Error404NotFound("webhook not found")
-		}
-		return nil, huma.Error500InternalServerError("failed to delete webhook")
+	if err := h.webhookService.DeleteWebhook(ctx, input.WebhookID, input.EnvironmentID, kit.FromPtr(currentUser)); err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
 	return &handlerutil.Out[any]{
-		Body: base.ApiResponse[any]{
+		Body: types.ApiResponse[any]{
 			Success: true,
 		},
 	}, nil

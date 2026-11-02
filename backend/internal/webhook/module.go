@@ -7,15 +7,17 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-// Module wires the webhook domain and mounts its routes.
-type Module struct {
-	service *WebhookService
-}
+type (
+	// Module wires the webhook domain and mounts its routes.
+	Module struct {
+		service *WebhookService
+	}
+)
 
 // New assembles webhook routes around the provided service.
 func New(service *WebhookService) *Module {
@@ -53,6 +55,7 @@ func RegisterWebhooks(api huma.API, webhookService *WebhookService) {
 		Description: "List all webhooks configured for this environment",
 		Tags:        []string{"Webhooks"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermWebhooksList, h.ListWebhooks)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

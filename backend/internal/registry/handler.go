@@ -6,53 +6,56 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
-	kit "go.getarcane.app/kit/pkg"
-	"go.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"kit.getarcane.app"
+	"kit.getarcane.app/sys/crypto"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
-// ContainerRegistryHandler handles container registry management endpoints.
-type ContainerRegistryHandler struct {
-	registryService      *ContainerRegistryService
-	syncRemoteRegistries func(context.Context)
-}
+type (
+	// ContainerRegistryHandler handles container registry management endpoints.
+	ContainerRegistryHandler struct {
+		registryService      *ContainerRegistryService
+		syncRemoteRegistries func(context.Context)
+	}
 
-type ListContainerRegistriesInput struct {
-	Search string `query:"search" doc:"Search query"`
-	Sort   string `query:"sort" doc:"Column to sort by"`
-	Order  string `query:"order" default:"asc" doc:"Sort direction"`
-	Start  int    `query:"start" default:"0" doc:"Start index"`
-	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
-}
+	ListContainerRegistriesInput struct {
+		Search string `query:"search" doc:"Search query"`
+		Sort   string `query:"sort" doc:"Column to sort by"`
+		Order  string `query:"order" default:"asc" doc:"Sort direction"`
+		Start  int    `query:"start" default:"0" doc:"Start index"`
+		Limit  int    `query:"limit" default:"20" doc:"Items per page"`
+	}
 
-type CreateContainerRegistryInput struct {
-	Body containerregistry.CreateContainerRegistryRequest
-}
+	CreateContainerRegistryInput struct {
+		types.Create[types.ContainerRegistry]
+	}
 
-type GetContainerRegistryInput struct {
-	ID string `path:"id" doc:"Registry ID"`
-}
+	GetContainerRegistryInput struct {
+		ID string `path:"id" doc:"Registry ID"`
+	}
 
-type UpdateContainerRegistryInput struct {
-	ID   string `path:"id" doc:"Registry ID"`
-	Body containerregistry.UpdateContainerRegistryRequest
-}
+	UpdateContainerRegistryInput struct {
+		ID string `path:"id" doc:"Registry ID"`
+		types.Update[types.ContainerRegistry]
+	}
 
-type DeleteContainerRegistryInput struct {
-	ID string `path:"id" doc:"Registry ID"`
-}
+	DeleteContainerRegistryInput struct {
+		ID string `path:"id" doc:"Registry ID"`
+	}
 
-type TestContainerRegistryInput struct {
-	ID string `path:"id" doc:"Registry ID"`
-}
+	ContainerRegistryActionInput struct {
+		ID     string `path:"id" doc:"Registry ID"`
+		Action string `query:"action" required:"true" enum:"test" doc:"Registry action"`
+	}
 
-type SyncContainerRegistriesInput struct {
-	Body containerregistry.SyncRequest
-}
+	SyncContainerRegistriesInput struct {
+		Body types.ContainerRegistrySyncRequest
+	}
+)
 
 // NewHandler builds the container registry HTTP handler.
 func NewHandler(registryService *ContainerRegistryService, syncRemoteRegistries func(context.Context)) *ContainerRegistryHandler {
@@ -60,14 +63,14 @@ func NewHandler(registryService *ContainerRegistryService, syncRemoteRegistries 
 }
 
 // ListRegistries returns a paginated list of container registries.
-func (h *ContainerRegistryHandler) ListRegistries(ctx context.Context, input *ListContainerRegistriesInput) (*handlerutil.Page[containerregistry.ContainerRegistry], error) {
+func (h *ContainerRegistryHandler) ListRegistries(ctx context.Context, input *ListContainerRegistriesInput) (*handlerutil.Page[types.ContainerRegistry], error) {
 	registries, paginationResp, err := h.registryService.GetRegistriesPaginated(ctx, handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search))
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to list registries: " + err.Error())
 	}
 
-	return &handlerutil.Page[containerregistry.ContainerRegistry]{
-		Body: base.Paginated[containerregistry.ContainerRegistry]{
+	return &handlerutil.Page[types.ContainerRegistry]{
+		Body: types.Paginated[types.ContainerRegistry]{
 			Success:    true,
 			Data:       registries,
 			Pagination: handlerutil.PaginationResponse(paginationResp),
@@ -76,14 +79,14 @@ func (h *ContainerRegistryHandler) ListRegistries(ctx context.Context, input *Li
 }
 
 // GetPullUsage returns pull usage visibility for configured registries.
-func (h *ContainerRegistryHandler) GetPullUsage(ctx context.Context, input *struct{}) (*handlerutil.Out[containerregistry.PullUsageResponse], error) {
+func (h *ContainerRegistryHandler) GetPullUsage(ctx context.Context, input *struct{}) (*handlerutil.Out[types.ContainerRegistryPullUsageResponse], error) {
 	usage, err := h.registryService.GetRegistryPullUsage(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to retrieve registry: " + err.Error())
 	}
 
-	return &handlerutil.Out[containerregistry.PullUsageResponse]{
-		Body: base.ApiResponse[containerregistry.PullUsageResponse]{
+	return &handlerutil.Out[types.ContainerRegistryPullUsageResponse]{
+		Body: types.ApiResponse[types.ContainerRegistryPullUsageResponse]{
 			Success: true,
 			Data:    usage,
 		},
@@ -91,8 +94,13 @@ func (h *ContainerRegistryHandler) GetPullUsage(ctx context.Context, input *stru
 }
 
 // CreateRegistry creates a new container registry.
-func (h *ContainerRegistryHandler) CreateRegistry(ctx context.Context, input *CreateContainerRegistryInput) (*handlerutil.Out[containerregistry.ContainerRegistry], error) {
-	reg, err := h.registryService.CreateRegistry(ctx, input.Body)
+func (h *ContainerRegistryHandler) CreateRegistry(ctx context.Context, input *CreateContainerRegistryInput) (*handlerutil.Out[types.ContainerRegistry], error) {
+	submitted, err := input.SubmittedFields()
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid request body", err)
+	}
+
+	reg, err := h.registryService.CreateRegistry(ctx, input.Body, submitted)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to create registry: "+err.Error())
@@ -100,37 +108,42 @@ func (h *ContainerRegistryHandler) CreateRegistry(ctx context.Context, input *Cr
 
 	h.triggerRemoteRegistrySync(ctx, "registry creation")
 
-	body, mapErr := handlerutil.MapOneAPIResponse[*ContainerRegistry, containerregistry.ContainerRegistry](reg, func(error) string {
+	body, mapErr := handlerutil.MapOneAPIResponse[*ContainerRegistry, types.ContainerRegistry](reg, func(error) string {
 		return "Failed to map registry"
 	})
 	if mapErr != nil {
 		return nil, mapErr
 	}
 
-	return &handlerutil.Out[containerregistry.ContainerRegistry]{Body: body}, nil
+	return &handlerutil.Out[types.ContainerRegistry]{Body: body}, nil
 }
 
 // GetRegistry returns a container registry by ID.
-func (h *ContainerRegistryHandler) GetRegistry(ctx context.Context, input *GetContainerRegistryInput) (*handlerutil.Out[containerregistry.ContainerRegistry], error) {
+func (h *ContainerRegistryHandler) GetRegistry(ctx context.Context, input *GetContainerRegistryInput) (*handlerutil.Out[types.ContainerRegistry], error) {
 	reg, err := h.registryService.GetRegistryByID(ctx, input.ID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve registry: "+err.Error())
 	}
 
-	body, mapErr := handlerutil.MapOneAPIResponse[*ContainerRegistry, containerregistry.ContainerRegistry](reg, func(error) string {
+	body, mapErr := handlerutil.MapOneAPIResponse[*ContainerRegistry, types.ContainerRegistry](reg, func(error) string {
 		return "Failed to map registry"
 	})
 	if mapErr != nil {
 		return nil, mapErr
 	}
 
-	return &handlerutil.Out[containerregistry.ContainerRegistry]{Body: body}, nil
+	return &handlerutil.Out[types.ContainerRegistry]{Body: body}, nil
 }
 
 // UpdateRegistry updates a container registry.
-func (h *ContainerRegistryHandler) UpdateRegistry(ctx context.Context, input *UpdateContainerRegistryInput) (*handlerutil.Out[containerregistry.ContainerRegistry], error) {
-	reg, err := h.registryService.UpdateRegistry(ctx, input.ID, input.Body)
+func (h *ContainerRegistryHandler) UpdateRegistry(ctx context.Context, input *UpdateContainerRegistryInput) (*handlerutil.Out[types.ContainerRegistry], error) {
+	submitted, err := input.SubmittedFields()
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid request body", err)
+	}
+
+	reg, err := h.registryService.UpdateRegistry(ctx, input.ID, input.Body, submitted)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to update registry: "+err.Error())
@@ -138,18 +151,18 @@ func (h *ContainerRegistryHandler) UpdateRegistry(ctx context.Context, input *Up
 
 	h.triggerRemoteRegistrySync(ctx, "registry update")
 
-	body, mapErr := handlerutil.MapOneAPIResponse[*ContainerRegistry, containerregistry.ContainerRegistry](reg, func(error) string {
+	body, mapErr := handlerutil.MapOneAPIResponse[*ContainerRegistry, types.ContainerRegistry](reg, func(error) string {
 		return "Failed to map registry"
 	})
 	if mapErr != nil {
 		return nil, mapErr
 	}
 
-	return &handlerutil.Out[containerregistry.ContainerRegistry]{Body: body}, nil
+	return &handlerutil.Out[types.ContainerRegistry]{Body: body}, nil
 }
 
 // DeleteRegistry deletes a container registry.
-func (h *ContainerRegistryHandler) DeleteRegistry(ctx context.Context, input *DeleteContainerRegistryInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *ContainerRegistryHandler) DeleteRegistry(ctx context.Context, input *DeleteContainerRegistryInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.registryService.DeleteRegistry(ctx, input.ID); err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete registry: "+err.Error())
@@ -161,7 +174,7 @@ func (h *ContainerRegistryHandler) DeleteRegistry(ctx context.Context, input *De
 }
 
 // TestRegistry tests connectivity to a container registry.
-func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *TestContainerRegistryInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *ContainerRegistryActionInput) (*handlerutil.Out[types.MessageResponse], error) {
 	reg, err := h.registryService.GetRegistryByID(ctx, input.ID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
@@ -193,7 +206,7 @@ func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *Test
 }
 
 // SyncRegistries syncs container registries from a remote source.
-func (h *ContainerRegistryHandler) SyncRegistries(ctx context.Context, input *SyncContainerRegistriesInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *ContainerRegistryHandler) SyncRegistries(ctx context.Context, input *SyncContainerRegistriesInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.registryService.SyncRegistries(ctx, input.Body.Registries); err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to sync registries: "+err.Error())

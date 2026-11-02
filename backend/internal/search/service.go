@@ -7,32 +7,32 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/category"
-	"github.com/getarcaneapp/arcane/types/v2/meta"
-	"github.com/getarcaneapp/arcane/types/v2/search"
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
+	"kit.getarcane.app/normalization"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"getarcane.dev/types/v3"
 )
 
-type CustomizeSearchService struct {
-	categories []category.Category
-}
+type (
+	CustomizeSearchService struct {
+		categories []types.Category
+	}
+)
 
 func NewCustomizeSearchService() *CustomizeSearchService {
-	return &CustomizeSearchService{categories: BuildCategories[CustomizeItem](search.CustomizeProfile)}
+	return &CustomizeSearchService{categories: BuildCategories[CustomizeItem](types.SearchProfileCustomize)}
 }
 
 // GetCustomizeCategories returns the category index initialized by the service.
-func (s *CustomizeSearchService) GetCustomizeCategories() []category.Category {
+func (s *CustomizeSearchService) GetCustomizeCategories() []types.Category {
 	return s.categories
 }
 
 // BuildCategories extracts searchable metadata in model field order.
-func BuildCategories[T any](profile search.Profile) []category.Category {
-	catMetaMap := utils.ExtractCategoryMetadata[T]()
+func BuildCategories[T any](profile types.SearchProfile) []types.Category {
+	catMetaMap := normalization.ExtractCategoryMetadata[T]()
 
-	categories := map[string][]meta.Metadata{}
+	categories := map[string][]types.SettingMetadata{}
 	var categoryOrder []string
 
 	rt := reflect.TypeFor[T]()
@@ -43,21 +43,21 @@ func BuildCategories[T any](profile search.Profile) []category.Category {
 			continue
 		}
 
-		metaTag := utils.ParseMetaTag(field.Tag.Get("meta"))
+		metaTag := normalization.ParseMetaTag(field.Tag.Get("meta"))
 		label := cmp.Or(metaTag["label"], key)
 		typ := cmp.Or(metaTag["type"], "text")
 		desc := metaTag["description"]
-		keywords := utils.ParseKeywords(metaTag["keywords"])
+		keywords := normalization.ParseKeywords(metaTag["keywords"])
 		categoryID := metaTag["category"]
-		if categoryID == "" && profile == search.SettingsProfile {
-			catMeta := utils.ParseMetaTag(field.Tag.Get("catmeta"))
+		if categoryID == "" && profile == types.SearchProfileSettings {
+			catMeta := normalization.ParseMetaTag(field.Tag.Get("catmeta"))
 			categoryID = catMeta["id"]
 		}
 		if categoryID == "" {
-			categoryID = kit.Ternary(profile == search.SettingsProfile, "jobs", "defaults")
+			categoryID = kit.Ternary(profile == types.SearchProfileSettings, "jobs", "defaults")
 		}
 
-		if categoryID == "internal" && profile == search.SettingsProfile {
+		if categoryID == "internal" && profile == types.SearchProfileSettings {
 			continue
 		}
 
@@ -65,7 +65,7 @@ func BuildCategories[T any](profile search.Profile) []category.Category {
 			categoryOrder = append(categoryOrder, categoryID)
 		}
 
-		sm := meta.Metadata{
+		sm := types.SettingMetadata{
 			Key:         key,
 			Label:       label,
 			Type:        typ,
@@ -76,25 +76,20 @@ func BuildCategories[T any](profile search.Profile) []category.Category {
 		categories[categoryID] = append(categories[categoryID], sm)
 	}
 
-	results := []category.Category{}
+	results := []types.Category{}
 	for _, catID := range categoryOrder {
 		catMeta := catMetaMap[catID]
 		if catMeta == nil {
 			continue
 		}
 
-		keywords := utils.ParseKeywords(catMeta["keywords"])
-		if keywords == nil {
-			keywords = []string{}
-		}
-
-		results = append(results, category.Category{
+		results = append(results, types.Category{
 			ID:          catMeta["id"],
 			Title:       catMeta["title"],
 			Description: catMeta["description"],
 			Icon:        catMeta["icon"],
 			URL:         catMeta["url"],
-			Keywords:    keywords,
+			Keywords:    normalization.ParseKeywords(catMeta["keywords"]),
 			Settings:    categories[catID],
 		})
 	}
@@ -103,30 +98,30 @@ func BuildCategories[T any](profile search.Profile) []category.Category {
 }
 
 // Search matches category metadata using the selected ranking profile.
-func Search(categories []category.Category, query string, profile search.Profile) search.Response {
+func Search(categories []types.Category, query string, profile types.SearchProfile) types.SearchResponse {
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query == "" {
-		return search.Response{
-			Results: []category.Category{},
+		return types.SearchResponse{
+			Results: []types.Category{},
 			Query:   query,
 			Count:   0,
 		}
 	}
 
-	var results []category.Category
-	if profile == search.CustomizeProfile {
-		results = []category.Category{}
+	var results []types.Category
+	if profile == types.SearchProfileCustomize {
+		results = []types.Category{}
 	}
 
 	for _, cat := range categories {
-		categoryMatch := categoryMatchesInternal(cat, query)
+		categoryMatch := categoryMatches(cat, query)
 
-		matchingSettings := findMatchingSettingsInternal(cat.Settings, query)
+		matchingSettings := findMatchingSettings(cat.Settings, query)
 
 		if categoryMatch || len(matchingSettings) > 0 {
-			relevanceScore := calculateRelevanceInternal(cat, matchingSettings, query, profile)
+			relevanceScore := calculateRelevance(cat, matchingSettings, query, profile)
 
-			categoryResult := category.Category{
+			categoryResult := types.Category{
 				ID:             cat.ID,
 				Title:          cat.Title,
 				Description:    cat.Description,
@@ -137,7 +132,7 @@ func Search(categories []category.Category, query string, profile search.Profile
 				RelevanceScore: relevanceScore,
 			}
 
-			if profile == search.CustomizeProfile {
+			if profile == types.SearchProfileCustomize {
 				categoryResult.MatchingSettings = cat.MatchingSettings
 			}
 
@@ -153,14 +148,14 @@ func Search(categories []category.Category, query string, profile search.Profile
 		return results[i].RelevanceScore > results[j].RelevanceScore
 	})
 
-	return search.Response{
+	return types.SearchResponse{
 		Results: results,
 		Query:   query,
 		Count:   len(results),
 	}
 }
 
-func categoryMatchesInternal(cat category.Category, query string) bool {
+func categoryMatches(cat types.Category, query string) bool {
 	if strings.Contains(strings.ToLower(cat.Title), query) {
 		return true
 	}
@@ -175,17 +170,17 @@ func categoryMatchesInternal(cat category.Category, query string) bool {
 	return false
 }
 
-func findMatchingSettingsInternal(settings []meta.Metadata, query string) []meta.Metadata {
-	var matching []meta.Metadata
+func findMatchingSettings(settings []types.SettingMetadata, query string) []types.SettingMetadata {
+	var matching []types.SettingMetadata
 	for _, setting := range settings {
-		if settingMatchesInternal(setting, query) {
+		if settingMatches(setting, query) {
 			matching = append(matching, setting)
 		}
 	}
 	return matching
 }
 
-func settingMatchesInternal(setting meta.Metadata, query string) bool {
+func settingMatches(setting types.SettingMetadata, query string) bool {
 	if strings.Contains(strings.ToLower(setting.Key), query) {
 		return true
 	}
@@ -203,10 +198,10 @@ func settingMatchesInternal(setting meta.Metadata, query string) bool {
 	return false
 }
 
-func calculateRelevanceInternal(cat category.Category, matchingSettings []meta.Metadata, query string, profile search.Profile) int {
+func calculateRelevance(cat types.Category, matchingSettings []types.SettingMetadata, query string, profile types.SearchProfile) int {
 	score := 0
 
-	if profile == search.CustomizeProfile && strings.ToLower(cat.Title) == query {
+	if profile == types.SearchProfileCustomize && strings.ToLower(cat.Title) == query {
 		score += 30
 	} else if strings.Contains(strings.ToLower(cat.Title), query) {
 		score += 20
@@ -218,25 +213,25 @@ func calculateRelevanceInternal(cat category.Category, matchingSettings []meta.M
 	for _, keyword := range cat.Keywords {
 		if strings.ToLower(keyword) == query {
 			score += 25
-			if profile == search.CustomizeProfile {
+			if profile == types.SearchProfileCustomize {
 				break
 			}
 		} else if strings.Contains(strings.ToLower(keyword), query) {
 			score += 10
-			if profile == search.CustomizeProfile {
+			if profile == types.SearchProfileCustomize {
 				break
 			}
 		}
 	}
 
 	for _, setting := range matchingSettings {
-		score += calculateSettingRelevanceInternal(setting, query, profile)
+		score += calculateSettingRelevance(setting, query, profile)
 	}
 
 	return score
 }
 
-func calculateSettingRelevanceInternal(setting meta.Metadata, query string, profile search.Profile) int {
+func calculateSettingRelevance(setting types.SettingMetadata, query string, profile types.SearchProfile) int {
 	score := 0
 	if strings.ToLower(setting.Key) == query {
 		score += 30
@@ -254,12 +249,12 @@ func calculateSettingRelevanceInternal(setting meta.Metadata, query string, prof
 	for _, keyword := range setting.Keywords {
 		if strings.ToLower(keyword) == query {
 			score += 20
-			if profile == search.CustomizeProfile {
+			if profile == types.SearchProfileCustomize {
 				break
 			}
 		} else if strings.Contains(strings.ToLower(keyword), query) {
 			score += 5
-			if profile == search.CustomizeProfile {
+			if profile == types.SearchProfileCustomize {
 				break
 			}
 		}

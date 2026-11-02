@@ -18,90 +18,129 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/auth"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	settingstypes "github.com/getarcaneapp/arcane/types/v2/settings"
-	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/labstack/echo/v5"
 	"github.com/samber/mo"
-	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	userdomain "github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/apikey"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/session"
+	"getarcane.dev/arcane/v3/internal/settings"
+	userdomain "getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/cookie"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/validation"
+	"getarcane.dev/types/v3"
 )
 
-type AuthHandler struct {
-	userService            *userdomain.UserService
-	authService            *AuthService
-	beginMFAAuthentication func(context.Context, string, auth.SessionMeta, string) (*auth.MFAChallenge, error)
-	settingsService        *settings.SettingsService
-}
+type (
+	AuthHandler struct {
+		userService            *userdomain.UserService
+		authService            *AuthService
+		beginMFAAuthentication func(context.Context, string, types.SessionMeta, string) (*types.MFAChallenge, error)
+		settingsService        *settings.SettingsService
+	}
 
-type LoginInput struct {
-	UserAgent string `header:"User-Agent"`
-	Body      auth.Login
-}
+	LoginInput struct {
+		UserAgent string `header:"User-Agent"`
+		Body      types.AuthLogin
+	}
 
-type LoginOutput struct {
-	SetCookie []string `header:"Set-Cookie" doc:"Session cookie"`
-	Body      base.ApiResponse[auth.AuthenticationResponse]
-}
+	LoginOutput struct {
+		SetCookie []string `header:"Set-Cookie" doc:"Session cookie"`
+		Body      types.ApiResponse[types.AuthenticationResponse]
+	}
 
-type LogoutInput struct {
-	SecureRefreshCookie   string       `cookie:"__Secure-refresh" doc:"Refresh cookie (HTTPS)"`
-	InsecureRefreshCookie string       `cookie:"refresh" doc:"Refresh cookie (HTTP)"`
-	Body                  *auth.Logout `required:"false"`
-}
+	LogoutInput struct {
+		Body                  *types.AuthLogout `required:"false"`
+		SecureRefreshCookie   string            `cookie:"__Secure-refresh" doc:"Refresh cookie (HTTPS)"`
+		InsecureRefreshCookie string            `cookie:"refresh" doc:"Refresh cookie (HTTP)"`
+	}
 
-type LogoutOutput struct {
-	SetCookie []string `header:"Set-Cookie" doc:"Cleared session cookie"`
-	Body      base.ApiResponse[base.MessageResponse]
-}
+	LogoutOutput struct {
+		SetCookie []string `header:"Set-Cookie" doc:"Cleared session cookie"`
+		Body      types.ApiResponse[types.MessageResponse]
+	}
 
-type RefreshTokenInput struct {
-	UserAgent             string        `header:"User-Agent"`
-	SecureRefreshCookie   string        `cookie:"__Secure-refresh" doc:"Refresh cookie (HTTPS)"`
-	InsecureRefreshCookie string        `cookie:"refresh" doc:"Refresh cookie (HTTP)"`
-	Body                  *auth.Refresh `required:"false"`
-}
+	RefreshTokenInput struct {
+		Body                  *types.AuthRefresh `required:"false"`
+		UserAgent             string             `header:"User-Agent"`
+		SecureRefreshCookie   string             `cookie:"__Secure-refresh" doc:"Refresh cookie (HTTPS)"`
+		InsecureRefreshCookie string             `cookie:"refresh" doc:"Refresh cookie (HTTP)"`
+	}
 
-type RefreshTokenOutput struct {
-	SetCookie []string `header:"Set-Cookie" doc:"Updated session cookie"`
-	Body      base.ApiResponse[auth.TokenRefreshResponse]
-}
+	RefreshTokenOutput struct {
+		SetCookie []string `header:"Set-Cookie" doc:"Updated session cookie"`
+		Body      types.ApiResponse[types.TokenRefreshResponse]
+	}
 
-type ChangePasswordInput struct {
-	Body auth.PasswordChange
-}
+	ChangePasswordInput struct {
+		Body types.PasswordChange
+	}
 
-type UpdateMyProfileBody struct {
-	DisplayName *string           `json:"displayName,omitempty"`
-	Email       *string           `json:"email,omitempty"`
-	Locale      *string           `json:"locale,omitempty"`
-	TimeFormat  *user.TimeFormat  `json:"timeFormat,omitempty" enum:"auto,12h,24h"`
-	FontSize    *int              `json:"fontSize,omitempty" minimum:"12" maximum:"20"`
-	Preferences *user.Preferences `json:"preferences,omitempty"`
-}
+	UpdateMyProfileInput struct {
+		types.Update[types.User]
+	}
 
-type UpdateMyProfileInput struct {
-	Body UpdateMyProfileBody
-}
+	UploadMyAvatarInput struct {
+		RawBody multipart.Form `contentType:"multipart/form-data"`
+	}
 
-type UploadMyAvatarInput struct {
-	RawBody multipart.Form `contentType:"multipart/form-data"`
-}
+	// securityRequirements holds parsed security requirements from an operation.
+	securityRequirements struct {
+		isRequired bool
+		bearerAuth bool
+		apiKeyAuth bool
+	}
+
+	operationProvider interface {
+		Operation() *huma.Operation
+	}
+
+	HumaMiddlewareParams struct {
+		API              huma.API
+		AuthService      *AuthService
+		APIKeyService    *apikey.ApiKeyService
+		PermResolver     PermissionResolver
+		EnvTokenResolver EnvironmentAccessTokenResolver
+		Config           *config.Config
+	}
+
+	AuthOptions struct {
+		AdminRequired   bool
+		SuccessOptional bool
+	}
+
+	ApiKeyValidator interface {
+		ValidateApiKeyWithID(ctx context.Context, rawKey string) (*userdomain.User, *apikey.ApiKey, error)
+	}
+
+	EnvironmentAccessTokenResolver interface {
+		ResolveEnvironmentByAccessToken(ctx context.Context, token string) (*environment.Environment, error)
+	}
+
+	// PermissionResolver resolves a caller's effective permission set. Implemented
+	// by role.RoleService; kept as an interface so tests can stub it.
+	PermissionResolver interface {
+		ResolvePermissions(ctx context.Context, userID string) (*authz.PermissionSet, error)
+		ResolveApiKeyPermissions(ctx context.Context, apiKeyID string) (*authz.PermissionSet, error)
+	}
+
+	AuthMiddleware struct {
+		authService      *AuthService
+		apiKeyValidator  ApiKeyValidator
+		envTokenResolver EnvironmentAccessTokenResolver
+		roleResolver     PermissionResolver
+		cfg              *config.Config
+		options          AuthOptions
+	}
+)
 
 // Login authenticates a user and returns tokens.
 func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutput, error) {
@@ -132,11 +171,11 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 			return nil, huma.Error500InternalServerError("Authentication failed")
 		}
 		return &LoginOutput{
-			Body: base.ApiResponse[auth.AuthenticationResponse]{
+			Body: types.ApiResponse[types.AuthenticationResponse]{
 				Success: true,
-				Data: auth.AuthenticationResponse{
+				Data: types.AuthenticationResponse{
 					Success: true,
-					Status:  auth.AuthenticationStatusMFARequired,
+					Status:  types.AuthenticationStatusMFARequired,
 					MFA:     challenge,
 				},
 			},
@@ -153,18 +192,16 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
-	expiresAt := tokenPair.ExpiresAt
-
 	return &LoginOutput{
 		SetCookie: tokenPair.CookieHeaders(cookie.SecureCookieFromContext(ctx)),
-		Body: base.ApiResponse[auth.AuthenticationResponse]{
+		Body: types.ApiResponse[types.AuthenticationResponse]{
 			Success: true,
-			Data: auth.AuthenticationResponse{
+			Data: types.AuthenticationResponse{
 				Success:      true,
-				Status:       auth.AuthenticationStatusAuthenticated,
+				Status:       types.AuthenticationStatusAuthenticated,
 				Token:        tokenPair.AccessToken,
 				RefreshToken: tokenPair.RefreshToken,
-				ExpiresAt:    &expiresAt,
+				ExpiresAt:    new(tokenPair.ExpiresAt),
 				User:         &userResp,
 			},
 		},
@@ -173,20 +210,18 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 
 // Logout clears the authentication session.
 func (h *AuthHandler) Logout(ctx context.Context, input *LogoutInput) (*LogoutOutput, error) {
-	if h.authService != nil {
-		if sessionID, exists := middleware.GetCurrentSessionIDFromContext(ctx); exists {
-			if err := h.authService.RevokeSession(ctx, sessionID); err != nil {
-				slog.ErrorContext(ctx, "Failed to revoke session on logout; clearing cookie anyway", "sessionId", sessionID, "error", err)
-			}
+	if sessionID, exists := middleware.GetCurrentSessionIDFromContext(ctx); exists {
+		if err := h.authService.RevokeSession(ctx, sessionID); err != nil {
+			slog.ErrorContext(ctx, "Failed to revoke session on logout; clearing cookie anyway", "sessionId", sessionID, "error", err)
 		}
-		if refreshToken := cmp.Or(kit.FromPtr(input.Body).RefreshToken, input.SecureRefreshCookie, input.InsecureRefreshCookie); refreshToken != "" {
-			if err := h.authService.RevokeSessionByRefreshToken(ctx, refreshToken); err != nil {
-				slog.WarnContext(ctx, "Failed to revoke refresh token session on logout", "error", err)
-			}
+	}
+	if refreshToken := cmp.Or(kit.FromPtr(input.Body).RefreshToken, input.SecureRefreshCookie, input.InsecureRefreshCookie); refreshToken != "" {
+		if err := h.authService.RevokeSessionByRefreshToken(ctx, refreshToken); err != nil {
+			slog.WarnContext(ctx, "Failed to revoke refresh token session on logout", "error", err)
 		}
-		if userModel, exists := userdomain.CurrentUserFromContext(ctx); exists {
-			h.authService.LogLogout(ctx, userModel)
-		}
+	}
+	if userModel, exists := userdomain.CurrentUserFromContext(ctx); exists {
+		h.authService.LogLogout(ctx, userModel)
 	}
 
 	return &LogoutOutput{
@@ -194,9 +229,9 @@ func (h *AuthHandler) Logout(ctx context.Context, input *LogoutInput) (*LogoutOu
 			cookie.BuildClearTokenCookieStringsFor(cookie.SecureCookieFromContext(ctx)),
 			cookie.BuildClearRefreshCookieStringsFor(cookie.SecureCookieFromContext(ctx))...,
 		),
-		Body: base.ApiResponse[base.MessageResponse]{
+		Body: types.ApiResponse[types.MessageResponse]{
 			Success: true,
-			Data: base.MessageResponse{
+			Data: types.MessageResponse{
 				Message: "Logged out successfully",
 			},
 		},
@@ -206,7 +241,7 @@ func (h *AuthHandler) Logout(ctx context.Context, input *LogoutInput) (*LogoutOu
 // GetCurrentUser reads the current user from the database. Uses
 // ToUserResponseDto (not the generic struct mapper) so the RBAC fields
 // (RoleAssignments, PermissionsByEnv) are resolved via RoleService.
-func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*handlerutil.Out[user.User], error) {
+func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*handlerutil.Out[types.User], error) {
 	currentUser, err := requireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -221,10 +256,29 @@ func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*han
 		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
-	return &handlerutil.Out[user.User]{
-		Body: base.ApiResponse[user.User]{
+	return &handlerutil.Out[types.User]{
+		Body: types.ApiResponse[types.User]{
 			Success: true,
 			Data:    out,
+		},
+	}, nil
+}
+
+func (h *AuthHandler) GetSessionBootstrap(ctx context.Context, _ *struct{}) (*handlerutil.Out[types.SessionBootstrap], error) {
+	currentUser, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ps, _ := middleware.PermissionsFromContext(ctx)
+	bootstrap, err := h.authService.GetSessionBootstrap(ctx, currentUser.ID, ps)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to load session")
+	}
+
+	return &handlerutil.Out[types.SessionBootstrap]{
+		Body: types.ApiResponse[types.SessionBootstrap]{
+			Success: true,
+			Data:    *bootstrap,
 		},
 	}, nil
 }
@@ -252,9 +306,9 @@ func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput
 
 	return &RefreshTokenOutput{
 		SetCookie: tokenPair.CookieHeaders(cookie.SecureCookieFromContext(ctx)),
-		Body: base.ApiResponse[auth.TokenRefreshResponse]{
+		Body: types.ApiResponse[types.TokenRefreshResponse]{
 			Success: true,
-			Data: auth.TokenRefreshResponse{
+			Data: types.TokenRefreshResponse{
 				Token:        tokenPair.AccessToken,
 				RefreshToken: tokenPair.RefreshToken,
 				ExpiresAt:    tokenPair.ExpiresAt,
@@ -264,7 +318,7 @@ func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput
 }
 
 // ChangePassword changes the current user's password.
-func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordInput) (*handlerutil.Out[types.MessageResponse], error) {
 	userModel, err := requireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -275,7 +329,12 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 	}
 
 	currentSessionID, _ := middleware.GetCurrentSessionIDFromContext(ctx)
-	err = h.authService.ChangePassword(ctx, userModel.ID, input.Body.CurrentPassword, input.Body.NewPassword, currentSessionID)
+	err = h.authService.ChangePassword(ctx, ChangePasswordRequest{
+		UserID:           userModel.ID,
+		CurrentPassword:  input.Body.CurrentPassword,
+		NewPassword:      input.Body.NewPassword,
+		CurrentSessionID: currentSessionID,
+	})
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidCredentials):
@@ -283,8 +342,8 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 		case errors.Is(err, common.ErrForbidden):
 			return nil, huma.Error403Forbidden(err.Error())
 		case errors.Is(err, common.ErrValidation):
-			passwordPolicy := h.authService.passwordPolicy(ctx)
-			return nil, handlerutil.Error400BadRequestWithType(err.Error(), validation.PasswordPolicyProblemType(passwordPolicy))
+			passwordPolicy := h.settingsService.GetStringSetting(ctx, "authPasswordPolicy")
+			return nil, handlerutil.Error400BadRequestWithType(err, validation.PasswordPolicyProblemType(passwordPolicy))
 		default:
 			return nil, huma.Error500InternalServerError("Failed to change password")
 		}
@@ -295,7 +354,7 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 
 // LogoutAllOtherSessions revokes every active session for the current user
 // except the session making this request.
-func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{}) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{}) (*handlerutil.Out[types.MessageResponse], error) {
 	userModel, err := requireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -312,15 +371,18 @@ func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{
 
 // UpdateMyProfile lets the current user update their own displayName and email.
 // OIDC-managed accounts are read-only here.
-func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfileInput) (*handlerutil.Out[user.User], error) {
+func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfileInput) (*handlerutil.Out[types.User], error) {
 	currentUser, err := requireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	isOidcUser := currentUser.OidcSubjectId != nil && *currentUser.OidcSubjectId != ""
-	touchesIdpFields := input.Body.DisplayName != nil || input.Body.Email != nil
-	if isOidcUser && touchesIdpFields {
+	submitted, err := input.SubmittedFields()
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid request body")
+	}
+
+	if kit.FromPtr(currentUser.OidcSubjectId) != "" && (submitted["displayName"] || submitted["email"]) {
 		return nil, huma.Error403Forbidden("display name and email are managed by your identity provider")
 	}
 
@@ -329,39 +391,26 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 		return nil, huma.Error500InternalServerError("Failed to get user information")
 	}
 
-	if input.Body.DisplayName != nil {
-		userModel.DisplayName = input.Body.DisplayName
+	email, err := userdomain.NormalizeOptionalEmail(kit.Ternary(submitted["email"], input.Body.Email, userModel.Email))
+	if err != nil {
+		return nil, handlerutil.APIError(err)
 	}
-	if input.Body.Email != nil {
-		normalized, normalizeOptionalEmailErr := userdomain.NormalizeOptionalEmail(input.Body.Email)
-		if normalizeOptionalEmailErr != nil {
-			return nil, huma.Error400BadRequest(normalizeOptionalEmailErr.Error())
-		}
-		if !strings.EqualFold(kit.FromPtr(normalized), kit.FromPtr(userModel.Email)) && h.settingsService.GetBoolSetting(ctx, "oidcMergeAccounts", false) {
-			return nil, huma.Error403Forbidden("email cannot be changed while OIDC account merging is enabled")
-		}
-		userModel.Email = normalized
+	if !strings.EqualFold(kit.FromPtr(email), kit.FromPtr(userModel.Email)) && h.settingsService.GetBoolSetting(ctx, "oidcMergeAccounts") {
+		return nil, huma.Error403Forbidden("email cannot be changed while OIDC account merging is enabled")
 	}
-	if input.Body.Locale != nil {
-		userModel.Locale = input.Body.Locale
-	}
-	if input.Body.TimeFormat != nil {
-		userModel.TimeFormat = *input.Body.TimeFormat
-	}
-	if input.Body.FontSize != nil {
-		userModel.FontSize = input.Body.FontSize
-	}
-	if p := input.Body.Preferences; p != nil {
+
+	preferences := userModel.Preferences
+	if p := input.Body.Preferences; submitted["preferences"] {
 		// Huma's enum tags cannot express these checks. The "default" accent
 		// sentinel means "no override"; anything else must be a color literal
 		// safe to inject into CSS.
-		if v := p.AccentColor; v != nil && *v != "" && *v != "default" && !settingstypes.SafeAccentColor.MatchString(*v) {
+		if v := kit.FromPtr(p.AccentColor); v != "" && v != "default" && !types.SafeAccentColor.MatchString(v) {
 			return nil, huma.Error400BadRequest("invalid accentColor value")
 		}
 		// Keys are environment IDs; the caps keep one user's preferences from growing without bound.
 		if v := p.EnvironmentColors; v != nil {
 			for id, color := range *v {
-				if len(*v) > 1000 || id == "" || len(id) > 64 || !settingstypes.SafeAccentColor.MatchString(color) {
+				if len(*v) > 1000 || id == "" || len(id) > 64 || !types.SafeAccentColor.MatchString(color) {
 					return nil, huma.Error400BadRequest("invalid environmentColors value")
 				}
 			}
@@ -374,8 +423,8 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 		}
 		// Copy every set (non-nil) field. Reflection keeps this merge-only update
 		// free of per-field branches, so a new preference needs no handler change.
-		dstValue := reflect.ValueOf(&userModel.Preferences).Elem()
-		srcValue := reflect.ValueOf(p).Elem()
+		dstValue := reflect.ValueOf(&preferences).Elem()
+		srcValue := reflect.ValueOf(p)
 		for i := range srcValue.NumField() {
 			if field := srcValue.Field(i); field.Kind() == reflect.Pointer && !field.IsNil() {
 				dstValue.Field(i).Set(field)
@@ -383,10 +432,22 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 		}
 	}
 
-	updated, err := h.userService.UpdateUser(ctx, userModel, nil)
+	updated, err := h.userService.UpdateUser(ctx, &userdomain.User{
+		BaseModel:   userModel.BaseModel,
+		Username:    userModel.Username,
+		DisplayName: kit.Ternary(submitted["displayName"], input.Body.DisplayName, userModel.DisplayName),
+		Email:       email,
+		Locale:      kit.Ternary(submitted["locale"], input.Body.Locale, userModel.Locale),
+		TimeFormat:  kit.Ternary(submitted["timeFormat"], input.Body.TimeFormat, userModel.TimeFormat),
+		FontSize:    kit.Ternary(submitted["fontSize"], input.Body.FontSize, userModel.FontSize),
+		Preferences: preferences,
+	}, nil)
 	if err != nil {
 		if errors.Is(err, userdomain.ErrEmailTaken) {
 			return nil, huma.Error409Conflict(userdomain.ErrEmailTaken.Error())
+		}
+		if errors.Is(err, common.ErrValidation) {
+			return nil, handlerutil.APIError(err)
 		}
 		return nil, huma.Error500InternalServerError("Failed to update user")
 	}
@@ -397,8 +458,8 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
-	return &handlerutil.Out[user.User]{
-		Body: base.ApiResponse[user.User]{
+	return &handlerutil.Out[types.User]{
+		Body: types.ApiResponse[types.User]{
 			Success: true,
 			Data:    out,
 		},
@@ -407,7 +468,7 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 
 // UploadMyAvatar lets the current user upload a custom profile picture.
 // Accepts PNG, JPEG, or WebP images up to the configured avatar upload limit.
-func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarInput) (*handlerutil.Out[user.User], error) {
+func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarInput) (*handlerutil.Out[types.User], error) {
 	currentUser, err := requireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -428,11 +489,8 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 	defer func() { _ = f.Close() }()
 
 	const defaultAvatarMaxUploadSizeMb = 2
-	maxSizeMb := defaultAvatarMaxUploadSizeMb
-	if h.settingsService != nil {
-		maxSizeMb = h.settingsService.GetIntSetting(ctx, "avatarMaxUploadSizeMb", defaultAvatarMaxUploadSizeMb)
-		maxSizeMb = kit.Ternary(maxSizeMb <= 0, defaultAvatarMaxUploadSizeMb, maxSizeMb)
-	}
+	configuredMb := h.settingsService.GetIntSetting(ctx, "avatarMaxUploadSizeMb")
+	maxSizeMb := kit.Ternary(configuredMb <= 0, defaultAvatarMaxUploadSizeMb, configuredMb)
 	maxSizeBytes := int64(maxSizeMb) * 1024 * 1024
 
 	// Read one byte past the configured ceiling so oversized files are rejected
@@ -471,8 +529,8 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
-	return &handlerutil.Out[user.User]{
-		Body: base.ApiResponse[user.User]{
+	return &handlerutil.Out[types.User]{
+		Body: types.ApiResponse[types.User]{
 			Success: true,
 			Data:    out,
 		},
@@ -480,7 +538,7 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 }
 
 // DeleteMyAvatar removes the current user's custom profile picture.
-func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*handlerutil.Out[user.User], error) {
+func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*handlerutil.Out[types.User], error) {
 	currentUser, err := requireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -502,8 +560,8 @@ func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*han
 		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
-	return &handlerutil.Out[user.User]{
-		Body: base.ApiResponse[user.User]{
+	return &handlerutil.Out[types.User]{
+		Body: types.ApiResponse[types.User]{
 			Success: true,
 			Data:    out,
 		},
@@ -554,17 +612,6 @@ func imageHasTransparency(img image.Image) bool {
 		}
 	}
 	return false
-}
-
-// securityRequirements holds parsed security requirements from an operation.
-type securityRequirements struct {
-	isRequired bool
-	bearerAuth bool
-	apiKeyAuth bool
-}
-
-type operationProvider interface {
-	Operation() *huma.Operation
 }
 
 // parseSecurityRequirements extracts security requirements from a Huma operation.
@@ -667,14 +714,7 @@ func createEnvironmentUser(env *environment.Environment) *userdomain.User {
 // enforces security requirements defined on operations. It also resolves the
 // caller's effective PermissionSet via permResolver and stashes it on the
 // request context for downstream middleware.RequirePermission checks.
-func NewHumaMiddleware(
-	api huma.API,
-	authService *AuthService,
-	apiKeyService *apikey.ApiKeyService,
-	permResolver PermissionResolver,
-	envTokenResolver EnvironmentAccessTokenResolver,
-	cfg *config.Config,
-) func(
+func NewHumaMiddleware(p HumaMiddlewareParams) func(
 	ctx huma.Context,
 	next func(
 		huma.Context,
@@ -682,22 +722,17 @@ func NewHumaMiddleware(
 ) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		ctx = huma.WithContext(ctx, context.WithValue(ctx.Context(), middleware.ContextKeyRemoteAddr, ctx.RemoteAddr()))
-		if authService == nil {
-			next(ctx)
-			return
-		}
-
-		if newCtx, ok := tryAgentAuth(ctx, cfg); ok {
+		if newCtx, ok := tryAgentAuth(ctx, p.Config); ok {
 			next(newCtx)
 			return
 		}
 
-		reqs := parseSecurityRequirements(api, ctx)
+		reqs := parseSecurityRequirements(p.API, ctx)
 		if !reqs.isRequired {
 			// Public routes (e.g. logout) still learn who the caller is when a
 			// valid bearer token is present, but never fail the request.
-			if authenticatedUser, sessionID, err := tryBearerAuth(ctx, authService); err == nil && authenticatedUser != nil {
-				newCtx := setUserInContext(ctx.Context(), authenticatedUser, resolveUserPermissions(ctx.Context(), permResolver, authenticatedUser))
+			if authenticatedUser, sessionID, err := tryBearerAuth(ctx, p.AuthService); err == nil && authenticatedUser != nil {
+				newCtx := setUserInContext(ctx.Context(), authenticatedUser, resolveUserPermissions(ctx.Context(), p.PermResolver, authenticatedUser))
 				ctx = huma.WithContext(ctx, context.WithValue(newCtx, middleware.ContextKeyCurrentSessionID, sessionID))
 			}
 			next(ctx)
@@ -705,11 +740,11 @@ func NewHumaMiddleware(
 		}
 
 		if reqs.apiKeyAuth && ctx.Header(middleware.HeaderApiKey) != "" {
-			handleApiKeyAuth(api, ctx, authService, apiKeyService, permResolver, envTokenResolver, reqs.bearerAuth, next)
+			handleApiKeyAuth(p.API, ctx, p.AuthService, p.APIKeyService, p.PermResolver, p.EnvTokenResolver, reqs.bearerAuth, next)
 			return
 		}
 
-		if authenticatedUser, env, ok := tryEnvironmentAccessTokenAuth(ctx, envTokenResolver, ctx.Header(middleware.HeaderAgentToken)); ok {
+		if authenticatedUser, env, ok := tryEnvironmentAccessTokenAuth(ctx, p.EnvTokenResolver, ctx.Header(middleware.HeaderAgentToken)); ok {
 			applyProxiedIconCatalog(ctx, authenticatedUser)
 			newCtx := setUserInContext(ctx.Context(), authenticatedUser, authz.EnvironmentPermissionSet(env.ID))
 			next(huma.WithContext(ctx, newCtx))
@@ -717,7 +752,7 @@ func NewHumaMiddleware(
 		}
 
 		if reqs.bearerAuth {
-			nextCtx, handled := handleBearerAuth(api, ctx, authService, permResolver)
+			nextCtx, handled := handleBearerAuth(p.API, ctx, p.AuthService, p.PermResolver)
 			if handled {
 				if nextCtx != nil {
 					next(nextCtx)
@@ -726,20 +761,17 @@ func NewHumaMiddleware(
 			}
 		}
 
-		_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Unauthorized: valid authentication required")
+		_ = huma.WriteErr(p.API, ctx, http.StatusUnauthorized, "Unauthorized: valid authentication required")
 	}
 }
 
 // tryAgentAuth authenticates an agent-mode request presenting the
-// agent token as a bootstrap pairing, agent token, or API key header.
+// agent token as an agent token or API key header.
 func tryAgentAuth(ctx huma.Context, cfg *config.Config) (huma.Context, bool) {
-	if cfg == nil || !cfg.AgentMode {
+	if !cfg.AgentEnabled {
 		return ctx, false
 	}
-	bootstrapPairing := strings.HasPrefix(ctx.URL().Path, middleware.AgentPairingPrefix) &&
-		AgentTokenMatches(ctx.Header(middleware.HeaderAgentBootstrap), cfg.AgentToken)
-	if !bootstrapPairing &&
-		!AgentTokenMatches(ctx.Header(middleware.HeaderAgentToken), cfg.AgentToken) &&
+	if !AgentTokenMatches(ctx.Header(middleware.HeaderAgentToken), cfg.AgentToken) &&
 		!AgentTokenMatches(ctx.Header(middleware.HeaderApiKey), cfg.AgentToken) {
 		return ctx, false
 	}
@@ -749,12 +781,12 @@ func tryAgentAuth(ctx huma.Context, cfg *config.Config) (huma.Context, bool) {
 	updatePath := strings.Contains(ctx.URL().Path, "/containers/") && strings.HasSuffix(ctx.URL().Path, "/update")
 	if ctx.Method() == http.MethodPost && updatePath {
 		if initiatorID := strings.TrimSpace(ctx.Header(middleware.HeaderUpdateInitiatorID)); initiatorID != "" {
-			initiator := activity.StartedBy{
+			initiator := types.ActivityStartedBy{
 				UserID:      initiatorID,
 				Username:    strings.TrimSpace(ctx.Header(middleware.HeaderUpdateInitiatorName)),
 				DisplayName: strings.TrimSpace(ctx.Header(middleware.HeaderUpdateInitiatorDisplayName)),
 			}
-			authCtx = utils.WithUpdateInitiator(authCtx, initiator)
+			authCtx = activity.WithUpdateInitiator(authCtx, initiator)
 		}
 	}
 	// The agent token path is infrastructure-level and not per-user, so it
@@ -863,7 +895,7 @@ func extractBearerToken(ctx huma.Context) (string, bool) {
 
 	// Try cookie as fallback
 	if cookieHeader := ctx.Header("Cookie"); cookieHeader != "" {
-		if token, err := cookie.GetTokenCookieFromHeader(cookieHeader); err == nil {
+		if token, err := cookie.GetTokenCookie(&http.Request{Header: http.Header{"Cookie": []string{cookieHeader}}}); err == nil {
 			return token, true
 		}
 	}
@@ -879,38 +911,9 @@ func setUserInContext(ctx context.Context, authenticatedUser *userdomain.User, p
 		ps = authz.NewPermissionSet()
 	}
 	ctx = context.WithValue(ctx, middleware.ContextKeyUserID, authenticatedUser.ID)
-	ctx = context.WithValue(ctx, user.CurrentUserContextKey{}, authenticatedUser)
+	ctx = context.WithValue(ctx, types.CurrentUserContextKey{}, authenticatedUser)
 	ctx = context.WithValue(ctx, middleware.ContextKeyUserPermissions, ps)
 	return ctx
-}
-
-type AuthOptions struct {
-	AdminRequired   bool
-	SuccessOptional bool
-}
-
-type ApiKeyValidator interface {
-	ValidateApiKeyWithID(ctx context.Context, rawKey string) (*userdomain.User, *apikey.ApiKey, error)
-}
-
-type EnvironmentAccessTokenResolver interface {
-	ResolveEnvironmentByAccessToken(ctx context.Context, token string) (*environment.Environment, error)
-}
-
-// PermissionResolver resolves a caller's effective permission set. Implemented
-// by role.RoleService; kept as an interface so tests can stub it.
-type PermissionResolver interface {
-	ResolvePermissions(ctx context.Context, userID string) (*authz.PermissionSet, error)
-	ResolveApiKeyPermissions(ctx context.Context, apiKeyID string) (*authz.PermissionSet, error)
-}
-
-type AuthMiddleware struct {
-	authService      *AuthService
-	apiKeyValidator  ApiKeyValidator
-	envTokenResolver EnvironmentAccessTokenResolver
-	roleResolver     PermissionResolver
-	cfg              *config.Config
-	options          AuthOptions
 }
 
 func NewAuthMiddleware(authService *AuthService, cfg *config.Config) *AuthMiddleware {
@@ -955,7 +958,7 @@ func (m *AuthMiddleware) Add() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			reqCtx := c.Request().Context()
-			if m.cfg != nil && m.cfg.AgentMode {
+			if m.cfg.AgentEnabled {
 				return m.agentAuth(reqCtx, c, next)
 			}
 			return m.managerAuth(reqCtx, c, next)
@@ -969,13 +972,6 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c *echo.Context, next ec
 	}
 
 	req := c.Request()
-	if strings.HasPrefix(req.URL.Path, middleware.AgentPairingPrefix) &&
-		AgentTokenMatches(req.Header.Get(middleware.HeaderAgentBootstrap), m.cfg.AgentToken) {
-		slog.InfoContext(ctx, "Agent auth: bootstrap pairing accepted", "path", req.URL.Path, "method", req.Method)
-		agentSudo(c)
-		return next(c)
-	}
-
 	if AgentTokenMatches(req.Header.Get(middleware.HeaderAgentToken), m.cfg.AgentToken) {
 		agentSudo(c)
 		return next(c)

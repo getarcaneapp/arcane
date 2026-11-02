@@ -9,18 +9,27 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow/flowtest"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	"kit.getarcane.app/docker/streams/bus"
+
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/types/v3"
 )
 
-const admissionTestContainers = `[
+const (
+	admissionTestContainers = `[
 	{"Id": "aaa111", "Names": ["/web-1"], "Labels": {"com.docker.compose.project": "Shop"}},
 	{"Id": "bbb222", "Names": ["/db-1"], "Labels": {"com.docker.compose.project": "shop"}},
 	{"Id": "ccc333", "Names": ["/blog-1"], "Labels": {"com.docker.compose.project": "blog"}},
@@ -33,6 +42,7 @@ const admissionTestContainers = `[
 	{"Id": "jjj000", "Names": ["/app/cache", "/cache"]},
 	{"Id": "kkk111", "Names": ["/app"]}
 ]`
+)
 
 func admissionTestSummaries(t *testing.T) []container.Summary {
 	t.Helper()
@@ -56,22 +66,11 @@ func newAdmissionTestService(t *testing.T) (*UpdaterService, *runs.Admission) {
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	admission := runs.NewAdmission(harness.Runtime.Service(), t.Name())
 	require.NoError(t, admission.Register(harness.Runtime))
-	svc, err := NewUpdaterService(
-		db,
-		nil,
-		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		admission,
-		nil,
-	)
+	svc, err := NewUpdaterService(UpdaterServiceParams{
+		DB:            db,
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+		Admission:     admission,
+	})
 	require.NoError(t, err)
 	harness.Start(t)
 	return svc, admission
@@ -79,17 +78,17 @@ func newAdmissionTestService(t *testing.T) (*UpdaterService, *runs.Admission) {
 
 func TestUpdateAdmissionKeys(t *testing.T) {
 	containers := admissionTestSummaries(t)
-	keys := func(ids ...string) []scheduler.AdmissionKey {
-		out := make([]scheduler.AdmissionKey, 0, len(ids))
+	keys := func(ids ...string) []types.SchedulerAdmissionKey {
+		out := make([]types.SchedulerAdmissionKey, 0, len(ids))
 		for _, id := range ids {
-			out = append(out, scheduler.AdmissionKey{Scope: "updater", ID: id})
+			out = append(out, types.SchedulerAdmissionKey{Scope: "updater", ID: id})
 		}
 		return out
 	}
 	tests := []struct {
 		name    string
 		targets []string
-		want    []scheduler.AdmissionKey
+		want    []types.SchedulerAdmissionKey
 	}{
 		{name: "compose project members share the project key", targets: []string{"aaa111"}, want: keys("project:shop")},
 		{name: "separate projects stay separate", targets: []string{"ccc333"}, want: keys("project:blog")},
@@ -119,7 +118,7 @@ func TestUpdateAdmissionKeys(t *testing.T) {
 
 func TestUpdaterService_AcquireUpdateUnrelatedKeyAdmitsImmediately(t *testing.T) {
 	svc, admission := newAdmissionTestService(t)
-	held, admitted, err := admission.TryAcquire(t.Context(), scheduler.AdmissionKey{Scope: "updater", ID: "project:shop"})
+	held, admitted, err := admission.TryAcquire(t.Context(), types.SchedulerAdmissionKey{Scope: "updater", ID: "project:shop"})
 	require.NoError(t, err)
 	require.True(t, admitted)
 	defer held.Release(t.Context())
@@ -135,7 +134,7 @@ func TestUpdaterService_AcquireUpdateUnrelatedKeyAdmitsImmediately(t *testing.T)
 
 func TestUpdaterService_AcquireUpdateWaitsForConflictingKey(t *testing.T) {
 	svc, admission := newAdmissionTestService(t)
-	held, admitted, err := admission.TryAcquire(t.Context(), scheduler.AdmissionKey{Scope: "updater", ID: "container:solo"})
+	held, admitted, err := admission.TryAcquire(t.Context(), types.SchedulerAdmissionKey{Scope: "updater", ID: "container:solo"})
 	require.NoError(t, err)
 	require.True(t, admitted)
 
@@ -166,7 +165,7 @@ func TestUpdaterService_AcquireUpdateWaitsForConflictingKey(t *testing.T) {
 
 func TestUpdaterService_AcquireUpdateFailureReleasesHeldKeys(t *testing.T) {
 	svc, admission := newAdmissionTestService(t)
-	held, admitted, err := admission.TryAcquire(t.Context(), scheduler.AdmissionKey{Scope: "updater", ID: "container:vpn"})
+	held, admitted, err := admission.TryAcquire(t.Context(), types.SchedulerAdmissionKey{Scope: "updater", ID: "container:vpn"})
 	require.NoError(t, err)
 	require.True(t, admitted)
 	defer held.Release(t.Context())
@@ -180,9 +179,22 @@ func TestUpdaterService_AcquireUpdateFailureReleasesHeldKeys(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
 	for _, id := range []string{"container:indexer", "container:torrent"} {
-		lease, free, tryErr := admission.TryAcquire(t.Context(), scheduler.AdmissionKey{Scope: "updater", ID: id})
+		lease, free, tryErr := admission.TryAcquire(t.Context(), types.SchedulerAdmissionKey{Scope: "updater", ID: id})
 		require.NoError(t, tryErr)
 		require.True(t, free, id)
 		lease.Release(t.Context())
 	}
+}
+
+func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }

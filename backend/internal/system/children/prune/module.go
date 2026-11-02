@@ -5,9 +5,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
 // RegisterRoutes registers the system prune endpoints.
@@ -21,4 +21,14 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		Tags:        []string{"System"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermSystemPrune, h.PruneAll)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "df",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/system/df",
+		Summary:     "Get reclaimable disk usage",
+		Description: "Get the disk space held by unused images, build cache, unused volumes, and stopped containers",
+		Tags:        []string{"System"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermSystemRead, h.GetDiskUsage)
 }

@@ -11,15 +11,27 @@ import (
 	"strings"
 	"time"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/labstack/echo/v5"
 	"go.uber.org/fx"
 	"google.golang.org/grpc"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	tunnelpb "getarcane.dev/arcane/v3/proto/tunnel/v1"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	HTTPServerParams struct {
+		fx.In
+
+		AppCtx       context.Context
+		Config       *config.Config
+		Router       *echo.Echo
+		TunnelServer *agent.TunnelServer
+		Scheduler    types.JobScheduler
+	}
 )
 
 var serverOptions = fx.Options(
@@ -30,44 +42,30 @@ var serverOptions = fx.Options(
 	),
 )
 
-type HTTPServerParams struct {
-	fx.In
-
-	AppCtx       context.Context
-	Config       *config.Config
-	Router       *echo.Echo
-	TunnelServer *edge.TunnelServer
-	Scheduler    schedulertypes.JobScheduler
-}
-
 // NewHTTPServer builds the shared HTTP/gRPC server and registers its lifecycle.
 func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
+	if p.Config.AgentEnabled {
+		return &http.Server{Handler: p.Router}, nil
+	}
 	listenAddr := p.Config.ListenAddr()
-	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLS(p.AppCtx, p.Config)
+	useTLS, tlsCertFile, tlsKeyFile, agentCfg, err := prepareServerTLS(p.AppCtx, p.Config)
 	if err != nil {
 		return nil, err
 	}
-	if p.TunnelServer != nil {
-		p.TunnelServer.Config = edgeCfg
-	}
+	p.TunnelServer.Config = agentCfg
 
-	// Managers serve the gRPC edge tunnel on the shared listener.
-	var httpHandler http.Handler = p.Router
-	var grpcServer *grpc.Server
-	if !p.Config.AgentMode && p.TunnelServer != nil {
-		//nolint:contextcheck // Stream interceptors receive request-scoped context from grpc.ServerStream.
-		grpcServer = grpc.NewServer(p.TunnelServer.GRPCServerOptions()...)
-		tunnelpb.RegisterTunnelServiceServer(grpcServer, p.TunnelServer)
-		httpHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isTunnelGRPCRequest(r) {
-				grpcServer.ServeHTTP(w, normalizeTunnelGRPCRequestPath(r))
-				return
-			}
-			p.Router.ServeHTTP(w, r)
-		})
-		slog.InfoContext(p.AppCtx, "Using shared HTTP/gRPC listener for edge tunnel", "addr", listenAddr)
-	}
-	httpHandler, protocols := configureHTTPProtocols(useTLS, httpHandler)
+	// Managers serve the gRPC agent tunnel on the shared listener.
+	//nolint:contextcheck // Stream interceptors receive request-scoped context from grpc.ServerStream.
+	grpcServer := grpc.NewServer(p.TunnelServer.GRPCServerOptions()...)
+	tunnelpb.RegisterTunnelServiceServer(grpcServer, p.TunnelServer)
+	slog.InfoContext(p.AppCtx, "Using shared HTTP/gRPC listener for agent tunnel", "addr", listenAddr)
+	httpHandler, protocols := configureHTTPProtocols(useTLS, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isTunnelGRPCRequest(r) {
+			grpcServer.ServeHTTP(w, normalizeTunnelGRPCRequestPath(r))
+			return
+		}
+		p.Router.ServeHTTP(w, r)
+	}))
 
 	var tlsConfig *tls.Config
 	if useTLS {
@@ -75,11 +73,11 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 		if loadErr != nil {
 			return nil, loadErr
 		}
-		edgeTLSConfig, tlsErr := edge.BuildManagerServerTLSConfig(edgeCfg)
+		agentTLSConfig, tlsErr := agent.BuildManagerServerTLSConfig(agentCfg)
 		if tlsErr != nil {
 			return nil, tlsErr
 		}
-		tlsConfig = cmp.Or(edgeTLSConfig, &tls.Config{})
+		tlsConfig = cmp.Or(agentTLSConfig, &tls.Config{})
 		tlsConfig.Certificates = []tls.Certificate{certificate}
 	}
 
@@ -95,8 +93,13 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 		BaseContext:       func(net.Listener) context.Context { return baseCtx },
 		// Long-lived stream handlers tune dead-peer detection per connection; see handlerutil.SetDeadPeerTimeout.
 		ConnContext: httpx.WithConn,
-		// Edge gRPC tunnels are one long HTTP/2 stream, so the 1 MiB default window would cap agent throughput per RTT.
-		HTTP2: &http.HTTP2Config{MaxReceiveBufferPerStream: 8 << 20, MaxReceiveBufferPerConnection: 16 << 20},
+		// Agent gRPC tunnels are one long HTTP/2 stream, so the 1 MiB default window would cap agent throughput per RTT.
+		HTTP2: &http.HTTP2Config{
+			MaxReceiveBufferPerStream:     8 << 20,
+			MaxReceiveBufferPerConnection: 16 << 20,
+			SendPingTimeout:               30 * time.Second,
+			PingTimeout:                   10 * time.Second,
+		},
 	}
 
 	lc.Append(fx.Hook{
@@ -140,20 +143,18 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 				slog.ErrorContext(ctx, "Server forced to shutdown", "error", shutdownErr)
 			}
 
-			if grpcServer != nil {
-				grpcStopped := make(chan struct{})
-				go func() {
-					grpcServer.GracefulStop()
-					close(grpcStopped)
-				}()
-				grpcTimer := time.NewTimer(2 * time.Second)
-				select {
-				case <-grpcStopped:
-					grpcTimer.Stop()
-				case <-grpcTimer.C:
-					grpcServer.Stop()
-					<-grpcStopped
-				}
+			grpcStopped := make(chan struct{})
+			go func() {
+				grpcServer.GracefulStop()
+				close(grpcStopped)
+			}()
+			grpcTimer := time.NewTimer(2 * time.Second)
+			select {
+			case <-grpcStopped:
+				grpcTimer.Stop()
+			case <-grpcTimer.C:
+				grpcServer.Stop()
+				<-grpcStopped
 			}
 			if shutdownErr == nil {
 				slog.InfoContext(ctx, "Server stopped gracefully")
@@ -165,30 +166,26 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 	return srv, nil
 }
 
-func prepareServerTLS(ctx context.Context, cfg *config.Config) (bool, string, string, *edge.Config, error) {
+func prepareServerTLS(ctx context.Context, cfg *config.Config) (bool, string, string, *agent.Config, error) {
 	useTLS := cfg.TLSEnabled
 	tlsCertFile := strings.TrimSpace(cfg.TLSCertFile)
 	tlsKeyFile := strings.TrimSpace(cfg.TLSKeyFile)
-	edgeCfg := buildEdgeRuntimeConfig(cfg)
+	agentCfg := buildAgentRuntimeConfig(cfg, "")
 	if useTLS && (tlsCertFile == "" || tlsKeyFile == "") {
-		return false, "", "", nil, errors.New("TLS_ENABLED requires both TLS_CERT_FILE and TLS_KEY_FILE")
+		return false, "", "", nil, errors.New("ARCANE_TLS_ENABLED requires both ARCANE_TLS_CERT_FILE and ARCANE_TLS_KEY_FILE")
 	}
 
-	if cfg.AgentMode {
-		return useTLS, tlsCertFile, tlsKeyFile, edgeCfg, nil
-	}
-
-	if err := edge.PrepareManagerMTLSAssetsWithContext(ctx, edgeCfg); err != nil {
+	if err := agent.PrepareManagerMTLSAssetsWithContext(ctx, agentCfg); err != nil {
 		return false, "", "", nil, err
 	}
 
-	if edge.NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) != edge.EdgeMTLSModeDisabled {
-		if err := edge.ValidateManagerMTLSConfig(edgeCfg); err != nil {
+	if agent.NormalizeMTLSMode(cfg.AgentMTLSMode) != agent.MTLSModeDisabled {
+		if err := agent.ValidateManagerMTLSConfig(agentCfg); err != nil {
 			return false, "", "", nil, err
 		}
 	}
 
-	return useTLS, tlsCertFile, tlsKeyFile, edgeCfg, nil
+	return useTLS, tlsCertFile, tlsKeyFile, agentCfg, nil
 }
 
 func configureHTTPProtocols(useTLS bool, handler http.Handler) (http.Handler, *http.Protocols) {
@@ -212,23 +209,22 @@ func configureHTTPProtocols(useTLS bool, handler http.Handler) (http.Handler, *h
 	return handler, &protocols
 }
 
-func buildEdgeRuntimeConfig(cfg *config.Config) *edge.Config {
-	return &edge.Config{
-		EdgeAgent:             cfg.EdgeAgent,
-		EdgeTransport:         cfg.EdgeTransport,
-		EdgeReconnectInterval: cfg.EdgeReconnectInterval,
-		EdgeMTLSMode:          cfg.EdgeMTLSMode,
-		EdgeMTLSCAFile:        cfg.EdgeMTLSCAFile,
-		EdgeMTLSCertFile:      cfg.EdgeMTLSCertFile,
-		EdgeMTLSKeyFile:       cfg.EdgeMTLSKeyFile,
-		EdgeMTLSServerName:    cfg.EdgeMTLSServerName,
-		EdgeMTLSAssetsDir:     cfg.EdgeMTLSAssetsDir,
-		AppURL:                cfg.GetAppURL(),
-		ManagerApiUrl:         cfg.ManagerApiUrl,
-		AgentToken:            cfg.AgentToken,
-		Port:                  cfg.Port,
-		Listen:                cfg.Listen,
-		EdgeMuxDisabled:       cfg.EdgeMuxDisabled,
+func buildAgentRuntimeConfig(cfg *config.Config, agentToken string) *agent.Config {
+	return &agent.Config{
+		AgentEnabled:           cfg.AgentEnabled,
+		AgentTransport:         cfg.AgentTransport,
+		AgentReconnectInterval: cfg.AgentReconnectInterval,
+		AgentMTLSMode:          cfg.AgentMTLSMode,
+		AgentMTLSCAFile:        cfg.AgentMTLSCAFile,
+		AgentMTLSCertFile:      cfg.AgentMTLSCertFile,
+		AgentMTLSKeyFile:       cfg.AgentMTLSKeyFile,
+		AgentMTLSServerName:    cfg.AgentMTLSServerName,
+		AgentMTLSAssetsDir:     cfg.AgentMTLSAssetsDir,
+		AppURL:                 cfg.GetAppURL(),
+		ManagerApiUrl:          cfg.ManagerApiUrl,
+		AgentToken:             agentToken,
+		Port:                   cfg.Port,
+		Listen:                 cfg.Listen,
 	}
 }
 

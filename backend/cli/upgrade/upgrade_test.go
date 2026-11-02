@@ -9,15 +9,16 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/updater/labels"
+
+	"kit.getarcane.app/updater/labels"
 )
 
-func TestNormalizeRecreatedArcaneLabelsInternal(t *testing.T) {
+func TestNormalizeRecreatedArcaneLabels(t *testing.T) {
 	tests := []struct {
-		name       string
 		labels     map[string]string
 		want       map[string]string
 		wantSource map[string]string
+		name       string
 	}{
 		{
 			name: "legacy server gains current Arcane label",
@@ -67,7 +68,7 @@ func TestNormalizeRecreatedArcaneLabelsInternal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := normalizeRecreatedArcaneLabelsInternal(tt.labels)
+			got := normalizeRecreatedArcaneLabels(tt.labels)
 
 			require.Equal(t, tt.want, got)
 			require.Equal(t, tt.wantSource, tt.labels)
@@ -75,7 +76,7 @@ func TestNormalizeRecreatedArcaneLabelsInternal(t *testing.T) {
 	}
 }
 
-func TestRefreshRecreatedImageLabelsInternal(t *testing.T) {
+func TestRefreshRecreatedImageLabels(t *testing.T) {
 	containerLabels := map[string]string{
 		"ORG.OPENCONTAINERS.IMAGE.VERSION":  "v2.6.0-next.30",
 		"org.opencontainers.image.revision": "old-revision",
@@ -109,7 +110,7 @@ func TestRefreshRecreatedImageLabelsInternal(t *testing.T) {
 		"org.opencontainers.image.authors":  "old-author",
 	}
 
-	got := refreshRecreatedImageLabelsInternal(containerLabels, previousImageLabels, targetImageLabels, "sha256:new-image")
+	got := refreshRecreatedImageLabels(containerLabels, previousImageLabels, targetImageLabels, "sha256:new-image")
 
 	require.Equal(t, map[string]string{
 		"org.opencontainers.image.version":  "v2.7.0-next.17",
@@ -123,10 +124,6 @@ func TestRefreshRecreatedImageLabelsInternal(t *testing.T) {
 		"com.example.custom":                "keep",
 	}, got)
 	require.Equal(t, originalContainerLabels, containerLabels)
-}
-
-func TestRefreshRecreatedImageLabelsInternalKeepsNilWhenNoLabelsExist(t *testing.T) {
-	require.Nil(t, refreshRecreatedImageLabelsInternal(nil, nil, nil, ""))
 }
 
 func TestRefreshRecreatedContainerLabelsInternalPreservesLabelsWhenTargetInspectFails(t *testing.T) {
@@ -151,7 +148,7 @@ func TestRefreshRecreatedContainerLabelsInternalPreservesLabelsWhenTargetInspect
 		"com.docker.compose.image":         "sha256:old-image",
 	}
 
-	got := refreshRecreatedContainerLabelsInternal(
+	got := refreshRecreatedContainerLabels(
 		t.Context(),
 		dockerClient,
 		containerLabels,
@@ -192,7 +189,7 @@ func TestRefreshRecreatedContainerLabelsInternalPreservesOverridesWhenPreviousIn
 		"com.docker.compose.image":         "sha256:old-image",
 	}
 
-	got := refreshRecreatedContainerLabelsInternal(
+	got := refreshRecreatedContainerLabels(
 		t.Context(),
 		dockerClient,
 		containerLabels,
@@ -206,4 +203,26 @@ func TestRefreshRecreatedContainerLabelsInternalPreservesOverridesWhenPreviousIn
 		"org.opencontainers.image.title":   "Arcane",
 		"com.docker.compose.image":         "sha256:new-image",
 	}, got)
+}
+
+func TestApplyRecoveredEnvironmentRenamesLegacyKeys(t *testing.T) {
+	result := applyRecoveredEnvironment([]string{
+		"PORT=4000",
+		"ENCRYPTION_KEY_FILE=/run/secrets/key",
+		"AGENT_TOKEN__FILE=/run/secrets/agent",
+		"TLS_CERT_FILE=/certs/tls.crt",
+		"LOG_LEVEL=debug",
+		"ARCANE_LOG_LEVEL=info",
+		"PUID=1000",
+	}, nil)
+
+	require.ElementsMatch(t, []string{
+		"ARCANE_PORT=4000",
+		"ARCANE_ENCRYPTION_KEY_FILE=/run/secrets/key",
+		"ARCANE_AGENT_TOKEN__FILE=/run/secrets/agent",
+		"ARCANE_TLS_CERT_FILE=/certs/tls.crt",
+		"LOG_LEVEL=debug",
+		"ARCANE_LOG_LEVEL=info",
+		"PUID=1000",
+	}, result)
 }

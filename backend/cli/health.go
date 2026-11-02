@@ -14,7 +14,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/config/schema"
 )
 
 const (
@@ -24,27 +25,36 @@ const (
 	healthPath           = "/api/health"
 )
 
-var healthTimeout time.Duration
+var (
+	healthTimeout time.Duration
 
-var HealthCmd = &cobra.Command{
-	Use:   "health",
-	Short: "Check API health",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg := config.Load()
-		timeout := healthTimeout
-		if timeout <= 0 {
-			timeout = defaultHealthTimeout
-		}
+	HealthCmd = &cobra.Command{
+		Use:   "health",
+		Short: "Check API health",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := schema.CheckLegacyEnv(cmd.Context()); err != nil {
+				return err
+			}
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			timeout := healthTimeout
+			if timeout <= 0 {
+				timeout = defaultHealthTimeout
+			}
 
-		if err := runHealthCommandInternal(cmd.Context(), cfg, timeout); err != nil {
-			return err
-		}
+			return runHealthCommand(cmd.Context(), cfg, timeout)
+		},
+	}
+)
 
-		return nil
-	},
+func init() {
+	HealthCmd.Flags().DurationVar(&healthTimeout, "timeout", defaultHealthTimeout, "Health check timeout (e.g. 5s)")
+	rootCmd.AddCommand(HealthCmd)
 }
 
-func buildHealthURLInternal(cfg *config.Config) (string, error) {
+func buildHealthURL(cfg *config.Config) (string, error) {
 	if cfg == nil {
 		return "", errors.New("health config is nil")
 	}
@@ -65,12 +75,12 @@ func buildHealthURLInternal(cfg *config.Config) (string, error) {
 	return u.String(), nil
 }
 
-func runHealthCommandInternal(ctx context.Context, cfg *config.Config, timeout time.Duration) error {
+func runHealthCommand(ctx context.Context, cfg *config.Config, timeout time.Duration) error {
 	if timeout <= 0 {
 		timeout = defaultHealthTimeout
 	}
 
-	healthURL, err := buildHealthURLInternal(cfg)
+	healthURL, err := buildHealthURL(cfg)
 	if err != nil {
 		return err
 	}
@@ -94,9 +104,4 @@ func runHealthCommandInternal(ctx context.Context, cfg *config.Config, timeout t
 	}
 
 	return nil
-}
-
-func init() {
-	HealthCmd.Flags().DurationVar(&healthTimeout, "timeout", defaultHealthTimeout, "Health check timeout (e.g. 5s)")
-	rootCmd.AddCommand(HealthCmd)
 }

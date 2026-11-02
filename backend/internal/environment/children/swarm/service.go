@@ -10,16 +10,19 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/environment"
 	"github.com/samber/mo"
-	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/apikey"
+	"getarcane.dev/types/v3"
 )
 
-type Service struct {
-	apiKeys *apikey.ApiKeyService
-}
+type (
+	Service struct {
+		apiKeys *apikey.ApiKeyService
+	}
+)
 
 func New(apiKeys *apikey.ApiKeyService) *Service {
 	return &Service{apiKeys: apiKeys}
@@ -34,14 +37,14 @@ func (s *Service) AgentIdentity(parentEnvironmentID, nodeID, hostname string) (s
 	if strings.TrimSpace(nodeID) == "" {
 		return "", "", errors.New("swarm node ID is required")
 	}
-	return cmp.Or(strings.TrimSpace(hostname), "Swarm Node "+nodeID[:min(len(nodeID), 12)]), "edge://swarm-node-" + nodeID[:min(len(nodeID), 12)], nil
+	return cmp.Or(strings.TrimSpace(hostname), "Swarm Node "+nodeID[:min(len(nodeID), 12)]), "agent://swarm-node-" + nodeID[:min(len(nodeID), 12)], nil
 }
 
 // AuthorizeBinding rejects bindings that would silently move an environment or
 // replace a node's visible binding unless rebind is set. countVisibleBindings
 // returns the other visible environments already bound to the node.
 func (s *Service) AuthorizeBinding(
-	candidate environment.SwarmBindingCandidate,
+	candidate types.SwarmBindingCandidate,
 	parentEnvironmentID, nodeID string,
 	rebind bool,
 	countVisibleBindings func() (int64, error),

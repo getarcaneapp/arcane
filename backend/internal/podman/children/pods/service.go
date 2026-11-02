@@ -10,28 +10,60 @@ import (
 	"strings"
 
 	"github.com/docker/go-units"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
-	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/podman"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/podman"
+	"getarcane.dev/types/v3"
 )
 
-const cpuPeriod = 100000
+type (
+	Service struct {
+		runtime func(context.Context) (podman.Runtime, error)
+	}
+)
 
-type Service struct {
-	runtime func(context.Context) (podman.Runtime, error)
+const (
+	cpuPeriod = 100000
+)
+
+var podPagination = pagination.Config[types.Pod]{
+	SearchAccessors: []pagination.SearchAccessor[types.Pod]{
+		func(pod types.Pod) (string, error) {
+			return pod.Name, nil
+		},
+		func(pod types.Pod) (string, error) {
+			return pod.ID, nil
+		},
+		func(pod types.Pod) (string, error) {
+			return pod.Status, nil
+		},
+		func(pod types.Pod) (string, error) {
+			return strings.Join(pod.Networks, " "), nil
+		},
+	},
+	SortBindings: []pagination.SortBinding[types.Pod]{
+		{Key: "name", Fn: func(a, b types.Pod) int {
+			return strings.Compare(a.Name, b.Name)
+		}},
+		{Key: "status", Fn: func(a, b types.Pod) int {
+			return strings.Compare(a.Status, b.Status)
+		}},
+		{Key: "created", Fn: func(a, b types.Pod) int {
+			return a.Created.Compare(b.Created)
+		}},
+	},
 }
 
 func NewService(runtime func(context.Context) (podman.Runtime, error)) *Service {
 	return &Service{runtime: runtime}
 }
 
-func (s *Service) List(ctx context.Context) ([]podmantypes.Pod, error) {
+func (s *Service) List(ctx context.Context) ([]types.Pod, error) {
 	rt, err := s.runtime(ctx)
 	if err != nil {
 		return nil, err
@@ -39,35 +71,7 @@ func (s *Service) List(ctx context.Context) ([]podmantypes.Pod, error) {
 	return rt.Client.PodList(ctx, nil)
 }
 
-var podPagination = pagination.Config[podmantypes.Pod]{
-	SearchAccessors: []pagination.SearchAccessor[podmantypes.Pod]{
-		func(pod podmantypes.Pod) (string, error) {
-			return pod.Name, nil
-		},
-		func(pod podmantypes.Pod) (string, error) {
-			return pod.ID, nil
-		},
-		func(pod podmantypes.Pod) (string, error) {
-			return pod.Status, nil
-		},
-		func(pod podmantypes.Pod) (string, error) {
-			return strings.Join(pod.Networks, " "), nil
-		},
-	},
-	SortBindings: []pagination.SortBinding[podmantypes.Pod]{
-		{Key: "name", Fn: func(a, b podmantypes.Pod) int {
-			return strings.Compare(a.Name, b.Name)
-		}},
-		{Key: "status", Fn: func(a, b podmantypes.Pod) int {
-			return strings.Compare(a.Status, b.Status)
-		}},
-		{Key: "created", Fn: func(a, b podmantypes.Pod) int {
-			return a.Created.Compare(b.Created)
-		}},
-	},
-}
-
-func (s *Service) ListPaginated(ctx context.Context, params pagination.QueryParams) ([]podmantypes.Pod, pagination.Response, error) {
+func (s *Service) ListPaginated(ctx context.Context, params pagination.QueryParams) ([]types.Pod, pagination.Response, error) {
 	items, err := s.List(ctx)
 	if err != nil {
 		return nil, pagination.Response{}, err
@@ -76,15 +80,15 @@ func (s *Service) ListPaginated(ctx context.Context, params pagination.QueryPara
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
 }
 
-func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) (base.Paginated[podmantypes.Pod], error) {
-	collection, err := httpx.CollectEnvironments[base.Paginated[podmantypes.Pod]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.Pod], error) {
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.Pod]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
 	if err != nil {
-		return base.Paginated[podmantypes.Pod]{}, err
+		return types.Paginated[types.Pod]{}, err
 	}
 
-	pages := make([]pagination.EnvironmentPage[podmantypes.Pod], 0, len(collection.Results))
+	pages := make([]pagination.EnvironmentPage[types.Pod], 0, len(collection.Results))
 	for _, result := range collection.Results {
-		pages = append(pages, pagination.EnvironmentPage[podmantypes.Pod]{
+		pages = append(pages, pagination.EnvironmentPage[types.Pod]{
 			Environment:    result.Environment,
 			Items:          result.Value.Data,
 			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
@@ -92,7 +96,7 @@ func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) 
 	}
 	data, resp := pagination.MergeEnvironmentPages(podPagination, pages, params)
 
-	return base.Paginated[podmantypes.Pod]{
+	return types.Paginated[types.Pod]{
 		Success:            true,
 		Data:               data,
 		Pagination:         handlerutil.PaginationResponse(resp),
@@ -100,28 +104,28 @@ func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) 
 	}, nil
 }
 
-func (s *Service) Inspect(ctx context.Context, nameOrID string) (podmantypes.PodInspect, error) {
+func (s *Service) Inspect(ctx context.Context, nameOrID string) (types.PodInspect, error) {
 	rt, err := s.runtime(ctx)
 	if err != nil {
-		return podmantypes.PodInspect{}, err
+		return types.PodInspect{}, err
 	}
 	pod, err := rt.Client.PodInspect(ctx, nameOrID)
 	if err != nil {
-		return podmantypes.PodInspect{}, err
+		return types.PodInspect{}, err
 	}
 	containers, err := rt.Client.ContainerList(ctx, nil, []string{pod.ID})
 	if err != nil {
-		return podmantypes.PodInspect{}, fmt.Errorf("list containers for pod %s: %w", pod.ID, err)
+		return types.PodInspect{}, fmt.Errorf("list containers for pod %s: %w", pod.ID, err)
 	}
 
 	for i, member := range pod.Containers {
-		index := slices.IndexFunc(containers, func(c podmantypes.Container) bool {
+		index := slices.IndexFunc(containers, func(c types.PodmanContainer) bool {
 			return c.ID == member.ID
 		})
 		if index < 0 {
 			continue
 		}
-		pod.Containers[i] = podmantypes.PodInspectContainer{
+		pod.Containers[i] = types.PodInspectContainer{
 			ID:       member.ID,
 			Name:     member.Name,
 			State:    member.State,
@@ -136,24 +140,27 @@ func (s *Service) Inspect(ctx context.Context, nameOrID string) (podmantypes.Pod
 	return pod, nil
 }
 
-func (s *Service) Create(ctx context.Context, req podmantypes.PodCreateRequest) (string, error) {
+func (s *Service) Create(ctx context.Context, req types.PodCreateRequest) (string, error) {
+	if err := validatePodRequest(req); err != nil {
+		return "", err
+	}
 	memory, err := byteSize("memory", req.Memory)
 	if err != nil {
 		return "", err
 	}
-	memorySwap, err := byteSize("memory swap", req.MemorySwap)
+	memorySwap, err := byteSize("memorySwap", req.MemorySwap)
 	if err != nil {
 		return "", err
 	}
-	shmSize, err := byteSize("shm size", req.ShmSize)
+	shmSize, err := byteSize("shmSize", req.ShmSize)
 	if err != nil {
 		return "", err
 	}
-	shmSizeSystemd, err := byteSize("systemd shm size", req.ShmSizeSystemd)
+	shmSizeSystemd, err := byteSize("shmSizeSystemd", req.ShmSizeSystemd)
 	if err != nil {
 		return "", err
 	}
-	weightDevices, err := deviceLimits("blkio weight", req.BlkioWeightDevices, func(major, minor int64, value string) (podman.PodWeightDevice, error) {
+	weightDevices, err := deviceLimits("blkioWeightDevices", req.BlkioWeightDevices, func(major, minor int64, value string) (podman.PodWeightDevice, error) {
 		weight, parseErr := strconv.ParseUint(value, 10, 16)
 		return podman.PodWeightDevice{
 			Major:  major,
@@ -172,11 +179,11 @@ func (s *Service) Create(ctx context.Context, req podmantypes.PodCreateRequest) 
 			Rate:  uint64(max(rate, 0)),
 		}, parseErr
 	}
-	readBps, err := deviceLimits("read bps", req.DeviceReadBps, throttle)
+	readBps, err := deviceLimits("deviceReadBps", req.DeviceReadBps, throttle)
 	if err != nil {
 		return "", err
 	}
-	writeBps, err := deviceLimits("write bps", req.DeviceWriteBps, throttle)
+	writeBps, err := deviceLimits("deviceWriteBps", req.DeviceWriteBps, throttle)
 	if err != nil {
 		return "", err
 	}
@@ -184,8 +191,9 @@ func (s *Service) Create(ctx context.Context, req podmantypes.PodCreateRequest) 
 	for i, entries := range [][]string{req.UIDMap, req.GIDMap} {
 		for _, entry := range entries {
 			var idMap podman.PodIDMap
-			if _, scanErr := fmt.Sscanf(strings.TrimSpace(entry), "%d:%d:%d", &idMap.ContainerID, &idMap.HostID, &idMap.Size); scanErr != nil {
-				return "", common.Classify(common.ErrBadRequest, fmt.Errorf("invalid ID mapping %q: use CONTAINER:HOST:SIZE", entry))
+			_, scanErr := fmt.Sscanf(strings.TrimSpace(entry), "%d:%d:%d", &idMap.ContainerID, &idMap.HostID, &idMap.Size)
+			if scanErr != nil || !idMapPattern.MatchString(strings.TrimSpace(entry)) {
+				return "", common.Classify(common.ErrValidation, &types.FieldError{Field: kit.Ternary(i == 0, "uidMap", "gidMap"), Err: fmt.Errorf("invalid ID mapping %q: use CONTAINER:HOST:SIZE", entry)})
 			}
 			idMaps[i] = append(idMaps[i], idMap)
 		}
@@ -195,7 +203,7 @@ func (s *Service) Create(ctx context.Context, req podmantypes.PodCreateRequest) 
 	var volumes []podman.PodNamedVolume
 	for _, volume := range req.Volumes {
 		if !strings.HasPrefix(volume.Source, "/") && strings.ContainsAny(volume.Source, `/\`) {
-			return "", common.Classify(common.ErrBadRequest, fmt.Errorf("volume source %q must be an absolute host path or a named volume", volume.Source))
+			return "", common.Classify(common.ErrValidation, &types.FieldError{Field: "volumes", Err: fmt.Errorf("volume source %q must be an absolute host path or a named volume", volume.Source)})
 		}
 		if strings.HasPrefix(volume.Source, "/") {
 			mounts = append(mounts, podman.PodMount{
@@ -332,7 +340,7 @@ func (s *Service) Create(ctx context.Context, req podmantypes.PodCreateRequest) 
 	})
 }
 
-func (s *Service) Action(ctx context.Context, nameOrID string, action podman.PodAction, req podmantypes.PodActionRequest) error {
+func (s *Service) Action(ctx context.Context, nameOrID string, action podman.PodAction, req types.PodActionRequest) error {
 	rt, err := s.runtime(ctx)
 	if err != nil {
 		return err
@@ -351,7 +359,7 @@ func (s *Service) Remove(ctx context.Context, nameOrID string, force bool) error
 	return rt.Client.PodRemove(ctx, nameOrID, force)
 }
 
-func (s *Service) Prune(ctx context.Context) ([]podmantypes.PodPruneReport, error) {
+func (s *Service) Prune(ctx context.Context) ([]types.PodPruneReport, error) {
 	rt, err := s.runtime(ctx)
 	if err != nil {
 		return nil, err
@@ -359,15 +367,15 @@ func (s *Service) Prune(ctx context.Context) ([]podmantypes.PodPruneReport, erro
 	return rt.Client.PodPrune(ctx)
 }
 
-func (s *Service) Top(ctx context.Context, nameOrID, psArgs string) (podmantypes.PodTop, error) {
+func (s *Service) Top(ctx context.Context, nameOrID, psArgs string) (types.PodTop, error) {
 	rt, err := s.runtime(ctx)
 	if err != nil {
-		return podmantypes.PodTop{}, err
+		return types.PodTop{}, err
 	}
 	return rt.Client.PodTop(ctx, nameOrID, psArgs)
 }
 
-func (s *Service) Stats(ctx context.Context, namesOrIDs []string) ([]podmantypes.PodStats, error) {
+func (s *Service) Stats(ctx context.Context, namesOrIDs []string) ([]types.PodStats, error) {
 	rt, err := s.runtime(ctx)
 	if err != nil {
 		return nil, err

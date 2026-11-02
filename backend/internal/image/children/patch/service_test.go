@@ -3,7 +3,6 @@ package patch
 import (
 	"context"
 	"encoding/json/v2"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,25 +12,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/features"
-	"github.com/getarcaneapp/arcane/types/v2/imagepatch"
-	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"kit.getarcane.app"
+	"kit.getarcane.app/docker/streams/bus"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/vulnerability"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
 func TestResolvePatchedRef(t *testing.T) {
@@ -74,13 +72,14 @@ func TestResolvePatchedRef(t *testing.T) {
 
 func TestListPatchTargets_ExcludesUntaggedImages(t *testing.T) {
 	ctx := t.Context()
-	dsn := fmt.Sprintf("file:image-patch-test-%d?mode=memory&cache=shared", time.Now().UnixNano())
-	gdb, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, gdb.AutoMigrate(&vulnerability.VulnerabilityScanRecord{}, &vulnerability.VulnerabilityReportRecord{}, &ImagePatchRecord{}))
-	db := &database.DB{DB: gdb}
+	settingsSvc, db := patchFeatureSettings(t)
+	require.NoError(t, settingsSvc.UpdateSettings(ctx, types.SettingsUpdate{"dockerHost": "unix:///nonexistent-arcane-test.sock"}))
 
-	svc := NewService(db, docker.NewDockerClientService(ctx, nil, &config.Config{DockerHost: "unix:///nonexistent-arcane-test.sock"}, nil), nil, nil, nil, nil)
+	svc := NewService(ServiceParams{
+		DB:              db,
+		DockerService:   docker.NewDockerClientService(ctx, nil, settingsSvc, bus.Config{}),
+		SettingsService: settingsSvc,
+	})
 
 	records := []vulnerability.VulnerabilityScanRecord{
 		{
@@ -122,7 +121,7 @@ func patchFeatureSettings(t *testing.T) (*settings.SettingsService, *database.DB
 	require.NoError(t, err)
 	require.NoError(t, gdb.AutoMigrate(&settings.SettingVariable{}, &vulnerability.VulnerabilityScanRecord{}, &vulnerability.VulnerabilityReportRecord{}, &ImagePatchRecord{}))
 	db := &database.DB{DB: gdb}
-	svc, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
+	svc, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}
@@ -132,23 +131,21 @@ func patchFeatureSettings(t *testing.T) (*settings.SettingsService, *database.DB
 
 func TestVulnerabilityFeatureBlocksReportPatchesOnly(t *testing.T) {
 	settingsSvc, db := patchFeatureSettings(t)
-	require.NoError(t, settingsSvc.SetBoolSetting(t.Context(), features.VulnerabilityManagementSettingKey, false))
-	svc := NewService(
-		db,
-		docker.NewDockerClientService(t.Context(), nil, &config.Config{DockerHost: "unix:///nonexistent-arcane-feature-test.sock"}, nil),
-		settingsSvc,
-		nil,
-		nil,
-		nil,
-	)
-	_, err := svc.PatchImage(t.Context(), "0", "test-image", imagepatch.PatchOptions{ScanID: "test-image"}, user.Actor{})
+	require.NoError(t, settingsSvc.SetBoolSetting(t.Context(), types.FeatureVulnerabilityManagementSettingKey, false))
+	require.NoError(t, settingsSvc.UpdateSettings(t.Context(), types.SettingsUpdate{"dockerHost": "unix:///nonexistent-arcane-feature-test.sock"}))
+	svc := NewService(ServiceParams{
+		DB:              db,
+		DockerService:   docker.NewDockerClientService(t.Context(), nil, settingsSvc, bus.Config{}),
+		SettingsService: settingsSvc,
+	})
+	_, err := svc.PatchImage(t.Context(), "0", "test-image", types.PatchOptions{ScanID: "test-image"}, types.Actor{})
 	require.ErrorIs(t, err, common.ErrFeatureDisabled)
 	_, _, err = svc.ListPatchTargets(t.Context(), "0", pagination.QueryParams{})
 	require.ErrorIs(t, err, common.ErrFeatureDisabled)
 	_, err = svc.Targets(t.Context(), "0")
 	require.ErrorIs(t, err, common.ErrFeatureDisabled)
 	// Standalone patching still reaches Docker; this test deliberately has no daemon.
-	_, err = svc.PatchImage(t.Context(), "0", "test-image", imagepatch.PatchOptions{}, user.Actor{})
+	_, err = svc.PatchImage(t.Context(), "0", "test-image", types.PatchOptions{}, types.Actor{})
 	require.Error(t, err)
 	require.NotErrorIs(t, err, common.ErrFeatureDisabled)
 	require.Contains(t, err.Error(), "failed to connect to Docker")
@@ -156,21 +153,24 @@ func TestVulnerabilityFeatureBlocksReportPatchesOnly(t *testing.T) {
 
 func TestQueuedReportPatchStopsWhenFeatureDisabled(t *testing.T) {
 	settingsSvc, db := patchFeatureSettings(t)
-	svc := NewService(db, nil, settingsSvc, nil, nil, nil)
+	svc := NewService(ServiceParams{
+		DB:              db,
+		SettingsService: settingsSvc,
+	})
 	record := &ImagePatchRecord{
 		EnvironmentID:   "0",
 		OriginalImageID: "test-image",
-		Mode:            string(imagepatch.PatchModeReport),
-		Status:          string(imagepatch.PatchStatusPatching),
+		Mode:            string(types.PatchModeReport),
+		Status:          string(types.PatchStatusPatching),
 	}
 	require.NoError(t, db.Create(record).Error)
 	svc.patchSlot <- struct{}{}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = svc.runPatch(t.Context(), record, imagepatch.PatchOptions{ScanID: "test-image"}, nil, "", "")
+		_ = svc.runPatch(t.Context(), record, types.PatchOptions{ScanID: "test-image"}, nil, "", "")
 	}()
-	require.NoError(t, settingsSvc.SetBoolSetting(t.Context(), features.VulnerabilityManagementSettingKey, false))
+	require.NoError(t, settingsSvc.SetBoolSetting(t.Context(), types.FeatureVulnerabilityManagementSettingKey, false))
 	// The active patch owns its slot until it finishes normally.
 	require.Len(t, svc.patchSlot, 1)
 	<-svc.patchSlot
@@ -181,15 +181,15 @@ func TestQueuedReportPatchStopsWhenFeatureDisabled(t *testing.T) {
 	}
 	var stored ImagePatchRecord
 	require.NoError(t, db.First(&stored, "id = ?", record.ID).Error)
-	require.Equal(t, string(imagepatch.PatchStatusFailed), stored.Status)
+	require.Equal(t, string(types.PatchStatusFailed), stored.Status)
 	require.NotNil(t, stored.Error)
-	require.Contains(t, *stored.Error, string(features.VulnerabilityManagement))
+	require.Contains(t, *stored.Error, string(types.FeatureVulnerabilityManagement))
 	require.Empty(t, svc.patchSlot)
 }
 
 func TestDisabledFeatureSkipsPatchVerificationScan(t *testing.T) {
 	settingsSvc, _ := patchFeatureSettings(t)
-	require.NoError(t, settingsSvc.SetBoolSetting(t.Context(), features.VulnerabilityManagementSettingKey, false))
+	require.NoError(t, settingsSvc.SetBoolSetting(t.Context(), types.FeatureVulnerabilityManagementSettingKey, false))
 	var inspected atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		inspected.Add(1)
@@ -200,15 +200,11 @@ func TestDisabledFeatureSkipsPatchVerificationScan(t *testing.T) {
 	dockerClient, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.41"))
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, dockerClient.Close()) }()
-	svc := NewService(
-		nil,
-		&docker.DockerClientService{Client: dockerClient},
-		settingsSvc,
-		nil,
-		nil,
-		// Any attempt to scan would access unconfigured dependencies and fail.
-		&vulnerability.VulnerabilityService{},
-	)
+	svc := NewService(ServiceParams{
+		DockerService:        docker.NewDockerClientService(t.Context(), nil, settingsSvc, bus.Config{}).WithClient(dockerClient),
+		SettingsService:      settingsSvc,
+		VulnerabilityService: &vulnerability.VulnerabilityService{},
+	})
 	require.NotPanics(t, func() {
 		svc.verifyPatchedImage(t.Context(), &ImagePatchRecord{EnvironmentID: "0", PatchedRef: "test:patched"}, "")
 	})
@@ -217,10 +213,10 @@ func TestDisabledFeatureSkipsPatchVerificationScan(t *testing.T) {
 
 func TestAggregatePatchTargetsMergesEnvironments(t *testing.T) {
 	scanned := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-	bodies := map[string]base.Paginated[imagepatch.PatchTarget]{
+	bodies := map[string]types.Paginated[types.PatchTarget]{
 		"a": {
 			Success: true,
-			Data: []imagepatch.PatchTarget{
+			Data: []types.PatchTarget{
 				{
 					ImageID:      "sha256:a1",
 					ImageRef:     "nginx:1",
@@ -234,11 +230,11 @@ func TestAggregatePatchTargetsMergesEnvironments(t *testing.T) {
 					ScanTime:     scanned,
 				},
 			},
-			Pagination: base.PaginationResponse{TotalItems: 2, GrandTotalItems: 4},
+			Pagination: types.PaginationResponse{TotalItems: 2, GrandTotalItems: 4},
 		},
 		"b": {
 			Success: true,
-			Data: []imagepatch.PatchTarget{
+			Data: []types.PatchTarget{
 				{
 					ImageID:      "sha256:b1",
 					ImageRef:     "alpine:3",
@@ -246,13 +242,13 @@ func TestAggregatePatchTargetsMergesEnvironments(t *testing.T) {
 					ScanTime:     scanned.Add(time.Hour),
 				},
 			},
-			Pagination: base.PaginationResponse{TotalItems: 1},
+			Pagination: types.PaginationResponse{TotalItems: 1},
 		},
 	}
 	var queries sync.Map
 	ctx := httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
 		IDs:     []string{"a", "b", "c"},
-		Request: httptest.NewRequest(http.MethodGet, "/api/environments/a,b,c/images/patch-targets?start=0&limit=20&order=desc", http.NoBody),
+		Request: httptest.NewRequest(http.MethodGet, "/api/environments/a,b,c/images/patches/targets?start=0&limit=20&order=desc", http.NoBody),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]
 			queries.Store(id, r.URL.Query())
@@ -269,19 +265,19 @@ func TestAggregatePatchTargetsMergesEnvironments(t *testing.T) {
 			}
 			_, _ = w.Write(payload)
 		}),
-		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
-			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
 		},
 	})
-	rowLabels := func(items []imagepatch.PatchTarget) []string {
+	rowLabels := func(items []types.PatchTarget) []string {
 		out := make([]string, 0, len(items))
 		for _, item := range items {
 			out = append(out, item.EnvironmentID+"/"+item.ImageRef)
 		}
 		return out
 	}
-	svc := NewService(nil, nil, nil, nil, nil, nil)
-	merge := func(sort string, order pagination.SortOrder, start, limit int) base.Paginated[imagepatch.PatchTarget] {
+	svc := NewService(ServiceParams{})
+	merge := func(sort string, order pagination.SortOrder, start, limit int) types.Paginated[types.PatchTarget] {
 		body, err := svc.AggregatePatchTargets(ctx, pagination.QueryParams{
 			SortParams: pagination.SortParams{Sort: sort, Order: order},
 			Params:     pagination.Params{Start: start, Limit: limit},
@@ -316,11 +312,11 @@ func TestRecoverInterruptedPatchesFailsLeftoverPatchingRecords(t *testing.T) {
 	for _, record := range []ImagePatchRecord{
 		{
 			BaseModel: database.BaseModel{ID: "stuck"},
-			Status:    string(imagepatch.PatchStatusPatching),
+			Status:    string(types.PatchStatusPatching),
 		},
 		{
 			BaseModel: database.BaseModel{ID: "done"},
-			Status:    string(imagepatch.PatchStatusCompleted),
+			Status:    string(types.PatchStatusCompleted),
 		},
 	} {
 		require.NoError(t, db.Create(&record).Error)
@@ -331,8 +327,8 @@ func TestRecoverInterruptedPatchesFailsLeftoverPatchingRecords(t *testing.T) {
 	var stuck, done ImagePatchRecord
 	require.NoError(t, db.First(&stuck, "id = ?", "stuck").Error)
 	require.NoError(t, db.First(&done, "id = ?", "done").Error)
-	assert.Equal(t, string(imagepatch.PatchStatusFailed), stuck.Status)
+	assert.Equal(t, string(types.PatchStatusFailed), stuck.Status)
 	assert.Equal(t, errPatchInterrupted.Error(), kit.FromPtr(stuck.Error))
-	assert.Equal(t, string(imagepatch.PatchStatusCompleted), done.Status)
+	assert.Equal(t, string(types.PatchStatusCompleted), done.Status)
 	assert.Nil(t, done.Error)
 }

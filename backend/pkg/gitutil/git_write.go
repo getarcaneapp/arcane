@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -21,9 +22,78 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"go.getarcane.app/acfs"
-	acfstypes "go.getarcane.app/acfs/types"
-	kit "go.getarcane.app/kit/pkg"
+
+	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
+)
+
+type (
+	// WriteCheckout is a scratch clone prepared for committing to one branch.
+	WriteCheckout struct {
+		repo         *git.Repository
+		RepoPath     string
+		Branch       string
+		HeadCommit   string
+		url          string
+		BranchExists bool
+	}
+
+	// CommitFile is one file to write into the checkout, repo-relative.
+	CommitFile struct {
+		Path       string
+		Content    []byte
+		Executable bool
+	}
+
+	// CollectOptions bounds CollectFiles; SkipDir and SkipFile see base names while directories expand.
+	CollectOptions struct {
+		SkipDir      func(name string) bool
+		SkipFile     func(name string) bool
+		MaxFiles     int
+		MaxTotalSize int64
+	}
+
+	fileCollector struct {
+		opts      CollectOptions
+		seen      map[string]struct{}
+		root      string
+		files     []CommitFile
+		totalSize int64
+	}
+
+	// CommitRequest describes the tree mutation to commit and push.
+	CommitRequest struct {
+		SignKey     *openpgp.Entity
+		Message     string
+		AuthorName  string
+		AuthorEmail string
+		Files       []CommitFile
+		Remove      []string
+	}
+
+	// CommitIdentity is the author Arcane commits as for one repository.
+	CommitIdentity struct {
+		SignKey *openpgp.Entity
+		Name    string
+		Email   string
+	}
+
+	// HistoryEntry is one commit touching a directory.
+	HistoryEntry struct {
+		Hash    string
+		Author  string
+		Email   string
+		Message string
+		Date    time.Time
+		Files   []string
+	}
+
+	// FileDiff is the unified diff of one file within a commit.
+	FileDiff struct {
+		Path  string
+		Patch string
+	}
 )
 
 var (
@@ -35,48 +105,15 @@ var (
 	ErrSelectionInvalid    = errors.New("selection is invalid")
 )
 
-// WriteCheckout is a scratch clone prepared for committing to one branch.
-type WriteCheckout struct {
-	RepoPath     string
-	Branch       string
-	HeadCommit   string
-	BranchExists bool
-	url          string
-	repo         *git.Repository
-}
-
-// CommitFile is one file to write into the checkout, repo-relative.
-type CommitFile struct {
-	Path       string
-	Content    []byte
-	Executable bool
-}
-
-// CollectOptions bounds CollectFiles; SkipDir and SkipFile see base names while directories expand.
-type CollectOptions struct {
-	MaxFiles     int
-	MaxTotalSize int64
-	SkipDir      func(name string) bool
-	SkipFile     func(name string) bool
-}
-
-type fileCollectorInternal struct {
-	root      string
-	opts      CollectOptions
-	files     []CommitFile
-	seen      map[string]struct{}
-	totalSize int64
-}
-
 // CollectFiles reads the selected files and directories under root as commit files, sorted by path.
 func CollectFiles(ctx context.Context, root string, selection []string, opts CollectOptions) ([]CommitFile, error) {
-	c := &fileCollectorInternal{root: root, opts: opts, seen: make(map[string]struct{})}
+	c := &fileCollector{root: root, opts: opts, seen: make(map[string]struct{})}
 	for _, selected := range selection {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		logical := "/" + selected
-		entry, err := acfs.Stat(ctx, root, logical, false)
+		entry, err := acfs.Root{Path: root}.Stat(ctx, logical, acfstypes.StatOptions{})
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				return nil, fmt.Errorf("selected path %s does not exist: %w", selected, ErrSelectionUnreadable)
@@ -87,12 +124,12 @@ func CollectFiles(ctx context.Context, root string, selection []string, opts Col
 			return nil, fmt.Errorf("%s is a symbolic link: %w", selected, ErrSelectionInvalid)
 		}
 		if !entry.IsDirectory {
-			if addErr := c.addInternal(ctx, entry); addErr != nil {
+			if addErr := c.add(ctx, entry); addErr != nil {
 				return nil, addErr
 			}
 			continue
 		}
-		err = acfs.Walk(ctx, root, logical, func(child acfstypes.Entry) error { return c.visitInternal(ctx, child) })
+		_, err = acfs.Root{Path: root}.Walk(ctx, logical, acfstypes.WalkOptions{}, func(child acfstypes.Entry) error { return c.visit(ctx, child) })
 		if err != nil && !errors.Is(err, ErrSelectionUnreadable) && !errors.Is(err, ErrSelectionLimits) && !errors.Is(err, ErrSelectionInvalid) {
 			return nil, fmt.Errorf("cannot walk %s: %v: %w", selected, err.Error(), ErrSelectionUnreadable)
 		}
@@ -107,17 +144,17 @@ func CollectFiles(ctx context.Context, root string, selection []string, opts Col
 	return c.files, nil
 }
 
-func (c *fileCollectorInternal) visitInternal(ctx context.Context, child acfstypes.Entry) error {
+func (c *fileCollector) visit(ctx context.Context, child acfstypes.Entry) error {
 	if child.IsDirectory && (child.Name == ".git" || (c.opts.SkipDir != nil && c.opts.SkipDir(child.Name))) {
 		return fs.SkipDir
 	}
 	if child.IsDirectory || child.IsSymlink || (c.opts.SkipFile != nil && c.opts.SkipFile(child.Name)) {
 		return nil
 	}
-	return c.addInternal(ctx, child)
+	return c.add(ctx, child)
 }
 
-func (c *fileCollectorInternal) addInternal(ctx context.Context, entry acfstypes.Entry) error {
+func (c *fileCollector) add(ctx context.Context, entry acfstypes.Entry) error {
 	relative := strings.TrimPrefix(entry.Path, "/")
 	if _, ok := c.seen[relative]; ok {
 		return nil
@@ -125,7 +162,7 @@ func (c *fileCollectorInternal) addInternal(ctx context.Context, entry acfstypes
 	if c.opts.MaxFiles > 0 && len(c.files) >= c.opts.MaxFiles {
 		return fmt.Errorf("file count limit exceeded (max %d files): %w", c.opts.MaxFiles, ErrSelectionLimits)
 	}
-	content, err := acfs.ReadFile(ctx, c.root, entry.Path)
+	content, err := acfs.Root{Path: c.root}.ReadFile(ctx, entry.Path)
 	if err != nil {
 		return fmt.Errorf("cannot read %s: %v: %w", relative, err.Error(), ErrSelectionUnreadable)
 	}
@@ -136,23 +173,6 @@ func (c *fileCollectorInternal) addInternal(ctx context.Context, entry acfstypes
 	c.seen[relative] = struct{}{}
 	c.files = append(c.files, CommitFile{Path: relative, Content: content, Executable: os.FileMode(entry.UnixMode)&0o111 != 0})
 	return nil
-}
-
-// CommitRequest describes the tree mutation to commit and push.
-type CommitRequest struct {
-	Files       []CommitFile
-	Remove      []string
-	Message     string
-	AuthorName  string
-	AuthorEmail string
-	SignKey     *openpgp.Entity
-}
-
-// CommitIdentity is the author Arcane commits as for one repository.
-type CommitIdentity struct {
-	Name    string
-	Email   string
-	SignKey *openpgp.Entity
 }
 
 // ParseSigningKey loads an armored OpenPGP private key and unlocks it with
@@ -187,22 +207,6 @@ func ParseSigningKey(armored, passphrase string) (*openpgp.Entity, error) {
 	return nil, errors.New("signing key does not contain a private key")
 }
 
-// HistoryEntry is one commit touching a directory.
-type HistoryEntry struct {
-	Hash    string
-	Author  string
-	Email   string
-	Message string
-	Date    time.Time
-	Files   []string
-}
-
-// FileDiff is the unified diff of one file within a commit.
-type FileDiff struct {
-	Path  string
-	Patch string
-}
-
 // CheckoutForWrite clones url at branch into a scratch directory. A branch that
 // does not exist yet is created from the remote default branch, and an empty
 // repository is initialized locally so the first push creates the branch.
@@ -219,12 +223,12 @@ func (c *Client) CheckoutForWrite(ctx context.Context, url, branch string, auth 
 	if err == nil {
 		repo, openErr := git.PlainOpen(repoPath)
 		if openErr != nil {
-			_ = c.Cleanup(repoPath)
+			_ = os.RemoveAll(repoPath)
 			return nil, fmt.Errorf("failed to open checkout: %w", openErr)
 		}
 		head, headErr := repo.Head()
 		if headErr != nil {
-			_ = c.Cleanup(repoPath)
+			_ = os.RemoveAll(repoPath)
 			return nil, fmt.Errorf("failed to resolve checkout head: %w", headErr)
 		}
 		return &WriteCheckout{RepoPath: repoPath, Branch: branch, HeadCommit: head.Hash().String(), BranchExists: true, url: normalized, repo: repo}, nil
@@ -232,19 +236,16 @@ func (c *Client) CheckoutForWrite(ctx context.Context, url, branch string, auth 
 
 	switch {
 	case errors.Is(err, transport.ErrEmptyRemoteRepository):
-		return c.initEmptyCheckoutInternal(normalized, branch)
+		return c.initEmptyCheckout(normalized, branch)
 	case errors.Is(err, git.NoMatchingRefSpecError{}):
-		return c.checkoutNewBranchInternal(ctx, normalized, branch, auth)
+		return c.checkoutNewBranch(ctx, normalized, branch, auth)
 	default:
 		return nil, err
 	}
 }
 
-func (c *Client) initEmptyCheckoutInternal(url, branch string) (*WriteCheckout, error) {
-	workDir := c.workDir
-	if workDir == "" {
-		workDir = os.TempDir()
-	}
+func (c *Client) initEmptyCheckout(url, branch string) (*WriteCheckout, error) {
+	workDir := cmp.Or(c.workDir, os.TempDir())
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create work dir: %w", err)
 	}
@@ -268,23 +269,23 @@ func (c *Client) initEmptyCheckoutInternal(url, branch string) (*WriteCheckout, 
 	return &WriteCheckout{RepoPath: repoPath, Branch: branch, url: url, repo: repo}, nil
 }
 
-func (c *Client) checkoutNewBranchInternal(ctx context.Context, url, branch string, auth AuthConfig) (*WriteCheckout, error) {
+func (c *Client) checkoutNewBranch(ctx context.Context, url, branch string, auth AuthConfig) (*WriteCheckout, error) {
 	repoPath, err := c.Clone(ctx, url, "", auth, 0)
 	if err != nil {
 		return nil, err
 	}
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
-		_ = c.Cleanup(repoPath)
+		_ = os.RemoveAll(repoPath)
 		return nil, fmt.Errorf("failed to open checkout: %w", err)
 	}
 	worktree, err := repo.Worktree()
 	if err != nil {
-		_ = c.Cleanup(repoPath)
+		_ = os.RemoveAll(repoPath)
 		return nil, fmt.Errorf("failed to open worktree: %w", err)
 	}
 	if checkoutErr := worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName(branch), Create: true}); checkoutErr != nil {
-		_ = c.Cleanup(repoPath)
+		_ = os.RemoveAll(repoPath)
 		return nil, fmt.Errorf("failed to create branch %s: %w", branch, checkoutErr)
 	}
 	return &WriteCheckout{RepoPath: repoPath, Branch: branch, url: url, repo: repo}, nil
@@ -302,7 +303,7 @@ func (c *Client) CommitAndPush(ctx context.Context, checkout *WriteCheckout, req
 	if err != nil {
 		return "", false, fmt.Errorf("failed to open worktree: %w", err)
 	}
-	if stageCommitFilesErr := stageCommitFilesInternal(ctx, checkout, worktree, req); stageCommitFilesErr != nil {
+	if stageCommitFilesErr := stageCommitFiles(ctx, checkout, worktree, req); stageCommitFilesErr != nil {
 		return "", false, stageCommitFilesErr
 	}
 
@@ -314,7 +315,7 @@ func (c *Client) CommitAndPush(ctx context.Context, checkout *WriteCheckout, req
 		}
 		return "", false, fmt.Errorf("failed to commit: %w", err)
 	}
-	if pushBranchErr := c.pushBranchInternal(ctx, checkout, hash.String(), auth); pushBranchErr != nil {
+	if pushBranchErr := c.pushBranch(ctx, checkout, hash.String(), auth); pushBranchErr != nil {
 		return "", false, pushBranchErr
 	}
 	checkout.HeadCommit = hash.String()
@@ -322,19 +323,19 @@ func (c *Client) CommitAndPush(ctx context.Context, checkout *WriteCheckout, req
 	return hash.String(), true, nil
 }
 
-// stageCommitFilesInternal writes through acfs so a symlink committed in the
+// stageCommitFiles writes through acfs so a symlink committed in the
 // repository can never redirect a write outside the checkout.
-func stageCommitFilesInternal(ctx context.Context, checkout *WriteCheckout, worktree *git.Worktree, req CommitRequest) error {
+func stageCommitFiles(ctx context.Context, checkout *WriteCheckout, worktree *git.Worktree, req CommitRequest) error {
 	for _, file := range req.Files {
 		if err := ValidatePath(checkout.RepoPath, file.Path); err != nil {
 			return err
 		}
 		logical := path.Join("/", filepath.ToSlash(file.Path))
-		if err := acfs.MkdirAll(ctx, checkout.RepoPath, path.Dir(logical), 0o755); err != nil {
+		if err := (acfs.Root{Path: checkout.RepoPath}).MkdirAll(ctx, path.Dir(logical), 0o755); err != nil {
 			return fmt.Errorf("failed to create directory for %s: %w", file.Path, err)
 		}
 		mode := kit.Ternary(file.Executable, 0o755, os.FileMode(0o644))
-		if _, err := acfs.WriteFrom(ctx, checkout.RepoPath, logical, bytes.NewReader(file.Content), int64(len(file.Content)), mode); err != nil {
+		if _, err := (acfs.Root{Path: checkout.RepoPath}).WriteFrom(ctx, logical, bytes.NewReader(file.Content), acfs.WriteFromOptions{Size: int64(len(file.Content)), Mode: mode}); err != nil {
 			return fmt.Errorf("failed to write %s: %w", file.Path, err)
 		}
 		if _, err := worktree.Add(file.Path); err != nil {
@@ -345,7 +346,7 @@ func stageCommitFilesInternal(ctx context.Context, checkout *WriteCheckout, work
 		if err := ValidatePath(checkout.RepoPath, removed); err != nil {
 			return err
 		}
-		if _, err := acfs.Stat(ctx, checkout.RepoPath, path.Join("/", filepath.ToSlash(removed)), false); err != nil {
+		if _, err := (acfs.Root{Path: checkout.RepoPath}).Stat(ctx, path.Join("/", filepath.ToSlash(removed)), acfstypes.StatOptions{}); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
@@ -358,9 +359,9 @@ func stageCommitFilesInternal(ctx context.Context, checkout *WriteCheckout, work
 	return nil
 }
 
-// pushBranchInternal pushes the checkout branch without force and verifies the
+// pushBranch pushes the checkout branch without force and verifies the
 // remote now points at commit.
-func (c *Client) pushBranchInternal(ctx context.Context, checkout *WriteCheckout, commit string, auth AuthConfig) error {
+func (c *Client) pushBranch(ctx context.Context, checkout *WriteCheckout, commit string, auth AuthConfig) error {
 	authMethod, err := c.getAuth(ctx, checkout.url, auth)
 	if err != nil {
 		return err
@@ -374,7 +375,7 @@ func (c *Client) pushBranchInternal(ctx context.Context, checkout *WriteCheckout
 		pushOptions.Auth = authMethod
 	}
 	if pushContextErr := checkout.repo.PushContext(ctx, pushOptions); pushContextErr != nil && !errors.Is(pushContextErr, git.NoErrAlreadyUpToDate) {
-		if isPushRejectedInternal(pushContextErr) {
+		if isPushRejected(pushContextErr) {
 			return fmt.Errorf("%s: %w", pushContextErr.Error(), ErrPushRejected)
 		}
 		return fmt.Errorf("failed to push: %w", pushContextErr)
@@ -390,7 +391,7 @@ func (c *Client) pushBranchInternal(ctx context.Context, checkout *WriteCheckout
 	return nil
 }
 
-func isPushRejectedInternal(err error) bool {
+func isPushRejected(err error) bool {
 	if errors.Is(err, git.ErrNonFastForwardUpdate) || errors.Is(err, git.ErrForceNeeded) {
 		return true
 	}
@@ -429,7 +430,7 @@ func (c *Client) DirectoryHistory(ctx context.Context, repoPath, directory strin
 		}
 		return nil, fmt.Errorf("failed to resolve head: %w", err)
 	}
-	prefix := directoryPrefixInternal(directory)
+	prefix := directoryPrefix(directory)
 	iter, err := repo.Log(&git.LogOptions{From: head.Hash(), PathFilter: func(p string) bool { return strings.HasPrefix(p, prefix) }})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read history: %w", err)
@@ -448,17 +449,17 @@ func (c *Client) DirectoryHistory(ctx context.Context, repoPath, directory strin
 			}
 			return nil, fmt.Errorf("failed to iterate history: %w", nextErr)
 		}
-		changes, nextErr := commitChangesInternal(ctx, commit, object.DefaultDiffTreeOptions)
+		changes, nextErr := commitChanges(ctx, commit, object.DefaultDiffTreeOptions)
 		if nextErr != nil {
 			return nil, nextErr
 		}
 		var files []string
 		for _, change := range changes {
-			if _, relative, ok := changePathInDirectoryInternal(change, prefix); ok {
+			if _, relative, ok := changePathInDirectory(change, prefix); ok {
 				files = append(files, relative)
 			}
 		}
-		entries = append(entries, historyEntryInternal(commit, files))
+		entries = append(entries, historyEntry(commit, files))
 		if limit > 0 && len(entries) >= limit {
 			break
 		}
@@ -486,13 +487,13 @@ func (c *Client) CommitDiff(ctx context.Context, repoPath, commitHash, directory
 	if err != nil {
 		return HistoryEntry{}, nil, fmt.Errorf("commit not found: %w", err)
 	}
-	prefix := directoryPrefixInternal(directory)
+	prefix := directoryPrefix(directory)
 	// Files are listed rename-aware; each file's patch comes from the plain diff.
-	listed, err := commitChangesInternal(ctx, commit, object.DefaultDiffTreeOptions)
+	listed, err := commitChanges(ctx, commit, object.DefaultDiffTreeOptions)
 	if err != nil {
 		return HistoryEntry{}, nil, err
 	}
-	plain, err := commitChangesInternal(ctx, commit, nil)
+	plain, err := commitChanges(ctx, commit, nil)
 	if err != nil {
 		return HistoryEntry{}, nil, err
 	}
@@ -500,7 +501,7 @@ func (c *Client) CommitDiff(ctx context.Context, repoPath, commitHash, directory
 	var files []string
 	var diffs []FileDiff
 	for _, change := range listed {
-		name, relative, ok := changePathInDirectoryInternal(change, prefix)
+		name, relative, ok := changePathInDirectory(change, prefix)
 		if !ok {
 			continue
 		}
@@ -515,19 +516,16 @@ func (c *Client) CommitDiff(ctx context.Context, repoPath, commitHash, directory
 		}
 		diffs = append(diffs, FileDiff{Path: relative, Patch: single})
 	}
-	return historyEntryInternal(commit, files), diffs, nil
+	return historyEntry(commit, files), diffs, nil
 }
 
-func directoryPrefixInternal(directory string) string {
+func directoryPrefix(directory string) string {
 	cleaned := strings.Trim(path.Clean(filepath.ToSlash(directory)), "/")
 	return kit.Ternary(cleaned == "" || cleaned == ".", "", cleaned+"/")
 }
 
-func historyEntryInternal(commit *object.Commit, files []string) HistoryEntry {
+func historyEntry(commit *object.Commit, files []string) HistoryEntry {
 	sort.Strings(files)
-	if files == nil {
-		files = []string{}
-	}
 	return HistoryEntry{
 		Hash:    commit.Hash.String(),
 		Author:  commit.Author.Name,
@@ -538,9 +536,9 @@ func historyEntryInternal(commit *object.Commit, files []string) HistoryEntry {
 	}
 }
 
-// commitChangesInternal diffs a commit against its first parent. Nil opts
+// commitChanges diffs a commit against its first parent. Nil opts
 // disables rename detection.
-func commitChangesInternal(ctx context.Context, commit *object.Commit, opts *object.DiffTreeOptions) (object.Changes, error) {
+func commitChanges(ctx context.Context, commit *object.Commit, opts *object.DiffTreeOptions) (object.Changes, error) {
 	var parentTree *object.Tree
 	if commit.NumParents() > 0 {
 		parent, err := commit.Parent(0)
@@ -563,9 +561,9 @@ func commitChangesInternal(ctx context.Context, commit *object.Commit, opts *obj
 	return changes, nil
 }
 
-// changePathInDirectoryInternal picks the side of a change that lives under
+// changePathInDirectory picks the side of a change that lives under
 // prefix, so renames into or out of the directory are still reported.
-func changePathInDirectoryInternal(change *object.Change, prefix string) (string, string, bool) {
+func changePathInDirectory(change *object.Change, prefix string) (string, string, bool) {
 	for _, name := range []string{change.To.Name, change.From.Name} {
 		if name == "" {
 			continue

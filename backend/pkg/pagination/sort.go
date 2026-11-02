@@ -2,25 +2,25 @@ package pagination
 
 import "slices"
 
-type SortOrder string
+type (
+	SortOrder string
+
+	SortParams struct {
+		Sort  string
+		Order SortOrder
+	}
+
+	SortOption[T any]  func(a, b T) int
+	SortBinding[T any] struct {
+		Fn     SortOption[T]
+		DescFn SortOption[T]
+		Key    string
+	}
+)
 
 const (
 	SortAsc  SortOrder = "asc"
 	SortDesc SortOrder = "desc"
-)
-
-type SortParams struct {
-	Sort  string
-	Order SortOrder
-}
-
-type (
-	SortOption[T any]  func(a, b T) int
-	SortBinding[T any] struct {
-		Key    string
-		Fn     SortOption[T]
-		DescFn SortOption[T]
-	}
 )
 
 // sortFunction always sorts: when params.Sort is empty or matches no binding it

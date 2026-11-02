@@ -1,0 +1,178 @@
+package ws
+
+import (
+	"context"
+	"log/slog"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+type (
+	Hub struct {
+		clients    map[*Client]struct{}
+		register   chan *Client
+		unregister chan *Client
+		broadcast  chan []byte
+		// stopped is closed when Run returns, so registration attempts against a
+		// torn-down hub fail fast instead of blocking forever on the unbuffered
+		// register channel.
+		stopped     chan struct{}
+		onFirst     func()
+		onActive    func()
+		onEmpty     func()
+		dropped     atomic.Uint64
+		lastWarned  atomic.Int64
+		mu          sync.RWMutex
+		stoppedOnce sync.Once
+	}
+)
+
+const (
+	broadcastDropWarningInterval = 5 * time.Second
+)
+
+func NewHub(buffer int) *Hub {
+	return &Hub{
+		clients:    make(map[*Client]struct{}),
+		register:   make(chan *Client),
+		unregister: make(chan *Client),
+		broadcast:  make(chan []byte, buffer),
+		stopped:    make(chan struct{}),
+	}
+}
+
+func (h *Hub) SetOnFirstClient(fn func()) {
+	h.mu.Lock()
+	h.onFirst = fn
+	h.mu.Unlock()
+}
+
+func (h *Hub) SetOnActive(fn func()) {
+	h.mu.Lock()
+	h.onActive = fn
+	h.mu.Unlock()
+}
+
+func (h *Hub) SetOnEmpty(fn func()) {
+	h.mu.Lock()
+	h.onEmpty = fn
+	h.mu.Unlock()
+}
+
+func (h *Hub) Run(ctx context.Context) {
+	defer trackWorkerGoroutine()()
+	defer h.closeAll()
+	// Signalled before closeAll so a registration racing this shutdown fails fast
+	// instead of joining a hub that is already draining. stoppedOnce keeps it safe
+	// if Run is ever (incorrectly) started twice.
+	defer func() { h.stoppedOnce.Do(func() { close(h.stopped) }) }()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case c := <-h.register:
+			var onFirst, onActive func()
+			h.mu.Lock()
+			h.clients[c] = struct{}{}
+			if len(h.clients) == 1 {
+				onActive = h.onActive
+				if h.onFirst != nil {
+					onFirst = h.onFirst
+					h.onFirst = nil
+				}
+			}
+			h.mu.Unlock()
+			if onActive != nil {
+				onActive()
+			}
+			if onFirst != nil {
+				onFirst()
+			}
+		case c := <-h.unregister:
+			// remove() handles the onEmpty callback when the last client disconnects.
+			h.remove(c)
+		case msg := <-h.broadcast:
+			h.mu.RLock()
+			var slowClients []*Client
+			for c := range h.clients {
+				select {
+				case c.send <- msg:
+				default:
+					// backpressure: drop slow client
+					// Collect them to remove outside the lock to avoid spawning goroutines
+					slowClients = append(slowClients, c)
+				}
+			}
+			h.mu.RUnlock()
+
+			for _, c := range slowClients {
+				h.remove(c)
+			}
+		}
+	}
+}
+
+func (h *Hub) Len() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.clients)
+}
+
+func (h *Hub) Publish(ctx context.Context, msg []byte) {
+	select {
+	case h.broadcast <- msg:
+	case <-h.stopped:
+	case <-ctx.Done():
+	}
+}
+
+func (h *Hub) Broadcast(msg []byte) {
+	select {
+	case h.broadcast <- msg:
+	default:
+		// prevent global stall if hub buffer fills
+		// This indicates the hub is not processing messages fast enough
+		h.dropped.Add(1)
+
+		now := time.Now().UnixNano()
+		lastWarned := h.lastWarned.Load()
+		if now-lastWarned >= broadcastDropWarningInterval.Nanoseconds() && h.lastWarned.CompareAndSwap(lastWarned, now) {
+			slog.WarnContext(context.Background(), "websocket hub broadcast buffer full; dropping messages", //nolint:forbidigo // Hub broadcast runs outside any request context.
+				"droppedCount", h.dropped.Swap(0))
+		}
+	}
+}
+
+func (h *Hub) remove(c *Client) {
+	h.mu.Lock()
+	_, exists := h.clients[c]
+	if exists {
+		delete(h.clients, c)
+		close(c.send)
+		_ = c.conn.CloseNow()
+	}
+	// Capture onEmpty under the lock so we can call it outside.
+	var onEmpty func()
+	if exists && len(h.clients) == 0 && h.onEmpty != nil {
+		onEmpty = h.onEmpty
+	}
+	h.mu.Unlock()
+
+	// Call outside the lock to avoid holding the mutex during cancel().
+	if onEmpty != nil {
+		slog.DebugContext(context.Background(), "websocket hub empty after client removal, triggering cleanup") //nolint:forbidigo // Hub cleanup runs outside any request context.
+		onEmpty()
+	}
+}
+
+func (h *Hub) closeAll() {
+	h.mu.Lock()
+	for c := range h.clients {
+		close(c.send)
+		_ = c.conn.CloseNow()
+		delete(h.clients, c)
+	}
+	h.mu.Unlock()
+}

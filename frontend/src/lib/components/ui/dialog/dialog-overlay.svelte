@@ -3,14 +3,24 @@
 
 	import { cn } from '#lib/utils.js';
 
-	let { ref = $bindable(null), class: className, ...restProps }: DialogPrimitive.OverlayProps = $props();
+	let {
+		ref = $bindable(null),
+		class: className,
+		variant = 'blur',
+		...restProps
+	}: DialogPrimitive.OverlayProps & {
+		/** `flat` dims without a backdrop filter, so only the panel itself blurs. */
+		variant?: 'blur' | 'flat';
+	} = $props();
 </script>
 
 <DialogPrimitive.Overlay
 	bind:ref
 	data-slot="dialog-overlay"
 	class={cn(
-		'fixed inset-0 z-(--arcane-z-overlay) bg-white/10 backdrop-blur-md data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:fill-mode-forwards data-[state=open]:animate-in data-[state=open]:fade-in-0 dark:bg-black/60',
+		'fixed inset-0 z-(--arcane-z-overlay) data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:fill-mode-forwards data-[state=open]:animate-in data-[state=open]:fade-in-0',
+		variant === 'blur' && 'bg-white/10 backdrop-blur-md dark:bg-black/60',
+		variant === 'flat' && 'bg-black/15 animation-duration-150 dark:bg-black/45',
 		className
 	)}
 	{...restProps}

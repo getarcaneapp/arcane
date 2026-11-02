@@ -2,44 +2,48 @@ package volumes
 
 import (
 	"context"
+	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/backup"
-	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
-// Handler serves the system-managed volume backup endpoints.
-type Handler struct {
-	service *Service
-	appCtx  context.Context
-}
+type (
+	// Handler serves the system-managed volume backup endpoints.
+	Handler struct {
+		service *Service
+		appCtx  context.Context
+	}
+
+	SystemVolumeBackupConfigOutput struct {
+		Body types.SystemVolumeBackupPolicyCollection
+	}
+
+	UpdateSystemVolumeBackupConfigInput struct {
+		Body types.UpdateSystemVolumeBackupPolicies
+	}
+
+	SystemVolumeBackupOptionsOutput struct {
+		Body []types.SystemVolumeBackupOption
+	}
+
+	SystemVolumeBackupRunOutput struct {
+		Body types.BackupRunAccepted
+	}
+
+	RunSystemVolumeBackupsInput struct {
+		Body *types.RunSystemVolumeBackupsRequest `json:"body,omitempty"`
+	}
+)
 
 func NewHandler(service *Service, appCtx context.Context) *Handler {
 	return &Handler{service: service, appCtx: appCtx}
-}
-
-type SystemVolumeBackupConfigOutput struct {
-	Body backup.SystemVolumeBackupPolicyCollection
-}
-
-type UpdateSystemVolumeBackupConfigInput struct {
-	Body backup.UpdateSystemVolumeBackupPolicies
-}
-
-type SystemVolumeBackupOptionsOutput struct {
-	Body []backup.SystemVolumeBackupOption
-}
-
-type SystemVolumeBackupRunOutput struct {
-	Body backup.BackupRunAccepted
-}
-
-type RunSystemVolumeBackupsInput struct {
-	Body *backup.RunSystemVolumeBackupsRequest `json:"body,omitempty"`
 }
 
 func (h *Handler) GetSystemVolumeConfig(ctx context.Context, _ *struct{}) (*SystemVolumeBackupConfigOutput, error) {
@@ -52,6 +56,9 @@ func (h *Handler) GetSystemVolumeConfig(ctx context.Context, _ *struct{}) (*Syst
 
 func (h *Handler) UpdateSystemVolumeConfig(ctx context.Context, input *UpdateSystemVolumeBackupConfigInput) (*SystemVolumeBackupConfigOutput, error) {
 	config, err := h.service.UpdateConfig(ctx, input.Body.Policies)
+	if errors.Is(err, common.ErrValidation) {
+		return nil, handlerutil.APIError(err)
+	}
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -71,7 +78,7 @@ func (h *Handler) RunSystemVolumeBackups(ctx context.Context, input *RunSystemVo
 	if err != nil {
 		return nil, err
 	}
-	result, err := h.service.Start(utils.ActivityRuntimeContext(ctx, h.appCtx), *user, kit.FromPtr(input.Body))
+	result, err := h.service.Start(activity.ActivityRuntimeContext(ctx, h.appCtx), *user, kit.FromPtr(input.Body))
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)

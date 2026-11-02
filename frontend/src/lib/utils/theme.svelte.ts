@@ -1,232 +1,70 @@
-import type { ApplicationTheme } from '#lib/types/settings.js';
+import type { ApplicationTheme, ThemeDefinition, ThemePalette } from '#lib/types/settings.js';
+import { trySync } from '#lib/utils/try-catch.js';
 
-const APPLICATION_THEME_VALUES = [
-	'default',
-	'graphite',
-	'carbon',
-	'ocean',
-	'amber',
-	'github',
-	'nord',
-	'everforest',
-	'rosepine'
-] as const satisfies readonly ApplicationTheme[];
+type ThemePreview = Pick<ThemePalette, 'background' | 'sidebar' | 'card' | 'border' | 'foreground' | 'primary'>;
 
-export type ApplicationThemeOption = {
-	value: ApplicationTheme;
-	preview: {
-		light: {
-			background: string;
-			sidebar: string;
-			card: string;
-			border: string;
-			foreground: string;
-			primary: string;
-		};
-		dark: {
-			background: string;
-			sidebar: string;
-			card: string;
-			border: string;
-			foreground: string;
-			primary: string;
-		};
-	};
+export type ApplicationThemeOption = Pick<ThemeDefinition, 'id' | 'name' | 'description'> & {
+	light: ThemePreview;
+	dark: ThemePreview;
 };
 
-export const APPLICATION_THEME_OPTIONS: readonly ApplicationThemeOption[] = [
-	{
-		value: 'default',
-		preview: {
-			light: {
-				background: '#fafafa',
-				sidebar: '#f3f4f6',
-				card: '#ffffff',
-				border: '#d4d4d8',
-				foreground: '#18181b',
-				primary: '#8b5cf6'
-			},
-			dark: {
-				background: '#24262b',
-				sidebar: '#1c1f24',
-				card: '#31343a',
-				border: '#4a4f58',
-				foreground: '#f5f7fa',
-				primary: '#a855f7'
-			}
-		}
+const DEFAULT_THEME_OPTION: ApplicationThemeOption = {
+	id: 'default',
+	light: {
+		background: '#fafafa',
+		sidebar: '#f3f4f6',
+		card: '#ffffff',
+		border: '#d4d4d8',
+		foreground: '#18181b',
+		primary: '#8b5cf6'
 	},
-	{
-		value: 'graphite',
-		preview: {
-			light: {
-				background: '#eef1f5',
-				sidebar: '#dfe5ec',
-				card: '#f8fafc',
-				border: '#cbd5e1',
-				foreground: '#0f172a',
-				primary: '#5b6ee1'
-			},
-			dark: {
-				background: '#2d3139',
-				sidebar: '#252932',
-				card: '#343944',
-				border: '#4d5664',
-				foreground: '#edf2f7',
-				primary: '#8ea0ff'
-			}
-		}
-	},
-	{
-		value: 'carbon',
-		preview: {
-			light: {
-				background: '#F4F4F4',
-				sidebar: '#EBEBEC',
-				card: '#FCFCFC',
-				border: '#D4D4D8',
-				foreground: '#1C1C1E',
-				primary: '#4A6FA5'
-			},
-			dark: {
-				background: '#0B0B0B',
-				sidebar: '#131315',
-				card: '#1C1C1F',
-				border: '#46464B',
-				foreground: '#D8D8D8',
-				primary: '#6B91D1'
-			}
-		}
-	},
-	{
-		value: 'ocean',
-		preview: {
-			light: {
-				background: '#EAF0FF',
-				sidebar: '#DDE5FA',
-				card: '#F8FAFF',
-				border: '#B9C6E8',
-				foreground: '#1E2A45',
-				primary: '#3B5CB5'
-			},
-			dark: {
-				background: '#10121B',
-				sidebar: '#151A2C',
-				card: '#1D2338',
-				border: '#474C5E',
-				foreground: '#CFD2E4',
-				primary: '#83ABFF'
-			}
-		}
-	},
-	{
-		value: 'amber',
-		preview: {
-			light: {
-				background: '#f9f1e6',
-				sidebar: '#efe0cd',
-				card: '#fffaf3',
-				border: '#ddc2a0',
-				foreground: '#3f2a12',
-				primary: '#c67620'
-			},
-			dark: {
-				background: '#3b2d1f',
-				sidebar: '#2f2419',
-				card: '#473626',
-				border: '#7a5b3d',
-				foreground: '#f7ead7',
-				primary: '#e0a255'
-			}
-		}
-	},
-	{
-		value: 'github',
-		preview: {
-			light: {
-				background: '#f6f8fa',
-				sidebar: '#eff2f5',
-				card: '#ffffff',
-				border: '#d0d7de',
-				foreground: '#1f2328',
-				primary: '#0969da'
-			},
-			dark: {
-				background: '#161b22',
-				sidebar: '#0d1117',
-				card: '#21262d',
-				border: '#30363d',
-				foreground: '#e6edf3',
-				primary: '#2f81f7'
-			}
-		}
-	},
-	{
-		value: 'nord',
-		preview: {
-			light: {
-				background: '#eceff4',
-				sidebar: '#e5e9f0',
-				card: '#f8fafc',
-				border: '#c5cedc',
-				foreground: '#2e3440',
-				primary: '#5e81ac'
-			},
-			dark: {
-				background: '#2b313c',
-				sidebar: '#242933',
-				card: '#353c49',
-				border: '#4c566a',
-				foreground: '#eceff4',
-				primary: '#88c0d0'
-			}
-		}
-	},
-	{
-		value: 'everforest',
-		preview: {
-			light: {
-				background: '#f2efdf',
-				sidebar: '#e7e2cc',
-				card: '#fbf8ee',
-				border: '#cdbf9f',
-				foreground: '#374145',
-				primary: '#6f894e'
-			},
-			dark: {
-				background: '#2d3530',
-				sidebar: '#252b28',
-				card: '#343f39',
-				border: '#56635f',
-				foreground: '#e6e2cc',
-				primary: '#a7c080'
-			}
-		}
-	},
-	{
-		value: 'rosepine',
-		preview: {
-			light: {
-				background: '#faf4ed',
-				sidebar: '#f2e9e1',
-				card: '#fffaf5',
-				border: '#dfd1c5',
-				foreground: '#575279',
-				primary: '#b4637a'
-			},
-			dark: {
-				background: '#191724',
-				sidebar: '#16141f',
-				card: '#26233a',
-				border: '#403d52',
-				foreground: '#e0def4',
-				primary: '#c4a7e7'
-			}
-		}
+	dark: {
+		background: '#24262b',
+		sidebar: '#1c1f24',
+		card: '#31343a',
+		border: '#4a4f58',
+		foreground: '#f5f7fa',
+		primary: '#a855f7'
 	}
-] as const;
+};
+
+const BUILT_IN_THEMES: readonly ThemeDefinition[] = Object.values(
+	import.meta.glob<ThemeDefinition>('../themes/*.json', { eager: true, import: 'default' })
+);
+
+let customThemes = $state.raw<readonly ThemeDefinition[]>([]);
+
+export function setCustomThemes(themes: readonly ThemeDefinition[]): void {
+	customThemes = themes;
+}
+
+export function getApplicationThemeOptions(): ApplicationThemeOption[] {
+	return [DEFAULT_THEME_OPTION, ...BUILT_IN_THEMES, ...customThemes];
+}
+
+export function findApplicationTheme(id: string): ThemeDefinition | undefined {
+	return [...BUILT_IN_THEMES, ...customThemes].find((theme) => theme.id === id);
+}
+
+function buildThemeCss(theme: ThemeDefinition): string {
+	const block = (selector: string, palette: ThemePalette) =>
+		`${selector} { ${Object.entries({
+			...palette,
+			'bg-surface': 'var(--surface)',
+			'glass-base': 'var(--surface)',
+			'glass-tint': 'var(--primary)'
+		})
+			.map(([token, value]) => `--${token}: ${value};`)
+			.join(' ')} }`;
+
+	return [
+		block(`:root[data-app-theme='${theme.id}']`, theme.light),
+		block(`:root.dark[data-app-theme='${theme.id}']`, theme.dark)
+	].join('\n');
+}
 
 const APP_THEME_ATTRIBUTE = 'data-app-theme';
+const APP_THEME_STYLE_ID = 'arcane-app-theme';
 const OLED_CLASS = 'oled';
 const DARK_CLASS = 'dark';
 const OLED_THEME_COLOR = '#000000';
@@ -241,6 +79,7 @@ const APPEARANCE_CACHE_KEY = 'arcane-appearance';
 
 type AppearanceCache = {
 	appTheme?: ApplicationTheme | null;
+	themeCss?: string | null;
 	oled?: boolean;
 	accent?: { primary: string; primaryForeground: string; ring: string } | null;
 	fontSize?: number | null;
@@ -253,49 +92,37 @@ function updateAppearanceCache(partial: AppearanceCache): void {
 		return;
 	}
 
-	try {
-		const stored = JSON.parse(localStorage.getItem(APPEARANCE_CACHE_KEY) ?? '{}') as { v?: AppearanceCache };
-		const v: AppearanceCache = { ...stored.v, ...partial };
+	const stored = trySync(() => JSON.parse(localStorage.getItem(APPEARANCE_CACHE_KEY) ?? '{}') as { v?: AppearanceCache });
+	const v: AppearanceCache = { ...stored.data?.v, ...partial };
 
-		// Pre-compute the exact attribute, class list, and inline style the inline
-		// script applies, so it stays a dumb three-line replay of this cache.
-		const attr = v.appTheme ?? '';
-		const cls = [v.oled && OLED_CLASS, v.noBlur && 'no-blur', v.reduceEffects && 'reduce-effects'].filter(Boolean).join(' ');
-		const css = [
-			...(v.accent
-				? [
-						`--primary: ${v.accent.primary}`,
-						`--primary-foreground: ${v.accent.primaryForeground}`,
-						`--ring: ${v.accent.ring}`,
-						`--sidebar-ring: ${v.accent.ring}`
-					]
-				: []),
-			...(v.fontSize ? [`font-size: ${v.fontSize}px`] : [])
-		].join('; ');
+	// Pre-compute the exact attribute, class list, and inline style the inline
+	// script applies, so it stays a dumb three-line replay of this cache.
+	const attr = v.appTheme ?? '';
+	const cls = [v.oled && OLED_CLASS, v.noBlur && 'no-blur', v.reduceEffects && 'reduce-effects'].filter(Boolean).join(' ');
+	const css = Object.entries({
+		'--primary': v.accent?.primary,
+		'--primary-foreground': v.accent?.primaryForeground,
+		'--ring': v.accent?.ring,
+		'--sidebar-ring': v.accent?.ring,
+		'font-size': v.fontSize && `${v.fontSize}px`
+	})
+		.filter(([, value]) => value)
+		.map(([property, value]) => `${property}: ${value}`)
+		.join('; ');
 
-		localStorage.setItem(APPEARANCE_CACHE_KEY, JSON.stringify({ v, attr, cls, css }));
-	} catch {
-		// localStorage unavailable (private browsing) or corrupted cache — the
-		// inline script degrades to the default theme, nothing else breaks.
-	}
+	trySync(() => localStorage.setItem(APPEARANCE_CACHE_KEY, JSON.stringify({ v, attr, cls, css })));
 }
 
 const appearanceState = $state({ theme: 'default' as ApplicationTheme, accent: 'default' });
 
-const THEME_LOGO_PRIMARIES = Object.fromEntries(
-	APPLICATION_THEME_OPTIONS.map((option) => [
-		option.value,
-		{ light: option.preview.light.primary, dark: option.preview.dark.primary }
-	])
-) as Record<ApplicationTheme, { light: string; dark: string }>;
-
 export function resolveThemePrimary(isDarkMode: boolean): string {
-	if (appearanceState.theme === 'default') {
+	const theme = findApplicationTheme(appearanceState.theme);
+
+	if (!theme) {
 		return DEFAULT_ACCENT_COLOR;
 	}
 
-	const primaries = THEME_LOGO_PRIMARIES[appearanceState.theme];
-	return isDarkMode ? primaries.dark : primaries.light;
+	return isDarkMode ? theme.dark.primary : theme.light.primary;
 }
 
 export function resolveLogoColor(isDarkMode: boolean): string {
@@ -307,11 +134,7 @@ export function resolveLogoColor(isDarkMode: boolean): string {
 }
 
 export function resolveApplicationTheme(value?: string | null): ApplicationTheme {
-	if (!value) {
-		return 'default';
-	}
-
-	return APPLICATION_THEME_VALUES.includes(value as ApplicationTheme) ? (value as ApplicationTheme) : 'default';
+	return value && findApplicationTheme(value) ? value : 'default';
 }
 
 export function applyApplicationTheme(themeValue?: string | null): void {
@@ -324,13 +147,23 @@ export function applyApplicationTheme(themeValue?: string | null): void {
 
 	ensureThemeColorSyncObserver();
 
-	if (theme === 'default') {
+	const definition = findApplicationTheme(theme);
+	const existingStyle = document.getElementById(APP_THEME_STYLE_ID);
+
+	if (!definition) {
+		existingStyle?.remove();
 		document.documentElement.removeAttribute(APP_THEME_ATTRIBUTE);
-	} else {
-		document.documentElement.setAttribute(APP_THEME_ATTRIBUTE, theme);
+		updateAppearanceCache({ appTheme: null, themeCss: null });
+		syncBrowserThemeColor();
+		return;
 	}
 
-	updateAppearanceCache({ appTheme: theme === 'default' ? null : theme });
+	const themeCss = buildThemeCss(definition);
+	const style =
+		existingStyle ?? document.head.appendChild(Object.assign(document.createElement('style'), { id: APP_THEME_STYLE_ID }));
+	style.textContent = themeCss;
+	document.documentElement.setAttribute(APP_THEME_ATTRIBUTE, theme);
+	updateAppearanceCache({ appTheme: theme, themeCss });
 
 	syncBrowserThemeColor();
 }

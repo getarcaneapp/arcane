@@ -17,54 +17,54 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var installWriteTestTransportOnceInternal sync.Once
+var installWriteTestTransportOnce sync.Once
 
-// installWriteTestTransportInternal serves bare repositories on disk over the
+// installWriteTestTransport serves bare repositories on disk over the
 // "http" scheme so the write paths run without a network or the git binary.
-func installWriteTestTransportInternal(t *testing.T) {
+func installWriteTestTransport(t *testing.T) {
 	t.Helper()
-	installWriteTestTransportOnceInternal.Do(func() {
+	installWriteTestTransportOnce.Do(func() {
 		client.InstallProtocol("http", server.NewClient(server.NewFilesystemLoader(osfs.New("/"))))
 	})
 }
 
-func newBareRepoURLInternal(t *testing.T) string {
+func newBareRepoURL(t *testing.T) string {
 	t.Helper()
-	installWriteTestTransportInternal(t)
+	installWriteTestTransport(t)
 	bare := filepath.Join(t.TempDir(), "bare.git")
 	_, err := gogit.PlainInit(bare, true)
 	require.NoError(t, err)
 	return "http://localhost" + bare
 }
 
-func noAuthInternal() AuthConfig {
+func noAuth() AuthConfig {
 	return AuthConfig{AuthType: "none"}
 }
 
-// pushCommitInternal commits files onto branch through a separate checkout,
+// pushCommit commits files onto branch through a separate checkout,
 // standing in for another writer against the same remote.
-func pushCommitInternal(t *testing.T, url, branch, message string, files map[string]string) string {
+func pushCommit(t *testing.T, url, branch, message string, files map[string]string) string {
 	t.Helper()
 	writer := NewClient(t.TempDir())
-	checkout, err := writer.CheckoutForWrite(t.Context(), url, branch, noAuthInternal())
+	checkout, err := writer.CheckoutForWrite(t.Context(), url, branch, noAuth())
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = writer.Cleanup(checkout.RepoPath) })
+	t.Cleanup(func() { _ = os.RemoveAll(checkout.RepoPath) })
 
 	request := CommitRequest{Message: message, AuthorName: "Other", AuthorEmail: "other@localhost"}
 	for path, content := range files {
 		request.Files = append(request.Files, CommitFile{Path: path, Content: []byte(content)})
 	}
-	head, _, err := writer.CommitAndPush(t.Context(), checkout, request, noAuthInternal())
+	head, _, err := writer.CommitAndPush(t.Context(), checkout, request, noAuth())
 	require.NoError(t, err)
 	return head
 }
 
 func TestWriteCommitAndPush_CreatesBranchInEmptyRepository(t *testing.T) {
 	ctx := t.Context()
-	url := newBareRepoURLInternal(t)
+	url := newBareRepoURL(t)
 	gitClient := NewClient(t.TempDir())
 
-	checkout, err := gitClient.CheckoutForWrite(ctx, url, "main", noAuthInternal())
+	checkout, err := gitClient.CheckoutForWrite(ctx, url, "main", noAuth())
 	require.NoError(t, err)
 	require.False(t, checkout.BranchExists)
 
@@ -74,17 +74,17 @@ func TestWriteCommitAndPush_CreatesBranchInEmptyRepository(t *testing.T) {
 		AuthorName:  "Arcane",
 		AuthorEmail: "arcane@localhost",
 	}
-	head, committed, err := gitClient.CommitAndPush(ctx, checkout, request, noAuthInternal())
+	head, committed, err := gitClient.CommitAndPush(ctx, checkout, request, noAuth())
 	require.NoError(t, err)
 	require.True(t, committed)
 	require.NotEmpty(t, head)
 
-	remoteHead, exists, err := gitClient.RemoteBranchHead(ctx, url, "main", noAuthInternal())
+	remoteHead, exists, err := gitClient.RemoteBranchHead(ctx, url, "main", noAuth())
 	require.NoError(t, err)
 	require.True(t, exists)
 	require.Equal(t, head, remoteHead)
 
-	second, committed, err := gitClient.CommitAndPush(ctx, checkout, request, noAuthInternal())
+	second, committed, err := gitClient.CommitAndPush(ctx, checkout, request, noAuth())
 	require.NoError(t, err)
 	assert.False(t, committed)
 	assert.Equal(t, head, second)
@@ -92,14 +92,14 @@ func TestWriteCommitAndPush_CreatesBranchInEmptyRepository(t *testing.T) {
 
 func TestCheckoutForWrite_CreatesMissingBranchFromDefault(t *testing.T) {
 	ctx := t.Context()
-	url := newBareRepoURLInternal(t)
+	url := newBareRepoURL(t)
 	gitClient := NewClient(t.TempDir())
 
-	pushCommitInternal(t, url, "master", "seed", map[string]string{"unrelated/keep.txt": "keep\n"})
+	pushCommit(t, url, "master", "seed", map[string]string{"unrelated/keep.txt": "keep\n"})
 
-	checkout, err := gitClient.CheckoutForWrite(ctx, url, "feature", noAuthInternal())
+	checkout, err := gitClient.CheckoutForWrite(ctx, url, "feature", noAuth())
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = gitClient.Cleanup(checkout.RepoPath) })
+	t.Cleanup(func() { _ = os.RemoveAll(checkout.RepoPath) })
 	require.FileExists(t, filepath.Join(checkout.RepoPath, "unrelated", "keep.txt"))
 
 	head, committed, err := gitClient.CommitAndPush(ctx, checkout, CommitRequest{
@@ -107,42 +107,42 @@ func TestCheckoutForWrite_CreatesMissingBranchFromDefault(t *testing.T) {
 		Message:     "backup on new branch",
 		AuthorName:  "Arcane",
 		AuthorEmail: "arcane@localhost",
-	}, noAuthInternal())
+	}, noAuth())
 	require.NoError(t, err)
 	require.True(t, committed)
 
-	remoteHead, exists, err := gitClient.RemoteBranchHead(ctx, url, "feature", noAuthInternal())
+	remoteHead, exists, err := gitClient.RemoteBranchHead(ctx, url, "feature", noAuth())
 	require.NoError(t, err)
 	require.True(t, exists)
 	require.Equal(t, head, remoteHead)
 
 	verify := NewClient(t.TempDir())
-	repoPath, err := verify.Clone(ctx, url, "feature", noAuthInternal(), 0)
+	repoPath, err := verify.Clone(ctx, url, "feature", noAuth(), 0)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = verify.Cleanup(repoPath) })
+	t.Cleanup(func() { _ = os.RemoveAll(repoPath) })
 	assert.FileExists(t, filepath.Join(repoPath, "unrelated", "keep.txt"))
 	assert.FileExists(t, filepath.Join(repoPath, "backups", "app", "compose.yaml"))
 }
 
 func TestWriteCommitAndPush_RejectsWhenRemoteAdvanced(t *testing.T) {
 	ctx := t.Context()
-	url := newBareRepoURLInternal(t)
+	url := newBareRepoURL(t)
 	gitClient := NewClient(t.TempDir())
 
-	pushCommitInternal(t, url, "main", "seed", map[string]string{"backups/app/compose.yaml": "services: {}\n"})
+	pushCommit(t, url, "main", "seed", map[string]string{"backups/app/compose.yaml": "services: {}\n"})
 
-	checkout, err := gitClient.CheckoutForWrite(ctx, url, "main", noAuthInternal())
+	checkout, err := gitClient.CheckoutForWrite(ctx, url, "main", noAuth())
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = gitClient.Cleanup(checkout.RepoPath) })
+	t.Cleanup(func() { _ = os.RemoveAll(checkout.RepoPath) })
 
-	pushCommitInternal(t, url, "main", "other writer", map[string]string{"other/notes.txt": "notes\n"})
+	pushCommit(t, url, "main", "other writer", map[string]string{"other/notes.txt": "notes\n"})
 
 	_, _, err = gitClient.CommitAndPush(ctx, checkout, CommitRequest{
 		Files:       []CommitFile{{Path: "backups/app/compose.yaml", Content: []byte("services: {app: {}}\n")}},
 		Message:     "stale backup",
 		AuthorName:  "Arcane",
 		AuthorEmail: "arcane@localhost",
-	}, noAuthInternal())
+	}, noAuth())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrPushRejected)
 }

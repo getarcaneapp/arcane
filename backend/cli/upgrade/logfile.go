@@ -13,34 +13,29 @@ import (
 	"sync"
 	"time"
 
-	"go.getarcane.app/acfs/atomic"
-	kit "go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
+	"kit.getarcane.app/fs/atomic"
 )
 
-const logFilePerm = 0o644
+type (
+	messageOnlyHandler struct {
+		w        io.Writer
+		mu       *sync.Mutex
+		attrs    []slog.Attr
+		groups   []string
+		minLevel slog.Level
+	}
 
-// messageOnlyHandler renders a record as its message plus flattened attrs, with
-// none of the level/time/source framing a text handler adds. The upgrade log is
-// read by humans watching an upgrade, so it stays terse.
-type messageOnlyHandler struct {
-	mu       *sync.Mutex
-	w        io.Writer
-	minLevel slog.Level
-	attrs    []slog.Attr
-	groups   []string
-}
+	LogWriter struct {
+		path string
+		buf  []byte
+		mu   sync.Mutex
+	}
+)
 
-// LogWriter accumulates the upgrade log in memory and rewrites the whole file
-// through atomic.WriteFile on every entry. The upgrade recreates the container
-// it is reporting on, so a run can be cut short at any point -- rewriting
-// atomically per entry means the file on disk is always a complete, untorn log
-// up to the last entry emitted, with no partial line ever visible to whoever
-// reads it afterwards.
-type LogWriter struct {
-	mu   sync.Mutex
-	path string
-	buf  []byte
-}
+const (
+	logFilePerm = 0o644
+)
 
 func (w *LogWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
@@ -77,13 +72,9 @@ func SetupMessageOnlyLogFile(dataDir, filePrefix string, minLevel slog.Level) (*
 	}
 
 	stdoutHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: minLevel, AddSource: true})
-	fileHandler := newMessageOnlyHandler(logFile, minLevel)
+	fileHandler := &messageOnlyHandler{mu: &sync.Mutex{}, w: logFile, minLevel: minLevel}
 	slog.SetDefault(slog.New(slog.NewMultiHandler(stdoutHandler, fileHandler)))
 	return logFile, nil
-}
-
-func newMessageOnlyHandler(w io.Writer, minLevel slog.Level) *messageOnlyHandler {
-	return &messageOnlyHandler{mu: &sync.Mutex{}, w: w, minLevel: minLevel}
 }
 
 func (h *messageOnlyHandler) Enabled(_ context.Context, level slog.Level) bool {

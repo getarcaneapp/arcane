@@ -10,6 +10,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type (
+	sortItem struct {
+		ID    string
+		Group string
+	}
+)
+
 func TestSortFunctionUsesCustomDescendingComparatorWhenProvided(t *testing.T) {
 	items := []int{2, 1, 0}
 
@@ -48,11 +55,6 @@ func TestSortFunctionUsesCustomDescendingComparatorWhenProvided(t *testing.T) {
 	})
 
 	require.Equal(t, []int{2, 1, 0}, sorted)
-}
-
-type sortItem struct {
-	ID    string
-	Group string
 }
 
 func sortItemBindings() []SortBinding[sortItem] {

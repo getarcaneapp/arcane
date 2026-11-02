@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -15,19 +16,49 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
-	"go.getarcane.app/acfs"
-	"go.getarcane.app/acfs/types"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	libswarm "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/swarm"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
+	kitfs "kit.getarcane.app/fs"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	libswarm "getarcane.dev/arcane/v3/pkg/swarm"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	// Service deploys and manages swarm stacks and their persisted sources.
+	Service struct {
+		docker           *dockerInternal.DockerClientService
+		ensureManager    func(ctx context.Context) error
+		listTasks        func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
+		paginateServices func(ctx context.Context, services []swarm.Service, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error)
+		registryAuth     func(ctx context.Context, imageRef string) (string, error)
+		settingsService  *settings.SettingsService
+	}
+
+	ServiceParams struct {
+		DockerService    *dockerInternal.DockerClientService
+		EnsureManager    func(ctx context.Context) error
+		ListTasks        func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
+		PaginateServices func(ctx context.Context, services []swarm.Service, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error)
+		RegistryAuth     func(ctx context.Context, imageRef string) (string, error)
+		SettingsService  *settings.SettingsService
+	}
+
+	StackSourceUpdate struct {
+		Submitted map[string]bool
+		Source    types.SwarmStackSource
+	}
 )
 
 const (
@@ -37,35 +68,35 @@ const (
 	swarmStackEnvFilename          = ".env"
 )
 
-// Service deploys and manages swarm stacks and their persisted sources.
-type Service struct {
-	docker           *dockerInternal.DockerClientService
-	ensureManager    func(ctx context.Context) error
-	listTasks        func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]swarmtypes.TaskSummary, pagination.Response, error)
-	paginateServices func(ctx context.Context, services []swarm.Service, params pagination.QueryParams) ([]swarmtypes.ServiceSummary, pagination.Response, error)
-	registryAuth     func(ctx context.Context, imageRef string) (string, error)
-	settingsService  *settings.SettingsService
-}
+var (
+	stackPagination = pagination.Config[types.SwarmStackSummary]{
+		SearchAccessors: []pagination.SearchAccessor[types.SwarmStackSummary]{
+			func(stack types.SwarmStackSummary) (string, error) { return stack.Name, nil },
+			func(stack types.SwarmStackSummary) (string, error) { return stack.Namespace, nil },
+		},
+		SortBindings: []pagination.SortBinding[types.SwarmStackSummary]{
+			{Key: "name", Fn: func(a, b types.SwarmStackSummary) int { return strings.Compare(a.Name, b.Name) }},
+			{Key: "services", Fn: func(a, b types.SwarmStackSummary) int { return cmp.Compare(a.Services, b.Services) }},
+			{Key: "created", Fn: func(a, b types.SwarmStackSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
+			{Key: "updated", Fn: func(a, b types.SwarmStackSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
+		},
+	}
 
-func NewService(
-	dockerService *dockerInternal.DockerClientService,
-	ensureManager func(ctx context.Context) error,
-	listTasks func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]swarmtypes.TaskSummary, pagination.Response, error),
-	paginateServices func(ctx context.Context, services []swarm.Service, params pagination.QueryParams) ([]swarmtypes.ServiceSummary, pagination.Response, error),
-	registryAuth func(ctx context.Context, imageRef string) (string, error),
-	settingsService *settings.SettingsService,
-) *Service {
+	deployStackAfterSourceUpdate = (*Service).DeployStack
+)
+
+func NewService(p ServiceParams) *Service {
 	return &Service{
-		docker:           dockerService,
-		ensureManager:    ensureManager,
-		listTasks:        listTasks,
-		paginateServices: paginateServices,
-		registryAuth:     registryAuth,
-		settingsService:  settingsService,
+		docker:           p.DockerService,
+		ensureManager:    p.EnsureManager,
+		listTasks:        p.ListTasks,
+		paginateServices: p.PaginateServices,
+		registryAuth:     p.RegistryAuth,
+		settingsService:  p.SettingsService,
 	}
 }
 
-func (s *Service) ListStacksPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]swarmtypes.StackSummary, pagination.Response, error) {
+func (s *Service) ListStacksPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.SwarmStackSummary, pagination.Response, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, pagination.Response{}, err
 	}
@@ -78,22 +109,30 @@ func (s *Service) ListStacksPaginated(ctx context.Context, environmentID string,
 	}
 	services := servicesResult.Items
 
-	stacks := make(map[string]*swarmtypes.StackSummary)
+	infoResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
+		return dockerClient.Info(ctx, client.InfoOptions{})
+	})
+	if err != nil {
+		return nil, pagination.Response{}, fmt.Errorf("failed to get Docker info: %w", err)
+	}
+
+	stacks := make(map[string]*types.SwarmStackSummary)
 	for _, service := range services {
-		stackName := service.Spec.Labels[swarmtypes.StackNamespaceLabel]
+		stackName := service.Spec.Labels[types.SwarmStackNamespaceLabel]
 		if stackName == "" {
 			continue
 		}
 
 		entry, exists := stacks[stackName]
 		if !exists {
-			stacks[stackName] = &swarmtypes.StackSummary{
+			stacks[stackName] = &types.SwarmStackSummary{
 				ID:        stackName,
 				Name:      stackName,
 				Namespace: stackName,
 				Services:  1,
 				CreatedAt: service.CreatedAt,
 				UpdatedAt: service.UpdatedAt,
+				ClusterID: kit.FromPtr(infoResult.Info.Swarm.Cluster).ID,
 			}
 			continue
 		}
@@ -112,36 +151,69 @@ func (s *Service) ListStacksPaginated(ctx context.Context, environmentID string,
 		return nil, pagination.Response{}, err
 	}
 	for stackName, persisted := range persistedStacks {
-		if _, exists := stacks[stackName]; exists {
+		if entry, exists := stacks[stackName]; exists {
+			entry.HasSource = true
 			continue
 		}
 		stacks[stackName] = new(persisted)
 	}
 
-	items := make([]swarmtypes.StackSummary, 0, len(stacks))
+	items := make([]types.SwarmStackSummary, 0, len(stacks))
 	for _, stack := range stacks {
 		items = append(items, *stack)
 	}
 
-	config := pagination.Config[swarmtypes.StackSummary]{
-		SearchAccessors: []pagination.SearchAccessor[swarmtypes.StackSummary]{
-			func(stack swarmtypes.StackSummary) (string, error) { return stack.Name, nil },
-			func(stack swarmtypes.StackSummary) (string, error) { return stack.Namespace, nil },
-		},
-		SortBindings: []pagination.SortBinding[swarmtypes.StackSummary]{
-			{Key: "name", Fn: func(a, b swarmtypes.StackSummary) int { return strings.Compare(a.Name, b.Name) }},
-			{Key: "services", Fn: func(a, b swarmtypes.StackSummary) int { return cmp.Compare(a.Services, b.Services) }},
-			{Key: "created", Fn: func(a, b swarmtypes.StackSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
-			{Key: "updated", Fn: func(a, b swarmtypes.StackSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
-		},
-	}
-	result := config.SearchOrderAndPaginate(items, params)
+	result := stackPagination.SearchOrderAndPaginate(items, params)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 
 	return result.Items, paginationResp, nil
 }
 
-func (s *Service) DeployStack(ctx context.Context, environmentID string, req swarmtypes.StackDeployRequest) (*swarmtypes.StackDeployResponse, error) {
+func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.SwarmStackSummary], error) {
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.SwarmStackSummary]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return types.Paginated[types.SwarmStackSummary]{}, err
+	}
+
+	sourced := map[string]bool{}
+	for _, result := range collection.Results {
+		for _, item := range result.Value.Data {
+			if item.ClusterID != "" && item.HasSource {
+				sourced[item.ClusterID+"/"+item.Name] = true
+			}
+		}
+	}
+	listed := map[string]bool{}
+	pages := make([]pagination.EnvironmentPage[types.SwarmStackSummary], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		items := slices.DeleteFunc(slices.Clone(result.Value.Data), func(item types.SwarmStackSummary) bool {
+			key := item.ClusterID + "/" + item.Name
+			if item.ClusterID == "" || item.HasSource {
+				return false
+			}
+			if sourced[key] || listed[key] {
+				return true
+			}
+			listed[key] = true
+			return false
+		})
+		pages = append(pages, pagination.EnvironmentPage[types.SwarmStackSummary]{
+			Environment:    result.Environment,
+			Items:          items,
+			TotalAvailable: max(cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems)-int64(len(result.Value.Data)-len(items)), int64(len(items))),
+		})
+	}
+	data, resp := pagination.MergeEnvironmentPages(stackPagination, pages, params)
+
+	return types.Paginated[types.SwarmStackSummary]{
+		Success:            true,
+		Data:               data,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
+func (s *Service) DeployStack(ctx context.Context, environmentID string, req types.SwarmStackDeployRequest) (*types.SwarmStackDeployResponse, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, err
 	}
@@ -162,7 +234,7 @@ func (s *Service) DeployStack(ctx context.Context, environmentID string, req swa
 	}
 
 	if upsertStackSourceErr := s.upsertStackSource(ctx, environmentID, stackName, req.ComposeContent, req.OverrideContent, req.EnvContent, req.Files); upsertStackSourceErr != nil {
-		slog.WarnContext(ctx, "failed to persist swarm stack source", "environmentId", normalizeSwarmEnvironmentID(environmentID), "stackName", stackName, "error", upsertStackSourceErr)
+		slog.WarnContext(ctx, "failed to persist swarm stack source", "environmentId", cmp.Or(strings.TrimSpace(environmentID), "0"), "stackName", stackName, "error", upsertStackSourceErr)
 	}
 
 	workingDir := req.WorkingDir
@@ -172,7 +244,7 @@ func (s *Service) DeployStack(ctx context.Context, environmentID string, req swa
 
 	pm := projects.NewPathMapperForConfiguredDirectory(
 		ctx,
-		s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory", defaultSwarmStackSourceRootDir),
+		s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory"),
 		defaultSwarmStackSourceRootDir,
 		dockerClient,
 	)
@@ -197,10 +269,10 @@ func (s *Service) DeployStack(ctx context.Context, environmentID string, req swa
 		return nil, classifySwarmStackError(deployStackErr)
 	}
 
-	return &swarmtypes.StackDeployResponse{Name: stackName}, nil
+	return &types.SwarmStackDeployResponse{Name: stackName}, nil
 }
 
-func (s *Service) GetStack(ctx context.Context, environmentID, stackName string) (*swarmtypes.StackInspect, error) {
+func (s *Service) GetStack(ctx context.Context, environmentID, stackName string) (*types.SwarmStackInspect, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, err
 	}
@@ -215,7 +287,7 @@ func (s *Service) GetStack(ctx context.Context, environmentID, stackName string)
 			return nil, persistedErr
 		}
 
-		return &swarmtypes.StackInspect{
+		return &types.SwarmStackInspect{
 			Name:      persisted.Name,
 			Namespace: persisted.Namespace,
 			Services:  persisted.Services,
@@ -235,7 +307,7 @@ func (s *Service) GetStack(ctx context.Context, environmentID, stackName string)
 		}
 	}
 
-	return &swarmtypes.StackInspect{
+	return &types.SwarmStackInspect{
 		Name:      stackName,
 		Namespace: stackName,
 		Services:  len(services),
@@ -244,7 +316,7 @@ func (s *Service) GetStack(ctx context.Context, environmentID, stackName string)
 	}, nil
 }
 
-func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName string) (*swarmtypes.StackSource, error) {
+func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName string) (*types.SwarmStackSource, error) {
 	stackName = strings.TrimSpace(stackName)
 	if stackName == "" {
 		return nil, errors.New("stack name is required")
@@ -255,7 +327,7 @@ func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName s
 		return nil, err
 	}
 
-	composeContent, err := acfs.ReadFile(ctx, stackSourceDir, "/"+swarmStackComposeFilename)
+	composeContent, err := acfs.Root{Path: stackSourceDir}.ReadFile(ctx, "/"+swarmStackComposeFilename)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, errdefs.ErrNotFound
@@ -264,7 +336,7 @@ func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName s
 	}
 
 	overrideContent := ""
-	overrideBytes, err := acfs.ReadFile(ctx, stackSourceDir, "/"+swarmStackOverrideFilename)
+	overrideBytes, err := acfs.Root{Path: stackSourceDir}.ReadFile(ctx, "/"+swarmStackOverrideFilename)
 	if err == nil {
 		overrideContent = string(overrideBytes)
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -272,37 +344,42 @@ func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName s
 	}
 
 	envContent := ""
-	envBytes, err := acfs.ReadFile(ctx, stackSourceDir, "/"+swarmStackEnvFilename)
+	envBytes, err := acfs.Root{Path: stackSourceDir}.ReadFile(ctx, "/"+swarmStackEnvFilename)
 	if err == nil {
 		envContent = string(envBytes)
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("failed to read swarm stack env source: %w", err)
 	}
 
-	var files []swarmtypes.SyncFile
-	err = acfs.Walk(ctx, stackSourceDir, "/", func(entry types.Entry) error {
-		if entry.IsDirectory || entry.IsSymlink {
+	var files []types.SwarmSyncFile
+	_, err = acfs.Root{Path: stackSourceDir}.Walk(
+		ctx,
+		"/",
+		acfstypes.WalkOptions{},
+		func(entry acfstypes.Entry) error {
+			if entry.IsDirectory || entry.IsSymlink {
+				return nil
+			}
+			relativePath := strings.TrimPrefix(entry.Path, "/")
+			if relativePath == swarmStackComposeFilename || relativePath == swarmStackOverrideFilename || relativePath == swarmStackEnvFilename {
+				return nil
+			}
+			content, readFileErr := acfs.Root{Path: stackSourceDir}.ReadFile(ctx, entry.Path)
+			if readFileErr != nil {
+				return readFileErr
+			}
+			files = append(files, types.SwarmSyncFile{
+				RelativePath: relativePath,
+				Content:      content,
+			})
 			return nil
-		}
-		relativePath := strings.TrimPrefix(entry.Path, "/")
-		if relativePath == swarmStackComposeFilename || relativePath == swarmStackOverrideFilename || relativePath == swarmStackEnvFilename {
-			return nil
-		}
-		content, readFileErr := acfs.ReadFile(ctx, stackSourceDir, entry.Path)
-		if readFileErr != nil {
-			return readFileErr
-		}
-		files = append(files, swarmtypes.SyncFile{
-			RelativePath: relativePath,
-			Content:      content,
-		})
-		return nil
-	})
+		},
+	)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("failed to read additional swarm stack source files: %w", err)
 	}
 
-	return &swarmtypes.StackSource{
+	return &types.SwarmStackSource{
 		Name:            stackName,
 		ComposeContent:  string(composeContent),
 		OverrideContent: overrideContent,
@@ -311,15 +388,10 @@ func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName s
 	}, nil
 }
 
-var deployStackAfterSourceUpdate = (*Service).DeployStack
-
-func (s *Service) UpdateStackSource(ctx context.Context, environmentID, stackName string, req swarmtypes.StackSourceUpdateRequest) (*swarmtypes.StackSource, error) {
+func (s *Service) UpdateStackSource(ctx context.Context, environmentID, stackName string, change StackSourceUpdate) (*types.SwarmStackSource, error) {
 	stackName = strings.TrimSpace(stackName)
 	if stackName == "" {
 		return nil, errors.New("stack name is required")
-	}
-	if strings.TrimSpace(req.ComposeContent) == "" {
-		return nil, errors.New("stack compose source is required")
 	}
 
 	previous, err := s.GetStackSource(ctx, environmentID, stackName)
@@ -327,7 +399,19 @@ func (s *Service) UpdateStackSource(ctx context.Context, environmentID, stackNam
 		return nil, err
 	}
 
-	if upsertStackSourceErr := s.upsertStackSource(ctx, environmentID, stackName, req.ComposeContent, req.OverrideContent, req.EnvContent, req.Files); upsertStackSourceErr != nil {
+	current := kit.FromPtr(previous)
+	source := types.SwarmStackSource{
+		Name:            stackName,
+		ComposeContent:  kit.Ternary(change.Submitted["composeContent"], change.Source.ComposeContent, current.ComposeContent),
+		OverrideContent: kit.Ternary(change.Submitted["overrideContent"], change.Source.OverrideContent, current.OverrideContent),
+		EnvContent:      kit.Ternary(change.Submitted["envContent"], change.Source.EnvContent, current.EnvContent),
+		Files:           kit.Ternary(change.Submitted["files"], change.Source.Files, current.Files),
+	}
+	if strings.TrimSpace(source.ComposeContent) == "" {
+		return nil, errors.New("stack compose source is required")
+	}
+
+	if upsertStackSourceErr := s.upsertStackSource(ctx, environmentID, stackName, source.ComposeContent, source.OverrideContent, source.EnvContent, source.Files); upsertStackSourceErr != nil {
 		return nil, upsertStackSourceErr
 	}
 
@@ -339,12 +423,12 @@ func (s *Service) UpdateStackSource(ctx context.Context, environmentID, stackNam
 	// resolution is per image and yields nothing unless a configured container
 	// registry matches the image host. Without it, a service added in the edit
 	// has no previous spec to fall back on and private images fail to pull.
-	if _, deployStackAfterSourceUpdateErr := deployStackAfterSourceUpdate(s, ctx, environmentID, swarmtypes.StackDeployRequest{
+	if _, deployStackAfterSourceUpdateErr := deployStackAfterSourceUpdate(s, ctx, environmentID, types.SwarmStackDeployRequest{
 		Name:             stackName,
-		ComposeContent:   req.ComposeContent,
-		OverrideContent:  req.OverrideContent,
-		EnvContent:       req.EnvContent,
-		Files:            req.Files,
+		ComposeContent:   source.ComposeContent,
+		OverrideContent:  source.OverrideContent,
+		EnvContent:       source.EnvContent,
+		Files:            source.Files,
 		Prune:            true,
 		WithRegistryAuth: true,
 	}); deployStackAfterSourceUpdateErr != nil {
@@ -357,35 +441,29 @@ func (s *Service) UpdateStackSource(ctx context.Context, environmentID, stackNam
 			restoreErr = s.deleteStackSource(ctx, environmentID, stackName)
 		}
 		if restoreErr != nil {
-			slog.WarnContext(ctx, "failed to restore swarm stack source after deploy failure", "environmentId", normalizeSwarmEnvironmentID(environmentID), "stackName", stackName, "error", restoreErr)
+			slog.WarnContext(ctx, "failed to restore swarm stack source after deploy failure", "environmentId", cmp.Or(strings.TrimSpace(environmentID), "0"), "stackName", stackName, "error", restoreErr)
 		}
 		return nil, fmt.Errorf("failed to redeploy swarm stack from updated source: %w", deployStackAfterSourceUpdateErr)
 	}
 
-	return &swarmtypes.StackSource{
-		Name:            stackName,
-		ComposeContent:  req.ComposeContent,
-		OverrideContent: req.OverrideContent,
-		EnvContent:      req.EnvContent,
-		Files:           req.Files,
-	}, nil
+	return &source, nil
 }
 
-func (s *Service) listPersistedStackSources(ctx context.Context, environmentID string) (map[string]swarmtypes.StackSummary, error) {
+func (s *Service) listPersistedStackSources(ctx context.Context, environmentID string) (map[string]types.SwarmStackSummary, error) {
 	_, environmentDir, err := s.resolveSwarmStackSourceEnvironmentDir(ctx, environmentID)
 	if err != nil {
 		return nil, err
 	}
 
-	entries, err := acfs.List(ctx, environmentDir, "/")
+	entries, err := acfs.Root{Path: environmentDir}.List(ctx, "/")
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return map[string]swarmtypes.StackSummary{}, nil
+			return map[string]types.SwarmStackSummary{}, nil
 		}
 		return nil, fmt.Errorf("failed to list swarm stack source directories: %w", err)
 	}
 
-	stacks := make(map[string]swarmtypes.StackSummary, len(entries))
+	stacks := make(map[string]types.SwarmStackSummary, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDirectory {
 			continue
@@ -406,7 +484,7 @@ func (s *Service) listPersistedStackSources(ctx context.Context, environmentID s
 }
 
 // getPersistedStackSourceSummary maps any not-found failure to errdefs.ErrNotFound.
-func (s *Service) getPersistedStackSourceSummary(ctx context.Context, environmentID, stackName string) (*swarmtypes.StackSummary, error) {
+func (s *Service) getPersistedStackSourceSummary(ctx context.Context, environmentID, stackName string) (*types.SwarmStackSummary, error) {
 	_, stackSourceDir, err := s.resolveSwarmStackSourceDir(ctx, environmentID, stackName)
 	if err != nil {
 		return nil, err
@@ -419,8 +497,8 @@ func (s *Service) getPersistedStackSourceSummary(ctx context.Context, environmen
 	return summary, err
 }
 
-func (s *Service) buildPersistedStackSourceSummary(ctx context.Context, stackSourceDir, stackName string) (*swarmtypes.StackSummary, error) {
-	composeEntry, err := acfs.Stat(ctx, stackSourceDir, "/"+swarmStackComposeFilename, true)
+func (s *Service) buildPersistedStackSourceSummary(ctx context.Context, stackSourceDir, stackName string) (*types.SwarmStackSummary, error) {
+	composeEntry, err := acfs.Root{Path: stackSourceDir}.Stat(ctx, "/"+swarmStackComposeFilename, acfstypes.StatOptions{FollowFinal: true})
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, errdefs.ErrNotFound
@@ -431,7 +509,7 @@ func (s *Service) buildPersistedStackSourceSummary(ctx context.Context, stackSou
 	createdAt := composeEntry.ModTime
 	updatedAt := composeEntry.ModTime
 
-	envEntry, err := acfs.Stat(ctx, stackSourceDir, "/"+swarmStackEnvFilename, true)
+	envEntry, err := acfs.Root{Path: stackSourceDir}.Stat(ctx, "/"+swarmStackEnvFilename, acfstypes.StatOptions{FollowFinal: true})
 	if err == nil {
 		if envEntry.ModTime.Before(createdAt) {
 			createdAt = envEntry.ModTime
@@ -443,13 +521,14 @@ func (s *Service) buildPersistedStackSourceSummary(ctx context.Context, stackSou
 		return nil, fmt.Errorf("failed to stat swarm stack env source: %w", err)
 	}
 
-	return &swarmtypes.StackSummary{
+	return &types.SwarmStackSummary{
 		ID:        stackName,
 		Name:      stackName,
 		Namespace: stackName,
 		Services:  0,
 		CreatedAt: createdAt,
 		UpdatedAt: updatedAt,
+		HasSource: true,
 	}, nil
 }
 
@@ -487,7 +566,7 @@ func (s *Service) RemoveStack(ctx context.Context, environmentID, stackName stri
 	}
 
 	if deleteStackSourceErr := s.deleteStackSource(ctx, environmentID, stackName); deleteStackSourceErr != nil {
-		slog.WarnContext(ctx, "failed to remove persisted swarm stack source", "environmentId", normalizeSwarmEnvironmentID(environmentID), "stackName", stackName, "error", deleteStackSourceErr)
+		slog.WarnContext(ctx, "failed to remove persisted swarm stack source", "environmentId", cmp.Or(strings.TrimSpace(environmentID), "0"), "stackName", stackName, "error", deleteStackSourceErr)
 	}
 
 	return nil
@@ -511,7 +590,7 @@ func (s *Service) removeStackServices(ctx context.Context, stackName string, ser
 	return nil
 }
 
-func (s *Service) ListStackServicesPaginated(ctx context.Context, stackName string, params pagination.QueryParams) ([]swarmtypes.ServiceSummary, pagination.Response, error) {
+func (s *Service) ListStackServicesPaginated(ctx context.Context, stackName string, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, pagination.Response{}, err
 	}
@@ -527,7 +606,7 @@ func (s *Service) ListStackServicesPaginated(ctx context.Context, stackName stri
 	return s.paginateServices(ctx, services, params)
 }
 
-func (s *Service) ListStackTasksPaginated(ctx context.Context, stackName string, params pagination.QueryParams) ([]swarmtypes.TaskSummary, pagination.Response, error) {
+func (s *Service) ListStackTasksPaginated(ctx context.Context, stackName string, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, pagination.Response{}, err
 	}
@@ -548,7 +627,7 @@ func (s *Service) ListStackTasksPaginated(ctx context.Context, stackName string,
 	return s.listTasks(ctx, filters, params)
 }
 
-func (s *Service) RenderStackConfig(ctx context.Context, environmentID string, req swarmtypes.StackRenderConfigRequest) (*swarmtypes.StackRenderConfigResponse, error) {
+func (s *Service) RenderStackConfig(ctx context.Context, environmentID string, req types.SwarmStackRenderConfigRequest) (*types.SwarmStackRenderConfigResponse, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, err
 	}
@@ -563,7 +642,7 @@ func (s *Service) RenderStackConfig(ctx context.Context, environmentID string, r
 	}
 	pm := projects.NewPathMapperForConfiguredDirectory(
 		ctx,
-		s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory", defaultSwarmStackSourceRootDir),
+		s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory"),
 		defaultSwarmStackSourceRootDir,
 		dockerClient,
 	)
@@ -580,7 +659,7 @@ func (s *Service) RenderStackConfig(ctx context.Context, environmentID string, r
 		return nil, classifySwarmStackError(err)
 	}
 
-	return &swarmtypes.StackRenderConfigResponse{
+	return &types.SwarmStackRenderConfigResponse{
 		Name:            result.Name,
 		RenderedCompose: result.RenderedCompose,
 		Services:        result.Services,
@@ -597,7 +676,7 @@ func (s *Service) listStackServicesRaw(ctx context.Context, stackName string) ([
 		return nil, errors.New("stack name is required")
 	}
 
-	stackFilter := make(client.Filters).Add("label", fmt.Sprintf("%s=%s", swarmtypes.StackNamespaceLabel, stackName))
+	stackFilter := make(client.Filters).Add("label", fmt.Sprintf("%s=%s", types.SwarmStackNamespaceLabel, stackName))
 	servicesResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceListResult, error) {
 		return dockerClient.ServiceList(ctx, client.ServiceListOptions{
 			Filters: stackFilter,
@@ -623,7 +702,7 @@ func (s *Service) waitForRemovedServiceTasks(ctx context.Context, stackName stri
 	defer ticker.Stop()
 
 	// Docker rejects a service filter naming a removed service, so filter by stack label.
-	taskFilters := make(client.Filters).Add("label", fmt.Sprintf("%s=%s", swarmtypes.StackNamespaceLabel, stackName))
+	taskFilters := make(client.Filters).Add("label", fmt.Sprintf("%s=%s", types.SwarmStackNamespaceLabel, stackName))
 
 	for {
 		tasksResult, err := s.docker.Call(waitCtx, func(ctx context.Context, dockerClient *client.Client) (client.TaskListResult, error) {
@@ -658,7 +737,7 @@ func (s *Service) waitForRemovedServiceTasks(ctx context.Context, stackName stri
 	}
 }
 
-func (s *Service) upsertStackSource(ctx context.Context, environmentID, stackName, composeContent, overrideContent, envContent string, files []swarmtypes.SyncFile) error {
+func (s *Service) upsertStackSource(ctx context.Context, environmentID, stackName, composeContent, overrideContent, envContent string, files []types.SwarmSyncFile) error {
 	stackName = strings.TrimSpace(stackName)
 	if stackName == "" {
 		return errors.New("stack name is required")
@@ -669,15 +748,15 @@ func (s *Service) upsertStackSource(ctx context.Context, environmentID, stackNam
 		return err
 	}
 
-	stackLogical, err := acfs.LogicalPath(rootDir, stackSourceDir)
+	stackLogical, err := acfs.Root{Path: rootDir}.LogicalPath(stackSourceDir)
 	if err != nil {
 		return fmt.Errorf("swarm stack source directory is outside its root: %w", err)
 	}
 	// os rather than acfs: acfs can only open a root that already exists.
-	if mkdirAllErr := os.MkdirAll(rootDir, utils.DirPerm); mkdirAllErr != nil {
+	if mkdirAllErr := os.MkdirAll(rootDir, kitfs.DirPerm); mkdirAllErr != nil {
 		return fmt.Errorf("failed to create swarm stack source root: %w", mkdirAllErr)
 	}
-	if mkdirAllErr := acfs.MkdirAll(ctx, rootDir, stackLogical, utils.DirPerm); mkdirAllErr != nil {
+	if mkdirAllErr := (acfs.Root{Path: rootDir}).MkdirAll(ctx, stackLogical, kitfs.DirPerm); mkdirAllErr != nil {
 		return fmt.Errorf("failed to create swarm stack source directory: %w", mkdirAllErr)
 	}
 
@@ -711,13 +790,18 @@ func (s *Service) upsertStackSource(ctx context.Context, environmentID, stackNam
 	}
 
 	existingFiles := make([]string, 0)
-	if walkErr := acfs.Walk(ctx, stackSourceDir, "/", func(entry types.Entry) error {
-		if entry.IsDirectory || entry.IsSymlink {
+	if _, walkErr := (acfs.Root{Path: stackSourceDir}).Walk(
+		ctx,
+		"/",
+		acfstypes.WalkOptions{},
+		func(entry acfstypes.Entry) error {
+			if entry.IsDirectory || entry.IsSymlink {
+				return nil
+			}
+			existingFiles = append(existingFiles, strings.TrimPrefix(entry.Path, "/"))
 			return nil
-		}
-		existingFiles = append(existingFiles, strings.TrimPrefix(entry.Path, "/"))
-		return nil
-	}); walkErr != nil {
+		},
+	); walkErr != nil {
 		return fmt.Errorf("failed to inspect existing swarm stack files: %w", walkErr)
 	}
 
@@ -742,27 +826,23 @@ func (s *Service) deleteStackSource(ctx context.Context, environmentID, stackNam
 		return err
 	}
 
-	stackLogical, err := acfs.LogicalPath(rootDir, stackSourceDir)
+	stackLogical, err := acfs.Root{Path: rootDir}.LogicalPath(stackSourceDir)
 	if err != nil {
 		return fmt.Errorf("swarm stack source directory is outside its root: %w", err)
 	}
-	if removeAllErr := acfs.RemoveAll(ctx, rootDir, stackLogical); removeAllErr != nil {
+	if removeAllErr := (acfs.Root{Path: rootDir}).RemoveAll(ctx, stackLogical); removeAllErr != nil {
 		return fmt.Errorf("failed to remove swarm stack source directory: %w", removeAllErr)
 	}
 
 	// Best-effort cleanup of now-empty environment directory.
 	environmentDir := filepath.Dir(stackSourceDir)
 	if environmentDir != rootDir {
-		if removeErr := acfs.Remove(ctx, rootDir, path.Dir(stackLogical)); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
+		if removeErr := (acfs.Root{Path: rootDir}).Remove(ctx, path.Dir(stackLogical)); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
 			slog.DebugContext(ctx, "swarm stack source environment directory cleanup skipped", "dir", environmentDir, "error", removeErr)
 		}
 	}
 
 	return nil
-}
-
-func normalizeSwarmEnvironmentID(environmentID string) string {
-	return cmp.Or(strings.TrimSpace(environmentID), "0")
 }
 
 func (s *Service) resolveSwarmStackSourceDir(ctx context.Context, environmentID, stackName string) (string, string, error) {
@@ -785,16 +865,12 @@ func (s *Service) resolveSwarmStackSourceDir(ctx context.Context, environmentID,
 }
 
 func (s *Service) resolveSwarmStackSourceEnvironmentDir(ctx context.Context, environmentID string) (string, string, error) {
-	normalizedEnvironmentID := projects.SanitizeProjectName(normalizeSwarmEnvironmentID(environmentID))
+	normalizedEnvironmentID := projects.SanitizeProjectName(cmp.Or(strings.TrimSpace(environmentID), "0"))
 	if normalizedEnvironmentID == "" || strings.Trim(normalizedEnvironmentID, "_") == "" {
 		normalizedEnvironmentID = "0"
 	}
 
-	configuredRootDir := defaultSwarmStackSourceRootDir
-	if s.settingsService != nil {
-		configuredRootDir = s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory", defaultSwarmStackSourceRootDir)
-	}
-	rootDir := projects.ResolveConfiguredContainerDirectory(configuredRootDir, defaultSwarmStackSourceRootDir)
+	rootDir := projects.ResolveConfiguredContainerDirectory(s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory"), defaultSwarmStackSourceRootDir)
 
 	environmentDir := filepath.Clean(filepath.Join(rootDir, normalizedEnvironmentID))
 	if !projects.IsSafeSubdirectory(rootDir, environmentDir) {

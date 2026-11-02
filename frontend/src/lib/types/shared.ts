@@ -28,6 +28,7 @@ export type PaginationResponse = {
 	currentPage: number;
 	itemsPerPage: number;
 	grandTotalItems?: number;
+	hasNextPage?: boolean;
 };
 
 export type Paginated<T, C = unknown> = {
@@ -35,6 +36,15 @@ export type Paginated<T, C = unknown> = {
 	pagination: PaginationResponse;
 	counts?: C;
 };
+
+export type MessageResponse = {
+	message: string;
+	activityId?: string;
+};
+
+export type CreateRequest<T, W extends keyof T, R extends W = never> = Pick<T, R> & Partial<Pick<T, Exclude<W, R>>>;
+
+export type UpdateRequest<T, W extends keyof T> = Partial<Pick<T, W>>;
 
 // --- Events ---
 
@@ -78,6 +88,13 @@ export interface SystemStats {
 	hostname?: string;
 	gpuCount: number;
 	gpus?: GPUStats[];
+}
+
+export interface SystemDiskUsage {
+	unusedImagesBytes: number;
+	buildCacheBytes: number;
+	unusedVolumesBytes: number;
+	stoppedContainersBytes: number;
 }
 
 export interface GPUStats {
@@ -206,81 +223,20 @@ export interface SettingsSearchResponse {
 
 // --- Dashboard ---
 
-import type { ContainerStatusCounts, ContainerSummaryDto, ImageSummaryDto, ImageUsageCounts, VolumeUsageCounts } from './docker';
+import type { ContainerStatusCounts, ImageUsageCounts } from './docker';
 import type { Environment } from './environment';
 import type { AppVersionInformation } from './settings';
-
-export type DashboardActionItemKind = 'stopped_containers' | 'image_updates' | 'actionable_vulnerabilities' | 'expiring_keys';
-
-export type DashboardActionItemSeverity = 'warning' | 'critical';
-
-export interface DashboardActionItem {
-	kind: DashboardActionItemKind;
-	count: number;
-	severity: DashboardActionItemSeverity;
-}
-
-export interface DashboardActionItems {
-	items: DashboardActionItem[];
-}
-
-export interface DashboardSnapshotSettings {}
-
-export interface DashboardSnapshot {
-	containers: Paginated<ContainerSummaryDto, ContainerStatusCounts>;
-	images: Paginated<ImageSummaryDto>;
-	imageUsageCounts: ImageUsageCounts;
-	volumeUsageCounts?: VolumeUsageCounts;
-	actionItems: DashboardActionItems;
-	settings: DashboardSnapshotSettings;
-	versionInfo?: AppVersionInformation;
-	podCount?: number;
-}
-
-export type DashboardStreamEventType = 'snapshot' | 'error' | 'pending' | 'heartbeat';
-
-export type DashboardStreamErrorCode = 'agent_incompatible' | 'unreachable' | 'auth_failed' | '';
-
-export interface DashboardStreamEvent {
-	type: DashboardStreamEventType;
-	environmentId?: string;
-	snapshot?: DashboardSnapshot;
-	error?: string;
-	errorCode?: DashboardStreamErrorCode;
-	timestamp: string;
-}
-
-export type EnvironmentDashboardSnapshotState = 'ready' | 'skipped' | 'error';
 
 export interface DashboardEnvironmentOverview {
 	environment: Environment;
 	containers: ContainerStatusCounts;
 	imageUsageCounts: ImageUsageCounts;
-	volumeUsageCounts?: VolumeUsageCounts;
-	actionItems: DashboardActionItems;
-	settings: DashboardSnapshotSettings;
+	updates: number;
+	vulnerabilities: number;
+	actionItemCount: number;
 	versionInfo?: AppVersionInformation;
 	podCount?: number;
-	snapshotState: EnvironmentDashboardSnapshotState;
-	snapshotError?: string;
-}
-
-export interface DashboardOverviewSummary {
-	totalEnvironments: number;
-	reachableEnvironments: number;
-	unavailableEnvironments: number;
-	disabledEnvironments: number;
-	totalContainers: number;
-	runningContainers: number;
-	stoppedContainers: number;
-	totalImages: number;
-	imagesInUse: number;
-	imagesUnused: number;
-	totalVolumes: number;
-	volumesInUse: number;
-	volumesUnused: number;
-	podmanEnvironments: number;
-	totalPods: number;
+	error?: string;
 }
 
 export interface DashboardEnvironmentCardState {

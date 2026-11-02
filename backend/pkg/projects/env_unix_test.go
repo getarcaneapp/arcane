@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"kit.getarcane.app/fs"
 )
 
 // TestReadProjectEnvState_TreatsPermissionLockedEnvAsUnreadable verifies that a
@@ -25,7 +25,7 @@ func TestReadProjectEnvState_TreatsPermissionLockedEnvAsUnreadable(t *testing.T)
 
 	projectDir := t.TempDir()
 	envPath := filepath.Join(projectDir, EffectiveEnvFileName)
-	require.NoError(t, os.WriteFile(envPath, []byte("FOO=locked\n"), utils.FilePerm))
+	require.NoError(t, os.WriteFile(envPath, []byte("FOO=locked\n"), fs.FilePerm))
 	require.NoError(t, os.Chmod(envPath, 0o000))
 	t.Cleanup(func() { _ = os.Chmod(envPath, 0o644) })
 
@@ -46,7 +46,7 @@ func TestReadProjectEnvState_TreatsDirectoryAsUnreadable(t *testing.T) {
 	for _, fileName := range []string{EffectiveEnvFileName, GitSourceEnvFileName, OverrideEnvFileName} {
 		t.Run(fileName, func(t *testing.T) {
 			projectDir := t.TempDir()
-			require.NoError(t, os.Mkdir(filepath.Join(projectDir, fileName), utils.DirPerm))
+			require.NoError(t, os.Mkdir(filepath.Join(projectDir, fileName), fs.DirPerm))
 
 			state, err := ReadProjectEnvState(projectDir)
 			require.NoError(t, err)
@@ -62,7 +62,7 @@ func TestReadProjectEnvState_TreatsDirectoryAsUnreadable(t *testing.T) {
 
 func TestParseEnvFile_IgnoresDirectory(t *testing.T) {
 	envDir := filepath.Join(t.TempDir(), EffectiveEnvFileName)
-	require.NoError(t, os.Mkdir(envDir, utils.DirPerm))
+	require.NoError(t, os.Mkdir(envDir, fs.DirPerm))
 
 	projectEnv, err := ParseProjectEnvFile(envDir, EnvMap{})
 	require.NoError(t, err)
@@ -76,9 +76,9 @@ func TestParseEnvFile_IgnoresDirectory(t *testing.T) {
 func TestWithTransientValidationEnvFile_LeavesEnvDirectoryUntouched(t *testing.T) {
 	projectDir := t.TempDir()
 	envDir := filepath.Join(projectDir, EffectiveEnvFileName)
-	require.NoError(t, os.Mkdir(envDir, utils.DirPerm))
+	require.NoError(t, os.Mkdir(envDir, fs.DirPerm))
 	nested := filepath.Join(envDir, "keep")
-	require.NoError(t, os.WriteFile(nested, []byte("x"), utils.FilePerm))
+	require.NoError(t, os.WriteFile(nested, []byte("x"), fs.FilePerm))
 
 	content := "FOO=bar\n"
 	runErr := errors.New("validation failed")
@@ -100,9 +100,15 @@ func TestWithTransientValidationEnvFile_LeavesEnvDirectoryUntouched(t *testing.T
 func TestValidateComposeContentForUpdate_EnvDirectory(t *testing.T) {
 	projectsDir := t.TempDir()
 	projectDir := filepath.Join(projectsDir, "envdir")
-	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, EffectiveEnvFileName), utils.DirPerm))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, EffectiveEnvFileName), fs.DirPerm))
 
 	compose := "services:\n  app:\n    image: nginx:alpine\n"
 	content := "FOO=bar\n"
-	require.NoError(t, ValidateComposeContentForUpdate(t.Context(), projectsDir, projectDir, "envdir", compose, &content, nil, "", false))
+	require.NoError(t, ValidateComposeContentForUpdate(t.Context(), ValidateComposeRequest{
+		ProjectsDirectory: projectsDir,
+		ProjectPath:       projectDir,
+		ProjectName:       "envdir",
+		ComposeContent:    compose,
+		EnvContent:        &content,
+	}))
 }

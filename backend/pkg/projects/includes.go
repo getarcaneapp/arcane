@@ -11,44 +11,42 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/template"
 	"github.com/samber/mo"
-	"go.getarcane.app/acfs"
 	"go.yaml.in/yaml/v4"
+
+	"kit.getarcane.app/acfs"
 )
 
-// Security Model for Include Files:
-// - READ: Docker Compose's spec allows include files from anywhere (parent dirs,
-//   absolute paths). ParseIncludes does NOT enforce containment; it returns whatever
-//   the compose file points at. Callers must validate containment and symlinks before
-//   reading include content or returning inc.Content to users.
-// - WRITE/DELETE: Restricted to files within the project directory only for security.
-//   Always go through ValidateIncludePathForWrite.
+type (
+	// Security Model for Include Files:
+	// - READ: Docker Compose's spec allows include files from anywhere (parent dirs,
+	//   absolute paths). ParseIncludes does NOT enforce containment; it returns whatever
+	//   the compose file points at. Callers must validate containment and symlinks before
+	//   reading include content or returning inc.Content to users.
+	// - WRITE/DELETE: Restricted to files within the project directory only for security.
+	//   Always go through ValidateIncludePathForWrite.
 
-type IncludeFile struct {
-	Path         string `json:"path"`
-	RelativePath string `json:"relative_path"`
-	Content      string `json:"content"`
-}
+	IncludeFile struct {
+		Path         string `json:"path"`
+		RelativePath string `json:"relative_path"`
+		Content      string `json:"content"`
+	}
 
-// MissingIncludeStubLoader creates temporary stub compose files for missing
-// include paths during validation.
-type MissingIncludeStubLoader struct {
-	projectPath string
-	tempDir     string
-	stubs       map[string]string
-}
-
-// NewMissingIncludeStubLoader creates a loader for validation stubs under projectPath.
-func NewMissingIncludeStubLoader(projectPath string) *MissingIncludeStubLoader {
-	return &MissingIncludeStubLoader{projectPath: projectPath}
-}
+	// MissingIncludeStubLoader creates temporary stub compose files for missing
+	// include paths during validation.
+	MissingIncludeStubLoader struct {
+		stubs       map[string]string
+		projectPath string
+		tempDir     string
+	}
+)
 
 func (l *MissingIncludeStubLoader) Accept(localPath string) bool {
-	_, ok := l.resolveMissingIncludeInternal(localPath).Get()
+	_, ok := l.resolveMissingInclude(localPath).Get()
 	return ok
 }
 
 func (l *MissingIncludeStubLoader) Load(ctx context.Context, filePath string) (string, error) {
-	validatedPath, ok := l.resolveMissingIncludeInternal(filePath).Get()
+	validatedPath, ok := l.resolveMissingInclude(filePath).Get()
 	if !ok {
 		return "", fmt.Errorf("include file is not eligible for validation stub: %s", filePath)
 	}
@@ -74,14 +72,14 @@ func (l *MissingIncludeStubLoader) Load(ctx context.Context, filePath string) (s
 		relPath = filepath.Base(validatedPath)
 	}
 	stubPath := filepath.Join(l.tempDir, relPath)
-	stubLogical, err := acfs.LogicalPath(l.tempDir, stubPath)
+	stubLogical, err := acfs.Root{Path: l.tempDir}.LogicalPath(stubPath)
 	if err != nil {
 		return "", fmt.Errorf("resolve validation include stub path: %w", err)
 	}
-	if mkdirAllErr := acfs.MkdirAll(ctx, l.tempDir, path.Dir(stubLogical), 0o755); mkdirAllErr != nil {
+	if mkdirAllErr := (acfs.Root{Path: l.tempDir}).MkdirAll(ctx, path.Dir(stubLogical), 0o755); mkdirAllErr != nil {
 		return "", fmt.Errorf("create validation include directory: %w", mkdirAllErr)
 	}
-	if writeErr := acfs.Write(ctx, l.tempDir, stubLogical, []byte("services: {}\n"), acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
+	if writeErr := (acfs.Root{Path: l.tempDir}).Write(ctx, stubLogical, []byte("services: {}\n"), acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
 		return "", fmt.Errorf("write validation include stub: %w", writeErr)
 	}
 
@@ -93,7 +91,7 @@ func (l *MissingIncludeStubLoader) Dir(localPath string) string {
 	return filepath.Dir(localPath)
 }
 
-func (l *MissingIncludeStubLoader) resolveMissingIncludeInternal(localPath string) mo.Option[string] {
+func (l *MissingIncludeStubLoader) resolveMissingInclude(localPath string) mo.Option[string] {
 	validatedPath, err := ValidateIncludePathForWrite(l.projectPath, localPath)
 	if err != nil {
 		return mo.None[string]()
@@ -150,14 +148,14 @@ func ParseIncludesFromContent(composeFilePath string, content []byte, envMap Env
 	switch v := includes.(type) {
 	case []any:
 		for _, item := range v {
-			incs, err := parseIncludeItemInternal(item, composeDir, envMap, includeContent)
+			incs, err := parseIncludeItem(item, composeDir, envMap, includeContent)
 			if err != nil {
 				return nil, err
 			}
 			includeFiles = append(includeFiles, incs...)
 		}
 	case string:
-		incs, err := parseIncludeItemInternal(v, composeDir, envMap, includeContent)
+		incs, err := parseIncludeItem(v, composeDir, envMap, includeContent)
 		if err != nil {
 			return nil, err
 		}
@@ -172,15 +170,15 @@ func ParseIncludesFromContent(composeFilePath string, content []byte, envMap Env
 	return includeFiles, nil
 }
 
-func parseIncludeItemInternal(item any, baseDir string, envMap EnvMap, includeContent bool) ([]IncludeFile, error) {
-	includePaths, err := extractIncludePathsInternal(item)
+func parseIncludeItem(item any, baseDir string, envMap EnvMap, includeContent bool) ([]IncludeFile, error) {
+	includePaths, err := extractIncludePaths(item)
 	if err != nil {
 		return nil, err
 	}
 
 	results := make([]IncludeFile, 0, len(includePaths))
 	for _, includePath := range includePaths {
-		inc, resolveIncludeFileErr := resolveIncludeFileInternal(includePath, baseDir, envMap, includeContent)
+		inc, resolveIncludeFileErr := resolveIncludeFile(includePath, baseDir, envMap, includeContent)
 		if resolveIncludeFileErr != nil {
 			return nil, resolveIncludeFileErr
 		}
@@ -189,18 +187,18 @@ func parseIncludeItemInternal(item any, baseDir string, envMap EnvMap, includeCo
 	return results, nil
 }
 
-func extractIncludePathsInternal(item any) ([]string, error) {
+func extractIncludePaths(item any) ([]string, error) {
 	switch v := item.(type) {
 	case string:
 		return []string{v}, nil
 	case map[string]any:
-		return extractIncludePathsFromMapInternal(v)
+		return extractIncludePathsFromMap(v)
 	default:
 		return nil, errors.New("invalid include item type")
 	}
 }
 
-func extractIncludePathsFromMapInternal(v map[string]any) ([]string, error) {
+func extractIncludePathsFromMap(v map[string]any) ([]string, error) {
 	switch p := v["path"].(type) {
 	case string:
 		return []string{p}, nil
@@ -220,7 +218,7 @@ func extractIncludePathsFromMapInternal(v map[string]any) ([]string, error) {
 	}
 }
 
-func resolveIncludeFileInternal(includePath, baseDir string, envMap EnvMap, includeContent bool) (IncludeFile, error) {
+func resolveIncludeFile(includePath, baseDir string, envMap EnvMap, includeContent bool) (IncludeFile, error) {
 	if includePath == "" {
 		return IncludeFile{}, errors.New("empty include path")
 	}
@@ -241,7 +239,7 @@ func resolveIncludeFileInternal(includePath, baseDir string, envMap EnvMap, incl
 	}
 	fullPath = filepath.Clean(fullPath)
 
-	content, err := readIncludeContentInternal(fullPath, includePath, includeContent)
+	content, err := readIncludeContent(fullPath, includePath, includeContent)
 	if err != nil {
 		return IncludeFile{}, err
 	}
@@ -264,7 +262,7 @@ func resolveIncludeFileInternal(includePath, baseDir string, envMap EnvMap, incl
 	}, nil
 }
 
-func readIncludeContentInternal(fullPath, includePath string, includeContent bool) (string, error) {
+func readIncludeContent(fullPath, includePath string, includeContent bool) (string, error) {
 	if !includeContent {
 		return "", nil
 	}

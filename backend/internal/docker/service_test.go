@@ -2,7 +2,7 @@ package docker
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11,16 +11,22 @@ import (
 	"testing"
 	"time"
 
-	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
+	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
+	"kit.getarcane.app/concurrency"
+	"kit.getarcane.app/docker/streams/bus"
+
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/types/v3"
 )
 
 func TestDockerClientService_GetClientPinsEffectiveAPIVersion(t *testing.T) {
@@ -135,7 +141,12 @@ func TestDockerClientService_RefreshClientClosesOldCachedClientWhenReplaced(t *t
 	require.NoError(t, err)
 	closedBeforeReplace := oldServerClosedConnections.Load()
 
-	svc.config.DockerHost = newServer.URL
+	require.NoError(t, svc.settingsService.UpdateSettings(t.Context(), types.SettingsUpdate{"dockerHost": newServer.URL}))
+	require.Eventually(t, func() bool {
+		svc.mu.Lock()
+		defer svc.mu.Unlock()
+		return svc.Client == nil
+	}, time.Second, 10*time.Millisecond)
 
 	err = svc.RefreshClient(t.Context())
 	require.NoError(t, err)
@@ -149,6 +160,25 @@ func TestDockerClientService_RefreshClientClosesOldCachedClientWhenReplaced(t *t
 	}, time.Second, 10*time.Millisecond)
 	assert.NotSame(t, firstClient, secondClient)
 	assert.Equal(t, "1.42", secondClient.ClientVersion())
+}
+
+func TestDockerClientService_GetClientRebuildsClientWhenDockerHostChanges(t *testing.T) {
+	oldServer := newDockerPingTestServer(t, func() string { return "1.41" })
+	newServer := newDockerPingTestServer(t, func() string { return "1.41" })
+	svc := newDockerClientServiceForTest(t, oldServer.URL)
+	t.Cleanup(svc.Close)
+
+	firstClient, err := svc.GetClient(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, oldServer.URL, firstClient.DaemonHost())
+
+	require.NoError(t, svc.settingsService.UpdateSettings(t.Context(), types.SettingsUpdate{"dockerHost": newServer.URL}))
+
+	require.Eventually(t, func() bool {
+		cli, getErr := svc.GetClient(t.Context())
+		return getErr == nil && cli.DaemonHost() == newServer.URL
+	}, time.Second, 10*time.Millisecond)
+	assert.Equal(t, newServer.URL, svc.DockerHost())
 }
 
 func TestDockerClientService_RefreshClientProbeFailureKeepsCachedClient(t *testing.T) {
@@ -183,7 +213,15 @@ func TestDockerClientService_RefreshClientProbeFailureKeepsCachedClient(t *testi
 }
 
 func TestDockerClientService_PublishesDaemonImageEvents(t *testing.T) {
-	expected := events.Message{Type: events.ImageEventType, Action: events.ActionPull, TimeNano: 123, Actor: events.Actor{ID: "nginx:latest"}}
+	expected := events.Message{
+		Type:     events.ImageEventType,
+		Action:   events.ActionPull,
+		TimeNano: 123,
+		Actor: events.Actor{
+			ID:         "nginx:latest",
+			Attributes: map[string]string{"name": "nginx"},
+		},
+	}
 	payload, err := json.Marshal(expected)
 	require.NoError(t, err)
 	server := newDockerPingTestServerWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
@@ -200,13 +238,15 @@ func TestDockerClientService_PublishesDaemonImageEvents(t *testing.T) {
 	})
 	svc := newDockerClientServiceForTest(t, server.URL)
 	t.Cleanup(svc.Close)
-	eventCh, unsubscribe := svc.EventBus().Subscribe(events.ImageEventType)
+	eventCh, unsubscribe := svc.EventBus().Subscribe(events.ImageEventType, bus.SubscribeOptions{})
 	t.Cleanup(unsubscribe)
-	stop, err := concurrency.StartSupervised(t.Context(), "Docker event watcher", func(ctx context.Context) error {
-		svc.WatchEvents(ctx)
-		return nil
-	})
-	require.NoError(t, err)
+	stop := concurrency.Supervise(t.Context(), concurrency.SuperviseConfig{
+		Run: func(ctx context.Context) error {
+			svc.WatchEvents(ctx)
+			return nil
+		},
+		Name: "Docker event watcher",
+	}).Stop
 	t.Cleanup(func() { _ = stop(context.WithoutCancel(t.Context())) })
 
 	select {
@@ -242,13 +282,15 @@ func TestDockerClientService_EventActorStopCancelsAndJoinsStream(t *testing.T) {
 	service := newDockerClientServiceForTest(t, server.URL)
 	t.Cleanup(service.Close)
 
-	eventsCh, unsubscribe := service.EventBus().Subscribe(events.ImageEventType)
+	eventsCh, unsubscribe := service.EventBus().Subscribe(events.ImageEventType, bus.SubscribeOptions{})
 	t.Cleanup(unsubscribe)
-	stop, err := concurrency.StartSupervised(t.Context(), "Docker event watcher", func(ctx context.Context) error {
-		service.WatchEvents(ctx)
-		return nil
-	})
-	require.NoError(t, err)
+	stop := concurrency.Supervise(t.Context(), concurrency.SuperviseConfig{
+		Run: func(ctx context.Context) error {
+			service.WatchEvents(ctx)
+			return nil
+		},
+		Name: "Docker event watcher",
+	}).Stop
 
 	select {
 	case <-streamStarted:
@@ -313,11 +355,13 @@ func TestDockerClientService_WatchEventsResumesFromLastEventAfterRefresh(t *test
 	})
 	svc := newDockerClientServiceForTest(t, server.URL)
 	t.Cleanup(svc.Close)
-	stop, err := concurrency.StartSupervised(t.Context(), "Docker event watcher", func(ctx context.Context) error {
-		svc.WatchEvents(ctx)
-		return nil
-	})
-	require.NoError(t, err)
+	stop := concurrency.Supervise(t.Context(), concurrency.SuperviseConfig{
+		Run: func(ctx context.Context) error {
+			svc.WatchEvents(ctx)
+			return nil
+		},
+		Name: "Docker event watcher",
+	}).Stop
 	t.Cleanup(func() { _ = stop(context.WithoutCancel(t.Context())) })
 
 	select {
@@ -372,6 +416,86 @@ func TestDockerClientService_EngineCachesUntilClientChanges(t *testing.T) {
 	assert.Equal(t, int32(3), versionCalls.Load())
 }
 
+func TestDockerClientService_ListContainersCachedUntilInvalidated(t *testing.T) {
+	var listCalls atomic.Int32
+	daemonEvents := make(chan events.Message)
+	server := newDockerPingTestServerWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case path.Base(r.URL.Path) == "_ping":
+			w.Header().Set("Api-Version", "1.41")
+			w.WriteHeader(http.StatusOK)
+		case path.Base(r.URL.Path) == "events":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			assert.NoError(t, http.NewResponseController(w).Flush())
+			for {
+				select {
+				case <-r.Context().Done():
+					return
+				case message := <-daemonEvents:
+					assert.NoError(t, json.MarshalWrite(w, message))
+					assert.NoError(t, http.NewResponseController(w).Flush())
+				}
+			}
+		case path.Base(r.URL.Path) == "json":
+			listCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"Id":"abc","State":"running"}]`))
+		case r.Method == http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	svc := newDockerClientServiceForTest(t, server.URL)
+	t.Cleanup(svc.Close)
+
+	_, err := svc.ListContainers(t.Context(), false)
+	require.NoError(t, err)
+	_, err = svc.ListContainers(t.Context(), false)
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), listCalls.Load(), "lists are not cached before the event stream is live")
+
+	stop := concurrency.Supervise(t.Context(), concurrency.SuperviseConfig{
+		Run: func(ctx context.Context) error {
+			svc.WatchEvents(ctx)
+			return nil
+		},
+		Name: "Docker event watcher",
+	}).Stop
+	t.Cleanup(func() { _ = stop(context.WithoutCancel(t.Context())) })
+	require.Eventually(t, func() bool { return svc.inventory.Load() != nil }, time.Second, time.Millisecond)
+
+	listCalls.Store(0)
+	for range 3 {
+		containers, listErr := svc.ListContainers(t.Context(), false)
+		require.NoError(t, listErr)
+		require.Len(t, containers, 1)
+	}
+	assert.Equal(t, int32(1), listCalls.Load())
+
+	_, err = svc.ListContainers(t.Context(), true)
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), listCalls.Load())
+
+	daemonEvents <- events.Message{Type: events.ContainerEventType, Action: "exec_start: sh", TimeNano: 1}
+	_, err = svc.ListContainers(t.Context(), false)
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), listCalls.Load(), "exec events do not change the container list")
+
+	daemonEvents <- events.Message{Type: events.ContainerEventType, Action: events.ActionDie, TimeNano: 2}
+	require.Eventually(t, func() bool {
+		_, listErr := svc.ListContainers(t.Context(), false)
+		return listErr == nil && listCalls.Load() == 3
+	}, time.Second, time.Millisecond)
+
+	_, err = svc.ContainerRemove(t.Context(), "abc", client.ContainerRemoveOptions{})
+	require.NoError(t, err)
+	_, err = svc.ListContainers(t.Context(), false)
+	require.NoError(t, err)
+	assert.Equal(t, int32(4), listCalls.Load(), "an Arcane write drops the cached list before its event arrives")
+}
+
 func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {
 	images := []image.Summary{
 		{ID: "sha256:image-a", Containers: -1, Size: 100},
@@ -397,11 +521,20 @@ func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {
 func TestCountImageUsage_NoImages(t *testing.T) {
 	counts := CountImageUsage(nil, []container.Summary{{ImageID: "sha256:image-a"}})
 
-	assert.Equal(t, imagetypes.UsageCounts{}, counts)
+	assert.Equal(t, types.ImageUsageCounts{}, counts)
 }
 
 func newDockerClientServiceForTest(t *testing.T, host string) *DockerClientService {
-	return NewDockerClientService(t.Context(), nil, &config.Config{DockerHost: host}, nil)
+	t.Helper()
+	gdb, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gdb.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gdb}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	require.NoError(t, settingsService.UpdateSettings(t.Context(), types.SettingsUpdate{"dockerHost": host}))
+	return NewDockerClientService(t.Context(), db, settingsService, bus.Config{})
 }
 
 func newDockerPingTestServer(t *testing.T, apiVersion func() string) *httptest.Server {

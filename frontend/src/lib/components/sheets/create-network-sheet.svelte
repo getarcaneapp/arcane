@@ -51,7 +51,7 @@
 		gateway: z.string().optional().default('')
 	});
 
-	let formData = $derived({
+	const form = createForm<typeof formSchema>(formSchema, {
 		networkName: '',
 		networkDriver: 'bridge',
 		checkDuplicate: true,
@@ -63,9 +63,6 @@
 		ipRange: '',
 		gateway: ''
 	});
-
-	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
 
 	// Dynamic labels state for the key-value pairs
 	let labels = $state<{ key: string; value: string }[]>([{ key: '', value: '' }]);
@@ -133,18 +130,8 @@
 	function handleOpenChange(newOpenState: boolean) {
 		open = newOpenState;
 		if (!newOpenState) {
-			// Reset form data
 			pickedEnvironmentId = '';
-			inputs.networkName.value = '';
-			inputs.networkDriver.value = 'bridge';
-			inputs.checkDuplicate.value = true;
-			inputs.internal.value = false;
-			inputs.networkLabels.value = '';
-			inputs.driverOptions.value = '';
-			inputs.enableIpam.value = false;
-			inputs.subnet.value = '';
-			inputs.ipRange.value = '';
-			inputs.gateway.value = '';
+			form.reset();
 			labels = [{ key: '', value: '' }];
 		}
 	}
@@ -172,18 +159,18 @@
 					type="text"
 					placeholder={m.network_name_placeholder()}
 					disabled={isLoading}
-					bind:value={inputs.networkName.value}
-					aria-invalid={!!inputs.networkName.error}
+					bind:value={form.inputs.networkName.value}
+					aria-invalid={!!form.inputs.networkName.error}
 				/>
-				{#if inputs.networkName.error}
-					<p class="text-xs text-destructive">{inputs.networkName.error}</p>
+				{#if form.inputs.networkName.error}
+					<p class="text-xs text-destructive">{form.inputs.networkName.error}</p>
 				{/if}
 				<p class="text-xs text-muted-foreground">{m.network_name_description()}</p>
 			</div>
 
 			<SelectWithLabel
 				id="driver-select"
-				bind:value={inputs.networkDriver.value}
+				bind:value={form.inputs.networkDriver.value}
 				label={m.network_driver_label()}
 				description={m.network_driver_description()}
 				options={drivers}
@@ -193,11 +180,11 @@
 			<div class="space-y-4">
 				<div class="flex items-center space-x-4">
 					<div class="flex items-center space-x-2">
-						<Checkbox id="check-duplicate" bind:checked={inputs.checkDuplicate.value} disabled={isLoading} />
+						<Checkbox id="check-duplicate" bind:checked={form.inputs.checkDuplicate.value} disabled={isLoading} />
 						<Label for="check-duplicate" weight="normal">{m.network_check_duplicate_label()}</Label>
 					</div>
 					<div class="flex items-center space-x-2">
-						<Checkbox id="internal" bind:checked={inputs.internal.value} disabled={isLoading} />
+						<Checkbox id="internal" bind:checked={form.inputs.internal.value} disabled={isLoading} />
 						<Label for="internal" weight="normal">{m.network_internal_label()}</Label>
 					</div>
 				</div>
@@ -243,11 +230,11 @@
 									placeholder={m.network_labels_placeholder()}
 									disabled={isLoading}
 									rows={3}
-									bind:value={inputs.networkLabels.value}
-									aria-invalid={!!inputs.networkLabels.error}
+									bind:value={form.inputs.networkLabels.value}
+									aria-invalid={!!form.inputs.networkLabels.error}
 								/>
-								{#if inputs.networkLabels.error}
-									<p class="text-xs text-destructive">{inputs.networkLabels.error}</p>
+								{#if form.inputs.networkLabels.error}
+									<p class="text-xs text-destructive">{form.inputs.networkLabels.error}</p>
 								{/if}
 								<p class="text-xs text-muted-foreground">{m.network_labels_description()}</p>
 							</div>
@@ -265,11 +252,11 @@
 								placeholder={m.network_driver_options_placeholder()}
 								disabled={isLoading}
 								rows={3}
-								bind:value={inputs.driverOptions.value}
-								aria-invalid={!!inputs.driverOptions.error}
+								bind:value={form.inputs.driverOptions.value}
+								aria-invalid={!!form.inputs.driverOptions.error}
 							/>
-							{#if inputs.driverOptions.error}
-								<p class="text-xs text-destructive">{inputs.driverOptions.error}</p>
+							{#if form.inputs.driverOptions.error}
+								<p class="text-xs text-destructive">{form.inputs.driverOptions.error}</p>
 							{/if}
 							<p class="text-xs text-muted-foreground">{m.network_driver_options_description()}</p>
 						</div>
@@ -281,11 +268,11 @@
 					<Accordion.Content>
 						<div class="space-y-4 pt-4">
 							<div class="flex items-center space-x-2">
-								<Checkbox id="enable-ipam" bind:checked={inputs.enableIpam.value} disabled={isLoading} />
+								<Checkbox id="enable-ipam" bind:checked={form.inputs.enableIpam.value} disabled={isLoading} />
 								<Label for="enable-ipam">{m.network_enable_ipam_label()}</Label>
 							</div>
 
-							{#if inputs.enableIpam.value}
+							{#if form.inputs.enableIpam.value}
 								<div class="space-y-4 border-l-2 border-muted pl-6">
 									<div class="space-y-2">
 										<Label for="subnet">{m.common_subnet()}</Label>
@@ -294,11 +281,11 @@
 											type="text"
 											placeholder={m.network_example_subnet()}
 											disabled={isLoading}
-											bind:value={inputs.subnet.value}
-											aria-invalid={!!inputs.subnet.error}
+											bind:value={form.inputs.subnet.value}
+											aria-invalid={!!form.inputs.subnet.error}
 										/>
-										{#if inputs.subnet.error}
-											<p class="text-xs text-destructive">{inputs.subnet.error}</p>
+										{#if form.inputs.subnet.error}
+											<p class="text-xs text-destructive">{form.inputs.subnet.error}</p>
 										{/if}
 										<p class="text-xs text-muted-foreground">{m.network_subnet_description()}</p>
 									</div>
@@ -310,11 +297,11 @@
 											type="text"
 											placeholder={m.network_example_ip_range()}
 											disabled={isLoading}
-											bind:value={inputs.ipRange.value}
-											aria-invalid={!!inputs.ipRange.error}
+											bind:value={form.inputs.ipRange.value}
+											aria-invalid={!!form.inputs.ipRange.error}
 										/>
-										{#if inputs.ipRange.error}
-											<p class="text-xs text-destructive">{inputs.ipRange.error}</p>
+										{#if form.inputs.ipRange.error}
+											<p class="text-xs text-destructive">{form.inputs.ipRange.error}</p>
 										{/if}
 										<p class="text-xs text-muted-foreground">{m.network_ip_range_description()}</p>
 									</div>
@@ -326,11 +313,11 @@
 											type="text"
 											placeholder={m.network_example_gateway()}
 											disabled={isLoading}
-											bind:value={inputs.gateway.value}
-											aria-invalid={!!inputs.gateway.error}
+											bind:value={form.inputs.gateway.value}
+											aria-invalid={!!form.inputs.gateway.error}
 										/>
-										{#if inputs.gateway.error}
-											<p class="text-xs text-destructive">{inputs.gateway.error}</p>
+										{#if form.inputs.gateway.error}
+											<p class="text-xs text-destructive">{form.inputs.gateway.error}</p>
 										{/if}
 										<p class="text-xs text-muted-foreground">{m.network_gateway_description()}</p>
 									</div>

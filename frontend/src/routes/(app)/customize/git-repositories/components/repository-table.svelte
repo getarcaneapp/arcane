@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -20,18 +21,19 @@
 		ExternalLinkIcon as LinkIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitRepositoryService } from '#lib/services/git-repository-service.js';
 	import type { GitRepository } from '#lib/types/automation.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	type FieldVisibility = Record<string, boolean>;
 
 	let {
-		repositories = $bindable(),
+		repositories,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
 		onEditRepository
@@ -42,19 +44,21 @@
 		onEditRepository: (repository: GitRepository) => void;
 	} = $props();
 
-	let isLoading = $state({
+	const queryClient = useQueryClient();
+
+	const isLoading = $state({
 		removing: false,
 		testing: false
 	});
 
-	const canDeleteRepository = $derived(hasPermission('git-repositories:delete'));
+	const canDeleteRepository = $derived(hasShownPermission('git-repositories:delete'));
 
 	const bulkActions = $derived.by<BulkAction[]>(() => [
 		{
 			id: 'remove',
 			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
 			action: 'remove',
-			onClick: handleDeleteSelected,
+			onclick: handleDeleteSelected,
 			loading: isLoading.removing,
 			disabled: !canDeleteRepository || isLoading.removing,
 			icon: Trash2Icon
@@ -83,8 +87,7 @@
 			},
 			onComplete: async (result) => {
 				if (result.success > 0) {
-					// fallow-ignore-next-line code-duplication -- refresh handler calls gitRepositoryService (sync-table calls gitOpsSyncService); no shared surface
-					repositories = await gitRepositoryService.getRepositories(requestOptions);
+					await queryClient.invalidateQueries({ queryKey: queryKeys.gitRepositories.all });
 				}
 			},
 			clearSelection: () => (selectedIds = []),
@@ -104,7 +107,7 @@
 			failureMessage: m.common_delete_failed({ resource: safeName }),
 			onSuccess: async () => {
 				toast.success(m.common_delete_success({ resource: `${m.resource_repository()} "${safeName}"` }));
-				repositories = await gitRepositoryService.getRepositories(requestOptions);
+				await queryClient.invalidateQueries({ queryKey: queryKeys.gitRepositories.all });
 			}
 		});
 	}
@@ -176,7 +179,7 @@
 {/snippet}
 
 {#snippet UrlCell({ value }: { value: unknown })}
-	<code class="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">{value}</code>
+	<code class="rounded-xl bg-muted px-2 py-1 text-xs text-muted-foreground">{value}</code>
 {/snippet}
 
 {#snippet AuthTypeCell({ value }: { value: unknown })}
@@ -252,7 +255,6 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
-	onRefresh={async (options) => (repositories = await gitRepositoryService.getRepositories(options))}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

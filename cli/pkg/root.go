@@ -14,49 +14,53 @@ import (
 
 	"charm.land/fang/v2"
 	"charm.land/lipgloss/v2"
+	charmLog "charm.land/log/v2"
 	"github.com/spf13/cobra"
-	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/runstate"
-	runtimectx "github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/activities"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/admin"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/auth"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/completion"
-	configClient "github.com/getarcaneapp/arcane/cli/v2/pkg/config"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/containers"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/doctor"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/environments"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/gitops"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/images"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/jobs"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/networks"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/podman"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/registries"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/repos"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/selfupdate"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/settings"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/system"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/templates"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/updater"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/variables"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/version"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/volumes"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/vulnerabilities"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/webhooks"
+	"kit.getarcane.app"
+
+	"getarcane.dev/cli/v3/internal/cmdutil"
+	"getarcane.dev/cli/v3/internal/config"
+	"getarcane.dev/cli/v3/internal/logger"
+	"getarcane.dev/cli/v3/internal/output"
+	"getarcane.dev/cli/v3/internal/runstate"
+	runtimectx "getarcane.dev/cli/v3/internal/runtime"
+	"getarcane.dev/cli/v3/pkg/activities"
+	"getarcane.dev/cli/v3/pkg/admin"
+	"getarcane.dev/cli/v3/pkg/auth"
+	"getarcane.dev/cli/v3/pkg/completion"
+	configClient "getarcane.dev/cli/v3/pkg/config"
+	"getarcane.dev/cli/v3/pkg/containers"
+	"getarcane.dev/cli/v3/pkg/doctor"
+	"getarcane.dev/cli/v3/pkg/environments"
+	"getarcane.dev/cli/v3/pkg/generate"
+	"getarcane.dev/cli/v3/pkg/gitops"
+	"getarcane.dev/cli/v3/pkg/images"
+	"getarcane.dev/cli/v3/pkg/jobs"
+	"getarcane.dev/cli/v3/pkg/networks"
+	"getarcane.dev/cli/v3/pkg/podman"
+	"getarcane.dev/cli/v3/pkg/projects"
+	"getarcane.dev/cli/v3/pkg/registries"
+	"getarcane.dev/cli/v3/pkg/repos"
+	"getarcane.dev/cli/v3/pkg/selfupdate"
+	"getarcane.dev/cli/v3/pkg/settings"
+	"getarcane.dev/cli/v3/pkg/system"
+	"getarcane.dev/cli/v3/pkg/templates"
+	"getarcane.dev/cli/v3/pkg/updater"
+	"getarcane.dev/cli/v3/pkg/variables"
+	"getarcane.dev/cli/v3/pkg/version"
+	"getarcane.dev/cli/v3/pkg/volumes"
+	"getarcane.dev/cli/v3/pkg/vulnerabilities"
+	"getarcane.dev/cli/v3/pkg/webhooks"
 )
 
-type rootOptions struct {
-	logLevel, configPath, outputMode, envOverride  string
-	logJSON, showVersion, assumeYes, noColor, json bool
-	requestTimeout                                 time.Duration
-}
+type (
+	rootOptions struct {
+		logLevel, configPath, outputMode, envOverride  string
+		logJSON, showVersion, assumeYes, noColor, json bool
+		requestTimeout                                 time.Duration
+	}
+)
 
 // NewRootCommand builds a fresh Arcane CLI command tree.
 func NewRootCommand() *cobra.Command {
@@ -116,7 +120,7 @@ func NewRootCommand() *cobra.Command {
 	cmdutil.EnumVarP(root, flags, &opts.logLevel, "log-level", "", "info", "Log level", "debug", "info", "warn", "error", "fatal")
 	flags.StringVarP(&opts.configPath, "config", "c", "", "Path to config file (default ~/.config/arcanecli.yml)")
 	cmdutil.EnumVarP(root, flags, &opts.outputMode, "output", "", "text", "Output mode", "text", "json")
-	flags.StringVar(&opts.envOverride, "env", "", "Override default environment ID for this invocation")
+	flags.StringVar(&opts.envOverride, "env", "", "Limit this invocation to one environment ID (default: all environments)")
 	flags.BoolVarP(&opts.assumeYes, "yes", "y", false, "Automatic yes to prompts")
 	flags.BoolVar(&opts.noColor, "no-color", false, "Disable colored output")
 	flags.DurationVar(&opts.requestTimeout, "request-timeout", 0, "HTTP request timeout override (e.g. 30s, 2m)")
@@ -126,8 +130,10 @@ func NewRootCommand() *cobra.Command {
 
 	imagesCmd := images.Command()
 	imagesCmd.AddCommand(vulnerabilities.Command())
+	generateCmd := generate.Command()
+	cmdutil.SetScope(cmdutil.ScopeGlobal, generateCmd)
 	root.AddCommand(
-		configClient.Command(), completion.NewCommand(root), doctor.Command(), generate.Command(), version.Command(), auth.Command(),
+		configClient.Command(), completion.NewCommand(root), doctor.Command(), generateCmd, version.Command(), auth.Command(),
 		containers.Command(), imagesCmd, volumes.Command(), networks.Command(), projects.Command(), environments.Command(),
 		registries.Command(), repos.Command(), templates.Command(), settings.Command(), jobs.Command(), system.Command(),
 		updater.Command(), selfupdate.Command(), admin.Command(), gitops.Command(), variables.Command(), activities.Command(),
@@ -199,7 +205,10 @@ func instrumentCommandTree(cmd *cobra.Command) {
 	if cmd.RunE != nil {
 		originalRunE := cmd.RunE
 		cmd.RunE = func(command *cobra.Command, args []string) error {
-			logger.GetLogger().Debug(action, "command", command.CommandPath(), "arg_count", len(args))
+			charmLog.Default().Debug(action, "command", command.CommandPath(), "arg_count", len(args))
+			if !command.HasParent() {
+				return originalRunE(command, args)
+			}
 			return cmdutil.RunScoped(command, args, originalRunE)
 		}
 	}
@@ -207,7 +216,7 @@ func instrumentCommandTree(cmd *cobra.Command) {
 	if cmd.Run != nil {
 		originalRun := cmd.Run
 		cmd.Run = func(command *cobra.Command, args []string) {
-			logger.GetLogger().Debug(action, "command", command.CommandPath(), "arg_count", len(args))
+			charmLog.Default().Debug(action, "command", command.CommandPath(), "arg_count", len(args))
 			originalRun(command, args)
 		}
 	}

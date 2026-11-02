@@ -7,13 +7,15 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-// Module owns the customization search index and mounts the customization search routes.
-type Module struct {
-	customize *CustomizeSearchService
-}
+type (
+	// Module owns the customization search index and mounts the customization search routes.
+	Module struct {
+		customize *CustomizeSearchService
+	}
+)
 
 // New builds the customization search index.
 func New() *Module {

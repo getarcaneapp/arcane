@@ -4,48 +4,59 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/event"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
-// EventHandler handles event management endpoints.
-type EventHandler struct {
-	eventService *EventService
-}
+type (
+	// EventHandler handles event management endpoints.
+	EventHandler struct {
+		eventService *EventService
+	}
 
-type ListEventsInput struct {
-	Search   string `query:"search" doc:"Search query"`
-	Sort     string `query:"sort" doc:"Column to sort by"`
-	Order    string `query:"order" default:"asc" doc:"Sort direction"`
-	Start    int    `query:"start" default:"0" doc:"Start index"`
-	Limit    int    `query:"limit" default:"20" doc:"Limit"`
-	Severity string `query:"severity" doc:"Filter by severity"`
-	Type     string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
-}
+	ListEventsInput struct {
+		Search       string `query:"search" doc:"Search query"`
+		Sort         string `query:"sort" doc:"Column to sort by"`
+		Order        string `query:"order" default:"asc" doc:"Sort direction"`
+		Severity     string `query:"severity" doc:"Filter by severity"`
+		Type         string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
+		Start        int    `query:"start" default:"0" doc:"Start index"`
+		Limit        int    `query:"limit" default:"20" doc:"Limit"`
+		IncludeTotal bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
+	}
 
-type GetEventStatsInput struct{}
+	GetEventStatsInput struct{}
 
-type GetEventsByEnvironmentInput struct {
-	EnvironmentID string `path:"environmentId" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction"`
-	Start         int    `query:"start" default:"0" doc:"Start index"`
-	Limit         int    `query:"limit" default:"20" doc:"Limit"`
-	Severity      string `query:"severity" doc:"Filter by severity"`
-	Type          string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
-}
+	GetEventsByEnvironmentInput struct {
+		EnvironmentID string `path:"environmentId" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction"`
+		Severity      string `query:"severity" doc:"Filter by severity"`
+		Type          string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
+		Start         int    `query:"start" default:"0" doc:"Start index"`
+		Limit         int    `query:"limit" default:"20" doc:"Limit"`
+		IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
+	}
 
-type DeleteEventInput struct {
-	EventID string `path:"eventId" doc:"Event ID"`
-}
+	WaitForEnvironmentChangesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Epoch         string `query:"epoch" doc:"Epoch from the previous response; a different epoch returns immediately"`
+		Since         uint64 `query:"since" doc:"Highest kind revision already seen; waits until a newer revision exists"`
+		Wait          uint64 `query:"wait" doc:"Maximum seconds to wait for a newer revision; capped at the server limit"`
+	}
+
+	DeleteEventInput struct {
+		EventID string `path:"eventId" doc:"Event ID"`
+	}
+)
 
 // ListEvents returns a paginated list of events.
-func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (*handlerutil.Page[event.Event], error) {
+func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (*handlerutil.Page[types.Event], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params.SkipCount = !input.IncludeTotal
 
 	if input.Severity != "" {
 		params.Filters["severity"] = input.Severity
@@ -59,8 +70,8 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 		return nil, huma.Error500InternalServerError("Failed to list events: " + err.Error())
 	}
 
-	return &handlerutil.Page[event.Event]{
-		Body: base.Paginated[event.Event]{
+	return &handlerutil.Page[types.Event]{
+		Body: types.Paginated[types.Event]{
 			Success:    true,
 			Data:       events,
 			Pagination: handlerutil.PaginationResponse(paginationResp),
@@ -69,14 +80,14 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 }
 
 // GetEventStats returns global event counts grouped by severity.
-func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput) (*handlerutil.Out[event.SeverityCounts], error) {
+func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput) (*handlerutil.Out[types.EventSeverityCounts], error) {
 	counts, err := h.eventService.GetEventSeverityCounts(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to load event statistics: " + err.Error())
 	}
 
-	return &handlerutil.Out[event.SeverityCounts]{
-		Body: base.ApiResponse[event.SeverityCounts]{
+	return &handlerutil.Out[types.EventSeverityCounts]{
+		Body: types.ApiResponse[types.EventSeverityCounts]{
 			Success: true,
 			Data:    counts,
 		},
@@ -84,12 +95,13 @@ func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput)
 }
 
 // GetEventsByEnvironment returns events for a specific environment.
-func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEventsByEnvironmentInput) (*handlerutil.Page[event.Event], error) {
+func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEventsByEnvironmentInput) (*handlerutil.Page[types.Event], error) {
 	if input.EnvironmentID == "" {
 		return nil, huma.Error400BadRequest("Environment ID is required")
 	}
 
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params.SkipCount = !input.IncludeTotal
 
 	if input.Severity != "" {
 		params.Filters["severity"] = input.Severity
@@ -98,13 +110,13 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 		params.Filters["type"] = input.Type
 	}
 
-	events, paginationResp, err := h.eventService.GetEventsByEnvironmentPaginated(ctx, input.EnvironmentID, params)
+	events, paginationResp, err := paginateEvents(h.eventService.db.WithContext(ctx).Model(&Event{}).Where("environment_id = ?", input.EnvironmentID), params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to list events: " + err.Error())
 	}
 
-	return &handlerutil.Page[event.Event]{
-		Body: base.Paginated[event.Event]{
+	return &handlerutil.Page[types.Event]{
+		Body: types.Paginated[types.Event]{
 			Success:    true,
 			Data:       events,
 			Pagination: handlerutil.PaginationResponse(paginationResp),
@@ -113,7 +125,7 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 }
 
 // DeleteEvent deletes an event.
-func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if input.EventID == "" {
 		return nil, huma.Error400BadRequest("Event ID is required")
 	}
@@ -123,4 +135,13 @@ func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput)
 	}
 
 	return handlerutil.MessageOutput("Event deleted successfully", ""), nil
+}
+
+func (h *EventHandler) WaitForEnvironmentChanges(ctx context.Context, input *WaitForEnvironmentChangesInput) (*handlerutil.Out[types.EnvironmentChanges], error) {
+	return &handlerutil.Out[types.EnvironmentChanges]{
+		Body: types.ApiResponse[types.EnvironmentChanges]{
+			Success: true,
+			Data:    h.eventService.WaitForChanges(ctx, input.EnvironmentID, input.Epoch, input.Since, input.Wait),
+		},
+	}, nil
 }

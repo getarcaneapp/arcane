@@ -5,18 +5,18 @@ import (
 	"net/http"
 	"strings"
 
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/labstack/echo/v5"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/types/v3"
 )
 
 var authenticatedRequests = func() metric.Int64Counter {
-	counter, err := otel.Meter(tracing.InstrumentationName).Int64Counter("arcane.auth.requests",
+	counter, err := otel.Meter(logging.InstrumentationName).Int64Counter("arcane.auth.requests",
 		metric.WithDescription("Authenticated API requests by credential type"),
 		metric.WithUnit("{request}"),
 	)
@@ -28,7 +28,7 @@ var authenticatedRequests = func() metric.Int64Counter {
 
 // RecordAuthenticatedRequest tags the request span with the acting user and
 // counts the request by credential type.
-func RecordAuthenticatedRequest(ctx context.Context, header http.Header, user *usertypes.Actor) {
+func RecordAuthenticatedRequest(ctx context.Context, header http.Header, user *types.Actor) {
 	method := "session"
 	switch {
 	case header.Get(HeaderApiKey) != "":

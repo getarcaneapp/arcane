@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import type { ResolvedPathname } from '$app/types';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -12,31 +14,31 @@
 	import { authService } from '#lib/services/auth-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type { AuthenticationResponse, MFAChallenge as MFAChallengeData, User } from '#lib/types/auth.js';
-	import { getAuthRedirectPath, normalizeAuthenticationError } from '#lib/utils/auth.js';
+	import { getAuthRedirectPath, isInAppPath, normalizeAuthenticationError } from '#lib/utils/auth.js';
 	import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	let error = $state('');
 	let mfaChallenge = $state<MFAChallengeData | null>(null);
-	let pendingRedirect = $state('');
+	let pendingRedirect = $state<ResolvedPathname | null>(null);
 	const queryClient = useQueryClient();
 
-	const buildLoginRedirect = (errorCode: string, message?: string) => {
+	const buildLoginQuery = (errorCode: string, message?: string) => {
 		const params = new URLSearchParams({ error: errorCode });
 		if (message) {
 			params.set('message', message);
 		}
-		return `/login?${params.toString()}`;
+		return params.toString();
 	};
 
-	// Returns '' when no explicit target was carried across the OIDC round trip.
+	// Returns null when no explicit target was carried across the OIDC round trip.
 	// This runs before the user is in the store, so the account landing page must
 	// not be resolved here — it is resolved after sign-in, below.
 	const getStoredRedirect = () => {
 		const storedRedirect = localStorage.getItem('oidc_redirect');
-		return storedRedirect?.startsWith('/') && !storedRedirect.startsWith('//') ? storedRedirect : '';
+		return isInAppPath(storedRedirect) ? storedRedirect : null;
 	};
 
 	type CallbackFailure = {
@@ -48,7 +50,7 @@
 		return { code, userMessage };
 	}
 
-	async function finalizeAuthentication(user: User, redirectTo: string) {
+	async function finalizeAuthentication(user: User, redirectTo: ResolvedPathname | null) {
 		// refreshAll re-runs the root +layout.ts loader, which fetches settings
 		// (with a graceful catch). We don't fetch them here directly — a user with
 		// zero/limited permissions would 403 on settings:read and crash this handler.
@@ -56,8 +58,8 @@
 		const operationResult = await tryCatch(
 			(async () => {
 				const settings = await queryClient.query({
-					queryKey: queryKeys.settings.global(),
-					queryFn: () => settingsService.getSettings()
+					queryKey: queryKeys.settings.byEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID),
+					queryFn: () => settingsService.getSettingsForEnvironmentMerged(LOCAL_DOCKER_ENVIRONMENT_ID)
 				});
 				settingsStore.set(settings);
 			})()
@@ -75,12 +77,11 @@
 		// this navigation for environment-scoped users.
 		const landingUser = page.data['user'] ?? user;
 		const landingPage = getEffectiveLandingPage();
-		const requestedTarget = redirectTo || landingPage;
+		const requestedTarget = redirectTo ?? landingPage;
 		const target =
 			getAuthRedirectPath(
 				requestedTarget,
 				landingUser,
-				environmentStore.selected?.id,
 				page.data['permissionsManifest'],
 				page.data['permissionsManifestLoadFailed'] ?? false,
 				landingPage
@@ -186,7 +187,7 @@
 			}
 
 			error = userMessage;
-			setTimeout(() => goto(buildLoginRedirect(redirectCode, userMessage)), 3000);
+			setTimeout(() => goto(resolve(`/(auth)/login/[[mode]]?${buildLoginQuery(redirectCode, userMessage)}`, {})), 3000);
 		}
 	}));
 
@@ -214,6 +215,6 @@
 			     unexpected throw inside onSuccess), the user would otherwise
 			     see a blank page with no way out. Always show a logout link. -->
 		<p class="text-sm text-muted-foreground">{m.auth_processing_login()}</p>
-		<a href="/logout" class="mt-6 text-xs text-primary underline">{m.common_logout()}</a>
+		<a href={resolve('/(auth)/logout')} class="mt-6 text-xs text-primary underline">{m.common_logout()}</a>
 	</OidcStatusPanel>
 {/if}

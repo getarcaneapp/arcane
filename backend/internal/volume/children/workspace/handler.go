@@ -8,51 +8,48 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
-	"github.com/getarcaneapp/arcane/types/v2/workspace"
 	"github.com/samber/mo"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
-type Handler struct {
-	service         *Service
-	activityService *activity.ActivityService
-	appCtx          context.Context
-}
+type (
+	Handler struct {
+		service         *Service
+		activityService *activity.ActivityService
+		appCtx          context.Context
+	}
 
-type GetVolumeWorkspaceInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-}
+	GetVolumeWorkspaceInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		VolumeName    string `path:"volumeName" doc:"Volume name"`
+	}
 
-type GetVolumeWorkspaceFileInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	RelativePath  string `query:"relativePath" doc:"Path relative to the volume workspace root"`
-}
+	GetVolumeWorkspaceFileInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		VolumeName    string `path:"volumeName" doc:"Volume name"`
+		RelativePath  string `query:"relativePath" doc:"Path relative to the volume workspace root"`
+	}
 
-type UpdateVolumeWorkspaceInput struct {
-	EnvironmentID string         `path:"id" doc:"Environment ID"`
-	VolumeName    string         `path:"volumeName" doc:"Volume name"`
-	RawBody       multipart.Form `contentType:"multipart/form-data"`
-}
+	UpdateVolumeWorkspaceInput struct {
+		RawBody       multipart.Form `contentType:"multipart/form-data"`
+		EnvironmentID string         `path:"id" doc:"Environment ID"`
+		VolumeName    string         `path:"volumeName" doc:"Volume name"`
+	}
+)
 
 func NewHandler(service *Service, activityService *activity.ActivityService, appCtx context.Context) *Handler {
 	return &Handler{service: service, activityService: activityService, appCtx: appCtx}
 }
 
-func volumeWorkspaceHTTPErrorInternal(err error) error {
+func volumeWorkspaceHTTPError(err error) error {
 	switch {
 	case errors.Is(err, common.ErrVolumeWorkspaceConflict):
 		return huma.Error409Conflict(err.Error())
@@ -67,31 +64,31 @@ func volumeWorkspaceHTTPErrorInternal(err error) error {
 	}
 }
 
-func (h *Handler) GetVolumeWorkspace(ctx context.Context, input *GetVolumeWorkspaceInput) (*handlerutil.Out[workspace.Workspace], error) {
+func (h *Handler) GetVolumeWorkspace(ctx context.Context, input *GetVolumeWorkspaceInput) (*handlerutil.Out[types.Workspace], error) {
 	result, err := h.service.GetVolumeWorkspace(ctx, input.VolumeName)
 	if err != nil {
-		return nil, volumeWorkspaceHTTPErrorInternal(err)
+		return nil, volumeWorkspaceHTTPError(err)
 	}
-	return &handlerutil.Out[workspace.Workspace]{Body: base.ApiResponse[workspace.Workspace]{Success: true, Data: *result}}, nil
+	return &handlerutil.Out[types.Workspace]{Body: types.ApiResponse[types.Workspace]{Success: true, Data: *result}}, nil
 }
 
-func (h *Handler) GetVolumeWorkspaceFile(ctx context.Context, input *GetVolumeWorkspaceFileInput) (*handlerutil.Out[workspace.FileContent], error) {
+func (h *Handler) GetVolumeWorkspaceFile(ctx context.Context, input *GetVolumeWorkspaceFileInput) (*handlerutil.Out[types.WorkspaceFileContent], error) {
 	result, err := h.service.GetVolumeWorkspaceFile(ctx, input.VolumeName, input.RelativePath)
 	if err != nil {
-		return nil, volumeWorkspaceHTTPErrorInternal(err)
+		return nil, volumeWorkspaceHTTPError(err)
 	}
-	return &handlerutil.Out[workspace.FileContent]{Body: base.ApiResponse[workspace.FileContent]{Success: true, Data: *result}}, nil
+	return &handlerutil.Out[types.WorkspaceFileContent]{Body: types.ApiResponse[types.WorkspaceFileContent]{Success: true, Data: *result}}, nil
 }
 
 func (h *Handler) DownloadVolumeWorkspaceFile(ctx context.Context, input *GetVolumeWorkspaceFileInput) (*huma.StreamResponse, error) {
 	reader, size, err := h.service.DownloadVolumeWorkspaceFile(ctx, input.VolumeName, input.RelativePath)
 	if err != nil {
-		return nil, volumeWorkspaceHTTPErrorInternal(err)
+		return nil, volumeWorkspaceHTTPError(err)
 	}
 	return handlerutil.DownloadResponse(reader, size, path.Base(input.RelativePath)), nil
 }
 
-func requireVolumeWorkspacePermissionsInternal(ctx context.Context, environmentID string, changes []volume.WorkspaceFileChange) error {
+func requireVolumeWorkspacePermissions(ctx context.Context, environmentID string, changes []types.VolumeWorkspaceFileChange) error {
 	permissions, ok := middleware.PermissionsFromContext(ctx)
 	if !ok || permissions == nil {
 		return huma.Error403Forbidden("insufficient permissions")
@@ -105,19 +102,15 @@ func requireVolumeWorkspacePermissionsInternal(ctx context.Context, environmentI
 	return nil
 }
 
-func (h *Handler) UpdateVolumeWorkspace(ctx context.Context, input *UpdateVolumeWorkspaceInput) (*handlerutil.Out[workspace.Workspace], error) {
-	manifest, err := handlerutil.ParseMultipartJSONPart[volume.WorkspaceUpdateManifest](input.RawBody, "manifest")
+func (h *Handler) UpdateVolumeWorkspace(ctx context.Context, input *UpdateVolumeWorkspaceInput) (*handlerutil.Out[types.Workspace], error) {
+	manifest, err := handlerutil.ParseMultipartJSONPart[types.VolumeWorkspaceUpdateManifest](input.RawBody, "manifest")
 	if err != nil {
 		return nil, err
 	}
-	if requireVolumeWorkspacePermissionsErr := requireVolumeWorkspacePermissionsInternal(ctx, input.EnvironmentID, manifest.FileChanges); requireVolumeWorkspacePermissionsErr != nil {
+	if requireVolumeWorkspacePermissionsErr := requireVolumeWorkspacePermissions(ctx, input.EnvironmentID, manifest.FileChanges); requireVolumeWorkspacePermissionsErr != nil {
 		return nil, requireVolumeWorkspacePermissionsErr
 	}
-	maxFileSizeBytes := workspacepkg.MaxFileSizeBytes(workspacepkg.DefaultMaxFileSizeMB)
-	if h.service != nil {
-		maxFileSizeBytes = h.service.MaxFileSizeBytes()
-	}
-	uploads, err := handlerutil.ReadWorkspaceUploads(input.RawBody, maxFileSizeBytes)
+	uploads, err := handlerutil.ReadWorkspaceUploads(input.RawBody, h.service.MaxFileSizeBytes(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -125,10 +118,10 @@ func (h *Handler) UpdateVolumeWorkspace(ctx context.Context, input *UpdateVolume
 	if err != nil {
 		return nil, err
 	}
-	var result *workspace.Workspace
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	var result *types.Workspace
+	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID: input.EnvironmentID, Type: activitytypes.TypeResourceAction, ResourceType: "volume", ResourceID: input.VolumeName, ResourceName: input.VolumeName, User: user,
+		EnvironmentID: input.EnvironmentID, Type: types.ActivityTypeResourceAction, ResourceType: "volume", ResourceID: input.VolumeName, ResourceName: input.VolumeName, User: user,
 		Step: "Updating volume workspace", Message: "Updating volume workspace", SuccessMessage: "Volume workspace updated successfully",
 		Metadata: database.JSON{"action": "update_volume_workspace", "fileChangeCount": len(manifest.FileChanges)},
 	}, func(runtimeCtx context.Context) error {
@@ -137,8 +130,8 @@ func (h *Handler) UpdateVolumeWorkspace(ctx context.Context, input *UpdateVolume
 		return updateErr
 	})
 	if err != nil {
-		return nil, volumeWorkspaceHTTPErrorInternal(err)
+		return nil, volumeWorkspaceHTTPError(err)
 	}
 	result.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
-	return &handlerutil.Out[workspace.Workspace]{Body: base.ApiResponse[workspace.Workspace]{Success: true, Data: *result}}, nil
+	return &handlerutil.Out[types.Workspace]{Body: types.ApiResponse[types.Workspace]{Success: true, Data: *result}}, nil
 }

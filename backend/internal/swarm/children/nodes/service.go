@@ -9,26 +9,72 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
-	"github.com/samber/mo"
-	"go.getarcane.app/kit/pkg"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	// Service manages swarm nodes, their agent bindings, and Easy Join.
+	Service struct {
+		docker             *dockerInternal.DockerClientService
+		ensureManager      func(ctx context.Context) error
+		listTasks          func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
+		localJoinTokens    func(ctx context.Context) (*types.SwarmJoinTokensResponse, error)
+		environmentService *environment.EnvironmentService
+		identityCache      *hot.HotCache[string, SwarmNodeIdentity]
+	}
+
+	ServiceParams struct {
+		DockerService      *dockerInternal.DockerClientService
+		EnsureManager      func(ctx context.Context) error
+		ListTasks          func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
+		LocalJoinTokens    func(ctx context.Context) (*types.SwarmJoinTokensResponse, error)
+		EnvironmentService *environment.EnvironmentService
+	}
+
+	SwarmNodeIdentity struct {
+		SwarmNodeID   string `json:"swarmNodeId"`
+		Hostname      string `json:"hostname"`
+		Role          string `json:"role"`
+		EngineVersion string `json:"engineVersion"`
+		SwarmActive   bool   `json:"swarmActive"`
+	}
+
+	swarmNodeAgentRuntime struct {
+		lastHeartbeat *time.Time
+		identity      *SwarmNodeIdentity
+		connected     bool
+	}
+
+	swarmNodeAgentCoverage struct {
+		runtimeByEnvID     map[string]swarmNodeAgentRuntime
+		boundEnvsByNodeID  map[string][]environment.Environment
+		candidatesByNodeID map[string][]environment.Environment
+		localIdentity      *SwarmNodeIdentity
+		// Resolved once per request rather than per node: the name is user-editable, and
+		// applyNodeAgentCoverage runs in a loop with no context to look it up.
+		localEnvironmentName string
+	}
 )
 
 const (
@@ -36,29 +82,13 @@ const (
 	swarmNodeIdentityCacheTTL         = 30 * time.Second
 )
 
-// Service manages swarm nodes, their agent bindings, and Easy Join.
-type Service struct {
-	docker             *dockerInternal.DockerClientService
-	ensureManager      func(ctx context.Context) error
-	listTasks          func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]swarmtypes.TaskSummary, pagination.Response, error)
-	localJoinTokens    func(ctx context.Context) (*swarmtypes.SwarmJoinTokensResponse, error)
-	environmentService *environment.EnvironmentService
-	identityCache      *hot.HotCache[string, SwarmNodeIdentity]
-}
-
-func NewService(
-	dockerService *dockerInternal.DockerClientService,
-	ensureManager func(ctx context.Context) error,
-	listTasks func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]swarmtypes.TaskSummary, pagination.Response, error),
-	localJoinTokens func(ctx context.Context) (*swarmtypes.SwarmJoinTokensResponse, error),
-	environmentService *environment.EnvironmentService,
-) *Service {
+func NewService(p ServiceParams) *Service {
 	return &Service{
-		docker:             dockerService,
-		ensureManager:      ensureManager,
-		listTasks:          listTasks,
-		localJoinTokens:    localJoinTokens,
-		environmentService: environmentService,
+		docker:             p.DockerService,
+		ensureManager:      p.EnsureManager,
+		listTasks:          p.ListTasks,
+		localJoinTokens:    p.LocalJoinTokens,
+		environmentService: p.EnvironmentService,
 		identityCache: hot.NewHotCache[string, SwarmNodeIdentity](hot.LRU, 512).
 			WithTTL(swarmNodeIdentityCacheTTL).
 			WithJanitor().
@@ -66,36 +96,11 @@ func NewService(
 	}
 }
 
-type SwarmNodeIdentity struct {
-	SwarmNodeID   string `json:"swarmNodeId"`
-	Hostname      string `json:"hostname"`
-	Role          string `json:"role"`
-	EngineVersion string `json:"engineVersion"`
-	SwarmActive   bool   `json:"swarmActive"`
-}
-
-type swarmNodeAgentRuntime struct {
-	connected     bool
-	lastHeartbeat *time.Time
-	lastPollAt    *time.Time
-	identity      *SwarmNodeIdentity
-}
-
-type swarmNodeAgentCoverage struct {
-	runtimeByEnvID     map[string]swarmNodeAgentRuntime
-	boundEnvsByNodeID  map[string][]environment.Environment
-	candidatesByNodeID map[string][]environment.Environment
-	localIdentity      *SwarmNodeIdentity
-	// Resolved once per request rather than per node: the name is user-editable, and
-	// applyNodeAgentCoverage runs in a loop with no context to look it up.
-	localEnvironmentName string
-}
-
-func (s *Service) ListNodesPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]swarmtypes.NodeSummary, pagination.Response, error) {
-	if environmentID != "0" && s.environmentService != nil {
+func (s *Service) ListNodesPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.SwarmNode, pagination.Response, error) {
+	if environmentID != "0" {
 		var remote struct {
-			Success bool                     `json:"success"`
-			Data    []swarmtypes.NodeSummary `json:"data"`
+			Data    []types.SwarmNode `json:"data"`
+			Success bool              `json:"success"`
 		}
 		if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/environments/0/swarm/nodes?limit=-1", nil, &remote); err != nil {
 			return nil, pagination.Response{}, fmt.Errorf("failed to list remote swarm nodes: %w", err)
@@ -121,9 +126,9 @@ func (s *Service) ListNodesPaginated(ctx context.Context, environmentID string, 
 	}
 	nodes := nodesResult.Items
 
-	items := make([]swarmtypes.NodeSummary, 0, len(nodes))
+	items := make([]types.SwarmNode, 0, len(nodes))
 	for _, node := range nodes {
-		items = append(items, swarmtypes.NewNodeSummary(node))
+		items = append(items, types.NewSwarmNode(node))
 	}
 
 	s.enrichNodeAgentStatuses(ctx, environmentID, items)
@@ -135,11 +140,11 @@ func (s *Service) ListNodesPaginated(ctx context.Context, environmentID string, 
 	return result.Items, paginationResp, nil
 }
 
-func (s *Service) GetNode(ctx context.Context, environmentID, nodeID string) (*swarmtypes.NodeSummary, error) {
-	if environmentID != "0" && s.environmentService != nil {
+func (s *Service) GetNode(ctx context.Context, environmentID, nodeID string) (*types.SwarmNode, error) {
+	if environmentID != "0" {
 		var remote struct {
-			Success bool                   `json:"success"`
-			Data    swarmtypes.NodeSummary `json:"data"`
+			Data    types.SwarmNode `json:"data"`
+			Success bool            `json:"success"`
 		}
 		remotePath := "/api/environments/0/swarm/nodes/" + nodeID
 		if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, remotePath, nil, &remote); err != nil {
@@ -148,7 +153,7 @@ func (s *Service) GetNode(ctx context.Context, environmentID, nodeID string) (*s
 		if !remote.Success {
 			return nil, errors.New("remote swarm node inspection failed")
 		}
-		items := []swarmtypes.NodeSummary{remote.Data}
+		items := []types.SwarmNode{remote.Data}
 		s.enrichNodeAgentStatuses(ctx, environmentID, items)
 		return &items[0], nil
 	}
@@ -164,28 +169,28 @@ func (s *Service) GetNode(ctx context.Context, environmentID, nodeID string) (*s
 		return nil, fmt.Errorf("failed to inspect swarm node: %w", err)
 	}
 
-	items := []swarmtypes.NodeSummary{swarmtypes.NewNodeSummary(nodeResult.Node)}
+	items := []types.SwarmNode{types.NewSwarmNode(nodeResult.Node)}
 	s.enrichNodeAgentStatuses(ctx, environmentID, items)
 	return new(items[0]), nil
 }
 
 // ReconcileNodeAgents verifies visible environment identities and persists only
 // unique node matches. Ambiguous and mismatched identities remain unchanged.
-func (s *Service) ReconcileNodeAgents(ctx context.Context, environmentID string) (*swarmtypes.NodeAgentReconcileResponse, error) {
+func (s *Service) ReconcileNodeAgents(ctx context.Context, environmentID string) (*types.NodeAgentReconcileResponse, error) {
 	items, _, err := s.ListNodesPaginated(ctx, environmentID, pagination.QueryParams{Limit: -1})
 	if err != nil {
 		return nil, err
 	}
 
-	results := make([]swarmtypes.NodeAgentReconcileResult, 0, len(items))
+	results := make([]types.NodeAgentReconcileResult, 0, len(items))
 	for _, node := range items {
-		result := swarmtypes.NodeAgentReconcileResult{
+		result := types.NodeAgentReconcileResult{
 			NodeID:        node.ID,
 			State:         node.Agent.State,
 			EnvironmentID: node.Agent.EnvironmentID,
 			Candidates:    node.Agent.Candidates,
 		}
-		if node.Agent.State == swarmtypes.NodeAgentStateMismatched || len(node.Agent.Candidates) != 1 {
+		if node.Agent.State == types.NodeAgentStateMismatched || len(node.Agent.Candidates) != 1 {
 			results = append(results, result)
 			continue
 		}
@@ -198,19 +203,19 @@ func (s *Service) ReconcileNodeAgents(ctx context.Context, environmentID string)
 			continue
 		}
 
-		results = append(results, swarmtypes.NodeAgentReconcileResult{
+		results = append(results, types.NodeAgentReconcileResult{
 			NodeID:        node.ID,
-			State:         swarmtypes.NodeAgentStateConnected,
+			State:         types.NodeAgentStateConnected,
 			EnvironmentID: &bound.ID,
 		})
 	}
 
-	return &swarmtypes.NodeAgentReconcileResponse{Results: results}, nil
+	return &types.NodeAgentReconcileResponse{Results: results}, nil
 }
 
 // BindNodeAgent verifies that a visible environment currently reports the
 // requested node identity before persisting the binding.
-func (s *Service) BindNodeAgent(ctx context.Context, parentEnvironmentID, nodeID string, request swarmtypes.NodeAgentBindingRequest) (*environment.Environment, error) {
+func (s *Service) BindNodeAgent(ctx context.Context, parentEnvironmentID, nodeID string, request types.NodeAgentBindingRequest) (*environment.Environment, error) {
 	localEnvironment, err := s.environmentService.GetEnvironmentByID(ctx, request.EnvironmentID)
 	if err != nil {
 		return nil, err
@@ -258,8 +263,8 @@ func (s *Service) GetLocalNodeIdentity(ctx context.Context) (*SwarmNodeIdentity,
 	}, nil
 }
 
-func (s *Service) enrichNodeAgentStatuses(ctx context.Context, environmentID string, items []swarmtypes.NodeSummary) {
-	if s.environmentService == nil || len(items) == 0 || strings.TrimSpace(environmentID) == "" {
+func (s *Service) enrichNodeAgentStatuses(ctx context.Context, environmentID string, items []types.SwarmNode) {
+	if len(items) == 0 || strings.TrimSpace(environmentID) == "" {
 		return
 	}
 	coverage, err := s.resolveNodeAgentCoverage(ctx, environmentID)
@@ -301,7 +306,7 @@ func (s *Service) resolveNodeAgentCoverage(ctx context.Context, environmentID st
 	for _, candidate := range probeEnvsByID {
 		env := candidate
 		g.Go(func() (workerErr error) {
-			defer utils.RecoverToError(&workerErr, "swarm worker")
+			defer concurrency.RecoverToError(&workerErr, "swarm worker")
 
 			runtime := s.resolveSwarmNodeAgentRuntime(groupCtx, &env)
 			runtimeMu.Lock()
@@ -349,15 +354,15 @@ func (s *Service) resolveNodeAgentCoverage(ctx context.Context, environmentID st
 	return coverage, nil
 }
 
-func (s *Service) applyNodeAgentCoverage(environmentID string, item *swarmtypes.NodeSummary, coverage *swarmNodeAgentCoverage) {
+func (s *Service) applyNodeAgentCoverage(environmentID string, item *types.SwarmNode, coverage *swarmNodeAgentCoverage) {
 	if item == nil || coverage == nil {
 		return
 	}
 	nodeID := strings.TrimSpace(item.ID)
 	if environmentID == environment.LocalEnvironmentID && coverage.localIdentity != nil && coverage.localIdentity.SwarmActive && strings.TrimSpace(coverage.localIdentity.SwarmNodeID) == nodeID {
-		item.Agent = swarmtypes.NodeAgentStatus{
-			State:           swarmtypes.NodeAgentStateConnected,
-			BindingKind:     new(swarmtypes.NodeAgentBindingKindLocal),
+		item.Agent = types.NodeAgentStatus{
+			State:           types.NodeAgentStateConnected,
+			BindingKind:     new(types.NodeAgentBindingKindLocal),
 			EnvironmentID:   new(environment.LocalEnvironmentID),
 			EnvironmentName: new(environment.DisplayName(environment.LocalEnvironmentID, coverage.localEnvironmentName)),
 			EnvironmentType: new("local"),
@@ -376,7 +381,7 @@ func (s *Service) applyNodeAgentCoverage(environmentID string, item *swarmtypes.
 
 	candidates := coverage.candidatesByNodeID[nodeID]
 	if len(candidates) > 1 {
-		item.Agent = swarmtypes.NodeAgentStatus{State: swarmtypes.NodeAgentStateAmbiguous, Candidates: buildNodeAgentCandidates(candidates)}
+		item.Agent = types.NodeAgentStatus{State: types.NodeAgentStateAmbiguous, Candidates: buildNodeAgentCandidates(candidates)}
 		return
 	}
 	if len(candidates) == 1 {
@@ -391,7 +396,7 @@ func (s *Service) resolveSwarmNodeAgentRuntime(ctx context.Context, env *environ
 
 	identity, found, _ := s.identityCache.Get(env.ID)
 	if !found {
-		if fetched, err := s.fetchSwarmNodeIdentityViaEdge(ctx, env.ID); err != nil {
+		if fetched, err := s.fetchSwarmNodeIdentityViaAgent(ctx, env.ID); err != nil {
 			slog.DebugContext(ctx, "failed to probe swarm node identity", "environmentId", env.ID, "error", err.Error())
 		} else {
 			identity, found = *fetched, true
@@ -399,18 +404,17 @@ func (s *Service) resolveSwarmNodeAgentRuntime(ctx context.Context, env *environ
 		}
 	}
 	return swarmNodeAgentRuntime{
-		connected:     found || edge.HasActiveTunnel(env.ID),
-		lastHeartbeat: kit.FromPtr(edge.GetTunnelRuntimeState(env.ID).OrEmpty()).LastHeartbeat,
-		lastPollAt:    edge.GetPollRuntimeRegistry().Get(env.ID, time.Now()).OrEmpty().LastPollAt,
+		connected:     found || agent.GetRegistry().Active(env.ID).IsPresent(),
+		lastHeartbeat: kit.FromPtr(agent.GetTunnelRuntimeState(env.ID).OrEmpty()).LastHeartbeat,
 		identity:      kit.Ternary(found, &identity, nil),
 	}
 }
 
 // JoinEnvironments joins visible remote environments to the selected swarm
 // manager and returns an independent result for every target.
-func (s *Service) JoinEnvironments(ctx context.Context, managerEnvironmentID string, request swarmtypes.SwarmJoinEnvironmentsRequest) (*swarmtypes.SwarmJoinEnvironmentsResponse, error) {
+func (s *Service) JoinEnvironments(ctx context.Context, managerEnvironmentID string, request types.SwarmJoinEnvironmentsRequest) (*types.SwarmJoinEnvironmentsResponse, error) {
 	if len(request.Targets) == 0 {
-		return &swarmtypes.SwarmJoinEnvironmentsResponse{Results: []swarmtypes.SwarmJoinEnvironmentResult{}}, nil
+		return &types.SwarmJoinEnvironmentsResponse{Results: []types.SwarmJoinEnvironmentResult{}}, nil
 	}
 
 	nodes, _, err := s.ListNodesPaginated(ctx, managerEnvironmentID, pagination.QueryParams{Limit: -1})
@@ -430,14 +434,14 @@ func (s *Service) JoinEnvironments(ctx context.Context, managerEnvironmentID str
 		memberNodeIDs[node.ID] = struct{}{}
 	}
 
-	results := make([]swarmtypes.SwarmJoinEnvironmentResult, len(request.Targets))
+	results := make([]types.SwarmJoinEnvironmentResult, len(request.Targets))
 	processTarget := func(index int) {
 		target := request.Targets[index]
 		results[index] = s.joinEnvironment(ctx, managerEnvironmentID, target, remoteAddrs, tokens, memberNodeIDs)
 	}
 
 	for index, target := range request.Targets {
-		if target.Role == swarmtypes.SwarmJoinEnvironmentRoleManager {
+		if target.Role == types.SwarmJoinEnvironmentRoleManager {
 			processTarget(index)
 		}
 	}
@@ -445,11 +449,11 @@ func (s *Service) JoinEnvironments(ctx context.Context, managerEnvironmentID str
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.SetLimit(swarmNodeIdentityProbeConcurrency)
 	for index, target := range request.Targets {
-		if target.Role != swarmtypes.SwarmJoinEnvironmentRoleWorker {
+		if target.Role != types.SwarmJoinEnvironmentRoleWorker {
 			continue
 		}
 		group.Go(func() (workerErr error) {
-			defer utils.RecoverToError(&workerErr, "swarm worker")
+			defer concurrency.RecoverToError(&workerErr, "swarm worker")
 
 			if groupCtx.Err() == nil {
 				processTarget(index)
@@ -459,19 +463,19 @@ func (s *Service) JoinEnvironments(ctx context.Context, managerEnvironmentID str
 	}
 	_ = group.Wait()
 
-	return &swarmtypes.SwarmJoinEnvironmentsResponse{Results: results}, nil
+	return &types.SwarmJoinEnvironmentsResponse{Results: results}, nil
 }
 
-func (s *Service) getSwarmJoinTokensForEnvironment(ctx context.Context, environmentID string) (*swarmtypes.SwarmJoinTokensResponse, error) {
+func (s *Service) getSwarmJoinTokensForEnvironment(ctx context.Context, environmentID string) (*types.SwarmJoinTokensResponse, error) {
 	if environmentID == "0" {
 		return s.localJoinTokens(ctx)
 	}
 
 	var response struct {
-		Success bool                               `json:"success"`
-		Data    swarmtypes.SwarmJoinTokensResponse `json:"data"`
+		Data    types.SwarmJoinTokensResponse `json:"data"`
+		Success bool                          `json:"success"`
 	}
-	if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/environments/0/swarm/join-tokens", nil, &response); err != nil {
+	if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/environments/0/swarm/join/tokens", nil, &response); err != nil {
 		return nil, fmt.Errorf("failed to get remote swarm join tokens: %w", err)
 	}
 	if !response.Success {
@@ -483,21 +487,21 @@ func (s *Service) getSwarmJoinTokensForEnvironment(ctx context.Context, environm
 func (s *Service) joinEnvironment(
 	ctx context.Context,
 	managerEnvironmentID string,
-	target swarmtypes.SwarmJoinEnvironmentTarget,
+	target types.SwarmJoinEnvironmentTarget,
 	remoteAddrs []string,
-	tokens *swarmtypes.SwarmJoinTokensResponse,
+	tokens *types.SwarmJoinTokensResponse,
 	memberNodeIDs map[string]struct{},
-) swarmtypes.SwarmJoinEnvironmentResult {
-	result := func(state swarmtypes.SwarmJoinEnvironmentResultState, nodeID, message string) swarmtypes.SwarmJoinEnvironmentResult {
-		return swarmtypes.SwarmJoinEnvironmentResult{
+) types.SwarmJoinEnvironmentResult {
+	result := func(state types.SwarmJoinEnvironmentResultState, nodeID, message string) types.SwarmJoinEnvironmentResult {
+		return types.SwarmJoinEnvironmentResult{
 			EnvironmentID: target.EnvironmentID,
 			State:         state,
 			NodeID:        kit.Ternary(nodeID == "", nil, &nodeID),
 			Error:         kit.Ternary(message == "", nil, &message),
 		}
 	}
-	failed := func(message string) swarmtypes.SwarmJoinEnvironmentResult {
-		return result(swarmtypes.SwarmJoinEnvironmentResultFailed, "", message)
+	failed := func(message string) types.SwarmJoinEnvironmentResult {
+		return result(types.SwarmJoinEnvironmentResultFailed, "", message)
 	}
 
 	localEnvironment, err := s.environmentService.GetEnvironmentByID(ctx, target.EnvironmentID)
@@ -517,11 +521,11 @@ func (s *Service) joinEnvironment(
 		if _, bindErr := s.environmentService.BindSwarmNodeEnvironment(ctx, managerEnvironmentID, nodeID, target.EnvironmentID, true); bindErr != nil {
 			return failed(bindErr.Error())
 		}
-		return result(swarmtypes.SwarmJoinEnvironmentResultAlreadyMember, nodeID, "")
+		return result(types.SwarmJoinEnvironmentResultAlreadyMember, nodeID, "")
 	}
 
-	joinToken := kit.Ternary(target.Role == swarmtypes.SwarmJoinEnvironmentRoleManager, tokens.Manager, tokens.Worker)
-	body, err := json.Marshal(swarmtypes.SwarmJoinRequest{
+	joinToken := kit.Ternary(target.Role == types.SwarmJoinEnvironmentRoleManager, tokens.Manager, tokens.Worker)
+	body, err := json.Marshal(types.SwarmJoinRequest{
 		ListenAddr:    target.ListenAddr,
 		AdvertiseAddr: target.AdvertiseAddr,
 		DataPathAddr:  target.DataPathAddr,
@@ -549,7 +553,7 @@ func (s *Service) joinEnvironment(
 			nodeID := strings.TrimSpace(verifiedRuntime.identity.SwarmNodeID)
 			if _, getNodeErr := s.GetNode(ctx, managerEnvironmentID, nodeID); getNodeErr == nil {
 				if _, bindErr := s.environmentService.BindSwarmNodeEnvironment(ctx, managerEnvironmentID, nodeID, target.EnvironmentID, true); bindErr == nil {
-					return result(swarmtypes.SwarmJoinEnvironmentResultJoined, nodeID, "")
+					return result(types.SwarmJoinEnvironmentResultJoined, nodeID, "")
 				}
 			}
 		}
@@ -561,18 +565,18 @@ func (s *Service) joinEnvironment(
 		}
 	}
 
-	return result(swarmtypes.SwarmJoinEnvironmentResultJoinedUnverified, "", "")
+	return result(types.SwarmJoinEnvironmentResultJoinedUnverified, "", "")
 }
 
-func (s *Service) fetchSwarmNodeIdentityViaEdge(ctx context.Context, environmentID string) (*SwarmNodeIdentity, error) {
+func (s *Service) fetchSwarmNodeIdentityViaAgent(ctx context.Context, environmentID string) (*SwarmNodeIdentity, error) {
 	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	var parsed struct {
-		Success bool               `json:"success"`
 		Data    *SwarmNodeIdentity `json:"data"`
+		Success bool               `json:"success"`
 	}
-	if err := s.environmentService.ProxyJSONRequest(reqCtx, environmentID, http.MethodGet, "/api/swarm/node-identity", nil, &parsed); err != nil {
+	if err := s.environmentService.ProxyJSONRequest(reqCtx, environmentID, http.MethodGet, "/api/swarm/identity", nil, &parsed); err != nil {
 		return nil, err
 	}
 	if !parsed.Success || parsed.Data == nil {
@@ -582,48 +586,46 @@ func (s *Service) fetchSwarmNodeIdentityViaEdge(ctx context.Context, environment
 	return parsed.Data, nil
 }
 
-func (s *Service) buildNodeAgentStatus(nodeID string, env *environment.Environment, runtime swarmNodeAgentRuntime) swarmtypes.NodeAgentStatus {
+func (s *Service) buildNodeAgentStatus(nodeID string, env *environment.Environment, runtime swarmNodeAgentRuntime) types.NodeAgentStatus {
 	if env == nil {
-		return swarmtypes.NodeAgentStatus{State: swarmtypes.NodeAgentStateNone}
+		return types.NodeAgentStatus{State: types.NodeAgentStateNone}
 	}
 
-	// Live means an open tunnel or a fresh poll check-in; the runtime registries only hold fresh activity,
-	// unlike env.Status, which poll-mode agents never advance out of "pending".
-	live := runtime.connected || runtime.lastHeartbeat != nil || runtime.lastPollAt != nil
+	// Live means an open tunnel; the runtime registry only holds fresh activity, unlike env.Status.
+	live := runtime.connected || runtime.lastHeartbeat != nil
 	identity := kit.FromPtr(runtime.identity)
 	reportedNodeID := strings.TrimSpace(identity.SwarmNodeID)
 	reportedHostname := strings.TrimSpace(identity.Hostname)
-	state := func() swarmtypes.NodeAgentState {
+	state := func() types.NodeAgentState {
 		switch {
 		// Only a live tunnel with a completed identity probe can authoritatively detect a node-ID mismatch.
 		case runtime.connected && runtime.identity != nil:
-			return kit.Ternary(identity.SwarmActive && reportedNodeID == strings.TrimSpace(nodeID), swarmtypes.NodeAgentStateConnected, swarmtypes.NodeAgentStateMismatched)
+			return kit.Ternary(identity.SwarmActive && reportedNodeID == strings.TrimSpace(nodeID), types.NodeAgentStateConnected, types.NodeAgentStateMismatched)
 		// A fresh check-in proves the agent Arcane mapped to this node at deploy time is reachable.
 		case live:
-			return swarmtypes.NodeAgentStateConnected
+			return types.NodeAgentStateConnected
 		// No live evidence: an unpaired agent stays pending; one seen before is offline.
 		case env.Status == string(environment.EnvironmentStatusPending) || env.LastSeen == nil:
-			return swarmtypes.NodeAgentStatePending
+			return types.NodeAgentStatePending
 		default:
-			return swarmtypes.NodeAgentStateOffline
+			return types.NodeAgentStateOffline
 		}
 	}()
 
-	return swarmtypes.NodeAgentStatus{
+	return types.NodeAgentStatus{
 		State:            state,
-		BindingKind:      new(kit.Ternary(env.Hidden, swarmtypes.NodeAgentBindingKindDedicated, swarmtypes.NodeAgentBindingKindEnvironment)),
+		BindingKind:      new(kit.Ternary(env.Hidden, types.NodeAgentBindingKindDedicated, types.NodeAgentBindingKindEnvironment)),
 		EnvironmentID:    &env.ID,
 		EnvironmentName:  &env.Name,
-		EnvironmentType:  new(kit.Ternary(env.IsEdge, "edge", "direct")),
+		EnvironmentType:  new("agent"),
 		Connected:        &live,
 		LastHeartbeat:    runtime.lastHeartbeat,
-		LastPollAt:       runtime.lastPollAt,
 		ReportedNodeID:   kit.Ternary(reportedNodeID == "", nil, &reportedNodeID),
 		ReportedHostname: kit.Ternary(reportedHostname == "", nil, &reportedHostname),
 	}
 }
 
-func (s *Service) UpdateNode(ctx context.Context, nodeID string, req swarmtypes.NodeUpdateRequest) error {
+func (s *Service) UpdateNode(ctx context.Context, nodeID string, update types.SwarmNode, submitted map[string]bool) error {
 	if err := s.ensureManager(ctx); err != nil {
 		return err
 	}
@@ -635,20 +637,16 @@ func (s *Service) UpdateNode(ctx context.Context, nodeID string, req swarmtypes.
 		return fmt.Errorf("failed to inspect swarm node: %w", err)
 	}
 
-	version := cmp.Or(req.Version, nodeResult.Node.Version.Index)
-
 	current := nodeResult.Node.Spec
-	spec := swarm.NodeSpec{
-		Name:         mo.PointerToOption(req.Name).OrElse(current.Name),
-		Labels:       kit.Ternary(req.Labels != nil, req.Labels, current.Labels),
-		Role:         mo.PointerToOption(req.Role).OrElse(current.Role),
-		Availability: mo.PointerToOption(req.Availability).OrElse(current.Availability),
-	}
-
 	if _, nodeUpdateErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NodeUpdateResult, error) {
 		return dockerClient.NodeUpdate(ctx, nodeID, client.NodeUpdateOptions{
-			Version: swarm.Version{Index: version},
-			Spec:    spec,
+			Version: swarm.Version{Index: cmp.Or(update.Version, nodeResult.Node.Version.Index)},
+			Spec: swarm.NodeSpec{
+				Name:         kit.Ternary(submitted["name"], update.Name, current.Name),
+				Labels:       kit.Ternary(submitted["labels"], update.Labels, current.Labels),
+				Role:         kit.Ternary(submitted["role"], swarm.NodeRole(update.Role), current.Role),
+				Availability: kit.Ternary(submitted["availability"], swarm.NodeAvailability(update.Availability), current.Availability),
+			},
 		})
 	}); nodeUpdateErr != nil {
 		return fmt.Errorf("failed to update swarm node: %w", nodeUpdateErr)
@@ -671,15 +669,7 @@ func (s *Service) RemoveNode(ctx context.Context, nodeID string, force bool) err
 	return nil
 }
 
-func (s *Service) PromoteNode(ctx context.Context, nodeID string) error {
-	return s.UpdateNode(ctx, nodeID, swarmtypes.NodeUpdateRequest{Role: new(swarm.NodeRoleManager)})
-}
-
-func (s *Service) DemoteNode(ctx context.Context, nodeID string) error {
-	return s.UpdateNode(ctx, nodeID, swarmtypes.NodeUpdateRequest{Role: new(swarm.NodeRoleWorker)})
-}
-
-func (s *Service) ListNodeTasksPaginated(ctx context.Context, nodeID string, params pagination.QueryParams) ([]swarmtypes.TaskSummary, pagination.Response, error) {
+func (s *Service) ListNodeTasksPaginated(ctx context.Context, nodeID string, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, pagination.Response{}, err
 	}
@@ -689,40 +679,64 @@ func (s *Service) ListNodeTasksPaginated(ctx context.Context, nodeID string, par
 	return s.listTasks(ctx, filters, params)
 }
 
-func (s *Service) buildNodePaginationConfig() pagination.Config[swarmtypes.NodeSummary] {
-	return pagination.Config[swarmtypes.NodeSummary]{
-		SearchAccessors: []pagination.SearchAccessor[swarmtypes.NodeSummary]{
-			func(node swarmtypes.NodeSummary) (string, error) { return node.Hostname, nil },
-			func(node swarmtypes.NodeSummary) (string, error) { return node.ID, nil },
-			func(node swarmtypes.NodeSummary) (string, error) { return node.Role, nil },
-			func(node swarmtypes.NodeSummary) (string, error) { return node.Status, nil },
-			func(node swarmtypes.NodeSummary) (string, error) { return node.Availability, nil },
+func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.SwarmNode], error) {
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.SwarmNode]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return types.Paginated[types.SwarmNode]{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[types.SwarmNode], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		pages = append(pages, pagination.EnvironmentPage[types.SwarmNode]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
+	}
+	data, resp := pagination.MergeEnvironmentPages(s.buildNodePaginationConfig(), pages, params)
+
+	return types.Paginated[types.SwarmNode]{
+		Success:            true,
+		Data:               data,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
+func (s *Service) buildNodePaginationConfig() pagination.Config[types.SwarmNode] {
+	return pagination.Config[types.SwarmNode]{
+		SearchAccessors: []pagination.SearchAccessor[types.SwarmNode]{
+			func(node types.SwarmNode) (string, error) { return node.Hostname, nil },
+			func(node types.SwarmNode) (string, error) { return node.ID, nil },
+			func(node types.SwarmNode) (string, error) { return node.Role, nil },
+			func(node types.SwarmNode) (string, error) { return node.Status, nil },
+			func(node types.SwarmNode) (string, error) { return node.Availability, nil },
 		},
-		SortBindings: []pagination.SortBinding[swarmtypes.NodeSummary]{
-			{Key: "hostname", Fn: func(a, b swarmtypes.NodeSummary) int { return strings.Compare(a.Hostname, b.Hostname) }},
-			{Key: "role", Fn: func(a, b swarmtypes.NodeSummary) int { return strings.Compare(a.Role, b.Role) }},
-			{Key: "status", Fn: func(a, b swarmtypes.NodeSummary) int { return strings.Compare(a.Status, b.Status) }},
-			{Key: "availability", Fn: func(a, b swarmtypes.NodeSummary) int { return strings.Compare(a.Availability, b.Availability) }},
-			{Key: "created", Fn: func(a, b swarmtypes.NodeSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
-			{Key: "updated", Fn: func(a, b swarmtypes.NodeSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
+		SortBindings: []pagination.SortBinding[types.SwarmNode]{
+			{Key: "hostname", Fn: func(a, b types.SwarmNode) int { return strings.Compare(a.Hostname, b.Hostname) }},
+			{Key: "role", Fn: func(a, b types.SwarmNode) int { return strings.Compare(a.Role, b.Role) }},
+			{Key: "status", Fn: func(a, b types.SwarmNode) int { return strings.Compare(a.Status, b.Status) }},
+			{Key: "availability", Fn: func(a, b types.SwarmNode) int { return strings.Compare(a.Availability, b.Availability) }},
+			{Key: "created", Fn: func(a, b types.SwarmNode) int { return a.CreatedAt.Compare(b.CreatedAt) }},
+			{Key: "updated", Fn: func(a, b types.SwarmNode) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
 		},
 	}
 }
 
 // GetJoinCandidates lists environments available to join the selected manager.
-func (s *Service) GetJoinCandidates(ctx context.Context, environmentID string) ([]swarmtypes.SwarmJoinCandidate, error) {
+func (s *Service) GetJoinCandidates(ctx context.Context, environmentID string) ([]types.SwarmJoinCandidate, error) {
 	var identity *SwarmNodeIdentity
 	var err error
 	if environmentID == environment.LocalEnvironmentID {
 		identity, err = s.GetLocalNodeIdentity(ctx)
 	} else {
-		identity, err = s.fetchSwarmNodeIdentityViaEdge(ctx, environmentID)
+		identity, err = s.fetchSwarmNodeIdentityViaAgent(ctx, environmentID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect Easy Join manager: %w", err)
 	}
 	if !identity.SwarmActive || identity.Role == "worker" {
-		return []swarmtypes.SwarmJoinCandidate{}, nil
+		return []types.SwarmJoinCandidate{}, nil
 	}
 	if identity.Role != "manager" {
 		return nil, errors.New("unexpected swarm node role")
@@ -743,7 +757,7 @@ func (s *Service) GetJoinCandidates(ctx context.Context, environmentID string) (
 	if err != nil {
 		return nil, err
 	}
-	candidates := make([]swarmtypes.SwarmJoinCandidate, 0, len(environments))
+	candidates := make([]types.SwarmJoinCandidate, 0, len(environments))
 	for _, candidate := range environments {
 		if candidate.ID == environmentID {
 			continue
@@ -751,11 +765,10 @@ func (s *Service) GetJoinCandidates(ctx context.Context, environmentID string) (
 		if _, bound := boundEnvironmentIDs[candidate.ID]; bound {
 			continue
 		}
-		environmentType := kit.Ternary(candidate.IsEdge, "edge", "direct")
-		candidates = append(candidates, swarmtypes.SwarmJoinCandidate{
+		candidates = append(candidates, types.SwarmJoinCandidate{
 			EnvironmentID:   candidate.ID,
 			EnvironmentName: candidate.Name,
-			EnvironmentType: environmentType,
+			EnvironmentType: "agent",
 			Status:          candidate.Status,
 		})
 	}
@@ -766,7 +779,7 @@ func (s *Service) GetJoinCandidates(ctx context.Context, environmentID string) (
 // token-free message. Agent HTTP errors contribute their detail; transport
 // errors keep their own text.
 func describeSwarmJoinFailure(err error, joinToken string) string {
-	var status *remenv.StatusError
+	var status *agent.StatusError
 	if !errors.As(err, &status) {
 		return RedactSwarmJoinToken(err.Error(), joinToken)
 	}
@@ -795,7 +808,7 @@ func RedactSwarmJoinToken(message, joinToken string) string {
 
 // selectSwarmManagerAddresses prefers explicit manager addresses and
 // otherwise uses the addresses advertised by the cluster's manager nodes.
-func selectSwarmManagerAddresses(explicit []string, nodes []swarmtypes.NodeSummary) ([]string, error) {
+func selectSwarmManagerAddresses(explicit []string, nodes []types.SwarmNode) ([]string, error) {
 	addrs := kit.TrimNonEmpty(explicit)
 	if len(addrs) > 0 {
 		return addrs, nil
@@ -811,14 +824,13 @@ func selectSwarmManagerAddresses(explicit []string, nodes []swarmtypes.NodeSumma
 	return addrs, nil
 }
 
-func buildNodeAgentCandidates(environments []environment.Environment) []swarmtypes.NodeAgentCandidate {
-	candidates := make([]swarmtypes.NodeAgentCandidate, 0, len(environments))
+func buildNodeAgentCandidates(environments []environment.Environment) []types.NodeAgentCandidate {
+	candidates := make([]types.NodeAgentCandidate, 0, len(environments))
 	for _, environment := range environments {
-		environmentType := kit.Ternary(environment.IsEdge, "edge", "direct")
-		candidates = append(candidates, swarmtypes.NodeAgentCandidate{
+		candidates = append(candidates, types.NodeAgentCandidate{
 			EnvironmentID:   environment.ID,
 			EnvironmentName: environment.Name,
-			EnvironmentType: environmentType,
+			EnvironmentType: "agent",
 		})
 	}
 	return candidates

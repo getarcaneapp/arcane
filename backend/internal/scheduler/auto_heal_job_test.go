@@ -1,0 +1,245 @@
+package scheduler
+
+import (
+	"context"
+	"slices"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/libtnb/sqlite"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+
+	"getarcane.dev/arcane/v3/internal/apns"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/notification"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/types/v3"
+)
+
+func newTestAutoHealJob() *AutoHealJob {
+	return &AutoHealJob{
+		restarts: make(map[string]*restartRecord),
+	}
+}
+
+func TestAutoHeal_FilterCandidates_SkipsSelfContainer(t *testing.T) {
+	job := newTestAutoHealJob()
+
+	selfFullID := "407163929c492b5c4b01a3981f5de4774c37aa8300bd214b4d62412a3dc56468"
+	containers := []container.Summary{
+		{ID: selfFullID, Names: []string{"/arcane"}},
+		{ID: "aaaabbbbccccddddeeeeffff0000111122223333444455556666777788889999", Names: []string{"/other"}},
+	}
+
+	// Hostname-based detection yields the short 12-char ID.
+	candidates := job.filterCandidates(containers, nil, selfFullID[:12])
+	require.Len(t, candidates, 1)
+	require.Equal(t, "/other", candidates[0].Names[0])
+
+	// cgroup/mountinfo-based detection yields the full ID.
+	candidates = job.filterCandidates(containers, nil, selfFullID)
+	require.Len(t, candidates, 1)
+	require.Equal(t, "/other", candidates[0].Names[0])
+
+	// Outside Docker no self ID is detected and the guard is a no-op.
+	candidates = job.filterCandidates(containers, nil, "")
+	require.Len(t, candidates, 2)
+}
+
+func TestAutoHeal_ProcessCandidate_SkipsQuadletContainers(t *testing.T) {
+	job := &AutoHealJob{
+		restarts: make(map[string]*restartRecord),
+		inspectContainerFn: func(context.Context, *client.Client, string) (container.InspectResponse, error) {
+			t.Fatal("quadlet-managed containers must not be inspected")
+			return container.InspectResponse{}, nil
+		},
+		restartContainerFn: func(context.Context, *client.Client, string) error {
+			t.Fatal("quadlet-managed containers must not be restarted")
+			return nil
+		},
+	}
+
+	target, err := job.processCandidate(t.Context(), nil, container.Summary{
+		ID:     "quadlet-id",
+		Names:  []string{"/web"},
+		Labels: map[string]string{types.PodmanSystemdUnitLabel: "web.service"},
+	}, 5, 30*time.Minute, 30)
+	require.NoError(t, err)
+	require.Equal(t, types.TargetOutcome{
+		ResourceType: "container",
+		ID:           "quadlet-id",
+		Status:       types.RunStatusSkipped,
+		Message:      "managed by systemd unit web.service; its Restart= policy owns recovery",
+	}, target)
+}
+
+func TestAutoHeal_ReserveRestartSlot_UnderLimit(t *testing.T) {
+	job := newTestAutoHealJob()
+
+	for range 5 {
+		_, reserved := job.reserveRestartSlot("container-1", 5, 30*time.Minute)
+		require.True(t, reserved)
+	}
+}
+
+func TestAutoHeal_ReserveRestartSlot_AtLimit(t *testing.T) {
+	job := newTestAutoHealJob()
+
+	for range 5 {
+		job.reserveRestartSlot("container-1", 5, 30*time.Minute)
+	}
+
+	_, reserved := job.reserveRestartSlot("container-1", 5, 30*time.Minute)
+	require.False(t, reserved)
+}
+
+func TestAutoHeal_ReserveRestartSlot_WindowExpiry(t *testing.T) {
+	job := &AutoHealJob{
+		restarts: map[string]*restartRecord{
+			"container-1": {timestamps: slices.Repeat([]time.Time{time.Now().Add(-31 * time.Minute)}, 5)},
+		},
+	}
+
+	_, reserved := job.reserveRestartSlot("container-1", 5, 30*time.Minute)
+	require.True(t, reserved)
+}
+
+func TestAutoHeal_ReserveRestartSlot_MixedTimestamps(t *testing.T) {
+	job := &AutoHealJob{
+		restarts: map[string]*restartRecord{
+			"container-1": {timestamps: slices.Repeat([]time.Time{time.Now().Add(-31 * time.Minute)}, 3)},
+		},
+	}
+
+	for range 5 {
+		_, reserved := job.reserveRestartSlot("container-1", 5, 30*time.Minute)
+		require.True(t, reserved)
+	}
+
+	_, reserved := job.reserveRestartSlot("container-1", 5, 30*time.Minute)
+	require.False(t, reserved)
+}
+
+func TestAutoHeal_ReserveRestartSlot_DifferentContainers(t *testing.T) {
+	job := newTestAutoHealJob()
+
+	for range 5 {
+		job.reserveRestartSlot("container-1", 5, 30*time.Minute)
+	}
+
+	_, reserved := job.reserveRestartSlot("container-1", 5, 30*time.Minute)
+	require.False(t, reserved)
+
+	_, reserved = job.reserveRestartSlot("container-2", 5, 30*time.Minute)
+	require.True(t, reserved)
+}
+
+func TestAutoHeal_ShouldSchedule(t *testing.T) {
+	ctx := t.Context()
+	_, settingsSvc, _ := setupAnalyticsStateServices(t)
+	job, err := NewAutoHealJob(AutoHealJobParams{
+		SettingsService: settingsSvc,
+	})
+	require.NoError(t, err)
+
+	require.False(t, job.ShouldSchedule(ctx))
+
+	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", true))
+	require.True(t, job.ShouldSchedule(ctx))
+}
+
+func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
+	ctx := t.Context()
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}, &event.Event{}, &notification.NotificationSettings{}, &environment.Environment{}))
+	wrappedDB := &database.DB{DB: db}
+
+	settingsSvc, err := newSettingsServiceForTest(t, ctx, wrappedDB)
+	require.NoError(t, err)
+	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", true))
+	require.NoError(t, settingsSvc.UpdateSetting(ctx, "autoHealExcludedContainers", "skip-me"))
+
+	cfg := &config.Config{}
+	eventSvc := event.NewEventService(wrappedDB, cfg, nil)
+	job, err := NewAutoHealJob(AutoHealJobParams{
+		SettingsService: settingsSvc,
+		EventService:    eventSvc,
+		NotificationService: notification.NewNotificationService(notification.NotificationServiceParams{
+			DB:     wrappedDB,
+			Config: cfg,
+			EnvironmentSvc: environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+				DB:              wrappedDB,
+				EventService:    eventSvc,
+				SettingsService: settingsSvc,
+			}),
+			EventSvc: eventSvc,
+			APNSSvc: apns.NewApnsService(apns.ApnsServiceParams{
+				LifecycleCtx:    ctx,
+				DB:              wrappedDB,
+				Config:          cfg,
+				SettingsService: settingsSvc,
+				EventService:    eventSvc,
+			}),
+			SettingsService: settingsSvc,
+		}),
+	})
+	require.NoError(t, err)
+	job.getDockerClientFn = func() (*client.Client, error) { return nil, nil }
+	job.listContainers = func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
+		return []container.Summary{
+			{ID: "c1", Names: []string{"/one"}},
+			{ID: "c2", Names: []string{"/two"}},
+			{ID: "c3", Names: []string{"/three"}},
+			{ID: "c4", Names: []string{"/four"}},
+			{ID: "c5", Names: []string{"/five"}},
+			{ID: "c6", Names: []string{"/six"}},
+			{ID: "skip", Names: []string{"/skip-me"}},
+		}, nil
+	}
+
+	var current atomic.Int32
+	var maxConcurrent atomic.Int32
+	var restarts atomic.Int32
+
+	job.inspectContainerFn = func(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error) {
+		active := current.Add(1)
+		for {
+			maxSeen := maxConcurrent.Load()
+			if active <= maxSeen || maxConcurrent.CompareAndSwap(maxSeen, active) {
+				break
+			}
+		}
+		defer current.Add(-1)
+
+		time.Sleep(40 * time.Millisecond)
+
+		switch containerID {
+		case "c5":
+			return container.InspectResponse{State: &container.State{}}, nil
+		case "c6":
+			return container.InspectResponse{State: &container.State{Health: &container.Health{Status: container.Healthy}}}, nil
+		default:
+			return container.InspectResponse{State: &container.State{Health: &container.Health{Status: container.Unhealthy}}}, nil
+		}
+	}
+	job.restartContainerFn = func(ctx context.Context, dockerClient *client.Client, containerID string) error {
+		restarts.Add(1)
+		return nil
+	}
+
+	_, runErr1 := job.Run(ctx)
+	require.NoError(t, runErr1)
+
+	require.Greater(t, maxConcurrent.Load(), int32(1))
+	require.LessOrEqual(t, maxConcurrent.Load(), int32(autoHealInspectConcurrency))
+	require.Equal(t, int32(4), restarts.Load())
+}

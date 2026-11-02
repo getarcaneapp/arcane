@@ -1,41 +1,51 @@
-import { untrack } from 'svelte';
-
 import { settingsService } from '#lib/services/settings-service.js';
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-import type { Settings } from '#lib/types/settings.js';
+import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
+import type { ResolvedSettings, SettingKey, Settings } from '#lib/types/settings.js';
 
-let current = $state.raw<Settings>();
-const listeners = new Set<(settings: Settings | undefined) => void>();
+let resolved = $state.raw<ResolvedSettings>();
 
 const reload = async () => {
-	const environmentId = await environmentStore.getCurrentEnvironmentId();
-	const settings = await settingsService.getReadableSettings(environmentId);
-	if (environmentId === environmentStore.selected?.id) set(settings);
+	set(await settingsService.getReadableSettings(LOCAL_DOCKER_ENVIRONMENT_ID));
 };
 
-const set = (settings: Settings) => {
-	current = settings;
-	untrack(() => {
-		for (const listener of listeners) listener(settings);
-	});
+const set = (settings: ResolvedSettings) => {
+	resolved = settings;
+};
+
+const save = async (changes: Partial<Settings>) => {
+	const base = resolved ?? (await settingsService.getReadableSettings(LOCAL_DOCKER_ENVIRONMENT_ID));
+	const updated = await settingsService.updateSettingsForEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID, base, changes);
+	set(updated);
+	return updated;
+};
+
+const lock = (key: SettingKey) => {
+	const meta = resolved?.meta[key];
+	return meta?.locked ? meta : undefined;
 };
 
 let autoLoginEnabled = $state(false);
 
 export default {
 	get current() {
-		return current;
+		return resolved?.values;
 	},
-	onChange(listener: (settings: Settings | undefined) => void) {
-		listeners.add(listener);
-		untrack(() => listener(current));
-		return () => {
-			listeners.delete(listener);
-		};
+	get resolved() {
+		return resolved;
+	},
+	get runtime() {
+		return resolved?.runtime ?? {};
+	},
+	get readOnly() {
+		return resolved?.readOnly ?? false;
+	},
+	lock,
+	isLocked(key: SettingKey) {
+		return lock(key) !== undefined;
 	},
 	reload,
 	set,
-	// Auto-login
+	save,
 	autoLoginEnabled: {
 		get current() {
 			return autoLoginEnabled;

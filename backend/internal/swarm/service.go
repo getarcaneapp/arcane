@@ -4,31 +4,64 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	stdjson "encoding/json"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"net/url"
+	"slices"
 	"strings"
 
-	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/api/types/system"
 	"github.com/moby/moby/client"
+	"go.uber.org/fx"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm/children/configs"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm/children/nodes"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm/children/secrets"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm/children/services"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm/children/stacks"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/swarm/children/configs"
+	"getarcane.dev/arcane/v3/internal/swarm/children/nodes"
+	"getarcane.dev/arcane/v3/internal/swarm/children/secrets"
+	"getarcane.dev/arcane/v3/internal/swarm/children/services"
+	"getarcane.dev/arcane/v3/internal/swarm/children/stacks"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/jsonx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	// SwarmService provides Docker Swarm cluster operations and coordinates its
+	// services, nodes, stacks, configs, and secrets features.
+	SwarmService struct {
+		dockerService *docker.DockerClientService
+		kvService     *kv.KVService
+
+		services *services.Service
+		nodes    *nodes.Service
+		stacks   *stacks.Service
+		configs  *configs.Service
+		secrets  *secrets.Service
+	}
+
+	SwarmServiceParams struct {
+		fx.In
+
+		DockerService      *docker.DockerClientService
+		SettingsService    *settings.SettingsService
+		KVService          *kv.KVService
+		RegistryService    *registry.ContainerRegistryService
+		EnvironmentService *environment.EnvironmentService
+	}
 )
 
 const (
@@ -36,56 +69,58 @@ const (
 	defaultSwarmListenAddr = "0.0.0.0:2377"
 )
 
-// SwarmService provides Docker Swarm cluster operations and coordinates its
-// services, nodes, stacks, configs, and secrets features.
-type SwarmService struct {
-	dockerService *docker.DockerClientService
-	kvService     *kv.KVService
-
-	services *services.Service
-	nodes    *nodes.Service
-	stacks   *stacks.Service
-	configs  *configs.Service
-	secrets  *secrets.Service
+var taskPagination = pagination.Config[types.SwarmTaskSummary]{
+	SearchAccessors: []pagination.SearchAccessor[types.SwarmTaskSummary]{
+		func(task types.SwarmTaskSummary) (string, error) { return task.Name, nil },
+		func(task types.SwarmTaskSummary) (string, error) { return task.ServiceName, nil },
+		func(task types.SwarmTaskSummary) (string, error) { return task.NodeName, nil },
+		func(task types.SwarmTaskSummary) (string, error) { return task.ID, nil },
+		func(task types.SwarmTaskSummary) (string, error) { return task.CurrentState, nil },
+	},
+	SortBindings: []pagination.SortBinding[types.SwarmTaskSummary]{
+		{Key: "service", Fn: func(a, b types.SwarmTaskSummary) int { return strings.Compare(a.ServiceName, b.ServiceName) }},
+		{Key: "node", Fn: func(a, b types.SwarmTaskSummary) int { return strings.Compare(a.NodeName, b.NodeName) }},
+		{Key: "state", Fn: func(a, b types.SwarmTaskSummary) int { return strings.Compare(a.CurrentState, b.CurrentState) }},
+		{Key: "created", Fn: func(a, b types.SwarmTaskSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
+		{Key: "updated", Fn: func(a, b types.SwarmTaskSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
+	},
 }
 
-func NewSwarmService(
-	dockerService *docker.DockerClientService,
-	settingsService *settings.SettingsService,
-	kvService *kv.KVService,
-	registryService *registry.ContainerRegistryService,
-	environmentService *environment.EnvironmentService,
-) *SwarmService {
-	s := &SwarmService{dockerService: dockerService, kvService: kvService}
+func NewSwarmService(p SwarmServiceParams) *SwarmService {
+	s := &SwarmService{dockerService: p.DockerService, kvService: p.KVService}
 
-	var registryAuth func(context.Context, string) (string, error)
-	if registryService != nil {
-		registryAuth = registryService.GetRegistryAuthForImage
-	}
-
-	s.services = services.NewService(dockerService, s.ensureSwarmManager, s.listTasksPaginatedWithFilters)
-	s.nodes = nodes.NewService(dockerService, s.ensureSwarmManager, s.listTasksPaginatedWithFilters, s.GetSwarmJoinTokens, environmentService)
-	s.stacks = stacks.NewService(dockerService, s.ensureSwarmManager, s.listTasksPaginatedWithFilters, s.services.PaginateSummaries, registryAuth, settingsService)
-	s.configs = configs.NewService(dockerService, s.ensureSwarmManager)
-	s.secrets = secrets.NewService(dockerService, s.ensureSwarmManager)
+	s.services = services.NewService(p.DockerService, s.ensureSwarmManager, s.listTasksPaginatedWithFilters)
+	s.nodes = nodes.NewService(nodes.ServiceParams{
+		DockerService:      p.DockerService,
+		EnsureManager:      s.ensureSwarmManager,
+		ListTasks:          s.listTasksPaginatedWithFilters,
+		LocalJoinTokens:    s.GetSwarmJoinTokens,
+		EnvironmentService: p.EnvironmentService,
+	})
+	s.stacks = stacks.NewService(stacks.ServiceParams{
+		DockerService:    p.DockerService,
+		EnsureManager:    s.ensureSwarmManager,
+		ListTasks:        s.listTasksPaginatedWithFilters,
+		PaginateServices: s.services.PaginateSummaries,
+		RegistryAuth:     p.RegistryService.GetRegistryAuthForImage,
+		SettingsService:  p.SettingsService,
+	})
+	s.configs = configs.NewService(p.DockerService, s.ensureSwarmManager)
+	s.secrets = secrets.NewService(p.DockerService, s.ensureSwarmManager)
 	return s
 }
 
 // DeployStack deploys a swarm stack; GitOps sync uses it as the domain API.
-func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, req swarmtypes.StackDeployRequest) (*swarmtypes.StackDeployResponse, error) {
+func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, req types.SwarmStackDeployRequest) (*types.SwarmStackDeployResponse, error) {
 	return s.stacks.DeployStack(ctx, environmentID, req)
 }
 
 // StreamServiceLogs streams swarm service logs for the WebSocket log endpoint.
-func (s *SwarmService) StreamServiceLogs(ctx context.Context, serviceID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
-	return s.services.StreamServiceLogs(ctx, serviceID, logsChan, follow, tail, since, timestamps)
+func (s *SwarmService) StreamServiceLogs(ctx context.Context, serviceID string, logsChan chan<- string, opts types.LogStreamOptions) error {
+	return s.services.StreamServiceLogs(ctx, serviceID, logsChan, opts)
 }
 
 func (s *SwarmService) IsEnabled(ctx context.Context) (bool, error) {
-	if s.kvService == nil {
-		return false, nil
-	}
-
 	enabled, err := s.kvService.GetBool(ctx, KVKeySwarmEnabled, false)
 	if err != nil {
 		return false, fmt.Errorf("failed to read swarm enabled state: %w", err)
@@ -94,7 +129,32 @@ func (s *SwarmService) IsEnabled(ctx context.Context) (bool, error) {
 	return enabled, nil
 }
 
-func (s *SwarmService) ListTasksPaginated(ctx context.Context, params pagination.QueryParams) ([]swarmtypes.TaskSummary, pagination.Response, error) {
+func (s *SwarmService) GetStatus(ctx context.Context) (types.SwarmRuntimeStatus, error) {
+	enabled, err := s.IsEnabled(ctx)
+	if err != nil || !enabled {
+		return types.SwarmRuntimeStatus{Enabled: enabled}, err
+	}
+	info, err := s.getDockerInfo(ctx)
+	if err != nil {
+		slog.DebugContext(ctx, "Skipping swarm cluster ID", "error", err)
+	}
+	return types.SwarmRuntimeStatus{
+		Enabled:   true,
+		ClusterID: kit.FromPtr(info.Swarm.Cluster).ID,
+	}, nil
+}
+
+func (s *SwarmService) AggregateStatus(ctx context.Context) (types.ApiResponse[types.SwarmRuntimeStatus], error) {
+	return httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[types.SwarmRuntimeStatus]) types.SwarmRuntimeStatus {
+		return types.SwarmRuntimeStatus{
+			Enabled: slices.ContainsFunc(environments, func(environment types.EnvironmentData[types.SwarmRuntimeStatus]) bool {
+				return environment.Data.Enabled
+			}),
+		}
+	})
+}
+
+func (s *SwarmService) ListTasksPaginated(ctx context.Context, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error) {
 	if err := s.ensureSwarmManager(ctx); err != nil {
 		return nil, pagination.Response{}, err
 	}
@@ -102,7 +162,7 @@ func (s *SwarmService) ListTasksPaginated(ctx context.Context, params pagination
 	return s.listTasksPaginatedWithFilters(ctx, nil, params)
 }
 
-func (s *SwarmService) GetSwarmInfo(ctx context.Context) (*swarmtypes.SwarmInfo, error) {
+func (s *SwarmService) GetSwarmInfo(ctx context.Context) (*types.SwarmInfo, error) {
 	if err := s.ensureSwarmManager(ctx); err != nil {
 		return nil, err
 	}
@@ -114,10 +174,10 @@ func (s *SwarmService) GetSwarmInfo(ctx context.Context) (*swarmtypes.SwarmInfo,
 		return nil, fmt.Errorf("failed to inspect swarm: %w", err)
 	}
 
-	return new(swarmtypes.NewSwarmInfo(infoResult.Swarm)), nil
+	return new(types.NewSwarmInfo(infoResult.Swarm)), nil
 }
 
-func (s *SwarmService) InitSwarm(ctx context.Context, req swarmtypes.SwarmInitRequest) (*swarmtypes.SwarmInitResponse, error) {
+func (s *SwarmService) InitSwarm(ctx context.Context, req types.SwarmInitRequest) (*types.SwarmInitResponse, error) {
 	if !req.ForceNewCluster {
 		if err := s.ensureSwarmInactive(ctx); err != nil {
 			return nil, err
@@ -157,10 +217,10 @@ func (s *SwarmService) InitSwarm(ctx context.Context, req swarmtypes.SwarmInitRe
 
 	s.persistSwarmEnabledState(ctx, true)
 
-	return &swarmtypes.SwarmInitResponse{NodeID: initResult.NodeID}, nil
+	return &types.SwarmInitResponse{NodeID: initResult.NodeID}, nil
 }
 
-func (s *SwarmService) JoinSwarm(ctx context.Context, req swarmtypes.SwarmJoinRequest) error {
+func (s *SwarmService) JoinSwarm(ctx context.Context, req types.SwarmJoinRequest) error {
 	if err := s.ensureSwarmInactive(ctx); err != nil {
 		return err
 	}
@@ -182,7 +242,7 @@ func (s *SwarmService) JoinSwarm(ctx context.Context, req swarmtypes.SwarmJoinRe
 	return nil
 }
 
-func (s *SwarmService) LeaveSwarm(ctx context.Context, req swarmtypes.SwarmLeaveRequest) error {
+func (s *SwarmService) LeaveSwarm(ctx context.Context, req types.SwarmLeaveRequest) error {
 	if _, err := s.ensureSwarmActive(ctx); err != nil {
 		return err
 	}
@@ -198,7 +258,7 @@ func (s *SwarmService) LeaveSwarm(ctx context.Context, req swarmtypes.SwarmLeave
 	return nil
 }
 
-func (s *SwarmService) UnlockSwarm(ctx context.Context, req swarmtypes.SwarmUnlockRequest) error {
+func (s *SwarmService) UnlockSwarm(ctx context.Context, req types.SwarmUnlockRequest) error {
 	info, err := s.getDockerInfo(ctx)
 	if err != nil {
 		return err
@@ -217,7 +277,7 @@ func (s *SwarmService) UnlockSwarm(ctx context.Context, req swarmtypes.SwarmUnlo
 	return nil
 }
 
-func (s *SwarmService) GetSwarmUnlockKey(ctx context.Context) (*swarmtypes.SwarmUnlockKeyResponse, error) {
+func (s *SwarmService) GetSwarmUnlockKey(ctx context.Context) (*types.SwarmUnlockKeyResponse, error) {
 	if err := s.ensureSwarmManager(ctx); err != nil {
 		return nil, err
 	}
@@ -229,10 +289,10 @@ func (s *SwarmService) GetSwarmUnlockKey(ctx context.Context) (*swarmtypes.Swarm
 		return nil, fmt.Errorf("failed to get swarm unlock key: %w", err)
 	}
 
-	return &swarmtypes.SwarmUnlockKeyResponse{UnlockKey: unlockResult.Key}, nil
+	return &types.SwarmUnlockKeyResponse{UnlockKey: unlockResult.Key}, nil
 }
 
-func (s *SwarmService) GetSwarmJoinTokens(ctx context.Context) (*swarmtypes.SwarmJoinTokensResponse, error) {
+func (s *SwarmService) GetSwarmJoinTokens(ctx context.Context) (*types.SwarmJoinTokensResponse, error) {
 	if err := s.ensureSwarmManager(ctx); err != nil {
 		return nil, err
 	}
@@ -244,13 +304,13 @@ func (s *SwarmService) GetSwarmJoinTokens(ctx context.Context) (*swarmtypes.Swar
 		return nil, fmt.Errorf("failed to inspect swarm: %w", err)
 	}
 
-	return &swarmtypes.SwarmJoinTokensResponse{
+	return &types.SwarmJoinTokensResponse{
 		Worker:  infoResult.Swarm.JoinTokens.Worker,
 		Manager: infoResult.Swarm.JoinTokens.Manager,
 	}, nil
 }
 
-func (s *SwarmService) RotateSwarmJoinTokens(ctx context.Context, req swarmtypes.SwarmRotateJoinTokensRequest) error {
+func (s *SwarmService) RotateSwarmJoinTokens(ctx context.Context, req types.SwarmRotateJoinTokensRequest) error {
 	if err := s.ensureSwarmManager(ctx); err != nil {
 		return err
 	}
@@ -283,7 +343,7 @@ func (s *SwarmService) RotateSwarmJoinTokens(ctx context.Context, req swarmtypes
 	return nil
 }
 
-func (s *SwarmService) UpdateSwarmSpec(ctx context.Context, req swarmtypes.SwarmUpdateRequest) error {
+func (s *SwarmService) UpdateSwarmSpec(ctx context.Context, req types.SwarmUpdateRequest) error {
 	if err := s.ensureSwarmManager(ctx); err != nil {
 		return err
 	}
@@ -319,7 +379,7 @@ func (s *SwarmService) UpdateSwarmSpec(ctx context.Context, req swarmtypes.Swarm
 	return nil
 }
 
-func (s *SwarmService) listTasksPaginatedWithFilters(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]swarmtypes.TaskSummary, pagination.Response, error) {
+func (s *SwarmService) listTasksPaginatedWithFilters(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error) {
 	servicesResult, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceListResult, error) {
 		return dockerClient.ServiceList(ctx, client.ServiceListOptions{})
 	})
@@ -354,33 +414,41 @@ func (s *SwarmService) listTasksPaginatedWithFilters(ctx context.Context, filter
 		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm tasks: %w", err)
 	}
 
-	items := make([]swarmtypes.TaskSummary, 0, len(tasksResult.Items))
+	items := make([]types.SwarmTaskSummary, 0, len(tasksResult.Items))
 	for _, task := range tasksResult.Items {
-		items = append(items, swarmtypes.NewTaskSummary(task, serviceNameByID[task.ServiceID], nodeNameByID[task.NodeID]))
+		items = append(items, types.NewSwarmTaskSummary(task, serviceNameByID[task.ServiceID], nodeNameByID[task.NodeID]))
 	}
 
-	config := pagination.Config[swarmtypes.TaskSummary]{
-		SearchAccessors: []pagination.SearchAccessor[swarmtypes.TaskSummary]{
-			func(task swarmtypes.TaskSummary) (string, error) { return task.Name, nil },
-			func(task swarmtypes.TaskSummary) (string, error) { return task.ServiceName, nil },
-			func(task swarmtypes.TaskSummary) (string, error) { return task.NodeName, nil },
-			func(task swarmtypes.TaskSummary) (string, error) { return task.ID, nil },
-			func(task swarmtypes.TaskSummary) (string, error) { return task.CurrentState, nil },
-		},
-		SortBindings: []pagination.SortBinding[swarmtypes.TaskSummary]{
-			{Key: "service", Fn: func(a, b swarmtypes.TaskSummary) int { return strings.Compare(a.ServiceName, b.ServiceName) }},
-			{Key: "node", Fn: func(a, b swarmtypes.TaskSummary) int { return strings.Compare(a.NodeName, b.NodeName) }},
-			{Key: "state", Fn: func(a, b swarmtypes.TaskSummary) int { return strings.Compare(a.CurrentState, b.CurrentState) }},
-			{Key: "created", Fn: func(a, b swarmtypes.TaskSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
-			{Key: "updated", Fn: func(a, b swarmtypes.TaskSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
-		},
-	}
-	result := config.SearchOrderAndPaginate(items, params)
+	result := taskPagination.SearchOrderAndPaginate(items, params)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 	return result.Items, paginationResp, nil
 }
 
-func decodeSwarmSpec(raw stdjson.RawMessage) (swarm.Spec, error) {
+func (s *SwarmService) AggregateTasks(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.SwarmTaskSummary], error) {
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.SwarmTaskSummary]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return types.Paginated[types.SwarmTaskSummary]{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[types.SwarmTaskSummary], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		pages = append(pages, pagination.EnvironmentPage[types.SwarmTaskSummary]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
+	}
+	data, resp := pagination.MergeEnvironmentPages(taskPagination, pages, params)
+
+	return types.Paginated[types.SwarmTaskSummary]{
+		Success:            true,
+		Data:               data,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
+func decodeSwarmSpec(raw jsontext.Value) (swarm.Spec, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
 		return swarm.Spec{}, errors.New("swarm spec is required")
@@ -388,7 +456,7 @@ func decodeSwarmSpec(raw stdjson.RawMessage) (swarm.Spec, error) {
 
 	var spec swarm.Spec
 	// Docker encodes durations as integer nanoseconds.
-	if err := json.Unmarshal(trimmed, &spec, stdjson.FormatDurationAsNano(true)); err != nil {
+	if err := json.Unmarshal(trimmed, &spec, jsonx.DurationNano); err != nil {
 		return swarm.Spec{}, fmt.Errorf("failed to parse swarm spec: %w", err)
 	}
 
@@ -453,9 +521,6 @@ func (s *SwarmService) SyncSwarmEnabledState(ctx context.Context) error {
 	}
 
 	enabled := info.Swarm.LocalNodeState == swarm.LocalNodeStateActive && strings.TrimSpace(info.Swarm.NodeID) != ""
-	if s.kvService == nil {
-		return nil
-	}
 
 	if setBoolErr := s.kvService.SetBool(ctx, KVKeySwarmEnabled, enabled); setBoolErr != nil {
 		return fmt.Errorf("persist swarm enabled state: %w", setBoolErr)
@@ -465,10 +530,6 @@ func (s *SwarmService) SyncSwarmEnabledState(ctx context.Context) error {
 }
 
 func (s *SwarmService) persistSwarmEnabledState(ctx context.Context, enabled bool) {
-	if s.kvService == nil {
-		return
-	}
-
 	if err := s.kvService.SetBool(ctx, KVKeySwarmEnabled, enabled); err != nil {
 		slog.WarnContext(ctx, "Failed to persist swarm enabled state", "enabled", enabled, "error", err)
 	}

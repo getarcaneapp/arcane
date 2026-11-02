@@ -1,14 +1,16 @@
-module github.com/getarcaneapp/arcane/backend/v2
+module getarcane.dev/arcane/v3
 
 go 1.27.3
 
 replace (
+	getarcane.dev/cli/v3 => ../cli
+	getarcane.dev/types/v3 => ../types
 	github.com/docker/buildx => github.com/docker/buildx v0.32.1
-	github.com/getarcaneapp/arcane/cli/v2 => ../cli
-	github.com/getarcaneapp/arcane/types/v2 => ../types
 )
 
 require (
+	getarcane.dev/cli/v3 v3.0.0
+	getarcane.dev/types/v3 v3.0.0
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/aws/aws-sdk-go-v2 v1.47.5
 	github.com/aws/aws-sdk-go-v2/config v1.33.13
@@ -28,9 +30,6 @@ require (
 	github.com/docker/cli v29.9.2+incompatible
 	github.com/docker/compose/v5 v5.6.1
 	github.com/docker/go-units v0.5.0
-	github.com/fsnotify/fsnotify v1.10.1
-	github.com/getarcaneapp/arcane/cli/v2 v2.14.0
-	github.com/getarcaneapp/arcane/types/v2 v2.14.0
 	github.com/go-git/go-billy/v5 v5.9.2
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/go-webauthn/webauthn v0.18.2
@@ -66,16 +65,6 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/subosito/gotenv v1.6.0
 	github.com/wneessen/go-mail v0.8.1
-	go.getarcane.app/acfs v0.6.3
-	go.getarcane.app/builds v0.4.7
-	go.getarcane.app/docker v0.1.3
-	go.getarcane.app/docker/compat v0.1.6
-	go.getarcane.app/docker/convert v0.3.7
-	go.getarcane.app/kit v0.4.2
-	go.getarcane.app/streams v0.4.6
-	go.getarcane.app/sys/cgroup v0.2.5
-	go.getarcane.app/sys/crypto v0.3.3
-	go.getarcane.app/updater v0.11.13
 	go.opentelemetry.io/contrib/bridges/otelslog v0.21.0
 	go.opentelemetry.io/contrib/exporters/autoexport v0.72.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
@@ -102,6 +91,14 @@ require (
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
 	gorm.io/plugin/opentelemetry v0.1.16
+	kit.getarcane.app v0.6.0
+	kit.getarcane.app/acfs v0.7.0
+	kit.getarcane.app/builds v0.5.0
+	kit.getarcane.app/docker v0.3.0
+	kit.getarcane.app/docker/convert v0.4.0
+	kit.getarcane.app/sys/cgroup v0.3.0
+	kit.getarcane.app/tripwire v0.1.1
+	kit.getarcane.app/updater v0.12.0
 	modernc.org/sqlite v1.61.1
 )
 
@@ -172,6 +169,7 @@ require (
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/fogleman/ease v0.0.0-20170301025033-8da417bf1776 // indirect
 	github.com/fsnotify/fsevents v0.2.0 // indirect
+	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/fvbommel/sortorder v1.2.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.6 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
@@ -284,7 +282,7 @@ require (
 	github.com/tinylib/msgp v1.6.5 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
-	github.com/tonistiigi/fsutil v0.0.0-20261009124904-c1c5bffae3b5 // indirect
+	github.com/tonistiigi/fsutil v0.0.0-20261027232937-ca65610c2295 // indirect
 	github.com/tonistiigi/go-csvvalue v0.0.0-20240814133006-030d3b2625d0 // indirect
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea // indirect
 	github.com/tonistiigi/vt100 v0.0.0-20240514184818-90bafcd6abab // indirect

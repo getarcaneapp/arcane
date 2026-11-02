@@ -1,31 +1,34 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import type { ResolvedPathname } from '$app/types';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import EnvironmentSwitcherDialog from '#lib/components/dialogs/environment-switcher-dialog.svelte';
 	import * as Empty from '#lib/components/ui/empty/index.js';
+	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { ErrorNotFoundIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 
 	let {
 		message,
 		status,
 		title = m.error_generic(),
 		showButton = true,
-		actionHref = '/dashboard',
+		actionHref = resolve('/(app)/dashboard'),
 		actionLabel = m.error_go_to_dashboard()
 	}: {
 		message: string;
 		status?: number;
 		title?: string;
 		showButton?: boolean;
-		actionHref?: string;
+		actionHref?: ResolvedPathname;
 		actionLabel?: string;
 	} = $props();
 
-	let envSwitcherOpen = $state(false);
+	const environment = $derived(environmentStore.available.find((env) => env.id === page.url.searchParams.get('env')));
+	const localSettings = useEnvironmentSettings(() => LOCAL_DOCKER_ENVIRONMENT_ID);
 
 	// Check if this is a connection error
 	const isConnectionError = $derived.by(() => {
@@ -34,7 +37,7 @@
 			'cannot connect to the docker daemon',
 			'failed to connect to docker',
 			'error during connect:',
-			'edge agent is not connected',
+			'agent is not connected',
 			'no active tunnel for environment',
 			'tunnel connection closed',
 			'proxy request failed'
@@ -43,26 +46,25 @@
 	});
 
 	const connectionErrorTitle = $derived.by(() => {
-		if (environmentStore.selected?.id === '0') {
+		if (environment?.id === LOCAL_DOCKER_ENVIRONMENT_ID) {
 			return m.error_connection_local_docker();
-		} else {
-			return m.error_connection_remote_environment({ name: environmentStore.selected?.name || 'Unknown' });
 		}
+		return m.error_connection_remote_environment({ name: environment?.name || 'Unknown' });
 	});
 
 	const connectionErrorMessage = $derived.by(() => {
-		if (environmentStore.selected?.id === '0') {
-			const host = settingsStore.current ? settingsStore.current?.dockerHost : 'unix:///var/run/docker.sock';
+		if (environment?.id === LOCAL_DOCKER_ENVIRONMENT_ID) {
 			return m.error_connection_local_docker_desc({
-				host: host || 'unix:///var/run/docker.sock'
-			});
-		} else {
-			return m.error_connection_remote_environment_desc({
-				name: environmentStore.selected?.name || 'Unknown',
-				url: environmentStore.selected?.apiUrl || 'Unknown URL'
+				host: localSettings.current?.values.dockerHost || 'unix:///var/run/docker.sock'
 			});
 		}
+		return m.error_connection_remote_environment_desc({
+			name: environment?.name || 'Unknown',
+			url: environment?.apiUrl || 'Unknown URL'
+		});
 	});
+
+	const showConnectionError = $derived(isConnectionError && !!environment);
 </script>
 
 <div class="grid h-full min-h-screen place-items-center px-6">
@@ -71,19 +73,11 @@
 			<Empty.Media variant="icon">
 				<ErrorNotFoundIcon class="size-20 text-destructive" aria-hidden="true" />
 			</Empty.Media>
-			<Empty.Title role="heading" aria-level={1}>{isConnectionError ? connectionErrorTitle : title}</Empty.Title>
-			<Empty.Description>{isConnectionError ? connectionErrorMessage : message} - {status}</Empty.Description>
+			<Empty.Title role="heading" aria-level={1}>{showConnectionError ? connectionErrorTitle : title}</Empty.Title>
+			<Empty.Description>{showConnectionError ? connectionErrorMessage : message} - {status}</Empty.Description>
 		</Empty.Header>
 		<Empty.Content>
 			<div class="flex flex-col gap-3">
-				{#if status !== 404}
-					<ArcaneButton
-						action="base"
-						tone="outline"
-						customLabel={m.sidebar_select_environment()}
-						onclick={() => (envSwitcherOpen = true)}
-					/>
-				{/if}
 				{#if showButton}
 					<ArcaneButton action="base" customLabel={actionLabel} onclick={() => goto(actionHref)} />
 				{/if}
@@ -91,5 +85,3 @@
 		</Empty.Content>
 	</Empty.Root>
 </div>
-
-<EnvironmentSwitcherDialog bind:open={envSwitcherOpen} />

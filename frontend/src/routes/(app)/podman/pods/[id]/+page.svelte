@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 
 	import ActionButtonGroup from '#lib/components/action-button-group/action-button-group.svelte';
@@ -45,7 +46,6 @@
 		queryKey: queryKeys.podman.pod(envId, data.pod.id),
 		queryFn: () => podmanService.getPod(data.pod.id, envId),
 		initialData: data.pod,
-		refetchInterval: 10000,
 		retry: false
 	}));
 	const pod = $derived(podQuery.data ?? data.pod);
@@ -86,7 +86,7 @@
 						destructive: true,
 						placement: 'menu',
 						label: m.common_remove(),
-						onclick: () => confirmRemovePod({ ...pod, environmentId: envId }, () => goto('/podman/pods'))
+						onclick: () => confirmRemovePod({ ...pod, environmentId: envId }, () => goto(resolve('/(app)/podman/pods')))
 					}
 				]
 			: []
@@ -120,7 +120,7 @@
 					{pod.name}
 				</h1>
 				<Badge variant={podmanStateVariant(pod.state)} minWidth="20">{pod.state}</Badge>
-				<EnvironmentCell value={envId} />
+				<EnvironmentCell value={envId} plain />
 			</div>
 		{/snippet}
 
@@ -159,7 +159,7 @@
 
 			<Tabs.Content value="stats" class="h-full">
 				{#if activeTab === 'stats'}
-					<PodStats podName={pod.name} {envId} {isRunning} />
+					<PodStats containers={pod.containers ?? []} {envId} {isRunning} />
 				{/if}
 			</Tabs.Content>
 

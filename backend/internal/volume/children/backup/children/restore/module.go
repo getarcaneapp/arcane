@@ -4,33 +4,28 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/upload"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
 // RegisterRoutes registers the volume backup restore endpoints.
 func RegisterRoutes(api huma.API, h *Handler) {
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "restore-volume-backup",
+	middleware.RegisterWithActionPermissions(api, huma.Operation{
+		OperationID: "volume-backup-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/volumes/{volumeName}/backups/{backupId}/restore",
+		Path:        "/environments/{id}/volumes/{volumeName}/backups/{backupId}",
 		Summary:     "Restore volume backup",
+		Description: "Restore a full volume backup, or selected files with action restorefiles",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermVolumesBackup, h.RestoreBackup)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "restore-volume-backup-files",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/volumes/{volumeName}/backups/{backupId}/restore-files",
-		Summary:     "Restore specific files from a volume backup",
-		Tags:        []string{"Volume Backup"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermVolumesBackup, h.RestoreBackupFiles)
+	}, "action", map[string]string{
+		"restore":      authz.PermVolumesBackup,
+		"restorefiles": authz.PermVolumesBackup,
+	}, h.RestoreAction)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "upload-volume-backup",
@@ -42,6 +37,6 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			"and will be removed in a future release.",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: upload.LegacyMultipartMiddleware(api, h.uploadService, uploadtypes.KindVolumeBackup),
+		Middlewares: upload.LegacyMultipartMiddleware(api, h.uploadService, types.UploadKindVolumeBackup),
 	}, authz.PermVolumesUpload, h.UploadAndRestore)
 }

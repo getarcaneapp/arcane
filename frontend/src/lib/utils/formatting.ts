@@ -1,10 +1,8 @@
 import Convert from 'ansi-to-html';
-import { Temporal } from 'temporal-polyfill';
-import { z } from 'zod/v4';
+import stripAnsi from 'strip-ansi';
 
 import { getLocale, setLocale as setParaglideLocale, type Locale } from '#lib/paraglide/runtime.js';
 import { timeFormatStore } from '#lib/stores/time-format.store.svelte.js';
-import { tryCatch } from '#lib/utils/try-catch.js';
 
 // --- String helpers ---
 
@@ -22,7 +20,8 @@ export function truncateString(str: string | undefined, maxLength: number): stri
 }
 
 export function truncateImageDigest(image: string): string {
-	return image.replace(/@sha256:([a-f0-9]{7})[a-f0-9]+/g, '@sha256:$1');
+	const [name, digest] = image.split('@sha256:');
+	return digest === undefined ? image : `${name}@sha256:${digest.slice(0, 7)}`;
 }
 
 export function withOccurrenceKeys(values?: readonly string[] | null) {
@@ -219,9 +218,7 @@ export function nowInstantString(): string {
 	return Temporal.Now.instant().toString({ smallestUnit: 'millisecond' });
 }
 
-// The polyfill's Temporal.Now.timeZoneId() constructs a fresh Intl.DateTimeFormat
-// on every call, so resolve the local zone once per session.
-const localTimeZoneId = Temporal.Now.timeZoneId();
+const localTimeZoneId = new Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 export function plainDateFromInstant(value: InstantInput, timeZone = localTimeZoneId): Temporal.PlainDate | undefined {
 	return parseInstant(value)?.toZonedDateTimeISO(timeZone).toPlainDate();
@@ -302,8 +299,8 @@ export function isPastDate(value: InstantInput): boolean {
 	return instant ? Temporal.Instant.compare(instant, Temporal.Now.instant()) < 0 : false;
 }
 
-export function formatTime(value: InstantInput): string {
-	return formatAbsoluteDateTimeInternal(value, { includeSeconds: true }, true);
+export function formatTime(value: InstantInput, options: { includeSeconds?: boolean } = {}): string {
+	return formatAbsoluteDateTimeInternal(value, { includeSeconds: options.includeSeconds ?? true }, true);
 }
 
 function relativeTimeValueInternal(target: Temporal.Instant, base: Temporal.Instant): RelativeTimeValue {
@@ -383,19 +380,12 @@ export function formatElapsedTime(value: InstantInput, options: RelativeTimeForm
 	return elapsedTimeFormatterInternal(relative.unit).format(elapsedValue);
 }
 
-export async function setLocale(locale: Locale, reload = true) {
-	const operationResult = await tryCatch(
-		(async () => {
-			const zodLocale = await import(`../../../node_modules/zod/v4/locales/${locale}.js`);
-			z.config(zodLocale.default());
-		})()
-	);
-	if (operationResult.error !== null) {
-		const error = operationResult.error;
-		console.warn(`Failed to load zod locale for ${locale}:`, error);
-	}
+export function setLocale(locale: Locale, reload = true) {
+	void Promise.all([import('zod/v4'), import(`../../../node_modules/zod/v4/locales/${locale}.js`)])
+		.then(([{ z }, zodLocale]) => z.config(zodLocale.default()))
+		.catch((error: unknown) => console.warn(`Failed to load zod locale for ${locale}:`, error));
 
-	setParaglideLocale(locale, { reload });
+	void setParaglideLocale(locale, { reload });
 }
 
 // --- ANSI conversion ---
@@ -433,134 +423,10 @@ export function ansiToHtml(text: string): string {
 
 // --- Log text sanitization ---
 
-const ANSI_ESCAPE_SEQUENCE = /\x1B\[[0-?]*[ -/]*[@-~]/g;
-const ANSI_OSC_SEQUENCE = /\x1B\][^\x07]*(?:\x07|\x1B\\)/g;
 const LOOSE_ANSI_MARKER_SEQUENCE = /\[(?:\d{1,3}(?:;\d{1,3})*)m/g;
 
-function stripAnsi(input: string): string {
-	return input.replace(ANSI_ESCAPE_SEQUENCE, '').replace(ANSI_OSC_SEQUENCE, '').replace(LOOSE_ANSI_MARKER_SEQUENCE, '');
-}
-
 export function sanitizeLogText(input: string): string {
-	return stripAnsi(input.replace(/\r/g, '')).trimEnd();
-}
-
-// --- Email validation ---
-
-const EMAIL_LOCAL_PART_PATTERN = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+$/;
-const EMAIL_DOMAIN_LABEL_PATTERN = /^[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?$/u;
-
-export function isValidUserEmail(email: string): boolean {
-	const trimmedEmail = email.trim();
-	if (!trimmedEmail || trimmedEmail.includes(' ')) {
-		return false;
-	}
-
-	const atIndex = trimmedEmail.indexOf('@');
-	if (atIndex <= 0 || atIndex !== trimmedEmail.lastIndexOf('@') || atIndex === trimmedEmail.length - 1) {
-		return false;
-	}
-
-	const localPart = trimmedEmail.slice(0, atIndex);
-	const domainPart = trimmedEmail.slice(atIndex + 1);
-
-	return isValidLocalPart(localPart) && isValidDomainPart(domainPart);
-}
-
-function isValidLocalPart(localPart: string): boolean {
-	if (!localPart || localPart.length > 64 || localPart.startsWith('.') || localPart.endsWith('.') || localPart.includes('..')) {
-		return false;
-	}
-
-	return EMAIL_LOCAL_PART_PATTERN.test(localPart);
-}
-
-function isValidDomainPart(domainPart: string): boolean {
-	if (!domainPart || domainPart.length > 255) {
-		return false;
-	}
-
-	if (isValidIPv4Literal(domainPart)) {
-		return true;
-	}
-
-	if (isValidIPv6Literal(domainPart)) {
-		return true;
-	}
-
-	const labels = domainPart.split('.');
-	if (labels.length === 4 && labels.every((label) => /^\d+$/.test(label))) {
-		return false;
-	}
-
-	if (labels.some((label) => !EMAIL_DOMAIN_LABEL_PATTERN.test(label))) {
-		return false;
-	}
-
-	return true;
-}
-
-function isValidIPv4Literal(domainPart: string): boolean {
-	const octets = domainPart.split('.');
-	if (octets.length !== 4) {
-		return false;
-	}
-
-	return octets.every((octet) => /^\d+$/.test(octet) && Number(octet) >= 0 && Number(octet) <= 255);
-}
-
-function isValidIPv6Literal(domainPart: string): boolean {
-	if (!/^\[IPv6:[0-9A-Fa-f:.]+\]$/i.test(domainPart)) {
-		return false;
-	}
-
-	const address = domainPart.slice(6, -1);
-	return isValidIPv6Address(address);
-}
-
-function isValidIPv6Address(address: string): boolean {
-	if (!address.includes(':') || address.includes(':::')) {
-		return false;
-	}
-
-	const compressionIndex = address.indexOf('::');
-	if (compressionIndex !== -1 && compressionIndex !== address.lastIndexOf('::')) {
-		return false;
-	}
-
-	if (compressionIndex === -1) {
-		return countIPv6Segments(address.split(':')) === 8;
-	}
-
-	const [left = '', right = ''] = address.split('::');
-	const leftCount = left ? countIPv6Segments(left.split(':')) : 0;
-	const rightCount = right ? countIPv6Segments(right.split(':')) : 0;
-
-	return leftCount >= 0 && rightCount >= 0 && leftCount + rightCount < 8;
-}
-
-function countIPv6Segments(segments: string[]): number {
-	let count = 0;
-
-	for (let i = 0; i < segments.length; i += 1) {
-		const segment = segments[i];
-		if (!segment) {
-			return -1;
-		}
-
-		const isLastSegment = i === segments.length - 1;
-		if (segment.includes('.')) {
-			return isLastSegment && isValidIPv4Literal(segment) ? count + 2 : -1;
-		}
-
-		if (!/^[0-9A-Fa-f]{1,4}$/.test(segment)) {
-			return -1;
-		}
-
-		count += 1;
-	}
-
-	return count;
+	return stripAnsi(input.replaceAll('\r', '')).replace(LOOSE_ANSI_MARKER_SEQUENCE, '').trimEnd();
 }
 
 // --- Browser file download ---

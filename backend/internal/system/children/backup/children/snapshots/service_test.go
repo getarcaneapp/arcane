@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/recovery"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
 )
 
 func TestSnapshotSourceFilesSkipLiveAndProjectFiles(t *testing.T) {
@@ -42,9 +42,9 @@ func TestSnapshotSourceFilesSkipLiveAndProjectFiles(t *testing.T) {
 		excludes:          []string{".arcane-snapshot-*", RecoveryRequestName, "arcane.db-wal", "arcane.db-shm", "arcane.db-journal", "arcane.francis.db-wal"},
 	}
 	type attributes struct {
+		modTime time.Time
 		size    int64
 		mode    os.FileMode
-		modTime time.Time
 	}
 	walk := func() map[string]attributes {
 		files, walkErr := snapshotSourceFiles(t.Context(), layout)
@@ -157,9 +157,9 @@ func TestProjectsRelativePathFromManifest(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			manifest := recovery.Manifest{Environment: map[string]string{
-				"DATABASE_URL":       test.databaseURL,
-				"PROJECTS_DIRECTORY": test.projectsDirectory,
+			manifest := types.RecoveryManifest{Environment: map[string]string{
+				"ARCANE_DATABASE_URL":       test.databaseURL,
+				"ARCANE_PROJECTS_DIRECTORY": test.projectsDirectory,
 			}}
 			relative, err := projectsRelativePathFromManifest(manifest)
 			if test.errorContains != "" {
@@ -183,7 +183,7 @@ func TestProjectEntriesFromSnapshotSynthesizesFoldersAndExcludesProtectedData(t 
 		"/demo/nested/compose.yaml",
 		"/z.txt",
 	}, snapshotLayout{dataPath: "/", projectsPath: "/", databaseName: "arcane.db"}, "", false)
-	require.Equal(t, []backup.BackupFileEntry{
+	require.Equal(t, []types.BackupFileEntry{
 		{Path: "demo", Name: "demo", IsDirectory: true},
 		{Path: "z.txt", Name: "z.txt"},
 	}, entries)
@@ -194,7 +194,7 @@ func TestProjectEntriesFromSnapshotNestedBrowse(t *testing.T) {
 		"/app/data/custom/projects/demo/nested/",
 		"/app/data/custom/projects/demo/compose.yaml",
 	}, snapshotLayout{dataPath: "/app/data", projectsPath: "/app/data/custom/projects", databaseName: "arcane.db"}, "demo", false)
-	require.Equal(t, []backup.BackupFileEntry{
+	require.Equal(t, []types.BackupFileEntry{
 		{Path: "demo/nested", Name: "nested", IsDirectory: true},
 		{Path: "demo/compose.yaml", Name: "compose.yaml"},
 	}, entries)
@@ -203,69 +203,69 @@ func TestProjectEntriesFromSnapshotNestedBrowse(t *testing.T) {
 func TestNormalizeSystemBackupSelection(t *testing.T) {
 	snapshot := systemBackupSnapshot{
 		layout: snapshotLayout{dataPath: "/data", projectsPath: "/data/historical", databaseName: "arcane.db"},
-		entries: []backup.BackupFileEntry{
+		entries: []types.BackupFileEntry{
 			{Path: "demo", Name: "demo", IsDirectory: true},
 			{Path: "demo/compose.yaml", Name: "compose.yaml"},
 		},
 	}
-	selected, err := normalizeSystemBackupSelection(backup.RestoreSelection{SelectAll: true}, snapshot)
+	selected, err := normalizeSystemBackupSelection(types.BackupRestoreSelection{SelectAll: true}, snapshot)
 	require.NoError(t, err)
-	require.Equal(t, []backup.BackupFileEntry{{Path: "", Name: "historical", IsDirectory: true}}, selected)
+	require.Equal(t, []types.BackupFileEntry{{Path: "", Name: "historical", IsDirectory: true}}, selected)
 
 	_, err = normalizeSystemBackupSelection(
-		backup.RestoreSelection{SelectAll: true, Paths: []string{"demo"}},
+		types.BackupRestoreSelection{SelectAll: true, Paths: []string{"demo"}},
 		snapshot,
 	)
 	require.ErrorContains(t, err, "cannot be combined")
 
 	selected, err = normalizeSystemBackupSelection(
-		backup.RestoreSelection{Paths: []string{"demo/compose.yaml", "demo"}},
+		types.BackupRestoreSelection{Paths: []string{"demo/compose.yaml", "demo"}},
 		snapshot,
 	)
 	require.NoError(t, err)
-	require.Equal(t, []backup.BackupFileEntry{{Path: "demo", Name: "demo", IsDirectory: true}}, selected)
+	require.Equal(t, []types.BackupFileEntry{{Path: "demo", Name: "demo", IsDirectory: true}}, selected)
 
 	snapshot.layout.projectsPath = snapshot.layout.dataPath
-	selected, err = normalizeSystemBackupSelection(backup.RestoreSelection{SelectAll: true}, snapshot)
+	selected, err = normalizeSystemBackupSelection(types.BackupRestoreSelection{SelectAll: true}, snapshot)
 	require.NoError(t, err)
-	require.Equal(t, []backup.BackupFileEntry{{Path: "demo", Name: "demo", IsDirectory: true}}, selected)
+	require.Equal(t, []types.BackupFileEntry{{Path: "demo", Name: "demo", IsDirectory: true}}, selected)
 }
 
 func TestSnapshotLayoutFromManifest(t *testing.T) {
 	legacy := map[string]string{"DATABASE_URL": "file:/app/data/arcane.db", "PROJECTS_DIRECTORY": "/app/data/projects"}
 	tests := []struct {
-		name          string
-		manifest      recovery.Manifest
-		root          string
 		expected      snapshotLayout
+		name          string
+		root          string
 		errorContains string
+		manifest      types.RecoveryManifest
 	}{
 		{
-			name: "version 1 projects inside data", manifest: recovery.Manifest{FormatVersion: 1, Environment: legacy}, root: "/",
+			name: "version 1 projects inside data", manifest: types.RecoveryManifest{FormatVersion: 1, Environment: legacy}, root: "/",
 			expected: snapshotLayout{dataPath: "/", projectsPath: "/projects", databaseName: "arcane.db"},
 		},
 		{
 			name:     "version 1 projects outside data are omitted",
-			manifest: recovery.Manifest{FormatVersion: 1, Environment: map[string]string{"DATABASE_URL": "file:/app/data/arcane.db", "PROJECTS_DIRECTORY": "/srv/projects"}},
+			manifest: types.RecoveryManifest{FormatVersion: 1, Environment: map[string]string{"DATABASE_URL": "file:/app/data/arcane.db", "ARCANE_PROJECTS_DIRECTORY": "/srv/projects"}},
 			root:     "/app/data", expected: snapshotLayout{dataPath: "/app/data", databaseName: "arcane.db"},
 		},
 		{
-			name: "version 2 external projects", manifest: recovery.Manifest{FormatVersion: 2, DataPath: "/data", ProjectsPath: "/projects", DatabasePath: "arcane.db"}, root: "/data",
+			name: "version 2 external projects", manifest: types.RecoveryManifest{FormatVersion: 2, DataPath: "/data", ProjectsPath: "/projects", DatabasePath: "arcane.db"}, root: "/data",
 			expected: snapshotLayout{dataPath: "/data", projectsPath: "/projects", databaseName: "arcane.db"},
 		},
 		{
-			name: "version 2 mismatched root", manifest: recovery.Manifest{FormatVersion: 2, DataPath: "/data", ProjectsPath: "/projects", DatabasePath: "arcane.db"}, root: "/",
+			name: "version 2 mismatched root", manifest: types.RecoveryManifest{FormatVersion: 2, DataPath: "/data", ProjectsPath: "/projects", DatabasePath: "arcane.db"}, root: "/",
 			errorContains: "records data path /data but was found at /",
 		},
 		{
-			name: "version 2 traversal", manifest: recovery.Manifest{FormatVersion: 2, DataPath: "/data", ProjectsPath: "/../etc", DatabasePath: "arcane.db"}, root: "/data",
+			name: "version 2 traversal", manifest: types.RecoveryManifest{FormatVersion: 2, DataPath: "/data", ProjectsPath: "/../etc", DatabasePath: "arcane.db"}, root: "/data",
 			errorContains: "invalid projects path",
 		},
 		{
-			name: "version 2 malformed database path", manifest: recovery.Manifest{FormatVersion: 2, DataPath: "/data", ProjectsPath: "/data", DatabasePath: ""}, root: "/data",
+			name: "version 2 malformed database path", manifest: types.RecoveryManifest{FormatVersion: 2, DataPath: "/data", ProjectsPath: "/data", DatabasePath: ""}, root: "/data",
 			errorContains: "invalid database path",
 		},
-		{name: "unsupported version", manifest: recovery.Manifest{FormatVersion: 3}, root: "/data", errorContains: "unsupported format 3"},
+		{name: "unsupported version", manifest: types.RecoveryManifest{FormatVersion: 4}, root: "/data", errorContains: "unsupported format 4"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -291,14 +291,17 @@ func TestSnapshotLayoutProtectsDataFiles(t *testing.T) {
 	require.False(t, nested.protected("arcane.db"))
 	external := snapshotLayout{dataPath: "/data", projectsPath: "/projects", databaseName: "arcane.db"}
 	require.False(t, external.protected(".arcane-recovery.json"))
-	require.False(t, snapshotLayout{dataPath: "/data"}.projectsIncluded())
+	require.Empty(t, snapshotLayout{dataPath: "/data"}.projectsPath)
 }
 
 func TestProjectsSnapshotPath(t *testing.T) {
 	tests := []struct {
-		name, data, projects, expected string
-		external                       bool
-		errorContains                  string
+		name          string
+		data          string
+		projects      string
+		expected      string
+		errorContains string
+		external      bool
 	}{
 		{name: "inside data", data: "/app/data", projects: "/app/data/projects", expected: "/data/projects"},
 		{name: "nested deeper", data: "/app/data", projects: "/app/data/custom/projects/", expected: "/data/custom/projects"},
@@ -349,10 +352,10 @@ func TestSourceMounts(t *testing.T) {
 func TestNestedDataPath(t *testing.T) {
 	tests := []struct {
 		name          string
-		mounts        []container.MountPoint
 		expected      string
-		nested        bool
 		errorContains string
+		mounts        []container.MountPoint
+		nested        bool
 	}{
 		{
 			name: "data directory inside projects bind on the host",
@@ -457,7 +460,7 @@ func TestRestoreStages(t *testing.T) {
 		{Type: mount.TypeBind, Source: "/host/nested", Destination: "/app/data/projects", RW: true},
 		{Type: mount.TypeBind, Source: "/host/external", Destination: "/srv/projects", RW: true},
 	}
-	repository := recovery.RestoreRepository{Environment: []string{"RUSTIC_REPOSITORY=/repository"}}
+	repository := types.RecoveryRestoreRepository{Environment: []string{"RUSTIC_REPOSITORY=/repository"}}
 	dataVolume := mount.Mount{Type: mount.TypeVolume, Source: "arcane-data", Target: "/restore"}
 	nested := mount.Mount{Type: mount.TypeBind, Source: "/host/nested", Target: "/restore/projects"}
 
@@ -467,12 +470,12 @@ func TestRestoreStages(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(
 			t,
-			[]recovery.RestoreStage{
+			[]types.RecoveryRestoreStage{
 				{
 					Repository: repository,
 					SnapshotID: "snap",
 					SourcePath: "/data",
-					Target: recovery.RestoreTarget{
+					Target: types.RecoveryRestoreTarget{
 						Mounts: []mount.Mount{
 							dataVolume,
 							nested,
@@ -494,7 +497,7 @@ func TestRestoreStages(t *testing.T) {
 		require.Equal(t, "/projects", stages[1].SourcePath)
 		require.Equal(
 			t,
-			recovery.RestoreTarget{
+			types.RecoveryRestoreTarget{
 				Mounts: []mount.Mount{
 					{
 						Type:   mount.TypeBind,
@@ -521,7 +524,7 @@ func TestRestoreStages(t *testing.T) {
 		require.Equal(t, []mount.Mount{dataVolume}, stages[0].Target.Mounts)
 		require.Equal(
 			t,
-			recovery.RestoreTarget{
+			types.RecoveryRestoreTarget{
 				Mounts: []mount.Mount{
 					{
 						Type:   mount.TypeBind,
@@ -540,7 +543,7 @@ func TestRestoreStages(t *testing.T) {
 		require.Equal(t, []mount.Mount{dataVolume, nested}, stages[0].Target.Mounts)
 		require.Equal(
 			t,
-			recovery.RestoreTarget{
+			types.RecoveryRestoreTarget{
 				Mounts: []mount.Mount{
 					{
 						Type:   mount.TypeVolume,

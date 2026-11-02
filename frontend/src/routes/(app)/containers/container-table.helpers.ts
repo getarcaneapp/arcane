@@ -45,11 +45,7 @@ export function containerSortValue(container: ContainerSummaryDto, column: strin
 }
 
 export function getContainerDisplayName(container: ContainerSummaryDto): string {
-	const first = container.names?.[0];
-	if (first) {
-		return first.replace(/^\//, '');
-	}
-	return container.id.substring(0, 12);
+	return container.names?.[0] || container.id.substring(0, 12);
 }
 
 const actionStatusMessages: Record<ActionStatus, () => string> = {
@@ -99,4 +95,15 @@ export function getContainerStatusLabel(state: string): string {
 		default:
 			return state ? state.charAt(0).toUpperCase() + state.slice(1) : m.common_unknown();
 	}
+}
+
+export function formatUsagePercent(percent: number | undefined, stopped: boolean): string {
+	if (stopped) return m.common_na();
+	return percent === undefined ? '--' : `${percent.toFixed(1)}%`;
+}
+
+export function getUsageTone(percent: number): 'destructive' | 'warning' | 'default' {
+	if (percent > 80) return 'destructive';
+	if (percent > 60) return 'warning';
+	return 'default';
 }

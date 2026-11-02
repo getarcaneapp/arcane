@@ -41,20 +41,29 @@
 	let yaml = $state('');
 	let start = $state(true);
 	let replace = $state(false);
-	let networks = $state<string[]>([]);
 	let generateOpen = $state(false);
-	let generateNames = $state<string[]>([]);
 	let generateType = $state<PodmanKubeGenerateType>('pod');
 	let generateService = $state(false);
-	let resultLines = $state<string[]>([]);
-	let loading = $state({ play: false, down: false, generate: false });
+	const loading = $state({ play: false, down: false, generate: false });
 
 	type PickerItem = { value: string; label: string; hint?: string };
+	type EnvironmentSelection = { environmentId: string; networks: string[]; generateNames: string[]; resultLines: string[] };
+
+	let storedSelection = $state<EnvironmentSelection>({ environmentId: '', networks: [], generateNames: [], resultLines: [] });
+	const selection = $derived<EnvironmentSelection>(
+		storedSelection.environmentId === environmentId
+			? storedSelection
+			: { environmentId, networks: [], generateNames: [], resultLines: [] }
+	);
+
+	function updateSelection(patch: Partial<Omit<EnvironmentSelection, 'environmentId'>>) {
+		storedSelection = { ...selection, ...patch };
+	}
 
 	const listAll = { pagination: { page: 1, limit: -1 } };
 
 	const networksQuery = createQuery(() => ({
-		queryKey: [...queryKeys.podman.environment(environmentId), 'kube', 'networks'],
+		queryKey: queryKeys.podman.kubeNetworks(environmentId),
 		queryFn: () => networkService.getNetworksForEnvironment(environmentId, listAll),
 		enabled: podmanEnvs.length > 0
 	}));
@@ -64,7 +73,7 @@
 	);
 
 	const generateSourcesQuery = createQuery(() => ({
-		queryKey: [...queryKeys.podman.environment(environmentId), 'kube', 'generate-sources'],
+		queryKey: queryKeys.podman.kubeGenerateSources(environmentId),
 		queryFn: async () => {
 			const [pods, containers, volumes] = await Promise.all([
 				podmanService.getPods(environmentId, listAll),
@@ -74,7 +83,7 @@
 			return [
 				...pods.data.map((pod) => ({ value: pod.name, label: pod.name, hint: m.podman_pod() })),
 				...containers.data.map((container) => {
-					const name = container.names[0]?.replace(/^\//, '') ?? container.id;
+					const name = container.names[0] ?? container.id;
 					return { value: name, label: name, hint: m.resource_container() };
 				}),
 				...volumes.data.map((volume) => ({ value: volume.name, label: volume.name, hint: m.resource_volume() }))
@@ -83,13 +92,6 @@
 		enabled: generateOpen
 	}));
 
-	$effect(() => {
-		void environmentId;
-		resultLines = [];
-		networks = [];
-		generateNames = [];
-	});
-
 	function toggleValue(selected: string[], value: string) {
 		return selected.includes(value) ? selected.filter((entry) => entry !== value) : [...selected, value];
 	}
@@ -97,7 +99,7 @@
 	async function invalidatePods(targetId: string) {
 		await Promise.all([
 			queryClient.invalidateQueries({ queryKey: queryKeys.podman.environment(targetId) }),
-			queryClient.invalidateQueries({ queryKey: ['podman-pods'] })
+			queryClient.invalidateQueries({ queryKey: queryKeys.podman.podsAll })
 		]);
 	}
 
@@ -110,7 +112,10 @@
 		loading.play = true;
 		await handleApiResultWithCallbacks({
 			result: await tryCatch(
-				podmanService.kubePlay({ yaml, start, replace, networks: networks.length > 0 ? networks : undefined }, targetId)
+				podmanService.kubePlay(
+					{ yaml, start, replace, networks: selection.networks.length > 0 ? selection.networks : undefined },
+					targetId
+				)
 			),
 			message: m.podman_kube_play_failed(),
 			setLoadingState: (value) => (loading.play = value),
@@ -122,13 +127,15 @@
 				}
 				await invalidatePods(targetId);
 				if (targetId !== environmentId) return;
-				resultLines = [
-					...(report.pods ?? []).flatMap((pod) => [
-						m.podman_kube_pod_created({ id: pod.id.slice(0, 12), count: pod.containers?.length ?? 0 }),
-						...(pod.containerErrors ?? [])
-					]),
-					...(report.volumes ?? []).map((volume) => volume.name)
-				];
+				updateSelection({
+					resultLines: [
+						...(report.pods ?? []).flatMap((pod) => [
+							m.podman_kube_pod_created({ id: pod.id.slice(0, 12), count: pod.containers?.length ?? 0 }),
+							...(pod.containerErrors ?? [])
+						]),
+						...(report.volumes ?? []).map((volume) => volume.name)
+					]
+				});
 			}
 		});
 	}
@@ -157,7 +164,9 @@
 							toast.success(m.podman_kube_down_success({ count: report.rmReport?.length ?? 0 }));
 							await invalidatePods(targetId);
 							if (targetId !== environmentId) return;
-							resultLines = (report.rmReport ?? []).map((pod) => m.podman_kube_pod_removed({ id: pod.id.slice(0, 12) }));
+							updateSelection({
+								resultLines: (report.rmReport ?? []).map((pod) => m.podman_kube_pod_removed({ id: pod.id.slice(0, 12) }))
+							});
 						}
 					});
 				}
@@ -166,7 +175,7 @@
 	}
 
 	async function handleGenerate() {
-		if (generateNames.length === 0) {
+		if (selection.generateNames.length === 0) {
 			toast.error(m.common_field_required({ field: m.podman_kube_generate_names() }));
 			return;
 		}
@@ -174,7 +183,10 @@
 		loading.generate = true;
 		await handleApiResultWithCallbacks({
 			result: await tryCatch(
-				podmanService.kubeGenerate({ names: generateNames, type: generateType, service: generateService || undefined }, targetId)
+				podmanService.kubeGenerate(
+					{ names: selection.generateNames, type: generateType, service: generateService || undefined },
+					targetId
+				)
 			),
 			message: m.podman_kube_generate_failed(),
 			setLoadingState: (value) => (loading.generate = value),
@@ -304,13 +316,15 @@
 				</div>
 				<div class="flex min-w-72 items-center gap-2">
 					<Label for="kube-networks" weight="normal" class="shrink-0">{m.resource_networks_cap()}</Label>
-					{@render multiSelect('kube-networks', networkItems, networks, networksQuery.isLoading, (value) => (networks = value))}
+					{@render multiSelect('kube-networks', networkItems, selection.networks, networksQuery.isLoading, (value) =>
+						updateSelection({ networks: value })
+					)}
 				</div>
 			</div>
 
-			{#if resultLines.length > 0}
+			{#if selection.resultLines.length > 0}
 				<ul class="shrink-0 space-y-1 font-mono text-xs text-muted-foreground">
-					{#each withOccurrenceKeys(resultLines) as line (line.key)}
+					{#each withOccurrenceKeys(selection.resultLines) as line (line.key)}
 						<li>{line.value}</li>
 					{/each}
 				</ul>
@@ -342,9 +356,9 @@
 			{@render multiSelect(
 				'kube-generate-names',
 				generateSourcesQuery.data ?? [],
-				generateNames,
+				selection.generateNames,
 				generateSourcesQuery.isLoading,
-				(value) => (generateNames = value)
+				(value) => updateSelection({ generateNames: value })
 			)}
 		</div>
 		<SelectWithLabel
@@ -361,7 +375,7 @@
 			customLabel={m.podman_kube_generate()}
 			onclick={handleGenerate}
 			loading={loading.generate}
-			disabled={loading.generate || generateNames.length === 0}
+			disabled={loading.generate || selection.generateNames.length === 0}
 		/>
 	{/snippet}
 </ResponsiveDialog>

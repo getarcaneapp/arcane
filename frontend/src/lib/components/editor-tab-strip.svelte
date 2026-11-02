@@ -76,7 +76,7 @@
 				<button
 					type="button"
 					class={cn(
-						'mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-foreground/10 focus-visible:opacity-100',
+						'mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded-xl opacity-0 group-hover:opacity-100 hover:bg-foreground/10 focus-visible:opacity-100',
 						isActive && 'opacity-100'
 					)}
 					aria-label={m.common_close()}

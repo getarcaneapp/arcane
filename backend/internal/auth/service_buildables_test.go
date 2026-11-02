@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/buildables"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"getarcane.dev/arcane/v3/buildables"
+	"getarcane.dev/arcane/v3/internal/config"
 )
 
 func enableAutoLoginFeature(t *testing.T) {
@@ -27,7 +27,6 @@ func TestGetAutoLoginConfig_Enabled(t *testing.T) {
 
 	settingsSvc, err := newSettingsServiceForAuthTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "authLocalEnabled", true))
 
 	s := newTestAuthService()
@@ -53,7 +52,6 @@ func TestGetAutoLoginConfig_DisabledWhenLocalAuthDisabled(t *testing.T) {
 
 	settingsSvc, err := newSettingsServiceForAuthTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "authLocalEnabled", false))
 
 	s := newTestAuthService()
@@ -70,30 +68,4 @@ func TestGetAutoLoginConfig_DisabledWhenLocalAuthDisabled(t *testing.T) {
 	require.NotNil(t, result)
 	require.False(t, result.Enabled, "Expected auto-login to be disabled when local auth is disabled")
 	require.Empty(t, result.Username, "Expected empty username when disabled")
-}
-
-func TestGetAutoLoginPassword(t *testing.T) {
-	enableAutoLoginFeature(t)
-	s := newTestAuthService()
-	s.config = &config.Config{
-		BuildablesConfig: config.BuildablesConfig{
-			AutoLoginPassword: "my-secret-password",
-		},
-	}
-
-	password := s.GetAutoLoginPassword()
-	require.Equal(t, "my-secret-password", password)
-}
-
-func TestGetAutoLoginPassword_EmptyWhenNotConfigured(t *testing.T) {
-	enableAutoLoginFeature(t)
-	s := newTestAuthService()
-	s.config = &config.Config{
-		BuildablesConfig: config.BuildablesConfig{
-			AutoLoginPassword: "",
-		},
-	}
-
-	password := s.GetAutoLoginPassword()
-	require.Empty(t, password)
 }

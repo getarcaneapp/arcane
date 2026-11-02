@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { mode } from 'mode-watcher';
@@ -37,6 +38,7 @@
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import type { DashboardWidgetConfig } from '#lib/types/auth.js';
 	import type { ContainerDetailsDto, ContainerNetworkSettings, ContainerStats as ContainerStatsType } from '#lib/types/docker.js';
 	import type { IncludeFile } from '#lib/types/swarm.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
@@ -44,6 +46,7 @@
 	import { runContainerLifecycleAction, confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
 	import { isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
+	import { createDashboardWidget, pinDashboardAction } from '#lib/utils/dashboard-layout.js';
 	import { calculateMemoryUsage, getCustomHostname, getThemedIconUrl } from '#lib/utils/docker.js';
 	import { environmentHref, listScopes } from '#lib/utils/environments.js';
 	import { bytes } from '#lib/utils/formatting.js';
@@ -64,7 +67,7 @@
 	import ContainerStats from '../components/container-stats.svelte';
 	import ContainerStorage from '../components/container-storage.svelte';
 	import KillContainerDialog from '../components/kill-container-dialog.svelte';
-	import { getContainerStatusLabel } from '../container-table.helpers';
+	import { getContainerStatusLabel, getStateBadgeVariant } from '../container-table.helpers';
 	let { data } = $props();
 	const queryClient = useQueryClient();
 	let container = $derived(data?.container as ContainerDetailsDto);
@@ -88,12 +91,7 @@
 		await refreshAll();
 	}
 
-	const cleanContainerName = (name: string | undefined): string => {
-		if (!name) return m.common_not_found_title({ resource: m.containers() });
-		return name.replace(/^\/+/, '');
-	};
-
-	const containerDisplayName = $derived(cleanContainerName(container?.name));
+	const containerDisplayName = $derived(container?.name || m.common_not_found_title({ resource: m.containers() }));
 	const containerIconUrl = $derived(getThemedIconUrl(container, mode.current));
 
 	const calculateCPUPercent = (statsData: ContainerStatsType | null): number => {
@@ -205,10 +203,12 @@
 		if (!updateViewMounted || environmentId !== currentEnvId || containerId !== container.id) return;
 		if (result.error instanceof APIError && result.error.status === 404) {
 			await Promise.all(
-				listScopes([environmentId]).map((scope) => queryClient.invalidateQueries({ queryKey: ['containers', scope] }))
+				listScopes([environmentId]).map((scope) =>
+					queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(scope) })
+				)
 			);
 			if (!updateViewMounted || environmentId !== currentEnvId || containerId !== container.id) return;
-			await goto('/containers');
+			await goto(resolve('/(app)/containers'));
 			return;
 		}
 		if (result.error !== null) {
@@ -219,8 +219,8 @@
 		}
 		await Promise.all([
 			...listScopes([environmentId]).flatMap((scope) => [
-				queryClient.invalidateQueries({ queryKey: ['containers', scope] }),
-				queryClient.invalidateQueries({ queryKey: ['projects', scope] })
+				queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(scope) }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(scope) })
 			]),
 			queryClient.invalidateQueries({ queryKey: queryKeys.containers.detail(environmentId, containerId) }),
 			queryClient.invalidateQueries({ queryKey: queryKeys.projects.environment(environmentId) })
@@ -394,7 +394,9 @@
 				label: m.common_edit(),
 				icon: EditIcon,
 				group: 'manage',
-				href: environmentHref(`/containers/${container.id}/edit`, currentEnvId)
+				href: resolve(`/(app)/containers/[containerId]/edit?env=${encodeURIComponent(currentEnvId)}`, {
+					containerId: container.id
+				})
 			});
 		}
 		if (canConvertToCompose) {
@@ -437,6 +439,20 @@
 				onclick: () => (commitDialogOpen = true)
 			});
 		}
+		const target: DashboardWidgetConfig = {
+			resourceKind: 'containers',
+			environmentIds: [currentEnvId],
+			resourceId: container.id
+		};
+		list.push(pinDashboardAction('pin-dashboard', m.pin_to_dashboard(), () => createDashboardWidget('resource', target)));
+		if (showStats) {
+			list.push(
+				pinDashboardAction('pin-stats', m.pin_stats_to_dashboard(), () => createDashboardWidget('containerStats', target))
+			);
+		}
+		if (canViewLogs) {
+			list.push(pinDashboardAction('pin-logs', m.pin_logs_to_dashboard(), () => createDashboardWidget('containerLogs', target)));
+		}
 		if (canKillContainer && (isContainerRunning || isContainerPaused)) {
 			list.push({
 				id: 'kill',
@@ -465,12 +481,11 @@
 			{containerDisplayName}
 		</h1>
 		{#if container?.state}
-			<Badge
-				variant={container.state.status === 'running' ? 'green' : container.state.status === 'exited' ? 'red' : 'amber'}
-				minWidth="20">{getContainerStatusLabel(container.state.status)}</Badge
+			<Badge variant={getStateBadgeVariant(container.state.status)} minWidth="20"
+				>{getContainerStatusLabel(container.state.status)}</Badge
 			>
 		{/if}
-		<EnvironmentCell value={currentEnvId} />
+		<EnvironmentCell value={currentEnvId} plain />
 		{#if updateInfo?.hasUpdate}
 			<Badge variant="amber" minWidth="20">{m.sidebar_update_available()}</Badge>
 		{/if}

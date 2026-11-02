@@ -67,7 +67,7 @@ async function mockRefreshSuccess(page: Page): Promise<() => number> {
 			body: JSON.stringify({
 				success: true,
 				data: {
-					token: 'mocked-access-token',
+					token: 'mocked-session-token',
 					refreshToken: 'mocked-refresh-token',
 					expiresAt: new Date(Date.now() + 3_600_000).toISOString()
 				}
@@ -140,9 +140,7 @@ test.describe('Token refresh behaviour', () => {
 		await page.getByRole('button', { name: 'Sign in to Arcane', exact: true }).click();
 		await expect(page).toHaveURL('/dashboard');
 		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
-		await expect(
-			page.locator('main').getByText('Dashboard', { exact: true }).first()
-		).toBeVisible();
+		await expect(page.locator('main').getByRole('heading', { level: 1 })).toBeVisible();
 
 		const tokenCookies = (await page.context().cookies()).filter(
 			(cookie) =>
@@ -155,12 +153,12 @@ test.describe('Token refresh behaviour', () => {
 		expect(tokenCookies[0]?.value.length).toBeLessThan(1024);
 	});
 
-	test('version mismatch 401 on /auth/me during page load is silently recovered', async ({
+	test('version mismatch 401 on /auth/bootstrap during page load is silently recovered', async ({
 		page
 	}) => {
 		await registerTokenSeeding(page);
 		const refreshCallCount = await mockRefreshSuccess(page);
-		await injectVersionMismatchUntilRefresh(page, /\/api\/auth\/me(?:\?.*)?$/);
+		await injectVersionMismatchUntilRefresh(page, /\/api\/auth\/bootstrap(?:\?.*)?$/);
 
 		await page.goto('/dashboard');
 		await page.waitForLoadState('load');
@@ -200,8 +198,8 @@ test.describe('Token refresh behaviour', () => {
 		});
 
 		await injectExpired401Always(page, /\/api\/environments\/[^/]+\/containers(?:\/.*)?$/);
-		// Keep /auth/me unauthenticated too so the login page does not immediately bounce back.
-		await injectExpired401Always(page, /\/api\/auth\/me$/);
+		// Keep /auth/bootstrap unauthenticated too so the login page does not immediately bounce back.
+		await injectExpired401Always(page, /\/api\/auth\/bootstrap(?:\?.*)?$/);
 
 		await page.goto('/containers');
 		await expect.poll(() => refreshCalled).toBe(true);

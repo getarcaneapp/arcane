@@ -12,26 +12,31 @@ import (
 	"sync/atomic"
 	"time"
 
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/labstack/echo/v5"
 
-	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
+	wshub "getarcane.dev/arcane/v3/pkg/ws"
+	"getarcane.dev/types/v3"
 )
 
-// ============================================================================
-// Shared Log Stream Helpers
-// ============================================================================
+type (
+	wsLogStream struct {
+		hub             *wshub.Hub
+		cancel          context.CancelFunc
+		firstSubscriber chan struct{}
+		format          string
+		key             string
+		refs            int
+		done            bool
+		seq             atomic.Uint64
+	}
 
-type wsLogStream struct {
-	hub             *wshub.Hub
-	cancel          context.CancelFunc
-	firstSubscriber chan struct{}
-	format          string
-	key             string
-	refs            int
-	done            bool
-	seq             atomic.Uint64
-}
+	// logStreamParams holds the standard query parameters shared by every WS log endpoint.
+	logStreamParams struct {
+		format  string
+		stream  types.LogStreamOptions
+		batched bool
+	}
+)
 
 func (h *WebSocketHandler) getOrCreateLogStream(key string, create func(onEmpty func(*wsLogStream)) *wsLogStream) *wsLogStream {
 	h.logStreamsMu.Lock()
@@ -77,24 +82,16 @@ func (h *WebSocketHandler) releaseLogStream(key string, stream *wsLogStream, don
 	}
 }
 
-// logStreamParams holds the standard query parameters shared by every WS log endpoint.
-type logStreamParams struct {
-	tail       string
-	since      string
-	format     string
-	follow     bool
-	timestamps bool
-	batched    bool
-}
-
 func parseLogStreamParams(c *echo.Context) logStreamParams {
 	return logStreamParams{
-		follow:     cmp.Or(c.QueryParam("follow"), "true") == "true",
-		tail:       cmp.Or(c.QueryParam("tail"), "100"),
-		since:      c.QueryParam("since"),
-		timestamps: c.QueryParam("timestamps") == "true",
-		format:     cmp.Or(c.QueryParam("format"), "text"),
-		batched:    c.QueryParam("batched") == "true",
+		stream: types.LogStreamOptions{
+			Tail:       cmp.Or(c.QueryParam("tail"), "100"),
+			Since:      c.QueryParam("since"),
+			Follow:     cmp.Or(c.QueryParam("follow"), "true") == "true",
+			Timestamps: c.QueryParam("timestamps") == "true",
+		},
+		format:  cmp.Or(c.QueryParam("format"), "text"),
+		batched: c.QueryParam("batched") == "true",
 	}
 }
 
@@ -119,10 +116,10 @@ func (h *WebSocketHandler) serveLogStream(
 		resourceID,
 		params.format,
 		strconv.FormatBool(params.batched),
-		strconv.FormatBool(params.follow),
-		params.tail,
-		params.since,
-		strconv.FormatBool(params.timestamps),
+		strconv.FormatBool(params.stream.Follow),
+		params.stream.Tail,
+		params.stream.Since,
+		strconv.FormatBool(params.stream.Timestamps),
 	}, "|")
 	stream := h.getOrCreateLogStream(streamKey, func(onEmpty func(*wsLogStream)) *wsLogStream {
 		return hubBuilder(streamKey, onEmpty)
@@ -154,7 +151,7 @@ func broadcastLogStreamError(ctx context.Context, label, resourceID, format stri
 			Level:     "error",
 			Message:   errorPrefix + err.Error(),
 			Service:   "arcane",
-			Timestamp: wshub.NowRFC3339(),
+			Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
 		}
 		if b, marshalErr := json.Marshal(msg); marshalErr == nil {
 			ls.hub.Broadcast(b)
@@ -195,7 +192,7 @@ func (h *WebSocketHandler) ProjectLogs(c *echo.Context) error {
 	}
 
 	params := parseLogStreamParams(c)
-	h.serveLogStream(c, systemtypes.WSKindProjectLogs, projectID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
+	h.serveLogStream(c, types.WSKindProjectLogs, projectID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
 		return h.startLogHub(
 			streamKey,
 			projectID,
@@ -233,7 +230,7 @@ func normalizeContainerLogMessage(line string) wshub.LogMessage {
 func (h *WebSocketHandler) startLogHub(
 	key, resourceID, label string,
 	params logStreamParams,
-	stream func(context.Context, string, chan<- string, bool, string, string, bool) error,
+	stream func(context.Context, string, chan<- string, types.LogStreamOptions) error,
 	normalizeJSON func(string) wshub.LogMessage,
 	normalizeText func(string) string,
 	onEmptyHook func(*wsLogStream),
@@ -269,7 +266,7 @@ func (h *WebSocketHandler) startLogSource(
 	cancel context.CancelFunc,
 	key, resourceID, label string,
 	params logStreamParams,
-	stream func(context.Context, string, chan<- string, bool, string, string, bool) error,
+	stream func(context.Context, string, chan<- string, types.LogStreamOptions) error,
 	ls *wsLogStream,
 ) <-chan string {
 	lines := make(chan string, 256)
@@ -282,7 +279,7 @@ func (h *WebSocketHandler) startLogSource(
 		case <-ls.firstSubscriber:
 		}
 
-		if err := stream(ctx, resourceID, lines, params.follow, params.tail, params.since, params.timestamps); err != nil {
+		if err := stream(ctx, resourceID, lines, params.stream); err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return
 			}
@@ -317,7 +314,7 @@ func startLogForwarders(
 				Seq:         ls.seq.Add(1),
 				Level:       message.Level,
 				Message:     message.Message,
-				Timestamp:   cmp.Or(message.Timestamp, wshub.NowRFC3339()),
+				Timestamp:   cmp.Or(message.Timestamp, time.Now().UTC().Format(time.RFC3339Nano)),
 				Service:     message.Service,
 				ContainerID: message.ContainerID,
 			}
@@ -394,7 +391,7 @@ func (h *WebSocketHandler) ContainerLogs(c *echo.Context) error {
 	}
 
 	params := parseLogStreamParams(c)
-	h.serveLogStream(c, systemtypes.WSKindContainerLogs, containerID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
+	h.serveLogStream(c, types.WSKindContainerLogs, containerID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
 		return h.startLogHub(
 			streamKey,
 			containerID,
@@ -434,7 +431,7 @@ func (h *WebSocketHandler) ServiceLogs(c *echo.Context) error {
 	}
 
 	params := parseLogStreamParams(c)
-	h.serveLogStream(c, systemtypes.WSKindServiceLogs, serviceID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
+	h.serveLogStream(c, types.WSKindServiceLogs, serviceID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
 		return h.startLogHub(
 			streamKey,
 			serviceID,

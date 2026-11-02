@@ -17,26 +17,62 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	updatertypes "github.com/getarcaneapp/arcane/types/v2/updater"
-	"github.com/getarcaneapp/arcane/types/v2/user"
-	"github.com/getarcaneapp/arcane/types/v2/webhook"
-	"go.getarcane.app/kit/normalization"
-	"go.getarcane.app/kit/pkg"
-	"go.getarcane.app/sys/crypto"
+	"go.uber.org/fx"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
+	"kit.getarcane.app/normalization"
+	"kit.getarcane.app/sys/crypto"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/container"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/gitops"
+	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/updater"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	remoteWebhookTarget struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+
+	WebhookService struct {
+		tokenHashes map[string]struct{}
+
+		db                 *database.DB
+		containerService   *container.ContainerService
+		updaterService     *updater.UpdaterService
+		projectService     *project.ProjectService
+		gitOpsSyncService  *gitops.GitOpsSyncService
+		eventService       *event.EventService
+		environmentService *environment.EnvironmentService
+
+		// actions tracks in-flight background webhook actions accepted with a 202
+		// so shutdown can drain them instead of dropping acknowledged work.
+		actions      sync.WaitGroup
+		tokenMu      sync.RWMutex
+		tokenWriteMu sync.Mutex
+	}
+
+	WebhookServiceParams struct {
+		fx.In
+
+		DB                 *database.DB
+		ContainerService   *container.ContainerService
+		UpdaterService     *updater.UpdaterService
+		ProjectService     *project.ProjectService
+		GitOpsSyncService  *gitops.GitOpsSyncService
+		EventService       *event.EventService
+		EnvironmentService *environment.EnvironmentService
+	}
 )
 
 const (
@@ -48,72 +84,59 @@ const (
 )
 
 var (
-	ErrWebhookNotFound      = errors.New("webhook not found")
+	ErrWebhookNotFound      = common.Classify(common.ErrNotFound, errors.New("webhook not found"))
 	ErrWebhookInvalid       = errors.New("invalid webhook token")
 	ErrWebhookDisabled      = errors.New("webhook is disabled")
-	ErrWebhookInvalidType   = errors.New("invalid webhook target type")
-	ErrWebhookInvalidAction = errors.New("invalid webhook action type")
-	ErrWebhookMissingTarget = errors.New("target ID is required for container, project, and gitops webhook types")
+	ErrWebhookInvalidType   = common.Classify(common.ErrValidation, errors.New("invalid target type, must be 'container', 'project', 'updater', or 'gitops'"))
+	ErrWebhookInvalidAction = common.Classify(common.ErrValidation, errors.New("invalid action type for target type"))
+	ErrWebhookMissingName   = common.Classify(common.ErrValidation, errors.New("webhook name is required"))
+	ErrWebhookMissingTarget = common.Classify(common.ErrValidation, errors.New("target ID is required for container, project, and gitops webhook types"))
 	ErrWebhookForbidden     = common.Classify(common.ErrForbidden, errors.New("you do not have permission to run this webhook action"))
-
 	// remoteWebhookTargetListPaths lists agent endpoints for target types whose records live in the agent's database.
 	remoteWebhookTargetListPaths = map[string]string{
 		WebhookTargetTypeProject: "/api/environments/" + types.LocalDockerEnvironmentID + "/projects/references",
-		WebhookTargetTypeGitOps:  "/api/environments/" + types.LocalDockerEnvironmentID + "/gitops-syncs?limit=-1",
+		WebhookTargetTypeGitOps:  "/api/environments/" + types.LocalDockerEnvironmentID + "/gitops/syncs?limit=-1",
+	}
+
+	webhookActionPermissions = map[string]map[string]string{
+		WebhookTargetTypeContainer: {
+			WebhookActionTypeUpdate:   authz.PermImageUpdatesCheck,
+			WebhookActionTypeStart:    authz.PermContainersStart,
+			WebhookActionTypeStop:     authz.PermContainersStop,
+			WebhookActionTypeRestart:  authz.PermContainersRestart,
+			WebhookActionTypeRedeploy: authz.PermContainersRedeploy,
+		},
+		WebhookTargetTypeProject: {
+			WebhookActionTypeUpdate:   authz.PermProjectsUpdate,
+			WebhookActionTypeUp:       authz.PermProjectsDeploy,
+			WebhookActionTypeDown:     authz.PermProjectsDown,
+			WebhookActionTypeRestart:  authz.PermProjectsRestart,
+			WebhookActionTypeRedeploy: authz.PermProjectsDeploy,
+		},
+		WebhookTargetTypeUpdater: {
+			WebhookActionTypeRun: authz.PermImageUpdatesCheck,
+		},
+		WebhookTargetTypeGitOps: {
+			WebhookActionTypeSync: authz.PermGitOpsSync,
+		},
 	}
 )
 
-type remoteWebhookTarget struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-type WebhookService struct {
-	tokenWriteMu sync.Mutex
-	tokenMu      sync.RWMutex
-	tokenHashes  map[string]struct{}
-
-	// actions tracks in-flight background webhook actions accepted with a 202
-	// so shutdown can drain them instead of dropping acknowledged work.
-	actions            sync.WaitGroup
-	db                 *database.DB
-	containerService   *container.ContainerService
-	updaterService     *updater.UpdaterService
-	projectService     *project.ProjectService
-	gitOpsSyncService  *gitops.GitOpsSyncService
-	eventService       *event.EventService
-	environmentService *environment.EnvironmentService
-}
-
-func NewWebhookService(
-	db *database.DB,
-	containerService *container.ContainerService,
-	updaterService *updater.UpdaterService,
-	projectService *project.ProjectService,
-	gitOpsSyncService *gitops.GitOpsSyncService,
-	eventService *event.EventService,
-	environmentService *environment.EnvironmentService,
-) *WebhookService {
+func NewWebhookService(p WebhookServiceParams) *WebhookService {
 	return &WebhookService{
-		db:                 db,
-		containerService:   containerService,
-		updaterService:     updaterService,
-		projectService:     projectService,
-		gitOpsSyncService:  gitOpsSyncService,
-		eventService:       eventService,
-		environmentService: environmentService,
+		db:                 p.DB,
+		containerService:   p.ContainerService,
+		updaterService:     p.UpdaterService,
+		projectService:     p.ProjectService,
+		gitOpsSyncService:  p.GitOpsSyncService,
+		eventService:       p.EventService,
+		environmentService: p.EnvironmentService,
 	}
 }
 
-// isRemoteWebhookEnvironmentInternal reports whether environmentID refers to a
-// remote environment (anything but the local Docker environment).
-func isRemoteWebhookEnvironmentInternal(environmentID string) bool {
-	return environmentID != "" && environmentID != types.LocalDockerEnvironmentID
-}
-
-// generateWebhookTokenInternal creates a new random webhook token and returns the raw token
+// generateWebhookToken creates a new random webhook token and returns the raw token
 // (to be shown to the user once), its SHA-256 hash, and the lookup prefix.
-func generateWebhookTokenInternal() (raw, hash, prefix string, err error) {
+func generateWebhookToken() (raw, hash, prefix string, err error) {
 	b := make([]byte, webhookTokenLength)
 	if _, err = rand.Read(b); err != nil {
 		return "", "", "", fmt.Errorf("failed to generate webhook token: %w", err)
@@ -134,7 +157,7 @@ func generateWebhookTokenInternal() (raw, hash, prefix string, err error) {
 	return raw, hash, prefix, nil
 }
 
-func parseWebhookPrefixInternal(raw string) (string, error) {
+func parseWebhookPrefix(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	hexPart, ok := strings.CutPrefix(raw, webhookTokenPrefix)
 	if !ok || len(hexPart) < webhookTokenPrefixLen {
@@ -174,7 +197,7 @@ func (s *WebhookService) IsKnownToken(raw string) bool {
 	return ok
 }
 
-func defaultWebhookActionTypeInternal(targetType string) (string, error) {
+func defaultWebhookActionType(targetType string) (string, error) {
 	switch targetType {
 	case WebhookTargetTypeContainer, WebhookTargetTypeProject:
 		return WebhookActionTypeUpdate, nil
@@ -187,7 +210,7 @@ func defaultWebhookActionTypeInternal(targetType string) (string, error) {
 	}
 }
 
-func resolveWebhookActionTypeInternal(targetType, actionType string) (string, error) {
+func resolveWebhookActionType(targetType, actionType string) (string, error) {
 	switch targetType {
 	case WebhookTargetTypeContainer, WebhookTargetTypeProject, WebhookTargetTypeUpdater, WebhookTargetTypeGitOps:
 	default:
@@ -196,7 +219,7 @@ func resolveWebhookActionTypeInternal(targetType, actionType string) (string, er
 
 	normalizedActionType := strings.TrimSpace(strings.ToLower(actionType))
 	if normalizedActionType == "" {
-		return defaultWebhookActionTypeInternal(targetType)
+		return defaultWebhookActionType(targetType)
 	}
 
 	if targetType == WebhookTargetTypeProject && normalizedActionType == "deploy" {
@@ -227,29 +250,6 @@ func resolveWebhookActionTypeInternal(targetType, actionType string) (string, er
 	return "", ErrWebhookInvalidAction
 }
 
-var webhookActionPermissions = map[string]map[string]string{
-	WebhookTargetTypeContainer: {
-		WebhookActionTypeUpdate:   authz.PermImageUpdatesCheck,
-		WebhookActionTypeStart:    authz.PermContainersStart,
-		WebhookActionTypeStop:     authz.PermContainersStop,
-		WebhookActionTypeRestart:  authz.PermContainersRestart,
-		WebhookActionTypeRedeploy: authz.PermContainersRedeploy,
-	},
-	WebhookTargetTypeProject: {
-		WebhookActionTypeUpdate:   authz.PermProjectsUpdate,
-		WebhookActionTypeUp:       authz.PermProjectsDeploy,
-		WebhookActionTypeDown:     authz.PermProjectsDown,
-		WebhookActionTypeRestart:  authz.PermProjectsRestart,
-		WebhookActionTypeRedeploy: authz.PermProjectsDeploy,
-	},
-	WebhookTargetTypeUpdater: {
-		WebhookActionTypeRun: authz.PermImageUpdatesCheck,
-	},
-	WebhookTargetTypeGitOps: {
-		WebhookActionTypeSync: authz.PermGitOpsSync,
-	},
-}
-
 func authorizeWebhookAction(callerPerms *authz.PermissionSet, targetType, actionType, environmentID string) error {
 	permission, ok := webhookActionPermissions[targetType][actionType]
 	if !ok || !callerPerms.Allows(permission, environmentID) {
@@ -258,8 +258,8 @@ func authorizeWebhookAction(callerPerms *authz.PermissionSet, targetType, action
 	return nil
 }
 
-func resolvedWebhookActionTypeInternal(targetType, actionType string) string {
-	resolvedActionType, err := resolveWebhookActionTypeInternal(targetType, actionType)
+func resolvedWebhookActionType(targetType, actionType string) string {
+	resolvedActionType, err := resolveWebhookActionType(targetType, actionType)
 	if err != nil {
 		return strings.TrimSpace(strings.ToLower(actionType))
 	}
@@ -271,14 +271,17 @@ func resolvedWebhookActionTypeInternal(targetType, actionType string) string {
 func (s *WebhookService) CreateWebhook(
 	ctx context.Context,
 	name, targetType, actionType, targetID, environmentID string,
-	actor user.Actor,
+	actor types.Actor,
 	callerPerms *authz.PermissionSet,
 ) (*Webhook, string, error) {
-	input := webhook.CreateInput{Name: name, TargetType: targetType, ActionType: actionType, TargetID: targetID}
+	input := types.Webhook{Name: name, TargetType: targetType, ActionType: actionType, TargetID: targetID}
 	if err := normalization.Normalize(&input); err != nil {
 		return nil, "", err
 	}
-	resolvedActionType, err := resolveWebhookActionTypeInternal(targetType, actionType)
+	if input.Name == "" {
+		return nil, "", ErrWebhookMissingName
+	}
+	resolvedActionType, err := resolveWebhookActionType(targetType, actionType)
 	if err != nil {
 		return nil, "", err
 	}
@@ -297,14 +300,14 @@ func (s *WebhookService) CreateWebhook(
 
 	// Container references can only be resolved against the local Docker daemon;
 	// remote-environment webhooks keep the raw target and resolve on trigger.
-	if targetType == WebhookTargetTypeContainer && !isRemoteWebhookEnvironmentInternal(environmentID) {
-		targetRef, err = s.resolveContainerWebhookTargetRefInternal(ctx, targetID)
+	if targetType == WebhookTargetTypeContainer && (environmentID == "" || environmentID == types.LocalDockerEnvironmentID) {
+		targetRef, err = s.resolveContainerWebhookTargetRef(ctx, targetID)
 		if err != nil {
 			return nil, "", err
 		}
 	}
 
-	raw, hash, prefix, err := generateWebhookTokenInternal()
+	raw, hash, prefix, err := generateWebhookToken()
 	if err != nil {
 		return nil, "", err
 	}
@@ -334,20 +337,18 @@ func (s *WebhookService) CreateWebhook(
 	s.tokenHashes[hash] = struct{}{}
 	s.tokenMu.Unlock()
 
-	if s.eventService != nil {
-		_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:          event.EventTypeWebhookCreate,
-			Severity:      event.EventSeveritySuccess,
-			Title:         "Webhook created: " + wh.Name,
-			Description:   fmt.Sprintf("Created webhook '%s' targeting %s (%s)", wh.Name, wh.TargetType, wh.ActionType),
-			ResourceType:  new("webhook"),
-			ResourceID:    &wh.ID,
-			ResourceName:  &wh.Name,
-			UserID:        &actor.ID,
-			Username:      &actor.Username,
-			EnvironmentID: &wh.EnvironmentID,
-		})
-	}
+	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
+		Type:          event.EventTypeWebhookCreate,
+		Severity:      event.EventSeveritySuccess,
+		Title:         "Webhook created: " + wh.Name,
+		Description:   fmt.Sprintf("Created webhook '%s' targeting %s (%s)", wh.Name, wh.TargetType, wh.ActionType),
+		ResourceType:  new("webhook"),
+		ResourceID:    &wh.ID,
+		ResourceName:  &wh.Name,
+		UserID:        &actor.ID,
+		Username:      &actor.Username,
+		EnvironmentID: &wh.EnvironmentID,
+	})
 
 	return wh, raw, nil
 }
@@ -364,26 +365,26 @@ func (s *WebhookService) ListWebhooks(ctx context.Context, environmentID string)
 	return webhooks, nil
 }
 
-func (s *WebhookService) ListWebhookSummaries(ctx context.Context, environmentID string) ([]webhook.Summary, error) {
+func (s *WebhookService) ListWebhookSummaries(ctx context.Context, environmentID string) ([]types.Webhook, error) {
 	webhooks, err := s.ListWebhooks(ctx, environmentID)
 	if err != nil {
 		return nil, err
 	}
 
-	remoteNames := s.remoteWebhookTargetNamesInternal(ctx, environmentID, webhooks)
-	summaries := make([]webhook.Summary, len(webhooks))
+	remoteNames := s.remoteWebhookTargetNames(ctx, environmentID, webhooks)
+	summaries := make([]types.Webhook, len(webhooks))
 	for i := range webhooks {
 		wh := webhooks[i]
 		targetName, ok := remoteNames[wh.TargetType][wh.TargetID]
 		if !ok {
-			targetName = s.resolveWebhookTargetNameInternal(ctx, &wh)
+			targetName = s.resolveWebhookTargetName(ctx, &wh)
 		}
-		summaries[i] = webhook.Summary{
+		summaries[i] = types.Webhook{
 			ID:              wh.ID,
 			Name:            wh.Name,
 			TokenPrefix:     wh.TokenPrefix,
 			TargetType:      wh.TargetType,
-			ActionType:      resolvedWebhookActionTypeInternal(wh.TargetType, wh.ActionType),
+			ActionType:      resolvedWebhookActionType(wh.TargetType, wh.ActionType),
 			TargetID:        wh.TargetID,
 			TargetName:      targetName,
 			EnvironmentID:   wh.EnvironmentID,
@@ -396,10 +397,32 @@ func (s *WebhookService) ListWebhookSummaries(ctx context.Context, environmentID
 	return summaries, nil
 }
 
-// remoteWebhookTargetNamesInternal fetches target names keyed by target type and ID from a remote environment.
-func (s *WebhookService) remoteWebhookTargetNamesInternal(ctx context.Context, environmentID string, webhooks []Webhook) map[string]map[string]string {
+func (s *WebhookService) AggregateWebhookSummaries(ctx context.Context) (types.ApiResponse[[]types.Webhook], error) {
+	collection, err := httpx.CollectEnvironments[types.ApiResponse[[]types.Webhook]](ctx, nil)
+	if err != nil {
+		return types.ApiResponse[[]types.Webhook]{}, err
+	}
+	webhooks := make([]types.Webhook, 0)
+	for _, result := range collection.Results {
+		for _, webhook := range result.Value.Data {
+			webhook.SetEnvironment(result.Environment)
+			webhooks = append(webhooks, webhook)
+		}
+	}
+	slices.SortStableFunc(webhooks, func(a, b types.Webhook) int {
+		return b.CreatedAt.Compare(a.CreatedAt)
+	})
+	return types.ApiResponse[[]types.Webhook]{
+		Success:            true,
+		Data:               webhooks,
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
+// remoteWebhookTargetNames fetches target names keyed by target type and ID from a remote environment.
+func (s *WebhookService) remoteWebhookTargetNames(ctx context.Context, environmentID string, webhooks []Webhook) map[string]map[string]string {
 	names := map[string]map[string]string{}
-	if !isRemoteWebhookEnvironmentInternal(environmentID) {
+	if environmentID == "" || environmentID == types.LocalDockerEnvironmentID {
 		return names
 	}
 
@@ -407,7 +430,7 @@ func (s *WebhookService) remoteWebhookTargetNamesInternal(ctx context.Context, e
 		if !slices.ContainsFunc(webhooks, func(wh Webhook) bool { return wh.TargetType == targetType }) {
 			continue
 		}
-		var out base.ApiResponse[[]remoteWebhookTarget]
+		var out types.ApiResponse[[]remoteWebhookTarget]
 		if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, path, nil, &out); err != nil {
 			slog.WarnContext(ctx, "failed to resolve remote webhook target names", "environmentId", environmentID, "targetType", targetType, "error", err)
 			continue
@@ -420,30 +443,24 @@ func (s *WebhookService) remoteWebhookTargetNamesInternal(ctx context.Context, e
 	return names
 }
 
-func (s *WebhookService) resolveWebhookTargetNameInternal(ctx context.Context, wh *Webhook) string {
+func (s *WebhookService) resolveWebhookTargetName(ctx context.Context, wh *Webhook) string {
 	switch wh.TargetType {
 	case WebhookTargetTypeContainer:
 		// Remote containers cannot be resolved against the local Docker daemon.
-		if isRemoteWebhookEnvironmentInternal(wh.EnvironmentID) {
+		if wh.EnvironmentID != "" && wh.EnvironmentID != types.LocalDockerEnvironmentID {
 			if strings.TrimSpace(wh.TargetRef) != "" {
 				return wh.TargetRef
 			}
 			return wh.TargetID
 		}
 		if strings.TrimSpace(wh.TargetRef) != "" {
-			if s.containerService == nil {
-				return wh.TargetRef
-			}
 			name, err := s.containerService.GetContainerNameByReference(ctx, wh.TargetRef)
 			if err == nil {
 				return name
 			}
 			return wh.TargetRef
 		}
-		if s.containerService == nil {
-			return ""
-		}
-		name, err := s.containerService.GetContainerNameByID(ctx, wh.TargetID)
+		name, err := s.containerService.GetContainerNameByReference(ctx, wh.TargetID)
 		return kit.Ternary(err != nil, "", name)
 	case WebhookTargetTypeProject:
 		var localProject project.Project
@@ -486,7 +503,7 @@ func (s *WebhookService) GetWebhookByID(ctx context.Context, id, environmentID s
 }
 
 // DeleteWebhook removes a webhook by ID, scoped to an environment.
-func (s *WebhookService) DeleteWebhook(ctx context.Context, id, environmentID string, actor user.Actor) error {
+func (s *WebhookService) DeleteWebhook(ctx context.Context, id, environmentID string, actor types.Actor) error {
 	wh, err := s.GetWebhookByID(ctx, id, environmentID)
 	if err != nil {
 		return err
@@ -508,26 +525,31 @@ func (s *WebhookService) DeleteWebhook(ctx context.Context, id, environmentID st
 	delete(s.tokenHashes, wh.TokenHash)
 	s.tokenMu.Unlock()
 
-	if s.eventService != nil {
-		_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:          event.EventTypeWebhookDelete,
-			Severity:      event.EventSeverityInfo,
-			Title:         "Webhook deleted: " + wh.Name,
-			Description:   fmt.Sprintf("Deleted webhook '%s'", wh.Name),
-			ResourceType:  new("webhook"),
-			ResourceID:    &wh.ID,
-			ResourceName:  &wh.Name,
-			UserID:        &actor.ID,
-			Username:      &actor.Username,
-			EnvironmentID: &wh.EnvironmentID,
-		})
-	}
+	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
+		Type:          event.EventTypeWebhookDelete,
+		Severity:      event.EventSeverityInfo,
+		Title:         "Webhook deleted: " + wh.Name,
+		Description:   fmt.Sprintf("Deleted webhook '%s'", wh.Name),
+		ResourceType:  new("webhook"),
+		ResourceID:    &wh.ID,
+		ResourceName:  &wh.Name,
+		UserID:        &actor.ID,
+		Username:      &actor.Username,
+		EnvironmentID: &wh.EnvironmentID,
+	})
 
 	return nil
 }
 
 // UpdateWebhook updates the enabled state of a webhook, scoped to an environment.
-func (s *WebhookService) UpdateWebhook(ctx context.Context, id, environmentID string, enabled bool, actor user.Actor, callerPerms *authz.PermissionSet) (*Webhook, error) {
+func (s *WebhookService) UpdateWebhook(
+	ctx context.Context,
+	id, environmentID string,
+	update types.Webhook,
+	submitted map[string]bool,
+	actor types.Actor,
+	callerPerms *authz.PermissionSet,
+) (*Webhook, error) {
 	var wh Webhook
 	err := s.db.WithContext(ctx).
 		Where("id = ? AND environment_id = ?", id, environmentID).
@@ -538,28 +560,27 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, id, environmentID st
 	if err != nil {
 		return nil, fmt.Errorf("failed to get webhook: %w", err)
 	}
-	if authorizeErr := authorizeWebhookAction(callerPerms, wh.TargetType, resolvedWebhookActionTypeInternal(wh.TargetType, wh.ActionType), wh.EnvironmentID); authorizeErr != nil {
+	if authorizeErr := authorizeWebhookAction(callerPerms, wh.TargetType, resolvedWebhookActionType(wh.TargetType, wh.ActionType), wh.EnvironmentID); authorizeErr != nil {
 		return nil, authorizeErr
 	}
 
+	enabled := kit.Ternary(submitted["enabled"], update.Enabled, wh.Enabled)
 	if updateWebhookErr := s.db.WithContext(ctx).Model(&wh).Update("enabled", enabled).Error; updateWebhookErr != nil {
 		return nil, fmt.Errorf("failed to update webhook: %w", updateWebhookErr)
 	}
 
-	if s.eventService != nil {
-		_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:          event.EventTypeWebhookUpdate,
-			Severity:      event.EventSeveritySuccess,
-			Title:         "Webhook updated: " + wh.Name,
-			Description:   fmt.Sprintf("Updated webhook '%s' enabled=%v", wh.Name, enabled),
-			ResourceType:  new("webhook"),
-			ResourceID:    &wh.ID,
-			ResourceName:  &wh.Name,
-			UserID:        &actor.ID,
-			Username:      &actor.Username,
-			EnvironmentID: &wh.EnvironmentID,
-		})
-	}
+	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
+		Type:          event.EventTypeWebhookUpdate,
+		Severity:      event.EventSeveritySuccess,
+		Title:         "Webhook updated: " + wh.Name,
+		Description:   fmt.Sprintf("Updated webhook '%s' enabled=%v", wh.Name, enabled),
+		ResourceType:  new("webhook"),
+		ResourceID:    &wh.ID,
+		ResourceName:  &wh.Name,
+		UserID:        &actor.ID,
+		Username:      &actor.Username,
+		EnvironmentID: &wh.EnvironmentID,
+	})
 
 	return &wh, nil
 }
@@ -569,7 +590,7 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, id, environmentID st
 // acknowledgement instead of holding the connection for the full action
 // duration (#3469). The action outcome is recorded in the event log.
 func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) error {
-	prefix, err := parseWebhookPrefixInternal(rawToken)
+	prefix, err := parseWebhookPrefix(rawToken)
 	if err != nil {
 		return ErrWebhookInvalid
 	}
@@ -597,7 +618,7 @@ func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) er
 		return ErrWebhookDisabled
 	}
 
-	actionType, err := resolveWebhookActionTypeInternal(wh.TargetType, wh.ActionType)
+	actionType, err := resolveWebhookActionType(wh.TargetType, wh.ActionType)
 	if err != nil {
 		return err
 	}
@@ -609,16 +630,16 @@ func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) er
 	execCtx := context.WithoutCancel(ctx)
 	s.actions.Go(func() {
 		defer func() {
-			if panicErr := utils.PanicToError(recover()); panicErr != nil {
+			if panicErr := concurrency.PanicToError(recover()); panicErr != nil {
 				slog.ErrorContext(execCtx, "webhook action panicked", "webhookId", wh.ID, "webhookName", wh.Name, "actionType", actionType, "error", panicErr)
 			}
 		}()
-		if _, executeWebhookActionErr := s.executeWebhookActionInternal(execCtx, wh, actionType); executeWebhookActionErr != nil {
-			// Action failures are recorded as error events by wrapWebhookActionErrorInternal.
+		if _, executeWebhookActionErr := s.executeWebhookAction(execCtx, wh, actionType); executeWebhookActionErr != nil {
+			// Action failures are recorded as error events by wrapWebhookActionError.
 			slog.ErrorContext(execCtx, "webhook action failed", "webhookId", wh.ID, "webhookName", wh.Name, "actionType", actionType, "error", executeWebhookActionErr)
 			return
 		}
-		s.logWebhookEventInternal(execCtx, wh, actionType, event.EventSeveritySuccess, "")
+		s.logWebhookEvent(execCtx, wh, actionType, event.EventSeveritySuccess, "")
 	})
 
 	return nil
@@ -629,35 +650,35 @@ func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) er
 func (s *WebhookService) DrainActions(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	return utils.WaitGroup(ctx, &s.actions)
+	return concurrency.WaitGroup(ctx, &s.actions)
 }
 
-func (s *WebhookService) executeWebhookActionInternal(ctx context.Context, wh *Webhook, actionType string) (*updatertypes.Result, error) {
+func (s *WebhookService) executeWebhookAction(ctx context.Context, wh *Webhook, actionType string) (*types.UpdaterResult, error) {
 	// Webhooks are stored and triggered on the manager; actions against remote
 	// environments are forwarded through the environment proxy.
-	if isRemoteWebhookEnvironmentInternal(wh.EnvironmentID) {
-		return s.executeRemoteWebhookActionInternal(ctx, wh, actionType)
+	if wh.EnvironmentID != "" && wh.EnvironmentID != types.LocalDockerEnvironmentID {
+		return s.executeRemoteWebhookAction(ctx, wh, actionType)
 	}
 
 	switch wh.TargetType {
 	case WebhookTargetTypeContainer:
-		return s.executeContainerWebhookActionInternal(ctx, wh, actionType)
+		return s.executeContainerWebhookAction(ctx, wh, actionType)
 	case WebhookTargetTypeProject:
-		return s.executeProjectWebhookActionInternal(ctx, wh, actionType)
+		return s.executeProjectWebhookAction(ctx, wh, actionType)
 	case WebhookTargetTypeUpdater:
-		return s.executeUpdaterWebhookActionInternal(ctx, wh, actionType)
+		return s.executeUpdaterWebhookAction(ctx, wh, actionType)
 	case WebhookTargetTypeGitOps:
-		return s.executeGitOpsWebhookActionInternal(ctx, wh, actionType)
+		return s.executeGitOpsWebhookAction(ctx, wh, actionType)
 	default:
 		return nil, ErrWebhookInvalidType
 	}
 }
 
-// remoteWebhookRequestInternal maps a webhook action to the env-scoped API
+// remoteWebhookRequest maps a webhook action to the env-scoped API
 // request forwarded to the remote environment. Paths use the agent-local
 // environment ID, matching the environment proxy's path-rewriting convention.
 // wantResult reports whether the response carries an updatertypes.Result payload.
-func remoteWebhookRequestInternal(wh *Webhook, actionType string) (method, path string, wantResult bool, err error) {
+func remoteWebhookRequest(wh *Webhook, actionType string) (method, path string, wantResult bool, err error) {
 	apiPrefix := "/api/environments/" + types.LocalDockerEnvironmentID
 
 	switch wh.TargetType {
@@ -670,17 +691,21 @@ func remoteWebhookRequestInternal(wh *Webhook, actionType string) (method, path 
 		switch actionType {
 		case WebhookActionTypeUpdate:
 			return http.MethodPost, containerPath + "/update", true, nil
-		case WebhookActionTypeStart, WebhookActionTypeStop, WebhookActionTypeRestart, WebhookActionTypeRedeploy:
-			return http.MethodPost, containerPath + "/" + actionType, false, nil
+		case WebhookActionTypeStart, WebhookActionTypeStop, WebhookActionTypeRestart:
+			return http.MethodPost, containerPath + "?action=" + actionType, false, nil
+		case WebhookActionTypeRedeploy:
+			return http.MethodPost, containerPath + "/redeploy", false, nil
 		}
 		return "", "", false, ErrWebhookInvalidAction
 	case WebhookTargetTypeProject:
 		projectPath := apiPrefix + "/projects/" + url.PathEscape(wh.TargetID)
 		switch actionType {
 		case WebhookActionTypeUpdate:
-			return http.MethodPost, projectPath + "/update-services", false, nil
-		case WebhookActionTypeUp, WebhookActionTypeDown, WebhookActionTypeRestart, WebhookActionTypeRedeploy:
-			return http.MethodPost, projectPath + "/" + actionType, false, nil
+			return http.MethodPost, projectPath + "?action=updateservices", false, nil
+		case WebhookActionTypeDown, WebhookActionTypeRestart:
+			return http.MethodPost, projectPath + "?action=" + actionType, false, nil
+		case WebhookActionTypeUp, WebhookActionTypeRedeploy:
+			return http.MethodPost, projectPath + "/deploy?action=" + actionType, false, nil
 		}
 		return "", "", false, ErrWebhookInvalidAction
 	case WebhookTargetTypeUpdater:
@@ -692,70 +717,66 @@ func remoteWebhookRequestInternal(wh *Webhook, actionType string) (method, path 
 		if actionType != WebhookActionTypeSync {
 			return "", "", false, ErrWebhookInvalidAction
 		}
-		return http.MethodPost, apiPrefix + "/gitops-syncs/" + url.PathEscape(wh.TargetID) + "/sync", false, nil
+		return http.MethodPost, apiPrefix + "/gitops/syncs/" + url.PathEscape(wh.TargetID) + "?action=sync", false, nil
 	default:
 		return "", "", false, ErrWebhookInvalidType
 	}
 }
 
-func (s *WebhookService) executeRemoteWebhookActionInternal(ctx context.Context, wh *Webhook, actionType string) (*updatertypes.Result, error) {
-	if s.environmentService == nil {
-		return nil, s.wrapWebhookActionErrorInternal(ctx, wh, wh.TargetType, actionType, errors.New("environment service not available"))
-	}
-
-	method, path, wantResult, err := remoteWebhookRequestInternal(wh, actionType)
+func (s *WebhookService) executeRemoteWebhookAction(ctx context.Context, wh *Webhook, actionType string) (*types.UpdaterResult, error) {
+	method, path, wantResult, err := remoteWebhookRequest(wh, actionType)
 	if err != nil {
 		return nil, err
 	}
 
-	var result *updatertypes.Result
+	var result *types.UpdaterResult
 	if wantResult {
-		var out base.ApiResponse[*updatertypes.Result]
+		var out types.ApiResponse[*types.UpdaterResult]
 		if proxyJSONRequestErr := s.environmentService.ProxyJSONRequest(ctx, wh.EnvironmentID, method, path, nil, &out); proxyJSONRequestErr != nil {
-			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, wh.TargetType, actionType, proxyJSONRequestErr)
+			return nil, s.wrapWebhookActionError(ctx, wh, wh.TargetType, actionType, proxyJSONRequestErr)
 		}
 		result = out.Data
 	} else {
-		var out base.ApiResponse[any]
+		var out types.ApiResponse[any]
 		if proxyServiceActionErr := s.environmentService.ProxyJSONRequest(ctx, wh.EnvironmentID, method, path, nil, &out); proxyServiceActionErr != nil {
-			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, wh.TargetType, actionType, proxyServiceActionErr)
+			return nil, s.wrapWebhookActionError(ctx, wh, wh.TargetType, actionType, proxyServiceActionErr)
 		}
 	}
 
 	return result, nil
 }
 
-func (s *WebhookService) executeContainerWebhookActionInternal(ctx context.Context, wh *Webhook, actionType string) (*updatertypes.Result, error) {
-	containerID, err := s.resolveContainerWebhookTargetIDInternal(ctx, wh)
+func (s *WebhookService) executeContainerWebhookAction(ctx context.Context, wh *Webhook, actionType string) (*types.UpdaterResult, error) {
+	containerID, err := s.resolveContainerWebhookTargetID(ctx, wh)
 	if err != nil {
-		return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "container", actionType, err)
+		return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, err)
 	}
 
 	switch actionType {
 	case WebhookActionTypeUpdate:
 		result, updateSingleContainerErr := s.updaterService.UpdateSingleContainer(ctx, containerID)
 		if updateSingleContainerErr != nil {
-			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "container", actionType, updateSingleContainerErr)
+			return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, updateSingleContainerErr)
 		}
 		return result, nil
 	case WebhookActionTypeStart:
-		if startContainerErr := s.containerService.StartContainer(ctx, containerID, user.SystemUser); startContainerErr != nil {
-			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "container", actionType, startContainerErr)
+		if startContainerErr := s.containerService.StartContainer(ctx, containerID, types.SystemUser); startContainerErr != nil {
+			return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, startContainerErr)
 		}
 		return nil, nil
 	case WebhookActionTypeStop:
-		if stopContainerErr := s.containerService.StopContainer(ctx, containerID, user.SystemUser); stopContainerErr != nil {
-			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "container", actionType, stopContainerErr)
+		if stopContainerErr := s.containerService.StopContainer(ctx, containerID, types.SystemUser); stopContainerErr != nil {
+			return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, stopContainerErr)
 		}
 		return nil, nil
 	case WebhookActionTypeRestart:
-		if restartContainerErr := s.containerService.RestartContainer(ctx, containerID, user.SystemUser); restartContainerErr != nil {
-			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "container", actionType, restartContainerErr)
+		if restartContainerErr := s.containerService.RestartContainer(ctx, containerID, types.SystemUser); restartContainerErr != nil {
+			return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, restartContainerErr)
 		}
 		return nil, nil
 	case WebhookActionTypeRedeploy:
-		if _, redeployContainerErr := s.containerService.RedeployContainer(ctx, containerID, user.SystemUser); redeployContainerErr != nil {
-			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "container", actionType, redeployContainerErr)
+		if _, redeployContainerErr := s.containerService.RedeployContainer(ctx, containerID, types.SystemUser); redeployContainerErr != nil {
+			return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, redeployContainerErr)
 		}
 		return nil, nil
 	default:
@@ -763,11 +784,7 @@ func (s *WebhookService) executeContainerWebhookActionInternal(ctx context.Conte
 	}
 }
 
-func (s *WebhookService) resolveContainerWebhookTargetRefInternal(ctx context.Context, targetID string) (string, error) {
-	if s.containerService == nil {
-		return "", nil
-	}
-
+func (s *WebhookService) resolveContainerWebhookTargetRef(ctx context.Context, targetID string) (string, error) {
 	containerName, err := s.containerService.GetContainerNameByReference(ctx, targetID)
 	if errdefs.IsNotFound(err) {
 		return "", common.Classify(common.ErrBadRequest, fmt.Errorf("target container not found: %w", err))
@@ -779,11 +796,7 @@ func (s *WebhookService) resolveContainerWebhookTargetRefInternal(ctx context.Co
 	return containerName, nil
 }
 
-func (s *WebhookService) resolveContainerWebhookTargetIDInternal(ctx context.Context, wh *Webhook) (string, error) {
-	if s.containerService == nil {
-		return wh.TargetID, nil
-	}
-
+func (s *WebhookService) resolveContainerWebhookTargetID(ctx context.Context, wh *Webhook) (string, error) {
 	references := make([]string, 0, 2)
 	if strings.TrimSpace(wh.TargetRef) != "" {
 		references = append(references, wh.TargetRef)
@@ -801,14 +814,14 @@ func (s *WebhookService) resolveContainerWebhookTargetIDInternal(ctx context.Con
 		}
 
 		containerName := strings.TrimPrefix(containerInfo.Name, "/")
-		s.syncWebhookContainerTargetInternal(ctx, wh, containerInfo.ID, containerName)
+		s.syncWebhookContainerTarget(ctx, wh, containerInfo.ID, containerName)
 		return containerInfo.ID, nil
 	}
 
 	return "", kit.Ternary[error](lastErr != nil, lastErr, ErrWebhookMissingTarget)
 }
 
-func (s *WebhookService) syncWebhookContainerTargetInternal(ctx context.Context, wh *Webhook, containerID, containerName string) {
+func (s *WebhookService) syncWebhookContainerTarget(ctx context.Context, wh *Webhook, containerID, containerName string) {
 	updates := map[string]any{}
 	if containerID != "" && containerID != wh.TargetID {
 		updates["target_id"] = containerID
@@ -825,31 +838,31 @@ func (s *WebhookService) syncWebhookContainerTargetInternal(ctx context.Context,
 	_ = s.db.WithContext(ctx).Model(wh).Updates(updates).Error
 }
 
-func (s *WebhookService) executeProjectWebhookActionInternal(ctx context.Context, wh *Webhook, actionType string) (*updatertypes.Result, error) {
+func (s *WebhookService) executeProjectWebhookAction(ctx context.Context, wh *Webhook, actionType string) (*types.UpdaterResult, error) {
 	switch actionType {
 	case WebhookActionTypeUpdate:
-		if err := s.projectService.UpdateProjectServices(ctx, wh.TargetID, nil, user.SystemUser, true); err != nil {
-			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "project", actionType, err)
+		if err := s.projectService.UpdateProjectServices(ctx, wh.TargetID, nil, types.SystemUser, true); err != nil {
+			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
 		}
 		return nil, nil
 	case WebhookActionTypeUp:
-		if err := s.projectService.DeployProject(ctx, wh.TargetID, user.SystemUser, nil); err != nil {
-			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "project", actionType, err)
+		if err := s.projectService.DeployProject(ctx, wh.TargetID, types.SystemUser, nil); err != nil {
+			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
 		}
 		return nil, nil
 	case WebhookActionTypeDown:
-		if err := s.projectService.DownProject(ctx, wh.TargetID, user.SystemUser); err != nil {
-			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "project", actionType, err)
+		if err := s.projectService.DownProject(ctx, wh.TargetID, types.SystemUser); err != nil {
+			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
 		}
 		return nil, nil
 	case WebhookActionTypeRestart:
-		if err := s.projectService.RestartProject(ctx, wh.TargetID, nil, user.SystemUser); err != nil {
-			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "project", actionType, err)
+		if err := s.projectService.RestartProject(ctx, wh.TargetID, nil, types.SystemUser); err != nil {
+			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
 		}
 		return nil, nil
 	case WebhookActionTypeRedeploy:
-		if err := s.projectService.RedeployProject(ctx, wh.TargetID, user.SystemUser, nil); err != nil {
-			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "project", actionType, err)
+		if err := s.projectService.RedeployProject(ctx, wh.TargetID, types.SystemUser, nil); err != nil {
+			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
 		}
 		return nil, nil
 	default:
@@ -857,44 +870,45 @@ func (s *WebhookService) executeProjectWebhookActionInternal(ctx context.Context
 	}
 }
 
-func (s *WebhookService) executeUpdaterWebhookActionInternal(ctx context.Context, wh *Webhook, actionType string) (*updatertypes.Result, error) {
+func (s *WebhookService) executeUpdaterWebhookAction(ctx context.Context, wh *Webhook, actionType string) (*types.UpdaterResult, error) {
 	if actionType != WebhookActionTypeRun {
 		return nil, ErrWebhookInvalidAction
 	}
 
-	result, err := s.updaterService.ApplyPending(ctx, updatertypes.Options{})
+	result, err := s.updaterService.ApplyPending(ctx, types.UpdaterOptions{})
 	if err != nil {
-		return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "updater", actionType, err)
+		return nil, s.wrapWebhookActionError(ctx, wh, "updater", actionType, err)
 	}
 
 	return result, nil
 }
 
-func (s *WebhookService) executeGitOpsWebhookActionInternal(ctx context.Context, wh *Webhook, actionType string) (*updatertypes.Result, error) {
+func (s *WebhookService) executeGitOpsWebhookAction(ctx context.Context, wh *Webhook, actionType string) (*types.UpdaterResult, error) {
 	if actionType != WebhookActionTypeSync {
 		return nil, ErrWebhookInvalidAction
 	}
 
-	if _, err := s.gitOpsSyncService.PerformSync(ctx, wh.EnvironmentID, wh.TargetID, user.SystemUser); err != nil {
-		return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "gitops", actionType, err)
+	if _, err := s.gitOpsSyncService.PerformSync(ctx, gitops.SyncRequest{
+		EnvironmentID: wh.EnvironmentID,
+		SyncID:        wh.TargetID,
+		Actor:         types.SystemUser,
+	}); err != nil {
+		return nil, s.wrapWebhookActionError(ctx, wh, "gitops", actionType, err)
 	}
 
 	return nil, nil
 }
 
-func (s *WebhookService) wrapWebhookActionErrorInternal(ctx context.Context, wh *Webhook, targetKind, actionType string, err error) error {
+func (s *WebhookService) wrapWebhookActionError(ctx context.Context, wh *Webhook, targetKind, actionType string, err error) error {
 	msg := fmt.Sprintf("%s %s failed: %s", targetKind, actionType, err)
-	s.logWebhookEventInternal(ctx, wh, actionType, event.EventSeverityError, msg)
+	s.logWebhookEvent(ctx, wh, actionType, event.EventSeverityError, msg)
 	if err != nil {
 		return fmt.Errorf("%s %s failed: %w", targetKind, actionType, err)
 	}
 	return nil
 }
 
-func (s *WebhookService) logWebhookEventInternal(ctx context.Context, wh *Webhook, actionType string, severity event.EventSeverity, errMsg string) {
-	if s.eventService == nil {
-		return
-	}
+func (s *WebhookService) logWebhookEvent(ctx context.Context, wh *Webhook, actionType string, severity event.EventSeverity, errMsg string) {
 	title := "Webhook triggered: " + wh.Name
 	if severity == event.EventSeverityError {
 		title = "Webhook trigger failed: " + wh.Name

@@ -1,5 +1,3 @@
-import type { Temporal } from 'temporal-polyfill';
-
 import { m } from '#lib/paraglide/messages.js';
 import type { ContainerDetailsDto, ContainerStats, ContainerSummaryDto } from '#lib/types/docker.js';
 import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
@@ -392,11 +390,11 @@ export function getApplicationLogo(
 	}
 
 	const query = params.toString();
-	return query ? `/api/app-images/logo?${query}` : '/api/app-images/logo';
+	return query ? `/api/app/images/logo?${query}` : '/api/app/images/logo';
 }
 
 export function getDefaultProfilePicture(): string {
-	return '/api/app-images/profile';
+	return '/api/app/images/profile';
 }
 
 // --- Status variants ---
@@ -422,15 +420,12 @@ export function getStatusVariant(status?: string | null): StatusVariant {
 
 // --- Environment status resolution ---
 
-type RuntimeEnvironmentState = Pick<Environment, 'isEdge' | 'connected' | 'status' | 'lastPollAt'>;
+type RuntimeEnvironmentState = Pick<Environment, 'id' | 'connected' | 'status'>;
 
-export function resolveEnvironmentStatus(
-	environment: RuntimeEnvironmentState,
-	overrideStatus?: EnvironmentStatus | null
-): EnvironmentStatus {
-	const status = overrideStatus ?? environment.status;
+export function resolveEnvironmentStatus(environment: RuntimeEnvironmentState): EnvironmentStatus {
+	const status = environment.status;
 
-	if (!environment.isEdge) {
+	if (environment.id === '0') {
 		return status;
 	}
 
@@ -438,16 +433,8 @@ export function resolveEnvironmentStatus(
 		return 'online';
 	}
 
-	if (environment.lastPollAt) {
-		return 'standby';
-	}
-
 	if (status === 'pending') {
 		return 'pending';
-	}
-
-	if (status === 'standby') {
-		return 'standby';
 	}
 
 	if (environment.connected === false) {
@@ -457,17 +444,14 @@ export function resolveEnvironmentStatus(
 	return status;
 }
 
-export function isEnvironmentOnline(environment: RuntimeEnvironmentState, overrideStatus?: EnvironmentStatus | null): boolean {
-	const resolved = resolveEnvironmentStatus(environment, overrideStatus);
-	return resolved === 'online' || resolved === 'standby';
+export function isEnvironmentOnline(environment: RuntimeEnvironmentState): boolean {
+	return resolveEnvironmentStatus(environment) === 'online';
 }
 
-export function getEnvironmentStatusVariant(status: EnvironmentStatus): 'green' | 'blue' | 'amber' | 'red' {
+export function getEnvironmentStatusVariant(status: EnvironmentStatus): 'green' | 'amber' | 'red' {
 	switch (status) {
 		case 'online':
 			return 'green';
-		case 'standby':
-			return 'blue';
 		case 'pending':
 			return 'amber';
 		default:

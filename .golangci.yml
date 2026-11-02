@@ -1,4 +1,3 @@
-# Slightly Modified Version of docker's golangci lint configuration to fit arcanes standards
 version: '2'
 
 run:
@@ -7,6 +6,7 @@ run:
     - exclude_frontend
     - playwright
   timeout: 15m
+  allow-serial-runners: true
 
 issues:
   max-issues-per-linter: 0
@@ -25,11 +25,13 @@ formatters:
   settings:
     gci:
       sections:
-        - prefix(arena,archive/,bufio,bytes,cmp,compress/,container/,context,crypto,database/,debug/,embed,encoding,errors,expvar,flag,fmt,go/,hash,html,image,index/,io,iter,log,maps,math,mime,net,os,path,plugin,reflect,regexp,runtime,slices,sort,strconv,strings,structs,sync,syscall,testing,text/,time,unicode,unique,unsafe,uuid,weak)
+        - standard
         - default
-        - localmodule
+        - prefix(kit.getarcane.app)
+        - prefix(getarcane.dev)
       custom-order: true
     gofumpt:
+      module-path: getarcane.dev/arcane/v3
       extra:
         group-params: true
         clothe-returns: true
@@ -39,15 +41,18 @@ linters:
   default: none
   enable:
     - copyloopvar
+    - decorder
     - depguard
     - errcheck
     - errorlint
+    - exptostd
     - exhaustruct_v5
     - forbidigo
     - gocognit
     - gocritic
     - gomodguard_v2
     - govet
+    - grouper
     - importas
     - ineffassign
     - lll
@@ -67,22 +72,37 @@ linters:
     - gocyclo
 
   settings:
+    decorder:
+      dec-order:
+        - type
+        - const
+        - var
+        - func
+      ignore-underscore-vars: false
+      disable-dec-order-check: false
+      disable-init-func-first-check: false
+      disable-dec-num-check: true
+
     depguard:
       rules:
         main:
           deny:
-            - pkg: io/ioutil
-              desc: io/ioutil package has been deprecated
             - pkg: github.com/docker/docker/errdefs
               desc: use github.com/containerd/errdefs instead.
-            - pkg: golang.org/x/exp/maps
-              desc: use stdlib maps package
-            - pkg: golang.org/x/exp/slices
-              desc: use stdlib slices package
             - pkg: 'github.com/google/uuid'
               desc: Use stdlib uuid instead.
             - pkg: 'gopkg.in/yaml.v3'
               desc: Use go.yaml.in/yaml/v4 instead.
+        migrations:
+          files:
+            - '**/internal/database/migrations/**'
+          deny:
+            - pkg: gorm.io
+              desc: Go migrations must use raw SQL, not GORM models.
+            - pkg: getarcane.dev/arcane/v3/internal
+              desc: Go migrations must not depend on application packages that change after the migration version.
+            - pkg: getarcane.dev/types
+              desc: Go migrations must not depend on shared contracts that change after the migration version.
 
     exhaustruct_v5:
       explicit-mode: true
@@ -112,28 +132,31 @@ linters:
 
     importas:
       alias:
-        - pkg: go.getarcane.app/docker
+        - pkg: kit.getarcane.app/docker
           alias: docker
-        - pkg: github.com/getarcaneapp/arcane/backend/v2/internal/docker
+        - pkg: kit.getarcane.app
+          alias: kit
+        - pkg: getarcane.dev/arcane/v3/internal/docker
           alias: dockerInternal
+        - pkg: charm.land/log/v2
+          alias: charmLog
 
     lll:
       line-length: 200
 
     govet:
-      enable:
-        - shadow
+      enable-all: true
       settings:
         shadow:
           strict: true
 
     grouper:
       const-require-single-const: true
-      const-require-grouping: true
+      const-require-grouping: false
       var-require-single-var: true
-      var-require-grouping: true
+      var-require-grouping: false
       type-require-single-type: true
-      type-require-grouping: true
+      type-require-grouping: false
 
     nakedret:
       # Disallow naked returns if func has more lines of code than this setting.
@@ -144,6 +167,7 @@ linters:
       rules:
         - name: package-comments
           disabled: true
+        - name: redundant-import-alias
 
     sloglint:
       context: 'all' # https://github.com/go-simpler/sloglint#context-only
@@ -153,8 +177,3 @@ linters:
 
   exclusions:
     generated: strict
-    rules:
-      # The legacy edge message protocol uses deprecated tunnel.proto messages until v3 removes both.
-      - path: pkg/libarcane/edge/
-        linters: [staticcheck]
-        text: 'SA1019: .*proto/tunnel/v1'

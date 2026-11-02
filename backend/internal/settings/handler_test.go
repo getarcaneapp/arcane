@@ -10,46 +10,48 @@ import (
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/settings"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/types/v3"
 )
 
-func TestSettingsHandlerAppendRuntimeSettings(t *testing.T) {
-	handler := &SettingsHandler{cfg: &config.Config{
-		UIConfigurationDisabled:       true,
-		BackupVolumeName:              "custom-backups",
-		ProjectWorkspaceMaxFileSizeMB: 12,
-		VolumeWorkspaceMaxFileSizeMB:  18,
-	}}
+func TestSettingsHandlerRuntimeSettings(t *testing.T) {
+	settingsService, err := newSettingsServiceForTest(t, t.Context(), setupSettingsTestDB(t))
+	require.NoError(t, err)
+	handler := &SettingsHandler{
+		settingsService: settingsService,
+		cfg: &config.Config{
+			UIConfigurationDisabled: true,
+			BackupVolumeName:        "custom-backups",
+		},
+	}
 
-	publicKeys := runtimeSettingKeys(handler.appendRuntimeSettings(nil, false))
-	require.NotContains(t, publicKeys, "uiConfigDisabled")
-	require.NotContains(t, publicKeys, "backupVolumeName")
-	require.NotContains(t, publicKeys, "depotConfigured")
-	require.NotContains(t, publicKeys, "edgeMTLSManagerCAAvailable")
+	publicRuntime := handler.runtimeSettings(false)
+	require.Empty(t, publicRuntime.BackupVolumeName)
+	require.False(t, publicRuntime.DepotConfigured)
 
-	authenticatedKeys := runtimeSettingKeys(handler.appendRuntimeSettings(nil, true))
-	require.Equal(t, "12", authenticatedKeys[projectWorkspaceMaxFileSizeSettingKey])
-	require.Equal(t, "18", authenticatedKeys[volumeWorkspaceMaxFileSizeSettingKey])
-	require.Equal(t, "true", authenticatedKeys["uiConfigDisabled"])
-	require.Equal(t, "custom-backups", authenticatedKeys["backupVolumeName"])
-	require.Equal(t, "false", authenticatedKeys["edgeMTLSManagerCAAvailable"])
+	authenticatedRuntime := handler.runtimeSettings(true)
+	require.Equal(t, "custom-backups", authenticatedRuntime.BackupVolumeName)
+	require.False(t, authenticatedRuntime.AgentMTLSManagerCAAvailable)
 }
 
-func TestSettingsHandlerAppendRuntimeSettingsDoesNotGenerateEdgeMTLSCA(t *testing.T) {
+func TestSettingsHandlerRuntimeSettingsDoesNotGenerateAgentMTLSCA(t *testing.T) {
+	settingsService, err := newSettingsServiceForTest(t, t.Context(), setupSettingsTestDB(t))
+	require.NoError(t, err)
 	assetsDir := t.TempDir()
-	handler := &SettingsHandler{cfg: &config.Config{
-		EdgeMTLSMode:      edge.EdgeMTLSModeRequired,
-		EdgeMTLSAssetsDir: assetsDir,
-	}}
+	handler := &SettingsHandler{
+		settingsService: settingsService,
+		cfg: &config.Config{
+			AgentMTLSMode:      agent.MTLSModeRequired,
+			AgentMTLSAssetsDir: assetsDir,
+		},
+	}
 
-	authenticatedKeys := runtimeSettingKeys(handler.appendRuntimeSettings(nil, true))
-	require.Equal(t, "false", authenticatedKeys["edgeMTLSManagerCAAvailable"])
+	require.False(t, handler.runtimeSettings(true).AgentMTLSManagerCAAvailable)
 	require.NoFileExists(t, filepath.Join(assetsDir, "ca.crt"))
 	require.NoFileExists(t, filepath.Join(assetsDir, "ca.key"))
 }
@@ -72,7 +74,7 @@ func TestSettingsHandlerUpdateLocalEnvironmentRejectsUnreadableProjectsDirectory
 	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o700) })
 
 	handler := &SettingsHandler{settingsService: settingsService, cfg: &config.Config{}}
-	_, err = handler.UpdateSettings(ctx, &UpdateSettingsInput{EnvironmentID: "0", Body: settings.Update{ProjectsDirectory: new(unreadable)}})
+	_, err = handler.UpdateSettings(ctx, &UpdateSettingsInput{EnvironmentID: "0", Body: types.SettingsUpdate{"projectsDirectory": unreadable}})
 	require.Error(t, err)
 
 	var statusErr huma.StatusError
@@ -83,18 +85,21 @@ func TestSettingsHandlerUpdateLocalEnvironmentRejectsUnreadableProjectsDirectory
 }
 
 func TestSettingsHandlerRemoteWorkspaceSettingsVisibility(t *testing.T) {
-	remoteSettings := []settings.PublicSetting{
-		{Key: "dockerHost", Type: "string", Value: "unix:///var/run/docker.sock"},
-		{Key: "baseServerUrl", Type: "string", Value: "https://manager.example"},
-		{Key: "defaultShell", Type: "string", Value: "/bin/bash"},
-		{Key: projectWorkspaceMaxFileSizeSettingKey, Type: "number", Value: "12"},
-		{Key: volumeWorkspaceMaxFileSizeSettingKey, Type: "number", Value: "18"},
-		{Key: "futureAdminSetting", Type: "string", Value: "hidden"},
+	remoteSnapshot := types.SettingsSnapshot{
+		Settings: []types.SettingState{
+			{Key: "dockerHost", Type: "text", Value: "unix:///var/run/docker.sock"},
+			{Key: "baseServerUrl", Type: "text", Value: "https://manager.example"},
+			{Key: "defaultShell", Type: "text", Value: "/bin/bash"},
+			{Key: "futureAdminSetting", Type: "text", Value: "hidden"},
+		},
+		Runtime: types.SettingsRuntime{
+			BackupVolumeName: "remote-backups",
+		},
 	}
 	proxy := func(_ context.Context, _, method, path string, _ []byte, output any) error {
 		require.Equal(t, http.MethodGet, method)
 		require.Equal(t, "/api/environments/0/settings", path)
-		payload, err := json.Marshal(remoteSettings)
+		payload, err := json.Marshal(remoteSnapshot)
 		require.NoError(t, err)
 		return json.Unmarshal(payload, output)
 	}
@@ -106,20 +111,13 @@ func TestSettingsHandlerRemoteWorkspaceSettingsVisibility(t *testing.T) {
 	permissions := authz.NewPermissionSet()
 	permissions.AddEnv("env-remote", authz.PermSettingsRead)
 	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, permissions)
-	output, err := handler.GetSettings(ctx, &GetSettingsInput{EnvironmentID: "env-remote"})
+	output, err := handler.GetSettings(ctx, &types.EnvironmentInput{EnvironmentID: "env-remote"})
 	require.NoError(t, err)
-	require.Equal(t, []settings.PublicSetting{remoteSettings[0], remoteSettings[3], remoteSettings[4]}, output.Body)
+	require.Equal(t, remoteSnapshot.Settings[:3], output.Body.Settings)
+	require.Equal(t, remoteSnapshot.Runtime, output.Body.Runtime)
 
 	adminCtx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
-	output, err = handler.GetSettings(adminCtx, &GetSettingsInput{EnvironmentID: "env-remote"})
+	output, err = handler.GetSettings(adminCtx, &types.EnvironmentInput{EnvironmentID: "env-remote"})
 	require.NoError(t, err)
-	require.Equal(t, remoteSettings, output.Body)
-}
-
-func runtimeSettingKeys(publicSettings []settings.PublicSetting) map[string]string {
-	keys := make(map[string]string, len(publicSettings))
-	for _, setting := range publicSettings {
-		keys[setting.Key] = setting.Value
-	}
-	return keys
+	require.Equal(t, remoteSnapshot, output.Body)
 }

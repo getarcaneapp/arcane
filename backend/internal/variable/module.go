@@ -4,17 +4,19 @@ package variable
 import (
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-type Module struct {
-	service     *VariableService
-	environment *environment.EnvironmentService
-}
+type (
+	Module struct {
+		service     *VariableService
+		environment *environment.EnvironmentService
+	}
+)
 
 func New(service *VariableService, environmentService *environment.EnvironmentService) *Module {
 	return &Module{service: service, environment: environmentService}
@@ -28,7 +30,7 @@ func (m *Module) Service() *VariableService {
 }
 
 func (m *Module) RegisterRoutes(api huma.API, cfg *config.Config) {
-	if cfg != nil && cfg.AgentMode {
+	if cfg != nil && cfg.AgentEnabled {
 		if m == nil {
 			RegisterMaterializedVariables(api, nil, nil)
 			return
@@ -68,7 +70,7 @@ func RegisterVariables(api huma.API, variableService *VariableService, environme
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "updateVariable",
-		Method:      "PUT",
+		Method:      "PATCH",
 		Path:        "/variables/{id}",
 		Summary:     "Update a global variable",
 		Description: "Update a global variable's key, value, secret flag, or environment scope",
@@ -99,7 +101,7 @@ func RegisterVariables(api huma.API, variableService *VariableService, environme
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getVariableSyncStatus",
 		Method:      "GET",
-		Path:        "/variables/sync-status",
+		Path:        "/variables/sync",
 		Summary:     "Get variable sync status",
 		Description: "Get the last global-variable sync result per environment",
 		Tags:        []string{"Variables"},

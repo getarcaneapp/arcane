@@ -1,0 +1,69 @@
+package volumes
+
+import (
+	"encoding/json/v2"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestGetProjectVolumeCopyRuntimeInternal_UsesToolsImageWhenAvailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			w.Header().Set("Content-Type", "application/json")
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Id": "tools-image"})) {
+				return
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	copyRuntime, err := getProjectVolumeCopyRuntime(t.Context(), newTestDockerClient(t, server), ToolsImage(""))
+
+	require.NoError(t, err)
+	require.Equal(t, ToolsImage(""), copyRuntime.Image)
+}
+
+func TestCreateProjectVolumeCopyHolderContainerInternal_UsesPassiveHolderCommand(t *testing.T) {
+	var createBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
+			if !assert.NoError(t, json.UnmarshalRead(r.Body, &createBody)) {
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{
+				"Id":       "helper-container",
+				"Warnings": []string{},
+			})) {
+				return
+			}
+		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/containers/helper-container"):
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	_, cleanup, err := createProjectVolumeCopyHolderContainer(
+		t.Context(),
+		newTestDockerClient(t, server),
+		projectVolumeCopyRuntime{Image: "arcane:local"},
+		"nginx_data",
+		true,
+	)
+	require.NoError(t, err)
+	defer cleanup()
+
+	require.Empty(t, createBody["Entrypoint"])
+	require.Equal(t, []any{"sleep", "infinity"}, createBody["Cmd"])
+}

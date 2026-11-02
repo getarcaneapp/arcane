@@ -7,10 +7,24 @@ import (
 	"slices"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/activity"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	// Candidate is the part of an activity row a sweep decides on.
+	Candidate struct {
+		StartedAt time.Time
+		Metadata  database.JSON `gorm:"type:text"`
+		ID        string
+	}
+
+	// Service runs the candidate queries behind the periodic activity sweeps.
+	Service struct {
+		db *database.DB
+	}
 )
 
 const (
@@ -19,7 +33,6 @@ const (
 	// must be before the periodic sweep fails it. It covers the window between
 	// StartActivity's row creation and the worker's Track call.
 	abandonedActivityGrace = 2 * time.Minute
-
 	// abandonedActivitySweepLimit bounds one sweep; later sweeps take the rest.
 	abandonedActivitySweepLimit = 500
 )
@@ -30,18 +43,6 @@ var backupActions = []string{
 	"run_system_volume_backups",
 	"scheduled_volume_backup",
 	"scheduled_system_backup",
-}
-
-// Candidate is the part of an activity row a sweep decides on.
-type Candidate struct {
-	ID        string
-	StartedAt time.Time
-	Metadata  database.JSON `gorm:"type:text"`
-}
-
-// Service runs the candidate queries behind the periodic activity sweeps.
-type Service struct {
-	db *database.DB
 }
 
 // NewService returns a sweeps query service over db.
@@ -58,7 +59,7 @@ func (s *Service) activities(ctx context.Context) *gorm.DB {
 func (s *Service) StaleImageUpdateChecks(ctx context.Context) ([]Candidate, error) {
 	var rows []Candidate
 	err := s.activities(ctx).
-		Where("type = ? AND status = ? AND started_at < ?", activity.TypeImageUpdateCheck, activity.StatusRunning, time.Now().Add(-staleImageUpdateCheckAge)).
+		Where("type = ? AND status = ? AND started_at < ?", types.ActivityTypeImageUpdateCheck, types.ActivityStatusRunning, time.Now().Add(-staleImageUpdateCheckAge)).
 		Find(&rows).Error
 	return rows, err
 }
@@ -68,8 +69,8 @@ func (s *Service) StaleImageUpdateChecks(ctx context.Context) ([]Candidate, erro
 func (s *Service) Abandoned(ctx context.Context, trackedIDs []string) ([]Candidate, error) {
 	query := s.activities(ctx).
 		Select("id", "started_at").
-		Where("status IN ? AND started_at < ?", []activity.Status{activity.StatusQueued, activity.StatusRunning}, time.Now().Add(-abandonedActivityGrace)).
-		Where("type <> ?", activity.TypeJobRun)
+		Where("status IN ? AND started_at < ?", []types.ActivityStatus{types.ActivityStatusQueued, types.ActivityStatusRunning}, time.Now().Add(-abandonedActivityGrace)).
+		Where("type <> ?", types.ActivityTypeJobRun)
 	if len(trackedIDs) > 0 {
 		query = query.Where("id NOT IN ?", trackedIDs)
 	}
@@ -82,8 +83,8 @@ func (s *Service) Abandoned(ctx context.Context, trackedIDs []string) ([]Candida
 func (s *Service) OrphanedQueued(ctx context.Context, protectedIDs []string) ([]Candidate, error) {
 	var rows []Candidate
 	err := s.activities(ctx).
-		Where("status = ?", activity.StatusQueued).
-		Where("type <> ?", activity.TypeJobRun).
+		Where("status = ?", types.ActivityStatusQueued).
+		Where("type <> ?", types.ActivityTypeJobRun).
 		Where("id NOT IN ?", append(protectedIDs, "")).
 		Find(&rows).Error
 	return rows, err
@@ -93,7 +94,7 @@ func (s *Service) OrphanedJobRuns(ctx context.Context, protectedIDs []string) ([
 	var rows []Candidate
 	err := s.activities(ctx).
 		Select("id").
-		Where("type = ? AND status IN ?", activity.TypeJobRun, []activity.Status{activity.StatusQueued, activity.StatusRunning}).
+		Where("type = ? AND status IN ?", types.ActivityTypeJobRun, []types.ActivityStatus{types.ActivityStatusQueued, types.ActivityStatusRunning}).
 		Where("id NOT IN ?", append(protectedIDs, "")).
 		Find(&rows).Error
 	return rows, err
@@ -103,7 +104,7 @@ func (s *Service) OrphanedJobRuns(ctx context.Context, protectedIDs []string) ([
 func (s *Service) StaleAutoUpdates(ctx context.Context, protectedIDs []string) ([]Candidate, error) {
 	var rows []Candidate
 	err := s.activities(ctx).
-		Where("type = ? AND status = ?", activity.TypeAutoUpdate, activity.StatusRunning).
+		Where("type = ? AND status = ?", types.ActivityTypeAutoUpdate, types.ActivityStatusRunning).
 		Where("id NOT IN ?", append(protectedIDs, "")).
 		Find(&rows).Error
 	return rows, err
@@ -113,7 +114,7 @@ func (s *Service) StaleAutoUpdates(ctx context.Context, protectedIDs []string) (
 func (s *Service) InterruptedBackups(ctx context.Context, protectedIDs []string) ([]Candidate, error) {
 	var rows []Candidate
 	if err := s.activities(ctx).
-		Where("status IN ?", []activity.Status{activity.StatusQueued, activity.StatusRunning}).
+		Where("status IN ?", []types.ActivityStatus{types.ActivityStatusQueued, types.ActivityStatusRunning}).
 		Where("id NOT IN ?", append(protectedIDs, "")).
 		Find(&rows).Error; err != nil {
 		return nil, err

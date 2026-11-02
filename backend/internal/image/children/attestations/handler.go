@@ -10,34 +10,37 @@ import (
 
 	"github.com/containerd/platforms"
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/image"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
-const statusClientClosedRequest = 499
+type (
+	// Handler serves image attestation endpoints.
+	Handler struct {
+		service *Service
+	}
 
-// Handler serves image attestation endpoints.
-type Handler struct {
-	service *Service
-}
+	GetImageAttestationsInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ImageName     string `path:"name" doc:"Image ID or image reference"`
+		Platform      string `query:"platform" doc:"OCI platform selector, for example linux/amd64"`
+		PredicateType string `query:"predicateType" doc:"Exact in-toto predicate type URI to include"`
+		WithStatement bool   `query:"statement" default:"false" doc:"Include verbatim statement JSON bodies"`
+	}
+)
 
-type GetImageAttestationsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ImageName     string `path:"name" doc:"Image ID or image reference"`
-	Platform      string `query:"platform" doc:"OCI platform selector, for example linux/amd64"`
-	PredicateType string `query:"predicateType" doc:"Exact in-toto predicate type URI to include"`
-	WithStatement bool   `query:"statement" default:"false" doc:"Include verbatim statement JSON bodies"`
-}
+const (
+	statusClientClosedRequest = 499
+)
 
 func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
 
 // GetImageAttestations returns in-toto attestation statements attached to an image.
-func (h *Handler) GetImageAttestations(ctx context.Context, input *GetImageAttestationsInput) (*handlerutil.Out[image.AttestationList], error) {
+func (h *Handler) GetImageAttestations(ctx context.Context, input *GetImageAttestationsInput) (*handlerutil.Out[types.ImageAttestationList], error) {
 	imageName := strings.TrimSpace(input.ImageName)
 	if imageName == "" {
 		return nil, huma.Error400BadRequest("image name is required")
@@ -65,8 +68,8 @@ func (h *Handler) GetImageAttestations(ctx context.Context, input *GetImageAttes
 		return nil, huma.Error500InternalServerError("failed to get image attestations")
 	}
 
-	return &handlerutil.Out[image.AttestationList]{
-		Body: base.ApiResponse[image.AttestationList]{
+	return &handlerutil.Out[types.ImageAttestationList]{
+		Body: types.ApiResponse[types.ImageAttestationList]{
 			Success: true,
 			Data:    *out,
 		},

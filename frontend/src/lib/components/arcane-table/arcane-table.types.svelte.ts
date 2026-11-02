@@ -2,6 +2,8 @@ import type { ColumnFiltersState, ColumnVisibilityState, RowData } from '@tansta
 import type { Snippet } from 'svelte';
 import type { Component } from 'svelte';
 
+import type { IconType } from '#lib/icons/index.js';
+
 import type { ArcaneColumn, ArcaneFilterFn, ArcaneRow } from './table-features';
 
 export interface FilterOption {
@@ -21,9 +23,11 @@ export type MobileFieldVisibility = Record<string, boolean>;
 export type SortDirection = 'asc' | 'desc';
 export type SortPreference = [string, SortDirection];
 export type SortState = { column: string; direction: SortDirection };
+export type TableViewMode = 'list' | 'grid';
 
 export type ColumnWidth = 'auto' | 'min' | 'max' | number;
 export type ColumnAlign = 'left' | 'center' | 'right';
+export type CardSlot = 'title' | 'context' | 'badge' | 'meter' | 'field' | 'footer' | 'footerEnd' | 'hidden';
 
 export type ColumnSpec<T extends RowData> = {
 	accessorKey?: keyof T & string;
@@ -32,13 +36,8 @@ export type ColumnSpec<T extends RowData> = {
 	title: string;
 	hidden?: boolean;
 	sortable?: boolean;
-	/**
-	 * Sort the current page locally via the column accessor instead of asking the
-	 * server. For values the server cannot sort (e.g. live WebSocket stats).
-	 */
 	clientSort?: boolean;
-	cell?: Snippet<[{ row: ArcaneRow<T>; item: T; value: unknown }]>;
-	/** Render a shared value-only Svelte component without a per-table wrapper snippet. */
+	cell?: Snippet<[{ row: ArcaneRow<T>; item: T; value: unknown; view: TableViewMode }]>;
 	cellComponent?: Component<{ value: unknown }>;
 	header?: Snippet<[{ column: ArcaneColumn<T>; title: string; class?: string }]>;
 	class?: string;
@@ -47,22 +46,19 @@ export type ColumnSpec<T extends RowData> = {
 	width?: ColumnWidth;
 	align?: ColumnAlign;
 	truncate?: boolean;
+	card?: CardSlot;
+	cardIcon?: IconType;
+	cardLabel?: boolean;
 };
 
-// Compact persisted prefs to reduce JSON size
 export type CompactTablePrefs = {
-	// v: list of hidden column ids (only the exceptions)
 	v?: string[];
-	// f: filters as [id, value] tuples
 	f?: [string, unknown][];
-	// g: global filter string
 	g?: string;
-	// s: sort as [column, direction]
 	s?: SortPreference;
-	// l: page size (limit)
 	l?: number;
-	// m: list of hidden mobile field ids
 	m?: string[];
+	d?: TableViewMode;
 	c?: Record<string, unknown>;
 };
 
@@ -152,14 +148,13 @@ export type BulkAction = {
 		| 'prune'
 		| 'archive'
 		| 'update';
-	onClick: (ids: string[]) => void;
+	onclick: (ids: string[]) => void;
 	disabled?: boolean;
 	disabledReason?: string;
 	loading?: boolean;
 	icon?: Component;
 };
 
-// Grouping types
 export type GroupedData<T> = {
 	groupName: string;
 	items: T[];

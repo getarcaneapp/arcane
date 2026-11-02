@@ -6,16 +6,18 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-type Module struct {
-	service *NotificationService
-	config  *config.Config
-}
+type (
+	Module struct {
+		service *NotificationService
+		config  *config.Config
+	}
+)
 
 func New(service *NotificationService, cfg *config.Config) *Module {
 	return &Module{service: service, config: cfg}
@@ -46,7 +48,7 @@ func RegisterNotifications(api huma.API, notificationSvc *NotificationService, c
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-all-notification-settings",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/notifications/settings",
+		Path:        "/notifications/settings",
 		Summary:     "Get all notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -55,7 +57,7 @@ func RegisterNotifications(api huma.API, notificationSvc *NotificationService, c
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-notification-settings",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/notifications/settings/{provider}",
+		Path:        "/notifications/settings/{provider}",
 		Summary:     "Get notification settings by provider",
 		Tags:        []string{"Notifications"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -64,7 +66,7 @@ func RegisterNotifications(api huma.API, notificationSvc *NotificationService, c
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-or-update-notification-settings",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/notifications/settings",
+		Path:        "/notifications/settings",
 		Summary:     "Create or update notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -73,20 +75,22 @@ func RegisterNotifications(api huma.API, notificationSvc *NotificationService, c
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-notification-settings",
 		Method:      http.MethodDelete,
-		Path:        "/environments/{id}/notifications/settings/{provider}",
+		Path:        "/notifications/settings/{provider}",
 		Summary:     "Delete notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermNotificationsManage, h.DeleteNotificationSettings)
 
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "test-notification",
+	middleware.RegisterWithActionPermissions(api, huma.Operation{
+		OperationID: "notification-settings-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/notifications/test/{provider}",
+		Path:        "/notifications/settings/{provider}",
 		Summary:     "Test notification",
 		Tags:        []string{"Notifications"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermNotificationsManage, h.TestNotification)
+	}, "action", map[string]string{
+		"test": authz.PermNotificationsManage,
+	}, h.TestNotification)
 
 	// Environment tokens are authenticated by ApiKeyAuth and revalidated by the
 	// handler. RBAC middleware cannot scope this route because it has no environment ID.

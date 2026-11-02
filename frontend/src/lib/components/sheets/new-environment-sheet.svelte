@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 
@@ -7,17 +7,18 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
-	import UrlInput from '#lib/components/form/url-input.svelte';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
-	import { RemoteEnvironmentIcon, EdgeConnectionIcon, DownloadIcon } from '#lib/icons/index.js';
+	import { AgentConnectionIcon, DownloadIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { environmentDeploymentSnippetsQuery } from '#lib/query/environments.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { isSessionCancelledError, withSessionSignal } from '#lib/services/api-service.js';
+	import { isSessionCancelledError } from '#lib/services/api-service.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
-	import type { CreateEnvironmentDTO, DeploymentSnippetFile } from '#lib/types/environment.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import type { EnvironmentCreate, DeploymentSnippetFile } from '#lib/types/environment.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { downloadTextFile } from '#lib/utils/formatting.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -30,141 +31,55 @@
 	let { open = $bindable(false), onEnvironmentCreated }: NewEnvironmentSheetProps = $props();
 	const queryClient = useQueryClient();
 
-	type ConnectionMode = 'direct' | 'edge';
-	let connectionMode = $state<ConnectionMode>('direct');
+	let createdEnvironment = $state<{ id: string; apiKey: string; useMTLS: boolean } | null>(null);
 
-	let createdEnvironment = $state<{
-		id: string;
-		apiKey: string;
-		name: string;
-		apiUrl: string;
-		isEdge: boolean;
-		mtlsEnabled: boolean;
-		mtlsFiles?: DeploymentSnippetFile[];
-		dockerRun?: string;
-		dockerCompose?: string;
-	} | null>(null);
+	const snippetsQuery = createQuery(() => ({
+		...environmentDeploymentSnippetsQuery(createdEnvironment?.id ?? ''),
+		enabled: createdEnvironment !== null
+	}));
+	const mtlsAssetsUnavailable = $derived(!!createdEnvironment?.useMTLS && !!snippetsQuery.data && !snippetsQuery.data.mtls);
+	const generatedMTLS = $derived(createdEnvironment?.useMTLS ? snippetsQuery.data?.mtls : undefined);
+	const createdSnippets = $derived(generatedMTLS ?? snippetsQuery.data);
 
-	let isLoadingSnippets = $state(false);
 	const createEnvironmentMutation = createMutation(() => ({
-		mutationFn: (variables: { dto: CreateEnvironmentDTO; apiUrl: string; isEdge: boolean; useMTLS: boolean }) =>
-			environmentManagementService.create(variables.dto),
+		mutationFn: (variables: { dto: EnvironmentCreate; useMTLS: boolean }) => environmentManagementService.create(variables.dto),
 		onSuccess: async (created, variables) => {
+			await environmentStore.initialize([...environmentStore.available, created]);
 			await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
 
 			if (created.apiKey) {
 				createdEnvironment = {
 					id: created.id,
 					apiKey: created.apiKey,
-					name: created.name,
-					apiUrl: variables.apiUrl,
-					isEdge: variables.isEdge,
-					mtlsEnabled: false
+					useMTLS: variables.useMTLS
 				};
-
-				isLoadingSnippets = true;
-				try {
-					const operationResult1 = await tryCatch(
-						(async () => {
-							const snippets = await queryClient.query({
-								queryKey: queryKeys.environments.deploymentSnippets(created.id),
-								queryFn: () => environmentManagementService.getDeploymentSnippets(created.id),
-								staleTime: 0
-							});
-							const useGeneratedMTLS = variables.useMTLS && !!snippets.mtls;
-							if (variables.useMTLS && !snippets.mtls) {
-								toast.warning(m.environments_new_agent_mtls_assets_unavailable());
-							}
-
-							createdEnvironment.dockerRun = useGeneratedMTLS ? snippets.mtls!.dockerRun : snippets.dockerRun;
-							createdEnvironment.dockerCompose = useGeneratedMTLS ? snippets.mtls!.dockerCompose : snippets.dockerCompose;
-							createdEnvironment.mtlsEnabled = useGeneratedMTLS;
-							createdEnvironment.mtlsFiles = useGeneratedMTLS ? snippets.mtls!.files : [];
-						})()
-					);
-					if (operationResult1.error !== null) {
-						const err = operationResult1.error;
-
-						console.error('Failed to fetch deployment snippets:', err);
-					}
-				} finally {
-					isLoadingSnippets = false;
-				}
-
 				toast.success(m.environments_created_success());
 			} else {
 				toast.error(m.environments_api_key_error());
 			}
 		},
 		onError: (error) => {
-			toast.error(m.environments_create_failed());
-			console.error(error);
+			toast.error(m.environments_create_failed(), { description: extractApiErrorMessage(error) });
 		}
 	}));
 	const isSubmittingNewAgent = $derived(createEnvironmentMutation.isPending);
 
-	let newAgentUrlProtocol = $state<'https' | 'http'>('http');
-	let edgeMTLSEnabled = $state(false);
+	let agentMTLSEnabled = $state(false);
 
-	// Direct mode form schema requires URL
-	const directFormSchema = z.object({
-		name: z.string().min(1, m.environments_name_required()).max(25, m.environments_name_too_long()),
-		apiUrl: z.string().min(1, m.environments_server_url_required())
-	});
-
-	// Edge mode form schema only requires name
-	const edgeFormSchema = z.object({
+	const agentFormSchema = z.object({
 		name: z.string().min(1, m.environments_name_required()).max(25, m.environments_name_too_long())
 	});
 
-	const directForm = createForm<typeof directFormSchema>(directFormSchema, {
-		name: '',
-		apiUrl: ''
-	});
-	let directInputs = $derived(directForm.inputs);
-
-	const edgeForm = createForm<typeof edgeFormSchema>(edgeFormSchema, {
+	const agentForm = createForm<typeof agentFormSchema>(agentFormSchema, {
 		name: ''
 	});
-	let edgeInputs = $derived(edgeForm.inputs);
+	let agentInputs = $derived(agentForm.inputs);
 
-	// Reset on open/close
-
-	function handleDirectSubmit() {
-		const data = directForm.validate();
+	function handleAgentSubmit() {
+		const data = agentForm.validate();
 		if (!data) return;
 
-		const fullUrl = `${newAgentUrlProtocol}://${data.apiUrl}`;
-
-		const dto: CreateEnvironmentDTO = {
-			name: data.name,
-			apiUrl: fullUrl,
-			useApiKey: true,
-			isEdge: false
-		};
-
-		createEnvironmentMutation.mutate({ dto, apiUrl: fullUrl, isEdge: false, useMTLS: false });
-	}
-
-	function handleEdgeSubmit() {
-		const data = edgeForm.validate();
-		if (!data) return;
-
-		const edgeApiHost = data.name
-			.trim()
-			.toLowerCase()
-			.replace(/[^a-z0-9]+/g, '-')
-			.replace(/(^-|-$)+/g, '');
-		const edgeApiUrl = `edge://${edgeApiHost}`;
-
-		const dto: CreateEnvironmentDTO = {
-			name: data.name,
-			apiUrl: edgeApiUrl,
-			useApiKey: true,
-			isEdge: true
-		};
-
-		createEnvironmentMutation.mutate({ dto, apiUrl: '', isEdge: true, useMTLS: edgeMTLSEnabled });
+		createEnvironmentMutation.mutate({ dto: { name: data.name }, useMTLS: agentMTLSEnabled });
 	}
 
 	function handleDone() {
@@ -173,7 +88,7 @@
 	}
 
 	function findCreatedMTLSFile(fileName: string): DeploymentSnippetFile | undefined {
-		return createdEnvironment?.mtlsFiles?.find((file) => file.name === fileName);
+		return generatedMTLS?.files?.find((file) => file.name === fileName);
 	}
 
 	async function downloadCreatedMTLSFile(fileName: string) {
@@ -191,11 +106,7 @@
 		const downloadUrl = file.downloadUrl;
 		const operationResult2 = await tryCatch(
 			(async () => {
-				const response = await fetch(downloadUrl, { credentials: 'include', signal: withSessionSignal() });
-				if (!response.ok) {
-					throw new Error(`HTTP ${response.status}`);
-				}
-				const blob = await response.blob();
+				const blob = await environmentManagementService.downloadDeploymentFile(downloadUrl);
 				const url = URL.createObjectURL(blob);
 				const a = document.createElement('a');
 				a.href = url;
@@ -226,12 +137,10 @@
 		<div class="space-y-6 px-6 py-6">
 			{#if createdEnvironment}
 				<div class="space-y-4">
-					{#if createdEnvironment.isEdge}
-						<div class="flex items-center gap-2 rounded-lg bg-primary/10 p-3 text-sm text-primary">
-							<EdgeConnectionIcon class="size-5" />
-							<span>{m.env_edge_agent_desc()}</span>
-						</div>
-					{/if}
+					<div class="flex items-center gap-2 rounded-lg bg-primary/10 p-3 text-sm text-primary">
+						<AgentConnectionIcon class="size-5" />
+						<span>{m.env_agent_desc()}</span>
+					</div>
 
 					<div class="space-y-2">
 						<div class="text-sm font-medium">{m.environments_api_key()}</div>
@@ -246,7 +155,7 @@
 						<p class="text-xs text-muted-foreground">{m.environments_api_key_warning()}</p>
 					</div>
 
-					{#if createdEnvironment.mtlsEnabled}
+					{#if generatedMTLS}
 						<div class="space-y-3 rounded-lg border border-info/25 bg-info/8 p-4">
 							<div class="space-y-1">
 								<p class="text-sm font-medium">{m.environments_new_agent_mtls_enabled()}</p>
@@ -277,95 +186,52 @@
 						</div>
 					{/if}
 
-					{#if isLoadingSnippets}
+					{#if mtlsAssetsUnavailable}
+						<p class="text-sm text-warning">{m.environments_new_agent_mtls_assets_unavailable()}</p>
+					{/if}
+
+					{#if snippetsQuery.isPending}
 						<div class="flex items-center justify-center py-8">
 							<Spinner class="size-6" />
 						</div>
-					{:else if createdEnvironment.dockerRun && createdEnvironment.dockerCompose}
+					{:else if snippetsQuery.isError}
+						<p class="text-sm text-destructive">{extractApiErrorMessage(snippetsQuery.error)}</p>
+					{:else if createdSnippets?.dockerRun && createdSnippets.dockerCompose}
 						<AgentCommandBlock
 							dockerRunLabel={m.docker_run_command()}
-							dockerRun={createdEnvironment.dockerRun}
+							dockerRun={createdSnippets.dockerRun}
 							dockerComposeLabel={m.common_docker_compose()}
-							dockerCompose={createdEnvironment.dockerCompose}
+							dockerCompose={createdSnippets.dockerCompose}
 						/>
 					{/if}
 
 					<ArcaneButton action="base" class="w-full" onclick={handleDone} customLabel={m.common_done()} />
 				</div>
 			{:else}
-				<Tabs.Root bind:value={connectionMode} class="w-full">
-					<Tabs.List class="grid w-full grid-cols-2">
-						<Tabs.Trigger value="direct" class="flex items-center">
-							<RemoteEnvironmentIcon class="size-4" />
-							Direct
-						</Tabs.Trigger>
-						<Tabs.Trigger value="edge" class="flex items-center">
-							<EdgeConnectionIcon class="size-4" />
-							Edge
-						</Tabs.Trigger>
-					</Tabs.List>
+				<p class="text-sm text-muted-foreground">
+					{m.environments_agent_desc()}
+				</p>
+				<form onsubmit={preventDefault(handleAgentSubmit)} class="space-y-4">
+					<FormInput label={m.common_name()} placeholder={m.env_remote_docker_host()} bind:input={agentInputs.name} />
 
-					<Tabs.Content value="direct" class="mt-4">
-						<p class="mb-4 text-sm text-muted-foreground">
-							{m.environments_direct_desc()}
-						</p>
-						<form onsubmit={preventDefault(handleDirectSubmit)} class="space-y-4">
-							<FormInput
-								label={m.common_name()}
-								placeholder={m.environments_production_docker()}
-								bind:input={directInputs.name}
-							/>
+					<LabeledSwitch
+						id="new-agent-mtls"
+						label={m.environments_agent_mtls_enable()}
+						description={m.environments_agent_mtls_desc()}
+						checked={agentMTLSEnabled}
+						onCheckedChange={(checked) => (agentMTLSEnabled = checked)}
+						disabled={isSubmittingNewAgent}
+					/>
 
-							<UrlInput
-								id="new-agent-api-url"
-								label={m.environments_agent_address()}
-								placeholder={m.environments_agent_address_placeholder()}
-								description={m.environments_agent_address_description()}
-								bind:value={directInputs.apiUrl.value}
-								bind:protocol={newAgentUrlProtocol}
-								disabled={isSubmittingNewAgent}
-								required
-								error={directInputs.apiUrl.error ?? undefined}
-							/>
-
-							<ArcaneButton
-								action="confirm"
-								type="submit"
-								class="w-full"
-								disabled={isSubmittingNewAgent}
-								loading={isSubmittingNewAgent}
-								customLabel={m.environments_generate_config()}
-							/>
-						</form>
-					</Tabs.Content>
-
-					<Tabs.Content value="edge" class="mt-4">
-						<p class="mb-4 text-sm text-muted-foreground">
-							{m.environments_edge_desc()}
-						</p>
-						<form onsubmit={preventDefault(handleEdgeSubmit)} class="space-y-4">
-							<FormInput label={m.common_name()} placeholder={m.env_remote_docker_host()} bind:input={edgeInputs.name} />
-
-							<LabeledSwitch
-								id="new-edge-agent-mtls"
-								label={m.environments_edge_mtls_enable()}
-								description={m.environments_edge_mtls_desc()}
-								checked={edgeMTLSEnabled}
-								onCheckedChange={(checked) => (edgeMTLSEnabled = checked)}
-								disabled={isSubmittingNewAgent}
-							/>
-
-							<ArcaneButton
-								action="confirm"
-								type="submit"
-								class="w-full"
-								disabled={isSubmittingNewAgent}
-								loading={isSubmittingNewAgent}
-								customLabel={m.environments_generate_config()}
-							/>
-						</form>
-					</Tabs.Content>
-				</Tabs.Root>
+					<ArcaneButton
+						action="confirm"
+						type="submit"
+						class="w-full"
+						disabled={isSubmittingNewAgent}
+						loading={isSubmittingNewAgent}
+						customLabel={m.environments_generate_config()}
+					/>
+				</form>
 			{/if}
 		</div>
 	{/snippet}

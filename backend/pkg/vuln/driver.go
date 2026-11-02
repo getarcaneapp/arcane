@@ -1,0 +1,664 @@
+package vuln
+
+import (
+	"bytes"
+	"cmp"
+	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"math"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	cerrdefs "github.com/containerd/errdefs"
+	containertypes "github.com/moby/moby/api/types/container"
+	mounttypes "github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/client"
+
+	"kit.getarcane.app"
+	"kit.getarcane.app/docker"
+
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	RuntimeOptions struct {
+		NetworkMode  string
+		ContainerEnv []string
+		Mounts       []mounttypes.Mount
+	}
+
+	ResourceLimits struct {
+		CPUSet    string
+		Resources containertypes.Resources
+		Apply     bool
+	}
+
+	HostConfigOptions struct {
+		CacheVolume  string
+		Runtime      RuntimeOptions
+		SecurityOpts []string
+		Limits       ResourceLimits
+		Privileged   bool
+	}
+)
+
+const (
+	// DefaultNetworkMode is the network the scan container joins when nothing
+	// more specific is configured or detected.
+	DefaultNetworkMode = "bridge"
+	// CacheMountTarget is where the shared Trivy cache volume is mounted inside
+	// the scan container.
+	CacheMountTarget = "/root/.cache"
+	// RegistryConfigDir is where the generated registry auth config lands inside
+	// the scan container.
+	RegistryConfigDir = "/tmp/arcane-registry-auth"
+	// NanoCPUsPerCore and BytesPerMB convert configured limits to Docker units.
+	NanoCPUsPerCore = int64(1_000_000_000)
+	BytesPerMB      = int64(1024 * 1024)
+	// ContainerFilesDir is where generated files are copied inside the scan container.
+	ContainerFilesDir  = "/tmp"
+	RegistryConfigFile = "arcane-registry-auth/config.json"
+	TrivyConfigFile    = "trivy-config.yaml"
+	TrivyIgnoreFile    = "trivy-ignore"
+	outputPathPrefix   = "/tmp/arcane-trivy-result-"
+	errorExcerptSize   = int64(32 * 1024)
+)
+
+func ResolveUnixSocketSource(
+	ctx context.Context,
+	socketPath string,
+	discoverHostPath func(context.Context, string) (string, error),
+	isRunningInDocker func() bool,
+) (string, error) {
+	socketPath = strings.TrimSpace(socketPath)
+	if socketPath == "" {
+		return "", errors.New("unix docker host is missing a socket path")
+	}
+
+	if discoverHostPath != nil {
+		hostPath, err := discoverHostPath(ctx, socketPath)
+		if err == nil && strings.TrimSpace(hostPath) != "" {
+			return strings.TrimSpace(hostPath), nil
+		}
+		if err != nil && (isRunningInDocker == nil || isRunningInDocker()) {
+			return "", fmt.Errorf("failed to resolve socket path %q: %w", socketPath, err)
+		}
+	}
+
+	if isRunningInDocker != nil && isRunningInDocker() {
+		return "", fmt.Errorf("failed to resolve socket path %q to a daemon-visible host path", socketPath)
+	}
+
+	return socketPath, nil
+}
+
+func NewOutputPath() string {
+	return outputPathPrefix + strconv.FormatInt(time.Now().UnixNano(), 10) + ".json"
+}
+
+func BuildHostConfig(opts HostConfigOptions) *containertypes.HostConfig {
+	mounts := append([]mounttypes.Mount{}, opts.Runtime.Mounts...)
+	if strings.TrimSpace(opts.CacheVolume) != "" {
+		mounts = append(mounts, mounttypes.Mount{
+			Type:   mounttypes.TypeVolume,
+			Source: opts.CacheVolume,
+			Target: CacheMountTarget,
+		})
+	}
+
+	resources := opts.Limits.Resources
+	if opts.Limits.CPUSet != "" {
+		resources.NanoCPUs = 0
+		resources.CpusetCpus = opts.Limits.CPUSet
+	}
+
+	return &containertypes.HostConfig{
+		NetworkMode: containertypes.NetworkMode(cmp.Or(strings.TrimSpace(opts.Runtime.NetworkMode), DefaultNetworkMode)),
+		// Keep single-scan containers until explicit cleanup so we can reliably
+		// wait for completion and collect logs across Docker variants.
+		AutoRemove:  false,
+		Mounts:      mounts,
+		SecurityOpt: slices.Clone(opts.SecurityOpts),
+		Privileged:  opts.Privileged,
+		Resources:   kit.Ternary(opts.Limits.Apply, resources, containertypes.Resources{}),
+	}
+}
+
+func CreateLogTempFile(prefix string) (*os.File, error) {
+	// System temp scratch (with a user cache dir fallback below): no acfs root
+	// exists for either location.
+	// Try the default system temp dir first.
+	file, primaryErr := os.CreateTemp("", prefix)
+	if primaryErr == nil {
+		return file, nil
+	}
+	// /tmp is not writable (e.g. hardened container). Fall back to a
+	// per-user cache directory so Trivy scans can still run.
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create trivy temp file (primary: %s) and user cache dir unavailable: %w", primaryErr.Error(), err)
+	}
+	fallbackDir := filepath.Join(cacheDir, "arcane", "trivy-tmp")
+	if mkdirAllErr := os.MkdirAll(fallbackDir, 0o700); mkdirAllErr != nil {
+		return nil, fmt.Errorf("failed to create trivy fallback temp dir %s (primary: %s): %w", fallbackDir, primaryErr.Error(), mkdirAllErr)
+	}
+	fallbackFile, err := os.CreateTemp(fallbackDir, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create trivy temp file in fallback dir %s (primary: %s): %w", fallbackDir, primaryErr.Error(), err)
+	}
+	return fallbackFile, nil
+}
+
+func CleanupLogTempFiles(ctx context.Context, files ...*os.File) {
+	for _, file := range files {
+		if file == nil {
+			continue
+		}
+
+		localPath := file.Name()
+		if err := file.Close(); err != nil {
+			slog.WarnContext(ctx, "failed to close trivy temp file", "path", localPath, "error", err)
+		}
+
+		if localPath == "" {
+			continue
+		}
+
+		// System temp scratch: no acfs root exists for it.
+		if err := os.Remove(localPath); err != nil {
+			slog.WarnContext(ctx, "failed to remove trivy temp file", "path", localPath, "error", err)
+		}
+	}
+}
+
+func MountSummaries(hostConfig *containertypes.HostConfig) []string {
+	if hostConfig == nil || len(hostConfig.Mounts) == 0 {
+		return nil
+	}
+
+	summaries := make([]string, 0, len(hostConfig.Mounts))
+	for _, mount := range hostConfig.Mounts {
+		source := cmp.Or(mount.Source, string(mount.Type))
+		summaries = append(summaries, fmt.Sprintf("%s:%s", source, mount.Target))
+	}
+
+	return summaries
+}
+
+func LogContainerStartupRequest(ctx context.Context, scope string, config *containertypes.Config, hostConfig *containertypes.HostConfig) {
+	if config == nil {
+		return
+	}
+
+	resources := containertypes.Resources{}
+	autoRemove := false
+	var mounts []string
+	networkMode := ""
+	var securityOpts []string
+	privileged := false
+	if hostConfig != nil {
+		resources = hostConfig.Resources
+		autoRemove = hostConfig.AutoRemove
+		mounts = MountSummaries(hostConfig)
+		networkMode = string(hostConfig.NetworkMode)
+		securityOpts = append([]string(nil), hostConfig.SecurityOpt...)
+		privileged = hostConfig.Privileged
+	}
+
+	slog.DebugContext(ctx,
+		"preparing trivy container startup",
+		"scope", scope,
+		"image", config.Image,
+		"cmd", config.Cmd,
+		"entrypoint", config.Entrypoint,
+		"networkMode", networkMode,
+		"securityOpts", securityOpts,
+		"privileged", privileged,
+		"autoRemove", autoRemove,
+		"mounts", mounts,
+		"nanoCpUs", resources.NanoCPUs,
+		"cpuset", resources.CpusetCpus,
+		"memory", resources.Memory,
+		"memorySwap", resources.MemorySwap,
+	)
+}
+
+func TruncateLogOutput(content string, maxBytes int64) string {
+	content = strings.TrimSpace(content)
+	if content == "" || maxBytes <= 0 {
+		return content
+	}
+
+	raw := []byte(content)
+	if int64(len(raw)) <= maxBytes {
+		return content
+	}
+
+	return strings.TrimSpace(string(raw[:maxBytes])) + " ...<truncated>"
+}
+
+func ReadStartupLogs(ctx context.Context, dockerClient *client.Client, containerID string) (string, string) {
+	if dockerClient == nil || containerID == "" {
+		return "", ""
+	}
+
+	logsCtx, logsCancel := context.WithTimeout(ctx, timeouts.GetDuration(0, timeouts.DefaultDockerAPI))
+	defer logsCancel()
+
+	logs, err := dockerClient.ContainerLogs(logsCtx, containerID, client.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Tail:       "200",
+	})
+	if err != nil {
+		slog.DebugContext(ctx, "failed to read trivy startup logs", "containerId", containerID, "error", err)
+		return "", ""
+	}
+	defer func() {
+		if closeErr := logs.Close(); closeErr != nil {
+			slog.WarnContext(ctx, "failed to close trivy startup logs stream", "containerId", containerID, "error", closeErr)
+		}
+	}()
+
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	if stdCopyErr := docker.WaitStdCopy(docker.StartStdCopy(logs, &stdoutBuf, &stderrBuf)); stdCopyErr != nil {
+		slog.DebugContext(ctx, "failed to decode trivy startup logs", "containerId", containerID, "error", stdCopyErr)
+	}
+
+	stdoutLog := TruncateLogOutput(stdoutBuf.String(), errorExcerptSize)
+	stderrLog := TruncateLogOutput(stderrBuf.String(), errorExcerptSize)
+	return stdoutLog, stderrLog
+}
+
+func RemoveContainer(ctx context.Context, dockerClient *client.Client, containerID, purpose string) {
+	if dockerClient == nil || containerID == "" {
+		return
+	}
+
+	cleanupCtx := context.WithoutCancel(ctx)
+	cleanupCtx, cleanupCancel := context.WithTimeout(cleanupCtx, timeouts.GetDuration(0, timeouts.DefaultDockerAPI))
+	defer cleanupCancel()
+
+	if _, err := dockerClient.ContainerRemove(cleanupCtx, containerID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+		slog.WarnContext(cleanupCtx, "failed to remove container", "purpose", purpose, "containerId", containerID, "error", err)
+	}
+}
+
+func ParseCPULimit(raw string, fallback float64) float64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return fallback
+	}
+
+	limit, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return fallback
+	}
+
+	return kit.Ternary(limit < 0, 0, limit)
+}
+
+func ParseMemoryLimitMB(raw string, fallback int64) int64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return fallback
+	}
+
+	limit, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return fallback
+	}
+
+	return kit.Ternary(limit < 0, 0, limit)
+}
+
+func ContainerWaitTimeout(trivyTimeoutArg string) time.Duration {
+	trivyTimeoutArg = strings.TrimSpace(trivyTimeoutArg)
+	if trivyTimeoutArg == "" {
+		return timeouts.DefaultTrivyScan + timeouts.DefaultDockerAPI
+	}
+
+	timeout, err := time.ParseDuration(trivyTimeoutArg)
+	if err != nil || timeout <= 0 {
+		return timeouts.DefaultTrivyScan + timeouts.DefaultDockerAPI
+	}
+	return timeout + timeouts.DefaultDockerAPI
+}
+
+func IsSynologyDockerHost(operatingSystem string) bool {
+	// Docker info may return a multi-line OS string on some Synology models.
+	// e.g. DS925+ (Kernel 5.x) returns "Synology NAS\n (containerized)";
+	// older DSM builds (e.g. DS1019+, Kernel 4.4) report just "DiskStation".
+	for line := range strings.SplitSeq(operatingSystem, "\n") {
+		line = strings.ToLower(strings.TrimSpace(line))
+		if strings.Contains(line, "synology") || strings.Contains(line, "diskstation") {
+			return true
+		}
+	}
+	return false
+}
+
+func BuildCPUSet(nanoCPUs int64, hostCPUs int) string {
+	if nanoCPUs <= 0 {
+		return ""
+	}
+
+	if hostCPUs <= 0 {
+		hostCPUs = 1
+	}
+
+	requestedCPUs := min(max(int(math.Floor(float64(nanoCPUs)/float64(NanoCPUsPerCore))), 1), hostCPUs)
+
+	if requestedCPUs == 1 {
+		return "0"
+	}
+
+	return fmt.Sprintf("0-%d", requestedCPUs-1)
+}
+
+func TempFileSize(file *os.File) int64 {
+	if file == nil {
+		return 0
+	}
+
+	stat, err := file.Stat()
+	if err != nil {
+		return 0
+	}
+
+	return stat.Size()
+}
+
+func ReadTempFileExcerpt(file *os.File) string {
+	if file == nil {
+		return ""
+	}
+
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return ""
+	}
+
+	content, err := io.ReadAll(io.LimitReader(file, errorExcerptSize))
+	if err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(string(content))
+}
+
+func ReadOutputFromContainerFile(ctx context.Context, dockerClient *client.Client, containerID, outputPath string) ([]byte, error) {
+	if dockerClient == nil {
+		return nil, errors.New("docker client is nil")
+	}
+	if containerID == "" {
+		return nil, errors.New("container id is empty")
+	}
+	if strings.TrimSpace(outputPath) == "" {
+		return nil, errors.New("trivy output path is empty")
+	}
+
+	copyCtx, copyCancel := context.WithTimeout(ctx, timeouts.GetDuration(0, timeouts.DefaultDockerAPI))
+	defer copyCancel()
+
+	archiveReader, _, err := docker.CopyFromContainer(copyCtx, dockerClient, containerID, outputPath)
+	if err != nil {
+		return nil, fmt.Errorf("copy trivy output file: %w", err)
+	}
+	defer func() {
+		if closeErr := archiveReader.Close(); closeErr != nil && !docker.IsExpectedStreamEndError(closeErr) {
+			slog.WarnContext(ctx,
+				"failed to close trivy output archive stream",
+				"containerId", containerID,
+				"outputPath", outputPath,
+				"error", closeErr,
+			)
+		}
+	}()
+
+	rawOutput, err := io.ReadAll(archiveReader)
+	if err != nil {
+		return nil, fmt.Errorf("extract trivy output file: %w", err)
+	}
+
+	if len(bytes.TrimSpace(rawOutput)) == 0 {
+		return nil, io.EOF
+	}
+
+	return rawOutput, nil
+}
+
+func CleanupOutputFileInContainer(ctx context.Context, dockerClient *client.Client, containerID, outputPath string) {
+	if dockerClient == nil || containerID == "" || strings.TrimSpace(outputPath) == "" {
+		return
+	}
+
+	execCtx, execCancel := context.WithTimeout(ctx, timeouts.GetDuration(0, timeouts.DefaultDockerAPI))
+	defer execCancel()
+
+	execResp, err := dockerClient.ExecCreate(execCtx, containerID, client.ExecCreateOptions{
+		Cmd: []string{"rm", "-f", outputPath},
+	})
+	if err != nil {
+		slog.DebugContext(ctx,
+			"failed to create cleanup exec for trivy output file",
+			"containerId", containerID,
+			"outputPath", outputPath,
+			"error", err,
+		)
+		return
+	}
+
+	if _, execStartErr := dockerClient.ExecStart(execCtx, execResp.ID, client.ExecStartOptions{}); execStartErr != nil {
+		slog.DebugContext(ctx,
+			"failed to start cleanup exec for trivy output file",
+			"containerId", containerID,
+			"outputPath", outputPath,
+			"error", execStartErr,
+		)
+		return
+	}
+}
+
+func DecodeReportFromFile(file *os.File) (*types.TrivyReport, error) {
+	if file == nil {
+		return nil, errors.New("trivy output file is nil")
+	}
+
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("failed to seek trivy output file: %w", err)
+	}
+
+	rawOutput, err := io.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read trivy output file: %w", err)
+	}
+
+	return DecodeReportFromBytes(rawOutput)
+}
+
+func DecodeReportFromBytes(rawOutput []byte) (*types.TrivyReport, error) {
+	trimmedOutput := bytes.TrimSpace(rawOutput)
+	if len(trimmedOutput) == 0 {
+		return nil, io.EOF
+	}
+
+	report, strictErr := decodeSingleReport(trimmedOutput)
+	if strictErr == nil {
+		return report, nil
+	}
+
+	// Trivy output can occasionally include non-JSON log lines or additional JSON
+	// objects around the report depending on Docker variant / stream behavior.
+	// Extract top-level JSON objects and return the first valid Trivy report.
+	jsonCandidates := extractTopLevelJSONObjectCandidates(trimmedOutput)
+	if len(jsonCandidates) == 0 {
+		return nil, strictErr
+	}
+
+	lastErr := strictErr
+	for _, candidate := range jsonCandidates {
+		localReport, err := decodeSingleReport(candidate)
+		if err == nil {
+			return localReport, nil
+		}
+		lastErr = err
+	}
+
+	return nil, lastErr
+}
+
+func decodeSingleReport(rawOutput []byte) (*types.TrivyReport, error) {
+	decoder := jsontext.NewDecoder(bytes.NewReader(rawOutput))
+
+	var report types.TrivyReport
+	if err := json.UnmarshalDecode(decoder, &report); err != nil {
+		return nil, err
+	}
+
+	if !isLikelyReport(&report) {
+		return nil, errors.New("decoded JSON object is not a trivy report")
+	}
+
+	if hasTrailingNonWhitespace(rawOutput, decoder.InputOffset()) {
+		return nil, errors.New("trivy output contains trailing data")
+	}
+
+	return &report, nil
+}
+
+func hasTrailingNonWhitespace(rawOutput []byte, offset int64) bool {
+	if offset < 0 {
+		return len(bytes.TrimSpace(rawOutput)) > 0
+	}
+
+	if offset >= int64(len(rawOutput)) {
+		return false
+	}
+
+	return len(bytes.TrimSpace(rawOutput[offset:])) > 0
+}
+
+func isLikelyReport(report *types.TrivyReport) bool {
+	if report == nil {
+		return false
+	}
+
+	return report.SchemaVersion > 0 ||
+		strings.TrimSpace(report.ArtifactName) != "" ||
+		strings.TrimSpace(report.ArtifactType) != "" ||
+		len(report.Results) > 0
+}
+
+func extractTopLevelJSONObjectCandidates(rawOutput []byte) [][]byte {
+	if len(rawOutput) == 0 {
+		return nil
+	}
+
+	candidates := make([][]byte, 0, 4)
+	start := -1
+	depth := 0
+	inString := false
+	escaped := false
+
+	for i, b := range rawOutput {
+		if start == -1 {
+			if b == '{' {
+				start = i
+				depth = 1
+				inString = false
+				escaped = false
+			}
+			continue
+		}
+
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+
+			switch b {
+			case '\\':
+				escaped = true
+			case '"':
+				inString = false
+			}
+			continue
+		}
+
+		switch b {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				candidate := bytes.TrimSpace(rawOutput[start : i+1])
+				if len(candidate) > 0 {
+					candidates = append(candidates, candidate)
+				}
+				start = -1
+			}
+		}
+	}
+
+	return candidates
+}
+
+func FormatExitError(exitCode int64, errMsg, imageName string) error {
+	errMsg = strings.TrimSpace(errMsg)
+
+	if exitCode == 137 {
+		if errMsg == "" || errMsg == fmt.Sprintf("exit status %d", exitCode) {
+			return fmt.Errorf("trivy scan failed: process killed with exit status 137 (likely out of memory while scanning %s)", imageName)
+		}
+		return fmt.Errorf("trivy scan failed: %s (process killed with exit status 137; likely out of memory)", errMsg)
+	}
+
+	if strings.Contains(strings.ToLower(errMsg), "deadline exceeded") {
+		return fmt.Errorf("trivy scan timed out for %s (increase TRIVY_SCAN_TIMEOUT or trivyScanTimeout setting)", imageName)
+	}
+
+	return fmt.Errorf("trivy scan failed: %s", errMsg)
+}
+
+func AwaitContainerWaitResponse(
+	ctx context.Context,
+	statusCh <-chan containertypes.WaitResponse,
+	errCh <-chan error,
+) (int64, error) {
+	for statusCh != nil || errCh != nil {
+		select {
+		case waitResp, ok := <-statusCh:
+			if !ok {
+				statusCh = nil
+				continue
+			}
+			return waitResp.StatusCode, nil
+		case err, ok := <-errCh:
+			if !ok {
+				errCh = nil
+				continue
+			}
+			if err != nil {
+				return 0, err
+			}
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
+
+	return 0, errors.New("trivy container wait ended without status")
+}

@@ -15,31 +15,65 @@ import (
 	"uuid"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/getarcaneapp/arcane/types/v2/federated"
-	httpxtypes "github.com/getarcaneapp/arcane/types/v2/httpx"
 	"github.com/samber/mo"
-	"go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"go.uber.org/fx"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/auth"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/session"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	arcaneoidc "getarcane.dev/arcane/v3/pkg/oidc"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	FederatedCredentialService struct {
+		providerGroup   singleflight.Group
+		exchanges       metric.Int64Counter
+		db              *database.DB
+		authService     *auth.AuthService
+		userService     *user.UserService
+		settingsService *settings.SettingsService
+		eventService    *event.EventService
+		roleService     *role.RoleService
+		httpClient      *http.Client
+		keySetManager   *arcaneoidc.KeySetManager
+		keySets         map[string]oidc.KeySet
+		providerMu      sync.RWMutex
+	}
+
+	FederatedCredentialServiceParams struct {
+		fx.In
+
+		DB              *database.DB
+		AuthService     *auth.AuthService
+		UserService     *user.UserService
+		SettingsService *settings.SettingsService
+		EventService    *event.EventService
+		HTTPClient      *http.Client
+		KeySetManager   *arcaneoidc.KeySetManager
+		RoleService     *role.RoleService
+	}
+
+	CredentialUpdate struct {
+		Submitted map[string]bool
+		Request   types.FederatedCredential
+	}
 )
 
 const (
@@ -49,69 +83,48 @@ const (
 
 var errInvalidGrant = common.Classify(common.ErrFederatedCredentialInvalidGrant, errors.New("invalid federated token grant"))
 
-type FederatedCredentialService struct {
-	db              *database.DB
-	authService     *auth.AuthService
-	userService     *user.UserService
-	settingsService *settings.SettingsService
-	eventService    *event.EventService
-	roleService     *role.RoleService
-	httpClient      *http.Client
-	keySetManager   *oidcjwk.KeySetManager
-	providerMu      sync.RWMutex
-	keySets         map[string]oidc.KeySet
-	providerGroup   singleflight.Group
-	exchanges       metric.Int64Counter
-}
-
-func NewFederatedCredentialService(
-	db *database.DB,
-	authService *auth.AuthService,
-	userService *user.UserService,
-	settingsService *settings.SettingsService,
-	eventService *event.EventService,
-	httpClient *http.Client,
-	keySetManager *oidcjwk.KeySetManager,
-	roleService *role.RoleService,
-) *FederatedCredentialService {
-	client := httpx.NewHTTPClient(httpxtypes.ClientOptions{Timeout: 15 * time.Second, TLSHandshakeTimeout: 10 * time.Second})
-	if httpClient != nil {
-		copied := *httpClient
+func NewFederatedCredentialService(p FederatedCredentialServiceParams) *FederatedCredentialService {
+	client := httpx.NewHTTPClient(httpx.ClientConfig{
+		Timeout:             15 * time.Second,
+		MaxIdleConnsPerHost: 32,
+	})
+	if p.HTTPClient != nil {
+		copied := *p.HTTPClient
 		client = &copied
 	}
 	client.Transport = otelhttp.NewTransport(client.Transport)
 
-	exchanges, err := otel.Meter(tracing.InstrumentationName).Int64Counter("arcane.federated.token_exchanges",
+	exchanges, err := otel.Meter(logging.InstrumentationName).Int64Counter("arcane.federated.token_exchanges",
 		metric.WithDescription("Federated credential token exchanges by outcome"), metric.WithUnit("{exchange}"))
 	if err != nil {
 		otel.Handle(err)
 	}
 
 	return &FederatedCredentialService{
-		db:              db,
-		authService:     authService,
-		userService:     userService,
-		settingsService: settingsService,
-		eventService:    eventService,
+		db:              p.DB,
+		authService:     p.AuthService,
+		userService:     p.UserService,
+		settingsService: p.SettingsService,
+		eventService:    p.EventService,
 		httpClient:      client,
-		keySetManager:   keySetManager,
-		roleService:     roleService,
+		keySetManager:   p.KeySetManager,
+		roleService:     p.RoleService,
 		keySets:         make(map[string]oidc.KeySet),
 		exchanges:       exchanges,
 	}
 }
 
-func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID string, req federated.CreateFederatedCredential) (*federated.FederatedCredential, error) {
-	normalized, err := normalizeCreateFederatedCredentialInternal(req)
+func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID string, req types.FederatedCredential) (*types.FederatedCredential, error) {
+	normalized, err := normalizeFederatedCredential(req)
 	if err != nil {
 		return nil, err
 	}
-	if validateRoleGrantAgainstUserErr := s.validateRoleGrantAgainstUserInternal(ctx, callerUserID, normalized.RoleID, normalized.EnvironmentID); validateRoleGrantAgainstUserErr != nil {
+	if validateRoleGrantAgainstUserErr := s.validateRoleGrantAgainstUser(ctx, callerUserID, normalized.RoleID, normalized.EnvironmentID); validateRoleGrantAgainstUserErr != nil {
 		return nil, validateRoleGrantAgainstUserErr
 	}
 
 	var created FederatedCredential
-	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err = s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		serviceUser := user.User{
 			Username:         "svc_federated_" + strings.ReplaceAll(uuid.New().String(), "-", ""),
 			DisplayName:      mo.EmptyableToOption(strings.TrimSpace("Federated: " + normalized.Name)).ToPointer(),
@@ -154,14 +167,12 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 	if err != nil {
 		return nil, err
 	}
-	if s.roleService != nil {
-		s.roleService.InvalidateUser(created.IdentityUserID)
-	}
+	s.roleService.InvalidateUser(created.IdentityUserID)
 
 	return s.Get(ctx, created.ID)
 }
 
-func (s *FederatedCredentialService) List(ctx context.Context, params pagination.QueryParams) ([]federated.FederatedCredential, pagination.Response, error) {
+func (s *FederatedCredentialService) List(ctx context.Context, params pagination.QueryParams) ([]types.FederatedCredential, pagination.Response, error) {
 	var credentials []FederatedCredential
 	query := s.db.WithContext(ctx).
 		Model(&FederatedCredential{}).
@@ -179,19 +190,19 @@ func (s *FederatedCredentialService) List(ctx context.Context, params pagination
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate federated credentials: %w", err)
 	}
 
-	result := make([]federated.FederatedCredential, len(credentials))
+	result := make([]types.FederatedCredential, len(credentials))
 	for i := range credentials {
-		result[i] = toFederatedCredentialDTOInternal(&credentials[i])
+		result[i] = toFederatedCredentialDTO(&credentials[i])
 	}
 	return result, resp, nil
 }
 
-func (s *FederatedCredentialService) Get(ctx context.Context, id string) (*federated.FederatedCredential, error) {
+func (s *FederatedCredentialService) Get(ctx context.Context, id string) (*types.FederatedCredential, error) {
 	credential, err := findCredential(s.db.WithContext(ctx).Preload("IdentityUser").Preload("Role").Preload("Environment"), id)
 	if err != nil {
 		return nil, err
 	}
-	return new(toFederatedCredentialDTOInternal(&credential)), nil
+	return new(toFederatedCredentialDTO(&credential)), nil
 }
 
 func findCredential(query *gorm.DB, id string) (FederatedCredential, error) {
@@ -205,24 +216,55 @@ func findCredential(query *gorm.DB, id string) (FederatedCredential, error) {
 	return credential, nil
 }
 
-func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID, id string, req federated.UpdateFederatedCredential) (*federated.FederatedCredential, error) {
+func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID, id string, change CredentialUpdate) (*types.FederatedCredential, error) {
 	credential, err := findCredential(s.db.WithContext(ctx), id)
 	if err != nil {
 		return nil, err
 	}
 
-	updated, roleChanged, err := applyFederatedCredentialUpdateInternal(credential, req)
+	normalized, err := normalizeFederatedCredential(types.FederatedCredential{
+		Name:            kit.Ternary(change.Submitted["name"], change.Request.Name, credential.Name),
+		Description:     kit.Ternary(change.Submitted["description"], change.Request.Description, credential.Description),
+		Enabled:         kit.Ternary(change.Submitted["enabled"], change.Request.Enabled, credential.Enabled),
+		IssuerURL:       kit.Ternary(change.Submitted["issuerUrl"], change.Request.IssuerURL, credential.IssuerURL),
+		Audiences:       kit.Ternary(change.Submitted["audiences"], change.Request.Audiences, []string(credential.Audiences)),
+		SubjectClaim:    kit.Ternary(change.Submitted["subjectClaim"], change.Request.SubjectClaim, credential.SubjectClaim),
+		SubjectMatch:    kit.Ternary(change.Submitted["subjectMatch"], change.Request.SubjectMatch, credential.SubjectMatch),
+		MatchType:       kit.Ternary(change.Submitted["matchType"], change.Request.MatchType, credential.MatchType),
+		RoleID:          kit.Ternary(change.Submitted["roleId"], change.Request.RoleID, credential.RoleID),
+		EnvironmentID:   kit.Ternary(change.Submitted["environmentId"], change.Request.EnvironmentID, credential.EnvironmentID),
+		TokenTTLSeconds: kit.Ternary(change.Submitted["tokenTtlSeconds"], change.Request.TokenTTLSeconds, credential.TokenTTLSeconds),
+		ExpiresAt:       kit.Ternary(change.Submitted["expiresAt"], change.Request.ExpiresAt, credential.ExpiresAt),
+	})
 	if err != nil {
 		return nil, err
 	}
+	updated := FederatedCredential{
+		BaseModel:       credential.BaseModel,
+		Name:            normalized.Name,
+		Description:     normalized.Description,
+		Enabled:         normalized.Enabled,
+		IssuerURL:       normalized.IssuerURL,
+		Audiences:       normalized.Audiences,
+		SubjectClaim:    normalized.SubjectClaim,
+		SubjectMatch:    normalized.SubjectMatch,
+		MatchType:       normalized.MatchType,
+		RoleID:          normalized.RoleID,
+		EnvironmentID:   normalized.EnvironmentID,
+		IdentityUserID:  credential.IdentityUserID,
+		TokenTTLSeconds: normalized.TokenTTLSeconds,
+		LastUsedAt:      credential.LastUsedAt,
+		ExpiresAt:       normalized.ExpiresAt,
+	}
+	roleChanged := updated.RoleID != credential.RoleID || kit.FromPtr(updated.EnvironmentID) != kit.FromPtr(credential.EnvironmentID)
 	revokeActiveSessions := credential.Enabled && !updated.Enabled
 	if roleChanged {
-		if validateRoleGrantAgainstUserErr := s.validateRoleGrantAgainstUserInternal(ctx, callerUserID, updated.RoleID, updated.EnvironmentID); validateRoleGrantAgainstUserErr != nil {
+		if validateRoleGrantAgainstUserErr := s.validateRoleGrantAgainstUser(ctx, callerUserID, updated.RoleID, updated.EnvironmentID); validateRoleGrantAgainstUserErr != nil {
 			return nil, validateRoleGrantAgainstUserErr
 		}
 	}
 
-	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err = s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if updateCredentialErr := tx.Save(&updated).Error; updateCredentialErr != nil {
 			return fmt.Errorf("failed to update federated credential: %w", updateCredentialErr)
 		}
@@ -254,10 +296,10 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID, i
 	if err != nil {
 		return nil, err
 	}
-	if roleChanged && s.roleService != nil {
+	if roleChanged {
 		s.roleService.InvalidateUser(updated.IdentityUserID)
 	}
-	if (revokeActiveSessions || roleChanged) && s.authService != nil {
+	if revokeActiveSessions || roleChanged {
 		s.authService.InvalidateUserTokenCache(updated.IdentityUserID)
 	}
 	return s.Get(ctx, id)
@@ -269,7 +311,7 @@ func (s *FederatedCredentialService) Delete(ctx context.Context, id string) erro
 		return err
 	}
 
-	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err = s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if deleteErr := tx.Delete(&FederatedCredential{}, "id = ?", credential.ID).Error; deleteErr != nil {
 			return fmt.Errorf("failed to delete federated credential: %w", deleteErr)
 		}
@@ -281,25 +323,21 @@ func (s *FederatedCredentialService) Delete(ctx context.Context, id string) erro
 	if err != nil {
 		return err
 	}
-	if s.roleService != nil {
-		s.roleService.InvalidateUser(credential.IdentityUserID)
-	}
-	if s.authService != nil {
-		s.authService.InvalidateUserTokenCache(credential.IdentityUserID)
-	}
+	s.roleService.InvalidateUser(credential.IdentityUserID)
+	s.authService.InvalidateUserTokenCache(credential.IdentityUserID)
 	return nil
 }
 
-func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req federated.TokenExchangeRequest) (_ *federated.FederatedTokenResponse, err error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "federated.token_exchange")
-	claims := jwtclaims.ParseJWTClaims(req.SubjectToken)
+func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req types.TokenExchangeRequest) (_ *types.FederatedTokenResponse, err error) {
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "federated.token_exchange")
+	claims := arcaneoidc.ParseJWTClaims(req.SubjectToken)
 	issuer := ""
 	subject := ""
 	var audiences []string
 	if claims != nil {
-		issuer = kit.ToString(jwtclaims.GetByPath(claims, "iss").OrEmpty())
-		subject = kit.ToString(jwtclaims.GetByPath(claims, "sub").OrEmpty())
-		audiences = kit.Unique(kit.TrimNonEmpty(kit.Collect(jwtclaims.GetByPath(claims, "aud").OrEmpty(), func(item any) string { return kit.As(item, "") })))
+		issuer = kit.ToString(arcaneoidc.GetByPath(claims, "iss").OrEmpty())
+		subject = kit.ToString(arcaneoidc.GetByPath(claims, "sub").OrEmpty())
+		audiences = kit.Unique(kit.TrimNonEmpty(kit.Collect(arcaneoidc.GetByPath(claims, "aud").OrEmpty(), func(item any) string { return kit.As(item, "") })))
 	}
 
 	logResult := "failure"
@@ -309,7 +347,7 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req fede
 		outcome := []attribute.KeyValue{attribute.String("arcane.federated.outcome", logResult), attribute.String("arcane.federated.reason", logReason)}
 		s.exchanges.Add(context.WithoutCancel(ctx), 1, metric.WithAttributes(outcome...))
 		span.SetAttributes(append(outcome, attribute.String("arcane.federated.issuer", issuer), attribute.String("arcane.federated.credential_id", credentialID))...)
-		tracing.End(span, err)
+		logging.EndSpan(span, err)
 
 		slog.InfoContext(ctx, "Federated credential token exchange",
 			"result", logResult,
@@ -319,9 +357,6 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req fede
 			"audiences", audiences,
 			"credentialId", credentialID,
 		)
-		if s.eventService == nil {
-			return
-		}
 		severity := event.EventSeverityInfo
 		title := "Federated credential token exchange"
 		if logResult != "success" {
@@ -356,9 +391,9 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req fede
 		}()
 	}()
 
-	invalidRequest := req.GrantType != federated.TokenExchangeGrantType || strings.TrimSpace(req.SubjectToken) == "" ||
-		(req.SubjectTokenType != federated.SubjectTokenTypeJWT && req.SubjectTokenType != federated.SubjectTokenTypeIDToken) ||
-		(req.RequestedTokenType != "" && req.RequestedTokenType != federated.RequestedTokenTypeAccessJWT)
+	invalidRequest := req.GrantType != types.TokenExchangeGrantType || strings.TrimSpace(req.SubjectToken) == "" ||
+		(req.SubjectTokenType != types.SubjectTokenTypeJWT && req.SubjectTokenType != types.SubjectTokenTypeIDToken) ||
+		(req.RequestedTokenType != "" && req.RequestedTokenType != types.RequestedTokenTypeAccessJWT)
 	if invalidRequest {
 		logReason = "invalid_request"
 		return nil, common.Classify(common.ErrFederatedCredentialInvalidRequest, errors.New("invalid federated token exchange request"))
@@ -392,7 +427,7 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req fede
 		return nil, common.Classify(common.ErrFederatedCredentialInvalidGrant, fmt.Errorf("invalid federated token grant: %w", err))
 	}
 	if subject == "" {
-		subject = kit.ToString(jwtclaims.GetByPath(verifiedClaims, defaultFederatedSubjectClaim).OrEmpty())
+		subject = kit.ToString(arcaneoidc.GetByPath(verifiedClaims, defaultFederatedSubjectClaim).OrEmpty())
 	}
 	if len(audiences) == 0 {
 		audiences = append([]string{}, verifiedToken.Audience...)
@@ -414,7 +449,7 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req fede
 	if pruneErr := s.db.WithContext(ctx).Where("expires_at < ?", time.Now()).Delete(&FederatedTokenReplay{}).Error; pruneErr != nil {
 		return nil, fmt.Errorf("failed to prune federated token replay records: %w", pruneErr)
 	}
-	tokenID := strings.TrimSpace(kit.ToString(jwtclaims.GetByPath(verifiedClaims, "jti").OrEmpty()))
+	tokenID := strings.TrimSpace(kit.ToString(arcaneoidc.GetByPath(verifiedClaims, "jti").OrEmpty()))
 	tokenKind := "jti"
 	if tokenID == "" {
 		tokenID = req.SubjectToken
@@ -460,11 +495,11 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req fede
 
 	logResult = "success"
 	logReason = "matched"
-	return &federated.FederatedTokenResponse{
+	return &types.FederatedTokenResponse{
 		AccessToken:     tokenPair.AccessToken,
 		TokenType:       "Bearer",
 		ExpiresIn:       max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0),
-		IssuedTokenType: federated.IssuedTokenTypeAccessToken,
+		IssuedTokenType: types.IssuedTokenTypeAccessToken,
 	}, nil
 }
 
@@ -490,9 +525,6 @@ func (s *FederatedCredentialService) verifySubjectToken(ctx context.Context, iss
 			if metadata.JWKSURL == "" {
 				return nil, errors.New("federated issuer metadata is missing jwks_uri")
 			}
-			if s.keySetManager == nil {
-				return nil, errors.New("JWK set manager is not configured")
-			}
 
 			discovered, err := s.keySetManager.KeySet(context.WithoutCancel(ctx), s.httpClient, metadata.JWKSURL)
 			if err != nil {
@@ -513,7 +545,7 @@ func (s *FederatedCredentialService) verifySubjectToken(ctx context.Context, iss
 
 	verifier := oidc.NewVerifier(issuer, keySet, &oidc.Config{
 		SkipClientIDCheck:    true,
-		SupportedSigningAlgs: oidcjwk.SupportedSigningAlgs(),
+		SupportedSigningAlgs: arcaneoidc.SupportedSigningAlgs(),
 	})
 	idToken, err := verifier.Verify(oidc.ClientContext(ctx, s.httpClient), rawToken)
 	if err != nil {
@@ -537,11 +569,11 @@ func credentialMatchesToken(credential *FederatedCredential, tokenAudiences []st
 	}
 
 	subjectClaim := cmp.Or(strings.TrimSpace(credential.SubjectClaim), defaultFederatedSubjectClaim)
-	subject := kit.ToString(jwtclaims.GetByPath(claims, subjectClaim).OrEmpty())
+	subject := kit.ToString(arcaneoidc.GetByPath(claims, subjectClaim).OrEmpty())
 	if subject == "" {
 		return false
 	}
-	if !strings.EqualFold(strings.TrimSpace(credential.MatchType), federated.MatchTypeGlob) {
+	if !strings.EqualFold(strings.TrimSpace(credential.MatchType), types.FederatedMatchTypeGlob) {
 		return subject == credential.SubjectMatch
 	}
 

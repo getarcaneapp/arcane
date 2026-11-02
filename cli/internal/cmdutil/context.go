@@ -6,10 +6,18 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
+	"getarcane.dev/cli/v3/internal/client"
+	"getarcane.dev/cli/v3/internal/output"
+	"getarcane.dev/cli/v3/internal/prompt"
+	"getarcane.dev/cli/v3/internal/runtime"
+)
+
+type (
+	// Declining prints Cancelled to stderr and returns false without an error.
+	ConfirmOptions struct {
+		Label string
+		Force bool
+	}
 )
 
 // ClientFromCommand returns a configured authenticated client for the command.
@@ -65,24 +73,17 @@ func AllowPrompt(cmd *cobra.Command) bool {
 	return !JSONOutputEnabled(cmd) && prompt.IsInteractive()
 }
 
-// ConfirmOrCancel accepts force, --yes, or fleet consent; otherwise it requires text mode and terminal input.
-// Declining prints Cancelled to stderr and returns false without an error.
-func ConfirmOrCancel(cmd *cobra.Command, force bool, label string) (bool, error) {
+func ConfirmOrCancel(cmd *cobra.Command, opts ConfirmOptions) (bool, error) {
 	app, _ := runtime.From(cmd.Context())
-	if force || AssumeYes(cmd) || app != nil && app.FleetConfirmed {
+	if opts.Force || AssumeYes(cmd) || app != nil && app.AllConfirmed {
 		return true, nil
 	}
 	if JSONOutputEnabled(cmd) {
-		return false, fmt.Errorf("confirmation required: re-run with --yes (%s)", label)
+		return false, fmt.Errorf("confirmation required: re-run with --yes (%s)", opts.Label)
 	}
-	confirmed, err := output.Confirm(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr(), label)
+	confirmed, err := output.Confirm(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr(), opts.Label)
 	if err == nil && !confirmed {
 		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Cancelled")
 	}
 	return confirmed, err
-}
-
-// Confirm prompts through ConfirmOrCancel unless invocation consent is already present.
-func Confirm(cmd *cobra.Command, label string) (bool, error) {
-	return ConfirmOrCancel(cmd, false, label)
 }

@@ -1,7 +1,7 @@
 <script lang="ts">
+	import MemoryRing from '#lib/components/memory-ring.svelte';
 	import MetricRing from '#lib/components/metric-ring.svelte';
 	import { m } from '#lib/paraglide/messages.js';
-	import { bytes } from '#lib/utils/formatting.js';
 
 	interface Props {
 		value?: number;
@@ -13,18 +13,6 @@
 	}
 
 	let { value, limit, loading = false, stopped = false, unavailable = false, type }: Props = $props();
-
-	const memoryPercent = $derived.by(() => {
-		if (type !== 'memory' || !value || !limit || limit === 0) return undefined;
-		return (value / limit) * 100;
-	});
-
-	const memoryFormatted = $derived.by(() => {
-		if (type !== 'memory' || value === undefined) return undefined;
-		return bytes.format(value, { unitSeparator: ' ' });
-	});
-
-	const percent = $derived(type === 'cpu' ? value : memoryPercent);
 </script>
 
 {#if stopped}
@@ -32,24 +20,15 @@
 {:else if unavailable && value === undefined}
 	<div class="text-xs text-muted-foreground">{m.common_unavailable()}</div>
 {:else if loading}
-	<div class="flex items-center gap-2">
-		<div class="size-6.5 shrink-0 animate-pulse rounded-full bg-muted"></div>
-		<div class="h-3 w-16 animate-pulse rounded bg-muted"></div>
-	</div>
-{:else if type === 'memory' && memoryFormatted}
-	<div class="flex items-center gap-2">
-		<MetricRing {percent} variant={type} />
-		<span class="text-xs font-medium text-foreground tabular-nums">
-			{memoryFormatted}
-		</span>
-	</div>
+	<div class="size-9.5 shrink-0 animate-pulse rounded-full bg-muted"></div>
 {:else if type === 'cpu' && value !== undefined}
-	<div class="flex items-center gap-2">
-		<MetricRing {percent} variant={type} />
-		<span class="text-xs font-medium text-foreground tabular-nums">
-			{value.toFixed(1)}%
-		</span>
-	</div>
+	<span class="inline-flex">
+		<MetricRing percent={value} variant="cpu" size={38} stroke={3}>
+			<span class="text-2xs font-medium text-foreground tabular-nums">{Math.round(value)}%</span>
+		</MetricRing>
+	</span>
+{:else if type === 'memory' && value !== undefined}
+	<MemoryRing used={value} total={limit} />
 {:else}
 	<div class="text-xs text-muted-foreground">—</div>
 {/if}

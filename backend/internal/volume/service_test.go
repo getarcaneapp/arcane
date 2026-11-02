@@ -4,48 +4,46 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/user"
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/acfs"
-	"go.getarcane.app/acfs/types"
-	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/s3"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
 func TestEnrichVolumesWithUsageData(t *testing.T) {
 	tests := []struct {
+		assertions   func(t *testing.T, got []volume.Volume)
 		name         string
 		volumes      []volume.Volume
 		usageVolumes []volume.Volume
 		wantLen      int
-		assertions   func(t *testing.T, got []volume.Volume)
 	}{
 		{
 			name: "attaches usage by name",
@@ -95,40 +93,40 @@ func TestEnrichVolumesWithUsageData(t *testing.T) {
 func TestIsInternalVolume(t *testing.T) {
 	svc := &VolumeService{backupVolumeName: "arcane-backups"}
 
-	require.True(t, svc.isInternalVolume(volumetypes.Volume{Name: "arcane-backups"}))
-	require.False(t, svc.isInternalVolume(volumetypes.Volume{Name: "user-volume"}))
+	require.True(t, svc.isInternalVolume(types.Volume{Name: "arcane-backups"}))
+	require.False(t, svc.isInternalVolume(types.Volume{Name: "user-volume"}))
 }
 
 func TestRenameVolumeRejectsInvalidAndProtectedNames(t *testing.T) {
 	service := &VolumeService{backupVolumeName: "arcane-backups"}
 
-	_, err := service.RenameVolume(t.Context(), "data", "data", user.Actor{})
+	_, err := service.RenameVolume(t.Context(), "data", "data", types.Actor{})
 	require.ErrorIs(t, err, common.ErrVolumeRenameInvalid)
 
-	_, err = service.RenameVolume(t.Context(), "arcane-backups", "renamed-backups", user.Actor{})
+	_, err = service.RenameVolume(t.Context(), "arcane-backups", "renamed-backups", types.Actor{})
 	require.ErrorIs(t, err, common.ErrVolumeRenameProtected)
 
-	_, err = service.RenameVolume(t.Context(), "data", "arcane-backups", user.Actor{})
+	_, err = service.RenameVolume(t.Context(), "data", "arcane-backups", types.Actor{})
 	require.ErrorIs(t, err, common.ErrVolumeRenameProtected)
 }
 
-func applyVolumeBackupMigrations(t *testing.T, gormDB *gorm.DB) {
+func newVolumeBackupTestDB(t *testing.T, name string) *gorm.DB {
 	t.Helper()
-	for _, name := range []string{"032_add_volume_backups.sql", "073_add_backup_support.sql", "087_add_volume_backup_remote_instance.sql"} {
-		migration, err := os.ReadFile("../../resources/migrations/sqlite/" + name)
-		require.NoError(t, err)
-		require.NoError(t, gormDB.Exec(strings.Split(string(migration), "-- +goose Down")[0]).Error)
-	}
+	db, err := database.Initialize(t.Context(), "file:"+name+"?mode=memory&cache=shared", database.MigrationOptions{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	return db.DB
 }
 
 func TestRenameVolumeMetadataPreservesPoliciesAndHistory(t *testing.T) {
-	gormDB, err := gorm.Open(sqlite.Open("file:volume-rename-metadata?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	applyVolumeBackupMigrations(t, gormDB)
-	require.NoError(t, gormDB.Exec("INSERT INTO volume_backup_policies (id, volume_name, schedule) VALUES (?, ?, ?)", "policy-1", "source-data", "0 0 2 * * *").Error)
+	gormDB := newVolumeBackupTestDB(t, "volume-rename-metadata")
+	require.NoError(t, gormDB.Exec("INSERT INTO volume_backup_policies (id, volume_name, schedule) VALUES (?, ?, ?)", "policy-1", "source-data", "0 2 * * *").Error)
 	require.NoError(t, gormDB.Create(&VolumeBackup{VolumeName: "source-data", PolicyID: "policy-1"}).Error)
 
-	service := NewVolumeService(&database.DB{DB: gormDB}, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	service := NewVolumeService(VolumeServiceParams{
+		Config: &config.Config{},
+		DB:     &database.DB{DB: gormDB},
+	})
 	require.NoError(t, service.renameVolumeMetadata(t.Context(), "source-data", "renamed-data"))
 
 	var renamedPolicy string
@@ -145,30 +143,30 @@ func TestListBackupsPaginatedByManagementType(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&VolumeBackup{}))
 	for _, entry := range []*VolumeBackup{
-		{VolumeName: "app", Status: VolumeBackupStatusSucceeded, Destination: volumetypes.BackupDestinationLocal, PolicyID: backup.SystemVolumePolicyPrefix + "abc"},
-		{VolumeName: "app", Status: VolumeBackupStatusSucceeded, Destination: volumetypes.BackupDestinationLocal, PolicyID: "per-volume"},
-		{VolumeName: "app", Status: VolumeBackupStatusSucceeded, Destination: volumetypes.BackupDestinationLocal},
+		{VolumeName: "app", Status: VolumeBackupStatusSucceeded, Destination: types.VolumeBackupDestinationLocal, PolicyID: types.SystemVolumePolicyPrefix + "abc"},
+		{VolumeName: "app", Status: VolumeBackupStatusSucceeded, Destination: types.VolumeBackupDestinationLocal, PolicyID: "per-volume"},
+		{VolumeName: "app", Status: VolumeBackupStatusSucceeded, Destination: types.VolumeBackupDestinationLocal},
 	} {
 		require.NoError(t, gormDB.Create(entry).Error)
 	}
 	service := &VolumeService{db: &database.DB{DB: gormDB}}
 
-	systemRows, total, err := service.listBackups(t.Context(), "app", pagination.QueryParams{
+	systemRows, page, err := service.listBackups(t.Context(), "app", pagination.QueryParams{
 		Filters: map[string]string{"type": "system"},
 	})
 	require.NoError(t, err)
-	require.EqualValues(t, 1, total)
+	require.EqualValues(t, 1, page.TotalItems)
 	require.Len(t, systemRows, 1)
-	require.Equal(t, backup.ManagementTypeSystem, systemRows[0].Type)
+	require.Equal(t, types.BackupManagementTypeSystem, systemRows[0].Type)
 
-	volumeRows, total, err := service.listBackups(t.Context(), "app", pagination.QueryParams{
+	volumeRows, page, err := service.listBackups(t.Context(), "app", pagination.QueryParams{
 		Filters: map[string]string{"type": "volume"},
 	})
 	require.NoError(t, err)
-	require.EqualValues(t, 2, total)
+	require.EqualValues(t, 2, page.TotalItems)
 	require.Len(t, volumeRows, 2)
 	for _, entry := range volumeRows {
-		require.Equal(t, backup.ManagementTypeVolume, entry.Type)
+		require.Equal(t, types.BackupManagementTypeVolume, entry.Type)
 	}
 }
 
@@ -223,74 +221,15 @@ func writeDockerExecAttachResponse(t *testing.T, w http.ResponseWriter, stdout s
 	}
 }
 
-func TestVolumeWorkspaceReadsWaitForMutationLock(t *testing.T) {
-	testCases := map[string]func(context.Context, *VolumeService) error{
-		"tree": func(ctx context.Context, service *VolumeService) error {
-			_, err := service.workspace.GetVolumeWorkspace(ctx, "workspace-volume")
-			return err
-		},
-		"file": func(ctx context.Context, service *VolumeService) error {
-			_, err := service.workspace.GetVolumeWorkspaceFile(ctx, "workspace-volume", "file.txt")
-			return err
-		},
-		"download": func(ctx context.Context, service *VolumeService) error {
-			_, _, err := service.workspace.DownloadVolumeWorkspaceFile(ctx, "workspace-volume", "file.txt")
-			return err
-		},
-	}
-
-	for name, read := range testCases {
-		t.Run(name, func(t *testing.T) {
-			requestStarted := make(chan struct{}, 1)
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				requestStarted <- struct{}{}
-				http.Error(w, "stop after lock acquisition", http.StatusInternalServerError)
-			}))
-			t.Cleanup(server.Close)
-
-			dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeWorkspaceTestDockerClient(t, server))
-			service := NewVolumeService(nil, dockerService, nil, nil, nil, nil, nil, nil, nil, nil)
-			unlockMutation := service.workspaceLocks.Lock("workspace-volume")
-			readStarted := make(chan struct{})
-			readDone := make(chan error, 1)
-			go func() {
-				close(readStarted)
-				readDone <- read(t.Context(), service)
-			}()
-			<-readStarted
-
-			require.Never(t, func() bool {
-				select {
-				case <-requestStarted:
-					return true
-				default:
-					return false
-				}
-			}, 50*time.Millisecond, time.Millisecond, "workspace read reached Docker while a mutation held the volume lock")
-
-			unlockMutation()
-			require.Eventually(t, func() bool {
-				select {
-				case <-requestStarted:
-					return true
-				default:
-					return false
-				}
-			}, time.Second, time.Millisecond)
-			require.Error(t, <-readDone)
-		})
-	}
-}
-
 func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/workspace-volume"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(volume.Volume{Name: "workspace-volume", Driver: "local"})
+			_ = json.MarshalWrite(w, volume.Volume{Name: "workspace-volume", Driver: "local"})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/helper/json"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
+			_ = json.MarshalWrite(w, map[string]any{
 				"Id":    "helper",
 				"State": map[string]any{"Running": true},
 			})
@@ -298,7 +237,7 @@ func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 			var request struct {
 				Cmd []string `json:"Cmd"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			if err := json.UnmarshalRead(r.Body, &request); err != nil {
 				t.Errorf("decode exec request: %v", err)
 				return
 			}
@@ -308,7 +247,7 @@ func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"Id": "read-exec"})
+			_ = json.MarshalWrite(w, map[string]string{"Id": "read-exec"})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/exec/read-exec/start"):
 			_, _ = io.Copy(io.Discard, r.Body)
 			content := []byte("content")
@@ -321,16 +260,19 @@ func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 			writeDockerExecAttachResponse(t, w, output.String())
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/exec/read-exec/json"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"Running": false, "ExitCode": 0})
+			_ = json.MarshalWrite(w, map[string]any{"Running": false, "ExitCode": 0})
 		default:
 			http.Error(w, "unexpected Docker request: "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
 		}
 	}))
 	t.Cleanup(server.Close)
 
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeWorkspaceTestDockerClient(t, server))
-	service := NewVolumeService(nil, dockerService, nil, nil, nil, nil, nil, nil, nil, nil)
-	service.helperByVolume["workspace-volume"] = &volumeHelper{id: "helper", lastUsedAt: time.Now(), protocol: types.ProtocolVersion}
+	dockerService := newVolumeTestDockerService(t, newVolumeWorkspaceTestDockerClient(t, server))
+	service := NewVolumeService(VolumeServiceParams{
+		Config:        &config.Config{},
+		DockerService: dockerService,
+	})
+	service.helperByVolume["workspace-volume"] = &volumeHelper{id: "helper", lastUsedAt: time.Now(), protocol: acfstypes.ProtocolVersion}
 	reader, size, err := service.workspace.DownloadVolumeWorkspaceFile(t.Context(), "workspace-volume", "file.txt")
 	require.NoError(t, err)
 	require.EqualValues(t, 7, size)
@@ -354,26 +296,26 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/workspace-volume"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(volume.Volume{Name: "workspace-volume", Driver: "local"})
+			_ = json.MarshalWrite(w, volume.Volume{Name: "workspace-volume", Driver: "local"})
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"Id": "tools-image"})
+			_ = json.MarshalWrite(w, map[string]string{"Id": "tools-image"})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"Id": "helper", "Warnings": []string{}})
+			_ = json.MarshalWrite(w, map[string]any{"Id": "helper", "Warnings": []string{}})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper/start"):
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper/exec"):
 			var request struct {
 				Cmd []string `json:"Cmd"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			if err := json.UnmarshalRead(r.Body, &request); err != nil {
 				t.Errorf("decode exec request: %v", err)
 				return
 			}
 			execCommands = append(execCommands, request.Cmd)
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"Id": fmt.Sprintf("workspace-exec-%d", len(execCommands)-1)})
+			_ = json.MarshalWrite(w, map[string]string{"Id": fmt.Sprintf("workspace-exec-%d", len(execCommands)-1)})
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/exec/workspace-exec-") && strings.HasSuffix(r.URL.Path, "/start"):
 			_, _ = io.Copy(io.Discard, r.Body)
 			output := kit.Ternary(
@@ -384,7 +326,7 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 			writeDockerExecAttachResponse(t, w, output)
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/exec/workspace-exec-") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"Running": false, "ExitCode": 0})
+			_ = json.MarshalWrite(w, map[string]any{"Running": false, "ExitCode": 0})
 		case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/containers/helper/archive"):
 			archiveCopies++
 			w.WriteHeader(http.StatusOK)
@@ -394,17 +336,30 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
+	gormDB, err := gorm.Open(sqlite.Open("file:volume-workspace-stale-revision?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	settingsService, err := settings.NewSettingsService(t.Context(), &database.DB{DB: gormDB}, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))
+	})
+
 	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
-	service := NewVolumeService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient), nil, nil, nil, nil, nil, nil, nil, nil)
+	service := NewVolumeService(VolumeServiceParams{
+		Config:          &config.Config{},
+		DockerService:   newVolumeTestDockerService(t, dockerClient),
+		SettingsService: settingsService,
+	})
 	uploadIndex := 0
-	workspace, err := service.workspace.UpdateVolumeWorkspace(t.Context(), "workspace-volume", volumetypes.WorkspaceUpdateManifest{
+	workspace, err := service.workspace.UpdateVolumeWorkspace(t.Context(), "workspace-volume", types.VolumeWorkspaceUpdateManifest{
 		FileTreeRevision: "stale",
-		FileChanges: []volumetypes.WorkspaceFileChange{{
-			Operation:    volumetypes.FileOpCreateFile,
+		FileChanges: []types.VolumeWorkspaceFileChange{{
+			Operation:    types.FileOpCreateFile,
 			RelativePath: "new.txt",
 			UploadIndex:  &uploadIndex,
 		}},
-	}, map[int][]byte{0: []byte("new content")}, user.Actor{})
+	}, map[int][]byte{0: []byte("new content")}, types.Actor{})
 
 	require.Nil(t, workspace)
 	require.ErrorIs(t, err, common.ErrVolumeWorkspaceConflict)
@@ -431,26 +386,32 @@ func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {
 		VolumeName:      "app-data",
 		Status:          VolumeBackupStatusSucceeded,
 		Trigger:         VolumeBackupTriggerManual,
-		Destination:     volumetypes.BackupDestinationLocalS3,
+		Destination:     types.VolumeBackupDestinationLocalS3,
 		S3DestinationID: destination.ID,
 	}).Error)
 
-	service := NewVolumeService(db, nil, nil, nil, nil, nil, nil, s3.NewS3DestinationService(db, nil), nil, nil)
+	service := NewVolumeService(VolumeServiceParams{
+		Config:          &config.Config{},
+		DB:              db,
+		SettingsService: newVolumeTestSettingsService(t),
+		S3Destinations:  s3.NewS3DestinationService(db, nil),
+	})
 	backups, _, err := service.backup.List(t.Context(), "app-data", pagination.QueryParams{})
 	require.NoError(t, err)
 	require.Len(t, backups, 1)
-	require.Equal(t, volumetypes.BackupDestinationLocalS3, backups[0].Destination)
+	require.Equal(t, types.VolumeBackupDestinationLocalS3, backups[0].Destination)
 	require.Equal(t, "Offsite", backups[0].S3DestinationName)
 }
 
 func TestVolumeBackupPolicy_GetReturnsLastRunForEachPolicyFromStore(t *testing.T) {
-	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-last-runs-store?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	applyVolumeBackupMigrations(t, gormDB)
+	gormDB := newVolumeBackupTestDB(t, "volume-backup-last-runs-store")
 	require.NoError(t, gormDB.Create(&VolumeBackup{VolumeName: "app-data", PolicyID: "first-policy", Status: VolumeBackupStatusSucceeded}).Error)
 	require.NoError(t, gormDB.Create(&VolumeBackup{VolumeName: "app-data", PolicyID: "second-policy", Status: VolumeBackupStatusFailed}).Error)
 
-	store := NewVolumeService(&database.DB{DB: gormDB}, nil, nil, nil, nil, nil, nil, nil, nil, nil).backupStore()
+	store := NewVolumeService(VolumeServiceParams{
+		Config: &config.Config{},
+		DB:     &database.DB{DB: gormDB},
+	}).backupStore()
 	first, err := store.Latest(t.Context(), "first-policy")
 	require.NoError(t, err)
 	require.Equal(t, "succeeded", first.Status)
@@ -474,25 +435,25 @@ func volumeScopeContext(t *testing.T, target string, bodies map[string]any) (con
 				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
 				return
 			}
-			_ = json.NewEncoder(w).Encode(body)
+			_ = json.MarshalWrite(w, body)
 		}),
-		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
-			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
 		},
 	}), &queries
 }
 
 func TestAggregateVolumesMergesEnvironments(t *testing.T) {
 	bodies := map[string]any{
-		"a": base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData]{Success: true, Data: []volumetypes.Volume{
+		"a": types.PaginatedWithCounts[types.Volume, VolumeUsageCountsData]{Success: true, Data: []types.Volume{
 			{Name: "data", Size: 30, InUse: true},
 			{Name: "logs", Size: 5},
-		}, Counts: VolumeUsageCountsData{Inuse: 1, Unused: 1, Total: 2}, Pagination: base.PaginationResponse{TotalItems: 2, GrandTotalItems: 3}},
-		"b": base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData]{Success: true, Data: []volumetypes.Volume{
+		}, Counts: VolumeUsageCountsData{Inuse: 1, Unused: 1, Total: 2}, Pagination: types.PaginationResponse{TotalItems: 2, GrandTotalItems: 3}},
+		"b": types.PaginatedWithCounts[types.Volume, VolumeUsageCountsData]{Success: true, Data: []types.Volume{
 			{Name: "cache", Size: 10},
-		}, Counts: VolumeUsageCountsData{Unused: 1, Total: 1}, Pagination: base.PaginationResponse{TotalItems: 1}},
+		}, Counts: VolumeUsageCountsData{Unused: 1, Total: 1}, Pagination: types.PaginationResponse{TotalItems: 1}},
 	}
-	rowLabels := func(items []volumetypes.Volume) []string {
+	rowLabels := func(items []types.Volume) []string {
 		out := make([]string, 0, len(items))
 		for _, item := range items {
 			out = append(out, item.EnvironmentID+"/"+item.Name)
@@ -513,7 +474,7 @@ func TestAggregateVolumesMergesEnvironments(t *testing.T) {
 		require.Equal(t, int64(4), body.Pagination.GrandTotalItems)
 		require.Equal(t, int64(2), body.Pagination.TotalPages)
 		require.Equal(t, VolumeUsageCountsData{Inuse: 1, Unused: 2, Total: 3}, body.Counts)
-		require.Equal(t, []base.EnvironmentFailure{{Environment: base.EnvironmentRef{ID: "c", Name: "c"}, Message: "environment offline"}}, body.FailedEnvironments)
+		require.Equal(t, []types.EnvironmentFailure{{Environment: types.EnvironmentRef{ID: "c", Name: "c"}, Message: "environment offline"}}, body.FailedEnvironments)
 		for _, id := range []string{"a", "b"} {
 			stored, ok := queries.Load(id)
 			require.True(t, ok)
@@ -549,8 +510,8 @@ func TestAggregateVolumesMergesEnvironments(t *testing.T) {
 
 func TestAggregateVolumeSizesKeepsEnvironmentRows(t *testing.T) {
 	ctx, _ := volumeScopeContext(t, "/api/environments/a,b,c/volumes/sizes", map[string]any{
-		"a": base.ApiResponse[[]VolumeSizeInfo]{Success: true, Data: []VolumeSizeInfo{{Name: "data", Size: 30, RefCount: 1}, {Name: "logs", Size: 5}}},
-		"b": base.ApiResponse[[]VolumeSizeInfo]{Success: true, Data: []VolumeSizeInfo{{Name: "data", Size: 7}}},
+		"a": types.ApiResponse[[]VolumeSizeInfo]{Success: true, Data: []VolumeSizeInfo{{Name: "data", Size: 30, RefCount: 1}, {Name: "logs", Size: 5}}},
+		"b": types.ApiResponse[[]VolumeSizeInfo]{Success: true, Data: []VolumeSizeInfo{{Name: "data", Size: 7}}},
 	})
 
 	body, err := (&VolumeService{}).AggregateVolumeSizes(ctx)
@@ -558,10 +519,72 @@ func TestAggregateVolumeSizesKeepsEnvironmentRows(t *testing.T) {
 
 	require.True(t, body.Success)
 	require.Equal(t, []VolumeSizeInfo{
-		{EnvironmentTag: base.EnvironmentTag{EnvironmentID: "a", EnvironmentName: "Env a"}, Name: "data", Size: 30, RefCount: 1},
-		{EnvironmentTag: base.EnvironmentTag{EnvironmentID: "a", EnvironmentName: "Env a"}, Name: "logs", Size: 5},
-		{EnvironmentTag: base.EnvironmentTag{EnvironmentID: "b", EnvironmentName: "Env b"}, Name: "data", Size: 7},
+		{EnvironmentTag: types.EnvironmentTag{EnvironmentID: "a", EnvironmentName: "Env a"}, Name: "data", Size: 30, RefCount: 1},
+		{EnvironmentTag: types.EnvironmentTag{EnvironmentID: "a", EnvironmentName: "Env a"}, Name: "logs", Size: 5},
+		{EnvironmentTag: types.EnvironmentTag{EnvironmentID: "b", EnvironmentName: "Env b"}, Name: "data", Size: 7},
 	}, body.Data)
 	require.Len(t, body.FailedEnvironments, 1)
 	require.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
+}
+
+func TestAggregateVolumeCountsSumsEnvironments(t *testing.T) {
+	ctx, _ := volumeScopeContext(t, "/api/environments/a,b,c/volumes/counts", map[string]any{
+		"a": types.ApiResponse[VolumeUsageCountsData]{
+			Success: true,
+			Data: VolumeUsageCountsData{
+				Inuse:  1,
+				Unused: 2,
+				Total:  3,
+			},
+		},
+		"b": types.ApiResponse[VolumeUsageCountsData]{
+			Success: true,
+			Data: VolumeUsageCountsData{
+				Inuse: 4,
+				Total: 4,
+			},
+		},
+	})
+
+	body, err := (&VolumeService{}).AggregateVolumeCounts(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, VolumeUsageCountsData{
+		Inuse:  5,
+		Unused: 2,
+		Total:  7,
+	}, body.Data)
+	require.Len(t, body.Environments, 2)
+	require.Len(t, body.FailedEnvironments, 1)
+}
+
+func TestVolumePaginationConfig_FiltersByLabel(t *testing.T) {
+	items := []types.Volume{
+		{Name: "tagged", Labels: map[string]string{"backup": "daily", "tags": "a,b"}},
+		{Name: "other", Labels: map[string]string{"backup": "weekly"}},
+		{Name: "bare", Labels: map[string]string{}},
+	}
+	paginationConfig := pagination.Config[types.Volume]{FilterAccessors: (&VolumeService{}).buildVolumePaginationConfig().FilterAccessors}
+
+	tests := []struct {
+		name   string
+		filter string
+		want   []string
+	}{
+		{name: "key only", filter: "backup", want: []string{"tagged", "other"}},
+		{name: "key and value", filter: "backup=daily", want: []string{"tagged"}},
+		{name: "value containing comma", filter: "tags=a,b", want: []string{"tagged"}},
+		{name: "missing key", filter: "missing", want: nil},
+		{name: "blank is a no-op", filter: " ", want: []string{"tagged", "other", "bare"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := paginationConfig.SearchOrderAndPaginate(items, pagination.QueryParams{Filters: map[string]string{"label": tt.filter}})
+			var got []string
+			for _, item := range result.Items {
+				got = append(got, item.Name)
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
 }

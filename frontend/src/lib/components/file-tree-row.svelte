@@ -67,7 +67,7 @@
 	{#if isDirectory && showDisclosure}
 		<button
 			type="button"
-			class="inline-flex size-4 shrink-0 items-center justify-center rounded hover:bg-muted"
+			class="inline-flex size-4 shrink-0 items-center justify-center rounded-xl hover:bg-muted"
 			aria-label={expanded ? collapseLabel : expandLabel}
 			onclick={onToggle}
 		>

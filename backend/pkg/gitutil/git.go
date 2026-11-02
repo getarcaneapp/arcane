@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"net"
-	nethttp "net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -19,7 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -29,27 +27,68 @@ import (
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/gofrs/flock"
-	"go.getarcane.app/acfs"
-	acfstypes "go.getarcane.app/acfs/types"
-	kit "go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
+	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
+
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/arcane/v3/pkg/workspace"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	// Client handles git operations
+	Client struct {
+		workDir string
+	}
+
+	// AuthConfig holds authentication configuration
+	AuthConfig struct {
+		AuthType               string
+		Username               string
+		Token                  string
+		SSHKey                 string
+		SSHHostKeyVerification string // strict, accept_new, skip
+	}
+
+	// BranchInfo holds information about a git branch
+	BranchInfo struct {
+		Name      string
+		IsDefault bool
+	}
+
+	// SyncFileInfo holds information about a file to be synced
+	SyncFileInfo struct {
+		RelativePath string // Path relative to the sync directory
+		Content      []byte
+		Size         int64
+		IsBinary     bool
+		// Executable mirrors git's +x bit so lifecycle hook scripts arrive runnable.
+		Executable bool
+	}
+
+	// DirectoryWalkResult holds the result of walking a directory for sync
+	DirectoryWalkResult struct {
+		Files           []SyncFileInfo
+		TotalFiles      int
+		TotalSize       int64
+		SkippedBinaries int
+	}
 )
 
 const (
 	// binarySniffBytes is how much of a file is inspected to classify it as binary.
 	binarySniffBytes = 512
-
 	// CloneScratchPrefix names the per-run clone scratch dirs created by Clone.
 	CloneScratchPrefix = "gitops-"
-
-	errUnsupportedURL = "repository URL must use http(s)://, ssh://, git://, or git@host:path"
-
+	errUnsupportedURL  = "repository URL must use http(s)://, ssh://, git://, or git@host:path"
 	// SSH host key verification modes
 
 	SSHHostKeyVerificationStrict    = "strict"     // Require host key in known_hosts
@@ -58,6 +97,8 @@ const (
 	defaultKnownHostsDataDir        = "/app/data"
 	defaultKnownHostsPath           = "/app/data/.ssh/known_hosts"
 )
+
+var scpLikeURLPattern = regexp.MustCompile(`^[^@/]+@[^:/]+:`)
 
 // go-git's file transport execs the git binary, which the distroless image lacks, so unregister it.
 func init() {
@@ -68,13 +109,6 @@ func init() {
 		capability.ThinPack,
 	}
 }
-
-// Client handles git operations
-type Client struct {
-	workDir string
-}
-
-var scpLikeURLPattern = regexp.MustCompile(`^[^@/]+@[^:/]+:`)
 
 // normalizeURL coerces a repository URL onto a network transport, never the file transport.
 // Schemeless host-style URLs (e.g. github.com/org/repo.git) get https://.
@@ -109,15 +143,6 @@ func NewClient(workDir string) *Client {
 	return &Client{
 		workDir: workDir,
 	}
-}
-
-// AuthConfig holds authentication configuration
-type AuthConfig struct {
-	AuthType               string
-	Username               string
-	Token                  string
-	SSHKey                 string
-	SSHHostKeyVerification string // strict, accept_new, skip
 }
 
 // getAuth returns the appropriate transport.AuthMethod.
@@ -335,17 +360,14 @@ func RepositoryAttribute(rawURL string) attribute.KeyValue {
 // Clone clones a repository to a temporary directory. A depth of 0 fetches the
 // full history; read-only callers pass 1 to fetch only the branch tip.
 func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig, depth int) (repoPath string, err error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "gitrepo.clone", trace.WithAttributes(
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "gitrepo.clone", trace.WithAttributes(
 		attribute.String("arcane.git.branch", branch),
 		attribute.Int("arcane.git.depth", depth),
 	))
-	defer func() { tracing.End(span, err) }()
+	defer func() { logging.EndSpan(span, err) }()
 
-	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Minute)
-		defer cancel()
-	}
+	ctx, cancel := timeouts.WithDefault(ctx, timeouts.DefaultGitOperation)
+	defer cancel()
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return "", ctxErr
 	}
@@ -413,12 +435,6 @@ func (c *Client) GetCurrentCommit(ctx context.Context, repoPath string) (string,
 	return ref.Hash().String(), nil
 }
 
-// BranchInfo holds information about a git branch
-type BranchInfo struct {
-	Name      string
-	IsDefault bool
-}
-
 // ListBranches lists a remote repository's branches, default branch first.
 func (c *Client) ListBranches(ctx context.Context, url string, auth AuthConfig) ([]BranchInfo, error) {
 	refs, err := c.listRemoteReferences(ctx, url, auth)
@@ -459,8 +475,8 @@ func (c *Client) ProbeRemote(ctx context.Context, url string, auth AuthConfig) e
 }
 
 func (c *Client) listRemoteReferences(ctx context.Context, url string, auth AuthConfig) (refs []*plumbing.Reference, err error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "gitrepo.list_remote")
-	defer func() { tracing.End(span, err) }()
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "gitrepo.list_remote")
+	defer func() { logging.EndSpan(span, err) }()
 
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, ctxErr
@@ -505,13 +521,13 @@ func ValidatePath(repoPath, requestedPath string) error {
 
 // BrowseTree returns the file tree at targetPath, confined to the clone directory: escaping paths and
 // symlinks pointing outside it are rejected rather than followed.
-func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([]gitops.FileTreeNode, error) {
+func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([]types.FileTreeNode, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
 	logicalPath := path.Join("/", filepath.ToSlash(targetPath))
-	entry, err := acfs.Stat(ctx, repoPath, logicalPath, true)
+	entry, err := acfs.Root{Path: repoPath}.Stat(ctx, logicalPath, acfstypes.StatOptions{FollowFinal: true})
 	if err != nil {
 		return nil, fmt.Errorf("path not found: %w", err)
 	}
@@ -519,12 +535,12 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 		return nil, errors.New("path is not a directory")
 	}
 
-	entries, err := acfs.List(ctx, repoPath, logicalPath)
+	entries, err := acfs.Root{Path: repoPath}.List(ctx, logicalPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read directory: %w", err)
 	}
 
-	var nodes []gitops.FileTreeNode
+	var nodes []types.FileTreeNode
 	for _, child := range entries {
 		if errErr := ctx.Err(); errErr != nil {
 			return nil, errErr
@@ -533,9 +549,9 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 			continue
 		}
 
-		nodeType := kit.Ternary(child.IsDirectory, gitops.FileTreeNodeTypeDirectory, gitops.FileTreeNodeTypeFile)
+		nodeType := kit.Ternary(child.IsDirectory, types.FileTreeNodeTypeDirectory, types.FileTreeNodeTypeFile)
 
-		nodes = append(nodes, gitops.FileTreeNode{
+		nodes = append(nodes, types.FileTreeNode{
 			Name: child.Name,
 			Path: filepath.Join(targetPath, child.Name),
 			Type: nodeType,
@@ -546,14 +562,9 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 	return nodes, nil
 }
 
-// Cleanup removes a temporary repository directory with os.RemoveAll, since acfs refuses to remove its own root.
-func (c *Client) Cleanup(repoPath string) error {
-	return os.RemoveAll(repoPath)
-}
-
 // Discard removes a scratch checkout, logging instead of failing when removal breaks.
 func (c *Client) Discard(ctx context.Context, repoPath string) {
-	if err := c.Cleanup(repoPath); err != nil {
+	if err := os.RemoveAll(repoPath); err != nil {
 		slog.WarnContext(ctx, "Failed to cleanup repository", "path", repoPath, "error", err)
 	}
 }
@@ -614,7 +625,7 @@ func (c *Client) FileExists(ctx context.Context, repoPath, filePath string) bool
 	if err := ctx.Err(); err != nil {
 		return false
 	}
-	exists, err := acfs.Exists(ctx, repoPath, path.Join("/", filepath.ToSlash(filePath)))
+	exists, err := acfs.Root{Path: repoPath}.Exists(ctx, path.Join("/", filepath.ToSlash(filePath)))
 	return err == nil && exists
 }
 
@@ -623,29 +634,11 @@ func (c *Client) ReadFile(ctx context.Context, repoPath, filePath string) (strin
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	content, err := acfs.ReadFile(ctx, repoPath, path.Join("/", filepath.ToSlash(filePath)))
+	content, err := acfs.Root{Path: repoPath}.ReadFile(ctx, path.Join("/", filepath.ToSlash(filePath)))
 	if err != nil {
 		return "", fmt.Errorf("failed to read file: %w", err)
 	}
 	return string(content), nil
-}
-
-// SyncFileInfo holds information about a file to be synced
-type SyncFileInfo struct {
-	RelativePath string // Path relative to the sync directory
-	Content      []byte
-	Size         int64
-	IsBinary     bool
-	// Executable mirrors git's +x bit so lifecycle hook scripts arrive runnable.
-	Executable bool
-}
-
-// DirectoryWalkResult holds the result of walking a directory for sync
-type DirectoryWalkResult struct {
-	Files           []SyncFileInfo
-	TotalFiles      int
-	TotalSize       int64
-	SkippedBinaries int
 }
 
 // WalkDirectory returns every file in the compose file's directory, enforcing file count and
@@ -666,71 +659,76 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 	result := &DirectoryWalkResult{
 		Files: make([]SyncFileInfo, 0),
 	}
-	err := acfs.Walk(ctx, syncDir, "/", func(entry acfstypes.Entry) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if entry.IsSymlink {
-			return nil
-		}
-		if entry.IsDirectory {
-			if entry.Name == ".git" {
-				return fs.SkipDir
+	_, err := acfs.Root{Path: syncDir}.Walk(
+		ctx,
+		"/",
+		acfstypes.WalkOptions{},
+		func(entry acfstypes.Entry) error {
+			if err := ctx.Err(); err != nil {
+				return err
 			}
-			return nil
-		}
+			if entry.IsSymlink {
+				return nil
+			}
+			if entry.IsDirectory {
+				if entry.Name == ".git" {
+					return fs.SkipDir
+				}
+				return nil
+			}
 
-		relativePath := strings.TrimPrefix(entry.Path, "/")
-		if maxFiles > 0 && result.TotalFiles >= maxFiles {
-			return fmt.Errorf("file count limit exceeded (max %d files)", maxFiles)
-		}
+			relativePath := strings.TrimPrefix(entry.Path, "/")
+			if maxFiles > 0 && result.TotalFiles >= maxFiles {
+				return fmt.Errorf("file count limit exceeded (max %d files)", maxFiles)
+			}
 
-		if maxBinarySize > 0 && entry.Size > maxBinarySize {
-			reader, _, openErr := acfs.OpenRead(ctx, syncDir, entry.Path, binarySniffBytes)
-			if openErr != nil {
-				return fmt.Errorf("failed to inspect file %s: %w", relativePath, openErr)
+			if maxBinarySize > 0 && entry.Size > maxBinarySize {
+				reader, _, openErr := acfs.Root{Path: syncDir}.OpenRead(ctx, entry.Path, binarySniffBytes)
+				if openErr != nil {
+					return fmt.Errorf("failed to inspect file %s: %w", relativePath, openErr)
+				}
+				buf := make([]byte, binarySniffBytes)
+				n, readErr := reader.Read(buf)
+				closeErr := reader.Close()
+				if readErr != nil && !errors.Is(readErr, io.EOF) {
+					return fmt.Errorf("failed to inspect file %s: %w", relativePath, errors.Join(readErr, closeErr))
+				}
+				if closeErr != nil {
+					return fmt.Errorf("failed to close file %s after inspection: %w", relativePath, closeErr)
+				}
+				if slices.Contains(buf[:n], 0) {
+					result.SkippedBinaries++
+					return nil
+				}
 			}
-			buf := make([]byte, binarySniffBytes)
-			n, readErr := reader.Read(buf)
-			closeErr := reader.Close()
-			if readErr != nil && !errors.Is(readErr, io.EOF) {
-				return fmt.Errorf("failed to inspect file %s: %w", relativePath, errors.Join(readErr, closeErr))
+
+			content, readErr := acfs.Root{Path: syncDir}.ReadFile(ctx, entry.Path)
+			if readErr != nil {
+				return fmt.Errorf("failed to read file %s: %w", relativePath, readErr)
 			}
-			if closeErr != nil {
-				return fmt.Errorf("failed to close file %s after inspection: %w", relativePath, closeErr)
-			}
-			if IsBinaryContent(buf[:n]) {
+
+			fileSize := int64(len(content))
+			isBinary := !workspace.IsTextContent(content)
+			if isBinary && maxBinarySize > 0 && fileSize > maxBinarySize {
 				result.SkippedBinaries++
 				return nil
 			}
-		}
+			if maxTotalSize > 0 && result.TotalSize+fileSize > maxTotalSize {
+				return fmt.Errorf("total size limit exceeded (max %d bytes)", maxTotalSize)
+			}
 
-		content, readErr := acfs.ReadFile(ctx, syncDir, entry.Path)
-		if readErr != nil {
-			return fmt.Errorf("failed to read file %s: %w", relativePath, readErr)
-		}
-
-		fileSize := int64(len(content))
-		isBinary := IsBinaryContent(content)
-		if isBinary && maxBinarySize > 0 && fileSize > maxBinarySize {
-			result.SkippedBinaries++
+			result.Files = append(result.Files, SyncFileInfo{
+				RelativePath: relativePath,
+				Content:      content,
+				Size:         fileSize,
+				IsBinary:     isBinary,
+				Executable:   os.FileMode(entry.UnixMode)&0o111 != 0,
+			})
+			result.TotalFiles++
+			result.TotalSize += fileSize
 			return nil
-		}
-		if maxTotalSize > 0 && result.TotalSize+fileSize > maxTotalSize {
-			return fmt.Errorf("total size limit exceeded (max %d bytes)", maxTotalSize)
-		}
-
-		result.Files = append(result.Files, SyncFileInfo{
-			RelativePath: relativePath,
-			Content:      content,
-			Size:         fileSize,
-			IsBinary:     isBinary,
-			Executable:   os.FileMode(entry.UnixMode)&0o111 != 0,
-		})
-		result.TotalFiles++
-		result.TotalSize += fileSize
-		return nil
-	})
+		},
+	)
 	switch {
 	case err != nil:
 		return nil, err
@@ -739,43 +737,4 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 	}
 
 	return result, nil
-}
-
-// IsBinaryContent reports whether content looks binary rather than text.
-func IsBinaryContent(content []byte) bool {
-	if len(content) == 0 {
-		return false
-	}
-
-	checkSize := min(len(content), binarySniffBytes)
-	contentType := nethttp.DetectContentType(content[:checkSize])
-
-	if strings.HasPrefix(contentType, "text/") {
-		return false
-	}
-
-	textAppTypes := []string{
-		"application/json",
-		"application/xml",
-		"application/javascript",
-		"application/x-yaml",
-		"application/yaml",
-		"application/toml",
-		"application/x-sh",
-	}
-	for _, t := range textAppTypes {
-		if strings.HasPrefix(contentType, t) {
-			return false
-		}
-	}
-
-	// Text files rarely contain null bytes, so they mark octet-stream content as binary.
-	if contentType == "application/octet-stream" {
-		return slices.Contains(content[:checkSize], 0)
-	}
-
-	return strings.HasPrefix(contentType, "application/") ||
-		strings.HasPrefix(contentType, "image/") ||
-		strings.HasPrefix(contentType, "video/") ||
-		strings.HasPrefix(contentType, "audio/")
 }

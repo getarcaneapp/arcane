@@ -7,23 +7,23 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	kit "go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
 )
 
-const DefaultMaxFileSizeMB = 10
+type (
+	UploadReference struct {
+		UploadIndex   *int
+		BaselineIndex *int
+		Operation     string
+	}
+)
 
-type UploadReference struct {
-	Operation     string
-	UploadIndex   *int
-	BaselineIndex *int
-}
-
-func EffectiveMaxFileSizeMB(configured int) int {
-	return kit.Ternary(configured <= 0, DefaultMaxFileSizeMB, configured)
-}
+const (
+	DefaultMaxFileSizeMB = 10
+)
 
 func MaxFileSizeBytes(configuredMB int) int64 {
-	return int64(EffectiveMaxFileSizeMB(configuredMB)) * 1024 * 1024
+	return int64(kit.Ternary(configuredMB <= 0, DefaultMaxFileSizeMB, configuredMB)) * 1024 * 1024
 }
 
 func ValidateUpdateManifest(fileTreeRevision string, fileChangeCount, maxFileChanges int) error {

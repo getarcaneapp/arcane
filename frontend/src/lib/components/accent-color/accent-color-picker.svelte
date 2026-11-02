@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { mode } from 'mode-watcher';
 
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
 	import { CheckIcon, AddIcon } from '#lib/icons/index.js';
@@ -26,27 +27,24 @@
 		disabled = false,
 		colors = defaultColors,
 		withTheme = true,
-		customColorTitle,
-		onSelect
+		disabledColors = [],
+		onSelect,
+		onCustomColor
 	}: {
 		selectedColor: string;
 		previousColor: string;
 		disabled?: boolean;
-		/** Preset swatches; defaults to the accent colors. */
 		colors?: Swatch[];
-		/** Offers the "inherit the application theme" swatch. */
 		withTheme?: boolean;
-		customColorTitle?: string;
-		/** Called whenever the user picks a different color. */
+		disabledColors?: string[];
 		onSelect?: (color: string) => void;
+		onCustomColor?: () => void;
 	} = $props();
 	let showCustomColorDialog = $state(false);
-	// Several pickers can share a page, so radio IDs are scoped to this one.
-	const uid = $props.id();
 
+	const uid = $props.id();
 	const themePrimary = $derived(resolveThemePrimary(mode.current === 'dark'));
 
-	// Check if current accent color is a custom color (not in predefined list)
 	let isCustomColor = $derived(selectedColor !== 'theme' && !colors.some((c) => c.color === selectedColor));
 	let isPreviousColorCustom = $derived(previousColor !== 'theme' && !colors.some((c) => c.color === previousColor));
 
@@ -78,48 +76,54 @@
 	{@render colorOption('Custom', 'custom', false, true)}
 </RadioGroup.Root>
 
-<CustomColorDialog bind:open={showCustomColorDialog} title={customColorTitle} onApply={handleAccentColorChange} />
+<CustomColorDialog bind:open={showCustomColorDialog} onApply={handleAccentColorChange} />
 
 {#snippet colorOption(label: string, color: string, isSelected: boolean, isCustomColorSelection = false)}
+	{@const isDisabled = disabled || disabledColors.includes(color)}
 	<div class="group/item relative">
-		<RadioGroup.Item id={`${uid}-${color}`} value={color} class="sr-only" />
+		<RadioGroup.Item id={`${uid}-${color}`} value={color} class="sr-only" disabled={isDisabled} />
 		<Label
 			for={`${uid}-${color}`}
 			class={{
-				'cursor-pointer': !disabled,
-				'cursor-not-allowed': disabled,
+				'cursor-pointer': !isDisabled,
+				'cursor-not-allowed': isDisabled,
 				group: isCustomColorSelection
 			}}
 			onclick={() => {
-				if (isCustomColorSelection && !disabled) {
-					showCustomColorDialog = true;
-				}
+				if (!isCustomColorSelection || disabled) return;
+				if (onCustomColor) onCustomColor();
+				else showCustomColorDialog = true;
 			}}
 		>
-			<div
-				class={{
-					'relative z-(--arcane-z-raised) size-8 rounded-full border-2 bg-(--swatch) transition-all duration-200 ease-out group-hover/item:z-(--arcane-z-sticky) group-hover/item:scale-110': true
-				}}
-				style={`--swatch: ${color === 'theme' ? themePrimary : color}`}
-				title={label}
-			>
-				{#if isCustomColorSelection}
-					<div
-						class="absolute inset-0 flex items-center justify-center rounded-full border-2 border-dashed border-border bg-muted"
-					>
-						<AddIcon class="size-4 text-muted-foreground" />
-					</div>
-				{:else if isSelected}
-					<div class="absolute inset-0 flex items-center justify-center">
-						<CheckIcon class="size-6 text-white drop-shadow-sm" />
-					</div>
-				{/if}
-			</div>
-			<div
-				class="absolute top-12 left-1/2 z-(--arcane-z-sticky) max-w-0 -translate-x-1/2 transform overflow-hidden rounded-md border bg-background px-2 py-1 text-xs whitespace-nowrap text-muted-foreground opacity-0 shadow-sm transition-all duration-300 ease-out group-hover/item:max-w-25 group-hover/item:text-foreground group-hover/item:opacity-100"
-			>
-				{label}
-			</div>
+			<ArcaneTooltip.Root delayDuration={200}>
+				<ArcaneTooltip.Trigger>
+					{#snippet child({ props })}
+						<div
+							{...props}
+							tabindex="-1"
+							class={{
+								'relative z-(--arcane-z-raised) size-8 rounded-full border-2 bg-(--swatch) transition-all duration-200 ease-out': true,
+								'group-hover/item:z-(--arcane-z-sticky) group-hover/item:scale-110': !isDisabled,
+								'opacity-30': isDisabled
+							}}
+							style={`--swatch: ${color === 'theme' ? themePrimary : color}`}
+						>
+							{#if isCustomColorSelection}
+								<div
+									class="absolute inset-0 flex items-center justify-center rounded-full border-2 border-dashed border-border bg-muted"
+								>
+									<AddIcon class="size-4 text-muted-foreground" />
+								</div>
+							{:else if isSelected}
+								<div class="absolute inset-0 flex items-center justify-center">
+									<CheckIcon class="size-6 text-white drop-shadow-sm" />
+								</div>
+							{/if}
+						</div>
+					{/snippet}
+				</ArcaneTooltip.Trigger>
+				<ArcaneTooltip.Content>{label}</ArcaneTooltip.Content>
+			</ArcaneTooltip.Root>
 		</Label>
 	</div>
 {/snippet}

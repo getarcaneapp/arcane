@@ -13,7 +13,7 @@ COPY --chown=vp:vp --parents pnpm-lock.yaml pnpm-workspace.yaml package.json \
 RUN --mount=type=cache,id=arcane-pnpm-v3,target=/home/vp/.local/share/pnpm/store,sharing=locked,uid=1000,gid=1000 \
     vp install --frozen-lockfile --prefer-offline --filter ./frontend...
 
-RUN printf 'NODE_VERSION=%s\nSVELTEKIT_VERSION=%s\n' \
+RUN printf 'NODE_VERSION=%s\nSVELTEKIT_VERSION=v%s\n' \
     "$(vp node --version)" \
     "$(vp -C frontend node -p 'require("@sveltejs/kit/package.json").version')" \
     > /tmp/arcane-frontend-build.env
@@ -64,7 +64,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux \
     go build \
     -tags "${BUILD_TAGS}" \
-    -ldflags "-w -s -X github.com/getarcaneapp/arcane/backend/v2/internal/config.Version=${VERSION} -X github.com/getarcaneapp/arcane/backend/v2/internal/config.Revision=${REVISION} -X github.com/getarcaneapp/arcane/backend/v2/internal/config.BuildTime=${BUILD_TIME} -X github.com/getarcaneapp/arcane/backend/v2/internal/config.NodeVersion=${NODE_VERSION} -X github.com/getarcaneapp/arcane/backend/v2/internal/config.SvelteKitVersion=${SVELTEKIT_VERSION}" \
+    -ldflags "-w -s -X getarcane.dev/arcane/v3/internal/config.Version=${VERSION} -X getarcane.dev/arcane/v3/internal/config.Revision=${REVISION} -X getarcane.dev/arcane/v3/internal/config.BuildTime=${BUILD_TIME} -X getarcane.dev/arcane/v3/internal/config.NodeVersion=${NODE_VERSION} -X getarcane.dev/arcane/v3/internal/config.SvelteKitVersion=v${SVELTEKIT_VERSION}" \
     -trimpath \
     -o /build/arcane \
     ./cmd/main.go
@@ -78,9 +78,8 @@ ARG TARGETARCH
 ARG VERSION
 ARG REVISION
 
-ENV GIN_MODE=release
-ENV PORT=3552
-ENV ENVIRONMENT=production
+ENV ARCANE_PORT=3552
+ENV ARCANE_ENVIRONMENT=production
 ENV ARCANE_IN_CONTAINER=true
 ENV NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility \

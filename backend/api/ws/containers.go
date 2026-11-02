@@ -9,13 +9,20 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/labstack/echo/v5"
-	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/container"
+	wshub "getarcane.dev/arcane/v3/pkg/ws"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	containersStatsResult struct {
+		samples map[string]*types.ContainerResourceSample
+		err     error
+	}
 )
 
 const (
@@ -24,11 +31,6 @@ const (
 	// containersStatsReadLimit fits a subscription of 500 full container IDs, the most one batch samples.
 	containersStatsReadLimit = 64 << 10
 )
-
-type containersStatsResult struct {
-	samples map[string]*containertypes.ResourceSample
-	err     error
-}
 
 // ContainersStats streams resource samples for a client-chosen set of containers over one WebSocket.
 // The client sends a ResourceSampleSubscription whenever its set changes; the server answers with a
@@ -40,7 +42,7 @@ type containersStatsResult struct {
 //	@Param			id	path	string	true	"Environment ID"
 //	@Router			/api/environments/{id}/ws/containers/stats [get]
 func (h *WebSocketHandler) ContainersStats(c *echo.Context) error {
-	conn, unregister, ok := h.acceptWS(c, systemtypes.WSKindContainerStats, "batch")
+	conn, unregister, ok := h.acceptWS(c, types.WSKindContainerStats, "batch")
 	if !ok {
 		return nil
 	}
@@ -57,7 +59,7 @@ func (h *WebSocketHandler) ContainersStats(c *echo.Context) error {
 	// The pong is serviced by readContainersStatsPump.
 	go wshub.KeepAlive(ctx, cancel, conn)
 
-	send := func(batch containertypes.ResourceSampleBatch) error {
+	send := func(batch types.ContainerResourceSampleBatch) error {
 		b, err := json.Marshal(batch)
 		if err != nil {
 			return err
@@ -105,9 +107,9 @@ func (h *WebSocketHandler) ContainersStats(c *echo.Context) error {
 			},
 			func(result containersStatsResult) bool {
 				if result.err != nil {
-					return send(containertypes.ResourceSampleBatch{Error: "Failed to sample container stats: " + result.err.Error(), Timestamp: time.Now()}) == nil
+					return send(types.ContainerResourceSampleBatch{Error: "Failed to sample container stats: " + result.err.Error(), Timestamp: time.Now()}) == nil
 				}
-				return send(containertypes.ResourceSampleBatch{Samples: result.samples, Timestamp: time.Now()}) == nil
+				return send(types.ContainerResourceSampleBatch{Samples: result.samples, Timestamp: time.Now()}) == nil
 			})
 		if subCtx.Err() == nil {
 			return nil
@@ -125,7 +127,7 @@ func readContainersStatsPump(ctx context.Context, cancel context.CancelFunc, con
 		if err != nil {
 			return
 		}
-		var subscription containertypes.ResourceSampleSubscription
+		var subscription types.ContainerResourceSampleSubscription
 		if json.Unmarshal(data, &subscription) != nil {
 			continue
 		}

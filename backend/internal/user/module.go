@@ -5,17 +5,19 @@ package user
 import (
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-type Module struct {
-	service                  *UserService
-	invalidateUserTokenCache func(string)
-	settings                 *settings.SettingsService
-}
+type (
+	Module struct {
+		service                  *UserService
+		invalidateUserTokenCache func(string)
+		settings                 *settings.SettingsService
+	}
+)
 
 func New(service *UserService, invalidateUserTokenCache func(string), settingsService *settings.SettingsService) *Module {
 	return &Module{service: service, invalidateUserTokenCache: invalidateUserTokenCache, settings: settingsService}
@@ -75,7 +77,7 @@ func RegisterUsers(api huma.API, userService *UserService, invalidateUserTokenCa
 
 	huma.Register(api, huma.Operation{
 		OperationID: "updateUser",
-		Method:      "PUT",
+		Method:      "PATCH",
 		Path:        "/users/{userId}",
 		Summary:     "Update a user",
 		Description: "Update an existing user's information",

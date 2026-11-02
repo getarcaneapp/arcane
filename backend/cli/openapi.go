@@ -4,9 +4,10 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"go.getarcane.app/acfs/atomic"
 
-	"github.com/getarcaneapp/arcane/backend/v2/api"
+	"kit.getarcane.app/fs/atomic"
+
+	"getarcane.dev/arcane/v3/api"
 )
 
 var openapiCmd = &cobra.Command{

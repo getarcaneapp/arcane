@@ -8,11 +8,34 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	composeapi "github.com/docker/compose/v5/pkg/api"
-	kit "go.getarcane.app/kit/pkg"
+
+	"kit.getarcane.app"
 )
 
-// ImagePullMode describes when Arcane should pull an image for a project.
-type ImagePullMode int
+type (
+	// ImagePullMode describes when Arcane should pull an image for a project.
+	ImagePullMode int
+
+	// ImagePullStep is one entry of an image pull plan: the mode plus, for
+	// ImagePullModeRefresh, the window after which a new pull is due.
+	ImagePullStep struct {
+		Mode         ImagePullMode
+		RefreshAfter time.Duration
+	}
+
+	// DeployImageDecision describes how deploy should handle a service image.
+	DeployImageDecision struct {
+		StaleAfter    time.Duration
+		Build         bool
+		PullAlways    bool
+		PullIfMissing bool
+		// PullIfStale pulls when the image is missing or its last-tag time is
+		// older than StaleAfter (pull_policy daily/weekly/every_N).
+		PullIfStale             bool
+		FallbackBuildOnPullFail bool
+		RequireLocalOnly        bool
+	}
+)
 
 const (
 	// ImagePullModeNever skips pulling the image.
@@ -25,26 +48,6 @@ const (
 	// ImagePullModeAlways pulls even when the image is present locally.
 	ImagePullModeAlways
 )
-
-// ImagePullStep is one entry of an image pull plan: the mode plus, for
-// ImagePullModeRefresh, the window after which a new pull is due.
-type ImagePullStep struct {
-	Mode         ImagePullMode
-	RefreshAfter time.Duration
-}
-
-// DeployImageDecision describes how deploy should handle a service image.
-type DeployImageDecision struct {
-	Build         bool
-	PullAlways    bool
-	PullIfMissing bool
-	// PullIfStale pulls when the image is missing or its last-tag time is
-	// older than StaleAfter (pull_policy daily/weekly/every_N).
-	PullIfStale             bool
-	StaleAfter              time.Duration
-	FallbackBuildOnPullFail bool
-	RequireLocalOnly        bool
-}
 
 // ResolveServiceImagePullMode resolves compose pull_policy into Arcane's pull step.
 func ResolveServiceImagePullMode(svc composetypes.ServiceConfig) ImagePullStep {
@@ -142,16 +145,9 @@ func NormalizeDeployPullPolicy(policy string) string {
 	}
 }
 
-// IsAlwaysPullPolicy reports whether policy means an unconditional pull.
-// Refresh windows (daily/weekly/every_N) are not "always": they pull only
-// once their window has elapsed, matching compose v5.5.0.
-func IsAlwaysPullPolicy(policy string) bool {
-	return policy == "always"
-}
-
-// refreshWindowForPolicyInternal resolves policy as a refresh window
+// refreshWindowForPolicy resolves policy as a refresh window
 // (daily/weekly/every_N), reporting false for every other policy.
-func refreshWindowForPolicyInternal(svc composetypes.ServiceConfig, policy string) (time.Duration, bool) {
+func refreshWindowForPolicy(svc composetypes.ServiceConfig, policy string) (time.Duration, bool) {
 	normalized := svc
 	normalized.PullPolicy = policy
 	parsed, window, err := normalized.GetPullPolicy()
@@ -172,15 +168,15 @@ func DecideDeployImageAction(svc composetypes.ServiceConfig, pullPolicyOverride 
 	buildEnabled := svc.Build != nil
 
 	if buildEnabled {
-		switch {
-		case policy == "build":
+		switch policy {
+		case "build":
 			return DeployImageDecision{Build: true}
-		case policy == "never":
+		case "never":
 			return DeployImageDecision{RequireLocalOnly: true}
-		case IsAlwaysPullPolicy(policy):
+		case "always":
 			return DeployImageDecision{PullAlways: true, FallbackBuildOnPullFail: true}
 		default:
-			if window, ok := refreshWindowForPolicyInternal(svc, policy); ok {
+			if window, ok := refreshWindowForPolicy(svc, policy); ok {
 				return DeployImageDecision{
 					PullIfStale:             true,
 					StaleAfter:              window,
@@ -191,13 +187,13 @@ func DecideDeployImageAction(svc composetypes.ServiceConfig, pullPolicyOverride 
 		}
 	}
 
-	switch {
-	case policy == "never":
+	switch policy {
+	case "never":
 		return DeployImageDecision{RequireLocalOnly: true}
-	case IsAlwaysPullPolicy(policy):
+	case "always":
 		return DeployImageDecision{PullAlways: true}
 	default:
-		if window, ok := refreshWindowForPolicyInternal(svc, policy); ok {
+		if window, ok := refreshWindowForPolicy(svc, policy); ok {
 			return DeployImageDecision{PullIfStale: true, StaleAfter: window}
 		}
 		return DeployImageDecision{PullIfMissing: true}

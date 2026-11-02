@@ -2,7 +2,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
-	import type { Temporal } from 'temporal-polyfill';
 
 	import DatePicker from '#lib/components/form/date-picker.svelte';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -38,7 +37,7 @@
 		autocomplete?: HTMLInputElement['autocomplete'];
 	} = $props();
 
-	const id = $derived(label?.toLowerCase().replace(/ /g, '-'));
+	const id = $derived(label?.toLowerCase().replaceAll(' ', '-'));
 </script>
 
 <div {...restProps}>

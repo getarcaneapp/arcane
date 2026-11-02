@@ -1,120 +1,124 @@
 package oidc
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log/slog"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
-	roletypes "github.com/getarcaneapp/arcane/types/v2/role"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/auth"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/passkey"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/session"
+	"getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/arcane/v3/pkg/cookie"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/types/v3"
 )
 
-// OidcHandler handles OIDC authentication endpoints, plus OIDC group → role
-// mapping management (since mappings only make sense in the OIDC context).
-type OidcHandler struct {
-	authService    *auth.AuthService
-	passkeyService *passkey.PasskeyService
-	oidcService    *OidcService
-	roleService    *role.RoleService
-	userService    *user.UserService
-	config         *config.Config
-}
-
-type OidcHeaders struct {
-	Origin          string `header:"Origin"`
-	XForwardedHost  string `header:"X-Forwarded-Host"`
-	XForwardedProto string `header:"X-Forwarded-Proto"`
-	Host            string `header:"Host"`
-	UserAgent       string `header:"User-Agent"`
-}
-
-type GetOidcStatusInput struct{}
-
-type GetOidcStatusOutput struct {
-	Body authtypes.OidcStatusInfo
-}
-
-type GetOidcAuthUrlInput struct {
-	OidcHeaders
-
-	Body authtypes.OidcAuthUrlRequest
-}
-
-type GetOidcAuthUrlOutput struct {
-	SetCookie string `header:"Set-Cookie" doc:"OIDC state cookie"`
-	Body      authtypes.OidcAuthUrlResponse
-}
-
-type HandleOidcCallbackInput struct {
-	OidcHeaders
-
-	OidcStateCookie string `cookie:"oidc_state" doc:"OIDC state cookie from auth URL request"`
-	Body            authtypes.OidcCallbackRequest
-}
-
-type HandleOidcCallbackOutput struct {
-	SetCookie []string `header:"Set-Cookie" doc:"Session and clear state cookies"`
-	Body      authtypes.OidcCallbackResponse
-}
-
-type GetOidcConfigInput struct {
-	OidcHeaders
-}
-
-type GetOidcConfigOutput struct {
-	Body authtypes.OidcConfigResponse
-}
-
-type InitiateDeviceAuthInput struct{}
-
-type InitiateDeviceAuthOutput struct {
-	Body authtypes.OidcDeviceAuthResponse
-}
-
-type ExchangeDeviceTokenInput struct {
-	UserAgent string `header:"User-Agent"`
-	Body      authtypes.OidcDeviceTokenRequest
-}
-
-type ExchangeDeviceTokenOutput struct {
-	Body authtypes.AuthenticationResponse
-}
-
-type ListOidcRoleMappingsInput struct{}
-
-type CreateOidcRoleMappingInput struct {
-	Body roletypes.CreateOidcRoleMapping
-}
-
-type UpdateOidcRoleMappingInput struct {
-	ID   string `path:"id" doc:"Mapping ID"`
-	Body roletypes.UpdateOidcRoleMapping
-}
-
-type DeleteOidcRoleMappingInput struct {
-	ID string `path:"id" doc:"Mapping ID"`
-}
-
-type DeleteOidcRoleMappingOutput struct {
-	Body struct {
-		Success bool   `json:"success"`
-		Message string `json:"message"`
+type (
+	// OidcHandler handles OIDC authentication endpoints, plus OIDC group → role
+	// mapping management (since mappings only make sense in the OIDC context).
+	OidcHandler struct {
+		authService    *auth.AuthService
+		passkeyService *passkey.PasskeyService
+		oidcService    *OidcService
+		roleService    *role.RoleService
+		userService    *user.UserService
+		config         *config.Config
 	}
-}
+
+	OidcHeaders struct {
+		Origin          string `header:"Origin"`
+		XForwardedHost  string `header:"X-Forwarded-Host"`
+		XForwardedProto string `header:"X-Forwarded-Proto"`
+		Host            string `header:"Host"`
+		UserAgent       string `header:"User-Agent"`
+	}
+
+	GetOidcStatusInput struct{}
+
+	GetOidcStatusOutput struct {
+		Body types.OidcStatusInfo
+	}
+
+	GetOidcAuthUrlInput struct {
+		OidcHeaders
+
+		Body types.OidcAuthUrlRequest
+	}
+
+	GetOidcAuthUrlOutput struct {
+		SetCookie string `header:"Set-Cookie" doc:"OIDC state cookie"`
+		Body      types.OidcAuthUrlResponse
+	}
+
+	HandleOidcCallbackInput struct {
+		OidcHeaders
+
+		OidcStateCookie string `cookie:"oidc_state" doc:"OIDC state cookie from auth URL request"`
+		Body            types.OidcCallbackRequest
+	}
+
+	HandleOidcCallbackOutput struct {
+		Body      types.AuthenticationResponse
+		SetCookie []string `header:"Set-Cookie" doc:"Session and clear state cookies"`
+	}
+
+	GetOidcConfigInput struct {
+		OidcHeaders
+	}
+
+	GetOidcConfigOutput struct {
+		Body types.OidcConfigResponse
+	}
+
+	InitiateDeviceAuthInput struct{}
+
+	InitiateDeviceAuthOutput struct {
+		Body types.OidcDeviceAuthResponse
+	}
+
+	ExchangeDeviceTokenInput struct {
+		UserAgent string `header:"User-Agent"`
+		Body      types.OidcDeviceTokenRequest
+	}
+
+	ExchangeDeviceTokenOutput struct {
+		Body types.AuthenticationResponse
+	}
+
+	ListOidcRoleMappingsInput struct{}
+
+	CreateOidcRoleMappingInput struct {
+		types.Create[types.OidcRoleMapping]
+	}
+
+	UpdateOidcRoleMappingInput struct {
+		ID string `path:"id" doc:"Mapping ID"`
+		types.Update[types.OidcRoleMapping]
+	}
+
+	DeleteOidcRoleMappingInput struct {
+		ID string `path:"id" doc:"Mapping ID"`
+	}
+
+	DeleteOidcRoleMappingOutput struct {
+		Body struct {
+			Message string `json:"message"`
+			Success bool   `json:"success"`
+		}
+	}
+)
 
 // GetOidcStatus returns the OIDC configuration status.
 func (h *OidcHandler) GetOidcStatus(ctx context.Context, _ *GetOidcStatusInput) (*GetOidcStatusOutput, error) {
@@ -138,16 +142,12 @@ func (h *OidcHandler) GetOidcConfig(ctx context.Context, input *GetOidcConfigInp
 		return nil, huma.Error500InternalServerError("Failed to get OIDC configuration")
 	}
 
-	appUrl := ""
-	if h.config != nil {
-		appUrl = h.config.AppUrl
-	}
-	origin := httpx.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, appUrl)
+	origin := httpx.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, h.config.GetAppURL())
 
 	return &GetOidcConfigOutput{
-		Body: authtypes.OidcConfigResponse{
+		Body: types.OidcConfigResponse{
 			ClientID:                    oidcConfig.ClientID,
-			RedirectUri:                 h.oidcService.GetOidcRedirectURL(origin),
+			RedirectUri:                 (cmp.Or(origin, strings.TrimSuffix(h.oidcService.config.GetAppURL(), "/")) + "/auth/oidc/callback"),
 			IssuerUrl:                   oidcConfig.IssuerURL,
 			AuthorizationEndpoint:       oidcConfig.AuthorizationEndpoint,
 			TokenEndpoint:               oidcConfig.TokenEndpoint,
@@ -168,11 +168,7 @@ func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlI
 		return nil, huma.Error400BadRequest("OIDC authentication is disabled")
 	}
 
-	appUrl := ""
-	if h.config != nil {
-		appUrl = h.config.AppUrl
-	}
-	origin := httpx.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, appUrl)
+	origin := httpx.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, h.config.GetAppURL())
 
 	mobileRedirectURI := input.Body.MobileRedirectUri
 	if mobileRedirectURI != "" {
@@ -194,7 +190,7 @@ func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlI
 
 	return &GetOidcAuthUrlOutput{
 		SetCookie: stateCookie,
-		Body: authtypes.OidcAuthUrlResponse{
+		Body: types.OidcAuthUrlResponse{
 			AuthUrl: authUrl,
 		},
 	}, nil
@@ -207,11 +203,7 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 		return nil, huma.Error400BadRequest("Missing or invalid OIDC state cookie")
 	}
 
-	appUrl := ""
-	if h.config != nil {
-		appUrl = h.config.AppUrl
-	}
-	origin := httpx.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, appUrl)
+	origin := httpx.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, h.config.GetAppURL())
 
 	mobileRedirectURI := input.Body.MobileRedirectUri
 	if mobileRedirectURI != "" {
@@ -222,7 +214,13 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 	}
 
 	// Process OIDC callback
-	userInfo, tokenResp, err := h.oidcService.HandleCallback(ctx, input.Body.Code, input.Body.State, input.OidcStateCookie, origin, mobileRedirectURI)
+	userInfo, tokenResp, err := h.oidcService.HandleCallback(ctx, CallbackRequest{
+		Code:              input.Body.Code,
+		State:             input.Body.State,
+		StoredState:       input.OidcStateCookie,
+		Origin:            origin,
+		MobileRedirectURI: mobileRedirectURI,
+	})
 	if err != nil {
 		slog.WarnContext(ctx, "OIDC callback failed", "error", err, "origin", origin, "statePresent", input.Body.State != "", "codePresent", input.Body.Code != "")
 		return nil, huma.Error400BadRequest("OIDC callback failed: " + err.Error())
@@ -255,9 +253,9 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 		}
 		return &HandleOidcCallbackOutput{
 			SetCookie: setCookies,
-			Body: authtypes.OidcCallbackResponse{
+			Body: types.AuthenticationResponse{
 				Success: true,
-				Status:  authtypes.AuthenticationStatusMFARequired,
+				Status:  types.AuthenticationStatusMFARequired,
 				MFA:     challenge,
 			},
 		}, nil
@@ -281,9 +279,9 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 
 	return &HandleOidcCallbackOutput{
 		SetCookie: setCookies,
-		Body: authtypes.OidcCallbackResponse{
+		Body: types.AuthenticationResponse{
 			Success:      true,
-			Status:       authtypes.AuthenticationStatusAuthenticated,
+			Status:       types.AuthenticationStatusAuthenticated,
 			Token:        tokenPair.AccessToken,
 			RefreshToken: tokenPair.RefreshToken,
 			ExpiresAt:    &expiresAt,
@@ -372,9 +370,9 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 	}
 
 	return &ExchangeDeviceTokenOutput{
-		Body: authtypes.AuthenticationResponse{
+		Body: types.AuthenticationResponse{
 			Success:      true,
-			Status:       authtypes.AuthenticationStatusAuthenticated,
+			Status:       types.AuthenticationStatusAuthenticated,
 			Token:        tokenPair.AccessToken,
 			RefreshToken: tokenPair.RefreshToken,
 			ExpiresAt:    &expiresAt,
@@ -383,68 +381,64 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 	}, nil
 }
 
-func (h *OidcHandler) ListOidcRoleMappings(ctx context.Context, _ *ListOidcRoleMappingsInput) (*handlerutil.Out[[]roletypes.OidcRoleMapping], error) {
+func (h *OidcHandler) ListOidcRoleMappings(ctx context.Context, _ *ListOidcRoleMappingsInput) (*handlerutil.Out[[]types.OidcRoleMapping], error) {
 	rows, err := h.roleService.ListOidcMappings(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list mappings: " + err.Error())
 	}
-	out := &handlerutil.Out[[]roletypes.OidcRoleMapping]{}
-	out.Body.Success = true
-	out.Body.Data = make([]roletypes.OidcRoleMapping, len(rows))
+	data := make([]types.OidcRoleMapping, len(rows))
 	for i := range rows {
-		out.Body.Data[i] = toOidcMappingDTO(&rows[i])
+		data[i] = toOidcMappingDTO(&rows[i])
 	}
-	return out, nil
+	return &handlerutil.Out[[]types.OidcRoleMapping]{
+		Body: types.ApiResponse[[]types.OidcRoleMapping]{
+			Success: true,
+			Data:    data,
+		},
+	}, nil
 }
 
-func (h *OidcHandler) CreateOidcRoleMapping(ctx context.Context, input *CreateOidcRoleMappingInput) (*handlerutil.Out[roletypes.OidcRoleMapping], error) {
-	claimValue := strings.TrimSpace(input.Body.ClaimValue)
-	roleID := strings.TrimSpace(input.Body.RoleID)
-	if claimValue == "" {
-		return nil, huma.Error400BadRequest("claim value is required")
-	}
-	if roleID == "" {
-		return nil, huma.Error400BadRequest("role id is required")
-	}
-	mapping, err := h.roleService.CreateOidcMapping(ctx, claimValue, roleID, input.Body.EnvironmentID)
+func (h *OidcHandler) CreateOidcRoleMapping(ctx context.Context, input *CreateOidcRoleMappingInput) (*handlerutil.Out[types.OidcRoleMapping], error) {
+	mapping, err := h.roleService.CreateOidcMapping(ctx, input.Body.ClaimValue, input.Body.RoleID, input.Body.EnvironmentID)
 	if err != nil {
-		if errors.Is(err, common.ErrInvalidRoleAssignment) {
-			return nil, huma.Error400BadRequest(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("failed to create mapping: " + err.Error())
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
-	out := &handlerutil.Out[roletypes.OidcRoleMapping]{}
-	out.Body.Success = true
-	out.Body.Data = toOidcMappingDTO(mapping)
-	return out, nil
+	return &handlerutil.Out[types.OidcRoleMapping]{
+		Body: types.ApiResponse[types.OidcRoleMapping]{
+			Success: true,
+			Data:    toOidcMappingDTO(mapping),
+		},
+	}, nil
 }
 
-func (h *OidcHandler) UpdateOidcRoleMapping(ctx context.Context, input *UpdateOidcRoleMappingInput) (*handlerutil.Out[roletypes.OidcRoleMapping], error) {
-	claimValue := strings.TrimSpace(input.Body.ClaimValue)
-	roleID := strings.TrimSpace(input.Body.RoleID)
-	if claimValue == "" {
-		return nil, huma.Error400BadRequest("claim value is required")
-	}
-	if roleID == "" {
-		return nil, huma.Error400BadRequest("role id is required")
-	}
-	mapping, err := h.roleService.UpdateOidcMapping(ctx, input.ID, claimValue, roleID, input.Body.EnvironmentID)
+func (h *OidcHandler) UpdateOidcRoleMapping(ctx context.Context, input *UpdateOidcRoleMappingInput) (*handlerutil.Out[types.OidcRoleMapping], error) {
+	submitted, err := input.SubmittedFields()
 	if err != nil {
-		if errors.Is(err, common.ErrOidcMappingNotFound) {
-			return nil, huma.Error404NotFound("mapping not found")
-		}
-		if errors.Is(err, common.ErrOidcMappingEnvManaged) {
-			return nil, huma.Error409Conflict(err.Error())
-		}
-		if errors.Is(err, common.ErrInvalidRoleAssignment) {
-			return nil, huma.Error400BadRequest(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("failed to update mapping: " + err.Error())
+		return nil, huma.Error400BadRequest("invalid request body")
 	}
-	out := &handlerutil.Out[roletypes.OidcRoleMapping]{}
-	out.Body.Success = true
-	out.Body.Data = toOidcMappingDTO(mapping)
-	return out, nil
+	current, err := h.roleService.GetOidcMapping(ctx, input.ID)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+	mapping, err := h.roleService.UpdateOidcMapping(
+		ctx,
+		input.ID,
+		kit.Ternary(submitted["claimValue"], input.Body.ClaimValue, current.ClaimValue),
+		kit.Ternary(submitted["roleId"], input.Body.RoleID, current.RoleID),
+		kit.Ternary(submitted["environmentId"], input.Body.EnvironmentID, current.EnvironmentID),
+	)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+	return &handlerutil.Out[types.OidcRoleMapping]{
+		Body: types.ApiResponse[types.OidcRoleMapping]{
+			Success: true,
+			Data:    toOidcMappingDTO(mapping),
+		},
+	}, nil
 }
 
 func (h *OidcHandler) DeleteOidcRoleMapping(ctx context.Context, input *DeleteOidcRoleMappingInput) (*DeleteOidcRoleMappingOutput, error) {
@@ -463,8 +457,8 @@ func (h *OidcHandler) DeleteOidcRoleMapping(ctx context.Context, input *DeleteOi
 	return out, nil
 }
 
-func toOidcMappingDTO(m *role.OidcRoleMapping) roletypes.OidcRoleMapping {
-	return roletypes.OidcRoleMapping{
+func toOidcMappingDTO(m *role.OidcRoleMapping) types.OidcRoleMapping {
+	return types.OidcRoleMapping{
 		ID:            m.ID,
 		ClaimValue:    m.ClaimValue,
 		RoleID:        m.RoleID,

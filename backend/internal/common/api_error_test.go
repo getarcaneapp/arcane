@@ -5,12 +5,13 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
 )
 
 func TestToAPIErrorMapsClassifiedValidationDetails(t *testing.T) {
-	var err error = &base.FieldError{Field: "name", Err: errors.New("Name is required")}
+	var err error = &types.FieldError{Field: "name", Err: errors.New("Name is required")}
 	err = Classify(ErrValidation, err)
 
 	apiErr := ToAPIError(err)

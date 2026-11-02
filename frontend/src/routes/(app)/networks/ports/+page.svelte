@@ -1,52 +1,30 @@
 <script lang="ts">
 	import { createQuery } from '@tanstack/svelte-query';
-	import { tick } from 'svelte';
+	import { untrack } from 'svelte';
 
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import { portService } from '#lib/services/port-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
+	import { portListQuery } from '#lib/query/networks.js';
+	import { readableEnvironments } from '#lib/utils/environments.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 
 	import PortTable from './components/port-table.svelte';
 
 	let { data } = $props();
 
-	let requestOptions = $derived(data.portRequestOptions);
-	let selectedIds = $state<string[]>([]);
+	const pageState = new ResourceListPageState(untrack(() => data.portRequestOptions));
 
-	const scope = $derived(environmentStore.shownKey);
-
-	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
 	const portsQuery = createQuery(() => {
-		const queryScope = scope;
-		const environments = environmentStore.shown;
-		const options = requestOptions;
+		const scope = pageState.scope;
 		return {
-			queryKey: queryKeys.ports.list(queryScope, options),
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, options, (id, request, config) =>
-					portService.getPortsForEnvironment(id, request, config)
-				),
-			placeholderData: (previous, query) => {
-				if (query?.queryKey[1] === queryScope) return previous;
-				return undefined;
-			},
-			select: (value) => ({ envId: queryScope, value })
+			...portListQuery(scope, readableEnvironments('containers:list'), pageState.requestOptions),
+			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
+			select: (value) => ({ envId: scope, value })
 		};
 	});
-	const ports = $derived(portsQuery.data?.envId === scope ? portsQuery.data.value : null);
 
-	useEnvironmentRefresh(() => {
-		selectedIds = [];
-	});
-
-	async function refresh() {
-		await portsQuery.refetch();
-	}
-
+	const resourcesReady = $derived(portsQuery.data?.envId === pageState.scope);
+	const ports = $derived(portsQuery.data?.value ?? data.ports);
 	const isRefreshing = $derived(portsQuery.isFetching && !portsQuery.isPending);
 
 	const actionButtons: ActionButton[] = $derived([
@@ -56,7 +34,7 @@
 			placement: 'secondary',
 			iconOnly: true,
 			label: m.common_refresh(),
-			onclick: refresh,
+			onclick: () => portsQuery.refetch(),
 			loading: isRefreshing,
 			disabled: portsQuery.isFetching
 		}
@@ -65,17 +43,12 @@
 
 <ResourcePageLayout title={m.common_ports()} subtitle={m.ports_subtitle()} {actionButtons}>
 	{#snippet mainContent()}
-		{#if ports}
+		{#if resourcesReady}
 			<PortTable
 				{ports}
-				bind:selectedIds
-				bind:requestOptions
-				onRefreshData={async (options) => {
-					requestOptions = options;
-					// Let the query pick up the new key first; unchanged options (Retry) still refetch.
-					await tick();
-					await portsQuery.refetch({ cancelRefetch: false });
-				}}
+				bind:selectedIds={pageState.selectedIds}
+				bind:requestOptions={pageState.requestOptions}
+				onRetry={() => portsQuery.refetch()}
 			/>
 		{/if}
 	{/snippet}

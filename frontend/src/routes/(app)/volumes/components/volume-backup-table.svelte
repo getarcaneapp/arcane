@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { onMount, onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -43,6 +44,8 @@
 		ArrowDownIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { volumeBackupListQuery } from '#lib/query/volumes.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 	import { volumeBackupService, type VolumeBackupListResponse } from '#lib/services/volume-backup-service.js';
 	import { volumeService } from '#lib/services/volume-service.js';
@@ -85,16 +88,6 @@
 	// Destinations are a global resource; an environment-scoped backup grant does not cover them.
 	const canListS3Destinations = $derived(hasPermission('s3-destinations:list', GLOBAL_SCOPE));
 
-	let backupsPaginated = $state<VolumeBackupListResponse>({
-		data: [],
-		pagination: {
-			currentPage: 1,
-			totalPages: 1,
-			totalItems: 0,
-			itemsPerPage: 10
-		}
-	});
-	let backupWarnings = $state<string[]>([]);
 	let backupPolicies = $state<VolumeBackupPolicy[]>([]);
 	let s3Destinations = $state<S3Destination[]>([]);
 	let s3DestinationsError = $state<string | null>(null);
@@ -122,30 +115,37 @@
 	let backupFilesSearch = $state('');
 	let selectedPaths = $state<string[]>([]);
 	let selectAllBackupFiles = $state(false);
-	let backupLoadVersion = 0;
 	let active = true;
 	onDestroy(() => {
 		active = false;
-		backupLoadVersion += 1;
 	});
 
-	async function loadData(options: SearchPaginationSortRequest): Promise<VolumeBackupListResponse> {
-		await environmentStore.ready;
-		if (!active) return backupsPaginated;
-		const environmentId = currentEnvId;
-		const name = volumeName;
-		const version = ++backupLoadVersion;
-		const result = await tryCatch(volumeBackupService.listBackups(name, options, environmentId));
-		if (version !== backupLoadVersion || environmentId !== currentEnvId || name !== volumeName) return backupsPaginated;
-		if (result.error !== null) {
-			let message: string = m.volumes_backup_load_failed();
-			if (result.error instanceof Error) message = result.error.message;
-			toast.error(message);
-			return backupsPaginated;
+	const queryClient = useQueryClient();
+	const backupsQuery = createQuery(() => ({
+		...volumeBackupListQuery(currentEnvId, volumeName, requestOptions),
+		placeholderData: (previous, query) =>
+			query?.queryKey[1] === currentEnvId && query?.queryKey[2] === volumeName ? previous : undefined
+	}));
+	const backupsPaginated = $derived<VolumeBackupListResponse>(
+		backupsQuery.data ?? {
+			data: [],
+			pagination: {
+				currentPage: 1,
+				totalPages: 1,
+				totalItems: 0,
+				itemsPerPage: 10
+			}
 		}
-		backupsPaginated = result.data;
-		backupWarnings = result.data.warnings ?? [];
-		return result.data;
+	);
+	const backupWarnings = $derived(backupsQuery.data?.warnings ?? []);
+
+	$effect(() => {
+		const error = backupsQuery.error;
+		if (error) toast.error(m.volumes_backup_load_failed(), { description: extractApiErrorMessage(error) });
+	});
+
+	function invalidateBackups() {
+		return queryClient.invalidateQueries({ queryKey: queryKeys.volumes.backupListPrefix(currentEnvId, volumeName) });
 	}
 
 	const backupActivity = useBackupActivity(
@@ -159,7 +159,7 @@
 					activity.metadata['volumeNames'].includes(volumeName))
 			);
 		},
-		() => loadData(requestOptions),
+		invalidateBackups,
 		() => volumeName,
 		() => {
 			const name = volumeName;
@@ -167,7 +167,7 @@
 			return async (environmentId) => {
 				const ids: string[] = [];
 				let page = 1;
-				let totalPages = 1;
+				let hasNextPage = false;
 				do {
 					const result = await volumeBackupService.listBackups(
 						name,
@@ -178,9 +178,9 @@
 						environmentId
 					);
 					ids.push(...result.data.filter((backup) => backup.status === 'running').map((backup) => backup.id));
-					totalPages = result.pagination.totalPages;
+					hasNextPage = result.pagination.hasNextPage ?? false;
 					page++;
-				} while (page <= totalPages);
+				} while (hasNextPage);
 				return ids;
 			};
 		}
@@ -207,7 +207,7 @@
 						m.backups_started(),
 						canReadActivities ? activityToastOptions(extractActivityId(result), false) : undefined
 					);
-					void loadData(requestOptions);
+					void invalidateBackups();
 					return true;
 				})()
 			);
@@ -257,14 +257,14 @@
 								m.common_delete_success({ resource: m.volumes_workspace_backup() }),
 								activityToastOptions(extractActivityId(result))
 							);
-							await loadData(requestOptions);
+							await invalidateBackups();
 						})()
 					);
 					if (operationResult.error !== null) {
 						const error = operationResult.error;
 
 						toast.error(extractApiErrorMessage(error));
-						await loadData(requestOptions);
+						await invalidateBackups();
 					}
 				}
 			}
@@ -287,7 +287,7 @@
 			},
 			setLoading: (loading) => (deletingSelected = loading),
 			onItemFailure: (_id, error) => toast.error(extractApiErrorMessage(error)),
-			onComplete: () => loadData(requestOptions),
+			onComplete: invalidateBackups,
 			clearSelection: () => (selectedIds = [])
 		});
 	}
@@ -303,7 +303,7 @@
 				const response = await run();
 				await afterRun?.();
 				toast.success(successMessage(), activityToastOptions(extractActivityId(response)));
-				await loadData(requestOptions);
+				await invalidateBackups();
 			})()
 		);
 		if (result.error !== null) {
@@ -415,8 +415,7 @@
 		const name = volumeName;
 		const [collection, destinations] = await Promise.all([
 			volumeBackupService.getPolicies(name, environmentId),
-			canBackupVolume && canListS3Destinations ? tryCatch(s3DestinationService.listAll()) : Promise.resolve(null),
-			loadData(requestOptions)
+			canBackupVolume && canListS3Destinations ? tryCatch(s3DestinationService.listAll()) : Promise.resolve(null)
 		]);
 		if (!active || environmentId !== currentEnvId || name !== volumeName) return;
 		backupPolicies = collection.policies;
@@ -459,7 +458,7 @@
 			id: 'remove',
 			label: m.common_remove_selected_count({ count: selectedIds.length }),
 			action: 'remove',
-			onClick: handleDeleteSelected,
+			onclick: handleDeleteSelected,
 			loading: deletingSelected,
 			disabled: !canDeleteBackup || deletingSelected || selectedIds.length === 0,
 			icon: TrashIcon
@@ -663,7 +662,7 @@
 						action="inspect"
 						size="sm"
 						customLabel={m.activity_view_activity()}
-						onclick={() => activityStore.openCenter(activityId)}
+						onclick={() => activityStore.openCenter(activityId, undefined, currentEnvId)}
 					/>
 				{/if}
 			</Alert.Description></Alert.Root
@@ -719,7 +718,6 @@
 		bind:selectedIds
 		bind:requestOptions
 		bind:mobileFieldVisibility
-		onRefresh={loadData}
 		{columns}
 		{mobileFields}
 		{bulkActions}
@@ -835,7 +833,7 @@
 			addTitle={m.volume_backup_add_schedule()}
 			description={m.volume_backup_policy_description()}
 			enabledDescription={m.volume_backup_policy_enabled_description()}
-			defaultSchedule="0 0 2 * * *"
+			defaultSchedule="0 2 * * *"
 			showStopContainers
 			destinations={canListS3Destinations && !s3DestinationsError ? s3Destinations : undefined}
 			updatePolicies={async (policies) => (await volumeBackupService.updatePolicies(volumeName, policies, currentEnvId)).policies}

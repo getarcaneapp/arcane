@@ -1,30 +1,27 @@
 <script lang="ts">
 	import { refreshAll } from '$app/navigation';
-	import { onDestroy } from 'svelte';
+	import { untrack } from 'svelte';
 	import type { Attachment } from 'svelte/attachments';
 
 	import ReleaseNotes from '#lib/components/release-notes.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import * as Popover from '#lib/components/ui/popover/index.js';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
-	import { SuccessIcon, ClockIcon, AlertIcon, AlertTriangleIcon, ExternalLinkIcon, InfoIcon } from '#lib/icons/index.js';
+	import { SuccessIcon, AlertTriangleIcon, ExternalLinkIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { APIError } from '#lib/services/api-service.js';
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
+	import { clientStream } from '#lib/stores/client-stream.svelte.js';
+	import { MANAGER_ENVIRONMENT_ID, isActiveUpgradeJob, upgradeJobStore } from '#lib/stores/upgrade-job.store.svelte.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
-	import type {
-		UpdateAllJob,
-		UpdateAllEnvironmentResult,
-		UpdateAllEnvironmentStatus,
-		UpdateAllStage
-	} from '#lib/types/system-upgrade.js';
+	import type { UpgradeJob, UpgradeJobResult, UpgradeJobResultStatus, UpgradeJobStage } from '#lib/types/system-upgrade.js';
 	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { formatRelativeTime, nowInstantString } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import UpdateAllElapsed from './update-all-elapsed.svelte';
+	import UpgradeJobRow from './upgrade-job-row.svelte';
 	import VersionUpdateSummary from './version-update-summary.svelte';
 
 	// open has no $bindable fallback: upstream binds can start out undefined, and
@@ -39,158 +36,99 @@
 		open?: boolean;
 		versionInformation?: AppVersionInformation;
 		canConfirm?: boolean;
-		/** Dev-only: run a scripted fake fleet instead of calling the API. */
+		/** Dev-only: run a scripted fake set of environments instead of calling the API. */
 		debugDemo?: boolean;
 		onFinished?: () => void | Promise<void>;
 	} = $props();
 
-	type Phase = 'confirm' | 'running' | 'finished';
-
-	const POLL_INTERVAL_MS = 3000;
-	// After a 409 the winning job may not be persisted yet; re-read status this many
-	// times, this far apart, before concluding there is nothing to adopt.
-	const CONFLICT_STATUS_READS = 3;
-	const CONFLICT_STATUS_RETRY_MS = 1000;
-	const MANAGER_ENVIRONMENT_ID = '0';
-
-	let phase = $state<Phase>('confirm');
-	let job = $state<UpdateAllJob | null>(null);
-	let reconnecting = $state(false);
-	let pollActive = false;
-	let pollTimer: ReturnType<typeof setTimeout> | null = null;
-	// Bumped on every confirm and reset so a startup/status response that lands after
-	// the dialog closed (or a newer attempt began) is ignored instead of restarting
-	// polling for a dialog nobody is looking at.
+	let jobId = $state<string | null>(null);
+	let starting = $state(false);
+	let demoJob = $state<UpgradeJob | null>(null);
+	let demoReconnecting = $state(false);
 	let startAttempt = 0;
 
-	function stopPolling() {
-		pollActive = false;
-		if (pollTimer) {
-			clearTimeout(pollTimer);
-			pollTimer = null;
-		}
-	}
+	const job = $derived.by(() => {
+		if (debugDemo) return demoJob;
+		const current = upgradeJobStore.job;
+		return current && current.id === jobId ? current : null;
+	});
 
-	// Closing stops observing; the backend job and restart recovery keep running.
+	const phase = $derived.by(() => {
+		if (debugDemo) {
+			if (!demoJob) return 'confirm';
+			return isActiveUpgradeJob(demoJob) ? 'running' : 'finished';
+		}
+		if (!jobId) return starting ? 'running' : 'confirm';
+		return !job || isActiveUpgradeJob(job) ? 'running' : 'finished';
+	});
+
+	const reconnecting = $derived(
+		debugDemo ? demoReconnecting : job?.status === 'pending_restart' && !clientStream.streamConnected
+	);
+
 	function resetState() {
 		startAttempt++;
-		stopPolling();
-		phase = 'confirm';
-		job = null;
-		reconnecting = false;
+		jobId = null;
+		starting = false;
+		demoJob = null;
+		demoReconnecting = false;
 	}
 
-	function schedulePoll() {
-		if (!pollActive) return;
-		pollTimer = setTimeout(poll, POLL_INTERVAL_MS);
-	}
-
-	function isActiveJob(candidate: UpdateAllJob | null | undefined): candidate is UpdateAllJob {
-		return candidate?.status === 'running' || candidate?.status === 'pending_restart';
-	}
-
-	function followJob(next: UpdateAllJob) {
-		job = next;
-		reconnecting = false;
-		if (!isActiveJob(next)) {
-			stopPolling();
-			phase = 'finished';
-			return;
-		}
-		phase = 'running';
-		if (!debugDemo) systemUpgradeService.monitorUpdateAllRecovery(next);
-		pollActive = true;
-		schedulePoll();
-	}
-
-	// A status read that never reached the backend, or hit a gateway with no backend
-	// behind it, is what a manager restart looks like from the browser.
-	function isConnectionLost(error: unknown): boolean {
-		if (error instanceof TypeError) return true;
-		if (!(error instanceof APIError)) return false;
-		return !error.status || [502, 503, 504].includes(error.status);
-	}
-
-	function handleStatusError(error: unknown) {
-		// No job has ever run: nothing to follow.
-		if (!job && error instanceof APIError && error.status === 404) {
-			stopPolling();
-			phase = 'confirm';
-			return;
-		}
-		reconnecting = job?.status === 'pending_restart' && isConnectionLost(error);
-		pollActive = true;
-		schedulePoll();
-	}
-
-	async function poll() {
-		if (!pollActive) return;
-		const attempt = startAttempt;
-		const response = await tryCatch(systemUpgradeService.getUpdateAllStatus());
-		if (!pollActive || attempt !== startAttempt) return;
-		if (response.error !== null) {
-			handleStatusError(response.error);
-			return;
-		}
-		followJob(response.data);
+	function followJob(next: UpgradeJob) {
+		upgradeJobStore.follow(next);
+		jobId = next.id;
+		starting = false;
 	}
 
 	// Reopening the dialog picks up an update that is still running on the backend.
 	async function restoreActiveJob() {
 		const attempt = ++startAttempt;
-		phase = 'running';
-		const response = await tryCatch(systemUpgradeService.getUpdateAllStatus());
-		if (attempt !== startAttempt) return;
-		if (response.error !== null) {
-			handleStatusError(response.error);
-			return;
-		}
-		if (isActiveJob(response.data)) {
-			followJob(response.data);
-		} else {
-			phase = 'confirm';
-		}
+		starting = true;
+		await upgradeJobStore.load();
+		if (attempt === startAttempt) starting = false;
 	}
+
+	$effect(() => {
+		if (!open || debugDemo || jobId || starting) return;
+		const current = upgradeJobStore.job;
+		if (isActiveUpgradeJob(current)) untrack(() => followJob(current));
+	});
 
 	// Dialog.Content only exists while the dialog is open, so this runs once per
 	// opening and its cleanup once per close.
 	const observeUpdate: Attachment = () => {
-		if (!debugDemo) void restoreActiveJob();
-		return () => resetState();
+		if (debugDemo) return () => resetState();
+		const stopWatching = upgradeJobStore.watch();
+		void restoreActiveJob();
+		return () => {
+			stopWatching();
+			resetState();
+		};
 	};
 
-	async function handleConfirm() {
+	async function handleConfirm(environmentIds?: string[]) {
 		const attempt = ++startAttempt;
-		phase = 'running';
-		reconnecting = false;
+		starting = true;
 
 		if (debugDemo) {
 			void runDebugDemo();
 			return;
 		}
 
-		const startResult = await tryCatch(systemUpgradeService.triggerUpdateAll());
+		const startResult = await tryCatch(systemUpgradeService.startUpgradeJob(environmentIds));
 		let next = startResult.data;
 		// The backend refuses a second job while one is active (409). Adopt that job
 		// and follow it instead of failing; never retry the POST.
 		if (startResult.error instanceof APIError && startResult.error.status === 409) {
-			// A concurrent start answers 409 before its job row is persisted, so the first
-			// read can still show no job (404) or the previous terminal one.
-			for (let read = 0; read < CONFLICT_STATUS_READS && attempt === startAttempt; read++) {
-				if (read > 0) await new Promise((resolve) => setTimeout(resolve, CONFLICT_STATUS_RETRY_MS));
-				const active = (await tryCatch(systemUpgradeService.getUpdateAllStatus())).data;
-				if (isActiveJob(active)) {
-					next = active;
-					break;
-				}
-			}
+			const active = await upgradeJobStore.load();
+			if (isActiveUpgradeJob(active)) next = active;
 		}
 		// The dialog closed (or was re-confirmed) while the request was in flight.
 		if (attempt !== startAttempt) return;
 
 		if (!next) {
 			await handleApiResultWithCallbacks({ result: startResult, message: m.environments_update_all_trigger_failed() });
-			resetState();
+			if (attempt === startAttempt) starting = false;
 			return;
 		}
 
@@ -199,30 +137,15 @@
 
 	async function handleClose() {
 		const attempt = ++startAttempt;
-		stopPolling();
 		// Refresh through SvelteKit instead of reloading the document: a hard reload
-		// lands while agents are still reconnecting after the fleet restart, which
+		// lands while agents are still reconnecting after every environment restarts, which
 		// renders every environment as offline for a moment.
-		if (job && !debugDemo) {
-			const operationResult2 = await tryCatch(
-				(async () => {
-					await refreshAll();
-				})()
-			);
-			if (operationResult2.error !== null) {
-				// A failed refresh must not trap the dialog open.
-			}
-		}
+		if (job && !debugDemo) await tryCatch(refreshAll());
 		if (attempt !== startAttempt) return;
 		resetState();
 		open = false;
 		await onFinished?.();
 	}
-
-	onDestroy(() => {
-		startAttempt++;
-		stopPolling();
-	});
 
 	// Version/release presentation for the confirm step, rendered when the caller
 	// has the manager's version information at hand (sidebar / mobile nav).
@@ -246,6 +169,11 @@
 		failed: results.filter((r) => r.status === 'failed').length,
 		unconfirmed: results.filter((r) => r.status === 'triggered').length
 	});
+	const versionChange = $derived.by(() => {
+		const from = job?.managerVersionAtStart?.trim() ?? '';
+		const to = job?.managerTargetVersion?.trim() ?? '';
+		return from && to && from !== to ? `${from} → ${to}` : '';
+	});
 	const hasIssues = $derived(outcomeCounts.failed > 0 || outcomeCounts.unconfirmed > 0);
 	const failed = $derived(job?.status === 'failed' || hasIssues);
 
@@ -258,96 +186,43 @@
 		return m.environments_update_all_in_progress();
 	});
 
-	const completedColors = {
-		segment: 'bg-success',
-		badge: 'border-success/40 bg-success/10 text-success',
-		text: 'text-muted-foreground'
-	};
-	const pendingDisplay = {
-		label: m.common_pending,
-		segment: 'bg-muted',
-		badge: 'border-border bg-muted/40 text-muted-foreground/60',
-		text: 'text-muted-foreground'
-	};
-	const environmentStatusDisplay = new Map(
-		Object.entries({
-			pending: pendingDisplay,
-			updating: {
-				label: m.common_action_updating,
-				segment: 'bg-primary animate-pulse',
-				badge: 'border-primary/40 bg-primary/10 text-primary',
-				text: 'text-primary'
-			},
-			updated: { label: m.common_updated, ...completedColors },
-			up_to_date: { label: m.image_update_up_to_date_title, ...completedColors },
-			triggered: {
-				label: m.environments_update_all_status_triggered,
-				segment: 'bg-warning',
-				badge: 'border-warning/40 bg-warning/10 text-warning',
-				text: 'text-warning'
-			},
-			skipped_offline: {
-				label: m.environments_update_all_status_skipped_offline,
-				segment: 'bg-warning',
-				badge: 'border-warning/40 bg-warning/10 text-warning',
-				text: 'text-warning'
-			},
-			failed: {
-				label: m.common_failed,
-				segment: 'bg-destructive',
-				badge: 'border-destructive/40 bg-destructive/10 text-destructive',
-				text: 'text-destructive'
-			}
-		} satisfies Record<UpdateAllEnvironmentStatus, { label: () => string; segment: string; badge: string; text: string }>)
-	);
+	const orderedResults = $derived([
+		...results.filter((r) => r.environmentId !== MANAGER_ENVIRONMENT_ID),
+		...(managerResult ? [managerResult] : [])
+	]);
+	const failedIds = $derived(results.filter((r) => r.status === 'failed').map((r) => r.environmentId));
+	const updatingCount = $derived(results.filter((r) => r.status === 'updating').length);
+	const progressSegments = $derived([
+		{ count: outcomeCounts.updated + outcomeCounts.current, class: 'bg-success', label: m.environments_update_all_legend_done },
+		{ count: updatingCount, class: 'bg-primary animate-pulse', label: m.environments_update_all_legend_updating },
+		{
+			count: outcomeCounts.skipped + outcomeCounts.unconfirmed,
+			class: 'bg-warning',
+			label: m.environments_update_all_legend_skipped
+		},
+		{ count: outcomeCounts.failed, class: 'bg-destructive', label: m.environments_update_all_legend_failed },
+		{ count: totalCount - doneCount - updatingCount, class: 'bg-muted', label: m.environments_update_all_legend_queued }
+	]);
 
-	function statusPresentation(status: UpdateAllEnvironmentStatus) {
-		return environmentStatusDisplay.get(status) ?? pendingDisplay;
-	}
-
-	const stageLabels: Record<UpdateAllStage, () => string> = {
-		checking: m.environments_update_all_stage_checking,
-		starting: m.environments_update_all_stage_starting,
-		reconnecting: m.environments_update_all_stage_reconnecting,
-		verifying: m.environments_update_all_stage_verifying
-	};
-
-	// While a row is updating its stage replaces the generic status label.
-	function rowLabel(result: UpdateAllEnvironmentResult): string {
-		const statusLabel = statusPresentation(result.status).label;
-		if (result.status !== 'updating' || !result.stage) return statusLabel();
-		if (result.stage === 'reconnecting' && result.environmentId === MANAGER_ENVIRONMENT_ID) {
-			return m.environments_update_all_stage_manager_restart();
-		}
-		return (stageLabels[result.stage] ?? statusLabel)();
-	}
-
-	// An environment that was already current reports the same version twice; show it
-	// once rather than as a "v1.0.0 → v1.0.0" no-op transition.
-	function versionLine(result: UpdateAllEnvironmentResult): string {
-		const from = result.fromVersion?.trim() ?? '';
-		const to = result.toVersion?.trim() ?? '';
-		if (!from || !to || from === to) return to || from;
-		return `${from} → ${to}`;
-	}
-
-	// Dev-only preview: step a fake fleet through every row state so this dialog can be
-	// designed and reviewed without triggering a real fleet update. Only ever enabled
+	// Dev-only preview: step fake environments through every row state so this dialog can be
+	// designed and reviewed without triggering a real update of all environments. Only ever enabled
 	// from a dev-guarded callsite.
 	async function runDebugDemo() {
 		const attempt = startAttempt;
-		const live = () => attempt === startAttempt && phase === 'running';
+		const live = () => attempt === startAttempt && isActiveUpgradeJob(demoJob);
 		// Sleeps, then reports whether the demo is still the one being watched.
 		const pause = async (ms: number) => {
 			await new Promise((resolve) => setTimeout(resolve, ms));
 			return live();
 		};
-		const enterStage = (row: UpdateAllEnvironmentResult, stage: UpdateAllStage) => {
+		const enterStage = (row: UpgradeJobResult, stage: UpgradeJobStage, percent: number) => {
 			row.stage = stage;
 			row.stageStartedAt = nowInstantString();
+			row.percent = percent;
+			row.logs = [...(row.logs ?? []), `time=${nowInstantString()} level=INFO msg="${stage}"`];
 		};
-		// Big enough fleet (10) to exercise the scrolling list (#3655).
-		const demo: Array<{ name: string; outcome: UpdateAllEnvironmentStatus; to: string; error?: string }> = [
+		// Enough environments (10) to exercise the scrolling list (#3655).
+		const demo: Array<{ name: string; outcome: UpgradeJobResultStatus; to: string; error?: string }> = [
 			{ name: 'Local Docker', outcome: 'updated', to: 'v0.9.2' },
 			{ name: 'palladium', outcome: 'updated', to: 'v0.9.2' },
 			{ name: 'naswidc1.ofkm.us', outcome: 'up_to_date', to: 'v0.9.1' },
@@ -360,51 +235,66 @@
 			{ name: 'staging.ofkm.us', outcome: 'updated', to: 'v0.9.2' }
 		];
 
-		job = {
+		demoJob = {
 			id: 'demo',
 			status: 'running',
 			createdAt: nowInstantString(),
+			userId: 'demo',
+			username: 'demo',
+			managerVersionAtStart: 'v0.9.1',
+			managerDigestAtStart: '',
+			managerTargetVersion: 'v0.9.2',
 			results: demo.map((entry, index) => ({
 				environmentId: index === 0 ? MANAGER_ENVIRONMENT_ID : `demo-${index}`,
 				environmentName: entry.name,
 				status: 'pending',
-				fromVersion: 'v0.9.1'
+				fromVersion: 'v0.9.1',
+				percent: 0
 			}))
 		};
+		starting = false;
 
-		// Remotes first, manager last — the real processing order.
-		const steps = [...demo.entries()].map(([index, entry]) => ({ index, entry }));
-		for (const { index, entry } of [...steps.slice(1), ...steps.slice(0, 1)]) {
-			const row = job?.results?.[index];
-			if (!live() || !row) return;
+		// Remotes four at a time, manager last — the real processing order.
+		const runRow = async (index: number, entry: (typeof demo)[number]) => {
+			const row = demoJob?.results?.[index];
+			if (!live() || !row) return false;
 			row.status = 'updating';
-			enterStage(row, 'checking');
-			if (!(await pause(700))) return;
-			enterStage(row, 'starting');
-			if (!(await pause(700))) return;
-			enterStage(row, 'reconnecting');
+			enterStage(row, 'checking', 5);
+			if (!(await pause(700))) return false;
+			enterStage(row, 'pulling', 30);
+			if (!(await pause(700))) return false;
+			enterStage(row, 'upgrading', 70);
+			if (!(await pause(700))) return false;
+			enterStage(row, 'reconnecting', 90);
 			// One slow reconnect, to exercise the elapsed-time display.
-			if (index === 1 && !(await pause(5000))) return;
+			if (index === 1 && !(await pause(5000))) return false;
 			// The manager restart is the one moment the reconnecting banner shows.
-			if (index === 0 && job) {
-				job.status = 'pending_restart';
-				reconnecting = true;
-				if (!(await pause(3000))) return;
-				reconnecting = false;
+			if (index === 0 && demoJob) {
+				demoJob.status = 'pending_restart';
+				demoReconnecting = true;
+				if (!(await pause(3000))) return false;
+				demoReconnecting = false;
 			}
-			enterStage(row, 'verifying');
-			if (!(await pause(700))) return;
+			enterStage(row, 'verifying', 95);
+			if (!(await pause(700))) return false;
 			row.status = entry.outcome;
 			row.stage = undefined;
 			row.stageStartedAt = undefined;
+			row.percent = 100;
 			row.toVersion = entry.to;
 			if (entry.error) row.error = entry.error;
+			return true;
+		};
+		const remotes = [...demo.entries()].slice(1);
+		for (let start = 0; start < remotes.length; start += 4) {
+			const batch = remotes.slice(start, start + 4).map(([index, entry]) => runRow(index, entry));
+			if ((await Promise.all(batch)).includes(false)) return;
 		}
+		if (!demo[0] || !(await runRow(0, demo[0]))) return;
 
-		if (!live() || !job) return;
-		job.status = 'completed';
-		job.completedAt = nowInstantString();
-		phase = 'finished';
+		if (!live() || !demoJob) return;
+		demoJob.status = 'completed';
+		demoJob.completedAt = nowInstantString();
 	}
 </script>
 
@@ -435,7 +325,7 @@
 							<a
 								href={releaseUrl}
 								target="_blank"
-								rel="noopener noreferrer"
+								rel="external noopener noreferrer"
 								class="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
 							>
 								{m.update_center_view_full_release()}
@@ -466,44 +356,45 @@
 							{/if}
 							<Dialog.Title><span class="block min-w-0 truncate">{title}</span></Dialog.Title>
 						</div>
-						<div class="flex shrink-0 items-center gap-1 pr-6">
-							{#if totalCount > 0}
-								<span class="text-xs text-muted-foreground tabular-nums">
-									{m.environments_update_all_progress({ done: doneCount, total: totalCount })}
-								</span>
-							{/if}
-							{#if phase === 'running'}
-								<Popover.Root>
-									<Popover.Trigger>
-										{#snippet child({ props })}
-											<Button {...props} variant="ghost" size="icon" class="size-7" aria-label={m.info()}>
-												<InfoIcon class="size-4" />
-											</Button>
-										{/snippet}
-									</Popover.Trigger>
-									<Popover.Content align="end" class="w-80">
-										<div class="space-y-2 text-xs leading-relaxed text-muted-foreground">
-											<p>{m.environments_update_all_manager_note()}</p>
-											<p>{m.environments_update_all_reconnection_note()}</p>
-										</div>
-									</Popover.Content>
-								</Popover.Root>
-							{/if}
-						</div>
+						{#if totalCount > 0}
+							<span class="shrink-0 pr-6 text-xs text-muted-foreground tabular-nums">
+								{m.environments_update_all_progress({ done: doneCount, total: totalCount })}
+							</span>
+						{/if}
 					</div>
+					{#if versionChange || (phase === 'running' && job)}
+						<p class="flex flex-wrap gap-x-2 text-xs text-muted-foreground tabular-nums">
+							{#if versionChange}<span>{versionChange}</span>{/if}
+							{#if phase === 'running' && job}<UpdateAllElapsed since={job.createdAt} />{/if}
+						</p>
+					{/if}
 				</Dialog.Header>
 
 				{#if totalCount > 0}
-					<div class="mt-3 flex gap-1">
-						{#each results as result (result.environmentId)}
-							<div class={cn('h-1.5 flex-1 rounded-full transition-colors', statusPresentation(result.status).segment)}></div>
+					<div class="mt-4 flex h-1.5 overflow-hidden rounded-full bg-muted">
+						{#each progressSegments as segment, index (index)}
+							{#if segment.count > 0}
+								<div
+									class={cn('h-full w-(--segment-width) transition-all', segment.class)}
+									style:--segment-width="{(segment.count / totalCount) * 100}%"
+								></div>
+							{/if}
+						{/each}
+					</div>
+					<div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground tabular-nums">
+						{#each progressSegments as segment, index (index)}
+							{#if segment.count > 0}
+								<span class="inline-flex items-center gap-1.5">
+									<span class={cn('size-1.5 rounded-full', segment.class)}></span>
+									{segment.label({ count: segment.count })}
+								</span>
+							{/if}
 						{/each}
 					</div>
 				{/if}
 
-				{#if phase === 'finished'}
-					<p class="mt-3 text-sm text-muted-foreground">{m.environments_update_all_summary(outcomeCounts)}</p>
-					{#if job?.error}<p class="mt-2 text-sm text-destructive">{job.error}</p>{/if}
+				{#if phase === 'finished' && job?.error}
+					<p class="mt-3 text-sm text-destructive">{job.error}</p>
 				{/if}
 
 				{#if reconnecting}
@@ -523,51 +414,10 @@
 				<div class="border-t border-border/60">
 					<!-- Native scroller: ScrollArea's percentage-height viewport resolves to auto
 					     under a max-height-only parent, so it never clips (#3655). -->
-					<div class="max-h-72 overflow-y-auto">
+					<div class="max-h-96 overflow-y-auto">
 						<ul class="divide-y divide-border/50">
-							{#each results as result (result.environmentId)}
-								{@const versions = versionLine(result)}
-								<li class="flex items-center gap-3 px-6 py-2.5 text-sm">
-									<span
-										class={cn(
-											'flex size-7 shrink-0 items-center justify-center rounded-full border',
-											statusPresentation(result.status).badge
-										)}
-									>
-										{#if result.status === 'updated' || result.status === 'up_to_date'}
-											<SuccessIcon class="size-3.5" />
-										{:else if result.status === 'updating'}
-											<Spinner class="size-3.5" />
-										{:else if result.status === 'skipped_offline' || result.status === 'triggered'}
-											<AlertIcon class="size-3.5" />
-										{:else if result.status === 'failed'}
-											<AlertTriangleIcon class="size-3.5" />
-										{:else}
-											<ClockIcon class="size-3.5" />
-										{/if}
-									</span>
-
-									<div class="min-w-0 flex-1">
-										<div class="flex items-center gap-1.5">
-											<span class="truncate font-medium">{result.environmentName}</span>
-											{#if result.environmentId === MANAGER_ENVIRONMENT_ID}
-												<span class="shrink-0 rounded border px-1 text-3xs text-muted-foreground">{m.manager()}</span>
-											{/if}
-										</div>
-										{#if result.status === 'failed' && result.error}
-											<span class="block truncate text-xs text-muted-foreground" title={result.error}>{result.error}</span>
-										{:else if versions}
-											<span class="block truncate text-xs text-muted-foreground tabular-nums">{versions}</span>
-										{/if}
-									</div>
-
-									<div class={cn('max-w-48 shrink-0 text-right text-xs', statusPresentation(result.status).text)}>
-										<span>{rowLabel(result)}</span>
-										{#if result.status === 'updating' && result.stageStartedAt}
-											<UpdateAllElapsed class="block text-muted-foreground" since={result.stageStartedAt} />
-										{/if}
-									</div>
-								</li>
+							{#each orderedResults as result (result.environmentId)}
+								<UpgradeJobRow {result} />
 							{/each}
 						</ul>
 					</div>
@@ -584,9 +434,14 @@
 			{#if phase === 'confirm'}
 				<Button variant="outline" onclick={() => (open = false)}>{m.common_cancel()}</Button>
 				{#if canConfirm}
-					<Button onclick={handleConfirm}>{m.update_all()}</Button>
+					<Button onclick={() => handleConfirm()}>{m.update_all()}</Button>
 				{/if}
 			{:else}
+				{#if phase === 'finished' && canConfirm && !debugDemo && failedIds.length > 0}
+					<Button variant="outline" disabled={starting} onclick={() => handleConfirm(failedIds)}>
+						{m.environments_update_all_retry_failed()}
+					</Button>
+				{/if}
 				<Button variant="outline" onclick={handleClose}>{m.common_close()}</Button>
 			{/if}
 		</Dialog.Footer>

@@ -1,7 +1,7 @@
 package client
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"getarcane.dev/cli/v3/internal/types"
 )
 
 func TestClient_UsesAPIKeyHeader(t *testing.T) {
@@ -38,7 +38,7 @@ func TestClient_UsesAPIKeyHeader(t *testing.T) {
 	require.NoError(t, err,
 		"New() error: %v", err)
 
-	resp, err := c.Get(t.Context(), "/api/version")
+	resp, err := c.Request(t.Context(), http.MethodGet, "/api/version", nil)
 
 	require.NoError(t, err,
 		"Get() error: %v", err)
@@ -75,7 +75,7 @@ func TestClient_UsesBearerTokenHeader(t *testing.T) {
 			require.NoError(t, err,
 				"New() error: %v", err)
 
-			resp, err := c.Get(t.Context(), "/api/version")
+			resp, err := c.Request(t.Context(), http.MethodGet, "/api/version", nil)
 
 			require.NoError(t, err,
 				"Get() error: %v", err)
@@ -110,7 +110,7 @@ func TestClient_NewUnauthenticated_DoesNotSendAuthHeaders(t *testing.T) {
 	require.NoError(t, err,
 		"NewUnauthenticated() error: %v", err)
 
-	resp, err := c.Get(t.Context(), "/api/auth/login")
+	resp, err := c.Request(t.Context(), http.MethodGet, "/api/auth/login", nil)
 
 	require.NoError(t, err,
 		"Get() error: %v", err)
@@ -131,7 +131,7 @@ func TestClient_Request_DoesNotDoubleMarshalBytes(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var p payload
-		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		if err := json.UnmarshalRead(r.Body, &p); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -154,7 +154,7 @@ func TestClient_Request_DoesNotDoubleMarshalBytes(t *testing.T) {
 	require.NoError(t, err,
 		"json.Marshal() error: %v", err)
 
-	resp, err := c.Post(t.Context(), "/api/auth/login", raw)
+	resp, err := c.Request(t.Context(), http.MethodPost, "/api/auth/login", raw)
 
 	require.NoError(t, err,
 		"Post() error: %v", err)
@@ -189,7 +189,7 @@ func TestClient_RetriesIdempotentRequests(t *testing.T) {
 
 	c.SetRetryPolicy(3, 1*time.Millisecond, 2*time.Millisecond)
 
-	resp, err := c.Get(t.Context(), "/api/version")
+	resp, err := c.Request(t.Context(), http.MethodGet, "/api/version", nil)
 
 	require.NoError(t, err,
 		"Get() error: %v", err)
@@ -221,7 +221,7 @@ func TestClient_DoesNotRetryNonIdempotentRequests(t *testing.T) {
 
 	c.SetRetryPolicy(3, 1*time.Millisecond, 2*time.Millisecond)
 
-	resp, err := c.Post(t.Context(), "/api/version", map[string]any{"a": 1})
+	resp, err := c.Request(t.Context(), http.MethodPost, "/api/version", map[string]any{"a": 1})
 
 	require.NoError(t, err,
 		"Post() returned transport error: %v", err)
@@ -276,7 +276,7 @@ func TestClient_DoRaw_Success(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		_ = json.MarshalWrite(w, map[string]any{"ok": true})
 	}))
 	defer srv.Close()
 
@@ -300,9 +300,12 @@ func TestClientDoEnvelope(t *testing.T) {
 		Name string `json:"name"`
 	}
 	for _, tt := range []struct {
-		name, method, response, wantErr string
-		status                          int
-		body                            any
+		body     any
+		name     string
+		method   string
+		response string
+		wantErr  string
+		status   int
 	}{
 		{name: "GET", method: http.MethodGet, status: http.StatusOK, response: `{"success":true,"data":{"name":"arcane"}}`},
 		{

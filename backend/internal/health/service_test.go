@@ -5,15 +5,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/types/v3"
 )
 
 func newReadyTestService(t *testing.T, shutdown <-chan struct{}) (*Service, *database.DB) {
@@ -40,7 +40,7 @@ func newReadyTestService(t *testing.T, shutdown <-chan struct{}) (*Service, *dat
 
 	return &Service{
 		db:       db,
-		docker:   docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient),
+		docker:   (&docker.DockerClientService{}).WithClient(dockerClient),
 		shutdown: shutdown,
 	}, db
 }
@@ -49,7 +49,7 @@ func TestService_Ready(t *testing.T) {
 	t.Run("ready when database and docker respond", func(t *testing.T) {
 		svc, _ := newReadyTestService(t, make(chan struct{}))
 
-		assert.Equal(t, system.ReadinessResponse{
+		assert.Equal(t, types.ReadinessResponse{
 			Status: readyStatus,
 			Checks: map[string]string{
 				"database": checkOK,

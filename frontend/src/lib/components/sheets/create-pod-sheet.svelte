@@ -20,6 +20,7 @@
 		PodmanPodExitPolicy,
 		PodmanPodRestartPolicy
 	} from '#lib/types/podman.js';
+	import { applyApiFieldError } from '#lib/utils/api.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { parseList } from '#lib/utils/form-parsers.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
@@ -27,7 +28,7 @@
 	type CreatePodFormProps = {
 		open: boolean;
 		environments: EnvironmentRef[];
-		onSubmit: (request: PodmanPodCreateRequest, environmentId: string) => void;
+		onSubmit: (request: PodmanPodCreateRequest, environmentId: string) => Promise<Error | null>;
 		isLoading: boolean;
 	};
 
@@ -42,23 +43,10 @@
 	let pickedEnvironmentId = $state('');
 	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'podman:pods', environments));
 
-	const sizePattern = /^\d+(\.\d+)?\s*[bkmg]?b?$/i;
-	const cpusetPattern = /^\d+(-\d+)?(,\d+(-\d+)?)*$/;
-	const idMapPattern = /^\d+:\d+:\d+$/;
-	const devicePattern = /^\d+:\d+$/;
-
-	const optionalSize = z.string().refine((value) => value === '' || sizePattern.test(value), m.podman_pod_invalid_size());
 	const optionalNumber = z.string().refine((value) => value === '' || Number(value) >= 0, m.podman_pod_invalid_number());
-	const optionalCpuset = z.string().refine((value) => value === '' || cpusetPattern.test(value), m.podman_pod_invalid_cpuset());
-	const optionalIdMap = z
-		.string()
-		.refine((value) => parseList(value).every((entry) => idMapPattern.test(entry)), m.podman_pod_invalid_id_map());
 
 	const formSchema = z.object({
-		podName: z
-			.string()
-			.min(1, m.common_field_required({ field: m.common_name() }))
-			.regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/, m.podman_pod_name_invalid()),
+		name: z.string().min(1, m.common_field_required({ field: m.common_name() })),
 		hostname: z.string(),
 		exitPolicy: z.string(),
 		restartPolicy: z.string(),
@@ -74,8 +62,8 @@
 		ipc: z.string(),
 		uts: z.string(),
 		userns: z.string(),
-		uidMap: optionalIdMap,
-		gidMap: optionalIdMap,
+		uidMap: z.string(),
+		gidMap: z.string(),
 		securityOpt: z.string(),
 		networkMode: z.string(),
 		networkPath: z.string(),
@@ -90,12 +78,10 @@
 		cgroupParent: z.string(),
 		cpus: optionalNumber,
 		cpuShares: z.string().refine((value) => value === '' || Number.isInteger(Number(value)), m.podman_pod_invalid_number()),
-		cpusetCpus: optionalCpuset,
-		cpusetMems: optionalCpuset,
-		memory: optionalSize,
-		memorySwap: z
-			.string()
-			.refine((value) => value === '' || value === '-1' || sizePattern.test(value), m.podman_pod_invalid_size()),
+		cpusetCpus: z.string(),
+		cpusetMems: z.string(),
+		memory: z.string(),
+		memorySwap: z.string(),
 		blkioWeight: z
 			.string()
 			.refine(
@@ -104,12 +90,12 @@
 			),
 		gpus: z.string(),
 		volumesFrom: z.string(),
-		shmSize: optionalSize,
-		shmSizeSystemd: optionalSize
+		shmSize: z.string(),
+		shmSizeSystemd: z.string()
 	});
 
 	const defaults: z.infer<typeof formSchema> = {
-		podName: '',
+		name: '',
 		hostname: '',
 		exitPolicy: 'default',
 		restartPolicy: 'default',
@@ -167,14 +153,10 @@
 		};
 	}
 
-	let resetToken = $state(0);
 	let submitted = $state(false);
 	let rows = $state(emptyRows());
-	let form = $derived.by(() => {
-		resetToken;
-		return createForm<typeof formSchema>(formSchema, { ...defaults });
-	});
-	let inputs = $derived(form.inputs);
+	const form = createForm<typeof formSchema>(formSchema, { ...defaults });
+	const inputs = form.inputs;
 
 	const exitPolicies = [
 		{ value: 'default', label: m.podman_pod_restart_policy_default() },
@@ -201,7 +183,7 @@
 
 	const filled = (...values: string[]) => values.some((value) => value.trim() !== '');
 	const deviceLimitInvalid = (limits: DeviceLimitRow[]) =>
-		limits.some((row) => filled(row.device, row.value) && (!devicePattern.test(row.device.trim()) || !row.value.trim()));
+		limits.some((row) => filled(row.device, row.value) && !(row.device.trim() && row.value.trim()));
 	const portsInvalid = $derived(
 		rows.ports.some((row) => filled(row.hostPort, row.containerPort, row.hostIp) && !(Number(row.containerPort) > 0))
 	);
@@ -231,15 +213,15 @@
 		);
 	}
 
-	function handleSubmit() {
+	async function handleSubmit() {
 		submitted = true;
 		const data = form.validate();
 		if (!data || portsInvalid || networksInvalid || hostsInvalid || volumesInvalid || limitsInvalid) return;
 
 		const networkMode = data.networkMode === 'path' ? `ns:${data.networkPath}` : data.networkMode;
-		onSubmit(
+		const error = await onSubmit(
 			{
-				name: data.podName,
+				name: data.name,
 				hostname: data.hostname || undefined,
 				labels: keyValues(rows.labels),
 				exitPolicy: data.exitPolicy === 'default' ? undefined : (data.exitPolicy as PodmanPodExitPolicy),
@@ -319,6 +301,7 @@
 			},
 			environmentId
 		);
+		applyApiFieldError(inputs, error);
 	}
 
 	function handleOpenChange(newOpenState: boolean) {
@@ -327,7 +310,7 @@
 			pickedEnvironmentId = '';
 			submitted = false;
 			rows = emptyRows();
-			resetToken += 1;
+			form.reset();
 		}
 	}
 </script>
@@ -383,7 +366,7 @@
 				label={m.common_name()}
 				placeholder={m.podman_pod_name_placeholder()}
 				disabled={isLoading}
-				bind:input={inputs.podName}
+				bind:input={inputs.name}
 			/>
 			<FormInput
 				label={m.hostname()}

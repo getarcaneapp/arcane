@@ -6,15 +6,17 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-// Module owns role persistence and its HTTP surface.
-type Module struct {
-	service *RoleService
-}
+type (
+	// Module owns role persistence and its HTTP surface.
+	Module struct {
+		service *RoleService
+	}
+)
 
 // New assembles the role routes around its service.
 func New(service *RoleService) *Module {
@@ -75,7 +77,7 @@ func RegisterRoles(api huma.API, roleService *RoleService) {
 
 	huma.Register(api, huma.Operation{
 		OperationID: "update-role",
-		Method:      http.MethodPut,
+		Method:      http.MethodPatch,
 		Path:        "/roles/{id}",
 		Summary:     "Update a custom role",
 		Description: "Built-in roles are read-only and return 403 on update. Reserved for global admins.",
@@ -98,7 +100,7 @@ func RegisterRoles(api huma.API, roleService *RoleService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-permissions-manifest",
 		Method:      http.MethodGet,
-		Path:        "/roles/available-permissions",
+		Path:        "/roles/permissions",
 		Summary:     "Get the permission manifest",
 		Description: "Returns every permission the server recognizes, grouped by resource. Used by permission-picking UIs.",
 		Tags:        []string{"Roles"},
@@ -108,7 +110,7 @@ func RegisterRoles(api huma.API, roleService *RoleService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "list-user-role-assignments",
 		Method:      http.MethodGet,
-		Path:        "/users/{userId}/role-assignments",
+		Path:        "/users/{userId}/roles",
 		Summary:     "List a user's role assignments",
 		Description: "Reserved for global admins.",
 		Tags:        []string{"Roles"},
@@ -119,7 +121,7 @@ func RegisterRoles(api huma.API, roleService *RoleService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "set-user-role-assignments",
 		Method:      http.MethodPut,
-		Path:        "/users/{userId}/role-assignments",
+		Path:        "/users/{userId}/roles",
 		Summary:     "Replace a user's manual role assignments",
 		Description: "Replaces every source='manual' assignment for the user. source='oidc' assignments are not touched. Reserved for global admins; enforces the last-admin guard.",
 		Tags:        []string{"Roles"},

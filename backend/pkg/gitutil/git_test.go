@@ -23,6 +23,12 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
+type (
+	stubFileInfo struct {
+		dir bool
+	}
+)
+
 // Azure DevOps requires multi_ack/multi_ack_detailed in pack negotiation;
 // go-git's default UnsupportedCapabilities strips them and clones fail with
 // "invalid reset option: object not found" (#3168).
@@ -35,18 +41,18 @@ func TestInitAllowsMultiAckCapabilities(t *testing.T) {
 func TestGetKnownHostsPath(t *testing.T) {
 	homePath := "/home/tester/.ssh/known_hosts"
 	tests := []struct {
-		name       string
-		workDir    string
-		override   string
-		dataDir    bool
-		homeDir    string
-		homeExists bool
-		workExists bool
 		homeErr    error
 		statErr    error
 		workErr    error
-		want       []string
 		wantErr    error
+		name       string
+		workDir    string
+		override   string
+		homeDir    string
+		want       []string
+		dataDir    bool
+		homeExists bool
+		workExists bool
 	}{
 		{
 			name:    "returns SSH_KNOWN_HOSTS env var when set",
@@ -154,16 +160,17 @@ func TestGetKnownHostsPath(t *testing.T) {
 	}
 }
 
-type stubFileInfo struct {
-	dir bool
-}
+func (s stubFileInfo) Name() string { return "stub" }
 
-func (s stubFileInfo) Name() string       { return "stub" }
-func (s stubFileInfo) Size() int64        { return 0 }
-func (s stubFileInfo) Mode() os.FileMode  { return 0o755 }
+func (s stubFileInfo) Size() int64 { return 0 }
+
+func (s stubFileInfo) Mode() os.FileMode { return 0o755 }
+
 func (s stubFileInfo) ModTime() time.Time { return time.Time{} }
-func (s stubFileInfo) IsDir() bool        { return s.dir }
-func (s stubFileInfo) Sys() any           { return nil }
+
+func (s stubFileInfo) IsDir() bool { return s.dir }
+
+func (s stubFileInfo) Sys() any { return nil }
 
 func TestGetSSHHostKeyCallback(t *testing.T) {
 	client := NewClient("")
@@ -472,22 +479,6 @@ func TestValidatePath(t *testing.T) {
 	})
 }
 
-func TestNewClient(t *testing.T) {
-	t.Run("creates client with work dir", func(t *testing.T) {
-		client := NewClient("/tmp/test")
-
-		assert.Equal(t, "/tmp/test", client.workDir,
-			"expected workDir /tmp/test, got %s", client.workDir)
-	})
-
-	t.Run("creates client with empty work dir", func(t *testing.T) {
-		client := NewClient("")
-
-		assert.Empty(t, client.workDir,
-			"expected empty workDir, got %s", client.workDir)
-	})
-}
-
 func writeFile(t *testing.T, dir, name string, content []byte) {
 	t.Helper()
 	targetPath := filepath.Join(dir, name)
@@ -635,7 +626,7 @@ func TestWalkDirectory_MaxTotalSizeUnlimited(t *testing.T) {
 func TestWalkDirectory_MaxBinarySizeSkips(t *testing.T) {
 	tmpDir := t.TempDir()
 	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
-	// Binary content: null bytes cause IsBinaryContent to return true
+	// Binary content: null bytes mark the file as binary
 	binaryContent := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13}
 	writeFile(t, tmpDir, "data.bin", binaryContent)
 

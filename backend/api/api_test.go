@@ -2,31 +2,28 @@ package api
 
 import (
 	"bytes"
+	"encoding/json/jsontext"
 	"net/http"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	humav2 "github.com/danielgtaylor/huma/v2"
-	basetypes "github.com/getarcaneapp/arcane/types/v2/base"
-	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
-	envtypes "github.com/getarcaneapp/arcane/types/v2/env"
-	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
-	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/labstack/echo/v5"
-	dockercontainer "github.com/moby/moby/api/types/container"
-	dockernetwork "github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/swarm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/health"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/health"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
 func TestWorkspaceRoutesReplaceProjectAndVolumeLegacyRoutes(t *testing.T) {
@@ -38,11 +35,11 @@ func TestWorkspaceRoutesReplaceProjectAndVolumeLegacyRoutes(t *testing.T) {
 		method string
 	}{
 		{path: "/environments/{id}/projects/{projectId}/workspace", method: http.MethodGet},
-		{path: "/environments/{id}/projects/{projectId}/workspace", method: http.MethodPut},
+		{path: "/environments/{id}/projects/{projectId}/workspace", method: http.MethodPatch},
 		{path: "/environments/{id}/projects/{projectId}/workspace/file", method: http.MethodGet},
 		{path: "/environments/{id}/projects/{projectId}/workspace/file/download", method: http.MethodGet},
 		{path: "/environments/{id}/volumes/{volumeName}/workspace", method: http.MethodGet},
-		{path: "/environments/{id}/volumes/{volumeName}/workspace", method: http.MethodPut},
+		{path: "/environments/{id}/volumes/{volumeName}/workspace", method: http.MethodPatch},
 		{path: "/environments/{id}/volumes/{volumeName}/workspace/file", method: http.MethodGet},
 		{path: "/environments/{id}/volumes/{volumeName}/workspace/file/download", method: http.MethodGet},
 		{path: "/environments/{id}/builds/browse", method: http.MethodGet},
@@ -54,8 +51,8 @@ func TestWorkspaceRoutesReplaceProjectAndVolumeLegacyRoutes(t *testing.T) {
 			switch route.method {
 			case http.MethodGet:
 				require.NotNil(t, item.Get)
-			case http.MethodPut:
-				require.NotNil(t, item.Put)
+			case http.MethodPatch:
+				require.NotNil(t, item.Patch)
 			}
 		})
 	}
@@ -79,84 +76,71 @@ func TestWorkspaceRoutesReplaceProjectAndVolumeLegacyRoutes(t *testing.T) {
 	}
 }
 
-func TestCustomSchemaNamer_PrefixesArcaneTypesByPackage(t *testing.T) {
-	imageName := customSchemaNamer(reflect.TypeFor[imagetypes.Summary](), "")
-	envName := customSchemaNamer(reflect.TypeFor[envtypes.Summary](), "")
+func TestSchemaRegistry_UsesDescriptiveTypeNames(t *testing.T) {
+	registry := SetupAPIForSpec().OpenAPI().Components.Schemas
 
-	require.Equal(t, "ImageSummary", imageName,
-		"expected ImageSummary, got %q", imageName)
-
-	require.Equal(t, "EnvSummary", envName,
-		"expected EnvSummary, got %q", envName)
+	require.Equal(t, "#/components/schemas/ImageSummary", registry.Schema(reflect.TypeFor[types.ImageSummary](), true, "").Ref)
+	require.Equal(t, "#/components/schemas/EnvSummary", registry.Schema(reflect.TypeFor[types.EnvSummary](), true, "").Ref)
 }
 
-func TestCustomSchemaNamer_PointerMatchesValue(t *testing.T) {
-	valueName := customSchemaNamer(reflect.TypeFor[imagetypes.Summary](), "")
-	pointerName := customSchemaNamer(reflect.TypeFor[*imagetypes.Summary](), "")
+func TestSchemaRegistry_PointerMatchesValue(t *testing.T) {
+	registry := SetupAPIForSpec().OpenAPI().Components.Schemas
 
-	require.Equal(t, pointerName, valueName,
-		"expected pointer and value names to match, got %q and %q", valueName, pointerName)
-
-	genericValueName := customSchemaNamer(reflect.TypeFor[basetypes.ApiResponse[containertypes.StatusCounts]](), "")
-	genericPointerName := customSchemaNamer(reflect.TypeFor[*basetypes.ApiResponse[containertypes.StatusCounts]](), "")
-
-	require.Equal(t, genericPointerName, genericValueName,
-		"expected generic pointer and value names to match, got %q and %q", genericValueName, genericPointerName)
+	require.Equal(t,
+		registry.Schema(reflect.TypeFor[types.ImageSummary](), true, "").Ref,
+		registry.Schema(reflect.TypeFor[*types.ImageSummary](), true, "").Ref,
+	)
+	require.Equal(t,
+		registry.Schema(reflect.TypeFor[types.ApiResponse[types.ContainerStatusCounts]](), true, "").Ref,
+		registry.Schema(reflect.TypeFor[*types.ApiResponse[types.ContainerStatusCounts]](), true, "").Ref,
+	)
 }
 
-func TestCustomSchemaNamer_PrefixesDockerTypes(t *testing.T) {
-	name := customSchemaNamer(reflect.TypeFor[dockernetwork.Inspect](), "")
+func TestSchemaRegistry_AliasesCollidingDockerTypes(t *testing.T) {
+	registry := SetupAPIForSpec().OpenAPI().Components.Schemas
 
-	require.True(t, strings.HasPrefix(name, "DockerNetwork"),
-		"expected DockerNetwork prefix, got %q", name)
+	require.Equal(t, "#/components/schemas/DockerSwarmPlacement", registry.Schema(reflect.TypeFor[swarm.Placement](), true, "").Ref)
+	require.Equal(t, "#/components/schemas/DockerNetworkConfigReference", registry.Schema(reflect.TypeFor[*network.ConfigReference](), true, "").Ref)
+	require.Equal(t, "#/components/schemas/Placement", registry.Schema(reflect.TypeFor[composetypes.Placement](), true, "").Ref)
 }
 
-func TestCustomSchemaNamer_DisambiguatesGenericDomainTypes(t *testing.T) {
-	volumeResp := customSchemaNamer(reflect.TypeFor[basetypes.ApiResponse[volumetypes.UsageCounts]](), "")
-	imageResp := customSchemaNamer(reflect.TypeFor[basetypes.ApiResponse[imagetypes.UsageCounts]](), "")
+func TestSchemaRegistry_DisambiguatesGenericDomainTypes(t *testing.T) {
+	registry := SetupAPIForSpec().OpenAPI().Components.Schemas
 
-	require.Contains(t, volumeResp, "VolumeUsageCounts",
-		"expected VolumeUsageCounts in name, got %q", volumeResp)
-
-	require.Contains(t, imageResp, "ImageUsageCounts",
-		"expected ImageUsageCounts in name, got %q", imageResp)
-
-	require.NotEqual(t, imageResp, volumeResp,
-		"expected unique generic schema names, got %q", volumeResp)
-
-	containerResp := customSchemaNamer(reflect.TypeFor[basetypes.ApiResponse[containertypes.StatusCounts]](), "")
-	projectResp := customSchemaNamer(reflect.TypeFor[basetypes.ApiResponse[projecttypes.StatusCounts]](), "")
-
-	require.Contains(t, containerResp, "ContainerStatusCounts",
-		"expected ContainerStatusCounts in name, got %q", containerResp)
-
-	require.Contains(t, projectResp, "ProjectStatusCounts",
-		"expected ProjectStatusCounts in name, got %q", projectResp)
-
-	require.NotEqual(t, projectResp, containerResp,
-		"expected unique generic schema names, got %q", containerResp)
-
-	baseResp := customSchemaNamer(reflect.TypeFor[basetypes.ApiResponse[basetypes.MessageResponse]](), "")
-
-	require.NotContains(t, baseResp, "BaseApiResponseBase",
-		"expected base generic argument without redundant package prefix, got %q", baseResp)
-
-	multiArgument := customSchemaNamer(reflect.TypeFor[basetypes.PaginatedWithCounts[networktypes.Summary, networktypes.UsageCounts]](), "")
-
-	require.Equal(t, "BasePaginatedWithCountsNetworkSummaryNetworkUsageCounts", multiArgument,
-		"expected both generic arguments to be package-qualified in order, got %q", multiArgument)
-
-	mixedPackages := customSchemaNamer(reflect.TypeFor[basetypes.PaginatedWithCounts[dockercontainer.Summary, imagetypes.Summary]](), "")
-
-	require.Equal(t, "BasePaginatedWithCountsSummaryImageSummary", mixedPackages,
-		"expected only the Arcane argument to be qualified in place, got %q", mixedPackages)
+	testCases := []struct {
+		typ  reflect.Type
+		want string
+	}{
+		{typ: reflect.TypeFor[types.ApiResponse[types.VolumeUsageCounts]](), want: "ApiResponseVolumeUsageCounts"},
+		{typ: reflect.TypeFor[types.ApiResponse[types.ImageUsageCounts]](), want: "ApiResponseImageUsageCounts"},
+		{typ: reflect.TypeFor[types.ApiResponse[types.ContainerStatusCounts]](), want: "ApiResponseContainerStatusCounts"},
+		{typ: reflect.TypeFor[types.ApiResponse[types.ProjectStatusCounts]](), want: "ApiResponseProjectStatusCounts"},
+		{typ: reflect.TypeFor[types.Paginated[types.ContainerSummary]](), want: "PaginatedContainerSummary"},
+		{typ: reflect.TypeFor[types.PaginatedWithCounts[types.NetworkSummary, types.NetworkUsageCounts]](), want: "PaginatedWithCountsNetworkSummaryNetworkUsageCounts"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.want, func(t *testing.T) {
+			require.Equal(t, "#/components/schemas/"+testCase.want, registry.Schema(testCase.typ, true, "").Ref)
+		})
+	}
 }
 
-func TestHandlerDeps_ZeroValue(t *testing.T) {
-	var deps HandlerDeps
+func TestSchemaRegistry_RefsResolve(t *testing.T) {
+	api := SetupAPIForSpec()
+	document, err := api.OpenAPI().MarshalJSON()
+	require.NoError(t, err)
+	schemas := api.OpenAPI().Components.Schemas.Map()
 
-	require.Nil(t, deps.Auth)
-	require.Nil(t, deps.Docker)
+	matches := regexp.MustCompile(`"\$ref":"#/components/schemas/([^"]+)"`).FindAllSubmatch(document, -1)
+	require.NotEmpty(t, matches)
+
+	var unresolved []string
+	for _, match := range matches {
+		if _, ok := schemas[string(match[1])]; !ok {
+			unresolved = append(unresolved, string(match[1]))
+		}
+	}
+	require.Empty(t, unresolved)
 }
 
 func TestSetupAPIForSpec_DefaultSecurity(t *testing.T) {
@@ -242,10 +226,10 @@ func TestSetupAPIForSpec_PublicRoutesOverrideSecurity(t *testing.T) {
 		path   string
 		method string
 	}{
-		{path: "/app-images/logo", method: "GET"},
-		{path: "/app-images/favicon", method: "GET"},
-		{path: "/app-images/profile", method: "GET"},
-		{path: "/app-images/pwa/{filename}", method: "GET"},
+		{path: "/app/images/logo", method: "GET"},
+		{path: "/app/images/favicon", method: "GET"},
+		{path: "/app/images/profile", method: "GET"},
+		{path: "/app/images/pwa/{filename}", method: "GET"},
 		{path: "/auth/login", method: "POST"},
 		{path: "/auth/logout", method: "POST"},
 		{path: "/auth/refresh", method: "POST"},
@@ -260,7 +244,7 @@ func TestSetupAPIForSpec_PublicRoutesOverrideSecurity(t *testing.T) {
 		{path: "/environments/{id}/settings/public", method: "GET"},
 		{path: "/environments/pair", method: "POST"},
 		{path: "/version", method: "GET"},
-		{path: "/app-version", method: "GET"},
+		{path: "/app/version", method: "GET"},
 	}
 
 	for _, testCase := range testCases {
@@ -331,9 +315,9 @@ func TestVariableMaterializationRoutesAreAgentOnly(t *testing.T) {
 
 	managerMatcher := authz.NewPermissionMatcher()
 	managerMatcher.CollectFromHumaAPI(managerAPI)
-	_, found := managerMatcher.Lookup("GET", "/templates/variables").Get()
+	_, found := managerMatcher.Lookup("GET", "/templates/variables", nil).Get()
 	require.False(t, found)
-	_, found = managerMatcher.Lookup("PUT", "/templates/variables").Get()
+	_, found = managerMatcher.Lookup("PUT", "/templates/variables", nil).Get()
 	require.False(t, found)
 
 	router := echo.New()
@@ -341,7 +325,7 @@ func TestVariableMaterializationRoutesAreAgentOnly(t *testing.T) {
 		router,
 		router.Group("/api"),
 		handlerutil.NewActivityAppContext(t.Context()),
-		&config.Config{AgentMode: true},
+		&config.Config{AgentEnabled: true},
 		HandlerDeps{Health: health.New(&health.Service{})},
 	)
 	require.Nil(t, agentAPI.OpenAPI().Paths["/variables"])
@@ -357,8 +341,8 @@ func TestEasyJoinRoutesDeclareSwarmJoinPermission(t *testing.T) {
 		path   string
 		method string
 	}{
-		{path: "/environments/{id}/swarm/join-candidates", method: "GET"},
-		{path: "/environments/{id}/swarm/join-environments", method: "POST"},
+		{path: "/environments/{id}/swarm/join/candidates", method: "GET"},
+		{path: "/environments/{id}/swarm/join/environments", method: "POST"},
 	}
 
 	matcher := authz.NewPermissionMatcher()
@@ -378,7 +362,7 @@ func TestEasyJoinRoutesDeclareSwarmJoinPermission(t *testing.T) {
 			require.Equal(t, authz.PermSwarmJoin, operation.Metadata[authz.MetaRequiredPermission])
 
 			suffix := strings.TrimPrefix(tt.path, "/environments/{id}")
-			permission, found := matcher.Lookup(tt.method, suffix).Get()
+			permission, found := matcher.Lookup(tt.method, suffix, nil).Get()
 			require.True(t, found)
 			require.Equal(t, authz.PermSwarmJoin, permission)
 		})
@@ -419,6 +403,9 @@ func TestEnvScopedOperationsDeclarePermission(t *testing.T) {
 			if op.Security != nil && len(op.Security) == 0 {
 				continue
 			}
+			if _, isAction := op.Metadata[authz.MetaActionPermissions].(map[string]string); isAction {
+				continue
+			}
 			permission, ok := op.Metadata[authz.MetaRequiredPermission].(string)
 			if !ok || permission == "" {
 				missing = append(missing, method+" "+path)
@@ -431,4 +418,12 @@ func TestEnvScopedOperationsDeclarePermission(t *testing.T) {
 		assert.Failf(t, "unexpected failure", "%d env-scoped operation(s) missing required-permission metadata; register them with middleware.RegisterWithPermission:\n  %s",
 			len(missing), strings.Join(missing, "\n  "))
 	}
+}
+
+func TestSchemaRegistry_RawJSONIsUntyped(t *testing.T) {
+	registry := SetupAPIForSpec().OpenAPI().Components.Schemas
+
+	schema := registry.Schema(reflect.TypeFor[jsontext.Value](), true, "")
+	require.Empty(t, schema.Type)
+	require.Empty(t, schema.ContentEncoding)
 }

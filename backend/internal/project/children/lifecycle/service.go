@@ -18,28 +18,31 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	lifecycletype "github.com/getarcaneapp/arcane/types/v2/lifecycle"
-	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
-	"go.getarcane.app/acfs"
-	"go.getarcane.app/docker"
-	"go.getarcane.app/kit/pkg"
-	"go.getarcane.app/kit/pkg/capture"
 
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/capture"
+	"kit.getarcane.app/docker"
+
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/types/v3"
 )
 
-// Service runs pre-deploy scripts in throwaway runner containers.
-type Service struct {
-	dockerService *dockerInternal.DockerClientService
-	imageService  *image.ImageService
-}
+type (
+	// Service runs pre-deploy scripts in throwaway runner containers.
+	Service struct {
+		dockerService *dockerInternal.DockerClientService
+		imageService  *image.ImageService
+	}
+)
 
 const (
 	// lifecycleWorkspaceMount is where the project dir is mounted; scripts run there.
@@ -48,7 +51,6 @@ const (
 	lifecycleMaxOutputBytes = 16 * 1024
 	// lifecycleStreamDrainTimeout bounds the post-exit log drain, matching vulnerability scanning.
 	lifecycleStreamDrainTimeout = 30 * time.Second
-
 	// Last-run status values written to GitOpsSync.PreDeployLastRunStatus.
 	LifecycleStatusSuccess = "success"
 	LifecycleStatusFailed  = "failed"
@@ -143,10 +145,10 @@ func (s *Service) RunScript(
 	projectPath string,
 	scriptPath string,
 	hookEnv map[string]string,
-	extraMounts []lifecycletype.ExtraMount,
+	extraMounts []types.LifecycleExtraMount,
 	networkMode string,
 	timeout time.Duration,
-	actor user.Actor,
+	actor types.Actor,
 ) (stdoutContent, stderrContent string, exitCode int64, err error) {
 	// Pull a missing runner image through the image service so credentials and the pull timeout apply.
 	if _, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
@@ -163,7 +165,7 @@ func (s *Service) RunScript(
 
 	// MountForSubpath mounts a volume-backed /app/data via VolumeOptions.Subpath (host binds fail on e.g. WSL2).
 	// On the host, or when the mount cannot be derived, projectPath is bound as-is.
-	inspect, inspectErr := s.dockerService.Call(ctx, libarcane.InspectCurrentArcaneContainer)
+	inspect, inspectErr := s.dockerService.Call(ctx, selfcontainer.InspectCurrentArcaneContainer)
 	if inspectErr != nil {
 		slog.WarnContext(ctx, "failed to derive workspace mount; falling back to bind on project path", "projectPath", projectPath, "error", inspectErr)
 	}
@@ -197,7 +199,7 @@ func (s *Service) RunScript(
 				AttachStdout: true,
 				AttachStderr: true,
 				Labels: map[string]string{
-					libarcane.InternalResourceLabel: "true",
+					selfcontainer.InternalResourceLabel: "true",
 				},
 			},
 			// no-new-privileges and CapDrop ALL strip setuid and root capabilities from the script and its children.
@@ -313,7 +315,7 @@ func ValidateScriptPath(ctx context.Context, projectPath, scriptPath string) err
 		return fmt.Errorf("script path %q escapes project directory", scriptPath)
 	}
 
-	entry, err := acfs.Stat(ctx, absProject, "/"+filepath.ToSlash(scriptPath), false)
+	entry, err := acfs.Root{Path: absProject}.Stat(ctx, "/"+filepath.ToSlash(scriptPath), acfstypes.StatOptions{})
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			// The runner image's user may read a path Arcane's uid cannot traverse (#3373); let the run surface real problems.

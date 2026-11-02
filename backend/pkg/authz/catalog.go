@@ -1,27 +1,29 @@
 package authz
 
+type (
+	// PermissionCatalogResource describes a resource group in the permission
+	// catalog. It is the authz-owned source for permission ordering, scope, and
+	// display metadata used by API manifests and validation helpers.
+	PermissionCatalogResource struct {
+		Key     string
+		Label   string
+		Scope   string
+		Actions []PermissionCatalogAction
+	}
+
+	// PermissionCatalogAction describes one recognized permission.
+	PermissionCatalogAction struct {
+		Key         string
+		Permission  string
+		Label       string
+		Description string
+	}
+)
+
 const (
 	PermissionScopeGlobal = "global"
 	PermissionScopeEnv    = "env"
 )
-
-// PermissionCatalogResource describes a resource group in the permission
-// catalog. It is the authz-owned source for permission ordering, scope, and
-// display metadata used by API manifests and validation helpers.
-type PermissionCatalogResource struct {
-	Key     string
-	Label   string
-	Scope   string
-	Actions []PermissionCatalogAction
-}
-
-// PermissionCatalogAction describes one recognized permission.
-type PermissionCatalogAction struct {
-	Key         string
-	Permission  string
-	Label       string
-	Description string
-}
 
 var permissionCatalog = []PermissionCatalogResource{
 	{"users", "Users", PermissionScopeGlobal, []PermissionCatalogAction{
@@ -230,9 +232,6 @@ var permissionCatalog = []PermissionCatalogResource{
 	}},
 	{"notifications", "Notifications", PermissionScopeGlobal, []PermissionCatalogAction{
 		{"manage", PermNotificationsManage, "Manage", ""},
-	}},
-	{"dashboard", "Dashboard", PermissionScopeEnv, []PermissionCatalogAction{
-		{"read", PermDashboardRead, "Read", ""},
 	}},
 	{"system", "System", PermissionScopeEnv, []PermissionCatalogAction{
 		{"read", PermSystemRead, "Read", ""},

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -7,7 +9,6 @@
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
-	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import UpdateCenterDialog from '#lib/components/dialogs/update-center-dialog.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -24,8 +25,10 @@
 		ConnectionIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -34,28 +37,29 @@
 	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker.js';
 	import { capitalizeFirstLetter } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
-	import { applyEnvironmentUpgrade } from '#lib/utils/update-actions.js';
 
 	import EasyJoinDialog from '../../swarm/cluster/components/easy-join-dialog.svelte';
 	import EnvironmentUpgradeMenuItem from './environment-upgrade-menu-item.svelte';
 	import EnvironmentVersionCell from './environment-version-cell.svelte';
 
 	let {
-		environments = $bindable(),
+		environments,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
+		onRetry,
 		onDeleteSelected,
 		bulkDeleteLoading = false
 	}: {
 		environments: Paginated<Environment>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
+		onRetry: () => Promise<unknown>;
 		onDeleteSelected: (ids: string[]) => void;
 		bulkDeleteLoading?: boolean;
 	} = $props();
 
-	let isLoading = $state({ removing: false, testing: false, upgrading: false, toggling: false });
-	let upgradingEnvironmentId = $state<string | null>(null);
+	const queryClient = useQueryClient();
+	const isLoading = $state({ removing: false, testing: false, upgrading: false, toggling: false });
 	let showUpgradeDialog = $state(false);
 	let selectedEnvironmentForUpgrade = $state<Environment | null>(null);
 	let selectedVersionInfoForUpgrade = $state<AppVersionInformation | null>(null);
@@ -64,27 +68,32 @@
 	let easyJoinTarget = $state<Environment | null>(null);
 	const easyJoinCandidates = useEasyJoinCandidates();
 
-	const canInstallUpdates = $derived(hasPermission('environments:update'));
+	const canInstallUpdates = $derived(hasPermission('environments:update', GLOBAL_SCOPE));
 
 	const environmentTypeFilters: FilterOption[] = [
-		{ value: 'http', label: m.environments_edge_http_label(), icon: EnvironmentsIcon },
-		{ value: 'edge', label: m.environments_edge_label(), icon: EnvironmentsIcon },
-		{ value: 'websocket', label: m.environments_edge_websocket_label(), icon: EnvironmentsIcon },
-		{ value: 'grpc', label: m.environments_edge_grpc_label(), icon: EnvironmentsIcon }
+		{ value: 'agent', label: m.environments_agent_label(), icon: EnvironmentsIcon },
+		{ value: 'websocket', label: m.environments_agent_websocket_label(), icon: EnvironmentsIcon },
+		{ value: 'grpc', label: m.environments_agent_grpc_label(), icon: EnvironmentsIcon }
 	];
 
 	function resolveEnvironmentTransport(item: Environment): 'grpc' | 'websocket' | undefined {
 		// Prefer the live tunnel transport; fall back to the last one used so
-		// disconnected or poll-only agents still show what they connect with.
-		return (item.connected ? item.edgeTransport : undefined) ?? item.lastEdgeTransport;
+		// disconnected agents still show what they connect with.
+		return (item.connected ? item.agentTransport : undefined) ?? item.lastAgentTransport;
 	}
 
 	function getEnvironmentTypeLabel(item: Environment): string {
-		if (!item.isEdge) return m.environments_edge_http_label();
+		if (item.id === '0') return m.local();
 		const transport = resolveEnvironmentTransport(item);
-		if (!transport) return m.environments_edge_label();
-		if (transport === 'websocket') return m.environments_edge_websocket_label();
-		return m.environments_edge_grpc_label();
+		if (!transport) return m.environments_agent_label();
+		if (transport === 'websocket') return m.environments_agent_websocket_label();
+		return m.environments_agent_grpc_label();
+	}
+
+	function getEnvironmentTypeVariant(item: Environment): 'gray' | 'purple' | 'blue' {
+		const transport = resolveEnvironmentTransport(item);
+		if (item.id === '0' || !transport) return 'gray';
+		return transport === 'websocket' ? 'purple' : 'blue';
 	}
 
 	function canEasyJoin(item: Environment): boolean {
@@ -113,8 +122,8 @@
 						setLoadingState: () => {},
 						onSuccess: async () => {
 							toast.success(m.common_delete_success({ resource: `${m.resource_environment()} "${hostname}"` }));
-							environments = await environmentManagementService.getEnvironments(requestOptions);
-							await environmentStore.initialize(environments.data);
+							await environmentStore.initialize(environmentStore.available.filter((environment) => environment.id !== id));
+							await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
 						}
 					});
 					isLoading.removing = false;
@@ -134,9 +143,7 @@
 				const status = (resp as { status: string; message?: string }).status;
 				if (status === 'online') toast.success(m.environments_test_connection_success());
 				else toast.error(m.environments_test_connection_error());
-				// Refresh to get updated status from backend
-				environments = await environmentManagementService.getEnvironments(requestOptions);
-				await environmentStore.initialize(environments.data);
+				await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
 			}
 		});
 		isLoading.testing = false;
@@ -146,15 +153,6 @@
 		selectedEnvironmentForUpgrade = environment;
 		selectedVersionInfoForUpgrade = versionInfo;
 		showUpgradeDialog = true;
-	}
-
-	async function handleConfirmUpgrade() {
-		if (!selectedEnvironmentForUpgrade) return;
-
-		const envId = selectedEnvironmentForUpgrade.id;
-		upgradingEnvironmentId = envId;
-
-		return applyEnvironmentUpgrade(envId, () => m.upgrade_failed({ error: m.common_unknown() }));
 	}
 
 	async function handleToggleEnabled(environment: Environment) {
@@ -167,14 +165,16 @@
 			result,
 			message: m.common_update_failed({ resource: m.resource_environment() }),
 			setLoadingState: () => {},
-			onSuccess: async () => {
+			onSuccess: async (updated) => {
 				toast.success(
 					m.common_update_success({
 						resource: `${m.resource_environment()} "${environment.name}"`
 					})
 				);
-				environments = await environmentManagementService.getEnvironments(requestOptions);
-				await environmentStore.initialize(environments.data);
+				await environmentStore.initialize(
+					environmentStore.available.map((available) => (available.id === updated.id ? updated : available))
+				);
+				await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
 			}
 		});
 
@@ -230,7 +230,7 @@
 			id: 'remove',
 			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
 			action: 'remove',
-			onClick: onDeleteSelected,
+			onclick: onDeleteSelected,
 			loading: bulkDeleteLoading,
 			disabled: bulkDeleteLoading || isLoading.removing,
 			icon: TrashIcon
@@ -238,6 +238,11 @@
 	]);
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
+
+	const statusDotClass: Record<string, string> = {
+		online: 'bg-success',
+		pending: 'bg-warning'
+	};
 </script>
 
 {#snippet EnvironmentCell({ item }: { item: Environment })}
@@ -248,24 +253,17 @@
 				<EnvironmentsIcon class="size-4 text-muted-foreground" />
 			</div>
 			<div
-				class="absolute -top-1 -right-1 size-3 rounded-full border-2 border-background {statusValue === 'online'
-					? 'bg-success'
-					: statusValue === 'standby'
-						? 'bg-info'
-						: statusValue === 'pending'
-							? 'bg-warning'
-							: 'bg-destructive'}"
+				class={[
+					'absolute -top-1 -right-1 size-3 rounded-full border-2 border-background',
+					statusDotClass[statusValue] ?? 'bg-destructive'
+				]}
 			></div>
 		</div>
-		{#if environmentStore.selected?.id === item.id}
-			<Badge variant="blue">
-				{m.common_current()}
-			</Badge>
-		{/if}
 		<div class="flex flex-col gap-0.5 leading-tight">
 			<button
+				type="button"
 				class="h-auto min-h-0 cursor-pointer p-0 text-left text-sm leading-tight font-medium text-foreground hover:underline"
-				onclick={() => goto(`/environments/${item.id}`)}
+				onclick={() => goto(resolve('/(app)/environments/[id]', { id: item.id }))}
 			>
 				{item.name}
 			</button>
@@ -282,22 +280,7 @@
 
 {#snippet TypeCell({ value }: { value: unknown })}
 	{@const env = value as Environment}
-	{@const typeLabel = getEnvironmentTypeLabel(env)}
-	{@const transport = resolveEnvironmentTransport(env)}
-	{@const typeVariant = !env.isEdge || !transport ? 'gray' : transport === 'websocket' ? 'purple' : 'blue'}
-	<div class="flex items-center gap-1.5">
-		<Badge variant={typeVariant} minWidth="20">{typeLabel}</Badge>
-		{#if env.id !== '0' && !env.isEdge}
-			<ArcaneTooltip.Root>
-				<ArcaneTooltip.Trigger>
-					<Badge variant="amber">{m.environments_direct_deprecated_badge()}</Badge>
-				</ArcaneTooltip.Trigger>
-				<ArcaneTooltip.Content>
-					<p>{m.environments_warning_direct_deprecated()}</p>
-				</ArcaneTooltip.Content>
-			</ArcaneTooltip.Root>
-		{/if}
-	</div>
+	<Badge variant={getEnvironmentTypeVariant(env)} minWidth="20">{getEnvironmentTypeLabel(env)}</Badge>
 {/snippet}
 
 {#snippet VersionCell({ item }: { item: Environment })}
@@ -320,10 +303,7 @@
 		icon={{ component: StatsIcon, variant: 'emerald' }}
 		title={(item: Environment) => item.name || item.id}
 		subtitle={(item: Environment) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
-		badges={[
-			{ variant: 'green', text: m.resource_environment_cap() },
-			...(environmentStore.selected?.id === item.id ? [{ variant: 'blue' as const, text: m.common_current() }] : [])
-		]}
+		badges={[{ variant: 'green', text: m.resource_environment_cap() }]}
 		fields={[
 			{
 				label: m.common_status(),
@@ -348,33 +328,13 @@
 			}
 		]}
 		rowActions={RowActions}
-		onclick={(item: Environment) => goto(`/environments/${item.id}`)}
+		onclick={(item: Environment) => goto(resolve('/(app)/environments/[id]', { id: item.id }))}
 	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Environment })}
 	<RowActionsMenu>
-		<DropdownMenu.Item
-			onclick={async () => {
-				if (!item.enabled) {
-					toast.error(m.environments_cannot_switch_disabled());
-					return;
-				}
-				await handleApiResultWithCallbacks({
-					result: await tryCatch(environmentStore.setEnvironment(item)),
-					message: m.environments_connect_error(),
-					onSuccess: () => {
-						toast.success(m.environments_switched_to({ name: item.name }));
-					}
-				});
-			}}
-			disabled={!item.enabled || environmentStore.selected?.id === item.id}
-		>
-			<EnvironmentsIcon class="size-4" />
-			{environmentStore.selected?.id === item.id ? m.environments_current_environment() : m.environments_use_environment()}
-		</DropdownMenu.Item>
-
-		<DropdownMenu.Item onclick={() => goto(`/environments/${item.id}`)}>
+		<DropdownMenu.Item onclick={() => goto(resolve('/(app)/environments/[id]', { id: item.id }))}>
 			<InspectIcon class="size-4" />
 			{m.common_view_details()}
 		</DropdownMenu.Item>
@@ -398,7 +358,7 @@
 				environment={item}
 				isOnline={isEnvironmentOnline(item)}
 				disabled={isLoading.upgrading}
-				isUpgradingThis={upgradingEnvironmentId === item.id}
+				isUpgradingThis={isLoading.upgrading && selectedEnvironmentForUpgrade?.id === item.id}
 				onSelect={handleUpgradeSelected}
 			/>
 
@@ -429,11 +389,7 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
-	onRefresh={async (options) => {
-		environments = await environmentManagementService.getEnvironments(options);
-		await environmentStore.initialize(environments.data);
-		return environments;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}
@@ -441,14 +397,10 @@
 />
 
 <UpdateCenterDialog
-	bind:open={
-		() => showUpgradeDialog,
-		(open) => {
-			showUpgradeDialog = open;
-			if (!open) upgradingEnvironmentId = null;
-		}
-	}
-	onConfirm={handleConfirmUpgrade}
+	bind:open={showUpgradeDialog}
+	onFinished={async () => {
+		await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
+	}}
 	versionInformation={selectedVersionInfoForUpgrade ?? undefined}
 	canInstall={canInstallUpdates}
 	environmentName={selectedEnvironmentForUpgrade?.name}
@@ -456,10 +408,10 @@
 	bind:upgrading={isLoading.upgrading}
 />
 
-{#key `${easyJoinSession}:${easyJoinCandidates.managerEnvironmentId}`}
+{#key `${easyJoinSession}:${easyJoinTarget ? easyJoinCandidates.managerFor(easyJoinTarget.id) : ''}`}
 	<EasyJoinDialog
 		bind:open={easyJoinDialogOpen}
-		managerEnvironmentId={easyJoinCandidates.managerEnvironmentId ?? undefined}
+		managerEnvironmentId={easyJoinTarget ? easyJoinCandidates.managerFor(easyJoinTarget.id) : undefined}
 		targetEnvironmentId={easyJoinTarget?.id}
 		onComplete={easyJoinCandidates.refresh}
 	/>

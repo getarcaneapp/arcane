@@ -10,44 +10,45 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/lestrrat-go/jwx/v4/jwt"
-	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/user"
+)
+
+type (
+	accessTokenClaims struct {
+		ExpiresAt  time.Time
+		UserID     string
+		SessionID  string
+		Username   string
+		AppVersion string
+	}
+
+	refreshTokenClaims struct {
+		ID         string
+		UserID     string
+		SessionID  string
+		AppVersion string
+	}
 )
 
 const (
 	browserSessionSigningKeySize = 64
-
-	accessTokenSubject    = "access"
-	browserTokenSubject   = "browser_session"
-	refreshTokenSubject   = "refresh"
-	browserRefreshSubject = "browser_refresh"
-
-	claimSessionID             = "sid"
-	claimUserID                = "user_id"
-	claimUsername              = "username"
-	claimEmail                 = "email"
-	claimDisplayName           = "display_name"
-	claimAppVersion            = "app_version"
-	claimTokenType             = "token_type"
-	claimFederatedCredentialID = "federated_credential_id"
+	accessTokenSubject           = "access"
+	browserTokenSubject          = "browser_session"
+	refreshTokenSubject          = "refresh"
+	browserRefreshSubject        = "browser_refresh"
+	claimSessionID               = "sid"
+	claimUserID                  = "user_id"
+	claimUsername                = "username"
+	claimEmail                   = "email"
+	claimDisplayName             = "display_name"
+	claimAppVersion              = "app_version"
+	claimTokenType               = "token_type"
+	claimFederatedCredentialID   = "federated_credential_id"
 )
-
-type accessTokenClaims struct {
-	UserID     string
-	SessionID  string
-	Username   string
-	AppVersion string
-	ExpiresAt  time.Time
-}
-
-type refreshTokenClaims struct {
-	ID         string
-	UserID     string
-	SessionID  string
-	AppVersion string
-}
 
 var tokenParseOptions = []jwt.ParseOption{
 	jwt.WithStrictStringClaims(true),

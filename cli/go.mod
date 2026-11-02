@@ -1,8 +1,8 @@
-module github.com/getarcaneapp/arcane/cli/v2
+module getarcane.dev/cli/v3
 
 go 1.27.3
 
-replace github.com/getarcaneapp/arcane/types/v2 => ../types
+replace getarcane.dev/types/v3 => ../types
 
 require (
 	charm.land/bubbles/v2 v2.2.1
@@ -10,13 +10,13 @@ require (
 	charm.land/fang/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.6
 	charm.land/log/v2 v2.0.1
+	getarcane.dev/types/v3 v3.0.0
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/creack/pty v1.1.24
 	github.com/docker/go-connections v0.8.2
 	github.com/docker/go-units v0.5.0
-	github.com/getarcaneapp/arcane/types/v2 v2.14.0
 	github.com/gofrs/flock v0.13.1
 	github.com/mattn/go-runewidth v0.0.31
 	github.com/muesli/cancelreader v0.2.2
@@ -27,12 +27,11 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
 	github.com/theupdateframework/go-tuf/v2 v2.4.2
-	go.getarcane.app/acfs v0.6.3
-	go.getarcane.app/builds v0.4.7
-	go.getarcane.app/docker v0.1.3
-	go.getarcane.app/kit v0.4.2
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	google.golang.org/protobuf v1.36.12
+	kit.getarcane.app v0.6.0
+	kit.getarcane.app/builds v0.5.0
+	kit.getarcane.app/docker v0.3.0
 )
 
 require (

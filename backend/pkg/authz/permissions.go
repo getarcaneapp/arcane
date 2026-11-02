@@ -8,186 +8,145 @@ package authz
 const (
 	// Built-in role IDs. Stable across migrations so other code may reference them
 	// safely. All six built-in roles are seeded by migration 054_add_rbac.
-
 	BuiltInRoleAdmin         = "role_admin"
 	BuiltInRoleEditor        = "role_editor"
 	BuiltInRoleNoShellEditor = "role_no_shell_editor"
 	BuiltInRoleDeployer      = "role_deployer"
 	BuiltInRoleMonitor       = "role_monitor"
 	BuiltInRoleViewer        = "role_viewer"
-
 	// Org-level permissions (require a global-scope role assignment).
 
-	PermUsersList   = "users:list"
-	PermUsersRead   = "users:read"
-	PermUsersCreate = "users:create"
-	PermUsersUpdate = "users:update"
-	PermUsersDelete = "users:delete"
-
-	// PermRolesList and the role permissions below cover role management
-	// (Create / Update / Delete) and role assignment to users. They are reserved
-	// for global admins and intentionally not exposed as delegated permissions —
-	// see backend/internal/middleware/role.go::RequireGlobalAdmin. Likewise, managing
-	// OIDC group → role mappings is admin-only because it is effectively another
-	// path for granting role assignments.
-	PermRolesList = "roles:list"
-	PermRolesRead = "roles:read"
-
-	PermApiKeysList   = "apikeys:list"
-	PermApiKeysRead   = "apikeys:read"
-	PermApiKeysCreate = "apikeys:create"
-	PermApiKeysUpdate = "apikeys:update"
-	PermApiKeysDelete = "apikeys:delete"
-
-	PermFederatedList   = "federated:list"
-	PermFederatedRead   = "federated:read"
-	PermFederatedCreate = "federated:create"
-	PermFederatedUpdate = "federated:update"
-	PermFederatedDelete = "federated:delete"
-
-	PermSettingsRead  = "settings:read"
-	PermSettingsWrite = "settings:write"
-
-	PermEnvironmentsList   = "environments:list"
-	PermEnvironmentsRead   = "environments:read"
-	PermEnvironmentsCreate = "environments:create"
-	PermEnvironmentsUpdate = "environments:update"
-	PermEnvironmentsDelete = "environments:delete"
-	PermEnvironmentsPair   = "environments:pair"
-	PermEnvironmentsSync   = "environments:sync"
-
-	PermRegistriesList       = "registries:list"
-	PermRegistriesRead       = "registries:read"
-	PermRegistriesCreate     = "registries:create"
-	PermRegistriesUpdate     = "registries:update"
-	PermRegistriesDelete     = "registries:delete"
-	PermRegistriesTest       = "registries:test"
-	PermRegistriesBrowse     = "registries:browse"
-	PermRegistriesDeleteTags = "registries:delete-tags"
-
-	PermTemplatesList   = "templates:list"
-	PermTemplatesRead   = "templates:read"
-	PermTemplatesCreate = "templates:create"
-	PermTemplatesUpdate = "templates:update"
-	PermTemplatesDelete = "templates:delete"
-
-	PermVariablesRead   = "variables:read"
-	PermVariablesCreate = "variables:create"
-	PermVariablesUpdate = "variables:update"
-	PermVariablesDelete = "variables:delete"
-	PermVariablesSync   = "variables:sync"
-
-	PermGitReposList   = "git-repositories:list"
-	PermGitReposRead   = "git-repositories:read"
-	PermGitReposCreate = "git-repositories:create"
-	PermGitReposUpdate = "git-repositories:update"
-	PermGitReposDelete = "git-repositories:delete"
-	PermGitReposTest   = "git-repositories:test"
-	PermGitReposSync   = "git-repositories:sync"
-
-	// PermS3DestinationsList and its siblings gate S3 backup destinations,
-	// which hold credentials and are manager-owned, so they are granted
-	// separately from general settings, like container registries.
-	PermS3DestinationsList   = "s3-destinations:list"
-	PermS3DestinationsRead   = "s3-destinations:read"
-	PermS3DestinationsCreate = "s3-destinations:create"
-	PermS3DestinationsUpdate = "s3-destinations:update"
-	PermS3DestinationsDelete = "s3-destinations:delete"
-	PermS3DestinationsTest   = "s3-destinations:test"
-	PermS3DestinationsSync   = "s3-destinations:sync"
-
-	// PermSystemBackupsRead and siblings gate Arcane's own system backups.
-	// Every route additionally requires a global admin; the dedicated grants
-	// exist so admin-owned scoped API keys can be limited to this surface
-	// instead of carrying settings:read/write. Restore is separate because it
-	// replaces the whole instance.
-	PermSystemBackupsRead    = "system-backups:read"
-	PermSystemBackupsManage  = "system-backups:manage"
-	PermSystemBackupsRestore = "system-backups:restore"
-	// PermSystemBackupsRecoveryKey is separate from manage: regenerating the
-	// key invalidates access to the existing repositories.
+	PermUsersList                = "users:list"
+	PermUsersRead                = "users:read"
+	PermUsersCreate              = "users:create"
+	PermUsersUpdate              = "users:update"
+	PermUsersDelete              = "users:delete"
+	PermRolesList                = "roles:list"
+	PermRolesRead                = "roles:read"
+	PermApiKeysList              = "apikeys:list"
+	PermApiKeysRead              = "apikeys:read"
+	PermApiKeysCreate            = "apikeys:create"
+	PermApiKeysUpdate            = "apikeys:update"
+	PermApiKeysDelete            = "apikeys:delete"
+	PermFederatedList            = "federated:list"
+	PermFederatedRead            = "federated:read"
+	PermFederatedCreate          = "federated:create"
+	PermFederatedUpdate          = "federated:update"
+	PermFederatedDelete          = "federated:delete"
+	PermSettingsRead             = "settings:read"
+	PermSettingsWrite            = "settings:write"
+	PermEnvironmentsList         = "environments:list"
+	PermEnvironmentsRead         = "environments:read"
+	PermEnvironmentsCreate       = "environments:create"
+	PermEnvironmentsUpdate       = "environments:update"
+	PermEnvironmentsDelete       = "environments:delete"
+	PermEnvironmentsPair         = "environments:pair"
+	PermEnvironmentsSync         = "environments:sync"
+	PermRegistriesList           = "registries:list"
+	PermRegistriesRead           = "registries:read"
+	PermRegistriesCreate         = "registries:create"
+	PermRegistriesUpdate         = "registries:update"
+	PermRegistriesDelete         = "registries:delete"
+	PermRegistriesTest           = "registries:test"
+	PermRegistriesBrowse         = "registries:browse"
+	PermRegistriesDeleteTags     = "registries:delete-tags"
+	PermTemplatesList            = "templates:list"
+	PermTemplatesRead            = "templates:read"
+	PermTemplatesCreate          = "templates:create"
+	PermTemplatesUpdate          = "templates:update"
+	PermTemplatesDelete          = "templates:delete"
+	PermVariablesRead            = "variables:read"
+	PermVariablesCreate          = "variables:create"
+	PermVariablesUpdate          = "variables:update"
+	PermVariablesDelete          = "variables:delete"
+	PermVariablesSync            = "variables:sync"
+	PermGitReposList             = "git-repositories:list"
+	PermGitReposRead             = "git-repositories:read"
+	PermGitReposCreate           = "git-repositories:create"
+	PermGitReposUpdate           = "git-repositories:update"
+	PermGitReposDelete           = "git-repositories:delete"
+	PermGitReposTest             = "git-repositories:test"
+	PermGitReposSync             = "git-repositories:sync"
+	PermS3DestinationsList       = "s3-destinations:list"
+	PermS3DestinationsRead       = "s3-destinations:read"
+	PermS3DestinationsCreate     = "s3-destinations:create"
+	PermS3DestinationsUpdate     = "s3-destinations:update"
+	PermS3DestinationsDelete     = "s3-destinations:delete"
+	PermS3DestinationsTest       = "s3-destinations:test"
+	PermS3DestinationsSync       = "s3-destinations:sync"
+	PermSystemBackupsRead        = "system-backups:read"
+	PermSystemBackupsManage      = "system-backups:manage"
+	PermSystemBackupsRestore     = "system-backups:restore"
 	PermSystemBackupsRecoveryKey = "system-backups:recovery-key"
-
-	PermEventsRead          = "events:read"
-	PermEventsDelete        = "events:delete"
-	PermCustomizeManage     = "customize:manage"
-	PermNotificationsManage = "notifications:manage"
-
-	// PermDiagnosticsRead gates the admin-only runtime diagnostics surface
-	// (runtime/memory/GC stats, WebSocket metrics, pprof profiles, and the live
-	// backend log tail). Global-scoped; seeded only into the Admin role.
-	PermDiagnosticsRead = "diagnostics:read"
-
+	PermEventsRead               = "events:read"
+	PermEventsDelete             = "events:delete"
+	PermCustomizeManage          = "customize:manage"
+	PermNotificationsManage      = "notifications:manage"
+	PermDiagnosticsRead          = "diagnostics:read"
 	// Env-scoped permissions (resolved against the {id} env ID in the path).
 
-	PermContainersList       = "containers:list"
-	PermContainersRead       = "containers:read"
-	PermContainersLogs       = "containers:logs"
-	PermContainersCreate     = "containers:create"
-	PermContainersStart      = "containers:start"
-	PermContainersStop       = "containers:stop"
-	PermContainersRestart    = "containers:restart"
-	PermContainersRedeploy   = "containers:redeploy"
-	PermContainersEdit       = "containers:edit"
-	PermContainersKill       = "containers:kill"
-	PermContainersPause      = "containers:pause"
-	PermContainersDelete     = "containers:delete"
-	PermContainersExec       = "containers:exec"
-	PermContainersAutoUpdate = "containers:autoupdate"
-
-	PermProjectsList    = "projects:list"
-	PermProjectsRead    = "projects:read"
-	PermProjectsLogs    = "projects:logs"
-	PermProjectsCreate  = "projects:create"
-	PermProjectsUpdate  = "projects:update"
-	PermProjectsDeploy  = "projects:deploy"
-	PermProjectsDown    = "projects:down"
-	PermProjectsRestart = "projects:restart"
-	PermProjectsDelete  = "projects:delete"
-	PermProjectsArchive = "projects:archive"
-
-	PermImagesList   = "images:list"
-	PermImagesRead   = "images:read"
-	PermImagesPull   = "images:pull"
-	PermImagesPush   = "images:push"
-	PermImagesBuild  = "images:build"
-	PermImagesTag    = "images:tag"
-	PermImagesCommit = "images:commit"
-	PermImagesPrune  = "images:prune"
-	PermImagesDelete = "images:delete"
-	PermImagesUpload = "images:upload"
-	PermImagesPatch  = "images:patch"
-
-	PermVolumesList   = "volumes:list"
-	PermVolumesRead   = "volumes:read"
-	PermVolumesCreate = "volumes:create"
-	PermVolumesRename = "volumes:rename"
-	PermVolumesDelete = "volumes:delete"
-	PermVolumesPrune  = "volumes:prune"
-	PermVolumesUpload = "volumes:upload"
-	PermVolumesBackup = "volumes:backup"
-
-	PermNetworksList       = "networks:list"
-	PermNetworksRead       = "networks:read"
-	PermNetworksCreate     = "networks:create"
-	PermNetworksDelete     = "networks:delete"
-	PermNetworksPrune      = "networks:prune"
-	PermNetworksConnect    = "networks:connect"
-	PermNetworksDisconnect = "networks:disconnect"
-
-	PermSwarmRead         = "swarm:read"
-	PermSwarmInit         = "swarm:init"
-	PermSwarmJoin         = "swarm:join"
-	PermSwarmLeave        = "swarm:leave"
-	PermSwarmSpec         = "swarm:spec"
-	PermSwarmNodes        = "swarm:nodes"
-	PermSwarmServices     = "swarm:services"
-	PermSwarmServicesLogs = "swarm:services:logs"
-	PermSwarmStacks       = "swarm:stacks"
-	PermSwarmConfigs      = "swarm:configs"
-	PermSwarmSecrets      = "swarm:secrets"
-	PermSwarmUnlock       = "swarm:unlock"
-
+	PermContainersList          = "containers:list"
+	PermContainersRead          = "containers:read"
+	PermContainersLogs          = "containers:logs"
+	PermContainersCreate        = "containers:create"
+	PermContainersStart         = "containers:start"
+	PermContainersStop          = "containers:stop"
+	PermContainersRestart       = "containers:restart"
+	PermContainersRedeploy      = "containers:redeploy"
+	PermContainersEdit          = "containers:edit"
+	PermContainersKill          = "containers:kill"
+	PermContainersPause         = "containers:pause"
+	PermContainersDelete        = "containers:delete"
+	PermContainersExec          = "containers:exec"
+	PermContainersAutoUpdate    = "containers:autoupdate"
+	PermProjectsList            = "projects:list"
+	PermProjectsRead            = "projects:read"
+	PermProjectsLogs            = "projects:logs"
+	PermProjectsCreate          = "projects:create"
+	PermProjectsUpdate          = "projects:update"
+	PermProjectsDeploy          = "projects:deploy"
+	PermProjectsDown            = "projects:down"
+	PermProjectsRestart         = "projects:restart"
+	PermProjectsDelete          = "projects:delete"
+	PermProjectsArchive         = "projects:archive"
+	PermImagesList              = "images:list"
+	PermImagesRead              = "images:read"
+	PermImagesPull              = "images:pull"
+	PermImagesPush              = "images:push"
+	PermImagesBuild             = "images:build"
+	PermImagesTag               = "images:tag"
+	PermImagesCommit            = "images:commit"
+	PermImagesPrune             = "images:prune"
+	PermImagesDelete            = "images:delete"
+	PermImagesUpload            = "images:upload"
+	PermImagesPatch             = "images:patch"
+	PermVolumesList             = "volumes:list"
+	PermVolumesRead             = "volumes:read"
+	PermVolumesCreate           = "volumes:create"
+	PermVolumesRename           = "volumes:rename"
+	PermVolumesDelete           = "volumes:delete"
+	PermVolumesPrune            = "volumes:prune"
+	PermVolumesUpload           = "volumes:upload"
+	PermVolumesBackup           = "volumes:backup"
+	PermNetworksList            = "networks:list"
+	PermNetworksRead            = "networks:read"
+	PermNetworksCreate          = "networks:create"
+	PermNetworksDelete          = "networks:delete"
+	PermNetworksPrune           = "networks:prune"
+	PermNetworksConnect         = "networks:connect"
+	PermNetworksDisconnect      = "networks:disconnect"
+	PermSwarmRead               = "swarm:read"
+	PermSwarmInit               = "swarm:init"
+	PermSwarmJoin               = "swarm:join"
+	PermSwarmLeave              = "swarm:leave"
+	PermSwarmSpec               = "swarm:spec"
+	PermSwarmNodes              = "swarm:nodes"
+	PermSwarmServices           = "swarm:services"
+	PermSwarmServicesLogs       = "swarm:services:logs"
+	PermSwarmStacks             = "swarm:stacks"
+	PermSwarmConfigs            = "swarm:configs"
+	PermSwarmSecrets            = "swarm:secrets"
+	PermSwarmUnlock             = "swarm:unlock"
 	PermPodmanRead              = "podman:read"
 	PermPodmanPods              = "podman:pods"
 	PermPodmanQuadlets          = "podman:quadlets"
@@ -195,58 +154,56 @@ const (
 	PermPodmanKube              = "podman:kube"
 	PermPodmanSecrets           = "podman:secrets"
 	PermPodmanAutoUpdate        = "podman:autoupdate"
-
-	PermGitOpsList   = "gitops:list"
-	PermGitOpsRead   = "gitops:read"
-	PermGitOpsCreate = "gitops:create"
-	PermGitOpsUpdate = "gitops:update"
-	PermGitOpsDelete = "gitops:delete"
-	PermGitOpsSync   = "gitops:sync"
-	// PermGitOpsLifecycle gates configuring a sync's pre-deploy lifecycle hook
-	// (script + runner image + env + host bind mounts + network mode), which is
-	// effectively arbitrary code execution on the host. It is intentionally
-	// separate from gitops:create / gitops:update so that holding those broader
-	// permissions (e.g. the built-in Editor role) does not by itself grant the
-	// ability to author hooks; seeded only into the Admin built-in role.
-	PermGitOpsLifecycle = "gitops:lifecycle"
-	// PermGitOpsBackup gates the "Back up to Git" feature. Backup-only routes
-	// (preview, history, resolve) require it alone; the shared sync routes
-	// require it in addition to the matching gitops:* permission when the sync
-	// is a backup. Backups push project files (optionally the .env) to a
-	// repository, so holding the broader gitops:* permissions alone is not enough.
-	PermGitOpsBackup = "gitops:backup"
-
-	PermWebhooksList   = "webhooks:list"
-	PermWebhooksCreate = "webhooks:create"
-	PermWebhooksUpdate = "webhooks:update"
-	PermWebhooksDelete = "webhooks:delete"
-
-	PermJobsManage    = "jobs:manage"
-	PermDashboardRead = "dashboard:read"
-
-	PermSystemRead    = "system:read"
-	PermSystemPrune   = "system:prune"
-	PermSystemUpgrade = "system:upgrade"
-
-	PermImageUpdatesRead  = "image-updates:read"
-	PermImageUpdatesCheck = "image-updates:check"
-
-	PermVulnsRead   = "vulnerabilities:read"
-	PermVulnsScan   = "vulnerabilities:scan"
-	PermVulnsManage = "vulnerabilities:manage"
-
-	PermBuildWorkspacesManage = "build-workspaces:manage"
-
-	PermActivitiesRead   = "activities:read"
-	PermActivitiesCancel = "activities:cancel"
-	PermActivitiesDelete = "activities:delete"
+	PermGitOpsList              = "gitops:list"
+	PermGitOpsRead              = "gitops:read"
+	PermGitOpsCreate            = "gitops:create"
+	PermGitOpsUpdate            = "gitops:update"
+	PermGitOpsDelete            = "gitops:delete"
+	PermGitOpsSync              = "gitops:sync"
+	PermGitOpsLifecycle         = "gitops:lifecycle"
+	PermGitOpsBackup            = "gitops:backup"
+	PermWebhooksList            = "webhooks:list"
+	PermWebhooksCreate          = "webhooks:create"
+	PermWebhooksUpdate          = "webhooks:update"
+	PermWebhooksDelete          = "webhooks:delete"
+	PermJobsManage              = "jobs:manage"
+	PermSystemRead              = "system:read"
+	PermSystemPrune             = "system:prune"
+	PermSystemUpgrade           = "system:upgrade"
+	PermImageUpdatesRead        = "image-updates:read"
+	PermImageUpdatesCheck       = "image-updates:check"
+	PermVulnsRead               = "vulnerabilities:read"
+	PermVulnsScan               = "vulnerabilities:scan"
+	PermVulnsManage             = "vulnerabilities:manage"
+	PermBuildWorkspacesManage   = "build-workspaces:manage"
+	PermActivitiesRead          = "activities:read"
+	PermActivitiesCancel        = "activities:cancel"
+	PermActivitiesDelete        = "activities:delete"
 )
 
-// orgLevelPermissions is derived from the authz permission catalog. Env-scoped
-// permissions are everything in the catalog that is not in this set.
-var orgLevelPermissions = buildOrgLevelPermissionsInternal()
+var (
+	orgLevelPermissions = buildOrgLevelPermissions()
 
-func buildOrgLevelPermissionsInternal() map[string]struct{} {
+	// allPermissionsSet is the canonical exact-set lookup of every defined
+	// permission, built once from AllPermissions(). Anchors IsKnownPermission and
+	// IsEnvScoped to exact membership so PermissionSet.IsGlobalAdmin can rely on
+	// "ps.Global ⊆ allPermissionsSet" as a true invariant.
+	allPermissionsSet = func() map[string]struct{} {
+		all := AllPermissions()
+		m := make(map[string]struct{}, len(all))
+		for _, p := range all {
+			m[p] = struct{}{}
+		}
+		return m
+	}()
+
+	// totalPermissionsCount caches len(allPermissionsSet) so callers on the auth
+	// hot path (notably PermissionSet.IsGlobalAdmin) don't re-allocate and walk a
+	// ~100-element slice on every authenticated request.
+	totalPermissionsCount = len(allPermissionsSet)
+)
+
+func buildOrgLevelPermissions() map[string]struct{} {
 	out := make(map[string]struct{})
 	for _, resource := range permissionCatalog {
 		if resource.Scope != PermissionScopeGlobal {
@@ -274,24 +231,6 @@ func IsEnvScoped(perm string) bool {
 	}
 	return !IsOrgLevel(perm)
 }
-
-// allPermissionsSet is the canonical exact-set lookup of every defined
-// permission, built once from AllPermissions(). Anchors IsKnownPermission and
-// IsEnvScoped to exact membership so PermissionSet.IsGlobalAdmin can rely on
-// "ps.Global ⊆ allPermissionsSet" as a true invariant.
-var allPermissionsSet = func() map[string]struct{} {
-	all := AllPermissions()
-	m := make(map[string]struct{}, len(all))
-	for _, p := range all {
-		m[p] = struct{}{}
-	}
-	return m
-}()
-
-// totalPermissionsCount caches len(allPermissionsSet) so callers on the auth
-// hot path (notably PermissionSet.IsGlobalAdmin) don't re-allocate and walk a
-// ~100-element slice on every authenticated request.
-var totalPermissionsCount = len(allPermissionsSet)
 
 // TotalPermissionsCount returns the number of distinct permission constants
 // the package defines. Computed once at init; cheap to call repeatedly.
@@ -363,7 +302,7 @@ func BuiltInEditorPermissions() []string {
 		PermPodmanRead, PermPodmanPods, PermPodmanQuadlets, PermPodmanQuadletsLifecycle, PermPodmanKube, PermPodmanSecrets, PermPodmanAutoUpdate,
 		PermGitOpsList, PermGitOpsRead, PermGitOpsCreate, PermGitOpsUpdate, PermGitOpsDelete, PermGitOpsSync, PermGitOpsBackup,
 		PermWebhooksList, PermWebhooksCreate, PermWebhooksUpdate, PermWebhooksDelete,
-		PermJobsManage, PermNotificationsManage, PermDashboardRead,
+		PermJobsManage, PermNotificationsManage,
 		PermSystemRead, PermSystemPrune,
 		PermImageUpdatesRead, PermImageUpdatesCheck,
 		PermVulnsRead, PermVulnsScan, PermVulnsManage,
@@ -400,7 +339,6 @@ func BuiltInDeployerPermissions() []string {
 		PermSwarmRead, PermSwarmServicesLogs,
 		PermPodmanRead, PermPodmanQuadletsLifecycle, PermPodmanAutoUpdate,
 		PermGitOpsList, PermGitOpsRead, PermGitOpsSync,
-		PermDashboardRead,
 		PermSystemRead,
 		PermImageUpdatesRead, PermImageUpdatesCheck,
 		PermVulnsRead,
@@ -433,7 +371,6 @@ func BuiltInViewerPermissions() []string {
 		PermPodmanRead,
 		PermGitOpsList, PermGitOpsRead,
 		PermWebhooksList,
-		PermDashboardRead,
 		PermSystemRead,
 		PermImageUpdatesRead,
 		PermVulnsRead,
@@ -455,7 +392,6 @@ func BuiltInMonitorPermissions() []string {
 		PermNetworksList, PermNetworksRead,
 		PermSwarmRead, PermSwarmServicesLogs,
 		PermPodmanRead,
-		PermDashboardRead,
 		PermSystemRead,
 		PermImageUpdatesRead,
 		PermVulnsRead,

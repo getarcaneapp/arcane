@@ -5,19 +5,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	userdomain "github.com/getarcaneapp/arcane/backend/v2/internal/user"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/passkey"
+	"getarcane.dev/arcane/v3/internal/session"
+	userdomain "getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/types/v3"
 )
 
-func newResetMFATestDBInternal(t *testing.T) *database.DB {
+func newResetMFATestDB(t *testing.T) *database.DB {
 	t.Helper()
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -37,22 +37,22 @@ func newResetMFATestDBInternal(t *testing.T) *database.DB {
 	return db
 }
 
-func TestEnsureMFAResetEnabledInternal(t *testing.T) {
-	require.ErrorContains(t, ensureMFAResetEnabledInternal(&config.Config{}), "ALLOW_CLI_MFA_RESET=true")
-	require.NoError(t, ensureMFAResetEnabledInternal(&config.Config{AllowCLIMFAReset: true}))
+func TestEnsureMFAResetEnabled(t *testing.T) {
+	require.ErrorContains(t, ensureMFAResetEnabled(&config.Config{}), "ARCANE_ALLOW_CLI_MFA_RESET=true")
+	require.NoError(t, ensureMFAResetEnabled(&config.Config{AllowCLIMFAReset: true}))
 }
 
-func TestConfirmMFAResetInternal(t *testing.T) {
+func TestConfirmMFAReset(t *testing.T) {
 	var output bytes.Buffer
-	require.NoError(t, confirmMFAResetInternal(bytes.NewBufferString("RESET\n"), &output, "alice"))
+	require.NoError(t, confirmMFAReset(bytes.NewBufferString("RESET\n"), &output, "alice"))
 	require.Contains(t, output.String(), "alice")
 
 	output.Reset()
-	require.ErrorContains(t, confirmMFAResetInternal(bytes.NewBufferString("cancel\n"), &output, "alice"), "cancelled")
+	require.ErrorContains(t, confirmMFAReset(bytes.NewBufferString("cancel\n"), &output, "alice"), "cancelled")
 }
 
 func TestResetMFACommandServiceStatePreservesPasskey(t *testing.T) {
-	db := newResetMFATestDBInternal(t)
+	db := newResetMFATestDB(t)
 	ctx := t.Context()
 	user := &userdomain.User{
 		ID:                "mfa-reset-user",
@@ -70,9 +70,9 @@ func TestResetMFACommandServiceStatePreservesPasskey(t *testing.T) {
 	}
 	require.NoError(t, db.Create(passkeyRecord).Error)
 	sessionService := session.NewSessionService(db)
-	firstSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
+	firstSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), types.SessionMeta{})
 	require.NoError(t, err)
-	secondSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
+	secondSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), types.SessionMeta{})
 	require.NoError(t, err)
 	require.NoError(t, db.Create(&passkey.PasskeyRecoveryCode{
 		ID:       "mfa-reset-code",

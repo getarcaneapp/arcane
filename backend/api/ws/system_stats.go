@@ -11,17 +11,18 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/labstack/echo/v5"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
-	kit "go.getarcane.app/kit/pkg"
-	"go.getarcane.app/sys/cgroup"
 
-	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
-	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"kit.getarcane.app"
+	"kit.getarcane.app/sys/cgroup"
+
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	wshub "getarcane.dev/arcane/v3/pkg/ws"
+	"getarcane.dev/types/v3"
 )
 
 const (
@@ -70,9 +71,8 @@ func (h *WebSocketHandler) acquireSystemStatsSampler(ctx context.Context, interv
 		closeReady := sync.OnceFunc(func() {
 			close(ready)
 		})
-		if !h.initializeCPUCache(samplerCtx) {
-			closeReady()
-			return
+		if val, ok := h.readCPUUsage(0); ok {
+			h.cpuCache.Store(val)
 		}
 		if samplerCtx.Err() != nil {
 			closeReady()
@@ -160,7 +160,7 @@ func (h *WebSocketHandler) systemStatsSamplerInterval() time.Duration {
 	return systemStatsSamplerDefaultInterval
 }
 
-func (h *WebSocketHandler) runSystemStatsSampler(ctx context.Context, wake <-chan struct{}, collect func(context.Context) systemtypes.SystemStats) {
+func (h *WebSocketHandler) runSystemStatsSampler(ctx context.Context, wake <-chan struct{}, collect func(context.Context) types.SystemStats) {
 	interval := h.systemStatsSamplerInterval()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -191,7 +191,7 @@ func (h *WebSocketHandler) runSystemStatsSampler(ctx context.Context, wake <-cha
 }
 
 // collectSystemStats gathers all system statistics.
-func (h *WebSocketHandler) collectSystemStats(ctx context.Context) systemtypes.SystemStats {
+func (h *WebSocketHandler) collectSystemStats(ctx context.Context) types.SystemStats {
 	cpuUsage, _ := h.cpuCache.Load()
 
 	h.systemStaticInfo.once.Do(func() {
@@ -213,11 +213,7 @@ func (h *WebSocketHandler) collectSystemStats(ctx context.Context) systemtypes.S
 	cpuCount, memUsed, memTotal := h.applyCgroupLimits(ctx, h.systemStaticInfo.cpuCount, memUsed, memTotal)
 
 	diskUsagePath, found, err := h.diskUsagePathCache.GetWithLoaders(struct{}{}, func(_ []struct{}) (map[struct{}]string, error) {
-		path := "/"
-		if h.systemService != nil {
-			path = h.systemService.GetDiskUsagePath(ctx)
-		}
-		return map[struct{}]string{{}: path}, nil
+		return map[struct{}]string{{}: cmp.Or(h.settingsService.GetSettingsConfig().DiskUsagePath.Value, "/")}, nil
 	})
 	diskUsagePath = kit.Ternary(err != nil || !found, "/", diskUsagePath)
 	diskInfo, err := disk.Usage(diskUsagePath)
@@ -225,14 +221,14 @@ func (h *WebSocketHandler) collectSystemStats(ctx context.Context) systemtypes.S
 		diskInfo, _ = disk.Usage("/")
 	}
 
-	var gpuStats []systemtypes.GPUStats
-	if h.gpuMonitor != nil && h.gpuMonitor.Enabled() {
-		if stats, statsErr := h.gpuMonitor.Stats(ctx); statsErr == nil {
+	var gpuStats []types.GPUStats
+	if monitor := h.gpuMonitor.Load(); monitor != nil && monitor.Enabled() {
+		if stats, statsErr := monitor.Stats(ctx); statsErr == nil {
 			gpuStats = stats
 		}
 	}
 
-	return systemtypes.SystemStats{
+	return types.SystemStats{
 		CPUUsage:     cpuUsage,
 		MemoryUsage:  memUsed,
 		MemoryTotal:  memTotal,
@@ -251,10 +247,8 @@ func (h *WebSocketHandler) collectSystemStats(ctx context.Context) systemtypes.S
 // per-container limits to host statistics.
 func (h *WebSocketHandler) applyCgroupLimits(ctx context.Context, cpuCount int, memUsed, memTotal uint64) (int, uint64, uint64) {
 	if cgroup.IsDockerContainer() {
-		if h.systemService != nil {
-			if used, total, ok := h.systemService.GetDockerHostMemory(ctx); ok {
-				return cpuCount, used, total
-			}
+		if used, total, ok := h.systemService.GetDockerHostMemory(ctx); ok {
+			return cpuCount, used, total
 		}
 		return cpuCount, memUsed, memTotal
 	}
@@ -291,31 +285,6 @@ func applyCPUAffinityLimit(cpuCount int) int {
 		return n
 	}
 	return cpuCount
-}
-
-// initializeCPUCache permits unavailable CPU samples but stops on cancellation.
-func (h *WebSocketHandler) initializeCPUCache(ctx context.Context) bool {
-	result := make(chan float64, 1)
-
-	go func() {
-		if val, ok := h.readCPUUsage(time.Second); ok {
-			result <- val
-		}
-		close(result)
-	}()
-
-	select {
-	case <-ctx.Done():
-		return false
-	case val, ok := <-result:
-		if ctx.Err() != nil {
-			return false
-		}
-		if ok {
-			h.cpuCache.Store(val)
-		}
-		return true
-	}
 }
 
 func (h *WebSocketHandler) readCPUUsage(interval time.Duration) (float64, bool) {
@@ -359,7 +328,7 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 		}
 	}()
 
-	conn, unregister, ok := h.acceptWS(c, systemtypes.WSKindSystemStats, "")
+	conn, unregister, ok := h.acceptWS(c, types.WSKindSystemStats, "")
 	if !ok {
 		return nil
 	}
@@ -370,7 +339,7 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 		}
 	}()
 
-	interval, _ := httputil.GetIntQueryParam(c.Request(), "interval", false)
+	interval, _ := httpx.GetIntQueryParam(c.Request(), "interval", false)
 	sampleInterval := time.Duration(min(cmp.Or(max(interval, 0), 2), 60)) * time.Second
 
 	conn.SetReadLimit(512)

@@ -9,80 +9,85 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/labstack/echo/v5"
 	"github.com/samber/hot"
-	"go.getarcane.app/streams/agg"
-	"go.getarcane.app/sys/cgroup"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	systemlib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/system"
-	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
+	"kit.getarcane.app/concurrency"
+	"kit.getarcane.app/docker/streams/agg"
+	"kit.getarcane.app/sys/cgroup"
+
+	"getarcane.dev/arcane/v3/internal/auth"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/container"
+	"getarcane.dev/arcane/v3/internal/diagnostics"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/swarm"
+	"getarcane.dev/arcane/v3/internal/system"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	systemlib "getarcane.dev/arcane/v3/pkg/system"
+	wshub "getarcane.dev/arcane/v3/pkg/ws"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	// WebSocketHandler consolidates all WebSocket and streaming endpoints.
+	// REST endpoints are handled by Huma handlers.
+	WebSocketHandler struct {
+		// ctx ends after open connections were closed with StatusGoingAway on app shutdown.
+		ctx                context.Context
+		projectService     *project.ProjectService
+		containerService   *container.ContainerService
+		swarmService       *swarm.SwarmService
+		systemService      *system.SystemService
+		settingsService    *settings.SettingsService
+		diagnosticsService *diagnostics.DiagnosticsService
+		checkWSOrigin      func(*http.Request) bool
+		activeConnections  map[string]int
+		logStreams         map[string]*wsLogStream
+		cpuCache           concurrency.Snapshot[float64]
+		containersStatsHub *agg.Hub[containersStatsResult]
+		cgroupCache        *cgroup.Cache
+		gpuMonitor         atomic.Pointer[systemlib.GPUMonitor]
+
+		diskUsagePathCache   *hot.HotCache[struct{}, string]
+		projectLogStreamer   func(ctx context.Context, projectID string, logsChan chan<- string, opts types.LogStreamOptions) error
+		containerLogStreamer func(ctx context.Context, containerID string, logsChan chan<- string, opts types.LogStreamOptions) error
+		systemStatsCollector func(ctx context.Context) types.SystemStats
+		cpuUsageReader       func(interval time.Duration) (float64, bool)
+		systemStatsSampler   struct {
+			latest            concurrency.Snapshot[types.SystemStats]
+			intervals         map[time.Duration]int
+			cancel            context.CancelFunc
+			ready             chan struct{}
+			wake              chan struct{}
+			clients           int
+			effectiveInterval atomic.Int64
+			lifecycleMu       sync.Mutex
+			running           bool
+		}
+		conns              sync.Map
+		containerStatsHubs sync.Map
+		systemStaticInfo   struct {
+			hostname string
+			cpuCount int
+			once     sync.Once
+		}
+		activeConnectionsMu sync.Mutex
+		logStreamsMu        sync.Mutex
+	}
 )
 
 var (
 	defaultWebSocketMetrics     = wshub.NewWebSocketMetrics()
 	observeWebSocketMetricsOnce sync.Once
 )
-
-// WebSocketHandler consolidates all WebSocket and streaming endpoints.
-// REST endpoints are handled by Huma handlers.
-type WebSocketHandler struct {
-	// ctx ends after open connections were closed with StatusGoingAway on app shutdown.
-	ctx                 context.Context
-	conns               sync.Map
-	projectService      *project.ProjectService
-	containerService    *container.ContainerService
-	swarmService        *swarm.SwarmService
-	systemService       *system.SystemService
-	diagnosticsService  *diagnostics.DiagnosticsService
-	checkWSOrigin       func(*http.Request) bool
-	activeConnectionsMu sync.Mutex
-	activeConnections   map[string]int
-	logStreamsMu        sync.Mutex
-	logStreams          map[string]*wsLogStream
-	cpuCache            concurrency.Snapshot[float64]
-	systemStaticInfo    struct {
-		once     sync.Once
-		cpuCount int
-		hostname string
-	}
-	systemStatsSampler struct {
-		latest            concurrency.Snapshot[systemtypes.SystemStats]
-		lifecycleMu       sync.Mutex
-		clients           int
-		intervals         map[time.Duration]int
-		effectiveInterval atomic.Int64
-		cancel            context.CancelFunc
-		ready             chan struct{}
-		wake              chan struct{}
-		running           bool
-	}
-	containerStatsHubs sync.Map
-	containersStatsHub *agg.Hub[containersStatsResult]
-	cgroupCache        *cgroup.Cache
-	gpuMonitor         *systemlib.GPUMonitor
-
-	diskUsagePathCache   *hot.HotCache[struct{}, string]
-	projectLogStreamer   func(ctx context.Context, projectID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
-	containerLogStreamer func(ctx context.Context, containerID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
-	systemStatsCollector func(ctx context.Context) systemtypes.SystemStats
-	cpuUsageReader       func(interval time.Duration) (float64, bool)
-}
 
 func NewWebSocketHandler(
 	appCtx context.Context,
@@ -93,6 +98,7 @@ func NewWebSocketHandler(
 	systemService *system.SystemService,
 	diagnosticsService *diagnostics.DiagnosticsService,
 	authMiddleware *auth.AuthMiddleware,
+	settingsService *settings.SettingsService,
 	cfg *config.Config,
 ) {
 	ctx, cancel := context.WithCancel(context.WithoutCancel(appCtx))
@@ -102,16 +108,23 @@ func NewWebSocketHandler(
 		containerService:   containerService,
 		swarmService:       swarmService,
 		systemService:      systemService,
+		settingsService:    settingsService,
 		diagnosticsService: diagnosticsService,
 		logStreams:         make(map[string]*wsLogStream),
-		containersStatsHub: agg.NewHub[containersStatsResult](),
-		cgroupCache:        cgroup.NewCache(cgroupCacheTTL),
-		gpuMonitor:         systemlib.NewGPUMonitor(cfg.GPUMonitoringEnabled, cfg.GPUType),
+		containersStatsHub: &agg.Hub[containersStatsResult]{},
+		cgroupCache:        cgroup.NewCache(cgroup.CacheConfig{TTL: cgroupCacheTTL}),
 		diskUsagePathCache: hot.NewHotCache[struct{}, string](hot.LRU, 1).
 			WithTTL(5 * time.Minute).
 			Build(),
 		checkWSOrigin: httpx.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	}
+	newGPUMonitor := func() *systemlib.GPUMonitor {
+		return systemlib.NewGPUMonitor(settingsService.GetBoolSetting(ctx, "gpuMonitoringEnabled"), settingsService.GetStringSetting(ctx, "gpuType"))
+	}
+	handler.gpuMonitor.Store(newGPUMonitor())
+	context.AfterFunc(ctx, settingsService.SubscribeSettingsChanges([]string{"gpuMonitoringEnabled", "gpuType"}, func([]types.SettingUpdate) {
+		handler.gpuMonitor.Store(newGPUMonitor())
+	}))
 	// Send the close frames before cancelling hubs, whose teardown closes connections without a handshake.
 	context.AfterFunc(appCtx, func() {
 		var wg sync.WaitGroup
@@ -125,7 +138,7 @@ func NewWebSocketHandler(
 		cancel()
 	})
 	observeWebSocketMetricsOnce.Do(func() {
-		if err := defaultWebSocketMetrics.ObserveConnections(otel.Meter(tracing.InstrumentationName)); err != nil {
+		if err := defaultWebSocketMetrics.ObserveConnections(otel.Meter(logging.InstrumentationName)); err != nil {
 			otel.Handle(err)
 		}
 	})
@@ -146,7 +159,7 @@ func (h *WebSocketHandler) acceptWS(c *echo.Context, kind, resourceID string) (*
 		return nil, nil, false
 	}
 	userID, _ := c.Get("userID").(string)
-	info := systemtypes.WebSocketConnectionInfo{
+	info := types.WebSocketConnectionInfo{
 		Kind:       kind,
 		EnvID:      c.Param("id"),
 		ResourceID: resourceID,
@@ -158,7 +171,7 @@ func (h *WebSocketHandler) acceptWS(c *echo.Context, kind, resourceID string) (*
 	h.conns.Store(conn, struct{}{})
 	// The HTTP tracing middleware skips upgrades, so this is a root span unless the client sent a traceparent.
 	parent := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
-	_, span := otel.Tracer(tracing.InstrumentationName).Start(parent, "websocket "+kind,
+	_, span := otel.Tracer(logging.InstrumentationName).Start(parent, "websocket "+kind,
 		trace.WithSpanKind(trace.SpanKindServer),
 		trace.WithAttributes(
 			attribute.String("arcane.websocket.kind", kind),

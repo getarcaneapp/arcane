@@ -12,16 +12,50 @@ import (
 	"strings"
 
 	"github.com/compose-spec/compose-go/v2/loader"
-	kit "go.getarcane.app/kit/pkg"
 	"go.yaml.in/yaml/v4"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/common"
 )
 
-type DiscoveredProjectDir struct {
-	DirName string
-	Path    string
-}
+type (
+	DiscoveredProjectDir struct {
+		DirName string
+		Path    string
+	}
+)
+
+const (
+	// ArcaneTrashPrefix is the prefix Arcane uses when quarantining (soft-deleting) a
+	// project's files, e.g. ".arcane-trash-<name>-<unix>". Trash directories are
+	// Arcane-managed and must never be discovered or imported as user projects.
+	ArcaneTrashPrefix = ".arcane-trash-"
+)
+
+var (
+	// gitOpsScratchEmbeddedNameRe matches the legacy name-embedded gitops scratch
+	// directory form, e.g. "Makerra.gitops-backup-1780656786384743013". That form always
+	// used a time.Now().UnixNano() suffix (≥18 digits), so a long digit run is required:
+	// it keeps a real user project ending in "<base>.gitops-backup-notes" (non-numeric) or
+	// "<base>.gitops-backup-2024" (short, year-like) from being mistaken for Arcane scratch.
+	// The hidden os.MkdirTemp forms (".gitops-backup-*", ".gitops-sync-stage-*") are matched
+	// by prefix, not by this regex.
+	gitOpsScratchEmbeddedNameRe = regexp.MustCompile(`\.gitops-(?:backup|sync-stage)-\d{10,}$`)
+
+	// filesystemSnapshotDirNames are directory names used by filesystems and NAS
+	// appliances for read-only snapshots or trash. They contain point-in-time
+	// copies of real project directories and must never be discovered as projects:
+	// #snapshot/#recycle (Synology BTRFS), .snapshot (NetApp), .snapshots
+	// (snapper/btrbk), .zfs (ZFS snapdir).
+	filesystemSnapshotDirNames = map[string]bool{
+		"#snapshot":  true,
+		"#recycle":   true,
+		".snapshot":  true,
+		".snapshots": true,
+		".zfs":       true,
+	}
+)
 
 // IsProjectDirectoryEntry reports whether a directory entry should be treated as a project directory.
 // Regular directories are always accepted. Symlinked directories are accepted only when enabled.
@@ -74,7 +108,7 @@ func IsProjectDirectoryPath(path string, followSymlinks bool) (bool, error) {
 	return resolvedInfo.IsDir(), nil
 }
 
-func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks bool, maxDepth int) ([]DiscoveredProjectDir, error) {
+func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks bool, maxDepth int, skipDirectories string) ([]DiscoveredProjectDir, error) {
 	root = filepath.Clean(root)
 
 	isDir, err := IsProjectDirectoryPath(root, followSymlinks)
@@ -86,7 +120,7 @@ func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks
 	ancestors := make(map[string]struct{})
 
 	if err == nil {
-		err = walkProjectDirectoriesInternal(ctx, root, root, true, 0, maxDepth, followSymlinks, projectScanSkipDirectorySetInternal(""), ancestors, &discovered)
+		err = walkProjectDirectories(ctx, root, root, true, 0, maxDepth, followSymlinks, projectScanSkipDirectorySet(skipDirectories), ancestors, &discovered)
 	}
 	if err != nil {
 		// The process runs as the PUID/PGID runtime user (default 65532) even
@@ -105,7 +139,7 @@ func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks
 	return discovered, nil
 }
 
-func walkProjectDirectoriesInternal(ctx context.Context,
+func walkProjectDirectories(ctx context.Context,
 	root,
 	path string,
 	isRoot bool,
@@ -123,7 +157,7 @@ func walkProjectDirectoriesInternal(ctx context.Context,
 		}
 	}
 
-	identity, err := ResolveDirectoryIdentityInternal(path)
+	identity, err := ResolveDirectoryIdentity(path)
 	if err != nil {
 		if !isRoot && errors.Is(err, os.ErrPermission) {
 			slog.WarnContext(ctx, "Skipping unreadable project directory during discovery", "path", path, "error", err)
@@ -187,7 +221,7 @@ func walkProjectDirectoriesInternal(ctx context.Context,
 			continue
 		}
 
-		if walkProjectDirectoriesErr := walkProjectDirectoriesInternal(
+		if walkProjectDirectoriesErr := walkProjectDirectories(
 			ctx,
 			root,
 			childPath,
@@ -206,15 +240,6 @@ func walkProjectDirectoriesInternal(ctx context.Context,
 	return nil
 }
 
-// gitOpsScratchEmbeddedNameRe matches the legacy name-embedded gitops scratch
-// directory form, e.g. "Makerra.gitops-backup-1780656786384743013". That form always
-// used a time.Now().UnixNano() suffix (≥18 digits), so a long digit run is required:
-// it keeps a real user project ending in "<base>.gitops-backup-notes" (non-numeric) or
-// "<base>.gitops-backup-2024" (short, year-like) from being mistaken for Arcane scratch.
-// The hidden os.MkdirTemp forms (".gitops-backup-*", ".gitops-sync-stage-*") are matched
-// by prefix, not by this regex.
-var gitOpsScratchEmbeddedNameRe = regexp.MustCompile(`\.gitops-(?:backup|sync-stage)-\d{10,}$`)
-
 // IsGitOpsScratchDirName reports whether name is an Arcane GitOps scratch directory:
 // the hidden staging/backup temp dirs (".gitops-sync-stage-*", ".gitops-backup-*")
 // or the legacy name-embedded backup form ("<name>.gitops-backup-<digits>"). These are
@@ -230,39 +255,13 @@ func IsGitOpsScratchDirName(name string) bool {
 	return gitOpsScratchEmbeddedNameRe.MatchString(name)
 }
 
-// filesystemSnapshotDirNames are directory names used by filesystems and NAS
-// appliances for read-only snapshots or trash. They contain point-in-time
-// copies of real project directories and must never be discovered as projects:
-// #snapshot/#recycle (Synology BTRFS), .snapshot (NetApp), .snapshots
-// (snapper/btrbk), .zfs (ZFS snapdir).
-var filesystemSnapshotDirNames = map[string]bool{
-	"#snapshot":  true,
-	"#recycle":   true,
-	".snapshot":  true,
-	".snapshots": true,
-	".zfs":       true,
-}
-
 // IsFilesystemSnapshotDirName reports whether name is a well-known filesystem
 // snapshot/trash directory (see filesystemSnapshotDirNames).
 func IsFilesystemSnapshotDirName(name string) bool {
 	return filesystemSnapshotDirNames[strings.ToLower(strings.TrimSpace(name))]
 }
 
-// PathContainsSnapshotDirectory reports whether any segment of relPath is a
-// filesystem snapshot/trash directory name, i.e. the path points into a
-// point-in-time copy rather than a live project directory.
-func PathContainsSnapshotDirectory(relPath string) bool {
-	return pathHasSegmentInternal(relPath, IsFilesystemSnapshotDirName)
-}
-
-// PathContainsIgnoredDirectory reports whether any segment of relPath is a
-// directory that project discovery skips (see IsIgnoredProjectDirName).
-func PathContainsIgnoredDirectory(relPath string) bool {
-	return pathHasSegmentInternal(relPath, IsIgnoredProjectDirName)
-}
-
-func pathHasSegmentInternal(relPath string, match func(string) bool) bool {
+func PathHasSegment(relPath string, match func(string) bool) bool {
 	for segment := range strings.SplitSeq(filepath.ToSlash(relPath), "/") {
 		if match(segment) {
 			return true
@@ -270,11 +269,6 @@ func pathHasSegmentInternal(relPath string, match func(string) bool) bool {
 	}
 	return false
 }
-
-// ArcaneTrashPrefix is the prefix Arcane uses when quarantining (soft-deleting) a
-// project's files, e.g. ".arcane-trash-<name>-<unix>". Trash directories are
-// Arcane-managed and must never be discovered or imported as user projects.
-const ArcaneTrashPrefix = ".arcane-trash-"
 
 // IsInternalScratchDirName reports whether name is any Arcane-managed scratch
 // directory that must never be discovered or imported as a user project: the
@@ -331,10 +325,10 @@ func NormalizeProjectName(name string) string {
 	return kit.Ternary(normalized == "", name, normalized)
 }
 
-// ResolveDirectoryIdentityInternal stays on os.*: it resolves symlinks that
+// ResolveDirectoryIdentity stays on os.*: it resolves symlinks that
 // may point anywhere on the host to establish directory identity, which the
 // root-confined acfs API cannot do.
-func ResolveDirectoryIdentityInternal(path string) (string, error) {
+func ResolveDirectoryIdentity(path string) (string, error) {
 	resolvedPath, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -366,16 +360,16 @@ func ComposeEnvRequiresDirectorySync(composePath, overrideFileName string, envCo
 	if overrideFileName != "" {
 		allowedComposeFiles[overrideFileName] = struct{}{}
 	}
-	if entriesNeedDirectorySyncInternal(ComposeFileEntriesFromEnv(envMap), allowedComposeFiles) {
+	if entriesNeedDirectorySync(ComposeFileEntriesFromEnv(envMap), allowedComposeFiles) {
 		return true
 	}
 
 	// Single-file sync writes the synced env content to .env, so a
 	// self-reference is satisfiable; anything else never reaches the project.
-	return entriesNeedDirectorySyncInternal(ComposeEnvFileEntriesFromEnv(envMap), map[string]struct{}{EffectiveEnvFileName: {}})
+	return entriesNeedDirectorySync(ComposeEnvFileEntriesFromEnv(envMap), map[string]struct{}{EffectiveEnvFileName: {}})
 }
 
-func entriesNeedDirectorySyncInternal(entries []string, allowed map[string]struct{}) bool {
+func entriesNeedDirectorySync(entries []string, allowed map[string]struct{}) bool {
 	for _, entry := range entries {
 		// Normalize so relative prefixes like "./compose.yaml" match allowed.
 		cleaned := filepath.Clean(entry)

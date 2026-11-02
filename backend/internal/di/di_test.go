@@ -17,114 +17,116 @@ import (
 	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/appimages"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/dashboard"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/federated"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/oidc"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/port"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/variable"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/apikey"
+	"getarcane.dev/arcane/v3/internal/appimages"
+	"getarcane.dev/arcane/v3/internal/auth"
+	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/build"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/container"
+	"getarcane.dev/arcane/v3/internal/dashboard"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/diagnostics"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/federated"
+	"getarcane.dev/arcane/v3/internal/gitops"
+	"getarcane.dev/arcane/v3/internal/gitrepo"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/job"
+	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/network"
+	"getarcane.dev/arcane/v3/internal/notification"
+	"getarcane.dev/arcane/v3/internal/oidc"
+	"getarcane.dev/arcane/v3/internal/podman"
+	"getarcane.dev/arcane/v3/internal/port"
+	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/role"
+	s3domain "getarcane.dev/arcane/v3/internal/s3"
+	"getarcane.dev/arcane/v3/internal/scheduler"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/search"
+	"getarcane.dev/arcane/v3/internal/session"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/swarm"
+	"getarcane.dev/arcane/v3/internal/system"
+	"getarcane.dev/arcane/v3/internal/template"
+	"getarcane.dev/arcane/v3/internal/updater"
+	"getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/arcane/v3/internal/variable"
+	"getarcane.dev/arcane/v3/internal/version"
+	"getarcane.dev/arcane/v3/internal/volume"
+	"getarcane.dev/arcane/v3/internal/vulnerability"
+	"getarcane.dev/arcane/v3/internal/webhook"
+	arcaneoidc "getarcane.dev/arcane/v3/pkg/oidc"
 )
 
-type graphParams struct {
-	fx.In
+type (
+	graphParams struct {
+		fx.In
 
-	AppImages         *appimages.ApplicationImagesService
-	User              *user.UserService
-	Project           *project.ProjectService
-	Environment       *environment.EnvironmentService
-	Settings          *settings.SettingsService
-	KV                *kv.KVService
-	JobSchedule       *job.JobService
-	Search            *search.Module
-	Container         *container.Module
-	Image             *image.ImageService
-	Build             *build.BuildService
-	Lifecycle         *project.LifecycleService
-	Volume            *volume.Module
-	BackupEngine      *backup.Engine
-	S3Destination     *s3domain.Module
-	Network           *network.NetworkService
-	Port              *port.PortService
-	Swarm             *swarm.SwarmService
-	ImageUpdate       *imageupdate.ImageUpdateService
-	Session           *session.SessionService
-	Auth              *auth.AuthService
-	Oidc              *oidc.OidcService
-	Docker            *docker.DockerClientService
-	Template          *template.TemplateService
-	ContainerRegistry *registry.ContainerRegistryService
-	System            *system.Module
-	Diagnostics       *diagnostics.DiagnosticsService
-	Updater           *updater.Module
-	Event             *event.EventService
-	Activity          *activity.ActivityService
-	Version           *version.VersionService
-	Notification      *notification.NotificationService
-	ApiKey            *apikey.ApiKeyService
-	Federated         *federated.FederatedCredentialService
-	GitRepository     *gitrepo.GitRepositoryService
-	GitOpsSync        *gitops.GitOpsSyncService
-	Webhook           *webhook.Module
-	Vulnerability     *vulnerability.VulnerabilityService
-	Dashboard         *dashboard.Module
-	Podman            *podman.Module
-	Role              *role.RoleService
-	Variable          *variable.VariableService
-	AuthMiddleware    *auth.AuthMiddleware
-	JWKSetManager     *oidcjwk.KeySetManager
+		AppImages         *appimages.ApplicationImagesService
+		User              *user.UserService
+		Project           *project.ProjectService
+		Environment       *environment.EnvironmentService
+		Settings          *settings.SettingsService
+		KV                *kv.KVService
+		JobSchedule       *job.JobService
+		Search            *search.Module
+		Container         *container.Module
+		Image             *image.ImageService
+		Build             *build.BuildService
+		Lifecycle         *project.LifecycleService
+		Volume            *volume.Module
+		BackupEngine      *backup.Engine
+		S3Destination     *s3domain.Module
+		Network           *network.NetworkService
+		Port              *port.PortService
+		Swarm             *swarm.SwarmService
+		ImageUpdate       *imageupdate.ImageUpdateService
+		Session           *session.SessionService
+		Auth              *auth.AuthService
+		Oidc              *oidc.OidcService
+		Docker            *docker.DockerClientService
+		Template          *template.TemplateService
+		ContainerRegistry *registry.ContainerRegistryService
+		System            *system.Module
+		Diagnostics       *diagnostics.DiagnosticsService
+		Updater           *updater.Module
+		Event             *event.EventService
+		Activity          *activity.ActivityService
+		Version           *version.VersionService
+		Notification      *notification.NotificationService
+		ApiKey            *apikey.ApiKeyService
+		Federated         *federated.FederatedCredentialService
+		GitRepository     *gitrepo.GitRepositoryService
+		GitOpsSync        *gitops.GitOpsSyncService
+		Webhook           *webhook.Module
+		Vulnerability     *vulnerability.VulnerabilityService
+		Dashboard         *dashboard.DashboardService
+		Podman            *podman.Module
+		Role              *role.RoleService
+		Variable          *variable.VariableService
+		AuthMiddleware    *auth.AuthMiddleware
+		JWKSetManager     *arcaneoidc.KeySetManager
 
-	AutoUpdate             *flow.Job `name:"auto-update"`
-	ImageUpdateWatcher     *scheduler.ImageUpdateWatcher
-	DockerClientRefresh    *scheduler.DockerClientRefreshJob
-	Analytics              *scheduler.AnalyticsJob
-	EventCleanup           *scheduler.EventCleanupJob
-	PruningVolumeHelper    *scheduler.PruningVolumeHelperJob
-	ExpiredSessionsCleanup *scheduler.ExpiredSessionsCleanupJob
-	ScheduledPrune         *scheduler.ScheduledPruneJob
-	FilesystemWatcher      *scheduler.FilesystemWatcherJob
-	VulnerabilityScan      *flow.Job `name:"vulnerability-scan"`
-	AutoHeal               *scheduler.AutoHealJob
-}
+		AutoUpdate             *flow.Job `name:"auto-update"`
+		ImageUpdateWatcher     *scheduler.ImageUpdateWatcher
+		DockerClientRefresh    *scheduler.DockerClientRefreshJob
+		Analytics              *scheduler.AnalyticsJob
+		EventCleanup           *scheduler.EventCleanupJob
+		PruningVolumeHelper    *scheduler.PruningVolumeHelperJob
+		ExpiredSessionsCleanup *scheduler.ExpiredSessionsCleanupJob
+		ScheduledPrune         *scheduler.ScheduledPruneJob
+		FilesystemWatcher      *scheduler.FilesystemWatcherJob
+		VulnerabilityScan      *flow.Job `name:"vulnerability-scan"`
+		AutoHeal               *scheduler.AutoHealJob
+	}
+)
 
 func TestOptionsValidate(t *testing.T) {
 	_, cancel := context.WithCancelCause(t.Context())
@@ -133,8 +135,10 @@ func TestOptionsValidate(t *testing.T) {
 		fx.Supply(
 			cancel,
 			&config.Config{},
+			settings.Env{},
 			(*database.DB)(nil),
 			&http.Client{},
+			fx.Annotated{Name: "encryptionKey", Target: "test-encryption-key"},
 		),
 		fx.Provide(func() context.Context { return t.Context() }),
 		ActorOptions,
@@ -146,7 +150,7 @@ func TestOptionsValidate(t *testing.T) {
 }
 
 func TestDockerEventLifecycle(t *testing.T) {
-	for _, mode := range []string{"manager", "agent", "edge"} {
+	for _, mode := range []string{"manager", "agent"} {
 		t.Run(mode, func(t *testing.T) {
 			streamStopped := make(chan struct{})
 			var stopped sync.Once
@@ -185,12 +189,20 @@ func TestDockerEventLifecycle(t *testing.T) {
 			require.NoError(t, err)
 			sqlDB.SetMaxOpenConns(1)
 			t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
-			require.NoError(t, db.AutoMigrate(&event.Event{}))
+			require.NoError(t, db.AutoMigrate(&event.Event{}, &settings.SettingVariable{}))
 			databaseDB := &database.DB{DB: db}
-			cfg := &config.Config{DockerHost: server.URL, AgentMode: mode != "manager", EdgeAgent: mode == "edge"}
+			cfg := &config.Config{AgentEnabled: mode == "agent"}
+			settingsService, err := settings.NewSettingsService(t.Context(), databaseDB, cfg, settings.Env{"dockerHost": server.URL})
+			require.NoError(t, err)
 			lifecycle := fxtest.NewLifecycle(t)
 			eventService := event.NewEventService(databaseDB, cfg, nil)
-			provideDockerClientService(t.Context(), lifecycle, databaseDB, cfg, nil, eventService)
+			provideDockerClientService(dockerClientServiceParams{
+				Ctx:           t.Context(),
+				Lifecycle:     lifecycle,
+				DB:            databaseDB,
+				LocalSettings: settingsService,
+				EventService:  eventService,
+			})
 			t.Cleanup(func() {
 				ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 3*time.Second)
 				defer cancel()

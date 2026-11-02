@@ -60,7 +60,7 @@
 	<ArcaneButton
 		bind:ref
 		action="base"
-		tone={variant === 'ghost' ? 'ghost' : variant === 'outline' ? 'outline' : 'outline'}
+		tone={variant === 'ghost' ? 'ghost' : 'outline'}
 		size={resolvedSize}
 		{tabindex}
 		class={cn('flex items-center gap-2', className)}
@@ -103,7 +103,7 @@
 			<ArcaneButton
 				bind:ref
 				action="base"
-				tone={variant === 'ghost' ? 'ghost' : variant === 'outline' ? 'outline' : 'outline'}
+				tone={variant === 'ghost' ? 'ghost' : 'outline'}
 				size={resolvedSize}
 				{tabindex}
 				class={cn('flex cursor-not-allowed items-center gap-2 opacity-50', className)}

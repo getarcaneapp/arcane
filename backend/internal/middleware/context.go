@@ -6,16 +6,19 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
+)
+
+type (
+	// ContextKey is a type for context keys used by Huma handlers.
+	ContextKey string
 )
 
 const (
 	// Auth header names and path prefixes shared between the Echo middleware
 	// (WebSocket/diagnostics) and the Huma auth bridge (REST). Keep these in one
 	// place so a change to a header name applies to every route type at once.
-
-	HeaderAgentBootstrap             = "X-Arcane-Agent-Bootstrap"
 	HeaderAgentToken                 = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
 	HeaderApiKey                     = "X-Api-Key"            // #nosec G101: header name, not a credential
 	HeaderActivityBatchID            = "X-Arcane-Batch-Id"
@@ -26,9 +29,7 @@ const (
 	// remote environments. Agents authenticate proxied calls as a synthetic user
 	// with no preferences, so without it every remote environment would resolve
 	// container/project icons against the default catalog.
-	HeaderIconCatalog  = "X-Arcane-Icon-Catalog"
-	AgentPairingPrefix = "/api/environments/0/agent/pair"
-
+	HeaderIconCatalog             = "X-Arcane-Icon-Catalog"
 	ContextKeyApiKeyID ContextKey = "apiKeyID"
 	// ContextKeyUserID is the context key for the authenticated user's ID.
 	ContextKeyUserID ContextKey = "userID"
@@ -44,9 +45,6 @@ const (
 	// ContextKeyAuthMethod is the Echo context key for the authentication method.
 	ContextKeyAuthMethod ContextKey = "authMethod"
 )
-
-// ContextKey is a type for context keys used by Huma handlers.
-type ContextKey string
 
 // GetUserIDFromContext retrieves the user ID from the context.
 func GetUserIDFromContext(ctx context.Context) (string, bool) {
@@ -76,11 +74,11 @@ func GetRemoteAddrFromContext(ctx context.Context) string {
 // NewActivityBatchID lifts the client-supplied activity batch ID header into the
 // request context so activities spawned by one logical bulk action can be
 // grouped without threading the ID through every handler. Invalid values are
-// ignored by utils.WithActivityBatchID.
+// ignored by activitylib.WithActivityBatchID.
 func NewActivityBatchID() func(ctx huma.Context, next func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		if batchID := strings.TrimSpace(ctx.Header(HeaderActivityBatchID)); batchID != "" {
-			ctx = huma.WithContext(ctx, utils.WithActivityBatchID(ctx.Context(), batchID))
+			ctx = huma.WithContext(ctx, activitylib.WithActivityBatchID(ctx.Context(), batchID))
 		}
 		next(ctx)
 	}

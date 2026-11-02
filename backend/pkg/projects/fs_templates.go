@@ -13,10 +13,55 @@ import (
 	composeloader "github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/samber/mo"
-	"go.getarcane.app/acfs"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"kit.getarcane.app/acfs"
+	"kit.getarcane.app/fs"
+
+	"getarcane.dev/arcane/v3/internal/common"
+)
+
+// Previous built-in templates; unedited on-disk copies are upgraded to the current defaults.
+const (
+	retiredDefaultComposeTemplate = `services:
+  nginx:
+    image: nginx:alpine
+    container_name: nginx_service
+    env_file:
+      - .env
+    ports:
+      - "8080:80"
+    volumes:
+      - nginx_data:/usr/share/nginx/html
+    restart: unless-stopped
+
+volumes:
+  nginx_data:
+    driver: local
+`
+	retiredDefaultEnvTemplate = `# Environment Variables
+# These variables will be available to your project services
+# Format: VARIABLE_NAME=value
+
+# Web Server Configuration
+NGINX_HOST=localhost
+NGINX_PORT=80
+
+# Database Configuration
+POSTGRES_DB=myapp
+POSTGRES_USER=myuser
+POSTGRES_PASSWORD=mypassword
+POSTGRES_PORT=5432
+
+# Example Additional Variables
+# API_KEY=your_api_key_here
+# SECRET_KEY=your_secret_key_here
+# DEBUG=false
+`
+)
+
+var (
+	slugInvalidCharsPattern = regexp.MustCompile(`[^a-z0-9\-_]+`)
+	slugDashRunPattern      = regexp.MustCompile(`-+`)
 )
 
 // ReadFolderComposeTemplate stays on os.* for its reads: template folders are
@@ -50,11 +95,6 @@ func ReadFolderComposeTemplate(ctx context.Context, baseDir, folder string) (str
 	return string(b), envPtr, desc, true, nil
 }
 
-var (
-	slugInvalidCharsPattern = regexp.MustCompile(`[^a-z0-9\-_]+`)
-	slugDashRunPattern      = regexp.MustCompile(`-+`)
-)
-
 func Slugify(in string) string {
 	in = strings.TrimSpace(strings.ToLower(in))
 	if in == "" {
@@ -72,11 +112,11 @@ func EnsureTemplateDir(ctx context.Context, templatesDir, base string) (dir, com
 		return "", "", "", fmt.Errorf("ensure templates dir: %w", derr)
 	}
 	dir = filepath.Join(baseDir, base)
-	dirLogical, err := acfs.LogicalPath(baseDir, dir)
+	dirLogical, err := acfs.Root{Path: baseDir}.LogicalPath(dir)
 	if err != nil {
 		return "", "", "", fmt.Errorf("template directory is outside the templates root: %w", err)
 	}
-	if mkdirAllErr := acfs.MkdirAll(ctx, baseDir, dirLogical, utils.DirPerm); mkdirAllErr != nil {
+	if mkdirAllErr := (acfs.Root{Path: baseDir}).MkdirAll(ctx, dirLogical, fs.DirPerm); mkdirAllErr != nil {
 		return "", "", "", fmt.Errorf("failed to create template directory: %w", mkdirAllErr)
 	}
 	composePath = filepath.Join(dir, "compose.yaml")
@@ -100,46 +140,6 @@ func WriteTemplateFiles(composePath, envPath, composeContent, envContent string)
 	return &envContent, nil
 }
 
-// Previous built-in templates; unedited on-disk copies are upgraded to the current defaults.
-const (
-	retiredDefaultComposeTemplate = `services:
-  nginx:
-    image: nginx:alpine
-    container_name: nginx_service
-    env_file:
-      - .env
-    ports:
-      - "8080:80"
-    volumes:
-      - nginx_data:/usr/share/nginx/html
-    restart: unless-stopped
-
-volumes:
-  nginx_data:
-    driver: local
-`
-
-	retiredDefaultEnvTemplate = `# Environment Variables
-# These variables will be available to your project services
-# Format: VARIABLE_NAME=value
-
-# Web Server Configuration
-NGINX_HOST=localhost
-NGINX_PORT=80
-
-# Database Configuration
-POSTGRES_DB=myapp
-POSTGRES_USER=myuser
-POSTGRES_PASSWORD=mypassword
-POSTGRES_PORT=5432
-
-# Example Additional Variables
-# API_KEY=your_api_key_here
-# SECRET_KEY=your_secret_key_here
-# DEBUG=false
-`
-)
-
 // EnsureDefaultTemplates writes missing default templates and upgrades unedited retired defaults.
 func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) error {
 	templatesDir, err := GetTemplatesDirectory(ctx, configuredTemplatesDir)
@@ -156,7 +156,7 @@ func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) 
 		{"/.env.template", "env", getDefaultEnvTemplate(), retiredDefaultEnvTemplate},
 	}
 	for _, tmpl := range defaults {
-		exists, existsErr := acfs.Exists(ctx, templatesDir, tmpl.path)
+		exists, existsErr := acfs.Root{Path: templatesDir}.Exists(ctx, tmpl.path)
 		if existsErr != nil {
 			return fmt.Errorf("write default %s template: %w", tmpl.name, existsErr)
 		}
@@ -164,7 +164,7 @@ func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) 
 			if tmpl.retired == "" {
 				continue
 			}
-			current, readFileErr := acfs.ReadFile(ctx, templatesDir, tmpl.path)
+			current, readFileErr := acfs.Root{Path: templatesDir}.ReadFile(ctx, tmpl.path)
 			if readFileErr != nil {
 				return fmt.Errorf("read default %s template: %w", tmpl.name, readFileErr)
 			}
@@ -172,7 +172,7 @@ func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) 
 				continue
 			}
 		}
-		if writeErr := acfs.Write(ctx, templatesDir, tmpl.path, []byte(tmpl.content), acfs.WriteOptions{Mode: utils.FilePerm}); writeErr != nil {
+		if writeErr := (acfs.Root{Path: templatesDir}).Write(ctx, tmpl.path, []byte(tmpl.content), acfs.WriteOptions{Mode: fs.FilePerm}); writeErr != nil {
 			return fmt.Errorf("write default %s template: %w", tmpl.name, writeErr)
 		}
 	}
@@ -185,8 +185,6 @@ func getDefaultComposeTemplate() string {
   nginx:
     image: nginx:alpine
     container_name: nginx_service
-    env_file:
-      - .env
     ports:
       - "${NGINX_HOST_PORT:-8080}:80"
     volumes:
@@ -267,7 +265,7 @@ STACK_RESTART_DELAY=5s
 
 func getDefaultEnvTemplate() string {
 	return `# Project variables
-# These values are interpolated into compose.yaml and passed to services via env_file.
+# These values are interpolated into compose.yaml.
 # Example syntax in compose.yaml:
 #   ports:
 #     - "${NGINX_HOST_PORT:-8080}:80"
@@ -294,7 +292,7 @@ func ParseComposeServices(ctx context.Context, composeContent string) []string {
 
 	// Create a dummy .env file to prevent env file errors
 	envPath := filepath.Join(tmpDir, ".env")
-	if writeFileWithPermErr := WriteFileWithPerm(envPath, "", utils.FilePerm); writeFileWithPermErr != nil {
+	if writeFileWithPermErr := WriteFileWithPerm(envPath, "", fs.FilePerm); writeFileWithPermErr != nil {
 		slog.WarnContext(ctx, "Failed to create dummy env file", "error", writeFileWithPermErr)
 	}
 
@@ -338,7 +336,7 @@ func ResolveTemplateIconURL(ctx context.Context, composeContent, envContent stri
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	envPath := filepath.Join(tmpDir, ".env")
-	if writeFileWithPermErr := WriteFileWithPerm(envPath, envContent, utils.FilePerm); writeFileWithPermErr != nil {
+	if writeFileWithPermErr := WriteFileWithPerm(envPath, envContent, fs.FilePerm); writeFileWithPermErr != nil {
 		slog.WarnContext(ctx, "failed to create temp env file for template icon parsing", "error", writeFileWithPermErr)
 	}
 
@@ -372,6 +370,6 @@ func ResolveTemplateIconURL(ctx context.Context, composeContent, envContent stri
 		return nil
 	}
 
-	icon, _, _, _ := parseArcaneBlockInternal(ctx, project.Extensions[arcaneBlockKey])
+	icon, _, _, _ := parseArcaneBlock(ctx, project.Extensions[arcaneBlockKey])
 	return mo.EmptyableToOption(strings.TrimSpace(icon.Icon)).ToPointer()
 }

@@ -6,9 +6,9 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/webhook"
+	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
 // RegisterWebhookTrigger registers the public (unauthenticated) trigger endpoint.
@@ -22,7 +22,7 @@ func RegisterWebhookTrigger(g *echo.Group, webhookService *webhook.WebhookServic
 		}
 
 		token := c.Param("token")
-		err := webhookService.TriggerByToken(utils.ActivityRuntimeContext(c.Request().Context(), appCtx.Context()), token)
+		err := webhookService.TriggerByToken(activity.ActivityRuntimeContext(c.Request().Context(), appCtx.Context()), token)
 		if err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, webhook.ErrWebhookNotFound) || errors.Is(err, webhook.ErrWebhookInvalid) {

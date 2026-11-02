@@ -1,16 +1,17 @@
 <script lang="ts" generics="TPolicy extends BackupPolicy, TUpdate extends { id: string } = BackupPolicyUpdate">
-	import { onMount, untrack, type Snippet } from 'svelte';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { untrack, type Snippet } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import BackupPolicyFields from '#lib/components/backup-policy-fields.svelte';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
+	import { s3DestinationAllQuery } from '#lib/query/backups.js';
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { BackupPolicy, BackupPolicyForm, BackupPolicyUpdate } from '#lib/types/backup.js';
 	import type { S3Destination } from '#lib/types/s3-destination.js';
-	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { extractApiErrorField, extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { backupDestinationFromFlags, backupPolicyDestinationValues, backupPolicyUpdateFromPolicy } from '#lib/utils/backups.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -63,38 +64,37 @@
 
 	let saving = $state(false);
 	let deleting = $state(false);
-	let loadedDestinations = $state<S3Destination[]>([]);
-	let destinationsLoading = $state(false);
-	let destinationsLoadError = $state<string | null>(null);
 	// Destinations are a global resource. Without list access the dialog keeps a
 	// policy's configured destination read-only instead of requesting the list.
 	const canListDestinations = $derived(hasPermission('s3-destinations:list', GLOBAL_SCOPE));
 	const destinationsAccessible = $derived(destinations !== undefined || canListDestinations);
+	const destinationsQuery = createQuery(() => ({
+		...s3DestinationAllQuery(),
+		enabled: !destinations && canListDestinations
+	}));
+	const loadedDestinations = $derived(destinationsQuery.data ?? []);
+	const destinationsLoading = $derived(destinationsQuery.isLoading);
+	const destinationsLoadError = $derived(destinationsQuery.error ? extractApiErrorMessage(destinationsQuery.error) : null);
 	const initialPolicy = untrack(() => policies.find((item) => item.id === policyId));
-	let initialForm: PolicyForm;
-	if (initialPolicy) {
-		initialForm = {
-			id: initialPolicy.id,
-			enabled: initialPolicy.enabled,
-			schedule: initialPolicy.schedule,
-			retentionCount: initialPolicy.retentionCount,
-			stopContainers: initialPolicy.stopContainers ?? false,
-			s3DestinationId: initialPolicy.s3DestinationId || '',
-			destination: backupDestinationFromFlags(initialPolicy.localEnabled, initialPolicy.s3Enabled)
-		};
-	} else {
-		initialForm = newPolicy();
-	}
-	let form = $state<PolicyForm>(initialForm);
+	let form = $state<PolicyForm>(
+		initialPolicy
+			? {
+					id: initialPolicy.id,
+					enabled: initialPolicy.enabled,
+					schedule: initialPolicy.schedule,
+					retentionCount: initialPolicy.retentionCount,
+					stopContainers: initialPolicy.stopContainers ?? false,
+					s3DestinationId: initialPolicy.s3DestinationId || '',
+					destination: backupDestinationFromFlags(initialPolicy.localEnabled, initialPolicy.s3Enabled)
+				}
+			: newPolicy()
+	);
 
 	const destinationList = $derived(destinations ?? loadedDestinations);
-	const scheduleError = $derived(
-		!form.schedule.trim()
-			? m.jobs_cron_required()
-			: form.schedule.trim().split(/\s+/).length !== 6
-				? m.jobs_cron_invalid()
-				: (form.serverError ?? null)
-	);
+	const scheduleError = $derived.by(() => {
+		if (!form.schedule.trim()) return m.jobs_cron_required();
+		return form.serverError ?? null;
+	});
 	const retentionError = $derived(
 		Number.isInteger(Number(form.retentionCount)) && form.retentionCount >= 0 && form.retentionCount <= 3650
 			? null
@@ -124,27 +124,6 @@
 		};
 	}
 
-	async function loadDestinations() {
-		destinationsLoading = true;
-		destinationsLoadError = null;
-		try {
-			const operationResult1 = await tryCatch(
-				(async () => {
-					loadedDestinations = await s3DestinationService.listAll();
-				})()
-			);
-			if (operationResult1.error !== null) {
-				destinationsLoadError = extractApiErrorMessage(operationResult1.error);
-			}
-		} finally {
-			destinationsLoading = false;
-		}
-	}
-
-	onMount(() => {
-		if (!destinations && canListDestinations) void loadDestinations();
-	});
-
 	function updateForm(values: Partial<BackupPolicyForm>) {
 		form = { ...form, ...values, serverError: undefined };
 	}
@@ -173,9 +152,8 @@
 			if (operationResult2.error !== null) {
 				const error = operationResult2.error;
 
-				const message = error instanceof Error ? error.message : messages.saveFailed;
-				if (/cron|schedule/i.test(message)) form = { ...form, serverError: message };
-				else toast.error(message);
+				if (extractApiErrorField(error) === 'schedule') form = { ...form, serverError: extractApiErrorMessage(error) };
+				else toast.error(messages.saveFailed, { description: extractApiErrorMessage(error) });
 			}
 		} finally {
 			saving = false;

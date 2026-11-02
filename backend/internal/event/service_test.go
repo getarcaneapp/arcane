@@ -2,10 +2,12 @@ package event
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -13,20 +15,22 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/event"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/kit/pkg"
-	"go.getarcane.app/streams/bus"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event/children/correlation"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"kit.getarcane.app"
+	"kit.getarcane.app/docker/streams/bus"
+
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/event/children/correlation"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
 func setupEventServiceTestDB(t *testing.T) *database.DB {
@@ -37,61 +41,22 @@ func setupEventServiceTestDB(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-func TestCreateEventRequestJSONOmitempty(t *testing.T) {
-	t.Run("includes optional fields when set", func(t *testing.T) {
-		payload, err := json.Marshal(CreateEventRequest{
-			Type:         EventTypeContainerStart,
-			Title:        "Container started",
-			Description:  "Container 'web' has been started",
-			ResourceType: new("container"),
-			ResourceID:   new("container-1"),
-			ResourceName: new("web"),
-			UserID:       new("user-1"),
-			Username:     new("arcane"),
-		})
-		require.NoError(t, err)
-
-		var decoded map[string]any
-		require.NoError(t, json.Unmarshal(payload, &decoded))
-
-		require.Equal(t, "container", decoded["resourceType"])
-		require.Equal(t, "container-1", decoded["resourceId"])
-		require.Equal(t, "web", decoded["resourceName"])
-		require.Equal(t, "user-1", decoded["userId"])
-		require.Equal(t, "arcane", decoded["username"])
-	})
-
-	t.Run("omits optional fields when nil", func(t *testing.T) {
-		payload, err := json.Marshal(CreateEventRequest{
-			Type:  EventTypeUserLogin,
-			Title: "User logged in",
-		})
-		require.NoError(t, err)
-
-		var decoded map[string]any
-		require.NoError(t, json.Unmarshal(payload, &decoded))
-
-		_, hasResourceType := decoded["resourceType"]
-		_, hasResourceID := decoded["resourceId"]
-		_, hasResourceName := decoded["resourceName"]
-		_, hasUserID := decoded["userId"]
-		_, hasUsername := decoded["username"]
-
-		require.False(t, hasResourceType)
-		require.False(t, hasResourceID)
-		require.False(t, hasResourceName)
-		require.False(t, hasUserID)
-		require.False(t, hasUsername)
-	})
-}
-
 func TestEventService_LogEventsPersistOptionalPointers(t *testing.T) {
 	ctx := t.Context()
 	db := setupEventServiceTestDB(t)
 	svc := NewEventService(db, nil, nil)
 
 	metadata := database.JSON{"source": "test"}
-	err := svc.LogContainerEvent(ctx, EventTypeContainerStart, "container-1", "web", "user-1", "arcane", "0", metadata)
+	err := svc.LogResourceEvent(ctx, ResourceEvent{
+		Type:          EventTypeContainerStart,
+		ResourceType:  "container",
+		ResourceID:    "container-1",
+		ResourceName:  "web",
+		UserID:        "user-1",
+		Username:      "arcane",
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	})
 	require.NoError(t, err)
 
 	var containerEvent Event
@@ -165,18 +130,16 @@ func TestEventService_LogErrorEvent_DoesNotMutateInputMetadata(t *testing.T) {
 	svc := NewEventService(db, nil, nil)
 
 	metadata := database.JSON{"phase": "pull"}
-	svc.LogErrorEvent(
-		ctx,
-		EventTypeImageScan,
-		"image",
-		"img-1",
-		"nginx:latest",
-		"user-1",
-		"arcane",
-		"0",
-		errors.New("pull failed"),
-		metadata,
-	)
+	svc.LogErrorEvent(ctx, ResourceEvent{
+		Type:          EventTypeImageScan,
+		ResourceType:  "image",
+		ResourceID:    "img-1",
+		ResourceName:  "nginx:latest",
+		UserID:        "user-1",
+		Username:      "arcane",
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}, errors.New("pull failed"))
 
 	_, mutated := metadata["error"]
 	require.False(t, mutated, "input metadata should not be mutated by LogErrorEvent")
@@ -189,7 +152,7 @@ func TestEventService_LogErrorEvent_DoesNotMutateInputMetadata(t *testing.T) {
 	require.Equal(t, "pull failed", saved.Metadata["error"])
 }
 
-func TestEventService_CreateEvent_ForwardsToManagerAPIInAgentMode(t *testing.T) {
+func TestEventService_CreateEvent_ForwardsToManagerAPIOnAgent(t *testing.T) {
 	ctx := t.Context()
 	db := setupEventServiceTestDB(t)
 
@@ -207,7 +170,7 @@ func TestEventService_CreateEvent_ForwardsToManagerAPIInAgentMode(t *testing.T) 
 
 		defer func() { _ = r.Body.Close() }()
 		var payload CreateEventRequest
-		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&payload)) {
+		if !assert.NoError(t, json.UnmarshalRead(r.Body, &payload)) {
 			return
 		}
 
@@ -221,7 +184,7 @@ func TestEventService_CreateEvent_ForwardsToManagerAPIInAgentMode(t *testing.T) 
 	defer server.Close()
 
 	cfg := &config.Config{
-		AgentMode:     true,
+		AgentEnabled:  true,
 		AgentToken:    "test-agent-token",
 		ManagerApiUrl: server.URL,
 	}
@@ -319,7 +282,7 @@ func TestEventService_GetEventSeverityCounts(t *testing.T) {
 
 	counts, err := svc.GetEventSeverityCounts(ctx)
 	require.NoError(t, err)
-	require.Equal(t, event.SeverityCounts{Total: 4, Info: 2, Success: 1, Warning: 0, Error: 1}, counts)
+	require.Equal(t, types.EventSeverityCounts{Total: 4, Info: 2, Success: 1, Warning: 0, Error: 1}, counts)
 }
 
 func TestEventService_ListEventsPaginated_TypeCategoryFilter(t *testing.T) {
@@ -412,7 +375,7 @@ func TestDaemonEventForwardingPreservesMetadata(t *testing.T) {
 	requests := make(chan CreateEventRequest, 4)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req CreateEventRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.UnmarshalRead(r.Body, &req); err != nil {
 			t.Errorf("decode forwarded event: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -422,7 +385,7 @@ func TestDaemonEventForwardingPreservesMetadata(t *testing.T) {
 	}))
 	defer server.Close()
 	db := setupEventServiceTestDB(t)
-	svc := NewEventService(db, &config.Config{AgentMode: true, AgentToken: "agent-token", ManagerApiUrl: server.URL}, server.Client())
+	svc := NewEventService(db, &config.Config{AgentEnabled: true, AgentToken: "agent-token", ManagerApiUrl: server.URL}, server.Client())
 	message := events.Message{
 		Type:     events.ContainerEventType,
 		Action:   events.ActionDie,
@@ -461,7 +424,7 @@ func TestEventStreamPublishesCommittedMutations(t *testing.T) {
 	service := NewEventService(db, nil, nil)
 	changes := 0
 	var persistedCounts []int64
-	unsubscribe := service.changes.Subscribe(func(struct{}) {
+	unsubscribe := service.Changes.Subscribe(func(types.EnvironmentChanges) {
 		changes++
 		var count int64
 		require.NoError(t, db.Model(&Event{}).Count(&count).Error)
@@ -496,16 +459,16 @@ func TestEventStreamProducerCoalescesAndCancels(t *testing.T) {
 		service := NewEventService(nil, nil, nil)
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
-		output := make(chan event.StreamEvent)
+		output := make(chan types.EventStreamEvent)
 		stopped := make(chan struct{})
 		go func() {
 			defer close(stopped)
-			service.RunStreamProducer(ctx, output)
+			service.RunStreamProducer(ctx, authz.SudoPermissionSet(), output)
 		}()
 		synctest.Wait()
 		// Initial send is blocked, but subscriptions must already be ready.
 		for range 100 {
-			service.changes.Publish(struct{}{})
+			service.PublishChange("0", "container")
 		}
 		initial := <-output
 		require.Equal(t, "changed", initial.Type)
@@ -518,11 +481,11 @@ func TestEventStreamProducerCoalescesAndCancels(t *testing.T) {
 		default:
 		}
 		// A stalled client must not hold up publishers or prevent shutdown.
-		service.changes.Publish(struct{}{})
+		service.PublishChange("0", "container")
 		synctest.Wait()
 		cancel()
 		<-stopped
-		service.changes.Publish(struct{}{})
+		service.PublishChange("0", "container")
 	})
 }
 
@@ -531,14 +494,14 @@ func TestEventStreamProducerBroadcasts(t *testing.T) {
 		service := NewEventService(nil, nil, nil)
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
-		first := make(chan event.StreamEvent, 1)
-		second := make(chan event.StreamEvent, 1)
-		go service.RunStreamProducer(ctx, first)
-		go service.RunStreamProducer(ctx, second)
+		first := make(chan types.EventStreamEvent, 1)
+		second := make(chan types.EventStreamEvent, 1)
+		go service.RunStreamProducer(ctx, authz.SudoPermissionSet(), first)
+		go service.RunStreamProducer(ctx, authz.SudoPermissionSet(), second)
 		synctest.Wait()
 		<-first
 		<-second
-		service.changes.Publish(struct{}{})
+		service.PublishChange("0", "container")
 		synctest.Wait()
 		require.Equal(t, "changed", (<-first).Type)
 		require.Equal(t, "changed", (<-second).Type)
@@ -773,17 +736,17 @@ func TestDockerEventSubscriptionsReadyAndStop(t *testing.T) {
 				sqlDB.SetMaxOpenConns(1)
 				svc := NewEventService(db, nil, nil)
 				var recovered, published atomic.Int64
-				stopChanges := svc.changes.Subscribe(func(struct{}) { published.Add(1) })
+				stopChanges := svc.Changes.Subscribe(func(types.EnvironmentChanges) { published.Add(1) })
 				defer stopChanges()
-				eventBus := bus.NewDockerEventBus(bus.WithDroppedEventCallback(func(message events.Message) {
+				eventBus := bus.NewDockerEventBus(bus.Config{OnDrop: func(message events.Message) {
 					recovered.Add(1)
 					svc.RecordDockerEvent(t.Context(), message)
-				}))
+				}})
 				defer eventBus.Close()
 				run, cleanup := svc.SubscribeDockerEvents(eventBus)
 				defer cleanup()
 				// A stalled unrelated subscriber also invokes the global overflow callback.
-				_, stopStalled := eventBus.Subscribe(events.ImageEventType, bus.WithSubscriberBuffer(1))
+				_, stopStalled := eventBus.Subscribe(events.ImageEventType, bus.SubscribeOptions{Buffer: new(1)})
 				defer stopStalled()
 				const occurrences = daemonEventChanBuffer + 64
 				publishBurst := func(offset int64) {
@@ -837,7 +800,7 @@ func TestDaemonEventWriterBatchesAndFlushesOnStop(t *testing.T) {
 		svc := NewEventService(db, nil, nil)
 		defer func() { assert.NoError(t, svc.Stop(t.Context())) }()
 		var published atomic.Int64
-		stopChanges := svc.changes.Subscribe(func(struct{}) { published.Add(1) })
+		stopChanges := svc.Changes.Subscribe(func(types.EnvironmentChanges) { published.Add(1) })
 		defer stopChanges()
 		record := func(timeNano int64) {
 			svc.RecordDockerEvent(t.Context(), events.Message{Type: events.ContainerEventType, Action: events.ActionStart, TimeNano: timeNano, Actor: events.Actor{ID: "web"}})
@@ -916,4 +879,120 @@ func TestCreateEventCorrelationEligibility(t *testing.T) {
 			require.Equal(t, tc.want, svc.ShouldSuppressDaemonEvent(strings.SplitN(string(tc.eventType), ".", 2)[0], "id", "", ""))
 		})
 	}
+}
+
+func TestRecordDockerEventPublishesSuppressedChange(t *testing.T) {
+	db := setupEventServiceTestDB(t)
+	svc := NewEventService(db, nil, nil)
+	svc.MarkDockerExpectation("container", "web", "")
+	svc.RecordDockerEvent(t.Context(), events.Message{
+		Type:     events.ContainerEventType,
+		Action:   events.ActionStart,
+		TimeNano: 123,
+		Actor:    events.Actor{ID: "web"},
+	})
+	require.NoError(t, svc.Stop(t.Context()))
+	requireDaemonCount(t, db, 0)
+	require.Contains(t, svc.EnvironmentChanges("0").Kinds, "container")
+}
+
+func TestPublishChangeNormalizesKinds(t *testing.T) {
+	svc := NewEventService(nil, nil, nil)
+	for _, kind := range []string{"images", "podman.pod.start", " Container.Start ", "git.sync.run", "image_update", ""} {
+		svc.PublishChange("", kind)
+	}
+	require.ElementsMatch(t, []string{"image", "podman", "container", "gitops", "image_update"}, slices.Collect(maps.Keys(svc.EnvironmentChanges("0").Kinds)))
+}
+
+func TestEventStreamProducerFlushesOnceForAccessibleEnvironments(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		service := NewEventService(nil, nil, nil)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		ps := authz.NewPermissionSet()
+		ps.AddEnv("1", authz.PermContainersRead)
+		output := make(chan types.EventStreamEvent, 4)
+		go service.RunStreamProducer(ctx, ps, output)
+		synctest.Wait()
+		require.Empty(t, (<-output).Changes)
+
+		service.PublishChange("1", "container")
+		service.PublishChange("1", "image")
+		service.PublishChange("2", "container")
+		synctest.Wait()
+		require.Empty(t, output)
+		time.Sleep(changeStreamFlushInterval)
+		synctest.Wait()
+		require.Len(t, output, 1)
+		flushed := <-output
+		require.Len(t, flushed.Changes, 1)
+		require.Equal(t, "1", flushed.Changes[0].EnvironmentID)
+		require.ElementsMatch(t, []string{"container", "image"}, slices.Collect(maps.Keys(flushed.Changes[0].Kinds)))
+
+		service.PublishChange("2", "volume")
+		time.Sleep(2 * changeStreamFlushInterval)
+		synctest.Wait()
+		require.Empty(t, output)
+	})
+}
+
+func TestWaitForChangesSinceAndEpoch(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		service := NewEventService(nil, nil, nil)
+		service.PublishChange("0", "container")
+		current := service.EnvironmentChanges("0")
+		started := time.Now()
+		require.Equal(t, current, service.WaitForChanges(t.Context(), "0", "previous-process", current.Kinds["container"], 0))
+		require.Equal(t, current, service.WaitForChanges(t.Context(), "0", current.Epoch, 0, 0))
+		require.Zero(t, time.Since(started))
+		require.Equal(t, current, service.WaitForChanges(t.Context(), "0", current.Epoch, current.Kinds["container"], 0))
+		require.Equal(t, changeWaitLimit, time.Since(started))
+	})
+}
+
+func TestRelayChangesPublishesAllOnBaselineAndEpochChange(t *testing.T) {
+	service := NewEventService(nil, nil, nil)
+	cursor := types.EnvironmentChanges{
+		EnvironmentID: "0",
+		Epoch:         "agent-start",
+		Kinds:         map[string]uint64{"container": 3, "image": 5},
+	}
+	service.RelayChanges("7", types.EnvironmentChanges{}, cursor)
+	require.ElementsMatch(t, []string{"all"}, slices.Collect(maps.Keys(service.EnvironmentChanges("7").Kinds)))
+
+	service.RelayChanges("7", cursor, types.EnvironmentChanges{
+		EnvironmentID: "0",
+		Epoch:         "agent-start",
+		Kinds:         map[string]uint64{"container": 3, "image": 6, "volume": 7},
+	})
+	require.ElementsMatch(t, []string{"all", "image", "volume"}, slices.Collect(maps.Keys(service.EnvironmentChanges("7").Kinds)))
+
+	service.RelayChanges("7", cursor, types.EnvironmentChanges{
+		EnvironmentID: "0",
+		Epoch:         "agent-restart",
+		Kinds:         map[string]uint64{"container": 1},
+	})
+	require.Contains(t, service.EnvironmentChanges("7").Kinds, "all")
+}
+
+func TestWaitForChangesReturnsOnPublish(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		service := NewEventService(nil, nil, nil)
+		epoch := service.EnvironmentChanges("0").Epoch
+		result := make(chan types.EnvironmentChanges, 1)
+		started := time.Now()
+		go func() {
+			result <- service.WaitForChanges(t.Context(), "0", epoch, 0, 0)
+		}()
+		synctest.Wait()
+		service.PublishChange("1", "container")
+		synctest.Wait()
+		require.Empty(t, result)
+
+		service.PublishChange("0", "container")
+		service.PublishChange("0", "image")
+		changes := <-result
+		require.Equal(t, changeWaitCoalesce, time.Since(started))
+		require.ElementsMatch(t, []string{"container", "image"}, slices.Collect(maps.Keys(changes.Kinds)))
+	})
 }

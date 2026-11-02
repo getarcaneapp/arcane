@@ -10,15 +10,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/settings"
 )
 
-func TestServiceDeleteFileRejectsCurrentDirectoryInternal(t *testing.T) {
+func TestServiceDeleteFileRejectsCurrentDirectory(t *testing.T) {
 	ctx := t.Context()
 	db := setupSettingsTestDB(t)
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	root := t.TempDir()
@@ -43,9 +43,9 @@ func setupSettingsTestDB(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
+func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	svc, err := settings.NewSettingsService(ctx, db, &config.Config{})
+	svc, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}

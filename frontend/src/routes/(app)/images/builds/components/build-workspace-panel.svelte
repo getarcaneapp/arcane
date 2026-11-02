@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import type { FileProvider } from '#lib/components/file-browser/index.js';
@@ -65,7 +66,7 @@
 					showLabel={false}
 					customLabel={m.build_workspace_open_settings()}
 					title={m.build_workspace_open_settings()}
-					onclick={() => goto('/settings/builds')}
+					onclick={() => goto(resolve(`/(app)/settings/builds?env=${encodeURIComponent(environmentId)}`))}
 					class="hover:bg-white/5"
 				/>
 			</div>

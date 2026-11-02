@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,15 +16,18 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
-	"go.getarcane.app/docker"
-	"go.getarcane.app/docker/compat"
-	kit "go.getarcane.app/kit/pkg"
-	"go.getarcane.app/sys/cgroup"
-	"go.getarcane.app/updater/labels"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
+	"kit.getarcane.app"
+	"kit.getarcane.app/docker"
+	"kit.getarcane.app/docker/compat"
+	"kit.getarcane.app/sys/cgroup"
+	"kit.getarcane.app/updater/labels"
+
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/config/schema"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
 )
 
 var (
@@ -31,27 +35,27 @@ var (
 	targetImage   string
 	pullImageRef  string
 	autoDetect    bool
-)
 
-// UpgradeCmd recreates a running Arcane container with a newer image while
-// preserving its configuration.
-var UpgradeCmd = &cobra.Command{
-	Use:   "upgrade",
-	Short: "Upgrade an Arcane container to the latest version",
-	Long: `Upgrade an Arcane container by pulling the latest image and recreating the container.
+	// UpgradeCmd recreates a running Arcane container with a newer image while
+	// preserving its configuration.
+	UpgradeCmd = &cobra.Command{
+		Use:   "upgrade",
+		Short: "Upgrade an Arcane container to the latest version",
+		Long: `Upgrade an Arcane container by pulling the latest image and recreating the container.
 This command should be run from outside the container (e.g., from the host or another container).`,
-	Example: `  # Auto-detect and upgrade the Arcane container
+		Example: `  # Auto-detect and upgrade the Arcane container
   arcane upgrade --auto
 
   # Upgrade a specific container
   arcane upgrade --container arcane
 
   # Upgrade to a specific image tag
-  arcane upgrade --container arcane --image ghcr.io/getarcaneapp/arcane:v1.2.3`,
-	// Use background context to ignore signals during upgrade
-	// This prevents the upgrade from being interrupted when the target container stops
-	RunE: runUpgrade,
-}
+  arcane upgrade --container arcane --image ghcr.io/getarcaneapp/manager:v1.2.3`,
+		// Use background context to ignore signals during upgrade
+		// This prevents the upgrade from being interrupted when the target container stops
+		RunE: runUpgrade,
+	}
+)
 
 func init() {
 	UpgradeCmd.Flags().StringVarP(&containerName, "container", "c", "", "Name of the container to upgrade")
@@ -65,7 +69,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// This prevents interruption when stopping the target container
 	ctx := context.WithoutCancel(cmd.Context())
 
-	logFile, err := SetupMessageOnlyLogFile(libarcane.UpgradeLogDirectory, "arcane-upgrade", slog.LevelInfo)
+	logFile, err := SetupMessageOnlyLogFile(selfcontainer.UpgradeLogDirectory, "arcane-upgrade", slog.LevelInfo)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to setup file logging", "error", err)
 	} else {
@@ -95,6 +99,16 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to inspect container %s: %w", containerName, inspectErr)
 		}
 		targetContainer = inspectResult.Container
+	}
+	env := map[string]string{}
+	for _, entry := range kit.FromPtr(targetContainer.Config).Env {
+		name, value, _ := strings.Cut(entry, "=")
+		env[name] = value
+	}
+	if config.DirectAgentRequested(func(name string) string {
+		return env[name]
+	}) && !strings.EqualFold(env["ARCANE_AGENT"], "true") {
+		return fmt.Errorf("refusing to upgrade container %s: %w", containerName, config.ErrDirectAgentRemoved)
 	}
 
 	// Determine the reference the container should run as, and what to pull.
@@ -221,7 +235,7 @@ func isLegacyServerLabel(containerLabels map[string]string) bool {
 	return false
 }
 
-func normalizeRecreatedArcaneLabelsInternal(containerLabels map[string]string) map[string]string {
+func normalizeRecreatedArcaneLabels(containerLabels map[string]string) map[string]string {
 	normalized := maps.Clone(containerLabels)
 	if normalized == nil {
 		return nil
@@ -236,7 +250,7 @@ func normalizeRecreatedArcaneLabelsInternal(containerLabels map[string]string) m
 	return normalized
 }
 
-func refreshRecreatedImageLabelsInternal(containerLabels, previousImageLabels, imageLabels map[string]string, imageDigest string) map[string]string {
+func refreshRecreatedImageLabels(containerLabels, previousImageLabels, imageLabels map[string]string, imageDigest string) map[string]string {
 	refreshed := maps.Clone(containerLabels)
 	for key, value := range containerLabels {
 		if !strings.HasPrefix(strings.ToLower(key), "org.opencontainers.image.") {
@@ -275,7 +289,7 @@ func refreshRecreatedImageLabelsInternal(containerLabels, previousImageLabels, i
 	return refreshed
 }
 
-func refreshRecreatedContainerLabelsInternal(ctx context.Context, dockerClient *client.Client, containerLabels map[string]string, previousImage, targetImage string) map[string]string {
+func refreshRecreatedContainerLabels(ctx context.Context, dockerClient *client.Client, containerLabels map[string]string, previousImage, targetImage string) map[string]string {
 	// Manifest data is needed to record the platform manifest digest compose
 	// v5.5.0 expects in com.docker.compose.image; older daemons may reject the
 	// option, so retry without it and fall back to the top-level image ID.
@@ -295,7 +309,7 @@ func refreshRecreatedContainerLabelsInternal(ctx context.Context, dockerClient *
 	previousImageLabels := map[string]string(nil)
 	if imageInspect.Config != nil {
 		imageLabels = imageInspect.Config.Labels
-		if hasOCIImageLabelInternal(containerLabels) && strings.TrimSpace(previousImage) != "" {
+		if hasOCIImageLabel(containerLabels) && strings.TrimSpace(previousImage) != "" {
 			previousImageInspect, previousImageInspectErr := dockerClient.ImageInspect(ctx, previousImage)
 			if previousImageInspectErr != nil {
 				slog.WarnContext(ctx, "Could not inspect previous image labels; preserving existing OCI labels",
@@ -307,10 +321,10 @@ func refreshRecreatedContainerLabelsInternal(ctx context.Context, dockerClient *
 			}
 		}
 	}
-	return refreshRecreatedImageLabelsInternal(containerLabels, previousImageLabels, imageLabels, projects.ComposeImageDigest(imageInspect))
+	return refreshRecreatedImageLabels(containerLabels, previousImageLabels, imageLabels, projects.ComposeImageDigest(imageInspect))
 }
 
-func hasOCIImageLabelInternal(containerLabels map[string]string) bool {
+func hasOCIImageLabel(containerLabels map[string]string) bool {
 	for key := range containerLabels {
 		if strings.HasPrefix(strings.ToLower(key), "org.opencontainers.image.") {
 			return true
@@ -332,12 +346,10 @@ func isAgentContainer(inspect container.InspectResponse) bool {
 		}
 	}
 	// Legacy agent detection: AGENT_MODE=true in env
-	for _, env := range inspect.Config.Env {
-		if strings.EqualFold(env, "AGENT_MODE=true") {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(inspect.Config.Env, func(env string) bool {
+		name, value, _ := strings.Cut(env, "=")
+		return (name == "AGENT_MODE" || name == "ARCANE_AGENT_MODE") && strings.EqualFold(value, "true")
+	})
 }
 
 // shouldSkipContainer determines if a container should be skipped during search
@@ -382,7 +394,7 @@ func determineImageName(ctx context.Context, dockerClient *client.Client, cont c
 
 	// Default to :latest if still no tag
 	if !hasExplicitTag(imageName) {
-		imageName = kit.Ternary(imageName == "", "ghcr.io/getarcaneapp/arcane:latest", imageName+":latest")
+		imageName = kit.Ternary(imageName == "", "ghcr.io/getarcaneapp/manager:latest", imageName+":latest")
 	}
 
 	return imageName
@@ -481,14 +493,12 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	}
 
 	// Create new container config
-	config := *oldContainer.Config
-	config.Image = newImage
-	config.Labels = normalizeRecreatedArcaneLabelsInternal(config.Labels)
-	if len(environment) > 0 {
-		config.Env = applyRecoveredEnvironmentInternal(config.Env, environment)
-	}
+	containerConfig := *oldContainer.Config
+	containerConfig.Image = newImage
+	containerConfig.Labels = normalizeRecreatedArcaneLabels(containerConfig.Labels)
+	containerConfig.Env = applyRecoveredEnvironment(containerConfig.Env, environment)
 
-	config.Labels = refreshRecreatedContainerLabelsInternal(ctx, dockerClient, config.Labels, oldContainer.Image, cmp.Or(expectedImageID, newImage))
+	containerConfig.Labels = refreshRecreatedContainerLabels(ctx, dockerClient, containerConfig.Labels, oldContainer.Image, cmp.Or(expectedImageID, newImage))
 
 	hostConfig, sanitizedMemorySwappiness, engineInfo, err := compat.PrepareRecreateHostConfigForEngine(ctx, dockerClient, oldContainer.ID, oldContainer.HostConfig)
 	if err != nil {
@@ -518,21 +528,21 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	// When network mode is "host" or "container:...", Hostname must be empty
 	nm := hostConfig.NetworkMode
 	if nm.IsHost() || nm.IsContainer() {
-		config.Hostname = ""
-		config.Domainname = ""
+		containerConfig.Hostname = ""
+		containerConfig.Domainname = ""
 	}
 
 	// Clear hostname if it looks like a container ID (auto-generated by Docker)
 	// This allows Docker to assign the new container's ID as the hostname
-	if looksLikeContainerID(config.Hostname) {
-		slog.DebugContext(ctx, "Clearing auto-generated hostname", "oldHostname", config.Hostname)
-		config.Hostname = ""
+	if looksLikeContainerID(containerConfig.Hostname) {
+		slog.DebugContext(ctx, "Clearing auto-generated hostname", "oldHostname", containerConfig.Hostname)
+		containerConfig.Hostname = ""
 	}
 
 	// Fix for "conflicting options: port exposing and the container type network mode"
 	// When network mode is "container:...", port mappings are not allowed
 	if nm.IsContainer() {
-		config.ExposedPorts = nil
+		containerConfig.ExposedPorts = nil
 		hostConfig.PortBindings = nil
 		hostConfig.PublishAllPorts = false
 	}
@@ -570,10 +580,7 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	fmt.Println("PROGRESS:70:Stopping old container")
 	slog.InfoContext(ctx, "Stopping old container", "name", oldName)
 	// Allow graceful shutdown and longer finite timeouts, but never wait forever.
-	stopTimeout := 40
-	if configured := oldContainer.Config.StopTimeout; configured != nil && *configured > stopTimeout {
-		stopTimeout = *configured
-	}
+	stopTimeout := max(40, kit.FromPtr(oldContainer.Config.StopTimeout))
 	if _, containerStopErr := dockerClient.ContainerStop(ctx, oldContainer.ID, client.ContainerStopOptions{Timeout: &stopTimeout}); containerStopErr != nil {
 		_, _ = dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: originalName})
 		return fmt.Errorf("stop old container: %w", containerStopErr)
@@ -581,12 +588,15 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 
 	fmt.Println("PROGRESS:75:Creating new container")
 	slog.InfoContext(ctx, "Creating new container", "name", originalName)
-	resp, err := compat.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
-		Config:           &config,
-		HostConfig:       hostConfig,
-		NetworkingConfig: networkConfig,
-		Name:             originalName,
-	}, apiVersion)
+	resp, err := compat.ContainerCreateWithCompatibility(ctx, dockerClient, compat.CreateRequest{
+		Options: client.ContainerCreateOptions{
+			Config:           &containerConfig,
+			HostConfig:       hostConfig,
+			NetworkingConfig: networkConfig,
+			Name:             originalName,
+		},
+		APIVersion: apiVersion,
+	})
 	if err != nil {
 		// Try to restart and restore old container on failure
 		_, _ = dockerClient.ContainerStart(ctx, oldContainer.ID, client.ContainerStartOptions{})
@@ -641,14 +651,32 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	return nil
 }
 
-func applyRecoveredEnvironmentInternal(current []string, recovered map[string]string) []string {
+func applyRecoveredEnvironment(current []string, recovered map[string]string) []string {
+	renamed := schema.RenamedEnv()
+	present := make(map[string]struct{}, len(current))
+	for _, entry := range current {
+		name, _, _ := strings.Cut(entry, "=")
+		present[name] = struct{}{}
+	}
 	seen := make(map[string]struct{}, len(recovered))
 	updated := make([]string, 0, len(current)+len(recovered))
 	for _, entry := range current {
-		name, _, found := strings.Cut(entry, "=")
+		name, value, found := strings.Cut(entry, "=")
 		if !found {
 			updated = append(updated, entry)
 			continue
+		}
+		for _, suffix := range []string{"", "__FILE", "_FILE"} {
+			base, ok := strings.CutSuffix(name, suffix)
+			target, legacy := renamed[base]
+			if !ok || !legacy {
+				continue
+			}
+			if _, exists := present[target+suffix]; !exists {
+				name = target + suffix
+				entry = name + "=" + value
+			}
+			break
 		}
 		if baseName, ok := strings.CutSuffix(name, "__FILE"); ok {
 			if _, localOk := recovered[baseName]; localOk {

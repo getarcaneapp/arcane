@@ -8,22 +8,24 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system/children/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system/children/prune"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system/children/upgrade"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/system/children/backup"
+	"getarcane.dev/arcane/v3/internal/system/children/prune"
+	"getarcane.dev/arcane/v3/internal/system/children/upgrade"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-// Module wires the system domain and mounts its routes.
-type Module struct {
-	service         *SystemService
-	activityService *activity.ActivityService
-	cfg             *config.Config
-}
+type (
+	// Module wires the system domain and mounts its routes.
+	Module struct {
+		service         *SystemService
+		activityService *activity.ActivityService
+		cfg             *config.Config
+	}
+)
 
 // New wires system routes around an existing service.
 func New(
@@ -80,35 +82,19 @@ func RegisterSystem(api huma.API, h *SystemHandler) {
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermSystemRead, h.GetDockerInfo)
 
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "start-all-containers",
+	middleware.RegisterWithActionPermissions(api, huma.Operation{
+		OperationID: "system-containers-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/system/containers/start-all",
-		Summary:     "Start all containers",
-		Description: "Start all Docker containers",
+		Path:        "/environments/{id}/system/containers",
+		Summary:     "Run bulk container action",
+		Description: "Start all, start stopped, or stop all Docker containers",
 		Tags:        []string{"System"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermContainersStart, h.StartAllContainers)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "start-all-stopped-containers",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/system/containers/start-stopped",
-		Summary:     "Start all stopped containers",
-		Description: "Start all stopped Docker containers",
-		Tags:        []string{"System"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermContainersStart, h.StartAllStoppedContainers)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "stop-all-containers",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/system/containers/stop-all",
-		Summary:     "Stop all containers",
-		Description: "Stop all running Docker containers",
-		Tags:        []string{"System"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermContainersStop, h.StopAllContainers)
+	}, "action", map[string]string{
+		"startall":     authz.PermContainersStart,
+		"startstopped": authz.PermContainersStart,
+		"stopall":      authz.PermContainersStop,
+	}, h.RunContainersAction)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "convert-docker-run",

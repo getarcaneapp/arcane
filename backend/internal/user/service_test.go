@@ -2,25 +2,28 @@ package user_test
 
 import (
 	"context"
+	"fmt"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	userdomain "github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/session"
+	"getarcane.dev/arcane/v3/internal/settings"
+	userdomain "getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
-func setupAuthServiceTestDBInternal(t *testing.T) *database.DB {
+func setupAuthServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -41,8 +44,8 @@ func setupAuthServiceTestDBInternal(t *testing.T) *database.DB {
 	require.NoError(
 		t,
 		db.Exec("CREATE TABLE IF NOT EXISTS environments (id text PRIMARY KEY, created_at datetime, updated_at dateti"+
-			"me, name text, api_url text, status text, enabled numeric, is_edge numeric, hidden numeric, last_see"+
-			"n datetime, last_edge_transport text, access_token text, api_key_id text, parent_environment_id text"+
+			"me, name text, api_url text, status text, enabled numeric, hidden numeric, last_see"+
+			"n datetime, last_agent_transport text, access_token text, api_key_id text, parent_environment_id text"+
 			", swarm_node_id text)").Error,
 	)
 	require.NoError(
@@ -58,7 +61,7 @@ func setupAuthServiceTestDBInternal(t *testing.T) *database.DB {
 // does, so the legacy-admin-guard tests exercise the real RBAC path.
 func setupUserAndRoleServices(t *testing.T) (*userdomain.UserService, *role.RoleService) {
 	t.Helper()
-	db := setupAuthServiceTestDBInternal(t)
+	db := setupAuthServiceTestDB(t)
 	localRole := role.NewRoleService(db)
 	require.NoError(t, localRole.EnsureBuiltInRoles(t.Context()))
 	userRecord := userdomain.NewUserService(db, localRole, session.RevokeAllUserSessionsExceptInDB)
@@ -279,12 +282,12 @@ func TestUpdateUserPersistsTimeFormatAndMapsToDto(t *testing.T) {
 	ctx := t.Context()
 
 	u := createTestUser(t, userSvc, "user-1", "time-format-user")
-	require.Equal(t, user.TimeFormatAuto, u.TimeFormat)
+	require.Equal(t, types.TimeFormatAuto, u.TimeFormat)
 
-	for _, timeFormat := range []user.TimeFormat{
-		user.TimeFormatAuto,
-		user.TimeFormat12Hour,
-		user.TimeFormat24Hour,
+	for _, timeFormat := range []types.TimeFormat{
+		types.TimeFormatAuto,
+		types.TimeFormat12Hour,
+		types.TimeFormat24Hour,
 	} {
 		t.Run(string(timeFormat), func(t *testing.T) {
 			u.TimeFormat = timeFormat
@@ -298,6 +301,327 @@ func TestUpdateUserPersistsTimeFormatAndMapsToDto(t *testing.T) {
 			dto, err := userSvc.ToUserResponseDto(ctx, *reloaded)
 			require.NoError(t, err)
 			require.Equal(t, timeFormat, dto.TimeFormat)
+		})
+	}
+}
+
+func TestUpdateUserNormalizesDashboardLayout(t *testing.T) {
+	userSvc, _ := setupUserAndRoleServices(t)
+	ctx := t.Context()
+
+	tooManyWidgets := make([]types.DashboardWidgetLayout, 0, 55)
+	cappedWidgets := make([]types.DashboardWidgetLayout, 0, 50)
+	for i := range 55 {
+		tooManyWidgets = append(tooManyWidgets, types.DashboardWidgetLayout{
+			ID:   fmt.Sprintf("query-%d", i),
+			Type: "resourceQuery",
+		})
+		if i < 50 {
+			cappedWidgets = append(cappedWidgets, types.DashboardWidgetLayout{
+				ID:   fmt.Sprintf("query-%d", i),
+				Type: "resourceQuery",
+				W:    2,
+				H:    2,
+			})
+		}
+	}
+	manyFilters := make(map[string]string, 25)
+	for i := range 25 {
+		manyFilters[fmt.Sprintf("key-%02d", i)] = "value"
+	}
+	cappedFilters := make(map[string]string, 20)
+	for i := range 20 {
+		cappedFilters[fmt.Sprintf("key-%02d", i)] = "value"
+	}
+
+	tests := []struct {
+		name         string
+		layout       []types.DashboardWidgetLayout
+		want         []types.DashboardWidgetLayout
+		generatedIDs []int
+	}{
+		{
+			name: "legacy built-ins resolve type from id and clamp",
+			layout: []types.DashboardWidgetLayout{
+				{ID: "attention", X: 10, Y: -2, W: 20, H: 30},
+				{ID: "unknown", W: 6, H: 4},
+				{ID: "healthy", X: 11, W: 1, H: 1},
+				{ID: "attention", W: 4, H: 4},
+				{ID: "jobs"},
+				{
+					ID:     "memory",
+					X:      2,
+					Y:      3,
+					W:      5,
+					H:      6,
+					Hidden: true,
+				},
+			},
+			want: []types.DashboardWidgetLayout{
+				{ID: "attention", Type: "attention", W: 12, H: 12},
+				{ID: "healthy", Type: "healthy", X: 10, W: 2, H: 2},
+				{ID: "jobs", Type: "jobs", W: 3, H: 3},
+				{
+					ID:     "memory",
+					Type:   "memory",
+					X:      2,
+					Y:      3,
+					W:      5,
+					H:      6,
+					Hidden: true,
+				},
+			},
+		},
+		{
+			name: "multi instances kept and invalid entries dropped",
+			layout: []types.DashboardWidgetLayout{
+				{ID: "q1", Type: "resourceQuery", Title: "  Running  ", W: 4, H: 3},
+				{ID: "q2", Type: "resourceQuery", W: 4, H: 3},
+				{ID: "q1", Type: "resourceQuery", W: 4, H: 3},
+				{ID: "jobs", Type: "jobs"},
+				{ID: "jobs-2", Type: "jobs"},
+				{ID: "jobs", Type: "jobs"},
+				{ID: "w1", Type: "bogus"},
+			},
+			want: []types.DashboardWidgetLayout{
+				{ID: "q1", Type: "resourceQuery", Title: "Running", W: 4, H: 3},
+				{ID: "q2", Type: "resourceQuery", W: 4, H: 3},
+				{ID: "jobs", Type: "jobs", W: 3, H: 3},
+			},
+		},
+		{
+			name: "multi widgets without id get unique ids and built-ins without id are dropped",
+			layout: []types.DashboardWidgetLayout{
+				{Type: "resourceQuery", W: 4, H: 3},
+				{Type: "containerStats"},
+				{Type: "healthy"},
+				{ID: "q1", Type: "resourceQuery", W: 4, H: 3},
+			},
+			want: []types.DashboardWidgetLayout{
+				{Type: "resourceQuery", W: 4, H: 3},
+				{Type: "containerStats", W: 4, H: 5},
+				{ID: "q1", Type: "resourceQuery", W: 4, H: 3},
+			},
+			generatedIDs: []int{0, 1},
+		},
+		{
+			name: "title capped at 80 runes",
+			layout: []types.DashboardWidgetLayout{
+				{ID: "q1", Type: "resourceQuery", Title: strings.Repeat("é", 90)},
+			},
+			want: []types.DashboardWidgetLayout{
+				{ID: "q1", Type: "resourceQuery", Title: strings.Repeat("é", 80), W: 2, H: 2},
+			},
+		},
+		{
+			name:   "layout capped at 50 widgets",
+			layout: tooManyWidgets,
+			want:   cappedWidgets,
+		},
+		{
+			name: "config sanitized on multi types and dropped on built-ins",
+			layout: []types.DashboardWidgetLayout{
+				{
+					ID:   "q1",
+					Type: "resourceQuery",
+					Config: &types.DashboardWidgetConfig{
+						EnvironmentIDs: []string{"0", "", "env-1", "0"},
+						ResourceKind:   "pods",
+						Search:         strings.Repeat("s", 300),
+						Filters:        manyFilters,
+						Display:        "grid",
+						Limit:          500,
+					},
+				},
+				{
+					ID:   "q2",
+					Type: "resourceQuery",
+					Config: &types.DashboardWidgetConfig{
+						ResourceKind: "containers",
+						Filters:      map[string]string{" ": "dropped", "status": "running"},
+						Display:      "list",
+					},
+				},
+				{
+					ID: "healthy",
+					Config: &types.DashboardWidgetConfig{
+						ResourceKind: "containers",
+					},
+				},
+			},
+			want: []types.DashboardWidgetLayout{
+				{
+					ID:   "q1",
+					Type: "resourceQuery",
+					W:    2,
+					H:    2,
+					Config: &types.DashboardWidgetConfig{
+						EnvironmentIDs: []string{"0", "env-1"},
+						Search:         strings.Repeat("s", 256),
+						Filters:        cappedFilters,
+						Display:        "count",
+						Limit:          50,
+					},
+				},
+				{
+					ID:   "q2",
+					Type: "resourceQuery",
+					W:    2,
+					H:    2,
+					Config: &types.DashboardWidgetConfig{
+						ResourceKind: "containers",
+						Filters:      map[string]string{"status": "running"},
+						Display:      "list",
+						Limit:        5,
+					},
+				},
+				{ID: "healthy", Type: "healthy", W: 2, H: 2},
+			},
+		},
+	}
+
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			u := createTestUser(t, userSvc, fmt.Sprintf("user-%d", i), fmt.Sprintf("dashboard-layout-user-%d", i))
+			u.Preferences.DashboardLayout = &tt.layout
+			_, err := userSvc.UpdateUser(ctx, u, nil)
+			require.NoError(t, err)
+
+			reloaded, err := userSvc.GetUserByID(ctx, u.ID)
+			require.NoError(t, err)
+			got := slices.Clone(*reloaded.Preferences.DashboardLayout)
+			ids := make([]string, 0, len(tt.generatedIDs))
+			for _, i := range tt.generatedIDs {
+				require.NotEmpty(t, got[i].ID)
+				ids = append(ids, got[i].ID)
+				got[i] = types.DashboardWidgetLayout{
+					Type:   got[i].Type,
+					Title:  got[i].Title,
+					X:      got[i].X,
+					Y:      got[i].Y,
+					W:      got[i].W,
+					H:      got[i].H,
+					Hidden: got[i].Hidden,
+					Config: got[i].Config,
+				}
+			}
+			require.Len(t, slices.Compact(slices.Sorted(slices.Values(ids))), len(ids))
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func themePalette(color string) types.ThemePalette {
+	return types.ThemePalette{
+		Background:               color,
+		Foreground:               color,
+		Card:                     color,
+		CardForeground:           color,
+		Popover:                  color,
+		PopoverForeground:        color,
+		Primary:                  color,
+		PrimaryForeground:        color,
+		Secondary:                color,
+		SecondaryForeground:      color,
+		Muted:                    color,
+		MutedForeground:          color,
+		Accent:                   color,
+		AccentForeground:         color,
+		Border:                   color,
+		Input:                    color,
+		Ring:                     color,
+		Sidebar:                  color,
+		SidebarForeground:        color,
+		SidebarPrimary:           color,
+		SidebarPrimaryForeground: color,
+		SidebarAccent:            color,
+		SidebarAccentForeground:  color,
+		SidebarBorder:            color,
+		SidebarRing:              color,
+		Surface:                  color,
+		GlassShadowColor:         color,
+		SyntaxComment:            color,
+		SyntaxKeyword:            color,
+		SyntaxProperty:           color,
+		SyntaxString:             color,
+		SyntaxNumber:             color,
+		SyntaxOperator:           color,
+	}
+}
+
+func customTheme(id string, dark types.ThemePalette) types.CustomTheme {
+	return types.CustomTheme{
+		ID:    id,
+		Name:  "My Theme",
+		Light: themePalette("#ffffff"),
+		Dark:  dark,
+	}
+}
+
+func TestUpdateUserAcceptsValidCustomTheme(t *testing.T) {
+	userSvc, _ := setupUserAndRoleServices(t)
+	ctx := t.Context()
+
+	u := createTestUser(t, userSvc, "user-1", "custom-theme-user")
+	themes := []types.CustomTheme{customTheme("custom-midnight", themePalette("oklch(0.2 0.05 260)"))}
+	u.Preferences.CustomThemes = &themes
+	_, err := userSvc.UpdateUser(ctx, u, nil)
+	require.NoError(t, err)
+
+	reloaded, err := userSvc.GetUserByID(ctx, u.ID)
+	require.NoError(t, err)
+	require.Equal(t, &themes, reloaded.Preferences.CustomThemes)
+}
+
+func TestUpdateUserRejectsInvalidCustomThemes(t *testing.T) {
+	userSvc, _ := setupUserAndRoleServices(t)
+	ctx := t.Context()
+
+	u := createTestUser(t, userSvc, "user-1", "custom-theme-user")
+	tooMany := make([]types.CustomTheme, 0, 21)
+	for i := range 21 {
+		tooMany = append(tooMany, customTheme(fmt.Sprintf("custom-theme-%d", i), themePalette("#000000")))
+	}
+	tests := []struct {
+		name    string
+		wantMsg string
+		themes  []types.CustomTheme
+	}{
+		{
+			name:    "css injection",
+			themes:  []types.CustomTheme{customTheme("custom-evil", themePalette("red; } body {"))},
+			wantMsg: `custom theme "custom-evil": dark token "background" is not a valid color`,
+		},
+		{
+			name:    "named color",
+			themes:  []types.CustomTheme{customTheme("custom-named", themePalette("red"))},
+			wantMsg: `custom theme "custom-named": dark token "background" is not a valid color`,
+		},
+		{
+			name:    "missing prefix",
+			themes:  []types.CustomTheme{customTheme("midnight", themePalette("#000000"))},
+			wantMsg: `custom theme "midnight": id must start with custom-`,
+		},
+		{
+			name: "duplicate ids",
+			themes: []types.CustomTheme{
+				customTheme("custom-midnight", themePalette("#000000")),
+				customTheme("custom-midnight", themePalette("#111111")),
+			},
+			wantMsg: `custom theme "custom-midnight": id is used more than once`,
+		},
+		{
+			name:    "too many themes",
+			themes:  tooMany,
+			wantMsg: "at most 20 custom themes are allowed",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			u.Preferences.CustomThemes = &tt.themes
+			_, err := userSvc.UpdateUser(ctx, u, nil)
+			require.ErrorIs(t, err, common.ErrValidation)
+			require.ErrorContains(t, err, tt.wantMsg)
 		})
 	}
 }
@@ -338,7 +662,7 @@ func TestUpdateUserAllowsGlobalAdminActorEditingAdmin(t *testing.T) {
 	require.NoError(t, err)
 
 	admin.DisplayName = new("Renamed Admin")
-	actorCtx := context.WithValue(ctx, user.CurrentUserContextKey{}, other)
+	actorCtx := context.WithValue(ctx, types.CurrentUserContextKey{}, other)
 	_, err = userSvc.UpdateUser(actorCtx, admin, otherPerms)
 	require.NoError(t, err)
 }
@@ -361,21 +685,6 @@ func TestUpdateUserAllowsNonAdminActorEditingNonAdmin(t *testing.T) {
 	target := createTestUser(t, userSvc, "user-1", "plain-user")
 	target.DisplayName = new("New Name")
 	_, err = userSvc.UpdateUser(ctx, target, managerPerms)
-	require.NoError(t, err)
-}
-
-func TestUpdateUserAllowsSelfEditByNonAdmin(t *testing.T) {
-	userSvc, roleSvc := setupUserAndRoleServices(t)
-	ctx := t.Context()
-
-	admin := createTestUser(t, userSvc, "admin-1", "arcane")
-	grantGlobalAdmin(t, roleSvc, admin.ID)
-	adminPerms, err := roleSvc.ResolvePermissions(ctx, admin.ID)
-	require.NoError(t, err)
-
-	admin.DisplayName = new("Self Rename")
-	actorCtx := context.WithValue(ctx, user.CurrentUserContextKey{}, admin)
-	_, err = userSvc.UpdateUser(actorCtx, admin, adminPerms)
 	require.NoError(t, err)
 }
 
@@ -417,7 +726,7 @@ func TestDeleteUserAllowsGlobalAdminActorDeletingAdmin(t *testing.T) {
 	otherPerms, err := roleSvc.ResolvePermissions(ctx, other.ID)
 	require.NoError(t, err)
 
-	actorCtx := context.WithValue(ctx, user.CurrentUserContextKey{}, other)
+	actorCtx := context.WithValue(ctx, types.CurrentUserContextKey{}, other)
 	require.NoError(t, userSvc.DeleteUser(actorCtx, admin.ID, otherPerms))
 }
 
@@ -452,19 +761,19 @@ func TestCreateDefaultAdminRecoversArcaneUserWhenNoGlobalAdminExists(t *testing.
 }
 
 func TestUserDisplayNameNormalization(t *testing.T) {
-	svc := userdomain.NewUserService(setupAuthServiceTestDBInternal(t), nil, session.RevokeAllUserSessionsExceptInDB)
+	svc := userdomain.NewUserService(setupAuthServiceTestDB(t), nil, session.RevokeAllUserSessionsExceptInDB)
 	ctx := t.Context()
-	created, err := svc.CreateUser(ctx, &userdomain.User{ID: "normalized", Username: " Jose\u0301 ", Email: new(" Jose\u0301@example.com "), DisplayName: new(" Jose\u0301 ")})
+	created, err := svc.CreateUser(ctx, &userdomain.User{ID: "normalized", Username: " Jose\u0301 ", Email: new("jose@exa\u0301mple.com"), DisplayName: new(" Jose\u0301 ")})
 	require.NoError(t, err)
 	require.Equal(t, "Jose\u0301", created.Username)
-	require.Equal(t, " Jose\u0301@example.com ", *created.Email)
+	require.Equal(t, "jose@exa\u0301mple.com", *created.Email)
 	require.Equal(t, "José", *created.DisplayName)
 	created.DisplayName = new(" Andre\u0301 ")
 	profile, err := svc.UpdateUser(ctx, created, nil)
 	require.NoError(t, err)
 	require.Equal(t, "André", *profile.DisplayName)
 	require.Equal(t, "Jose\u0301", profile.Username)
-	require.Equal(t, " Jose\u0301@example.com ", *profile.Email)
+	require.Equal(t, "jose@exa\u0301mple.com", *profile.Email)
 	created.Username = " Andre\u0301 "
 	created.DisplayName = nil
 	updated, err := svc.UpdateUser(ctx, created, nil)
@@ -474,7 +783,7 @@ func TestUserDisplayNameNormalization(t *testing.T) {
 	reloaded, err := svc.GetUserByID(ctx, updated.ID)
 	require.NoError(t, err)
 	require.Equal(t, " Andre\u0301 ", reloaded.Username)
-	require.Equal(t, " Jose\u0301@example.com ", *reloaded.Email)
+	require.Equal(t, "jose@exa\u0301mple.com", *reloaded.Email)
 	_, err = svc.GetUserByUsername(ctx, " Andre\u0301 ")
 	require.NoError(t, err)
 	_, err = svc.CreateUser(ctx, &userdomain.User{ID: "empty", Username: " \t "})

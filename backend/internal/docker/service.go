@@ -6,65 +6,83 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
+	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
-	"github.com/getarcaneapp/arcane/types/v2/dashboard"
-	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
-	"go.getarcane.app/docker"
-	"go.getarcane.app/docker/compat"
-	"go.getarcane.app/kit/pkg"
-	"go.getarcane.app/streams/bus"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
+	"kit.getarcane.app/docker"
+	"kit.getarcane.app/docker/compat"
+	"kit.getarcane.app/docker/streams/bus"
+
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/startup"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	DockerClientService struct {
+		clientLastProbe time.Time
+
+		// Coalesce concurrent full-inventory lists into one Docker response; per-instance
+		// because a WithClient copy talks to a different daemon.
+		imageListFlight     singleflight.Group
+		containerListFlight singleflight.Group
+		diskUsageFlight     singleflight.Group
+		*client.Client
+
+		db              *database.DB
+		settingsService *settings.SettingsService
+		engineClient    *client.Client
+		eventBus        *bus.DockerEventBus
+		streamConnected *concurrency.Signal[struct{}]
+		inventory       atomic.Pointer[dockerInventory]
+
+		engine        compat.EngineCompatibilityInfo
+		clientVersion string
+		clientHost    string
+		boundHost     string
+		mu            sync.Mutex
+	}
+
+	dockerInventory struct {
+		containers atomic.Pointer[[]container.Summary]
+		images     atomic.Pointer[[]image.Summary]
+	}
 )
 
 const (
 	dockerClientNegotiationTimeout = 5 * time.Second
-
 	// dockerEventStreamHealthyAfter is how long an event stream must survive before
 	// the reconnect backoff is considered recovered and reset.
 	dockerEventStreamHealthyAfter = 30 * time.Second
 )
 
-type DockerClientService struct {
-	*client.Client
-
-	db              *database.DB
-	config          *config.Config
-	settingsService *settings.SettingsService
-	clientVersion   string
-	clientLastProbe time.Time
-	engine          compat.EngineCompatibilityInfo
-	engineClient    *client.Client
-	mu              sync.Mutex
-	eventBus        *bus.DockerEventBus
-
-	// Coalesce concurrent full-inventory lists into one Docker response; per-instance
-	// because a WithClient copy talks to a different daemon.
-	imageListFlight     singleflight.Group
-	containerListFlight singleflight.Group
-}
-
-func NewDockerClientService(_ context.Context, db *database.DB, cfg *config.Config, settingsService *settings.SettingsService, eventBusOptions ...bus.Option) *DockerClientService {
-	return &DockerClientService{
+func NewDockerClientService(ctx context.Context, db *database.DB, settingsService *settings.SettingsService, eventBusConfig bus.Config) *DockerClientService {
+	service := &DockerClientService{
 		db:              db,
-		config:          cfg,
 		settingsService: settingsService,
-		eventBus:        bus.NewDockerEventBus(eventBusOptions...),
+		eventBus:        bus.NewDockerEventBus(eventBusConfig),
+		streamConnected: concurrency.NewSignal[struct{}](),
 	}
+	context.AfterFunc(ctx, settingsService.SubscribeSettingsChanges([]string{"dockerHost"}, func([]types.SettingUpdate) {
+		service.Close()
+	}))
+	return service
 }
 
 // WithClient returns a copy of the service bound to an already-connected Docker
@@ -72,10 +90,11 @@ func NewDockerClientService(_ context.Context, db *database.DB, cfg *config.Conf
 func (s *DockerClientService) WithClient(dockerClient *client.Client) *DockerClientService {
 	return &DockerClientService{
 		db:              s.db,
-		config:          s.config,
 		settingsService: s.settingsService,
 		Client:          dockerClient,
+		boundHost:       dockerClient.DaemonHost(),
 		eventBus:        s.eventBus,
+		streamConnected: s.streamConnected,
 	}
 }
 
@@ -111,7 +130,8 @@ func (s *DockerClientService) GetClient(ctx context.Context) (*client.Client, er
 // RefreshClient probes the Docker daemon and recreates the cached client when
 // the daemon's effective API version changed.
 func (s *DockerClientService) RefreshClient(ctx context.Context) error {
-	probeClient, err := client.New(client.WithHost(s.config.DockerHost))
+	host := s.DockerHost()
+	probeClient, err := client.New(client.WithHost(host))
 	if err != nil {
 		return fmt.Errorf("failed to refresh Docker client: failed to create Docker probe client: %w", err)
 	}
@@ -130,20 +150,40 @@ func (s *DockerClientService) RefreshClient(ctx context.Context) error {
 	}
 
 	s.mu.Lock()
-	if s.Client != nil && apiVersion == s.clientVersion {
+	if s.Client != nil && apiVersion == s.clientVersion && host == s.clientHost {
 		s.clientLastProbe = time.Now()
 		s.mu.Unlock()
 		return nil
 	}
 	s.mu.Unlock()
 
-	cli, err := client.New(client.WithHost(s.config.DockerHost), client.WithAPIVersion(apiVersion))
+	dropInventoryOnWrite := func(method string) {
+		if inventory := s.inventory.Load(); inventory != nil && method != http.MethodGet && method != http.MethodHead {
+			s.inventory.CompareAndSwap(inventory, &dockerInventory{})
+		}
+	}
+	cli, err := client.New(
+		client.WithHost(host),
+		client.WithAPIVersion(apiVersion),
+		client.WithHTTPRequestHook(func(req *http.Request) error {
+			dropInventoryOnWrite(req.Method)
+			return nil
+		}),
+		client.WithHTTPResponseHook(func(resp *http.Response) {
+			dropInventoryOnWrite(kit.FromPtr(resp.Request).Method)
+		}),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to refresh Docker client: failed to configure Docker client API version %s: %w", apiVersion, err)
 	}
 
 	s.mu.Lock()
-	if s.Client != nil && apiVersion == s.clientVersion {
+	if host != s.DockerHost() {
+		s.mu.Unlock()
+		closeDockerClient(ctx, cli, "stale host after settings change")
+		return s.RefreshClient(ctx)
+	}
+	if s.Client != nil && apiVersion == s.clientVersion && host == s.clientHost {
 		s.clientLastProbe = time.Now()
 		s.mu.Unlock()
 		closeDockerClient(ctx, cli, "unused after concurrent refresh")
@@ -153,6 +193,7 @@ func (s *DockerClientService) RefreshClient(ctx context.Context) error {
 	oldClient := s.Client
 	s.Client = cli
 	s.clientVersion = apiVersion
+	s.clientHost = host
 	s.clientLastProbe = time.Now()
 	s.engineClient = nil
 	s.mu.Unlock()
@@ -192,10 +233,10 @@ func (s *DockerClientService) Engine(ctx context.Context) (compat.EngineCompatib
 
 // DockerHost returns the configured DOCKER_HOST value.
 func (s *DockerClientService) DockerHost() string {
-	if s == nil || s.config == nil {
-		return ""
+	if s.boundHost != "" {
+		return s.boundHost
 	}
-	return s.config.DockerHost
+	return startup.ResolveDockerHost(s.settingsService.GetSettingsConfig().DockerHost.Value, os.Stat)
 }
 
 // Close closes the cached Docker client.
@@ -205,17 +246,17 @@ func (s *DockerClientService) Close() {
 	s.Client = nil
 	s.engineClient = nil
 	s.mu.Unlock()
+	s.inventory.Store(nil)
 
 	closeDockerClient(context.Background(), oldClient, "cached") //nolint:forbidigo // Shutdown close runs without a request context.
 }
 
 func (s *DockerClientService) EventBus() *bus.DockerEventBus {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.eventBus == nil {
-		s.eventBus = bus.NewDockerEventBus()
-	}
 	return s.eventBus
+}
+
+func (s *DockerClientService) EventStreamConnected() *concurrency.Signal[struct{}] {
+	return s.streamConnected
 }
 
 func (s *DockerClientService) WatchEvents(ctx context.Context) {
@@ -233,6 +274,8 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 				Since: kit.Ternary(lastEventNano == 0, "", fmt.Sprintf("%d.%09d", (lastEventNano+1)/int64(time.Second), (lastEventNano+1)%int64(time.Second))),
 			})
 			streamStart := time.Now()
+			s.inventory.Store(&dockerInventory{})
+			s.streamConnected.Publish(struct{}{})
 			var streamErr error
 		stream:
 			for {
@@ -248,12 +291,16 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 						msg.TimeNano = time.Now().UnixNano()
 					}
 					lastEventNano = msg.TimeNano
+					if !strings.HasPrefix(string(msg.Action), "exec_") {
+						s.inventory.Store(&dockerInventory{})
+					}
 					s.EventBus().Publish(msg)
 				case recvErr, ok := <-result.Err:
 					streamErr = kit.Ternary(ok, recvErr, nil)
 					break stream
 				}
 			}
+			s.inventory.Store(nil)
 			if streamErr != nil && !errors.Is(streamErr, context.Canceled) && !errors.Is(streamErr, io.EOF) {
 				slog.WarnContext(ctx, "Docker event stream stopped", "error", streamErr)
 			}
@@ -280,10 +327,10 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 // ListCoalesced shares one detached Call among concurrent callers; each waiter stops on its own
 // context, nothing is cached, and the shared result must be treated as immutable.
 // Streaming calls (logs, events, attach, pull, exec, stats, wait) must not use it because Call applies a deadline.
-func (s *DockerClientService) ListCoalesced[T any](ctx context.Context, group *singleflight.Group, op func(context.Context, *client.Client) (T, error)) (T, error) {
+func (s *DockerClientService) ListCoalesced[T any](ctx context.Context, group *singleflight.Group, key string, op func(context.Context, *client.Client) (T, error)) (T, error) {
 	var zero T
 
-	ch := group.DoChan("list", func() (any, error) {
+	ch := group.DoChan(key, func() (any, error) {
 		return s.Call(context.WithoutCancel(ctx), op)
 	})
 
@@ -310,36 +357,63 @@ func (s *DockerClientService) Call[T any](ctx context.Context, op func(context.C
 		var zero T
 		return zero, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	timeout := timeouts.DefaultDockerAPI
-	if s.settingsService != nil {
-		timeout = timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
-	}
+	timeout := timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
 	apiCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return op(apiCtx, dockerClient)
 }
 
-func (s *DockerClientService) ListContainers(ctx context.Context) ([]container.Summary, error) {
-	return s.ListCoalesced(ctx, &s.containerListFlight, func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
+func (s *DockerClientService) ListContainers(ctx context.Context, live bool) ([]container.Summary, error) {
+	inventory := s.inventory.Load()
+	if inventory != nil && !live {
+		if cached := inventory.containers.Load(); cached != nil {
+			return *cached, nil
+		}
+	}
+	return s.ListCoalesced(ctx, &s.containerListFlight, fmt.Sprintf("%p", inventory), func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
 		containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 		if err != nil {
 			return nil, fmt.Errorf("failed to list Docker containers: %w", err)
+		}
+		if inventory != nil {
+			inventory.containers.Store(&containerList.Items)
 		}
 		return containerList.Items, nil
 	})
 }
 
 func (s *DockerClientService) ListImages(ctx context.Context) ([]image.Summary, error) {
-	return s.ListCoalesced(ctx, &s.imageListFlight, func(ctx context.Context, dockerClient *client.Client) ([]image.Summary, error) {
+	inventory := s.inventory.Load()
+	if inventory != nil {
+		if cached := inventory.images.Load(); cached != nil {
+			return *cached, nil
+		}
+	}
+	return s.ListCoalesced(ctx, &s.imageListFlight, fmt.Sprintf("%p", inventory), func(ctx context.Context, dockerClient *client.Client) ([]image.Summary, error) {
 		imageList, err := dockerClient.ImageList(ctx, client.ImageListOptions{All: true})
 		if err != nil {
 			return nil, fmt.Errorf("failed to list Docker images: %w", err)
+		}
+		if inventory != nil {
+			inventory.images.Store(&imageList.Items)
 		}
 		return imageList.Items, nil
 	})
 }
 
-func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*dashboard.DockerSnapshot, error) {
+func (s *DockerClientService) GetDiskUsage(ctx context.Context) (client.DiskUsageResult, error) {
+	return s.ListCoalesced(ctx, &s.diskUsageFlight, "", func(ctx context.Context, dockerClient *client.Client) (client.DiskUsageResult, error) {
+		return dockerClient.DiskUsage(ctx, client.DiskUsageOptions{
+			Containers: true,
+			Images:     true,
+			Volumes:    true,
+			BuildCache: true,
+			Verbose:    true,
+		})
+	})
+}
+
+func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*types.DashboardDockerSnapshot, error) {
 	g, groupCtx := errgroup.WithContext(ctx)
 
 	var containers []container.Summary
@@ -348,21 +422,21 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*d
 	var volumes *client.VolumeListResult
 
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "docker snapshot worker")
+		defer concurrency.RecoverToError(&workerErr, "docker snapshot worker")
 
 		var err error
-		containers, err = s.ListContainers(groupCtx)
+		containers, err = s.ListContainers(groupCtx, false)
 		return err
 	})
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "docker snapshot worker")
+		defer concurrency.RecoverToError(&workerErr, "docker snapshot worker")
 
 		var err error
 		images, err = s.ListImages(groupCtx)
 		return err
 	})
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "docker snapshot worker")
+		defer concurrency.RecoverToError(&workerErr, "docker snapshot worker")
 
 		var err error
 		networks, err = s.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) ([]network.Summary, error) {
@@ -378,7 +452,7 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*d
 		return nil
 	})
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "docker snapshot worker")
+		defer concurrency.RecoverToError(&workerErr, "docker snapshot worker")
 
 		var err error
 		volumes, err = s.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) (*client.VolumeListResult, error) {
@@ -397,7 +471,7 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*d
 		return nil, err
 	}
 
-	return &dashboard.DockerSnapshot{
+	return &types.DashboardDockerSnapshot{
 		Containers: containers,
 		Images:     images,
 		Networks:   networks,
@@ -406,7 +480,7 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*d
 }
 
 func (s *DockerClientService) GetAllContainers(ctx context.Context) ([]container.Summary, int, int, int, error) {
-	containers, err := s.ListContainers(ctx)
+	containers, err := s.ListContainers(ctx, false)
 	if err != nil {
 		return nil, 0, 0, 0, err
 	}
@@ -426,28 +500,28 @@ func (s *DockerClientService) GetAllContainers(ctx context.Context) ([]container
 
 // GetAllImages lists images and containers concurrently and returns the
 // images together with their usage counts, including total image size.
-func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary, imagetypes.UsageCounts, error) {
+func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary, types.ImageUsageCounts, error) {
 	g, groupCtx := errgroup.WithContext(ctx)
 
 	var images []image.Summary
 	var containers []container.Summary
 
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "docker image list worker")
+		defer concurrency.RecoverToError(&workerErr, "docker image list worker")
 
 		var err error
 		images, err = s.ListImages(groupCtx)
 		return err
 	})
 	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "docker container list worker")
+		defer concurrency.RecoverToError(&workerErr, "docker container list worker")
 
 		var err error
-		containers, err = s.ListContainers(groupCtx)
+		containers, err = s.ListContainers(groupCtx, false)
 		return err
 	})
 	if err := g.Wait(); err != nil {
-		return nil, imagetypes.UsageCounts{}, err
+		return nil, types.ImageUsageCounts{}, err
 	}
 
 	return images, CountImageUsage(images, containers), nil
@@ -455,7 +529,7 @@ func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary
 
 // CountImageUsage tallies in-use, unused, and total image counts plus the summed
 // image size. An image is in use when a container references its ID.
-func CountImageUsage(images []image.Summary, containers []container.Summary) imagetypes.UsageCounts {
+func CountImageUsage(images []image.Summary, containers []container.Summary) types.ImageUsageCounts {
 	inUseImageIDs := make(map[string]struct{}, len(containers))
 	for _, c := range containers {
 		if c.ImageID == "" {
@@ -464,7 +538,7 @@ func CountImageUsage(images []image.Summary, containers []container.Summary) ima
 		inUseImageIDs[c.ImageID] = struct{}{}
 	}
 
-	var counts imagetypes.UsageCounts
+	var counts types.ImageUsageCounts
 	for _, img := range images {
 		counts.Total++
 		counts.TotalSize += img.Size
@@ -479,18 +553,28 @@ func CountImageUsage(images []image.Summary, containers []container.Summary) ima
 }
 
 func (s *DockerClientService) GetAllNetworks(ctx context.Context) ([]network.Summary, int, int, int, error) {
-	containers, err := s.ListContainers(ctx)
-	if err != nil {
-		return nil, 0, 0, 0, err
-	}
-	networks, err := s.Call(ctx, func(ctx context.Context, dockerClient *client.Client) ([]network.Summary, error) {
-		networkList, listErr := compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
-		if listErr != nil {
-			return nil, fmt.Errorf("failed to list Docker networks: %w", listErr)
-		}
-		return networkList.Items, nil
+	g, groupCtx := errgroup.WithContext(ctx)
+	var containers []container.Summary
+	var networks []network.Summary
+	g.Go(func() (workerErr error) {
+		defer concurrency.RecoverToError(&workerErr, "network container list worker")
+		var err error
+		containers, err = s.ListContainers(groupCtx, false)
+		return err
 	})
-	if err != nil {
+	g.Go(func() (workerErr error) {
+		defer concurrency.RecoverToError(&workerErr, "network list worker")
+		var err error
+		networks, err = s.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) ([]network.Summary, error) {
+			networkList, listErr := compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+			if listErr != nil {
+				return nil, fmt.Errorf("failed to list Docker networks: %w", listErr)
+			}
+			return networkList.Items, nil
+		})
+		return err
+	})
+	if err := g.Wait(); err != nil {
 		return nil, 0, 0, 0, err
 	}
 	_, unused, total := CountNetworkUsage(networks, containers)

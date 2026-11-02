@@ -8,63 +8,30 @@ import (
 	"github.com/moby/moby/client"
 )
 
+type (
+	classified struct {
+		kind error
+		err  error
+	}
+)
+
 const (
 	// ConfigurationErrorCodeEnvFileUnreadable is the ConfigurationError code reported
 	// alongside ErrProjectEnvUnreadable.
 	ConfigurationErrorCodeEnvFileUnreadable = "env_file_unreadable"
 )
 
-type classified struct {
-	kind error
-	err  error
-}
-
-// Classify gives err a stable semantic identity without changing its message.
-func Classify(kind, err error) error {
-	if err == nil {
-		return nil
-	}
-	if kind == nil {
-		return err
-	}
-	return &classified{kind: kind, err: err}
-}
-
-func ClassifyDockerError(err error) error {
-	switch {
-	case errdefs.IsNotFound(err):
-		return Classify(ErrNotFound, err)
-	case errdefs.IsConflict(err):
-		return Classify(ErrConflict, err)
-	case errdefs.IsInvalidArgument(err):
-		return Classify(ErrBadRequest, err)
-	case errdefs.IsUnavailable(err), client.IsErrConnectionFailed(err):
-		return Classify(ErrUnavailable, err)
-	case errors.Is(err, context.DeadlineExceeded):
-		return Classify(ErrTimeout, err)
-	default:
-		return err
-	}
-}
-
-func (e *classified) Error() string { return e.err.Error() }
-
-func (e *classified) Unwrap() error { return e.err }
-
-func (e *classified) Is(target error) bool { return errors.Is(e.kind, target) }
-
 //nolint:staticcheck // Preserve existing API error messages.
 var (
-	ErrBadRequest          = errors.New("kind: bad request")
-	ErrValidation          = errors.New("kind: validation failed")
-	ErrUnauthorized        = errors.New("kind: unauthorized")
-	ErrForbidden           = errors.New("kind: forbidden")
-	ErrNotFound            = errors.New("kind: not found")
-	ErrConflict            = errors.New("kind: conflict")
-	ErrTimeout             = errors.New("kind: timeout")
-	ErrUnavailable         = errors.New("kind: service unavailable")
-	ErrInsufficientStorage = errors.New("kind: insufficient storage")
-
+	ErrBadRequest                        = errors.New("kind: bad request")
+	ErrValidation                        = errors.New("kind: validation failed")
+	ErrUnauthorized                      = errors.New("kind: unauthorized")
+	ErrForbidden                         = errors.New("kind: forbidden")
+	ErrNotFound                          = errors.New("kind: not found")
+	ErrConflict                          = errors.New("kind: conflict")
+	ErrTimeout                           = errors.New("kind: timeout")
+	ErrUnavailable                       = errors.New("kind: service unavailable")
+	ErrInsufficientStorage               = errors.New("kind: insufficient storage")
 	ErrFeatureDisabled                   = Classify(ErrForbidden, errors.New("feature disabled"))
 	ErrInvalidToken                      = errors.New("invalid token")
 	ErrExpiredToken                      = errors.New("token expired")
@@ -74,7 +41,7 @@ var (
 	ErrTokenValidation                   = Classify(ErrUnauthorized, errors.New("Invalid token claims"))
 	ErrSessionRevoked                    = Classify(ErrUnauthorized, errors.New("Session has been revoked"))
 	ErrUpgradeInProgress                 = Classify(ErrConflict, errors.New("an upgrade is already in progress"))
-	ErrUpdateAllInProgress               = Classify(ErrConflict, errors.New("an update-all job is already in progress"))
+	ErrUpgradeJobInProgress              = Classify(ErrConflict, errors.New("an upgrade job is already in progress"))
 	ErrUpdaterNoContainersMatched        = Classify(ErrBadRequest, errors.New("no compose-managed containers matched the requested resources"))
 	ErrTemplateNotFound                  = Classify(ErrNotFound, errors.New("Template not found"))
 	ErrInvalidEnvKey                     = Classify(ErrValidation, errors.New("Invalid environment key"))
@@ -117,7 +84,7 @@ var (
 	ErrFederatedCredentialInvalidGrant         = Classify(ErrUnauthorized, errors.New("invalid federated token grant"))
 	ErrFederatedCredentialPermissionEscalation = Classify(ErrForbidden, errors.New("cannot map a federated credential to a role you do not hold"))
 	ErrOidcMappingNotFound                     = Classify(ErrNotFound, errors.New("OIDC role mapping not found"))
-	ErrOidcMappingEnvManaged                   = Classify(ErrConflict, errors.New("OIDC role mapping is managed by OIDC_ROLE_MAPPINGS and cannot be edited at runtime"))
+	ErrOidcMappingEnvManaged                   = Classify(ErrConflict, errors.New("OIDC role mapping is managed by ARCANE_OIDC_ROLE_MAPPINGS and cannot be edited at runtime"))
 	ErrNoGlobalAdminRemains                    = Classify(ErrConflict, errors.New("At least one user must retain a global Admin role assignment"))
 	ErrProjectNotFound                         = Classify(ErrNotFound, errors.New("Project not found"))
 	ErrContainerRegistryNotFound               = Classify(ErrNotFound, errors.New("Container registry not found"))
@@ -139,7 +106,6 @@ var (
 	ErrComposeFileEnvInvalid                   = Classify(ErrValidation, errors.New("invalid COMPOSE_FILE selection"))
 	ErrProjectEnvUnreadable                    = Classify(ErrValidation, errors.New("project env file is not readable"))
 	ErrEnvironmentInvalidProxyTarget           = Classify(ErrBadRequest, errors.New("Invalid proxy target URL"))
-	ErrEnvironmentConnectionTestFailed         = Classify(ErrBadRequest, errors.New("Environment connection test failed"))
 	ErrUnsafeRemoteURL                         = Classify(ErrBadRequest, errors.New("Remote URL is not allowed"))
 	ErrImageScanInProgress                     = Classify(ErrConflict, errors.New("an image update check is already in progress"))
 	ErrVulnerabilityScanNotFound               = Classify(ErrNotFound, errors.New("Vulnerability scan not found"))
@@ -152,3 +118,37 @@ var (
 	ErrUploadChunkInvalid                      = Classify(ErrValidation, errors.New("Invalid upload chunk"))
 	ErrUploadSessionInvalid                    = Classify(ErrValidation, errors.New("Invalid upload session request"))
 )
+
+// Classify gives err a stable semantic identity without changing its message.
+func Classify(kind, err error) error {
+	if err == nil {
+		return nil
+	}
+	if kind == nil {
+		return err
+	}
+	return &classified{kind: kind, err: err}
+}
+
+func ClassifyDockerError(err error) error {
+	switch {
+	case errdefs.IsNotFound(err):
+		return Classify(ErrNotFound, err)
+	case errdefs.IsConflict(err):
+		return Classify(ErrConflict, err)
+	case errdefs.IsInvalidArgument(err):
+		return Classify(ErrBadRequest, err)
+	case errdefs.IsUnavailable(err), client.IsErrConnectionFailed(err):
+		return Classify(ErrUnavailable, err)
+	case errors.Is(err, context.DeadlineExceeded):
+		return Classify(ErrTimeout, err)
+	default:
+		return err
+	}
+}
+
+func (e *classified) Error() string { return e.err.Error() }
+
+func (e *classified) Unwrap() error { return e.err }
+
+func (e *classified) Is(target error) bool { return errors.Is(e.kind, target) }

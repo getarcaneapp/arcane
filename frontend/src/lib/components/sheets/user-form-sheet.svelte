@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+	import { untrack } from 'svelte';
 	import { z } from 'zod/v4';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
@@ -8,15 +10,14 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { User } from '#lib/types/auth.js';
+	import type { User, UserUpdate } from '#lib/types/auth.js';
 	import type { Role } from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
-	import { isValidUserEmail } from '#lib/utils/formatting.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
 	type RoleAssignmentInput = { roleId: string; environmentId?: string };
-	type UserSubmission = Omit<Partial<User>, 'roleAssignments'> & {
-		password?: string;
+	type UserSubmission = UserUpdate & {
 		roleAssignments?: RoleAssignmentInput[];
 	};
 	type UserFormSubmission = { user: UserSubmission; isEditMode: boolean; userId?: string };
@@ -34,7 +35,7 @@
 
 	let {
 		open = $bindable(false),
-		userToEdit = $bindable(),
+		userToEdit,
 		roles,
 		environments,
 		availableRoleAssignments = [],
@@ -47,6 +48,16 @@
 	let canEditUsername = $derived(!isEditMode || allowUsernameEdit);
 
 	let isOidcUser = $derived(!!userToEdit?.oidcSubjectId);
+	const passwordPlaceholder = $derived.by(() => {
+		if (isOidcUser) return m.users_password_managed_oidc();
+		if (isEditMode) return m.users_password_leave_empty();
+		return m.users_password_enter();
+	});
+	const passwordDescription = $derived.by(() => {
+		if (isOidcUser) return m.users_password_description_oidc();
+		if (isEditMode) return m.users_password_description_edit();
+		return m.users_password_description_create();
+	});
 	let oidcAssignments = $derived(userToEdit?.roleAssignments?.filter((a) => a.source === 'oidc') ?? []);
 	const userFieldMaxLength = 255;
 	const passwordMinLength = 8;
@@ -72,10 +83,7 @@
 				(value) => [...value].length <= userFieldMaxLength,
 				m.common_max_length({ field: m.common_display_name(), maxLength: userFieldMaxLength })
 			),
-		email: z
-			.string()
-			.trim()
-			.refine((value) => value === '' || isValidUserEmail(value), m.common_invalid_email()),
+		email: z.string().trim(),
 		roleAssignments: z
 			.array(
 				z.object({
@@ -88,16 +96,16 @@
 			.refine((assignments) => isOidcUser || assignments.length >= 1, m.users_role_assignments_required())
 	});
 
-	let formData = $derived({
-		username: userToEdit?.username || '',
-		password: '',
-		displayName: userToEdit?.displayName || '',
-		email: userToEdit?.email || '',
-		roleAssignments: availableRoleAssignments
-	});
-
-	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
+	const form = createForm<typeof formSchema>(
+		formSchema,
+		untrack(() => ({
+			username: userToEdit?.username || '',
+			password: '',
+			displayName: userToEdit?.displayName || '',
+			email: userToEdit?.email || '',
+			roleAssignments: availableRoleAssignments
+		}))
+	);
 
 	async function submitUser(data: UserFormSubmission) {
 		if (await onSubmit(data)) {
@@ -108,7 +116,7 @@
 	async function handleSubmit() {
 		// createForm trims strings for ordinary text fields. Passwords are opaque,
 		// so preserve exactly what the user entered after validating the raw value.
-		const password = inputs.password.value;
+		const password = form.inputs.password.value;
 		const data = form.validate();
 		if (!data) return;
 
@@ -122,39 +130,49 @@
 			return;
 		}
 
-		const userData: UserSubmission = {
-			roleAssignments: data.roleAssignments
-		};
-
-		// When editing, only send profile fields that changed so a stale form
-		// can't overwrite newer values
-		if (!isEditMode || data.displayName.trim() !== (userToEdit?.displayName ?? '').trim()) {
-			userData.displayName = data.displayName;
+		if (!userToEdit) {
+			await submitUser({
+				user: {
+					username: data.username,
+					password,
+					displayName: data.displayName || undefined,
+					email: data.email || undefined,
+					roleAssignments: data.roleAssignments
+				},
+				isEditMode
+			});
+			return;
 		}
 
-		if (data.email && (!isEditMode || data.email.trim() !== (userToEdit?.email ?? '').trim())) {
-			userData.email = data.email;
-		}
+		const profile = changedFields(
+			{
+				...userToEdit,
+				username: userToEdit.username.trim(),
+				displayName: userToEdit.displayName || null,
+				email: userToEdit.email || null
+			},
+			{
+				displayName: data.displayName || null,
+				email: data.email || null,
+				username: canEditUsername ? data.username : userToEdit.username.trim()
+			}
+		);
 
-		// Only include username when creating, or when editing changed it — an
-		// unchanged legacy username with @ would fail the backend pattern check
-		if (!isEditMode || (canEditUsername && data.username !== userToEdit?.username.trim())) {
-			userData.username = data.username;
-		}
-
-		// Only include password if it's provided (for create) or if editing and password is not empty
-		if (!isEditMode || (isEditMode && password)) {
-			userData.password = password;
-		}
-
-		await submitUser({ user: userData, isEditMode, userId: userToEdit?.id });
+		await submitUser({
+			user: {
+				...profile,
+				...(password ? { password } : {}),
+				roleAssignments: data.roleAssignments
+			},
+			isEditMode,
+			userId: userToEdit.id
+		});
 	}
 
 	function handleOpenChange(newOpenState: boolean) {
 		open = newOpenState;
 		if (!newOpenState) {
 			form.reset();
-			userToEdit = null;
 		}
 	}
 </script>
@@ -176,23 +194,15 @@
 				type="text"
 				description={m.users_username_description()}
 				disabled={!canEditUsername || isOidcUser}
-				bind:input={inputs.username}
+				bind:input={form.inputs.username}
 			/>
 			<FormInput
 				label={isEditMode ? m.common_password() : m.users_password_required_label()}
 				type="password"
-				placeholder={isOidcUser
-					? m.users_password_managed_oidc()
-					: isEditMode
-						? m.users_password_leave_empty()
-						: m.users_password_enter()}
-				description={isOidcUser
-					? m.users_password_description_oidc()
-					: isEditMode
-						? m.users_password_description_edit()
-						: m.users_password_description_create()}
+				placeholder={passwordPlaceholder}
+				description={passwordDescription}
 				disabled={isOidcUser}
-				bind:input={inputs.password}
+				bind:input={form.inputs.password}
 			/>
 			<FormInput
 				label={m.common_display_name()}
@@ -200,7 +210,7 @@
 				placeholder={m.users_display_name_placeholder()}
 				description={m.users_display_name_description()}
 				disabled={isOidcUser}
-				bind:input={inputs.displayName}
+				bind:input={form.inputs.displayName}
 			/>
 			<FormInput
 				label={m.common_email()}
@@ -209,7 +219,7 @@
 				description={m.users_email_description()}
 				autocomplete="email"
 				disabled={isOidcUser}
-				bind:input={inputs.email}
+				bind:input={form.inputs.email}
 			/>
 			<IfPermitted adminOnly>
 				<div>
@@ -219,7 +229,9 @@
 						<div class="mb-3">
 							<p class="text-xs text-muted-foreground">
 								{m.oidc_synced_role_assignments()}
-								<a href="/settings/authentication" class="ml-1 text-primary underline">{m.users_role_assignments_oidc_link()}</a>
+								<a href={resolve('/(app)/system/authentication')} class="ml-1 text-primary underline"
+									>{m.users_role_assignments_oidc_link()}</a
+								>
 							</p>
 							<div class="mt-2 flex flex-wrap gap-2">
 								{#each oidcAssignments as assignment (`${assignment.roleId}-${assignment.environmentId ?? 'global'}`)}
@@ -232,9 +244,9 @@
 							</div>
 						</div>
 					{/if}
-					<RoleAssignmentsEditor bind:assignments={inputs.roleAssignments.value} {roles} {environments} />
-					{#if inputs.roleAssignments.error}
-						<p class="mt-1 text-xs text-destructive">{inputs.roleAssignments.error}</p>
+					<RoleAssignmentsEditor bind:assignments={form.inputs.roleAssignments.value} {roles} {environments} />
+					{#if form.inputs.roleAssignments.error}
+						<p class="mt-1 text-xs text-destructive">{form.inputs.roleAssignments.error}</p>
 					{/if}
 				</div>
 			</IfPermitted>

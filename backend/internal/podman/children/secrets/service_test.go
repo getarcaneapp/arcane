@@ -7,12 +7,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/podman"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/podman"
+	"getarcane.dev/types/v3"
 )
 
 func newTestService(t *testing.T, handler http.HandlerFunc) *Service {
@@ -49,7 +49,7 @@ func TestUpdateReplacesSecretAndReturnsInspect(t *testing.T) {
 		}
 	})
 
-	secret, err := svc.Update(t.Context(), "db-pass", podmantypes.SecretUpdateRequest{
+	secret, err := svc.Update(t.Context(), "db-pass", types.PodmanSecretUpdateRequest{
 		Data:   "rotated",
 		Driver: "file",
 		Labels: map[string]string{"tier": "db"},

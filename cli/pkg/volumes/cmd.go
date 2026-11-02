@@ -7,14 +7,38 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/spf13/cobra"
-	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"kit.getarcane.app"
+
+	"getarcane.dev/cli/v3/internal/cmdutil"
+	"getarcane.dev/cli/v3/internal/output"
+	clitypes "getarcane.dev/cli/v3/internal/types"
+	"getarcane.dev/types/v3"
 )
+
+var volumeRef = cmdutil.ResourceRef[types.Volume, types.Volume]{
+	EnvironmentScoped: true,
+	Singular:          "volume",
+	Plural:            "volumes",
+	IDHint:            "the volume name",
+	ListCmd:           "arcane volumes list",
+	GetPath:           clitypes.Volume,
+	IdentifierOf:      func(data types.Volume) string { return data.Name },
+	ListPath:          clitypes.Volumes,
+	Matches: func(item types.Volume, identifierLower, original string) bool {
+		idLower := strings.ToLower(item.ID)
+		return strings.EqualFold(item.Name, original) || strings.Contains(strings.ToLower(item.Name), identifierLower) ||
+			idLower == identifierLower || (len(identifierLower) >= 4 && strings.HasPrefix(idLower, identifierLower))
+	},
+	Label: func(match types.Volume) string {
+		if match.Driver != "" {
+			return fmt.Sprintf("%s (%s)", match.Name, match.Driver)
+		}
+		return match.Name
+	},
+	Promote: func(match types.Volume) *types.Volume { return &match },
+}
 
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
@@ -73,9 +97,9 @@ func newListCmd() *cobra.Command {
 				query.Set("include", "true")
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[volume.Volume]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.Volume]{
 				Resource: "volumes",
-				Endpoint: types.Volumes(c.EnvID()),
+				Endpoint: clitypes.Volumes(c.EnvID()),
 				Params: cmdutil.ListParams{
 					Resource:        "volumes",
 					Limit:           opts.limitFlag,
@@ -85,7 +109,7 @@ func newListCmd() *cobra.Command {
 				},
 				Query:   query,
 				Headers: []string{"NAME", "DRIVER", "MOUNTPOINT", "CREATED", "IN USE"},
-				Row: func(vol volume.Volume) []string {
+				Row: func(vol types.Volume) []string {
 					return []string{
 						vol.Name,
 						vol.Driver,
@@ -170,7 +194,7 @@ func newDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.forceFlag,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete volume %s?", resolved.Name),
-				Path:           cmdutil.AppendQuery(types.Volume(c.EnvID(), resolved.Name), url.Values{"force": []string{strconv.FormatBool(opts.forceFlag)}}),
+				Path:           cmdutil.AppendQuery(clitypes.Volume(c.EnvID(), resolved.Name), url.Values{"force": []string{strconv.FormatBool(opts.forceFlag)}}),
 				FailureMessage: "failed to delete volume",
 				SuccessMessage: fmt.Sprintf("Volume %s deleted successfully", resolved.Name),
 			})
@@ -193,7 +217,7 @@ func newCountsCmd() *cobra.Command {
 			}
 			return cmdutil.Run(cmd, c, cmdutil.Spec[any]{
 				Method:         http.MethodGet,
-				Path:           types.VolumesCounts(c.EnvID()),
+				Path:           clitypes.VolumesCounts(c.EnvID()),
 				FailureMessage: "failed to get volume counts",
 				Render: func(data any) error {
 					output.Header("Volume Usage Counts")
@@ -216,7 +240,7 @@ func newPruneCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, opts.forceFlag, "Are you sure you want to prune unused volumes?")
+			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: "Are you sure you want to prune unused volumes?", Force: opts.forceFlag})
 			if confirmationErr != nil || !confirmed {
 				return confirmationErr
 			}
@@ -228,14 +252,14 @@ func newPruneCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[any]{
 				Method:         http.MethodPost,
-				Path:           types.VolumesPrune(c.EnvID()),
+				Path:           clitypes.VolumesPrune(c.EnvID()),
 				FailureMessage: "failed to prune volumes",
 				Render:         func(any) error { output.Success("%s", "Volumes pruned successfully"); return nil },
 			})
 		},
 	}
 	cmd.Flags().BoolVarP(&opts.forceFlag, "force", "f", false, "Force prune without confirmation")
-	cmdutil.SetScope(cmdutil.ScopeFleet, cmd)
+	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	return cmd
 }
 
@@ -252,7 +276,7 @@ func newSizesCmd() *cobra.Command {
 			}
 			return cmdutil.Run(cmd, c, cmdutil.Spec[any]{
 				Method:         http.MethodGet,
-				Path:           types.VolumesSizes(c.EnvID()),
+				Path:           clitypes.VolumesSizes(c.EnvID()),
 				FailureMessage: "failed to get volume sizes",
 				Render: func(data any) error {
 					output.Header("Volume Sizes")
@@ -285,7 +309,7 @@ func newUsageCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[any]{
 				Method:         http.MethodGet,
-				Path:           types.VolumeUsage(c.EnvID(), resolved.Name),
+				Path:           clitypes.VolumeUsage(c.EnvID(), resolved.Name),
 				FailureMessage: "failed to get volume usage",
 				Render: func(data any) error {
 					output.Header("Volume Usage: %s", resolved.Name)
@@ -336,17 +360,17 @@ func newCreateCmd() *cobra.Command {
 				}
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[volume.Volume]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Volume]{
 				Method: http.MethodPost,
-				Path:   types.Volumes(c.EnvID()),
-				Body: volume.Create{
-					Name:       opts.volumeCreateName,
-					Driver:     opts.volumeCreateDriver,
-					DriverOpts: driverOpts,
-					Labels:     labels,
+				Path:   clitypes.Volumes(c.EnvID()),
+				Body: types.Volume{
+					Name:    opts.volumeCreateName,
+					Driver:  opts.volumeCreateDriver,
+					Options: driverOpts,
+					Labels:  labels,
 				},
 				FailureMessage: "failed to create volume",
-				Render: func(data volume.Volume) error {
+				Render: func(data types.Volume) error {
 					output.Success("Volume %s created successfully", data.Name)
 					output.KeyValue("Name", data.Name)
 					output.KeyValue("Driver", data.Driver)
@@ -363,27 +387,4 @@ func newCreateCmd() *cobra.Command {
 	_ = cmd.MarkFlagRequired("name")
 	cmdutil.SetScope(cmdutil.ScopeDestination, cmd)
 	return cmd
-}
-
-var volumeRef = cmdutil.ResourceRef[volume.Volume, volume.Volume]{
-	EnvironmentScoped: true,
-	Singular:          "volume",
-	Plural:            "volumes",
-	IDHint:            "the volume name",
-	ListCmd:           "arcane volumes list",
-	GetPath:           types.Volume,
-	IdentifierOf:      func(data volume.Volume) string { return data.Name },
-	ListPath:          types.Volumes,
-	Matches: func(item volume.Volume, identifierLower, original string) bool {
-		idLower := strings.ToLower(item.ID)
-		return strings.EqualFold(item.Name, original) || strings.Contains(strings.ToLower(item.Name), identifierLower) ||
-			idLower == identifierLower || (len(identifierLower) >= 4 && strings.HasPrefix(idLower, identifierLower))
-	},
-	Label: func(match volume.Volume) string {
-		if match.Driver != "" {
-			return fmt.Sprintf("%s (%s)", match.Name, match.Driver)
-		}
-		return match.Name
-	},
-	Promote: func(match volume.Volume) *volume.Volume { return &match },
 }

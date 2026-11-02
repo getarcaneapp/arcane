@@ -10,7 +10,7 @@ mod dev 'just/dev.just'
 [group('build')]
 mod build 'just/build.just'
 
-# Run tests: e2e, backend, cli, types, all
+# Run tests: e2e, backend, cli, all
 [group('checks')]
 mod test 'just/test.just'
 
@@ -46,11 +46,11 @@ mod docs 'just/docs.just'
 [group('generation')]
 mod i18n 'just/i18n.just'
 
-# Benchmark edge transports: edge [count] [benchtime], memory [profile] [benchtime]
+# Benchmark agent tunnel transports: tunnel [count] [benchtime], memory [profile] [benchtime]
 [group('performance')]
 mod bench 'just/bench.just'
 
-# Compute the next image version: version [github-output]
+# Release tooling: version [github-output] [next|beta]
 [group('release')]
 mod release 'just/release.just'
 

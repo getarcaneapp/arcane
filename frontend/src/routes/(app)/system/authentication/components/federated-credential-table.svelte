@@ -1,0 +1,240 @@
+<script lang="ts">
+	import { useQueryClient } from '@tanstack/svelte-query';
+	import { toast } from 'svelte-sonner';
+
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table/index.js';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { LockIcon, TrashIcon, EditIcon } from '#lib/icons/index.js';
+	import * as m from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { federatedCredentialService } from '#lib/services/federated-credential-service.js';
+	import type { FederatedCredential } from '#lib/types/auth.js';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { isGlobalAdmin } from '#lib/utils/auth.js';
+	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { formatOptionalDateTime, isPastDate } from '#lib/utils/formatting.js';
+
+	let {
+		federatedCredentials,
+		selectedIds = $bindable(),
+		requestOptions = $bindable(),
+		onRetry,
+		onEditFederatedCredential
+	}: {
+		federatedCredentials: Paginated<FederatedCredential>;
+		selectedIds: string[];
+		requestOptions: SearchPaginationSortRequest;
+		onRetry: () => Promise<unknown>;
+		onEditFederatedCredential: (credential: FederatedCredential) => void;
+	} = $props();
+
+	const queryClient = useQueryClient();
+
+	const isLoading = $state({
+		removing: false
+	});
+	const canManageFederatedCredentials = $derived(isGlobalAdmin());
+
+	function getStatusText(credential: FederatedCredential): string {
+		if (isPastDate(credential.expiresAt)) return m.expired();
+		if (!credential.enabled) return m.common_disabled();
+		return m.common_enabled();
+	}
+
+	function getStatusVariant(credential: FederatedCredential): 'red' | 'green' | 'gray' {
+		if (isPastDate(credential.expiresAt)) return 'red';
+		if (!credential.enabled) return 'gray';
+		return 'green';
+	}
+
+	function getScope(credential: FederatedCredential): string {
+		return credential.environmentName || m.global();
+	}
+
+	function getRoleScope(credential: FederatedCredential): string {
+		const role = credential.roleName || credential.roleId;
+		return `${role} / ${getScope(credential)}`;
+	}
+
+	function handleDeleteSelected() {
+		if (selectedIds.length === 0) return;
+		const ids = [...selectedIds];
+
+		bulkConfirmAndRun({
+			ids,
+			title: m.federated_credential_delete_selected_title({ count: ids.length }),
+			message: m.federated_credential_delete_selected_message({ count: ids.length }),
+			confirmLabel: m.common_delete(),
+			destructive: true,
+			run: (credentialId) => federatedCredentialService.delete(credentialId),
+			messages: {
+				success: (count) => m.federated_credential_bulk_delete_success({ count }),
+				partial: (success, total, failed) =>
+					m.common_bulk_delete_partial({ success, total, failed, resource: m.federated_credential_page_title() }),
+				failure: () => m.federated_credential_bulk_delete_failed({ count: ids.length })
+			},
+			setLoading: (loading) => (isLoading.removing = loading),
+			onComplete: async ({ success }) => {
+				if (success > 0) await queryClient.invalidateQueries({ queryKey: queryKeys.federatedCredentials.all });
+			},
+			clearSelection: () => (selectedIds = []),
+			sequential: true
+		});
+	}
+
+	function handleDeleteFederatedCredential(credentialId: string, name: string) {
+		const safeName = name?.trim() || m.common_unknown();
+		confirmAndRun({
+			title: m.federated_credential_delete_title({ name: safeName }),
+			message: m.federated_credential_delete_message({ name: safeName }),
+			confirmLabel: m.common_delete(),
+			destructive: true,
+			setLoading: (loading) => (isLoading.removing = loading),
+			run: () => federatedCredentialService.delete(credentialId),
+			failureMessage: m.federated_credential_delete_failed({ name: safeName }),
+			onSuccess: async () => {
+				toast.success(m.federated_credential_delete_success({ name: safeName }));
+				await queryClient.invalidateQueries({ queryKey: queryKeys.federatedCredentials.all });
+			}
+		});
+	}
+
+	const columns = [
+		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
+		{ accessorKey: 'issuerUrl', title: m.federated_credential_issuer_label(), sortable: true, cell: IssuerCell },
+		{ accessorKey: 'subjectMatch', title: m.federated_credential_subject_match_label(), sortable: true, cell: SubjectCell },
+		{ accessorKey: 'roleId', title: m.federated_credential_role_scope_column(), sortable: false, cell: RoleScopeCell },
+		{ accessorKey: 'enabled', title: m.common_status(), sortable: true, cell: StatusCell },
+		{ accessorKey: 'lastUsedAt', title: m.last_used(), sortable: true, cell: LastUsedCell }
+	] satisfies ColumnSpec<FederatedCredential>[];
+
+	const mobileFields = [
+		{ id: 'issuerUrl', label: m.federated_credential_issuer_label(), defaultVisible: true },
+		{ id: 'subjectMatch', label: m.federated_credential_subject_match_label(), defaultVisible: true },
+		{ id: 'roleScope', label: m.federated_credential_role_scope_column(), defaultVisible: true },
+		{ id: 'lastUsedAt', label: m.last_used(), defaultVisible: true }
+	];
+
+	const bulkActions = $derived.by<BulkAction[]>(() => {
+		if (!canManageFederatedCredentials) return [];
+		return [
+			{
+				id: 'remove',
+				label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
+				action: 'remove',
+				onclick: handleDeleteSelected,
+				loading: isLoading.removing,
+				disabled: isLoading.removing || selectedIds.length === 0,
+				icon: TrashIcon
+			}
+		];
+	});
+
+	let mobileFieldVisibility = $state<Record<string, boolean>>({});
+</script>
+
+{#snippet NameCell({ item }: { item: FederatedCredential })}
+	<span class="font-medium">{item.name}</span>
+{/snippet}
+
+{#snippet IssuerCell({ item }: { item: FederatedCredential })}
+	<span class="max-w-72 truncate text-muted-foreground">{item.issuerUrl}</span>
+{/snippet}
+
+{#snippet SubjectCell({ item }: { item: FederatedCredential })}
+	<div class="flex flex-col gap-0.5">
+		<span class="font-mono text-xs">{item.subjectMatch}</span>
+		<span class="text-xs text-muted-foreground">{item.subjectClaim} / {item.matchType}</span>
+	</div>
+{/snippet}
+
+{#snippet RoleScopeCell({ item }: { item: FederatedCredential })}
+	<span>{getRoleScope(item)}</span>
+{/snippet}
+
+{#snippet StatusCell({ item }: { item: FederatedCredential })}
+	<Badge variant={getStatusVariant(item)} minWidth="20">{getStatusText(item)}</Badge>
+{/snippet}
+
+{#snippet LastUsedCell({ item }: { item: FederatedCredential })}
+	{formatOptionalDateTime(item.lastUsedAt)}
+{/snippet}
+
+{#snippet FederatedCredentialMobileCardSnippet({
+	item,
+	mobileFieldVisibility
+}: {
+	item: FederatedCredential;
+	mobileFieldVisibility: MobileFieldVisibility;
+})}
+	<UniversalMobileCard
+		{item}
+		icon={{ component: LockIcon, variant: 'blue' }}
+		title={(item: FederatedCredential) => item.name}
+		subtitle={(item: FederatedCredential) => ((mobileFieldVisibility['issuerUrl'] ?? true) ? item.issuerUrl : null)}
+		badges={[
+			(item: FederatedCredential) => ({
+				variant: getStatusVariant(item),
+				text: getStatusText(item)
+			})
+		]}
+		fields={[
+			{
+				label: m.federated_credential_subject_match_label(),
+				getValue: (item: FederatedCredential) => item.subjectMatch,
+				icon: LockIcon,
+				iconVariant: 'gray' as const,
+				show: mobileFieldVisibility['subjectMatch'] ?? true
+			},
+			{
+				label: m.federated_credential_role_scope_column(),
+				getValue: (item: FederatedCredential) => getRoleScope(item),
+				icon: LockIcon,
+				iconVariant: 'gray' as const,
+				show: mobileFieldVisibility['roleScope'] ?? true
+			},
+			{
+				label: m.last_used(),
+				getValue: (item: FederatedCredential) => formatOptionalDateTime(item.lastUsedAt),
+				icon: LockIcon,
+				iconVariant: 'gray' as const,
+				show: mobileFieldVisibility['lastUsedAt'] ?? true
+			}
+		]}
+		rowActions={RowActions}
+	/>
+{/snippet}
+
+{#snippet RowActions({ item }: { item: FederatedCredential })}
+	{#if canManageFederatedCredentials}
+		<RowActionsMenu>
+			<DropdownMenu.Item onclick={() => onEditFederatedCredential(item)}>
+				<EditIcon class="size-4" />
+				{m.common_edit()}
+			</DropdownMenu.Item>
+			<DropdownMenu.Separator />
+			<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteFederatedCredential(item.id, item.name)}>
+				<TrashIcon class="size-4" />
+				{m.common_delete()}
+			</DropdownMenu.Item>
+		</RowActionsMenu>
+	{/if}
+{/snippet}
+
+<ArcaneTable
+	persistKey="arcane-federated-credentials-table"
+	items={federatedCredentials}
+	bind:requestOptions
+	bind:selectedIds
+	bind:mobileFieldVisibility
+	{bulkActions}
+	{onRetry}
+	{columns}
+	{mobileFields}
+	rowActions={RowActions}
+	mobileCard={FederatedCredentialMobileCardSnippet}
+/>

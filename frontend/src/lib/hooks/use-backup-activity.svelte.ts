@@ -5,7 +5,7 @@ import { queryKeys } from '#lib/query/query-keys.js';
 import { activityService } from '#lib/services/activity-service.js';
 import { STREAM_CHANNEL_ACTIVITIES } from '#lib/services/stream-service.js';
 import { clientStream } from '#lib/stores/client-stream.svelte.js';
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import type { Activity, ActivityStreamEvent } from '#lib/types/activity.type.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -21,8 +21,6 @@ export function useBackupActivity(
 	const activeQuery = createQuery(() => {
 		const environmentId = getEnvironmentId();
 		const discover = getDiscovery();
-		// Discovery has no activity stream; otherwise idle polling only runs while the stream is down.
-		const poll = !!discover || !clientStream.streamConnected;
 		return {
 			queryKey,
 			queryFn: async ({ signal }): Promise<string[]> => {
@@ -32,7 +30,7 @@ export function useBackupActivity(
 				const activities: Activity[] = [];
 				for (const status of ['queued', 'running']) {
 					let page = 1;
-					let totalPages = 1;
+					let hasNextPage = false;
 					do {
 						const result = await activityService.getActivities(
 							{ pagination: { page, limit: 100 }, filters: { status } },
@@ -40,14 +38,12 @@ export function useBackupActivity(
 						);
 						signal.throwIfAborted();
 						activities.push(...result.data);
-						totalPages = result.pagination.totalPages;
+						hasNextPage = result.pagination.hasNextPage ?? false;
 						page++;
-					} while (page <= totalPages);
+					} while (hasNextPage);
 				}
 				return activities.filter(matches).map((activity) => activity.id);
 			},
-			// A running backup keeps polling as a fallback for missed stream events.
-			refetchInterval: (query) => (poll || query.state.data?.length ? 5000 : false),
 			staleTime: 0
 		};
 	});
@@ -74,14 +70,14 @@ export function useBackupActivity(
 			onEvent(payload) {
 				const event = payload as ActivityStreamEvent;
 				const environmentId = getEnvironmentId();
-				if ((event.environmentId || '0') !== environmentId) return;
+				if ((event.environmentId || LOCAL_DOCKER_ENVIRONMENT_ID) !== environmentId) return;
 				let activities: Activity[] = [];
 				if (event.type === 'snapshot') activities = event.activities ?? [];
 				else if (event.activity) activities = [event.activity];
 				const relevant = activities.some(
 					(activity) =>
-						(activity.sourceEnvironmentId || activity.environmentId || event.environmentId || '0') === environmentId &&
-						matches(activity)
+						(activity.sourceEnvironmentId || activity.environmentId || event.environmentId || LOCAL_DOCKER_ENVIRONMENT_ID) ===
+							environmentId && matches(activity)
 				);
 				const activeSnapshot = event.type === 'snapshot' && activeIds.length > 0;
 				const activeMessage = event.type === 'message' && activeIds.includes(event.message?.activityId ?? event.activityId ?? '');

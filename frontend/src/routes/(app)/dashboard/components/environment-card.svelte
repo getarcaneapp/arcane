@@ -1,13 +1,10 @@
 <script lang="ts">
-	import type { ActionButton } from '#lib/components/action-button-group/index.js';
-	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { ActionButtonGroup, type ActionButton } from '#lib/components/action-button-group/index.js';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import { Badge, badgeVariants } from '#lib/components/ui/badge/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
-	import { CpuIcon, EnvironmentsIcon, GpuIcon, MemoryStickIcon, VolumesIcon } from '#lib/icons/index.js';
+	import { CpuIcon, GpuIcon, MemoryStickIcon, VolumesIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
 	import type { DashboardEnvironmentOverview, DashboardLiveStatsStatus, SystemStats } from '#lib/types/shared.js';
@@ -21,6 +18,8 @@
 		getCpuMetric,
 		getCpuMetricLabel,
 		getDiskMetric,
+		getAgentConnectionStateLabel,
+		getAgentTransportLabel,
 		getGpuMetric,
 		getGpuMetricLabel,
 		getMemoryMetric,
@@ -33,11 +32,9 @@
 	// These bindings target record entries that start undefined; Svelte rejects a bindable fallback here.
 	let {
 		overview,
-		isCurrent,
 		systemStats,
 		liveStatsStatus,
-		snapshotLoading,
-		useButton,
+		countsLoading,
 		menuButtons,
 		debugUpgrade = false,
 		debugVersionInfo,
@@ -47,11 +44,9 @@
 		onRefreshRequested
 	}: {
 		overview: DashboardEnvironmentOverview;
-		isCurrent: boolean;
 		systemStats: SystemStats | null;
 		liveStatsStatus: DashboardLiveStatsStatus;
-		snapshotLoading: boolean;
-		useButton?: ActionButton;
+		countsLoading: boolean;
 		menuButtons: ActionButton[];
 		debugUpgrade?: boolean;
 		debugVersionInfo: AppVersionInformation;
@@ -72,7 +67,7 @@
 	const gpuMetric = $derived(getGpuMetric(systemStats));
 </script>
 
-<Card.Root variant="outlined" interactive selected={isCurrent} class="@container overflow-hidden">
+<Card.Root interactive class="@container overflow-hidden">
 	<Card.Content>
 		<div class="flex flex-col gap-4">
 			<div class="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:items-start sm:justify-between">
@@ -120,61 +115,27 @@
 									</Badge>
 								{/if}
 							</div>
-							{#if versionInfo.updateAvailable || debugUpgrade}
-								<EnvironmentUpgradeAction
-									{environment}
-									{versionInfo}
-									{canUpgrade}
-									debug={debugUpgrade}
-									{onRefreshRequested}
-									render="dialog"
-									bind:open={upgradeOpen}
-									bind:upgrading={upgradeLoading}
-								/>
-							{/if}
 						{/if}
 					</div>
 
 					<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-muted-foreground/70">
-						<span class="font-mono">{environment.apiUrl}</span>
-						<span>•</span>
+						{#if environment.id !== '0'}
+							<span>{getAgentTransportLabel(environment)}</span>
+							<span>•</span>
+							<span>{getAgentConnectionStateLabel(environment)}</span>
+							<span>•</span>
+						{/if}
 						<span title={activity.title}>{activity.label}: {activity.value}</span>
 					</div>
 				</div>
 
 				<div class="flex shrink-0 items-center gap-1 pt-1 sm:pt-0">
-					{#if useButton}
-						<ArcaneButton
-							action="base"
-							size="sm"
-							tone="ghost"
-							icon={EnvironmentsIcon}
-							customLabel={isCurrent ? m.common_current() : useButton.label}
-							loading={useButton.loading}
-							disabled={useButton.disabled}
-							onclick={useButton.onclick}
-							class={cn(isCurrent && 'disabled:opacity-100 [&_svg]:text-primary!')}
-						/>
-					{/if}
-					<RowActionsMenu>
-						{#each menuButtons as button (button.id)}
-							<DropdownMenu.Item
-								disabled={!!(button.disabled || button.loading)}
-								onclick={button.onclick}
-								variant={button.action === 'prune' ? 'destructive' : 'default'}
-							>
-								{#if button.icon}
-									<button.icon class="size-4" />
-								{/if}
-								{button.label}
-							</DropdownMenu.Item>
-						{/each}
-					</RowActionsMenu>
+					<ActionButtonGroup buttons={menuButtons} size="sm" />
 				</div>
 			</div>
 
 			{#if shouldLoadEnvironment(environment) || isEnvironmentOnline(environment)}
-				{#if snapshotLoading}
+				{#if countsLoading}
 					<Skeleton class="h-4 w-64" />
 				{:else}
 					<div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
@@ -198,7 +159,7 @@
 						{/if}
 						<span class="text-border">·</span>
 						<span>
-							<span class="font-semibold text-foreground tabular-nums">{overview.actionItems.items.length}</span>
+							<span class="font-semibold text-foreground tabular-nums">{overview.actionItemCount}</span>
 							{String(m.dashboard_action_items_title()).toLowerCase()}
 						</span>
 					</div>
@@ -277,9 +238,9 @@
 				</div>
 			{/if}
 
-			{#if overview.snapshotError}
+			{#if overview.error}
 				<div class="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-					{m.dashboard_all_summary_unavailable({ error: overview.snapshotError })}
+					{m.dashboard_all_summary_unavailable({ error: overview.error })}
 				</div>
 			{/if}
 		</div>

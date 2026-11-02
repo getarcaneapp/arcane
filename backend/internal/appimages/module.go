@@ -15,7 +15,7 @@ func RegisterAppImages(api huma.API, appImagesService *ApplicationImagesService)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-logo",
 		Method:      http.MethodGet,
-		Path:        "/app-images/logo",
+		Path:        "/app/images/logo",
 		Summary:     "Get application logo",
 		Description: "Get the application logo image",
 		Tags:        []string{"Application Images"},
@@ -25,7 +25,7 @@ func RegisterAppImages(api huma.API, appImagesService *ApplicationImagesService)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-favicon",
 		Method:      http.MethodGet,
-		Path:        "/app-images/favicon",
+		Path:        "/app/images/favicon",
 		Summary:     "Get application favicon",
 		Description: "Get the application favicon image",
 		Tags:        []string{"Application Images"},
@@ -35,7 +35,7 @@ func RegisterAppImages(api huma.API, appImagesService *ApplicationImagesService)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-default-profile",
 		Method:      http.MethodGet,
-		Path:        "/app-images/profile",
+		Path:        "/app/images/profile",
 		Summary:     "Get default profile image",
 		Description: "Get the default user profile image",
 		Tags:        []string{"Application Images"},
@@ -45,7 +45,7 @@ func RegisterAppImages(api huma.API, appImagesService *ApplicationImagesService)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-pwa-icon",
 		Method:      http.MethodGet,
-		Path:        "/app-images/pwa/{filename}",
+		Path:        "/app/images/pwa/{filename}",
 		Summary:     "Get PWA icon",
 		Description: "Get a Progressive Web App icon image",
 		Tags:        []string{"Application Images"},

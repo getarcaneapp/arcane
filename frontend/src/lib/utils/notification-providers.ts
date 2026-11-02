@@ -3,6 +3,7 @@ import {
 	NOTIFICATION_PROVIDER_KEYS,
 	type NotificationProviderKey,
 	type NotificationSettings,
+	type NotificationSettingsUpsert,
 	type ProviderFormValuesMap,
 	discordSettingsToFormValues,
 	emailSettingsToFormValues,
@@ -36,7 +37,7 @@ export type NotificationProviderDefinition<K extends NotificationProviderKey> = 
 	label: () => string;
 	description: () => string;
 	fromSettings: (settings?: NotificationSettings) => ProviderFormValuesMap[K];
-	toSettings: (values: ProviderFormValuesMap[K]) => NotificationSettings;
+	toSettings: (values: ProviderFormValuesMap[K]) => NotificationSettingsUpsert;
 };
 
 type NotificationProviderDefinitions = {
@@ -173,6 +174,6 @@ export function getNotificationProviderDefinition<K extends NotificationProvider
 export function notificationProviderFormValuesToSettings<K extends NotificationProviderKey>(
 	provider: K,
 	values: ProviderFormValuesMap[K]
-): NotificationSettings {
+): NotificationSettingsUpsert {
 	return getNotificationProviderDefinition(provider).toSettings(values);
 }

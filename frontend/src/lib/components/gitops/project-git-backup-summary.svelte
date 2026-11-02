@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -31,6 +32,7 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { confirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { environmentHref } from '#lib/utils/environments.js';
 	import { formatDateTimeShort, formatRelativeTime } from '#lib/utils/formatting.js';
 	import { syncedPaths } from '#lib/utils/gitops.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -89,7 +91,7 @@
 	const backupState = $derived<GitOpsBackupState>(sync?.backupState ?? 'never');
 	const needsAttention = $derived(backupState === 'needs_attention');
 	const showError = $derived(!!sync?.lastSyncError && (backupState === 'failed' || needsAttention));
-	const createHref = $derived(`/environments/${environmentId}/gitops?action=create&mode=backup&projectId=${projectId}`);
+	const createHref = $derived(environmentHref(`/gitops?action=create&mode=backup&projectId=${projectId}`, environmentId));
 	const destination = $derived.by(() => {
 		if (!sync) return '';
 		const repository = sync.repository?.name ?? sync.repositoryId;
@@ -184,7 +186,7 @@
 {:else}
 	{@const StateIcon = stateVisual.icon}
 	<div class="space-y-4">
-		<div class="flex flex-wrap items-center gap-4 rounded-xl border border-border/70 bg-card/60 p-4 backdrop-blur-md">
+		<div class="flex flex-wrap items-center gap-4 rounded-xl border border-border/70 bg-card/10 p-4">
 			<div class={cn('flex size-12 shrink-0 items-center justify-center rounded-full ring-1 ring-inset', stateVisual.bg)}>
 				<StateIcon class={cn('size-6', stateVisual.color)} />
 			</div>
@@ -220,7 +222,10 @@
 						</DropdownMenu.Item>
 
 						{#if canEdit}
-							<DropdownMenu.Item onclick={() => goto(`/environments/${environmentId}/gitops?action=edit&syncId=${sync.id}`)}>
+							<DropdownMenu.Item
+								onclick={() =>
+									goto(resolve(`/(app)/gitops?action=edit&syncId=${sync.id}&env=${encodeURIComponent(environmentId)}`))}
+							>
 								<SettingsIcon class="size-4" />
 								{m.settings()}
 							</DropdownMenu.Item>
@@ -253,7 +258,7 @@
 		{/if}
 
 		<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-			<div class="hover-lift flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/80 p-4">
+			<div class="hover-lift flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/10 p-4">
 				<div class="space-y-2">
 					<p class="text-sm font-medium tracking-wide text-muted-foreground">{m.files_in_last_backup()}</p>
 					<h3 class="text-2xl font-semibold tracking-tight tabular-nums">{snapshotFiles}</h3>
@@ -261,7 +266,11 @@
 						<p class="text-xs text-muted-foreground">{m.file_limit({ limit: fileLimit })}</p>
 					{/if}
 				</div>
-				<MetricRing variant="backup" percent={filePercent} size={44} stroke={5} />
+				<MetricRing variant="backup" percent={filePercent} size={44} stroke={5}>
+					{#if fileLimit > 0}
+						<span class="text-2xs font-medium text-foreground tabular-nums">{Math.round(filePercent)}%</span>
+					{/if}
+				</MetricRing>
 			</div>
 			<StatCard
 				title={m.last_backup()}
@@ -287,7 +296,7 @@
 		</div>
 
 		{#if canBackup}
-			<div class="rounded-xl border border-border/70 bg-card/80">
+			<div class="rounded-xl border border-border/70 bg-card/10">
 				<div class="flex items-center justify-between gap-2 border-b border-border/50 px-4 py-3">
 					<h3 class="flex items-center gap-2 text-sm font-medium">
 						<ClockIcon class="size-4" />
@@ -316,7 +325,7 @@
 					<ul class="divide-y divide-border/50">
 						{#each recentEntries as entry (entry.commit)}
 							<li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm">
-								<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{entry.commit.slice(0, 7)}</code>
+								<code class="rounded-xl bg-muted px-1.5 py-0.5 font-mono text-xs">{entry.commit.slice(0, 7)}</code>
 								<span class="min-w-0 flex-1 truncate font-medium">{firstLine(entry.message)}</span>
 								<span class="flex items-center gap-1 text-xs text-muted-foreground">
 									<FileTextIcon class="size-3.5" />

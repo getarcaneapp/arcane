@@ -2,19 +2,31 @@ package services
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/containerd/errdefs"
+	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/api/types/system"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"kit.getarcane.app/docker/streams/bus"
+
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
 func newSwarmTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
@@ -35,14 +47,14 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 	maxConcurrent := uint64(2)
 
 	tests := []struct {
-		name       string
-		mode       swarm.ServiceMode
 		assertMode func(*testing.T, swarm.ServiceMode)
+		name       string
+		modeJSON   string
 		wantErr    bool
 	}{
 		{
-			name: "replicated",
-			mode: swarm.ServiceMode{Replicated: &swarm.ReplicatedService{}},
+			name:     "replicated",
+			modeJSON: `{"Replicated":{}}`,
 			assertMode: func(t *testing.T, mode swarm.ServiceMode) {
 				t.Helper()
 				require.NotNil(t, mode.Replicated)
@@ -52,8 +64,8 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 			},
 		},
 		{
-			name: "replicated job",
-			mode: swarm.ServiceMode{ReplicatedJob: &swarm.ReplicatedJob{MaxConcurrent: &maxConcurrent}},
+			name:     "replicated job",
+			modeJSON: `{"ReplicatedJob":{"MaxConcurrent":2}}`,
 			assertMode: func(t *testing.T, mode swarm.ServiceMode) {
 				t.Helper()
 				require.Nil(t, mode.Replicated)
@@ -65,14 +77,14 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 			},
 		},
 		{
-			name:    "global",
-			mode:    swarm.ServiceMode{Global: &swarm.GlobalService{}},
-			wantErr: true,
+			name:     "global",
+			modeJSON: `{"Global":{}}`,
+			wantErr:  true,
 		},
 		{
-			name:    "global job",
-			mode:    swarm.ServiceMode{GlobalJob: &swarm.GlobalJob{}},
-			wantErr: true,
+			name:     "global job",
+			modeJSON: `{"GlobalJob":{}}`,
+			wantErr:  true,
 		},
 	}
 
@@ -86,7 +98,7 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 
 				switch {
 				case r.Method == http.MethodGet && r.URL.Path == "/v1.41/info":
-					if !assert.NoError(t, json.NewEncoder(w).Encode(system.Info{
+					if !assert.NoError(t, json.MarshalWrite(w, system.Info{
 						Swarm: swarm.Info{
 							LocalNodeState:   swarm.LocalNodeStateActive,
 							ControlAvailable: true,
@@ -95,25 +107,16 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 						return
 					}
 				case r.Method == http.MethodGet && r.URL.Path == "/v1.41/services/service-1":
-					if !assert.NoError(t, json.NewEncoder(w).Encode(swarm.Service{
-						ID:      "service-1",
-						Version: swarm.Version{Index: 7},
-						Spec: swarm.ServiceSpec{
-							Annotations: swarm.Annotations{Name: "service-1"},
-							Mode:        tt.mode,
-						},
-					})) {
-						return
-					}
+					_, _ = fmt.Fprintf(w, `{"ID":"service-1","Version":{"Index":7},"Spec":{"Name":"service-1","Mode":%s}}`, tt.modeJSON)
 				case r.Method == http.MethodPost && r.URL.Path == "/v1.41/services/service-1/update":
 					updateCalls++
 					if !assert.Equal(t, "7", r.URL.Query().Get("version")) {
 						return
 					}
-					if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&updatedSpec)) {
+					if !assert.NoError(t, json.UnmarshalRead(r.Body, &updatedSpec)) {
 						return
 					}
-					if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Warnings": []string{"updated"}})) {
+					if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"Warnings": []string{"updated"}})) {
 						return
 					}
 				default:
@@ -122,7 +125,7 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			dockerService := &docker.DockerClientService{Client: newSwarmTestDockerClient(t, server)}
+			dockerService := newSettingsDockerService(t, newSwarmTestDockerClient(t, server))
 			svc := NewService(dockerService, func(context.Context) error { return nil }, nil)
 
 			resp, err := svc.ScaleService(ctx, "service-1", replicas)
@@ -140,4 +143,59 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 			tt.assertMode(t, updatedSpec.Mode)
 		})
 	}
+}
+
+func servicesScopeContext(t *testing.T, target string, bodies map[string]any) context.Context {
+	t.Helper()
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.MarshalWrite(w, body)
+		}),
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	})
+}
+
+func TestAggregateMergesEnvironments(t *testing.T) {
+	ctx := servicesScopeContext(t, "/api/environments/a,b,c/swarm/services", map[string]any{
+		"a": types.Paginated[types.SwarmServiceSummary]{
+			Success: true,
+			Data:    []types.SwarmServiceSummary{{ID: "s1", Name: "web"}},
+		},
+		"b": types.Paginated[types.SwarmServiceSummary]{
+			Success: true,
+			Data:    []types.SwarmServiceSummary{{ID: "s2", Name: "api"}},
+		},
+	})
+
+	body, err := (&Service{}).Aggregate(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
+	require.NoError(t, err)
+
+	require.Len(t, body.Data, 2)
+	require.ElementsMatch(t, []string{"Env a", "Env b"}, []string{body.Data[0].Environment().Name, body.Data[1].Environment().Name})
+	require.EqualValues(t, 2, body.Pagination.TotalItems)
+	require.Len(t, body.FailedEnvironments, 1)
+	require.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
+}
+
+func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }

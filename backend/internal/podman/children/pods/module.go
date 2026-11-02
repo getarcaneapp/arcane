@@ -5,8 +5,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
 const (
@@ -40,7 +40,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		handlerutil.Operation("get-podman-pod-top", http.MethodGet, podsPath+"/{podId}/top", "List pod processes", "", podsTag),
 		authz.PermPodmanRead, h.Top)
 	handlerutil.RegisterSecured(api,
-		handlerutil.Operation("podman-pod-action", http.MethodPost, podsPath+"/{podId}/{action}", "Run pod lifecycle action", "Start, stop, restart, pause, unpause, or kill a pod", podsTag),
+		handlerutil.Operation("podman-pod-action", http.MethodPost, podsPath+"/{podId}", "Run pod lifecycle action", "Start, stop, restart, pause, unpause, or kill a pod", podsTag),
 		authz.PermPodmanPods, h.Action)
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation("delete-podman-pod", http.MethodDelete, podsPath+"/{podId}", "Remove pod", "", podsTag),

@@ -9,45 +9,56 @@ import (
 	"log/slog"
 	"time"
 
-	apikeytypes "github.com/getarcaneapp/arcane/types/v2/apikey"
-	gitopstypes "github.com/getarcaneapp/arcane/types/v2/gitops"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
+	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"getarcane.dev/arcane/v3/internal/apikey"
+	"getarcane.dev/arcane/v3/internal/gitops"
+	"getarcane.dev/arcane/v3/internal/gitrepo"
+	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
-type PlaywrightService struct {
-	apiKeyService     *apikey.ApiKeyService
-	userService       *user.UserService
-	repositoryService *gitrepo.GitRepositoryService
-	syncService       *gitops.GitOpsSyncService
-	projectService    *project.ProjectService
-}
+type (
+	PlaywrightService struct {
+		apiKeyService     *apikey.ApiKeyService
+		userService       *user.UserService
+		repositoryService *gitrepo.GitRepositoryService
+		syncService       *gitops.GitOpsSyncService
+		projectService    *project.ProjectService
+	}
 
-func NewPlaywrightService(
-	apiKeyService *apikey.ApiKeyService,
-	userService *user.UserService,
-	repositoryService *gitrepo.GitRepositoryService,
-	syncService *gitops.GitOpsSyncService,
-	projectService *project.ProjectService,
-) *PlaywrightService {
+	PlaywrightServiceParams struct {
+		APIKeyService     *apikey.ApiKeyService
+		UserService       *user.UserService
+		RepositoryService *gitrepo.GitRepositoryService
+		SyncService       *gitops.GitOpsSyncService
+		ProjectService    *project.ProjectService
+	}
+)
+
+const (
+	testRepositoryName = "gitsyncs-test-repo"
+	testRepositoryURL  = "https://github.com/getarcaneapp/gitsyncs.git"
+	testSyncName       = "gitops-test-sync"
+	testProjectName    = "gitops-test-project"
+	testBranch         = "main"
+	testComposePath    = "compose-test-repo/compose.yaml"
+)
+
+func NewPlaywrightService(p PlaywrightServiceParams) *PlaywrightService {
 	return &PlaywrightService{
-		apiKeyService:     apiKeyService,
-		userService:       userService,
-		repositoryService: repositoryService,
-		syncService:       syncService,
-		projectService:    projectService,
+		apiKeyService:     p.APIKeyService,
+		userService:       p.UserService,
+		repositoryService: p.RepositoryService,
+		syncService:       p.SyncService,
+		projectService:    p.ProjectService,
 	}
 }
 
-func (ps *PlaywrightService) CreateTestApiKeys(ctx context.Context, count int) ([]*apikeytypes.ApiKeyCreatedDto, error) {
+func (ps *PlaywrightService) CreateTestApiKeys(ctx context.Context, count int) ([]*types.ApiKeyCreatedDto, error) {
 	slog.InfoContext(ctx, "Playwright: Creating test API keys", "count", count)
 
 	// Get the arcane user to associate the API keys with
@@ -60,15 +71,15 @@ func (ps *PlaywrightService) CreateTestApiKeys(ctx context.Context, count int) (
 	// the legacy "admin-everywhere" credential the e2e suite expects. There is
 	// no request context here, so grant validation runs against a sudo set.
 	allPerms := authz.AllPermissions()
-	grants := make([]apikeytypes.PermissionGrant, len(allPerms))
+	grants := make([]types.ApiKeyPermissionGrant, len(allPerms))
 	for i, p := range allPerms {
-		grants[i] = apikeytypes.PermissionGrant{Permission: p}
+		grants[i] = types.ApiKeyPermissionGrant{Permission: p}
 	}
 
-	var createdKeys []*apikeytypes.ApiKeyCreatedDto
+	var createdKeys []*types.ApiKeyCreatedDto
 	for i := range count {
 		description := fmt.Sprintf("Test API key %d for Playwright tests", i+1)
-		req := apikeytypes.CreateApiKey{
+		req := types.ApiKey{
 			Name:        fmt.Sprintf("test-api-key-%d", i+1),
 			Description: &description,
 			Permissions: grants,
@@ -111,15 +122,6 @@ func (ps *PlaywrightService) DeleteAllTestApiKeys(ctx context.Context) error {
 	return nil
 }
 
-const (
-	testRepositoryNameInternal = "gitsyncs-test-repo"
-	testRepositoryURLInternal  = "https://github.com/getarcaneapp/gitsyncs.git"
-	testSyncNameInternal       = "gitops-test-sync"
-	testProjectNameInternal    = "gitops-test-project"
-	testBranchInternal         = "main"
-	testComposePathInternal    = "compose-test-repo/compose.yaml"
-)
-
 // CreateTestGitOpsProject seeds the suite prerequisite through the real GitOps services.
 func (ps *PlaywrightService) CreateTestGitOpsProject(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
@@ -129,17 +131,21 @@ func (ps *PlaywrightService) CreateTestGitOpsProject(ctx context.Context) error 
 		return fmt.Errorf("failed to get arcane user: %w", err)
 	}
 	actor := *localUser.Actor()
-	repositoryID, err := ps.ensureTestRepositoryInternal(ctx, actor)
+	repositoryID, err := ps.ensureTestRepository(ctx, actor)
 	if err != nil {
 		return err
 	}
-	sync, created, err := ps.ensureTestSyncInternal(ctx, repositoryID, actor)
+	sync, created, err := ps.ensureTestSync(ctx, repositoryID, actor)
 	if err != nil {
 		return err
 	}
 	// CreateSync already ran the initial sync; retry only if it failed.
-	if !created || sync.LastSyncStatus == nil || *sync.LastSyncStatus != "success" || sync.LastSyncError != nil {
-		result, performSyncErr := ps.syncService.PerformSync(ctx, "0", sync.ID, actor)
+	if !created || kit.FromPtr(sync.LastSyncStatus) != "success" || sync.LastSyncError != nil {
+		result, performSyncErr := ps.syncService.PerformSync(ctx, gitops.SyncRequest{
+			EnvironmentID: "0",
+			SyncID:        sync.ID,
+			Actor:         actor,
+		})
 		if performSyncErr != nil {
 			return fmt.Errorf("failed to sync GitOps test project: %w", performSyncErr)
 		}
@@ -151,14 +157,14 @@ func (ps *PlaywrightService) CreateTestGitOpsProject(ctx context.Context) error 
 			return performSyncErr
 		}
 	}
-	if sync.ProjectID == nil || sync.LastSyncCommit == nil || *sync.LastSyncCommit == "" || sync.LastSyncStatus == nil || *sync.LastSyncStatus != "success" || sync.LastSyncError != nil {
+	if sync.ProjectID == nil || kit.FromPtr(sync.LastSyncCommit) == "" || kit.FromPtr(sync.LastSyncStatus) != "success" || sync.LastSyncError != nil {
 		return errors.New("GitOps test sync did not bind a managed project and commit")
 	}
-	details, err := ps.projectService.GetProjectDetails(ctx, *sync.ProjectID, projecttypes.DetailsOptions{})
+	details, err := ps.projectService.GetProjectDetails(ctx, *sync.ProjectID, types.ProjectDetailsOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to verify GitOps test project: %w", err)
 	}
-	if details.Name != testProjectNameInternal ||
+	if details.Name != testProjectName ||
 		details.GitOpsManagedBy == nil ||
 		*details.GitOpsManagedBy != sync.ID ||
 		details.LastSyncCommit == nil ||
@@ -168,20 +174,27 @@ func (ps *PlaywrightService) CreateTestGitOpsProject(ctx context.Context) error 
 	return nil
 }
 
-func (ps *PlaywrightService) ensureTestRepositoryInternal(ctx context.Context, actor usertypes.Actor) (string, error) {
-	params := pagination.QueryParams{Search: testRepositoryNameInternal, Limit: 100}
+func (ps *PlaywrightService) ensureTestRepository(ctx context.Context, actor types.Actor) (string, error) {
+	params := pagination.QueryParams{Search: testRepositoryName, Limit: 100}
 	repositories, _, err := ps.repositoryService.GetRepositoriesPaginated(ctx, params)
 	if err != nil {
 		return "", err
 	}
 	repositoryID := ""
 	for _, repository := range repositories {
-		if repository.Name != testRepositoryNameInternal {
+		if repository.Name != testRepositoryName {
 			continue
 		}
-		updated, updateRepositoryErr := ps.repositoryService.UpdateRepository(ctx, repository.ID, gitopstypes.UpdateRepositoryRequest{
-			Name: new(testRepositoryNameInternal), URL: new(testRepositoryURLInternal), AuthType: new("none"), Enabled: new(true),
-		}, actor)
+		updated, updateRepositoryErr := ps.repositoryService.UpdateRepository(ctx, repository.ID, gitrepo.RepositoryUpdate{
+			Request: types.GitRepository{
+				Name:     testRepositoryName,
+				URL:      testRepositoryURL,
+				AuthType: "none",
+				Enabled:  true,
+			},
+			Submitted: map[string]bool{"name": true, "url": true, "authType": true, "enabled": true},
+			Actor:     actor,
+		})
 		if updateRepositoryErr != nil {
 			return "", updateRepositoryErr
 		}
@@ -189,43 +202,72 @@ func (ps *PlaywrightService) ensureTestRepositoryInternal(ctx context.Context, a
 		break
 	}
 	if repositoryID == "" {
-		created, createRepositoryErr := ps.repositoryService.CreateRepository(ctx, gitopstypes.CreateRepositoryRequest{
-			Name: testRepositoryNameInternal, URL: testRepositoryURLInternal, AuthType: "none", Enabled: new(true),
-		}, actor)
+		created, createRepositoryErr := ps.repositoryService.CreateRepository(ctx, types.GitRepository{
+			Name:     testRepositoryName,
+			URL:      testRepositoryURL,
+			AuthType: "none",
+		}, nil, actor)
 		if createRepositoryErr != nil {
 			return "", createRepositoryErr
 		}
 		repositoryID = created.ID
 	}
-	if testConnectionErr := ps.repositoryService.TestConnection(ctx, repositoryID, testBranchInternal, actor); testConnectionErr != nil {
+	if testConnectionErr := ps.repositoryService.TestConnection(ctx, repositoryID, testBranch, actor); testConnectionErr != nil {
 		return "", fmt.Errorf("failed to connect to GitOps test repository: %w", testConnectionErr)
 	}
 	return repositoryID, nil
 }
 
-func (ps *PlaywrightService) ensureTestSyncInternal(ctx context.Context, repositoryID string, actor usertypes.Actor) (*project.GitOpsSync, bool, error) {
-	params := pagination.QueryParams{Search: testSyncNameInternal, Limit: 100}
+func (ps *PlaywrightService) ensureTestSync(ctx context.Context, repositoryID string, actor types.Actor) (*project.GitOpsSync, bool, error) {
+	params := pagination.QueryParams{Search: testSyncName, Limit: 100}
 	syncs, _, _, err := ps.syncService.GetSyncsPaginated(ctx, "0", params)
 	if err != nil {
 		return nil, false, err
 	}
 	for _, sync := range syncs {
-		if sync.Name != testSyncNameInternal {
+		if sync.Name != testSyncName {
 			continue
 		}
-		updated, updateSyncErr := ps.syncService.UpdateSync(ctx, "0", sync.ID, gitopstypes.UpdateSyncRequest{
-			Name: new(testSyncNameInternal), RepositoryID: new(repositoryID), Branch: new(testBranchInternal), ComposePath: new(testComposePathInternal),
-			TargetType: new("project"), ProjectName: new(testProjectNameInternal), AutoSync: new(false), SyncDirectory: new(false), PullImageAfterSync: new(false), RedeployAfterSync: new(false),
-		}, actor)
+		updated, updateSyncErr := ps.syncService.UpdateSync(ctx, "0", sync.ID, gitops.SyncUpdate{
+			Request: types.GitOpsSync{
+				Name:         testSyncName,
+				RepositoryID: repositoryID,
+				Branch:       testBranch,
+				ComposePath:  testComposePath,
+				TargetType:   "project",
+				ProjectName:  testProjectName,
+			},
+			Submitted: map[string]bool{
+				"name":               true,
+				"repositoryId":       true,
+				"branch":             true,
+				"composePath":        true,
+				"targetType":         true,
+				"projectName":        true,
+				"autoSync":           true,
+				"syncDirectory":      true,
+				"pullImageAfterSync": true,
+				"redeployAfterSync":  true,
+			},
+			Actor: actor,
+		})
 		if updateSyncErr != nil {
 			return nil, false, updateSyncErr
 		}
 		return updated, false, nil
 	}
-	created, err := ps.syncService.CreateSync(ctx, "0", gitopstypes.CreateSyncRequest{
-		Name: testSyncNameInternal, RepositoryID: repositoryID, Branch: testBranchInternal, ComposePath: testComposePathInternal,
-		TargetType: "project", ProjectName: testProjectNameInternal, AutoSync: new(false), SyncDirectory: new(false), PullImageAfterSync: new(false), RedeployAfterSync: new(false),
-	}, actor)
+	created, err := ps.syncService.CreateSync(ctx, "0", gitops.SyncUpdate{
+		Request: types.GitOpsSync{
+			Name:         testSyncName,
+			RepositoryID: repositoryID,
+			Branch:       testBranch,
+			ComposePath:  testComposePath,
+			TargetType:   "project",
+			ProjectName:  testProjectName,
+		},
+		Submitted: map[string]bool{"autoSync": true, "syncDirectory": true, "pullImageAfterSync": true, "redeployAfterSync": true},
+		Actor:     actor,
+	})
 	if err != nil {
 		return nil, false, err
 	}

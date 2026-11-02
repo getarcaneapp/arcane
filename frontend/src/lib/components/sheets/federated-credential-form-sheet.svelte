@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Temporal } from 'temporal-polyfill';
+	import { untrack } from 'svelte';
 	import { z } from 'zod/v4';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
@@ -12,9 +12,17 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { InfoIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import type { CreateFederatedCredential, FederatedCredential, FederatedCredentialMatchType, Role } from '#lib/types/auth.js';
+	import type {
+		FederatedCredential,
+		FederatedCredentialCreate,
+		FederatedCredentialMatchType,
+		FederatedCredentialUpdate,
+		FederatedCredentialWritable,
+		Role
+	} from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import { plainDateFromInstant, plainDateToInstantString } from '#lib/utils/formatting.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
 	type Props = {
@@ -23,7 +31,11 @@
 		roles: Role[];
 		environments: Environment[];
 		isLoading: boolean;
-		onSubmit: (data: { credential: CreateFederatedCredential; isEditMode: boolean; credentialId?: string }) => void;
+		onSubmit: (
+			data:
+				| { isEditMode: true; credentialId: string; credential: FederatedCredentialUpdate }
+				| { isEditMode: false; credential: FederatedCredentialCreate }
+		) => void;
 	};
 
 	let { open = $bindable(false), credentialToEdit, roles, environments, isLoading, onSubmit }: Props = $props();
@@ -60,35 +72,31 @@
 		expiresAt: z.instanceof(Temporal.PlainDate).optional()
 	});
 
-	const formData = $derived({
-		name: credentialToEdit?.name ?? '',
-		description: credentialToEdit?.description ?? '',
-		enabled: credentialToEdit?.enabled ?? false,
-		issuerUrl: credentialToEdit?.issuerUrl ?? '',
-		audience: credentialToEdit?.audiences?.join('\n') ?? '',
-		subjectClaim: credentialToEdit?.subjectClaim ?? 'sub',
-		subjectMatch: credentialToEdit?.subjectMatch ?? '',
-		matchType: credentialToEdit?.matchType ?? ('exact' as FederatedCredentialMatchType),
-		roleId: credentialToEdit?.roleId ?? roles[0]?.id ?? '',
-		environmentId: credentialToEdit?.environmentId ?? GLOBAL_OPTION_ID,
-		tokenTtlSeconds: credentialToEdit?.tokenTtlSeconds ?? 900,
-		expiresAt: plainDateFromInstant(credentialToEdit?.expiresAt)
-	});
-
-	const form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
-
-	const hasWildcardWarning = $derived.by(() => {
-		const value = String(inputs.subjectMatch.value ?? '').trim();
-		return shouldWarnSubjectMatchInternal(value);
-	});
-
-	function shouldWarnSubjectMatchInternal(value: string): boolean {
-		if (value === '' || value === '*') {
-			return value === '*';
-		}
-		return value.endsWith('/*') || /^repo:[^/]+\/\*(?::|$)/.test(value);
+	function formValues() {
+		return {
+			name: credentialToEdit?.name ?? '',
+			description: credentialToEdit?.description ?? '',
+			enabled: credentialToEdit?.enabled ?? false,
+			issuerUrl: credentialToEdit?.issuerUrl ?? '',
+			audience: credentialToEdit?.audiences?.join('\n') ?? '',
+			subjectClaim: credentialToEdit?.subjectClaim ?? 'sub',
+			subjectMatch: credentialToEdit?.subjectMatch ?? '',
+			matchType: credentialToEdit?.matchType ?? ('exact' as FederatedCredentialMatchType),
+			roleId: credentialToEdit?.roleId ?? roles[0]?.id ?? '',
+			environmentId: credentialToEdit?.environmentId ?? GLOBAL_OPTION_ID,
+			tokenTtlSeconds: credentialToEdit?.tokenTtlSeconds ?? 900,
+			expiresAt: plainDateFromInstant(credentialToEdit?.expiresAt)
+		};
 	}
+
+	const form = createForm<typeof formSchema>(formSchema, untrack(formValues));
+
+	const hasWildcardWarning = $derived(
+		String(form.inputs.subjectMatch.value ?? '')
+			.trim()
+			.split(':')
+			.some((part) => part === '*' || part.endsWith('/*'))
+	);
 
 	function envSelectedLabel(value: string): string {
 		return envOptions.find((o) => o.id === value)?.name ?? m.common_select_option();
@@ -113,9 +121,9 @@
 		const data = form.validate();
 		if (!data) return;
 
-		const payload: CreateFederatedCredential = {
+		const values: Required<Pick<FederatedCredential, FederatedCredentialWritable>> = {
 			name: data.name,
-			description: data.description || undefined,
+			description: data.description || null,
 			enabled: data.enabled,
 			issuerUrl: data.issuerUrl,
 			audiences: parseAudiencesInternal(data.audience),
@@ -123,16 +131,45 @@
 			subjectMatch: data.subjectMatch,
 			matchType: data.matchType,
 			roleId: data.roleId,
-			environmentId: data.environmentId === GLOBAL_OPTION_ID ? undefined : data.environmentId,
+			environmentId: data.environmentId === GLOBAL_OPTION_ID ? null : data.environmentId,
 			tokenTtlSeconds: data.tokenTtlSeconds,
-			expiresAt: data.expiresAt ? plainDateToInstantString(data.expiresAt) : undefined
+			expiresAt: data.expiresAt ? plainDateToInstantString(data.expiresAt) : null
 		};
 
-		onSubmit({ credential: payload, isEditMode, credentialId: credentialToEdit?.id });
+		if (!credentialToEdit) {
+			onSubmit({
+				isEditMode: false,
+				credential: {
+					...values,
+					description: values.description ?? undefined,
+					environmentId: values.environmentId ?? undefined,
+					expiresAt: values.expiresAt ?? undefined
+				}
+			});
+			return;
+		}
+
+		const originalExpiry = plainDateFromInstant(credentialToEdit.expiresAt);
+		onSubmit({
+			isEditMode: true,
+			credentialId: credentialToEdit.id,
+			credential: changedFields(
+				{
+					...credentialToEdit,
+					description: credentialToEdit.description ?? null,
+					environmentId: credentialToEdit.environmentId ?? null,
+					expiresAt: originalExpiry ? plainDateToInstantString(originalExpiry) : null
+				},
+				values
+			)
+		});
 	}
 
 	function handleOpenChange(newOpenState: boolean) {
 		open = newOpenState;
+		if (!newOpenState) {
+			form.reset(formValues());
+		}
 	}
 </script>
 
@@ -152,14 +189,14 @@
 				label={m.common_name()}
 				type="text"
 				placeholder={m.federated_credential_name_placeholder()}
-				bind:input={inputs.name}
+				bind:input={form.inputs.name}
 				disabled={isLoading}
 			/>
 			<FormInput
 				label={m.common_description()}
 				type="text"
 				placeholder={m.optional_description_placeholder()}
-				bind:input={inputs.description}
+				bind:input={form.inputs.description}
 				disabled={isLoading}
 			/>
 			<FormInput
@@ -167,7 +204,7 @@
 				type="text"
 				placeholder={m.federated_credential_issuer_placeholder()}
 				description={m.federated_credential_issuer_description()}
-				bind:input={inputs.issuerUrl}
+				bind:input={form.inputs.issuerUrl}
 				disabled={isLoading}
 			/>
 			<FormInput
@@ -176,7 +213,7 @@
 				rows={3}
 				placeholder={m.federated_credential_audiences_placeholder()}
 				description={m.federated_credential_audiences_description()}
-				bind:input={inputs.audience}
+				bind:input={form.inputs.audience}
 				disabled={isLoading}
 			/>
 			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -184,14 +221,14 @@
 					label={m.federated_credential_subject_claim_label()}
 					type="text"
 					placeholder={m.federated_credential_subject_claim_placeholder()}
-					bind:input={inputs.subjectClaim}
+					bind:input={form.inputs.subjectClaim}
 					disabled={isLoading}
 				/>
 				<div class="space-y-2">
 					<Label for="federated-match-type" class="mb-0">{m.federated_credential_match_type_label()}</Label>
-					<Select.Root type="single" bind:value={inputs.matchType.value} disabled={isLoading}>
+					<Select.Root type="single" bind:value={form.inputs.matchType.value} disabled={isLoading}>
 						<Select.Trigger id="federated-match-type" class="w-full">
-							<span>{matchTypeLabel(inputs.matchType.value)}</span>
+							<span>{matchTypeLabel(form.inputs.matchType.value)}</span>
 						</Select.Trigger>
 						<Select.Content>
 							{#each MATCH_TYPES as option (option.value)}
@@ -208,7 +245,7 @@
 				type="text"
 				placeholder={m.federated_credential_subject_match_placeholder()}
 				description={m.federated_credential_subject_match_description()}
-				bind:input={inputs.subjectMatch}
+				bind:input={form.inputs.subjectMatch}
 				disabled={isLoading}
 			/>
 			{#if hasWildcardWarning}
@@ -226,9 +263,9 @@
 				scopeLabel={m.common_scope()}
 				{roles}
 				{envOptions}
-				bind:roleValue={inputs.roleId.value}
-				bind:environmentValue={inputs.environmentId.value}
-				roleError={inputs.roleId.error}
+				bind:roleValue={form.inputs.roleId.value}
+				bind:environmentValue={form.inputs.environmentId.value}
+				roleError={form.inputs.roleId.error}
 				{roleSelectedLabel}
 				{envSelectedLabel}
 				disabled={isLoading}
@@ -239,19 +276,19 @@
 					label={m.federated_credential_ttl_label()}
 					type="number"
 					description={m.federated_credential_ttl_description()}
-					bind:input={inputs.tokenTtlSeconds}
+					bind:input={form.inputs.tokenTtlSeconds}
 					disabled={isLoading}
 				/>
 				<FormInput
 					label={m.federated_credential_expires_at_label()}
 					type="date"
 					description={m.federated_credential_expires_at_description()}
-					bind:input={inputs.expiresAt}
+					bind:input={form.inputs.expiresAt}
 					disabled={isLoading}
 				/>
 			</div>
 			<div class="flex items-center space-x-2">
-				<Switch id="federated-enabled" bind:checked={inputs.enabled.value} disabled={isLoading} />
+				<Switch id="federated-enabled" bind:checked={form.inputs.enabled.value} disabled={isLoading} />
 				<div class="grid gap-1.5 leading-none">
 					<Label for="federated-enabled" class="mb-0">
 						{m.common_enabled()}
@@ -268,6 +305,7 @@
 	{#snippet footer()}
 		<SheetFooterActions
 			bind:open
+			onCancel={() => handleOpenChange(false)}
 			cancelDisabled={isLoading}
 			submitAction={isEditMode ? 'save' : 'create'}
 			submitDisabled={isLoading}

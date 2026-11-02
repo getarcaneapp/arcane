@@ -23,13 +23,10 @@
 		tag: z.string().optional().default('latest')
 	});
 
-	let formData = $derived({
+	const form = createForm<typeof formSchema>(formSchema, {
 		imageRef: '',
 		tag: 'latest'
 	});
-
-	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
 
 	let isPulling = $state(false);
 	let pickedEnvironmentId = $state('');
@@ -77,11 +74,8 @@
 		}
 
 		open = newOpenState;
-		if (!newOpenState || newOpenState) {
-			pickedEnvironmentId = '';
-			inputs.imageRef.value = '';
-			inputs.tag.value = 'latest';
-		}
+		pickedEnvironmentId = '';
+		form.reset();
 	}
 </script>
 
@@ -105,14 +99,14 @@
 				type="text"
 				placeholder={m.images_image_name_placeholder()}
 				description={m.images_image_name_description()}
-				bind:input={inputs.imageRef}
+				bind:input={form.inputs.imageRef}
 			/>
 			<FormInput
 				label={m.tag()}
 				type="text"
 				placeholder={m.images_tag_latest()}
 				description={m.images_tag_description()}
-				bind:input={inputs.tag}
+				bind:input={form.inputs.tag}
 			/>
 		</form>
 	{/snippet}

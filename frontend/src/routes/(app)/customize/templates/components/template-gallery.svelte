@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { PersistedState } from 'runed';
 	import { onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -12,23 +13,26 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { SearchIcon, TemplateIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { templateService } from '#lib/services/template-service.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { Template } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { debounced } from '#lib/utils/ws.js';
 
 	import TemplateCard from './template-card.svelte';
 
 	let {
-		templates = $bindable(),
+		templates,
 		requestOptions = $bindable()
 	}: {
 		templates: Paginated<Template>;
 		requestOptions: SearchPaginationSortRequest;
 	} = $props();
+
+	const queryClient = useQueryClient();
 
 	let deletingId = $state<string | null>(null);
 	let downloadingId = $state<string | null>(null);
@@ -42,7 +46,7 @@
 	const totalItems = $derived(templates.pagination?.totalItems ?? 0);
 	const pageSize = $derived(requestOptions.pagination?.limit ?? templates.pagination?.itemsPerPage ?? 20);
 	const hasActiveQuery = $derived(!!requestOptions.search || requestOptions.filters?.['type'] !== undefined);
-	const canCreateTemplate = $derived(hasPermission('templates:create'));
+	const canCreateTemplate = $derived(hasShownPermission('templates:create'));
 
 	const typeFilterLabel = $derived(templateTypeFilters.find((f) => f.value === typeFilter)?.label ?? m.common_all());
 
@@ -54,10 +58,6 @@
 		);
 	});
 
-	async function refetch() {
-		templates = await templateService.getTemplates(requestOptions);
-	}
-
 	function applySearch(value: string) {
 		const search = value.trim();
 		requestOptions = {
@@ -66,7 +66,6 @@
 			pagination: { page: 1, limit: pageSize }
 		};
 		if (prefs) prefs.current = { ...prefs.current, g: search };
-		refetch();
 	}
 
 	const debouncedSearch = debounced(applySearch, 300);
@@ -85,20 +84,17 @@
 			pagination: { page: 1, limit: pageSize }
 		};
 		if (prefs) prefs.current = { ...prefs.current, f: value === 'all' ? [] : [['type', value]] };
-		refetch();
 	}
 
 	function setPage(page: number) {
 		if (page < 1) page = 1;
 		if (totalPages > 0 && page > totalPages) page = totalPages;
 		requestOptions = { ...requestOptions, pagination: { page, limit: pageSize } };
-		refetch();
 	}
 
 	function setPageSize(limit: number) {
 		if (prefs) prefs.current = { ...prefs.current, l: limit };
 		requestOptions = { ...requestOptions, pagination: { page: 1, limit } };
-		refetch();
 	}
 
 	async function handleDeleteTemplate(template: Template) {
@@ -118,7 +114,7 @@
 						setLoadingState: (value) => (value ? null : (deletingId = null)),
 						onSuccess: async () => {
 							toast.success(m.common_delete_success({ resource: `${m.resource_template()} "${template.name}"` }));
-							await refetch();
+							await queryClient.invalidateQueries({ queryKey: queryKeys.templates.all });
 							deletingId = null;
 						}
 					});
@@ -137,7 +133,7 @@
 			setLoadingState: (value) => (value ? null : (downloadingId = null)),
 			onSuccess: async () => {
 				toast.success(m.templates_downloaded_success({ name: template.name }));
-				await refetch();
+				await queryClient.invalidateQueries({ queryKey: queryKeys.templates.all });
 				downloadingId = null;
 			}
 		});

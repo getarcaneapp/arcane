@@ -14,25 +14,58 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
-	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/backupbrowser"
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
+
+	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/pkg/backupbrowser"
+	"getarcane.dev/arcane/v3/pkg/volumes"
+	"getarcane.dev/types/v3"
 )
 
-const restoreBackupFilesScript = `set -e
+type (
+	// Dependencies are the backup runtime, storage, and helper-container operations restores run through.
+	Dependencies struct {
+		Docker          *docker.DockerClientService
+		Engine          *backup.Engine
+		Events          *event.EventService
+		Locks           *concurrency.KeyedMutex
+		Run             func(ctx context.Context, backupID string) (*types.VolumeBackup, error)
+		Repository      func(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (backup.Repository, string, error)
+		Password        func(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error)
+		StopContainers  func(ctx context.Context, volumeName string, user types.Actor, refuseArcaneWriters bool) ([]container.Summary, error)
+		StartContainers func(ctx context.Context, stopped []container.Summary, user types.Actor) ([]container.Summary, error)
+		SafetyBackup    func(ctx context.Context, volumeName string, user types.Actor) (string, error)
+		ArchivePaths    func(ctx context.Context, backupID string) ([]string, error)
+		ArchiveFilename func(backupID string) (string, error)
+		HelperImage     func(ctx context.Context) (string, error)
+		StorageMount    func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
+		AcquireHelper   func(ctx context.Context, volumeName string) (string, func(), error)
+		Exec            func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
+	}
+
+	// Service restores volume backups, selected backup files, and uploaded archives into volumes.
+	Service struct {
+		deps Dependencies
+	}
+
+	selectionPlan struct {
+		entries      []types.BackupFileEntry
+		archivePaths []string
+		globalRoot   bool
+	}
+)
+
+const (
+	restoreBackupFilesScript = `set -e
 archive="$1"
 shift
 archive_mode=$(stat -c '%A' -- "$archive" 2>/dev/null) || { echo ARCANE_NOT_FOUND >&2; exit 44; }
@@ -42,7 +75,7 @@ for member do
 done
 tar -xzf "$archive" -C /volume -- "$@"`
 
-const replaceVolumeScript = `set -e
+	replaceVolumeScript = `set -e
 : "${1:?}"
 for f in /volume/* /volume/.[!.]* /volume/..?*; do
   case "$f" in "$1") ;; *) rm -rf -- "$f" ;; esac
@@ -52,43 +85,19 @@ for f in "$1"/* "$1"/.[!.]* "$1"/..?*; do
 done
 rmdir -- "$1"`
 
-const restoreArchiveScript = `set -e
+	restoreArchiveScript = `set -e
 tmp=$(mktemp -d /volume/.restore_tmp.XXXXXX)
 tar -tzf "$1" >/dev/null
 tar -xzf "$1" -C "$tmp"
 set -- "$tmp"
 ` + replaceVolumeScript
-
-// Dependencies are the backup runtime, storage, and helper-container operations restores run through.
-type Dependencies struct {
-	Docker          *docker.DockerClientService
-	Engine          *backup.Engine
-	Events          *event.EventService
-	Locks           *utils.KeyedMutex
-	Run             func(ctx context.Context, backupID string) (*volume.Backup, error)
-	Repository      func(ctx context.Context, dockerClient *client.Client, entry *volume.Backup) (backup.Repository, string, error)
-	Password        func(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error)
-	StopContainers  func(ctx context.Context, volumeName string, user usertypes.Actor, refuseArcaneWriters bool) ([]container.Summary, error)
-	StartContainers func(ctx context.Context, stopped []container.Summary, user usertypes.Actor) ([]container.Summary, error)
-	SafetyBackup    func(ctx context.Context, volumeName string, user usertypes.Actor) (string, error)
-	ArchivePaths    func(ctx context.Context, backupID string) ([]string, error)
-	ArchiveFilename func(backupID string) (string, error)
-	HelperImage     func(ctx context.Context) (string, error)
-	StorageMount    func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
-	AcquireHelper   func(ctx context.Context, volumeName string) (string, func(), error)
-	Exec            func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
-}
-
-// Service restores volume backups, selected backup files, and uploaded archives into volumes.
-type Service struct {
-	deps Dependencies
-}
+)
 
 func NewService(deps Dependencies) *Service {
 	return &Service{deps: deps}
 }
 
-func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string, user usertypes.Actor) (err error) {
+func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string, user types.Actor) (err error) {
 	entry, err := s.deps.Run(ctx, backupID)
 	if err != nil {
 		return err
@@ -104,7 +113,7 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 	}
 	var repository backup.Repository
 	var snapshotID, password string
-	if entry.Format != volume.BackupFormatArchive {
+	if entry.Format != types.VolumeBackupFormatArchive {
 		repository, snapshotID, err = s.deps.Repository(ctx, dockerClient, entry)
 		if err != nil {
 			return err
@@ -147,7 +156,7 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 			return fmt.Errorf("failed to create pre-restore backup: %w", err)
 		}
 	}
-	if entry.Format == volume.BackupFormatArchive {
+	if entry.Format == types.VolumeBackupFormatArchive {
 		if restoreArchiveBackupErr := s.restoreArchiveBackup(ctx, dockerClient, volumeName, backupID, nil); restoreArchiveBackupErr != nil {
 			return restoreArchiveBackupErr
 		}
@@ -179,34 +188,37 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 	if preBackupID != "" {
 		metadata["pre_restore_backupId"] = preBackupID
 	}
-	if logErr := s.deps.Events.LogVolumeEvent(ctx, event.EventTypeVolumeBackupRestore, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.deps.Events.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeVolumeBackupRestore,
+		ResourceType:  "volume",
+		ResourceID:    volumeName,
+		ResourceName:  volumeName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume backup restore event", "volume", volumeName, "error", logErr)
 	}
 	return nil
 }
 
-type selectionPlan struct {
-	entries      []backuptypes.BackupFileEntry
-	archivePaths []string
-	globalRoot   bool
-}
-
 func (s *Service) resolveRestoreSelection(
 	ctx context.Context,
 	dockerClient *client.Client,
-	entry *volume.Backup,
+	entry *types.VolumeBackup,
 	repository backup.Repository,
 	snapshotID string,
-	selection backuptypes.RestoreSelection,
+	selection types.BackupRestoreSelection,
 ) (selectionPlan, error) {
 	if selection.SelectAll && strings.TrimSpace(selection.Search) == "" {
-		if _, err := backupbrowser.NormalizeSelection(selection, []backuptypes.BackupFileEntry{{Path: "", IsDirectory: true}}); err != nil {
+		if _, err := backupbrowser.NormalizeSelection(selection, []types.BackupFileEntry{{Path: "", IsDirectory: true}}); err != nil {
 			return selectionPlan{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
 		}
 		return selectionPlan{globalRoot: true}, nil
 	}
 	paths, err := func() ([]string, error) {
-		if entry.Format == volume.BackupFormatArchive {
+		if entry.Format == types.VolumeBackupFormatArchive {
 			return s.deps.ArchivePaths(ctx, entry.ID)
 		}
 		password, passwordErr := s.deps.Password(ctx, dockerClient, repository)
@@ -224,11 +236,11 @@ func (s *Service) resolveRestoreSelection(
 	}
 	return selectionPlan{
 		entries:      entries,
-		archivePaths: kit.Ternary(entry.Format == volume.BackupFormatArchive, paths, nil),
+		archivePaths: kit.Ternary(entry.Format == types.VolumeBackupFormatArchive, paths, nil),
 	}, nil
 }
 
-func archiveMembersForSelection(paths []string, selected []backuptypes.BackupFileEntry) []string {
+func archiveMembersForSelection(paths []string, selected []types.BackupFileEntry) []string {
 	files := make([]string, 0, len(paths))
 	for _, raw := range paths {
 		directory := strings.HasSuffix(strings.TrimSpace(raw), "/")
@@ -254,12 +266,12 @@ func (s *Service) restoreSelection(
 	ctx context.Context,
 	dockerClient *client.Client,
 	volumeName, backupID string,
-	entry *volume.Backup,
+	entry *types.VolumeBackup,
 	repository backup.Repository,
 	snapshotID string,
 	selection selectionPlan,
 ) error {
-	if entry.Format == volume.BackupFormatArchive {
+	if entry.Format == types.VolumeBackupFormatArchive {
 		// nil members restores the whole archive.
 		return s.restoreArchiveBackup(ctx, dockerClient, volumeName, backupID, kit.Ternary(selection.globalRoot, nil, archiveMembersForSelection(selection.archivePaths, selection.entries)))
 	}
@@ -287,7 +299,7 @@ func (s *Service) restoreSelection(
 	return nil
 }
 
-func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID string, selection backuptypes.RestoreSelection, user usertypes.Actor) (err error) {
+func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID string, selection types.BackupRestoreSelection, user types.Actor) (err error) {
 	entry, err := s.deps.Run(ctx, backupID)
 	if err != nil {
 		return err
@@ -303,7 +315,7 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID s
 	}
 	var repository backup.Repository
 	var snapshotID string
-	if entry.Format != volume.BackupFormatArchive {
+	if entry.Format != types.VolumeBackupFormatArchive {
 		repository, snapshotID, err = s.deps.Repository(ctx, dockerClient, entry)
 		if err != nil {
 			return err
@@ -357,7 +369,16 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID s
 		"select_all": selection.SelectAll,
 		"search":     selection.Search,
 	}
-	if logErr := s.deps.Events.LogVolumeEvent(ctx, event.EventTypeVolumeBackupRestoreFiles, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.deps.Events.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeVolumeBackupRestoreFiles,
+		ResourceType:  "volume",
+		ResourceID:    volumeName,
+		ResourceName:  volumeName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume backup restore files event", "volume", volumeName, "error", logErr)
 	}
 	return nil
@@ -391,9 +412,9 @@ func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client
 				Image:           helperImage,
 				Cmd:             kit.Ternary(members == nil, fullRestoreCmd, []string{"sleep", "infinity"}),
 				NetworkDisabled: true,
-				Labels:          volumehelper.Labels(),
+				Labels:          volumes.Labels(),
 			},
-			HostConfig: volumehelper.HostConfig(helperImage, []string{volumeName + ":/volume"}, []mount.Mount{backupMount}),
+			HostConfig: volumes.HostConfig(helperImage, []string{volumeName + ":/volume"}, []mount.Mount{backupMount}),
 		})
 	})
 	if err != nil {
@@ -401,7 +422,7 @@ func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client
 	}
 	defer func() {
 		_, _ = s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
+			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
 		})
 	}()
 	if _, containerStartErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
@@ -449,7 +470,7 @@ func (s *Service) RestoreArchiveMembers(ctx context.Context, containerID, filena
 	return stderr, nil
 }
 
-func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, user usertypes.Actor) (err error) {
+func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, user types.Actor) (err error) {
 	slog.DebugContext(ctx, "volume service: upload and restore", "volume", volumeName, "filename", filename, "user", user.ID)
 
 	gzr, err := gzip.NewReader(archive)
@@ -548,7 +569,16 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 		"filename":             filename,
 		"pre_restore_backupId": preBackupID,
 	}
-	if logErr := s.deps.Events.LogVolumeEvent(ctx, event.EventTypeVolumeBackupRestore, volumeName, volumeName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.deps.Events.LogResourceEvent(ctx, event.ResourceEvent{
+		Type:          event.EventTypeVolumeBackupRestore,
+		ResourceType:  "volume",
+		ResourceID:    volumeName,
+		ResourceName:  volumeName,
+		UserID:        user.ID,
+		Username:      user.Username,
+		EnvironmentID: "0",
+		Metadata:      metadata,
+	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume backup upload restore event", "volume", volumeName, "error", logErr.Error())
 	}
 

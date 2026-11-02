@@ -6,10 +6,11 @@ import (
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"kit.getarcane.app/sys/crypto"
+
+	"getarcane.dev/arcane/v3/internal/database"
 )
 
 func TestMarkSnapshotDirectories(t *testing.T) {
@@ -76,25 +77,25 @@ func TestRecoveryKeyStoreRoundTrip(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:recovery-key-store?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&SystemBackupRecoveryConfig{}))
-	crypto.InitEncryption(&crypto.Config{EncryptionKey: "recovery-key-store-test-key-32bytes", Environment: "test"})
+	crypto.InitEncryption(crypto.Config{EncryptionKey: "recovery-key-store-test-key-32bytes", Environment: "test"})
 	store := NewRecoveryKeyStore(&database.DB{DB: gormDB})
 
 	configured, err := store.Configured(t.Context())
 	require.NoError(t, err)
 	require.False(t, configured)
 
-	_, err = store.Get(t.Context())
+	_, err = store.Get(t.Context(), RecoveryKeyConfigID)
 	require.ErrorIs(t, err, ErrRecoveryKeyNotConfigured)
 
 	key, err := GenerateRecoveryKey()
 	require.NoError(t, err)
-	require.NoError(t, store.Set(t.Context(), key))
+	require.NoError(t, store.Set(t.Context(), RecoveryKeyConfigID, key))
 
 	configured, err = store.Configured(t.Context())
 	require.NoError(t, err)
 	require.True(t, configured)
 
-	stored, err := store.Get(t.Context())
+	stored, err := store.Get(t.Context(), RecoveryKeyConfigID)
 	require.NoError(t, err)
 	require.Equal(t, key, stored)
 }

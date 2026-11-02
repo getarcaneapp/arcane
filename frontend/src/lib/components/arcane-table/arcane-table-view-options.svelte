@@ -39,6 +39,11 @@
 	);
 	const activeSort = $derived(table?.atoms.sorting.get()[0]);
 	const activeSortColumn = $derived(activeSort ? sortableColumns.find((col) => col.id === String(activeSort.id)) : undefined);
+	const activeSortDirection = $derived.by(() => {
+		if (!activeSortColumn) return '';
+		if (activeSort?.desc) return 'desc';
+		return 'asc';
+	});
 
 	function selectSortColumn(columnId: string) {
 		const column = sortableColumns.find((col) => col.id === columnId);
@@ -89,7 +94,7 @@
 				</DropdownMenu.RadioGroup>
 				<DropdownMenu.Separator />
 				<DropdownMenu.RadioGroup
-					value={activeSortColumn ? (activeSort?.desc ? 'desc' : 'asc') : ''}
+					value={activeSortDirection}
 					onValueChange={(value) => activeSortColumn?.toggleSorting(value === 'desc')}
 				>
 					<DropdownMenu.RadioItem value="asc" disabled={!activeSortColumn} closeOnSelect={false}>

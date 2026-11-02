@@ -1,0 +1,117 @@
+package validation
+
+import (
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/types/v3"
+)
+
+func TestValidateCredentialTargetChange(t *testing.T) {
+	normalizeHost := func(value string) string {
+		return strings.TrimPrefix(strings.ToLower(value), "https://")
+	}
+
+	tests := []struct {
+		name               string
+		currentTarget      string
+		nextTarget         *string
+		normalize          func(string) string
+		storedCredentials  map[string]bool
+		updatedCredentials map[string]bool
+		wantField          string
+		wantFields         []string
+	}{
+		{
+			name:              "omitted target",
+			currentTarget:     "registry.example.com",
+			storedCredentials: map[string]bool{"token": true},
+		},
+		{
+			name:              "identical target",
+			currentTarget:     "registry.example.com",
+			nextTarget:        new("registry.example.com"),
+			storedCredentials: map[string]bool{"token": true},
+		},
+		{
+			name:              "cleared target",
+			currentTarget:     "registry.example.com",
+			nextTarget:        new("  "),
+			storedCredentials: map[string]bool{"token": true},
+		},
+		{
+			name:              "normalized target alias",
+			currentTarget:     "https://registry.example.com",
+			nextTarget:        new("REGISTRY.EXAMPLE.COM"),
+			normalize:         normalizeHost,
+			storedCredentials: map[string]bool{"token": true},
+		},
+		{
+			name:          "changed target without stored credentials",
+			currentTarget: "registry.example.com",
+			nextTarget:    new("registry.example.net"),
+		},
+		{
+			name:               "changed target with replacement",
+			currentTarget:      "registry.example.com",
+			nextTarget:         new("registry.example.net"),
+			storedCredentials:  map[string]bool{"token": true},
+			updatedCredentials: map[string]bool{"token": true},
+		},
+		{
+			name:               "changed target with clearing",
+			currentTarget:      "git.example.com/repo",
+			nextTarget:         new("git.example.net/repo"),
+			storedCredentials:  map[string]bool{"sshKey": true},
+			updatedCredentials: map[string]bool{"sshKey": true},
+		},
+		{
+			name:              "changed target with one missing credential",
+			currentTarget:     "registry.example.com",
+			nextTarget:        new("registry.example.net"),
+			storedCredentials: map[string]bool{"token": true},
+			wantField:         "token",
+		},
+		{
+			name:              "missing fields are deterministic",
+			currentTarget:     "git.example.com/repo",
+			nextTarget:        new("git.example.net/repo"),
+			storedCredentials: map[string]bool{"token": true, "sshKey": true},
+			wantFields:        []string{"sshKey", "token"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateCredentialTargetChange(
+				"credential target",
+				tt.currentTarget,
+				tt.nextTarget,
+				tt.normalize,
+				tt.storedCredentials,
+				tt.updatedCredentials,
+			)
+
+			switch {
+			case tt.wantField != "":
+				require.ErrorIs(t, err, common.ErrValidation)
+				fieldErr, ok := errors.AsType[*types.FieldError](err)
+				require.True(t, ok)
+				assert.Equal(t, tt.wantField, fieldErr.Field)
+				assert.Equal(t, "Changing credential target requires re-entering the token", err.Error())
+			case len(tt.wantFields) > 0:
+				var apiErr *common.APIError
+				require.ErrorAs(t, err, &apiErr)
+				assert.Equal(t, common.APIErrorCodeValidationError, apiErr.Code)
+				assert.Equal(t, map[string]any{"fields": tt.wantFields}, apiErr.Details)
+			default:
+				require.NoError(t, err)
+			}
+		})
+	}
+}

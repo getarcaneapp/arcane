@@ -1,16 +1,21 @@
 package podman
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 
-	"github.com/getarcaneapp/arcane/types/v2/podman"
 	"github.com/spf13/cobra"
-	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"kit.getarcane.app"
+
+	"getarcane.dev/cli/v3/internal/client"
+	"getarcane.dev/cli/v3/internal/cmdutil"
+	"getarcane.dev/cli/v3/internal/output"
+	internaltypes "getarcane.dev/cli/v3/internal/types"
+	"getarcane.dev/types/v3"
 )
 
 func Command() *cobra.Command {
@@ -43,11 +48,11 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.Status]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.PodmanStatus]{
 				Method:         http.MethodGet,
-				Path:           types.PodmanStatus(c.EnvID()),
+				Path:           internaltypes.PodmanStatus(c.EnvID()),
 				FailureMessage: "failed to get Podman status",
-				Render: func(data podman.Status) error {
+				Render: func(data types.PodmanStatus) error {
 					if !data.Detected {
 						output.Info("Podman was not detected on this environment")
 						return nil
@@ -84,7 +89,7 @@ func newAutoUpdateCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, opts.force || opts.dryRun, "Are you sure you want to auto-update Podman containers?")
+			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: "Are you sure you want to auto-update Podman containers?", Force: opts.force || opts.dryRun})
 			if confirmationErr != nil || !confirmed {
 				return confirmationErr
 			}
@@ -94,12 +99,12 @@ func newAutoUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.AutoUpdateResult]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.PodmanAutoUpdateResult]{
 				Method:         http.MethodPost,
-				Path:           types.PodmanAutoUpdate(c.EnvID()),
-				Body:           podman.AutoUpdateOptions{DryRun: opts.dryRun},
+				Path:           internaltypes.PodmanAutoUpdate(c.EnvID()),
+				Body:           types.PodmanAutoUpdateOptions{DryRun: opts.dryRun},
 				FailureMessage: "failed to run Podman auto-update",
-				Render: func(data podman.AutoUpdateResult) error {
+				Render: func(data types.PodmanAutoUpdateResult) error {
 					output.Header("Podman Auto-Update")
 					output.KeyValue("Mode", data.Mode)
 					if data.Unit != nil {
@@ -134,6 +139,19 @@ func newAutoUpdateCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Report pending updates without applying them")
 	cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "Skip the confirmation prompt")
-	cmdutil.SetScope(cmdutil.ScopeFleet, cmd)
+	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	return cmd
+}
+
+func searchPodman[S any](ctx context.Context, c *client.Client, path string, matches func(S) bool) ([]S, error) {
+	result, err := c.GetJSON[[]S](ctx, fmt.Sprintf("%s?limit=%d", path, cmdutil.ShowAllLimit))
+	if statusErr, ok := errors.AsType[*client.StatusError](err); ok && statusErr.StatusCode == http.StatusBadRequest {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(result.Data, func(item S) bool {
+		return !matches(item)
+	}), nil
 }

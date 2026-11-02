@@ -1,5 +1,4 @@
 import { m } from '#lib/paraglide/messages.js';
-import type { JobRunStatus } from '#lib/types/job.js';
 import type { JobStatus } from '#lib/types/settings.js';
 export function jobStatusLabel(status: string, isWorker = false): string {
 	const labels: Record<string, () => string> = {
@@ -54,12 +53,8 @@ export function jobNameLabel(job: JobStatus): string {
 	return target.length ? m.jobs_dynamic_job_name({ name: label, target: target.join(':') }) : label;
 }
 
-export type JobPanelSection = 'overview' | 'history';
-
-export type JobStatusTone = 'green' | 'red' | 'amber' | 'blue' | 'gray';
-
 /** Badge tone for a run or worker status. */
-export function jobStatusTone(status: string | undefined): JobStatusTone {
+export function jobStatusTone(status: string | undefined): 'green' | 'red' | 'amber' | 'blue' | 'gray' {
 	switch (status) {
 		case 'succeeded':
 		case 'healthy':
@@ -80,9 +75,4 @@ export function jobStatusTone(status: string | undefined): JobStatusTone {
 		default:
 			return 'gray';
 	}
-}
-
-/** Whether a run can still change, so views showing it keep polling. */
-export function isJobRunPending(status: JobRunStatus | undefined): boolean {
-	return status === 'queued' || status === 'waiting' || status === 'running' || status === 'retrying';
 }

@@ -8,31 +8,34 @@ import (
 
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
-	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/config"
 )
 
-type CORSMiddleware struct {
-	cfg           *config.Config
-	customOrigins []string
-}
+type (
+	CORSMiddleware struct {
+		cfg           *config.Config
+		customOrigins []string
+	}
+)
 
 func NewCORSMiddleware(cfg *config.Config) *CORSMiddleware {
 	return &CORSMiddleware{cfg: cfg}
 }
 
 func (m *CORSMiddleware) Add() echo.MiddlewareFunc {
-	// Edge Agent mode: skip CORS entirely. The agent only receives server-to-server
-	// requests through the edge tunnel from the manager — never from browsers.
-	if m.cfg != nil && m.cfg.EdgeAgent {
+	// Agent mode: skip CORS entirely. The agent only receives server-to-server
+	// requests through the agent tunnel from the manager — never from browsers.
+	if m.cfg.AgentEnabled {
 		return func(next echo.HandlerFunc) echo.HandlerFunc {
 			return func(c *echo.Context) error { return next(c) }
 		}
 	}
 
 	return middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins:     deriveAllowedOriginsInternal(m.cfg, m.customOrigins),
+		AllowOrigins:     deriveAllowedOrigins(m.cfg, m.customOrigins),
 		AllowCredentials: true,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"},
 		AllowHeaders: []string{
@@ -61,7 +64,7 @@ func (m *CORSMiddleware) Add() echo.MiddlewareFunc {
 	})
 }
 
-func deriveAllowedOriginsInternal(cfg *config.Config, custom []string) []string {
+func deriveAllowedOrigins(cfg *config.Config, custom []string) []string {
 	ctx := context.Background() //nolint:forbidigo // Middleware configuration is derived at startup without a request context.
 	if len(custom) > 0 {
 		return kit.Unique(custom)
@@ -77,7 +80,7 @@ func deriveAllowedOriginsInternal(cfg *config.Config, custom []string) []string 
 			if u, err := url.Parse(appURL); err == nil {
 				origins = append(origins, u.Scheme+"://"+u.Host)
 			} else {
-				slog.WarnContext(ctx, "Failed to parse APP_URL for CORS origins", "url", appURL, "error", err)
+				slog.WarnContext(ctx, "Failed to parse ARCANE_APP_URL for CORS origins", "url", appURL, "error", err)
 			}
 		}
 	}

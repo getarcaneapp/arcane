@@ -8,24 +8,26 @@ import (
 	"path/filepath"
 	"strings"
 
-	settingstypes "github.com/getarcaneapp/arcane/types/v2/settings"
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/types/v3"
 )
 
-type appImage struct {
-	data     []byte
-	mimeType string
-}
+type (
+	appImage struct {
+		mimeType string
+		data     []byte
+	}
 
-type ApplicationImagesService struct {
-	standard        map[string]appImage
-	development     map[string]appImage
-	settingsService *settings.SettingsService
-}
+	ApplicationImagesService struct {
+		standard        map[string]appImage
+		development     map[string]appImage
+		settingsService *settings.SettingsService
+	}
+)
 
 func NewApplicationImagesService(embeddedFS embed.FS, settingsService *settings.SettingsService) *ApplicationImagesService {
 	service := &ApplicationImagesService{
@@ -84,7 +86,7 @@ func (s *ApplicationImagesService) GetImageWithColor(name, colorOverride string,
 		return data, mimeType, nil
 	}
 
-	accentColor := kit.Ternary(settingstypes.SafeAccentColor.MatchString(colorOverride), colorOverride, settingstypes.DefaultAccentColor)
+	accentColor := kit.Ternary(types.SafeAccentColor.MatchString(colorOverride), colorOverride, types.DefaultAccentColor)
 	svg := strings.NewReplacer(
 		"fill:#6D28D9", "fill:"+accentColor,
 		"fill:#6d28d9", "fill:"+accentColor,

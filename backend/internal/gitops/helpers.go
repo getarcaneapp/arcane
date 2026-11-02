@@ -2,9 +2,10 @@ package gitops
 
 import (
 	"errors"
+	"slices"
 	"strings"
 
-	"go.getarcane.app/kit/pkg"
+	"kit.getarcane.app"
 )
 
 func normalizeSyncLimitSetting(value, defaultValue int) int {
@@ -18,14 +19,27 @@ func nullableTrimmedString(p *string) *string {
 }
 
 func validateSyncLimits(maxFiles *int, maxTotalSize, maxBinarySize *int64) error {
-	if maxFiles != nil && *maxFiles < 0 {
+	if kit.FromPtr(maxFiles) < 0 {
 		return errors.New("maxSyncFiles must be non-negative")
 	}
-	if maxTotalSize != nil && *maxTotalSize < 0 {
+	if kit.FromPtr(maxTotalSize) < 0 {
 		return errors.New("maxSyncTotalSize must be non-negative")
 	}
-	if maxBinarySize != nil && *maxBinarySize < 0 {
+	if kit.FromPtr(maxBinarySize) < 0 {
 		return errors.New("maxSyncBinarySize must be non-negative")
 	}
 	return nil
+}
+
+func hasPreDeployConfig(submitted map[string]bool) bool {
+	return slices.ContainsFunc([]string{
+		"preDeployScriptPath",
+		"preDeployRunnerImage",
+		"preDeployEnv",
+		"preDeployExtraMounts",
+		"preDeployTimeoutSec",
+		"preDeployNetworkMode",
+	}, func(field string) bool {
+		return submitted[field]
+	})
 }

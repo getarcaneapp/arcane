@@ -5,24 +5,26 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman/children/kube"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman/children/pods"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman/children/quadlets"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman/children/secrets"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/podman/children/kube"
+	"getarcane.dev/arcane/v3/internal/podman/children/pods"
+	"getarcane.dev/arcane/v3/internal/podman/children/quadlets"
+	"getarcane.dev/arcane/v3/internal/podman/children/secrets"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+)
+
+type (
+	Module struct {
+		service *Service
+		event   *event.EventService
+	}
 )
 
 const (
 	podmanPath = "/environments/{id}/podman"
 	podmanTag  = "Podman"
 )
-
-type Module struct {
-	service *Service
-	event   *event.EventService
-}
 
 func New(service *Service, eventService *event.EventService) *Module {
 	return &Module{service: service, event: eventService}
@@ -34,9 +36,15 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	}
 
 	h := &Handler{service: m.service, eventService: m.event}
-	handlerutil.RegisterSecured(api,
-		handlerutil.Operation("get-podman-status", http.MethodGet, podmanPath+"/status", "Get Podman status", "Report whether the environment runs Podman and which Podman features it supports", podmanTag),
-		authz.PermPodmanRead, h.GetStatus)
+	handlerutil.RegisterSecured(api, huma.Operation{
+		OperationID: "get-podman-status",
+		Method:      http.MethodGet,
+		Path:        podmanPath + "/status",
+		Summary:     "Get Podman status",
+		Description: "Report whether the environment runs Podman and which Podman features it supports",
+		Tags:        []string{podmanTag},
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
+	}, authz.PermPodmanRead, h.GetStatus)
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation("get-podman-info", http.MethodGet, podmanPath+"/info", "Get Podman info", "", podmanTag),
 		authz.PermPodmanRead, h.GetInfo)

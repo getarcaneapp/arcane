@@ -10,12 +10,13 @@ import (
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
-	"go.getarcane.app/builds/pkg/contextsource"
-	buildtypes "go.getarcane.app/builds/types"
-	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
+	"kit.getarcane.app"
+	"kit.getarcane.app/builds/pkg/contextsource"
+	buildtypes "kit.getarcane.app/builds/types"
+
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/types/v3"
 )
 
 // ResolveBuildContext resolves a service build context against workingDir.
@@ -92,12 +93,6 @@ func UlimitsFromCompose(ulimits map[string]*composetypes.UlimitsConfig) map[stri
 	return kit.Ternary(len(out) == 0, nil, out)
 }
 
-// MergeBuildTags combines a primary image tag with compose tags, trimming blanks
-// and de-duplicating while preserving order (primary first).
-func MergeBuildTags(primaryImage string, composeTags []string) []string {
-	return kit.Unique(kit.TrimNonEmpty(append([]string{primaryImage}, composeTags...)))
-}
-
 // BuildPlatformsFromCompose returns the build platforms for a service, falling
 // back to the service platform when no build platforms are declared.
 func BuildPlatformsFromCompose(svc composetypes.ServiceConfig) []string {
@@ -144,7 +139,7 @@ func SanitizeImageComponent(value string) string {
 	}, value)
 }
 
-func resolveEffectiveBuildProviderInternal(override, defaultProvider string) string {
+func resolveEffectiveBuildProvider(override, defaultProvider string) string {
 	provider := strings.ToLower(strings.TrimSpace(override))
 	if provider != "" {
 		return provider
@@ -161,19 +156,19 @@ func PrepareServiceBuildRequest(
 	project *composetypes.Project,
 	serviceName string,
 	svc composetypes.ServiceConfig,
-	options projecttypes.BuildOptions,
+	options types.ProjectBuildOptions,
 	defaultProvider string,
 ) (buildtypes.BuildRequest, composetypes.ServiceConfig, bool, error) {
 	if project == nil || svc.Build == nil {
 		return buildtypes.BuildRequest{}, svc, false, errors.New("compose project and service build configuration are required")
 	}
 	imageName, updatedSvc, updated := EnsureServiceImage(projectID, project.Name, serviceName, svc)
-	effectiveProvider := resolveEffectiveBuildProviderInternal(options.Provider, defaultProvider)
+	effectiveProvider := resolveEffectiveBuildProvider(options.Provider, defaultProvider)
 
 	if updated && effectiveProvider == "depot" {
 		return buildtypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s must define an image when using depot build provider", serviceName)
 	}
-	if updated && options.Push != nil && *options.Push {
+	if updated && kit.FromPtr(options.Push) {
 		return buildtypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s must define an image when push is enabled", serviceName)
 	}
 
@@ -198,7 +193,7 @@ func PrepareServiceBuildRequest(
 		ContextDir:       contextDir,
 		Dockerfile:       dockerfilePath,
 		DockerfileInline: dockerfileInline,
-		Tags:             MergeBuildTags(imageName, updatedSvc.Build.Tags),
+		Tags:             kit.Unique(kit.TrimNonEmpty(append([]string{imageName}, updatedSvc.Build.Tags...))),
 		Target:           strings.TrimSpace(updatedSvc.Build.Target),
 		BuildArgs:        BuildArgsFromCompose(updatedSvc.Build.Args),
 		Labels:           LabelsFromCompose(updatedSvc.Build.Labels),

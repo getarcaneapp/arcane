@@ -11,7 +11,9 @@ import { metaHelper } from '@tanstack/table-core';
 import type { Cell, Column, ColumnDef, FilterFn, Row, RowData, Table } from '@tanstack/table-core';
 
 // Type-only cycle with arcane-table.types.svelte.ts (which imports only types from here) — erased at emit.
-import type { ColumnAlign, ColumnWidth, FilterOption } from './arcane-table.types.svelte';
+import type { IconType } from '#lib/icons/index.js';
+
+import type { CardSlot, ColumnAlign, ColumnWidth, FilterOption } from './arcane-table.types.svelte';
 
 /**
  * Presentation hints Arcane stows on each column's `meta`. Declared through the v9
@@ -24,13 +26,16 @@ export interface ArcaneColumnMeta {
 	width?: ColumnWidth;
 	align?: ColumnAlign;
 	truncate?: boolean;
+	card?: CardSlot;
+	cardIcon?: IconType;
+	cardLabel?: boolean;
 }
 
 /**
  * The single, app-wide TanStack Table v9 feature set shared by every Arcane table.
  *
  * Arcane runs all tables in manual / server-side mode — sorting, filtering and
- * pagination all happen on the backend (driven by `requestOptions` + `onRefresh`) — so
+ * pagination all happen on the backend (driven by `requestOptions`) — so
  * we register only the *state* features the UI actually drives and deliberately omit
  * every client-side row-model factory (`createSortedRowModel`, `createFilteredRowModel`,
  * `createPaginatedRowModel`, …). v9 tree-shakes the unregistered feature code out of the

@@ -11,28 +11,47 @@ import (
 	"slices"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"getarcane.dev/cli/v3/internal/client"
+	"getarcane.dev/cli/v3/internal/output"
+	"getarcane.dev/types/v3"
 )
 
-// ListSpec describes a paginated list with raw JSON passthrough or table rendering.
-type ListSpec[T any] struct {
-	// Resource names the collection in error messages and the trailing
-	// "Showing x of y <resource>" line.
-	Resource string
-	// Endpoint is the list path (environment already applied).
-	Endpoint string
-	// Params configures pagination from the command's flags.
-	Params ListParams
-	// Query holds extra query parameters, applied after pagination.
-	Query url.Values
+type (
+	// ListSpec describes a paginated list with raw JSON passthrough or table rendering.
+	ListSpec[T any] struct {
+		// Query holds extra query parameters, applied after pagination.
+		Query url.Values
 
-	Headers []string
-	Row     func(T) []string
-}
+		Row func(T) []string
+		// Resource names the collection in error messages and the trailing
+		// "Showing x of y <resource>" line.
+		Resource string
+		// Endpoint is the list path (environment already applied).
+		Endpoint string
+
+		Headers []string
+		// Params configures pagination from the command's flags.
+		Params ListParams
+	}
+
+	// Spec describes a request with raw JSON data output or typed text rendering.
+	// Render is required in text mode; a nil Render returns a programmer error before requesting.
+	Spec[T any] struct {
+		Body                         any
+		Render                       func(T) error
+		Method, Path, FailureMessage string
+		Timeout                      time.Duration
+	}
+
+	// DeleteSpec describes a confirmed DELETE with optional body and human-readable success output.
+	DeleteSpec struct {
+		Body                                         any
+		Prompt, Path, FailureMessage, SuccessMessage string
+		Force                                        bool
+	}
+)
 
 // RunList executes one standard list command as described by spec.
 func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) error {
@@ -47,7 +66,7 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 		path = AppendQuery(path, spec.Query)
 	}
 
-	resp, err := c.Get(cmd.Context(), path)
+	resp, err := c.Request(cmd.Context(), http.MethodGet, path, nil)
 	if err != nil {
 		return fmt.Errorf("failed to list %s: %w", spec.Resource, err)
 	}
@@ -61,7 +80,7 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 	merged, _ := cmd.Context().Value(mergedScopeKey{}).(*mergedScope)
 	if JSONOutputEnabled(cmd) {
 		if merged != nil {
-			var envelope base.Paginated[jsontext.Value]
+			var envelope types.Paginated[jsontext.Value]
 			if unmarshalErr := json.Unmarshal(body, &envelope); unmarshalErr != nil {
 				return fmt.Errorf("failed to parse response: %w", unmarshalErr)
 			}
@@ -70,7 +89,7 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 		return PrintRawJSON(body)
 	}
 
-	var result base.Paginated[T]
+	var result types.Paginated[T]
 	if unmarshalErr := json.Unmarshal(body, &result); unmarshalErr != nil {
 		return fmt.Errorf("failed to parse response: %w", unmarshalErr)
 	}
@@ -87,23 +106,14 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 		if merged == nil {
 			continue
 		}
-		var ref base.EnvironmentRef
-		if tagged, ok := any(item).(interface{ Environment() base.EnvironmentRef }); ok {
+		var ref types.EnvironmentRef
+		if tagged, ok := any(item).(interface{ Environment() types.EnvironmentRef }); ok {
 			ref = tagged.Environment()
 		}
 		rows[i] = slices.Concat([]string{cmp.Or(ref.Name, merged.names[cmp.Or(ref.ID, c.EnvID())], ref.ID)}, rows[i])
 	}
 
 	return PrintTable(cmd, headers, rows, TableSummary{Resource: spec.Resource, Total: result.Pagination.TotalItems, Paginated: true})
-}
-
-// Spec describes a request with raw JSON data output or typed text rendering.
-// Render is required in text mode; a nil Render returns a programmer error before requesting.
-type Spec[T any] struct {
-	Method, Path, FailureMessage string
-	Body                         any
-	Timeout                      time.Duration
-	Render                       func(T) error
 }
 
 // Run enforces a success envelope and prints raw data in JSON mode or invokes Render in text mode.
@@ -146,16 +156,9 @@ func Run[T any](cmd *cobra.Command, c *client.Client, spec Spec[T]) error {
 	return spec.Render(data)
 }
 
-// DeleteSpec describes a confirmed DELETE with optional body and human-readable success output.
-type DeleteSpec struct {
-	Force                                        bool
-	Prompt, Path, FailureMessage, SuccessMessage string
-	Body                                         any
-}
-
 // RunDelete returns nil on cancellation, otherwise printing raw data in JSON mode or SuccessMessage in text mode.
 func RunDelete(cmd *cobra.Command, c *client.Client, spec DeleteSpec) error {
-	confirmed, err := ConfirmOrCancel(cmd, spec.Force, spec.Prompt)
+	confirmed, err := ConfirmOrCancel(cmd, ConfirmOptions{Label: spec.Prompt, Force: spec.Force})
 	if err != nil || !confirmed {
 		return err
 	}

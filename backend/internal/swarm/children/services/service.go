@@ -3,42 +3,77 @@ package services
 import (
 	"cmp"
 	"context"
-	stdjson "encoding/json"
 	"encoding/json/v2"
 	"fmt"
 	"maps"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
 
 	"github.com/containerd/errdefs"
-	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
-	"go.getarcane.app/docker"
-	"go.getarcane.app/kit/pkg"
 
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"kit.getarcane.app"
+	"kit.getarcane.app/docker"
+
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/jsonx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
-// Service manages swarm services.
-type Service struct {
-	docker        *dockerInternal.DockerClientService
-	ensureManager func(ctx context.Context) error
-	listTasks     func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]swarmtypes.TaskSummary, pagination.Response, error)
+type (
+	// Service manages swarm services.
+	Service struct {
+		docker        *dockerInternal.DockerClientService
+		ensureManager func(ctx context.Context) error
+		listTasks     func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
+	}
+)
+
+var servicePagination = pagination.Config[types.SwarmServiceSummary]{
+	SearchAccessors: []pagination.SearchAccessor[types.SwarmServiceSummary]{
+		func(svc types.SwarmServiceSummary) (string, error) { return svc.Name, nil },
+		func(svc types.SwarmServiceSummary) (string, error) { return svc.Image, nil },
+		func(svc types.SwarmServiceSummary) (string, error) { return svc.ID, nil },
+		func(svc types.SwarmServiceSummary) (string, error) { return svc.StackName, nil },
+		func(svc types.SwarmServiceSummary) (string, error) { return svc.Mode, nil },
+		func(svc types.SwarmServiceSummary) (string, error) {
+			return strings.Join(svc.Networks, " "), nil
+		},
+		func(svc types.SwarmServiceSummary) (string, error) {
+			return strings.Join(svc.Nodes, " "), nil
+		},
+	},
+	SortBindings: []pagination.SortBinding[types.SwarmServiceSummary]{
+		{Key: "name", Fn: func(a, b types.SwarmServiceSummary) int { return strings.Compare(a.Name, b.Name) }},
+		{Key: "image", Fn: func(a, b types.SwarmServiceSummary) int { return strings.Compare(a.Image, b.Image) }},
+		{Key: "mode", Fn: func(a, b types.SwarmServiceSummary) int { return strings.Compare(a.Mode, b.Mode) }},
+		{Key: "replicas", Fn: func(a, b types.SwarmServiceSummary) int {
+			if localCmp := cmp.Compare(a.Replicas, b.Replicas); localCmp != 0 {
+				return localCmp
+			}
+			return cmp.Compare(a.RunningReplicas, b.RunningReplicas)
+		}},
+		{Key: "created", Fn: func(a, b types.SwarmServiceSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
+		{Key: "updated", Fn: func(a, b types.SwarmServiceSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
+	},
 }
 
 func NewService(
 	dockerService *dockerInternal.DockerClientService,
 	ensureManager func(ctx context.Context) error,
-	listTasks func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]swarmtypes.TaskSummary, pagination.Response, error),
+	listTasks func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error),
 ) *Service {
 	return &Service{docker: dockerService, ensureManager: ensureManager, listTasks: listTasks}
 }
 
-func (s *Service) ListServicesPaginated(ctx context.Context, params pagination.QueryParams) ([]swarmtypes.ServiceSummary, pagination.Response, error) {
+func (s *Service) ListServicesPaginated(ctx context.Context, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, pagination.Response{}, err
 	}
@@ -58,45 +93,41 @@ func (s *Service) PaginateSummaries(
 	ctx context.Context,
 	services []swarm.Service,
 	params pagination.QueryParams,
-) ([]swarmtypes.ServiceSummary, pagination.Response, error) {
+) ([]types.SwarmServiceSummary, pagination.Response, error) {
 	summaries, err := s.summarizeServices(ctx, services)
 	if err != nil {
 		return nil, pagination.Response{}, err
 	}
 
-	config := pagination.Config[swarmtypes.ServiceSummary]{
-		SearchAccessors: []pagination.SearchAccessor[swarmtypes.ServiceSummary]{
-			func(svc swarmtypes.ServiceSummary) (string, error) { return svc.Name, nil },
-			func(svc swarmtypes.ServiceSummary) (string, error) { return svc.Image, nil },
-			func(svc swarmtypes.ServiceSummary) (string, error) { return svc.ID, nil },
-			func(svc swarmtypes.ServiceSummary) (string, error) { return svc.StackName, nil },
-			func(svc swarmtypes.ServiceSummary) (string, error) { return svc.Mode, nil },
-			func(svc swarmtypes.ServiceSummary) (string, error) {
-				return strings.Join(svc.Networks, " "), nil
-			},
-			func(svc swarmtypes.ServiceSummary) (string, error) {
-				return strings.Join(svc.Nodes, " "), nil
-			},
-		},
-		SortBindings: []pagination.SortBinding[swarmtypes.ServiceSummary]{
-			{Key: "name", Fn: func(a, b swarmtypes.ServiceSummary) int { return strings.Compare(a.Name, b.Name) }},
-			{Key: "image", Fn: func(a, b swarmtypes.ServiceSummary) int { return strings.Compare(a.Image, b.Image) }},
-			{Key: "mode", Fn: func(a, b swarmtypes.ServiceSummary) int { return strings.Compare(a.Mode, b.Mode) }},
-			{Key: "replicas", Fn: func(a, b swarmtypes.ServiceSummary) int {
-				if localCmp := cmp.Compare(a.Replicas, b.Replicas); localCmp != 0 {
-					return localCmp
-				}
-				return cmp.Compare(a.RunningReplicas, b.RunningReplicas)
-			}},
-			{Key: "created", Fn: func(a, b swarmtypes.ServiceSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
-			{Key: "updated", Fn: func(a, b swarmtypes.ServiceSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
-		},
-	}
-	result := config.SearchOrderAndPaginate(summaries, params)
+	result := servicePagination.SearchOrderAndPaginate(summaries, params)
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
 }
 
-func (s *Service) GetService(ctx context.Context, serviceID string) (*swarmtypes.ServiceInspect, error) {
+func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.SwarmServiceSummary], error) {
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.SwarmServiceSummary]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return types.Paginated[types.SwarmServiceSummary]{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[types.SwarmServiceSummary], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		pages = append(pages, pagination.EnvironmentPage[types.SwarmServiceSummary]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
+	}
+	data, resp := pagination.MergeEnvironmentPages(servicePagination, pages, params)
+
+	return types.Paginated[types.SwarmServiceSummary]{
+		Success:            true,
+		Data:               data,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
+func (s *Service) GetService(ctx context.Context, serviceID string) (*types.SwarmServiceInspect, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, err
 	}
@@ -109,7 +140,7 @@ func (s *Service) GetService(ctx context.Context, serviceID string) (*swarmtypes
 	}
 	service := serviceResult.Service
 
-	inspect := swarmtypes.NewServiceInspect(service)
+	inspect := types.NewSwarmServiceInspect(service)
 	inspect.Nodes = s.resolveServiceNodeNames(ctx, serviceID)
 	inspect.NetworkDetails = s.enrichServiceNetworkDetails(ctx, service.Spec.TaskTemplate.Networks)
 	inspect.Mounts = s.enrichServiceMounts(ctx, service.Spec.TaskTemplate.ContainerSpec)
@@ -154,12 +185,12 @@ func (s *Service) resolveServiceNodeNames(ctx context.Context, serviceID string)
 func (s *Service) enrichServiceNetworkDetails(
 	ctx context.Context,
 	networkConfigs []swarm.NetworkAttachmentConfig,
-) map[string]swarmtypes.ServiceNetworkDetail {
+) map[string]types.SwarmServiceNetworkDetail {
 	if len(networkConfigs) == 0 {
 		return nil
 	}
 
-	details := make(map[string]swarmtypes.ServiceNetworkDetail, len(networkConfigs))
+	details := make(map[string]types.SwarmServiceNetworkDetail, len(networkConfigs))
 	for _, networkConfig := range networkConfigs {
 		networkID := networkConfig.Target
 		netInspectResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkInspectResult, error) {
@@ -170,7 +201,7 @@ func (s *Service) enrichServiceNetworkDetails(
 		}
 
 		networkInfo := netInspectResult.Network
-		detail := swarmtypes.ServiceNetworkDetail{
+		detail := types.SwarmServiceNetworkDetail{
 			ID:         networkInfo.ID,
 			Name:       networkInfo.Name,
 			Driver:     networkInfo.Driver,
@@ -195,7 +226,7 @@ func (s *Service) enrichServiceNetworkDetails(
 			})
 			if networkInspectErr == nil {
 				configNetwork := configInspectResult.Network
-				configDetail := &swarmtypes.ServiceNetworkConfigDetail{
+				configDetail := &types.SwarmServiceNetworkConfigDetail{
 					Name:       configNetwork.Name,
 					Driver:     configNetwork.Driver,
 					Scope:      configNetwork.Scope,
@@ -224,12 +255,12 @@ func (s *Service) enrichServiceNetworkDetails(
 func (s *Service) enrichServiceMounts(
 	ctx context.Context,
 	containerSpec *swarm.ContainerSpec,
-) []swarmtypes.ServiceMount {
+) []types.SwarmServiceMount {
 	if containerSpec == nil {
 		return nil
 	}
 
-	mounts := make([]swarmtypes.ServiceMount, 0, len(containerSpec.Mounts))
+	mounts := make([]types.SwarmServiceMount, 0, len(containerSpec.Mounts))
 	for _, serviceMount := range containerSpec.Mounts {
 		volumeInfo := func() client.VolumeInspectResult {
 			if serviceMount.Type != "volume" || serviceMount.Source == "" {
@@ -243,7 +274,7 @@ func (s *Service) enrichServiceMounts(
 			}
 			return result
 		}().Volume
-		mounts = append(mounts, swarmtypes.ServiceMount{
+		mounts = append(mounts, types.SwarmServiceMount{
 			Type:          string(serviceMount.Type),
 			Source:        serviceMount.Source,
 			Target:        serviceMount.Target,
@@ -257,7 +288,7 @@ func (s *Service) enrichServiceMounts(
 	return mounts
 }
 
-func (s *Service) CreateService(ctx context.Context, req swarmtypes.ServiceCreateRequest) (*swarmtypes.ServiceCreateResponse, error) {
+func (s *Service) CreateService(ctx context.Context, req types.SwarmServiceCreateRequest) (*types.SwarmServiceCreateResponse, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, err
 	}
@@ -265,14 +296,11 @@ func (s *Service) CreateService(ctx context.Context, req swarmtypes.ServiceCreat
 	// Unmarshal spec from JSON
 	var spec swarm.ServiceSpec
 	// Docker encodes durations as integer nanoseconds.
-	if unmarshalErr := json.Unmarshal(req.Spec, &spec, stdjson.FormatDurationAsNano(true)); unmarshalErr != nil {
+	if unmarshalErr := json.Unmarshal(req.Spec, &spec, jsonx.DurationNano); unmarshalErr != nil {
 		return nil, fmt.Errorf("failed to parse service spec: %w", unmarshalErr)
 	}
 
-	optionsPayload := swarmtypes.ServiceCreateOptions{}
-	if req.Options != nil {
-		optionsPayload = *req.Options
-	}
+	optionsPayload := kit.FromPtr(req.Options)
 
 	// Sanitize spec to avoid empty UID/GID in secret/config refs
 	sanitizeServiceSpec(&spec)
@@ -288,13 +316,13 @@ func (s *Service) CreateService(ctx context.Context, req swarmtypes.ServiceCreat
 		return nil, fmt.Errorf("failed to create swarm service: %w", err)
 	}
 
-	return &swarmtypes.ServiceCreateResponse{
+	return &types.SwarmServiceCreateResponse{
 		ID:       resp.ID,
 		Warnings: resp.Warnings,
 	}, nil
 }
 
-func (s *Service) UpdateService(ctx context.Context, serviceID string, req swarmtypes.ServiceUpdateRequest) (*swarmtypes.ServiceUpdateResponse, error) {
+func (s *Service) UpdateService(ctx context.Context, serviceID string, req types.SwarmServiceUpdateRequest) (*types.SwarmServiceUpdateResponse, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, err
 	}
@@ -310,10 +338,7 @@ func (s *Service) UpdateService(ctx context.Context, serviceID string, req swarm
 		versionIndex = serviceResult.Service.Version.Index
 	}
 
-	optionsPayload := swarmtypes.ServiceUpdateOptions{}
-	if req.Options != nil {
-		optionsPayload = *req.Options
-	}
+	optionsPayload := kit.FromPtr(req.Options)
 
 	// Sanitize spec to avoid empty UID/GID in secret/config refs
 	sanitizeServiceSpec(&req.Spec)
@@ -332,7 +357,7 @@ func (s *Service) UpdateService(ctx context.Context, serviceID string, req swarm
 		return nil, fmt.Errorf("failed to update swarm service: %w", err)
 	}
 
-	return &swarmtypes.ServiceUpdateResponse{
+	return &types.SwarmServiceUpdateResponse{
 		Warnings: resp.Warnings,
 	}, nil
 }
@@ -351,7 +376,7 @@ func (s *Service) RemoveService(ctx context.Context, serviceID string) error {
 	return nil
 }
 
-func (s *Service) StreamServiceLogs(ctx context.Context, serviceID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
+func (s *Service) StreamServiceLogs(ctx context.Context, serviceID string, logsChan chan<- string, opts types.LogStreamOptions) error {
 	if err := s.ensureManager(ctx); err != nil {
 		return err
 	}
@@ -364,10 +389,10 @@ func (s *Service) StreamServiceLogs(ctx context.Context, serviceID string, logsC
 	options := client.ServiceLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
-		Follow:     follow,
-		Tail:       tail,
-		Since:      since,
-		Timestamps: timestamps,
+		Follow:     opts.Follow,
+		Tail:       opts.Tail,
+		Since:      opts.Since,
+		Timestamps: opts.Timestamps,
 		Details:    true,
 	}
 
@@ -377,14 +402,14 @@ func (s *Service) StreamServiceLogs(ctx context.Context, serviceID string, logsC
 	}
 	defer func() { _ = logs.Close() }()
 
-	if follow {
+	if opts.Follow {
 		return docker.StreamMultiplexedLogs(ctx, logs, logsChan)
 	}
 
 	return docker.ReadAllLogs(ctx, logs, logsChan)
 }
 
-func (s *Service) ListServiceTasksPaginated(ctx context.Context, serviceID string, params pagination.QueryParams) ([]swarmtypes.TaskSummary, pagination.Response, error) {
+func (s *Service) ListServiceTasksPaginated(ctx context.Context, serviceID string, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, pagination.Response{}, err
 	}
@@ -394,7 +419,7 @@ func (s *Service) ListServiceTasksPaginated(ctx context.Context, serviceID strin
 	return s.listTasks(ctx, filters, params)
 }
 
-func (s *Service) RollbackService(ctx context.Context, serviceID string) (*swarmtypes.ServiceUpdateResponse, error) {
+func (s *Service) RollbackService(ctx context.Context, serviceID string) (*types.SwarmServiceUpdateResponse, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, err
 	}
@@ -417,10 +442,10 @@ func (s *Service) RollbackService(ctx context.Context, serviceID string) (*swarm
 		return nil, fmt.Errorf("failed to rollback swarm service: %w", err)
 	}
 
-	return &swarmtypes.ServiceUpdateResponse{Warnings: updateResult.Warnings}, nil
+	return &types.SwarmServiceUpdateResponse{Warnings: updateResult.Warnings}, nil
 }
 
-func (s *Service) ScaleService(ctx context.Context, serviceID string, replicas uint64) (*swarmtypes.ServiceUpdateResponse, error) {
+func (s *Service) ScaleService(ctx context.Context, serviceID string, replicas uint64) (*types.SwarmServiceUpdateResponse, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, err
 	}
@@ -452,10 +477,10 @@ func (s *Service) ScaleService(ctx context.Context, serviceID string, replicas u
 		return nil, fmt.Errorf("failed to scale swarm service: %w", err)
 	}
 
-	return &swarmtypes.ServiceUpdateResponse{Warnings: updateResult.Warnings}, nil
+	return &types.SwarmServiceUpdateResponse{Warnings: updateResult.Warnings}, nil
 }
 
-func (s *Service) summarizeServices(ctx context.Context, services []swarm.Service) ([]swarmtypes.ServiceSummary, error) {
+func (s *Service) summarizeServices(ctx context.Context, services []swarm.Service) ([]types.SwarmServiceSummary, error) {
 	nodesResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NodeListResult, error) {
 		return dockerClient.NodeList(ctx, client.NodeListOptions{})
 	})
@@ -508,7 +533,7 @@ func (s *Service) summarizeServices(ctx context.Context, services []swarm.Servic
 		}
 	}
 
-	summaries := make([]swarmtypes.ServiceSummary, 0, len(services))
+	summaries := make([]types.SwarmServiceSummary, 0, len(services))
 	for _, service := range services {
 		var nodeNames []string
 		if nodeSet, ok := serviceNodes[service.ID]; ok {
@@ -518,7 +543,7 @@ func (s *Service) summarizeServices(ctx context.Context, services []swarm.Servic
 			}
 			sort.Strings(nodeNames)
 		}
-		summaries = append(summaries, swarmtypes.NewServiceSummary(service, nodeNames, networkNameByID))
+		summaries = append(summaries, types.NewSwarmServiceSummary(service, nodeNames, networkNameByID))
 	}
 
 	return summaries, nil
@@ -548,8 +573,8 @@ func sanitizeServiceSpec(spec *swarm.ServiceSpec) {
 	}
 }
 
-func toServiceNetworkIPAMConfig(cfg network.IPAMConfig) swarmtypes.ServiceNetworkIPAMConfig {
-	return swarmtypes.ServiceNetworkIPAMConfig{
+func toServiceNetworkIPAMConfig(cfg network.IPAMConfig) types.SwarmServiceNetworkIPAMConfig {
+	return types.SwarmServiceNetworkIPAMConfig{
 		Subnet:  kit.Ternary(cfg.Subnet.IsValid(), cfg.Subnet.String(), ""),
 		Gateway: kit.Ternary(cfg.Gateway.IsValid(), cfg.Gateway.String(), ""),
 		IPRange: kit.Ternary(cfg.IPRange.IsValid(), cfg.IPRange.String(), ""),

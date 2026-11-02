@@ -4,14 +4,16 @@ package template
 import (
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-type Module struct {
-	service *TemplateService
-}
+type (
+	Module struct {
+		service *TemplateService
+	}
+)
 
 func New(service *TemplateService) *Module {
 	return &Module{service: service}
@@ -102,7 +104,7 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 
 	huma.Register(api, huma.Operation{
 		OperationID: "updateTemplate",
-		Method:      "PUT",
+		Method:      "PATCH",
 		Path:        "/templates/{id}",
 		Summary:     "Update a template",
 		Description: "Update an existing compose template",
@@ -122,15 +124,16 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesDelete),
 	}, h.DeleteTemplate)
 
-	huma.Register(api, huma.Operation{
-		OperationID: "downloadTemplate",
+	middleware.RegisterWithActionPermissions(api, huma.Operation{
+		OperationID: "templateAction",
 		Method:      "POST",
-		Path:        "/templates/{id}/download",
+		Path:        "/templates/{id}",
 		Summary:     "Download a template",
 		Description: "Download a remote template to local storage",
 		Tags:        []string{"Templates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesCreate),
+	}, "action", map[string]string{
+		"download": authz.PermTemplatesCreate,
 	}, h.DownloadTemplate)
 
 	huma.Register(api, huma.Operation{
@@ -179,7 +182,7 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 
 	huma.Register(api, huma.Operation{
 		OperationID: "updateTemplateRegistry",
-		Method:      "PUT",
+		Method:      "PATCH",
 		Path:        "/templates/registries/{id}",
 		Summary:     "Update a template registry",
 		Description: "Update an existing template registry",

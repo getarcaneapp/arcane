@@ -3,7 +3,7 @@ import { toast } from 'svelte-sonner';
 // fallow-ignore-file code-duplication -- project and global tables already delegate removal to confirmAndRemoveContainer; only state callbacks differ
 import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 import { m } from '#lib/paraglide/messages.js';
-import { containerService, type ContainersPaginatedResponse } from '#lib/services/container-service.js';
+import { containerService } from '#lib/services/container-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { Activity } from '#lib/types/activity.type.js';
 import type { ContainerSummaryDto } from '#lib/types/docker.js';
@@ -16,7 +16,7 @@ import {
 	confirmAndUpdateContainer,
 	runContainerLifecycleAction
 } from '#lib/utils/container-actions.js';
-import { hasShownPermission, rowKey, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
+import { hasShownPermission, rowKey, type EnvironmentRow } from '#lib/utils/environments.js';
 import type { TableActionConfig, TableBulkActionConfig } from '#lib/utils/table-action-types.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -31,9 +31,8 @@ type BulkLoadingState = {
 };
 
 type ActionDeps = {
-	setContainers: (next: ContainerPage) => void;
 	setSelectedIds: (next: string[]) => void;
-	refreshContainers: () => Promise<ContainerPage>;
+	refreshContainers: () => Promise<unknown>;
 	actionStatus: Record<string, ActionStatus>;
 	isBulkLoading: BulkLoadingState;
 	/** Shown-environments scope the table rendered; compared only, never sent to the API. */
@@ -43,7 +42,6 @@ type ActionDeps = {
 };
 
 type ContainerRow = EnvironmentRow<ContainerSummaryDto>;
-type ContainerPage = EnvironmentPage<ContainersPaginatedResponse>;
 
 type ContainerActionKind = 'start' | 'stop' | 'restart' | 'pause' | 'unpause' | 'redeploy';
 
@@ -63,7 +61,6 @@ const containerActionConfigs: Record<
 };
 
 export function createContainerActions({
-	setContainers,
 	setSelectedIds,
 	refreshContainers,
 	actionStatus,
@@ -72,12 +69,6 @@ export function createContainerActions({
 	onUpdateAccepted,
 	canRefreshUpdates
 }: ActionDeps) {
-	const reloadContainers = async () => {
-		const result = await refreshContainers();
-		setContainers(result);
-		return result;
-	};
-
 	async function performContainerAction(action: ContainerActionKind, id: string, environmentId: string) {
 		const key = rowKey({ id, environmentId, environmentTagged: true });
 		if (action === 'start' || action === 'stop' || action === 'restart' || action === 'pause' || action === 'unpause') {
@@ -88,7 +79,7 @@ export function createContainerActions({
 				setStatus: (status) => {
 					actionStatus[key] = status;
 				},
-				onRefresh: reloadContainers
+				onRefresh: refreshContainers
 			});
 			return;
 		}
@@ -106,7 +97,7 @@ export function createContainerActions({
 					},
 					async onSuccess(data) {
 						toast.success(config.success(), activityToastOptions(extractActivityId(data)));
-						await reloadContainers();
+						await refreshContainers();
 					}
 				});
 			})()
@@ -129,7 +120,7 @@ export function createContainerActions({
 			setStatus: (status) => {
 				actionStatus[key] = status;
 			},
-			onRefresh: reloadContainers
+			onRefresh: refreshContainers
 		});
 	}
 
@@ -144,7 +135,7 @@ export function createContainerActions({
 			setLoading: (loading) => {
 				actionStatus[key] = loading ? 'updating' : '';
 			},
-			onRefresh: () => (canRefreshUpdates() ? reloadContainers() : undefined),
+			onRefresh: () => (canRefreshUpdates() ? refreshContainers() : undefined),
 			onAccepted: onUpdateAccepted
 		});
 	}
@@ -182,7 +173,7 @@ export function createContainerActions({
 			message: config.message(ids.length),
 			confirmLabel: config.label,
 			destructive: config.destructive ?? false,
-			run: (id, environmentId) => config.run(id, environmentId),
+			runInEnvironment: (id, environmentId) => config.run(id, environmentId),
 			messages: {
 				success: config.success,
 				partial: config.partial,
@@ -191,13 +182,13 @@ export function createContainerActions({
 			setLoading: (loading) => {
 				isBulkLoading[config.loadingKey] = loading;
 			},
-			onComplete: () => reloadContainers(),
+			onComplete: () => refreshContainers(),
 			clearSelection: () => setSelectedIds([])
 		});
 	}
 
-	async function handleBulkStart(ids: string[]) {
-		await runBulkAction(ids, {
+	function handleBulkStart(ids: string[]) {
+		runBulkAction(ids, {
 			title: (count) => m.containers_bulk_start_confirm_title({ count }),
 			message: (count) => m.containers_bulk_start_confirm_message({ count }),
 			label: m.common_start(),
@@ -209,8 +200,8 @@ export function createContainerActions({
 		});
 	}
 
-	async function handleBulkStop(ids: string[]) {
-		await runBulkAction(ids, {
+	function handleBulkStop(ids: string[]) {
+		runBulkAction(ids, {
 			title: (count) => m.containers_bulk_stop_confirm_title({ count }),
 			message: (count) => m.containers_bulk_stop_confirm_message({ count }),
 			label: m.common_stop(),
@@ -222,8 +213,8 @@ export function createContainerActions({
 		});
 	}
 
-	async function handleBulkRestart(ids: string[]) {
-		await runBulkAction(ids, {
+	function handleBulkRestart(ids: string[]) {
+		runBulkAction(ids, {
 			title: (count) => m.containers_bulk_restart_confirm_title({ count }),
 			message: (count) => m.containers_bulk_restart_confirm_message({ count }),
 			label: m.common_restart(),
@@ -251,7 +242,7 @@ export function createContainerActions({
 			message,
 			confirmLabel: m.common_update(),
 			destructive: false,
-			run: (id, environmentId) => containerService.updateContainer(id, environmentId),
+			runInEnvironment: (id, environmentId) => containerService.updateContainer(id, environmentId),
 			messages: {
 				success: (count) => m.containers_bulk_update_accepted({ count }),
 				partial: (success, total, failed) => m.containers_bulk_update_accept_partial({ success, total, failed }),
@@ -263,7 +254,7 @@ export function createContainerActions({
 			setLoading: (loading) => {
 				isBulkLoading['update'] = loading;
 			},
-			onComplete: () => (canRefreshUpdates() && updateScope === scope() && !tracksActivities ? reloadContainers() : undefined),
+			onComplete: () => (canRefreshUpdates() && updateScope === scope() && !tracksActivities ? refreshContainers() : undefined),
 			clearSelection: () => setSelectedIds([])
 		});
 	}
@@ -279,7 +270,7 @@ export function createContainerActions({
 				{ id: 'force', label: m.containers_remove_force_label(), initialState: false },
 				{ id: 'volumes', label: m.containers_remove_volumes_label(), initialState: false }
 			],
-			run: (id, environmentId, checkboxStates) =>
+			runInEnvironment: (id, environmentId, checkboxStates) =>
 				containerService.deleteContainer(id, {
 					force: !!checkboxStates['force'],
 					volumes: !!checkboxStates['volumes'],
@@ -293,7 +284,7 @@ export function createContainerActions({
 			setLoading: (loading) => {
 				isBulkLoading.remove = loading;
 			},
-			onComplete: () => reloadContainers(),
+			onComplete: () => refreshContainers(),
 			clearSelection: () => setSelectedIds([])
 		});
 	}

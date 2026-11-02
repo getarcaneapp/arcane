@@ -1,7 +1,7 @@
 package templates_test
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/testutil"
+	"getarcane.dev/cli/v3/internal/testutil"
 )
 
 func TestTemplatesListJSONIncludesPaginatedEnvelope(t *testing.T) {

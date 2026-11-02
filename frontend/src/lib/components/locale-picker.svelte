@@ -59,7 +59,7 @@
 			if (userStore.current) {
 				await userService.updateMyProfile({ locale });
 			}
-			await setLocale(locale);
+			setLocale(locale);
 			return locale;
 		},
 		onMutate: (locale) => {

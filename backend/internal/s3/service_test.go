@@ -10,18 +10,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/kit/pkg"
-	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/s3"
+	"kit.getarcane.app"
+	"kit.getarcane.app/sys/crypto"
+
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/s3"
+	"getarcane.dev/types/v3"
 )
 
 func setupS3DestinationServiceTest(t *testing.T) (*S3DestinationService, *gorm.DB) {
@@ -37,7 +38,7 @@ func setupS3DestinationServiceTest(t *testing.T) (*S3DestinationService, *gorm.D
 	require.NoError(t, gormDB.Exec("CREATE TABLE system_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backups (s3_destination_id text, remote_snapshot_id text)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
-	crypto.InitEncryption(&crypto.Config{
+	crypto.InitEncryption(crypto.Config{
 		EncryptionKey: "test-encryption-key-for-s3-destination-32bytes",
 		Environment:   "test",
 	})
@@ -48,7 +49,7 @@ func TestS3DestinationService_CRUD(t *testing.T) {
 	service, gormDB := setupS3DestinationServiceTest(t)
 	ctx := t.Context()
 
-	created, err := service.CreateS3Destination(ctx, backup.CreateS3Destination{
+	created, err := service.CreateS3Destination(ctx, types.S3Destination{
 		Name:            "  Cafe\u0301 offsite  ",
 		Endpoint:        "https://s3.example.com",
 		Bucket:          "arcane-backups",
@@ -77,7 +78,7 @@ func TestS3DestinationService_CRUD(t *testing.T) {
 	require.EqualValues(t, 1, page.TotalItems)
 	require.Len(t, listed, 1)
 
-	updated, err := service.UpdateS3Destination(ctx, created.ID, backup.UpdateS3Destination{
+	updated, err := service.UpdateS3Destination(ctx, created.ID, types.S3Destination{
 		Name:           "  Primary cafe\u0301 offsite  ",
 		Endpoint:       created.Endpoint,
 		Bucket:         created.Bucket,
@@ -102,7 +103,7 @@ func TestS3DestinationService_CRUD(t *testing.T) {
 func TestS3DestinationService_DeleteRejectsConfiguredDestination(t *testing.T) {
 	service, gormDB := setupS3DestinationServiceTest(t)
 	ctx := t.Context()
-	destination, err := service.CreateS3Destination(ctx, backup.CreateS3Destination{
+	destination, err := service.CreateS3Destination(ctx, types.S3Destination{
 		Name:            "In use",
 		Bucket:          "arcane-backups",
 		Region:          "us-east-1",
@@ -120,7 +121,7 @@ func TestS3DestinationService_DeleteRejectsConfiguredDestination(t *testing.T) {
 func TestS3DestinationService_UpdateRejectsLocationChangeWhileInUse(t *testing.T) {
 	service, gormDB := setupS3DestinationServiceTest(t)
 	ctx := t.Context()
-	destination, err := service.CreateS3Destination(ctx, backup.CreateS3Destination{
+	destination, err := service.CreateS3Destination(ctx, types.S3Destination{
 		Name:            "In use",
 		Bucket:          "arcane-backups",
 		Region:          "us-east-1",
@@ -131,7 +132,7 @@ func TestS3DestinationService_UpdateRejectsLocationChangeWhileInUse(t *testing.T
 	require.NoError(t, err)
 	require.NoError(t, gormDB.Exec("INSERT INTO volume_backups (s3_destination_id, remote_snapshot_id) VALUES (?, ?)", destination.ID, "snapshot-1").Error)
 
-	_, err = service.UpdateS3Destination(ctx, destination.ID, backup.UpdateS3Destination{
+	_, err = service.UpdateS3Destination(ctx, destination.ID, types.S3Destination{
 		Name:            destination.Name,
 		Bucket:          "other-bucket",
 		Region:          destination.Region,
@@ -141,7 +142,7 @@ func TestS3DestinationService_UpdateRejectsLocationChangeWhileInUse(t *testing.T
 	})
 	require.ErrorIs(t, err, ErrS3DestinationInUse)
 
-	updated, err := service.UpdateS3Destination(ctx, destination.ID, backup.UpdateS3Destination{
+	updated, err := service.UpdateS3Destination(ctx, destination.ID, types.S3Destination{
 		Name:        "Renamed",
 		Bucket:      destination.Bucket,
 		Region:      destination.Region,
@@ -156,7 +157,7 @@ func TestS3DestinationService_SyncS3Destinations(t *testing.T) {
 	service, gormDB := setupS3DestinationServiceTest(t)
 	ctx := t.Context()
 
-	legacy, err := service.CreateS3Destination(ctx, backup.CreateS3Destination{
+	legacy, err := service.CreateS3Destination(ctx, types.S3Destination{
 		Name:            "Legacy",
 		Bucket:          "legacy-bucket",
 		Region:          "us-east-1",
@@ -167,7 +168,7 @@ func TestS3DestinationService_SyncS3Destinations(t *testing.T) {
 	require.NoError(t, err)
 
 	createdAt := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
-	require.NoError(t, service.SyncS3Destinations(ctx, []backup.S3DestinationSync{
+	require.NoError(t, service.SyncS3Destinations(ctx, []types.S3Destination{
 		{
 			ID:              "destination-1",
 			Name:            "Remote primary",
@@ -195,7 +196,7 @@ func TestS3DestinationService_SyncS3Destinations(t *testing.T) {
 	_, err = service.GetS3Destination(ctx, legacy.ID)
 	require.ErrorIs(t, err, ErrS3DestinationNotFound)
 
-	require.NoError(t, service.SyncS3Destinations(ctx, []backup.S3DestinationSync{
+	require.NoError(t, service.SyncS3Destinations(ctx, []types.S3Destination{
 		{
 			ID:              "destination-1",
 			Name:            "Remote primary updated",
@@ -250,7 +251,7 @@ func TestS3DestinationService_TestS3DestinationRoundTrip(t *testing.T) {
 	defer server.Close()
 
 	service, _ := setupS3DestinationServiceTest(t)
-	require.NoError(t, service.TestS3DestinationConfiguration(t.Context(), backup.CreateS3Destination{
+	require.NoError(t, service.TestS3DestinationConfiguration(t.Context(), types.S3Destination{
 		Name:            "Unsaved destination",
 		Endpoint:        server.URL,
 		Bucket:          "arcane-backups",
@@ -261,7 +262,7 @@ func TestS3DestinationService_TestS3DestinationRoundTrip(t *testing.T) {
 		UseSSL:          false,
 		ForcePathStyle:  true,
 	}))
-	destination, err := service.CreateS3Destination(t.Context(), backup.CreateS3Destination{
+	destination, err := service.CreateS3Destination(t.Context(), types.S3Destination{
 		Name:            "Test destination",
 		Endpoint:        server.URL,
 		Bucket:          "arcane-backups",
@@ -280,7 +281,7 @@ func TestS3DestinationService_TestS3DestinationRoundTrip(t *testing.T) {
 	// before any outbound request: the stored secret must never sign requests
 	// against caller-modified connection settings.
 	requestsBeforeRejection := len(requestMethods)
-	err = service.TestS3Destination(t.Context(), destination.ID, &backup.UpdateS3Destination{
+	err = service.TestS3Destination(t.Context(), destination.ID, &types.S3Destination{
 		Name:           destination.Name,
 		Endpoint:       server.URL,
 		Bucket:         "edited-bucket",
@@ -294,7 +295,7 @@ func TestS3DestinationService_TestS3DestinationRoundTrip(t *testing.T) {
 	require.Len(t, requestMethods, requestsBeforeRejection)
 
 	expectedPathPrefix = "/edited-bucket/edited/.arcane-connection-test-"
-	require.NoError(t, service.TestS3Destination(t.Context(), destination.ID, &backup.UpdateS3Destination{
+	require.NoError(t, service.TestS3Destination(t.Context(), destination.ID, &types.S3Destination{
 		Name:            destination.Name,
 		Endpoint:        server.URL,
 		Bucket:          "edited-bucket",
@@ -321,8 +322,8 @@ func TestS3DestinationService_TestS3DestinationRoundTrip(t *testing.T) {
 	for _, scenario := range []struct {
 		name          string
 		code          string
-		status        int
 		reason        string
+		status        int
 		wantError     bool
 		snapshotError bool
 		configOnly    bool

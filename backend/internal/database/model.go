@@ -10,11 +10,19 @@ import (
 	"gorm.io/gorm"
 )
 
-type BaseModel struct {
-	ID        string     `json:"id" gorm:"primaryKey;type:text"`
-	CreatedAt time.Time  `json:"createdAt" gorm:"column:created_at" sortable:"true"`
-	UpdatedAt *time.Time `json:"updatedAt,omitempty" gorm:"column:updated_at"`
-}
+type (
+	BaseModel struct {
+		CreatedAt time.Time  `json:"createdAt" gorm:"column:created_at" sortable:"true"`
+		UpdatedAt *time.Time `json:"updatedAt,omitempty" gorm:"column:updated_at"`
+		ID        string     `json:"id" gorm:"primaryKey;type:text"`
+	}
+
+	//nolint:recvcheck
+	JSON map[string]any
+
+	//nolint:recvcheck
+	StringSlice []string
+)
 
 func (m *BaseModel) BeforeCreate(_ *gorm.DB) (err error) {
 	if m.ID == "" {
@@ -57,9 +65,6 @@ func JSONScan[T any](dest *T, value any) error {
 	}
 }
 
-//nolint:recvcheck
-type JSON map[string]any
-
 func (j JSON) Value() (driver.Value, error) {
 	return JSONValue(j == nil, j)
 }
@@ -67,9 +72,6 @@ func (j JSON) Value() (driver.Value, error) {
 func (j *JSON) Scan(value any) error {
 	return JSONScan(j, value)
 }
-
-//nolint:recvcheck
-type StringSlice []string
 
 func (s StringSlice) Value() (driver.Value, error) {
 	return JSONValue(s == nil, s)

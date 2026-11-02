@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -8,8 +10,10 @@
 	import TemplateSelectionDialog from '#lib/components/dialogs/template-selection-dialog.svelte';
 	import { ArrowLeftIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { templateService } from '#lib/services/template-service.js';
 	import type { Template } from '#lib/types/swarm.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 	import {
 		createTemplateContentSchema,
@@ -21,8 +25,9 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
-	let ui = $state({
+	const ui = $state({
 		saving: false,
 		showTemplateDialog: false,
 		isLoadingTemplate: false
@@ -41,16 +46,13 @@
 
 	const formSchema = createTemplateContentSchema();
 
-	let formData = $derived({
-		composeContent: originalComposeContent,
-		envContent: originalEnvContent
+	const form = createForm<typeof formSchema>(formSchema, {
+		composeContent: untrack(() => originalComposeContent),
+		envContent: untrack(() => originalEnvContent)
 	});
 
-	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
-
 	const hasChanges = $derived(
-		inputs.composeContent.value !== originalComposeContent || inputs.envContent.value !== originalEnvContent
+		form.inputs.composeContent.value !== originalComposeContent || form.inputs.envContent.value !== originalEnvContent
 	);
 	const saveState = $derived(getTemplateEditorSaveState(validation, hasChanges));
 	const validationState = $derived(saveState.validationState);
@@ -65,8 +67,9 @@
 			setLoading: (value) => (ui.saving = value),
 			onSuccess: async () => {
 				toast.success(m.templates_save_success());
-				originalComposeContent = inputs.composeContent.value;
-				originalEnvContent = inputs.envContent.value;
+				originalComposeContent = form.inputs.composeContent.value;
+				originalEnvContent = form.inputs.envContent.value;
+				await queryClient.invalidateQueries({ queryKey: queryKeys.templates.defaults() });
 			}
 		});
 	}
@@ -74,11 +77,11 @@
 	async function handleReset() {
 		resetTemplateEditorFields([
 			{
-				set: (value) => (inputs.composeContent.value = value),
+				set: (value) => (form.inputs.composeContent.value = value),
 				value: originalComposeContent
 			},
 			{
-				set: (value) => (inputs.envContent.value = value),
+				set: (value) => (form.inputs.envContent.value = value),
 				value: originalEnvContent
 			}
 		]);
@@ -92,16 +95,13 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					const templateContent = await templateService.getTemplateContent(template.id);
-					inputs.composeContent.value = templateContent.content ?? template.content ?? '';
-					inputs.envContent.value = templateContent.envContent ?? template.envContent ?? '';
+					form.inputs.composeContent.value = templateContent.content ?? template.content ?? '';
+					form.inputs.envContent.value = templateContent.envContent ?? template.envContent ?? '';
 					toast.success(m.compose_template_loaded({ name: template.name }));
 				})()
 			);
 			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.error('Error loading template:', error);
-				toast.error(error instanceof Error ? error.message : m.templates_download_failed());
+				toast.error(m.templates_download_failed(), { description: extractApiErrorMessage(operationResult.error) });
 			}
 		} finally {
 			ui.isLoadingTemplate = false;
@@ -111,7 +111,7 @@
 
 <div class="container mx-auto flex h-full min-h-0 max-w-full flex-col gap-6 overflow-hidden p-2 pb-10 sm:p-6 sm:pb-10">
 	<div class="space-y-3 sm:space-y-4">
-		<ArcaneButton action="base" tone="ghost" onclick={() => goto('/customize/templates')} class="w-fit gap-2">
+		<ArcaneButton action="base" tone="ghost" onclick={() => goto(resolve('/(app)/customize/templates'))} class="w-fit gap-2">
 			<ArrowLeftIcon class="size-4" />
 			<span>{m.common_back_to({ resource: m.templates_title() })}</span>
 		</ArcaneButton>
@@ -147,16 +147,16 @@
 	</div>
 
 	<ComposeTemplateEditor
-		bind:composeValue={inputs.composeContent.value}
-		bind:envValue={inputs.envContent.value}
+		bind:composeValue={form.inputs.composeContent.value}
+		bind:envValue={form.inputs.envContent.value}
 		originalCompose={originalComposeContent}
 		originalEnv={originalEnvContent}
 		bind:validation
 		{globalVariableMap}
 		fileIdPrefix="templates:defaults"
 		readOnly={ui.saving || ui.isLoadingTemplate}
-		composeError={inputs.composeContent.error}
-		envError={inputs.envContent.error}
+		composeError={form.inputs.composeContent.error}
+		envError={form.inputs.envContent.error}
 	/>
 </div>
 

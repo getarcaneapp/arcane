@@ -2,32 +2,48 @@ package bootstrap
 
 import (
 	"context"
+	"encoding/json/v2"
+	"net/http"
 	"slices"
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/features"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx/fxtest"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/scheduler"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/vulnerability"
+	"getarcane.dev/types/v3"
 )
 
-type settingsSubscriptionStubInternal struct {
-	featureCallbacks []func([]libarcane.SettingUpdate)
-	pollingCallback  func([]libarcane.SettingUpdate)
-	timeoutCallback  func([]libarcane.SettingUpdate)
-}
+type (
+	settingsSubscriptionStub struct {
+		pollingCallback  func([]types.SettingUpdate)
+		timeoutCallback  func([]types.SettingUpdate)
+		featureCallbacks []func([]types.SettingUpdate)
+	}
 
-func (s *settingsSubscriptionStubInternal) SubscribeSettingsChanges(keys []string, callback func([]libarcane.SettingUpdate)) func() {
-	if slices.Contains(keys, features.VulnerabilityManagementSettingKey) {
+	settingsSubscriptionSchedulerStub struct {
+		rescheduled chan struct{}
+		jobs        []string
+	}
+
+	timeoutSyncEnvironmentStub struct {
+		started chan struct{}
+	}
+
+	agentSettingsSyncStub struct {
+		snapshots map[string][]byte
+		patches   map[string]types.SettingsUpdate
+	}
+)
+
+func (s *settingsSubscriptionStub) SubscribeSettingsChanges(keys []string, callback func([]types.SettingUpdate)) func() {
+	if slices.Contains(keys, types.FeatureVulnerabilityManagementSettingKey) {
 		s.featureCallbacks = append(s.featureCallbacks, callback)
 	}
 	if slices.Contains(keys, "pollingEnabled") {
@@ -39,12 +55,7 @@ func (s *settingsSubscriptionStubInternal) SubscribeSettingsChanges(keys []strin
 	return func() {}
 }
 
-type settingsSubscriptionSchedulerStubInternal struct {
-	rescheduled chan struct{}
-	jobs        []string
-}
-
-func (s *settingsSubscriptionSchedulerStubInternal) RescheduleJob(_ context.Context, job schedulertypes.Job) error {
+func (s *settingsSubscriptionSchedulerStub) AddJob(_ context.Context, job types.SchedulerJob) error {
 	if job != nil {
 		s.jobs = append(s.jobs, job.Name())
 	}
@@ -56,18 +67,14 @@ func (s *settingsSubscriptionSchedulerStubInternal) RescheduleJob(_ context.Cont
 	return nil
 }
 
-type timeoutSyncEnvironmentStubInternal struct {
-	started chan struct{}
-}
-
-func (s *timeoutSyncEnvironmentStubInternal) ListRemoteEnvironments(context.Context) ([]environment.Environment, error) {
+func (s *timeoutSyncEnvironmentStub) ListRemoteEnvironments(context.Context) ([]environment.Environment, error) {
 	return []environment.Environment{{
 		ID:   "remote",
 		Name: "remote",
 	}}, nil
 }
 
-func (s *timeoutSyncEnvironmentStubInternal) ProxyRequest(ctx context.Context, _, _, _ string, _ []byte) ([]byte, int, error) {
+func (s *timeoutSyncEnvironmentStub) ProxyRequest(ctx context.Context, _, _, _ string, _ []byte) ([]byte, int, error) {
 	select {
 	case <-s.started:
 	default:
@@ -77,12 +84,55 @@ func (s *timeoutSyncEnvironmentStubInternal) ProxyRequest(ctx context.Context, _
 	return nil, 0, ctx.Err()
 }
 
+func (s *agentSettingsSyncStub) ListRemoteEnvironments(context.Context) ([]environment.Environment, error) {
+	return []environment.Environment{
+		{ID: "current", Name: "current"},
+		{ID: "legacy", Name: "legacy"},
+	}, nil
+}
+
+func (s *agentSettingsSyncStub) ProxyRequest(_ context.Context, envID, method, _ string, body []byte) ([]byte, int, error) {
+	if method == http.MethodGet {
+		return s.snapshots[envID], http.StatusOK, nil
+	}
+	var update types.SettingsUpdate
+	if err := json.Unmarshal(body, &update); err != nil {
+		return nil, 0, err
+	}
+	s.patches[envID] = update
+	return []byte(`{}`), http.StatusOK, nil
+}
+
+func TestSyncTimeoutSettingsToAgentsSkipsLockedKeysAndMismatchedAgents(t *testing.T) {
+	currentSnapshot, err := json.Marshal(types.SettingsSnapshot{
+		Settings: []types.SettingState{
+			{Key: "dockerApiTimeout", Locked: true, LockReason: "env"},
+			{Key: "buildTimeout"},
+		},
+	})
+	require.NoError(t, err)
+	stub := &agentSettingsSyncStub{
+		snapshots: map[string][]byte{
+			"current": currentSnapshot,
+			"legacy":  []byte(`[{"key":"dockerApiTimeout","type":"string","value":"30"}]`),
+		},
+		patches: map[string]types.SettingsUpdate{},
+	}
+
+	syncTimeoutSettingsToAgents(t.Context(), stub, map[string]string{
+		"dockerApiTimeout": "60",
+		"buildTimeout":     "900",
+	})
+
+	require.Equal(t, map[string]types.SettingsUpdate{"current": {"buildTimeout": "900"}}, stub.patches)
+}
+
 func TestSettingsTimeoutSyncDoesNotBlockOtherEffects(t *testing.T) {
 	lifecycle := fxtest.NewLifecycle(t)
 
-	settings := &settingsSubscriptionStubInternal{}
-	localScheduler := &settingsSubscriptionSchedulerStubInternal{rescheduled: make(chan struct{})}
-	localEnvironment := &timeoutSyncEnvironmentStubInternal{started: make(chan struct{})}
+	settings := &settingsSubscriptionStub{}
+	localScheduler := &settingsSubscriptionSchedulerStub{rescheduled: make(chan struct{})}
+	localEnvironment := &timeoutSyncEnvironmentStub{started: make(chan struct{})}
 	require.NoError(t, setupSettingsSubscriptions(settingsSubscriptionsParams{
 		Lifecycle:          lifecycle,
 		LifecycleCtx:       t.Context(),
@@ -96,7 +146,7 @@ func TestSettingsTimeoutSyncDoesNotBlockOtherEffects(t *testing.T) {
 
 	timeoutCallbackDone := make(chan struct{})
 	go func() {
-		settings.timeoutCallback([]libarcane.SettingUpdate{{Key: "dockerApiTimeout", Value: "30"}})
+		settings.timeoutCallback([]types.SettingUpdate{{Key: "dockerApiTimeout", Value: "30"}})
 		close(timeoutCallbackDone)
 	}()
 
@@ -111,7 +161,7 @@ func TestSettingsTimeoutSyncDoesNotBlockOtherEffects(t *testing.T) {
 		require.FailNow(t, "timeout settings callback remained blocked by remote sync")
 	}
 
-	settings.pollingCallback([]libarcane.SettingUpdate{{Key: "pollingEnabled", Value: "true"}})
+	settings.pollingCallback([]types.SettingUpdate{{Key: "pollingEnabled", Value: "true"}})
 	select {
 	case <-localScheduler.rescheduled:
 	case <-time.After(time.Second):
@@ -125,8 +175,8 @@ func TestSettingsTimeoutSyncDoesNotBlockOtherEffects(t *testing.T) {
 
 func TestFeatureChangeReschedulesScanAndPatchJobs(t *testing.T) {
 	lifecycle := fxtest.NewLifecycle(t)
-	settings := &settingsSubscriptionStubInternal{}
-	schedulerStub := &settingsSubscriptionSchedulerStubInternal{rescheduled: make(chan struct{})}
+	settings := &settingsSubscriptionStub{}
+	schedulerStub := &settingsSubscriptionSchedulerStub{rescheduled: make(chan struct{})}
 	require.NoError(t, setupSettingsSubscriptions(settingsSubscriptionsParams{
 		Lifecycle:         lifecycle,
 		LifecycleCtx:      t.Context(),
@@ -139,7 +189,7 @@ func TestFeatureChangeReschedulesScanAndPatchJobs(t *testing.T) {
 	}))
 	require.Len(t, settings.featureCallbacks, 3)
 	for _, callback := range settings.featureCallbacks {
-		callback([]libarcane.SettingUpdate{{Key: features.VulnerabilityManagementSettingKey, Value: "false"}})
+		callback([]types.SettingUpdate{{Key: types.FeatureVulnerabilityManagementSettingKey, Value: "false"}})
 	}
 	require.ElementsMatch(t, []string{scheduler.VulnerabilityScanJobName, scheduler.VulnerabilityRiskJobName, scheduler.AutoPatchJobName}, schedulerStub.jobs)
 	stopCtx, cancel := context.WithTimeout(t.Context(), time.Second)

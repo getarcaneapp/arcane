@@ -16,13 +16,36 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
-	kit "go.getarcane.app/kit/pkg"
-	updaterlabels "go.getarcane.app/updater/labels"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
+	"kit.getarcane.app"
+	updaterlabels "kit.getarcane.app/updater/labels"
+
+	"getarcane.dev/arcane/v3/pkg/iconcatalog"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	IconSet = iconcatalog.IconSet
+
+	// ArcaneComposeMetadata represents Arcane-specific configuration extracted from a Compose file.
+	ArcaneComposeMetadata struct {
+		// ServiceIconSets maps service names to their fallback, light, and dark icon values.
+		ServiceIconSets map[string]IconSet
+		// ProjectIcon contains fallback, light, and dark icon values for the project.
+		ProjectIcon IconSet
+		// ProjectURLS are additional URLs related to the project (e.g., documentation, homepage).
+		ProjectURLS []string
+		// ProjectTags are normalized tags managed by Compose metadata.
+		ProjectTags []types.ProjectTagOption
+		// ComposeFiles lists every compose file the metadata was parsed from: the root, COMPOSE_FILE entries, an auto-loaded override, and includes.
+		ComposeFiles []string
+		// EnvFiles lists every env file the parse read: the .env beside each parsed compose file plus resolved COMPOSE_ENV_FILES entries.
+		EnvFiles []string
+		// ProjectTagsAuthoritative reports whether every Compose tag was parsed successfully.
+		ProjectTagsAuthoritative bool
+	}
 )
 
 const (
@@ -32,46 +55,35 @@ const (
 	ArcaneIconLightLabel = "com.getarcaneapp.arcane.icon-light"
 	// ArcaneIconDarkLabel is the full reverse-DNS label key for dark service-level icons.
 	ArcaneIconDarkLabel = "com.getarcaneapp.arcane.icon-dark"
-
-	arcaneBlockKey     = "x-arcane"
-	arcaneIconKey      = "icon"
-	arcaneIconsKey     = "icons"
-	arcaneIconLightKey = "icon-light"
-	arcaneIconDarkKey  = "icon-dark"
-	arcaneURLsKey      = "urls"
-	arcaneTagsKey      = "tags"
-
+	arcaneBlockKey      = "x-arcane"
+	arcaneIconKey       = "icon"
+	arcaneIconsKey      = "icons"
+	arcaneIconLightKey  = "icon-light"
+	arcaneIconDarkKey   = "icon-dark"
+	arcaneURLsKey       = "urls"
+	arcaneTagsKey       = "tags"
 	// ProjectTagMaxLength is the maximum number of Unicode characters in a tag name.
 	ProjectTagMaxLength = 64
 	// ProjectTagsPerSourceLimit is the maximum number of UI or Compose tags on one project.
 	ProjectTagsPerSourceLimit = 50
 )
 
-type IconSet = iconcatalog.IconSet
-
-// ArcaneComposeMetadata represents Arcane-specific configuration extracted from a Compose file.
-type ArcaneComposeMetadata struct {
-	// ProjectIcon contains fallback, light, and dark icon values for the project.
-	ProjectIcon IconSet
-	// ProjectURLS are additional URLs related to the project (e.g., documentation, homepage).
-	ProjectURLS []string
-	// ProjectTags are normalized tags managed by Compose metadata.
-	ProjectTags []projecttypes.TagOption
-	// ProjectTagsAuthoritative reports whether every Compose tag was parsed successfully.
-	ProjectTagsAuthoritative bool
-	// ServiceIconSets maps service names to their fallback, light, and dark icon values.
-	ServiceIconSets map[string]IconSet
-	// ComposeFiles lists every compose file the metadata was parsed from: the root, COMPOSE_FILE entries, an auto-loaded override, and includes.
-	ComposeFiles []string
-	// EnvFiles lists every env file the parse read: the .env beside each parsed compose file plus resolved COMPOSE_ENV_FILES entries.
-	EnvFiles []string
+var projectTagColors = map[types.ProjectTagColor]struct{}{
+	types.ProjectTagColorGray:   {},
+	types.ProjectTagColorPurple: {},
+	types.ProjectTagColorBlue:   {},
+	types.ProjectTagColorGreen:  {},
+	types.ProjectTagColorYellow: {},
+	types.ProjectTagColorOrange: {},
+	types.ProjectTagColorRed:    {},
+	types.ProjectTagColorPink:   {},
 }
 
 // ParseArcaneComposeMetadata reads a Docker Compose file and extracts Arcane-specific metadata.
 // When projectsDirectory is set, Arcane's project env loading is used so .env.global is available.
 func ParseArcaneComposeMetadata(ctx context.Context, composeFilePath, projectsDirectory string, autoInjectEnv bool) (ArcaneComposeMetadata, error) {
 	if composeFilePath == "" {
-		return emptyArcaneComposeMetadataInternal(), nil
+		return emptyArcaneComposeMetadata(), nil
 	}
 
 	workdir := filepath.Dir(composeFilePath)
@@ -82,26 +94,26 @@ func ParseArcaneComposeMetadata(ctx context.Context, composeFilePath, projectsDi
 		envLoader := NewEnvLoader(projectsDirectory, workdir, autoInjectEnv)
 		loaded, _, err := envLoader.LoadEnvironment(ctx)
 		if err != nil {
-			return emptyArcaneComposeMetadataInternal(), fmt.Errorf("load project environment: %w", err)
+			return emptyArcaneComposeMetadata(), fmt.Errorf("load project environment: %w", err)
 		}
 		envMap = loaded
 	}
 
 	visited := map[string]struct{}{}
-	meta, err := parseArcaneComposeMetadataFromFileInternal(ctx, composeFilePath, envMap, visited)
+	meta, err := parseArcaneComposeMetadataFromFile(ctx, composeFilePath, envMap, visited)
 	if err != nil {
 		return meta, err
 	}
 	meta.ComposeFiles = kit.Unique(kit.TrimNonEmpty(append(meta.ComposeFiles, slices.Collect(maps.Keys(visited))...)))
 	slices.Sort(meta.ComposeFiles)
-	meta.EnvFiles = kit.Unique(kit.TrimNonEmpty(append(meta.EnvFiles, resolveComposeEnvFilesInternal(workdir, envMap)...)))
+	meta.EnvFiles = kit.Unique(kit.TrimNonEmpty(append(meta.EnvFiles, resolveComposeEnvFiles(workdir, envMap)...)))
 	return meta, nil
 }
 
-// resolveComposeEnvFilesInternal resolves the COMPOSE_ENV_FILES entries env
+// resolveComposeEnvFiles resolves the COMPOSE_ENV_FILES entries env
 // declares against workdir, skipping entries that escape it, mirroring what
 // EnvLoader merges for that directory.
-func resolveComposeEnvFilesInternal(workdir string, env EnvMap) []string {
+func resolveComposeEnvFiles(workdir string, env EnvMap) []string {
 	entries := ComposeEnvFileEntriesFromEnv(env)
 	resolved := make([]string, 0, len(entries))
 	for _, entry := range entries {
@@ -112,8 +124,8 @@ func resolveComposeEnvFilesInternal(workdir string, env EnvMap) []string {
 	return resolved
 }
 
-func parseArcaneComposeMetadataFromFileInternal(ctx context.Context, composeFilePath string, envMap map[string]string, visited map[string]struct{}) (ArcaneComposeMetadata, error) {
-	meta := emptyArcaneComposeMetadataInternal()
+func parseArcaneComposeMetadataFromFile(ctx context.Context, composeFilePath string, envMap map[string]string, visited map[string]struct{}) (ArcaneComposeMetadata, error) {
+	meta := emptyArcaneComposeMetadata()
 	if composeFilePath == "" {
 		return meta, nil
 	}
@@ -131,7 +143,7 @@ func parseArcaneComposeMetadataFromFileInternal(ctx context.Context, composeFile
 	workdir := filepath.Dir(absPath)
 	mergedEnv, siblingEnv := mergeEnvFromDotEnv(envMap, workdir)
 
-	project, err := loadComposeProjectForMetadataFromFileInternal(ctx, absPath, mergedEnv)
+	project, err := loadComposeProjectForMetadataFromFile(ctx, absPath, mergedEnv)
 	if err != nil {
 		return meta, fmt.Errorf("load compose metadata: %w", err)
 	}
@@ -142,7 +154,7 @@ func parseArcaneComposeMetadataFromFileInternal(ctx context.Context, composeFile
 	}
 	// The nested load's EnvLoader reads the sibling .env and the COMPOSE_ENV_FILES
 	// it declares, even where the inherited environment overrides those values.
-	meta.EnvFiles = append([]string{filepath.Join(workdir, EffectiveEnvFileName)}, resolveComposeEnvFilesInternal(workdir, siblingEnv)...)
+	meta.EnvFiles = append([]string{filepath.Join(workdir, EffectiveEnvFileName)}, resolveComposeEnvFiles(workdir, siblingEnv)...)
 
 	// Resolve include paths with the environment the loader interpolated, including COMPOSE_ENV_FILES.
 	includes, err := ParseIncludes(absPath, project.Environment, false)
@@ -151,7 +163,7 @@ func parseArcaneComposeMetadataFromFileInternal(ctx context.Context, composeFile
 	}
 
 	for _, include := range includes {
-		includedMeta, parseArcaneComposeMetadataFromFileErr := parseArcaneComposeMetadataFromFileInternal(ctx, include.Path, mergedEnv, visited)
+		includedMeta, parseArcaneComposeMetadataFromFileErr := parseArcaneComposeMetadataFromFile(ctx, include.Path, mergedEnv, visited)
 		if parseArcaneComposeMetadataFromFileErr != nil {
 			return meta, fmt.Errorf("load included Compose metadata %s: %w", include.Path, parseArcaneComposeMetadataFromFileErr)
 		}
@@ -162,13 +174,13 @@ func parseArcaneComposeMetadataFromFileInternal(ctx context.Context, composeFile
 }
 
 func extractArcaneComposeMetadata(ctx context.Context, project *composetypes.Project) ArcaneComposeMetadata {
-	meta := emptyArcaneComposeMetadataInternal()
+	meta := emptyArcaneComposeMetadata()
 	if project == nil {
 		return meta
 	}
 
 	if arcaneBlock, ok := project.Extensions[arcaneBlockKey]; ok {
-		meta.ProjectIcon, meta.ProjectURLS, meta.ProjectTags, meta.ProjectTagsAuthoritative = parseArcaneBlockInternal(ctx, arcaneBlock)
+		meta.ProjectIcon, meta.ProjectURLS, meta.ProjectTags, meta.ProjectTagsAuthoritative = parseArcaneBlock(ctx, arcaneBlock)
 	}
 
 	for name, svc := range project.Services {
@@ -178,7 +190,7 @@ func extractArcaneComposeMetadata(ctx context.Context, project *composetypes.Pro
 		}
 		if iconSet.IsEmpty() {
 			if arcaneBlock, ok := svc.Extensions[arcaneBlockKey]; ok {
-				iconSet, _, _, _ = parseArcaneBlockInternal(ctx, arcaneBlock)
+				iconSet, _, _, _ = parseArcaneBlock(ctx, arcaneBlock)
 			}
 		}
 		if !iconSet.IsEmpty() {
@@ -189,7 +201,7 @@ func extractArcaneComposeMetadata(ctx context.Context, project *composetypes.Pro
 	return meta
 }
 
-func parseArcaneBlockInternal(ctx context.Context, block any) (IconSet, []string, []projecttypes.TagOption, bool) {
+func parseArcaneBlock(ctx context.Context, block any) (IconSet, []string, []types.ProjectTagOption, bool) {
 	arcaneBlock, ok := kit.AsStringMap(block)
 	if !ok {
 		return IconSet{}, nil, nil, false
@@ -203,11 +215,11 @@ func parseArcaneBlockInternal(ctx context.Context, block any) (IconSet, []string
 		Dark:  cmp.Or(kit.Collect(arcaneBlock[arcaneIconDarkKey], kit.ToString)...),
 	}
 	urls := kit.Unique(kit.TrimNonEmpty(kit.Collect(arcaneBlock[arcaneURLsKey], kit.ToString)))
-	tags, tagsAuthoritative := parseComposeTagsInternal(ctx, arcaneBlock[arcaneTagsKey])
+	tags, tagsAuthoritative := parseComposeTags(ctx, arcaneBlock[arcaneTagsKey])
 	return icon, urls, tags, tagsAuthoritative
 }
 
-func parseComposeTagsInternal(ctx context.Context, value any) ([]projecttypes.TagOption, bool) {
+func parseComposeTags(ctx context.Context, value any) ([]types.ProjectTagOption, bool) {
 	values, ok := value.([]any)
 	if !ok {
 		if value != nil {
@@ -217,7 +229,7 @@ func parseComposeTagsInternal(ctx context.Context, value any) ([]projecttypes.Ta
 		return nil, true
 	}
 
-	tags := make([]projecttypes.TagOption, 0, min(len(values), ProjectTagsPerSourceLimit))
+	tags := make([]types.ProjectTagOption, 0, min(len(values), ProjectTagsPerSourceLimit))
 	seen := make(map[string]struct{}, len(values))
 	authoritative := true
 	for index, value := range values {
@@ -240,7 +252,7 @@ func parseComposeTagsInternal(ctx context.Context, value any) ([]projecttypes.Ta
 			authoritative = false
 			continue
 		}
-		color, err := NormalizeProjectTagColor(projecttypes.TagColor(colorValue))
+		color, err := NormalizeProjectTagColor(types.ProjectTagColor(colorValue))
 		if err != nil {
 			slog.WarnContext(ctx, "skipping invalid x-arcane tag color", "index", index, "tag", name, "error", err)
 			authoritative = false
@@ -255,13 +267,13 @@ func parseComposeTagsInternal(ctx context.Context, value any) ([]projecttypes.Ta
 			break
 		}
 		seen[name] = struct{}{}
-		tags = append(tags, projecttypes.TagOption{Name: name, Color: color})
+		tags = append(tags, types.ProjectTagOption{Name: name, Color: color})
 	}
 	return tags, authoritative
 }
 
-func mergeComposeTagsInternal(ctx context.Context, target, source []projecttypes.TagOption) []projecttypes.TagOption {
-	merged := make([]projecttypes.TagOption, 0, min(len(target)+len(source), ProjectTagsPerSourceLimit))
+func mergeComposeTags(ctx context.Context, target, source []types.ProjectTagOption) []types.ProjectTagOption {
+	merged := make([]types.ProjectTagOption, 0, min(len(target)+len(source), ProjectTagsPerSourceLimit))
 	seen := make(map[string]struct{}, len(target)+len(source))
 	for _, tag := range append(target, source...) {
 		if _, exists := seen[tag.Name]; exists {
@@ -282,10 +294,10 @@ func mergeArcaneComposeMetadata(ctx context.Context, target *ArcaneComposeMetada
 		return
 	}
 
-	target.ProjectIcon = mergeIconSetFieldsInternal(target.ProjectIcon, source.ProjectIcon)
+	target.ProjectIcon = mergeIconSetFields(target.ProjectIcon, source.ProjectIcon)
 
 	target.ProjectURLS = kit.Unique(kit.TrimNonEmpty(append(target.ProjectURLS, source.ProjectURLS...)))
-	target.ProjectTags = mergeComposeTagsInternal(ctx, target.ProjectTags, source.ProjectTags)
+	target.ProjectTags = mergeComposeTags(ctx, target.ProjectTags, source.ProjectTags)
 	target.ProjectTagsAuthoritative = target.ProjectTagsAuthoritative && source.ProjectTagsAuthoritative
 	target.ComposeFiles = append(target.ComposeFiles, source.ComposeFiles...)
 	target.EnvFiles = append(target.EnvFiles, source.EnvFiles...)
@@ -294,11 +306,11 @@ func mergeArcaneComposeMetadata(ctx context.Context, target *ArcaneComposeMetada
 		target.ServiceIconSets = map[string]IconSet{}
 	}
 	for name, iconSet := range source.ServiceIconSets {
-		target.ServiceIconSets[name] = mergeIconSetFieldsInternal(target.ServiceIconSets[name], iconSet)
+		target.ServiceIconSets[name] = mergeIconSetFields(target.ServiceIconSets[name], iconSet)
 	}
 }
 
-func mergeIconSetFieldsInternal(target, source IconSet) IconSet {
+func mergeIconSetFields(target, source IconSet) IconSet {
 	if strings.TrimSpace(target.Icon) == "" {
 		target.Icon = source.Icon
 	}
@@ -311,23 +323,27 @@ func mergeIconSetFieldsInternal(target, source IconSet) IconSet {
 	return target
 }
 
-func emptyArcaneComposeMetadataInternal() ArcaneComposeMetadata {
+func emptyArcaneComposeMetadata() ArcaneComposeMetadata {
 	return ArcaneComposeMetadata{
 		ProjectTagsAuthoritative: true,
 		ServiceIconSets:          map[string]IconSet{},
 	}
 }
 
-func loadComposeProjectForMetadataFromFileInternal(ctx context.Context, composeFilePath string, envMap map[string]string) (*composetypes.Project, error) {
-	return LoadComposeProject(ctx, composeFilePath, "", "", false, nil, envMap, func(opts *loader.Options) {
-		opts.SkipValidation = true
-		opts.SkipConsistencyCheck = true
-		opts.SkipResolveEnvironment = false
-	}, false, nil, nil, nil)
+func loadComposeProjectForMetadataFromFile(ctx context.Context, composeFilePath string, envMap map[string]string) (*composetypes.Project, error) {
+	return LoadComposeProject(ctx, LoadOptions{
+		ComposeFile: composeFilePath,
+		EnvOverride: envMap,
+		ConfigureLoader: func(opts *loader.Options) {
+			opts.SkipValidation = true
+			opts.SkipConsistencyCheck = true
+			opts.SkipResolveEnvironment = false
+		},
+	})
 }
 
 func loadComposeEnvironment(workdir string) map[string]string {
-	envMap := allowedProcessEnvInternal()
+	envMap := allowedProcessEnv()
 	if workdir == "" {
 		return envMap
 	}
@@ -403,26 +419,26 @@ func FindArcaneIconSet(labels any) IconSet {
 	iconSet := IconSet{}
 	if labelMap, ok := kit.AsStringMap(labels); ok {
 		for key, value := range labelMap {
-			assignArcaneIconValueInternal(&iconSet, key, kit.ToString(value))
+			assignArcaneIconValue(&iconSet, key, kit.ToString(value))
 		}
 		return iconSet
 	}
 
 	for _, s := range kit.Collect(labels, kit.ToString) {
 		if key, value, ok := parseLabelPair(s); ok {
-			assignArcaneIconValueInternal(&iconSet, key, value)
+			assignArcaneIconValue(&iconSet, key, value)
 		}
 	}
 
 	return iconSet
 }
 
-func assignArcaneIconValueInternal(iconSet *IconSet, key, value string) {
+func assignArcaneIconValue(iconSet *IconSet, key, value string) {
 	if iconSet == nil {
 		return
 	}
 
-	switch normalizeArcaneIconLabelInternal(key) {
+	switch normalizeArcaneIconLabel(key) {
 	case "icon":
 		iconSet.Icon = value
 	case "icon-light":
@@ -432,7 +448,7 @@ func assignArcaneIconValueInternal(iconSet *IconSet, key, value string) {
 	}
 }
 
-func normalizeArcaneIconLabelInternal(key string) string {
+func normalizeArcaneIconLabel(key string) string {
 	normalized := strings.ToLower(strings.TrimSpace(key))
 	switch normalized {
 	case ArcaneIconLabel, "arcane.icon":
@@ -453,17 +469,6 @@ func parseLabelPair(raw string) (string, string, bool) {
 		return "", "", false
 	}
 	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), true
-}
-
-var projectTagColorsInternal = map[projecttypes.TagColor]struct{}{
-	projecttypes.TagColorGray:   {},
-	projecttypes.TagColorPurple: {},
-	projecttypes.TagColorBlue:   {},
-	projecttypes.TagColorGreen:  {},
-	projecttypes.TagColorYellow: {},
-	projecttypes.TagColorOrange: {},
-	projecttypes.TagColorRed:    {},
-	projecttypes.TagColorPink:   {},
 }
 
 // NormalizeProjectTag validates and normalizes a project tag name.
@@ -508,12 +513,12 @@ func NormalizeProjectTags(names []string) ([]string, error) {
 }
 
 // NormalizeProjectTagColor validates and normalizes a project tag color.
-func NormalizeProjectTagColor(color projecttypes.TagColor) (projecttypes.TagColor, error) {
-	normalized := projecttypes.TagColor(strings.ToLower(strings.TrimSpace(string(color))))
+func NormalizeProjectTagColor(color types.ProjectTagColor) (types.ProjectTagColor, error) {
+	normalized := types.ProjectTagColor(strings.ToLower(strings.TrimSpace(string(color))))
 	if normalized == "" {
-		return projecttypes.TagColorGray, nil
+		return types.ProjectTagColorGray, nil
 	}
-	if _, valid := projectTagColorsInternal[normalized]; !valid {
+	if _, valid := projectTagColors[normalized]; !valid {
 		return "", fmt.Errorf("unsupported tag color %q", color)
 	}
 	return normalized, nil
@@ -532,7 +537,7 @@ func applyServiceLabelMetadata(project *composetypes.Project) error {
 			key   string
 			label string
 		}{
-			{key: "hidden", label: libarcane.HiddenResourceLabel},
+			{key: "hidden", label: selfcontainer.HiddenResourceLabel},
 			{key: "update-check", label: imageref.UpdateCheckLabel},
 		} {
 			value, present := arcane[metadata.key]
@@ -640,8 +645,7 @@ func metadataBool(value any) (bool, error) {
 		return enabled, nil
 	}
 	if text, ok := value.(string); ok {
-		enabled, err := strconv.ParseBool(strings.TrimSpace(text))
-		if err == nil {
+		if enabled, parsed := kit.ParseBool(text); parsed {
 			return enabled, nil
 		}
 	}

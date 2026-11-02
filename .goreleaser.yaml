@@ -52,11 +52,11 @@ builds:
     ldflags:
       - -w -s
       - -buildid={{ .Version }}
-      - -X github.com/getarcaneapp/arcane/backend/v2/internal/config.Version={{ .Version }}
-      - -X github.com/getarcaneapp/arcane/backend/v2/internal/config.Revision={{ .FullCommit }}
-      - -X github.com/getarcaneapp/arcane/backend/v2/internal/config.BuildTime={{ .Date }}
-      - -X github.com/getarcaneapp/arcane/backend/v2/internal/config.NodeVersion={{ envOrDefault "NODE_VERSION" "unknown" }}
-      - -X github.com/getarcaneapp/arcane/backend/v2/internal/config.SvelteKitVersion={{ envOrDefault "SVELTEKIT_VERSION" "unknown" }}
+      - -X getarcane.dev/arcane/v3/internal/config.Version={{ .Version }}
+      - -X getarcane.dev/arcane/v3/internal/config.Revision={{ .FullCommit }}
+      - -X getarcane.dev/arcane/v3/internal/config.BuildTime={{ .Date }}
+      - -X getarcane.dev/arcane/v3/internal/config.NodeVersion={{ envOrDefault "NODE_VERSION" "unknown" }}
+      - -X getarcane.dev/arcane/v3/internal/config.SvelteKitVersion={{ envOrDefault "SVELTEKIT_VERSION" "unknown" }}
     flags:
       - -trimpath
     mod_timestamp: '{{ .CommitTimestamp }}'
@@ -92,14 +92,15 @@ builds:
     ldflags:
       - -w -s
       - -buildid={{ .Version }}
-      - -X github.com/getarcaneapp/arcane/backend/v2/internal/config.Version={{ .Version }}
-      - -X github.com/getarcaneapp/arcane/backend/v2/internal/config.Revision={{ .FullCommit }}
-      - -X github.com/getarcaneapp/arcane/backend/v2/internal/config.BuildTime={{ .Date }}
+      - -X getarcane.dev/arcane/v3/internal/config.Version={{ .Version }}
+      - -X getarcane.dev/arcane/v3/internal/config.Revision={{ .FullCommit }}
+      - -X getarcane.dev/arcane/v3/internal/config.BuildTime={{ .Date }}
     flags:
       - -trimpath
     mod_timestamp: '{{ .CommitTimestamp }}'
 
   - id: arcane-cli
+    skip: '{{ if index .Env "BUILD_BETA" }}true{{ end }}'
     main: .
     dir: cli
     binary: arcane-cli
@@ -130,8 +131,8 @@ builds:
     ldflags:
       - -w -s
       - -buildid={{ .Version }}
-      - -X github.com/getarcaneapp/arcane/cli/v2/internal/config.Version={{ .Version }}
-      - -X github.com/getarcaneapp/arcane/cli/v2/internal/config.Revision={{ .FullCommit }}
+      - -X getarcane.dev/cli/v3/internal/config.Version={{ .Version }}
+      - -X getarcane.dev/cli/v3/internal/config.Revision={{ .FullCommit }}
     flags:
       - -trimpath
     mod_timestamp: '{{ .CommitTimestamp }}'
@@ -271,12 +272,14 @@ dockers_v2:
     dockerfile: docker/Dockerfile-static
     images:
       - ghcr.io/getarcaneapp/manager
+      - '{{ if index .Env "BUILD_BETA" }}getarcaneapp/manager{{ end }}'
     tags:
       - '{{ if index .Env "BUILD_NEXT" }}next{{ end }}'
+      - '{{ if index .Env "BUILD_BETA" }}v{{ index (split .Version ".") 0 }}-beta{{ end }}'
       - 'v{{ .Version }}'
-      - '{{ if not (index .Env "BUILD_NEXT") }}v{{ .Major }}.{{ .Minor }}{{ end }}'
-      - '{{ if not (index .Env "BUILD_NEXT") }}v{{ .Major }}{{ end }}'
-      - '{{ if not (index .Env "BUILD_NEXT") }}latest{{ end }}'
+      - '{{ if not (or (index .Env "BUILD_NEXT") (index .Env "BUILD_BETA")) }}v{{ .Major }}.{{ .Minor }}{{ end }}'
+      - '{{ if not (or (index .Env "BUILD_NEXT") (index .Env "BUILD_BETA")) }}v{{ .Major }}{{ end }}'
+      - '{{ if not (or (index .Env "BUILD_NEXT") (index .Env "BUILD_BETA")) }}latest{{ end }}'
     platforms:
       - linux/amd64
       - linux/arm64
@@ -301,12 +304,14 @@ dockers_v2:
     dockerfile: docker/Dockerfile-agent-static
     images:
       - ghcr.io/getarcaneapp/agent
+      - '{{ if index .Env "BUILD_BETA" }}getarcaneapp/agent{{ end }}'
     tags:
       - '{{ if index .Env "BUILD_NEXT" }}next{{ end }}'
+      - '{{ if index .Env "BUILD_BETA" }}v{{ index (split .Version ".") 0 }}-beta{{ end }}'
       - 'v{{ .Version }}'
-      - '{{ if not (index .Env "BUILD_NEXT") }}v{{ .Major }}.{{ .Minor }}{{ end }}'
-      - '{{ if not (index .Env "BUILD_NEXT") }}v{{ .Major }}{{ end }}'
-      - '{{ if not (index .Env "BUILD_NEXT") }}latest{{ end }}'
+      - '{{ if not (or (index .Env "BUILD_NEXT") (index .Env "BUILD_BETA")) }}v{{ .Major }}.{{ .Minor }}{{ end }}'
+      - '{{ if not (or (index .Env "BUILD_NEXT") (index .Env "BUILD_BETA")) }}v{{ .Major }}{{ end }}'
+      - '{{ if not (or (index .Env "BUILD_NEXT") (index .Env "BUILD_BETA")) }}latest{{ end }}'
     platforms:
       - linux/amd64
       - linux/arm64

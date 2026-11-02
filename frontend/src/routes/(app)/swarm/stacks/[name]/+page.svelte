@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
@@ -8,15 +10,17 @@
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
+	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
+	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { LayersIcon, DockIcon, JobsIcon, TrashIcon, EditIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { swarmStackQuery, swarmStackServiceListQuery, swarmStackTaskListQuery } from '#lib/query/swarm.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { SwarmStackSource } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -27,13 +31,26 @@
 
 	let { data } = $props();
 
-	let stack = $derived(data.stack);
-	let services = $derived(data.services);
-	let tasks = $derived(data.tasks);
 	let source = $derived<SwarmStackSource | null>(data.source);
 	let sourceState = $derived<'loading' | 'available' | 'missing' | 'forbidden' | 'error'>(data.sourceState);
-	let servicesRequestOptions = $derived(data.servicesRequestOptions);
-	let tasksRequestOptions = $derived(data.tasksRequestOptions);
+	let servicesRequestOptions = $state(untrack(() => data.servicesRequestOptions));
+	let tasksRequestOptions = $state(untrack(() => data.tasksRequestOptions));
+
+	const stackQuery = createQuery(() => ({
+		...swarmStackQuery(data.envId, data.stackName),
+		placeholderData: (previous, query) => (query?.queryKey[1] === data.envId ? previous : undefined)
+	}));
+	const servicesQuery = createQuery(() => ({
+		...swarmStackServiceListQuery(data.environment, data.stackName, servicesRequestOptions),
+		placeholderData: (previous, query) => (query?.queryKey[1] === data.envId ? previous : undefined)
+	}));
+	const tasksQuery = createQuery(() => ({
+		...swarmStackTaskListQuery(data.environment, data.stackName, tasksRequestOptions),
+		placeholderData: (previous, query) => (query?.queryKey[1] === data.envId ? previous : undefined)
+	}));
+	const stack = $derived(stackQuery.data ?? data.stack);
+	const services = $derived(servicesQuery.data ?? data.services);
+	const tasks = $derived(tasksQuery.data ?? data.tasks);
 
 	let selectedSourceFile = $state('compose');
 	let openSourceTabs = $state<string[]>(['compose']);
@@ -50,6 +67,10 @@
 			iconClass: key === 'compose' ? 'text-info' : 'text-success',
 			pending: false
 		}))
+	);
+	const sourceLines = useHighlightedCode(
+		() => (activeSourceTab === 'compose' ? (source?.composeContent ?? '') : (source?.envContent ?? '')),
+		() => (activeSourceTab === 'compose' ? 'yaml' : 'env')
 	);
 	const sourceWorkspaceLeadingRows = [
 		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-info', locked: true },
@@ -72,12 +93,12 @@
 		}
 	}
 	type StackTab = 'services' | 'tasks' | 'source';
-	let isLoading = $state({ refresh: false, remove: false });
+	const isLoading = $state({ refresh: false, remove: false });
 
 	const stackName = $derived(stack?.name ?? data.stackName);
 	const hasLiveStack = $derived((stack?.services ?? 0) > 0);
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const canManageStacks = $derived(hasPermission('swarm:stacks', currentEnvId));
+	const envId = $derived(data.envId);
+	const canManageStacks = $derived(hasPermission('swarm:stacks', envId));
 	const canViewSource = $derived(canManageStacks && sourceState !== 'forbidden');
 	const tabItems = $derived<TabItem[]>([
 		...(hasLiveStack ? [{ value: 'services', label: m.services(), icon: DockIcon }] : []),
@@ -86,7 +107,11 @@
 	]);
 	const urlTab = useUrlTab<StackTab>({
 		validTabs: () => tabItems.map((tab) => tab.value as StackTab),
-		defaultTab: () => (hasLiveStack ? 'services' : canViewSource ? 'source' : 'services')
+		defaultTab: () => {
+			if (hasLiveStack) return 'services';
+			if (canViewSource) return 'source';
+			return 'services';
+		}
 	});
 	const selectedTab = $derived(urlTab.value);
 	const totalServices = $derived(services?.pagination?.totalItems ?? services?.data?.length ?? 0);
@@ -97,14 +122,6 @@
 			: m.swarm_stack_saved_source({ stackName })
 	);
 
-	async function fetchStackServices(options: typeof servicesRequestOptions) {
-		return swarmService.getStackServices(stackName, options);
-	}
-
-	async function fetchStackTasks(options: typeof tasksRequestOptions) {
-		return swarmService.getStackTasks(stackName, options);
-	}
-
 	async function refreshSource(showErrorToast = false) {
 		if (!canManageStacks) {
 			source = null;
@@ -113,7 +130,7 @@
 		}
 		const operationResult = await tryCatch(
 			(async () => {
-				source = await swarmService.getStackSource(stackName);
+				source = await swarmService.getStackSource(stackName, envId);
 				sourceState = 'available';
 			})()
 		);
@@ -142,27 +159,21 @@
 	async function refresh() {
 		isLoading.refresh = true;
 		try {
-			const [stackResult, servicesResult, tasksResult] = await Promise.allSettled([
-				swarmService.getStack(stackName),
-				swarmService.getStackServices(stackName, servicesRequestOptions),
-				swarmService.getStackTasks(stackName, tasksRequestOptions)
+			const [stackResult, servicesResult, tasksResult] = await Promise.all([
+				stackQuery.refetch(),
+				servicesQuery.refetch(),
+				tasksQuery.refetch()
 			]);
 
-			if (stackResult.status === 'fulfilled') {
-				stack = stackResult.value;
-			} else {
+			if (stackResult.isError) {
 				toast.error(m.common_refresh_failed({ resource: `${m.swarm_stack()} "${stackName}"` }));
 			}
 
-			if (servicesResult.status === 'fulfilled') {
-				services = servicesResult.value;
-			} else {
+			if (servicesResult.isError) {
 				toast.error(m.common_refresh_failed({ resource: `${m.services()} (${stackName})` }));
 			}
 
-			if (tasksResult.status === 'fulfilled') {
-				tasks = tasksResult.value;
-			} else {
+			if (tasksResult.isError) {
 				toast.error(m.common_refresh_failed({ resource: `${m.tasks()} (${stackName})` }));
 			}
 			if (canManageStacks) {
@@ -172,8 +183,6 @@
 			isLoading.refresh = false;
 		}
 	}
-
-	useEnvironmentRefresh(refresh);
 
 	onMount(() => {
 		if (canManageStacks) {
@@ -191,12 +200,12 @@
 				action: async () => {
 					isLoading.remove = true;
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(swarmService.removeStack(stackName)),
+						result: await tryCatch(swarmService.removeStack(stackName, envId)),
 						message: m.common_delete_failed({ resource: `${m.swarm_stack()} "${stackName}"` }),
 						setLoadingState: (v) => (isLoading.remove = v),
 						onSuccess: async () => {
 							toast.success(m.common_delete_success({ resource: `${m.swarm_stack()} "${stackName}"` }));
-							goto('/swarm/stacks');
+							goto(resolve('/(app)/swarm/stacks'));
 						}
 					});
 				}
@@ -213,7 +222,10 @@
 						placement: 'primary' as const,
 						label: m.common_edit(),
 						icon: EditIcon,
-						onclick: () => goto(`/swarm/stacks/new?fromStack=${encodeURIComponent(stackName)}`),
+						onclick: () =>
+							goto(
+								resolve(`/(app)/swarm/stacks/new?fromStack=${encodeURIComponent(stackName)}&env=${encodeURIComponent(envId)}`)
+							),
 						disabled: isLoading.remove
 					},
 					{
@@ -261,7 +273,7 @@
 	{#snippet mainContent()}
 		<div class="flex min-h-screen-inset-18 flex-col gap-4">
 			{#if !hasLiveStack && canViewSource}
-				<Card.Root variant="subtle">
+				<Card.Root>
 					<Card.Content>
 						<p class="text-sm">{m.swarm_stacks_not_deployed_files_found()}</p>
 					</Card.Content>
@@ -275,18 +287,21 @@
 
 				<Tabs.Content value="services" class="min-h-0 flex-1">
 					<SwarmServicesTable
-						bind:services
+						{services}
+						invalidateKey={queryKeys.swarm.stack(envId, data.stackName)}
 						bind:requestOptions={servicesRequestOptions}
-						fetchServices={fetchStackServices}
+						onRetry={() => servicesQuery.refetch()}
 						persistKey={`arcane-swarm-stack-services-table-${stackName}`}
+						showEnvironment={false}
 					/>
 				</Tabs.Content>
 				<Tabs.Content value="tasks" class="min-h-0 flex-1">
 					<SwarmTasksTable
-						bind:tasks
+						{tasks}
 						bind:requestOptions={tasksRequestOptions}
-						fetchTasks={fetchStackTasks}
+						onRetry={() => tasksQuery.refetch()}
 						persistKey={`arcane-swarm-stack-tasks-table-${stackName}`}
+						showEnvironment={false}
 					/>
 				</Tabs.Content>
 				<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col">
@@ -326,39 +341,19 @@
 												onClose={closeSourceTab}
 											/>
 											<div class="relative min-h-0 flex-1">
-												{#await import('#lib/components/code-editor/editor.svelte')}
-													<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
-												{:then { default: CodeEditor }}
-													{#key activeSourceTab}
-														{#if activeSourceTab === 'compose'}
-															<div class="absolute inset-0 min-h-0 w-full min-w-0">
-																<CodeEditor
-																	value={stackSource.composeContent}
-																	language="yaml"
-																	readOnly={true}
-																	fontSize="13px"
-																	fileId={`swarm-stack-source:${stackName}:compose.yaml`}
-																/>
-															</div>
-														{:else if stackSource.envContent?.trim()}
-															<div class="absolute inset-0 min-h-0 w-full min-w-0">
-																<CodeEditor
-																	value={stackSource.envContent}
-																	language="env"
-																	readOnly={true}
-																	fontSize="13px"
-																	fileId={`swarm-stack-source:${stackName}:.env`}
-																/>
-															</div>
-														{:else}
-															<div class="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
-																No saved `.env` file was stored for this stack.
-															</div>
-														{/if}
-													{/key}
-												{:catch}
-													<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
-												{/await}
+												{#if activeSourceTab === 'compose' || stackSource.envContent?.trim()}
+													<CodeBlock.Root variant="ghost" class="absolute inset-0">
+														<CodeBlock.Content lineNumbers class="flex-1">
+															{#each sourceLines.current as line, index (index)}
+																<CodeBlock.Line code={line} />
+															{/each}
+														</CodeBlock.Content>
+													</CodeBlock.Root>
+												{:else}
+													<div class="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
+														No saved `.env` file was stored for this stack.
+													</div>
+												{/if}
 											</div>
 										</div>
 									{/snippet}
@@ -366,13 +361,13 @@
 							{/key}
 						</div>
 					{:else if sourceState === 'loading'}
-						<Card.Root variant="subtle">
+						<Card.Root>
 							<Card.Content>
 								<p class="text-center text-sm text-muted-foreground">{m.swarm_stack_source_loading()}</p>
 							</Card.Content>
 						</Card.Root>
 					{:else if sourceState === 'missing'}
-						<Card.Root variant="subtle">
+						<Card.Root>
 							<Card.Content>
 								<div class="space-y-2 text-sm">
 									<p class="font-medium">{m.common_not_found_title({ resource: 'Saved source' })}</p>
@@ -383,7 +378,7 @@
 							</Card.Content>
 						</Card.Root>
 					{:else if sourceState === 'error'}
-						<Card.Root variant="subtle">
+						<Card.Root>
 							<Card.Content>
 								<div class="space-y-2 text-sm">
 									<p class="font-medium">{m.common_action_failed()}</p>

@@ -10,77 +10,63 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/swarm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm/children/nodes"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/userctx"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/swarm/children/nodes"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/types/v3"
 )
 
-type SwarmHandler struct {
-	swarmService *SwarmService
-	eventService *event.EventService
-}
+type (
+	SwarmHandler struct {
+		swarmService *SwarmService
+		eventService *event.EventService
+	}
 
-type ListSwarmTasksInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-}
+	ListSwarmTasksInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" doc:"Column to sort by"`
+		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
 
-type GetSwarmInfoInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
+	InitSwarmInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.SwarmInitRequest
+	}
 
-type GetSwarmStatusInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
+	JoinSwarmInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.SwarmJoinRequest
+	}
 
-type InitSwarmInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          swarm.SwarmInitRequest
-}
+	LeaveSwarmInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.SwarmLeaveRequest
+	}
 
-type JoinSwarmInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          swarm.SwarmJoinRequest
-}
+	UnlockSwarmInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.SwarmUnlockRequest
+	}
 
-type LeaveSwarmInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          swarm.SwarmLeaveRequest
-}
+	SwarmJoinTokensActionInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Action        string `query:"action" required:"true" enum:"rotate" doc:"Join token action"`
+		Body          types.SwarmRotateJoinTokensRequest
+	}
 
-type UnlockSwarmInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          swarm.SwarmUnlockRequest
-}
-
-type GetSwarmUnlockKeyInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type GetSwarmJoinTokensInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type RotateSwarmJoinTokensInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          swarm.SwarmRotateJoinTokensRequest
-}
-
-type UpdateSwarmSpecInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          swarm.SwarmUpdateRequest
-}
+	UpdateSwarmSpecInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.SwarmUpdateRequest
+	}
+)
 
 func NewHandler(swarmService *SwarmService, eventService *event.EventService) *SwarmHandler {
 	return &SwarmHandler{swarmService: swarmService, eventService: eventService}
@@ -96,17 +82,21 @@ func NewHandler(swarmService *SwarmService, eventService *event.EventService) *S
 //
 // Returns a paginated task listing for the environment.
 // Returns a mapped HTTP error when task enumeration fails.
-func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput) (*handlerutil.Page[swarm.TaskSummary], error) {
+func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput) (*handlerutil.Page[types.SwarmTaskSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.swarmService.AggregateTasks(ctx, params)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list swarm tasks: " + err.Error())
+		}
+		return &handlerutil.Page[types.SwarmTaskSummary]{Body: body}, nil
+	}
 	items, paginationResp, err := h.swarmService.ListTasksPaginated(ctx, params)
 	if err != nil {
-		return nil, mapSwarmServiceErrorInternal(err, "Failed to list swarm tasks: "+err.Error())
-	}
-	if items == nil {
-		items = []swarm.TaskSummary{}
+		return nil, mapSwarmServiceError(err, "Failed to list swarm tasks: "+err.Error())
 	}
 
-	return &handlerutil.Page[swarm.TaskSummary]{Body: base.Paginated[swarm.TaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
+	return &handlerutil.Page[types.SwarmTaskSummary]{Body: types.Paginated[types.SwarmTaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
 // GetSwarmStatus returns the current swarm cluster metadata for an environment.
@@ -119,16 +109,24 @@ func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput
 //
 // Returns the current swarm information when swarm mode is available.
 // Returns a mapped HTTP error when swarm inspection fails.
-func (h *SwarmHandler) GetSwarmStatus(ctx context.Context, input *GetSwarmStatusInput) (*handlerutil.Out[swarm.RuntimeStatus], error) {
-	enabled, err := h.swarmService.IsEnabled(ctx)
+func (h *SwarmHandler) GetSwarmStatus(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.SwarmRuntimeStatus], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.swarmService.AggregateStatus(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to read swarm status")
+		}
+		return &handlerutil.Out[types.SwarmRuntimeStatus]{Body: body}, nil
+	}
+
+	status, err := h.swarmService.GetStatus(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to read swarm status")
 	}
 
-	return &handlerutil.Out[swarm.RuntimeStatus]{
-		Body: base.ApiResponse[swarm.RuntimeStatus]{
+	return &handlerutil.Out[types.SwarmRuntimeStatus]{
+		Body: types.ApiResponse[types.SwarmRuntimeStatus]{
 			Success: true,
-			Data:    swarm.RuntimeStatus{Enabled: enabled},
+			Data:    status,
 		},
 	}, nil
 }
@@ -143,13 +141,13 @@ func (h *SwarmHandler) GetSwarmStatus(ctx context.Context, input *GetSwarmStatus
 //
 // Returns the current swarm information when swarm mode is available.
 // Returns a mapped HTTP error when swarm inspection fails.
-func (h *SwarmHandler) GetSwarmInfo(ctx context.Context, input *GetSwarmInfoInput) (*handlerutil.Out[swarm.SwarmInfo], error) {
+func (h *SwarmHandler) GetSwarmInfo(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.SwarmInfo], error) {
 	info, err := h.swarmService.GetSwarmInfo(ctx)
 	if err != nil {
-		return nil, mapSwarmServiceErrorInternal(err, "Failed to inspect swarm: "+err.Error())
+		return nil, mapSwarmServiceError(err, "Failed to inspect swarm: "+err.Error())
 	}
 
-	return &handlerutil.Out[swarm.SwarmInfo]{Body: base.ApiResponse[swarm.SwarmInfo]{Success: true, Data: *info}}, nil
+	return &handlerutil.Out[types.SwarmInfo]{Body: types.ApiResponse[types.SwarmInfo]{Success: true, Data: *info}}, nil
 }
 
 // InitSwarm initializes swarm mode on the target engine.
@@ -163,15 +161,15 @@ func (h *SwarmHandler) GetSwarmInfo(ctx context.Context, input *GetSwarmInfoInpu
 // Returns the initialized swarm node ID and any other initialization details.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when initialization fails.
-func (h *SwarmHandler) InitSwarm(ctx context.Context, input *InitSwarmInput) (*handlerutil.Out[swarm.SwarmInitResponse], error) {
+func (h *SwarmHandler) InitSwarm(ctx context.Context, input *InitSwarmInput) (*handlerutil.Out[types.SwarmInitResponse], error) {
 	resp, err := h.swarmService.InitSwarm(ctx, input.Body)
 	if err != nil {
-		return nil, mapSwarmServiceErrorInternal(err, "Failed to initialize swarm")
+		return nil, mapSwarmServiceError(err, "Failed to initialize swarm")
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "lifecycle.init", "swarm", "cluster", "cluster", map[string]any{"nodeId": resp.NodeID})
 
-	return &handlerutil.Out[swarm.SwarmInitResponse]{Body: base.ApiResponse[swarm.SwarmInitResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[types.SwarmInitResponse]{Body: types.ApiResponse[types.SwarmInitResponse]{Success: true, Data: *resp}}, nil
 }
 
 // JoinSwarm joins the target engine to an existing swarm cluster.
@@ -185,11 +183,11 @@ func (h *SwarmHandler) InitSwarm(ctx context.Context, input *InitSwarmInput) (*h
 // Returns a confirmation response when the engine joins successfully.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the join operation fails.
-func (h *SwarmHandler) JoinSwarm(ctx context.Context, input *JoinSwarmInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *SwarmHandler) JoinSwarm(ctx context.Context, input *JoinSwarmInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.swarmService.JoinSwarm(ctx, input.Body); err != nil {
 		detail := nodes.RedactSwarmJoinToken(err.Error(), input.Body.JoinToken)
 		slog.WarnContext(ctx, "swarm join failed", "environmentId", input.EnvironmentID, "operation", "join-swarm", "error", detail)
-		httpErr := mapSwarmServiceErrorInternal(err, detail)
+		httpErr := mapSwarmServiceError(err, detail)
 		if model, ok := errors.AsType[*huma.ErrorModel](httpErr); ok {
 			model.Detail = nodes.RedactSwarmJoinToken(model.Detail, input.Body.JoinToken)
 		}
@@ -212,9 +210,9 @@ func (h *SwarmHandler) JoinSwarm(ctx context.Context, input *JoinSwarmInput) (*h
 // Returns a confirmation response when the engine leaves successfully.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the leave operation fails.
-func (h *SwarmHandler) LeaveSwarm(ctx context.Context, input *LeaveSwarmInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *SwarmHandler) LeaveSwarm(ctx context.Context, input *LeaveSwarmInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.swarmService.LeaveSwarm(ctx, input.Body); err != nil {
-		return nil, mapSwarmServiceErrorInternal(err, "Failed to leave swarm")
+		return nil, mapSwarmServiceError(err, "Failed to leave swarm")
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "lifecycle.leave", "swarm", "cluster", "cluster", map[string]any{"force": input.Body.Force})
@@ -233,9 +231,9 @@ func (h *SwarmHandler) LeaveSwarm(ctx context.Context, input *LeaveSwarmInput) (
 // Returns a confirmation response when the manager is unlocked.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the unlock operation fails.
-func (h *SwarmHandler) UnlockSwarm(ctx context.Context, input *UnlockSwarmInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *SwarmHandler) UnlockSwarm(ctx context.Context, input *UnlockSwarmInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.swarmService.UnlockSwarm(ctx, input.Body); err != nil {
-		return nil, mapSwarmServiceErrorInternal(err, "Failed to unlock swarm")
+		return nil, mapSwarmServiceError(err, "Failed to unlock swarm")
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "lifecycle.unlock", "swarm", "cluster", "cluster", map[string]any{})
@@ -253,13 +251,13 @@ func (h *SwarmHandler) UnlockSwarm(ctx context.Context, input *UnlockSwarmInput)
 //
 // Returns the current manager unlock key.
 // Returns a mapped HTTP error when the unlock key cannot be retrieved.
-func (h *SwarmHandler) GetUnlockKey(ctx context.Context, input *GetSwarmUnlockKeyInput) (*handlerutil.Out[swarm.SwarmUnlockKeyResponse], error) {
+func (h *SwarmHandler) GetUnlockKey(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.SwarmUnlockKeyResponse], error) {
 	resp, err := h.swarmService.GetSwarmUnlockKey(ctx)
 	if err != nil {
-		return nil, mapSwarmServiceErrorInternal(err, "Failed to get swarm unlock key")
+		return nil, mapSwarmServiceError(err, "Failed to get swarm unlock key")
 	}
 
-	return &handlerutil.Out[swarm.SwarmUnlockKeyResponse]{Body: base.ApiResponse[swarm.SwarmUnlockKeyResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[types.SwarmUnlockKeyResponse]{Body: types.ApiResponse[types.SwarmUnlockKeyResponse]{Success: true, Data: *resp}}, nil
 }
 
 // GetJoinTokens returns the current swarm worker and manager join tokens.
@@ -272,13 +270,13 @@ func (h *SwarmHandler) GetUnlockKey(ctx context.Context, input *GetSwarmUnlockKe
 //
 // Returns the current worker and manager join tokens.
 // Returns a mapped HTTP error when token lookup fails.
-func (h *SwarmHandler) GetJoinTokens(ctx context.Context, input *GetSwarmJoinTokensInput) (*handlerutil.Out[swarm.SwarmJoinTokensResponse], error) {
+func (h *SwarmHandler) GetJoinTokens(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.SwarmJoinTokensResponse], error) {
 	resp, err := h.swarmService.GetSwarmJoinTokens(ctx)
 	if err != nil {
-		return nil, mapSwarmServiceErrorInternal(err, "Failed to get swarm join tokens")
+		return nil, mapSwarmServiceError(err, "Failed to get swarm join tokens")
 	}
 
-	return &handlerutil.Out[swarm.SwarmJoinTokensResponse]{Body: base.ApiResponse[swarm.SwarmJoinTokensResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[types.SwarmJoinTokensResponse]{Body: types.ApiResponse[types.SwarmJoinTokensResponse]{Success: true, Data: *resp}}, nil
 }
 
 // RotateJoinTokens rotates the swarm worker and or manager join tokens.
@@ -292,9 +290,9 @@ func (h *SwarmHandler) GetJoinTokens(ctx context.Context, input *GetSwarmJoinTok
 // Returns a confirmation response when rotation succeeds.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when token rotation fails.
-func (h *SwarmHandler) RotateJoinTokens(ctx context.Context, input *RotateSwarmJoinTokensInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *SwarmHandler) RotateJoinTokens(ctx context.Context, input *SwarmJoinTokensActionInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.swarmService.RotateSwarmJoinTokens(ctx, input.Body); err != nil {
-		return nil, mapSwarmServiceErrorInternal(err, "Failed to rotate swarm join tokens")
+		return nil, mapSwarmServiceError(err, "Failed to rotate swarm join tokens")
 	}
 
 	h.auditSwarmMutation(
@@ -324,9 +322,9 @@ func (h *SwarmHandler) RotateJoinTokens(ctx context.Context, input *RotateSwarmJ
 // Returns a confirmation response when the spec update succeeds.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the spec update fails.
-func (h *SwarmHandler) UpdateSwarmSpec(ctx context.Context, input *UpdateSwarmSpecInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *SwarmHandler) UpdateSwarmSpec(ctx context.Context, input *UpdateSwarmSpecInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.swarmService.UpdateSwarmSpec(ctx, input.Body); err != nil {
-		return nil, mapSwarmServiceErrorInternal(err, "Failed to update swarm spec")
+		return nil, mapSwarmServiceError(err, "Failed to update swarm spec")
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "lifecycle.update_spec", "swarm", "cluster", "cluster", map[string]any{})
@@ -348,13 +346,9 @@ func (h *SwarmHandler) UpdateSwarmSpec(ctx context.Context, input *UpdateSwarmSp
 // resourceName provides a human-readable resource name when one exists.
 // metadata supplies additional structured audit fields to attach to the event.
 func (h *SwarmHandler) auditSwarmMutation(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any) {
-	if h.eventService == nil {
-		return
-	}
-
 	var userID *string
 	var username *string
-	if user, ok := userctx.CurrentUserFromContext(ctx); ok {
+	if user, ok := handlerutil.CurrentUserFromContext(ctx); ok {
 		userID = new(user.ID)
 		username = new(user.Username)
 	}
@@ -396,7 +390,7 @@ func (h *SwarmHandler) auditSwarmMutation(ctx context.Context, environmentID, ac
 	}
 }
 
-// mapSwarmServiceErrorInternal converts swarm-service errors into Huma HTTP errors.
+// mapSwarmServiceError converts swarm-service errors into Huma HTTP errors.
 //
 // It recognizes Arcane's swarm sentinel errors, common Docker error classes,
 // and a small set of validation-like substrings before falling back to an
@@ -406,7 +400,7 @@ func (h *SwarmHandler) auditSwarmMutation(ctx context.Context, environmentID, ac
 // fallback is the generic message returned when no specific mapping applies.
 //
 // Returns an HTTP-shaped error suitable for returning from a Huma handler.
-func mapSwarmServiceErrorInternal(err error, fallback string) error {
+func mapSwarmServiceError(err error, fallback string) error {
 	if err == nil {
 		return nil
 	}
@@ -428,7 +422,7 @@ func mapSwarmServiceErrorInternal(err error, fallback string) error {
 	if errdefs.IsConflict(err) || errors.Is(err, common.ErrConflict) {
 		return huma.Error409Conflict(err.Error())
 	}
-	if remoteStatus, ok := errors.AsType[*remenv.StatusError](err); ok && remoteStatus.StatusCode >= 400 && remoteStatus.StatusCode <= 599 {
+	if remoteStatus, ok := errors.AsType[*agent.StatusError](err); ok && remoteStatus.StatusCode >= 400 && remoteStatus.StatusCode <= 599 {
 		return huma.NewError(remoteStatus.StatusCode, fallback)
 	}
 	errText := strings.ToLower(err.Error())

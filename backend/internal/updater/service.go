@@ -13,60 +13,141 @@ import (
 	"sync"
 	"time"
 
-	"github.com/compose-spec/compose-go/v2/types"
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	imageupdatetypes "github.com/getarcaneapp/arcane/types/v2/imageupdate"
-	"github.com/getarcaneapp/arcane/types/v2/podman"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	arcaneupdater "github.com/getarcaneapp/arcane/types/v2/updater"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
-	"go.getarcane.app/docker"
-	"go.getarcane.app/docker/compat"
-	kit "go.getarcane.app/kit/pkg"
-	"go.getarcane.app/sys/cgroup"
-	"go.getarcane.app/updater"
-	"go.getarcane.app/updater/labels"
-	"go.getarcane.app/updater/pkg/utils/tagpolicy"
-	"go.getarcane.app/updater/refs"
-	updatertypes "go.getarcane.app/updater/types"
+	"go.uber.org/fx"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
-	projectpkg "github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/updater/children/execution"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/updater/children/recovery"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/userctx"
+	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
+	"kit.getarcane.app/docker"
+	"kit.getarcane.app/docker/compat"
+	"kit.getarcane.app/sys/cgroup"
+	"kit.getarcane.app/updater"
+	"kit.getarcane.app/updater/labels"
+	"kit.getarcane.app/updater/pkg/utils/tagpolicy"
+	"kit.getarcane.app/updater/refs"
+	updatertypes "kit.getarcane.app/updater/types"
+
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/notification"
+	projectpkg "getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/updater/children/execution"
+	"getarcane.dev/arcane/v3/internal/updater/children/recovery"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/imageref"
+	"getarcane.dev/arcane/v3/pkg/notifications"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	// UpdaterService is Arcane's handler-facing service for the standalone updater engine.
+	UpdaterService struct {
+		admission  *runs.Admission
+		engine     *updater.Service
+		execution  *execution.Service
+		recovery   *recovery.Service
+		autoUpdate *flow.Workflow
+		deps       updaterDependencies
+	}
+
+	updaterDependencies struct {
+		DB                     *database.DB
+		Docker                 *dockerInternal.DockerClientService
+		Settings               *settings.SettingsService
+		Projects               *projectpkg.ProjectService
+		ImagePuller            *image.ImageService
+		ImageUpdates           *imageupdate.ImageUpdateService
+		RegistryDigestResolver *registry.ContainerRegistryService
+		Events                 *event.EventService
+		Notifications          *notification.NotificationService
+		SelfUpgrade            SelfUpgrader
+		Activity               *activity.ActivityService
+		SystemUser             types.Actor
+	}
+
+	SelfUpgrader interface {
+		// TriggerUpgradeViaCLI returns the spawned upgrader container's ID, which this
+		// service does not need — only update-all's manager step uses it.
+		TriggerUpgradeViaCLI(ctx context.Context, user types.Actor, target updater.SelfUpdateTarget) (string, error)
+	}
+
+	// containerUpdateBatch accumulates per-container update notifications
+	// so a single update batch produces one batched notification.
+	containerUpdateBatch struct {
+		entries []notifications.ContainerUpdateBatchEntry
+		sync.Mutex
+	}
+	containerUpdateBatchContextKey struct{}
+	activityIDContextKey           struct{}
+	updateAdmissionKey             struct{}
+	updateProgressKey              struct{}
+	scopedPendingKey               struct{}
+	ignoreSettingsExclusionsKey    struct{}
+	updateProgress                 struct {
+		err           error
+		selfID        string
+		mu            sync.Mutex
+		selfTriggered bool
+	}
+	// autoUpdateApplied is the apply step's output, read back by finalize.
+	autoUpdateApplied struct {
+		Error          string              `json:"error,omitempty"`
+		RecordingError string              `json:"recordingError,omitempty"`
+		SelfID         string              `json:"selfId,omitempty"`
+		Result         types.UpdaterResult `json:"result"`
+		SelfTriggered  bool                `json:"selfTriggered,omitempty"`
+		Unresolved     bool                `json:"unresolved,omitempty"`
+		Completed      bool                `json:"completed"`
+		// Busy means another update held the updater, so this run applied nothing; Started means an earlier
+		// delivery had begun applying its plan.
+		Busy    bool `json:"busy,omitempty"`
+		Started bool `json:"started,omitempty"`
+	}
+
+	UpdaterServiceParams struct {
+		fx.In
+
+		DB                  *database.DB
+		SettingsService     *settings.SettingsService
+		DockerService       *dockerInternal.DockerClientService
+		ProjectService      *projectpkg.ProjectService
+		ImageUpdateService  *imageupdate.ImageUpdateService
+		RegistryService     *registry.ContainerRegistryService
+		EventService        *event.EventService
+		ImageService        *image.ImageService
+		NotificationService *notification.NotificationService
+		SelfUpgrader        SelfUpgrader
+		ActivityService     *activity.ActivityService
+		Config              *config.Config
+		Admission           *runs.Admission
+		RoleService         *role.RoleService
+	}
 )
 
 var (
-	errUpdateBusy = common.Classify(common.ErrConflict, errors.New("another container update is running"))
-
+	errUpdateBusy       = common.Classify(common.ErrConflict, errors.New("another container update is running"))
 	containerEventTypes = map[string]event.EventType{
 		"container_stop":   event.EventTypeContainerStop,
 		"container_delete": event.EventTypeContainerDelete,
@@ -74,133 +155,47 @@ var (
 		"container_start":  event.EventTypeContainerStart,
 		"container_update": event.EventTypeContainerUpdate,
 	}
-
 	updateLabelPolicy = updater.LabelPolicy{
 		UnmanagedReasonFunc: func(l map[string]string) string {
-			return kit.Ternary(podman.QuadletUnit(l) != "", "managed by a Podman quadlet; updates run through Podman auto-update", "")
+			return kit.Ternary(types.QuadletUnit(l) != "", "managed by a Podman quadlet; updates run through Podman auto-update", "")
 		},
-	}
-)
-
-// UpdaterService is Arcane's handler-facing service for the standalone updater engine.
-type UpdaterService struct {
-	admission  *runs.Admission
-	deps       updaterDependencies
-	engine     *updater.Service
-	execution  *execution.Service
-	recovery   *recovery.Service
-	autoUpdate *flow.Workflow
-}
-
-type updaterDependencies struct {
-	DB                     *database.DB
-	Docker                 *dockerInternal.DockerClientService
-	Settings               *settings.SettingsService
-	Projects               *projectpkg.ProjectService
-	ImagePuller            *image.ImageService
-	ImageUpdates           *imageupdate.ImageUpdateService
-	RegistryDigestResolver *registry.ContainerRegistryService
-	Events                 *event.EventService
-	Notifications          *notification.NotificationService
-	SelfUpgrade            selfUpgradeService
-	Activity               *activity.ActivityService
-	SystemUser             usertypes.Actor
-}
-
-type selfUpgradeService interface {
-	// TriggerUpgradeViaCLI returns the spawned upgrader container's ID, which this
-	// service does not need — only update-all's manager step uses it.
-	TriggerUpgradeViaCLI(ctx context.Context, user usertypes.Actor, target updater.SelfUpdateTarget) (string, error)
-}
-
-type (
-	// containerUpdateBatch accumulates per-container update notifications
-	// so a single update batch produces one batched notification.
-	containerUpdateBatch struct {
-		sync.Mutex
-
-		entries []notifications.ContainerUpdateBatchEntry
-	}
-
-	containerUpdateBatchContextKey struct{}
-	activityIDContextKey           struct{}
-	updateAdmissionKey             struct{}
-	updateProgressKey              struct{}
-	scopedPendingKey               struct{}
-	ignoreSettingsExclusionsKey    struct{}
-
-	updateProgress struct {
-		mu            sync.Mutex
-		err           error
-		selfTriggered bool
-		selfID        string
-	}
-
-	// autoUpdateApplied is the apply step's output, read back by finalize.
-	autoUpdateApplied struct {
-		Result         arcaneupdater.Result `json:"result"`
-		Error          string               `json:"error,omitempty"`
-		RecordingError string               `json:"recordingError,omitempty"`
-		SelfTriggered  bool                 `json:"selfTriggered,omitempty"`
-		SelfID         string               `json:"selfId,omitempty"`
-		Unresolved     bool                 `json:"unresolved,omitempty"`
-		Completed      bool                 `json:"completed"`
-		// Busy means another update held the updater, so this run applied nothing; Started means an earlier
-		// delivery had begun applying its plan.
-		Busy    bool `json:"busy,omitempty"`
-		Started bool `json:"started,omitempty"`
 	}
 )
 
 // NewUpdaterService constructs the Arcane updater facade.
-func NewUpdaterService(
-	db *database.DB,
-	localSettings *settings.SettingsService,
-	localDocker *dockerInternal.DockerClientService,
-	projectService *projectpkg.ProjectService,
-	imageUpdates *imageupdate.ImageUpdateService,
-	registries *registry.ContainerRegistryService,
-	events *event.EventService,
-	imageSvc *image.ImageService,
-	localNotifications *notification.NotificationService,
-	upgrade selfUpgradeService,
-	activityService *activity.ActivityService,
-	cfg *config.Config,
-	admission *runs.Admission,
-	roles *role.RoleService,
-) (*UpdaterService, error) {
+func NewUpdaterService(p UpdaterServiceParams) (*UpdaterService, error) {
 	service := &UpdaterService{
-		admission: admission,
+		admission: p.Admission,
 		deps: updaterDependencies{
-			DB:                     db,
-			Docker:                 localDocker,
-			Settings:               localSettings,
-			Projects:               projectService,
-			ImagePuller:            imageSvc,
-			ImageUpdates:           imageUpdates,
-			RegistryDigestResolver: registries,
-			Events:                 events,
-			Notifications:          localNotifications,
-			SelfUpgrade:            upgrade,
-			Activity:               activityService,
-			SystemUser:             usertypes.SystemUser,
+			DB:                     p.DB,
+			Docker:                 p.DockerService,
+			Settings:               p.SettingsService,
+			Projects:               p.ProjectService,
+			ImagePuller:            p.ImageService,
+			ImageUpdates:           p.ImageUpdateService,
+			RegistryDigestResolver: p.RegistryService,
+			Events:                 p.EventService,
+			Notifications:          p.NotificationService,
+			SelfUpgrade:            p.SelfUpgrader,
+			Activity:               p.ActivityService,
+			SystemUser:             types.SystemUser,
 		},
 	}
 	// keep: recovery callbacks bind to the allocated service
-	service.recovery = recovery.NewService(
-		localDocker,
-		imageSvc,
-		service.PendingImageUpdates,
-		activityIDFromContext,
-		func(ctx context.Context, ids []string) (context.Context, func(), error) {
+	service.recovery = recovery.NewService(recovery.ServiceParams{
+		DockerService:  p.DockerService,
+		Images:         p.ImageService,
+		PendingUpdates: service.PendingImageUpdates,
+		ActivityID:     activityIDFromContext,
+		AcquireUpdate: func(ctx context.Context, ids []string) (context.Context, func(), error) {
 			return service.acquireUpdate(ctx, ids, false)
 		},
-		service.ApplyPending,
-	)
+		ApplyPending: service.ApplyPending,
+	})
 	// keep: execution callbacks bind to the allocated service and its recovery
 	service.execution = execution.NewService(execution.Dependencies{
-		Config: cfg,
-		Roles:  roles,
+		Config: p.Config,
+		Roles:  p.RoleService,
 		AcquireUpdate: func(ctx context.Context, ids []string) (context.Context, func(), error) {
 			return service.acquireUpdate(ctx, ids, false)
 		},
@@ -220,7 +215,7 @@ func NewUpdaterService(
 		PendingStore:           service,
 		RunRecorder:            service,
 		Settings:               service,
-		RegistryDigestResolver: registries,
+		RegistryDigestResolver: p.RegistryService,
 		RegistryTagLister:      service,
 		ProjectUpdater:         service,
 		SelfUpdater:            service,
@@ -237,13 +232,13 @@ func NewUpdaterService(
 	}
 	// keep: the engine is configured with the allocated service
 	service.engine = engine
-	events.SetDockerUpdatingContainers(func() []string { return engine.Status().ContainerIDs })
+	p.EventService.SetDockerUpdatingContainers(func() []string { return engine.Status().ContainerIDs })
 	return service, nil
 }
 
 // ApplyPending executes pending image updates. A project or image scope limits the engine's
 // pending records to its containers; a container scope or a forced run updates each container.
-func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater.Options) (out *arcaneupdater.Result, err error) {
+func (s *UpdaterService) ApplyPending(ctx context.Context, options types.UpdaterOptions) (out *types.UpdaterResult, err error) {
 	containerIDs, err := s.pendingContainerIDs(ctx, options)
 	if err != nil {
 		return nil, err
@@ -258,7 +253,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater
 	batchCompleted := false
 	started, startErr := s.deps.Activity.StartActivity(ctx, activitylib.StartRequest{
 		EnvironmentID: "0",
-		Type:          activitytypes.TypeAutoUpdate,
+		Type:          types.ActivityTypeAutoUpdate,
 		Queue:         true,
 		ResourceType:  new("system"),
 		ResourceName:  new("Auto update"),
@@ -273,7 +268,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater
 	if activityID != "" {
 		ctx = contextWithActivityID(s.deps.Activity.Track(ctx, activityID), activityID)
 	}
-	out = &arcaneupdater.Result{Items: []arcaneupdater.ResourceResult{}}
+	out = &types.UpdaterResult{Items: []types.UpdaterResourceResult{}}
 	progress := &updateProgress{}
 	ctx = context.WithValue(ctx, updateProgressKey{}, progress)
 
@@ -310,7 +305,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater
 
 // applyBatch runs one update batch into out, records its events, and sends its notifications
 // as one batch, capped by a whole-run timeout.
-func (s *UpdaterService) applyBatch(ctx context.Context, options arcaneupdater.Options, out *arcaneupdater.Result) error {
+func (s *UpdaterService) applyBatch(ctx context.Context, options types.UpdaterOptions, out *types.UpdaterResult) error {
 	batch := &containerUpdateBatch{}
 	ctx = context.WithValue(context.WithValue(ctx, containerUpdateBatchContextKey{}, batch), ignoreSettingsExclusionsKey{}, options.IgnoreSettingsExclusions)
 	defer func() {
@@ -380,7 +375,7 @@ func (s *UpdaterService) applyBatch(ctx context.Context, options arcaneupdater.O
 	return nil
 }
 
-func (s *UpdaterService) pendingContainerIDs(ctx context.Context, options arcaneupdater.Options) ([]string, error) {
+func (s *UpdaterService) pendingContainerIDs(ctx context.Context, options types.UpdaterOptions) ([]string, error) {
 	if len(options.ResourceIds) > 0 {
 		containerIDs, _, _, _, err := s.scopedContainerIDs(ctx, options)
 		return containerIDs, err
@@ -413,7 +408,7 @@ func (s *UpdaterService) recordContainerIDs(ctx context.Context, records []updat
 		}
 		imageRefs = append(imageRefs, record.ImageRef())
 	}
-	imageContainerIDs, _, _, _, err := s.scopedContainerIDs(ctx, arcaneupdater.Options{Type: "image", ResourceIds: imageRefs})
+	imageContainerIDs, _, _, _, err := s.scopedContainerIDs(ctx, types.UpdaterOptions{Type: "image", ResourceIds: imageRefs})
 	if err != nil {
 		return nil, err
 	}
@@ -421,7 +416,7 @@ func (s *UpdaterService) recordContainerIDs(ctx context.Context, records []updat
 }
 
 // scopedContainerIDs resolves the requested containers, projects, or images to container IDs.
-func (s *UpdaterService) scopedContainerIDs(ctx context.Context, options arcaneupdater.Options) ([]string, map[string]string, map[string]string, map[string]bool, error) {
+func (s *UpdaterService) scopedContainerIDs(ctx context.Context, options types.UpdaterOptions) ([]string, map[string]string, map[string]string, map[string]bool, error) {
 	requested := kit.TrimNonEmpty(options.ResourceIds)
 	scope := strings.ToLower(strings.TrimSpace(options.Type))
 	switch {
@@ -450,7 +445,7 @@ func (s *UpdaterService) scopedContainerIDs(ctx context.Context, options arcaneu
 		if discovered {
 			continue
 		}
-		details, detailsErr := s.deps.Projects.GetProjectDetails(ctx, ref, projecttypes.DetailsOptions{IncludeServiceConfigs: true})
+		details, detailsErr := s.deps.Projects.GetProjectDetails(ctx, ref, types.ProjectDetailsOptions{IncludeServiceConfigs: true})
 		if detailsErr != nil {
 			continue
 		}
@@ -495,7 +490,7 @@ func (s *UpdaterService) scopedContainerIDs(ctx context.Context, options arcaneu
 
 // applyScopedUpdates applies running containers of a project or image scope through the engine's grouped
 // pending path, and stopped ones, a container scope, or a forced run through the single-container path.
-func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options arcaneupdater.Options, out *arcaneupdater.Result) error {
+func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options types.UpdaterOptions, out *types.UpdaterResult) error {
 	containerIDs, skipReasons, checkRecords, running, err := s.scopedContainerIDs(ctx, options)
 	if err != nil {
 		return err
@@ -512,7 +507,7 @@ func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options arcaneu
 		pending                                      []string
 	)
 	defer func() {
-		*out = arcaneupdater.Result{ //exhaustruct:enforce
+		*out = types.UpdaterResult{ //exhaustruct:enforce
 			Success:    kit.Ternary(completed, out.Failed+failed == 0, out.Success),
 			Checked:    out.Checked + checked,
 			Updated:    out.Updated + updated,
@@ -540,16 +535,16 @@ func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options arcaneu
 		}
 		checked++
 		skipped++
-		items = append(items, arcaneupdater.ResourceResult{
+		items = append(items, types.UpdaterResourceResult{
 			ResourceID:   containerID,
 			ResourceType: "container",
-			Status:       arcaneupdater.StatusSkipped,
+			Status:       types.UpdaterStatusSkipped,
 			Error:        reason,
 		})
-		if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+		if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
 			ID:           containerID,
 			ResourceType: "container",
-			Status:       scheduler.Skipped,
+			Status:       types.RunStatusSkipped,
 			Message:      reason,
 		}); progressErr != nil {
 			return progressErr
@@ -580,16 +575,16 @@ func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options arcaneu
 		if ctx.Err() != nil {
 			for _, remainingID := range pending[index:] {
 				failed++
-				items = append(items, arcaneupdater.ResourceResult{
+				items = append(items, types.UpdaterResourceResult{
 					ResourceID:   remainingID,
 					ResourceType: "container",
-					Status:       arcaneupdater.StatusFailed,
+					Status:       types.UpdaterStatusFailed,
 					Error:        fmt.Sprintf("update deadline exceeded before update: %v", ctx.Err()),
 				})
-				if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+				if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
 					ID:           remainingID,
 					ResourceType: "container",
-					Status:       scheduler.Failed,
+					Status:       types.RunStatusFailed,
 					Message:      fmt.Sprintf("update deadline exceeded before update: %v", ctx.Err()),
 				}); progressErr != nil {
 					return errors.Join(progressErr, errors.Join(engineErrs...))
@@ -597,10 +592,10 @@ func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options arcaneu
 			}
 			return errors.Join(append(engineErrs, ctx.Err())...)
 		}
-		if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+		if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
 			ID:           containerID,
 			ResourceType: "container",
-			Status:       scheduler.Running,
+			Status:       types.RunStatusRunning,
 		}); progressErr != nil {
 			return progressErr
 		}
@@ -618,16 +613,16 @@ func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options arcaneu
 		items = append(items, partial.Items...)
 		if projectOrImage && errors.Is(engineErr, updater.ErrContainerNotFound) {
 			skipped++
-			items = append(items, arcaneupdater.ResourceResult{
+			items = append(items, types.UpdaterResourceResult{
 				ResourceID:   containerID,
 				ResourceType: "container",
-				Status:       arcaneupdater.StatusSkipped,
+				Status:       types.UpdaterStatusSkipped,
 				Error:        "recreated by an earlier service update",
 			})
-			if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+			if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
 				ID:           containerID,
 				ResourceType: "container",
-				Status:       scheduler.Skipped,
+				Status:       types.RunStatusSkipped,
 				Message:      "recreated by an earlier service update",
 			}); progressErr != nil {
 				return errors.Join(progressErr, errors.Join(engineErrs...))
@@ -636,27 +631,27 @@ func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options arcaneu
 		}
 		if engineErr != nil {
 			failed++
-			items = append(items, arcaneupdater.ResourceResult{
+			items = append(items, types.UpdaterResourceResult{
 				ResourceID:   containerID,
 				ResourceType: "container",
-				Status:       arcaneupdater.StatusFailed,
+				Status:       types.UpdaterStatusFailed,
 				Error:        engineErr.Error(),
 			})
 			engineErrs = append(engineErrs, fmt.Errorf("%s: %w", containerID, engineErr))
 		}
-		if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+		if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
 			ID:           containerID,
 			ResourceType: "container",
-			Status: func() scheduler.RunStatus {
+			Status: func() types.RunStatus {
 				switch {
 				case engineErr != nil, partial.Failed > 0:
-					return scheduler.Failed
+					return types.RunStatusFailed
 				case moduleResult == nil:
-					return scheduler.NeedsAttention
+					return types.RunStatusNeedsAttention
 				case partial.Skipped > 0:
-					return scheduler.Skipped
+					return types.RunStatusSkipped
 				}
-				return scheduler.Succeeded
+				return types.RunStatusSucceeded
 			}(),
 			Message: func() string {
 				if engineErr == nil {
@@ -668,14 +663,14 @@ func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options arcaneu
 			return errors.Join(progressErr, errors.Join(engineErrs...))
 		}
 	}
-	s.logResultItems(ctx, &arcaneupdater.Result{Items: items})
+	s.logResultItems(ctx, &types.UpdaterResult{Items: items})
 	completed = true
 	// Like the unscoped engine error, these surface after every container was attempted.
 	return errors.Join(engineErrs...)
 }
 
 // UpdateSingleContainer updates a single container by ID to the latest available image.
-func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID string) (out *arcaneupdater.Result, err error) {
+func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID string) (out *types.UpdaterResult, err error) {
 	started, workCtx, err := s.deps.Activity.StartTrackedActivity(ctx, s.singleContainerActivityRequest(ctx, containerID))
 	if err != nil {
 		return nil, fmt.Errorf("start container update activity: %w", err)
@@ -683,12 +678,12 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	defer func() {
 		s.finishSingleContainerUpdate(workCtx, started.ID, out, err)
 	}()
-	defer utils.RecoverToError(&err, "single container update")
+	defer concurrency.RecoverToError(&err, "single container update")
 	return s.runSingleContainerUpdate(workCtx, containerID, started.ID)
 }
 
 // AcceptSingleContainerUpdate submits a cancellable container-update workflow and returns its activity.
-func (s *UpdaterService) AcceptSingleContainerUpdate(ctx context.Context, containerID string) (*activitytypes.Activity, error) {
+func (s *UpdaterService) AcceptSingleContainerUpdate(ctx context.Context, containerID string) (*types.Activity, error) {
 	activityID, err := s.execution.Submit(ctx, containerID, s.singleContainerActivityRequest(ctx, containerID))
 	if err != nil {
 		return nil, err
@@ -700,7 +695,7 @@ func (s *UpdaterService) AcceptSingleContainerUpdate(ctx context.Context, contai
 	return &detail.Activity, nil
 }
 
-func (s *UpdaterService) runSingleContainerUpdate(ctx context.Context, containerID, activityID string) (out *arcaneupdater.Result, err error) {
+func (s *UpdaterService) runSingleContainerUpdate(ctx context.Context, containerID, activityID string) (out *types.UpdaterResult, err error) {
 	var release func()
 	ctx, release, err = s.acquireUpdate(ctx, []string{containerID}, true)
 	if err != nil {
@@ -708,7 +703,7 @@ func (s *UpdaterService) runSingleContainerUpdate(ctx context.Context, container
 	}
 	defer release()
 	start := time.Now()
-	out = &arcaneupdater.Result{Items: []arcaneupdater.ResourceResult{}}
+	out = &types.UpdaterResult{Items: []types.UpdaterResourceResult{}}
 	defer func() {
 		// keep: stamps the named result on every return path
 		out.Duration = cmp.Or(out.Duration, time.Since(start).String())
@@ -740,9 +735,9 @@ func (s *UpdaterService) runSingleContainerUpdate(ctx context.Context, container
 }
 
 // GetStatus returns the current in-memory update activity snapshot.
-func (s *UpdaterService) GetStatus() arcaneupdater.Status {
+func (s *UpdaterService) GetStatus() types.UpdaterStatus {
 	status := s.engine.Status()
-	return arcaneupdater.Status{
+	return types.UpdaterStatus{
 		UpdatingContainers: status.UpdatingContainers,
 		UpdatingProjects:   status.UpdatingProjects,
 		ContainerIds:       status.ContainerIDs,
@@ -763,9 +758,31 @@ func (s *UpdaterService) GetHistory(ctx context.Context, limit int) ([]AutoUpdat
 	return records, nil
 }
 
+func (s *UpdaterService) AggregateHistory(ctx context.Context, limit int) (types.ApiResponse[[]types.AutoUpdateRecord], error) {
+	collection, err := httpx.CollectEnvironments[types.ApiResponse[[]types.AutoUpdateRecord]](ctx, nil)
+	if err != nil {
+		return types.ApiResponse[[]types.AutoUpdateRecord]{}, err
+	}
+	records := make([]types.AutoUpdateRecord, 0)
+	for _, result := range collection.Results {
+		for _, record := range result.Value.Data {
+			record.SetEnvironment(result.Environment)
+			records = append(records, record)
+		}
+	}
+	slices.SortStableFunc(records, func(a, b types.AutoUpdateRecord) int {
+		return b.StartTime.Compare(a.StartTime)
+	})
+	return types.ApiResponse[[]types.AutoUpdateRecord]{
+		Success:            true,
+		Data:               records[:min(len(records), limit)],
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
 // RestartContainersUsingOldIDs restarts containers matching old image IDs or refs.
-func (s *UpdaterService) RestartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef, oldRefToNewRef map[string]string) ([]arcaneupdater.ResourceResult, error) {
-	results, err := s.engine.RestartContainersUsingOldImages(ctx, oldIDToNewRef, oldRefToNewRef)
+func (s *UpdaterService) RestartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef, oldRefToNewRef map[string]string) ([]types.UpdaterResourceResult, error) {
+	results, err := s.engine.RestartContainersUsingOldImages(ctx, updater.RestartTargets{ByOldID: oldIDToNewRef, ByOldRef: oldRefToNewRef})
 	return resultFromModule(&updater.Result{Items: results}).Items, err
 }
 
@@ -780,16 +797,6 @@ func (s *UpdaterService) TriggerSelfUpdateViaCLI(ctx context.Context, source, co
 		InstanceType:  kit.Ternary(labels.IsArcaneAgentContainer(labelMap), "agent", "server"),
 		Labels:        labelMap,
 	})
-}
-
-// BeginContainerUpdate marks a container as updating.
-func (s *UpdaterService) BeginContainerUpdate(containerID string) func() {
-	return s.engine.BeginContainerUpdate(containerID)
-}
-
-// BeginProjectUpdate marks a project as updating.
-func (s *UpdaterService) BeginProjectUpdate(projectID string) func() {
-	return s.engine.BeginProjectUpdate(projectID)
 }
 
 func (s *UpdaterService) recordAutoUpdateEvent(ctx context.Context, severity event.EventSeverity, metadata database.JSON) {
@@ -837,7 +844,12 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 	if err != nil {
 		return err
 	}
-	writer := activitylib.NewWriter(ctx, s.deps.Activity, activityIDFromContext(ctx), progress, "Pulling updated images")
+	writer := activitylib.NewWriter(ctx, activitylib.WriterOptions{
+		Service:     s.deps.Activity,
+		ActivityID:  activityIDFromContext(ctx),
+		Output:      progress,
+		DefaultStep: "Pulling updated images",
+	})
 	defer activitylib.FlushWriter(writer)
 
 	credentials, err := s.deps.Projects.ResolveRegistryCredentials(ctx)
@@ -1089,7 +1101,7 @@ func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record upda
 
 // ExcludedContainers returns auto-update exclusions from Arcane settings.
 func (s *UpdaterService) ExcludedContainers(ctx context.Context) ([]string, error) {
-	return kit.Unique(kit.TrimNonEmpty(strings.Split(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""), ","))), nil
+	return kit.Unique(kit.TrimNonEmpty(strings.Split(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers"), ","))), nil
 }
 
 // ProjectByComposeName resolves an Arcane project from a Docker Compose project name.
@@ -1227,28 +1239,27 @@ func (s *UpdaterService) Notify(ctx context.Context, localNotification updater.N
 		buffer.Unlock()
 		return nil
 	}
-	return s.deps.Notifications.SendContainerUpdateNotification(
-		ctx,
-		localNotification.ContainerName,
-		localNotification.ImageRef,
-		localNotification.OldImage,
-		localNotification.NewImage,
-	)
+	return s.deps.Notifications.SendContainerUpdateNotification(ctx, notification.ContainerUpdateEvent{
+		ContainerName: localNotification.ContainerName,
+		ImageRef:      localNotification.ImageRef,
+		OldDigest:     localNotification.OldImage,
+		NewDigest:     localNotification.NewImage,
+	})
 }
 
 // RecordEvent records updater lifecycle events in Arcane's event stream.
 func (s *UpdaterService) RecordEvent(ctx context.Context, evt updater.Event) error {
 	if eventType, ok := containerEventTypes[evt.Phase]; ok {
-		return s.deps.Events.LogContainerEvent(
-			ctx,
-			eventType,
-			evt.ResourceID,
-			evt.ResourceName,
-			s.deps.SystemUser.ID,
-			s.deps.SystemUser.Username,
-			"0",
-			evt.Metadata,
-		)
+		return s.deps.Events.LogResourceEvent(ctx, event.ResourceEvent{
+			Type:          eventType,
+			ResourceType:  "container",
+			ResourceID:    evt.ResourceID,
+			ResourceName:  evt.ResourceName,
+			UserID:        s.deps.SystemUser.ID,
+			Username:      s.deps.SystemUser.Username,
+			EnvironmentID: "0",
+			Metadata:      evt.Metadata,
+		})
 	}
 
 	severity := kit.Ternary(strings.EqualFold(evt.Severity, "error"), event.EventSeverityError, event.EventSeverityInfo)
@@ -1288,19 +1299,19 @@ func (s *UpdaterService) singleContainerActivityRequest(ctx context.Context, con
 	}()
 	return activitylib.StartRequest{
 		EnvironmentID: "0",
-		Type:          activitytypes.TypeAutoUpdate,
+		Type:          types.ActivityTypeAutoUpdate,
 		Queue:         true,
 		DeferSlot:     true,
 		ResourceType:  new("container"),
 		ResourceID:    &containerID,
 		ResourceName:  &name,
-		StartedBy: func() *usertypes.Actor {
-			initiator, ok := utils.UpdateInitiatorFromContext(ctx)
+		StartedBy: func() *types.Actor {
+			initiator, ok := activitylib.UpdateInitiatorFromContext(ctx)
 			if !ok {
-				user, _ := userctx.CurrentUserFromContext(ctx)
+				user, _ := handlerutil.CurrentUserFromContext(ctx)
 				return user
 			}
-			return &usertypes.Actor{
+			return &types.Actor{
 				ID:          initiator.UserID,
 				Username:    initiator.Username,
 				DisplayName: mo.EmptyableToOption(initiator.DisplayName).ToPointer(),
@@ -1312,21 +1323,21 @@ func (s *UpdaterService) singleContainerActivityRequest(ctx context.Context, con
 	}
 }
 
-func (s *UpdaterService) finishSingleContainerUpdate(ctx context.Context, activityID string, result *arcaneupdater.Result, runErr error) {
+func (s *UpdaterService) finishSingleContainerUpdate(ctx context.Context, activityID string, result *types.UpdaterResult, runErr error) {
 	if activityID == "" {
 		return
 	}
 	outcome := s.recordSingleContainerUpdate(ctx, activityID, result, runErr)
-	s.completeAutoUpdateActivity(ctx, activityID, outcome.Message, kit.Ternary(outcome.Status != scheduler.Succeeded, outcome.Message, ""))
+	s.completeAutoUpdateActivity(ctx, activityID, outcome.Message, kit.Ternary(outcome.Status != types.RunStatusSucceeded, outcome.Message, ""))
 }
 
 // recordSingleContainerUpdate saves a container update's result on its activity and summarizes it as an outcome.
-func (s *UpdaterService) recordSingleContainerUpdate(ctx context.Context, activityID string, result *arcaneupdater.Result, runErr error) scheduler.Outcome {
-	item := func() arcaneupdater.ResourceResult {
+func (s *UpdaterService) recordSingleContainerUpdate(ctx context.Context, activityID string, result *types.UpdaterResult, runErr error) types.SchedulerOutcome {
+	item := func() types.UpdaterResourceResult {
 		if items := kit.FromPtr(result).Items; len(items) > 0 {
 			return items[0]
 		}
-		return arcaneupdater.ResourceResult{}
+		return types.UpdaterResourceResult{}
 	}()
 	metadata := func() database.JSON {
 		if result == nil {
@@ -1361,8 +1372,8 @@ func (s *UpdaterService) recordSingleContainerUpdate(ctx context.Context, activi
 		}
 	}
 	if runErr == nil && result != nil && result.Failed == 0 {
-		return scheduler.Outcome{
-			Status: scheduler.Succeeded,
+		return types.SchedulerOutcome{
+			Status: types.RunStatusSucceeded,
 			Message: func() string {
 				switch {
 				case result.Updated > 0 || result.Restarted > 0:
@@ -1376,8 +1387,8 @@ func (s *UpdaterService) recordSingleContainerUpdate(ctx context.Context, activi
 			}(),
 		}
 	}
-	return scheduler.Outcome{
-		Status: scheduler.Failed,
+	return types.SchedulerOutcome{
+		Status: types.RunStatusFailed,
 		Message: func() string {
 			switch {
 			case runErr != nil:
@@ -1397,7 +1408,7 @@ func (s *UpdaterService) appendAutoUpdateActivityMessage(ctx context.Context, ac
 		return
 	}
 	if _, err := s.deps.Activity.AppendMessage(ctx, activityID, activitylib.AppendMessageRequest{
-		Level:    activitytypes.MessageLevelInfo,
+		Level:    types.ActivityMessageLevelInfo,
 		Message:  message,
 		Progress: &progress,
 		Step:     step,
@@ -1412,14 +1423,14 @@ func (s *UpdaterService) completeAutoUpdateActivity(ctx context.Context, activit
 	if activityID == "" {
 		return
 	}
-	status, completion, errMessage := func() (activitytypes.Status, string, *string) {
+	status, completion, errMessage := func() (types.ActivityStatus, string, *string) {
 		switch {
 		case failure == "":
-			return activitytypes.StatusSuccess, message, nil
-		case activitylib.CancelledByContext(ctx):
-			return activitytypes.StatusCancelled, "Auto-update cancelled", nil
+			return types.ActivityStatusSuccess, message, nil
+		case errors.Is(context.Cause(ctx), activitylib.ErrCanceled):
+			return types.ActivityStatusCancelled, "Auto-update cancelled", nil
 		}
-		return activitytypes.StatusFailed, failure, &failure
+		return types.ActivityStatusFailed, failure, &failure
 	}()
 	// A lost terminal write strands the activity as running, so it is written past cancellation and logged loudly.
 	if _, err := s.deps.Activity.CompleteActivity(context.WithoutCancel(ctx), activityID, status, completion, errMessage); err != nil {
@@ -1429,9 +1440,9 @@ func (s *UpdaterService) completeAutoUpdateActivity(ctx context.Context, activit
 
 // resultFromModule converts an engine result to Arcane's wire type, which carries times as
 // strings and images as maps holding only the "main" entry. Callers set ActivityID.
-func resultFromModule(result *updater.Result) *arcaneupdater.Result {
+func resultFromModule(result *updater.Result) *types.UpdaterResult {
 	if result == nil {
-		return &arcaneupdater.Result{Items: []arcaneupdater.ResourceResult{}}
+		return &types.UpdaterResult{Items: []types.UpdaterResourceResult{}}
 	}
 	mainImage := func(ref string) map[string]string {
 		if ref == "" {
@@ -1439,9 +1450,9 @@ func resultFromModule(result *updater.Result) *arcaneupdater.Result {
 		}
 		return map[string]string{"main": ref}
 	}
-	items := make([]arcaneupdater.ResourceResult, 0, len(result.Items))
+	items := make([]types.UpdaterResourceResult, 0, len(result.Items))
 	for _, item := range result.Items {
-		items = append(items, arcaneupdater.ResourceResult{
+		items = append(items, types.UpdaterResourceResult{
 			ResourceID:      item.ResourceID,
 			ResourceName:    item.ResourceName,
 			ResourceType:    string(item.ResourceType),
@@ -1454,7 +1465,7 @@ func resultFromModule(result *updater.Result) *arcaneupdater.Result {
 			Details:         item.Details,
 		})
 	}
-	return &arcaneupdater.Result{
+	return &types.UpdaterResult{
 		Success:   result.Success,
 		Checked:   result.Checked,
 		Updated:   result.Updated,
@@ -1468,7 +1479,7 @@ func resultFromModule(result *updater.Result) *arcaneupdater.Result {
 	}
 }
 
-func (s *UpdaterService) logResultItems(ctx context.Context, result *arcaneupdater.Result) {
+func (s *UpdaterService) logResultItems(ctx context.Context, result *types.UpdaterResult) {
 	for _, item := range result.Items {
 		s.recordAutoUpdateEvent(ctx, cmp.Or(map[string]event.EventSeverity{
 			string(updater.StatusFailed):  event.EventSeverityError,
@@ -1514,7 +1525,7 @@ func (s *UpdaterService) CollectUsedImages(ctx context.Context) (map[string]stru
 }
 
 func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, out map[string]struct{}) error {
-	excludedContainers := docker.ExcludedContainerNameSet(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
+	excludedContainers := docker.ExcludedContainerNameSet(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers"))
 	ignoreOptOuts, _ := ctx.Value(ignoreSettingsExclusionsKey{}).(bool)
 	listResult, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
 		return dockerClient.ContainerList(ctx, client.ContainerListOptions{})
@@ -1656,17 +1667,17 @@ func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.Res
 		Details:          kit.Ternary(len(result.Details) > 0, maps.Clone(result.Details), nil),
 	}).Error
 	name := cmp.Or(strings.TrimSpace(result.ResourceName), result.ResourceID)
-	status := cmp.Or(map[updater.ResourceStatus]scheduler.RunStatus{
-		updater.StatusUpdated:   scheduler.Succeeded,
-		updater.StatusRestarted: scheduler.Succeeded,
-		updater.StatusUpToDate:  scheduler.Succeeded,
-		updater.StatusSkipped:   scheduler.Skipped,
-		updater.StatusFailed:    scheduler.Failed,
-	}[result.Status], scheduler.NeedsAttention)
+	status := cmp.Or(map[updater.ResourceStatus]types.RunStatus{
+		updater.StatusUpdated:   types.RunStatusSucceeded,
+		updater.StatusRestarted: types.RunStatusSucceeded,
+		updater.StatusUpToDate:  types.RunStatusSucceeded,
+		updater.StatusSkipped:   types.RunStatusSkipped,
+		updater.StatusFailed:    types.RunStatusFailed,
+	}[result.Status], types.RunStatusNeedsAttention)
 	activityID := activityIDFromContext(ctx)
 	if activityID != "" {
 		if _, appendErr := s.deps.Activity.AppendMessage(ctx, activityID, activitylib.AppendMessageRequest{
-			Level: kit.Ternary(result.Status == updater.StatusFailed, activitytypes.MessageLevelError, activitytypes.MessageLevelInfo),
+			Level: kit.Ternary(result.Status == updater.StatusFailed, types.ActivityMessageLevelError, types.ActivityMessageLevelInfo),
 			Message: func() string {
 				reason := strings.TrimSpace(result.Error)
 				if result.Status == updater.StatusFailed && reason != "" {
@@ -1687,15 +1698,15 @@ func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.Res
 		}
 	}
 	evidenceErr := func() error {
-		if status != scheduler.Succeeded {
+		if status != types.RunStatusSucceeded {
 			return nil
 		}
 		return s.recovery.VerifyResult(ctx, result.ResourceID)
 	}()
-	err := errors.Join(recordErr, jobcontext.Progress(ctx, scheduler.TargetOutcome{
+	err := errors.Join(recordErr, jobcontext.Progress(ctx, types.TargetOutcome{
 		ID:           result.ResourceID,
 		ResourceType: string(result.ResourceType),
-		Status:       kit.Ternary(evidenceErr != nil, scheduler.NeedsAttention, status),
+		Status:       kit.Ternary(evidenceErr != nil, types.RunStatusNeedsAttention, status),
 		Message: func() string {
 			if evidenceErr != nil {
 				return evidenceErr.Error()
@@ -1712,7 +1723,7 @@ func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.Res
 	return err
 }
 
-func (p *updateProgress) completeBatch(ctx context.Context, options arcaneupdater.Options, out *arcaneupdater.Result, batchCompleted bool, err error) error {
+func (p *updateProgress) completeBatch(ctx context.Context, options types.UpdaterOptions, out *types.UpdaterResult, batchCompleted bool, err error) error {
 	activityID := activityIDFromContext(ctx)
 	p.mu.Lock()
 	err = errors.Join(err, p.err)
@@ -1724,33 +1735,33 @@ func (p *updateProgress) completeBatch(ctx context.Context, options arcaneupdate
 	if !batchCompleted && err == nil {
 		err = errors.New("update batch ended without a confirmed result")
 	}
-	status := func() scheduler.RunStatus {
+	status := func() types.RunStatus {
 		switch {
 		case recordingFailed || selfTriggered:
-			return scheduler.NeedsAttention
+			return types.RunStatusNeedsAttention
 		case err != nil || out.Failed > 0:
-			return scheduler.Partial
+			return types.RunStatusPartial
 		}
-		return scheduler.Succeeded
+		return types.RunStatusSucceeded
 	}()
 	if selfTriggered {
-		err = errors.Join(err, jobcontext.Progress(ctx, scheduler.TargetOutcome{
+		err = errors.Join(err, jobcontext.Progress(ctx, types.TargetOutcome{
 			ID:           selfID,
 			ResourceType: "container",
-			Status:       scheduler.NeedsAttention,
+			Status:       types.RunStatusNeedsAttention,
 			ActivityID:   activityID,
 			Message:      "Self-update completion requires review",
 		}), errors.New("self-update was triggered but completion requires review"))
 	}
-	checkpointErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+	checkpointErr := jobcontext.Progress(ctx, types.TargetOutcome{
 		ID: "auto-update",
 		ResourceType: func() string {
 			switch {
 			case !batchCompleted:
 				return "update-interrupted"
 			// A scoped rerun of a durable run is a retry unless that run already recorded a finished batch.
-			case durableRun && len(options.ResourceIds) > 0 && !slices.ContainsFunc(previous.Outcome.Targets, func(target scheduler.TargetOutcome) bool {
-				return target.ID == "auto-update" && target.ResourceType == "update-batch" && (target.Status == scheduler.Succeeded || target.Status == scheduler.Partial)
+			case durableRun && len(options.ResourceIds) > 0 && !slices.ContainsFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
+				return target.ID == "auto-update" && target.ResourceType == "update-batch" && (target.Status == types.RunStatusSucceeded || target.Status == types.RunStatusPartial)
 			}):
 				return "update-retry"
 			}
@@ -1771,9 +1782,9 @@ func (p *updateProgress) completeBatch(ctx context.Context, options arcaneupdate
 		out.Success = false
 	}
 	if recordingFailed || selfTriggered || checkpointErr != nil {
-		return &scheduler.OutcomeError{
-			Outcome: scheduler.Outcome{
-				Status:     scheduler.NeedsAttention,
+		return &types.SchedulerOutcomeError{
+			Outcome: types.SchedulerOutcome{
+				Status:     types.RunStatusNeedsAttention,
 				Message:    err.Error(),
 				ActivityID: activityID,
 			},
@@ -1799,8 +1810,8 @@ func (s *UpdaterService) UpdateServiceImages(ctx context.Context, projectID stri
 }
 
 // CheckProjectUpdates checks effective Compose service policies without deploying containers.
-func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID string) (*projecttypes.UpdateInfo, error) {
-	details, err := s.deps.Projects.GetProjectDetails(ctx, projectID, projecttypes.DetailsOptions{IncludeServiceConfigs: true})
+func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID string) (*types.ProjectUpdateInfo, error) {
+	details, err := s.deps.Projects.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true})
 	if err != nil {
 		return nil, err
 	}
@@ -1828,7 +1839,7 @@ func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID stri
 	return projectpkg.BuildConfiguredUpdateInfo(projectID, details.Services, nil, records), nil
 }
 
-func (s *UpdaterService) checkProjectService(ctx context.Context, projectID string, service types.ServiceConfig) imageupdate.ImageUpdateRecord {
+func (s *UpdaterService) checkProjectService(ctx context.Context, projectID string, service composetypes.ServiceConfig) imageupdate.ImageUpdateRecord {
 	checkTime := time.Now().UTC()
 	parsed, err := refs.NormalizeReference(service.Image)
 	if err != nil {
@@ -1910,7 +1921,7 @@ func (s *UpdaterService) RegisterWorkflows(engine *flow.Engine) error {
 		Concurrency: 1,
 		Timeout:     2 * time.Hour,
 		Activity: activitylib.StartRequest{
-			Type:          activitytypes.TypeAutoUpdate,
+			Type:          types.ActivityTypeAutoUpdate,
 			Queue:         true,
 			ResourceType:  new("system"),
 			ResourceName:  new("Auto update"),
@@ -1958,7 +1969,7 @@ func (s *UpdaterService) autoUpdateCandidates(ctx context.Context, t flow.Task) 
 	if err != nil {
 		return nil, common.Classify(common.ErrUnavailable, err)
 	}
-	return t.ChildInput(imageupdatetypes.CheckRequest{ImageRefs: monitored})
+	return t.ChildInput(types.ImageUpdateCheckRequest{ImageRefs: monitored})
 }
 
 // autoUpdateResume reports whether the run already holds a frozen plan.
@@ -1973,7 +1984,7 @@ func (s *UpdaterService) planAutoUpdate(ctx context.Context, t flow.Task) (any, 
 	if !ok {
 		return nil, errors.New("auto-update requires a job run")
 	}
-	var checked scheduler.Outcome
+	var checked types.SchedulerOutcome
 	if err := t.DecodeOutput("check", &checked); err != nil && !errors.Is(err, workflow.ErrStepSkipped) {
 		return nil, err
 	}
@@ -2012,7 +2023,7 @@ func (s *UpdaterService) autoUpdateDeferral(ctx context.Context, now time.Time) 
 	for _, record := range seen {
 		seenAt[record.ID] = record.LatestSeenAt
 	}
-	envDelay := s.deps.Settings.GetIntSetting(ctx, "autoUpdateDelay", 0)
+	envDelay := s.deps.Settings.GetIntSetting(ctx, "autoUpdateDelay")
 	return func(record updater.ImageUpdateRecord, candidate container.Summary) bool {
 		override, ok := imageref.UpdateDelay(candidate.Labels)
 		delay := time.Duration(min(kit.Ternary(ok, override, envDelay), imageref.MaxUpdateDelayHours)) * time.Hour
@@ -2064,12 +2075,12 @@ func (s *UpdaterService) applyAutoUpdate(ctx context.Context, t flow.Task) (any,
 	if err != nil {
 		return nil, common.Classify(common.ErrUnavailable, err)
 	}
-	var result arcaneupdater.Result
+	var result types.UpdaterResult
 	applyErr := func() error {
 		if remaining == 0 {
 			return nil
 		}
-		return s.applyBatch(ctx, arcaneupdater.Options{}, &result)
+		return s.applyBatch(ctx, types.UpdaterOptions{}, &result)
 	}()
 	// A shutdown hands the task back so the redelivery finishes the remaining frozen targets.
 	if applyErr != nil && ctx.Err() != nil {
@@ -2078,7 +2089,7 @@ func (s *UpdaterService) applyAutoUpdate(ctx context.Context, t flow.Task) (any,
 	progress.mu.Lock()
 	defer progress.mu.Unlock()
 	return autoUpdateApplied{
-		Result: arcaneupdater.Result{ //exhaustruct:enforce
+		Result: types.UpdaterResult{ //exhaustruct:enforce
 			Success:    result.Success,
 			Checked:    result.Checked,
 			Updated:    result.Updated,
@@ -2119,9 +2130,9 @@ func (s *UpdaterService) finalizeAutoUpdate(ctx context.Context, t flow.Task) (a
 	activityID := t.ActivityID()
 	ctx = contextWithActivityID(ctx, activityID)
 	if applied.Busy {
-		status := kit.Ternary(applied.Started, scheduler.Failed, scheduler.Skipped)
+		status := kit.Ternary(applied.Started, types.RunStatusFailed, types.RunStatusSkipped)
 		message := kit.Ternary(applied.Started, "Another update is active; the remaining targets were not updated", "Another update is active")
-		if err := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+		if err := jobcontext.Progress(ctx, types.TargetOutcome{
 			ID:           "auto-update",
 			ResourceType: "update-batch",
 			Status:       status,
@@ -2130,7 +2141,7 @@ func (s *UpdaterService) finalizeAutoUpdate(ctx context.Context, t flow.Task) (a
 		}); err != nil {
 			return nil, common.Classify(common.ErrUnavailable, err)
 		}
-		return scheduler.Outcome{
+		return types.SchedulerOutcome{
 			Status:     status,
 			Message:    message,
 			ActivityID: activityID,
@@ -2139,7 +2150,7 @@ func (s *UpdaterService) finalizeAutoUpdate(ctx context.Context, t flow.Task) (a
 	// Containers that could not be planned never reached apply, so they count as failed here.
 	run, _ := jobcontext.Run(ctx)
 	unplanned := s.recovery.Unplanned(run)
-	result := &arcaneupdater.Result{ //exhaustruct:enforce
+	result := &types.UpdaterResult{ //exhaustruct:enforce
 		Success:    applied.Result.Success,
 		Checked:    applied.Result.Checked,
 		Updated:    applied.Result.Updated,
@@ -2156,7 +2167,7 @@ func (s *UpdaterService) finalizeAutoUpdate(ctx context.Context, t flow.Task) (a
 		err:           kit.Ternary(applied.RecordingError != "", errors.New(applied.RecordingError), nil),
 		selfTriggered: applied.SelfTriggered,
 		selfID:        applied.SelfID,
-	}).completeBatch(ctx, arcaneupdater.Options{}, result, applied.Completed, kit.Ternary(applied.Error != "", errors.New(applied.Error), nil))
+	}).completeBatch(ctx, types.UpdaterOptions{}, result, applied.Completed, kit.Ternary(applied.Error != "", errors.New(applied.Error), nil))
 	slog.InfoContext(ctx, "auto-update run completed",
 		"checked", result.Checked,
 		"updated", result.Updated,
@@ -2164,21 +2175,21 @@ func (s *UpdaterService) finalizeAutoUpdate(ctx context.Context, t flow.Task) (a
 		"skipped", result.Skipped,
 		"failed", result.Failed,
 	)
-	status, message := func() (scheduler.RunStatus, string) {
-		if outcomeErr, ok := errors.AsType[*scheduler.OutcomeError](err); ok {
+	status, message := func() (types.RunStatus, string) {
+		if outcomeErr, ok := errors.AsType[*types.SchedulerOutcomeError](err); ok {
 			return outcomeErr.Outcome.Status, outcomeErr.Outcome.Message
 		}
 		switch {
 		case applied.Unresolved:
-			return scheduler.Failed, "Some target outcomes could not be confirmed"
+			return types.RunStatusFailed, "Some target outcomes could not be confirmed"
 		case err != nil:
-			return scheduler.Partial, "Some updates failed: " + err.Error()
+			return types.RunStatusPartial, "Some updates failed: " + err.Error()
 		case result.Failed > 0:
-			return scheduler.Partial, "Some updates failed"
+			return types.RunStatusPartial, "Some updates failed"
 		}
-		return scheduler.Succeeded, "Auto-update run completed"
+		return types.RunStatusSucceeded, "Auto-update run completed"
 	}()
-	return scheduler.Outcome{
+	return types.SchedulerOutcome{
 		Status:     status,
 		Message:    message,
 		ActivityID: activityID,
@@ -2187,7 +2198,7 @@ func (s *UpdaterService) finalizeAutoUpdate(ctx context.Context, t flow.Task) (a
 }
 
 // ValidateAutoUpdateRetry allows a retry only while frozen targets remain unsettled.
-func (s *UpdaterService) ValidateAutoUpdateRetry(_ context.Context, run scheduler.Run) error {
+func (s *UpdaterService) ValidateAutoUpdateRetry(_ context.Context, run types.SchedulerRun) error {
 	unsettled, err := s.recovery.Unsettled(run)
 	if err != nil {
 		return fmt.Errorf("auto-update has no frozen plan to retry: %w", err)
@@ -2199,6 +2210,6 @@ func (s *UpdaterService) ValidateAutoUpdateRetry(_ context.Context, run schedule
 }
 
 // ReconcilePending resumes only frozen targets whose original container is unchanged.
-func (s *UpdaterService) ReconcilePending(ctx context.Context, run scheduler.Run) (scheduler.Outcome, error) {
+func (s *UpdaterService) ReconcilePending(ctx context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
 	return s.recovery.ReconcilePending(ctx, run)
 }

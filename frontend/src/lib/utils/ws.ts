@@ -41,7 +41,7 @@ export class ReconnectingWebSocket<T = unknown> {
 	constructor(opts: ReconnectWSOptions<T>) {
 		this.opts = opts;
 		this.maxBackoff = opts.maxBackoff ?? 30000;
-		if (opts.autoConnect) this.connect();
+		if (opts.autoConnect) void this.connect();
 	}
 
 	async connect() {
@@ -151,7 +151,7 @@ export class ReconnectingWebSocket<T = unknown> {
 
 		this.reconnectTimer = setTimeout(() => {
 			this.reconnectTimer = null;
-			if (!this.closed) this.connectOnce();
+			if (!this.closed) void this.connectOnce();
 		}, backoff);
 	}
 
@@ -266,7 +266,7 @@ export function createStatsWebSocket(opts: {
 	maxBackoff?: number;
 }) {
 	const buildUrl = () => {
-		const envId = opts.getEnvId() || '0';
+		const envId = opts.getEnvId();
 		const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
 		return `${protocol}://${location.host}/api/environments/${envId}/ws/system/stats`;
 	};
@@ -294,7 +294,7 @@ export function createContainerStatsWebSocket(opts: {
 	shouldReconnect?: () => boolean;
 }) {
 	const buildUrl = () => {
-		const envId = opts.getEnvId() || '0';
+		const envId = opts.getEnvId();
 		const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
 		return `${protocol}://${location.host}/api/environments/${envId}/ws/containers/${opts.containerId}/stats`;
 	};

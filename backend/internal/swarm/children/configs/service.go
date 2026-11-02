@@ -3,52 +3,56 @@ package configs
 import (
 	"cmp"
 	"context"
-	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
-	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
-// Service manages swarm configs.
-type Service struct {
-	docker        *docker.DockerClientService
-	ensureManager func(ctx context.Context) error
+type (
+	// Service manages swarm configs.
+	Service struct {
+		docker        *docker.DockerClientService
+		ensureManager func(ctx context.Context) error
+	}
+)
+
+var configPagination = pagination.Config[types.SwarmConfig]{
+	SearchAccessors: []pagination.SearchAccessor[types.SwarmConfig]{
+		func(item types.SwarmConfig) (string, error) {
+			return item.Spec.Name, nil
+		},
+		func(item types.SwarmConfig) (string, error) {
+			return item.ID, nil
+		},
+	},
+	SortBindings: []pagination.SortBinding[types.SwarmConfig]{
+		{Key: "name", Fn: func(a, b types.SwarmConfig) int {
+			return strings.Compare(a.Spec.Name, b.Spec.Name)
+		}},
+		{Key: "createdAt", Fn: func(a, b types.SwarmConfig) int {
+			return a.CreatedAt.Compare(b.CreatedAt)
+		}},
+		{Key: "updatedAt", Fn: func(a, b types.SwarmConfig) int {
+			return a.UpdatedAt.Compare(b.UpdatedAt)
+		}},
+	},
 }
 
 func NewService(dockerService *docker.DockerClientService, ensureManager func(ctx context.Context) error) *Service {
 	return &Service{docker: dockerService, ensureManager: ensureManager}
 }
 
-var configPagination = pagination.Config[swarmtypes.ConfigSummary]{
-	SearchAccessors: []pagination.SearchAccessor[swarmtypes.ConfigSummary]{
-		func(item swarmtypes.ConfigSummary) (string, error) {
-			return item.Spec.Name, nil
-		},
-		func(item swarmtypes.ConfigSummary) (string, error) {
-			return item.ID, nil
-		},
-	},
-	SortBindings: []pagination.SortBinding[swarmtypes.ConfigSummary]{
-		{Key: "name", Fn: func(a, b swarmtypes.ConfigSummary) int {
-			return strings.Compare(a.Spec.Name, b.Spec.Name)
-		}},
-		{Key: "createdAt", Fn: func(a, b swarmtypes.ConfigSummary) int {
-			return a.CreatedAt.Compare(b.CreatedAt)
-		}},
-		{Key: "updatedAt", Fn: func(a, b swarmtypes.ConfigSummary) int {
-			return a.UpdatedAt.Compare(b.UpdatedAt)
-		}},
-	},
-}
-
-func (s *Service) ListConfigs(ctx context.Context, params pagination.QueryParams) ([]swarmtypes.ConfigSummary, pagination.Response, error) {
+func (s *Service) ListConfigs(ctx context.Context, params pagination.QueryParams) ([]types.SwarmConfig, pagination.Response, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, pagination.Response{}, err
 	}
@@ -60,15 +64,39 @@ func (s *Service) ListConfigs(ctx context.Context, params pagination.QueryParams
 		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm configs: %w", err)
 	}
 
-	items := make([]swarmtypes.ConfigSummary, 0, len(listResult.Items))
+	items := make([]types.SwarmConfig, 0, len(listResult.Items))
 	for _, item := range listResult.Items {
-		items = append(items, swarmtypes.NewConfigSummary(item))
+		items = append(items, types.NewSwarmConfig(item))
 	}
 	result := configPagination.SearchOrderAndPaginate(items, params)
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
 }
 
-func (s *Service) GetConfig(ctx context.Context, configID string) (*swarmtypes.ConfigSummary, error) {
+func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.SwarmConfig], error) {
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.SwarmConfig]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return types.Paginated[types.SwarmConfig]{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[types.SwarmConfig], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		pages = append(pages, pagination.EnvironmentPage[types.SwarmConfig]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
+	}
+	data, resp := pagination.MergeEnvironmentPages(configPagination, pages, params)
+
+	return types.Paginated[types.SwarmConfig]{
+		Success:            true,
+		Data:               data,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
+func (s *Service) GetConfig(ctx context.Context, configID string) (*types.SwarmConfig, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, err
 	}
@@ -80,27 +108,20 @@ func (s *Service) GetConfig(ctx context.Context, configID string) (*swarmtypes.C
 		return nil, fmt.Errorf("failed to inspect swarm config: %w", err)
 	}
 
-	return new(swarmtypes.NewConfigSummary(cfgResult.Config)), nil
+	return new(types.NewSwarmConfig(cfgResult.Config)), nil
 }
 
-func (s *Service) CreateConfig(ctx context.Context, req swarmtypes.ConfigCreateRequest) (*swarmtypes.ConfigSummary, error) {
+func (s *Service) CreateConfig(ctx context.Context, config types.SwarmConfig) (*types.SwarmConfig, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, err
 	}
 
-	if trimmed := strings.TrimSpace(string(req.Spec)); trimmed == "" || trimmed == "null" {
-		return nil, errors.New("config spec is required")
-	}
-	var spec swarm.ConfigSpec
-	if err := json.Unmarshal(req.Spec, &spec); err != nil {
-		return nil, fmt.Errorf("failed to parse config spec: %w", err)
-	}
-	if strings.TrimSpace(spec.Name) == "" {
+	if strings.TrimSpace(config.Spec.Name) == "" {
 		return nil, errors.New("config spec name is required")
 	}
 
 	createResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ConfigCreateResult, error) {
-		return dockerClient.ConfigCreate(ctx, client.ConfigCreateOptions{Spec: spec})
+		return dockerClient.ConfigCreate(ctx, client.ConfigCreateOptions{Spec: config.Spec})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create swarm config: %w", err)
@@ -109,7 +130,7 @@ func (s *Service) CreateConfig(ctx context.Context, req swarmtypes.ConfigCreateR
 	return s.GetConfig(ctx, createResult.ID)
 }
 
-func (s *Service) UpdateConfig(ctx context.Context, configID string, req swarmtypes.ConfigUpdateRequest) (*swarmtypes.ConfigSummary, error) {
+func (s *Service) UpdateConfig(ctx context.Context, configID string, req types.SwarmConfigUpdateRequest) (*types.SwarmConfig, error) {
 	current, err := s.GetConfig(ctx, configID)
 	if err != nil {
 		return nil, err

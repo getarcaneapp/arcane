@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/url"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -14,59 +15,40 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/gitops"
-	"github.com/getarcaneapp/arcane/types/v2/lifecycle"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/italypaleale/francis/builtin/workflow"
-	"go.getarcane.app/acfs"
-	"go.getarcane.app/kit/pkg"
-	"go.getarcane.app/kit/pkg/mapping"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/fx"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops/children/backup"
-	gitopssync "github.com/getarcaneapp/arcane/backend/v2/internal/gitops/children/sync"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-	projectpkg "github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
-)
+	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	"kit.getarcane.app/concurrency"
+	"kit.getarcane.app/mapping"
 
-var syncRuns = func() metric.Int64Counter {
-	counter, err := otel.Meter(tracing.InstrumentationName).Int64Counter("arcane.gitops.syncs",
-		metric.WithDescription("GitOps sync runs by outcome"), metric.WithUnit("{sync}"))
-	if err != nil {
-		otel.Handle(err)
-	}
-	return counter
-}()
-
-const (
-	defaultGitSyncTimeout = 5 * time.Minute
-
-	defaultMaxSyncFiles        = 500
-	defaultMaxSyncTotalSizeMB  = 50
-	defaultMaxSyncBinarySizeMB = 10
-
-	gitOpsSyncAdmissionScope = "gitops-sync"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/gitops/children/backup"
+	gitopssync "getarcane.dev/arcane/v3/internal/gitops/children/sync"
+	"getarcane.dev/arcane/v3/internal/gitrepo"
+	projectpkg "getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/scheduler/entityjobs"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/swarm"
+	"getarcane.dev/arcane/v3/pkg/gitutil"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/logging"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -87,13 +69,11 @@ type (
 		sync    *gitopssync.Service
 		backup  *backup.Service
 	}
-
 	// syncTarget is the gitops-sync workflow input: the sync one scheduled job runs.
 	syncTarget struct {
 		EnvironmentID string `json:"environmentId"`
 		SyncID        string `json:"syncId"`
 	}
-
 	// lifecycleConfigInput is the pre-deploy hook slice of a create or update request.
 	lifecycleConfigInput struct {
 		targetType    *string
@@ -105,15 +85,55 @@ type (
 		networkMode   *string
 		syncDirectory *bool
 	}
-
 	// backupRuntime holds the in-memory coordination for backup syncs.
 	backupRuntime struct {
-		mu       sync.Mutex
 		branches map[string]*sync.Mutex
 		timers   map[string]*time.Timer
 		debounce time.Duration
+		mu       sync.Mutex
+	}
+
+	GitOpsSyncServiceParams struct {
+		fx.In
+
+		DB              *database.DB
+		RepoService     *gitrepo.GitRepositoryService
+		ProjectService  *projectpkg.ProjectService
+		SwarmService    *swarm.SwarmService
+		EventService    *event.EventService
+		SettingsService *settings.SettingsService
+	}
+
+	SyncUpdate struct {
+		Submitted map[string]bool
+		Actor     types.Actor
+		Request   types.GitOpsSync
+	}
+
+	SyncRequest struct {
+		EnvironmentID string
+		SyncID        string
+		Actor         types.Actor
+		BackupAdopt   bool
 	}
 )
+
+const (
+	defaultGitSyncTimeout      = 5 * time.Minute
+	defaultMaxSyncFiles        = 500
+	defaultMaxSyncTotalSizeMB  = 50
+	defaultMaxSyncBinarySizeMB = 10
+	gitOpsSyncAdmissionScope   = "gitops-sync"
+)
+
+var syncRuns = func() metric.Int64Counter {
+	counter, err := otel.Meter(logging.InstrumentationName).Int64Counter("arcane.gitops.syncs",
+		metric.WithDescription("GitOps sync runs by outcome"), metric.WithUnit("{sync}"))
+	if err != nil {
+		otel.Handle(err)
+	}
+	return counter
+}()
 
 func (s *GitOpsSyncService) validateLifecycleConfig(ctx context.Context, current *projectpkg.GitOpsSync, in lifecycleConfigInput) error {
 	var currentScript, currentRunner *string
@@ -126,7 +146,7 @@ func (s *GitOpsSyncService) validateLifecycleConfig(ctx context.Context, current
 	targetType := cmp.Or(strings.TrimSpace(kit.FromPtr(in.targetType)), currentTargetType)
 	scriptPath := strings.TrimSpace(kit.FromPtr(cmp.Or(in.scriptPath, currentScript)))
 	invalid := func(field, message string) error {
-		return common.Classify(common.ErrValidation, &base.FieldError{Field: field, Err: errors.New(message)})
+		return common.Classify(common.ErrValidation, &types.FieldError{Field: field, Err: errors.New(message)})
 	}
 
 	lifecycleFieldSet := in.scriptPath != nil || in.runnerImage != nil || in.env != nil || in.extraMounts != nil || in.timeoutSec != nil || in.networkMode != nil
@@ -136,7 +156,7 @@ func (s *GitOpsSyncService) validateLifecycleConfig(ctx context.Context, current
 		return nil
 	}
 	// The kill switch only blocks edits to lifecycle fields, not unrelated edits to a sync that already has a hook.
-	if lifecycleFieldSet && !s.settingsService.GetBoolSetting(ctx, "lifecycleEnabled", false) {
+	if lifecycleFieldSet && !s.settingsService.GetBoolSetting(ctx, "lifecycleEnabled") {
 		return invalid("preDeployScriptPath", "Pre-deploy lifecycle hooks are disabled. An admin must enable lifecycleEnabled in settings before they can be configured.")
 	}
 
@@ -152,14 +172,14 @@ func (s *GitOpsSyncService) validateLifecycleConfig(ctx context.Context, current
 		return invalid("preDeployScriptPath", "Script path must be relative to the project directory.")
 	case cleanedScript == ".." || strings.HasPrefix(cleanedScript, "../"):
 		return invalid("preDeployScriptPath", "Script path must not escape the project directory.")
-	case strings.TrimSpace(kit.FromPtr(cmp.Or(in.runnerImage, currentRunner))) == "" && strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "lifecycleDefaultRunnerImage", "")) == "":
+	case strings.TrimSpace(kit.FromPtr(cmp.Or(in.runnerImage, currentRunner))) == "" && strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "lifecycleDefaultRunnerImage")) == "":
 		return invalid("preDeployRunnerImage", "Runner image is required when a script path is set.")
 	case !kit.FromPtr(cmp.Or(in.syncDirectory, &currentSyncDirectory)):
 		return invalid("preDeployScriptPath", "Pre-deploy script requires \"Sync entire directory\" so the script is included in the synced files.")
 	}
 
 	if in.timeoutSec != nil {
-		maxTimeoutSec := s.settingsService.GetIntSetting(ctx, "lifecycleMaxTimeoutSec", lifecycle.DefaultMaxTimeoutSec)
+		maxTimeoutSec := s.settingsService.GetIntSetting(ctx, "lifecycleMaxTimeoutSec")
 		if *in.timeoutSec < 1 {
 			return invalid("preDeployTimeoutSec", "Timeout must be at least 1 second.")
 		}
@@ -176,25 +196,18 @@ func (s *GitOpsSyncService) validateLifecycleConfig(ctx context.Context, current
 	return nil
 }
 
-func NewGitOpsSyncService(
-	db *database.DB,
-	repoService *gitrepo.GitRepositoryService,
-	projectService *projectpkg.ProjectService,
-	swarmService *swarm.SwarmService,
-	eventService *event.EventService,
-	settingsService *settings.SettingsService,
-) *GitOpsSyncService {
+func NewGitOpsSyncService(p GitOpsSyncServiceParams) *GitOpsSyncService {
 	s := &GitOpsSyncService{
-		db:              db,
-		repoService:     repoService,
-		projectService:  projectService,
-		swarmService:    swarmService,
-		eventService:    eventService,
-		settingsService: settingsService,
+		db:              p.DB,
+		repoService:     p.RepoService,
+		projectService:  p.ProjectService,
+		swarmService:    p.SwarmService,
+		eventService:    p.EventService,
+		settingsService: p.SettingsService,
 		jobs:            entityjobs.New(entityjobs.GitOpsSyncJobPrefix, gitOpsSyncAdmissionScope),
 		backups:         &backupRuntime{branches: map[string]*sync.Mutex{}, timers: map[string]*time.Timer{}, debounce: backup.DefaultBackupSaveDebounce},
 	}
-	logError := func(ctx context.Context, syncRecord *projectpkg.GitOpsSync, actor user.Actor, errorMsg string) {
+	logError := func(ctx context.Context, syncRecord *projectpkg.GitOpsSync, actor types.Actor, errorMsg string) {
 		_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
 			Type:          event.EventTypeGitSyncError,
 			Severity:      event.EventSeverityError,
@@ -208,8 +221,25 @@ func NewGitOpsSyncService(
 			EnvironmentID: new(syncRecord.EnvironmentID),
 		})
 	}
-	s.sync = gitopssync.New(db, repoService, projectService, swarmService, eventService, s.getEffectiveSyncLimits, logError, s.jobs.Unregister)
-	s.backup = backup.New(db, repoService, projectService, eventService, s.getEffectiveSyncLimits, logError, s.backups.branchLock)
+	s.sync = gitopssync.New(gitopssync.Params{
+		DB:             p.DB,
+		RepoService:    p.RepoService,
+		ProjectService: p.ProjectService,
+		SwarmService:   p.SwarmService,
+		EventService:   p.EventService,
+		Limits:         s.getEffectiveSyncLimits,
+		LogError:       logError,
+		UnregisterJob:  s.jobs.Unregister,
+	})
+	s.backup = backup.New(backup.Params{
+		DB:             p.DB,
+		RepoService:    p.RepoService,
+		ProjectService: p.ProjectService,
+		EventService:   p.EventService,
+		Limits:         s.getEffectiveSyncLimits,
+		LogError:       logError,
+		BranchLock:     s.backups.branchLock,
+	})
 	return s
 }
 
@@ -234,34 +264,38 @@ func (s *GitOpsSyncService) RegisterWorkflows(engine *flow.Engine) error {
 				if errors.Is(err, common.ErrNotFound) {
 					slog.InfoContext(ctx, "gitops auto-sync job unregistering; sync no longer exists", "syncId", target.SyncID)
 					s.jobs.Unregister(ctx, target.SyncID)
-					return scheduler.Outcome{Status: scheduler.Skipped}, nil
+					return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 				}
 				if err != nil {
 					return nil, common.Classify(common.ErrUnavailable, err)
 				}
 				if !syncRecord.AutoSync {
-					return scheduler.Outcome{Status: scheduler.Skipped}, nil
+					return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 				}
 				if previous, ok := jobcontext.Run(ctx); ok {
-					if outcome := jobcontext.ConfirmedTarget(previous, target.SyncID); outcome.Status == scheduler.Succeeded {
+					if outcome := jobcontext.ConfirmedTarget(previous, target.SyncID); outcome.Status == types.RunStatusSucceeded {
 						return outcome, nil
 					}
 				}
-				if runningErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{ID: target.SyncID, Status: scheduler.Running}); runningErr != nil {
+				if runningErr := jobcontext.Progress(ctx, types.TargetOutcome{ID: target.SyncID, Status: types.RunStatusRunning}); runningErr != nil {
 					return nil, runningErr
 				}
-				result, err := s.PerformSync(ctx, target.EnvironmentID, target.SyncID, user.SystemUser)
+				result, err := s.PerformSync(ctx, SyncRequest{
+					EnvironmentID: target.EnvironmentID,
+					SyncID:        target.SyncID,
+					Actor:         types.SystemUser,
+				})
 				if err != nil {
 					slog.ErrorContext(ctx, "gitops auto-sync run failed", "syncId", target.SyncID, "error", err)
 					return nil, err
 				}
 				if !result.Success {
-					return scheduler.Outcome{Status: scheduler.Skipped, Message: result.Message}, nil
+					return types.SchedulerOutcome{Status: types.RunStatusSkipped, Message: result.Message}, nil
 				}
-				if succeededErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{ID: target.SyncID, Status: scheduler.Succeeded}); succeededErr != nil {
+				if succeededErr := jobcontext.Progress(ctx, types.TargetOutcome{ID: target.SyncID, Status: types.RunStatusSucceeded}); succeededErr != nil {
 					return nil, succeededErr
 				}
-				return scheduler.Outcome{Status: scheduler.Succeeded, Message: result.Message}, nil
+				return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: result.Message}, nil
 			}), workflow.WithMaxAttempts(3), workflow.WithRetryBackoff(30*time.Second, 2*time.Minute)),
 		},
 	})
@@ -271,7 +305,7 @@ func (s *GitOpsSyncService) RegisterWorkflows(engine *flow.Engine) error {
 
 // SetScheduler injects the scheduler, the admission gate, and the app lifecycle context background syncs run on.
 // It must run during bootstrap, before any per-sync job is registered.
-func (s *GitOpsSyncService) SetScheduler(ctx context.Context, jobScheduler scheduler.DynamicScheduler, admissionGate *runs.Admission) error {
+func (s *GitOpsSyncService) SetScheduler(ctx context.Context, jobScheduler types.DynamicScheduler, admissionGate *runs.Admission) error {
 	return s.jobs.SetScheduler(ctx, jobScheduler, admissionGate)
 }
 
@@ -292,7 +326,7 @@ func (s *GitOpsSyncService) kickSync(ctx context.Context, syncID, trigger string
 	if !s.jobs.Enabled() {
 		return
 	}
-	if _, err := s.jobs.Scheduler().Submit(ctx, scheduler.Request{JobID: s.jobs.JobName(syncID), EnvironmentID: "0", Trigger: trigger}); err != nil {
+	if _, err := s.jobs.Scheduler().Submit(ctx, types.SchedulerRequest{JobID: s.jobs.JobName(syncID), EnvironmentID: "0", Trigger: trigger}); err != nil {
 		slog.ErrorContext(ctx, "gitops sync admission failed", "syncId", syncID, "trigger", trigger, "error", err)
 	}
 }
@@ -313,7 +347,7 @@ func (s *GitOpsSyncService) RegisterAutoSyncJobsOnStartup(ctx context.Context) {
 	for _, syncRecord := range syncs {
 		s.registerSyncJob(ctx, syncRecord.ID, syncRecord.EnvironmentID, syncRecord.SyncInterval)
 		overdue := syncRecord.LastSyncAt == nil || time.Since(*syncRecord.LastSyncAt) > time.Duration(max(syncRecord.SyncInterval, 1))*time.Minute
-		if overdue || (syncRecord.Mode == gitops.SyncModeBackup && syncRecord.BackupPending) {
+		if overdue || (syncRecord.Mode == types.GitOpsSyncModeBackup && syncRecord.BackupPending) {
 			s.kickSync(ctx, syncRecord.ID, "startup")
 		}
 	}
@@ -334,12 +368,16 @@ func (s *GitOpsSyncService) getEffectiveSyncLimits(ctx context.Context, syncReco
 	if syncRecord == nil {
 		return maxFiles, maxTotalSize, maxBinarySize
 	}
-	return kit.Ternary(s.settingsService.IsEnvOverrideActive("gitSyncMaxFiles"), maxFiles, syncRecord.MaxSyncFiles),
-		kit.Ternary(s.settingsService.IsEnvOverrideActive("gitSyncMaxTotalSizeMb"), maxTotalSize, syncRecord.MaxSyncTotalSize),
-		kit.Ternary(s.settingsService.IsEnvOverrideActive("gitSyncMaxBinarySizeMb"), maxBinarySize, syncRecord.MaxSyncBinarySize)
+	envPinned := func(key string) bool {
+		_, reason := s.settingsService.IsLocked(key)
+		return reason == settings.LockReasonEnv
+	}
+	return kit.Ternary(envPinned("gitSyncMaxFiles"), maxFiles, syncRecord.MaxSyncFiles),
+		kit.Ternary(envPinned("gitSyncMaxTotalSizeMb"), maxTotalSize, syncRecord.MaxSyncTotalSize),
+		kit.Ternary(envPinned("gitSyncMaxBinarySizeMb"), maxBinarySize, syncRecord.MaxSyncBinarySize)
 }
 
-func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]gitops.GitOpsSync, pagination.Response, gitops.SyncCounts, error) {
+func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.GitOpsSync, pagination.Response, types.GitOpsSyncCounts, error) {
 	var syncs []projectpkg.GitOpsSync
 	q := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).
 		Where("environment_id = ?", environmentID)
@@ -363,11 +401,11 @@ func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID
 		q.Session(&gorm.Session{}).Count(&total).Error,
 		q.Session(&gorm.Session{}).Where("auto_sync = ?", true).Count(&active).Error,
 		q.Session(&gorm.Session{}).Where("last_sync_status = ?", "success").Count(&successful).Error,
-		q.Session(&gorm.Session{}).Where("mode = ?", gitops.SyncModeBackup).Count(&backups).Error,
+		q.Session(&gorm.Session{}).Where("mode = ?", types.GitOpsSyncModeBackup).Count(&backups).Error,
 	); err != nil {
-		return nil, pagination.Response{}, gitops.SyncCounts{}, fmt.Errorf("failed to get sync counts: %w", err)
+		return nil, pagination.Response{}, types.GitOpsSyncCounts{}, fmt.Errorf("failed to get sync counts: %w", err)
 	}
-	counts := gitops.SyncCounts{
+	counts := types.GitOpsSyncCounts{
 		TotalSyncs:      int(total),
 		ActiveSyncs:     int(active),
 		SuccessfulSyncs: int(successful),
@@ -377,15 +415,63 @@ func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q.Preload("Repository").Preload("Project"), &syncs)
 	if err != nil {
-		return nil, pagination.Response{}, gitops.SyncCounts{}, fmt.Errorf("failed to paginate gitops syncs: %w", err)
+		return nil, pagination.Response{}, types.GitOpsSyncCounts{}, fmt.Errorf("failed to paginate gitops syncs: %w", err)
 	}
 
-	out, mapErr := mapping.MapSlice[projectpkg.GitOpsSync, gitops.GitOpsSync](syncs)
+	out, mapErr := mapping.MapSlice[projectpkg.GitOpsSync, types.GitOpsSync](syncs)
 	if mapErr != nil {
-		return nil, pagination.Response{}, gitops.SyncCounts{}, fmt.Errorf("failed to map syncs: %w", mapErr)
+		return nil, pagination.Response{}, types.GitOpsSyncCounts{}, fmt.Errorf("failed to map syncs: %w", mapErr)
 	}
 
 	return out, paginationResp, counts, nil
+}
+
+func (s *GitOpsSyncService) AggregateSyncs(ctx context.Context, params pagination.QueryParams) (types.PaginatedWithCounts[types.GitOpsSync, types.GitOpsSyncCounts], error) {
+	collection, err := httpx.CollectEnvironments[types.PaginatedWithCounts[types.GitOpsSync, types.GitOpsSyncCounts]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return types.PaginatedWithCounts[types.GitOpsSync, types.GitOpsSyncCounts]{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[types.GitOpsSync], 0, len(collection.Results))
+	var counts types.GitOpsSyncCounts
+	for _, result := range collection.Results {
+		pages = append(pages, pagination.EnvironmentPage[types.GitOpsSync]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
+		counts = types.GitOpsSyncCounts{
+			TotalSyncs:      counts.TotalSyncs + result.Value.Counts.TotalSyncs,
+			ActiveSyncs:     counts.ActiveSyncs + result.Value.Counts.ActiveSyncs,
+			SuccessfulSyncs: counts.SuccessfulSyncs + result.Value.Counts.SuccessfulSyncs,
+			DeploySyncs:     counts.DeploySyncs + result.Value.Counts.DeploySyncs,
+			BackupSyncs:     counts.BackupSyncs + result.Value.Counts.BackupSyncs,
+		}
+	}
+	data, resp := pagination.MergeEnvironmentPages(pagination.Config[types.GitOpsSync]{
+		SortBindings: []pagination.SortBinding[types.GitOpsSync]{
+			{Key: "name", Fn: func(a, b types.GitOpsSync) int { return strings.Compare(a.Name, b.Name) }},
+			{Key: "repositoryId", Fn: func(a, b types.GitOpsSync) int { return strings.Compare(a.RepositoryID, b.RepositoryID) }},
+			{Key: "branch", Fn: func(a, b types.GitOpsSync) int { return strings.Compare(a.Branch, b.Branch) }},
+			{Key: "composePath", Fn: func(a, b types.GitOpsSync) int { return strings.Compare(a.ComposePath, b.ComposePath) }},
+			{Key: "projectName", Fn: func(a, b types.GitOpsSync) int { return strings.Compare(a.ProjectName, b.ProjectName) }},
+			{Key: "syncInterval", Fn: func(a, b types.GitOpsSync) int { return cmp.Compare(a.SyncInterval, b.SyncInterval) }},
+			{Key: "autoSync", Fn: func(a, b types.GitOpsSync) int {
+				return cmp.Compare(kit.Ternary(a.AutoSync, 1, 0), kit.Ternary(b.AutoSync, 1, 0))
+			}},
+			{Key: "lastSyncAt", Fn: func(a, b types.GitOpsSync) int {
+				return kit.FromPtr(a.LastSyncAt).Compare(kit.FromPtr(b.LastSyncAt))
+			}},
+		},
+	}, pages, params)
+
+	return types.PaginatedWithCounts[types.GitOpsSync, types.GitOpsSyncCounts]{
+		Success:            true,
+		Data:               data,
+		Counts:             counts,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
 }
 
 func (s *GitOpsSyncService) GetSyncByID(ctx context.Context, environmentID, id string) (*projectpkg.GitOpsSync, error) {
@@ -419,38 +505,49 @@ func (s *GitOpsSyncService) getSyncByID(ctx context.Context, environmentID, id s
 	return &syncRecord, nil
 }
 
-func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string, req gitops.CreateSyncRequest, actor user.Actor) (*projectpkg.GitOpsSync, error) {
-	slog.InfoContext(ctx, "Creating GitOps sync", "environmentId", environmentID, "name", req.Name, "repositoryId", req.RepositoryID)
+func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string, change SyncUpdate) (*projectpkg.GitOpsSync, error) {
+	slog.InfoContext(ctx, "Creating GitOps sync", "environmentId", environmentID, "name", change.Request.Name, "repositoryId", change.Request.RepositoryID)
 
-	mode := cmp.Or(strings.TrimSpace(req.Mode), gitops.SyncModeDeploy)
+	mode := cmp.Or(strings.TrimSpace(change.Request.Mode), types.GitOpsSyncModeDeploy)
 	switch {
-	case mode != gitops.SyncModeDeploy && mode != gitops.SyncModeBackup:
-		return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "mode", Err: fmt.Errorf("unsupported sync mode %q", req.Mode)})
-	case mode == gitops.SyncModeDeploy && req.HasBackupOptions():
-		return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "mode", Err: errors.New("backup options require mode \"backup\"")})
-	case mode == gitops.SyncModeDeploy && strings.TrimSpace(req.ComposePath) == "":
-		return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "composePath", Err: errors.New("compose path is required")})
+	case strings.TrimSpace(change.Request.Name) == "":
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "name", Err: errors.New("name is required")})
+	case strings.TrimSpace(change.Request.RepositoryID) == "":
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "repositoryId", Err: errors.New("repository is required")})
+	case strings.TrimSpace(change.Request.Branch) == "":
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "branch", Err: errors.New("branch is required")})
+	case mode != types.GitOpsSyncModeDeploy && mode != types.GitOpsSyncModeBackup:
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: fmt.Errorf("unsupported sync mode %q", change.Request.Mode)})
+	case mode == types.GitOpsSyncModeDeploy && (change.Request.BackupDirectory != "" || len(change.Request.BackupPaths) > 0 || change.Submitted["backupOnSave"]):
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: errors.New("backup options require mode \"backup\"")})
+	case mode == types.GitOpsSyncModeBackup &&
+		(change.Request.TargetType != "" && change.Request.TargetType != "project" ||
+			change.Request.SyncDirectory || change.Request.PullImageAfterSync || change.Request.RedeployAfterSync ||
+			hasPreDeployConfig(change.Submitted)):
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: errors.New("deployment options cannot be set on a backup sync")})
+	case mode == types.GitOpsSyncModeDeploy && strings.TrimSpace(change.Request.ComposePath) == "":
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "composePath", Err: errors.New("compose path is required")})
 	}
 
-	repo, err := s.repoService.GetRepositoryByID(ctx, req.RepositoryID)
+	repo, err := s.repoService.GetRepositoryByID(ctx, change.Request.RepositoryID)
 	if err != nil {
-		slog.ErrorContext(ctx, "Repository not found for GitOps sync", "repositoryId", req.RepositoryID, "error", err)
+		slog.ErrorContext(ctx, "Repository not found for GitOps sync", "repositoryId", change.Request.RepositoryID, "error", err)
 		return nil, fmt.Errorf("repository not found: %w", err)
 	}
-	slog.InfoContext(ctx, "Found repository for GitOps sync", "repositoryId", req.RepositoryID, "repositoryName", repo.Name)
+	slog.InfoContext(ctx, "Found repository for GitOps sync", "repositoryId", change.Request.RepositoryID, "repositoryName", repo.Name)
 
-	if limitsErr := validateSyncLimits(req.MaxSyncFiles, req.MaxSyncTotalSize, req.MaxSyncBinarySize); limitsErr != nil {
+	if limitsErr := validateSyncLimits(&change.Request.MaxSyncFiles, &change.Request.MaxSyncTotalSize, &change.Request.MaxSyncBinarySize); limitsErr != nil {
 		return nil, limitsErr
 	}
 	lifecycleCfg := lifecycleConfigInput{
-		targetType:    &req.TargetType,
-		scriptPath:    req.PreDeployScriptPath,
-		runnerImage:   req.PreDeployRunnerImage,
-		env:           req.PreDeployEnv,
-		extraMounts:   req.PreDeployExtraMounts,
-		timeoutSec:    req.PreDeployTimeoutSec,
-		networkMode:   req.PreDeployNetworkMode,
-		syncDirectory: req.SyncDirectory,
+		targetType:    &change.Request.TargetType,
+		scriptPath:    kit.Ternary(change.Submitted["preDeployScriptPath"], new(kit.FromPtr(change.Request.PreDeployScriptPath)), nil),
+		runnerImage:   kit.Ternary(change.Submitted["preDeployRunnerImage"], new(kit.FromPtr(change.Request.PreDeployRunnerImage)), nil),
+		env:           kit.Ternary(change.Submitted["preDeployEnv"], new(kit.FromPtr(change.Request.PreDeployEnv)), nil),
+		extraMounts:   kit.Ternary(change.Submitted["preDeployExtraMounts"], new(kit.FromPtr(change.Request.PreDeployExtraMounts)), nil),
+		timeoutSec:    kit.Ternary(change.Submitted["preDeployTimeoutSec"], &change.Request.PreDeployTimeoutSec, nil),
+		networkMode:   kit.Ternary(change.Submitted["preDeployNetworkMode"], &change.Request.PreDeployNetworkMode, nil),
+		syncDirectory: kit.Ternary(change.Submitted["syncDirectory"], &change.Request.SyncDirectory, nil),
 	}
 	if lifecycleErr := s.validateLifecycleConfig(ctx, nil, lifecycleCfg); lifecycleErr != nil {
 		return nil, lifecycleErr
@@ -458,32 +555,32 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 
 	defaultMaxFiles, defaultMaxTotalSize, defaultMaxBinarySize := s.getEnvironmentSyncLimits(ctx)
 	syncRecord := projectpkg.GitOpsSync{
-		Name:                 req.Name,
+		Name:                 change.Request.Name,
 		EnvironmentID:        environmentID,
-		RepositoryID:         req.RepositoryID,
-		Branch:               req.Branch,
-		ComposePath:          req.ComposePath,
-		TargetType:           req.TargetType,
-		ProjectName:          cmp.Or(req.ProjectName, req.Name),
+		RepositoryID:         change.Request.RepositoryID,
+		Branch:               change.Request.Branch,
+		ComposePath:          change.Request.ComposePath,
+		TargetType:           change.Request.TargetType,
+		ProjectName:          cmp.Or(change.Request.ProjectName, change.Request.Name),
 		Mode:                 mode,
-		AutoSync:             kit.FromPtr(req.AutoSync),
-		SyncInterval:         *cmp.Or(req.SyncInterval, new(60)),
-		SyncDirectory:        kit.FromPtr(req.SyncDirectory),
-		PullImageAfterSync:   kit.FromPtr(req.PullImageAfterSync),
-		RedeployAfterSync:    kit.FromPtr(req.RedeployAfterSync),
-		MaxSyncFiles:         *cmp.Or(req.MaxSyncFiles, &defaultMaxFiles),
-		MaxSyncTotalSize:     *cmp.Or(req.MaxSyncTotalSize, &defaultMaxTotalSize),
-		MaxSyncBinarySize:    *cmp.Or(req.MaxSyncBinarySize, &defaultMaxBinarySize),
+		AutoSync:             change.Request.AutoSync,
+		SyncInterval:         kit.Ternary(change.Submitted["syncInterval"], change.Request.SyncInterval, 60),
+		SyncDirectory:        change.Request.SyncDirectory,
+		PullImageAfterSync:   change.Request.PullImageAfterSync,
+		RedeployAfterSync:    change.Request.RedeployAfterSync,
+		MaxSyncFiles:         kit.Ternary(change.Submitted["maxSyncFiles"], change.Request.MaxSyncFiles, defaultMaxFiles),
+		MaxSyncTotalSize:     kit.Ternary(change.Submitted["maxSyncTotalSize"], change.Request.MaxSyncTotalSize, defaultMaxTotalSize),
+		MaxSyncBinarySize:    kit.Ternary(change.Submitted["maxSyncBinarySize"], change.Request.MaxSyncBinarySize, defaultMaxBinarySize),
 		BackupOnSave:         true,
-		PreDeployScriptPath:  nullableTrimmedString(req.PreDeployScriptPath),
-		PreDeployRunnerImage: nullableTrimmedString(req.PreDeployRunnerImage),
-		PreDeployEnv:         nullableTrimmedString(req.PreDeployEnv),
-		PreDeployExtraMounts: nullableTrimmedString(req.PreDeployExtraMounts),
-		PreDeployTimeoutSec:  *cmp.Or(req.PreDeployTimeoutSec, new(lifecycle.DefaultTimeoutSec)),
-		PreDeployNetworkMode: cmp.Or(strings.TrimSpace(kit.FromPtr(req.PreDeployNetworkMode)), "none"),
+		PreDeployScriptPath:  nullableTrimmedString(change.Request.PreDeployScriptPath),
+		PreDeployRunnerImage: nullableTrimmedString(change.Request.PreDeployRunnerImage),
+		PreDeployEnv:         nullableTrimmedString(change.Request.PreDeployEnv),
+		PreDeployExtraMounts: nullableTrimmedString(change.Request.PreDeployExtraMounts),
+		PreDeployTimeoutSec:  kit.Ternary(change.Submitted["preDeployTimeoutSec"], change.Request.PreDeployTimeoutSec, types.LifecycleDefaultTimeoutSec),
+		PreDeployNetworkMode: cmp.Or(strings.TrimSpace(change.Request.PreDeployNetworkMode), "none"),
 	}
 
-	adoptedProject, err := s.insertSyncRecord(ctx, &syncRecord, req, mode)
+	adoptedProject, err := s.insertSyncRecord(ctx, &syncRecord, change.Request, change.Submitted, mode)
 	if err != nil {
 		return nil, err
 	}
@@ -503,13 +600,17 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		ResourceType:  new("git_sync"),
 		ResourceID:    new(syncRecord.ID),
 		ResourceName:  new(syncRecord.Name),
-		UserID:        new(actor.ID),
-		Username:      new(actor.Username),
+		UserID:        new(change.Actor.ID),
+		Username:      new(change.Actor.Username),
 		EnvironmentID: new(syncRecord.EnvironmentID),
 	})
 
 	// The sync exists even when its first run fails, so that failure can be retried rather than failing creation.
-	if _, syncErr := s.PerformSync(ctx, syncRecord.EnvironmentID, syncRecord.ID, actor); syncErr != nil {
+	if _, syncErr := s.PerformSync(ctx, SyncRequest{
+		EnvironmentID: syncRecord.EnvironmentID,
+		SyncID:        syncRecord.ID,
+		Actor:         change.Actor,
+	}); syncErr != nil {
 		slog.ErrorContext(ctx, "Failed to perform initial sync after creation", "syncId", syncRecord.ID, "error", syncErr)
 	}
 	// The initial sync above already ran, so the job needs no kick.
@@ -521,15 +622,15 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 
 // insertSyncRecord inserts the sync in one transaction with any linked project locked, so a project never
 // ends up with two Git relationships. It returns the project a deploy sync adopts.
-func (s *GitOpsSyncService) insertSyncRecord(ctx context.Context, syncRecord *projectpkg.GitOpsSync, req gitops.CreateSyncRequest, mode string) (*projectpkg.Project, error) {
+func (s *GitOpsSyncService) insertSyncRecord(ctx context.Context, syncRecord *projectpkg.GitOpsSync, req types.GitOpsSync, submitted map[string]bool, mode string) (*projectpkg.Project, error) {
 	var adoptedProject *projectpkg.Project
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// An adopted project must exist, and must not be deployed from or backed up to Git already.
-		if mode == gitops.SyncModeDeploy && strings.TrimSpace(req.ProjectID) != "" {
+		if mode == types.GitOpsSyncModeDeploy && strings.TrimSpace(kit.FromPtr(req.ProjectID)) != "" {
 			if strings.TrimSpace(req.TargetType) == "swarm_stack" {
-				return common.Classify(common.ErrValidation, &base.FieldError{Field: "projectId", Err: errors.New("an existing project cannot be linked to a swarm stack sync")})
+				return common.Classify(common.ErrValidation, &types.FieldError{Field: "projectId", Err: errors.New("an existing project cannot be linked to a swarm stack sync")})
 			}
-			project, err := projectpkg.LockProjectForSync(tx, req.ProjectID)
+			project, err := projectpkg.LockProjectForSync(tx, kit.FromPtr(req.ProjectID))
 			if err != nil {
 				return err
 			}
@@ -537,7 +638,7 @@ func (s *GitOpsSyncService) insertSyncRecord(ctx context.Context, syncRecord *pr
 				return common.Classify(common.ErrConflict, errors.New("project is already deployed from Git"))
 			}
 			var backups int64
-			if countErr := tx.Model(&projectpkg.GitOpsSync{}).Where("mode = ? AND project_id = ?", gitops.SyncModeBackup, project.ID).Count(&backups).Error; countErr != nil {
+			if countErr := tx.Model(&projectpkg.GitOpsSync{}).Where("mode = ? AND project_id = ?", types.GitOpsSyncModeBackup, project.ID).Count(&backups).Error; countErr != nil {
 				return fmt.Errorf("failed to check existing backups: %w", countErr)
 			}
 			if backups > 0 {
@@ -550,8 +651,8 @@ func (s *GitOpsSyncService) insertSyncRecord(ctx context.Context, syncRecord *pr
 			syncRecord.ProjectID = &project.ID
 			syncRecord.ProjectName = project.Name
 		}
-		if mode == gitops.SyncModeBackup {
-			if err := s.backup.ApplyCreate(ctx, tx, req, syncRecord); err != nil {
+		if mode == types.GitOpsSyncModeBackup {
+			if err := s.backup.ApplyCreate(ctx, tx, req, submitted, syncRecord); err != nil {
 				return err
 			}
 		}
@@ -582,81 +683,78 @@ func (s *GitOpsSyncService) insertSyncRecord(ctx context.Context, syncRecord *pr
 	return adoptedProject, err
 }
 
-func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id string, req gitops.UpdateSyncRequest, actor user.Actor) (*projectpkg.GitOpsSync, error) {
+func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id string, change SyncUpdate) (*projectpkg.GitOpsSync, error) {
 	syncRecord, err := s.GetSyncByID(ctx, environmentID, id)
 	if err != nil {
 		return nil, err
 	}
 
+	switch {
+	case syncRecord.Mode != types.GitOpsSyncModeBackup && (change.Submitted["backupPaths"] || change.Submitted["backupOnSave"]):
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: errors.New("backup options cannot be set on a deployment sync")})
+	case syncRecord.Mode == types.GitOpsSyncModeBackup &&
+		(change.Request.TargetType != "" && change.Request.TargetType != "project" ||
+			change.Submitted["composePath"] ||
+			change.Submitted["projectName"] ||
+			change.Request.SyncDirectory ||
+			change.Request.PullImageAfterSync ||
+			change.Request.RedeployAfterSync ||
+			hasPreDeployConfig(change.Submitted)):
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: errors.New("deployment options cannot be set on a backup sync")})
+	}
+
 	// Captured before the update so the job can follow the new state.
 	oldAutoSync := syncRecord.AutoSync
-	newAutoSync := *cmp.Or(req.AutoSync, &syncRecord.AutoSync)
-	newInterval := *cmp.Or(req.SyncInterval, &syncRecord.SyncInterval)
+	newAutoSync := kit.Ternary(change.Submitted["autoSync"], change.Request.AutoSync, syncRecord.AutoSync)
+	newInterval := kit.Ternary(change.Submitted["syncInterval"], change.Request.SyncInterval, syncRecord.SyncInterval)
 
-	updates := make(map[string]any)
-
-	if req.Name != nil {
-		updates["name"] = *req.Name
-	}
-	if req.RepositoryID != nil {
-		if _, repoErr := s.repoService.GetRepositoryByID(ctx, *req.RepositoryID); repoErr != nil {
+	if change.Submitted["repositoryId"] {
+		if _, repoErr := s.repoService.GetRepositoryByID(ctx, change.Request.RepositoryID); repoErr != nil {
 			return nil, fmt.Errorf("repository not found: %w", repoErr)
 		}
-		updates["repository_id"] = *req.RepositoryID
 	}
-	if req.Branch != nil {
-		updates["branch"] = *req.Branch
-	}
-	if req.ComposePath != nil {
-		updates["compose_path"] = *req.ComposePath
-	}
-	if req.TargetType != nil {
-		updates["target_type"] = *req.TargetType
-	}
-	if req.ProjectName != nil {
-		updates["project_name"] = *req.ProjectName
-	}
-	if req.AutoSync != nil {
-		updates["auto_sync"] = *req.AutoSync
-	}
-	if req.SyncInterval != nil {
-		updates["sync_interval"] = *req.SyncInterval
-	}
-	if req.SyncDirectory != nil {
-		updates["sync_directory"] = *req.SyncDirectory
-	}
-	if req.PullImageAfterSync != nil {
-		updates["pull_image_after_sync"] = *req.PullImageAfterSync
-	}
-	if req.RedeployAfterSync != nil {
-		updates["redeploy_after_sync"] = *req.RedeployAfterSync
-	}
-	if limitsErr := validateSyncLimits(req.MaxSyncFiles, req.MaxSyncTotalSize, req.MaxSyncBinarySize); limitsErr != nil {
+	if limitsErr := validateSyncLimits(&change.Request.MaxSyncFiles, &change.Request.MaxSyncTotalSize, &change.Request.MaxSyncBinarySize); limitsErr != nil {
 		return nil, limitsErr
 	}
-	if req.MaxSyncFiles != nil {
-		updates["max_sync_files"] = *req.MaxSyncFiles
-	}
-	if req.MaxSyncTotalSize != nil {
-		updates["max_sync_total_size"] = *req.MaxSyncTotalSize
-	}
-	if req.MaxSyncBinarySize != nil {
-		updates["max_sync_binary_size"] = *req.MaxSyncBinarySize
+
+	updates := make(map[string]any)
+	for field, update := range map[string]struct {
+		value  any
+		column string
+	}{
+		"name":               {column: "name", value: change.Request.Name},
+		"repositoryId":       {column: "repository_id", value: change.Request.RepositoryID},
+		"branch":             {column: "branch", value: change.Request.Branch},
+		"composePath":        {column: "compose_path", value: change.Request.ComposePath},
+		"targetType":         {column: "target_type", value: change.Request.TargetType},
+		"projectName":        {column: "project_name", value: change.Request.ProjectName},
+		"autoSync":           {column: "auto_sync", value: change.Request.AutoSync},
+		"syncInterval":       {column: "sync_interval", value: change.Request.SyncInterval},
+		"syncDirectory":      {column: "sync_directory", value: change.Request.SyncDirectory},
+		"pullImageAfterSync": {column: "pull_image_after_sync", value: change.Request.PullImageAfterSync},
+		"redeployAfterSync":  {column: "redeploy_after_sync", value: change.Request.RedeployAfterSync},
+		"maxSyncFiles":       {column: "max_sync_files", value: change.Request.MaxSyncFiles},
+		"maxSyncTotalSize":   {column: "max_sync_total_size", value: change.Request.MaxSyncTotalSize},
+		"maxSyncBinarySize":  {column: "max_sync_binary_size", value: change.Request.MaxSyncBinarySize},
+	} {
+		if change.Submitted[field] {
+			updates[update.column] = update.value
+		}
 	}
 
-	if modeErr := s.backup.ApplyModeUpdates(ctx, syncRecord, req, updates); modeErr != nil {
+	if modeErr := s.backup.ApplyModeUpdates(ctx, syncRecord, change.Request, change.Submitted, updates); modeErr != nil {
 		return nil, modeErr
 	}
 
 	lifecycleCfg := lifecycleConfigInput{
-		targetType:    req.TargetType,
-		scriptPath:    req.PreDeployScriptPath,
-		runnerImage:   req.PreDeployRunnerImage,
-		env:           req.PreDeployEnv,
-		extraMounts:   req.PreDeployExtraMounts,
-		timeoutSec:    req.PreDeployTimeoutSec,
-		networkMode:   req.PreDeployNetworkMode,
-		syncDirectory: req.SyncDirectory,
+		targetType:    kit.Ternary(change.Submitted["targetType"], &change.Request.TargetType, nil),
+		scriptPath:    kit.Ternary(change.Submitted["preDeployScriptPath"], new(kit.FromPtr(change.Request.PreDeployScriptPath)), nil),
+		runnerImage:   kit.Ternary(change.Submitted["preDeployRunnerImage"], new(kit.FromPtr(change.Request.PreDeployRunnerImage)), nil),
+		env:           kit.Ternary(change.Submitted["preDeployEnv"], new(kit.FromPtr(change.Request.PreDeployEnv)), nil),
+		extraMounts:   kit.Ternary(change.Submitted["preDeployExtraMounts"], new(kit.FromPtr(change.Request.PreDeployExtraMounts)), nil),
+		timeoutSec:    kit.Ternary(change.Submitted["preDeployTimeoutSec"], &change.Request.PreDeployTimeoutSec, nil),
+		networkMode:   kit.Ternary(change.Submitted["preDeployNetworkMode"], &change.Request.PreDeployNetworkMode, nil),
+		syncDirectory: kit.Ternary(change.Submitted["syncDirectory"], &change.Request.SyncDirectory, nil),
 	}
 	if lifecycleErr := s.validateLifecycleConfig(ctx, syncRecord, lifecycleCfg); lifecycleErr != nil {
 		return nil, lifecycleErr
@@ -692,8 +790,8 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 			ResourceType:  new("git_sync"),
 			ResourceID:    new(syncRecord.ID),
 			ResourceName:  new(syncRecord.Name),
-			UserID:        new(actor.ID),
-			Username:      new(actor.Username),
+			UserID:        new(change.Actor.ID),
+			Username:      new(change.Actor.Username),
 			EnvironmentID: new(syncRecord.EnvironmentID),
 		})
 	}
@@ -711,7 +809,7 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	return s.GetSyncByID(ctx, environmentID, id)
 }
 
-func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id string, actor user.Actor) error {
+func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id string, actor types.Actor) error {
 	// Even a row that can no longer be loaded must stop firing; an in-flight run re-reads it and skips.
 	s.jobs.Unregister(ctx, id)
 	s.backups.cancel(id)
@@ -759,16 +857,10 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 	return nil
 }
 
-func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id string, actor user.Actor) (*gitops.SyncResult, error) {
-	return s.performSyncAdmitted(ctx, environmentID, id, actor, false)
-}
-
-// performSyncAdmitted runs one sync under its admission lease and dispatches by mode. backupAdopt makes a
-// backup replace whatever the remote holds in its backup directory.
-func (s *GitOpsSyncService) performSyncAdmitted(ctx context.Context, environmentID, id string, actor user.Actor, backupAdopt bool) (syncResult *gitops.SyncResult, syncErr error) {
-	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "gitops.sync", trace.WithAttributes(
-		attribute.String("arcane.gitops.sync_id", id),
-		attribute.String("arcane.environment.id", environmentID),
+func (s *GitOpsSyncService) PerformSync(ctx context.Context, req SyncRequest) (syncResult *types.GitOpsSyncResult, syncErr error) {
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "gitops.sync", trace.WithAttributes(
+		attribute.String("arcane.gitops.sync_id", req.SyncID),
+		attribute.String("arcane.environment.id", req.EnvironmentID),
 	))
 	counted := false
 	defer func() {
@@ -778,18 +870,15 @@ func (s *GitOpsSyncService) performSyncAdmitted(ctx context.Context, environment
 			span.SetAttributes(outcome)
 			syncRuns.Add(context.WithoutCancel(ctx), 1, metric.WithAttributes(outcome))
 		}
-		tracing.End(span, syncErr)
+		logging.EndSpan(span, syncErr)
 	}()
 
 	// Overlapping runs of one sync (schedule, kick, manual, webhook) must not race the clone and redeploy.
-	lease, admitted, err := s.jobs.TryAcquire(ctx, id)
+	admitCtx, cancelAdmit := context.WithTimeout(ctx, defaultGitSyncTimeout)
+	lease, err := s.jobs.Acquire(admitCtx, req.SyncID)
+	cancelAdmit()
 	if err != nil {
 		return nil, fmt.Errorf("failed to admit GitOps sync: %w", err)
-	}
-	if !admitted {
-		slog.InfoContext(ctx, "GitOps sync already in progress; skipping", "syncId", id)
-		span.SetAttributes(attribute.Bool("arcane.gitops.skipped", true))
-		return &gitops.SyncResult{Success: false, Message: "sync already in progress", SyncedAt: time.Now()}, nil
 	}
 	defer lease.Release(ctx)
 	counted = true
@@ -797,7 +886,7 @@ func (s *GitOpsSyncService) performSyncAdmitted(ctx context.Context, environment
 	syncCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
 	defer cancel()
 
-	syncRecord, err := s.GetSyncByID(syncCtx, environmentID, id)
+	syncRecord, err := s.GetSyncByID(syncCtx, req.EnvironmentID, req.SyncID)
 	if err != nil {
 		return nil, err
 	}
@@ -810,25 +899,25 @@ func (s *GitOpsSyncService) performSyncAdmitted(ctx context.Context, environment
 		span.SetAttributes(git.RepositoryAttribute(syncRecord.Repository.URL))
 	}
 
-	result := &gitops.SyncResult{
+	result := &types.GitOpsSyncResult{
 		Success:  false,
 		SyncedAt: time.Now(),
 	}
 
-	if syncRecord.Mode == gitops.SyncModeBackup {
-		return s.backup.Perform(syncCtx, syncRecord, actor, result, backupAdopt)
+	if syncRecord.Mode == types.GitOpsSyncModeBackup {
+		return s.backup.Perform(syncCtx, syncRecord, req.Actor, result, req.BackupAdopt)
 	}
 
-	return s.sync.Run(ctx, defaultGitSyncTimeout, syncRecord, actor, result)
+	return s.sync.Run(ctx, defaultGitSyncTimeout, syncRecord, req.Actor, result)
 }
 
-func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id string) (*gitops.SyncStatus, error) {
+func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id string) (*types.GitOpsSyncStatus, error) {
 	syncRecord, err := s.GetSyncByID(ctx, environmentID, id)
 	if err != nil {
 		return nil, err
 	}
 
-	return &gitops.SyncStatus{
+	return &types.GitOpsSyncStatus{
 		ID:                  syncRecord.ID,
 		AutoSync:            syncRecord.AutoSync,
 		LastSyncAt:          syncRecord.LastSyncAt,
@@ -857,7 +946,7 @@ func (s *GitOpsSyncService) CleanupLeakedScratchDirsOnStartup(ctx context.Contex
 		return fmt.Errorf("failed to resolve projects directory for gitops scratch cleanup: %w", err)
 	}
 
-	entries, err := acfs.List(ctx, projectsDir, "/")
+	entries, err := acfs.Root{Path: projectsDir}.List(ctx, "/")
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil
@@ -871,7 +960,7 @@ func (s *GitOpsSyncService) CleanupLeakedScratchDirsOnStartup(ctx context.Contex
 			continue
 		}
 		scratchPath := filepath.Join(projectsDir, entry.Name)
-		if rmErr := acfs.RemoveAll(ctx, projectsDir, entry.Path); rmErr != nil {
+		if rmErr := (acfs.Root{Path: projectsDir}).RemoveAll(ctx, entry.Path); rmErr != nil {
 			slog.WarnContext(ctx, "Failed to remove leaked GitOps scratch directory on startup", "path", scratchPath, "error", rmErr)
 			continue
 		}
@@ -887,10 +976,6 @@ func (s *GitOpsSyncService) CleanupLeakedScratchDirsOnStartup(ctx context.Contex
 // CleanupLeakedCloneDirsOnStartup removes leaked git clone scratch dirs
 // ("gitops-*") under the git work dir; safe because no sync holds a clone yet.
 func (s *GitOpsSyncService) CleanupLeakedCloneDirsOnStartup(ctx context.Context) error {
-	if s.repoService == nil || s.repoService.Client == nil {
-		return nil
-	}
-
 	removed, err := s.repoService.PurgeScratchDirs(ctx, 0)
 	if err != nil {
 		return fmt.Errorf("failed to purge leaked git clone scratch directories: %w", err)
@@ -961,7 +1046,7 @@ func (s *GitOpsSyncService) ReconcileDirectorySyncProjectsOnStartup(ctx context.
 	return nil
 }
 
-func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id, localPath string) (*gitops.BrowseResponse, error) {
+func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id, localPath string) (*types.GitOpsBrowseResponse, error) {
 	browseCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
 	defer cancel()
 
@@ -993,14 +1078,14 @@ func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id, 
 		return nil, err
 	}
 
-	return &gitops.BrowseResponse{
+	return &types.GitOpsBrowseResponse{
 		Path:  localPath,
 		Files: files,
 	}, nil
 }
 
-func (s *GitOpsSyncService) ImportSyncs(ctx context.Context, environmentID string, req []gitops.ImportGitOpsSyncRequest, actor user.Actor) (*gitops.ImportGitOpsSyncResponse, error) {
-	response := &gitops.ImportGitOpsSyncResponse{
+func (s *GitOpsSyncService) ImportSyncs(ctx context.Context, environmentID string, req []types.ImportGitOpsSyncRequest, actor types.Actor) (*types.ImportGitOpsSyncResponse, error) {
+	response := &types.ImportGitOpsSyncResponse{
 		SuccessCount: 0,
 		FailedCount:  0,
 		Errors:       []string{},
@@ -1015,24 +1100,47 @@ func (s *GitOpsSyncService) ImportSyncs(ctx context.Context, environmentID strin
 			continue
 		}
 
-		createReq := gitops.CreateSyncRequest{
-			Name:                   importItem.SyncName,
-			RepositoryID:           repo.ID,
-			Branch:                 importItem.Branch,
-			ComposePath:            importItem.DockerComposePath,
-			ProjectName:            importItem.ProjectName,
-			AutoSync:               new(importItem.AutoSync),
-			SyncInterval:           new(importItem.SyncInterval),
-			SyncDirectory:          importItem.SyncDirectory,
-			PullImageAfterSync:     importItem.PullImageAfterSync,
-			RedeployAfterSync:      importItem.RedeployAfterSync,
-			MaxSyncFiles:           importItem.MaxSyncFiles,
-			MaxSyncTotalSize:       importItem.MaxSyncTotalSize,
-			MaxSyncBinarySize:      importItem.MaxSyncBinarySize,
-			PreDeployConfigRequest: importItem.PreDeployConfigRequest,
+		createReq := types.GitOpsSync{
+			Name:                 importItem.SyncName,
+			RepositoryID:         repo.ID,
+			Branch:               importItem.Branch,
+			ComposePath:          importItem.DockerComposePath,
+			ProjectName:          importItem.ProjectName,
+			AutoSync:             importItem.AutoSync,
+			SyncInterval:         importItem.SyncInterval,
+			SyncDirectory:        kit.FromPtr(importItem.SyncDirectory),
+			PullImageAfterSync:   kit.FromPtr(importItem.PullImageAfterSync),
+			RedeployAfterSync:    kit.FromPtr(importItem.RedeployAfterSync),
+			MaxSyncFiles:         kit.FromPtr(importItem.MaxSyncFiles),
+			MaxSyncTotalSize:     kit.FromPtr(importItem.MaxSyncTotalSize),
+			MaxSyncBinarySize:    kit.FromPtr(importItem.MaxSyncBinarySize),
+			PreDeployScriptPath:  importItem.PreDeployScriptPath,
+			PreDeployRunnerImage: importItem.PreDeployRunnerImage,
+			PreDeployEnv:         importItem.PreDeployEnv,
+			PreDeployExtraMounts: importItem.PreDeployExtraMounts,
+			PreDeployTimeoutSec:  kit.FromPtr(importItem.PreDeployTimeoutSec),
+			PreDeployNetworkMode: kit.FromPtr(importItem.PreDeployNetworkMode),
+		}
+		submitted := map[string]bool{
+			"autoSync":             true,
+			"syncInterval":         true,
+			"syncDirectory":        importItem.SyncDirectory != nil,
+			"maxSyncFiles":         importItem.MaxSyncFiles != nil,
+			"maxSyncTotalSize":     importItem.MaxSyncTotalSize != nil,
+			"maxSyncBinarySize":    importItem.MaxSyncBinarySize != nil,
+			"preDeployScriptPath":  importItem.PreDeployScriptPath != nil,
+			"preDeployRunnerImage": importItem.PreDeployRunnerImage != nil,
+			"preDeployEnv":         importItem.PreDeployEnv != nil,
+			"preDeployExtraMounts": importItem.PreDeployExtraMounts != nil,
+			"preDeployTimeoutSec":  importItem.PreDeployTimeoutSec != nil,
+			"preDeployNetworkMode": importItem.PreDeployNetworkMode != nil,
 		}
 
-		_, err = s.CreateSync(ctx, environmentID, createReq, actor)
+		_, err = s.CreateSync(ctx, environmentID, SyncUpdate{
+			Request:   createReq,
+			Submitted: submitted,
+			Actor:     actor,
+		})
 		if err != nil {
 			response.FailedCount++
 			response.Errors = append(response.Errors, fmt.Sprintf("Sync '%s': %v", importItem.SyncName, err))
@@ -1063,7 +1171,7 @@ func (r *backupRuntime) schedule(syncID string, run func()) {
 		timer.Stop()
 	}
 	r.timers[syncID] = time.AfterFunc(r.debounce, func() {
-		defer utils.RecoverToError(nil, "git backup debounce", "syncId", syncID)
+		defer concurrency.RecoverToError(nil, "git backup debounce", "syncId", syncID)
 		r.mu.Lock()
 		delete(r.timers, syncID)
 		r.mu.Unlock()
@@ -1081,27 +1189,29 @@ func (r *backupRuntime) cancel(syncID string) {
 }
 
 // ResolveBackupConflict applies the chosen strategy to a backup that needs attention.
-func (s *GitOpsSyncService) ResolveBackupConflict(ctx context.Context, environmentID, id string, req gitops.ResolveBackupConflictRequest, actor user.Actor) (*gitops.SyncResult, error) {
-	if req.Strategy != gitops.BackupConflictUseArcane {
-		return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "strategy", Err: fmt.Errorf("unsupported strategy %q", req.Strategy)})
+func (s *GitOpsSyncService) ResolveBackupConflict(ctx context.Context, environmentID, id string, req types.GitOpsResolveBackupConflictRequest, actor types.Actor) (*types.GitOpsSyncResult, error) {
+	if req.Strategy != types.GitOpsBackupConflictUseArcane {
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "strategy", Err: fmt.Errorf("unsupported strategy %q", req.Strategy)})
 	}
 	syncRecord, err := s.getBackupSync(ctx, environmentID, id)
 	if err != nil {
 		return nil, err
 	}
-	return s.performSyncAdmitted(ctx, syncRecord.EnvironmentID, syncRecord.ID, actor, true)
+	return s.PerformSync(ctx, SyncRequest{
+		EnvironmentID: syncRecord.EnvironmentID,
+		SyncID:        syncRecord.ID,
+		Actor:         actor,
+		BackupAdopt:   true,
+	})
 }
 
 // SubscribeProjectFileChanges marks backups pending on save and runs them after a debounce when auto backup is on.
 func (s *GitOpsSyncService) SubscribeProjectFileChanges(ctx context.Context) {
-	if s.projectService == nil {
-		return
-	}
 	runCtx := s.jobs.Context(ctx)
 	s.projectService.FilesChanged.Subscribe(func(projectID string) {
 		var syncs []projectpkg.GitOpsSync
 		if err := s.db.WithContext(runCtx).
-			Where("mode = ? AND project_id = ?", gitops.SyncModeBackup, projectID).
+			Where("mode = ? AND project_id = ?", types.GitOpsSyncModeBackup, projectID).
 			Find(&syncs).Error; err != nil {
 			slog.ErrorContext(runCtx, "Failed to load git backups for changed project", "projectId", projectID, "error", err)
 			return
@@ -1123,8 +1233,12 @@ func (s *GitOpsSyncService) SubscribeProjectFileChanges(ctx context.Context) {
 					return
 				}
 				go func() {
-					defer utils.RecoverToError(nil, "git backup after save", "syncId", syncID, "projectId", projectID)
-					if _, err := s.PerformSync(runCtx, environmentID, syncID, user.SystemUser); err != nil {
+					defer concurrency.RecoverToError(nil, "git backup after save", "syncId", syncID, "projectId", projectID)
+					if _, err := s.PerformSync(runCtx, SyncRequest{
+						EnvironmentID: environmentID,
+						SyncID:        syncID,
+						Actor:         types.SystemUser,
+					}); err != nil {
 						slog.ErrorContext(runCtx, "git backup after save failed", "syncId", syncID, "error", err)
 					}
 				}()
@@ -1134,7 +1248,7 @@ func (s *GitOpsSyncService) SubscribeProjectFileChanges(ctx context.Context) {
 }
 
 // PreviewBackup reports what the next backup run would commit or why it needs attention.
-func (s *GitOpsSyncService) PreviewBackup(ctx context.Context, environmentID, id string) (*gitops.BackupPreview, error) {
+func (s *GitOpsSyncService) PreviewBackup(ctx context.Context, environmentID, id string) (*types.GitOpsBackupPreview, error) {
 	previewCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
 	defer cancel()
 
@@ -1146,7 +1260,7 @@ func (s *GitOpsSyncService) PreviewBackup(ctx context.Context, environmentID, id
 }
 
 // GetBackupHistory lists revisions that touched the backup directory.
-func (s *GitOpsSyncService) GetBackupHistory(ctx context.Context, environmentID, id string, limit int) (*gitops.BackupHistoryResponse, error) {
+func (s *GitOpsSyncService) GetBackupHistory(ctx context.Context, environmentID, id string, limit int) (*types.GitOpsBackupHistoryResponse, error) {
 	historyCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
 	defer cancel()
 
@@ -1158,7 +1272,7 @@ func (s *GitOpsSyncService) GetBackupHistory(ctx context.Context, environmentID,
 }
 
 // GetBackupRevision returns one revision with per-file diffs inside the backup directory.
-func (s *GitOpsSyncService) GetBackupRevision(ctx context.Context, environmentID, id, commit string) (*gitops.BackupRevision, error) {
+func (s *GitOpsSyncService) GetBackupRevision(ctx context.Context, environmentID, id, commit string) (*types.GitOpsBackupRevision, error) {
 	revisionCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
 	defer cancel()
 
@@ -1171,14 +1285,14 @@ func (s *GitOpsSyncService) GetBackupRevision(ctx context.Context, environmentID
 
 // ReconcileInterruptedBackupsOnStartup turns backups left running by a restart into pending failures.
 func (s *GitOpsSyncService) ReconcileInterruptedBackupsOnStartup(ctx context.Context, protectedIDs ...string) error {
-	query := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("mode = ? AND last_sync_status = ?", gitops.SyncModeBackup, backup.BackupStatusRunning)
+	query := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("mode = ? AND last_sync_status = ?", types.GitOpsSyncModeBackup, backup.BackupStatusRunning)
 	if len(protectedIDs) > 0 {
 		query = query.Where("id NOT IN ?", protectedIDs)
 	}
 	err := query.Updates(map[string]any{
 		"last_sync_status":      "failed",
 		"last_sync_error":       "backup was interrupted by a restart",
-		"backup_failure_reason": gitops.BackupFailureRepository,
+		"backup_failure_reason": types.GitOpsBackupFailureRepository,
 		"backup_pending":        true,
 		"backup_pending_since":  time.Now(),
 	}).Error
@@ -1193,7 +1307,7 @@ func (s *GitOpsSyncService) getBackupSync(ctx context.Context, environmentID, id
 	if err != nil {
 		return nil, err
 	}
-	if syncRecord.Mode != gitops.SyncModeBackup {
+	if syncRecord.Mode != types.GitOpsSyncModeBackup {
 		return nil, common.Classify(common.ErrBadRequest, errors.New("sync does not back up to Git"))
 	}
 	if syncRecord.Repository == nil {

@@ -12,38 +12,39 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/settings"
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"getarcane.dev/cli/v3/internal/output"
+	"getarcane.dev/cli/v3/internal/prompt"
+	"getarcane.dev/cli/v3/internal/runtime"
+	clitypes "getarcane.dev/cli/v3/internal/types"
+	"getarcane.dev/types/v3"
+)
+
+type (
+	mergedScopeKey struct{}
+
+	mergedScope struct {
+		names    map[string]string
+		failures []types.EnvironmentFailure
+	}
+
+	environmentResult struct {
+		EnvironmentID   string         `json:"environmentId"`
+		EnvironmentName string         `json:"environmentName"`
+		Error           string         `json:"error,omitempty"`
+		Result          jsontext.Value `json:"result,omitempty"`
+	}
 )
 
 const (
 	ScopeRead        = "read"
 	ScopeMerged      = "merged"
-	ScopeFleet       = "fleet"
+	ScopeAll         = "all"
 	ScopeDestination = "destination"
 	ScopeResource    = "resource"
 	ScopeGlobal      = "global"
 )
-
-type mergedScopeKey struct{}
-
-type mergedScope struct {
-	names    map[string]string
-	failures []base.EnvironmentFailure
-}
-
-type environmentResult struct {
-	EnvironmentID   string         `json:"environmentId"`
-	EnvironmentName string         `json:"environmentName"`
-	Result          jsontext.Value `json:"result,omitempty"`
-	Error           string         `json:"error,omitempty"`
-}
 
 // SetResource binds raw identifiers through a command-owned closure; call after assigning RunE.
 func SetResource[D, S any](ref ResourceRef[D, S], commands ...*cobra.Command) {
@@ -56,7 +57,7 @@ func SetResource[D, S any](ref ResourceRef[D, S], commands ...*cobra.Command) {
 		run := cmd.RunE
 		cmd.RunE = func(command *cobra.Command, args []string) error {
 			app, _ := runtime.From(command.Context())
-			if !app.PreviewEnabled() {
+			if !app.AllEnvironments() {
 				return run(command, args)
 			}
 			defer app.SelectEnvironment("")
@@ -77,7 +78,6 @@ func SetResource[D, S any](ref ResourceRef[D, S], commands ...*cobra.Command) {
 	}
 }
 
-// SetScope declares how commands behave when all-environments preview is enabled.
 func SetScope(scope string, commands ...*cobra.Command) {
 	for _, cmd := range commands {
 		if cmd.Annotations == nil {
@@ -87,17 +87,24 @@ func SetScope(scope string, commands ...*cobra.Command) {
 	}
 }
 
+func Scope(cmd *cobra.Command) string {
+	for current := cmd; current != nil; current = current.Parent() {
+		if scope := current.Annotations["arcane:scope"]; scope != "" {
+			return scope
+		}
+	}
+	return ""
+}
+
 // RunScoped reuses the command's requests and rendering for each selected environment.
 func RunScoped(cmd *cobra.Command, args []string, run func(*cobra.Command, []string) error) error {
-	app, ok := runtime.From(cmd.Context())
-	if !ok || !app.PreviewEnabled() {
-		return run(cmd, args)
+	scope := Scope(cmd)
+	if scope == "" {
+		return fmt.Errorf("%s has no environment scope", cmd.CommandPath())
 	}
-	var scope string
-	for current := cmd; current != nil; current = current.Parent() {
-		if scope = current.Annotations["arcane:scope"]; scope != "" {
-			break
-		}
+	app, ok := runtime.From(cmd.Context())
+	if !ok || !app.AllEnvironments() {
+		return run(cmd, args)
 	}
 	if flag := cmd.Annotations["arcane:scope-flag"]; flag != "" {
 		enabled, _ := cmd.Flags().GetBool(flag)
@@ -105,7 +112,7 @@ func RunScoped(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 			return run(cmd, args)
 		}
 	}
-	if scope == "" || scope == ScopeGlobal {
+	if scope == ScopeGlobal {
 		return run(cmd, args)
 	}
 	if scope == ScopeResource {
@@ -115,7 +122,7 @@ func RunScoped(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 		return RunMerged(cmd, args, run)
 	}
 	if scope != ScopeDestination {
-		return RunEnvironments(cmd, args, run, scope == ScopeFleet)
+		return RunEnvironments(cmd, args, run, scope == ScopeAll)
 	}
 	environments, err := app.Environments(cmd.Context())
 	if err != nil {
@@ -156,11 +163,11 @@ func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 		if clientErr != nil {
 			return clientErr
 		}
-		publicSettings, settingsErr := c.DoJSON[[]settings.PublicSetting](cmd.Context(), http.MethodGet, types.SettingsPublic("0"), nil)
+		publicSettings, settingsErr := c.DoJSON[types.SettingsSnapshot](cmd.Context(), http.MethodGet, clitypes.SettingsPublic("0"), nil)
 		if settingsErr != nil {
 			return fmt.Errorf("failed to read the environment limit: %w", settingsErr)
 		}
-		for _, setting := range publicSettings {
+		for _, setting := range publicSettings.Settings {
 			if parsed, parseErr := strconv.Atoi(setting.Value); setting.Key == "allEnvironmentsLimit" && parseErr == nil && parsed > 0 {
 				limit = parsed
 			}
@@ -174,8 +181,8 @@ func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 			ids = append(ids, env.ID)
 			continue
 		}
-		merged.failures = append(merged.failures, base.EnvironmentFailure{
-			Environment: base.EnvironmentRef{ID: env.ID, Name: merged.names[env.ID]},
+		merged.failures = append(merged.failures, types.EnvironmentFailure{
+			Environment: types.EnvironmentRef{ID: env.ID, Name: merged.names[env.ID]},
 			Message:     fmt.Sprintf("not included: more than %d environments are shown at once", limit),
 		})
 	}
@@ -200,7 +207,7 @@ func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 // RunEnvironments executes a command sequentially and reports each environment's result.
 func RunEnvironments(cmd *cobra.Command, args []string, run func(*cobra.Command, []string) error, mutation bool) error {
 	app, _ := runtime.From(cmd.Context())
-	if !app.PreviewEnabled() {
+	if !app.AllEnvironments() {
 		return run(cmd, args)
 	}
 	environments, discoveryErr := app.Environments(cmd.Context())
@@ -212,11 +219,7 @@ func RunEnvironments(cmd *cobra.Command, args []string, run func(*cobra.Command,
 	}
 	skip, _ := cmd.Flags().GetBool("force")
 	if mutation && !skip {
-		labels := make([]string, len(environments))
-		for i, env := range environments {
-			labels[i] = cmp.Or(env.Name, env.ID)
-		}
-		confirmed, confirmErr := Confirm(cmd, fmt.Sprintf("%s across %d environments: %s?", cmd.Short, len(labels), strings.Join(labels, ", ")))
+		confirmed, confirmErr := ConfirmOrCancel(cmd, ConfirmOptions{Label: fmt.Sprintf("%s in all %d environments?", cmd.Short, len(environments))})
 		if confirmErr != nil {
 			return confirmErr
 		}
@@ -225,8 +228,8 @@ func RunEnvironments(cmd *cobra.Command, args []string, run func(*cobra.Command,
 		}
 	}
 	if mutation {
-		app.FleetConfirmed = true
-		defer func() { app.FleetConfirmed = false }()
+		app.AllConfirmed = true
+		defer func() { app.AllConfirmed = false }()
 	}
 	jsonMode := JSONOutputEnabled(cmd)
 	combined := &tableOutput{}
@@ -239,8 +242,8 @@ func RunEnvironments(cmd *cobra.Command, args []string, run func(*cobra.Command,
 	defer output.Configure(stdout, stderr, jsonMode, app.NoColor, cmd.Short)
 	defer app.SelectEnvironment("")
 	result := struct {
-		Success      bool                `json:"success"`
 		Environments []environmentResult `json:"environments"`
+		Success      bool                `json:"success"`
 	}{Success: true, Environments: make([]environmentResult, len(environments))}
 	var failures []error
 	var details []struct{ environment, body string }

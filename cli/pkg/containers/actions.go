@@ -10,14 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/spf13/cobra"
-	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"kit.getarcane.app"
+
+	"getarcane.dev/cli/v3/internal/cmdutil"
+	"getarcane.dev/cli/v3/internal/output"
+	clitypes "getarcane.dev/cli/v3/internal/types"
+	"getarcane.dev/types/v3"
 )
 
 func newKillCmd() *cobra.Command {
@@ -39,15 +39,15 @@ func newKillCmd() *cobra.Command {
 				return err
 			}
 
-			path := types.ContainerKill(c.EnvID(), resolved.ID)
+			path := clitypes.ContainerAction(c.EnvID(), resolved.ID, "kill")
 			if signal := strings.TrimSpace(opts.signal); signal != "" {
-				path += "?signal=" + url.QueryEscape(signal)
+				path += "&" + url.Values{"signal": {signal}}.Encode()
 			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
 				Path:           path,
 				FailureMessage: "failed to kill container",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					output.Success("Container %s killed successfully", containerDisplayName(resolved))
 					return nil
 				},
@@ -73,11 +73,11 @@ func newPauseCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.ContainerPause(c.EnvID(), resolved.ID),
+				Path:           clitypes.ContainerAction(c.EnvID(), resolved.ID, "pause"),
 				FailureMessage: "failed to pause container",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					output.Success("Container %s paused successfully", containerDisplayName(resolved))
 					return nil
 				},
@@ -101,11 +101,11 @@ func newUnpauseCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.ContainerUnpause(c.EnvID(), resolved.ID),
+				Path:           clitypes.ContainerAction(c.EnvID(), resolved.ID, "unpause"),
 				FailureMessage: "failed to unpause container",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					output.Success("Container %s unpaused successfully", containerDisplayName(resolved))
 					return nil
 				},
@@ -139,7 +139,7 @@ func newCommitCmd() *cobra.Command {
 				return err
 			}
 
-			body := container.CommitRequest{
+			body := types.ContainerCommitRequest{
 				Repository: opts.repository,
 				Tag:        opts.tag,
 				Comment:    opts.comment,
@@ -150,12 +150,12 @@ func newCommitCmd() *cobra.Command {
 
 			c.SetTimeout(30 * time.Minute)
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[container.CommitResult]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ContainerCommitResult]{
 				Method:         http.MethodPost,
-				Path:           types.ContainerCommit(c.EnvID(), resolved.ID),
+				Path:           clitypes.ContainerCommit(c.EnvID(), resolved.ID),
 				Body:           body,
 				FailureMessage: "failed to commit container",
-				Render: func(data container.CommitResult) error {
+				Render: func(data types.ContainerCommitResult) error {
 					output.Success("Container %s committed successfully", containerDisplayName(resolved))
 					output.KeyValue("Image ID", data.ID)
 					return nil
@@ -196,7 +196,7 @@ func newEditCmd() *cobra.Command {
 			if opts.file == "" {
 				return cmdutil.Run(cmd, c, cmdutil.Spec[jsontext.Value]{
 					Method:         http.MethodGet,
-					Path:           types.ContainerEditConfig(c.EnvID(), resolved.ID),
+					Path:           clitypes.ContainerConfig(c.EnvID(), resolved.ID),
 					FailureMessage: "failed to get container edit config",
 					Render:         func(data jsontext.Value) error { return cmdutil.PrintRawJSON(data) },
 				})
@@ -206,19 +206,19 @@ func newEditCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %w", opts.file, err)
 			}
-			var body container.Edit
+			var body types.ContainerEdit
 			if unmarshalErr := json.Unmarshal(data, &body); unmarshalErr != nil {
 				return fmt.Errorf("failed to parse edit payload: %w", unmarshalErr)
 			}
 
 			c.SetTimeout(30 * time.Minute)
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[container.Details]{
-				Method:         http.MethodPost,
-				Path:           types.ContainerEdit(c.EnvID(), resolved.ID),
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ContainerDetails]{
+				Method:         http.MethodPut,
+				Path:           clitypes.ContainerConfig(c.EnvID(), resolved.ID),
 				Body:           body,
 				FailureMessage: "failed to edit container",
-				Render: func(data container.Details) error {
+				Render: func(data types.ContainerDetails) error {
 					output.Success("Container %s edited successfully", containerDisplayName(resolved))
 					output.KeyValue("New ID", data.ID)
 					return nil
@@ -250,14 +250,14 @@ func newAutoUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			body := container.SetAutoUpdateRequest{Enabled: opts.enabled}
+			body := types.ContainerSetAutoUpdateRequest{Enabled: opts.enabled}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPut,
-				Path:           types.ContainerAutoUpdate(c.EnvID(), resolved.ID),
+				Path:           clitypes.ContainerAutoUpdate(c.EnvID(), resolved.ID),
 				Body:           body,
 				FailureMessage: "failed to set container auto-update",
-				Render: func(data base.MessageResponse) error {
+				Render: func(data types.MessageResponse) error {
 					output.Success("Auto-update %s for container %s", kit.Ternary(opts.enabled, "enabled", "disabled"), containerDisplayName(resolved))
 					return nil
 				},

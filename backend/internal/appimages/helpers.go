@@ -1,8 +1,9 @@
 package appimages
 
 import (
-	"go.getarcane.app/kit/pkg"
 	"golang.org/x/mod/semver"
+
+	"kit.getarcane.app"
 )
 
 // isStableVersion reports whether version is a semver release without a prerelease suffix.

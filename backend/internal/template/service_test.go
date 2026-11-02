@@ -13,18 +13,18 @@ import (
 	"testing"
 	"time"
 
-	tmpl "github.com/getarcaneapp/arcane/types/v2/template"
 	"github.com/libtnb/sqlite"
 	"github.com/samber/mo"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/types/v3"
 )
 
 func setupTemplateServiceTestDB(t *testing.T) *database.DB {
@@ -239,7 +239,7 @@ func TestDownloadTemplate_PreservesIconURL(t *testing.T) {
 		{"x-arcane:\n  icon: https://cdn.example/compose.png\nservices:\n  app:\n    image: nginx:alpine\n", "https://cdn.example/compose.png"},
 		{"services:\n  app:\n    image: nginx:alpine\n", "https://cdn.example/download.png"},
 	} {
-		require.NoError(t, service.UpdateTemplate(t.Context(), downloaded.ID, &ComposeTemplate{Name: stored.Name, Description: stored.Description, Content: tc.compose}))
+		require.NoError(t, service.UpdateTemplate(t.Context(), downloaded.ID, types.Template{Content: tc.compose}, map[string]bool{"content": true, "envContent": true}))
 		require.NoError(t, service.db.WithContext(t.Context()).First(&stored, "id = ?", downloaded.ID).Error)
 		require.NotNil(t, stored.Metadata)
 		require.NotNil(t, stored.Metadata.IconURL)
@@ -354,7 +354,7 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 	}
 	require.NoError(t, db.WithContext(t.Context()).Create(&localTemplates).Error)
 
-	service := NewTemplateService(t.Context(), db, http.DefaultClient, nil)
+	service := NewTemplateService(t.Context(), db, http.DefaultClient, minimalSettingsServiceForTest(t))
 	service.remoteCache.Set(service.remoteGeneration.Load(), []ComposeTemplate{
 		{
 			ID: "remote-one", CreatedAt: now, UpdatedAt: &now,
@@ -388,7 +388,7 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 	}
 }
 
-func templateIDs(templates []tmpl.Template) []string {
+func templateIDs(templates []types.Template) []string {
 	ids := make([]string, 0, len(templates))
 	for _, template := range templates {
 		ids = append(ids, template.ID)
@@ -399,7 +399,6 @@ func templateIDs(templates []tmpl.Template) []string {
 func TestFetchRaw_BlocksUnsafeRemoteURL(t *testing.T) {
 	service := &TemplateService{
 		httpClient:        http.DefaultClient,
-		lookupIP:          httpx.DefaultLookupIP,
 		registryFetchMeta: make(map[string]*registryFetchMeta),
 	}
 
@@ -519,7 +518,7 @@ func minimalSettingsServiceForTest(t *testing.T) *settings.SettingsService {
 
 func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	svc, err := settings.NewSettingsService(ctx, db, &config.Config{})
+	svc, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}

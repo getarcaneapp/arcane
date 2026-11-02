@@ -3,17 +3,16 @@
 	import { untrack } from 'svelte';
 
 	import PodmanSecretFormSheet from '#lib/components/sheets/podman-secret-form-sheet.svelte';
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { LockIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { podmanSecretListQuery } from '#lib/query/podman.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import type { PodmanSecret } from '#lib/types/podman.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { fetchAcrossEnvironments, type EnvironmentRow } from '#lib/utils/environments.js';
+	import type { EnvironmentRow } from '#lib/utils/environments.js';
 	import { shownPodmanEnvironments } from '#lib/utils/podman.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -31,41 +30,16 @@
 	let secretToEdit = $state<EnvironmentRow<PodmanSecret> | null>(null);
 
 	const secretsQuery = createQuery(() => {
-		const queryScope = pageState.scope;
-		const environments = podmanEnvironments;
-		const options = pageState.requestOptions;
+		const scope = pageState.scope;
 		return {
-			queryKey: queryKeys.podman.secrets(queryScope, options),
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, options, (id, request, config) => podmanService.getSecrets(id, request, config)),
-			placeholderData: (previous, query) => {
-				if (query?.queryKey[1] === queryScope) return previous;
-				return undefined;
-			},
-			select: (value) => ({ envId: queryScope, value })
+			...podmanSecretListQuery(scope, podmanEnvironments, pageState.requestOptions),
+			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
+			select: (value) => ({ envId: scope, value })
 		};
 	});
 
 	const resourcesReady = $derived(secretsQuery.data?.envId === pageState.scope);
 	const secrets = $derived(secretsQuery.data?.value ?? data.secrets);
-
-	async function loadSecrets(options: SearchPaginationSortRequest = pageState.requestOptions, requestedScope = pageState.scope) {
-		const environments = podmanEnvironments;
-		pageState.requestOptions = options;
-		await queryClient.query({
-			queryKey: queryKeys.podman.secrets(requestedScope, options),
-			staleTime: 0,
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, options, (id, request, config) => podmanService.getSecrets(id, request, config))
-		});
-	}
-
-	async function refresh() {
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(loadSecrets()),
-			message: m.common_refresh_failed({ resource: m.podman_secrets_title() })
-		});
-	}
 
 	function openSheet(secret: EnvironmentRow<PodmanSecret> | null) {
 		secretToEdit = secret;
@@ -81,13 +55,9 @@
 		});
 	}
 
-	useEnvironmentRefresh(() => {
-		isSheetOpen = false;
-	});
-
 	async function handleSaved() {
 		isSheetOpen = false;
-		await refresh();
+		await queryClient.invalidateQueries({ queryKey: queryKeys.podman.secretsPrefix(pageState.scope) });
 	}
 
 	const isRefreshing = $derived(secretsQuery.isFetching && !secretsQuery.isPending);
@@ -109,7 +79,7 @@
 			placement: 'secondary',
 			iconOnly: true,
 			label: m.common_refresh(),
-			onclick: refresh,
+			onclick: () => secretsQuery.refetch(),
 			loading: isRefreshing,
 			disabled: secretsQuery.isFetching
 		});
@@ -131,12 +101,9 @@
 		{#if resourcesReady}
 			{#key pageState.scope}
 				<SecretsTable
-					bind:secrets={
-						() => secrets,
-						(value) => queryClient.setQueryData(queryKeys.podman.secrets(pageState.scope, pageState.requestOptions), value)
-					}
+					{secrets}
 					bind:requestOptions={pageState.requestOptions}
-					onRefreshData={loadSecrets}
+					onRetry={() => secretsQuery.refetch()}
 					onEdit={openEditSheet}
 				/>
 			{/key}

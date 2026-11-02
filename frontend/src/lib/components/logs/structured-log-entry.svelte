@@ -7,6 +7,8 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
+	import StructuredLogJson from './structured-log-json.svelte';
+
 	interface Props {
 		data: Record<string, unknown>;
 		rawJson?: string;
@@ -306,7 +308,7 @@
 		<button
 			type="button"
 			onclick={copyToClipboard}
-			class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+			class="shrink-0 rounded-xl p-1 text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
 			title={copied ? 'Copied' : 'Copy JSON'}
 		>
 			{#if copied}
@@ -333,7 +335,9 @@
 				{/if}
 
 				<div class="mt-3 border-t border-border pt-3">
-					<pre class="overflow-x-auto text-xs break-all whitespace-pre-wrap text-foreground/80">{jsonString}</pre>
+					{#if showDetails}
+						<StructuredLogJson json={jsonString} />
+					{/if}
 				</div>
 			</div>
 		</Collapsible.Content>

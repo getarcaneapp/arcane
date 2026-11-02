@@ -6,19 +6,21 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-// Module joins the settings service with its route dependencies.
-type Module struct {
-	service         *SettingsService
-	search          *SettingsSearchService
-	proxyRemoteJSON handlerutil.RemoteJSONProxy
-	config          *config.Config
-}
+type (
+	// Module joins the settings service with its route dependencies.
+	Module struct {
+		service         *SettingsService
+		search          *SettingsSearchService
+		proxyRemoteJSON handlerutil.RemoteJSONProxy
+		config          *config.Config
+	}
+)
 
 // New builds the settings domain around its initialized service.
 func New(service *SettingsService, search *SettingsSearchService, proxyRemoteJSON handlerutil.RemoteJSONProxy, cfg *config.Config) *Module {
@@ -57,7 +59,7 @@ func RegisterSettings(api huma.API, settingsService *SettingsService, settingsSe
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/settings/public",
 		Summary:     "Get public settings",
-		Description: "Get all public settings for an environment",
+		Description: "Get the settings the UI needs for an environment. Anonymous callers receive public settings; signed-in callers of any role also receive the non-admin settings",
 		Tags:        []string{"Settings"},
 		Security:    []map[string][]string{},
 	}, h.GetPublicSettings)
@@ -74,7 +76,7 @@ func RegisterSettings(api huma.API, settingsService *SettingsService, settingsSe
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-settings",
-		Method:      http.MethodPut,
+		Method:      http.MethodPatch,
 		Path:        "/environments/{id}/settings",
 		Summary:     "Update settings",
 		Description: "Update settings for an environment",

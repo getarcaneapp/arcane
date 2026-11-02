@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -9,7 +10,6 @@
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import {
 		containerFormSchema,
-		editContainerFormSchema,
 		formValuesFromEditConfig,
 		rowsFromEditConfig,
 		toEditRequest
@@ -21,7 +21,7 @@
 	import { containerService } from '#lib/services/container-service.js';
 	import type { ContainerEditRequest } from '#lib/types/docker.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
-	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { applyApiFieldError, extractApiErrorMessage } from '#lib/utils/api.js';
 	import { environmentHref } from '#lib/utils/environments.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 
@@ -30,10 +30,7 @@
 	const queryClient = useQueryClient();
 	// The form is intentionally seeded once from the load-time snapshot.
 	// svelte-ignore state_referenced_locally
-	const form = createForm<typeof containerFormSchema>(
-		editContainerFormSchema(data.editConfig.hostname),
-		formValuesFromEditConfig(data.editConfig)
-	);
+	const form = createForm<typeof containerFormSchema>(containerFormSchema, formValuesFromEditConfig(data.editConfig));
 	let rows = $state(untrack(() => rowsFromEditConfig(data.editConfig)));
 
 	const editContainerMutation = createMutation(() => ({
@@ -43,9 +40,10 @@
 			await queryClient.invalidateQueries({ queryKey: queryKeys.containers.all });
 			queryClient.removeQueries({ queryKey: queryKeys.containers.detail(data.envId, data.containerId) });
 			queryClient.removeQueries({ queryKey: queryKeys.containers.editConfig(data.envId, data.containerId) });
-			goto(environmentHref(`/containers/${details.id}`, data.envId));
+			goto(resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(data.envId)}`, { containerId: details.id }));
 		},
 		onError: (error) => {
+			applyApiFieldError(form.inputs, error);
 			toast.error(m.edit_failed(), { description: extractApiErrorMessage(error) });
 		}
 	}));
@@ -82,7 +80,7 @@
 			/>
 			<div class="hidden h-4 w-px bg-border sm:block"></div>
 			<h1 class="truncate text-base font-semibold">{m.common_edit()} · {data.editConfig.name}</h1>
-			<EnvironmentCell value={data.envId} />
+			<EnvironmentCell value={data.envId} plain />
 		</div>
 	</div>
 

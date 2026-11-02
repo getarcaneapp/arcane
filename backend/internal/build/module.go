@@ -3,8 +3,8 @@ package build
 import (
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/build/children/workspace"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
+	"getarcane.dev/arcane/v3/internal/build/children/workspace"
+	"getarcane.dev/arcane/v3/internal/upload"
 )
 
 // RegisterBuildWorkspaces registers the build workspace file browser routes.

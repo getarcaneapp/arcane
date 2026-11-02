@@ -6,16 +6,18 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-type Module struct {
-	service  *ProjectService
-	activity *activity.ActivityService
-}
+type (
+	Module struct {
+		service  *ProjectService
+		activity *activity.ActivityService
+	}
+)
 
 func New(service *ProjectService, activityService *activity.ActivityService) *Module {
 	return &Module{service: service, activity: activityService}
@@ -73,7 +75,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-project-workspace",
-		Method:      http.MethodPut,
+		Method:      http.MethodPatch,
 		Path:        "/environments/{id}/projects/{projectId}/workspace",
 		Summary:     "Update project workspace",
 		Tags:        []string{"Project Workspace"},
@@ -134,25 +136,36 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermProjectsUpdate, h.UpdateProjectTag)
 
-	middleware.RegisterWithPermission(api, huma.Operation{
+	middleware.RegisterWithActionPermissions(api, huma.Operation{
 		OperationID: "deploy-project",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/projects/{projectId}/up",
-		Summary:     "Deploy a project",
-		Description: "Deploy a Docker Compose project (docker-compose up)",
-		Tags:        []string{"Projects"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermProjectsDeploy, h.DeployProject)
+		Path:        "/environments/{id}/projects/{projectId}/deploy",
+		Summary:     "Deploy, redeploy, or pull a project",
+		Description: "Stream a Docker Compose deploy action: up (docker compose up), redeploy (pull + down + up), or pull (pull all project images). " +
+			"The optional deploy options body applies to up and redeploy; pull ignores it.",
+		Tags:     []string{"Projects"},
+		Security: handlerutil.DefaultOperationSecurity(),
+	}, "action", map[string]string{
+		"up":       authz.PermProjectsDeploy,
+		"redeploy": authz.PermProjectsDeploy,
+		"pull":     authz.PermProjectsDeploy,
+	}, h.DeployProject)
 
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "down-project",
+	middleware.RegisterWithActionPermissions(api, huma.Operation{
+		OperationID: "project-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/projects/{projectId}/down",
-		Summary:     "Bring down a project",
-		Description: "Bring down a Docker Compose project (docker-compose down)",
+		Path:        "/environments/{id}/projects/{projectId}",
+		Summary:     "Run project action",
+		Description: "Bring down, restart, archive, unarchive, or update services of a Docker Compose project. Restart and updateservices accept an optional services list (empty targets all services).",
 		Tags:        []string{"Projects"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermProjectsDown, h.DownProject)
+	}, "action", map[string]string{
+		"down":           authz.PermProjectsDown,
+		"restart":        authz.PermProjectsRestart,
+		"archive":        authz.PermProjectsArchive,
+		"unarchive":      authz.PermProjectsArchive,
+		"updateservices": authz.PermProjectsUpdate,
+	}, h.RunProjectAction)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-project",
@@ -220,19 +233,9 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	}, authz.PermProjectsRead, h.GetProjectUpdates)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "redeploy-project",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/projects/{projectId}/redeploy",
-		Summary:     "Redeploy a project",
-		Description: "Redeploy a Docker Compose project (down + up)",
-		Tags:        []string{"Projects"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermProjectsDeploy, h.RedeployProject)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "destroy-project",
 		Method:      http.MethodDelete,
-		Path:        "/environments/{id}/projects/{projectId}/destroy",
+		Path:        "/environments/{id}/projects/{projectId}",
 		Summary:     "Destroy a project",
 		Description: "Destroy a Docker Compose project and optionally remove files/volumes",
 		Tags:        []string{"Projects"},
@@ -241,63 +244,13 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-project",
-		Method:      http.MethodPut,
+		Method:      http.MethodPatch,
 		Path:        "/environments/{id}/projects/{projectId}",
 		Summary:     "Update a project",
 		Description: "Update a Docker Compose project configuration",
 		Tags:        []string{"Projects"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermProjectsUpdate, h.UpdateProject)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "restart-project",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/projects/{projectId}/restart",
-		Summary:     "Restart a project",
-		Description: "Restart all containers in a Docker Compose project",
-		Tags:        []string{"Projects"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermProjectsRestart, h.RestartProject)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "update-project-services",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/projects/{projectId}/update-services",
-		Summary:     "Update project services",
-		Description: "Pull latest images and recreate the given services (all services when none are specified)",
-		Tags:        []string{"Projects"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermProjectsUpdate, h.UpdateProjectServices)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "archive-project",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/projects/{projectId}/archive",
-		Summary:     "Archive a project",
-		Description: "Archive a stopped Docker Compose project",
-		Tags:        []string{"Projects"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermProjectsArchive, h.ArchiveProject)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "unarchive-project",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/projects/{projectId}/unarchive",
-		Summary:     "Unarchive a project",
-		Description: "Unarchive a Docker Compose project",
-		Tags:        []string{"Projects"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermProjectsArchive, h.UnarchiveProject)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "pull-project-images",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/projects/{projectId}/pull",
-		Summary:     "Pull project images",
-		Description: "Pull all images for a Docker Compose project with streaming progress output",
-		Tags:        []string{"Projects"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermProjectsDeploy, h.PullProjectImages)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "build-project-images",

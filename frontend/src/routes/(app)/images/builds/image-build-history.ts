@@ -126,8 +126,7 @@ export function parseBuildOutput(output: string): BuildOutputEntry[] {
 				const data = JSON.parse(line) as Record<string, unknown>;
 				const error = data['error'];
 				if (error) {
-					const message =
-						typeof error === 'object' && error !== null ? ((error as { message?: string }).message ?? line) : String(error);
+					const message = typeof error === 'string' ? error : ((error as { message?: string }).message ?? line);
 					return { text: sanitizeLogText(message), isError: true } satisfies BuildOutputEntry;
 				}
 				const text = data['log'] ?? data['status'] ?? data['stream'];
