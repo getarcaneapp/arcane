@@ -40,12 +40,25 @@ type (
 	}
 
 	DashboardWidgetLayout struct {
-		ID     string `json:"id" doc:"Dashboard widget identifier"`
-		X      int    `json:"x" doc:"Column where the widget starts in the 12-column dashboard grid"`
-		Y      int    `json:"y" doc:"Row where the widget starts in the dashboard grid"`
-		W      int    `json:"w" doc:"Widget width in columns"`
-		H      int    `json:"h" doc:"Widget height in rows"`
-		Hidden bool   `json:"hidden,omitempty" doc:"Whether the widget is hidden"`
+		Config *DashboardWidgetConfig `json:"config,omitempty" doc:"Configuration for custom widget types"`
+		ID     string                 `json:"id" required:"false" doc:"Unique dashboard widget instance identifier; assigned by the server for new custom widgets"`
+		Type   string                 `json:"type,omitempty" doc:"Dashboard widget type; defaults to the identifier for built-in widgets"`
+		Title  string                 `json:"title,omitempty" doc:"Optional custom widget title"`
+		X      int                    `json:"x" doc:"Column where the widget starts in the 12-column dashboard grid"`
+		Y      int                    `json:"y" doc:"Row where the widget starts in the dashboard grid"`
+		W      int                    `json:"w" doc:"Widget width in columns"`
+		H      int                    `json:"h" doc:"Widget height in rows"`
+		Hidden bool                   `json:"hidden,omitempty" doc:"Whether the widget is hidden"`
+	}
+
+	DashboardWidgetConfig struct {
+		Filters        map[string]string `json:"filters,omitempty" doc:"Filters applied to the resource query, keyed by filter name"`
+		ResourceKind   string            `json:"resourceKind,omitempty" enum:"containers,projects,images,volumes,networks" doc:"Kind of resource the widget shows"`
+		ResourceID     string            `json:"resourceId,omitempty" doc:"Identifier of a single resource shown by the widget"`
+		Search         string            `json:"search,omitempty" doc:"Search text applied to the resource query"`
+		Display        string            `json:"display,omitempty" enum:"count,list" doc:"How the widget presents query results"`
+		EnvironmentIDs []string          `json:"environmentIds,omitempty" doc:"Environments the widget reads from; empty means all environments the user can access"`
+		Limit          int               `json:"limit,omitempty" doc:"Maximum number of resources listed by the widget"`
 	}
 
 	ThemePalette struct {

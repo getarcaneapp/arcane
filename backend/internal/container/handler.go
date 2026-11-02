@@ -59,6 +59,7 @@ type (
 		Updates         string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
 		Standalone      string `query:"standalone" doc:"Filter standalone containers only (true/false)"`
 		Label           string `query:"label" doc:"Filter by label key or key=value"`
+		Status          string `query:"status" doc:"Filter by state (running, exited, paused, restarting, created, dead, stopped, unhealthy)"`
 		Start           int    `query:"start" default:"0" doc:"Start index"`
 		Limit           int    `query:"limit" default:"20" doc:"Limit"`
 		IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
@@ -149,6 +150,9 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 	}
 	if input.Label != "" {
 		params.Filters["label"] = input.Label
+	}
+	if input.Status != "" {
+		params.Filters["status"] = input.Status
 	}
 
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {

@@ -189,3 +189,34 @@ func TestAggregateNetworkTopologyPrefixesNodeIDs(t *testing.T) {
 	}, body.Data.Edges)
 	require.Len(t, body.FailedEnvironments, 1)
 }
+
+func TestNetworkPaginationConfig_FiltersByLabel(t *testing.T) {
+	items := []types.NetworkSummary{
+		{ID: "tagged", Labels: map[string]string{"zone": "edge", "tags": "a,b"}},
+		{ID: "other", Labels: map[string]string{"zone": "core"}},
+		{ID: "bare", Labels: map[string]string{}},
+	}
+	paginationConfig := pagination.Config[types.NetworkSummary]{FilterAccessors: (&NetworkService{}).buildNetworkPaginationConfig().FilterAccessors}
+
+	tests := []struct {
+		name   string
+		filter string
+		want   []string
+	}{
+		{name: "key only", filter: "zone", want: []string{"tagged", "other"}},
+		{name: "key and value", filter: "zone=edge", want: []string{"tagged"}},
+		{name: "value containing comma", filter: "tags=a,b", want: []string{"tagged"}},
+		{name: "missing key", filter: "missing", want: nil},
+		{name: "blank is a no-op", filter: " ", want: []string{"tagged", "other", "bare"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := paginationConfig.SearchOrderAndPaginate(items, pagination.QueryParams{Filters: map[string]string{"label": tt.filter}})
+			var got []string
+			for _, item := range result.Items {
+				got = append(got, item.ID)
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
+}

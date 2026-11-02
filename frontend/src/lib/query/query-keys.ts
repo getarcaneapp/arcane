@@ -57,7 +57,6 @@ export const queryKeys = {
 		secrets: (scope: string, options: SearchPaginationSortRequest) =>
 			['podman-secrets', scope, stableSerialize(options)] as const,
 		pod: (environmentId: string, podId: string) => ['podman', environmentId, 'pods', podId] as const,
-		podStats: (environmentId: string, podName: string) => ['podman', environmentId, 'pods', podName, 'stats'] as const,
 		podTop: (environmentId: string, podId: string) => ['podman', environmentId, 'pods', podId, 'top'] as const,
 		quadlet: (environmentId: string, name: string) => ['podman', environmentId, 'quadlets', name] as const,
 		quadletFile: (environmentId: string, name: string) => ['podman', environmentId, 'quadlets', name, 'file'] as const,

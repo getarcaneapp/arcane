@@ -38,6 +38,7 @@
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import type { DashboardWidgetConfig } from '#lib/types/auth.js';
 	import type { ContainerDetailsDto, ContainerNetworkSettings, ContainerStats as ContainerStatsType } from '#lib/types/docker.js';
 	import type { IncludeFile } from '#lib/types/swarm.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
@@ -45,6 +46,7 @@
 	import { runContainerLifecycleAction, confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
 	import { isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
+	import { createDashboardWidget, pinDashboardAction } from '#lib/utils/dashboard-layout.js';
 	import { calculateMemoryUsage, getCustomHostname, getThemedIconUrl } from '#lib/utils/docker.js';
 	import { environmentHref, listScopes } from '#lib/utils/environments.js';
 	import { bytes } from '#lib/utils/formatting.js';
@@ -436,6 +438,20 @@
 				group: 'manage',
 				onclick: () => (commitDialogOpen = true)
 			});
+		}
+		const target: DashboardWidgetConfig = {
+			resourceKind: 'containers',
+			environmentIds: [currentEnvId],
+			resourceId: container.id
+		};
+		list.push(pinDashboardAction('pin-dashboard', m.pin_to_dashboard(), () => createDashboardWidget('resource', target)));
+		if (showStats) {
+			list.push(
+				pinDashboardAction('pin-stats', m.pin_stats_to_dashboard(), () => createDashboardWidget('containerStats', target))
+			);
+		}
+		if (canViewLogs) {
+			list.push(pinDashboardAction('pin-logs', m.pin_logs_to_dashboard(), () => createDashboardWidget('containerLogs', target)));
 		}
 		if (canKillContainer && (isContainerRunning || isContainerPaused)) {
 			list.push({

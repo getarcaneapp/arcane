@@ -2410,24 +2410,28 @@ func (s *ContainerService) buildContainerPaginationConfig() pagination.Config[ty
 				},
 			},
 			{
+				Key: "status",
+				Fn: func(c types.ContainerSummary, filterValue string) bool {
+					switch filterValue {
+					case "stopped":
+						return c.State != "running"
+					case "unhealthy":
+						return strings.Contains(c.Status, "(unhealthy)")
+					default:
+						return c.State == filterValue
+					}
+				},
+			},
+			{
 				Key: "standalone",
 				Fn: func(c types.ContainerSummary, filterValue string) bool {
 					value, valid := kit.ParseBool(filterValue)
 					return !valid || (docker.ComposeProjectLabel(c.Labels) == "" && !labels.IsSwarmTask(c.Labels)) == value
 				},
 			},
-			{
-				Key:     "label",
-				NoSplit: true,
-				Fn: func(c types.ContainerSummary, filterValue string) bool {
-					key, value, hasValue := strings.Cut(filterValue, "=")
-					if strings.TrimSpace(key) == "" {
-						return true
-					}
-					actual, ok := c.Labels[strings.TrimSpace(key)]
-					return ok && (!hasValue || actual == value)
-				},
-			},
+			pagination.LabelFilter(func(c types.ContainerSummary) map[string]string {
+				return c.Labels
+			}),
 		},
 	}
 }

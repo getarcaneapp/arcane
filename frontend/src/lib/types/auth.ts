@@ -131,7 +131,7 @@ export type ProjectEditorLayout = 'auto' | 'classic' | 'tree';
 
 export type EnvironmentLabelStyle = 'name' | 'dot';
 
-export type DashboardWidgetId =
+export type BuiltinDashboardWidgetType =
 	| 'healthy'
 	| 'attentionCount'
 	| 'updates'
@@ -144,13 +144,32 @@ export type DashboardWidgetId =
 	| 'reclaimable'
 	| 'memory';
 
+export type CustomDashboardWidgetType = 'resourceQuery' | 'resource' | 'containerStats' | 'containerLogs' | 'environment';
+
+export type DashboardWidgetType = BuiltinDashboardWidgetType | CustomDashboardWidgetType;
+
+export type DashboardResourceKind = 'containers' | 'projects' | 'images' | 'volumes' | 'networks';
+
+export type DashboardWidgetConfig = {
+	environmentIds?: string[];
+	resourceKind?: DashboardResourceKind;
+	resourceId?: string;
+	search?: string;
+	filters?: Record<string, string>;
+	display?: 'count' | 'list';
+	limit?: number;
+};
+
 export type DashboardWidgetLayout = {
-	id: DashboardWidgetId;
+	id?: string;
+	type?: DashboardWidgetType;
+	title?: string;
 	x: number;
 	y: number;
 	w: number;
 	h: number;
 	hidden?: boolean;
+	config?: DashboardWidgetConfig;
 };
 
 export type EditorTabWidth = 2 | 4 | 8;

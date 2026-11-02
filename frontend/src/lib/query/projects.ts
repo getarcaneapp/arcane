@@ -25,6 +25,13 @@ export function projectListQuery(scope: string, environments: EnvironmentRef[], 
 	});
 }
 
+export function projectDetailQuery(environmentId: string, projectId: string) {
+	return queryOptions({
+		queryKey: queryKeys.projects.detail(environmentId, projectId),
+		queryFn: () => projectService.getProjectForEnvironment(environmentId, projectId)
+	});
+}
+
 export function projectStatusCountsQuery(scope: string, environments: EnvironmentRef[]) {
 	return queryOptions({
 		queryKey: queryKeys.projects.statusCounts(scope),

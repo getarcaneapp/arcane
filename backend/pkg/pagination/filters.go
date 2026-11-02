@@ -1,6 +1,9 @@
 package pagination
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 type (
 	FilterResult[T any] struct {
@@ -25,6 +28,21 @@ type (
 		FilterAccessors []FilterAccessor[T]
 	}
 )
+
+func LabelFilter[T, V any](labelsOf func(T) map[string]V) FilterAccessor[T] {
+	return FilterAccessor[T]{
+		Fn: func(item T, filterValue string) bool {
+			key, value, hasValue := strings.Cut(filterValue, "=")
+			if strings.TrimSpace(key) == "" {
+				return true
+			}
+			actual, ok := labelsOf(item)[strings.TrimSpace(key)]
+			return ok && (!hasValue || fmt.Sprint(actual) == value)
+		},
+		Key:     "label",
+		NoSplit: true,
+	}
+}
 
 func (c Config[T]) SearchOrderAndPaginate(items []T, params QueryParams) FilterResult[T] {
 	totalAvailable := len(items)

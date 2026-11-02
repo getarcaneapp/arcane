@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
@@ -31,6 +32,7 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
+	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
@@ -113,11 +115,29 @@
 				};
 			},
 			enabled: vulnerabilityManagementEnabled && !!imageId && hasPermission('vulnerabilities:read', environmentId),
-			refetchInterval: (query) => (isVulnerabilityScanInProgress(query.state.data?.status) ? 2000 : false),
 			retry: false
 		};
 	});
 	const vulnerabilityScan = $derived(vulnerabilityManagementEnabled ? (scanQuery.data ?? null) : null);
+
+	onMount(() => {
+		let seen: string | undefined;
+		return activityStore.subscribeActivities((activities) => {
+			const next = activities
+				.filter(
+					(activity) =>
+						activity.type === 'vulnerability_scan' &&
+						activity.resourceId === image?.id &&
+						(activity.environmentId === currentEnvId || activity.sourceEnvironmentId === currentEnvId)
+				)
+				.map((activity) => `${activity.id}:${activity.status}:${activity.updatedAt}:${activity.latestMessage}`)
+				.join('|');
+			if (seen !== undefined && next !== seen) {
+				void queryClient.invalidateQueries({ queryKey: queryKeys.vulnerabilities.scanResult(currentEnvId, image?.id ?? '') });
+			}
+			seen = next;
+		});
+	});
 	const scanInProgress = $derived(isVulnerabilityScanInProgress(vulnerabilityScan?.status));
 	const scanReportError = $derived(scanQuery.isError && scanQuery.data ? extractApiErrorMessage(scanQuery.error) : null);
 

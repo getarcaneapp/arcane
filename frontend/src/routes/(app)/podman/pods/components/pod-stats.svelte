@@ -1,34 +1,45 @@
 <script lang="ts">
-	import { createQuery } from '@tanstack/svelte-query';
+	import { onDestroy } from 'svelte';
 
-	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import EmptyState from '#lib/components/states/empty-state.svelte';
 	import * as Card from '#lib/components/ui/card/index.js';
-	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import MonoCell from '#lib/components/vulnerability/mono-cell.svelte';
 	import { StatsIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import { podmanService } from '#lib/services/podman-service.js';
-	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import type { PodmanPodInspectContainer } from '#lib/types/podman.js';
+	import { rowKey } from '#lib/utils/environments.js';
+	import { bytes } from '#lib/utils/formatting.js';
+
+	import ContainerStatsCell from '../../../containers/components/container-stats-cell.svelte';
+	import { ContainerStatsManager } from '../../../containers/components/container-stats-manager.svelte';
+	import ContainerStatsSync from '../../../containers/components/container-stats-sync.svelte';
 
 	interface Props {
-		podName: string;
+		containers: PodmanPodInspectContainer[];
 		envId: string;
 		isRunning: boolean;
 	}
 
-	let { podName, envId, isRunning }: Props = $props();
+	let { containers, envId, isRunning }: Props = $props();
 
-	const statsQuery = createQuery(() => ({
-		queryKey: queryKeys.podman.podStats(envId, podName),
-		queryFn: () => podmanService.getPodStats([podName], envId),
-		enabled: isRunning,
-		refetchInterval: 5000,
-		retry: false
-	}));
+	const statsManager = new ContainerStatsManager();
+	onDestroy(() => statsManager.destroy());
+
+	const running = $derived(
+		isRunning
+			? containers
+					.filter((container) => container.state.toLowerCase() === 'running')
+					.map((container) => ({
+						...container,
+						key: rowKey({ id: container.id, environmentId: envId, environmentTagged: true })
+					}))
+			: []
+	);
+	const targetIds = $derived(new Set(running.map((container) => container.key)));
 </script>
+
+<ContainerStatsSync {statsManager} {targetIds} />
 
 <Card.Root>
 	<Card.Header icon={StatsIcon}>
@@ -38,27 +49,9 @@
 			</Card.Title>
 			<Card.Description>{m.podman_pod_stats_description()}</Card.Description>
 		</div>
-		{#if isRunning}
-			<div class="ml-auto">
-				<ArcaneButton action="refresh" size="sm" disabled={statsQuery.isFetching} onclick={() => statsQuery.refetch()} />
-			</div>
-		{/if}
 	</Card.Header>
-	{#if !isRunning}
+	{#if running.length === 0}
 		<EmptyState icon={StatsIcon} title={m.common_unavailable()} description={m.podman_pod_not_running()} />
-	{:else if statsQuery.isError}
-		<EmptyState
-			icon={StatsIcon}
-			title={m.common_load_failed({ resource: m.containers_resource_metrics() })}
-			description={extractApiErrorMessage(statsQuery.error)}
-			actionLabel={m.common_retry()}
-			onAction={() => statsQuery.refetch()}
-		/>
-	{:else if statsQuery.isPending}
-		<div class="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground" role="status" aria-live="polite">
-			<Spinner tone="muted" />
-			<span>{m.common_loading()}</span>
-		</div>
 	{:else}
 		<div class="overflow-x-auto rounded-b-lg">
 			<Table.Root aria-label={m.containers_resource_metrics()}>
@@ -73,14 +66,30 @@
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
-					{#each statsQuery.data ?? [] as stat (stat.cid)}
+					{#each running as container (container.key)}
+						{@const memory = statsManager.getMemoryUsage(container.key)}
+						{@const sample = statsManager.getSample(container.key)}
+						{@const loading = statsManager.isLoading(container.key)}
+						{@const unavailable = statsManager.hasError(container.key)}
 						<Table.Row>
-							<Table.Cell>{stat.name}</Table.Cell>
-							<Table.Cell><MonoCell value={stat.cpu} /></Table.Cell>
-							<Table.Cell><MonoCell value={stat.memUsage} /></Table.Cell>
-							<Table.Cell><MonoCell value={stat.blockIo} /></Table.Cell>
-							<Table.Cell><MonoCell value={stat.netIo} /></Table.Cell>
-							<Table.Cell><MonoCell value={stat.pids} /></Table.Cell>
+							<Table.Cell>{container.name}</Table.Cell>
+							<Table.Cell>
+								<ContainerStatsCell type="cpu" value={statsManager.getCPUPercent(container.key)} {loading} {unavailable} />
+							</Table.Cell>
+							<Table.Cell>
+								<ContainerStatsCell type="memory" value={memory?.usage} limit={memory?.limit} {loading} {unavailable} />
+							</Table.Cell>
+							<Table.Cell>
+								<MonoCell
+									value={sample ? `${bytes.format(sample.blockReadBytes)} / ${bytes.format(sample.blockWriteBytes)}` : ''}
+								/>
+							</Table.Cell>
+							<Table.Cell>
+								<MonoCell
+									value={sample ? `${bytes.format(sample.networkRxBytes)} / ${bytes.format(sample.networkTxBytes)}` : ''}
+								/>
+							</Table.Cell>
+							<Table.Cell><MonoCell value={sample ? String(sample.pids) : ''} /></Table.Cell>
 						</Table.Row>
 					{/each}
 				</Table.Body>

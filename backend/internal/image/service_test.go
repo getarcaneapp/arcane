@@ -1001,3 +1001,34 @@ func TestAggregateImageCountsSumsEnvironments(t *testing.T) {
 	require.Len(t, body.FailedEnvironments, 1)
 	assert.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
 }
+
+func TestImagePaginationConfig_FiltersByLabel(t *testing.T) {
+	items := []types.ImageSummary{
+		{ID: "tagged", Labels: map[string]any{"tier": "web", "port": 8080}},
+		{ID: "other", Labels: map[string]any{"tier": "db"}},
+		{ID: "bare", Labels: map[string]any{}},
+	}
+	paginationConfig := pagination.Config[types.ImageSummary]{FilterAccessors: (&ImageService{}).getImagePaginationConfig().FilterAccessors}
+
+	tests := []struct {
+		name   string
+		filter string
+		want   []string
+	}{
+		{name: "key only", filter: "tier", want: []string{"tagged", "other"}},
+		{name: "key and value", filter: "tier=web", want: []string{"tagged"}},
+		{name: "non-string value", filter: "port=8080", want: []string{"tagged"}},
+		{name: "missing key", filter: "missing", want: nil},
+		{name: "blank is a no-op", filter: " ", want: []string{"tagged", "other", "bare"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := paginationConfig.SearchOrderAndPaginate(items, pagination.QueryParams{Filters: map[string]string{"label": tt.filter}})
+			var got []string
+			for _, item := range result.Items {
+				got = append(got, item.ID)
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
+}

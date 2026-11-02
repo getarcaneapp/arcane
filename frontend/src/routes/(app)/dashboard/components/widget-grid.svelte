@@ -1,12 +1,10 @@
 <script lang="ts">
 	import { tick, type Snippet } from 'svelte';
 
-	import { EyeOffIcon } from '#lib/icons/index.js';
+	import { EyeOffIcon, SettingsIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { DashboardWidgetId, DashboardWidgetLayout } from '#lib/types/auth.js';
 	import { cn } from '#lib/utils.js';
-
-	import { DASHBOARD_WIDGETS, GRID_COLUMNS, moveWidget } from '../widgets';
+	import { DASHBOARD_WIDGET_TYPES, type DashboardWidget, GRID_COLUMNS, moveWidget } from '#lib/utils/dashboard-layout.js';
 
 	const ROW_PITCH_REM = 4;
 	const KEY_STEPS: Record<string, { x: number; y: number }> = {
@@ -22,18 +20,20 @@
 		layout,
 		editing,
 		onChange,
+		onConfigure,
 		widget
 	}: {
-		layout: DashboardWidgetLayout[];
+		layout: DashboardWidget[];
 		editing: boolean;
-		onChange: (layout: DashboardWidgetLayout[]) => void;
-		widget: Snippet<[DashboardWidgetId]>;
+		onChange: (layout: DashboardWidget[]) => void;
+		onConfigure: (widget: DashboardWidget) => void;
+		widget: Snippet<[DashboardWidget]>;
 	} = $props();
 
 	let grid = $state<HTMLElement | null>(null);
 	let pointer = $state<{
 		mode: 'move' | 'resize';
-		origin: DashboardWidgetLayout;
+		origin: DashboardWidget;
 		startX: number;
 		startY: number;
 		dx: number;
@@ -58,7 +58,7 @@
 	const rows = $derived(Math.max(0, ...preview.filter((item) => !item.hidden).map((item) => item.y + item.h)));
 	const target = $derived(pointer ? positions.get(pointer.origin.id) : undefined);
 
-	function start(event: PointerEvent, item: DashboardWidgetLayout, mode: 'move' | 'resize') {
+	function start(event: PointerEvent, item: DashboardWidget, mode: 'move' | 'resize') {
 		if (event.button !== 0 || !grid || !window.matchMedia('(width >= 64rem)').matches) return;
 		event.preventDefault();
 		const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
@@ -81,7 +81,7 @@
 		onChange(next);
 	}
 
-	async function step(event: KeyboardEvent, item: DashboardWidgetLayout, mode: 'move' | 'resize') {
+	async function step(event: KeyboardEvent, item: DashboardWidget, mode: 'move' | 'resize') {
 		const delta = KEY_STEPS[event.key];
 		if (!delta) return;
 		event.preventDefault();
@@ -125,7 +125,7 @@
 		></div>
 	{/if}
 	{#each ordered as item (item.id)}
-		{@const name = DASHBOARD_WIDGETS[item.id].label()}
+		{@const name = item.title || DASHBOARD_WIDGET_TYPES[item.type].label()}
 		{@const cell = positions.get(item.id) ?? item}
 		{@const active = pointer?.origin.id === item.id}
 		{@const moving = active && pointer?.mode === 'move'}
@@ -149,7 +149,7 @@
 				inert={editing}
 				class={cn('grid min-h-0 min-w-0', editing ? 'pointer-events-none widget-scaled shrink-0 select-none' : 'flex-1')}
 			>
-				{@render widget(item.id)}
+				{@render widget(item)}
 			</div>
 			{#if editing}
 				<button
@@ -169,15 +169,36 @@
 						class="pointer-events-auto flex h-7 min-w-0 items-center gap-0.5 rounded-full border border-border/70 bg-background pr-0.5 pl-3 shadow-sm"
 					>
 						<span class="mr-1 min-w-0 truncate text-xs font-medium text-muted-foreground">{name}</span>
-						<button
-							type="button"
-							class={CONTROL_CLASS}
-							aria-label={m.hide_name({ name })}
-							title={m.hide_name({ name })}
-							onclick={() => onChange(layout.map((entry) => (entry.id === item.id ? { ...entry, hidden: true } : entry)))}
-						>
-							<EyeOffIcon class="size-3.5" />
-						</button>
+						{#if DASHBOARD_WIDGET_TYPES[item.type].multi}
+							<button
+								type="button"
+								class={CONTROL_CLASS}
+								aria-label={m.configure_name({ name })}
+								title={m.configure_name({ name })}
+								onclick={() => onConfigure(item)}
+							>
+								<SettingsIcon class="size-3.5" />
+							</button>
+							<button
+								type="button"
+								class={CONTROL_CLASS}
+								aria-label={m.remove_name({ name })}
+								title={m.remove_name({ name })}
+								onclick={() => onChange(layout.filter((entry) => entry.id !== item.id))}
+							>
+								<TrashIcon class="size-3.5" />
+							</button>
+						{:else}
+							<button
+								type="button"
+								class={CONTROL_CLASS}
+								aria-label={m.hide_name({ name })}
+								title={m.hide_name({ name })}
+								onclick={() => onChange(layout.map((entry) => (entry.id === item.id ? { ...entry, hidden: true } : entry)))}
+							>
+								<EyeOffIcon class="size-3.5" />
+							</button>
+						{/if}
 					</div>
 				</div>
 				{#if active && pointer?.mode === 'resize'}

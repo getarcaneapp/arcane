@@ -59,7 +59,7 @@
 </script>
 
 <div class="flex h-full min-h-full flex-col">
-	<main class="min-w-0 flex-1">
+	<div class="min-w-0 flex-1">
 		{#if isSubPage}
 			<div
 				class={cn(
@@ -103,7 +103,7 @@
 				{@render children()}
 			</div>
 		</div>
-	</main>
+	</div>
 </div>
 
 {#if isSubPage && !isReadOnly && formState?.saveFunction}

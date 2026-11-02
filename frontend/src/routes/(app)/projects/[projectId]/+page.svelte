@@ -71,6 +71,7 @@
 		resolveProjectEditorLayout,
 		type ProjectEditorLayoutMode
 	} from '#lib/utils/compose-flow.js';
+	import { createDashboardWidget, pinDashboardAction } from '#lib/utils/dashboard-layout.js';
 	import { getStatusVariant, getThemedIconUrl } from '#lib/utils/docker.js';
 	import { environmentName, listScopes } from '#lib/utils/environments.js';
 	import { capitalizeFirstLetter, withOccurrenceKeys } from '#lib/utils/formatting.js';
@@ -1620,6 +1621,15 @@
 				onclick: handleArchiveToggle
 			});
 		}
+		list.push(
+			pinDashboardAction('pin-dashboard', m.pin_to_dashboard(), () =>
+				createDashboardWidget('resource', {
+					resourceKind: 'projects',
+					environmentIds: [envId],
+					resourceId: projectId
+				})
+			)
+		);
 		return list;
 	});
 </script>

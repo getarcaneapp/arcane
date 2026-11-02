@@ -49,10 +49,6 @@ type (
 	}
 )
 
-const (
-	dashboardColumns = 12
-)
-
 var (
 	ErrCannotRemoveLastAdmin = errors.New("cannot remove the last admin user")
 	ErrUsernameRequired      = errors.New("username is required")
@@ -62,20 +58,6 @@ var (
 	// target whose effective privilege is equal to or higher than the caller's
 	// (e.g. a delegated users:update holder trying to edit a global admin).
 	ErrInsufficientPrivilege = errors.New("insufficient privilege to modify this user")
-
-	dashboardWidgetSizes = map[string]struct{ minW, minH, maxH int }{
-		"healthy":          {minW: 2, minH: 2, maxH: 4},
-		"attentionCount":   {minW: 2, minH: 2, maxH: 4},
-		"updates":          {minW: 2, minH: 2, maxH: 4},
-		"risk":             {minW: 2, minH: 2, maxH: 4},
-		"reclaimableTotal": {minW: 2, minH: 2, maxH: 4},
-		"environments":     {minW: 6, minH: 3, maxH: 12},
-		"attention":        {minW: 4, minH: 4, maxH: 12},
-		"activity":         {minW: 4, minH: 4, maxH: 12},
-		"jobs":             {minW: 3, minH: 3, maxH: 12},
-		"reclaimable":      {minW: 3, minH: 3, maxH: 12},
-		"memory":           {minW: 3, minH: 3, maxH: 12},
-	}
 )
 
 func DefaultArgon2Params() *Argon2Params {
@@ -319,26 +301,7 @@ func (s *UserService) UpdateUser(ctx context.Context, localUser *User, actorPerm
 		return nil, err
 	}
 	if layout := localUser.Preferences.DashboardLayout; layout != nil {
-		widgets := make([]types.DashboardWidgetLayout, 0, len(dashboardWidgetSizes))
-		for _, widget := range *layout {
-			sizes, known := dashboardWidgetSizes[widget.ID]
-			duplicate := slices.ContainsFunc(widgets, func(existing types.DashboardWidgetLayout) bool {
-				return existing.ID == widget.ID
-			})
-			if !known || duplicate {
-				continue
-			}
-			width := min(max(widget.W, sizes.minW), dashboardColumns)
-			widgets = append(widgets, types.DashboardWidgetLayout{
-				ID:     widget.ID,
-				X:      min(max(widget.X, 0), dashboardColumns-width),
-				Y:      max(widget.Y, 0),
-				W:      width,
-				H:      min(max(widget.H, sizes.minH), sizes.maxH),
-				Hidden: widget.Hidden,
-			})
-		}
-		localUser.Preferences.DashboardLayout = &widgets
+		localUser.Preferences.DashboardLayout = new(normalizeDashboardLayout(*layout))
 	}
 	var updated User
 	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

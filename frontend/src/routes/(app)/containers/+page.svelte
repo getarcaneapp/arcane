@@ -10,6 +10,7 @@
 	import { containerListQuery } from '#lib/query/containers.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import type { ContainerStatusCounts } from '#lib/types/docker.js';
+	import { pinViewAction } from '#lib/utils/dashboard-layout.js';
 	import { ENVIRONMENT_FILTER, environmentFilterIds, hasShownPermission, readableEnvironments } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { confirmAndApplyAllUpdates } from '#lib/utils/update-actions.js';
@@ -99,6 +100,7 @@
 						disabled: !resourcesReady || isApplyingUpdates
 					}
 				: null,
+			pinViewAction('containers', pageState.requestOptions, readableEnvironments('containers:list')),
 			{
 				id: 'refresh',
 				action: 'refresh',

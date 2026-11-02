@@ -35,7 +35,7 @@ const NETWORK_DOMAINS = ['networks', 'network'];
 const MANAGER_GLOBAL_DOMAINS = new Set(['users', 'roles', 'federated-credentials', 'api-keys']);
 
 export const KIND_QUERY_DOMAINS: Record<string, readonly string[]> = {
-	container: [...CONTAINER_DOMAINS, 'images', 'image', 'volumes', 'volume', ...NETWORK_DOMAINS, 'system'],
+	container: [...CONTAINER_DOMAINS, 'images', 'image', 'volumes', 'volume', ...NETWORK_DOMAINS, 'system', 'podman'],
 	image: [...IMAGE_DOMAINS, 'system'],
 	project: ['projects', 'project', 'containers', 'container', 'gitops-syncs'],
 	volume: [...VOLUME_DOMAINS, 'system'],

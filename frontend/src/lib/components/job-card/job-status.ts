@@ -1,5 +1,4 @@
 import { m } from '#lib/paraglide/messages.js';
-import type { JobRunStatus } from '#lib/types/job.js';
 import type { JobStatus } from '#lib/types/settings.js';
 export function jobStatusLabel(status: string, isWorker = false): string {
 	const labels: Record<string, () => string> = {
@@ -76,9 +75,4 @@ export function jobStatusTone(status: string | undefined): 'green' | 'red' | 'am
 		default:
 			return 'gray';
 	}
-}
-
-/** Whether a run can still change, so views showing it keep polling. */
-export function isJobRunPending(status: JobRunStatus | undefined): boolean {
-	return status === 'queued' || status === 'waiting' || status === 'running' || status === 'retrying';
 }

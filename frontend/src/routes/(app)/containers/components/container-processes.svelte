@@ -31,8 +31,7 @@
 		gcTime: 0,
 		retry: false,
 		refetchOnWindowFocus: false,
-		refetchOnReconnect: false,
-		refetchInterval: 5000
+		refetchOnReconnect: false
 	}));
 
 	const titles = $derived(processesQuery.data?.titles ?? []);

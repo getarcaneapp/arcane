@@ -14,6 +14,7 @@
 	import type { NetworkCreateOptions, NetworkUsageCounts } from '#lib/types/docker.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { pinViewAction } from '#lib/utils/dashboard-layout.js';
 	import { readableEnvironments } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -78,6 +79,7 @@
 			loading: createNetworkMutation.isPending,
 			disabled: !resourcesReady || createNetworkMutation.isPending
 		},
+		pinViewAction('networks', pageState.requestOptions, readableEnvironments('networks:list')),
 		{
 			id: 'refresh',
 			action: 'refresh',

@@ -14,3 +14,10 @@ export function containerListQuery(scope: string, environments: EnvironmentRef[]
 			)
 	});
 }
+
+export function containerDetailQuery(environmentId: string, containerId: string) {
+	return queryOptions({
+		queryKey: queryKeys.containers.detail(environmentId, containerId),
+		queryFn: () => containerService.getContainerForEnvironment(environmentId, containerId)
+	});
+}

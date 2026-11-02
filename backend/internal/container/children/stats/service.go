@@ -54,6 +54,10 @@ type (
 		stats     container.StatsResponse
 	}
 
+	ioBytes struct {
+		rx, tx, read, write uint64
+	}
+
 	resourceSample struct {
 		inspect *container.InspectResponse
 		stats   container.StatsResponse
@@ -179,11 +183,17 @@ func (s *Service) Collect(ctx context.Context, items []types.ContainerSummary, m
 	samples := make(map[string]*types.ContainerResourceSample, len(raw))
 	for id, statsData := range raw {
 		built := stats.BuildSample(statsData)
+		totals := ioTotals(statsData)
 		samples[id] = &types.ContainerResourceSample{
 			CPUPercent:       float64(built.CPUTenths) / 10,
 			MemoryUsageBytes: built.MemoryUsageBytes,
 			MemoryLimitBytes: statsData.MemoryStats.Limit,
 			SampleTime:       statsData.Read,
+			BlockReadBytes:   totals.read,
+			BlockWriteBytes:  totals.write,
+			NetworkRxBytes:   totals.rx,
+			NetworkTxBytes:   totals.tx,
+			PIDs:             statsData.PidsStats.Current,
 		}
 	}
 	return samples, nil
@@ -385,23 +395,11 @@ func (r *resourceInstruments) observe(o metric.Observer, c container.Summary, sa
 	o.ObserveInt64(r.memoryLimit, int64(statsData.MemoryStats.Limit), labels)
 	o.ObserveInt64(r.pids, int64(statsData.PidsStats.Current), labels)
 
-	var rx, tx, read, write uint64
-	for _, network := range statsData.Networks {
-		rx += network.RxBytes
-		tx += network.TxBytes
-	}
-	for _, entry := range statsData.BlkioStats.IoServiceBytesRecursive {
-		switch strings.ToLower(entry.Op) {
-		case "read":
-			read += entry.Value
-		case "write":
-			write += entry.Value
-		}
-	}
-	o.ObserveInt64(r.networkIO, int64(rx), with(attribute.String("network.io.direction", "receive")))
-	o.ObserveInt64(r.networkIO, int64(tx), with(attribute.String("network.io.direction", "transmit")))
-	o.ObserveInt64(r.diskIO, int64(read), with(attribute.String("disk.io.direction", "read")))
-	o.ObserveInt64(r.diskIO, int64(write), with(attribute.String("disk.io.direction", "write")))
+	totals := ioTotals(statsData)
+	o.ObserveInt64(r.networkIO, int64(totals.rx), with(attribute.String("network.io.direction", "receive")))
+	o.ObserveInt64(r.networkIO, int64(totals.tx), with(attribute.String("network.io.direction", "transmit")))
+	o.ObserveInt64(r.diskIO, int64(totals.read), with(attribute.String("disk.io.direction", "read")))
+	o.ObserveInt64(r.diskIO, int64(totals.write), with(attribute.String("disk.io.direction", "write")))
 
 	if sample.inspect == nil {
 		return
@@ -410,6 +408,23 @@ func (r *resourceInstruments) observe(o metric.Observer, c container.Summary, sa
 	if startedAt, err := time.Parse(time.RFC3339Nano, kit.FromPtr(sample.inspect.State).StartedAt); err == nil {
 		o.ObserveFloat64(r.uptime, time.Since(startedAt).Seconds(), labels)
 	}
+}
+
+func ioTotals(statsData container.StatsResponse) ioBytes {
+	var totals ioBytes
+	for _, network := range statsData.Networks {
+		totals.rx += network.RxBytes
+		totals.tx += network.TxBytes
+	}
+	for _, entry := range statsData.BlkioStats.IoServiceBytesRecursive {
+		switch strings.ToLower(entry.Op) {
+		case "read":
+			totals.read += entry.Value
+		case "write":
+			totals.write += entry.Value
+		}
+	}
+	return totals
 }
 
 // ContainerResourceSampleSort orders summaries by sample value with unsampled containers last in both

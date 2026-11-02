@@ -32,6 +32,7 @@
 	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { createDashboardWidget, pinDashboardAction } from '#lib/utils/dashboard-layout.js';
 	import { isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import { createSettingsForm } from '#lib/utils/settings-form.js';
@@ -175,6 +176,11 @@
 				loading: isSyncing
 			});
 		}
+		actions.push(
+			pinDashboardAction('pin-dashboard', m.pin_to_dashboard(), () =>
+				createDashboardWidget('environment', { environmentIds: [environment.id] })
+			)
+		);
 		if (canEasyJoin) {
 			actions.push({
 				id: 'easy-join',

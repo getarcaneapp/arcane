@@ -25,6 +25,7 @@
 	import type { ImageUsageCounts } from '#lib/types/docker.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { pinViewAction } from '#lib/utils/dashboard-layout.js';
 	import {
 		acrossEnvironmentsNote,
 		actionEnvironments,
@@ -256,6 +257,7 @@
 				disabled: !resourcesReady || isChecking
 			});
 		}
+		buttons.push(pinViewAction('images', pageState.requestOptions, readableEnvironments('images:list')));
 		buttons.push({
 			id: 'refresh',
 			action: 'refresh',

@@ -822,6 +822,12 @@ type (
 		//
 		// Required: true
 		MemoryLimitBytes uint64 `json:"memoryLimitBytes"`
+
+		BlockReadBytes  uint64 `json:"blockReadBytes"`
+		BlockWriteBytes uint64 `json:"blockWriteBytes"`
+		NetworkRxBytes  uint64 `json:"networkRxBytes"`
+		NetworkTxBytes  uint64 `json:"networkTxBytes"`
+		PIDs            uint64 `json:"pids"`
 	}
 
 	// ContainerResourceSampleSubscription is the client frame on the batched container stats

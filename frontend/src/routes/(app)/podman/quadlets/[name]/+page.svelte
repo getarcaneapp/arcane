@@ -45,7 +45,6 @@
 		queryKey: queryKeys.podman.quadlet(envId, data.quadlet.name),
 		queryFn: () => podmanService.getQuadlet(data.quadlet.name, envId),
 		initialData: data.quadlet,
-		refetchInterval: 10000,
 		retry: false
 	}));
 	const quadlet = $derived(quadletQuery.data ?? data.quadlet);

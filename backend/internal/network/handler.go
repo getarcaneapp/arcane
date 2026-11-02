@@ -38,6 +38,7 @@ type (
 		Sort          string `query:"sort" doc:"Column to sort by"`
 		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
 		InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
+		Label         string `query:"label" doc:"Filter by label key or key=value"`
 		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
 		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 	}
@@ -83,6 +84,9 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.InUse != "" {
 		params.Filters["inUse"] = input.InUse
+	}
+	if input.Label != "" {
+		params.Filters["label"] = input.Label
 	}
 
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {

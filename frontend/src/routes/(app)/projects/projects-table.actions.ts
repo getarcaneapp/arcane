@@ -94,6 +94,45 @@ const projectActionConfigs: Record<ProjectActionKind, ProjectActionConfig> = {
 	}
 };
 
+type RunProjectActionOptions = {
+	action: ProjectActionKind;
+	projectId: string;
+	environmentId: string;
+	setStatus: (status: ActionStatus) => void;
+	onRefresh: () => Promise<unknown>;
+};
+
+export async function runProjectAction({
+	action,
+	projectId,
+	environmentId,
+	setStatus,
+	onRefresh
+}: RunProjectActionOptions): Promise<void> {
+	const config = projectActionConfigs[action];
+	setStatus(config.status);
+
+	const operationResult = await tryCatch(
+		(async () => {
+			await handleApiResultWithCallbacks({
+				result: await tryCatch(config.run(projectId, environmentId)),
+				message: config.failure(),
+				setLoadingState: (value) => {
+					setStatus(value ? config.status : '');
+				},
+				onSuccess: async (data) => {
+					toast.success(config.success(), activityToastOptions(extractActivityId(data)));
+					await onRefresh();
+				}
+			});
+		})()
+	);
+	if (operationResult.error !== null) {
+		toast.error(m.common_action_failed());
+		setStatus('');
+	}
+}
+
 export function createProjectActions({
 	getRequestOptions,
 	refreshProjects,
@@ -103,28 +142,15 @@ export function createProjectActions({
 }: ActionDeps): ProjectActions {
 	async function performProjectAction(action: ProjectActionKind, id: string, environmentId: string): Promise<void> {
 		const key = rowKey({ id, environmentId, environmentTagged: true });
-		const config = projectActionConfigs[action];
-		actionStatus[key] = config.status;
-
-		const operationResult = await tryCatch(
-			(async () => {
-				await handleApiResultWithCallbacks({
-					result: await tryCatch(config.run(id, environmentId)),
-					message: config.failure(),
-					setLoadingState: (value) => {
-						actionStatus[key] = value ? config.status : '';
-					},
-					onSuccess: async (data) => {
-						toast.success(config.success(), activityToastOptions(extractActivityId(data)));
-						await refreshProjects();
-					}
-				});
-			})()
-		);
-		if (operationResult.error !== null) {
-			toast.error(m.common_action_failed());
-			actionStatus[key] = '';
-		}
+		await runProjectAction({
+			action,
+			projectId: id,
+			environmentId,
+			setStatus: (status) => {
+				actionStatus[key] = status;
+			},
+			onRefresh: () => refreshProjects()
+		});
 	}
 
 	async function handleDestroyProject(id: string, environmentId: string): Promise<void> {
