@@ -60,11 +60,12 @@ type (
 	}
 
 	envFileCacheEntry struct {
-		mtime  time.Time
-		values EnvMap
-		path   string
-		size   int64
-		exists bool
+		mtime        time.Time
+		values       EnvMap
+		noInjectKeys map[string]struct{}
+		path         string
+		size         int64
+		exists       bool
 	}
 
 	// ComposeEnvOptions holds the deployment-relevant Docker Compose pre-defined
@@ -95,6 +96,11 @@ const (
 	OverrideEnvFileName                   = "project.env"
 	ProjectEnvModeDirect   ProjectEnvMode = "direct"
 	ProjectEnvModeOverride ProjectEnvMode = "override"
+	// GlobalEnvNoInjectDirective, in a "# arcane:noinject KEY" comment, marks a
+	// .env.global key as only available for ${VAR} interpolation. Marks are only
+	// read before the first variable line: placing them ahead of every value
+	// keeps values and marks consistent even in a partially rewritten file.
+	GlobalEnvNoInjectDirective = "arcane:noinject"
 	// Docker Compose pre-defined variable names that compose-go's consts package
 	// does not export. See https://docs.docker.com/compose/how-tos/environment-variables/envvars.
 	composeEnvFilesKey          = "COMPOSE_ENV_FILES"
@@ -216,7 +222,9 @@ func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envM
 
 	for k, v := range entry.values {
 		envMap[k] = v
-		injectionVars[k] = v
+		if _, skip := entry.noInjectKeys[k]; !skip {
+			injectionVars[k] = v
+		}
 	}
 
 	slog.DebugContext(ctx, "Merged global env into environment map", "totalEnvCount", len(envMap))
@@ -266,16 +274,22 @@ func loadCachedEnvFile(_ context.Context, envCache *hot.HotCache[string, envFile
 			return nil, fmt.Errorf("path is a directory: %s", path)
 		}
 
-		parsed, err := parseProjectEnvFileExisting(path, contextEnv)
+		// Values and no-inject marks come from one read so they always agree.
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("parse env file: read file: %w", err)
+		}
+		parsed, err := ParseProjectEnvContent(string(content), contextEnv)
 		if err != nil {
 			return nil, fmt.Errorf("parse env file: %w", err)
 		}
 		return map[string]envFileCacheEntry{key: {
-			path:   path,
-			mtime:  info.ModTime(),
-			size:   info.Size(),
-			exists: true,
-			values: parsed,
+			path:         path,
+			mtime:        info.ModTime(),
+			size:         info.Size(),
+			exists:       true,
+			values:       parsed,
+			noInjectKeys: parseNoInjectDirectives(string(content)),
 		}}, nil
 	})
 	if err != nil {
@@ -314,6 +328,34 @@ func parseProjectEnvFileExisting(path string, contextEnv EnvMap) (EnvMap, error)
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 	return ParseProjectEnvContent(string(content), contextEnv)
+}
+
+// parseNoInjectDirectives collects the keys marked with
+// GlobalEnvNoInjectDirective in the leading comment block. Scanning stops at
+// the first other line so a variable value is never read as a mark.
+func parseNoInjectDirectives(content string) map[string]struct{} {
+	var keys map[string]struct{}
+	for line := range strings.Lines(content) {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		comment, isComment := strings.CutPrefix(line, "#")
+		if !isComment {
+			break
+		}
+		fields := strings.Fields(comment)
+		if len(fields) < 2 || fields[0] != GlobalEnvNoInjectDirective {
+			continue
+		}
+		if keys == nil {
+			keys = make(map[string]struct{})
+		}
+		for _, key := range fields[1:] {
+			keys[key] = struct{}{}
+		}
+	}
+	return keys
 }
 
 // ParseProjectEnvFile parses a project .env file with variable expansion using the provided

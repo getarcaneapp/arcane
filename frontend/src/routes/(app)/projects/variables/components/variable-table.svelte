@@ -9,7 +9,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { VariableIcon, LockIcon, EditIcon, ClockIcon, GlobeIcon } from '#lib/icons/index.js';
+	import { VariableIcon, LockIcon, EditIcon, ClockIcon, GlobeIcon, BoxIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Paginated } from '#lib/types/base.js';
 	import type { GlobalVariable } from '#lib/types/env.js';
@@ -130,6 +130,12 @@
 				{m.secret()}
 			</Badge>
 		{/if}
+		{#if item.injectIntoContainers}
+			<Badge variant="blue" size="sm" title={m.inject_into_all_containers()}>
+				<BoxIcon class="size-3" />
+				{m.injected()}
+			</Badge>
+		{/if}
 	</div>
 {/snippet}
 
@@ -177,7 +183,10 @@
 		{item}
 		icon={{ component: VariableIcon, variant: 'blue' }}
 		title={(item: GlobalVariable) => item.key}
-		badges={item.isSecret ? [{ variant: 'amber' as const, text: m.secret() }] : []}
+		badges={[
+			(item: GlobalVariable) => (item.isSecret ? { variant: 'amber' as const, text: m.secret() } : null),
+			(item: GlobalVariable) => (item.injectIntoContainers ? { variant: 'blue' as const, text: m.injected() } : null)
+		]}
 		fields={[
 			{
 				label: m.value(),

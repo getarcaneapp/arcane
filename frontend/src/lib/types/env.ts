@@ -9,6 +9,7 @@ export interface GlobalVariable {
 	value: string;
 	isSecret: boolean;
 	allEnvironments: boolean;
+	injectIntoContainers: boolean;
 	environmentIds: string[];
 	createdAt: string;
 	updatedAt?: string;

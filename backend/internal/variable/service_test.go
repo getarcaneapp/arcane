@@ -26,6 +26,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/kv"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
 )
 
@@ -208,19 +209,87 @@ func TestResolveEffectiveVariables_EnvScopedOverridesAllEnv(t *testing.T) {
 
 	forA, err := service.resolveEffectiveVariables(ctx, "env-a")
 	require.NoError(t, err)
-	require.Equal(t, []types.EnvVariable{{Key: "REGION", Value: "eu-west"}}, forA)
+	require.Equal(t, []types.EnvVariable{{Key: "REGION", Value: "eu-west"}}, forA.Variables)
 
 	forB, err := service.resolveEffectiveVariables(ctx, "env-b")
 	require.NoError(t, err)
-	require.Equal(t, []types.EnvVariable{{Key: "REGION", Value: "default"}}, forB)
+	require.Equal(t, []types.EnvVariable{{Key: "REGION", Value: "default"}}, forB.Variables)
+}
+
+func TestResolveEffectiveVariables_ListsInterpolationOnlyKeys(t *testing.T) {
+	service, db, _ := setupVariableServiceTest(t, &variableTestRemoteProxy{})
+	ctx := t.Context()
+	createVariableTestEnvironment(t, db, "env-a")
+	createVariableTestEnvironment(t, db, "env-b")
+
+	timezone, err := service.CreateVariable(ctx, types.GlobalVariable{
+		Key: "TZ", Value: "UTC", AllEnvironments: true, InjectIntoContainers: true,
+	})
+	require.NoError(t, err)
+	require.True(t, timezone.InjectIntoContainers)
+
+	password, err := service.CreateVariable(ctx, types.GlobalVariable{
+		Key: "DB_PASSWORD", Value: "hunter2", IsSecret: true, AllEnvironments: true,
+	})
+	require.NoError(t, err)
+	require.False(t, password.InjectIntoContainers, "new variables are interpolation-only unless injection is requested")
+
+	// The env-scoped override decides injection for its environment.
+	_, err = service.CreateVariable(ctx, types.GlobalVariable{
+		Key: "TZ", Value: "Europe/Paris", EnvironmentIDs: []string{"env-a"},
+	})
+	require.NoError(t, err)
+
+	forA, err := service.resolveEffectiveVariables(ctx, "env-a")
+	require.NoError(t, err)
+	require.Equal(t, []string{"DB_PASSWORD", "TZ"}, forA.NoInjectKeys)
+
+	forB, err := service.resolveEffectiveVariables(ctx, "env-b")
+	require.NoError(t, err)
+	require.Equal(t, []string{"DB_PASSWORD"}, forB.NoInjectKeys)
+}
+
+func TestUpdateVariable_InjectIntoContainersKeptUnlessSubmitted(t *testing.T) {
+	service, db, _ := setupVariableServiceTest(t, &variableTestRemoteProxy{})
+	ctx := t.Context()
+	created, err := service.CreateVariable(ctx, types.GlobalVariable{
+		Key: "PUID", Value: "1000", AllEnvironments: true,
+	})
+	require.NoError(t, err)
+
+	updated, err := service.UpdateVariable(ctx, created.ID, types.GlobalVariable{InjectIntoContainers: true}, map[string]bool{"injectIntoContainers": true})
+	require.NoError(t, err)
+	require.True(t, updated.InjectIntoContainers)
+
+	updated, err = service.UpdateVariable(ctx, created.ID, types.GlobalVariable{Value: "1001"}, map[string]bool{"value": true})
+	require.NoError(t, err)
+	require.True(t, updated.InjectIntoContainers, "omitting the flag must keep the stored value")
+
+	var stored GlobalVariable
+	require.NoError(t, db.WithContext(ctx).First(&stored, "id = ?", created.ID).Error)
+	require.True(t, stored.InjectIntoContainers)
+}
+
+func TestImportVariables_KeepsInjectingImportedVariables(t *testing.T) {
+	service, db, _ := setupVariableServiceTest(t, &variableTestRemoteProxy{})
+	ctx := t.Context()
+	createVariableTestEnvironment(t, db, "env-a")
+
+	require.NoError(t, service.importVariables(ctx, []types.EnvVariable{{Key: "PUID", Value: "1000"}}, "env-a"))
+
+	listed, err := service.ListVariables(ctx)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	require.Equal(t, "PUID", listed[0].Key)
+	require.True(t, listed[0].InjectIntoContainers, "legacy .env.global entries were always injected")
 }
 
 func TestWriteLocalEnvFile_RejectsNewlineInjectionKey(t *testing.T) {
 	service, _, projectsDir := setupVariableServiceTest(t, &variableTestRemoteProxy{})
 
-	err := service.WriteLocalEnvFile(t.Context(), []types.EnvVariable{
+	err := service.WriteLocalEnvFile(t.Context(), types.EnvSummary{Variables: []types.EnvVariable{
 		{Key: "BENIGN\nINJECTED", Value: "x"},
-	})
+	}})
 	require.ErrorIs(t, err, common.ErrInvalidEnvKey, "expected InvalidEnvKeyError, got %v", err)
 
 	_, statErr := os.Stat(filepath.Join(projectsDir, ".env.global"))
@@ -235,13 +304,13 @@ func TestWriteLocalEnvFile_PreservesExistingFileMode(t *testing.T) {
 	ctx := t.Context()
 	envPath := filepath.Join(projectsDir, ".env.global")
 
-	require.NoError(t, service.WriteLocalEnvFile(ctx, []types.EnvVariable{{Key: "A", Value: "1"}}))
+	require.NoError(t, service.WriteLocalEnvFile(ctx, types.EnvSummary{Variables: []types.EnvVariable{{Key: "A", Value: "1"}}}))
 	info, err := os.Stat(envPath)
 	require.NoError(t, err)
 	require.Equal(t, fs.FilePerm, info.Mode().Perm(), "new file must use the configured default mode")
 
 	require.NoError(t, os.Chmod(envPath, 0o600))
-	require.NoError(t, service.WriteLocalEnvFile(ctx, []types.EnvVariable{{Key: "A", Value: "2"}}))
+	require.NoError(t, service.WriteLocalEnvFile(ctx, types.EnvSummary{Variables: []types.EnvVariable{{Key: "A", Value: "2"}}}))
 	info, err = os.Stat(envPath)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), info.Mode().Perm(), "rewrite must keep the existing mode")
@@ -268,6 +337,83 @@ func TestSyncEnvironment_LocalWritesEnvGlobalFile(t *testing.T) {
 	statuses := service.SyncStatuses()
 	require.Len(t, statuses, 1)
 	require.Equal(t, "synced", statuses[0].Status)
+}
+
+func TestSyncEnvironment_LocalSkipsInjectionForInterpolationOnlyVariables(t *testing.T) {
+	service, _, projectsDir := setupVariableServiceTest(t, &variableTestRemoteProxy{})
+	ctx := t.Context()
+
+	_, err := service.CreateVariable(ctx, types.GlobalVariable{
+		Key: "TZ", Value: "UTC", AllEnvironments: true, InjectIntoContainers: true,
+	})
+	require.NoError(t, err)
+	_, err = service.CreateVariable(ctx, types.GlobalVariable{
+		Key: "DB_PASSWORD", Value: "hunter2", IsSecret: true, AllEnvironments: true,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, service.SyncEnvironment(ctx, "0"))
+
+	workdir := filepath.Join(projectsDir, "app")
+	require.NoError(t, os.MkdirAll(workdir, fs.DirPerm))
+	envMap, injectionVars, err := projects.NewEnvLoader(projectsDir, workdir, false).LoadEnvironment(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hunter2", envMap["DB_PASSWORD"], "interpolation-only variables stay available for ${VAR}")
+	require.Equal(t, projects.EnvMap{"TZ": "UTC"}, injectionVars)
+
+	// The in-place rewrite truncates then writes, so a concurrent reader can see
+	// any prefix of the new file: none of them may inject the marked secret.
+	content, err := os.ReadFile(filepath.Join(projectsDir, ".env.global"))
+	require.NoError(t, err)
+	partialDir := t.TempDir()
+	for size := range len(content) + 1 {
+		require.NoError(t, os.WriteFile(filepath.Join(partialDir, ".env.global"), content[:size], fs.FilePerm))
+		_, partialInjection, loadErr := projects.NewEnvLoader(partialDir, filepath.Join(partialDir, "app"), false).LoadEnvironment(ctx)
+		require.NoError(t, loadErr)
+		require.NotContains(t, partialInjection, "DB_PASSWORD", "a %d-byte prefix injected the interpolation-only secret", size)
+	}
+}
+
+func TestSyncEnvironment_AgentPayloadOmitsNoInjectKeysWhenAllInjected(t *testing.T) {
+	var putBodies [][]byte
+	service, db, _ := setupVariableServiceTest(t, &variableTestRemoteProxy{
+		proxyJSON: func(_ context.Context, _, method, _ string, body []byte, response any) error {
+			if method == http.MethodGet {
+				return json.Unmarshal([]byte(`{"success":true,"data":[]}`), response)
+			}
+			putBodies = append(putBodies, append([]byte(nil), body...))
+			return json.Unmarshal([]byte(`{"success":true,"data":{"message":"updated"}}`), response)
+		},
+	})
+	ctx := t.Context()
+	token := "agent-token"
+	require.NoError(t, db.Create(&environment.Environment{
+		ID:          "env-agent",
+		Name:        "Agent",
+		ApiUrl:      "agent://env-agent",
+		Status:      string(environment.EnvironmentStatusOnline),
+		Enabled:     true,
+		AccessToken: &token,
+	}).Error)
+
+	_, err := service.CreateVariable(ctx, types.GlobalVariable{
+		Key: "TZ", Value: "UTC", AllEnvironments: true, InjectIntoContainers: true,
+	})
+	require.NoError(t, err)
+	require.NoError(t, service.SyncEnvironment(ctx, "env-agent"))
+
+	_, err = service.CreateVariable(ctx, types.GlobalVariable{
+		Key: "DB_PASSWORD", Value: "hunter2", AllEnvironments: true,
+	})
+	require.NoError(t, err)
+	require.NoError(t, service.SyncEnvironment(ctx, "env-agent"))
+
+	require.Len(t, putBodies, 2)
+	// Agents that predate the field reject unknown properties.
+	require.NotContains(t, string(putBodies[0]), "noInjectKeys")
+	var materialized types.EnvSummary
+	require.NoError(t, json.Unmarshal(putBodies[1], &materialized))
+	require.Equal(t, []string{"DB_PASSWORD"}, materialized.NoInjectKeys)
 }
 
 func TestSyncEnvironment_AgentMaterializesSecretsThroughAgentRoute(t *testing.T) {
