@@ -1473,6 +1473,22 @@ test.describe('System and volume restore', () => {
 					: history;
 			return route.fulfill({ json: paginated(rows) });
 		});
+		let resolveCompleted: (activity: Activity) => void = () => undefined;
+		const completed = new Promise<Activity>((resolve) => {
+			resolveCompleted = resolve;
+		});
+		await page.route(/\/api\/stream(?:\?.*)?$/, async (route) => {
+			const activity = await completed;
+			const timestamp = new Date().toISOString();
+			const event = {
+				channel: 'activities',
+				activity: { type: 'activity', environmentId: '0', activity, timestamp },
+				timestamp
+			};
+			await route
+				.fulfill({ contentType: 'text/event-stream', body: `data: ${JSON.stringify(event)}\n\n` })
+				.catch(() => undefined);
+		});
 
 		return {
 			savedCollection: () => savedCollection,
@@ -1495,6 +1511,7 @@ test.describe('System and volume restore', () => {
 					id: activity.id,
 					trigger: 'manual'
 				});
+				resolveCompleted(activity);
 			}
 		};
 	}

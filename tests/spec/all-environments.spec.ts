@@ -221,11 +221,8 @@ test.describe('All environments', () => {
 		await mockRemoteEnvironment(page);
 
 		await page.goto('/projects');
-		await page
-			.getByRole('button', { name: 'Update Projects', exact: true })
-			.filter({ visible: true })
-			.first()
-			.click();
+		await page.getByRole('button', { name: 'More actions', exact: true }).click();
+		await page.getByRole('menuitem', { name: 'Update Projects', exact: true }).click();
 
 		const dialog = page.getByRole('dialog');
 		await expect(dialog).toContainText('This runs on all 2 environments.');

@@ -29,12 +29,10 @@ async function navigateToProjects(page: Page) {
 }
 
 async function clickProjectsPageUpdateAction(page: Page) {
-	const updateProjectsButton = page
-		.getByRole('button', { name: 'Update Projects', exact: true })
-		.filter({ visible: true })
-		.first();
-	await expect(updateProjectsButton).toBeVisible();
-	await updateProjectsButton.click();
+	await page.getByRole('button', { name: 'More actions', exact: true }).click();
+	const updateProjectsItem = page.getByRole('menuitem', { name: 'Update Projects', exact: true });
+	await expect(updateProjectsItem).toBeVisible();
+	await updateProjectsItem.click();
 }
 
 async function clickProjectDetailUpdateAction(page: Page) {
