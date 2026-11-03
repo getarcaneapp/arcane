@@ -26,6 +26,7 @@ func Command() *cobra.Command {
 	command.AddCommand(newListCmd())
 	command.AddCommand(newGetCmd())
 	command.AddCommand(newTestCmd())
+	command.AddCommand(newTunnelCmd())
 	command.AddCommand(newDeleteCmd())
 	command.AddCommand(newUpdateCmd())
 	command.AddCommand(newVersionCmd())
@@ -151,6 +152,45 @@ func newTestCmd() *cobra.Command {
 				FailureMessage: "failed to test environment",
 				Render: func(types.EnvironmentTest) error {
 					output.Success("%s", "Environment connection test successful")
+					return nil
+				},
+			})
+		},
+	}
+}
+
+func newTunnelCmd() *cobra.Command {
+	command := &cobra.Command{
+		Use:   "tunnel",
+		Short: "Manage environment agent tunnels",
+	}
+	command.AddCommand(newTunnelRestartCmd())
+	return command
+}
+
+func newTunnelRestartCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "restart <id>",
+		Short:        "Restart the agent tunnel for an environment",
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := cmdutil.ClientFromCommand(cmd)
+			if err != nil {
+				return err
+			}
+
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.EnvironmentTunnelRestart]{
+				Method:         http.MethodPost,
+				Path:           clitypes.EnvironmentTunnelRestart(args[0]),
+				FailureMessage: "failed to restart agent tunnel",
+				Render: func(data types.EnvironmentTunnelRestart) error {
+					if !data.Reconnected {
+						output.Warning("Agent tunnel closed. The agent has not reconnected yet.")
+						return nil
+					}
+					output.Success("Agent tunnel reconnected")
+					output.KeyValue("Session ID", data.SessionID)
 					return nil
 				},
 			})

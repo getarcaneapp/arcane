@@ -16,6 +16,11 @@ type (
 		Status string `json:"status"`
 	}
 
+	EnvironmentTunnelRestart struct {
+		SessionID   string `json:"sessionId,omitzero"`
+		Reconnected bool   `json:"reconnected"`
+	}
+
 	AgentMTLSCertificate struct {
 		// CommonName is the certificate subject common name.
 		//

@@ -154,6 +154,16 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	}, authz.PermEnvironmentsRead, h.TestConnection)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "restartEnvironmentTunnel",
+		Method:      "POST",
+		Path:        "/environments/{id}/tunnel/restart",
+		Summary:     "Restart environment agent tunnel",
+		Description: "Close the active agent tunnel and wait for the agent to reconnect",
+		Tags:        []string{"Environments"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermEnvironmentsRestart, h.RestartTunnel)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "syncEnvironment",
 		Method:      "POST",
 		Path:        "/environments/{id}/sync",

@@ -26,6 +26,7 @@ import (
 	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/apikey"
+	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/event"
@@ -1869,4 +1870,60 @@ func TestApplyEnvironmentRuntimeState_OmitsTunnelStatsWithoutHistory(t *testing.
 
 	assert.Nil(t, env.AgentHost)
 	assert.Nil(t, env.AgentTunnelStats)
+}
+
+func TestEnvironmentService_RestartTunnel(t *testing.T) {
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(EnvironmentServiceParams{
+		DB:           db,
+		EventService: event.NewEventService(db, nil, nil),
+	})
+	tunnels := agent.NewTunnelRegistry()
+	agent.SetDefaultRegistry(tunnels)
+	t.Cleanup(func() {
+		agent.ClearDefaultRegistry(tunnels)
+	})
+	createTestEnvironment(t, db, "env-restart", "http://env.example", nil)
+
+	t.Run("rejects local environment", func(t *testing.T) {
+		_, err := svc.RestartTunnel(t.Context(), LocalEnvironmentID, nil, nil)
+		require.ErrorIs(t, err, common.ErrValidation)
+	})
+
+	t.Run("conflict without active tunnel", func(t *testing.T) {
+		_, err := svc.RestartTunnel(t.Context(), "env-restart", nil, nil)
+		require.ErrorIs(t, err, common.ErrConflict)
+	})
+
+	t.Run("closes tunnel and returns replacement session", func(t *testing.T) {
+		previous := agent.NewAgentTunnelWithConn("env-restart", agent.NewGRPCManagerTunnelConn(nil))
+		previous.SessionID = "session-old"
+		tunnels.Register("env-restart", previous)
+
+		go func() {
+			if assert.Eventually(t, previous.Conn.IsClosed, 5*time.Second, 5*time.Millisecond) {
+				replacement := agent.NewAgentTunnelWithConn("env-restart", agent.NewGRPCManagerTunnelConn(nil))
+				replacement.SessionID = "session-new"
+				tunnels.Register("env-restart", replacement)
+			}
+		}()
+
+		result, err := svc.RestartTunnel(t.Context(), "env-restart", nil, nil)
+		require.NoError(t, err)
+		require.Equal(t, types.EnvironmentTunnelRestart{
+			SessionID:   "session-new",
+			Reconnected: true,
+		}, result)
+		require.Equal(t, "restarted by user", previous.MetadataSnapshot().DisconnectReason)
+	})
+
+	t.Run("reports pending when agent has not redialed", func(t *testing.T) {
+		tunnels.Register("env-restart", agent.NewAgentTunnelWithConn("env-restart", agent.NewGRPCManagerTunnelConn(nil)))
+		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+		defer cancel()
+
+		result, err := svc.RestartTunnel(ctx, "env-restart", nil, nil)
+		require.NoError(t, err)
+		require.Equal(t, types.EnvironmentTunnelRestart{}, result)
+	})
 }

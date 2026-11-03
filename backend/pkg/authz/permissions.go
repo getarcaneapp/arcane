@@ -44,6 +44,7 @@ const (
 	PermEnvironmentsDelete       = "environments:delete"
 	PermEnvironmentsPair         = "environments:pair"
 	PermEnvironmentsSync         = "environments:sync"
+	PermEnvironmentsRestart      = "environments:restart"
 	PermRegistriesList           = "registries:list"
 	PermRegistriesRead           = "registries:read"
 	PermRegistriesCreate         = "registries:create"

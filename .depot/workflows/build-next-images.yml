@@ -59,12 +59,14 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: backend/go.mod
-          cache: true
-          cache-dependency-path: |
-            go.work
-            go.work.sum
-            */go.mod
-            */go.sum
+          cache: false
+
+      - name: Cache Go modules
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/pkg/mod
+          key: arcane-go-${{ runner.os }}-${{ hashFiles('go.work.sum', '*/go.sum') }}
+          restore-keys: arcane-go-${{ runner.os }}-
 
       - name: Capture frontend build versions
         id: frontend-versions

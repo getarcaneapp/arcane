@@ -252,6 +252,13 @@ var permissionCatalog = []PermissionCatalogResource{
 				Description: "Trigger an environment sync and heartbeat",
 				Requires:    []string{PermEnvironmentsRead},
 			},
+			{
+				Key:         "restart",
+				Permission:  PermEnvironmentsRestart,
+				Label:       "Restart tunnel",
+				Description: "Drop and reconnect the agent tunnel",
+				Requires:    []string{PermEnvironmentsRead},
+			},
 		},
 	},
 	{

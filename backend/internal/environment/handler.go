@@ -90,6 +90,10 @@ type (
 		ID string `path:"id" doc:"Environment ID"`
 	}
 
+	RestartTunnelInput struct {
+		ID string `path:"id" doc:"Environment ID"`
+	}
+
 	SyncEnvironmentInput struct {
 		ID string `path:"id" doc:"Environment ID"`
 	}
@@ -597,6 +601,22 @@ func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConn
 		Body: types.ApiResponse[types.EnvironmentTest]{
 			Success: true,
 			Data:    types.EnvironmentTest{Status: status},
+		},
+	}, nil
+}
+
+func (h *EnvironmentHandler) RestartTunnel(ctx context.Context, input *RestartTunnelInput) (*handlerutil.Out[types.EnvironmentTunnelRestart], error) {
+	userID, username := currentUserRefs(ctx)
+	result, err := h.environmentService.RestartTunnel(ctx, input.ID, userID, username)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to restart agent tunnel: "+apiErr.Message)
+	}
+
+	return &handlerutil.Out[types.EnvironmentTunnelRestart]{
+		Body: types.ApiResponse[types.EnvironmentTunnelRestart]{
+			Success: true,
+			Data:    result,
 		},
 	}, nil
 }

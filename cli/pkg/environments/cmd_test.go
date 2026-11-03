@@ -37,3 +37,21 @@ func TestEnvironmentsCreatePrintsAPIKeyAndInstallCommands(t *testing.T) {
 	require.Contains(t, out, "docker run arcane-agent")
 	require.Contains(t, out, "arcane-agent: {}")
 }
+
+func TestEnvironmentsTunnelRestartPrintsSession(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost || r.URL.Path != "/api/environments/env-1/tunnel/restart" {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"success":false,"error":"not found"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"success":true,"data":{"reconnected":true,"sessionId":"session-new"}}`))
+	}))
+	defer srv.Close()
+
+	out, errOut, err := testutil.Execute(t, []string{"--config", testutil.WriteConfig(t, srv.URL), "environments", "tunnel", "restart", "env-1"})
+	require.NoError(t, err, "stdout=%s\nstderr=%s", out, errOut)
+	require.Contains(t, out, "Agent tunnel reconnected")
+	require.Contains(t, out, "session-new")
+}

@@ -100,6 +100,10 @@ func Environment(id string) string { return pathf("/api/environments/%s", id) }
 
 func EnvironmentTest(envID string) string { return pathf("/api/environments/%s/test", envID) }
 
+func EnvironmentTunnelRestart(envID string) string {
+	return pathf("/api/environments/%s/tunnel/restart", envID)
+}
+
 func EnvironmentDeployment(envID string) string {
 	return pathf("/api/environments/%s/deployment", envID)
 }

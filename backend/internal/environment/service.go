@@ -116,13 +116,10 @@ type (
 )
 
 const (
-	// LocalEnvironmentID is the reserved ID of the environment Arcane manages directly.
 	LocalEnvironmentID           = "0"
 	localEnvironmentFallbackName = "Local"
 	legacyLocalEnvironmentName   = "Local Docker"
-	// SyncDeliveryExpiry bounds how long an accepted config push is trusted, so a
-	// rebuilt agent that stayed online is resynced without operator action.
-	SyncDeliveryExpiry = time.Hour
+	SyncDeliveryExpiry           = time.Hour
 
 	agentTokenCacheTTL   = time.Minute
 	environmentCacheTTL  = 30 * time.Second
@@ -133,12 +130,15 @@ const (
 	environmentHealthCheckTimeout    = 90 * time.Second
 	environmentHealthJobPrefix       = "environment-health:"
 	environmentHealthAdmissionScope  = "environment-health"
+	tunnelReconnectTimeout           = 30 * time.Second
 )
 
 var (
 	ErrEnvironmentAccessTokenRequired = errors.New("environment access token required")
 	ErrInvalidEnvironmentAccessToken  = errors.New("invalid environment access token")
 	ErrEnvironmentNotFound            = common.Classify(common.ErrNotFound, errors.New("environment not found"))
+	ErrLocalEnvironmentTunnel         = common.Classify(common.ErrValidation, errors.New("local environment has no agent tunnel"))
+	ErrAgentTunnelNotConnected        = common.Classify(common.ErrConflict, errors.New("agent tunnel is not connected"))
 	agentSlugPattern                  = regexp.MustCompile(`[^a-z0-9]+`)
 )
 
@@ -1317,6 +1317,32 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string) (str
 		slog.WarnContext(ctx, "Failed to persist environment status", "environmentId", id, "status", status, "error", updateErr)
 	}
 	return status, err
+}
+
+func (s *EnvironmentService) RestartTunnel(ctx context.Context, id string, userID, username *string) (types.EnvironmentTunnelRestart, error) {
+	if id == LocalEnvironmentID {
+		return types.EnvironmentTunnelRestart{}, ErrLocalEnvironmentTunnel
+	}
+	envRecord, err := s.GetEnvironmentByID(ctx, id)
+	if err != nil {
+		return types.EnvironmentTunnelRestart{}, err
+	}
+	tunnel, ok := agent.GetRegistry().Active(id).Get()
+	if !ok {
+		return types.EnvironmentTunnelRestart{}, ErrAgentTunnelNotConnected
+	}
+	if closeErr := tunnel.CloseWithReason("restarted by user"); closeErr != nil {
+		slog.WarnContext(ctx, "Failed to close agent tunnel", "environmentId", id, "error", closeErr)
+	}
+
+	s.createEnvironmentEvent(ctx, id, envRecord.Name, event.EventTypeEnvironmentTunnelRestarted,
+		"Agent Tunnel Restarted", fmt.Sprintf("Agent tunnel for environment '%s' was restarted", envRecord.Name), event.EventSeverityInfo, userID, username)
+
+	replacement, reconnected := agent.GetRegistry().WaitForActive(ctx, id, tunnelReconnectTimeout).Get()
+	return types.EnvironmentTunnelRestart{
+		SessionID:   replacement.MetadataSnapshot().SessionID,
+		Reconnected: reconnected,
+	}, nil
 }
 
 func (s *EnvironmentService) updateEnvironmentStatus(ctx context.Context, id, status string) error {

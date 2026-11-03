@@ -7,6 +7,7 @@
 	import { ActionButtonGroup, type ActionButton } from '#lib/components/action-button-group/index.js';
 	import AgentCommandBlock from '#lib/components/agent-command-block.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
@@ -73,6 +74,7 @@
 	let isRefreshing = $state(false);
 	let isTestingConnection = $state(false);
 	let isSyncing = $state(false);
+	let isRestartingTunnel = $state(false);
 	let isRegeneratingKey = $state(false);
 	let showRegenerateDialog = $state(false);
 	let regeneratedApiKey = $state<string | null>(null);
@@ -156,6 +158,16 @@
 			disabled: isTestingConnection,
 			loading: isTestingConnection
 		});
+		if (environment.id !== '0' && runtimeEnvironment.connected && hasPermission('environments:restart', environment.id)) {
+			actions.push({
+				id: 'restart-tunnel',
+				action: 'restart',
+				label: m.restart_tunnel(),
+				onclick: restartTunnel,
+				disabled: isRestartingTunnel,
+				loading: isRestartingTunnel
+			});
+		}
 		actions.push({
 			id: 'refresh',
 			action: 'refresh',
@@ -392,6 +404,35 @@
 		} finally {
 			isTestingConnection = false;
 		}
+	}
+
+	function restartTunnel() {
+		if (isRestartingTunnel) return;
+		openConfirmDialog({
+			title: m.restart_tunnel(),
+			message: m.restart_tunnel_confirm_description(),
+			confirm: {
+				label: m.restart_tunnel(),
+				destructive: true,
+				action: async () => {
+					isRestartingTunnel = true;
+					const result = await tryCatch(environmentManagementService.restartTunnel(environment.id));
+					isRestartingTunnel = false;
+					if (result.error !== null) {
+						toast.error(m.restart_tunnel_failed(), {
+							description: extractApiErrorMessage(result.error)
+						});
+						return;
+					}
+					if (result.data.reconnected) {
+						toast.success(m.restart_tunnel_success());
+					} else {
+						toast.info(m.restart_tunnel_pending());
+					}
+					await refreshAll();
+				}
+			}
+		});
 	}
 
 	async function handleRegenerateApiKey() {

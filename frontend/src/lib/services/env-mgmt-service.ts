@@ -36,6 +36,11 @@ class EnvironmentManagementService extends BaseAPIService {
 		return res.data.data as { status: 'online' | 'offline'; message?: string };
 	}
 
+	async restartTunnel(environmentId: string): Promise<{ reconnected: boolean; sessionId?: string }> {
+		const res = await this.api.post(`/environments/${environmentId}/tunnel/restart`);
+		return res.data.data as { reconnected: boolean; sessionId?: string };
+	}
+
 	async sync(environmentId: string): Promise<void> {
 		await this.api.post(`/environments/${environmentId}/sync`);
 	}

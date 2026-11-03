@@ -4383,5 +4383,10 @@
   "last_disconnect": "Last Disconnect",
   "last_disconnect_time": "Last disconnect {time}",
   "round_trip_min_avg_max": "min / avg / max: {min} / {avg} / {max} ms",
-  "schedule_timezone": "Schedules run in the {timezone} timezone. Set the TZ environment variable to change it."
+  "schedule_timezone": "Schedules run in the {timezone} timezone. Set the TZ environment variable to change it.",
+  "restart_tunnel": "Restart Tunnel",
+  "restart_tunnel_confirm_description": "This closes the agent tunnel and waits for the agent to reconnect. Open logs, terminals, and streams for this environment will disconnect.",
+  "restart_tunnel_success": "Agent tunnel reconnected",
+  "restart_tunnel_pending": "Agent tunnel closed. The agent has not reconnected yet.",
+  "restart_tunnel_failed": "Failed to restart agent tunnel"
 }
