@@ -37,7 +37,7 @@ require (
 	github.com/gofrs/flock v0.13.1
 	github.com/google/go-containerregistry v0.22.1
 	github.com/hashicorp/yamux v0.1.2
-	github.com/italypaleale/francis v0.2.0
+	github.com/italypaleale/francis v0.2.1
 	github.com/jwx-go/jwkfetch/v4 v4.0.4
 	github.com/klauspost/compress v1.20.3
 	github.com/labstack/echo-otel/v5 v5.0.0
@@ -46,7 +46,7 @@ require (
 	github.com/lestrrat-go/jwx/v4 v4.6.0
 	github.com/libtnb/sqlite v1.2.2
 	github.com/lmittmann/tint v1.2.1
-	github.com/moby/buildkit v0.34.1
+	github.com/moby/buildkit v0.34.2
 	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.2
 	github.com/nicholas-fedor/shoutrrr v0.22.1
@@ -59,7 +59,7 @@ require (
 	github.com/samber/hot v0.13.1
 	github.com/samber/mo v1.17.0
 	github.com/samber/slog-echo/v2 v2.2.0
-	github.com/shirou/gopsutil/v4 v4.26.9
+	github.com/shirou/gopsutil/v4 v4.26.10
 	github.com/sirupsen/logrus v1.10.2
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
@@ -76,7 +76,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
 	go.uber.org/fx v1.24.0
-	go.yaml.in/yaml/v4 v4.0.0-rc.6
+	go.yaml.in/yaml/v4 v4.0.0-rc.9
 	golang.org/x/crypto v0.58.0
 	golang.org/x/mod v0.42.0
 	golang.org/x/net v0.62.0
@@ -164,7 +164,7 @@ require (
 	github.com/docker/secrets-engine/x v0.8.5 // indirect
 	github.com/dunglas/httpsfv v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
-	github.com/ebitengine/purego v0.11.1 // indirect
+	github.com/ebitengine/purego v0.11.2 // indirect
 	github.com/eclipse/paho.golang v0.23.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
@@ -197,7 +197,7 @@ require (
 	github.com/in-toto/in-toto-golang v0.11.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/inhies/go-bytesize v0.0.0-20220417184213-4913239db9cf // indirect
-	github.com/italypaleale/go-kit v1.2.5 // indirect
+	github.com/italypaleale/go-kit v1.6.0 // indirect
 	github.com/italypaleale/go-sql-utils v0.3.12 // indirect
 	github.com/jackc/pgerrcode v0.0.0-20250907135507-afb5586c32a6 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -282,7 +282,7 @@ require (
 	github.com/tinylib/msgp v1.6.5 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
-	github.com/tonistiigi/fsutil v0.0.0-20261027232937-ca65610c2295 // indirect
+	github.com/tonistiigi/fsutil v0.0.0-20261103091533-a72de9dcf763 // indirect
 	github.com/tonistiigi/go-csvvalue v0.0.0-20240814133006-030d3b2625d0 // indirect
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea // indirect
 	github.com/tonistiigi/vt100 v0.0.0-20240514184818-90bafcd6abab // indirect
@@ -333,7 +333,7 @@ require (
 	mellium.im/sasl v0.3.2 // indirect
 	mellium.im/xmlstream v0.15.4 // indirect
 	mellium.im/xmpp v0.23.0 // indirect
-	modernc.org/libc v1.79.0 // indirect
+	modernc.org/libc v1.79.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 	tags.cncf.io/container-device-interface v1.1.1 // indirect

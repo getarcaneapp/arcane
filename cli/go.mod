@@ -27,7 +27,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
 	github.com/theupdateframework/go-tuf/v2 v2.4.2
-	go.yaml.in/yaml/v4 v4.0.0-rc.6
+	go.yaml.in/yaml/v4 v4.0.0-rc.9
 	google.golang.org/protobuf v1.36.12
 	kit.getarcane.app v0.6.0
 	kit.getarcane.app/builds v0.5.0
@@ -39,7 +39,7 @@ require (
 	github.com/Azure/go-ansiterm v0.0.0-20261006220739-8c912ac31dd4 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.10.1 // indirect
 	github.com/DmitriyVTitov/size v1.5.0 // indirect
-	github.com/Microsoft/go-winio v0.6.3 // indirect
+	github.com/Microsoft/go-winio v0.6.4 // indirect
 	github.com/ProtonMail/go-crypto v1.5.2 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
