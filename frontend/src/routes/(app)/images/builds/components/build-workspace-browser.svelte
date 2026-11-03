@@ -20,7 +20,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import type { UploadProgressCallback } from '#lib/services/upload-service.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { FileEntry } from '#lib/types/shared.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -58,7 +57,7 @@
 
 	const loading = $derived(filesQuery.isPending);
 	const error = $derived(filesQuery.error ? extractApiErrorMessage(filesQuery.error) : null);
-	const canOpenBuildSettings = $derived(hasPermission('settings:read', GLOBAL_SCOPE));
+	const canOpenBuildSettings = $derived(hasPermission('environment-settings:read', envId));
 
 	let showCreateFolder = $state(false);
 	let showUpload = $state(false);

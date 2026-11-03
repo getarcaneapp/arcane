@@ -132,7 +132,7 @@ func RegisterImageUpdates(
 		Summary:     "Get persisted update info for image references",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermImageUpdatesRead, h.GetUpdateInfoByRefs)
+	}, authz.PermImageUpdatesList, h.GetUpdateInfoByRefs)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-update-summary",
@@ -141,5 +141,5 @@ func RegisterImageUpdates(
 		Summary:     "Get update summary",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermImageUpdatesRead, h.GetUpdateSummary)
+	}, authz.PermImageUpdatesList, h.GetUpdateSummary)
 }

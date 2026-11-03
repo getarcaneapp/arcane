@@ -37,6 +37,7 @@ type (
 var serverOptions = fx.Options(
 	fx.Provide(
 		newRouter,
+		newTunnelServer,
 		newJobScheduler,
 		NewHTTPServer,
 	),

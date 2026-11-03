@@ -26,8 +26,9 @@
 	const queryClient = useQueryClient();
 
 	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
-	const podmanEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses));
-	const manageableEnvironments = $derived(podmanEnvironments.filter((env) => hasPermission('podman:pods', env.id)));
+	const podmanEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses, 'podman-pods:list'));
+	const createEnvironments = $derived(podmanEnvironments.filter((env) => hasPermission('podman-pods:create', env.id)));
+	const pruneEnvironments = $derived(podmanEnvironments.filter((env) => hasPermission('podman-pods:prune', env.id)));
 
 	const podsQuery = createQuery(() => {
 		const scope = pageState.scope;
@@ -74,7 +75,7 @@
 	}
 
 	function handlePrune() {
-		const environments = manageableEnvironments;
+		const environments = pruneEnvironments;
 		openConfirmDialog({
 			title: m.podman_pods_prune(),
 			message: `${m.podman_pods_prune_confirm()} ${acrossEnvironmentsNote(environments)}`.trim(),
@@ -92,27 +93,27 @@
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];
-		if (manageableEnvironments.length > 0) {
-			buttons.push(
-				{
-					id: 'create',
-					action: 'create',
-					placement: 'primary',
-					label: m.common_create_button({ resource: m.podman_pod() }),
-					onclick: () => (pageState.isCreateDialogOpen = true),
-					loading: createPodMutation.isPending,
-					disabled: !resourcesReady || createPodMutation.isPending
-				},
-				{
-					id: 'prune',
-					action: 'prune',
-					placement: 'secondary',
-					label: m.podman_pods_prune(),
-					onclick: handlePrune,
-					loading: prunePodsMutation.isPending,
-					disabled: prunePodsMutation.isPending
-				}
-			);
+		if (createEnvironments.length > 0) {
+			buttons.push({
+				id: 'create',
+				action: 'create',
+				placement: 'primary',
+				label: m.common_create_button({ resource: m.podman_pod() }),
+				onclick: () => (pageState.isCreateDialogOpen = true),
+				loading: createPodMutation.isPending,
+				disabled: !resourcesReady || createPodMutation.isPending
+			});
+		}
+		if (pruneEnvironments.length > 0) {
+			buttons.push({
+				id: 'prune',
+				action: 'prune',
+				placement: 'secondary',
+				label: m.podman_pods_prune(),
+				onclick: handlePrune,
+				loading: prunePodsMutation.isPending,
+				disabled: prunePodsMutation.isPending
+			});
 		}
 		buttons.push({
 			id: 'refresh',
@@ -150,7 +151,7 @@
 		<CreatePodSheet
 			bind:open={pageState.isCreateDialogOpen}
 			isLoading={createPodMutation.isPending}
-			environments={manageableEnvironments}
+			environments={createEnvironments}
 			onSubmit={handleCreate}
 		/>
 	{/snippet}

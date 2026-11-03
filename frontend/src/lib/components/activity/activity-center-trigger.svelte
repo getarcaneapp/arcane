@@ -22,7 +22,7 @@
 	const activeCount = $derived(activityStore.activeCount);
 	const isActive = $derived(activeCount > 0);
 	const currentUser = userStore;
-	const canReadActivities = $derived(userHasPermissionInAnyEnvironment(currentUser.current, 'activities:read'));
+	const canReadActivities = $derived(userHasPermissionInAnyEnvironment(currentUser.current, 'activities:list'));
 	const triggerSizeClass = $derived.by(() => {
 		if (mobile) return 'w-full px-4 py-3 text-sm font-medium';
 		if (collapsed) return 'h-9 w-9 justify-center';

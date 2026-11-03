@@ -6,13 +6,14 @@ import { swarmService } from '#lib/services/swarm-service.js';
 import { templateService } from '#lib/services/template-service.js';
 import { variableService } from '#lib/services/variable-service.js';
 import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
+import { userHasPermission } from '#lib/utils/auth.js';
 import { destinationEnvironmentId, environmentName, resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent, url }) => {
-	const [{ queryClient }] = await Promise.all([parent(), environmentStore.ready]);
+	const [{ queryClient, user }] = await Promise.all([parent(), environmentStore.ready]);
 	const templateId = url.searchParams.get('templateId');
 	const fromStack = url.searchParams.get('fromStack');
 	const sourceStackName = fromStack ? decodeURIComponent(fromStack) : null;
@@ -24,8 +25,8 @@ export const load: PageLoad = async ({ parent, url }) => {
 		envId = await resolveDetailEnvironmentId(url);
 		environments = [{ id: envId, name: environmentName(envId) }];
 	} else {
-		environments = (await queryClient.query(swarmEnvironmentsQueryOptions('swarm:stacks'))).managers;
-		envId = destinationEnvironmentId(url.searchParams.get('env') ?? '', 'swarm:stacks', environments);
+		environments = (await queryClient.query(swarmEnvironmentsQueryOptions('swarm-stacks:create'))).managers;
+		envId = destinationEnvironmentId(url.searchParams.get('env') ?? '', 'swarm-stacks:create', environments);
 	}
 
 	const sourceStackPromise = sourceStackName
@@ -83,17 +84,19 @@ export const load: PageLoad = async ({ parent, url }) => {
 				})
 			: Promise.resolve(null),
 		sourceStackPromise,
-		tryCatch(queryClient.query({ queryKey: queryKeys.variables.list(), queryFn: () => variableService.list() })).then(
-			(result) => {
-				if (result.error) {
-					const err: Error = result.error;
+		userHasPermission(user, 'variables:list')
+			? tryCatch(queryClient.query({ queryKey: queryKeys.variables.list(), queryFn: () => variableService.list() })).then(
+					(result) => {
+						if (result.error) {
+							const err: Error = result.error;
 
-					console.warn('Failed to load global variables:', err);
-					return [];
-				}
-				return result.data;
-			}
-		)
+							console.warn('Failed to load global variables:', err);
+							return [];
+						}
+						return result.data;
+					}
+				)
+			: Promise.resolve([])
 	]);
 
 	return {

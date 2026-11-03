@@ -15,9 +15,10 @@
 	import * as m from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { apiKeyService } from '#lib/services/api-key-service.js';
-	import type { ApiKey } from '#lib/types/auth.js';
+	import { GLOBAL_SCOPE, type ApiKey } from '#lib/types/auth.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { confirmDeleteApiKey } from '#lib/utils/api-keys.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { formatOptionalDateTime, isPastDate } from '#lib/utils/formatting.js';
 
@@ -134,17 +135,22 @@
 		{ id: 'lastUsedAt', label: m.last_used(), defaultVisible: true }
 	];
 
-	const bulkActions = $derived.by<BulkAction[]>(() => [
-		{
-			id: 'remove',
-			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
-			action: 'remove',
-			onclick: handleDeleteSelected,
-			loading: isLoading.removing,
-			disabled: isLoading.removing || selectedDeletableApiKeyIds.length === 0,
-			icon: TrashIcon
-		}
-	]);
+	const canDeleteApiKey = $derived(hasPermission('apikeys:delete', GLOBAL_SCOPE));
+
+	const bulkActions = $derived.by<BulkAction[]>(() => {
+		if (!canDeleteApiKey) return [];
+		return [
+			{
+				id: 'remove',
+				label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
+				action: 'remove',
+				onclick: handleDeleteSelected,
+				loading: isLoading.removing,
+				disabled: isLoading.removing || selectedDeletableApiKeyIds.length === 0,
+				icon: TrashIcon
+			}
+		];
+	});
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
@@ -251,9 +257,9 @@
 				</DropdownMenu.Item>
 			{/if}
 		</IfPermitted>
-		<DropdownMenu.Separator />
 
 		<IfPermitted perm="apikeys:delete">
+			<DropdownMenu.Separator />
 			{#if lockedReason}
 				<ArcaneTooltip.Root>
 					<ArcaneTooltip.Trigger class="w-full" disabledChild>
@@ -281,6 +287,7 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
+	selectionDisabled={!canDeleteApiKey}
 	{onRetry}
 	{columns}
 	{mobileFields}

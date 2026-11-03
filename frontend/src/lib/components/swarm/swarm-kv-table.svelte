@@ -133,11 +133,13 @@
 
 {#snippet RowActions({ item }: { item: KvRow })}
 	<RowActionsMenu>
-		<DropdownMenu.Item onclick={() => onEdit(item)}>
-			<EditIcon class="size-4" />
-			{m.common_edit()}
-		</DropdownMenu.Item>
-		{#if hasPermission(resource.permission, item.environmentId)}
+		{#if hasPermission(resource.permissions.read, item.environmentId)}
+			<DropdownMenu.Item onclick={() => onEdit(item)}>
+				<EditIcon class="size-4" />
+				{m.common_edit()}
+			</DropdownMenu.Item>
+		{/if}
+		{#if hasPermission(resource.permissions.delete, item.environmentId)}
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isDeleting}>
 				<TrashIcon class="size-4" />

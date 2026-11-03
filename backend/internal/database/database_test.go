@@ -2,10 +2,13 @@ package database
 
 import (
 	stdsql "database/sql"
+	"encoding/json/v2"
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/pressly/goose/v3"
@@ -14,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"getarcane.dev/arcane/v3/internal/database/migrations"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/sqlite"
 )
 
@@ -277,6 +281,235 @@ func TestMigration101_ConvertsCronSchedulesToFiveFields(t *testing.T) {
 		"s2":                     "@daily",
 		"v1":                     "0 */15 * * * *",
 	}, schedules())
+}
+
+func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-rbac-cleanup.db")
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 101))
+	pre102Permissions := strings.Fields(`
+		users:list users:read users:create users:update users:delete roles:list roles:read apikeys:list
+		apikeys:read apikeys:create apikeys:update apikeys:delete federated:list federated:read
+		federated:create federated:update federated:delete settings:read settings:write environments:list
+		environments:read environments:create environments:update environments:delete environments:pair
+		environments:sync registries:list registries:read registries:create registries:update
+		registries:delete registries:test registries:browse registries:delete-tags templates:list
+		templates:read templates:create templates:update templates:delete variables:read variables:create
+		variables:update variables:delete variables:sync git-repositories:list git-repositories:read
+		git-repositories:create git-repositories:update git-repositories:delete git-repositories:test
+		git-repositories:sync s3-destinations:list s3-destinations:read s3-destinations:create
+		s3-destinations:update s3-destinations:delete s3-destinations:test s3-destinations:sync
+		system-backups:read system-backups:manage system-backups:restore system-backups:recovery-key
+		events:read events:delete customize:manage diagnostics:read containers:list containers:read
+		containers:logs containers:create containers:start containers:stop containers:restart
+		containers:redeploy containers:edit containers:kill containers:pause containers:delete
+		containers:exec containers:autoupdate projects:list projects:read projects:logs projects:create
+		projects:update projects:deploy projects:down projects:restart projects:delete projects:archive
+		images:list images:read images:pull images:push images:build images:tag images:commit images:prune
+		images:delete images:upload images:patch volumes:list volumes:read volumes:create volumes:rename
+		volumes:delete volumes:prune volumes:upload volumes:backup networks:list networks:read
+		networks:create networks:delete networks:prune networks:connect networks:disconnect swarm:read
+		swarm:init swarm:join swarm:leave swarm:spec swarm:nodes swarm:services swarm:services:logs
+		swarm:stacks swarm:configs swarm:secrets swarm:unlock podman:read podman:pods podman:quadlets
+		podman:quadlets:lifecycle podman:kube podman:secrets podman:autoupdate gitops:list gitops:read
+		gitops:create gitops:update gitops:delete gitops:sync gitops:lifecycle gitops:backup webhooks:list
+		webhooks:create webhooks:update webhooks:delete jobs:manage notifications:manage system:read
+		system:prune system:upgrade image-updates:read image-updates:check vulnerabilities:read
+		vulnerabilities:scan vulnerabilities:manage build-workspaces:manage activities:read
+		activities:cancel activities:delete
+	`)
+	pre102JSON, err := json.Marshal(pre102Permissions)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO roles (id, name, permissions) VALUES
+		('r7', 'Custom admin', ?),
+		('r8', 'Builder', '["images:build"]')`, string(pre102JSON))
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO roles (id, name, permissions) VALUES
+		('r1', 'Customizer', '["containers:list","customize:manage"]'),
+		('r2', 'Checker', '["image-updates:check","images:list"]'),
+		('r3', 'Already applies', '["image-updates:check","image-updates:apply"]'),
+		('r4', 'Untouched', '["volumes:list"]'),
+		('r5', 'Renamed', '["containers:edit","jobs:manage","swarm:read","podman:quadlets:lifecycle","settings:write"]'),
+		('r6', 'Settings reader', '["settings:read"]')`)
+	require.NoError(t, err)
+	catalogRoles := make(map[string]string, len(authz.AllPermissions()))
+	for i, permission := range authz.AllPermissions() {
+		id := fmt.Sprintf("c%d", i)
+		catalogRoles[id] = permission
+		_, err = rawDB.ExecContext(ctx, `INSERT INTO roles (id, name, permissions) VALUES (?, ?, ?)`, id, "Catalog "+id, `["`+permission+`"]`)
+		require.NoError(t, err)
+	}
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO environments (id, name, api_url, status, enabled) VALUES ('e1', 'Remote', 'edge://remote', 'online', TRUE)`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES
+		('k1', 'Key', 'hash', 'prefix'),
+		('k2', 'Admin key', 'hash2', 'prefix2'),
+		('k3', 'Builder key', 'hash3', 'prefix3')`)
+	require.NoError(t, err)
+	for i, permission := range pre102Permissions {
+		_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id) VALUES (?, 'k2', ?, NULL)`,
+			fmt.Sprintf("a%d", i), permission)
+		require.NoError(t, err)
+	}
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id) VALUES
+		('b1', 'k3', 'images:build', 'e1')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id) VALUES
+		('p1', 'k1', 'customize:manage', NULL),
+		('p2', 'k1', 'image-updates:check', NULL),
+		('p3', 'k1', 'image-updates:check', 'e1'),
+		('p4', 'k1', 'containers:list', NULL),
+		('p5', 'k1', 'swarm:services', 'e1'),
+		('p6', 'k1', 'notifications:manage', NULL),
+		('p7', 'k1', 'settings:read', 'e1'),
+		('p8', 'k1', 'settings:update', NULL)`)
+	require.NoError(t, err)
+
+	rolePermissionsWhere := func(where string) map[string][]string {
+		values := map[string][]string{}
+		rows, queryErr := rawDB.QueryContext(ctx, `SELECT id, permissions FROM roles WHERE `+where)
+		require.NoError(t, queryErr)
+		for rows.Next() {
+			var id, permissions string
+			require.NoError(t, rows.Scan(&id, &permissions))
+			var decoded []string
+			require.NoError(t, json.Unmarshal([]byte(permissions), &decoded))
+			slices.Sort(decoded)
+			values[id] = decoded
+		}
+		require.NoError(t, rows.Err())
+		require.NoError(t, rows.Close())
+		return values
+	}
+	rolePermissions := func() map[string][]string {
+		return rolePermissionsWhere(`id IN ('r1', 'r2', 'r3', 'r4', 'r5', 'r6')`)
+	}
+	apiKeyPermissionsFor := func(apiKeyID string) []string {
+		values := []string{}
+		rows, queryErr := rawDB.QueryContext(ctx, `SELECT permission || '@' || COALESCE(environment_id, '') FROM api_key_permissions
+			WHERE api_key_id = ? ORDER BY permission, environment_id`, apiKeyID)
+		require.NoError(t, queryErr)
+		for rows.Next() {
+			var value string
+			require.NoError(t, rows.Scan(&value))
+			values = append(values, value)
+		}
+		require.NoError(t, rows.Err())
+		require.NoError(t, rows.Close())
+		slices.Sort(values)
+		return values
+	}
+	apiKeyPermissions := func() []string {
+		return apiKeyPermissionsFor("k1")
+	}
+	sorted := func(permissions ...string) []string {
+		return slices.Sorted(slices.Values(permissions))
+	}
+	expanded := func(permissions ...string) []string {
+		return sorted(authz.ExpandPermissions(permissions)...)
+	}
+	grants := func(environmentID string, permissions []string) []string {
+		out := make([]string, len(permissions))
+		for i, permission := range permissions {
+			out[i] = permission + "@" + environmentID
+		}
+		return out
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 102))
+	checker := expanded("image-updates:check", "image-updates:apply")
+	assert.Equal(t, map[string][]string{
+		"r1": {"containers:list"},
+		"r2": expanded("image-updates:check", "image-updates:apply", "images:list"),
+		"r3": checker,
+		"r4": {"volumes:list"},
+		"r5": expanded(
+			"containers:update",
+			"jobs:list", "jobs:read", "jobs:update", "jobs:run", "jobs:restart", "jobs:retry", "jobs:cancel", "jobs:ack",
+			"swarm:read",
+			"swarm-services:list", "swarm-services:read",
+			"swarm-stacks:list", "swarm-stacks:read",
+			"swarm-nodes:list", "swarm-nodes:read",
+			"swarm-configs:list", "swarm-configs:read",
+			"swarm-secrets:list", "swarm-secrets:read",
+			"podman-quadlets:start", "podman-quadlets:stop", "podman-quadlets:restart",
+			"settings:update", "environment-settings:update",
+		),
+		"r6": expanded("settings:read", "environment-settings:read"),
+	}, rolePermissions())
+	renamedCatalogPermissions := []string{
+		"settings:read", "settings:update", "variables:read", "system-backups:read", "swarm:read",
+		"podman:read", "image-updates:read", "image-updates:check", "vulnerabilities:read", "activities:read",
+	}
+	for id, permissions := range rolePermissionsWhere(`id LIKE 'c%'`) {
+		permission := catalogRoles[id]
+		assert.Equal(t, permissions, expanded(permissions...), "%s must be closed under catalog requirements", permission)
+		assert.Subset(t, permissions, authz.ExpandPermissions([]string{permission}), permission)
+		if !slices.Contains(renamedCatalogPermissions, permission) {
+			assert.Equal(t, expanded(permission), permissions, permission)
+		}
+	}
+	assert.Contains(t, rolePermissions()["r5"], "images:read")
+	assert.Contains(t, rolePermissions()["r5"], "activities:list")
+	assert.Equal(t, sorted(slices.Concat(
+		grants("", checker),
+		grants("e1", checker),
+		grants("", []string{"containers:list"}),
+		grants("e1", expanded("swarm-services:create", "swarm-services:update", "swarm-services:delete")),
+		grants("", expanded("notifications:list", "notifications:read", "notifications:update", "notifications:delete", "notifications:test")),
+		grants("e1", expanded("settings:read", "environment-settings:read")),
+		grants("", expanded("settings:update", "environment-settings:update")),
+	)...), apiKeyPermissions())
+	assert.Equal(t, sorted(authz.AllPermissions()...), rolePermissionsWhere(`id = 'r7'`)["r7"])
+	customAdmin := authz.NewPermissionSet()
+	customAdmin.AddGlobal(rolePermissionsWhere(`id = 'r7'`)["r7"]...)
+	assert.True(t, customAdmin.IsGlobalAdmin())
+	assert.Equal(t, sorted(grants("", authz.AllPermissions())...), apiKeyPermissionsFor("k2"))
+	assert.Contains(t, rolePermissionsWhere(`id = 'r8'`)["r8"], "build-workspaces:list")
+	assert.Contains(t, apiKeyPermissionsFor("k3"), "build-workspaces:list@e1")
+	var shortIDs int
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_permissions WHERE id NOT IN ('p2', 'p3', 'p4', 'p7', 'p8') AND id NOT LIKE 'a%' AND id <> 'b1' AND length(id) <> 36`).Scan(&shortIDs))
+	assert.Zero(t, shortIDs)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 101))
+	assert.Equal(t, map[string][]string{
+		"r1": {"containers:list"},
+		"r2": sorted("image-updates:check", "images:list", "image-updates:read", "activities:read"),
+		"r3": sorted("image-updates:check", "image-updates:read", "activities:read"),
+		"r4": {"volumes:list"},
+		"r5": sorted(
+			"containers:edit", "containers:read", "containers:list",
+			"images:read", "images:list", "networks:list", "volumes:list",
+			"activities:read",
+			"jobs:manage",
+			"swarm:read",
+			"podman:quadlets:lifecycle",
+			"settings:write", "settings:read",
+		),
+		"r6": {"settings:read"},
+	}, rolePermissions())
+	assert.Equal(t, sorted(
+		"activities:read@",
+		"activities:read@e1",
+		"containers:list@",
+		"image-updates:check@",
+		"image-updates:check@e1",
+		"image-updates:read@",
+		"image-updates:read@e1",
+		"notifications:manage@",
+		"settings:read@",
+		"settings:read@e1",
+		"settings:write@",
+		"swarm:services@e1",
+	), apiKeyPermissions())
+	preserved := slices.DeleteFunc(slices.Clone(pre102Permissions), func(permission string) bool {
+		return permission == "customize:manage"
+	})
+	assert.Equal(t, sorted(preserved...), rolePermissionsWhere(`id = 'r7'`)["r7"])
+	assert.Equal(t, sorted(grants("", preserved)...), apiKeyPermissionsFor("k2"))
+	assert.Equal(t, sorted("images:build", "images:list", "images:read", "activities:read"), rolePermissionsWhere(`id = 'r8'`)["r8"])
+	assert.Equal(t, grants("e1", sorted("images:build", "images:list", "images:read", "activities:read")), apiKeyPermissionsFor("k3"))
 }
 
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {

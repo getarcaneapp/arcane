@@ -25,9 +25,11 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { eventService } from '#lib/services/event-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { Event } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -245,7 +247,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Event })}
-	<IfPermitted perm="events:delete">
+	<IfPermitted perm="events:delete" envId={GLOBAL_SCOPE}>
 		<RowActionsMenu>
 			<DropdownMenu.Item
 				variant="destructive"
@@ -265,6 +267,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
+	selectionDisabled={!hasPermission('events:delete', GLOBAL_SCOPE)}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

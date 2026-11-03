@@ -41,6 +41,56 @@ func TestSettingsSetSendsSingleKeyPatch(t *testing.T) {
 	require.Equal(t, map[string]string{"dockerApiTimeout": "60"}, gotUpdate)
 }
 
+func TestSettingsSetRoutesScopeToEndpoint(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantPath string
+	}{
+		{name: "environment", args: []string{"--env", "3", "settings", "set", "dockerApiTimeout", "60"}, wantPath: "/api/environments/3/settings"},
+		{name: "manager", args: []string{"--env", "3", "settings", "set", "--scope", "manager", "analyticsEnabled", "false"}, wantPath: "/api/settings"},
+		{name: "authentication", args: []string{"--env", "0", "settings", "set", "--scope", "authentication", "authSessionTimeout", "60"}, wantPath: "/api/settings/authentication"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var (
+				mu      sync.Mutex
+				gotPath string
+			)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				defer mu.Unlock()
+				if r.Method == http.MethodPatch {
+					gotPath = r.URL.Path
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"settings":[],"runtime":{},"readOnly":false}`))
+			}))
+			defer srv.Close()
+
+			configPath := testutil.WriteConfig(t, srv.URL)
+			_, errOut, err := testutil.Execute(t, append([]string{"--config", configPath}, tt.args...))
+			require.NoError(t, err, "execute: %v (%s)", err, errOut)
+
+			mu.Lock()
+			defer mu.Unlock()
+			require.Equal(t, tt.wantPath, gotPath)
+		})
+	}
+}
+
+func TestSettingsListRejectsUnknownScope(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"settings":[],"runtime":{},"readOnly":false}`))
+	}))
+	defer srv.Close()
+
+	configPath := testutil.WriteConfig(t, srv.URL)
+	_, _, err := testutil.Execute(t, []string{"--config", configPath, "--env", "0", "settings", "list", "--scope", "global"})
+	require.EqualError(t, err, `invalid scope "global": must be environment, manager, or authentication`)
+}
+
 func TestSettingsSetReturnsFieldErrorMessage(t *testing.T) {
 	const message = "dockerApiTimeout is set by environment variable ARCANE_DOCKER_API_TIMEOUT and cannot be changed"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

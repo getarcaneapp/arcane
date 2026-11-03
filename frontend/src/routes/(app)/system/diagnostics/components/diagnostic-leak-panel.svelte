@@ -3,8 +3,10 @@
 	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import { AlertTriangleIcon, DownloadIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { GoroutineLeakReport } from '#lib/types/diagnostics.js';
 	import { cn } from '#lib/utils.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import type { DiagnosticsWebSocket } from '#lib/utils/ws.js';
@@ -110,16 +112,18 @@
 			disabled={scanning || downloading}
 			onclick={scan}
 		/>
-		<ArcaneButton
-			action="base"
-			tone="outline"
-			size="sm"
-			icon={DownloadIcon}
-			customLabel={m.diagnostics_profile_goroutineleak()}
-			loading={downloading}
-			disabled={scanning || downloading}
-			onclick={download}
-		/>
+		{#if hasPermission('diagnostics:profile', GLOBAL_SCOPE)}
+			<ArcaneButton
+				action="base"
+				tone="outline"
+				size="sm"
+				icon={DownloadIcon}
+				customLabel={m.diagnostics_profile_goroutineleak()}
+				loading={downloading}
+				disabled={scanning || downloading}
+				onclick={download}
+			/>
+		{/if}
 	</div>
 
 	{#if error}

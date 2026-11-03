@@ -13,9 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"getarcane.dev/arcane/v3/internal/config"
-	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/agent"
-	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/types/v3"
 )
 
@@ -74,7 +72,7 @@ func TestSettingsHandlerUpdateLocalEnvironmentRejectsUnreadableProjectsDirectory
 	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o700) })
 
 	handler := &SettingsHandler{settingsService: settingsService, cfg: &config.Config{}}
-	_, err = handler.UpdateSettings(ctx, &UpdateSettingsInput{EnvironmentID: "0", Body: types.SettingsUpdate{"projectsDirectory": unreadable}})
+	_, err = handler.UpdateEnvironmentSettings(ctx, &UpdateSettingsInput{EnvironmentID: "0", Body: types.SettingsUpdate{"projectsDirectory": unreadable}})
 	require.Error(t, err)
 
 	var statusErr huma.StatusError
@@ -84,13 +82,11 @@ func TestSettingsHandlerUpdateLocalEnvironmentRejectsUnreadableProjectsDirectory
 	require.Equal(t, originalDir, settingsService.GetSettingsConfig().ProjectsDirectory.Value)
 }
 
-func TestSettingsHandlerRemoteWorkspaceSettingsVisibility(t *testing.T) {
+func TestSettingsHandlerRemoteEnvironmentSettingsPassThrough(t *testing.T) {
 	remoteSnapshot := types.SettingsSnapshot{
 		Settings: []types.SettingState{
-			{Key: "dockerHost", Type: "text", Value: "unix:///var/run/docker.sock"},
-			{Key: "baseServerUrl", Type: "text", Value: "https://manager.example"},
-			{Key: "defaultShell", Type: "text", Value: "/bin/bash"},
-			{Key: "futureAdminSetting", Type: "text", Value: "hidden"},
+			{Key: "dockerHost", Type: "text", Value: "unix:///var/run/docker.sock", Scope: "environment"},
+			{Key: "defaultShell", Type: "text", Value: "/bin/bash", Scope: "environment"},
 		},
 		Runtime: types.SettingsRuntime{
 			BackupVolumeName: "remote-backups",
@@ -108,16 +104,7 @@ func TestSettingsHandlerRemoteWorkspaceSettingsVisibility(t *testing.T) {
 	require.NoError(t, err)
 	handler := &SettingsHandler{settingsService: settingsService, proxyRemoteJSON: proxy}
 
-	permissions := authz.NewPermissionSet()
-	permissions.AddEnv("env-remote", authz.PermSettingsRead)
-	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, permissions)
-	output, err := handler.GetSettings(ctx, &types.EnvironmentInput{EnvironmentID: "env-remote"})
-	require.NoError(t, err)
-	require.Equal(t, remoteSnapshot.Settings[:3], output.Body.Settings)
-	require.Equal(t, remoteSnapshot.Runtime, output.Body.Runtime)
-
-	adminCtx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
-	output, err = handler.GetSettings(adminCtx, &types.EnvironmentInput{EnvironmentID: "env-remote"})
+	output, err := handler.GetEnvironmentSettings(t.Context(), &types.EnvironmentInput{EnvironmentID: "env-remote"})
 	require.NoError(t, err)
 	require.Equal(t, remoteSnapshot, output.Body)
 }

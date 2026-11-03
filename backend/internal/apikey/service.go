@@ -350,10 +350,11 @@ func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, callerP
 	if len(req.Permissions) == 0 {
 		return nil, common.Classify(common.ErrValidation, errors.New("at least one permission is required"))
 	}
-	if err := validateGrantsAgainstPermissionSet(callerPerms, req.Permissions); err != nil {
+	grants := expandApiKeyGrants(req.Permissions)
+	if err := validateGrantsAgainstPermissionSet(callerPerms, grants); err != nil {
 		return nil, err
 	}
-	if err := s.validateGrantsAgainstOwner(ctx, userID, req.Permissions); err != nil {
+	if err := s.validateGrantsAgainstOwner(ctx, userID, grants); err != nil {
 		return nil, err
 	}
 	rawKey, err := s.generateApiKey()
@@ -367,7 +368,7 @@ func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, callerP
 		if created, createErr = s.createAPIKeyWithRawKey(ctx, tx, &userID, rawKey, req, nil, nil, ApiKeyKindScoped); createErr != nil {
 			return createErr
 		}
-		if setApiKeyPermissionsErr := s.roleService.SetApiKeyPermissionsInDB(ctx, tx, created.ID, toApiKeyPermissionRows(created.ID, req.Permissions)); setApiKeyPermissionsErr != nil {
+		if setApiKeyPermissionsErr := s.roleService.SetApiKeyPermissionsInDB(ctx, tx, created.ID, toApiKeyPermissionRows(created.ID, grants)); setApiKeyPermissionsErr != nil {
 			return fmt.Errorf("failed to persist api key permissions: %w", setApiKeyPermissionsErr)
 		}
 		return nil
@@ -417,6 +418,30 @@ func validateGrantsAgainstPermissionSet(callerPerms *authz.PermissionSet, grants
 		}
 	}
 	return nil
+}
+
+func expandApiKeyGrants(grants []types.ApiKeyPermissionGrant) []types.ApiKeyPermissionGrant {
+	environments := make(map[string]*string)
+	permissions := make(map[string][]string)
+	var order []string
+	for _, grant := range grants {
+		environmentID := kit.FromPtr(grant.EnvironmentID)
+		if _, seen := environments[environmentID]; !seen {
+			environments[environmentID] = grant.EnvironmentID
+			order = append(order, environmentID)
+		}
+		permissions[environmentID] = append(permissions[environmentID], grant.Permission)
+	}
+	out := make([]types.ApiKeyPermissionGrant, 0, len(grants))
+	for _, environmentID := range order {
+		for _, permission := range authz.ExpandPermissions(permissions[environmentID]) {
+			out = append(out, types.ApiKeyPermissionGrant{
+				EnvironmentID: environments[environmentID],
+				Permission:    permission,
+			})
+		}
+	}
+	return out
 }
 
 func toApiKeyPermissionRows(apiKeyID string, grants []types.ApiKeyPermissionGrant) []role.ApiKeyPermission {
@@ -882,6 +907,7 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 	if err := normalization.Normalize(&change.Request); err != nil {
 		return nil, err
 	}
+	grants := expandApiKeyGrants(change.Request.Permissions)
 
 	if change.Submitted["permissions"] {
 		if ak.Kind == ApiKeyKindPersonal {
@@ -892,7 +918,7 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 		// credential itself cannot do right now) AND by the key owner's role
 		// permissions (no caller can push another user's key above what that
 		// user's own roles allow).
-		if err := validateGrantsAgainstPermissionSet(callerPerms, change.Request.Permissions); err != nil {
+		if err := validateGrantsAgainstPermissionSet(callerPerms, grants); err != nil {
 			return nil, err
 		}
 		if ak.UserID == nil {
@@ -902,7 +928,7 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 			// caller-only check.
 			return nil, ErrApiKeyProtected
 		}
-		if err := s.validateGrantsAgainstOwner(ctx, *ak.UserID, change.Request.Permissions); err != nil {
+		if err := s.validateGrantsAgainstOwner(ctx, *ak.UserID, grants); err != nil {
 			return nil, err
 		}
 	}
@@ -925,7 +951,7 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 			return fmt.Errorf("failed to update API key: %w", err)
 		}
 		if change.Submitted["permissions"] {
-			if err := s.roleService.SetApiKeyPermissionsInDB(ctx, tx, ak.ID, toApiKeyPermissionRows(ak.ID, change.Request.Permissions)); err != nil {
+			if err := s.roleService.SetApiKeyPermissionsInDB(ctx, tx, ak.ID, toApiKeyPermissionRows(ak.ID, grants)); err != nil {
 				return fmt.Errorf("failed to update api key permissions: %w", err)
 			}
 			permissionsUpdated = true

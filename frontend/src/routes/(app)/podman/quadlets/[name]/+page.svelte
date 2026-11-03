@@ -32,7 +32,13 @@
 		createQuadletWorkspace,
 		quadletWorkspaceFiles
 	} from '../components/quadlet-workspace-editor.svelte';
-	import { confirmRemoveQuadlet, quadletActionLabels, runQuadletAction } from '../quadlet-actions';
+	import {
+		confirmRemoveQuadlet,
+		quadletActionLabels,
+		quadletActionPermissions,
+		quadletActions,
+		runQuadletAction
+	} from '../quadlet-actions';
 
 	let { data } = $props();
 
@@ -53,8 +59,10 @@
 		...new Set(containers.map((container) => container.podName).filter((name): name is string => !!name))
 	]);
 
-	const canEdit = $derived(hasPermission('podman:quadlets', envId));
-	const canLifecycle = $derived(hasPermission('podman:quadlets:lifecycle', envId) && !quadlet.template);
+	const canEdit = $derived(hasPermission('podman-quadlets:update', envId));
+	const canLifecycle = $derived(
+		!quadlet.template && quadletActions.some((action) => hasPermission(quadletActionPermissions[action], envId))
+	);
 	const canViewLogs = $derived(hasPermission('containers:logs', envId));
 
 	let content = $derived(data.file.content);
@@ -103,31 +111,30 @@
 		});
 	}
 
-	function lifecycleButton(action: PodmanQuadletAction, placement: 'primary' | 'secondary'): ActionButton {
-		return {
-			id: action,
-			action,
-			group: 'lifecycle',
-			placement,
-			label: quadletActionLabels[action](),
-			loading: pendingAction === action,
-			disabled: pendingAction !== null || !systemdAvailable,
-			disabledReason: systemdAvailable ? undefined : status?.systemdReason,
-			onclick: () =>
-				runQuadletAction(quadlet.name, action, envId, refresh, (loading) => (pendingAction = loading ? action : null))
-		};
+	function lifecycleButton(action: PodmanQuadletAction, placement: 'primary' | 'secondary'): ActionButton[] {
+		if (quadlet.template || !hasPermission(quadletActionPermissions[action], envId)) return [];
+		return [
+			{
+				id: action,
+				action,
+				group: 'lifecycle',
+				placement,
+				label: quadletActionLabels[action](),
+				loading: pendingAction === action,
+				disabled: pendingAction !== null || !systemdAvailable,
+				disabledReason: systemdAvailable ? undefined : status?.systemdReason,
+				onclick: () =>
+					runQuadletAction(quadlet.name, action, envId, refresh, (loading) => (pendingAction = loading ? action : null))
+			}
+		];
 	}
 
 	const isActive = $derived(podmanStateVariant(quadlet.unitStatus?.activeState ?? quadlet.status) === 'green');
 
 	const actions: ActionButton[] = $derived([
-		...(canLifecycle
-			? [
-					isActive ? lifecycleButton('stop', 'primary') : lifecycleButton('start', 'primary'),
-					lifecycleButton('restart', 'secondary')
-				]
-			: []),
-		...(canEdit
+		...(isActive ? lifecycleButton('stop', 'primary') : lifecycleButton('start', 'primary')),
+		...lifecycleButton('restart', 'secondary'),
+		...(hasPermission('podman-quadlets:delete', envId)
 			? [
 					{
 						id: 'remove',

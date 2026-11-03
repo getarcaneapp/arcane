@@ -165,7 +165,7 @@ func (h *ActivityHandler) GetActivity(ctx context.Context, input *GetActivityInp
 		}
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	if !canReadJobActivity(ctx, detail.Activity) {
+	if !canReadJobActivity(ctx, detail.Activity, authz.PermActivitiesRead) {
 		return nil, huma.Error404NotFound("activity not found")
 	}
 	h.applyActivitySourceLabel(ctx, input.EnvironmentID, &detail.Activity)
@@ -319,7 +319,7 @@ func (h *ActivityHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.
 			}
 			allowed := environments[:0]
 			for _, environment := range environments {
-				if ps.Allows(authz.PermActivitiesRead, environment.ID) {
+				if ps.Allows(authz.PermActivitiesList, environment.ID) {
 					allowed = append(allowed, environment)
 				}
 			}

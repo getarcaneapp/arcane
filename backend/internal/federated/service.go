@@ -34,6 +34,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/session"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/logging"
 	arcaneoidc "getarcane.dev/arcane/v3/pkg/oidc"
@@ -114,13 +115,13 @@ func NewFederatedCredentialService(p FederatedCredentialServiceParams) *Federate
 	}
 }
 
-func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID string, req types.FederatedCredential) (*types.FederatedCredential, error) {
+func (s *FederatedCredentialService) Create(ctx context.Context, callerPerms *authz.PermissionSet, req types.FederatedCredential) (*types.FederatedCredential, error) {
 	normalized, err := normalizeFederatedCredential(req)
 	if err != nil {
 		return nil, err
 	}
-	if validateRoleGrantAgainstUserErr := s.validateRoleGrantAgainstUser(ctx, callerUserID, normalized.RoleID, normalized.EnvironmentID); validateRoleGrantAgainstUserErr != nil {
-		return nil, validateRoleGrantAgainstUserErr
+	if validateRoleGrantErr := s.validateRoleGrant(ctx, callerPerms, normalized.RoleID, normalized.EnvironmentID); validateRoleGrantErr != nil {
+		return nil, validateRoleGrantErr
 	}
 
 	var created FederatedCredential
@@ -216,7 +217,7 @@ func findCredential(query *gorm.DB, id string) (FederatedCredential, error) {
 	return credential, nil
 }
 
-func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID, id string, change CredentialUpdate) (*types.FederatedCredential, error) {
+func (s *FederatedCredentialService) Update(ctx context.Context, callerPerms *authz.PermissionSet, id string, change CredentialUpdate) (*types.FederatedCredential, error) {
 	credential, err := findCredential(s.db.WithContext(ctx), id)
 	if err != nil {
 		return nil, err
@@ -258,10 +259,8 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID, i
 	}
 	roleChanged := updated.RoleID != credential.RoleID || kit.FromPtr(updated.EnvironmentID) != kit.FromPtr(credential.EnvironmentID)
 	revokeActiveSessions := credential.Enabled && !updated.Enabled
-	if roleChanged {
-		if validateRoleGrantAgainstUserErr := s.validateRoleGrantAgainstUser(ctx, callerUserID, updated.RoleID, updated.EnvironmentID); validateRoleGrantAgainstUserErr != nil {
-			return nil, validateRoleGrantAgainstUserErr
-		}
+	if validateRoleGrantErr := s.validateRoleGrant(ctx, callerPerms, updated.RoleID, updated.EnvironmentID); validateRoleGrantErr != nil {
+		return nil, validateRoleGrantErr
 	}
 
 	err = s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

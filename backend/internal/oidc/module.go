@@ -89,7 +89,7 @@ func RegisterOidc(
 
 	// --- OIDC role mapping endpoints ---
 
-	huma.Register(api, huma.Operation{
+	huma.Register(api, middleware.RequireGlobalAdmin(api, huma.Operation{
 		OperationID: "list-oidc-role-mappings",
 		Method:      http.MethodGet,
 		Path:        "/oidc/mappings",
@@ -97,36 +97,32 @@ func RegisterOidc(
 		Description: "Returns every mapping. On each OIDC login the user's group claim is matched against ClaimValue and matching rows become source='oidc' role assignments.",
 		Tags:        []string{"OIDC"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.ListOidcRoleMappings)
+	}), h.ListOidcRoleMappings)
 
-	huma.Register(api, huma.Operation{
+	huma.Register(api, middleware.RequireGlobalAdmin(api, huma.Operation{
 		OperationID: "create-oidc-role-mapping",
 		Method:      http.MethodPost,
 		Path:        "/oidc/mappings",
 		Summary:     "Create an OIDC role mapping",
 		Tags:        []string{"OIDC"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.CreateOidcRoleMapping)
+	}), h.CreateOidcRoleMapping)
 
-	huma.Register(api, huma.Operation{
+	huma.Register(api, middleware.RequireGlobalAdmin(api, huma.Operation{
 		OperationID: "update-oidc-role-mapping",
 		Method:      http.MethodPatch,
 		Path:        "/oidc/mappings/{id}",
 		Summary:     "Update an OIDC role mapping",
 		Tags:        []string{"OIDC"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.UpdateOidcRoleMapping)
+	}), h.UpdateOidcRoleMapping)
 
-	huma.Register(api, huma.Operation{
+	huma.Register(api, middleware.RequireGlobalAdmin(api, huma.Operation{
 		OperationID: "delete-oidc-role-mapping",
 		Method:      http.MethodDelete,
 		Path:        "/oidc/mappings/{id}",
 		Summary:     "Delete an OIDC role mapping",
 		Tags:        []string{"OIDC"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.DeleteOidcRoleMapping)
+	}), h.DeleteOidcRoleMapping)
 }

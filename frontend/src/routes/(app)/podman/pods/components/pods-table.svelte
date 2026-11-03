@@ -18,11 +18,11 @@
 	import type { PodmanPod } from '#lib/types/podman.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { hasShownPermission, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
+	import type { EnvironmentPage, EnvironmentRow } from '#lib/utils/environments.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { podmanStateVariant } from '#lib/utils/podman.js';
 
-	import { confirmRemovePod, podActionLabels, runPodAction } from '../pod-actions';
+	import { confirmRemovePod, podActionLabels, podActionPermissions, runPodAction } from '../pod-actions';
 
 	type PodRow = EnvironmentRow<PodmanPod>;
 
@@ -43,7 +43,6 @@
 		await queryClient.invalidateQueries({ queryKey: queryKeys.podman.podsPrefix(scope) });
 	}
 
-	const canManagePods = $derived(hasShownPermission('podman:pods'));
 	const lifecycleActions: PodmanPodAction[] = ['start', 'stop', 'restart', 'pause', 'unpause', 'kill'];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
@@ -132,13 +131,16 @@
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
-		{#if canManagePods && hasPermission('podman:pods', item.environmentId)}
+		{@const allowedActions = lifecycleActions.filter((action) => hasPermission(podActionPermissions[action], item.environmentId))}
+		{#if allowedActions.length > 0}
 			<DropdownMenu.Separator />
-			{#each lifecycleActions as action (action)}
+			{#each allowedActions as action (action)}
 				<DropdownMenu.Item onclick={() => runPodAction(item, action, invalidatePods)}>
 					{podActionLabels[action]()}
 				</DropdownMenu.Item>
 			{/each}
+		{/if}
+		{#if hasPermission('podman-pods:delete', item.environmentId)}
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={() => confirmRemovePod(item, invalidatePods)}>
 				<TrashIcon class="size-4" />

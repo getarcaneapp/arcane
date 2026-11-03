@@ -19,6 +19,7 @@ export interface SettingsFormConfig<T extends z.ZodType<SettingsPayload>> {
 	onReset?: () => void;
 	successMessage?: string;
 	errorMessage?: string;
+	readOnly?: boolean;
 }
 
 export function createSettingsForm<T extends z.ZodType<SettingsPayload>>(config: SettingsFormConfig<T>) {
@@ -30,7 +31,8 @@ export function createSettingsForm<T extends z.ZodType<SettingsPayload>>(config:
 		onSuccess,
 		onReset,
 		successMessage = m.common_update_success({ resource: m.settings() }),
-		errorMessage = m.common_update_failed({ resource: m.settings() })
+		errorMessage = m.common_update_failed({ resource: m.settings() }),
+		readOnly = false
 	} = config;
 
 	const form = createForm(schema, currentSettings);
@@ -73,7 +75,7 @@ export function createSettingsForm<T extends z.ZodType<SettingsPayload>>(config:
 		onReset?.();
 	};
 
-	settingsForm.registerFormActions(onSubmit, resetForm);
+	if (!readOnly) settingsForm.registerFormActions(onSubmit, resetForm);
 
 	return {
 		formInputs,

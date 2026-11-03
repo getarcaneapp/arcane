@@ -17,6 +17,15 @@ export const podActionLabels: Record<PodmanPodAction, () => string> = {
 	kill: m.common_kill
 };
 
+export const podActionPermissions: Record<PodmanPodAction, string> = {
+	start: 'podman-pods:start',
+	stop: 'podman-pods:stop',
+	restart: 'podman-pods:restart',
+	pause: 'podman-pods:pause',
+	unpause: 'podman-pods:pause',
+	kill: 'podman-pods:kill'
+};
+
 export async function runPodAction(
 	pod: PodTarget,
 	action: PodmanPodAction,

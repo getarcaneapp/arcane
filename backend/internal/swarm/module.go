@@ -233,7 +233,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmSpec,
+		authz.PermSwarmUpdate,
 		h.UpdateSwarmSpec,
 	)
 }

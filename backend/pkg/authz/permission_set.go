@@ -18,6 +18,11 @@ type (
 		PerEnv map[string]map[string]struct{}
 		Sudo   bool
 	}
+
+	ForwardedPermissions struct {
+		Global      []string `json:"global"`
+		Environment []string `json:"environment"`
+	}
 )
 
 // Allows reports whether the caller may perform `perm`. For env-scoped
@@ -114,6 +119,38 @@ func EnvironmentPermissionSet(envID string) *PermissionSet {
 	for _, p := range AllPermissions() {
 		if IsEnvScoped(p) {
 			ps.AddEnv(envID, p)
+		}
+	}
+	return ps
+}
+
+func (ps *PermissionSet) ForwardedPermissions(envID string) ForwardedPermissions {
+	if ps == nil {
+		return ForwardedPermissions{}
+	}
+	return ForwardedPermissions{
+		Global: slices.DeleteFunc(slices.Clone(orderedPermissions), func(perm string) bool {
+			_, global := ps.Global[perm]
+			return !global
+		}),
+		Environment: slices.DeleteFunc(slices.Clone(orderedPermissions), func(perm string) bool {
+			_, global := ps.Global[perm]
+			_, granted := ps.PerEnv[envID][perm]
+			return global || !granted || !IsEnvScoped(perm)
+		}),
+	}
+}
+
+func (f ForwardedPermissions) PermissionSet(envID string) *PermissionSet {
+	ps := NewPermissionSet()
+	for _, perm := range f.Global {
+		if IsKnownPermission(perm) {
+			ps.AddGlobal(perm)
+		}
+	}
+	for _, perm := range f.Environment {
+		if IsEnvScoped(perm) {
+			ps.AddEnv(envID, perm)
 		}
 	}
 	return ps

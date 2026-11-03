@@ -134,11 +134,11 @@ service_playwright.go   → service_playwright_test.go
 - **Typed REST/OpenAPI:** Huma v2.
 - **Permissions:** register permissioned endpoints with `middleware.RegisterWithPermission`.
 - **Direct Echo routes, only for:**
-  - WebSockets and streams
-  - Diagnostics and webhooks
-  - Playwright support
+  - WebSockets, including diagnostics streams
+  - The agent tunnel connection
   - The environment proxy
   - Embedded frontend delivery
+- **Everything else goes through Huma,** including webhooks, pprof, and Playwright support.
 - **Handlers:** translate HTTP data and call services. No business logic.
 - **Services:** get dependencies through constructors or Fx.
 - **Use:**

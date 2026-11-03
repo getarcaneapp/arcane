@@ -119,7 +119,7 @@ func (s *Service) update(ctx context.Context, t flow.Task) (any, error) {
 	}
 	if input.UserID != "" && (!s.deps.Config.AgentEnabled || input.UserID != "agent" || input.KeyID != "") {
 		permissions, permissionsErr := s.deps.Roles.ResolveExecutionPermissions(ctx, input.UserID, input.KeyID)
-		if permissionsErr != nil || !permissions.Allows(authz.PermImageUpdatesCheck, "0") {
+		if permissionsErr != nil || !permissions.Allows(authz.PermImageUpdatesApply, "0") {
 			return failed("requesting user no longer has permission to update containers"), nil
 		}
 	}

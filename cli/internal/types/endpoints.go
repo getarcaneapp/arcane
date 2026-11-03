@@ -404,6 +404,10 @@ func JobAction(envID, jobID, action string) string {
 
 func Settings(envID string) string { return pathf("/api/environments/%s/settings", envID) }
 
+func ManagerSettings() string { return "/api/settings" }
+
+func AuthenticationSettings() string { return "/api/settings/authentication" }
+
 func SettingsPublic(envID string) string {
 	return pathf("/api/environments/%s/settings/public", envID)
 }

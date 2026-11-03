@@ -14,6 +14,8 @@ import (
 	"getarcane.dev/types/v3"
 )
 
+var buildableRoutes []func(huma.API, *AuthService)
+
 type (
 	Module struct {
 		service                *AuthService
@@ -48,6 +50,9 @@ func (m *Module) Service() *AuthService {
 }
 
 func (m *Module) RegisterRoutes(api huma.API) {
+	for _, register := range buildableRoutes {
+		register(api, m.Service())
+	}
 	if m == nil {
 		RegisterAuth(api, nil, nil, nil, nil)
 		return

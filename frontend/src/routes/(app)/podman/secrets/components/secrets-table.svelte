@@ -19,7 +19,7 @@
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { hasShownPermission, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
+	import type { EnvironmentPage, EnvironmentRow } from '#lib/utils/environments.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -42,8 +42,6 @@
 
 	let isDeleting = $state(false);
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
-
-	const canManageSecrets = $derived(hasShownPermission('podman:secrets'));
 
 	function handleDelete(secret: SecretRow) {
 		const name = secret.spec.name;
@@ -127,11 +125,13 @@
 
 {#snippet RowActions({ item }: { item: SecretRow })}
 	<RowActionsMenu>
-		<DropdownMenu.Item onclick={() => onEdit(item)}>
-			<EditIcon class="size-4" />
-			{m.common_edit()}
-		</DropdownMenu.Item>
-		{#if canManageSecrets && hasPermission('podman:secrets', item.environmentId)}
+		{#if hasPermission('podman-secrets:read', item.environmentId)}
+			<DropdownMenu.Item onclick={() => onEdit(item)}>
+				<EditIcon class="size-4" />
+				{m.common_edit()}
+			</DropdownMenu.Item>
+		{/if}
+		{#if hasPermission('podman-secrets:delete', item.environmentId)}
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isDeleting}>
 				<TrashIcon class="size-4" />

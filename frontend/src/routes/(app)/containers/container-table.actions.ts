@@ -228,7 +228,7 @@ export function createContainerActions({
 
 	function handleBulkUpdate(validIds: string[], allIds: string[]) {
 		const updateScope = scope();
-		const tracksActivities = environmentStore.shown.every((env) => hasPermission('activities:read', env.id));
+		const tracksActivities = environmentStore.shown.every((env) => hasPermission('activities:list', env.id));
 		const totalCount = allIds.length;
 		const filteredCount = validIds.length;
 		const message =

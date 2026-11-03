@@ -28,7 +28,7 @@
 			queryKey: queryKeys.swarm.serviceTasks(requestedEnvironmentId, requestedServiceId),
 			queryFn: () =>
 				swarmService.getServiceTasks(requestedServiceId, { pagination: { page: 1, limit: 100 } }, requestedEnvironmentId),
-			enabled: !!serviceName && !!requestedServiceId && hasPermission('swarm:read', requestedEnvironmentId)
+			enabled: !!serviceName && !!requestedServiceId && hasPermission('swarm-services:read', requestedEnvironmentId)
 		};
 	});
 	const tasks = $derived(sortSwarmTasks(tasksQuery.data?.data ?? []));

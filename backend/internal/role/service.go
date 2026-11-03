@@ -224,7 +224,7 @@ func (s *RoleService) CreateRole(ctx context.Context, name string, description *
 	role := &Role{
 		Name:        input.Name,
 		Description: input.Description,
-		Permissions: database.StringSlice(permissions),
+		Permissions: database.StringSlice(authz.ExpandPermissions(permissions)),
 		BuiltIn:     false,
 	}
 	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -309,7 +309,7 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 		affected = ids
 		existing.Name = input.Name
 		existing.Description = input.Description
-		existing.Permissions = permissions
+		existing.Permissions = authz.ExpandPermissions(permissions)
 		if updateRoleErr := tx.Save(&existing).Error; updateRoleErr != nil {
 			return fmt.Errorf("failed to update role: %w", updateRoleErr)
 		}
@@ -1004,14 +1004,17 @@ func BuildPermissionsManifest() types.PermissionsManifest {
 				Permission:  action.Permission,
 				Label:       action.Label,
 				Description: action.Description,
-				Requires:    requiredPermissionsForPicker(action.Permission),
+				Requires: slices.DeleteFunc(authz.ExpandPermissions([]string{action.Permission}), func(permission string) bool {
+					return permission == action.Permission
+				}),
 			}
 		}
 		resources[i] = types.PermissionResource{
-			Key:     resource.Key,
-			Label:   resource.Label,
-			Scope:   resource.Scope,
-			Actions: actions,
+			Key:         resource.Key,
+			Label:       resource.Label,
+			Description: resource.Description,
+			Scope:       resource.Scope,
+			Actions:     actions,
 		}
 	}
 	return types.PermissionsManifest{
@@ -1052,36 +1055,4 @@ func buildAccessSurfaceManifest() []types.AccessSurface {
 		}
 	}
 	return out
-}
-
-func requiredPermissionsForPicker(permission string) []string {
-	switch permission {
-	case authz.PermSettingsWrite,
-		authz.PermApiKeysList,
-		authz.PermApiKeysRead,
-		authz.PermApiKeysCreate,
-		authz.PermApiKeysUpdate,
-		authz.PermApiKeysDelete,
-		authz.PermFederatedList,
-		authz.PermFederatedRead,
-		authz.PermFederatedCreate,
-		authz.PermFederatedUpdate,
-		authz.PermFederatedDelete,
-		authz.PermUsersList,
-		authz.PermUsersRead,
-		authz.PermUsersCreate,
-		authz.PermUsersUpdate,
-		authz.PermUsersDelete,
-		authz.PermRolesList,
-		authz.PermRolesRead,
-		authz.PermWebhooksList,
-		authz.PermWebhooksCreate,
-		authz.PermWebhooksUpdate,
-		authz.PermWebhooksDelete,
-		authz.PermNotificationsManage,
-		authz.PermDiagnosticsRead:
-		return []string{authz.PermSettingsRead}
-	default:
-		return nil
-	}
 }

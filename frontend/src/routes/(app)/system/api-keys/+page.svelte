@@ -14,8 +14,16 @@
 	import { apiKeyListQuery } from '#lib/query/api-keys.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { apiKeyService } from '#lib/services/api-key-service.js';
-	import type { ApiKey, ApiKeyCreated, ApiKeyPermissionGrant, ApiKeyUpdate, PersonalApiKeyCreate } from '#lib/types/auth.js';
+	import {
+		GLOBAL_SCOPE,
+		type ApiKey,
+		type ApiKeyCreated,
+		type ApiKeyPermissionGrant,
+		type ApiKeyUpdate,
+		type PersonalApiKeyCreate
+	} from '#lib/types/auth.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -92,17 +100,20 @@
 		}
 	}
 
-	const actionButtons: ActionButton[] = $derived.by(() => [
-		{
-			id: 'create',
-			action: 'create',
-			placement: 'primary',
-			label: m.create_api_key(),
-			onclick: openCreateDialog,
-			loading: isLoading.creating,
-			disabled: isLoading.creating
-		}
-	]);
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		if (!hasPermission('apikeys:create', GLOBAL_SCOPE)) return [];
+		return [
+			{
+				id: 'create',
+				action: 'create',
+				placement: 'primary',
+				label: m.create_api_key(),
+				onclick: openCreateDialog,
+				loading: isLoading.creating,
+				disabled: isLoading.creating
+			}
+		];
+	});
 </script>
 
 <SettingsPageLayout

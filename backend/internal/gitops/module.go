@@ -3,6 +3,7 @@ package gitops
 
 import (
 	"net/http"
+	"slices"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -59,54 +60,58 @@ func RegisterGitOpsSyncs(api huma.API, syncService *GitOpsSyncService) {
 	)
 	handlerutil.RegisterSecured(
 		api,
-		handlerutil.Operation(
-			"createGitOpsSync",
-			"POST",
-			basePath,
-			"Create a GitOps sync",
-			"Create a new GitOps sync configuration for an environment",
-			"GitOps Syncs",
-		),
+		huma.Operation{
+			OperationID: "createGitOpsSync",
+			Method:      http.MethodPost,
+			Path:        basePath,
+			Summary:     "Create a GitOps sync",
+			Description: "Create a new GitOps sync configuration for an environment",
+			Tags:        []string{"GitOps Syncs"},
+			Metadata:    map[string]any{authz.MetaPermissionConditions: slices.Concat(authz.GitOpsPreDeployConditions, authz.GitOpsModeConditions)},
+		},
 		authz.PermGitOpsCreate,
 		h.CreateSync,
 	)
 	handlerutil.RegisterSecured(
 		api,
-		handlerutil.Operation(
-			"importGitOpsSyncs",
-			"POST",
-			basePath+"/import",
-			"Import GitOps syncs",
-			"Import multiple GitOps sync configurations from JSON",
-			"GitOps Syncs",
-		),
+		huma.Operation{
+			OperationID: "importGitOpsSyncs",
+			Method:      http.MethodPost,
+			Path:        basePath + "/import",
+			Summary:     "Import GitOps syncs",
+			Description: "Import multiple GitOps sync configurations from JSON",
+			Tags:        []string{"GitOps Syncs"},
+			Metadata:    map[string]any{authz.MetaPermissionConditions: authz.GitOpsPreDeployConditions},
+		},
 		authz.PermGitOpsCreate,
 		h.ImportSyncs,
 	)
 	handlerutil.RegisterSecured(api, handlerutil.Operation("getGitOpsSync", "GET", syncPath, "Get a GitOps sync", "Get a GitOps sync by ID", "GitOps Syncs"), authz.PermGitOpsRead, h.GetSync)
 	handlerutil.RegisterSecured(
 		api,
-		handlerutil.Operation(
-			"updateGitOpsSync",
-			"PATCH",
-			syncPath,
-			"Update a GitOps sync",
-			"Update an existing GitOps sync configuration",
-			"GitOps Syncs",
-		),
+		huma.Operation{
+			OperationID: "updateGitOpsSync",
+			Method:      http.MethodPatch,
+			Path:        syncPath,
+			Summary:     "Update a GitOps sync",
+			Description: "Update an existing GitOps sync configuration",
+			Tags:        []string{"GitOps Syncs"},
+			Metadata:    map[string]any{authz.MetaPermissionConditions: slices.Concat(authz.GitOpsPreDeployConditions, authz.GitOpsSyncModeConditions)},
+		},
 		authz.PermGitOpsUpdate,
 		h.UpdateSync,
 	)
 	handlerutil.RegisterSecured(
 		api,
-		handlerutil.Operation(
-			"deleteGitOpsSync",
-			"DELETE",
-			syncPath,
-			"Delete a GitOps sync",
-			"Delete a GitOps sync configuration by ID",
-			"GitOps Syncs",
-		),
+		huma.Operation{
+			OperationID: "deleteGitOpsSync",
+			Method:      http.MethodDelete,
+			Path:        syncPath,
+			Summary:     "Delete a GitOps sync",
+			Description: "Delete a GitOps sync configuration by ID",
+			Tags:        []string{"GitOps Syncs"},
+			Metadata:    map[string]any{authz.MetaPermissionConditions: authz.GitOpsSyncModeConditions},
+		},
 		authz.PermGitOpsDelete,
 		h.DeleteSync,
 	)
@@ -120,6 +125,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *GitOpsSyncService) {
 			Description: "Manually trigger a sync operation",
 			Tags:        []string{"GitOps Syncs"},
 			Security:    handlerutil.DefaultOperationSecurity(),
+			Metadata:    map[string]any{authz.MetaPermissionConditions: authz.GitOpsSyncModeConditions},
 		},
 		"action",
 		map[string]string{

@@ -287,8 +287,8 @@
 				{item.enabled ? m.common_disable() : m.common_enable()}
 			</DropdownMenu.Item>
 		</IfPermitted>
-		<DropdownMenu.Separator />
 		<IfPermitted perm="webhooks:delete" envId={item.environmentId}>
+			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteWebhook(item)}>
 				<TrashIcon class="size-4" />
 				{m.common_delete()}

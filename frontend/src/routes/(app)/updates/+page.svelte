@@ -20,7 +20,13 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '#lib/utils/docker.js';
-	import { actionEnvironments, listScopes, readableEnvironments, settleAcrossEnvironments } from '#lib/utils/environments.js';
+	import {
+		actionEnvironments,
+		hasShownPermission,
+		listScopes,
+		readableEnvironments,
+		settleAcrossEnvironments
+	} from '#lib/utils/environments.js';
 	import { confirmAndApplyAllUpdates } from '#lib/utils/update-actions.js';
 
 	import ContainerUpdatesTable from './components/container-updates-table.svelte';
@@ -156,27 +162,32 @@
 		urlTab.select(value);
 	}
 
-	const actionButtons: ActionButton[] = $derived([
-		{
-			id: 'check-updates',
-			action: 'inspect',
-			label: m.images_check_updates(),
-			loadingLabel: m.common_action_checking(),
-			onclick: () => checkUpdatesMutation.mutate(actionEnvironments('image-updates:check')),
-			loading: isChecking,
-			disabled: isChecking
-		},
-		{
-			id: 'update-all',
-			action: 'update',
-			placement: 'primary',
-			label: m.update_all(),
-			loadingLabel: m.common_action_updating(),
-			onclick: updateAll,
-			loading: isUpdatingAll,
-			disabled: isUpdatingAll || totalAffectedResources === 0
-		},
-		{
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [];
+		if (hasShownPermission('image-updates:check')) {
+			buttons.push({
+				id: 'check-updates',
+				action: 'inspect',
+				label: m.images_check_updates(),
+				loadingLabel: m.common_action_checking(),
+				onclick: () => checkUpdatesMutation.mutate(actionEnvironments('image-updates:check')),
+				loading: isChecking,
+				disabled: isChecking
+			});
+		}
+		if (hasShownPermission('image-updates:apply')) {
+			buttons.push({
+				id: 'update-all',
+				action: 'update',
+				placement: 'primary',
+				label: m.update_all(),
+				loadingLabel: m.common_action_updating(),
+				onclick: updateAll,
+				loading: isUpdatingAll,
+				disabled: isUpdatingAll || totalAffectedResources === 0
+			});
+		}
+		buttons.push({
 			id: 'refresh',
 			action: 'refresh',
 			placement: 'secondary',
@@ -185,8 +196,9 @@
 			onclick: refresh,
 			loading: isRefreshing,
 			disabled: isRefreshing
-		}
-	]);
+		});
+		return buttons;
+	});
 
 	const statCards: StatCardConfig[] = $derived([
 		{

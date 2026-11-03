@@ -264,7 +264,7 @@
 		);
 		return () => resourcePoller.stop();
 	});
-	const canUpdateContainers = $derived(hasShownPermission('containers:autoupdate'));
+	const canUpdateContainers = $derived(hasShownPermission('image-updates:apply'));
 	const canStartContainers = $derived(hasShownPermission('containers:start'));
 	const canStopContainers = $derived(hasShownPermission('containers:stop'));
 	const canRestartContainers = $derived(hasShownPermission('containers:restart'));
@@ -825,7 +825,7 @@
 			icon={StopIcon}
 		/>
 	{/if}
-	{#if !status && item.updateInfo?.hasUpdate && hasPermission('containers:autoupdate', item.environmentId)}
+	{#if !status && item.updateInfo?.hasUpdate && hasPermission('image-updates:apply', item.environmentId)}
 		<ArcaneButton
 			action="base"
 			tone="ghost"
@@ -852,7 +852,7 @@
 			: item.labels?.['com.getarcaneapp.arcane.updater.strategy']?.trim() === 'tag'}
 		repo={imageRef.repo}
 		tag={imageRef.tag}
-		onUpdateContainer={hasPermission('containers:autoupdate', item.environmentId) ? () => handleUpdateContainer(item) : undefined}
+		onUpdateContainer={hasPermission('image-updates:apply', item.environmentId) ? () => handleUpdateContainer(item) : undefined}
 		debugHasUpdate={false}
 	/>
 {/snippet}
@@ -1028,7 +1028,7 @@
 				{m.common_inspect()}
 			</DropdownMenu.Item>
 
-			{#if hasPermission('containers:edit', envId) && !item.redeployDisabled && !item.labels?.[COMPOSE_PROJECT_LABEL]}
+			{#if hasPermission('containers:update', envId) && !item.redeployDisabled && !item.labels?.[COMPOSE_PROJECT_LABEL]}
 				<DropdownMenu.Item
 					onclick={() =>
 						goto(resolve(`/(app)/containers/[containerId]/edit?env=${encodeURIComponent(envId)}`, { containerId: item.id }))}
@@ -1051,7 +1051,7 @@
 
 			<DropdownMenu.Separator />
 
-			{#if item.updateInfo?.hasUpdate && hasPermission('containers:autoupdate', envId)}
+			{#if item.updateInfo?.hasUpdate && hasPermission('image-updates:apply', envId)}
 				<ActionMenuItem
 					onclick={() => handleUpdateContainer(item)}
 					disabled={isAnyLoading}

@@ -28,7 +28,7 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { SwarmNodeAgentDeployment, SwarmNode } from '#lib/types/swarm.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import { hasAnyPermission, hasPermission } from '#lib/utils/auth.js';
 	import { type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { capitalizeFirstLetter } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -54,8 +54,8 @@
 	type NodeRow = EnvironmentRow<SwarmNode>;
 	type NodePage = EnvironmentPage<SwarmNodesPaginatedResponse>;
 
-	function canManageNode(node: NodeRow): boolean {
-		return hasPermission('swarm:nodes', node.environmentId);
+	function canUpdateNode(node: NodeRow): boolean {
+		return hasPermission('swarm-nodes:update', node.environmentId);
 	}
 
 	let isLoading = $state(false);
@@ -387,7 +387,7 @@
 				<Badge variant="blue" class="max-w-50"
 					><span class="block min-w-0 truncate">{`${key}${value ? `=${value}` : ''}`}</span></Badge
 				>
-				{#if canManageNode(item)}
+				{#if canUpdateNode(item)}
 					<button
 						type="button"
 						class="absolute inset-0 flex cursor-pointer items-center justify-end rounded-lg bg-info/10 pr-1 opacity-0 backdrop-blur-2xs transition-opacity group-hover:opacity-100"
@@ -401,7 +401,7 @@
 				{/if}
 			</div>
 		{/each}
-		{#if canManageNode(item)}
+		{#if canUpdateNode(item)}
 			<button
 				type="button"
 				class="inline-flex items-center gap-1 rounded-xl border border-dashed border-border px-2 py-0.5 text-2xs font-medium transition-colors hover:border-primary hover:text-primary"
@@ -471,28 +471,40 @@
 
 {#snippet RowActions({ item }: { item: NodeRow })}
 	<RowActionsMenu triggerClass="relative size-8 p-0" iconClass="">
-		<DropdownMenu.Item onclick={() => inspectNodeTasks(item)}>
-			<InspectIcon class="size-4" />
-			{m.common_inspect()}
-		</DropdownMenu.Item>
-		{#if canManageNode(item)}
+		{#if hasPermission('swarm-nodes:read', item.environmentId)}
+			<DropdownMenu.Item onclick={() => inspectNodeTasks(item)}>
+				<InspectIcon class="size-4" />
+				{m.common_inspect()}
+			</DropdownMenu.Item>
+		{/if}
+		{#if canUpdateNode(item)}
 			<DropdownMenu.Item onclick={() => openAgentDialog(item)}>
 				<AgentConnectionIcon class="size-4" />
 				{getSwarmNodeAgentActionLabel(item.agent?.state)}
 			</DropdownMenu.Item>
+		{/if}
+		{#if hasAnyPermission(['swarm-nodes:promote', 'swarm-nodes:demote', 'swarm-nodes:update'], item.environmentId)}
 			<DropdownMenu.Separator />
+		{/if}
+		{#if hasPermission('swarm-nodes:promote', item.environmentId)}
 			<DropdownMenu.Item onclick={() => promoteNode(item)} disabled={isLoading || item.role === 'manager'}>
 				{m.swarm_node_promote()}
 			</DropdownMenu.Item>
+		{/if}
+		{#if hasPermission('swarm-nodes:demote', item.environmentId)}
 			<DropdownMenu.Item onclick={() => demoteNode(item)} disabled={isLoading || item.role !== 'manager'}>
 				{m.swarm_node_demote()}
 			</DropdownMenu.Item>
+		{/if}
+		{#if canUpdateNode(item)}
 			<DropdownMenu.Item onclick={() => setAvailability(item, 'drain')} disabled={isLoading || item.availability === 'drain'}>
 				{m.drain()}
 			</DropdownMenu.Item>
 			<DropdownMenu.Item onclick={() => setAvailability(item, 'active')} disabled={isLoading || item.availability === 'active'}>
 				{m.swarm_node_activate()}
 			</DropdownMenu.Item>
+		{/if}
+		{#if hasPermission('swarm-nodes:delete', item.environmentId)}
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={() => removeNode(item)} disabled={isLoading}>
 				<TrashIcon class="size-4" />

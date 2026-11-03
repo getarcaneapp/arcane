@@ -65,26 +65,66 @@ func RegisterSettings(api huma.API, settingsService *SettingsService, settingsSe
 	}, h.GetPublicSettings)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "get-settings",
+		OperationID: "get-environment-settings",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/settings",
-		Summary:     "Get settings",
-		Description: "Get all settings for an environment",
+		Summary:     "Get environment settings",
+		Description: "Get the environment-scoped settings for an environment",
 		Tags:        []string{"Settings"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermSettingsRead, h.GetSettings)
+	}, authz.PermEnvironmentSettingsRead, h.GetEnvironmentSettings)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "update-environment-settings",
+		Method:      http.MethodPatch,
+		Path:        "/environments/{id}/settings",
+		Summary:     "Update environment settings",
+		Description: "Update the environment-scoped settings for an environment. App-wide and authentication settings are rejected",
+		Tags:        []string{"Settings"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermEnvironmentSettingsUpdate, h.UpdateEnvironmentSettings)
+
+	// Top-level settings endpoints (not environment-scoped)
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-settings",
+		Method:      http.MethodGet,
+		Path:        "/settings",
+		Summary:     "Get app-wide settings",
+		Description: "Get the app-wide settings owned by the manager, excluding authentication and OIDC",
+		Tags:        []string{"Settings"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermSettingsRead, h.GetManagerSettings)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-settings",
 		Method:      http.MethodPatch,
-		Path:        "/environments/{id}/settings",
-		Summary:     "Update settings",
-		Description: "Update settings for an environment",
+		Path:        "/settings",
+		Summary:     "Update app-wide settings",
+		Description: "Update the app-wide settings owned by the manager. Environment and authentication settings are rejected",
 		Tags:        []string{"Settings"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermSettingsWrite, h.UpdateSettings)
+	}, authz.PermSettingsUpdate, h.UpdateManagerSettings)
 
-	// Top-level settings endpoints (not environment-scoped)
+	huma.Register(api, middleware.RequireGlobalAdmin(api, huma.Operation{
+		OperationID: "get-authentication-settings",
+		Method:      http.MethodGet,
+		Path:        "/settings/authentication",
+		Summary:     "Get authentication settings",
+		Description: "Get the local authentication, session, and OIDC settings. Requires a global admin",
+		Tags:        []string{"Settings"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}), h.GetAuthenticationSettings)
+
+	huma.Register(api, middleware.RequireGlobalAdmin(api, huma.Operation{
+		OperationID: "update-authentication-settings",
+		Method:      http.MethodPatch,
+		Path:        "/settings/authentication",
+		Summary:     "Update authentication settings",
+		Description: "Update the local authentication, session, and OIDC settings. Requires a global admin",
+		Tags:        []string{"Settings"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}), h.UpdateAuthenticationSettings)
+
 	huma.Register(api, huma.Operation{
 		OperationID: "search-settings",
 		Method:      http.MethodPost,

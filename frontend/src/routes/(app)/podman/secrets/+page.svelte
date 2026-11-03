@@ -23,8 +23,8 @@
 	const queryClient = useQueryClient();
 
 	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
-	const podmanEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses));
-	const canCreate = $derived(podmanEnvironments.some((env) => hasPermission('podman:secrets', env.id)));
+	const podmanEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses, 'podman-secrets:list'));
+	const canCreate = $derived(podmanEnvironments.some((env) => hasPermission('podman-secrets:create', env.id)));
 	let isSheetOpen = $state(false);
 	let sheetSession = $state(0);
 	let secretToEdit = $state<EnvironmentRow<PodmanSecret> | null>(null);
@@ -48,6 +48,7 @@
 	}
 
 	async function openEditSheet(secret: EnvironmentRow<PodmanSecret>) {
+		if (!hasPermission('podman-secrets:read', secret.environmentId)) return;
 		await handleApiResultWithCallbacks({
 			result: await tryCatch(podmanService.getSecret(secret.spec.name, secret.environmentId)),
 			message: m.common_load_failed({ resource: `${m.swarm_secret()} "${secret.spec.name}"` }),

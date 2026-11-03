@@ -127,7 +127,7 @@ func TestRequirePermissionEnvironmentGrantCannotManageGlobalNotifications(t *tes
 
 	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
 		ps := authz.NewPermissionSet()
-		ps.AddEnv("env-1", authz.PermNotificationsManage)
+		ps.AddEnv("env-1", authz.PermNotificationsUpdate)
 		next(huma.WithContext(ctx, context.WithValue(ctx.Context(), ContextKeyUserPermissions, ps)))
 	})
 
@@ -135,7 +135,7 @@ func TestRequirePermissionEnvironmentGrantCannotManageGlobalNotifications(t *tes
 		OperationID: "guarded-global-notifications",
 		Method:      http.MethodPost,
 		Path:        "/notifications/settings",
-		Middlewares: RequirePermission(api, authz.PermNotificationsManage),
+		Middlewares: RequirePermission(api, authz.PermNotificationsUpdate),
 	}, func(_ context.Context, _ *struct{}) (*struct{}, error) {
 		require.FailNow(t, "handler must not run for an environment-scoped grant on global notification settings")
 		return nil, nil
@@ -202,12 +202,13 @@ func TestRequireSudoRejectsHumanAdminAndAllowsAgent(t *testing.T) {
 			})
 
 			handlerRan := false
-			huma.Register(api, huma.Operation{
+			op := RequireSudo(api, huma.Operation{
 				OperationID: "materialized-variables-" + tt.name,
 				Method:      http.MethodGet,
 				Path:        "/environments/{id}/templates/variables",
-				Middlewares: RequireSudo(api),
-			}, func(_ context.Context, _ *struct {
+			})
+			require.Equal(t, true, op.Metadata[authz.MetaRequireSudo])
+			huma.Register(api, op, func(_ context.Context, _ *struct {
 				ID string `path:"id"`
 			},
 			) (*struct{}, error) {
@@ -322,4 +323,52 @@ func TestRequireActionPermission(t *testing.T) {
 	op := api.OpenAPI().Paths["/environments/{id}/containers/{cid}"].Post
 	require.Equal(t, "action", op.Metadata[authz.MetaActionParam])
 	require.NotContains(t, op.Metadata, authz.MetaRequiredPermission)
+}
+
+func TestRegisterEchoRoutesEnforcesDeclaredPermission(t *testing.T) {
+	router := echo.New()
+	ps := authz.NewPermissionSet()
+	ps.AddEnv("env-1", authz.PermContainersLogs)
+	RegisterEchoRoutes(router.Group("/api"), []EchoRoute{
+		{
+			Method:     http.MethodGet,
+			Path:       "/environments/:id/ws/containers/:containerId/logs",
+			Permission: authz.PermContainersLogs,
+			Handler: func(c *echo.Context) error {
+				return c.NoContent(http.StatusNoContent)
+			},
+		},
+		{
+			Method:     http.MethodGet,
+			Path:       "/diagnostics/stream",
+			Permission: authz.PermDiagnosticsRead,
+			Handler: func(c *echo.Context) error {
+				return c.NoContent(http.StatusNoContent)
+			},
+		},
+		{
+			Method: http.MethodGet,
+			Path:   "/docs",
+			Access: authz.EndpointAccessPublic,
+			Handler: func(c *echo.Context) error {
+				return c.NoContent(http.StatusNoContent)
+			},
+		},
+	}, func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			c.Set(string(ContextKeyUserPermissions), ps)
+			return next(c)
+		}
+	})
+
+	for path, want := range map[string]int{
+		"/api/environments/env-1/ws/containers/c/logs": http.StatusNoContent,
+		"/api/environments/env-2/ws/containers/c/logs": http.StatusForbidden,
+		"/api/diagnostics/stream":                      http.StatusForbidden,
+		"/api/docs":                                    http.StatusNoContent,
+	} {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, http.NoBody))
+		require.Equal(t, want, rec.Code, path)
+	}
 }

@@ -40,7 +40,13 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		authz.PermVolumesRead,
 		h.DownloadVolumeWorkspaceFile,
 	)
-	updateOperation := handlerutil.Operation("update-volume-workspace", http.MethodPatch, basePath, "Update volume workspace", "", tag)
-	updateOperation.RequestBody = handlerutil.WorkspaceMultipartRequestBody("JSON encoded volume workspace manifest")
-	handlerutil.RegisterSecured(api, updateOperation, authz.PermVolumesRead, h.UpdateVolumeWorkspace)
+	handlerutil.RegisterSecured(api, huma.Operation{
+		OperationID: "update-volume-workspace",
+		Method:      http.MethodPatch,
+		Path:        basePath,
+		Summary:     "Update volume workspace",
+		Tags:        []string{tag},
+		RequestBody: handlerutil.WorkspaceMultipartRequestBody("JSON encoded volume workspace manifest"),
+		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.VolumeWorkspaceConditions},
+	}, authz.PermVolumesRead, h.UpdateVolumeWorkspace)
 }

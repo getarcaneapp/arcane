@@ -25,7 +25,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Security: handlerutil.DefaultOperationSecurity(),
 			Metadata: map[string]any{authz.MetaEnvironmentAggregate: true},
 		},
-		authz.PermSwarmRead,
+		authz.PermSwarmConfigsList,
 		h.ListConfigs,
 	)
 	middleware.RegisterWithPermission(
@@ -40,7 +40,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmRead,
+		authz.PermSwarmConfigsRead,
 		h.GetConfig,
 	)
 	middleware.RegisterWithPermission(
@@ -55,7 +55,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmConfigs,
+		authz.PermSwarmConfigsCreate,
 		h.CreateConfig,
 	)
 	middleware.RegisterWithPermission(
@@ -70,7 +70,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmConfigs,
+		authz.PermSwarmConfigsUpdate,
 		h.UpdateConfig,
 	)
 	middleware.RegisterWithPermission(
@@ -85,7 +85,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmConfigs,
+		authz.PermSwarmConfigsDelete,
 		h.DeleteConfig,
 	)
 }

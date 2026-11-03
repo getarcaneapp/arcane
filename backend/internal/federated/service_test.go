@@ -348,7 +348,7 @@ func TestFederatedCredentialServiceUpdateDisableRevokesIssuedSessions(t *testing
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	_, err = service.Update(ctx, "admin-user", "cred-github-actions", CredentialUpdate{
+	_, err = service.Update(ctx, &authz.PermissionSet{Sudo: true}, "cred-github-actions", CredentialUpdate{
 		Request:   types.FederatedCredential{},
 		Submitted: map[string]bool{"enabled": true},
 	})
@@ -385,7 +385,7 @@ func TestFederatedCredentialServiceCreateRejectsBareWildcardGlob(t *testing.T) {
 	issuer := newFederatedTestIssuer(t)
 	service, _, _ := setupFederatedCredentialService(t, issuer)
 
-	_, err := service.Create(t.Context(), "admin-user", types.FederatedCredential{
+	_, err := service.Create(t.Context(), &authz.PermissionSet{Sudo: true}, types.FederatedCredential{
 		Name:            "Unsafe wildcard",
 		IssuerURL:       "https://token.actions.githubusercontent.com",
 		Audiences:       []string{"arcane-ci"},
@@ -397,6 +397,67 @@ func TestFederatedCredentialServiceCreateRejectsBareWildcardGlob(t *testing.T) {
 
 	require.Error(t, err)
 	require.ErrorIs(t, err, common.ErrFederatedCredentialInvalid, "unexpected error: %v", err)
+}
+
+func TestFederatedCredentialServiceValidatesRoleGrantAgainstCaller(t *testing.T) {
+	issuer := newFederatedTestIssuer(t)
+	service, _, _ := setupFederatedCredentialService(t, issuer)
+	ctx := t.Context()
+
+	tests := []struct {
+		callerPerms *authz.PermissionSet
+		name        string
+		wantErr     bool
+	}{
+		{
+			name:        "rejects a caller that cannot grant the mapped role",
+			callerPerms: &authz.PermissionSet{Global: map[string]struct{}{authz.PermFederatedUpdate: {}}},
+			wantErr:     true,
+		},
+		{
+			name:    "rejects a caller without a permission set",
+			wantErr: true,
+		},
+		{
+			name: "accepts a caller holding the mapped role permissions",
+			callerPerms: &authz.PermissionSet{Global: map[string]struct{}{
+				authz.PermFederatedUpdate: {},
+				authz.PermProjectsList:    {},
+			}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run("update "+tt.name, func(t *testing.T) {
+			_, err := service.Update(ctx, tt.callerPerms, "cred-github-actions", CredentialUpdate{
+				Request: types.FederatedCredential{
+					IssuerURL: "https://attacker.example.com",
+				},
+				Submitted: map[string]bool{"issuerUrl": true},
+			})
+			if tt.wantErr {
+				require.ErrorIs(t, err, common.ErrFederatedCredentialPermissionEscalation, "unexpected error: %v", err)
+				return
+			}
+			require.NoError(t, err)
+		})
+		t.Run("create "+tt.name, func(t *testing.T) {
+			_, err := service.Create(ctx, tt.callerPerms, types.FederatedCredential{
+				Name:            "Scoped " + tt.name,
+				IssuerURL:       "https://token.actions.githubusercontent.com",
+				Audiences:       []string{"arcane-ci"},
+				SubjectMatch:    "repo:getarcaneapp/arcane:*",
+				MatchType:       types.FederatedMatchTypeGlob,
+				RoleID:          "role-federated-viewer",
+				TokenTTLSeconds: 900,
+			})
+			if tt.wantErr {
+				require.ErrorIs(t, err, common.ErrFederatedCredentialPermissionEscalation, "unexpected error: %v", err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
 }
 
 func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {

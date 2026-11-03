@@ -2,35 +2,57 @@ package ws
 
 import (
 	"net/http"
+	"slices"
+	"strings"
 
-	"github.com/labstack/echo/v5"
-
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/authz"
 )
 
-type (
-	// proxiedWSRoute couples a proxied WebSocket route (relative to the
-	// /environments/{id}/ws group) with its handler and the permission it requires.
-	// It is the single source of truth for both Echo route registration and the
-	// remote environment proxy permission matcher, so the two can never drift.
-	proxiedWSRoute struct {
-		path    string
-		handler echo.HandlerFunc
-		perm    string
-	}
-)
-
-// proxiedRoutes returns the WebSocket streams that are proxied to remote
-// environments, each paired with its required permission.
-func (h *WebSocketHandler) proxiedRoutes() []proxiedWSRoute {
-	return []proxiedWSRoute{
-		{"/projects/:projectId/logs", h.ProjectLogs, authz.PermProjectsLogs},
-		{"/containers/stats", h.ContainersStats, authz.PermContainersRead},
-		{"/containers/:containerId/logs", h.ContainerLogs, authz.PermContainersLogs},
-		{"/containers/:containerId/stats", h.ContainerStats, authz.PermContainersRead},
-		{"/containers/:containerId/terminal", h.ContainerExec, authz.PermContainersExec},
-		{"/swarm/services/:serviceId/logs", h.ServiceLogs, authz.PermSwarmServicesLogs},
-		{"/system/stats", h.SystemStats, authz.PermSystemRead},
+func (h *WebSocketHandler) proxiedRoutes() []middleware.EchoRoute {
+	return []middleware.EchoRoute{
+		{
+			Method:     http.MethodGet,
+			Path:       "/environments/:id/ws/projects/:projectId/logs",
+			Permission: authz.PermProjectsLogs,
+			Handler:    h.ProjectLogs,
+		},
+		{
+			Method:     http.MethodGet,
+			Path:       "/environments/:id/ws/containers/stats",
+			Permission: authz.PermContainersRead,
+			Handler:    h.ContainersStats,
+		},
+		{
+			Method:     http.MethodGet,
+			Path:       "/environments/:id/ws/containers/:containerId/logs",
+			Permission: authz.PermContainersLogs,
+			Handler:    h.ContainerLogs,
+		},
+		{
+			Method:     http.MethodGet,
+			Path:       "/environments/:id/ws/containers/:containerId/stats",
+			Permission: authz.PermContainersRead,
+			Handler:    h.ContainerStats,
+		},
+		{
+			Method:     http.MethodGet,
+			Path:       "/environments/:id/ws/containers/:containerId/terminal",
+			Permission: authz.PermContainersExec,
+			Handler:    h.ContainerExec,
+		},
+		{
+			Method:     http.MethodGet,
+			Path:       "/environments/:id/ws/swarm/services/:serviceId/logs",
+			Permission: authz.PermSwarmServicesLogs,
+			Handler:    h.ServiceLogs,
+		},
+		{
+			Method:     http.MethodGet,
+			Path:       "/environments/:id/ws/system/stats",
+			Permission: authz.PermSystemRead,
+			Handler:    h.SystemStats,
+		},
 	}
 }
 
@@ -43,6 +65,11 @@ func (h *WebSocketHandler) proxiedRoutes() []proxiedWSRoute {
 func AddProxiedPermissions(m *authz.PermissionMatcher) {
 	var h WebSocketHandler
 	for _, r := range h.proxiedRoutes() {
-		m.Add(http.MethodGet, "/ws"+r.path, r.perm)
+		m.Add(r.Method, strings.TrimPrefix(r.Path, "/environments/:id"), r.Permission)
 	}
+}
+
+func Routes() []middleware.EchoRoute {
+	var h WebSocketHandler
+	return slices.Concat(h.proxiedRoutes(), h.diagnosticsRoutes())
 }

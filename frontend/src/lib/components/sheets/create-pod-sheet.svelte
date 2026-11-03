@@ -41,7 +41,7 @@
 	let { open = $bindable(false), environments, onSubmit, isLoading }: CreatePodFormProps = $props();
 
 	let pickedEnvironmentId = $state('');
-	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'podman:pods', environments));
+	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'podman-pods:create', environments));
 
 	const optionalNumber = z.string().refine((value) => value === '' || Number(value) >= 0, m.podman_pod_invalid_number());
 
@@ -358,7 +358,7 @@
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
 			<EnvironmentDestinationSelect
 				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
-				permission="podman:pods"
+				permission="podman-pods:create"
 				{environments}
 				variant="field"
 			/>

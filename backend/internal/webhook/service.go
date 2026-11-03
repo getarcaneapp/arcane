@@ -100,7 +100,7 @@ var (
 
 	webhookActionPermissions = map[string]map[string]string{
 		WebhookTargetTypeContainer: {
-			WebhookActionTypeUpdate:   authz.PermImageUpdatesCheck,
+			WebhookActionTypeUpdate:   authz.PermImageUpdatesApply,
 			WebhookActionTypeStart:    authz.PermContainersStart,
 			WebhookActionTypeStop:     authz.PermContainersStop,
 			WebhookActionTypeRestart:  authz.PermContainersRestart,
@@ -114,7 +114,7 @@ var (
 			WebhookActionTypeRedeploy: authz.PermProjectsDeploy,
 		},
 		WebhookTargetTypeUpdater: {
-			WebhookActionTypeRun: authz.PermImageUpdatesCheck,
+			WebhookActionTypeRun: authz.PermImageUpdatesApply,
 		},
 		WebhookTargetTypeGitOps: {
 			WebhookActionTypeSync: authz.PermGitOpsSync,

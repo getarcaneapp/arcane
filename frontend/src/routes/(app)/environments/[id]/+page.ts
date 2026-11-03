@@ -38,7 +38,9 @@ export const load: PageLoad = async ({ params, parent }) => {
 			let settings = null;
 			const operationResult = await tryCatch(
 				(async () =>
-					queryClient.query(environmentSettingsQuery(params.id, userHasPermission(user, 'settings:read', params.id))))()
+					queryClient.query(
+						environmentSettingsQuery(params.id, userHasPermission(user, 'environment-settings:read', params.id))
+					))()
 			);
 			if (operationResult.error !== null) {
 			} else {

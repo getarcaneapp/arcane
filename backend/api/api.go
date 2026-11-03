@@ -45,6 +45,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/swarm"
 	"getarcane.dev/arcane/v3/internal/system"
+	"getarcane.dev/arcane/v3/internal/telemetry"
 	"getarcane.dev/arcane/v3/internal/template"
 	"getarcane.dev/arcane/v3/internal/updater"
 	"getarcane.dev/arcane/v3/internal/upload"
@@ -54,6 +55,8 @@ import (
 	"getarcane.dev/arcane/v3/internal/volume"
 	"getarcane.dev/arcane/v3/internal/vulnerability"
 	"getarcane.dev/arcane/v3/internal/webhook"
+	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/jsonx"
 	"getarcane.dev/arcane/v3/resources"
@@ -107,9 +110,22 @@ type (
 		Upload            *upload.Module
 		Health            *health.Module
 	}
+
+	SetupParams struct {
+		Echo       *echo.Echo
+		Group      *echo.Group
+		AppContext handlerutil.ActivityAppContext
+		Config     *config.Config
+		Deps       HandlerDeps
+		Tunnel     *agent.TunnelServer
+	}
 )
 
+var featureRoutes []func(huma.API, SetupParams)
+
 const (
+	openAPIPath    = "/openapi"
+	schemasPath    = "/schemas"
 	scalarDocsHTML = `<!doctype html>
 <html>
   <head>
@@ -134,17 +150,19 @@ const (
 )
 
 // SetupAPI creates and configures the Huma API attached to the Echo router.
-func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityAppContext, cfg *config.Config, deps HandlerDeps) huma.API {
-	e.JSONSerializer = jsonx.Serializer{}
+func SetupAPI(p SetupParams) *authz.OperationRecorder {
+	p.Echo.JSONSerializer = jsonx.Serializer{}
 
 	humaConfig := huma.DefaultConfig("Arcane API", config.Version)
 	humaConfig.Formats = maps.Clone(humaConfig.Formats)
 	humaConfig.Formats["application/json"] = jsonx.HumaFormat
 	humaConfig.Formats["json"] = jsonx.HumaFormat
 	humaConfig.Info.Description = "Modern Docker Management, Designed for Everyone"
+	humaConfig.OpenAPIPath = openAPIPath
+	humaConfig.SchemasPath = schemasPath
 	// Disable default docs path - we'll use Scalar instead
 	humaConfig.DocsPath = ""
-	humaConfig.Servers = []*huma.Server{{URL: cfg.GetAppURL() + "/api"}}
+	humaConfig.Servers = []*huma.Server{{URL: p.Config.GetAppURL() + "/api"}}
 	humaConfig.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 		"BearerAuth": {
 			Type:         "http",
@@ -167,15 +185,15 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 		humaConfig.Components.Schemas.RegisterTypeAlias(t, alias)
 	}
 
-	api := humaecho.NewWithGroup(e, apiGroup, humaConfig)
+	api := &authz.OperationRecorder{API: humaecho.NewWithGroup(p.Echo, p.Group, humaConfig)}
 
 	api.UseMiddleware(auth.NewHumaMiddleware(auth.HumaMiddlewareParams{
 		API:              api,
-		AuthService:      deps.Auth.Service(),
-		APIKeyService:    deps.ApiKey.Service(),
-		PermResolver:     deps.Role.Service(),
-		EnvTokenResolver: deps.Environment.Service(),
-		Config:           cfg,
+		AuthService:      p.Deps.Auth.Service(),
+		APIKeyService:    p.Deps.ApiKey.Service(),
+		PermResolver:     p.Deps.Role.Service(),
+		EnvTokenResolver: p.Deps.Environment.Service(),
+		Config:           p.Config,
 	}))
 	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
 		if actor, ok := handlerutil.CurrentUserFromContext(ctx.Context()); ok {
@@ -186,62 +204,133 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 	api.UseMiddleware(middleware.NewActivityBatchID())
 	registerNormalization(api)
 
-	deps.Health.RegisterRoutes(api)
-	deps.Auth.RegisterRoutes(api)
-	passkey.RegisterPasskeys(api, deps.Passkey, deps.Auth.Service(), deps.User.Service())
-	deps.ApiKey.RegisterRoutes(api)
-	federated.RegisterFederatedCredentials(api, deps.Federated)
-	deps.Role.RegisterRoutes(api)
-	appimages.RegisterAppImages(api, deps.AppImages)
-	deps.User.RegisterRoutes(api)
-	deps.Project.RegisterRoutes(api, appCtx)
-	version.RegisterVersion(api, deps.Version)
-	deps.Event.RegisterRoutes(api)
-	deps.Activity.RegisterRoutes(api)
-	oidc.RegisterOidc(api, deps.Auth.Service(), deps.Passkey, deps.Oidc, deps.Role.Service(), deps.User.Service(), cfg)
-	deps.Environment.RegisterRoutes(api, appCtx, deps.Version.GetAppVersionInfo)
-	deps.ContainerRegistry.RegisterRoutes(api)
-	deps.Template.RegisterRoutes(api)
-	deps.Variable.RegisterRoutes(api, cfg)
-	deps.Image.RegisterRoutes(api, appCtx)
-	deps.Upload.RegisterRoutes(api)
-	build.RegisterBuildWorkspaces(api, deps.Build, deps.Upload.Service())
-	deps.ImageUpdate.RegisterRoutes(api, appCtx)
-	deps.Settings.RegisterRoutes(api)
-	deps.S3Destination.RegisterRoutes(api)
-	deps.JobSchedule.RegisterRoutes(api)
-	deps.Volume.RegisterRoutes(api, appCtx)
-	deps.Container.RegisterRoutes(api, appCtx)
-	port.RegisterPorts(api, deps.Port)
-	network.RegisterNetworks(api, deps.Network, deps.Docker, deps.Activity.Service(), appCtx)
-	deps.Swarm.RegisterRoutes(api)
-	deps.Podman.RegisterRoutes(api)
-	deps.Notification.RegisterRoutes(api)
-	deps.Apns.RegisterRoutes(api)
-	deps.Updater.RegisterRoutes(api, appCtx)
-	deps.Search.RegisterRoutes(api)
-	deps.System.RegisterRoutes(api, appCtx)
-	handlers.RegisterDiagnostics(api, deps.Diagnostics)
-	deps.GitRepository.RegisterRoutes(api)
-	deps.GitOpsSync.RegisterRoutes(api)
-	deps.Webhook.RegisterRoutes(api)
-	deps.Vulnerability.RegisterRoutes(api, appCtx)
-	handlers.RegisterStream(api, deps.Activity.Handler(), deps.Environment.Handler(), deps.Event.Service(), deps.Version, deps.System.Service())
+	p.Deps.Health.RegisterRoutes(api)
+	p.Deps.Auth.RegisterRoutes(api)
+	passkey.RegisterPasskeys(api, p.Deps.Passkey, p.Deps.Auth.Service(), p.Deps.User.Service())
+	p.Deps.ApiKey.RegisterRoutes(api)
+	federated.RegisterFederatedCredentials(api, p.Deps.Federated)
+	p.Deps.Role.RegisterRoutes(api)
+	appimages.RegisterAppImages(api, p.Deps.AppImages)
+	p.Deps.User.RegisterRoutes(api)
+	p.Deps.Project.RegisterRoutes(api, p.AppContext)
+	version.RegisterVersion(api, p.Deps.Version)
+	p.Deps.Event.RegisterRoutes(api, p.Deps.Environment.Service().ResolveEventEnvironmentByAccessToken)
+	p.Deps.Activity.RegisterRoutes(api)
+	oidc.RegisterOidc(api, p.Deps.Auth.Service(), p.Deps.Passkey, p.Deps.Oidc, p.Deps.Role.Service(), p.Deps.User.Service(), p.Config)
+	p.Deps.Environment.RegisterRoutes(api, p.AppContext, p.Deps.Version.GetAppVersionInfo)
+	p.Deps.ContainerRegistry.RegisterRoutes(api)
+	p.Deps.Template.RegisterRoutes(api)
+	p.Deps.Variable.RegisterRoutes(api, p.Config)
+	p.Deps.Image.RegisterRoutes(api, p.AppContext)
+	p.Deps.Upload.RegisterRoutes(api)
+	build.RegisterBuildWorkspaces(api, p.Deps.Build, p.Deps.Upload.Service())
+	p.Deps.ImageUpdate.RegisterRoutes(api, p.AppContext)
+	p.Deps.Settings.RegisterRoutes(api)
+	p.Deps.S3Destination.RegisterRoutes(api)
+	p.Deps.JobSchedule.RegisterRoutes(api)
+	p.Deps.Volume.RegisterRoutes(api, p.AppContext)
+	p.Deps.Container.RegisterRoutes(api, p.AppContext)
+	port.RegisterPorts(api, p.Deps.Port)
+	network.RegisterNetworks(api, p.Deps.Network, p.Deps.Docker, p.Deps.Activity.Service(), p.AppContext)
+	p.Deps.Swarm.RegisterRoutes(api)
+	p.Deps.Podman.RegisterRoutes(api)
+	p.Deps.Notification.RegisterRoutes(api)
+	p.Deps.Apns.RegisterRoutes(api)
+	p.Deps.Updater.RegisterRoutes(api, p.AppContext)
+	p.Deps.Search.RegisterRoutes(api)
+	p.Deps.System.RegisterRoutes(api, p.AppContext)
+	handlers.RegisterDiagnostics(api, p.Deps.Diagnostics)
+	p.Deps.GitRepository.RegisterRoutes(api)
+	p.Deps.GitOpsSync.RegisterRoutes(api)
+	p.Deps.Webhook.RegisterRoutes(api, p.AppContext)
+	p.Deps.Vulnerability.RegisterRoutes(api, p.AppContext)
+	handlers.RegisterStream(api, p.Deps.Activity.Handler(), p.Deps.Environment.Handler(), p.Deps.Event.Service(), p.Deps.Version, p.Deps.System.Service())
 
-	apiGroup.GET("/docs", func(c *echo.Context) error {
+	if !p.Config.AgentEnabled {
+		telemetry.RegisterRoutes(api, telemetry.NewService())
+		huma.Register(api, huma.Operation{
+			OperationID: "enroll-agent-mtls",
+			Method:      http.MethodPost,
+			Path:        "/tunnel/mtls/enroll",
+			Summary:     "Enroll an agent mTLS certificate",
+			Tags:        []string{"Environments"},
+			Hidden:      true,
+			Security:    []map[string][]string{},
+			Metadata:    map[string]any{authz.MetaAccess: authz.EndpointAccessAgentToken},
+			Middlewares: huma.Middlewares{
+				middleware.EchoMiddleware(middleware.PerIPRateLimit(10, 3)),
+				middleware.EchoMiddleware(middleware.PerAgentTokenRateLimit(10, 3)),
+			},
+		}, middleware.EchoHandler(p.Tunnel.HandleMTLSEnroll))
+	}
+	for _, register := range featureRoutes {
+		register(api, p)
+	}
+	huma.Register(api, huma.Operation{
+		OperationID: "get-api-docs",
+		Method:      http.MethodGet,
+		Path:        "/docs",
+		Tags:        []string{"Docs"},
+		Hidden:      true,
+		Security:    []map[string][]string{},
+		Metadata:    map[string]any{authz.MetaAccess: authz.EndpointAccessPublic},
+	}, middleware.EchoHandler(func(c *echo.Context) error {
 		return c.HTML(http.StatusOK, scalarDocsHTML)
-	})
-	apiGroup.GET("/docs/scalar.js", func(c *echo.Context) error {
+	}))
+	huma.Register(api, huma.Operation{
+		OperationID: "get-api-docs-script",
+		Method:      http.MethodGet,
+		Path:        "/docs/scalar.js",
+		Tags:        []string{"Docs"},
+		Hidden:      true,
+		Security:    []map[string][]string{},
+		Metadata:    map[string]any{authz.MetaAccess: authz.EndpointAccessPublic},
+	}, middleware.EchoHandler(func(c *echo.Context) error {
 		return c.FileFS("scalar/standalone.js", resources.FS)
-	})
+	}))
 
 	return api
 }
 
+func SpecRoutes() []authz.PermissionRoute {
+	return []authz.PermissionRoute{
+		{
+			Method: http.MethodGet,
+			Path:   openAPIPath + ".json",
+			Access: authz.EndpointAccessPublic,
+		},
+		{
+			Method: http.MethodGet,
+			Path:   openAPIPath + "-3.0.json",
+			Access: authz.EndpointAccessPublic,
+		},
+		{
+			Method: http.MethodGet,
+			Path:   openAPIPath + ".yaml",
+			Access: authz.EndpointAccessPublic,
+		},
+		{
+			Method: http.MethodGet,
+			Path:   openAPIPath + "-3.0.yaml",
+			Access: authz.EndpointAccessPublic,
+		},
+		{
+			Method: http.MethodGet,
+			Path:   schemasPath + "/:schema",
+			Access: authz.EndpointAccessPublic,
+		},
+	}
+}
+
 // SetupAPIForSpec creates a Huma API instance for OpenAPI spec generation only.
 // No services are required - this is purely for schema generation.
-func SetupAPIForSpec() huma.API {
+func SetupAPIForSpec() *authz.OperationRecorder {
 	e := echo.New()
-	appCtx := handlerutil.NewActivityAppContext(context.Background()) //nolint:forbidigo // Schema discovery has no running request or application lifecycle.
-	return SetupAPI(e, e.Group("/api"), appCtx, &config.Config{}, HandlerDeps{Health: health.New(&health.Service{})})
+	return SetupAPI(SetupParams{
+		Echo:       e,
+		Group:      e.Group("/api"),
+		AppContext: handlerutil.NewActivityAppContext(context.Background()), //nolint:forbidigo // Schema discovery has no running request or application lifecycle.
+		Config:     &config.Config{},
+		Deps:       HandlerDeps{Health: health.New(&health.Service{})},
+	})
 }

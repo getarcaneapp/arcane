@@ -663,6 +663,14 @@ func (s *EnvironmentService) GetDB() *database.DB {
 	return s.db
 }
 
+func (s *EnvironmentService) ResolveEventEnvironmentByAccessToken(ctx context.Context, token string) (string, error) {
+	env, err := s.ResolveEnvironmentByAccessToken(ctx, token)
+	if err != nil {
+		return "", err
+	}
+	return kit.Ternary(env.Enabled && env.ID != types.LocalDockerEnvironmentID, env.ID, ""), nil
+}
+
 func (s *EnvironmentService) ResolveEnvironmentByAccessToken(ctx context.Context, token string) (*Environment, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {

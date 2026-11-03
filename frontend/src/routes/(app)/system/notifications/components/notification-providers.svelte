@@ -10,8 +10,10 @@
 	import { NotificationsIcon, ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { notificationService } from '#lib/services/notification-service.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import { type NotificationProviderKey, NOTIFICATION_PROVIDER_KEYS } from '#lib/types/notifications.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import {
 		cloneNotificationProviderFormState,
 		createNotificationProviderFormState,
@@ -27,6 +29,7 @@
 	import { BuiltInProviderForm } from './providers';
 
 	let { disabled }: { disabled: boolean } = $props();
+	const canTestNotifications = $derived(hasPermission('notifications:test', GLOBAL_SCOPE));
 
 	let isLoaded = $state(false);
 	let loadError = $state<string | null>(null);
@@ -202,7 +205,7 @@
 							: savedSettings[provider] !== null}
 						hasExistingPassword={provider === 'signal' && hasSavedCredential(savedSettings.signal, 'password')}
 						hasExistingToken={provider === 'signal' && hasSavedCredential(savedSettings.signal, 'token')}
-						onTest={(testType) => testNotification(provider, testType)}
+						onTest={canTestNotifications ? (testType) => testNotification(provider, testType) : undefined}
 					/>
 				</div>
 			</Tabs.Content>

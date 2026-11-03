@@ -216,7 +216,7 @@ func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 		AppUrl:       "http://localhost:3552",
 		Environment:  config.AppEnvironmentTest,
 	}
-	router, _ := newRouter(RouterParams{
+	router := newRouter(RouterParams{
 		Context: t.Context(),
 		Config:  cfg,
 		HandlerDeps: api.HandlerDeps{

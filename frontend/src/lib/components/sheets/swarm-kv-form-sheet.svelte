@@ -40,7 +40,7 @@
 	} = $props();
 
 	const isSecret = $derived(resource.kind === 'secrets');
-	const canManage = $derived(hasPermission(resource.permission, environmentId));
+	const canManage = $derived(hasPermission(existing ? resource.permissions.update : resource.permissions.create, environmentId));
 
 	const initial = untrack(() => existing?.spec);
 	let name = $state(initial?.Name ?? '');
@@ -129,7 +129,7 @@
 			{#if !existing}
 				<EnvironmentDestinationSelect
 					bind:value={environmentId}
-					permission={resource.permission}
+					permission={resource.permissions.create}
 					{environments}
 					variant="field"
 				/>

@@ -25,7 +25,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Security: handlerutil.DefaultOperationSecurity(),
 			Metadata: map[string]any{authz.MetaEnvironmentAggregate: true},
 		},
-		authz.PermSwarmRead,
+		authz.PermSwarmServicesList,
 		h.ListServices,
 	)
 	middleware.RegisterWithPermission(
@@ -40,7 +40,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmRead,
+		authz.PermSwarmServicesRead,
 		h.GetService,
 	)
 	middleware.RegisterWithPermission(
@@ -55,7 +55,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmServices,
+		authz.PermSwarmServicesCreate,
 		h.CreateService,
 	)
 	middleware.RegisterWithPermission(
@@ -70,7 +70,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmServices,
+		authz.PermSwarmServicesUpdate,
 		h.UpdateService,
 	)
 	middleware.RegisterWithPermission(
@@ -85,7 +85,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmServices,
+		authz.PermSwarmServicesDelete,
 		h.DeleteService,
 	)
 	middleware.RegisterWithPermission(
@@ -100,7 +100,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmRead,
+		authz.PermSwarmServicesRead,
 		h.ListServiceTasks,
 	)
 	middleware.RegisterWithActionPermissions(
@@ -117,7 +117,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		},
 		"action",
 		map[string]string{
-			"rollback": authz.PermSwarmServices,
+			"rollback": authz.PermSwarmServicesUpdate,
 		},
 		h.RollbackService,
 	)
@@ -133,7 +133,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmServices,
+		authz.PermSwarmServicesUpdate,
 		h.ScaleService,
 	)
 }

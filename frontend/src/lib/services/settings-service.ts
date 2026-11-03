@@ -1,4 +1,6 @@
+import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
+import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 import type { ResolvedSettings, SettingKey, SettingState, Settings, SettingsSnapshot } from '#lib/types/settings.js';
 
 import BaseAPIService from './api-service';
@@ -17,18 +19,28 @@ export function parseSettingValue(type: string, value: string): string | number 
 
 class SettingsService extends BaseAPIService {
 	async getSettingsForEnvironmentMerged(environmentId: string): Promise<ResolvedSettings> {
-		if (environmentId === '0') return this.getSettingsForEnvironment('0');
-		const [main, environment] = await Promise.all([
-			userStore.hasPermission('settings:read', '0')
-				? this.getSettingsForEnvironment('0')
-				: this.getPublicSettingsForEnvironment('0'),
-			this.getSettingsForEnvironment(environmentId)
+		const publicMain = this.getPublicSettingsForEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID);
+		const [main, manager, authentication, environment] = await Promise.all([
+			publicMain,
+			userStore.hasPermission('settings:read', GLOBAL_SCOPE) ? this.getManagerSettings() : undefined,
+			userStore.isGlobalAdmin() ? this.getAuthenticationSettings() : undefined,
+			this.getEnvironmentSettingsOrPublic(environmentId, publicMain)
 		]);
-		return this.merge(main, environment);
+		return this.merge(environment, main, manager, authentication);
 	}
 
 	async getSettingsForEnvironment(environmentId: string): Promise<ResolvedSettings> {
 		const res = await this.api.get<SettingsSnapshot>(`/environments/${environmentId}/settings`);
+		return this.normalize(res.data);
+	}
+
+	async getManagerSettings(): Promise<ResolvedSettings> {
+		const res = await this.api.get<SettingsSnapshot>('/settings');
+		return this.normalize(res.data);
+	}
+
+	async getAuthenticationSettings(): Promise<ResolvedSettings> {
+		const res = await this.api.get<SettingsSnapshot>('/settings/authentication');
 		return this.normalize(res.data);
 	}
 
@@ -37,52 +49,60 @@ class SettingsService extends BaseAPIService {
 		return this.normalize(res.data);
 	}
 
-	async getPublicSettings(environmentId = '0'): Promise<ResolvedSettings> {
-		if (environmentId === '0') return this.getPublicSettingsForEnvironment('0');
-		const [main, environment] = await Promise.all([
-			this.getPublicSettingsForEnvironment('0'),
-			this.getPublicSettingsForEnvironment(environmentId)
-		]);
-		return this.merge(main, environment);
-	}
-
-	async getReadableSettings(environmentId: string): Promise<ResolvedSettings> {
-		if (!userStore.hasPermission('settings:read', environmentId)) return this.getPublicSettings(environmentId);
-		return this.getSettingsForEnvironmentMerged(environmentId);
-	}
-
 	async updateSettingsForEnvironment(
 		environmentId: string,
 		base: ResolvedSettings,
 		changes: Partial<Settings>
 	): Promise<ResolvedSettings> {
-		const patches: Record<SettingState['scope'], Record<string, string>> = { manager: {}, environment: {} };
+		const patches: Record<SettingState['scope'], Record<string, string>> = { manager: {}, authentication: {}, environment: {} };
 		for (const [key, value] of Object.entries(changes)) {
 			const meta = base.meta[key as SettingKey];
 			if (!meta || meta.locked || value === undefined || String(value) === meta.value) continue;
 			patches[meta.scope][key] = String(value);
 		}
-		const hasManagerChanges = Object.keys(patches.manager).length > 0;
-		const hasEnvironmentChanges = Object.keys(patches.environment).length > 0;
-		if (!hasManagerChanges && !hasEnvironmentChanges) return base;
-		if (hasManagerChanges) await this.api.patch('/environments/0/settings', patches.manager);
-		if (hasEnvironmentChanges) await this.api.patch(`/environments/${environmentId}/settings`, patches.environment);
-		return this.getReadableSettings(environmentId);
+		const endpoints: Record<SettingState['scope'], string> = {
+			manager: '/settings',
+			authentication: '/settings/authentication',
+			environment: `/environments/${environmentId}/settings`
+		};
+		const pending = (Object.keys(patches) as SettingState['scope'][]).filter((scope) => Object.keys(patches[scope]).length > 0);
+		if (pending.length === 0) return base;
+		for (const scope of pending) await this.api.patch(endpoints[scope], patches[scope]);
+		return this.getSettingsForEnvironmentMerged(environmentId);
 	}
 
-	private merge(main: ResolvedSettings, environment: ResolvedSettings): ResolvedSettings {
-		const scoped = (source: ResolvedSettings, scope: SettingState['scope']) =>
-			Object.values(source.meta).filter((meta) => meta.scope === scope);
+	private async getEnvironmentSettingsOrPublic(
+		environmentId: string,
+		publicMain: Promise<ResolvedSettings>
+	): Promise<ResolvedSettings> {
+		if (userStore.hasPermission('environment-settings:read', environmentId)) return this.getSettingsForEnvironment(environmentId);
+		if (environmentId === LOCAL_DOCKER_ENVIRONMENT_ID) return publicMain;
+		return this.getPublicSettingsForEnvironment(environmentId);
+	}
+
+	private merge(
+		environment: ResolvedSettings,
+		main: ResolvedSettings,
+		manager: ResolvedSettings | undefined,
+		authentication: ResolvedSettings | undefined
+	): ResolvedSettings {
+		const appWideMeta = new Map<string, SettingState>();
+		for (const source of [main, manager, authentication]) {
+			for (const meta of Object.values(source?.meta ?? {})) {
+				if (meta.scope !== 'environment') appWideMeta.set(meta.key, meta);
+			}
+		}
+		const managerRuntime = (manager ?? main).runtime;
 		return this.normalize({
-			settings: [...scoped(environment, 'environment'), ...scoped(main, 'manager')],
+			settings: [...Object.values(environment.meta).filter((meta) => meta.scope === 'environment'), ...appWideMeta.values()],
 			runtime: {
 				...environment.runtime,
-				frontendTracingEnabled: main.runtime.frontendTracingEnabled,
-				frontendMetricsEnabled: main.runtime.frontendMetricsEnabled,
-				frontendLogsEnabled: main.runtime.frontendLogsEnabled,
-				agentMTLSManagerCAAvailable: main.runtime.agentMTLSManagerCAAvailable
+				frontendTracingEnabled: managerRuntime.frontendTracingEnabled,
+				frontendMetricsEnabled: managerRuntime.frontendMetricsEnabled,
+				frontendLogsEnabled: managerRuntime.frontendLogsEnabled,
+				agentMTLSManagerCAAvailable: managerRuntime.agentMTLSManagerCAAvailable
 			},
-			readOnly: main.readOnly || environment.readOnly
+			readOnly: [environment, main, manager, authentication].some((source) => source?.readOnly)
 		});
 	}
 

@@ -5,9 +5,12 @@ package playwright
 import (
 	"net/http"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/labstack/echo/v5"
 
 	"getarcane.dev/arcane/v3/internal/federated"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
 )
 
 type (
@@ -29,15 +32,47 @@ type (
 	}
 )
 
-// SetupRoutes registers endpoints used by the Playwright end-to-end suite.
-func SetupRoutes(api *echo.Group, service *PlaywrightService, federatedService *federated.FederatedCredentialService) {
-	group := api.Group("/playwright")
-	handler := &playwrightHandler{service: service, federated: federatedService}
-
-	group.POST("/gitops", handler.createTestGitOpsProject)
-	group.POST("/apikeys", handler.createTestAPIKeys)
-	group.DELETE("/apikeys", handler.deleteTestAPIKeys)
-	group.POST("/federated", handler.createTestFederatedCredential)
+func RegisterRoutes(api huma.API, service *PlaywrightService, federatedService *federated.FederatedCredentialService) {
+	handler := &playwrightHandler{
+		service:   service,
+		federated: federatedService,
+	}
+	huma.Register(api, huma.Operation{
+		OperationID: "create-playwright-gitops-project",
+		Method:      http.MethodPost,
+		Path:        "/playwright/gitops",
+		Tags:        []string{"Playwright"},
+		Hidden:      true,
+		Security:    []map[string][]string{},
+		Metadata:    map[string]any{authz.MetaAccess: authz.EndpointAccessPublic},
+	}, middleware.EchoHandler(handler.createTestGitOpsProject))
+	huma.Register(api, huma.Operation{
+		OperationID: "create-playwright-api-keys",
+		Method:      http.MethodPost,
+		Path:        "/playwright/apikeys",
+		Tags:        []string{"Playwright"},
+		Hidden:      true,
+		Security:    []map[string][]string{},
+		Metadata:    map[string]any{authz.MetaAccess: authz.EndpointAccessPublic},
+	}, middleware.EchoHandler(handler.createTestAPIKeys))
+	huma.Register(api, huma.Operation{
+		OperationID: "delete-playwright-api-keys",
+		Method:      http.MethodDelete,
+		Path:        "/playwright/apikeys",
+		Tags:        []string{"Playwright"},
+		Hidden:      true,
+		Security:    []map[string][]string{},
+		Metadata:    map[string]any{authz.MetaAccess: authz.EndpointAccessPublic},
+	}, middleware.EchoHandler(handler.deleteTestAPIKeys))
+	huma.Register(api, huma.Operation{
+		OperationID: "create-playwright-federated-credential",
+		Method:      http.MethodPost,
+		Path:        "/playwright/federated",
+		Tags:        []string{"Playwright"},
+		Hidden:      true,
+		Security:    []map[string][]string{},
+		Metadata:    map[string]any{authz.MetaAccess: authz.EndpointAccessPublic},
+	}, middleware.EchoHandler(handler.createTestFederatedCredential))
 }
 
 func (h *playwrightHandler) createTestAPIKeys(c *echo.Context) error {

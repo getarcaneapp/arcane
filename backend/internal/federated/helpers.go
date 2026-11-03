@@ -15,6 +15,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/auth"
 	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/types/v3"
 )
 
@@ -67,24 +68,12 @@ func validateSubjectMatch(matchType, subjectMatch string) error {
 	return nil
 }
 
-func (s *FederatedCredentialService) validateRoleGrantAgainstUser(ctx context.Context, userID, roleID string, environmentID *string) error {
-	if strings.TrimSpace(userID) == "" {
-		return nil
-	}
-
-	user, err := s.userService.GetUserByID(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("load user for federated role validation: %w", err)
-	}
-	permissions, err := s.roleService.ResolvePermissions(ctx, user.ID)
-	if err != nil {
-		return fmt.Errorf("resolve user permissions: %w", err)
-	}
-	if validateRoleAssignmentAgainstCallerErr := s.roleService.ValidateRoleAssignmentAgainstCaller(ctx, permissions, roleID, environmentID); validateRoleAssignmentAgainstCallerErr != nil {
-		if errors.Is(validateRoleAssignmentAgainstCallerErr, common.ErrRolePermissionEscalation) {
-			return common.Classify(common.ErrFederatedCredentialPermissionEscalation, fmt.Errorf("cannot map a federated credential to a role you do not hold: %w", validateRoleAssignmentAgainstCallerErr))
+func (s *FederatedCredentialService) validateRoleGrant(ctx context.Context, callerPerms *authz.PermissionSet, roleID string, environmentID *string) error {
+	if err := s.roleService.ValidateRoleAssignmentAgainstCaller(ctx, callerPerms, roleID, environmentID); err != nil {
+		if errors.Is(err, common.ErrRolePermissionEscalation) {
+			return common.Classify(common.ErrFederatedCredentialPermissionEscalation, fmt.Errorf("cannot map a federated credential to a role you do not hold: %w", err))
 		}
-		return common.Classify(common.ErrFederatedCredentialInvalid, fmt.Errorf("invalid federated credential: %w", validateRoleAssignmentAgainstCallerErr))
+		return common.Classify(common.ErrFederatedCredentialInvalid, fmt.Errorf("invalid federated credential: %w", err))
 	}
 	return nil
 }

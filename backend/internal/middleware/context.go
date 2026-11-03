@@ -25,6 +25,7 @@ const (
 	HeaderUpdateInitiatorID          = "X-Arcane-Update-Initiator-Id"
 	HeaderUpdateInitiatorName        = "X-Arcane-Update-Initiator-Name"
 	HeaderUpdateInitiatorDisplayName = "X-Arcane-Update-Initiator-Display-Name"
+	HeaderForwardedPermissions       = "X-Arcane-Forwarded-Permissions"
 	// HeaderIconCatalog carries the requesting user's icon catalog preference to
 	// remote environments. Agents authenticate proxied calls as a synthetic user
 	// with no preferences, so without it every remote environment would resolve

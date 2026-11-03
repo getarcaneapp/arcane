@@ -2,6 +2,8 @@ package webhook
 
 import (
 	"context"
+	"errors"
+	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -9,6 +11,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
@@ -17,6 +20,16 @@ import (
 type (
 	WebhookHandler struct {
 		webhookService *WebhookService
+		appCtx         handlerutil.ActivityAppContext
+	}
+
+	TriggerWebhookInput struct {
+		Token string `path:"token"`
+	}
+
+	TriggerWebhookOutput struct {
+		Status int
+		Body   map[string]any
 	}
 
 	CreateWebhookInput struct {
@@ -35,6 +48,39 @@ type (
 		types.Update[types.Webhook]
 	}
 )
+
+func (h *WebhookHandler) TriggerWebhook(ctx context.Context, input *TriggerWebhookInput) (*TriggerWebhookOutput, error) {
+	if h.webhookService == nil {
+		return &TriggerWebhookOutput{
+			Status: http.StatusInternalServerError,
+			Body:   map[string]any{"success": false, "error": "service not available"},
+		}, nil
+	}
+
+	err := h.webhookService.TriggerByToken(activity.ActivityRuntimeContext(ctx, h.appCtx.Context()), input.Token)
+	switch {
+	case err == nil:
+		return &TriggerWebhookOutput{
+			Status: http.StatusAccepted,
+			Body:   map[string]any{"success": true, "data": map[string]string{"status": "accepted"}},
+		}, nil
+	case errors.Is(err, ErrWebhookNotFound), errors.Is(err, ErrWebhookInvalid):
+		return &TriggerWebhookOutput{
+			Status: http.StatusNotFound,
+			Body:   map[string]any{"success": false, "error": err.Error()},
+		}, nil
+	case errors.Is(err, ErrWebhookDisabled):
+		return &TriggerWebhookOutput{
+			Status: http.StatusForbidden,
+			Body:   map[string]any{"success": false, "error": err.Error()},
+		}, nil
+	default:
+		return &TriggerWebhookOutput{
+			Status: http.StatusInternalServerError,
+			Body:   map[string]any{"success": false, "error": "internal server error"},
+		}, nil
+	}
+}
 
 // ListWebhooks returns all webhooks for an environment (tokens are masked).
 func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.Webhook], error) {

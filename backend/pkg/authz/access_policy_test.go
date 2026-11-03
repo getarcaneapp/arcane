@@ -29,25 +29,25 @@ func TestAccessSurfaceRegistryDefinesSettingsCustomizeAndLandingSemantics(t *tes
 
 	notifications := requireAccessSurface(t, "settings.category.notifications")
 	require.Equal(t, authz.AccessScopeModeGlobalOnly, notifications.ScopeMode)
-	require.ElementsMatch(t, []string{authz.PermNotificationsManage}, notifications.Permissions)
+	require.ElementsMatch(t, []string{authz.PermNotificationsList, authz.PermNotificationsRead}, notifications.Permissions)
 
 	templates := requireAccessSurface(t, "customize.category.templates")
 	require.Equal(t, authz.AccessSurfaceKindCustomizeCategory, templates.Kind)
 	require.Equal(t, authz.AccessScopeModeGlobalOnly, templates.ScopeMode)
-	require.ElementsMatch(t, []string{authz.PermCustomizeManage, authz.PermTemplatesList, authz.PermTemplatesRead}, templates.Permissions)
+	require.ElementsMatch(t, []string{authz.PermTemplatesList, authz.PermTemplatesRead}, templates.Permissions)
 
 	variables := requireAccessSurface(t, "customize.category.variables")
 	require.Equal(t, authz.AccessSurfaceKindCustomizeCategory, variables.Kind)
 	require.Equal(t, authz.AccessScopeModeGlobalOnly, variables.ScopeMode)
 	require.Equal(t, authz.AccessMatchModeAnyOf, variables.MatchMode)
-	require.ElementsMatch(t, []string{authz.PermVariablesRead}, variables.Permissions)
+	require.ElementsMatch(t, []string{authz.PermVariablesList, authz.PermVariablesRead}, variables.Permissions)
 	require.NotContains(t, variables.Permissions, authz.PermTemplatesRead)
 
 	activities := requireAccessSurface(t, "route.activities")
 	require.Equal(t, authz.AccessSurfaceKindRoute, activities.Kind)
 	require.Empty(t, activities.URL)
 	require.Equal(t, authz.AccessScopeModeAnyEffectiveScope, activities.ScopeMode)
-	require.ElementsMatch(t, []string{authz.PermActivitiesRead}, activities.Permissions)
+	require.ElementsMatch(t, []string{authz.PermActivitiesList, authz.PermActivitiesRead}, activities.Permissions)
 
 	oidcRoleMappings := requireAccessSurface(t, "route.oidc-role-mappings")
 	require.Equal(t, authz.AccessSurfaceKindRoute, oidcRoleMappings.Kind)
@@ -86,18 +86,19 @@ func TestCanAccessSurfaceEvaluatesScopeModesAndLandingChildren(t *testing.T) {
 	require.True(t, authz.CanAccessSurface(ps, "landing.system", "env-b"))
 
 	notificationPS := authz.NewPermissionSet()
-	notificationPS.AddEnv("env-a", authz.PermNotificationsManage)
+	notificationPS.AddEnv("env-a", authz.PermNotificationsList)
 	require.False(t, authz.CanAccessSurface(notificationPS, "settings.category.notifications", "env-a"))
-	notificationPS.AddGlobal(authz.PermNotificationsManage)
+	notificationPS.AddGlobal(authz.PermNotificationsList)
 	require.True(t, authz.CanAccessSurface(notificationPS, "settings.category.notifications", "env-a"))
 
-	customizePS := authz.NewPermissionSet()
-	customizePS.AddGlobal(authz.PermCustomizeManage)
-	require.True(t, authz.CanAccessSurface(customizePS, "customize.category.registries", "env-a"))
-	require.True(t, authz.CanAccessSurface(customizePS, "landing.customize", "env-a"))
+	registryPS := authz.NewPermissionSet()
+	registryPS.AddGlobal(authz.PermRegistriesRead)
+	require.True(t, authz.CanAccessSurface(registryPS, "customize.category.registries", "env-a"))
+	require.True(t, authz.CanAccessSurface(registryPS, "landing.customize", "env-a"))
+	require.False(t, authz.CanAccessSurface(registryPS, "customize.category.templates", "env-a"))
 
 	variablePS := authz.NewPermissionSet()
-	variablePS.AddGlobal(authz.PermVariablesRead)
+	variablePS.AddGlobal(authz.PermVariablesList)
 	require.True(t, authz.CanAccessSurface(variablePS, "customize.category.variables", "env-a"))
 	require.True(t, authz.CanAccessSurface(variablePS, "landing.customize", "env-a"))
 	templatePS := authz.NewPermissionSet()
@@ -105,7 +106,7 @@ func TestCanAccessSurfaceEvaluatesScopeModesAndLandingChildren(t *testing.T) {
 	require.False(t, authz.CanAccessSurface(templatePS, "customize.category.variables", "env-a"))
 
 	activitiesPS := authz.NewPermissionSet()
-	activitiesPS.AddEnv("env-a", authz.PermActivitiesRead)
+	activitiesPS.AddEnv("env-a", authz.PermActivitiesList)
 	require.True(t, authz.CanAccessSurface(activitiesPS, "route.activities", "env-b"))
 	require.False(t, authz.CanAccessSurface(authz.NewPermissionSet(), "route.activities", "env-a"))
 
@@ -118,11 +119,91 @@ func TestCanAccessSurfaceEvaluatesScopeModesAndLandingChildren(t *testing.T) {
 	nonAdminPS.AddGlobal(authz.BuiltInEditorPermissions()...)
 	require.False(t, authz.CanAccessSurface(nonAdminPS, "route.oidc-role-mappings", "env-a"))
 
+	for _, id := range []string{"route.settings.roles.new", "route.settings.roles.detail"} {
+		require.True(t, authz.CanAccessSurface(globalAdminPS, id, "env-a"), "global admin must reach %s", id)
+		require.False(t, authz.CanAccessSurface(nonAdminPS, id, "env-a"), "non-admin must not reach %s", id)
+	}
+
+	backupsPS := authz.NewPermissionSet()
+	backupsPS.AddGlobal(authz.PermSystemBackupsList)
+	require.True(t, authz.CanAccessSurface(backupsPS, "settings.category.systembackups", "env-a"))
+	require.False(t, authz.CanAccessSurface(nonAdminPS, "settings.category.systembackups", "env-a"))
+
 	environmentAdminPS := authz.NewPermissionSet()
 	environmentAdminPS.AddEnv("env-a", authz.AllPermissions()...)
 	require.False(t, authz.CanAccessSurface(environmentAdminPS, "route.oidc-role-mappings", "env-a"))
 
 	require.False(t, authz.CanAccessSurface(authz.NewPermissionSet(), "missing.surface", "env-a"))
+}
+
+func TestCanAccessSurfaceGatesSettingsCategoriesByScope(t *testing.T) {
+	envSettingsPS := authz.NewPermissionSet()
+	envSettingsPS.AddEnv("env-a", authz.PermEnvironmentSettingsRead)
+	for _, category := range []string{"storage", "docker", "security", "timeouts", "activity", "build"} {
+		require.True(t, authz.CanAccessSurface(envSettingsPS, "settings.category."+category, "env-a"), category)
+		require.False(t, authz.CanAccessSurface(envSettingsPS, "settings.category."+category, "env-b"), category)
+	}
+	require.True(t, authz.CanAccessSurface(envSettingsPS, "landing.settings", "env-a"))
+	require.False(t, authz.CanAccessSurface(envSettingsPS, "settings.category.jobschedule", "env-a"))
+	envSettingsPS.AddEnv("env-a", authz.PermJobsList)
+	require.True(t, authz.CanAccessSurface(envSettingsPS, "settings.category.jobschedule", "env-a"))
+
+	jobsOnlyPS := authz.NewPermissionSet()
+	jobsOnlyPS.AddGlobal(authz.PermJobsList, authz.PermJobsRead)
+	require.False(t, authz.CanAccessSurface(jobsOnlyPS, "settings.category.jobschedule", "env-a"))
+
+	managerSettingsPS := authz.NewPermissionSet()
+	managerSettingsPS.AddGlobal(authz.PermSettingsRead, authz.PermSettingsUpdate)
+	require.False(t, authz.CanAccessSurface(managerSettingsPS, "settings.category.docker", "env-a"))
+	require.False(t, authz.CanAccessSurface(managerSettingsPS, "settings.category.authentication", ""))
+
+	editorPS := authz.NewPermissionSet()
+	editorPS.AddGlobal(authz.BuiltInEditorPermissions()...)
+	require.True(t, authz.CanAccessSurface(editorPS, "settings.category.docker", "env-a"))
+	require.False(t, authz.CanAccessSurface(editorPS, "settings.category.authentication", ""))
+
+	globalAdminPS := authz.NewPermissionSet()
+	globalAdminPS.AddGlobal(authz.AllPermissions()...)
+	require.True(t, globalAdminPS.IsGlobalAdmin())
+	require.True(t, authz.CanAccessSurface(globalAdminPS, "settings.category.authentication", ""))
+	require.True(t, authz.CanAccessSurface(authz.SudoPermissionSet(), "settings.category.authentication", ""))
+
+	environmentAdminPS := authz.NewPermissionSet()
+	environmentAdminPS.AddEnv("env-a", authz.AllPermissions()...)
+	require.False(t, authz.CanAccessSurface(environmentAdminPS, "settings.category.authentication", "env-a"))
+}
+
+func TestCanAccessSurfaceGatesCreateAndEditRoutesOnTheirMutatingPermission(t *testing.T) {
+	tests := []struct {
+		surfaceID  string
+		permission string
+		global     bool
+	}{
+		{surfaceID: "route.projects.new", permission: authz.PermProjectsCreate},
+		{surfaceID: "route.containers.new", permission: authz.PermContainersCreate},
+		{surfaceID: "route.containers.edit", permission: authz.PermContainersUpdate},
+		{surfaceID: "route.podman.pods.detail", permission: authz.PermPodmanPodsRead},
+		{surfaceID: "route.podman.quadlets.detail", permission: authz.PermPodmanQuadletsRead},
+		{surfaceID: "route.customize.templates.create", permission: authz.PermTemplatesCreate, global: true},
+		{surfaceID: "route.customize.templates.default", permission: authz.PermTemplatesUpdate, global: true},
+	}
+
+	viewerPS := authz.NewPermissionSet()
+	viewerPS.AddGlobal(authz.BuiltInViewerPermissions()...)
+
+	for _, tt := range tests {
+		t.Run(tt.surfaceID, func(t *testing.T) {
+			envGrant := authz.NewPermissionSet()
+			envGrant.AddEnv("env-a", tt.permission)
+			globalGrant := authz.NewPermissionSet()
+			globalGrant.AddGlobal(tt.permission)
+
+			require.True(t, authz.CanAccessSurface(globalGrant, tt.surfaceID, "env-b"))
+			require.Equal(t, !tt.global, authz.CanAccessSurface(envGrant, tt.surfaceID, "env-a"))
+			require.False(t, authz.CanAccessSurface(envGrant, tt.surfaceID, "env-b"))
+			require.Equal(t, tt.permission == authz.PermPodmanPodsRead || tt.permission == authz.PermPodmanQuadletsRead, authz.CanAccessSurface(viewerPS, tt.surfaceID, "env-a"))
+		})
+	}
 }
 
 func TestAccessSurfaceRegistryIsDefensiveAndInternallyConsistent(t *testing.T) {

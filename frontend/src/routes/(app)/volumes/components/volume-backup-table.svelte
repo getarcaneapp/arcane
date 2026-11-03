@@ -82,6 +82,7 @@
 	} = $props();
 
 	const currentEnvId = $derived(environmentId);
+	const canTrackActivities = $derived(hasPermission('activities:list', currentEnvId));
 	const canReadActivities = $derived(hasPermission('activities:read', currentEnvId));
 	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
 	const canDeleteBackup = $derived(hasPermission('volumes:backup', currentEnvId));
@@ -163,7 +164,7 @@
 		() => volumeName,
 		() => {
 			const name = volumeName;
-			if (canReadActivities) return undefined;
+			if (canTrackActivities) return undefined;
 			return async (environmentId) => {
 				const ids: string[] = [];
 				let page = 1;
@@ -191,7 +192,7 @@
 		creating = true;
 		const environmentId = currentEnvId;
 		const name = volumeName;
-		const tracksActivities = canReadActivities;
+		const tracksActivities = canTrackActivities;
 		try {
 			const operationResult = await tryCatch(
 				(async () => {

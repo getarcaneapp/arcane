@@ -11,7 +11,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { apnsService } from '#lib/services/apns-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type { ApnsDevice } from '#lib/types/apns.js';
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -22,8 +21,9 @@
 	import NotificationProviders from './components/notification-providers.svelte';
 
 	const isReadOnly = $derived(settingsStore.readOnly);
-	const canManageNotifications = $derived(hasPermission('notifications:manage', GLOBAL_SCOPE));
-	const canWriteSettings = $derived(hasPermission('settings:write', LOCAL_DOCKER_ENVIRONMENT_ID));
+	const canListNotifications = $derived(hasPermission('notifications:list', GLOBAL_SCOPE));
+	const canUpdateNotifications = $derived(hasPermission('notifications:update', GLOBAL_SCOPE));
+	const canWriteSettings = $derived(hasPermission('settings:update', GLOBAL_SCOPE));
 	const mobilePushEnabled = $derived(settingsStore.current?.apnsEnabled === true);
 	let savingMobilePush = $state(false);
 	const releaseLinksEnabled = $derived(settingsStore.current?.notificationsIncludeReleaseLinks !== false);
@@ -160,14 +160,14 @@
 					</SettingsRow>
 				{/if}
 			</SettingsSection>
-			{#if canManageNotifications}
+			{#if canListNotifications}
 				<SettingsSection
 					title={m.notifications_providers_title()}
 					description={m.notifications_providers_description()}
 					variant="plain"
 					class="mt-6"
 				>
-					<NotificationProviders disabled={isReadOnly} />
+					<NotificationProviders disabled={isReadOnly || !canUpdateNotifications} />
 				</SettingsSection>
 			{/if}
 		</fieldset>

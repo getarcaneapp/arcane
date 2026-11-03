@@ -5,6 +5,7 @@ import { projectService } from '#lib/services/project-service.js';
 import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 import { variableService } from '#lib/services/variable-service.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
+import { userHasPermission } from '#lib/utils/auth.js';
 import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -28,7 +29,7 @@ async function loadGlobalVariables(queryClient: QueryClient) {
 }
 
 export const load: PageLoad = async ({ params, parent, url }) => {
-	const { queryClient } = await parent();
+	const { queryClient, user } = await parent();
 	const envId = await resolveDetailEnvironmentId(url);
 
 	type ProjectData = Awaited<ReturnType<typeof projectService.getProjectForEnvironment>>;
@@ -56,7 +57,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 		queryFn: () => projectWorkspaceService.getWorkspace(params.projectId, envId)
 	});
 
-	const globalVariables = await loadGlobalVariables(queryClient);
+	const globalVariables = userHasPermission(user, 'variables:list') ? await loadGlobalVariables(queryClient) : [];
 
 	const editorState = {
 		name: project.name || '',

@@ -308,6 +308,32 @@ func TestSetupAPIForSpec_DoesNotRegisterPublicCreateEvent(t *testing.T) {
 		"expected POST /events to be absent from the public API")
 }
 
+func TestSetupAPIForSpec_HiddenOperationsKeepAccess(t *testing.T) {
+	api := SetupAPIForSpec()
+	access := map[string]authz.PermissionExportEndpoint{}
+	for _, endpoint := range authz.BuildPermissionExport(api, nil).Endpoints {
+		access[endpoint.Method+" "+endpoint.Path] = endpoint
+	}
+
+	for key, want := range map[string]string{
+		"POST /events":                   authz.EndpointAccessAgentToken,
+		"POST /tunnel/mtls/enroll":       authz.EndpointAccessAgentToken,
+		"POST /webhooks/trigger/{token}": authz.EndpointAccessWebhookToken,
+		"POST /auth/federated/token":     authz.EndpointAccessSubjectToken,
+		"POST /telemetry/{signal}":       authz.EndpointAccessPublic,
+		"GET /docs":                      authz.EndpointAccessPublic,
+		"GET /docs/scalar.js":            authz.EndpointAccessPublic,
+		"GET /debug/pprof/{name}":        authz.EndpointAccessPermission,
+		"POST /debug/pprof/symbol":       authz.EndpointAccessPermission,
+	} {
+		require.Equal(t, want, access[key].Access, key)
+	}
+	require.Equal(t, authz.PermDiagnosticsProfile, access["GET /debug/pprof/{name}"].Permission)
+	require.Equal(t, authz.PermDiagnosticsProfile, access["POST /debug/pprof/symbol"].Permission)
+	require.Nil(t, api.OpenAPI().Paths["/docs"])
+	require.Nil(t, api.OpenAPI().Paths["/webhooks/trigger/{token}"])
+}
+
 func TestVariableMaterializationRoutesAreAgentOnly(t *testing.T) {
 	managerAPI := SetupAPIForSpec()
 	require.NotNil(t, managerAPI.OpenAPI().Paths["/variables"])
@@ -321,13 +347,13 @@ func TestVariableMaterializationRoutesAreAgentOnly(t *testing.T) {
 	require.False(t, found)
 
 	router := echo.New()
-	agentAPI := SetupAPI(
-		router,
-		router.Group("/api"),
-		handlerutil.NewActivityAppContext(t.Context()),
-		&config.Config{AgentEnabled: true},
-		HandlerDeps{Health: health.New(&health.Service{})},
-	)
+	agentAPI := SetupAPI(SetupParams{
+		Echo:       router,
+		Group:      router.Group("/api"),
+		AppContext: handlerutil.NewActivityAppContext(t.Context()),
+		Config:     &config.Config{AgentEnabled: true},
+		Deps:       HandlerDeps{Health: health.New(&health.Service{})},
+	})
 	require.Nil(t, agentAPI.OpenAPI().Paths["/variables"])
 	materialized := agentAPI.OpenAPI().Paths["/environments/{id}/templates/variables"]
 	require.NotNil(t, materialized)

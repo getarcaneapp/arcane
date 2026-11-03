@@ -76,10 +76,11 @@ type (
 
 	// PermissionResource is one resource group in the manifest (e.g. "containers").
 	PermissionResource struct {
-		Key     string             `json:"key" doc:"Stable resource key" example:"containers"`
-		Label   string             `json:"label" doc:"Human-readable label" example:"Containers"`
-		Scope   string             `json:"scope" enum:"global,env" doc:"'global' for org-level perms; 'env' for per-environment perms"`
-		Actions []PermissionAction `json:"actions" doc:"Actions available on this resource"`
+		Key         string             `json:"key" doc:"Stable resource key" example:"containers"`
+		Label       string             `json:"label" doc:"Human-readable label" example:"Containers"`
+		Description string             `json:"description" doc:"What the resource covers" example:"Docker containers"`
+		Scope       string             `json:"scope" enum:"global,env" doc:"'global' for org-level perms; 'env' for per-environment perms"`
+		Actions     []PermissionAction `json:"actions" doc:"Actions available on this resource"`
 	}
 
 	// PermissionAction is one permission inside a resource group.
@@ -88,7 +89,7 @@ type (
 		Permission  string   `json:"permission" doc:"Fully-qualified permission string used in role definitions" example:"containers:start"`
 		Label       string   `json:"label" doc:"Human-readable label" example:"Start"`
 		Description string   `json:"description,omitempty" doc:"Optional longer description"`
-		Requires    []string `json:"requires,omitempty" doc:"Permissions that should be auto-selected when this permission is chosen in the UI"`
+		Requires    []string `json:"requires,omitempty" doc:"Every permission this permission transitively requires; the server adds them when a role or API key is saved"`
 	}
 
 	// PermissionPreset is an optional bulk-selection bundle exposed to the UI.

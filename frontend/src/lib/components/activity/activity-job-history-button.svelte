@@ -20,7 +20,7 @@
 </script>
 
 {#if activity.type === 'job_run' && jobId && runId}
-	<IfPermitted perm="jobs:manage" envId={environmentId}>
+	<IfPermitted perm="jobs:read" envId={environmentId}>
 		<Button variant="outline" size="sm" onclick={() => (historyOpen = true)}>
 			<ClockIcon aria-hidden="true" />
 			{m.jobs_run_history()}

@@ -312,6 +312,19 @@ func (s *SettingsService) UpdateSettingValues(ctx context.Context, updates []typ
 	return s.persistSettings(ctx, values)
 }
 
+func (s *SettingsService) ValidateScope(scope SettingScope, updates types.SettingsUpdate) error {
+	_, byKey := settingsFields()
+	for _, key := range slices.Sorted(maps.Keys(updates)) {
+		if field, ok := byKey[key]; ok && !field.isInternal && field.scope != scope {
+			return common.Classify(common.ErrValidation, &types.FieldError{
+				Field: key,
+				Err:   fmt.Errorf("%s is a %s setting and cannot be updated through %s settings", key, field.scope, scope),
+			})
+		}
+	}
+	return nil
+}
+
 // UpdateSettings publishes the refreshed snapshot before returning. Each
 // subscriber's effects remain ordered and may finish after this method returns.
 func (s *SettingsService) UpdateSettings(ctx context.Context, updates types.SettingsUpdate) error {
@@ -342,8 +355,12 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates types.Sett
 
 	cfg := s.GetSettingsConfig()
 	effectiveValue := func(key string) string {
+		if locked, reason := s.IsLocked(key); locked && reason == LockReasonEnv {
+			current, _, _, _ := cfg.FieldByKey(key)
+			return current
+		}
 		if value, ok := pending[key]; ok {
-			return value
+			return cmp.Or(value, byKey[key].defaultValue)
 		}
 		current, _, _, _ := cfg.FieldByKey(key)
 		return current
@@ -411,6 +428,12 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates types.Sett
 		); err != nil {
 			return err
 		}
+	}
+
+	if (submittedValue("authLocalEnabled") != nil || submittedValue("oidcEnabled") != nil) &&
+		effectiveValue("authLocalEnabled") != "true" && effectiveValue("oidcEnabled") != "true" {
+		return fieldErr(kit.Ternary(submittedValue("authLocalEnabled") != nil, "authLocalEnabled", "oidcEnabled"),
+			errors.New("local authentication and OIDC cannot both be disabled"))
 	}
 
 	if effectiveValue("oidcEnabled") == "true" {
@@ -626,13 +649,13 @@ func looksLikeCiphertext(value string, decryptErr error) bool {
 	return isDecryptErr && decodeErr == nil && len(decoded) >= minCiphertextBytes
 }
 
-func (s *SettingsService) SettingsSnapshot(visibility SettingVisibility) types.SettingsSnapshot {
+func (s *SettingsService) SettingsSnapshot(visibility SettingVisibility, scopes ...SettingScope) types.SettingsSnapshot {
 	current := s.snapshot.Load()
 	values := reflect.ValueOf(current.values).Elem()
 	fields, _ := settingsFields()
 	states := make([]types.SettingState, 0, len(fields))
 	for _, field := range fields {
-		if field.isInternal || !fieldVisibleForSettingVisibility(field, visibility) {
+		if field.isInternal || !fieldVisibleForSettingVisibility(field, visibility) || len(scopes) > 0 && !slices.Contains(scopes, field.scope) {
 			continue
 		}
 		value := values.Field(field.index).FieldByName("Value").String()
@@ -646,7 +669,7 @@ func (s *SettingsService) SettingsSnapshot(visibility SettingVisibility) types.S
 			Locked:     locked,
 			LockReason: string(reason),
 			Sensitive:  field.isSensitive,
-			Scope:      kit.Ternary(field.isManagerOnly, "manager", "environment"),
+			Scope:      string(field.scope),
 			EnvName:    field.envName,
 		})
 	}

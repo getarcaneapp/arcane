@@ -21,8 +21,6 @@
 
 	let { environmentId, onChanged }: { environmentId: string; onChanged?: () => void | Promise<void> } = $props();
 
-	const canManageSwarm = $derived(hasPermission('swarm:nodes', environmentId));
-
 	const swarmInfoQuery = createQuery(() => {
 		const requestedEnvironmentId = environmentId;
 		return {
@@ -291,7 +289,7 @@
 								size="sm"
 								customLabel={m.common_actions()}
 								onclick={() => (securityDialogOpen = true)}
-								disabled={!canManageSwarm}
+								disabled={!hasPermission('swarm:unlock', environmentId)}
 							/>
 						</Card.Action>
 					</Card.Header>
@@ -323,7 +321,7 @@
 								size="sm"
 								customLabel={m.swarm_cluster_rotate_tokens()}
 								onclick={handleRotateTokens}
-								disabled={!canManageSwarm || !isSwarmInitialized || isLoading.rotateTokens}
+								disabled={!hasPermission('swarm:unlock', environmentId) || !isSwarmInitialized || isLoading.rotateTokens}
 								loading={isLoading.rotateTokens}
 							/>
 						</Card.Action>
@@ -442,7 +440,7 @@
 								action="save"
 								customLabel={m.swarm_cluster_update_spec_action()}
 								onclick={handleUpdateSpec}
-								disabled={!canManageSwarm || isLoading.updateSpec}
+								disabled={!hasPermission('swarm:update', environmentId) || isLoading.updateSpec}
 								loading={isLoading.updateSpec}
 							/>
 						</div>
@@ -504,7 +502,7 @@
 										action="create"
 										customLabel={m.swarm_cluster_initialize_action()}
 										onclick={handleInit}
-										disabled={!canManageSwarm || isLoading.init}
+										disabled={!hasPermission('swarm:init', environmentId) || isLoading.init}
 										loading={isLoading.init}
 									/>
 								</div>
@@ -545,7 +543,7 @@
 										action="create"
 										customLabel={m.swarm_cluster_join_action()}
 										onclick={handleJoin}
-										disabled={!canManageSwarm || isLoading.join}
+										disabled={!hasPermission('swarm:join', environmentId) || isLoading.join}
 										loading={isLoading.join}
 									/>
 								</div>
@@ -578,7 +576,7 @@
 							action="save"
 							customLabel={m.swarm_cluster_unlock_action()}
 							onclick={handleUnlock}
-							disabled={!canManageSwarm || isLoading.unlock}
+							disabled={!hasPermission('swarm:unlock', environmentId) || isLoading.unlock}
 							loading={isLoading.unlock}
 						/>
 					</div>
@@ -593,7 +591,7 @@
 						action="remove"
 						customLabel={m.swarm_cluster_leave_action()}
 						onclick={handleLeave}
-						disabled={!canManageSwarm || isLoading.leave}
+						disabled={!hasPermission('swarm:leave', environmentId) || isLoading.leave}
 						loading={isLoading.leave}
 					/>
 				</div>

@@ -332,7 +332,7 @@
 				<div class="hidden items-center sm:flex">
 					<EnvironmentDestinationSelect
 						bind:value={destinationId}
-						permission="swarm:stacks"
+						permission={isEditMode ? 'swarm-stacks:update' : 'swarm-stacks:create'}
 						environments={data.environments}
 						variant="prefix"
 						readonly={isEditMode}
@@ -385,7 +385,7 @@
 				<div class="flex flex-shrink-0 items-center px-2 py-4 sm:hidden sm:px-6">
 					<EnvironmentDestinationSelect
 						bind:value={destinationId}
-						permission="swarm:stacks"
+						permission={isEditMode ? 'swarm-stacks:update' : 'swarm-stacks:create'}
 						environments={data.environments}
 						variant="prefix"
 						readonly={isEditMode}

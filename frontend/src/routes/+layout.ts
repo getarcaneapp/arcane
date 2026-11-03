@@ -25,7 +25,7 @@ import { PODMAN_STATUS_DEPENDENCY, type PodmanStatus } from '#lib/types/podman.j
 import type { AppVersionInformation, ResolvedSettings } from '#lib/types/settings.js';
 import type { SwarmRuntimeStatus } from '#lib/types/swarm.js';
 import { extractApiErrorStatus, isAuthRejectionError } from '#lib/utils/api.js';
-import { getAuthRedirectPath, userHasPermission } from '#lib/utils/auth.js';
+import { getAuthRedirectPath } from '#lib/utils/auth.js';
 import { isEnvironmentOnline } from '#lib/utils/docker.js';
 import { readableEnvironments, sumAcrossEnvironments } from '#lib/utils/environments.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
@@ -198,15 +198,13 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 
 		featureStore.connect(queryClient);
 		clientStream.connect(queryClient);
-		const settingsRequest = userHasPermission(user, 'settings:read')
-			? dataOrNull(
-					queryClient.query({
-						...rootQuery,
-						queryKey: queryKeys.settings.byEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID),
-						queryFn: () => settingsService.getSettingsForEnvironmentMerged(LOCAL_DOCKER_ENVIRONMENT_ID)
-					})
-				)
-			: Promise.resolve(null);
+		const settingsRequest = dataOrNull(
+			queryClient.query({
+				...rootQuery,
+				queryKey: queryKeys.settings.byEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID),
+				queryFn: () => settingsService.getSettingsForEnvironmentMerged(LOCAL_DOCKER_ENVIRONMENT_ID)
+			})
+		);
 		const featuresRequest = Promise.race([
 			Promise.all(
 				environmentStore.available
@@ -274,7 +272,7 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 				queryClient.query({
 					...rootQuery,
 					queryKey: queryKeys.settings.public(LOCAL_DOCKER_ENVIRONMENT_ID),
-					queryFn: () => settingsService.getPublicSettings()
+					queryFn: () => settingsService.getPublicSettingsForEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID)
 				})
 			));
 		await featuresRequest;
@@ -292,7 +290,7 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 			queryClient.query({
 				...rootQuery,
 				queryKey: queryKeys.settings.public(LOCAL_DOCKER_ENVIRONMENT_ID),
-				queryFn: () => settingsService.getPublicSettings()
+				queryFn: () => settingsService.getPublicSettingsForEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID)
 			})
 		);
 	}

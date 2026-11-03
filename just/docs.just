@@ -16,3 +16,15 @@ config output="" source_root=".":
     fi
 
     "${cmd[@]}"
+
+# Permission catalog and endpoint coverage JSON
+[script('bash')]
+permissions output="":
+    set -euo pipefail
+
+    cmd=(go run -tags exclude_frontend ./backend/cmd permissions)
+    if [ -n "{{ output }}" ]; then
+        cmd+=(--output "{{ output }}")
+    fi
+
+    "${cmd[@]}"

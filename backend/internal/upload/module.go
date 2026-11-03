@@ -5,6 +5,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/types/v3"
 )
@@ -41,10 +42,6 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	RegisterUploads(api, m.service)
 }
 
-// RegisterUploads registers the upload-session routes. The required permission
-// depends on the {kind} path parameter, so the operations carry no static
-// permission metadata; enforcement happens in-handler and, for remote
-// environments, in the proxy's upload special case.
 func RegisterUploads(api huma.API, service *UploadService) {
 	h := &UploadHandler{uploadService: service}
 
@@ -56,6 +53,7 @@ func RegisterUploads(api huma.API, service *UploadService) {
 		Description: "Start a chunked upload session; the file arrives as independently retryable chunks",
 		Tags:        []string{"Uploads"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions},
 	}, h.CreateSession)
 
 	huma.Register(api, huma.Operation{
@@ -66,6 +64,7 @@ func RegisterUploads(api huma.API, service *UploadService) {
 		Description:  "Upload one chunk of an upload session; re-sending a chunk is idempotent",
 		Tags:         []string{"Uploads"},
 		Security:     handlerutil.DefaultOperationSecurity(),
+		Metadata:     map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions},
 		MaxBodyBytes: types.UploadMaxChunkSize,
 	}, h.UploadChunk)
 
@@ -77,6 +76,7 @@ func RegisterUploads(api huma.API, service *UploadService) {
 		Description: "Inspect an upload session to resume by re-sending only the missing chunks",
 		Tags:        []string{"Uploads"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions},
 	}, h.GetSession)
 
 	huma.Register(api, huma.Operation{
@@ -87,5 +87,6 @@ func RegisterUploads(api huma.API, service *UploadService) {
 		Description: "Abort an upload session and discard its received chunks",
 		Tags:        []string{"Uploads"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions},
 	}, h.DeleteSession)
 }

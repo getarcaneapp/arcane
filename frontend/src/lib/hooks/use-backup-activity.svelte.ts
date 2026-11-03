@@ -6,6 +6,7 @@ import { activityService } from '#lib/services/activity-service.js';
 import { STREAM_CHANNEL_ACTIVITIES } from '#lib/services/stream-service.js';
 import { clientStream } from '#lib/stores/client-stream.svelte.js';
 import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
+import userStore from '#lib/stores/user-store.svelte.js';
 import type { Activity, ActivityStreamEvent } from '#lib/types/activity.type.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -44,6 +45,7 @@ export function useBackupActivity(
 				}
 				return activities.filter(matches).map((activity) => activity.id);
 			},
+			enabled: !!discover || userStore.hasPermission('activities:list', environmentId),
 			staleTime: 0
 		};
 	});

@@ -76,7 +76,7 @@ async function disarmWhenBackendResponds() {
 }
 
 export function confirmAndApplyAllUpdates({ setLoading, onRefresh }: ConfirmAndApplyAllUpdatesOptions) {
-	const environments = actionEnvironments('image-updates:check');
+	const environments = actionEnvironments('image-updates:apply');
 	openConfirmDialog({
 		title: m.update_all(),
 		message: `${m.updates_update_all_confirm_message()} ${acrossEnvironmentsNote(environments)}`.trim(),

@@ -735,7 +735,7 @@ func (s *Service) rescheduleSystemVolumeBackup(ctx context.Context, policy *type
 
 // Start freezes the selected policy and volumes, then submits their workflow.
 func (s *Service) Start(ctx context.Context, user types.Actor, request types.RunSystemVolumeBackupsRequest) (*types.BackupRunAccepted, error) {
-	requester := backup.NewRequester(ctx, user, "0", authz.PermSystemBackupsManage)
+	requester := backup.NewRequester(ctx, user, "0", authz.PermSystemBackupsCreate)
 	if err := s.engine.Authorize(ctx, requester); err != nil {
 		return nil, err
 	}

@@ -178,8 +178,9 @@
 	const hasMounts = $derived(mounts.length > 0);
 
 	const envId = $derived(data.envId);
-	const canManageServices = $derived(hasPermission('swarm:services', envId));
-	const canScaleService = $derived(canManageServices && showsReplicas);
+	const canUpdateService = $derived(hasPermission('swarm-services:update', envId));
+	const canDeleteService = $derived(hasPermission('swarm-services:delete', envId));
+	const canScaleService = $derived(canUpdateService && showsReplicas);
 
 	const serviceActions = $derived<ActionButton[]>([
 		...(canScaleService
@@ -195,36 +196,44 @@
 					}
 				]
 			: []),
-		{
-			id: 'edit',
-			action: 'edit',
-			placement: canScaleService ? ('secondary' as const) : ('primary' as const),
-			label: m.common_edit(),
-			icon: EditIcon,
-			disabled: isLoading.update,
-			onclick: openEdit
-		},
-		{
-			id: 'rollback',
-			action: 'redeploy',
-			group: 'deploy' as const,
-			label: m.swarm_service_rollback(),
-			icon: RedeployIcon,
-			disabled: isLoading.rollback,
-			onclick: handleRollback
-		},
-		{
-			id: 'delete',
-			action: 'remove',
-			group: 'danger' as const,
-			destructive: true,
-			label: m.common_delete(),
-			icon: TrashIcon,
-			disabled: isLoading.remove,
-			onclick: handleDelete
-		}
+		...(canUpdateService
+			? [
+					{
+						id: 'edit',
+						action: 'edit' as const,
+						placement: canScaleService ? ('secondary' as const) : ('primary' as const),
+						label: m.common_edit(),
+						icon: EditIcon,
+						disabled: isLoading.update,
+						onclick: openEdit
+					},
+					{
+						id: 'rollback',
+						action: 'redeploy' as const,
+						group: 'deploy' as const,
+						label: m.swarm_service_rollback(),
+						icon: RedeployIcon,
+						disabled: isLoading.rollback,
+						onclick: handleRollback
+					}
+				]
+			: []),
+		...(canDeleteService
+			? [
+					{
+						id: 'delete',
+						action: 'remove' as const,
+						group: 'danger' as const,
+						destructive: true,
+						label: m.common_delete(),
+						icon: TrashIcon,
+						disabled: isLoading.remove,
+						onclick: handleDelete
+					}
+				]
+			: [])
 	]);
-	const canViewServiceLogs = $derived(hasPermission('swarm:services:logs', envId));
+	const canViewServiceLogs = $derived(hasPermission('swarm-services:logs', envId));
 
 	const tabItems = $derived<TabItem[]>([
 		{ value: 'overview', label: m.common_overview(), icon: DockIcon },
@@ -362,7 +371,7 @@
 		{/snippet}
 
 		{#snippet headerActions()}
-			{#if canManageServices}
+			{#if serviceActions.length > 0}
 				<ActionButtonGroup size="sm" buttons={serviceActions} />
 			{/if}
 		{/snippet}

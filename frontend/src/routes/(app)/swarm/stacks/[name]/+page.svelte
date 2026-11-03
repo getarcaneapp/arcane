@@ -98,8 +98,8 @@
 	const stackName = $derived(stack?.name ?? data.stackName);
 	const hasLiveStack = $derived((stack?.services ?? 0) > 0);
 	const envId = $derived(data.envId);
-	const canManageStacks = $derived(hasPermission('swarm:stacks', envId));
-	const canViewSource = $derived(canManageStacks && sourceState !== 'forbidden');
+	const canReadStackSource = $derived(hasPermission('swarm-stacks:read', envId));
+	const canViewSource = $derived(canReadStackSource && sourceState !== 'forbidden');
 	const tabItems = $derived<TabItem[]>([
 		...(hasLiveStack ? [{ value: 'services', label: m.services(), icon: DockIcon }] : []),
 		...(hasLiveStack ? [{ value: 'tasks', label: m.tasks(), icon: JobsIcon }] : []),
@@ -123,7 +123,7 @@
 	);
 
 	async function refreshSource(showErrorToast = false) {
-		if (!canManageStacks) {
+		if (!canReadStackSource) {
 			source = null;
 			sourceState = 'forbidden';
 			return;
@@ -176,7 +176,7 @@
 			if (tasksResult.isError) {
 				toast.error(m.common_refresh_failed({ resource: `${m.tasks()} (${stackName})` }));
 			}
-			if (canManageStacks) {
+			if (canReadStackSource) {
 				await refreshSource(true);
 			}
 		} finally {
@@ -185,7 +185,7 @@
 	}
 
 	onMount(() => {
-		if (canManageStacks) {
+		if (canReadStackSource) {
 			void refreshSource();
 		}
 	});
@@ -214,7 +214,7 @@
 	}
 
 	const actionButtons: ActionButton[] = $derived([
-		...(canManageStacks
+		...(hasPermission('swarm-stacks:update', envId)
 			? [
 					{
 						id: 'edit',
@@ -227,7 +227,11 @@
 								resolve(`/(app)/swarm/stacks/new?fromStack=${encodeURIComponent(stackName)}&env=${encodeURIComponent(envId)}`)
 							),
 						disabled: isLoading.remove
-					},
+					}
+				]
+			: []),
+		...(hasPermission('swarm-stacks:delete', envId)
+			? [
 					{
 						id: 'remove',
 						action: 'remove' as const,

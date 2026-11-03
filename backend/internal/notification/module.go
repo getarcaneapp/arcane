@@ -52,7 +52,7 @@ func RegisterNotifications(api huma.API, notificationSvc *NotificationService, c
 		Summary:     "Get all notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermNotificationsManage, h.GetAllNotificationSettings)
+	}, authz.PermNotificationsList, h.GetAllNotificationSettings)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-notification-settings",
@@ -61,7 +61,7 @@ func RegisterNotifications(api huma.API, notificationSvc *NotificationService, c
 		Summary:     "Get notification settings by provider",
 		Tags:        []string{"Notifications"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermNotificationsManage, h.GetNotificationSettings)
+	}, authz.PermNotificationsRead, h.GetNotificationSettings)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-or-update-notification-settings",
@@ -70,7 +70,7 @@ func RegisterNotifications(api huma.API, notificationSvc *NotificationService, c
 		Summary:     "Create or update notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermNotificationsManage, h.CreateOrUpdateNotificationSettings)
+	}, authz.PermNotificationsUpdate, h.CreateOrUpdateNotificationSettings)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-notification-settings",
@@ -79,7 +79,7 @@ func RegisterNotifications(api huma.API, notificationSvc *NotificationService, c
 		Summary:     "Delete notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermNotificationsManage, h.DeleteNotificationSettings)
+	}, authz.PermNotificationsDelete, h.DeleteNotificationSettings)
 
 	middleware.RegisterWithActionPermissions(api, huma.Operation{
 		OperationID: "notification-settings-action",
@@ -89,7 +89,7 @@ func RegisterNotifications(api huma.API, notificationSvc *NotificationService, c
 		Tags:        []string{"Notifications"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, "action", map[string]string{
-		"test": authz.PermNotificationsManage,
+		"test": authz.PermNotificationsTest,
 	}, h.TestNotification)
 
 	// Environment tokens are authenticated by ApiKeyAuth and revalidated by the

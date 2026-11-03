@@ -21,7 +21,7 @@
 	let { data } = $props();
 
 	const pageState = new ResourceListPageState<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
-	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm:read'));
+	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm-stacks:list'));
 	const swarm = $derived(swarmQuery.data ?? data.swarm);
 
 	const stacksScope = $derived(swarmStacksScope(swarm));
@@ -46,7 +46,7 @@
 
 	const totalStacks = $derived(stacks?.pagination?.totalItems ?? stacks?.data?.length ?? 0);
 
-	const canCreateStack = $derived(swarm.managers.some((env) => hasPermission('swarm:stacks', env.id)));
+	const canCreateStack = $derived(swarm.managers.some((env) => hasPermission('swarm-stacks:create', env.id)));
 
 	const actionButtons = $derived.by(() =>
 		createRefreshActionButtons({

@@ -3,6 +3,7 @@ package gitops
 import (
 	"cmp"
 	"context"
+	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -109,45 +110,23 @@ const (
 	maxBackupHistoryLimit = 200
 )
 
-// requireLifecyclePermission rejects callers lacking gitops:lifecycle
-// for the target environment when a create/update request configures the
-// pre-deploy lifecycle hook. Configuring the hook lets the caller run an
-// arbitrary container — with host bind mounts, env, and network access — on
-// every sync, so it is gated behind its own permission (seeded only into the
-// Admin built-in role) rather than the broader gitops:create / gitops:update
-// permissions that non-admin roles such as Editor hold. Whether a request
-// touches the hook is decided by the request type itself
-// (hasPreDeployConfig over the submitted keys) so the field set has a single owner.
-func requireLifecyclePermission(ctx context.Context, environmentID string, lifecycleRequested bool) error {
-	if !lifecycleRequested {
-		return nil
+func requireConditionPermissions(ctx context.Context, environmentID string, conditions authz.PermissionConditions, field, value string) error {
+	ps, _ := middleware.PermissionsFromContext(ctx)
+	for _, perm := range conditions.Required(field, value) {
+		if !ps.Allows(perm, environmentID) {
+			return huma.Error403Forbidden("permission denied: " + perm)
+		}
 	}
-	if ps, _ := middleware.PermissionsFromContext(ctx); ps.Allows(authz.PermGitOpsLifecycle, environmentID) {
-		return nil
-	}
-	return huma.Error403Forbidden("configuring a pre-deploy lifecycle hook requires the " + authz.PermGitOpsLifecycle + " permission")
+	return nil
 }
 
-// requireBackupPermission rejects callers lacking gitops:backup for
-// the target environment when the operation touches a backup-mode sync.
-func requireBackupPermission(ctx context.Context, environmentID string, backup bool) error {
-	if !backup {
-		return nil
-	}
-	if ps, _ := middleware.PermissionsFromContext(ctx); ps.Allows(authz.PermGitOpsBackup, environmentID) {
-		return nil
-	}
-	return huma.Error403Forbidden("backing a project up to Git requires the " + authz.PermGitOpsBackup + " permission")
-}
-
-// requireBackupSyncPermission loads the sync and applies requireBackupPermission when it is a backup.
 func (h *GitOpsSyncHandler) requireBackupSyncPermission(ctx context.Context, environmentID, syncID string) error {
 	sync, err := h.syncService.GetSyncByID(ctx, environmentID, syncID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve GitOps sync")
 	}
-	return requireBackupPermission(ctx, environmentID, sync.Mode == types.GitOpsSyncModeBackup)
+	return requireConditionPermissions(ctx, environmentID, authz.GitOpsSyncModeConditions, "mode", sync.Mode)
 }
 
 // ListSyncs returns a paginated list of GitOps syncs.
@@ -186,10 +165,10 @@ func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsS
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid request body", err)
 	}
-	if lifecycleErr := requireLifecyclePermission(ctx, input.EnvironmentID, hasPreDeployConfig(submitted)); lifecycleErr != nil {
+	if lifecycleErr := requireConditionPermissions(ctx, input.EnvironmentID, authz.GitOpsPreDeployConditions, "preDeploy", strconv.FormatBool(hasPreDeployConfig(submitted))); lifecycleErr != nil {
 		return nil, lifecycleErr
 	}
-	if backupErr := requireBackupPermission(ctx, input.EnvironmentID, input.Body.Mode == types.GitOpsSyncModeBackup); backupErr != nil {
+	if backupErr := requireConditionPermissions(ctx, input.EnvironmentID, authz.GitOpsModeConditions, "mode", input.Body.Mode); backupErr != nil {
 		return nil, backupErr
 	}
 
@@ -218,7 +197,7 @@ func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsS
 // ImportSyncs imports multiple GitOps syncs.
 func (h *GitOpsSyncHandler) ImportSyncs(ctx context.Context, input *ImportGitOpsSyncsInput) (*handlerutil.Out[types.ImportGitOpsSyncResponse], error) {
 	for _, item := range input.Body {
-		if err := requireLifecyclePermission(ctx, input.EnvironmentID, item.HasPreDeployConfig()); err != nil {
+		if err := requireConditionPermissions(ctx, input.EnvironmentID, authz.GitOpsPreDeployConditions, "preDeploy", strconv.FormatBool(item.HasPreDeployConfig())); err != nil {
 			return nil, err
 		}
 	}
@@ -264,7 +243,7 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid request body", err)
 	}
-	if lifecycleErr := requireLifecyclePermission(ctx, input.EnvironmentID, hasPreDeployConfig(submitted)); lifecycleErr != nil {
+	if lifecycleErr := requireConditionPermissions(ctx, input.EnvironmentID, authz.GitOpsPreDeployConditions, "preDeploy", strconv.FormatBool(hasPreDeployConfig(submitted))); lifecycleErr != nil {
 		return nil, lifecycleErr
 	}
 	if backupErr := h.requireBackupSyncPermission(ctx, input.EnvironmentID, input.SyncID); backupErr != nil {

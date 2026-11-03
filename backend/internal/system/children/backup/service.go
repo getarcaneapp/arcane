@@ -1566,7 +1566,7 @@ func (s *Service) applyRetention(ctx context.Context, policyID string, keep int,
 
 // StartBackup prepares a manual backup, then submits its workflow.
 func (s *Service) StartBackup(ctx context.Context, user types.Actor, request types.CreateSystemBackupRequest) (*types.SystemBackupRun, error) {
-	requester := backup.NewRequester(ctx, user, "0", authz.PermSystemBackupsManage)
+	requester := backup.NewRequester(ctx, user, "0", authz.PermSystemBackupsCreate)
 	if err := s.engine.Authorize(ctx, requester); err != nil {
 		return nil, err
 	}

@@ -261,8 +261,8 @@
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
-		<DropdownMenu.Separator />
-		<IfPermitted perm="swarm:services" envId={item.environmentId}>
+		<IfPermitted perm="swarm-services:delete" envId={item.environmentId}>
+			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isAnyLoading}>
 				<TrashIcon class="size-4" />
 				{m.common_delete()}

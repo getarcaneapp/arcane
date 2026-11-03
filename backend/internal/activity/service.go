@@ -893,7 +893,7 @@ func (s *ActivityService) ListActivitiesPaginated(ctx context.Context, environme
 
 	var activities []Activity
 	q := s.db.WithContext(ctx).Model(&Activity{}).Where("environment_id = ?", environmentID)
-	q = scopeJobActivityVisibility(ctx, q, environmentID, authz.PermActivitiesRead)
+	q = scopeJobActivityVisibility(ctx, q, environmentID, authz.PermActivitiesList)
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)

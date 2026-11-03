@@ -25,6 +25,7 @@
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { PODMAN_KUBE_GENERATE_TYPES, type PodmanKubeGenerateType } from '#lib/types/podman.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { hasAnyPermission, hasPermission } from '#lib/utils/auth.js';
 	import { templateBtnClass } from '#lib/utils/compose-flow.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { withOccurrenceKeys } from '#lib/utils/formatting.js';
@@ -34,9 +35,9 @@
 	let { data } = $props();
 	const queryClient = useQueryClient();
 
-	const podmanEnvs = $derived(shownPodmanEnvironments(data.podmanStatuses));
+	const podmanEnvs = $derived(shownPodmanEnvironments(data.podmanStatuses, 'podman-kube:create'));
 	let picked = $state('');
-	const environmentId = $derived(destinationEnvironmentId(picked, 'podman:kube', podmanEnvs));
+	const environmentId = $derived(destinationEnvironmentId(picked, 'podman-kube:create', podmanEnvs));
 
 	let yaml = $state('');
 	let start = $state(true);
@@ -65,7 +66,7 @@
 	const networksQuery = createQuery(() => ({
 		queryKey: queryKeys.podman.kubeNetworks(environmentId),
 		queryFn: () => networkService.getNetworksForEnvironment(environmentId, listAll),
-		enabled: podmanEnvs.length > 0
+		enabled: podmanEnvs.length > 0 && hasPermission('networks:list', environmentId)
 	}));
 
 	const networkItems = $derived<PickerItem[]>(
@@ -76,9 +77,13 @@
 		queryKey: queryKeys.podman.kubeGenerateSources(environmentId),
 		queryFn: async () => {
 			const [pods, containers, volumes] = await Promise.all([
-				podmanService.getPods(environmentId, listAll),
-				containerService.getContainersForEnvironment(environmentId, listAll),
-				volumeService.getVolumesForEnvironment(environmentId, listAll)
+				hasPermission('podman-pods:list', environmentId) ? podmanService.getPods(environmentId, listAll) : { data: [] },
+				hasPermission('containers:list', environmentId)
+					? containerService.getContainersForEnvironment(environmentId, listAll)
+					: { data: [] },
+				hasPermission('volumes:list', environmentId)
+					? volumeService.getVolumesForEnvironment(environmentId, listAll)
+					: { data: [] }
 			]);
 			return [
 				...pods.data.map((pod) => ({ value: pod.name, label: pod.name, hint: m.podman_pod() })),
@@ -254,7 +259,7 @@
 				<div class="flex items-center gap-2">
 					<EnvironmentDestinationSelect
 						bind:value={() => environmentId, (value) => (picked = value)}
-						permission="podman:kube"
+						permission="podman-kube:create"
 						environments={podmanEnvs}
 					/>
 					<ButtonGroup.Root>
@@ -267,32 +272,40 @@
 							loading={loading.play}
 							disabled={loading.play || loading.down || !yaml.trim()}
 						/>
-						<DropdownMenu.Root>
-							<DropdownMenu.Trigger>
-								{#snippet child({ props })}
-									<ArcaneButton
-										{...props}
-										action="base"
-										tone="ghost"
-										class={`${templateBtnClass} -ml-px rounded-l-none px-2`}
-										icon={ArrowDownIcon}
-									/>
-								{/snippet}
-							</DropdownMenu.Trigger>
-							<DropdownMenu.Content align="end" class="min-w-55">
-								<DropdownMenu.Group>
-									<DropdownMenu.Item disabled={loading.play || loading.down} onclick={() => (generateOpen = true)}>
-										<TerminalIcon class="size-4" />
-										{m.podman_kube_generate()}
-									</DropdownMenu.Item>
-									<DropdownMenu.Separator />
-									<DropdownMenu.Item disabled={loading.play || loading.down || !yaml.trim()} onclick={handleDown}>
-										<TrashIcon class="size-4" />
-										{m.common_down()}
-									</DropdownMenu.Item>
-								</DropdownMenu.Group>
-							</DropdownMenu.Content>
-						</DropdownMenu.Root>
+						{#if hasAnyPermission(['podman-kube:read', 'podman-kube:delete'], environmentId)}
+							<DropdownMenu.Root>
+								<DropdownMenu.Trigger>
+									{#snippet child({ props })}
+										<ArcaneButton
+											{...props}
+											action="base"
+											tone="ghost"
+											class={`${templateBtnClass} -ml-px rounded-l-none px-2`}
+											icon={ArrowDownIcon}
+										/>
+									{/snippet}
+								</DropdownMenu.Trigger>
+								<DropdownMenu.Content align="end" class="min-w-55">
+									<DropdownMenu.Group>
+										{#if hasPermission('podman-kube:read', environmentId)}
+											<DropdownMenu.Item disabled={loading.play || loading.down} onclick={() => (generateOpen = true)}>
+												<TerminalIcon class="size-4" />
+												{m.podman_kube_generate()}
+											</DropdownMenu.Item>
+										{/if}
+										{#if hasPermission('podman-kube:read', environmentId) && hasPermission('podman-kube:delete', environmentId)}
+											<DropdownMenu.Separator />
+										{/if}
+										{#if hasPermission('podman-kube:delete', environmentId)}
+											<DropdownMenu.Item disabled={loading.play || loading.down || !yaml.trim()} onclick={handleDown}>
+												<TrashIcon class="size-4" />
+												{m.common_down()}
+											</DropdownMenu.Item>
+										{/if}
+									</DropdownMenu.Group>
+								</DropdownMenu.Content>
+							</DropdownMenu.Root>
+						{/if}
 					</ButtonGroup.Root>
 				</div>
 			{/if}

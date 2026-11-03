@@ -22,17 +22,17 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		Summary:     "List Podman secrets",
 		Tags:        []string{secretsTag},
 		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
-	}, authz.PermPodmanRead, h.List)
+	}, authz.PermPodmanSecretsList, h.List)
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation("create-podman-secret", http.MethodPost, secretsPath, "Create Podman secret", "", secretsTag),
-		authz.PermPodmanSecrets, h.Create)
+		authz.PermPodmanSecretsCreate, h.Create)
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation("get-podman-secret", http.MethodGet, secretsPath+"/{secretId}", "Inspect Podman secret", "Returns secret metadata; the value is never included", secretsTag),
-		authz.PermPodmanRead, h.Get)
+		authz.PermPodmanSecretsRead, h.Get)
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation("update-podman-secret", http.MethodPut, secretsPath+"/{secretId}", "Replace Podman secret", "Replace the value, driver, and labels of an existing secret", secretsTag),
-		authz.PermPodmanSecrets, h.Update)
+		authz.PermPodmanSecretsUpdate, h.Update)
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation("delete-podman-secret", http.MethodDelete, secretsPath+"/{secretId}", "Remove Podman secret", "", secretsTag),
-		authz.PermPodmanSecrets, h.Delete)
+		authz.PermPodmanSecretsDelete, h.Delete)
 }

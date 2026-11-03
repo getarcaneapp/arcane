@@ -36,7 +36,7 @@
 	import PodProcesses from '../components/pod-processes.svelte';
 	import PodResources from '../components/pod-resources.svelte';
 	import PodStats from '../components/pod-stats.svelte';
-	import { confirmRemovePod, podActionLabels, runPodAction } from '../pod-actions';
+	import { confirmRemovePod, podActionLabels, podActionPermissions, runPodAction } from '../pod-actions';
 
 	let { data } = $props();
 
@@ -50,7 +50,6 @@
 	}));
 	const pod = $derived(podQuery.data ?? data.pod);
 	const isRunning = $derived(pod.state.toLowerCase() === 'running');
-	const canManage = $derived(hasPermission('podman:pods', envId));
 
 	let pendingAction = $state<PodmanPodAction | null>(null);
 
@@ -58,39 +57,42 @@
 		await queryClient.invalidateQueries({ queryKey: queryKeys.podman.environment(envId) });
 	}
 
-	function lifecycleButton(action: PodmanPodAction, placement: 'primary' | 'secondary' | 'menu'): ActionButton {
-		return {
-			id: action,
-			action,
-			group: 'lifecycle',
-			placement,
-			label: podActionLabels[action](),
-			loading: pendingAction === action,
-			disabled: pendingAction !== null,
-			onclick: () =>
-				runPodAction({ ...pod, environmentId: envId }, action, refresh, (loading) => (pendingAction = loading ? action : null))
-		};
+	function lifecycleButton(action: PodmanPodAction, placement: 'primary' | 'secondary' | 'menu'): ActionButton[] {
+		if (!hasPermission(podActionPermissions[action], envId)) return [];
+		return [
+			{
+				id: action,
+				action,
+				group: 'lifecycle',
+				placement,
+				label: podActionLabels[action](),
+				loading: pendingAction === action,
+				disabled: pendingAction !== null,
+				onclick: () =>
+					runPodAction({ ...pod, environmentId: envId }, action, refresh, (loading) => (pendingAction = loading ? action : null))
+			}
+		];
 	}
 
-	const actions: ActionButton[] = $derived(
-		canManage
+	const actions: ActionButton[] = $derived([
+		...(isRunning ? lifecycleButton('stop', 'primary') : lifecycleButton('start', 'primary')),
+		...lifecycleButton('restart', 'secondary'),
+		...(pod.state.toLowerCase() === 'paused' ? lifecycleButton('unpause', 'menu') : lifecycleButton('pause', 'menu')),
+		...lifecycleButton('kill', 'menu'),
+		...(hasPermission('podman-pods:delete', envId)
 			? [
-					isRunning ? lifecycleButton('stop', 'primary') : lifecycleButton('start', 'primary'),
-					lifecycleButton('restart', 'secondary'),
-					pod.state.toLowerCase() === 'paused' ? lifecycleButton('unpause', 'menu') : lifecycleButton('pause', 'menu'),
-					lifecycleButton('kill', 'menu'),
 					{
 						id: 'remove',
-						action: 'remove',
-						group: 'danger',
+						action: 'remove' as const,
+						group: 'danger' as const,
 						destructive: true,
-						placement: 'menu',
+						placement: 'menu' as const,
 						label: m.common_remove(),
 						onclick: () => confirmRemovePod({ ...pod, environmentId: envId }, () => goto(resolve('/(app)/podman/pods')))
 					}
 				]
-			: []
-	);
+			: [])
+	]);
 
 	const urlTab = useUrlTab({
 		tabs: () => [

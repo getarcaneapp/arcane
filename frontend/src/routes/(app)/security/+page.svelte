@@ -237,7 +237,9 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					// Walk the merged image list in fixed-size pages, up to a total cap.
-					const environments = vulnerabilityEnvironments().filter((env) => hasPermission('vulnerabilities:scan', env.id));
+					const environments = vulnerabilityEnvironments().filter(
+						(env) => hasPermission('vulnerabilities:scan', env.id) && hasPermission('images:list', env.id)
+					);
 					const fetchImagesPage = (page: number) =>
 						fetchAcrossEnvironments(environments, { pagination: { page, limit: BULK_FETCH_PAGE_SIZE } }, (id, request, config) =>
 							imageService.getImagesForEnvironment(id, request, config)
@@ -342,7 +344,10 @@
 		wasFeatureEnabled = enabled;
 	});
 	const canScanVuln = $derived(
-		vulnerabilityManagementEnabled && vulnerabilityEnvironments().some((env) => hasPermission('vulnerabilities:scan', env.id))
+		vulnerabilityManagementEnabled &&
+			vulnerabilityEnvironments().some(
+				(env) => hasPermission('vulnerabilities:scan', env.id) && hasPermission('images:list', env.id)
+			)
 	);
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
@@ -411,7 +416,7 @@
 >
 	{#snippet mainContent()}
 		{#if !vulnerabilityManagementEnabled}
-			<FeatureDisabled environmentId={destinationEnvironmentId('', 'vulnerabilities:read')} />
+			<FeatureDisabled environmentId={destinationEnvironmentId('', 'vulnerabilities:list')} />
 		{:else}
 			<Tabs.Root value={activeTab}>
 				<div class="flex flex-wrap items-center justify-between gap-2">

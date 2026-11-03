@@ -1,6 +1,7 @@
 import { queryKeys } from '#lib/query/query-keys.js';
 import { swarmService } from '#lib/services/swarm-service.js';
 import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
+import { hasPermission } from '#lib/utils/auth.js';
 import { readableEnvironments, sumAcrossEnvironments, type EnvironmentFailure } from '#lib/utils/environments.js';
 
 export type SwarmEnvironments = {
@@ -10,9 +11,13 @@ export type SwarmEnvironments = {
 	scope: string;
 };
 
+function swarmReadableEnvironments(permission: string): EnvironmentRef[] {
+	return readableEnvironments(permission).filter((environment) => hasPermission('swarm:read', environment.id));
+}
+
 export async function loadSwarmEnvironments(permission: string): Promise<SwarmEnvironments> {
 	await environmentStore.ready;
-	const readable = readableEnvironments(permission);
+	const readable = swarmReadableEnvironments(permission);
 	const status = await sumAcrossEnvironments(readable, (scope, config) => swarmService.getSwarmStatus(scope, config), {
 		enabled: false
 	});
@@ -36,7 +41,7 @@ export async function loadSwarmEnvironments(permission: string): Promise<SwarmEn
 export function swarmEnvironmentsQueryOptions(permission: string) {
 	return {
 		queryKey: queryKeys.swarm.environments(
-			readableEnvironments(permission)
+			swarmReadableEnvironments(permission)
 				.map((environment) => environment.id)
 				.join(','),
 			permission

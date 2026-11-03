@@ -103,7 +103,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 		// Management mutations (create/update/delete) remain global-gated below.
 	}, h.ListEnvironments)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "createEnvironment",
 		Method:      "POST",
 		Path:        "/environments",
@@ -111,10 +111,9 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 		Description: "Create a new Docker environment",
 		Tags:        []string{"Environments"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermEnvironmentsCreate),
-	}, h.CreateEnvironment)
+	}, authz.PermEnvironmentsCreate, h.CreateEnvironment)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getEnvironment",
 		Method:      "GET",
 		Path:        "/environments/{id}",
@@ -122,10 +121,9 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 		Description: "Get a Docker environment by ID",
 		Tags:        []string{"Environments"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermEnvironmentsRead),
-	}, h.GetEnvironment)
+	}, authz.PermEnvironmentsRead, h.GetEnvironment)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "updateEnvironment",
 		Method:      "PATCH",
 		Path:        "/environments/{id}",
@@ -133,10 +131,9 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 		Description: "Update a Docker environment",
 		Tags:        []string{"Environments"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermEnvironmentsUpdate),
-	}, h.UpdateEnvironment)
+	}, authz.PermEnvironmentsUpdate, h.UpdateEnvironment)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "deleteEnvironment",
 		Method:      "DELETE",
 		Path:        "/environments/{id}",
@@ -144,8 +141,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 		Description: "Delete a Arcane environment",
 		Tags:        []string{"Environments"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermEnvironmentsDelete),
-	}, h.DeleteEnvironment)
+	}, authz.PermEnvironmentsDelete, h.DeleteEnvironment)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "testConnection",
@@ -219,7 +215,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermEnvironmentsRead, h.GetEnvironmentVersion)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "downloadAgentMTLSCA",
 		Method:      "GET",
 		Path:        "/agent/mtls/ca",
@@ -227,6 +223,5 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 		Description: "Download the Arcane-managed certificate authority used for generated agent mTLS client certificates",
 		Tags:        []string{"Environments"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermEnvironmentsPair),
-	}, h.DownloadAgentMTLSCA)
+	}, authz.PermEnvironmentsPair, h.DownloadAgentMTLSCA)
 }

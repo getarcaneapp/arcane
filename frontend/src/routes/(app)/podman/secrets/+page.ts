@@ -25,7 +25,9 @@ export const load: PageLoad = async ({ parent }) => {
 	} satisfies SearchPaginationSortRequest);
 
 	const secrets = await tryCatch(
-		queryClient.query(podmanSecretListQuery(scope, shownPodmanEnvironments(podmanStatuses), requestOptions))
+		queryClient.query(
+			podmanSecretListQuery(scope, shownPodmanEnvironments(podmanStatuses, 'podman-secrets:list'), requestOptions)
+		)
 	);
 	if (secrets.error !== null) {
 		throwPageLoadError(secrets.error, m.common_load_failed({ resource: m.podman_secrets_title() }));

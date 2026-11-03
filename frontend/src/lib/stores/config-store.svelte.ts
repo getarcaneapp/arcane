@@ -5,7 +5,7 @@ import type { ResolvedSettings, SettingKey, Settings } from '#lib/types/settings
 let resolved = $state.raw<ResolvedSettings>();
 
 const reload = async () => {
-	set(await settingsService.getReadableSettings(LOCAL_DOCKER_ENVIRONMENT_ID));
+	set(await settingsService.getSettingsForEnvironmentMerged(LOCAL_DOCKER_ENVIRONMENT_ID));
 };
 
 const set = (settings: ResolvedSettings) => {
@@ -13,7 +13,7 @@ const set = (settings: ResolvedSettings) => {
 };
 
 const save = async (changes: Partial<Settings>) => {
-	const base = resolved ?? (await settingsService.getReadableSettings(LOCAL_DOCKER_ENVIRONMENT_ID));
+	const base = resolved ?? (await settingsService.getSettingsForEnvironmentMerged(LOCAL_DOCKER_ENVIRONMENT_ID));
 	const updated = await settingsService.updateSettingsForEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID, base, changes);
 	set(updated);
 	return updated;

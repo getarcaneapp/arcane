@@ -143,6 +143,71 @@ func TestEnvironmentPermissionSetScopesToOwnEnvironment(t *testing.T) {
 		"environment token with empty env id must deny env-scoped permissions")
 }
 
+func TestForwardedPermissionsMirrorCallerForTargetEnvironment(t *testing.T) {
+	caller := NewPermissionSet()
+	caller.AddGlobal(PermUsersList, PermContainersStart, "unknown:perm")
+	caller.AddEnv("env-A", PermContainersUpdate, PermContainersStart, PermSettingsUpdate)
+	caller.AddEnv("env-B", PermContainersDelete)
+
+	forwarded := caller.ForwardedPermissions("env-A")
+	require.Equal(t, []string{PermUsersList, PermContainersStart}, forwarded.Global)
+	require.Equal(t, []string{PermContainersUpdate}, forwarded.Environment)
+
+	agent := forwarded.PermissionSet("0")
+	tests := []struct {
+		name  string
+		perm  string
+		envID string
+		want  bool
+	}{
+		{name: "global org permission", perm: PermUsersList, want: true},
+		{name: "global env permission", perm: PermContainersStart, envID: "0", want: true},
+		{name: "env permission on agent env", perm: PermContainersUpdate, envID: "0", want: true},
+		{name: "env permission is not global", perm: PermContainersUpdate},
+		{name: "other environment grant is dropped", perm: PermContainersDelete, envID: "0"},
+		{name: "env-scoped org permission is dropped", perm: PermSettingsUpdate},
+		{name: "unheld permission", perm: PermUsersCreate},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, agent.Allows(tt.perm, tt.envID))
+		})
+	}
+	require.False(t, agent.Sudo)
+	require.False(t, agent.IsGlobalAdmin())
+	require.NotContains(t, agent.Global, "unknown:perm")
+}
+
+func TestForwardedPermissionsDropUnknownAndMisscopedPermissions(t *testing.T) {
+	agent := ForwardedPermissions{
+		Global:      []string{"unknown:perm", PermUsersList},
+		Environment: []string{"unknown:perm", PermUsersCreate, PermContainersStart},
+	}.PermissionSet("0")
+
+	require.Equal(t, map[string]struct{}{PermUsersList: {}}, agent.Global)
+	require.Equal(t, map[string]struct{}{PermContainersStart: {}}, agent.PerEnv["0"])
+	require.False(t, agent.Allows(PermUsersCreate, ""))
+}
+
+func TestForwardedPermissionsKeepGlobalAdminWithoutSudo(t *testing.T) {
+	admin := NewPermissionSet()
+	admin.AddGlobal(AllPermissions()...)
+	agent := admin.ForwardedPermissions("env-A").PermissionSet("0")
+	require.True(t, agent.IsGlobalAdmin())
+	require.False(t, agent.Sudo)
+
+	envAdmin := NewPermissionSet()
+	envAdmin.AddEnv("env-A", AllPermissions()...)
+	envAgent := envAdmin.ForwardedPermissions("env-A").PermissionSet("0")
+	require.False(t, envAgent.IsGlobalAdmin())
+	require.True(t, envAgent.Allows(PermContainersStart, "0"))
+
+	var none *PermissionSet
+	empty := none.ForwardedPermissions("env-A").PermissionSet("0")
+	require.False(t, empty.Allows(PermContainersList, "0"))
+	require.False(t, empty.Sudo)
+}
+
 func TestEnvIDFromPath(t *testing.T) {
 	cases := map[string]string{
 		"/environments/abc-123/containers":     "abc-123",
@@ -190,18 +255,95 @@ func TestIsKnownPermissionRejectsSyntheticPrefixMatches(t *testing.T) {
 	}
 }
 
-func TestBuiltInRolesOnlyReferenceKnownPermissions(t *testing.T) {
-	for _, p := range BuiltInEditorPermissions() {
-		assert.True(t, IsKnownPermission(p),
-			"editor references unknown perm %q", p)
+func TestBuiltInRolesAreUniqueSubsetsOfAllPermissions(t *testing.T) {
+	for name, permissions := range builtInRoleSets() {
+		require.NotEmpty(t, permissions, "%s must not be empty", name)
+		seen := make(map[string]struct{}, len(permissions))
+		for _, p := range permissions {
+			require.True(t, IsKnownPermission(p), "%s references unknown perm %q", name, p)
+			_, dup := seen[p]
+			require.False(t, dup, "%s lists %q more than once", name, p)
+			seen[p] = struct{}{}
+		}
 	}
-	for _, p := range BuiltInDeployerPermissions() {
-		assert.True(t, IsKnownPermission(p),
-			"deployer references unknown perm %q", p)
+}
+
+func TestReadOnlyBuiltInRolesContainOnlyNonMutatingActions(t *testing.T) {
+	actionKeys := make(map[string]string)
+	for _, resource := range PermissionCatalog() {
+		for _, action := range resource.Actions {
+			actionKeys[action.Permission] = action.Key
+		}
 	}
-	for _, p := range BuiltInViewerPermissions() {
-		assert.True(t, IsKnownPermission(p),
-			"viewer references unknown perm %q", p)
+	readOnlyKeys := []string{"list", "read", "logs"}
+
+	for name, permissions := range map[string][]string{
+		"Viewer":  BuiltInViewerPermissions(),
+		"Monitor": BuiltInMonitorPermissions(),
+	} {
+		for _, p := range permissions {
+			require.Contains(t, readOnlyKeys, actionKeys[p], "%s must not receive mutating permission %q", name, p)
+		}
+	}
+}
+
+func TestBuiltInRoleUpdatePermissions(t *testing.T) {
+	deployer := BuiltInDeployerPermissions()
+	require.NotContains(t, deployer, PermContainersUpdate)
+	require.Contains(t, deployer, PermContainersAutoUpdate)
+	require.Contains(t, deployer, PermImageUpdatesApply)
+
+	require.Contains(t, BuiltInEditorPermissions(), PermImageUpdatesApply)
+	require.Contains(t, BuiltInNoShellEditorPermissions(), PermImageUpdatesApply)
+	require.NotContains(t, BuiltInNoShellEditorPermissions(), PermContainersExec)
+	require.Len(t, BuiltInNoShellEditorPermissions(), len(BuiltInEditorPermissions())-1)
+
+	for name, permissions := range builtInRoleSets() {
+		require.NotContains(t, permissions, PermDiagnosticsProfile, "%s must not receive %q", name, PermDiagnosticsProfile)
+	}
+	require.True(t, IsOrgLevel(PermDiagnosticsProfile))
+	require.True(t, IsEnvScoped(PermImageUpdatesApply))
+}
+
+func TestBuiltInRoleSettingsPermissions(t *testing.T) {
+	require.True(t, IsOrgLevel(PermSettingsRead))
+	require.True(t, IsOrgLevel(PermSettingsUpdate))
+	require.True(t, IsEnvScoped(PermEnvironmentSettingsRead))
+	require.True(t, IsEnvScoped(PermEnvironmentSettingsUpdate))
+	require.Equal(t, []string{PermEnvironmentSettingsRead, PermEnvironmentSettingsUpdate}, ExpandPermissions([]string{PermEnvironmentSettingsUpdate}))
+	require.Equal(t, []string{PermUsersList}, ExpandPermissions([]string{PermUsersList}))
+
+	for name, permissions := range map[string][]string{
+		"Editor": BuiltInEditorPermissions(),
+		"Viewer": BuiltInViewerPermissions(),
+	} {
+		require.Contains(t, permissions, PermSettingsRead, name)
+		require.Contains(t, permissions, PermEnvironmentSettingsRead, name)
+		require.NotContains(t, permissions, PermSettingsUpdate, name)
+		require.NotContains(t, permissions, PermEnvironmentSettingsUpdate, name)
+	}
+	for name, permissions := range map[string][]string{
+		"Deployer": BuiltInDeployerPermissions(),
+		"Monitor":  BuiltInMonitorPermissions(),
+	} {
+		require.NotContains(t, permissions, PermSettingsRead, name)
+		require.NotContains(t, permissions, PermEnvironmentSettingsRead, name)
+	}
+
+	admin := NewPermissionSet()
+	admin.AddGlobal(AllPermissions()...)
+	require.True(t, admin.IsGlobalAdmin())
+	delete(admin.Global, PermEnvironmentSettingsUpdate)
+	require.False(t, admin.IsGlobalAdmin())
+}
+
+func builtInRoleSets() map[string][]string {
+	return map[string][]string{
+		"Editor":          BuiltInEditorPermissions(),
+		"No-Shell Editor": BuiltInNoShellEditorPermissions(),
+		"Deployer":        BuiltInDeployerPermissions(),
+		"Viewer":          BuiltInViewerPermissions(),
+		"Monitor":         BuiltInMonitorPermissions(),
 	}
 }
 
@@ -268,7 +410,16 @@ func TestSystemBackupPermissionsAreAdminOnlyGlobalGrants(t *testing.T) {
 		"Monitor":         BuiltInMonitorPermissions(),
 		"Deployer":        BuiltInDeployerPermissions(),
 	}
-	for _, permission := range []string{PermSystemBackupsRead, PermSystemBackupsManage, PermSystemBackupsRestore, PermSystemBackupsRecoveryKey} {
+	for _, permission := range []string{
+		PermSystemBackupsList,
+		PermSystemBackupsRead,
+		PermSystemBackupsCreate,
+		PermSystemBackupsUpdate,
+		PermSystemBackupsDelete,
+		PermSystemBackupsUpload,
+		PermSystemBackupsRestore,
+		PermSystemBackupsRecoveryKey,
+	} {
 		require.True(t, IsKnownPermission(permission), "system backup permission %q must be known", permission)
 		require.True(t, IsOrgLevel(permission), "system backup permission %q must be global", permission)
 		require.Contains(t, AllPermissions(), permission, "Admin must receive %q", permission)
@@ -328,7 +479,7 @@ func TestS3DestinationPermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *tes
 	}
 
 	settingsOnly := NewPermissionSet()
-	settingsOnly.AddGlobal(PermSettingsRead, PermSettingsWrite)
+	settingsOnly.AddGlobal(PermSettingsRead, PermSettingsUpdate)
 	for _, permission := range s3Permissions {
 		require.False(t, settingsOnly.Allows(permission, ""),
 			"settings grants must not satisfy %q", permission)
@@ -353,6 +504,8 @@ func TestPermissionCatalogDerivesKnownPermissionsAndScopes(t *testing.T) {
 
 		require.False(t, resource.Scope != PermissionScopeGlobal && resource.Scope != PermissionScopeEnv,
 			"resource %q has invalid scope %q", resource.Key, resource.Scope)
+		require.NotEmpty(t, resource.Label, "resource %q has no label", resource.Key)
+		require.NotEmpty(t, resource.Description, "resource %q has no description", resource.Key)
 
 		for _, action := range resource.Actions {
 			catalogCount++
@@ -399,21 +552,120 @@ func TestVolumeRenamePermissionIsEditorOnlyByDefault(t *testing.T) {
 	require.NotContains(t, BuiltInDeployerPermissions(), PermVolumesRename)
 }
 
-func TestNotificationsManageRequiresGlobalScope(t *testing.T) {
-	require.True(t, IsOrgLevel(PermNotificationsManage),
-		"notifications:manage must be org-level for manager-global notification settings")
+func TestNotificationPermissionsRequireGlobalScope(t *testing.T) {
+	for _, permission := range []string{
+		PermNotificationsList,
+		PermNotificationsRead,
+		PermNotificationsUpdate,
+		PermNotificationsDelete,
+		PermNotificationsTest,
+	} {
+		require.True(t, IsOrgLevel(permission),
+			"%s must be org-level for manager-global notification settings", permission)
 
-	require.False(t, IsEnvScoped(PermNotificationsManage),
-		"notifications:manage must not be environment-scoped")
+		require.False(t, IsEnvScoped(permission),
+			"%s must not be environment-scoped", permission)
 
-	ps := NewPermissionSet()
-	ps.AddEnv("env-1", PermNotificationsManage)
+		ps := NewPermissionSet()
+		ps.AddEnv("env-1", permission)
 
-	require.False(t, ps.Allows(PermNotificationsManage, ""),
-		"an environment-scoped notification grant must not authorize the global resource")
+		require.False(t, ps.Allows(permission, ""),
+			"an environment-scoped notification grant must not authorize the global resource")
 
-	ps.AddGlobal(PermNotificationsManage)
+		ps.AddGlobal(permission)
 
-	require.True(t, ps.Allows(PermNotificationsManage, ""),
-		"a global notification grant must authorize the global resource")
+		require.True(t, ps.Allows(permission, ""),
+			"a global notification grant must authorize the global resource")
+	}
+}
+
+func TestEveryPermissionHasCatalogDescription(t *testing.T) {
+	descriptions := make(map[string]string)
+	for _, resource := range PermissionCatalog() {
+		for _, action := range resource.Actions {
+			descriptions[action.Permission] = action.Description
+		}
+	}
+	for _, permission := range AllPermissions() {
+		require.NotEmpty(t, descriptions[permission], "permission %q has no catalog description", permission)
+	}
+}
+
+func TestPermissionRequiresAreKnownAndAcyclic(t *testing.T) {
+	requires := make(map[string][]string)
+	scopes := make(map[string]string)
+	for _, resource := range PermissionCatalog() {
+		for _, action := range resource.Actions {
+			requires[action.Permission] = action.Requires
+			scopes[action.Permission] = resource.Scope
+		}
+	}
+
+	for permission, deps := range requires {
+		for _, dep := range deps {
+			require.True(t, IsKnownPermission(dep), "%q requires unknown permission %q", permission, dep)
+			require.NotEqual(t, permission, dep, "%q requires itself", permission)
+			require.Equal(t, scopes[permission], scopes[dep], "%q requires %q from another scope", permission, dep)
+		}
+	}
+
+	state := make(map[string]int)
+	var visit func(permission string, path []string)
+	visit = func(permission string, path []string) {
+		switch state[permission] {
+		case 1:
+			require.FailNow(t, "permission dependency cycle", "%v -> %s", path, permission)
+		case 2:
+			return
+		}
+		state[permission] = 1
+		for _, dep := range requires[permission] {
+			visit(dep, append(path, permission))
+		}
+		state[permission] = 2
+	}
+	for _, permission := range AllPermissions() {
+		visit(permission, nil)
+	}
+}
+
+func TestExpandPermissionsAddsTransitiveRequirementsInCatalogOrder(t *testing.T) {
+	require.Equal(t, []string{
+		PermContainersList,
+		PermContainersRead,
+		PermContainersCreate,
+		PermImagesList,
+		PermImagesRead,
+		PermVolumesList,
+		PermNetworksList,
+	}, ExpandPermissions([]string{PermContainersCreate}))
+
+	require.Equal(t, []string{
+		PermSettingsRead,
+		PermDiagnosticsRead,
+		PermDiagnosticsProfile,
+	}, ExpandPermissions([]string{PermDiagnosticsProfile, PermSettingsRead}))
+
+	require.Equal(t, []string{
+		PermSwarmRead,
+		PermSwarmNodesList,
+		PermSwarmNodesRead,
+		PermSwarmNodesPromote,
+		"unknown:permission",
+	}, ExpandPermissions([]string{"unknown:permission", PermSwarmNodesPromote}))
+
+	require.Empty(t, ExpandPermissions(nil))
+}
+
+func TestBuiltInRolesAreClosedUnderExpansion(t *testing.T) {
+	for name, permissions := range map[string][]string{
+		"Admin":           AllPermissions(),
+		"Editor":          BuiltInEditorPermissions(),
+		"No-Shell Editor": BuiltInNoShellEditorPermissions(),
+		"Deployer":        BuiltInDeployerPermissions(),
+		"Monitor":         BuiltInMonitorPermissions(),
+		"Viewer":          BuiltInViewerPermissions(),
+	} {
+		require.ElementsMatch(t, permissions, ExpandPermissions(permissions), "%s must already include every required permission", name)
+	}
 }

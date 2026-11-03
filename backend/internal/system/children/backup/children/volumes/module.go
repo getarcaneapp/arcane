@@ -11,7 +11,6 @@ import (
 
 // RegisterRoutes registers the system-managed volume backup endpoints.
 func RegisterRoutes(api huma.API, h *Handler) {
-	adminOnly := middleware.RequireGlobalAdmin(api)
 	middleware.RegisterWithPermission(
 		api,
 		huma.Operation{
@@ -22,7 +21,6 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Tags: []string{
 				"System Backups",
 			},
-			Middlewares: adminOnly,
 		},
 		authz.PermSystemBackupsRead,
 		h.GetSystemVolumeConfig,
@@ -37,9 +35,8 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Tags: []string{
 				"System Backups",
 			},
-			Middlewares: adminOnly,
 		},
-		authz.PermSystemBackupsManage,
+		authz.PermSystemBackupsUpdate,
 		h.UpdateSystemVolumeConfig,
 	)
 	middleware.RegisterWithPermission(
@@ -52,7 +49,6 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Tags: []string{
 				"System Backups",
 			},
-			Middlewares: adminOnly,
 		},
 		authz.PermSystemBackupsRead,
 		h.ListSystemVolumeOptions,
@@ -68,9 +64,8 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Tags: []string{
 				"System Backups",
 			},
-			Middlewares: adminOnly,
 		},
-		authz.PermSystemBackupsManage,
+		authz.PermSystemBackupsCreate,
 		h.RunSystemVolumeBackups,
 	)
 }

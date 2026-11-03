@@ -24,11 +24,14 @@ import (
 	buildtypes "kit.getarcane.app/builds/types"
 	"kit.getarcane.app/sys/crypto"
 
+	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/gitrepo"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/gitutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
@@ -335,6 +338,56 @@ func TestBuildService_BuildImage_FailureRecordsHistoryAndEvent(t *testing.T) {
 	assert.Contains(t, evt.Metadata["error"], "docker exporter")
 	require.NotEmpty(t, evt.Metadata["buildRecordId"])
 	assert.Equal(t, record.ID, evt.Metadata["buildRecordId"])
+}
+
+func TestBuildService_BuildImage_PushRequiresImagesPushPermission(t *testing.T) {
+	tests := []struct {
+		name        string
+		permissions *authz.PermissionSet
+		wantErr     bool
+	}{
+		{name: "no permissions", wantErr: true},
+		{name: "build only", permissions: &authz.PermissionSet{PerEnv: map[string]map[string]struct{}{"0": {authz.PermImagesBuild: {}}}}, wantErr: true},
+		{name: "push in other environment", permissions: &authz.PermissionSet{PerEnv: map[string]map[string]struct{}{"1": {authz.PermImagesPush: {}}}}, wantErr: true},
+		{name: "push in environment", permissions: &authz.PermissionSet{PerEnv: map[string]map[string]struct{}{"0": {authz.PermImagesPush: {}}}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, err := setupBuildHistoryTestDB()
+			require.NoError(t, err)
+
+			built := false
+			svc := &BuildService{
+				db:           db,
+				eventService: event.NewEventService(db, nil, nil),
+				builder: testBuildRecorder{
+					onBuild: func(buildtypes.BuildRequest) {
+						built = true
+					},
+				},
+			}
+			ctx := t.Context()
+			if tt.permissions != nil {
+				ctx = context.WithValue(ctx, middleware.ContextKeyUserPermissions, tt.permissions)
+			}
+
+			_, err = svc.BuildImage(ctx, "0", buildtypes.BuildRequest{
+				ContextDir: "/builds/demo",
+				Dockerfile: "Dockerfile",
+				Tags:       []string{"registry.example.com/demo:test"},
+				Provider:   "local",
+				Push:       true,
+			}, nil, "manual", nil)
+
+			if tt.wantErr {
+				require.ErrorIs(t, err, common.ErrForbidden)
+				assert.False(t, built)
+				return
+			}
+			require.NoError(t, err)
+			assert.True(t, built)
+		})
+	}
 }
 
 func TestBuildService_BuildImage_FailureExporterErrorsAppearInOutputHistoryAndEvent(t *testing.T) {

@@ -30,7 +30,7 @@
 	const permissionsManifest = $derived(data.permissionsManifest);
 	const swarmEnabled = $derived(data.swarmEnabled);
 	const podmanStatuses = $derived(data.podmanStatuses);
-	const canReadActivities = $derived(userHasPermissionInAnyEnvironment(user, 'activities:read'));
+	const canReadActivities = $derived(userHasPermissionInAnyEnvironment(user, 'activities:list'));
 
 	const isMobile = new IsMobile();
 	const isTablet = new IsTablet();

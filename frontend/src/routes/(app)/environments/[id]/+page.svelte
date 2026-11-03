@@ -101,9 +101,9 @@
 	const remoteVersion = $derived(versionQuery.data ?? null);
 	const isLoadingVersion = $derived(versionQuery.isFetching);
 
-	let showSettingsAction = $derived(runtimeEnvironment.enabled && hasPermission('settings:read', environment.id));
+	let showSettingsAction = $derived(runtimeEnvironment.enabled && hasPermission('environment-settings:read', environment.id));
 	let showEngineTab = $derived(runtimeEnvironment.enabled && hasPermission('system:read', environment.id));
-	let showHistoryTab = $derived(runtimeEnvironment.enabled && hasPermission('jobs:manage', environment.id));
+	let showHistoryTab = $derived(runtimeEnvironment.enabled && hasPermission('jobs:list', environment.id));
 	const podmanStatus = $derived(hasPermission('podman:read', environment.id) ? data.podmanStatuses?.[environment.id] : undefined);
 	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.agentMTLSCertificate));
 	let canPairEnvironments = $derived(hasPermission('environments:pair', environment.id));
@@ -166,7 +166,7 @@
 			disabled: isRefreshing,
 			loading: isRefreshing
 		});
-		if (environment.id !== '0') {
+		if (environment.id !== '0' && hasPermission('environments:sync', environment.id)) {
 			actions.push({
 				id: 'sync',
 				action: 'sync',
@@ -245,7 +245,7 @@
 		);
 		if (
 			changedFeatures.length > 0 &&
-			(!hasPermission('settings:write', environmentId) ||
+			(!hasPermission('environment-settings:update', environmentId) ||
 				changedFeatures.some((feature) => !featureStore.isSupported(feature.id, environmentId)))
 		) {
 			throw new Error(m.features_unavailable());
@@ -293,7 +293,7 @@
 			!isCurrentlyOnline ||
 			!settings ||
 			settings.readOnly ||
-			!hasPermission('settings:write', environment.id) ||
+			!hasPermission('environment-settings:update', environment.id) ||
 			!featureStore.isSupported(id, environment.id)
 		);
 	}

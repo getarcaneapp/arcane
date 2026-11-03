@@ -217,7 +217,7 @@ function createActivityStore() {
 
 	const core = createEnvironmentStreamStore<ActivityEnvironmentState, ActivityStreamEvent>({
 		label: 'Activity',
-		includeEnvironment: (environment) => userStore.hasPermission('activities:read', environment.id),
+		includeEnvironment: (environment) => userStore.hasPermission('activities:list', environment.id),
 		watchEnvironmentFilter: () => userStore.current,
 		createEnvironmentState(environment: Pick<Environment, 'id' | 'name'>): ActivityEnvironmentState {
 			return {
@@ -466,6 +466,9 @@ function createActivityStore() {
 		if (state.details[activityId] || state.detailLoadingIds[activityId]) {
 			return;
 		}
+		if (!userStore.hasPermission('activities:read', activityEnvironmentIdInternal(activityId))) {
+			return;
+		}
 
 		const signal = session.signal;
 		state = { ...state, detailLoadingIds: { ...state.detailLoadingIds, [activityId]: true } };
@@ -711,7 +714,11 @@ function createActivityStore() {
 		},
 		refresh: () => core.refresh(),
 		cancelActivity: async (activityId: string) => {
-			if (!activityId || state.cancellingIds[activityId]) {
+			if (
+				!activityId ||
+				state.cancellingIds[activityId] ||
+				!userStore.hasPermission('activities:cancel', activityEnvironmentIdInternal(activityId))
+			) {
 				return;
 			}
 			state = { ...state, cancellingIds: { ...state.cancellingIds, [activityId]: true } };
@@ -726,10 +733,12 @@ function createActivityStore() {
 			core.reconcileEnvironments();
 
 			const results = await Promise.all(
-				Object.values(core.environmentStates).map(async (environmentState) => ({
-					environmentState,
-					operationResult: await tryCatch(activityService.clearHistory(environmentState.id))
-				}))
+				Object.values(core.environmentStates)
+					.filter((environmentState) => userStore.hasPermission('activities:delete', environmentState.id))
+					.map(async (environmentState) => ({
+						environmentState,
+						operationResult: await tryCatch(activityService.clearHistory(environmentState.id))
+					}))
 			);
 			const summary: ActivityClearHistorySummary = {
 				deleted: results.reduce((total, { operationResult }) => total + (operationResult.data?.deleted ?? 0), 0),

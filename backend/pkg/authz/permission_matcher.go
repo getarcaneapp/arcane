@@ -158,41 +158,17 @@ func templateSegments(t string) []string {
 	return segs
 }
 
-// UploadKindPermission maps an upload-session kind to the permission required
-// to create, write to, inspect, or delete sessions of that kind. The boolean
-// is false for unknown kinds so callers (and remote proxies) fail closed.
-func UploadKindPermission(kind string) (string, bool) {
-	switch kind {
-	case types.UploadKindImage:
-		return PermImagesUpload, true
-	case types.UploadKindVolumeBackup:
-		return PermVolumesUpload, true
-	case types.UploadKindBuildWorkspace:
-		return PermBuildWorkspacesManage, true
-	}
-	return "", false
-}
-
 // VolumeWorkspaceRequiredPermissions returns the distinct mutation permissions
 // required by a Volume Workspace manifest. The boolean is false when a change
 // uses an unknown operation so remote proxies can fail closed.
 func VolumeWorkspaceRequiredPermissions(changes []types.VolumeWorkspaceFileChange) ([]string, bool) {
 	required := make([]string, 0, 3)
-
 	for _, change := range changes {
-		switch change.Operation {
-		case types.FileOpCreateFile, types.FileOpCreateFolder, types.FileOpUpdateFile:
-			required = append(required, PermVolumesUpload)
-		case types.FileOpRename, types.FileOpMove:
-			required = append(required, PermVolumesUpload)
-			required = append(required, PermVolumesDelete)
-		case types.FileOpDelete:
-			required = append(required, PermVolumesDelete)
-		case types.FileOpRestoreFile:
-			required = append(required, PermVolumesBackup)
-		default:
+		perms := VolumeWorkspaceConditions.Required("fileChanges.operation", change.Operation)
+		if len(perms) == 0 {
 			return nil, false
 		}
+		required = append(required, perms...)
 	}
 	return kit.Unique(required), true
 }

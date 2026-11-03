@@ -22,7 +22,7 @@ func Register(api huma.API, workspaceService *Service, uploadService *upload.Upl
 		Description: "List files and directories under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermBuildWorkspacesManage, h.BrowseDirectory)
+	}, authz.PermBuildWorkspacesList, h.BrowseDirectory)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse-content",
@@ -32,7 +32,7 @@ func Register(api huma.API, workspaceService *Service, uploadService *upload.Upl
 		Description: "Read file content under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermBuildWorkspacesManage, h.GetFileContent)
+	}, authz.PermBuildWorkspacesRead, h.GetFileContent)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse-download",
@@ -42,7 +42,7 @@ func Register(api huma.API, workspaceService *Service, uploadService *upload.Upl
 		Description: "Download a file from the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermBuildWorkspacesManage, h.DownloadFile)
+	}, authz.PermBuildWorkspacesRead, h.DownloadFile)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse-upload",
@@ -55,7 +55,7 @@ func Register(api huma.API, workspaceService *Service, uploadService *upload.Upl
 		Tags:        []string{"Builds"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 		Middlewares: upload.LegacyMultipartMiddleware(api, uploadService, types.UploadKindBuildWorkspace),
-	}, authz.PermBuildWorkspacesManage, h.UploadFile)
+	}, authz.PermBuildWorkspacesCreate, h.UploadFile)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse-mkdir",
@@ -65,7 +65,7 @@ func Register(api huma.API, workspaceService *Service, uploadService *upload.Upl
 		Description: "Create a directory under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermBuildWorkspacesManage, h.CreateDirectory)
+	}, authz.PermBuildWorkspacesCreate, h.CreateDirectory)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse-delete",
@@ -75,5 +75,5 @@ func Register(api huma.API, workspaceService *Service, uploadService *upload.Upl
 		Description: "Delete a file or directory under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermBuildWorkspacesManage, h.DeleteFile)
+	}, authz.PermBuildWorkspacesDelete, h.DeleteFile)
 }

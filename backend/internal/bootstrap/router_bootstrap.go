@@ -24,9 +24,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
-	"getarcane.dev/arcane/v3/internal/federated"
 	"getarcane.dev/arcane/v3/internal/middleware"
-	"getarcane.dev/arcane/v3/internal/telemetry"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/cookie"
@@ -45,30 +43,26 @@ type (
 		HandlerDeps    api.HandlerDeps
 		AuthMiddleware *auth.AuthMiddleware
 		TunnelRegistry *agent.TunnelRegistry
+		TunnelServer   *agent.TunnelServer
 	}
 )
 
-var (
-	registerPlaywrightRoutes []func(apiGroup *echo.Group, deps api.HandlerDeps)
-	registerBuildableRoutes  []func(apiGroup *echo.Group, deps api.HandlerDeps)
-
-	loggerSkipPatterns = []string{
-		"GET /api/environments/*/ws/containers/stats",
-		"GET /api/environments/*/ws/containers/*/logs",
-		"GET /api/environments/*/ws/containers/*/stats",
-		"GET /api/environments/*/ws/containers/*/terminal",
-		"GET /api/environments/*/ws/projects/*/logs",
-		"GET /api/environments/*/ws/system/stats",
-		"GET /api/stream",
-		"POST /api/telemetry/*",
-		"GET /_app/*",
-		"GET /img",
-		"GET /api/health",
-		"HEAD /api/health",
-		"GET /api/app/images/*",
-		"PUT /api/environments/*/uploads/*/*/chunks/*",
-	}
-)
+var loggerSkipPatterns = []string{
+	"GET /api/environments/*/ws/containers/stats",
+	"GET /api/environments/*/ws/containers/*/logs",
+	"GET /api/environments/*/ws/containers/*/stats",
+	"GET /api/environments/*/ws/containers/*/terminal",
+	"GET /api/environments/*/ws/projects/*/logs",
+	"GET /api/environments/*/ws/system/stats",
+	"GET /api/stream",
+	"POST /api/telemetry/*",
+	"GET /_app/*",
+	"GET /img",
+	"GET /api/health",
+	"HEAD /api/health",
+	"GET /api/app/images/*",
+	"PUT /api/environments/*/uploads/*/*/chunks/*",
+}
 
 func createAuthValidator(deps api.HandlerDeps) middleware.AuthValidator {
 	resolveUser := func(ctx context.Context, user *types.Actor) *authz.PermissionSet {
@@ -132,7 +126,7 @@ func createAuthValidator(deps api.HandlerDeps) middleware.AuthValidator {
 	}
 }
 
-func newRouter(p RouterParams) (*echo.Echo, *agent.TunnelServer) {
+func newRouter(p RouterParams) *echo.Echo {
 	// Path params are decoded after matching on the escaped path, so an encoded "/" cannot change the route.
 	e := echo.NewWithConfig(echo.Config{
 		Router: echo.NewRouter(echo.RouterConfig{AllowOverwritingRoute: true, UnescapePathParamValues: true}),
@@ -242,8 +236,6 @@ func newRouter(p RouterParams) (*echo.Echo, *agent.TunnelServer) {
 		},
 		p.HandlerDeps.Environment.Service().IsKnownAccessToken,
 	))
-	handlerAppCtx := handlerutil.NewActivityAppContext(p.Context)
-
 	envResolver := func(ctx context.Context, id string) (*string, bool, error) {
 		env, err := p.HandlerDeps.Environment.Service().GetEnvironmentByIDCached(ctx, id)
 		if err != nil {
@@ -251,23 +243,6 @@ func newRouter(p RouterParams) (*echo.Echo, *agent.TunnelServer) {
 		}
 		return env.AccessToken, env.Enabled, nil
 	}
-
-	// Register public webhook trigger endpoint before auth middleware (token in URL is the sole auth)
-	api.RegisterWebhookTrigger(apiGroup, p.HandlerDeps.Webhook.Service(), handlerAppCtx)
-	federated.RegisterFederatedTokenExchange(apiGroup, p.HandlerDeps.Federated)
-	if !p.Config.AgentEnabled {
-		telemetry.RegisterRoutes(apiGroup, telemetry.NewService())
-	}
-	p.HandlerDeps.Event.RegisterAgentRoutes(apiGroup, func(ctx context.Context, token string) (string, error) {
-		env, err := p.HandlerDeps.Environment.Service().ResolveEnvironmentByAccessToken(ctx, token)
-		if err != nil {
-			return "", err
-		}
-		if env == nil || !env.Enabled || env.ID == "0" {
-			return "", nil
-		}
-		return env.ID, nil
-	})
 
 	permissionMatcher := authz.NewPermissionMatcher()
 
@@ -291,16 +266,23 @@ func newRouter(p RouterParams) (*echo.Echo, *agent.TunnelServer) {
 	}))
 	apiGroup.Use(envProxyMiddleware)
 
-	humaAPI := api.SetupAPI(e, apiGroup, handlerAppCtx, p.Config, p.HandlerDeps)
+	if p.TunnelServer != nil {
+		middleware.RegisterEchoRoutes(apiGroup, tunnelRoutes(p.TunnelServer))
+	}
+
+	humaAPI := api.SetupAPI(api.SetupParams{
+		Echo:       e,
+		Group:      apiGroup,
+		AppContext: handlerutil.NewActivityAppContext(p.Context),
+		Config:     p.Config,
+		Deps:       p.HandlerDeps,
+		Tunnel:     p.TunnelServer,
+	})
 
 	// Fill the proxy's shared matcher from the local API surface before serving so remote
 	// requests are authorized with the same permissions.
 	permissionMatcher.CollectFromHumaAPI(humaAPI)
 	ws.AddProxiedPermissions(permissionMatcher)
-
-	for _, register := range registerBuildableRoutes {
-		register(apiGroup, p.HandlerDeps)
-	}
 
 	// Remaining echo handlers (WebSocket/streaming)
 	ws.NewWebSocketHandler(
@@ -315,27 +297,6 @@ func newRouter(p RouterParams) (*echo.Echo, *agent.TunnelServer) {
 		p.HandlerDeps.Settings.Service(),
 		p.Config,
 	)
-
-	// Managers accept agent connections on the agent tunnel endpoint.
-	var tunnelServer *agent.TunnelServer
-	if !p.Config.AgentEnabled {
-		tunnelServer = registerAgentTunnelRoutes(
-			p.Context,
-			p.Lifecycle,
-			p.Config,
-			apiGroup,
-			p.HandlerDeps.Environment.Service(),
-			p.HandlerDeps.Event.Service(),
-			p.HandlerDeps.Notification.Service(),
-			p.TunnelRegistry,
-		)
-	}
-
-	if p.Config.Environment != "production" {
-		for _, registerFunc := range registerPlaywrightRoutes {
-			registerFunc(apiGroup, p.HandlerDeps)
-		}
-	}
 
 	apiNotFound := func(c *echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]any{
@@ -355,7 +316,15 @@ func newRouter(p RouterParams) (*echo.Echo, *agent.TunnelServer) {
 		}
 	}
 
-	return e, tunnelServer
+	return e
+}
+
+func EchoRoutePermissions() []authz.PermissionRoute {
+	permissionRoutes := api.SpecRoutes()
+	for _, route := range slices.Concat(tunnelRoutes(nil), ws.Routes()) {
+		permissionRoutes = append(permissionRoutes, route.PermissionRoute)
+	}
+	return permissionRoutes
 }
 
 // secureCookieContextMiddleware marks requests as HTTPS for cookies. X-Forwarded-Proto is

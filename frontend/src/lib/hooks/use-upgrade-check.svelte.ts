@@ -17,7 +17,14 @@ export function useUpgradeCheck({ queryScope, getVersionInformation, getDebug = 
 
 	// Same permission the update-all endpoint enforces (PermSystemUpgrade).
 	const canInstallUpdates = $derived(hasPermission('system:upgrade', LOCAL_DOCKER_ENVIRONMENT_ID));
-	const shouldCheckUpgrade = $derived(!!(getVersionInformation()?.updateAvailable && canInstallUpdates && !getDebug()));
+	const shouldCheckUpgrade = $derived(
+		!!(
+			getVersionInformation()?.updateAvailable &&
+			canInstallUpdates &&
+			hasPermission('system:read', LOCAL_DOCKER_ENVIRONMENT_ID) &&
+			!getDebug()
+		)
+	);
 	const upgradeAvailabilityQuery = createQuery(() => ({
 		queryKey: queryKeys.system.upgradeAvailable(queryScope),
 		queryFn: () => systemUpgradeService.checkUpgradeAvailable(),

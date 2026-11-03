@@ -202,6 +202,7 @@ func RegisterImages(
 		Description: "Build a Docker image using BuildKit with streaming progress output",
 		Tags:        []string{"Images"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.BuildPushConditions},
 	}, authz.PermImagesBuild, h.BuildImage)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

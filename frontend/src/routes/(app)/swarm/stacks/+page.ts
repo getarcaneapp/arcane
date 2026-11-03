@@ -17,7 +17,7 @@ export const load: PageLoad = async ({ parent }) => {
 
 	const result = await tryCatch(
 		(async () => {
-			const swarm = await queryClient.query(swarmEnvironmentsQueryOptions('swarm:read'));
+			const swarm = await queryClient.query(swarmEnvironmentsQueryOptions('swarm-stacks:list'));
 			const stacks = await queryClient.query(swarmStackListQuery(swarm, requestOptions));
 			return { swarm, stacks };
 		})()

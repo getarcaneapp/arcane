@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -47,6 +48,21 @@ type (
 	}
 )
 
+var streamChannelConditions = authz.PermissionConditions{
+	{
+		In:         authz.ConditionInQuery,
+		Field:      "channels",
+		Value:      types.StreamChannelActivities,
+		Permission: authz.PermActivitiesList,
+	},
+	{
+		In:         authz.ConditionInQuery,
+		Field:      "channels",
+		Value:      types.StreamChannelUpgrade,
+		Permission: authz.PermSystemRead,
+	},
+}
+
 const (
 	clientStreamHeartbeatInterval = 15 * time.Second
 	clientStreamDeadPeerTimeout   = 45 * time.Second
@@ -86,6 +102,7 @@ func RegisterStream(
 		Description: "Streams the requested channels (environments, activities, events, version, arcane-upgrade) as JSON envelopes over a single Server-Sent Events connection",
 		Tags:        []string{"Stream"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaPermissionConditions: streamChannelConditions},
 		Middlewares: huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
 			httpx.SetStreamHeaders(ctx)
 			// The HTTP tracing middleware skips streams, so the lifetime span is a root unless the client sent a traceparent.
@@ -149,7 +166,10 @@ func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInp
 		wrapActivity := func(channel string, event types.ActivityStreamEvent) types.StreamEvent {
 			return types.StreamEvent{Channel: channel, Activity: &event, Timestamp: event.Timestamp}
 		}
-		if ps.Allows(authz.PermActivitiesRead, environment.LocalEnvironmentID) {
+		activityPerms := streamChannelConditions.Required("channels", types.StreamChannelActivities)
+		if !slices.ContainsFunc(activityPerms, func(perm string) bool {
+			return !ps.Allows(perm, environment.LocalEnvironmentID)
+		}) {
 			producers = append(producers, forwardStreamChannel(
 				types.StreamChannelActivities, wrapActivity,
 				func(producerCtx context.Context, events chan<- types.ActivityStreamEvent) {
@@ -157,7 +177,9 @@ func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInp
 				},
 			))
 		}
-		if ps.AllowsAny(authz.PermActivitiesRead) {
+		if !slices.ContainsFunc(activityPerms, func(perm string) bool {
+			return !ps.AllowsAny(perm)
+		}) {
 			producers = append(producers, forwardStreamChannel(
 				types.StreamChannelActivities, wrapActivity,
 				func(producerCtx context.Context, events chan<- types.ActivityStreamEvent) {
@@ -196,7 +218,9 @@ func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInp
 		))
 	}
 
-	if requested[types.StreamChannelUpgrade] && ps.Allows(authz.PermSystemRead, environment.LocalEnvironmentID) {
+	if requested[types.StreamChannelUpgrade] && !slices.ContainsFunc(streamChannelConditions.Required("channels", types.StreamChannelUpgrade), func(perm string) bool {
+		return !ps.Allows(perm, environment.LocalEnvironmentID)
+	}) {
 		producers = append(producers, forwardStreamChannel(
 			types.StreamChannelUpgrade,
 			func(channel string, job types.UpgradeJob) types.StreamEvent {

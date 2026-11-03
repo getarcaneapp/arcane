@@ -447,7 +447,7 @@ test.describe('Lifecycle', () => {
 	};
 
 	async function updateExperimentalFeatures(page: Page, enabled: string) {
-		const response = await page.request.patch('/api/environments/0/settings', {
+		const response = await page.request.patch('/api/settings', {
 			data: { experimentalFeaturesEnabled: enabled }
 		});
 		if (!response.ok()) {
@@ -455,7 +455,7 @@ test.describe('Lifecycle', () => {
 				`Update experimentalFeaturesEnabled failed with ${response.status()}: ${await response.text()}`
 			);
 		}
-		const settingsResponse = await page.request.get('/api/environments/0/settings');
+		const settingsResponse = await page.request.get('/api/settings');
 		expect(settingsResponse.ok(), 'Read back experimental feature setting').toBe(true);
 		const { settings } = (await settingsResponse.json()) as {
 			settings: Array<{ key: string; value: string }>;
@@ -1026,7 +1026,7 @@ test.describe('Lifecycle', () => {
 			if (settingsChanged) await updateExperimentalFeatures(page, originalExperimentalSetting);
 		});
 
-		const settingsResponse = await page.request.get('/api/environments/0/settings');
+		const settingsResponse = await page.request.get('/api/settings');
 		if (!settingsResponse.ok()) {
 			throw new Error(`Get settings failed with ${settingsResponse.status()}`);
 		}

@@ -64,7 +64,7 @@ func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handle
 		Description: "Apply pending container updates",
 		Tags:        []string{"Updater"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermImageUpdatesCheck, h.RunUpdater)
+	}, authz.PermImageUpdatesApply, h.RunUpdater)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-updater-status",
@@ -85,7 +85,7 @@ func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handle
 		Tags:        []string{"Updater"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
-	}, authz.PermImageUpdatesRead, h.GetUpdaterHistory)
+	}, authz.PermImageUpdatesList, h.GetUpdaterHistory)
 
 	acceptedSchema := huma.SchemaFromType(api.OpenAPI().Components.Schemas, reflect.TypeFor[types.ApiResponse[types.Activity]]())
 	completedSchema := huma.SchemaFromType(api.OpenAPI().Components.Schemas, reflect.TypeFor[types.ApiResponse[*types.UpdaterResult]]())
@@ -101,5 +101,5 @@ func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handle
 			"200": {Description: "Container update completed", Content: map[string]*huma.MediaType{"application/json": {Schema: completedSchema}}},
 			"202": {Description: "Container update accepted", Content: map[string]*huma.MediaType{"application/json": {Schema: acceptedSchema}}},
 		},
-	}, authz.PermImageUpdatesCheck, h.updateContainer)
+	}, authz.PermImageUpdatesApply, h.updateContainer)
 }

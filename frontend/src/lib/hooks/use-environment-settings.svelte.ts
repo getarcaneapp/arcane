@@ -9,7 +9,7 @@ export function useEnvironmentSettings(envId: string | (() => string)) {
 	const environmentId = typeof envId === 'string' ? () => envId : envId;
 	const query = createQuery(() => ({
 		queryKey: queryKeys.settings.byEnvironment(environmentId()),
-		queryFn: () => settingsService.getReadableSettings(environmentId()),
+		queryFn: () => settingsService.getSettingsForEnvironmentMerged(environmentId()),
 		enabled: environmentId() !== LOCAL_DOCKER_ENVIRONMENT_ID
 	}));
 	return {

@@ -28,7 +28,7 @@ export type TemplateAuthoringLoadError = { resource: TemplateAuthoringResource; 
 export type TemplateAuthoringPermissions = {
 	canReadTemplates: boolean;
 	canListTemplates: boolean;
-	canReadVariables: boolean;
+	canListVariables: boolean;
 };
 
 export type SelectedTemplateLoad = {
@@ -66,7 +66,7 @@ export async function loadTemplateAuthoringData(parent: ParentWithQueryClient) {
 	const permissions: TemplateAuthoringPermissions = {
 		canReadTemplates: userHasPermission(user, 'templates:read'),
 		canListTemplates: userHasPermission(user, 'templates:list'),
-		canReadVariables: userHasPermission(user, 'variables:read')
+		canListVariables: userHasPermission(user, 'variables:list')
 	};
 	const loadErrors: TemplateAuthoringLoadError[] = [];
 
@@ -97,7 +97,7 @@ export async function loadTemplateAuthoringData(parent: ParentWithQueryClient) {
 				queryFn: () => templateService.getAllTemplates()
 			})
 		),
-		loadOptional<GlobalVariable[]>('globalVariables', permissions.canReadVariables, [], () =>
+		loadOptional<GlobalVariable[]>('globalVariables', permissions.canListVariables, [], () =>
 			client.query({
 				queryKey: queryKeys.variables.list(),
 				queryFn: () => variableService.list()

@@ -42,7 +42,7 @@ func (m *Module) RegisterRoutes(api huma.API) {
 func RegisterUsers(api huma.API, userService *UserService, invalidateUserTokenCache func(string), settingsService *settings.SettingsService) {
 	h := &UserHandler{userService: userService, invalidateUserTokenCache: invalidateUserTokenCache, settingsService: settingsService}
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "listUsers",
 		Method:      "GET",
 		Path:        "/users",
@@ -50,10 +50,9 @@ func RegisterUsers(api huma.API, userService *UserService, invalidateUserTokenCa
 		Description: "Get a paginated list of all users",
 		Tags:        []string{"Users"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermUsersList),
-	}, h.ListUsers)
+	}, authz.PermUsersList, h.ListUsers)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "createUser",
 		Method:      "POST",
 		Path:        "/users",
@@ -61,10 +60,9 @@ func RegisterUsers(api huma.API, userService *UserService, invalidateUserTokenCa
 		Description: "Create a new user account",
 		Tags:        []string{"Users"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermUsersCreate),
-	}, h.CreateUser)
+	}, authz.PermUsersCreate, h.CreateUser)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getUser",
 		Method:      "GET",
 		Path:        "/users/{userId}",
@@ -72,10 +70,9 @@ func RegisterUsers(api huma.API, userService *UserService, invalidateUserTokenCa
 		Description: "Get a user by ID",
 		Tags:        []string{"Users"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermUsersRead),
-	}, h.GetUser)
+	}, authz.PermUsersRead, h.GetUser)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "updateUser",
 		Method:      "PATCH",
 		Path:        "/users/{userId}",
@@ -83,10 +80,9 @@ func RegisterUsers(api huma.API, userService *UserService, invalidateUserTokenCa
 		Description: "Update an existing user's information",
 		Tags:        []string{"Users"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermUsersUpdate),
-	}, h.UpdateUser)
+	}, authz.PermUsersUpdate, h.UpdateUser)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "deleteUser",
 		Method:      "DELETE",
 		Path:        "/users/{userId}",
@@ -94,8 +90,7 @@ func RegisterUsers(api huma.API, userService *UserService, invalidateUserTokenCa
 		Description: "Delete a user by ID",
 		Tags:        []string{"Users"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermUsersDelete),
-	}, h.DeleteUser)
+	}, authz.PermUsersDelete, h.DeleteUser)
 
 	// Unauthenticated by design: profile pictures are publicly visible
 	// so they can be displayed without requiring a session token.

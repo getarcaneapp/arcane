@@ -21,7 +21,7 @@
 
 	let { data } = $props();
 
-	const podmanEnvs = $derived(shownPodmanEnvironments(data.podmanStatuses));
+	const podmanEnvs = $derived(shownPodmanEnvironments(data.podmanStatuses, 'podman:autoupdate'));
 	const runnableEnvs = $derived(
 		actionEnvironments('podman:autoupdate').filter(
 			(env) => podmanEnvs.some((podmanEnv) => podmanEnv.id === env.id) && modeOf(env.id) !== 'unavailable'

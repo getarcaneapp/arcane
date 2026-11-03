@@ -20,6 +20,7 @@
 	import type { ContainerSummaryDto } from '#lib/types/docker.js';
 	import type { JobScheduleConfig, MixedSettingValue } from '#lib/types/settings.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import {
 		UPDATE_CHECK_LABEL,
 		UPDATE_DELAY_LABEL,
@@ -57,11 +58,14 @@
 		}))
 	}));
 
+	const canEditSchedules = $derived(environments.every((environment) => hasPermission('jobs:update', environment.id)));
+	const containerEnvironments = $derived(environments.filter((environment) => hasPermission('containers:list', environment.id)));
+
 	const containersQuery = createQuery(() => ({
-		...containerListQuery(environments.map((environment) => environment.id).join(','), environments, {
+		...containerListQuery(containerEnvironments.map((environment) => environment.id).join(','), containerEnvironments, {
 			pagination: { page: 1, limit: 100 }
 		}),
-		enabled: environments.length > 0 && (!!formInputs.autoUpdate.value || !!formInputs.autoHealEnabled.value)
+		enabled: containerEnvironments.length > 0 && (!!formInputs.autoUpdate.value || !!formInputs.autoHealEnabled.value)
 	}));
 	const containers = $derived([
 		...new Map((containersQuery.data?.data ?? []).map((container) => [containerName(container), container])).values()
@@ -125,25 +129,30 @@
 			>
 				{m.mixed()}
 			</MixedValuesPopover>
-			<button
-				type="button"
-				title={m.jobs_edit_schedule()}
-				class="rounded-sm transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-				onclick={() => openSchedule(key, name)}
-			>
-				<EditIcon class="size-3" />
-			</button>
+			{#if canEditSchedules}
+				<button
+					type="button"
+					title={m.jobs_edit_schedule()}
+					class="rounded-sm transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+					onclick={() => openSchedule(key, name)}
+				>
+					<EditIcon class="size-3" />
+				</button>
+			{/if}
 		</span>
 	{:else if values.length > 0}
 		<button
 			type="button"
 			class="mt-1.5 inline-flex items-center gap-1.5 rounded-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+			disabled={!canEditSchedules}
 			onclick={() => openSchedule(key, name)}
 		>
 			<ClockIcon class="size-3.5" />
 			{m.jobs_schedule()}:
 			<span class="font-mono">{values[0]}</span>
-			<EditIcon class="size-3" />
+			{#if canEditSchedules}
+				<EditIcon class="size-3" />
+			{/if}
 		</button>
 	{/if}
 {/snippet}

@@ -5,7 +5,7 @@ import type { SwarmKvKind } from '#lib/types/swarm.js';
 export type SwarmKvResource = {
 	kind: SwarmKvKind;
 	persistKey: string;
-	permission: string;
+	permissions: Record<'list' | 'read' | 'create' | 'update' | 'delete', string>;
 	icon: IconType;
 	resource: () => string;
 	title: () => string;
@@ -27,7 +27,13 @@ export const swarmKvResources: Record<SwarmKvKind, SwarmKvResource> = {
 	secrets: {
 		kind: 'secrets',
 		persistKey: 'arcane-swarm-secrets-table',
-		permission: 'swarm:secrets',
+		permissions: {
+			list: 'swarm-secrets:list',
+			read: 'swarm-secrets:read',
+			create: 'swarm-secrets:create',
+			update: 'swarm-secrets:update',
+			delete: 'swarm-secrets:delete'
+		},
 		icon: LockIcon,
 		resource: m.swarm_secret,
 		title: m.swarm_secrets_title,
@@ -47,7 +53,13 @@ export const swarmKvResources: Record<SwarmKvKind, SwarmKvResource> = {
 	configs: {
 		kind: 'configs',
 		persistKey: 'arcane-swarm-configs-table',
-		permission: 'swarm:configs',
+		permissions: {
+			list: 'swarm-configs:list',
+			read: 'swarm-configs:read',
+			create: 'swarm-configs:create',
+			update: 'swarm-configs:update',
+			delete: 'swarm-configs:delete'
+		},
 		icon: TemplateIcon,
 		resource: m.swarm_config,
 		title: m.swarm_configs_title,

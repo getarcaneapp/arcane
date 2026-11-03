@@ -110,7 +110,7 @@
 									{:else}
 										<Badge variant="gray">{m.swarm_cluster_not_initialized()}</Badge>
 									{/if}
-									{#if row.status?.clusterId && hasPermission('swarm:nodes', row.environment.id) && hasPermission('swarm:unlock', row.environment.id)}
+									{#if row.status?.clusterId && hasPermission('swarm:join', row.environment.id) && hasPermission('swarm:unlock', row.environment.id)}
 										<ArcaneButton
 											action="create"
 											size="sm"

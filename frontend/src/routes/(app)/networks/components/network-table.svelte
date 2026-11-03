@@ -31,8 +31,9 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
-	import { type EnvironmentPage, type EnvironmentRow, rowKey } from '#lib/utils/environments.js';
+	import { type EnvironmentPage, type EnvironmentRow, hasShownPermission, rowKey } from '#lib/utils/environments.js';
 	import { capitalizeFirstLetter } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -122,6 +123,7 @@
 	}
 
 	const isAnyLoading = $derived(Object.values(isLoading).some((l) => l));
+	const canDeleteNetwork = $derived(hasShownPermission('networks:delete'));
 
 	function getDriverVariant(driver: string): 'blue' | 'purple' | 'red' | 'orange' | 'gray' {
 		const variantMap: Record<string, 'blue' | 'purple' | 'red' | 'orange' | 'gray'> = {
@@ -177,17 +179,20 @@
 		{ id: 'gateway', label: m.common_gateway(), defaultVisible: true }
 	];
 
-	const bulkActions = $derived.by<BulkAction[]>(() => [
-		{
-			id: 'remove',
-			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
-			action: 'remove',
-			onclick: handleDeleteSelectedNetworks,
-			loading: isLoading.remove,
-			disabled: isLoading.remove,
-			icon: TrashIcon
-		}
-	]);
+	const bulkActions = $derived.by<BulkAction[]>(() => {
+		if (!canDeleteNetwork) return [];
+		return [
+			{
+				id: 'remove',
+				label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
+				action: 'remove',
+				onclick: handleDeleteSelectedNetworks,
+				loading: isLoading.remove,
+				disabled: isLoading.remove,
+				icon: TrashIcon
+			}
+		];
+	});
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
@@ -309,16 +314,18 @@
 			{m.common_inspect()}
 		</DropdownMenu.Item>
 
-		<DropdownMenu.Separator />
+		{#if hasPermission('networks:delete', item.environmentId)}
+			<DropdownMenu.Separator />
 
-		<DropdownMenu.Item
-			variant="destructive"
-			onclick={() => handleDeleteNetwork(item.id, item.name, item.environmentId)}
-			disabled={isAnyLoading || item.isDefault || DEFAULT_NETWORK_NAMES.has(item.name)}
-		>
-			<TrashIcon class="size-4" />
-			{m.common_delete()}
-		</DropdownMenu.Item>
+			<DropdownMenu.Item
+				variant="destructive"
+				onclick={() => handleDeleteNetwork(item.id, item.name, item.environmentId)}
+				disabled={isAnyLoading || item.isDefault || DEFAULT_NETWORK_NAMES.has(item.name)}
+			>
+				<TrashIcon class="size-4" />
+				{m.common_delete()}
+			</DropdownMenu.Item>
+		{/if}
 	</RowActionsMenu>
 {/snippet}
 
@@ -329,6 +336,7 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
+	selectionDisabled={!canDeleteNetwork}
 	{onRetry}
 	{columns}
 	{mobileFields}

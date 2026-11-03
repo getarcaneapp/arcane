@@ -15,7 +15,6 @@ import (
 // RegisterRoutes registers the system backup endpoints, including the
 // system-managed volume backup endpoints.
 func RegisterRoutes(api huma.API, h *Handler) {
-	adminOnly := middleware.RequireGlobalAdmin(api)
 	middleware.RegisterWithPermission(
 		api,
 		huma.Operation{
@@ -26,9 +25,8 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Tags: []string{
 				"System Backups",
 			},
-			Middlewares: adminOnly,
 		},
-		authz.PermSystemBackupsRead,
+		authz.PermSystemBackupsList,
 		h.List,
 	)
 	middleware.RegisterWithPermission(
@@ -41,9 +39,8 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Tags: []string{
 				"System Backups",
 			},
-			Middlewares: adminOnly,
 		},
-		authz.PermSystemBackupsRead,
+		authz.PermSystemBackupsList,
 		h.ListHistory,
 	)
 	middleware.RegisterWithPermission(
@@ -56,7 +53,6 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Tags: []string{
 				"System Backups",
 			},
-			Middlewares: adminOnly,
 		},
 		authz.PermSystemBackupsRead,
 		h.GetPolicies,
@@ -71,14 +67,13 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Tags: []string{
 				"System Backups",
 			},
-			Middlewares: adminOnly,
 		},
-		authz.PermSystemBackupsManage,
+		authz.PermSystemBackupsUpdate,
 		h.UpdatePolicies,
 	)
 	middleware.RegisterWithActionPermissions(
 		api,
-		huma.Operation{
+		middleware.RequireGlobalAdmin(api, huma.Operation{
 			OperationID: "generate-system-backup-recovery-key",
 			Method:      http.MethodPost,
 			Path:        "/backups/recovery/key",
@@ -86,8 +81,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Tags: []string{
 				"System Backups",
 			},
-			Middlewares: adminOnly,
-		},
+		}),
 		"action",
 		map[string]string{
 			"generate": authz.PermSystemBackupsRecoveryKey,
@@ -96,7 +90,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	)
 	middleware.RegisterWithPermission(
 		api,
-		huma.Operation{
+		middleware.RequireGlobalAdmin(api, huma.Operation{
 			OperationID: "set-system-backup-recovery-key",
 			Method:      http.MethodPut,
 			Path:        "/backups/recovery/key",
@@ -104,8 +98,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Tags: []string{
 				"System Backups",
 			},
-			Middlewares: adminOnly,
-		},
+		}),
 		authz.PermSystemBackupsRecoveryKey,
 		h.SetRecoveryKey,
 	)
@@ -120,14 +113,13 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Tags: []string{
 				"System Backups",
 			},
-			Middlewares: adminOnly,
 		},
-		authz.PermSystemBackupsManage,
+		authz.PermSystemBackupsCreate,
 		h.Create,
 	)
 	middleware.RegisterWithPermission(
 		api,
-		huma.Operation{
+		middleware.RequireGlobalAdmin(api, huma.Operation{
 			OperationID: "discover-system-backups",
 			Method:      http.MethodPost,
 			Path:        "/backups/discover",
@@ -135,14 +127,13 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Tags: []string{
 				"System Backups",
 			},
-			Middlewares: adminOnly,
-		},
-		authz.PermSystemBackupsManage,
+		}),
+		authz.PermSystemBackupsUpdate,
 		h.Discover,
 	)
 	middleware.RegisterWithActionPermissions(
 		api,
-		huma.Operation{
+		middleware.RequireGlobalAdmin(api, huma.Operation{
 			OperationID: "system-backup-action",
 			Method:      http.MethodPost,
 			Path:        "/backups/{id}",
@@ -151,8 +142,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Tags: []string{
 				"System Backups",
 			},
-			Middlewares: adminOnly,
-		},
+		}),
 		"action",
 		map[string]string{
 			"restore":      authz.PermSystemBackupsRestore,
@@ -170,7 +160,6 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Tags: []string{
 				"System Backups",
 			},
-			Middlewares: adminOnly,
 		},
 		authz.PermSystemBackupsRead,
 		h.BrowseFiles,
@@ -185,9 +174,8 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Tags: []string{
 				"System Backups",
 			},
-			Middlewares: adminOnly,
 		},
-		authz.PermSystemBackupsManage,
+		authz.PermSystemBackupsUpload,
 		h.Upload,
 	)
 	middleware.RegisterWithPermission(
@@ -200,9 +188,8 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Tags: []string{
 				"System Backups",
 			},
-			Middlewares: adminOnly,
 		},
-		authz.PermSystemBackupsManage,
+		authz.PermSystemBackupsDelete,
 		h.Delete,
 	)
 
