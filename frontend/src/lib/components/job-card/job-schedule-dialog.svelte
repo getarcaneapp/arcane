@@ -14,6 +14,7 @@
 		settingsKey,
 		schedule,
 		mixed = false,
+		timezone,
 		open = $bindable(false),
 		save,
 		onUpdate
@@ -22,6 +23,7 @@
 		settingsKey?: string;
 		schedule: string;
 		mixed?: boolean;
+		timezone?: string;
 		open?: boolean;
 		save: (update: Record<string, string>) => Promise<unknown>;
 		onUpdate?: () => void;
@@ -98,6 +100,9 @@
 				<p class="text-sm text-destructive">{error}</p>
 			{:else}
 				<p class="text-sm text-muted-foreground">{m.jobs_cron_expression_help()}</p>
+			{/if}
+			{#if timezone}
+				<p class="text-sm text-muted-foreground">{m.schedule_timezone({ timezone })}</p>
 			{/if}
 		</div>
 

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"slices"
 	"sync"
+	"time"
 
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
@@ -160,7 +161,7 @@ func newJobScheduler(
 					cancelScheduler()
 				}
 			}()
-			slog.InfoContext(appCtx, "Starting scheduler")
+			slog.InfoContext(appCtx, "Starting scheduler", "timezone", cfg.TimezoneName(), "utcOffset", time.Now().In(cfg.GetLocation()).Format("-07:00"))
 			if startErr := jobService.Coordinator().Start(ctx, schedulerCtx); startErr != nil {
 				return fmt.Errorf("initialize scheduler: %w", startErr)
 			}

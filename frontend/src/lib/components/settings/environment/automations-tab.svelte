@@ -58,6 +58,17 @@
 		}))
 	}));
 
+	const jobListResults = createQueries(() => ({
+		queries: environments.map((environment) => ({
+			queryKey: queryKeys.jobs.list(environment.id),
+			queryFn: ({ signal }) => jobScheduleService.listJobs(environment.id, { signal, suppressAccessDeniedToast: true }),
+			enabled: hasPermission('jobs:list', environment.id)
+		}))
+	}));
+	const scheduleTimezone = $derived(
+		[...new Set(jobListResults.flatMap((result) => (result.data?.timezone ? [result.data.timezone] : [])))].join(', ')
+	);
+
 	const canEditSchedules = $derived(environments.every((environment) => hasPermission('jobs:update', environment.id)));
 	const containerEnvironments = $derived(environments.filter((environment) => hasPermission('containers:list', environment.id)));
 
@@ -456,6 +467,7 @@
 			settingsKey={scheduleTarget.key}
 			schedule={scheduleTarget.value ?? (values.length > 1 ? '' : (values[0] ?? ''))}
 			mixed={!scheduleTarget.value && values.length > 1}
+			timezone={scheduleTimezone}
 			save={saveSchedule}
 			bind:open={scheduleOpen}
 			onUpdate={() => (scheduleOpen = false)}

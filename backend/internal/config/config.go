@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata"
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/fs"
@@ -338,6 +339,15 @@ func (c *Config) GetLocation() *time.Location {
 		return time.UTC
 	}
 	return loc
+}
+
+func (c *Config) TimezoneName() string {
+	loc := c.GetLocation()
+	if loc != time.Local {
+		return loc.String()
+	}
+	zone, _ := time.Now().In(loc).Zone()
+	return zone
 }
 
 // GetAppURL returns the effective application URL.
