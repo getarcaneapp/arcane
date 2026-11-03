@@ -40,10 +40,7 @@ type (
 		limiter  *arcaneregistry.RegistryRateLimiter
 	}
 
-	// tagRegistry adapts the registry service for one container tag scan.
-	// Successful tag listings are shared per repository and digest lookups per
-	// reference so replicas of the same image cost one registry request, and the
-	// scan's manager-provided credentials never leak into the service caches.
+	// tagRegistry shares listings and digests per scan so replicas cost one request and scan credentials skip service caches.
 	tagRegistry struct {
 		service     *registry.ContainerRegistryService
 		docker      *docker.DockerClientService
@@ -53,8 +50,7 @@ type (
 		credentials []types.ContainerRegistryCredential
 	}
 
-	// scanRegistryMemo memoizes successful registry lookups for one scan
-	// and coalesces concurrent misses for the same key into a single request.
+	// scanRegistryMemo memoizes successful lookups for one scan and coalesces concurrent misses per key.
 	scanRegistryMemo[V any] struct {
 		flight      singleflight.Group
 		values      map[string]V
@@ -65,8 +61,6 @@ type (
 )
 
 const (
-	// tagCheckWorkers bounds concurrent container policy evaluations per scan; the
-	// registry limiter still caps concurrent requests per registry host.
 	tagCheckWorkers = 10
 )
 
@@ -84,9 +78,7 @@ func NewService(
 	}
 }
 
-// Check evaluates the tag policy of each listed container running a wanted
-// image. Digest-tracked containers are handed to clearDigestTracked and each
-// finished check is handed to save as soon as it completes.
+// Check evaluates each wanted container's tag policy and saves each result as soon as it finishes.
 func (s *Service) Check(
 	ctx context.Context,
 	listed []container.Summary,
@@ -95,9 +87,7 @@ func (s *Service) Check(
 	clearDigestTracked func(context.Context, []string) error,
 	save func(context.Context, container.Summary, *types.ImageUpdateResponse) error,
 ) (map[string]*types.ImageUpdateResponse, error) {
-	// This engine only reads. Containers excluded from automatic installation
-	// (updater label or UI exclusion) are still checked; only the update-check
-	// label opts a container out of monitoring, so no Settings provider is wired.
+	// Read-only: only the update-check label opts a container out, so no Settings provider is wired.
 	adapter := tagRegistry{
 		service:     s.registry,
 		credentials: credentials,
@@ -145,13 +135,7 @@ func (s *Service) Check(
 		return map[string]*types.ImageUpdateResponse{}, clearErr
 	}
 
-	// Policies are evaluated concurrently; the shared adapter dedupes registry
-	// requests across replicas and the registry limiter caps them per host.
-	// Each result is persisted as soon as its check completes, so a scan that
-	// reaches its deadline keeps every check that finished before it. Saves are
-	// serialized and run on the group context: once the scan is cancelled the
-	// remaining writes fail instead of replacing stored results with
-	// cancellation errors.
+	// Saves are serialized on the group context so a cancelled scan keeps finished results without overwriting them.
 	checks := make([]*types.ImageUpdateResponse, len(candidates))
 	var saveMu sync.Mutex
 	g, groupCtx := errgroup.WithContext(ctx)
@@ -222,9 +206,6 @@ func (m *scanRegistryMemo[V]) do(key string, fetch func() (V, error)) (V, error)
 }
 
 func (r tagRegistry) ListTags(ctx context.Context, imageRef string) ([]string, error) {
-	if r.service == nil {
-		return nil, errors.New("registry service unavailable")
-	}
 	fetch := func() ([]string, error) { return r.service.ListImageTags(ctx, imageRef, r.credentials) }
 	parsed, err := refs.NormalizeReference(imageRef)
 	if err != nil {
@@ -239,16 +220,8 @@ func (r tagRegistry) ListTags(ctx context.Context, imageRef string) ([]string, e
 }
 
 func (r tagRegistry) ImageDigest(ctx context.Context, imageRef string) (string, error) {
-	if r.service == nil {
-		return "", errors.New("registry service unavailable")
-	}
 	fetch := func() (string, error) {
-		digestCtx, cancel := context.WithTimeout(ctx, func() time.Duration {
-			if r.settings == nil {
-				return timeouts.DefaultRegistry
-			}
-			return timeouts.GetDuration(r.settings.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry)
-		}())
+		digestCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(r.settings.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
 		defer cancel()
 		result, err := r.service.InspectImageDigest(digestCtx, imageRef, r.credentials)
 		if err != nil {
@@ -291,9 +264,7 @@ func (s *Service) checkContainerTag(ctx context.Context, engine *updater.Service
 	if err != nil {
 		return failed(err)
 	}
-	// A newer tag has no digest yet; resolve it so a tag rewritten during the
-	// auto-update delay counts as a new target. An unresolved digest only
-	// restarts that delay, so the update itself is still reported.
+	// Resolve a new tag's digest so a tag rewritten during the auto-update delay counts as a new target.
 	targetDigest := func() string {
 		if !check.UpdateAvailable || check.TargetDigest != "" {
 			return check.TargetDigest
@@ -329,17 +300,10 @@ func (s *Service) checkContainerTag(ctx context.Context, engine *updater.Service
 }
 
 func (r tagRegistry) DockerClient(ctx context.Context) (*client.Client, error) {
-	if r.docker == nil {
-		return nil, errors.New("docker service unavailable")
-	}
 	return r.docker.GetClient(ctx)
 }
 
-// AttachContainerUpdates binds each container's policy result to the
-// image result sharing its normalized reference. The image-only snapshot is
-// taken before the first container result is attached so it stays untouched.
-// A container candidate promotes the image result to its version update when
-// the image itself has none.
+// AttachContainerUpdates binds container results to image results by normalized reference, snapshotting the image result first.
 func AttachContainerUpdates(results, containerUpdates map[string]*types.ImageUpdateResponse) map[string]*types.ImageUpdateResponse {
 	containerIDsByRef := make(map[string][]string, len(containerUpdates))
 	for id, update := range containerUpdates {

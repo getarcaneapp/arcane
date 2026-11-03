@@ -31,18 +31,12 @@ type (
 		Step           string
 		Message        string
 		SuccessMessage string
-		// Queue routes the activity through the per-environment concurrency
-		// limiter so bulk long-running operations wait visibly instead of all
-		// running at once. Quick actions (start/stop/delete) must not set this.
+		// Queue waits on the per-environment concurrency limiter; quick actions (start/stop/delete) must not set it.
 		Queue bool
 	}
 )
 
 const (
-	// ErrCanceled is the cancellation cause set on an activity's work context when a
-	// user requests cancellation. Completion paths read context.Cause to record a
-	// cancelled (rather than failed) terminal status.
-	// cancelledMessage is the latest-message recorded when work is cancelled.
 	cancelledMessage = "Cancelled by user"
 )
 
@@ -56,13 +50,9 @@ func IDFromContext(ctx context.Context) string {
 	return strings.TrimSpace(activityID)
 }
 
-// AwaitHandlerActivitySlot blocks until the queued activity holds a
-// concurrency slot (flipping it to running). A cancellation while waiting is
-// not an error to the caller: the work context is already cancelled, so the
-// subsequent action fails fast and CompleteHandlerActivity records the
-// cancelled status.
+// AwaitHandlerActivitySlot blocks until a queued activity holds a slot; cancellation is recorded on completion, not returned.
 func AwaitHandlerActivitySlot(ctx context.Context, activityService Service, activityID, environmentID string) {
-	if activityService == nil || strings.TrimSpace(activityID) == "" {
+	if strings.TrimSpace(activityID) == "" {
 		return
 	}
 	waiter, ok := activityService.(SlotWaiter)
@@ -74,25 +64,8 @@ func AwaitHandlerActivitySlot(ctx context.Context, activityService Service, acti
 	}
 }
 
-// StartHandlerActivity creates a background activity and returns its ID along
-// with a work context the caller MUST use for the underlying operation. When
-// the service supports cancellation (implements Tracker), the returned context
-// is a cancelable child bound to the activity; cancelling the activity cancels
-// this context. The activity registration is released when the activity is
-// completed via the service. On failure it returns ("", ctx) unchanged.
-//
-// When queue is true the activity is routed through the per-environment
-// concurrency limiter: when no slot is free the activity is created with
-// status queued. The caller MUST then call AwaitHandlerActivitySlot on the
-// returned work context before doing the actual work (streaming endpoints
-// write their started line in between, so the client learns the activity ID
-// before the queue wait begins). Quick actions (start/stop/delete) must pass
-// false.
+// StartHandlerActivity returns the activity ID and the work context callers MUST use; queued activities must then call AwaitHandlerActivitySlot.
 func StartHandlerActivity(ctx context.Context, activityService Service, opts HandlerOptions) (string, context.Context) {
-	if activityService == nil {
-		return "", ctx
-	}
-
 	activity, err := activityService.StartActivity(ctx, StartRequest{
 		EnvironmentID: opts.EnvironmentID,
 		Type:          opts.Type,
@@ -119,7 +92,7 @@ func StartHandlerActivity(ctx context.Context, activityService Service, opts Han
 }
 
 func CompleteHandlerActivity(ctx context.Context, activityService Service, activityID, successMessage string, err error) {
-	if activityService == nil || strings.TrimSpace(activityID) == "" {
+	if strings.TrimSpace(activityID) == "" {
 		return
 	}
 
@@ -127,8 +100,7 @@ func CompleteHandlerActivity(ctx context.Context, activityService Service, activ
 	var errMessage *string
 	finalMessage := successMessage
 	if err != nil {
-		// Read the cancellation cause from the (possibly-tracked) work context
-		// before it is re-wrapped for the DB write below.
+		// Read the cause before the context is re-wrapped for the DB write.
 		if errors.Is(context.Cause(ctx), ErrCanceled) {
 			status = types.ActivityStatusCancelled
 			finalMessage = cancelledMessage
@@ -146,10 +118,7 @@ func CompleteHandlerActivity(ctx context.Context, activityService Service, activ
 	}
 }
 
-// RunHandlerActivity starts an activity, runs action with the activity's work
-// context (cancelable when the service supports it), and completes the activity.
-// The action MUST use the provided context for its operation so cancellation
-// propagates.
+// RunHandlerActivity runs action under the activity's cancelable work context and completes the activity.
 func RunHandlerActivity(ctx context.Context, activityService Service, opts HandlerOptions, action func(ctx context.Context) error) (string, error) {
 	activityID, workCtx := StartHandlerActivity(ctx, activityService, opts)
 	if opts.Queue {
@@ -172,9 +141,7 @@ func RunHandlerActivity(ctx context.Context, activityService Service, opts Handl
 	return activityID, err
 }
 
-// WriteDoneLine writes the terminal success frame of an operation NDJSON
-// stream. Clients resolve on this frame rather than relying on the network
-// EOF, which proxies do not always propagate promptly.
+// WriteDoneLine writes the terminal NDJSON frame, since proxies do not always propagate EOF promptly.
 func WriteDoneLine(writer io.Writer) {
 	if writer == nil {
 		return

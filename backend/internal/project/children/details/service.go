@@ -1,5 +1,4 @@
-// Package details derives project runtime state: service status from Compose
-// and containers, include files, logs and image update checks.
+// Package details derives project runtime state from Compose and containers.
 package details
 
 import (
@@ -38,7 +37,6 @@ import (
 )
 
 type (
-	// Service reads project runtime state, include files and update checks.
 	Service struct {
 		db              *database.DB
 		dockerService   *dockerInternal.DockerClientService
@@ -56,7 +54,6 @@ func New(db *database.DB, dockerService *dockerInternal.DockerClientService, ima
 	}
 }
 
-// ComposeContainers derives Compose containers from the coalesced full inventory.
 func (s *Service) ComposeContainers(ctx context.Context) ([]container.Summary, error) {
 	containers, err := s.dockerService.ListContainers(ctx, false)
 	if err != nil {
@@ -78,8 +75,7 @@ func RuntimeProjectName(fallback string, runtimeContainers []container.Summary) 
 	return cmp.Or(docker.ComposeProjectLabel(runtimeContainers[0].Labels), fallback)
 }
 
-// ComposeServices reports every Compose service with its container state,
-// including services that have no container yet.
+// ComposeServices includes services that have no container yet.
 func (s *Service) ComposeServices(
 	ctx context.Context,
 	composeProject *composetypes.Project,
@@ -88,7 +84,11 @@ func (s *Service) ComposeServices(
 	catalog string,
 ) ([]types.ProjectRuntimeService, error) {
 	runtimeName := RuntimeProjectName(composeProject.Name, runtimeContainers)
-	containers, err := projects.ComposePs(ctx, s.dockerService.DockerHost(), &composetypes.Project{Name: runtimeName}, nil, true)
+	containers, err := projects.ComposePs(ctx, types.ComposePsOptions{
+		Project:    &composetypes.Project{Name: runtimeName},
+		DockerHost: s.dockerService.DockerHost(),
+		All:        true,
+	})
 	if err != nil {
 		slog.ErrorContext(ctx, "compose ps error", "projectName", runtimeName, "error", err)
 		return nil, fmt.Errorf("failed to get compose services status: %w", err)
@@ -158,14 +158,12 @@ func (s *Service) ComposeServices(
 	return services, nil
 }
 
-// IncludeFiles lists the files a compose file includes, expanding ${VAR}
-// references from the project environment.
 func (s *Service) IncludeFiles(ctx context.Context, composeFile string) []types.ProjectIncludeFile {
 	if strings.TrimSpace(composeFile) == "" {
 		return nil
 	}
 
-	// Load environment variables so that include paths with ${VAR} references are expanded
+	// Loaded so include paths with ${VAR} references are expanded.
 	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
 	projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
 	envMap, _, _ := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), kit.ParseOrDefault(cfg.AutoInjectEnv.Value, false, strconv.ParseBool)).LoadEnvironment(ctx)
@@ -185,7 +183,6 @@ func (s *Service) IncludeFiles(ctx context.Context, composeFile string) []types.
 	return includeFiles
 }
 
-// ContainerUpdateInfo returns update checks scoped to the projects' running containers.
 func (s *Service) ContainerUpdateInfo(ctx context.Context, services []types.ProjectRuntimeService) map[string]*types.ImageUpdateInfo {
 	var containers []container.Summary
 	for _, service := range services {
@@ -206,7 +203,6 @@ func (s *Service) ContainerUpdateInfo(ctx context.Context, services []types.Proj
 	return scoped
 }
 
-// ServiceUpdateRecords loads per-service update checks for the projects.
 func (s *Service) ServiceUpdateRecords(ctx context.Context, projectIDs []string) []imageupdate.ImageUpdateRecord {
 	if len(projectIDs) == 0 {
 		return nil
@@ -219,7 +215,6 @@ func (s *Service) ServiceUpdateRecords(ctx context.Context, projectIDs []string)
 	return records
 }
 
-// Logs streams Compose logs for the project line by line.
 func Logs(ctx context.Context, dockerHost, projectName string, logsChan chan<- string, opts types.LogStreamOptions) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -228,10 +223,8 @@ func Logs(ctx context.Context, dockerHost, projectName string, logsChan chan<- s
 
 	done := make(chan error, 2)
 
-	// Reader goroutine: forward lines to channel
 	go func() {
-		// Closing the read half unblocks a pending pw.Write in ComposeLogs after an abandoned tail
-		// (ctx cancel or bufio.ErrTooLong); otherwise the writer goroutine wedges forever.
+		// Closing the read half unblocks a pending pw.Write in ComposeLogs after an abandoned tail.
 		defer cancel()
 		defer func() { _ = pr.CloseWithError(io.ErrClosedPipe) }()
 
@@ -257,14 +250,12 @@ func Logs(ctx context.Context, dockerHost, projectName string, logsChan chan<- s
 		}
 	}()
 
-	// Writer goroutine: compose logs -> pipe
 	go func() {
 		composeLogsErr := projects.ComposeLogs(ctx, dockerHost, projects.NormalizeProjectName(projectName), pw, opts)
 		_ = pw.Close()
 		done <- composeLogsErr
 	}()
 
-	// Wait for both goroutines to finish to avoid sending on a closed channel
 	for _, e := range []error{<-done, <-done} {
 		if e != nil && !errors.Is(e, io.EOF) && !errors.Is(e, context.Canceled) {
 			return e
@@ -403,14 +394,14 @@ func ExcludeHiddenRuntimeServices(details []types.Project) ([][]types.ProjectRun
 	return visibleByIndex, hiddenServicesByProjectID, hiddenRefsByProjectID
 }
 
-// ResolveDetailsOverride returns the override file name and content, hidden when a COMPOSE_FILE selection omits it.
+// ResolveDetailsOverride hides the override file when a COMPOSE_FILE selection omits it.
 func ResolveDetailsOverride(projectPath, overrideContent string, composeSelection []string) (fileName, content string) {
 	overridePath := projects.DetectComposeOverrideFile(projectPath)
 	if len(composeSelection) > 0 {
 		if overridePath == "" {
 			return "", ""
 		}
-		// Selection entries are absolute; full paths keep a same-named subdirectory file from matching.
+		// Full paths keep a same-named subdirectory file from matching.
 		absOverride, err := filepath.Abs(filepath.Clean(overridePath))
 		if err != nil || !slices.Contains(composeSelection, absOverride) {
 			return "", ""
@@ -419,7 +410,6 @@ func ResolveDetailsOverride(projectPath, overrideContent string, composeSelectio
 	return kit.Ternary(overridePath != "", filepath.Base(overridePath), ""), overrideContent
 }
 
-// ComposeSelectionRelativePaths returns a multi-file COMPOSE_FILE selection as ordered project-relative paths.
 func ComposeSelectionRelativePaths(projectPath string, selection []string) []string {
 	if len(selection) <= 1 {
 		return nil

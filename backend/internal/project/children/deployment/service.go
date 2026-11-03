@@ -1,5 +1,4 @@
-// Package deployment runs the image and bind-directory side of project
-// deployments: pulls, builds, update reconciliation and dependents.
+// Package deployment runs the image and bind-directory side of project deployments.
 package deployment
 
 import (
@@ -27,13 +26,11 @@ import (
 )
 
 type (
-	// Builder builds Compose service images.
 	Builder interface {
 		BuildImage(ctx context.Context, environmentID string, req buildtypes.BuildRequest, progressWriter io.Writer, serviceName string, user *types.Actor) (*buildtypes.BuildResult, error)
 		BuildSettings() buildtypes.BuildSettings
 	}
 
-	// Service runs the image side of deployments: pulls, update reconciliation, builds and dependents.
 	Service struct {
 		imageService  *image.ImageService
 		dockerService *docker.DockerClientService
@@ -49,8 +46,7 @@ func New(imageService *image.ImageService, dockerService *docker.DockerClientSer
 	}
 }
 
-// NamespaceDependents splits dependents into running and stopped-only services; never-created ones are skipped.
-// A ComposePs failure treats every dependent as running, since a dangling namespace reference is worse.
+// NamespaceDependents treats every dependent as running on a ComposePs failure, since a dangling namespace reference is worse.
 func (s *Service) NamespaceDependents(ctx context.Context, compProj *composetypes.Project, services []string) (running, stopped []string) {
 	if len(services) == 0 {
 		return nil, nil
@@ -59,7 +55,12 @@ func (s *Service) NamespaceDependents(ctx context.Context, compProj *composetype
 	if len(deps) == 0 {
 		return nil, nil
 	}
-	summaries, err := projects.ComposePs(ctx, s.dockerService.DockerHost(), compProj, deps, true)
+	summaries, err := projects.ComposePs(ctx, types.ComposePsOptions{
+		Project:    compProj,
+		DockerHost: s.dockerService.DockerHost(),
+		Services:   deps,
+		All:        true,
+	})
 	if err != nil {
 		slog.WarnContext(ctx, "failed to list namespace dependent containers; recreating all dependents", "project", compProj.Name, "dependents", deps, "error", err)
 		return deps, nil
@@ -79,7 +80,6 @@ func (s *Service) NamespaceDependents(ctx context.Context, compProj *composetype
 	return running, stopped
 }
 
-// ImageOperations wires image pulls, existence checks and builds for Compose.
 func (s *Service) ImageOperations(user *types.Actor, credentials []types.ContainerRegistryCredential) types.ComposeImageOperations {
 	return types.ComposeImageOperations{
 		Exists:     s.imageService.ImageExistsLocally,
@@ -100,8 +100,7 @@ func (s *Service) ImageOperations(user *types.Actor, credentials []types.Contain
 	}
 }
 
-// PrepareProjectBindDirectories creates missing auto-created bind sources as Arcane's user, not root (#4132).
-// Existing, escaping (#4195) and uninspectable sources are left to Docker.
+// PrepareProjectBindDirectories creates missing bind sources as Arcane's user, not root (#4132).
 func PrepareProjectBindDirectories(projectPath string) projects.PrepareProjectFunc {
 	return func(ctx context.Context, project *composetypes.Project) error {
 		for _, serviceName := range slices.Sorted(maps.Keys(project.Services)) {
@@ -117,7 +116,6 @@ func PrepareProjectBindDirectories(projectPath string) projects.PrepareProjectFu
 					exists, existsErr := acfs.Root{Path: projectPath}.Exists(ctx, logicalPath)
 					switch {
 					case exists || errors.Is(existsErr, acfs.ErrOutsideRoot) || errors.Is(existsErr, fs.ErrPermission):
-						// Leave existing, escaping, and uninspectable sources to the Docker daemon.
 					case existsErr != nil:
 						err = existsErr
 					default:

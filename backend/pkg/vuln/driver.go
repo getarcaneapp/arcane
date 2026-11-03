@@ -53,15 +53,10 @@ type (
 )
 
 const (
-	// DefaultNetworkMode is the network the scan container joins when nothing
-	// more specific is configured or detected.
+	// DefaultNetworkMode is used when no scan network is configured or detected.
 	DefaultNetworkMode = "bridge"
-	// CacheMountTarget is where the shared Trivy cache volume is mounted inside
-	// the scan container.
-	CacheMountTarget = "/root/.cache"
-	// RegistryConfigDir is where the generated registry auth config lands inside
-	// the scan container.
-	RegistryConfigDir = "/tmp/arcane-registry-auth"
+	CacheMountTarget   = "/root/.cache"
+	RegistryConfigDir  = "/tmp/arcane-registry-auth"
 	// NanoCPUsPerCore and BytesPerMB convert configured limits to Docker units.
 	NanoCPUsPerCore = int64(1_000_000_000)
 	BytesPerMB      = int64(1024 * 1024)
@@ -124,8 +119,7 @@ func BuildHostConfig(opts HostConfigOptions) *containertypes.HostConfig {
 
 	return &containertypes.HostConfig{
 		NetworkMode: containertypes.NetworkMode(cmp.Or(strings.TrimSpace(opts.Runtime.NetworkMode), DefaultNetworkMode)),
-		// Keep single-scan containers until explicit cleanup so we can reliably
-		// wait for completion and collect logs across Docker variants.
+		// Kept until explicit cleanup so completion and logs are reliable across Docker variants.
 		AutoRemove:  false,
 		Mounts:      mounts,
 		SecurityOpt: slices.Clone(opts.SecurityOpts),
@@ -135,15 +129,12 @@ func BuildHostConfig(opts HostConfigOptions) *containertypes.HostConfig {
 }
 
 func CreateLogTempFile(prefix string) (*os.File, error) {
-	// System temp scratch (with a user cache dir fallback below): no acfs root
-	// exists for either location.
-	// Try the default system temp dir first.
+	// System temp scratch with a user cache dir fallback: no acfs root exists for either.
 	file, primaryErr := os.CreateTemp("", prefix)
 	if primaryErr == nil {
 		return file, nil
 	}
-	// /tmp is not writable (e.g. hardened container). Fall back to a
-	// per-user cache directory so Trivy scans can still run.
+	// Hardened containers may have a read-only /tmp.
 	cacheDir, err := os.UserCacheDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create trivy temp file (primary: %s) and user cache dir unavailable: %w", primaryErr.Error(), err)
@@ -248,7 +239,7 @@ func TruncateLogOutput(content string, maxBytes int64) string {
 }
 
 func ReadStartupLogs(ctx context.Context, dockerClient *client.Client, containerID string) (string, string) {
-	if dockerClient == nil || containerID == "" {
+	if containerID == "" {
 		return "", ""
 	}
 
@@ -282,7 +273,7 @@ func ReadStartupLogs(ctx context.Context, dockerClient *client.Client, container
 }
 
 func RemoveContainer(ctx context.Context, dockerClient *client.Client, containerID, purpose string) {
-	if dockerClient == nil || containerID == "" {
+	if containerID == "" {
 		return
 	}
 
@@ -337,9 +328,7 @@ func ContainerWaitTimeout(trivyTimeoutArg string) time.Duration {
 }
 
 func IsSynologyDockerHost(operatingSystem string) bool {
-	// Docker info may return a multi-line OS string on some Synology models.
-	// e.g. DS925+ (Kernel 5.x) returns "Synology NAS\n (containerized)";
-	// older DSM builds (e.g. DS1019+, Kernel 4.4) report just "DiskStation".
+	// Some Synology models return a multi-line OS string, older DSM reports just "DiskStation".
 	for line := range strings.SplitSeq(operatingSystem, "\n") {
 		line = strings.ToLower(strings.TrimSpace(line))
 		if strings.Contains(line, "synology") || strings.Contains(line, "diskstation") {
@@ -398,9 +387,6 @@ func ReadTempFileExcerpt(file *os.File) string {
 }
 
 func ReadOutputFromContainerFile(ctx context.Context, dockerClient *client.Client, containerID, outputPath string) ([]byte, error) {
-	if dockerClient == nil {
-		return nil, errors.New("docker client is nil")
-	}
 	if containerID == "" {
 		return nil, errors.New("container id is empty")
 	}
@@ -439,7 +425,7 @@ func ReadOutputFromContainerFile(ctx context.Context, dockerClient *client.Clien
 }
 
 func CleanupOutputFileInContainer(ctx context.Context, dockerClient *client.Client, containerID, outputPath string) {
-	if dockerClient == nil || containerID == "" || strings.TrimSpace(outputPath) == "" {
+	if containerID == "" || strings.TrimSpace(outputPath) == "" {
 		return
 	}
 
@@ -498,9 +484,7 @@ func DecodeReportFromBytes(rawOutput []byte) (*types.TrivyReport, error) {
 		return report, nil
 	}
 
-	// Trivy output can occasionally include non-JSON log lines or additional JSON
-	// objects around the report depending on Docker variant / stream behavior.
-	// Extract top-level JSON objects and return the first valid Trivy report.
+	// Trivy output can wrap the report in log lines or extra JSON objects, so take the first valid report.
 	jsonCandidates := extractTopLevelJSONObjectCandidates(trimmedOutput)
 	if len(jsonCandidates) == 0 {
 		return nil, strictErr

@@ -69,6 +69,46 @@ func TestRenamedVolumeCreateOptionsInternal_UsesPendingComposeDriverOptions(t *t
 	require.NotEmpty(t, options.Labels[api.ConfigHashLabel])
 }
 
+func TestRenamedVolumeCreateOptions_ConfigHashMatchesCompose(t *testing.T) {
+	tests := []struct {
+		name   string
+		config composetypes.VolumeConfig
+		want   string
+	}{
+		{
+			name:   "default driver",
+			config: composetypes.VolumeConfig{Name: "x"},
+			want:   "4a2b2b84ef7d42b2ada07a9b41a782aa389aec6a62317db8ef67fc35d81d025e",
+		},
+		{
+			name: "driver options and labels",
+			config: composetypes.VolumeConfig{
+				Name:       "proj_data",
+				Driver:     "nfs",
+				DriverOpts: map[string]string{"type": "nfs", "o": "addr=10.0.0.1,rw"},
+				Labels:     composetypes.Labels{"tier": "db"},
+			},
+			want: "23ef8380bd7145a59addc7c4d07af41103571d5c7cd39b6caf64e818e80fe93a",
+		},
+		{
+			name: "external with html characters",
+			config: composetypes.VolumeConfig{
+				Name:     "e",
+				External: true,
+				Labels:   composetypes.Labels{"q": "a<b&c"},
+			},
+			want: "7459d64fc51178737aeb36808725efcb1943dce34b2abd14eb24e28b8f17f0f2",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			options, err := renamedVolumeCreateOptions(tt.config, nil)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, options.Labels[api.ConfigHashLabel])
+		})
+	}
+}
+
 func TestComposeVolumeKeysWithExplicitName(t *testing.T) {
 	projectPath := t.TempDir()
 	rootCompose := filepath.Join(projectPath, "compose.yaml")

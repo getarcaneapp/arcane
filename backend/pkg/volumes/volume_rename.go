@@ -68,10 +68,6 @@ func NewMigration(cfg MigrationConfig) types.VolumeMigration {
 
 // PlanRename validates and prepares an unused Docker volume for a copy-based rename.
 func PlanRename(ctx context.Context, dockerClient *client.Client, oldName, newName, toolsImage string) (types.VolumeMigration, error) {
-	if dockerClient == nil {
-		return nil, errors.New("docker service unavailable")
-	}
-
 	oldName = strings.TrimSpace(oldName)
 	newName = strings.TrimSpace(newName)
 	if oldName == "" || newName == "" {
@@ -112,11 +108,8 @@ func PlanRename(ctx context.Context, dockerClient *client.Client, oldName, newNa
 }
 
 func (m *dockerProjectVolumeRenameMigration) Apply(ctx context.Context) error {
-	if m == nil || len(m.entries) == 0 {
+	if len(m.entries) == 0 {
 		return nil
-	}
-	if m.dockerClient == nil {
-		return errors.New("docker service unavailable")
 	}
 
 	dockerClient := m.dockerClient
@@ -143,11 +136,8 @@ func (m *dockerProjectVolumeRenameMigration) Apply(ctx context.Context) error {
 }
 
 func (m *dockerProjectVolumeRenameMigration) Commit(ctx context.Context) error {
-	if m == nil || len(m.entries) == 0 {
+	if len(m.entries) == 0 {
 		return nil
-	}
-	if m.dockerClient == nil {
-		return errors.New("docker service unavailable")
 	}
 
 	dockerClient := m.dockerClient
@@ -169,7 +159,7 @@ func (m *dockerProjectVolumeRenameMigration) Commit(ctx context.Context) error {
 }
 
 func (m *dockerProjectVolumeRenameMigration) JournalVolumes() []types.VolumeJournalVolume {
-	if m == nil || len(m.entries) == 0 {
+	if len(m.entries) == 0 {
 		return nil
 	}
 
@@ -188,10 +178,6 @@ func (m *dockerProjectVolumeRenameMigration) JournalVolumes() []types.VolumeJour
 }
 
 func (m *dockerProjectVolumeRenameMigration) Rollback(ctx context.Context) error {
-	if m == nil || m.dockerClient == nil {
-		return nil
-	}
-
 	dockerClient := m.dockerClient
 
 	preservedTargets := map[string]struct{}{}
@@ -429,10 +415,6 @@ func createProjectVolumeCopyHolderContainer(ctx context.Context,
 }
 
 func getProjectVolumeCopyRuntime(ctx context.Context, dockerClient *client.Client, toolsImage string) (projectVolumeCopyRuntime, error) {
-	if dockerClient == nil {
-		return projectVolumeCopyRuntime{}, errors.New("docker service unavailable")
-	}
-
 	image, err := ResolveHelperImage(ctx, dockerClient, toolsImage)
 	if err != nil {
 		return projectVolumeCopyRuntime{}, err
@@ -456,9 +438,6 @@ func isProjectVolumeCopyNoSpaceError(err error) bool {
 func EnsureTargetsReadyForCleanup(ctx context.Context, dockerClient *client.Client, volumes []types.VolumeJournalVolume) error {
 	if len(volumes) == 0 {
 		return nil
-	}
-	if dockerClient == nil {
-		return errors.New("docker service unavailable")
 	}
 
 	var missingWithSource *types.TargetMissingWithSourceError

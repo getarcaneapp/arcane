@@ -154,15 +154,13 @@ func TestValidateWorkspaceChangesAgainstGitOps(t *testing.T) {
 	require.ErrorIs(t, err, common.ErrProjectWorkspaceForbidden)
 	require.ErrorContains(t, err, "conf/app.conf")
 
-	// Recursively deleting a folder that still holds a sync-owned file must
-	// also be rejected.
+	// Deleting a folder that still holds a sync-owned file is rejected too.
 	err = workspace.ValidateWorkspaceChangesAgainstGitOps([]types.WorkspaceFileChange{
 		{Operation: types.FileOpDelete, RelativePath: "conf", Recursive: true},
 	}, owned)
 	require.ErrorIs(t, err, common.ErrProjectWorkspaceForbidden)
 
-	// The operator overlay (e.g. a secret env file the repo cannot carry)
-	// stays editable.
+	// The operator overlay stays editable.
 	err = workspace.ValidateWorkspaceChangesAgainstGitOps([]types.WorkspaceFileChange{
 		{Operation: types.FileOpCreateFile, RelativePath: "app.env"},
 	}, owned)
@@ -513,7 +511,6 @@ func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	// Setup dependencies
 	settingsService, _ := newSettingsServiceForTest(t, ctx, db)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -529,7 +526,6 @@ func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
-	// Create test project
 	proj := &Project{
 		ID:   "p1",
 		Name: "test-project",
@@ -537,12 +533,10 @@ func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 	}
 	require.NoError(t, db.Create(proj).Error)
 
-	// Test success
 	found, err := svc.GetProjectFromDatabaseByID(ctx, "p1")
 	require.NoError(t, err)
 	assert.Equal(t, "test-project", found.Name)
 
-	// Test not found
 	_, err = svc.GetProjectFromDatabaseByID(ctx, "non-existent")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "project not found")
@@ -820,9 +814,7 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 
 	require.NoError(t, svc.PullProjectImages(ctx, projectRecord.ID, io.Discard, types.SystemUser, nil))
 
-	// sha256:old-* records represent update records for OTHER containers still running
-	// the old image. Pulling the image for one container must not mark them as up-to-date
-	// (#2453: updating one container was incorrectly removing others from the update list).
+	// Pulling for one container must not mark other containers' old-image records up to date (#2453).
 	var fullRecord imageupdate.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:old-full").First(&fullRecord).Error)
 	assert.True(t, fullRecord.HasUpdate)
@@ -835,7 +827,6 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:build-only").First(&buildRecord).Error)
 	assert.True(t, buildRecord.HasUpdate)
 
-	// The newly pulled image itself is correctly marked as up-to-date.
 	var currentRecord imageupdate.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", imageID).First(&currentRecord).Error)
 	assert.False(t, currentRecord.HasUpdate)
@@ -921,8 +912,7 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 		),
 	)
 
-	// sha256:old-api may still be in use by another container — pulling for one container
-	// must not clear it (fixes #2453).
+	// sha256:old-api may still be in use by another container (#2453).
 	var oldRecord imageupdate.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:old-api").First(&oldRecord).Error)
 	assert.True(t, oldRecord.HasUpdate)
@@ -991,7 +981,7 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 
 	require.NoError(t, svc.deployment.ImageOperations(nil, nil).Pull(ctx, imageRef, io.Discard))
 
-	// sha256:old-worker may still be in use by another container — must not be cleared (fixes #2453).
+	// sha256:old-worker may still be in use by another container (#2453).
 	var oldRecord imageupdate.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:old-worker").First(&oldRecord).Error)
 	assert.True(t, oldRecord.HasUpdate)
@@ -1122,7 +1112,7 @@ func TestProjectService_ComposePullSelectedServices_ReconcilesOnlyOnSuccess(t *t
 	assert.Equal(t, "registry.example.com", privateAuth.ServerAddress)
 	assert.Empty(t, authHeadersByRef[publicImageRef], "public image pull should not receive unrelated registry auth")
 
-	// sha256:selected-old may still be used by another container — must not be cleared (fixes #2453).
+	// sha256:selected-old may still be in use by another container (#2453).
 	var selectedRecord imageupdate.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:selected-old").First(&selectedRecord).Error)
 	assert.True(t, selectedRecord.HasUpdate)
@@ -1291,7 +1281,7 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFails(t *testing.T
 		composeUpProjectServices = originalComposeUp
 	})
 	upCalled := false
-	composeUpProjectServices = func(context.Context, string, *composetypes.Project, types.ComposeUpOptions) error {
+	composeUpProjectServices = func(context.Context, types.ComposeUpOptions) error {
 		upCalled = true
 		return errors.New("compose up should not run")
 	}
@@ -1411,17 +1401,17 @@ func TestProjectService_UpdateProjectServicesForcesRecreate(t *testing.T) {
 		composeUpProjectServices = originalComposeUp
 	})
 	var stopped []string
-	composeStopProjectServices = func(_ context.Context, _ string, _ *composetypes.Project, services []string) error {
-		stopped = services
+	composeStopProjectServices = func(_ context.Context, target types.ComposeTarget) error {
+		stopped = target.Services
 		return nil
 	}
 	upCalled := false
 	forceRecreate := false
-	composeUpProjectServices = func(_ context.Context, _ string, selected *composetypes.Project, opts types.ComposeUpOptions) error {
-		assert.True(t, eventService.ShouldSuppressDaemonEvent("container", "replacement", "app", selected.Name))
+	composeUpProjectServices = func(_ context.Context, opts types.ComposeUpOptions) error {
+		assert.True(t, eventService.ShouldSuppressDaemonEvent("container", "replacement", "app", opts.Project.Name))
 		assert.False(t, eventService.ShouldSuppressDaemonEvent("image", "pulled-image", "", ""))
 		upCalled = true
-		assert.Equal(t, []string{"app", "dormant", "sidecar"}, selected.ServiceNames(), "stopped dependents stay in the model for recreation")
+		assert.Equal(t, []string{"app", "dormant", "sidecar"}, opts.Project.ServiceNames(), "stopped dependents stay in the model for recreation")
 		forceRecreate = opts.ForceRecreate
 		assert.Equal(t, []string{"app", "sidecar"}, opts.Services, "stopped dependents are not started")
 		assert.False(t, opts.RemoveOrphans)
@@ -2635,9 +2625,7 @@ func TestProjectService_UpdateProject_EnvRetargetWritesExplicitIdenticalComposeT
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	// An explicit composeContent is authoritative even when it is
-	// byte-identical to the previous base: the caller intends the retargeted
-	// base to carry this content.
+	// An explicit composeContent is authoritative even when byte-identical to the previous base.
 	explicitCompose := baseContent
 	_, err = svc.UpdateProject(ctx, project.ID, nil, &explicitCompose, new("COMPOSE_FILE=alt.yaml\n"), nil, types.Actor{
 		ID:       "u1",
@@ -2701,8 +2689,7 @@ func TestProjectService_UpdateProject_EnvRetargetWithoutComposePayloadPreservesN
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	// Clients omit composeContent when the compose editor is unchanged: an
-	// env-only retarget must switch the selection without touching either file.
+	// An env-only retarget switches the selection without touching either file.
 	_, err = svc.UpdateProject(ctx, project.ID, nil, nil, new("COMPOSE_FILE=alt.yaml\n"), nil, types.Actor{
 		ID:       "u1",
 		Username: "tester",
@@ -3106,8 +3093,6 @@ func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation
 	assert.Equal(t, "FOO=bar\n", string(envBytes))
 }
 
-// newProjectServiceForOverrideTest builds a project with a base compose
-// file on disk and returns the service, the project record, and the project path.
 func newProjectServiceForOverrideTest(t *testing.T, dirName string) (*ProjectService, *Project, string) {
 	t.Helper()
 	db := setupProjectTestDB(t)
@@ -3161,8 +3146,7 @@ func TestProjectService_UpdateProject_CreatesOverrideWithDefaultName(t *testing.
 	})
 	require.NoError(t, err)
 
-	// A project with no override on disk gets the .yaml default, matching Arcane's
-	// compose.yaml base default (not compose.override.yml, candidates[0]).
+	// No override on disk gets the .yaml default, matching the compose.yaml base default.
 	overrideBytes, readErr := os.ReadFile(filepath.Join(projectPath, "compose.override.yaml"))
 	require.NoError(t, readErr)
 	assert.Equal(t, override, string(overrideBytes))
@@ -3177,8 +3161,7 @@ func TestProjectService_UpdateProject_PreservesExistingOverrideName(t *testing.T
 	ctx := t.Context()
 	svc, project, projectPath := newProjectServiceForOverrideTest(t, "override-preserve")
 
-	// An existing docker-compose.override.yml must keep its name on edit rather
-	// than being rewritten to the default compose.override.yaml.
+	// An existing docker-compose.override.yml keeps its name on edit.
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "docker-compose.override.yml"), []byte("services:\n  app:\n    image: alpine:3\n"), 0o600))
 
 	override := "services:\n  app:\n    image: busybox:latest\n"
@@ -3216,8 +3199,7 @@ func TestProjectService_UpdateProject_MergedValidationFailureLeavesDiskUnchanged
 	baseCompose := "services:\n  app:\n    image: nginx:alpine\n"
 	svc, project, projectPath := newProjectServiceForOverrideTest(t, "override-invalid")
 
-	// A new base compose plus a malformed override must fail validation, and the
-	// backup/restore must leave both the base and the override untouched on disk.
+	// A malformed override fails validation and the restore leaves both files untouched.
 	newCompose := "services:\n  app:\n    image: nginx:1.27\n"
 	badOverride := "services:\n  app:\n    image: \"unterminated\n"
 	_, err := svc.UpdateProject(ctx, project.ID, nil, new(newCompose), nil, new(badOverride), types.Actor{
@@ -4131,10 +4113,6 @@ func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValid
 	assert.Equal(t, compose, string(composeBytes))
 }
 
-// TestProjectService_ApplyGitSyncProjectFiles_TolerantOfUndefinedComposeVar verifies
-// a git sync updating a compose file that references an undefined ${VAR} (with no
-// .env supplying it yet) succeeds instead of failing compose validation with a
-// typed-decode error like `strconv.ParseFloat: parsing "": invalid syntax`.
 func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfUndefinedComposeVar(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
@@ -5004,7 +4982,7 @@ func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
 	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
 	projectPath := createComposeProjectDir(t, projectsRoot, "running-demo")
-	// DB row says stopped; the live Docker state below is what must block the archive.
+	// The DB row says stopped; live Docker state is what must block the archive.
 	require.NoError(t, db.Create(&Project{
 		ID:      "project-running",
 		Name:    "running-demo",
@@ -5196,8 +5174,7 @@ func TestProjectService_ListProjects_PersistsInferredServiceCount(t *testing.T) 
 	require.Equal(t, 2, rows[0].ServiceCount)
 	require.Equal(t, 4, rows[1].ServiceCount)
 
-	// The inferred count is persisted because the plain list path sorts and
-	// paginates on this column in SQL.
+	// Persisted because the plain list path sorts and paginates on this column in SQL.
 	var stored Project
 	require.NoError(t, db.First(&stored, "id = ?", "inferred").Error)
 	require.Equal(t, 2, stored.ServiceCount)
@@ -5610,10 +5587,6 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t
 	assert.Empty(t, items)
 }
 
-// TestProjectService_SyncProjectsFromFileSystem_PrunesLeakedScratchRow verifies a
-// phantom project row imported from a leaked gitops scratch dir is pruned and not
-// re-imported, while a real project is kept. This closes the "deleted projects
-// resurrected on restart" loop for gitops scratch leftovers.
 func TestProjectService_SyncProjectsFromFileSystem_PrunesLeakedScratchRow(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
@@ -5663,17 +5636,11 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectsWhenDirector
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	// An existing-but-empty projects directory simulates a mis-mapped or unmounted
-	// projects volume: GetProjectsDirectory resolves (and MkdirAll's) it, discovery
-	// finds nothing, and every stored project path is now missing on disk.
+	// An empty projects directory simulates an unmounted projects volume.
 	projectsRoot := t.TempDir()
 	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
-	// Seed a small deployment's worth of filesystem-managed projects whose
-	// directories do not exist. Each would individually be pruned as "directory no
-	// longer exists"; together they would wipe the table — exactly what the
-	// mass-wipe guard must prevent, even for deployments with only a handful of
-	// projects (the guard must not give small installs a free pass).
+	// Small installs get no free pass from the mass-wipe guard.
 	const seeded = 3
 	for i := range seeded {
 		require.NoError(t, db.WithContext(ctx).Create(&Project{
@@ -5734,10 +5701,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectWithAmbiguous
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 
-	// Replace the standard compose.yaml with two custom-named compose files. The
-	// directory still holds compose content, but DetectComposeFile can't pick one
-	// and returns common.ErrComposeFileNotFound. The reconcile must NOT delete the
-	// record: the project's files are intact on disk and it may be deployable.
+	// Ambiguous compose files must not delete the record: the project may still be deployable.
 	require.NoError(t, os.Remove(filepath.Join(projectPath, "compose.yaml")))
 	composeBody := []byte("services:\n  app:\n    image: nginx:alpine\n")
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "app.yaml"), composeBody, 0o644))
@@ -5764,8 +5728,6 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedS
 
 	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 
-	// Initial sync at the default scan depth discovers both the top-level and
-	// the nested project, persisting them to the database.
 	defaultSvc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -5785,8 +5747,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedS
 	require.NoError(t, err)
 	require.Len(t, items, 2)
 
-	// Lowering the scan depth must prune the nested project from the database on
-	// the next sync, even though its compose file still exists on disk.
+	// Lowering the scan depth prunes the nested project even though its compose file still exists.
 	require.NoError(t, settingsService.SetIntSetting(ctx, "projectScanMaxDepth", 1))
 	depthLimitedSvc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -5809,8 +5770,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedS
 	assert.Equal(t, "project1", items[0].Name)
 	assert.Equal(t, topLevelPath, items[0].Path)
 
-	// The pruned project's files must remain untouched on disk so raising the
-	// depth again re-discovers it.
+	// The pruned project's files stay on disk so raising the depth re-discovers it.
 	assert.FileExists(t, filepath.Join(nestedPath, "compose.yaml"))
 }
 
@@ -5867,14 +5827,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesDBRecordsWhenDirecto
 	assert.Equal(t, before[0].Path, after[0].Path)
 }
 
-// TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDespiteUnreadableNestedSibling
-// covers the regression from GitHub issue #3080: a permission-denied error on a
-// non-root nested subdirectory used to abort discovery of ALL projects. Unlike
-// TestProjectService_SyncProjectsFromFileSystem_PreservesDBRecordsWhenDirectoryUnreadable
-// above (which makes the projects ROOT itself unreadable and expects sync to still
-// error), this test makes only a NESTED subdirectory unreadable and expects sync to
-// succeed, discover the readable sibling project, and leave alone any existing DB
-// record whose path happens to live under the now-skipped unreadable subtree.
+// Only a nested subdirectory is unreadable here, so sync succeeds unlike the unreadable-root test (#3080).
 func TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDespiteUnreadableNestedSibling(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX permission-denied behavior is not portable to Windows")
@@ -5897,8 +5850,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDesp
 	t.Cleanup(func() { _ = os.Chmod(unreadableDir, 0o700) })
 	require.NoError(t, os.Chmod(unreadableDir, 0))
 
-	// Seed a DB row (bypassing the filesystem) whose Path sits under the
-	// now-unreadable subtree, simulating a project Arcane previously knew about.
+	// A known project under the unreadable subtree.
 	strandedDirName := "stranded-project"
 	require.NoError(t, db.Create(&Project{
 		ID:      "stranded-under-unreadable",
@@ -5940,8 +5892,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDesp
 	}
 
 	assert.True(t, foundReadableSibling, "readable sibling project must still be discovered")
-	// evaluateProjectCleanup only prunes on os.IsNotExist; a permission-denied
-	// stat falls into the "keep the record" branch, so the stranded record must survive.
+	// evaluateProjectCleanup only prunes on os.IsNotExist, so the stranded record survives.
 	assert.True(t, foundStrandedRecord, "DB record under the unreadable subtree must not be pruned by a permission-denied stat")
 }
 
@@ -8784,9 +8735,11 @@ func TestUpdateProjectServiceImagesPersistsBeforeDeploymentAndRetries(t *testing
 	})
 	var deployed []*composetypes.Project
 	var scopes [][]string
-	composeStopProjectServices = func(context.Context, string, *composetypes.Project, []string) error { return nil }
-	composeUpProjectServices = func(_ context.Context, _ string, selected *composetypes.Project, opts types.ComposeUpOptions) error {
-		deployed = append(deployed, selected)
+	composeStopProjectServices = func(context.Context, types.ComposeTarget) error {
+		return nil
+	}
+	composeUpProjectServices = func(_ context.Context, opts types.ComposeUpOptions) error {
+		deployed = append(deployed, opts.Project)
 		scopes = append(scopes, opts.Services)
 		return deploymentError
 	}
@@ -8990,8 +8943,7 @@ func TestProjectTagSummaryDoesNotMutateSharedReferenceResults(t *testing.T) {
 	require.False(t, known["example:3.1.0"].HasUpdate)
 	require.Equal(t, "3.2.0", scoped["first"].LatestVersion)
 
-	// A shared image result is dropped when every service using the reference
-	// opted out of update checks, and kept while one still monitors it.
+	// A shared image result is kept while one service still monitors the reference.
 	known = map[string]*types.ImageUpdateInfo{"example:3.1.0": {HasUpdate: true, UpdateType: "digest"}, "other:1.0": {HasUpdate: true, UpdateType: "digest"}}
 	unmonitored := map[string]string{imageref.UpdateCheckLabel: "false"}
 	merged = projectdetails.MergeProjectContainerUpdateInfo(
@@ -9079,8 +9031,7 @@ func TestCountProjectsWithPendingTagUpdatesUsesRuntimeContainers(t *testing.T) {
 	count = service.CountProjectsWithPendingUpdates(t.Context(), containers, allProjects)
 	require.Zero(t, count)
 
-	// A digest check stored under another local tag of the running image marks
-	// the project once, however many replicas share the image.
+	// A digest check under another local tag of the image marks the project once, however many replicas share it.
 	require.NoError(t, db.Create(&Project{Name: "third", Path: "third", ImageRefsJSON: `["app:latest"]`}).Error)
 	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{ID: "moving-image", Repository: "docker.io/library/app", Tag: "stable", HasUpdate: true, UpdateType: "digest"}).Error)
 	containers = append(containers,
@@ -9169,9 +9120,11 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 			})
 			var deployed []*composetypes.Project
 			var scopes [][]string
-			composeStopProjectServices = func(context.Context, string, *composetypes.Project, []string) error { return nil }
-			composeUpProjectServices = func(_ context.Context, _ string, selected *composetypes.Project, opts types.ComposeUpOptions) error {
-				deployed = append(deployed, selected)
+			composeStopProjectServices = func(context.Context, types.ComposeTarget) error {
+				return nil
+			}
+			composeUpProjectServices = func(_ context.Context, opts types.ComposeUpOptions) error {
+				deployed = append(deployed, opts.Project)
 				scopes = append(scopes, opts.Services)
 				return deploymentError
 			}
@@ -9497,8 +9450,7 @@ func TestConfiguredProjectAggregatesReplicaAndPreviewChecks(t *testing.T) {
 	require.True(t, summary.ServiceUpdates["web"].UpdateInfo.HasUpdate)
 	require.Equal(t, "3.2.0", scoped["two"].LatestVersion)
 
-	// A stale preview still advertising an update is superseded by a runtime
-	// check at least as recent that found nothing; a newer preview still wins.
+	// A runtime check at least as recent supersedes a stale preview; a newer preview still wins.
 	previewTime := time.Now().Add(-time.Hour)
 	records[0].HasUpdate = true
 	records[0].LatestVersion = &previewTarget
@@ -9613,10 +9565,6 @@ func TestPrepareProjectBindDirectories(t *testing.T) {
 	})
 }
 
-// TestProjectService_ApplyGitSyncProjectFiles_TolerantOfPermissionLockedEnv verifies
-// a permission-locked (e.g. chmod 000, foreign-owned) .env does not brick a git sync:
-// the compose file still updates, the sync succeeds, and the locked file is left
-// untouched instead of aborting the whole update.
 func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfPermissionLockedEnv(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires Unix permission semantics")
@@ -9679,7 +9627,6 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfPermissionLockedEnv(t
 	require.NoError(t, err)
 	assert.Contains(t, string(composeBytes), "nginx:1.27-alpine")
 
-	// The locked .env survived untouched — sync did not attempt to overwrite it.
 	require.NoError(t, os.Chmod(envPath, 0o644))
 	envBytes, err := os.ReadFile(envPath)
 	require.NoError(t, err)

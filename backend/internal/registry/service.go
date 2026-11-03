@@ -124,8 +124,7 @@ func (f rateLimitRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, er
 	return f(req)
 }
 
-// NewContainerRegistryService creates a registry service. kvService may be nil
-// in tests that do not need pull tracking or rate-limit caching.
+// NewContainerRegistryService allows a nil kvService in tests without pull tracking or rate-limit caching.
 func NewContainerRegistryService(p ContainerRegistryServiceParams) *ContainerRegistryService {
 	rawHTTPClient := cmp.Or(p.HTTPClient, &http.Client{Timeout: 30 * time.Second})
 	// Trace a copy so the injected client keeps its raw transport.
@@ -436,7 +435,6 @@ func (s *ContainerRegistryService) DeleteRegistry(ctx context.Context, id string
 	return nil
 }
 
-// GetDecryptedToken returns the decrypted token for a registry
 func (s *ContainerRegistryService) GetDecryptedToken(ctx context.Context, id string) (string, error) {
 	registryRecord, err := s.GetRegistryByID(ctx, id)
 	if err != nil {
@@ -451,7 +449,6 @@ func (s *ContainerRegistryService) GetDecryptedToken(ctx context.Context, id str
 	return decryptedToken, nil
 }
 
-// GetEnabledRegistries returns all enabled registries
 func (s *ContainerRegistryService) GetEnabledRegistries(ctx context.Context) ([]ContainerRegistry, error) {
 	var registries []ContainerRegistry
 	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Find(&registries).Error; err != nil {
@@ -460,8 +457,7 @@ func (s *ContainerRegistryService) GetEnabledRegistries(ctx context.Context) ([]
 	return registries, nil
 }
 
-// GetRegistryAuthForImage returns X-Registry-Auth for the image's registry host.
-// A nil receiver is allowed: build.BuildService may hold no registry service behind a RegistryAuthProvider.
+// GetRegistryAuthForImage allows a nil receiver: build.BuildService may hold no registry service.
 func (s *ContainerRegistryService) GetRegistryAuthForImage(ctx context.Context, imageRef string) (string, error) {
 	if s == nil {
 		return "", nil
@@ -718,7 +714,6 @@ func (s *ContainerRegistryService) TestRegistry(ctx context.Context, registryURL
 	))
 	defer func() { logging.EndSpan(span, testErr) }()
 	if strings.TrimSpace(username) == "" && strings.TrimSpace(token) == "" {
-		// No credentials configured — skip the credential test.
 		return nil
 	}
 
@@ -739,8 +734,7 @@ func (s *ContainerRegistryService) TestRegistry(ctx context.Context, registryURL
 	return nil
 }
 
-// TestECRRegistry tests connectivity for an ECR registry by generating an auth token
-// and attempting a Docker login.
+// TestECRRegistry generates an ECR auth token and attempts a Docker login.
 func (s *ContainerRegistryService) TestECRRegistry(ctx context.Context, reg *ContainerRegistry) error {
 	ecrUser, ecrPass, err := s.GetOrRefreshECRToken(ctx, reg)
 	if err != nil {
@@ -749,8 +743,7 @@ func (s *ContainerRegistryService) TestECRRegistry(ctx context.Context, reg *Con
 	return s.TestRegistry(ctx, reg.URL, ecrUser, ecrPass)
 }
 
-// ImageDigest fetches the current digest for an image:tag from the registry
-// This is used for digest-based update detection for non-semver tags
+// ImageDigest fetches the registry digest of image:tag for non-semver update detection.
 func (s *ContainerRegistryService) ImageDigest(ctx context.Context, imageRef string) (string, error) {
 	parts, err := refs.NormalizeReference(imageRef)
 	if err != nil {
@@ -918,8 +911,7 @@ func (s *ContainerRegistryService) InspectImageDigest(
 	}
 }
 
-// classifyDigestError tags digest lookup failures so callers can retry
-// transient ones. Retryable kinds are checked first because fallback errors are joined.
+// classifyDigestError checks retryable kinds first because fallback errors are joined.
 func classifyDigestError(err error) error {
 	if err == nil {
 		return nil
@@ -1026,14 +1018,10 @@ func (s *ContainerRegistryService) getDockerClient(ctx context.Context) (Registr
 	if err != nil {
 		return nil, fmt.Errorf("failed to get docker client: %w", err)
 	}
-	if dockerClient == nil {
-		return nil, errors.New("docker client unavailable")
-	}
 	return dockerClient, nil
 }
 
-// credentialForRegistry resolves the stored credential of one registry.
-// It returns nil when the registry is configured for anonymous access.
+// credentialForRegistry returns nil for anonymous registries.
 func (s *ContainerRegistryService) credentialForRegistry(ctx context.Context, reg *ContainerRegistry) (*resolvedRegistryCredential, error) {
 	if reg.RegistryType == RegistryTypeECR {
 		ecrUser, ecrPass, err := s.GetOrRefreshECRToken(ctx, reg)
@@ -1065,8 +1053,7 @@ func (s *ContainerRegistryService) credentialForRegistry(ctx context.Context, re
 	}, nil
 }
 
-// SyncRegistries syncs registries from a manager to this agent instance
-// It creates, updates, or deletes registries to match the provided list
+// SyncRegistries creates, updates, and deletes local registries to match the manager's list.
 func (s *ContainerRegistryService) SyncRegistries(ctx context.Context, syncItems []types.ContainerRegistrySync) error {
 	if err := normalization.Normalize(&syncItems); err != nil {
 		return err
@@ -1164,8 +1151,7 @@ func NormalizeRegistryType(value string) (string, error) {
 	}
 }
 
-// normalizeRepositoryNames trims, deduplicates and validates entries in order.
-// It returns a non-nil slice so that GORM always serializes to a JSON array.
+// normalizeRepositoryNames returns a non-nil slice so GORM always serializes a JSON array.
 func normalizeRepositoryNames(raw []string) (database.StringSlice, error) {
 	for _, name := range kit.Unique(kit.TrimNonEmpty(raw)) {
 		// A repository name is only a path, so placeholder domain and tag segments make it a full reference.
@@ -1190,8 +1176,7 @@ func IsRateLimitErrorString(msg string) bool {
 	})
 }
 
-// ListImageTags discovers repository tags with the same credential precedence as
-// digest checks. External credentials replace local credentials when supplied.
+// ListImageTags uses digest-check credential precedence; external credentials replace local ones.
 func (s *ContainerRegistryService) ListImageTags(ctx context.Context, imageRef string, externalCreds []types.ContainerRegistryCredential) (tagList []string, tagsErr error) {
 	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "registry.list_tags", trace.WithAttributes(attribute.String("arcane.image.ref", imageRef)))
 	defer func() {
@@ -1225,8 +1210,7 @@ func (s *ContainerRegistryService) ListImageTags(ctx context.Context, imageRef s
 	return tags, err
 }
 
-// GetOrRefreshECRToken returns a valid ECR auth token, reusing the encrypted cached one within its 12-hour window.
-// Otherwise it fetches a new token from AWS and persists it; concurrent refreshes per registry share one singleflight call.
+// GetOrRefreshECRToken reuses the cached token within its window, otherwise refreshes it once per registry via singleflight.
 func (s *ContainerRegistryService) GetOrRefreshECRToken(ctx context.Context, reg *ContainerRegistry) (username, password string, err error) {
 	if endpointErr := validateECRRegistryEndpoint(reg.URL, reg.Insecure); endpointErr != nil {
 		return "", "", endpointErr
@@ -1318,7 +1302,6 @@ func (s *ContainerRegistryService) GetOrRefreshECRToken(ctx context.Context, reg
 	return "AWS", ecrPassword, nil
 }
 
-// ImageLabels resolves the remote image config labels without pulling.
 func (s *ContainerRegistryService) ImageLabels(ctx context.Context, imageRef string) (map[string]string, error) {
 	if strings.TrimSpace(imageRef) == "" {
 		return nil, errors.New("empty image reference")

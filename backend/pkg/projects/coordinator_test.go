@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/moby/moby/api/types/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -90,21 +89,21 @@ func TestCoordinatorUpdateServicesScopesDependents(t *testing.T) {
 	var selectedNames []string
 	forceRecreate := false
 	coordinator := NewCoordinator(types.ComposeCommands{
-		Stop: func(_ context.Context, _ string, _ *composetypes.Project, services []string) error {
-			stopped = services
+		Stop: func(_ context.Context, target types.ComposeTarget) error {
+			stopped = target.Services
 			calls = append(calls, "stop")
 			return nil
 		},
-		Up: func(_ context.Context, _ string, selected *composetypes.Project, opts types.ComposeUpOptions) error {
+		Up: func(_ context.Context, opts types.ComposeUpOptions) error {
 			upped = opts.Services
-			selectedNames = selected.ServiceNames()
+			selectedNames = opts.Project.ServiceNames()
 			forceRecreate = opts.ForceRecreate
 			calls = append(calls, "up")
 			return nil
 		},
-		Create: func(_ context.Context, _ string, selected *composetypes.Project, services []string, _ map[string]registry.AuthConfig) error {
-			created = services
-			assert.Equal(t, selectedNames, selected.ServiceNames(), "create reuses the scoped model")
+		Create: func(_ context.Context, opts types.ComposeCreateOptions) error {
+			created = opts.Services
+			assert.Equal(t, selectedNames, opts.Project.ServiceNames(), "create reuses the scoped model")
 			calls = append(calls, "create")
 			return nil
 		},

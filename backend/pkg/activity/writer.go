@@ -23,11 +23,7 @@ import (
 type (
 	Writer struct {
 		ctx context.Context
-		// persistCtx is ctx detached from cancellation. Cancellation usually
-		// races the last — most diagnostic — output lines (the error frames
-		// explaining it), so batches persist on persistCtx while ctx only bounds
-		// the drain goroutine's intake, mirroring CompleteActivity's detached
-		// terminal write.
+		// persistCtx ignores cancellation so the final, most diagnostic lines still persist.
 		persistCtx      context.Context
 		activityService MessageAppender
 		writer          io.Writer
@@ -64,15 +60,13 @@ type (
 )
 
 const (
-	writerAppendQueueSize = 128
-	// writerAppendBatchSize caps how many queued lines are drained into one
-	// AppendMessages transaction.
+	writerAppendQueueSize     = 128
 	writerAppendBatchSize     = 32
 	writerDropWarningInterval = 5 * time.Second
 )
 
 func NewWriter(ctx context.Context, opts WriterOptions) io.Writer {
-	if opts.Service == nil || strings.TrimSpace(opts.ActivityID) == "" {
+	if strings.TrimSpace(opts.ActivityID) == "" {
 		return kit.Ternary(opts.Output == nil, io.Discard, opts.Output)
 	}
 	if existing, ok := opts.Output.(*Writer); ok {
@@ -153,11 +147,9 @@ func (w *Writer) Flush() {
 	}
 }
 
-// processLine records stream lines as activity messages verbatim.
-// Docker operation output arrives as {"log":"<raw CLI line>"} frames; terminal
-// failures as {"error":"..."} frames. Anything else passes through untouched.
+// processLine records {"log"} and {"error"} frames and other lines verbatim as activity messages.
 func (w *Writer) processLine(line string) mo.Option[writerAppendMessage] {
-	if line == "" || w.activityService == nil || w.activityID == "" {
+	if line == "" || w.activityID == "" {
 		return mo.None[writerAppendMessage]()
 	}
 
@@ -219,9 +211,7 @@ func (w *Writer) drainMessages(ctx context.Context) {
 		case item := <-w.queueCh:
 			w.drainQueueBatch(item)
 		case <-done(ctx):
-			// Cancellation stops intake, but the lines already accepted into
-			// the queue — typically the ones explaining the cancellation —
-			// still get persisted before the goroutine exits.
+			// Lines already queued, usually the ones explaining the cancellation, still persist.
 			w.drainRemaining()
 			return
 		}
@@ -239,11 +229,7 @@ func (w *Writer) drainRemaining() {
 	}
 }
 
-// drainQueueBatch drains whatever is already queued behind item (up
-// to writerAppendBatchSize lines) into a single AppendMessages call, so bulk
-// docker output costs one transaction per batch instead of one per line.
-// Flush signals encountered while draining close only after the write, since
-// the messages queued before them are only then persisted.
+// drainQueueBatch writes up to writerAppendBatchSize queued lines in one AppendMessages call, closing flushes afterwards.
 func (w *Writer) drainQueueBatch(item writerQueueItem) {
 	var batch []AppendMessageRequest
 	var flushes []chan struct{}
@@ -280,9 +266,7 @@ drain:
 			slog.WarnContext(w.persistCtx, "failed to persist activity output batch", "activityId", w.activityID, "lines", len(batch), "error", err)
 		}
 	}
-	// Flushes release even when the append failed: Flush carries no error
-	// path, and holding them would stall activity completion on the very
-	// cancellation that typically caused the failure.
+	// Flushes release even on append failure so completion never stalls on the cancellation that caused it.
 	for _, flushDone := range flushes {
 		close(flushDone)
 	}
