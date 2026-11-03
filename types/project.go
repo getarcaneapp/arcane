@@ -559,7 +559,7 @@ type (
 		// IsDiscovered indicates whether this row was derived from runtime Compose labels instead of an Arcane project record.
 		//
 		// Required: false
-		IsDiscovered bool `json:"isDiscovered,omitempty" readOnly:"true"`
+		IsDiscovered bool `json:"isDiscovered,omitzero" readOnly:"true"`
 
 		// IsArchived indicates whether the project is hidden from the default project list.
 		//
@@ -569,17 +569,17 @@ type (
 		// HasBuildDirective indicates whether any Compose service defines a build directive.
 		//
 		// Required: false
-		HasBuildDirective bool `json:"hasBuildDirective,omitempty" readOnly:"true"`
+		HasBuildDirective bool `json:"hasBuildDirective,omitzero" readOnly:"true"`
 
 		// RedeployDisabled indicates whether redeploy actions are disabled for this project.
 		//
 		// Required: false
-		RedeployDisabled bool `json:"redeployDisabled,omitempty" readOnly:"true"`
+		RedeployDisabled bool `json:"redeployDisabled,omitzero" readOnly:"true"`
 
 		// EnvFileExists reports whether the project .env file is present.
 		//
 		// Required: false
-		EnvFileExists bool `json:"envFileExists,omitempty" readOnly:"true"`
+		EnvFileExists bool `json:"envFileExists,omitzero" readOnly:"true"`
 	}
 
 	// ProjectDestroy is used to destroy a project.
