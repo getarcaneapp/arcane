@@ -19,6 +19,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
@@ -42,6 +43,7 @@ type (
 		localJoinTokens    func(ctx context.Context) (*types.SwarmJoinTokensResponse, error)
 		environmentService *environment.EnvironmentService
 		identityCache      *hot.HotCache[string, SwarmNodeIdentity]
+		enrollments        singleflight.Group
 	}
 
 	ServiceParams struct {
@@ -141,6 +143,17 @@ func (s *Service) ListNodesPaginated(ctx context.Context, environmentID string, 
 }
 
 func (s *Service) GetNode(ctx context.Context, environmentID, nodeID string) (*types.SwarmNode, error) {
+	node, err := s.inspectNode(ctx, environmentID, nodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	items := []types.SwarmNode{*node}
+	s.enrichNodeAgentStatuses(ctx, environmentID, items)
+	return &items[0], nil
+}
+
+func (s *Service) inspectNode(ctx context.Context, environmentID, nodeID string) (*types.SwarmNode, error) {
 	if environmentID != "0" {
 		var remote struct {
 			Data    types.SwarmNode `json:"data"`
@@ -153,9 +166,7 @@ func (s *Service) GetNode(ctx context.Context, environmentID, nodeID string) (*t
 		if !remote.Success {
 			return nil, errors.New("remote swarm node inspection failed")
 		}
-		items := []types.SwarmNode{remote.Data}
-		s.enrichNodeAgentStatuses(ctx, environmentID, items)
-		return &items[0], nil
+		return &remote.Data, nil
 	}
 
 	if err := s.ensureManager(ctx); err != nil {
@@ -168,10 +179,7 @@ func (s *Service) GetNode(ctx context.Context, environmentID, nodeID string) (*t
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect swarm node: %w", err)
 	}
-
-	items := []types.SwarmNode{types.NewSwarmNode(nodeResult.Node)}
-	s.enrichNodeAgentStatuses(ctx, environmentID, items)
-	return new(items[0]), nil
+	return new(types.NewSwarmNode(nodeResult.Node)), nil
 }
 
 // ReconcileNodeAgents verifies visible environment identities and persists only
@@ -239,6 +247,62 @@ func (s *Service) BindNodeAgent(ctx context.Context, parentEnvironmentID, nodeID
 	return bound, nil
 }
 
+func (s *Service) EnrollNodeAgent(ctx context.Context, enrollmentToken, agentToken, nodeID string) (*types.NodeAgentEnrollResponse, error) {
+	parentEnvironmentID, err := s.environmentService.ResolveSwarmEnrollmentToken(ctx, enrollmentToken)
+	if err != nil {
+		return nil, err
+	}
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" || len(nodeID) > 64 || strings.ContainsFunc(nodeID, func(r rune) bool { return (r < 'a' || r > 'z') && (r < '0' || r > '9') }) {
+		return nil, common.Classify(common.ErrBadRequest, errors.New("a valid swarm node ID is required"))
+	}
+
+	current, currentErr := s.environmentService.ResolveEnvironmentByAccessToken(ctx, agentToken)
+	if currentErr == nil && current.Enabled &&
+		kit.FromPtr(current.ParentEnvironmentID) == parentEnvironmentID && strings.TrimSpace(kit.FromPtr(current.SwarmNodeID)) == nodeID {
+		return &types.NodeAgentEnrollResponse{EnvironmentID: current.ID, Token: kit.FromPtr(current.AccessToken)}, nil
+	}
+
+	enrolled, err, _ := s.enrollments.Do(parentEnvironmentID+"/"+nodeID, func() (any, error) {
+		return s.enrollNodeAgent(ctx, parentEnvironmentID, nodeID)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return enrolled.(*types.NodeAgentEnrollResponse), nil
+}
+
+func (s *Service) enrollNodeAgent(ctx context.Context, parentEnvironmentID, nodeID string) (*types.NodeAgentEnrollResponse, error) {
+	node, err := s.inspectNode(ctx, parentEnvironmentID, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	if node.ID != nodeID {
+		return nil, common.Classify(common.ErrBadRequest, errors.New("the full swarm node ID is required"))
+	}
+
+	agentEnvs, err := s.environmentService.ListSwarmNodeAgentEnvironments(ctx, parentEnvironmentID)
+	if err != nil {
+		return nil, err
+	}
+	coverage, err := s.buildNodeAgentCoverage(ctx, parentEnvironmentID, slices.DeleteFunc(agentEnvs, func(bound environment.Environment) bool {
+		return strings.TrimSpace(kit.FromPtr(bound.SwarmNodeID)) != node.ID
+	}), nil)
+	if err != nil {
+		return nil, err
+	}
+	s.applyNodeAgentCoverage(parentEnvironmentID, node, coverage)
+	if node.Agent.State == types.NodeAgentStateConnected || node.Agent.State == types.NodeAgentStateMismatched {
+		return nil, common.Classify(common.ErrConflict, errors.New("this swarm node is already covered by a connected Arcane agent"))
+	}
+
+	env, token, err := s.environmentService.EnsureSwarmNodeAgentEnvironment(ctx, parentEnvironmentID, node.ID, node.Hostname, types.SystemUser.ID, types.SystemUser.Username, true)
+	if err != nil {
+		return nil, err
+	}
+	return &types.NodeAgentEnrollResponse{EnvironmentID: env.ID, Token: token}, nil
+}
+
 func (s *Service) GetLocalNodeIdentity(ctx context.Context) (*SwarmNodeIdentity, error) {
 	infoResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
 		return dockerClient.Info(ctx, client.InfoOptions{})
@@ -290,7 +354,10 @@ func (s *Service) resolveNodeAgentCoverage(ctx context.Context, environmentID st
 		slog.WarnContext(ctx, "failed to load swarm node agent candidates", "environmentId", environmentID, "error", err.Error())
 		candidateEnvs = nil
 	}
+	return s.buildNodeAgentCoverage(ctx, environmentID, agentEnvs, candidateEnvs)
+}
 
+func (s *Service) buildNodeAgentCoverage(ctx context.Context, environmentID string, agentEnvs, candidateEnvs []environment.Environment) (*swarmNodeAgentCoverage, error) {
 	probeEnvsByID := make(map[string]environment.Environment, len(agentEnvs)+len(candidateEnvs))
 	for _, env := range candidateEnvs {
 		probeEnvsByID[env.ID] = env

@@ -413,6 +413,9 @@ func mapSwarmServiceError(err error, fallback string) error {
 	if errors.Is(err, common.ErrBadRequest) {
 		return huma.Error400BadRequest(err.Error())
 	}
+	if errors.Is(err, common.ErrUnauthorized) {
+		return huma.Error401Unauthorized(err.Error())
+	}
 	if errdefs.IsNotFound(err) || errors.Is(err, common.ErrNotFound) {
 		return huma.Error404NotFound(err.Error())
 	}

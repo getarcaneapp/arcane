@@ -9,6 +9,8 @@ import type {
 	SwarmNodeAgentDeployment,
 	SwarmNodeAgentBindingRequest,
 	SwarmNodeAgentReconcileResponse,
+	SwarmNodeAgentEnrollment,
+	SwarmNodeAgentEnrollmentToken,
 	SwarmServiceCreateRequest,
 	SwarmServiceUpdateRequest,
 	SwarmServiceCreateResponse,
@@ -122,6 +124,18 @@ class SwarmService extends BaseAPIService {
 
 	async reconcileNodeAgents(environmentId: string): Promise<SwarmNodeAgentReconcileResponse> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/nodes/agents/reconcile`, {}));
+	}
+
+	async getNodeAgentEnrollment(environmentId: string): Promise<SwarmNodeAgentEnrollment> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/nodes/agents/enrollment`));
+	}
+
+	async rotateNodeAgentEnrollment(environmentId: string): Promise<SwarmNodeAgentEnrollmentToken> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/nodes/agents/enrollment`));
+	}
+
+	async revokeNodeAgentEnrollment(environmentId: string): Promise<void> {
+		await this.handleResponse(this.api.delete(`/environments/${environmentId}/swarm/nodes/agents/enrollment`));
 	}
 
 	async bindNodeAgent(nodeId: string, request: SwarmNodeAgentBindingRequest, environmentId: string): Promise<SwarmNode> {

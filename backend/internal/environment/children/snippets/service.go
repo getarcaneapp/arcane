@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"getarcane.dev/arcane/v3/internal/database"
@@ -66,6 +67,41 @@ func Agent(managerURL, apiKey string) (string, string) {
 	}, "\n")
 
 	return dockerRun, dockerCompose
+}
+
+func Swarm(managerURL, enrollmentToken, mtlsMode string) (string, string) {
+	env := []string{
+		"      - ARCANE_AGENT=true",
+		"      - ARCANE_AGENT_TRANSPORT=auto",
+		"      - ARCANE_AGENT_ENROLLMENT_TOKEN=" + enrollmentToken,
+		"      - ARCANE_MANAGER_API_URL=" + managerURL,
+	}
+	if mode := agent.NormalizeMTLSMode(mtlsMode); mode != agent.MTLSModeDisabled {
+		env = append(env,
+			"      - ARCANE_AGENT_MTLS_MODE="+mode,
+			"      - ARCANE_AGENT_MTLS_ASSETS_DIR="+DeploymentSnippetsMTLSPath,
+		)
+	}
+
+	stack := strings.Join(slices.Concat([]string{
+		"# Runs an Arcane agent on every Swarm node, including nodes that join later.",
+		"# To limit the nodes, add deploy.placement.constraints (for example node.role == manager).",
+		"services:",
+		"  arcane-agent:",
+		"    image: ghcr.io/getarcaneapp/agent:latest",
+		"    environment:",
+	}, env, []string{
+		"    volumes:",
+		"      - /var/run/docker.sock:/var/run/docker.sock",
+		"      - arcane-data:" + DeploymentSnippetsDataPath,
+		"    deploy:",
+		"      mode: global",
+		"",
+		"volumes:",
+		"  arcane-data:",
+	}), "\n")
+
+	return "docker stack deploy -c arcane-agent.yml arcane-agent", stack
 }
 
 // GenerateMTLS issues manager-signed agent mTLS assets and renders the snippets
