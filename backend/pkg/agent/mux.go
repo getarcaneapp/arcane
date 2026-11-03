@@ -21,6 +21,8 @@ const (
 	// tunnelCapabilityMuxGrant switches both peers to mux; only managers that serve mux send it, since older ones echo offers.
 	tunnelCapabilityMuxGrant = "mux-grant-v1"
 
+	TunnelCapabilityForwardedPermissions = "forwarded-permissions-v1"
+
 	// MuxAgentBaseURL is the synthetic origin for requests a manager sends through a multiplexed tunnel.
 	MuxAgentBaseURL   = "http://agent.tunnel.arcane.internal"
 	muxManagerBaseURL = "http://manager.tunnel.arcane.internal"

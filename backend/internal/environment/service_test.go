@@ -979,6 +979,32 @@ func TestEnvironmentService_ResolveEnvironmentByAccessToken(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidEnvironmentAccessToken)
 }
 
+func TestEnvironmentService_ResolveEventEnvironmentByAccessToken(t *testing.T) {
+	ctx := t.Context()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(EnvironmentServiceParams{
+		DB:           db,
+		EventService: event.NewEventService(db, nil, nil),
+	})
+
+	enabledToken := "enabled-token"
+	disabledToken := "disabled-token"
+	createNamedTestEnvironment(t, db, "env-enabled", "Enabled", "http://enabled.example", &enabledToken)
+	createNamedTestEnvironment(t, db, "env-disabled", "Disabled", "http://disabled.example", &disabledToken)
+	require.NoError(t, db.Model(&Environment{}).Where("id = ?", "env-disabled").Update("enabled", false).Error)
+
+	envID, err := svc.ResolveEventEnvironmentByAccessToken(ctx, enabledToken)
+	require.NoError(t, err)
+	require.Equal(t, "env-enabled", envID)
+
+	envID, err = svc.ResolveEventEnvironmentByAccessToken(ctx, disabledToken)
+	require.NoError(t, err)
+	require.Empty(t, envID)
+
+	_, err = svc.ResolveEventEnvironmentByAccessToken(ctx, "missing-token")
+	require.ErrorIs(t, err, ErrInvalidEnvironmentAccessToken)
+}
+
 func TestEnvironmentService_GenerateDeploymentSnippets_TransportDefaults(t *testing.T) {
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{

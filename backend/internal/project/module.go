@@ -260,5 +260,6 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 		Description: "Build Docker Compose services with build directives using BuildKit",
 		Tags:        []string{"Projects"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.BuildPushConditions},
 	}, authz.PermProjectsDeploy, h.BuildProjectImages)
 }

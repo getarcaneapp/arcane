@@ -26,7 +26,7 @@
 	const queryClient = useQueryClient();
 
 	const pageState = new ResourceListPageState<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
-	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm:read'));
+	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm-services:list'));
 	const swarm = $derived(swarmQuery.data ?? data.swarm);
 	const isLoading = $state({ creating: false });
 	let showCreateDialog = $state(false);
@@ -53,10 +53,10 @@
 
 	const totalServices = $derived(services?.pagination?.totalItems ?? services?.data?.length ?? 0);
 
-	const canCreateService = $derived(swarm.managers.some((env) => hasPermission('swarm:services', env.id)));
+	const canCreateService = $derived(swarm.managers.some((env) => hasPermission('swarm-services:create', env.id)));
 
 	function openCreateDialog() {
-		createEnvironmentId = destinationEnvironmentId(createEnvironmentId, 'swarm:services', swarm.managers);
+		createEnvironmentId = destinationEnvironmentId(createEnvironmentId, 'swarm-services:create', swarm.managers);
 		showCreateDialog = true;
 	}
 
@@ -103,7 +103,7 @@
 		bind:open={showCreateDialog}
 		bind:environmentId={createEnvironmentId}
 		environments={swarm.managers}
-		environmentPermission="swarm:services"
+		environmentPermission="swarm-services:create"
 		title={m.swarm_service_create_title()}
 		description={m.swarm_service_create_description()}
 		submitLabel={m.common_create()}

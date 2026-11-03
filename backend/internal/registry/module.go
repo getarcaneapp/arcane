@@ -52,7 +52,7 @@ func (m *Module) RegisterRoutes(api huma.API) {
 }
 
 func RegisterContainerRegistries(api huma.API, h *ContainerRegistryHandler) {
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "listContainerRegistries",
 		Method:      "GET",
 		Path:        "/registries",
@@ -60,10 +60,9 @@ func RegisterContainerRegistries(api huma.API, h *ContainerRegistryHandler) {
 		Description: "Get a paginated list of container registries",
 		Tags:        []string{"Container Registries"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermRegistriesList),
-	}, h.ListRegistries)
+	}, authz.PermRegistriesList, h.ListRegistries)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "createContainerRegistry",
 		Method:      "POST",
 		Path:        "/registries",
@@ -71,10 +70,9 @@ func RegisterContainerRegistries(api huma.API, h *ContainerRegistryHandler) {
 		Description: "Create a new container registry",
 		Tags:        []string{"Container Registries"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermRegistriesCreate),
-	}, h.CreateRegistry)
+	}, authz.PermRegistriesCreate, h.CreateRegistry)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "syncContainerRegistries",
 		Method:      "POST",
 		Path:        "/registries/sync",
@@ -82,10 +80,9 @@ func RegisterContainerRegistries(api huma.API, h *ContainerRegistryHandler) {
 		Description: "Sync container registries from a remote source",
 		Tags:        []string{"Container Registries"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermRegistriesUpdate),
-	}, h.SyncRegistries)
+	}, authz.PermRegistriesUpdate, h.SyncRegistries)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getContainerRegistryPullUsage",
 		Method:      "GET",
 		Path:        "/registries/usage",
@@ -93,10 +90,9 @@ func RegisterContainerRegistries(api huma.API, h *ContainerRegistryHandler) {
 		Description: "Get configured registry pull usage and rate limit visibility",
 		Tags:        []string{"Container Registries"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermRegistriesRead),
-	}, h.GetPullUsage)
+	}, authz.PermRegistriesRead, h.GetPullUsage)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getContainerRegistry",
 		Method:      "GET",
 		Path:        "/registries/{id}",
@@ -104,10 +100,9 @@ func RegisterContainerRegistries(api huma.API, h *ContainerRegistryHandler) {
 		Description: "Get a container registry by ID",
 		Tags:        []string{"Container Registries"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermRegistriesRead),
-	}, h.GetRegistry)
+	}, authz.PermRegistriesRead, h.GetRegistry)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "updateContainerRegistry",
 		Method:      "PATCH",
 		Path:        "/registries/{id}",
@@ -115,10 +110,9 @@ func RegisterContainerRegistries(api huma.API, h *ContainerRegistryHandler) {
 		Description: "Update an existing container registry",
 		Tags:        []string{"Container Registries"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermRegistriesUpdate),
-	}, h.UpdateRegistry)
+	}, authz.PermRegistriesUpdate, h.UpdateRegistry)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "deleteContainerRegistry",
 		Method:      "DELETE",
 		Path:        "/registries/{id}",
@@ -126,8 +120,7 @@ func RegisterContainerRegistries(api huma.API, h *ContainerRegistryHandler) {
 		Description: "Delete a container registry by ID",
 		Tags:        []string{"Container Registries"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermRegistriesDelete),
-	}, h.DeleteRegistry)
+	}, authz.PermRegistriesDelete, h.DeleteRegistry)
 
 	middleware.RegisterWithActionPermissions(api, huma.Operation{
 		OperationID: "containerRegistryAction",

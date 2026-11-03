@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/subtle"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"image"
@@ -673,9 +674,6 @@ func tryEnvironmentAccessTokenAuth(ctx huma.Context, resolver EnvironmentAccessT
 	return createEnvironmentUser(env), env, true
 }
 
-// createAgentSudoUser creates a sudo user for agent authentication.
-// The sudo PermissionSet attached to the context by the agent token path
-// bypasses every check; the user's Roles field is intentionally empty.
 func createAgentSudoUser() *userdomain.User {
 	return &userdomain.User{
 		ID:       "agent",
@@ -722,6 +720,10 @@ func NewHumaMiddleware(p HumaMiddlewareParams) func(
 ) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		ctx = huma.WithContext(ctx, context.WithValue(ctx.Context(), middleware.ContextKeyRemoteAddr, ctx.RemoteAddr()))
+		if _, ownAccess := kit.FromPtr(ctx.Operation()).Metadata[authz.MetaAccess]; ownAccess {
+			next(ctx)
+			return
+		}
 		if newCtx, ok := tryAgentAuth(ctx, p.Config); ok {
 			next(newCtx)
 			return
@@ -777,7 +779,7 @@ func tryAgentAuth(ctx huma.Context, cfg *config.Config) (huma.Context, bool) {
 	}
 	authenticatedUser := createAgentSudoUser()
 	applyProxiedIconCatalog(ctx, authenticatedUser)
-	authCtx := setUserInContext(ctx.Context(), authenticatedUser, authz.SudoPermissionSet())
+	authCtx := setUserInContext(ctx.Context(), authenticatedUser, agentPermissions(ctx.Context(), ctx.Header(middleware.HeaderForwardedPermissions)))
 	updatePath := strings.Contains(ctx.URL().Path, "/containers/") && strings.HasSuffix(ctx.URL().Path, "/update")
 	if ctx.Method() == http.MethodPost && updatePath {
 		if initiatorID := strings.TrimSpace(ctx.Header(middleware.HeaderUpdateInitiatorID)); initiatorID != "" {
@@ -789,8 +791,6 @@ func tryAgentAuth(ctx huma.Context, cfg *config.Config) (huma.Context, bool) {
 			authCtx = activity.WithUpdateInitiator(authCtx, initiator)
 		}
 	}
-	// The agent token path is infrastructure-level and not per-user, so it
-	// gets a sudo PermissionSet that bypasses every check.
 	return huma.WithContext(ctx, authCtx), true
 }
 
@@ -972,15 +972,11 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c *echo.Context, next ec
 	}
 
 	req := c.Request()
-	if AgentTokenMatches(req.Header.Get(middleware.HeaderAgentToken), m.cfg.AgentToken) {
-		agentSudo(c)
-		return next(c)
-	}
-
-	// Check for API key as agent token
-	if AgentTokenMatches(req.Header.Get(middleware.HeaderApiKey), m.cfg.AgentToken) {
-		agentSudo(c)
-		return next(c)
+	if AgentTokenMatches(req.Header.Get(middleware.HeaderAgentToken), m.cfg.AgentToken) ||
+		AgentTokenMatches(req.Header.Get(middleware.HeaderApiKey), m.cfg.AgentToken) {
+		ps := agentPermissions(ctx, req.Header.Get(middleware.HeaderForwardedPermissions))
+		setAgentUser(c, ps)
+		return m.authorizeAndContinue(c, next, ps)
 	}
 
 	slog.WarnContext(
@@ -1148,12 +1144,24 @@ func (m *AuthMiddleware) resolveEnvironmentAccessToken(ctx context.Context, toke
 	return mo.Some(env)
 }
 
-func agentSudo(c *echo.Context) {
+func setAgentUser(c *echo.Context, ps *authz.PermissionSet) {
 	agentUser := createAgentSudoUser()
 	c.Set(string(middleware.ContextKeyUserID), agentUser.ID)
 	c.Set(string(middleware.ContextKeyCurrentUser), agentUser)
-	c.Set(string(middleware.ContextKeyUserPermissions), authz.SudoPermissionSet())
+	c.Set(string(middleware.ContextKeyUserPermissions), ps)
 	c.Set(string(middleware.ContextKeyAuthMethod), "agent_token")
+}
+
+func agentPermissions(ctx context.Context, forwarded string) *authz.PermissionSet {
+	if forwarded == "" {
+		return authz.SudoPermissionSet()
+	}
+	var perms authz.ForwardedPermissions
+	if err := json.Unmarshal([]byte(forwarded), &perms); err != nil {
+		slog.WarnContext(ctx, "Rejecting malformed forwarded permissions", "error", err)
+		return authz.NewPermissionSet()
+	}
+	return perms.PermissionSet(types.LocalDockerEnvironmentID)
 }
 
 func environmentScoped(c *echo.Context, env *environment.Environment) *authz.PermissionSet {

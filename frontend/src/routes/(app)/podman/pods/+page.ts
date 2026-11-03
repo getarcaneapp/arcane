@@ -25,7 +25,7 @@ export const load: PageLoad = async ({ parent }) => {
 	} satisfies SearchPaginationSortRequest);
 
 	const pods = await tryCatch(
-		queryClient.query(podmanPodListQuery(scope, shownPodmanEnvironments(podmanStatuses), requestOptions))
+		queryClient.query(podmanPodListQuery(scope, shownPodmanEnvironments(podmanStatuses, 'podman-pods:list'), requestOptions))
 	);
 	if (pods.error !== null) {
 		throwPageLoadError(pods.error, m.common_load_failed({ resource: m.podman_pods_title() }));

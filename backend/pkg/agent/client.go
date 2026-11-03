@@ -280,7 +280,7 @@ func (c *TunnelClient) serveTunnelSession(ctx context.Context, conn TunnelConnec
 		Type:          MessageTypeRegister,
 		AgentToken:    c.cfg.AgentToken,
 		AgentInstance: c.agentInstanceID,
-		Capabilities:  []string{tunnelCapabilityMux},
+		Capabilities:  []string{tunnelCapabilityMux, TunnelCapabilityForwardedPermissions},
 		ResumeSession: sessionID,
 	}); err != nil {
 		// A rejected gRPC stream can report EOF from Send; Recv carries the RPC status.

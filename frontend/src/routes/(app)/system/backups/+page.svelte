@@ -30,6 +30,7 @@
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { BackupFileProvider, BackupFileRootLoadState } from '#lib/types/backup.js';
 	import type {
 		BackupHistoryEntry,
@@ -38,13 +39,13 @@
 		SystemVolumeBackupSelectionMode
 	} from '#lib/types/system-backup.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
+	import { hasAnyPermission, hasPermission, isGlobalAdmin } from '#lib/utils/auth.js';
 	import {
 		backupDestinationOptions,
 		backupPolicyDestinationDisplay,
 		runAutomaticBackupDiscovery,
 		s3DestinationOptions
 	} from '#lib/utils/backups.js';
-	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -98,7 +99,10 @@
 	let restoreFilesLoaded = $state(false);
 	let restoringFiles = $state(false);
 	const isReadOnly = $derived(settingsStore.readOnly);
-	const canManageRecoveryKey = $derived(hasShownPermission('system-backups:recovery-key'));
+	const canCreateBackups = $derived(hasPermission('system-backups:create', GLOBAL_SCOPE));
+	const canUpdateBackupPolicies = $derived(hasPermission('system-backups:update', GLOBAL_SCOPE));
+	const canManageRecoveryKey = $derived(isGlobalAdmin());
+	const canDiscoverBackups = $derived(isGlobalAdmin());
 	const destinationOptions = $derived(backupDestinationOptions(data.destinations.length > 0));
 	const s3Options = $derived(s3DestinationOptions(data.destinations));
 	const backupTypeOptions = $derived([
@@ -389,7 +393,7 @@
 	let mounted = false;
 	async function discoverStoredBackups() {
 		if (!mounted || autoDiscovered || !policyCollection.recoveryKeyStored || !data.destinations.length) return;
-		if (!hasShownPermission('system-backups:manage')) return;
+		if (!canDiscoverBackups) return;
 		autoDiscovered = true;
 		const found = await runAutomaticBackupDiscovery(data.destinations);
 		if (mounted && found) await refresh();
@@ -398,7 +402,7 @@
 		mounted = true;
 	});
 	$effect(() => {
-		if (!hasShownPermission('system-backups:manage')) return;
+		if (!canDiscoverBackups) return;
 		untrack(() => {
 			void discoverStoredBackups();
 		});
@@ -516,30 +520,42 @@
 	}
 
 	const actionButtons: ActionButton[] = $derived.by(() => [
-		{
-			id: 'create',
-			action: 'create',
-			placement: 'primary',
-			label: m.common_create(),
-			disabled: isReadOnly,
-			menuItems: [
-				{ id: 'schedule', label: m.jobs_schedule(), onclick: () => openSchedule() },
-				{
-					id: 'workspace-backup',
-					label: m.volumes_workspace_backup(),
-					onclick: () => openAction('create'),
-					disabled: backupActivity.activeIds.length > 0
-				}
-			]
-		},
-		{
-			id: 's3-destinations',
-			action: 'edit',
-			icon: CloudStorageIcon,
-			label: m.s3_destinations_title(),
-			href: '/system/backups/s3'
-		},
-		...(!policyCollection.recoveryKeyStored
+		...(canCreateBackups || canUpdateBackupPolicies
+			? [
+					{
+						id: 'create',
+						action: 'create',
+						placement: 'primary',
+						label: m.common_create(),
+						disabled: isReadOnly,
+						menuItems: [
+							...(canUpdateBackupPolicies ? [{ id: 'schedule', label: m.jobs_schedule(), onclick: () => openSchedule() }] : []),
+							...(canCreateBackups
+								? [
+										{
+											id: 'workspace-backup',
+											label: m.volumes_workspace_backup(),
+											onclick: () => openAction('create'),
+											disabled: backupActivity.activeIds.length > 0
+										}
+									]
+								: [])
+						]
+					} satisfies ActionButton
+				]
+			: []),
+		...(hasAnyPermission(['s3-destinations:list', 's3-destinations:read'], GLOBAL_SCOPE)
+			? [
+					{
+						id: 's3-destinations',
+						action: 'edit',
+						icon: CloudStorageIcon,
+						label: m.s3_destinations_title(),
+						href: '/system/backups/s3'
+					} satisfies ActionButton
+				]
+			: []),
+		...(canDiscoverBackups && !policyCollection.recoveryKeyStored
 			? [
 					{
 						id: 'discover',
@@ -586,7 +602,7 @@
 		icon={BackupIcon}
 		title={m.system_backups_empty_title()}
 		description={m.system_backups_empty_description()}
-		actionLabel={isReadOnly ? undefined : m.common_create()}
+		actionLabel={isReadOnly || !canCreateBackups ? undefined : m.common_create()}
 		onAction={() => openAction('create')}
 	/>
 {/snippet}
@@ -598,14 +614,16 @@
 				<LockIcon class="size-4 shrink-0 text-warning" />
 				<p class="text-sm">{m.system_backups_recovery_key_needed()}</p>
 			</div>
-			<ArcaneButton
-				action="edit"
-				size="sm"
-				customLabel={m.system_backups_setup_recovery_key()}
-				loading={generatingKey}
-				onclick={openRecoveryKey}
-				disabled={isReadOnly || !canManageRecoveryKey}
-			/>
+			{#if canManageRecoveryKey}
+				<ArcaneButton
+					action="edit"
+					size="sm"
+					customLabel={m.system_backups_setup_recovery_key()}
+					loading={generatingKey}
+					onclick={openRecoveryKey}
+					disabled={isReadOnly}
+				/>
+			{/if}
 		</div>
 	{/if}
 {/snippet}
@@ -878,7 +896,7 @@
 								{policy}
 								resourceType="system"
 								onEdit={() => openSchedule('system', policy.id)}
-								editDisabled={isReadOnly}
+								editDisabled={isReadOnly || !canUpdateBackupPolicies}
 							/>
 						{/each}
 						{#each systemVolumePolicyCollection.policies as policy (policy.id)}
@@ -887,7 +905,7 @@
 								resourceType="volume"
 								showStopContainers
 								onEdit={() => openSchedule('volume', policy.id)}
-								editDisabled={isReadOnly}
+								editDisabled={isReadOnly || !canUpdateBackupPolicies}
 							/>
 						{/each}
 					</div>

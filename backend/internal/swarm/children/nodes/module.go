@@ -25,7 +25,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Security: handlerutil.DefaultOperationSecurity(),
 			Metadata: map[string]any{authz.MetaEnvironmentAggregate: true},
 		},
-		authz.PermSwarmRead,
+		authz.PermSwarmNodesList,
 		h.ListNodes,
 	)
 	middleware.RegisterWithPermission(
@@ -40,7 +40,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmRead,
+		authz.PermSwarmNodesRead,
 		h.GetNode,
 	)
 	middleware.RegisterWithPermission(
@@ -55,7 +55,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmNodes,
+		authz.PermSwarmNodesUpdate,
 		h.GetNodeAgentDeployment,
 	)
 	middleware.RegisterWithPermission(
@@ -70,7 +70,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmNodes,
+		authz.PermSwarmNodesUpdate,
 		h.ReconcileNodeAgents,
 	)
 	middleware.RegisterWithPermission(
@@ -85,7 +85,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmNodes,
+		authz.PermSwarmNodesUpdate,
 		h.PutNodeAgentBinding,
 	)
 	middleware.RegisterWithPermission(
@@ -100,7 +100,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmNodes,
+		authz.PermSwarmNodesUpdate,
 		h.DeleteNodeAgentBinding,
 	)
 	middleware.RegisterWithPermission(
@@ -115,7 +115,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmNodes,
+		authz.PermSwarmNodesUpdate,
 		h.DeleteNodeAgentDeployment,
 	)
 	middleware.RegisterWithPermission(
@@ -130,7 +130,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmNodes,
+		authz.PermSwarmNodesUpdate,
 		h.UpdateNode,
 	)
 	middleware.RegisterWithPermission(
@@ -145,7 +145,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmNodes,
+		authz.PermSwarmNodesDelete,
 		h.DeleteNode,
 	)
 	middleware.RegisterWithActionPermissions(
@@ -162,8 +162,8 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		},
 		"action",
 		map[string]string{
-			"promote": authz.PermSwarmNodes,
-			"demote":  authz.PermSwarmNodes,
+			"promote": authz.PermSwarmNodesPromote,
+			"demote":  authz.PermSwarmNodesDemote,
 		},
 		h.RunNodeAction,
 	)
@@ -179,7 +179,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmRead,
+		authz.PermSwarmNodesRead,
 		h.ListNodeTasks,
 	)
 	middleware.RegisterWithPermission(

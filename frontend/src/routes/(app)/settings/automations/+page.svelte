@@ -9,7 +9,7 @@
 	title={m.automations()}
 	description={m.settings_category_automations_description()}
 	icon={JobsIcon}
-	permissions={['jobs:manage']}
+	permissions={['jobs:read']}
 	keys={[
 		'pollingEnabled',
 		'imageEventWatcherEnabled',

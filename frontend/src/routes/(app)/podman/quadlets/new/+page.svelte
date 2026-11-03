@@ -41,11 +41,13 @@
 		artifact: '[Artifact]\nArtifact=\n'
 	};
 
-	const podmanEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses));
-	const quadletEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses, (status) => status.quadletsSupported));
-	const installEnvironments = $derived(quadletEnvironments.filter((env) => hasPermission('podman:quadlets', env.id)));
+	const podmanEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses, 'podman-quadlets:create'));
+	const quadletEnvironments = $derived(
+		shownPodmanEnvironments(data.podmanStatuses, 'podman-quadlets:create', (status) => status.quadletsSupported)
+	);
+	const installEnvironments = $derived(quadletEnvironments.filter((env) => hasPermission('podman-quadlets:create', env.id)));
 	let picked = $state('');
-	const environmentId = $derived(destinationEnvironmentId(picked, 'podman:quadlets', installEnvironments));
+	const environmentId = $derived(destinationEnvironmentId(picked, 'podman-quadlets:create', installEnvironments));
 	const status = $derived(data.podmanStatuses[environmentId]);
 	const appsSupported = $derived(status?.quadletAppsSupported === true);
 
@@ -147,7 +149,7 @@
 				<div class="flex items-center gap-2">
 					<EnvironmentDestinationSelect
 						bind:value={() => environmentId, (value) => (picked = value)}
-						permission="podman:quadlets"
+						permission="podman-quadlets:create"
 						environments={installEnvironments}
 					/>
 					{#if installEnvironments.length > 0}

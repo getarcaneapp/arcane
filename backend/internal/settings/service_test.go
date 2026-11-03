@@ -134,6 +134,137 @@ func TestSettingsServiceUpdateSettingsRejectsEnablingOIDCWithoutSecret(t *testin
 	require.Equal(t, "false", current.OidcEnabled.Value)
 }
 
+func TestSettingsServiceUpdateSettingsRejectsDisablingEveryLoginMethod(t *testing.T) {
+	ctx := t.Context()
+	svc, err := newSettingsServiceForTest(t, ctx, setupSettingsTestDB(t))
+	require.NoError(t, err)
+
+	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"authLocalEnabled": "false"})
+	require.ErrorIs(t, err, common.ErrValidation)
+	fieldErr, ok := errors.AsType[*types.FieldError](err)
+	require.True(t, ok)
+	require.Equal(t, "authLocalEnabled", fieldErr.Field)
+	require.Equal(t, "true", svc.GetSettingsConfig().AuthLocalEnabled.Value)
+
+	require.NoError(t, svc.UpdateSettings(ctx, types.SettingsUpdate{
+		"oidcEnabled":      "true",
+		"oidcClientId":     "arcane",
+		"oidcClientSecret": "secret",
+		"oidcIssuerUrl":    "https://issuer.example.com",
+		"authLocalEnabled": "false",
+	}))
+	require.Equal(t, "false", svc.GetSettingsConfig().AuthLocalEnabled.Value)
+
+	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"oidcEnabled": "false"})
+	require.ErrorIs(t, err, common.ErrValidation)
+	fieldErr, ok = errors.AsType[*types.FieldError](err)
+	require.True(t, ok)
+	require.Equal(t, "oidcEnabled", fieldErr.Field)
+	require.Equal(t, "true", svc.GetSettingsConfig().OidcEnabled.Value)
+
+	require.NoError(t, svc.UpdateSettings(ctx, types.SettingsUpdate{
+		"oidcEnabled":      "false",
+		"authLocalEnabled": "true",
+	}))
+	require.Equal(t, "true", svc.GetSettingsConfig().AuthLocalEnabled.Value)
+	require.Equal(t, "false", svc.GetSettingsConfig().OidcEnabled.Value)
+}
+
+func TestSettingsServiceUpdateSettingsRejectsDisablingLocalAuthWhenEnvLocksOIDCOff(t *testing.T) {
+	t.Setenv("ARCANE_OIDC_ENABLED", "false")
+
+	ctx := t.Context()
+	svc, err := newSettingsServiceForTest(t, ctx, setupSettingsTestDB(t))
+	require.NoError(t, err)
+
+	err = svc.UpdateSettings(ctx, types.SettingsUpdate{
+		"oidcEnabled":      "true",
+		"authLocalEnabled": "false",
+	})
+	require.ErrorIs(t, err, common.ErrValidation)
+	fieldErr, ok := errors.AsType[*types.FieldError](err)
+	require.True(t, ok)
+	require.Equal(t, "authLocalEnabled", fieldErr.Field)
+	require.Equal(t, "true", svc.GetSettingsConfig().AuthLocalEnabled.Value)
+}
+
+func TestSettingsServiceUpdateSettingsAllowsUnrelatedChangesWhenEnvDisablesEveryLoginMethod(t *testing.T) {
+	t.Setenv("ARCANE_AUTH_LOCAL_ENABLED", "false")
+	t.Setenv("ARCANE_OIDC_ENABLED", "false")
+
+	ctx := t.Context()
+	svc, err := newSettingsServiceForTest(t, ctx, setupSettingsTestDB(t))
+	require.NoError(t, err)
+
+	require.NoError(t, svc.UpdateSettings(ctx, types.SettingsUpdate{"dockerApiTimeout": "45"}))
+	require.Equal(t, "45", svc.GetSettingsConfig().DockerAPITimeout.Value)
+}
+
+func TestSettingsServiceValidateScope(t *testing.T) {
+	ctx := t.Context()
+	svc, err := newSettingsServiceForTest(t, ctx, setupSettingsTestDB(t))
+	require.NoError(t, err)
+
+	tests := []struct {
+		name    string
+		scope   SettingScope
+		key     string
+		wantErr bool
+	}{
+		{name: "environment key in environment scope", scope: SettingScopeEnvironment, key: "dockerApiTimeout"},
+		{name: "manager key in environment scope", scope: SettingScopeEnvironment, key: "analyticsEnabled", wantErr: true},
+		{name: "oidc key in environment scope", scope: SettingScopeEnvironment, key: "oidcClientId", wantErr: true},
+		{name: "manager key in manager scope", scope: SettingScopeManager, key: "analyticsEnabled"},
+		{name: "auth key in manager scope", scope: SettingScopeManager, key: "oidcEnabled", wantErr: true},
+		{name: "local auth key in manager scope", scope: SettingScopeManager, key: "authLocalEnabled", wantErr: true},
+		{name: "environment key in manager scope", scope: SettingScopeManager, key: "dockerApiTimeout", wantErr: true},
+		{name: "auth key in authentication scope", scope: SettingScopeAuthentication, key: "oidcMergeAccounts"},
+		{name: "manager key in authentication scope", scope: SettingScopeAuthentication, key: "analyticsEnabled", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := svc.ValidateScope(tt.scope, types.SettingsUpdate{tt.key: "x"})
+			if !tt.wantErr {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorIs(t, err, common.ErrValidation)
+			fieldErr, ok := errors.AsType[*types.FieldError](err)
+			require.True(t, ok)
+			require.Equal(t, tt.key, fieldErr.Field)
+		})
+	}
+}
+
+func TestSettingsServiceSettingsSnapshotFiltersByScope(t *testing.T) {
+	ctx := t.Context()
+	svc, err := newSettingsServiceForTest(t, ctx, setupSettingsTestDB(t))
+	require.NoError(t, err)
+
+	keys := func(scope SettingScope) []string {
+		out := []string{}
+		for _, state := range svc.SettingsSnapshot(SettingVisibilityAll, scope).Settings {
+			require.Equal(t, string(scope), state.Scope, state.Key)
+			out = append(out, state.Key)
+		}
+		return out
+	}
+
+	authentication := keys(SettingScopeAuthentication)
+	require.Subset(t, authentication, []string{"authLocalEnabled", "authSessionTimeout", "oidcEnabled", "oidcClientSecret", "oidcMergeAccounts"})
+	require.NotContains(t, authentication, "analyticsEnabled")
+
+	manager := keys(SettingScopeManager)
+	require.Subset(t, manager, []string{"analyticsEnabled", "updateCheckEnabled", "apnsEnabled", "experimentalFeaturesEnabled"})
+	require.NotContains(t, manager, "oidcEnabled")
+	require.NotContains(t, manager, "dockerHost")
+
+	environment := keys(SettingScopeEnvironment)
+	require.Subset(t, environment, []string{"dockerHost", "dockerApiTimeout", "depotToken", "projectsDirectory"})
+	require.NotContains(t, environment, "analyticsEnabled")
+	require.NotContains(t, environment, "authLocalEnabled")
+}
+
 func TestSettingsServiceUpdateSettingsAllowsOIDCIssuerChangeWithReplacementSecret(t *testing.T) {
 	ctx := t.Context()
 	db := setupSettingsTestDB(t)
@@ -839,7 +970,7 @@ func TestSettingsService_SettingsSnapshot(t *testing.T) {
 		Type:      "password",
 		Source:    string(SourceDB),
 		Sensitive: true,
-		Scope:     "manager",
+		Scope:     "authentication",
 		EnvName:   "ARCANE_OIDC_CLIENT_SECRET",
 	}, states["oidcClientSecret"])
 	require.Equal(t, string(SourceDefault), states["defaultShell"].Source)

@@ -43,9 +43,9 @@
 	let submitting = $state(false);
 
 	const environmentId = $derived(
-		existing?.environmentId ?? destinationEnvironmentId(pickedEnvironmentId, 'podman:secrets', environments)
+		existing?.environmentId ?? destinationEnvironmentId(pickedEnvironmentId, 'podman-secrets:create', environments)
 	);
-	const canManage = $derived(hasPermission('podman:secrets', environmentId));
+	const canManage = $derived(hasPermission(existing ? 'podman-secrets:update' : 'podman-secrets:create', environmentId));
 	const valueLabel = $derived(existing ? m.podman_secrets_new_value_label() : m.value());
 
 	const description = $derived(
@@ -110,7 +110,7 @@
 			{#if !existing}
 				<EnvironmentDestinationSelect
 					bind:value={() => environmentId, (next) => (pickedEnvironmentId = next)}
-					permission="podman:secrets"
+					permission="podman-secrets:create"
 					{environments}
 					variant="field"
 				/>

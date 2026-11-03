@@ -179,6 +179,7 @@ func TestEnsureBuiltInRolesMigratesVariablePermissionsWithoutBackfillingCustomGr
 
 	oldEditorPermissions := slices.DeleteFunc(authz.BuiltInEditorPermissions(), func(permission string) bool {
 		return slices.Contains([]string{
+			authz.PermVariablesList,
 			authz.PermVariablesRead,
 			authz.PermVariablesCreate,
 			authz.PermVariablesUpdate,
@@ -193,6 +194,7 @@ func TestEnsureBuiltInRolesMigratesVariablePermissionsWithoutBackfillingCustomGr
 	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
 
 	allVariablePermissions := []string{
+		authz.PermVariablesList,
 		authz.PermVariablesRead,
 		authz.PermVariablesCreate,
 		authz.PermVariablesUpdate,
@@ -209,8 +211,9 @@ func TestEnsureBuiltInRolesMigratesVariablePermissionsWithoutBackfillingCustomGr
 	for _, roleID := range []string{authz.BuiltInRoleViewer, authz.BuiltInRoleDeployer} {
 		builtIn, getErr := roleSvc.GetRole(ctx, roleID)
 		require.NoError(t, getErr)
+		require.Contains(t, []string(builtIn.Permissions), authz.PermVariablesList)
 		require.Contains(t, []string(builtIn.Permissions), authz.PermVariablesRead)
-		for _, permission := range allVariablePermissions[1:] {
+		for _, permission := range allVariablePermissions[2:] {
 			require.NotContains(t, []string(builtIn.Permissions), permission, "role %s", roleID)
 		}
 	}
@@ -222,7 +225,7 @@ func TestEnsureBuiltInRolesMigratesVariablePermissionsWithoutBackfillingCustomGr
 
 	preservedCustomRole, err := roleSvc.GetRole(ctx, customRole.ID)
 	require.NoError(t, err)
-	require.Equal(t, []string{authz.PermTemplatesRead}, []string(preservedCustomRole.Permissions))
+	require.Equal(t, []string{authz.PermTemplatesList, authz.PermTemplatesRead}, []string(preservedCustomRole.Permissions))
 
 	var keyPermissions []role.ApiKeyPermission
 	require.NoError(t, userSvc.WithContext(ctx).Where("api_key_id = ?", scopedKey.ID).Find(&keyPermissions).Error)
@@ -389,15 +392,15 @@ func TestResolveExecutionPermissions(t *testing.T) {
 		require.NoError(t, db.Create(&key).Error)
 		permissions, err := service.ResolveExecutionPermissions(t.Context(), owner.ID, key.ID)
 		require.NoError(t, err)
-		require.True(t, permissions.Allows(authz.PermJobsManage, environmentID))
-		require.False(t, permissions.Allows(authz.PermJobsManage, "env-2"))
+		require.True(t, permissions.Allows(authz.PermJobsRun, environmentID))
+		require.False(t, permissions.Allows(authz.PermJobsRun, "env-2"))
 		require.False(t, permissions.IsGlobalAdmin())
 
 		require.NoError(t, db.Where("user_id = ?", owner.ID).Delete(&role.UserRoleAssignment{}).Error)
 		for _, keyID := range []string{"", key.ID} {
 			permissions, err = service.ResolveExecutionPermissions(t.Context(), owner.ID, keyID)
 			require.NoError(t, err)
-			require.False(t, permissions.Allows(authz.PermJobsManage, environmentID))
+			require.False(t, permissions.Allows(authz.PermJobsRun, environmentID))
 		}
 	})
 
@@ -408,19 +411,19 @@ func TestResolveExecutionPermissions(t *testing.T) {
 		environmentID := "env-1"
 		key := testApiKeyRow{ID: "scoped", Kind: "scoped", UserID: &owner.ID, EnvironmentID: &environmentID}
 		require.NoError(t, db.Create(&key).Error)
-		require.NoError(t, service.SetApiKeyPermissions(t.Context(), key.ID, []role.ApiKeyPermission{{Permission: authz.PermJobsManage}}))
+		require.NoError(t, service.SetApiKeyPermissions(t.Context(), key.ID, []role.ApiKeyPermission{{Permission: authz.PermJobsRun}}))
 		cached, err := service.ResolveApiKeyPermissions(t.Context(), key.ID)
 		require.NoError(t, err)
-		require.True(t, cached.Allows(authz.PermJobsManage, "env-2"))
+		require.True(t, cached.Allows(authz.PermJobsRun, "env-2"))
 		permissions, err := service.ResolveExecutionPermissions(t.Context(), owner.ID, key.ID)
 		require.NoError(t, err)
-		require.True(t, permissions.Allows(authz.PermJobsManage, environmentID))
-		require.False(t, permissions.Allows(authz.PermJobsManage, "env-2"))
+		require.True(t, permissions.Allows(authz.PermJobsRun, environmentID))
+		require.False(t, permissions.Allows(authz.PermJobsRun, "env-2"))
 
 		require.NoError(t, db.Where("api_key_id = ?", key.ID).Delete(&role.ApiKeyPermission{}).Error)
 		permissions, err = service.ResolveExecutionPermissions(t.Context(), owner.ID, key.ID)
 		require.NoError(t, err)
-		require.False(t, permissions.Allows(authz.PermJobsManage, environmentID))
+		require.False(t, permissions.Allows(authz.PermJobsRun, environmentID))
 	})
 
 	t.Run("rejects invalid persisted identities", func(t *testing.T) {
@@ -446,4 +449,46 @@ func TestResolveExecutionPermissions(t *testing.T) {
 		_, err = service.ResolveExecutionPermissions(t.Context(), owner.ID, "")
 		require.Error(t, err)
 	})
+}
+
+func TestCreateAndUpdateRoleStoreRequiredPermissions(t *testing.T) {
+	ctx := t.Context()
+	_, roleSvc := setupUserAndRoleServices(t)
+
+	created, err := roleSvc.CreateRole(ctx, "Image patcher", nil, []string{authz.PermImagesPatch})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{
+		authz.PermImagesList,
+		authz.PermImagesRead,
+		authz.PermImagesPatch,
+		authz.PermVulnsList,
+		authz.PermActivitiesList,
+		authz.PermActivitiesRead,
+	}, []string(created.Permissions))
+
+	updated, err := roleSvc.UpdateRole(ctx, created.ID, "Image patcher", nil, []string{authz.PermDiagnosticsProfile})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{
+		authz.PermDiagnosticsRead,
+		authz.PermDiagnosticsProfile,
+	}, []string(updated.Permissions))
+
+	stored, err := roleSvc.GetRole(ctx, created.ID)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string(updated.Permissions), []string(stored.Permissions))
+}
+
+func TestPermissionsManifestExposesTransitiveRequirements(t *testing.T) {
+	requires := make(map[string][]string)
+	descriptions := make(map[string]string)
+	for _, resource := range role.BuildPermissionsManifest().Resources {
+		require.NotEmpty(t, resource.Description, "resource %s", resource.Key)
+		for _, action := range resource.Actions {
+			requires[action.Permission] = action.Requires
+			descriptions[action.Permission] = action.Description
+		}
+	}
+	require.ElementsMatch(t, []string{authz.PermImagesList, authz.PermImagesRead, authz.PermVulnsList, authz.PermActivitiesList, authz.PermActivitiesRead}, requires[authz.PermImagesPatch])
+	require.Empty(t, requires[authz.PermContainersList])
+	require.NotEmpty(t, descriptions[authz.PermContainersList])
 }

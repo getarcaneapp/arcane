@@ -280,7 +280,7 @@
 	});
 
 	const vulnerabilitiesQuery = createQuery(() => {
-		const environments = loadableEnvironments('vulnerabilities:read').filter((environment) =>
+		const environments = loadableEnvironments('vulnerabilities:list').filter((environment) =>
 			featureStore.isEnabled('vulnerabilityManagement', environment.id)
 		);
 		return {
@@ -324,7 +324,7 @@
 	});
 
 	const riskEnvironments = $derived(
-		loadableEnvironments('vulnerabilities:read').filter((environment) =>
+		loadableEnvironments('vulnerabilities:list').filter((environment) =>
 			featureStore.isEnabled('vulnerabilityManagement', environment.id)
 		)
 	);
@@ -340,7 +340,7 @@
 	});
 
 	const eventsQuery = createQueries(() => {
-		const environments = limitEnvironments(userStore.hasPermission('events:read') ? loadableEnvironments('events:read') : []);
+		const environments = limitEnvironments(userStore.hasPermission('events:list') ? loadableEnvironments('events:list') : []);
 		const enabled = anyWidgetVisible(ATTENTION_WIDGETS);
 		return {
 			queries: environments.included.map((environment) => ({
@@ -353,7 +353,7 @@
 	});
 
 	const jobsQuery = createQueries(() => {
-		const environments = limitEnvironments(loadableEnvironments('jobs:manage'));
+		const environments = limitEnvironments(loadableEnvironments('jobs:list'));
 		const enabled = anyWidgetVisible(['jobs', ...ATTENTION_WIDGETS]);
 		return {
 			queries: environments.included.map((environment) => ({

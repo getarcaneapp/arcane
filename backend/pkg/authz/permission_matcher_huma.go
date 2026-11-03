@@ -22,6 +22,14 @@ const (
 
 	MetaActionPermissions = "arcane:actionPermissions"
 
+	MetaRequireGlobalAdmin = "arcane:requireGlobalAdmin"
+
+	MetaRequireSudo = "arcane:requireSudo"
+
+	MetaPermissionConditions = "arcane:permissionConditions"
+
+	MetaAccess = "arcane:access"
+
 	envPathPrefix = "/environments/{id}"
 )
 

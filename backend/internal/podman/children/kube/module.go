@@ -17,11 +17,11 @@ const (
 func RegisterRoutes(api huma.API, h *Handler) {
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation("play-podman-kube", http.MethodPost, kubePath+"/play", "Play kube YAML", "Create pods and containers from Kubernetes YAML", kubeTag),
-		authz.PermPodmanKube, h.Play)
+		authz.PermPodmanKubeCreate, h.Play)
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation("down-podman-kube", http.MethodPost, kubePath+"/down", "Tear down kube YAML", "Remove pods and containers created from Kubernetes YAML", kubeTag),
-		authz.PermPodmanKube, h.Down)
+		authz.PermPodmanKubeDelete, h.Down)
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation("generate-podman-kube", http.MethodPost, kubePath+"/generate", "Generate kube YAML", "Generate Kubernetes YAML from pods, containers, or volumes", kubeTag),
-		authz.PermPodmanKube, h.Generate)
+		authz.PermPodmanKubeRead, h.Generate)
 }

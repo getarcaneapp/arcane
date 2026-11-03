@@ -52,7 +52,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, envSvc *environment.
 		Description: "Get configured cron schedules for background jobs",
 		Tags:        []string{"JobSchedules"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermJobsManage, h.Get)
+	}, authz.PermJobsRead, h.Get)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-job-schedules",
@@ -62,7 +62,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, envSvc *environment.
 		Description: "Update background job cron schedules and reschedule running jobs",
 		Tags:        []string{"JobSchedules"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermJobsManage, h.Update)
+	}, authz.PermJobsUpdate, h.Update)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-jobs",
@@ -72,7 +72,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, envSvc *environment.
 		Description: "Get status, schedule, and metadata for all background jobs",
 		Tags:        []string{"JobSchedules"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermJobsManage, h.ListJobs)
+	}, authz.PermJobsList, h.ListJobs)
 
 	middleware.RegisterWithActionPermissions(api, huma.Operation{
 		OperationID:   "job-action",
@@ -84,8 +84,8 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, envSvc *environment.
 		Tags:          []string{"JobSchedules"},
 		Security:      handlerutil.DefaultOperationSecurity(),
 	}, "action", map[string]string{
-		"run":     authz.PermJobsManage,
-		"restart": authz.PermJobsManage,
+		"run":     authz.PermJobsRun,
+		"restart": authz.PermJobsRestart,
 	}, h.RunJobAction)
 
 	basePath := "/environments/{id}/jobs/{jobId}"
@@ -98,7 +98,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, envSvc *environment.
 			Summary:     "List job runs",
 			Security:    handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermJobsManage,
+		authz.PermJobsList,
 		h.ListRuns,
 	)
 	middleware.RegisterWithPermission(
@@ -110,7 +110,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, envSvc *environment.
 			Summary:     "Get job run",
 			Security:    handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermJobsManage,
+		authz.PermJobsRead,
 		h.GetRun,
 	)
 	middleware.RegisterWithActionPermissions(
@@ -124,9 +124,9 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, envSvc *environment.
 		},
 		"action",
 		map[string]string{
-			"retry":  authz.PermJobsManage,
-			"cancel": authz.PermJobsManage,
-			"ack":    authz.PermJobsManage,
+			"retry":  authz.PermJobsRetry,
+			"cancel": authz.PermJobsCancel,
+			"ack":    authz.PermJobsAck,
 		},
 		h.RunJobRunAction,
 	)

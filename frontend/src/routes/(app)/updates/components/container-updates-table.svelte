@@ -221,7 +221,7 @@
 
 	function handleBulkUpdate(ids: string[]) {
 		const updateScope = scope;
-		const tracksActivities = environmentStore.shown.every((env) => hasPermission('activities:read', env.id));
+		const tracksActivities = environmentStore.shown.every((env) => hasPermission('activities:list', env.id));
 		bulkConfirmAndRun({
 			ids,
 			title: m.updates_bulk_update_confirm_title({ count: ids.length }),
@@ -244,8 +244,10 @@
 		});
 	}
 
+	const canApplyUpdates = $derived(hasShownPermission('image-updates:apply'));
+
 	const bulkActions = $derived<BulkAction[]>(
-		hasShownPermission('containers:autoupdate')
+		canApplyUpdates
 			? [
 					{
 						id: 'update',
@@ -295,7 +297,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ContainerUpdateRow })}
-	<IfPermitted perm={['image-updates:read', 'containers:autoupdate']} envId={item.environmentId}>
+	<IfPermitted perm={['image-updates:read', 'image-updates:apply', 'containers:autoupdate']} envId={item.environmentId}>
 		<RowActionsMenu>
 			{#if item.updateInfo?.hasUpdate}
 				<IfPermitted perm="image-updates:read" envId={item.environmentId}>
@@ -311,7 +313,7 @@
 				</IfPermitted>
 			{/if}
 
-			<IfPermitted perm="containers:autoupdate" envId={item.environmentId}>
+			<IfPermitted perm="image-updates:apply" envId={item.environmentId}>
 				<DropdownMenu.Item onclick={() => handleUpdateContainer(item.container)} disabled={!!updatingContainerIds[rowKey(item)]}>
 					{#if updatingContainerIds[rowKey(item)]}
 						<Spinner class="size-4" />
@@ -320,7 +322,9 @@
 					{/if}
 					{m.update_container()}
 				</DropdownMenu.Item>
+			</IfPermitted>
 
+			<IfPermitted perm="containers:autoupdate" envId={item.environmentId}>
 				<DropdownMenu.Item
 					onclick={() => handleToggleAutoUpdate(item)}
 					disabled={item.labelControlled || !item.statusAvailable || !!togglingAutoUpdateIds[rowKey(item)]}
@@ -383,6 +387,7 @@
 	items={tableItems}
 	bind:requestOptions
 	bind:selectedIds
+	selectionDisabled={!canApplyUpdates}
 	bind:mobileFieldVisibility
 	{onRetry}
 	{columns}

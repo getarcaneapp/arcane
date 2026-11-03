@@ -43,7 +43,7 @@
 		const requestEnvironmentId = environmentId;
 		return {
 			queryKey: queryKeys.settings.byEnvironment(requestEnvironmentId),
-			queryFn: () => settingsService.getReadableSettings(requestEnvironmentId),
+			queryFn: () => settingsService.getSettingsForEnvironmentMerged(requestEnvironmentId),
 			enabled: open
 		};
 	});

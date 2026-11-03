@@ -17,10 +17,16 @@
 	import type { PodmanQuadletDetail, PodmanStatus } from '#lib/types/podman.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { hasShownPermission, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
+	import type { EnvironmentPage, EnvironmentRow } from '#lib/utils/environments.js';
 	import { podmanStateVariant } from '#lib/utils/podman.js';
 
-	import { confirmRemoveQuadlet, quadletActionLabels, quadletActions, runQuadletAction } from '../quadlet-actions';
+	import {
+		confirmRemoveQuadlet,
+		quadletActionLabels,
+		quadletActionPermissions,
+		quadletActions,
+		runQuadletAction
+	} from '../quadlet-actions';
 
 	type QuadletRow = EnvironmentRow<PodmanQuadletDetail> & { id: string };
 
@@ -42,9 +48,6 @@
 	async function invalidateQuadlets() {
 		await queryClient.invalidateQueries({ queryKey: queryKeys.podman.quadletsPrefix(scope) });
 	}
-
-	const canManageQuadlets = $derived(hasShownPermission('podman:quadlets'));
-	const canRunLifecycle = $derived(hasShownPermission('podman:quadlets:lifecycle'));
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 
@@ -154,10 +157,13 @@
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
-		{#if canRunLifecycle && hasPermission('podman:quadlets:lifecycle', item.environmentId) && !item.template}
+		{@const allowedActions = item.template
+			? []
+			: quadletActions.filter((action) => hasPermission(quadletActionPermissions[action], item.environmentId))}
+		{#if allowedActions.length > 0}
 			{@const status = podmanStatuses[item.environmentId]}
 			<DropdownMenu.Separator />
-			{#each quadletActions as action (action)}
+			{#each allowedActions as action (action)}
 				<DropdownMenu.Item
 					disabled={!status?.systemdAvailable}
 					title={status?.systemdAvailable ? undefined : status?.systemdReason}
@@ -167,7 +173,7 @@
 				</DropdownMenu.Item>
 			{/each}
 		{/if}
-		{#if canManageQuadlets && hasPermission('podman:quadlets', item.environmentId)}
+		{#if hasPermission('podman-quadlets:delete', item.environmentId)}
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item
 				variant="destructive"

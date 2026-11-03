@@ -72,6 +72,7 @@ export type PermissionsManifest = {
 export type PermissionResource = {
 	key: string;
 	label: string;
+	description: string;
 	scope: RoleScope;
 	actions: PermissionAction[];
 };

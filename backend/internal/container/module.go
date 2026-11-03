@@ -188,7 +188,7 @@ func RegisterContainers(
 		Description: "Apply configuration changes and recreate the container",
 		Tags:        []string{"Containers"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermContainersEdit, h.EditContainer)
+	}, authz.PermContainersUpdate, h.EditContainer)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-container",

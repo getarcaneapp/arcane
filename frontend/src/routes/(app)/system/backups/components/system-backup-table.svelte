@@ -15,8 +15,11 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { BackupIcon, RestartIcon, UploadIcon, ClockIcon, VolumesIcon, FileTextIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { BackupHistoryEntry } from '#lib/types/system-backup.js';
+	import { hasPermission, isGlobalAdmin } from '#lib/utils/auth.js';
 	import {
 		backupManagementFilterOptions,
 		backupStatusLabel,
@@ -50,6 +53,10 @@
 	} = $props();
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
+	const canUploadBackups = $derived(hasPermission('system-backups:upload', GLOBAL_SCOPE));
+	const canDeleteBackups = $derived(hasPermission('system-backups:delete', GLOBAL_SCOPE));
+	const canRestoreBackups = $derived(isGlobalAdmin());
+	const canRestoreVolume = $derived(hasPermission('volumes:backup', LOCAL_DOCKER_ENVIRONMENT_ID));
 	const columns = [
 		{ accessorKey: 'id', title: m.system_backups_id(), sortable: false, cell: IdCell },
 		{ accessorKey: 'resourceName', title: m.backups_resource(), sortable: true, cell: ResourceCell },
@@ -83,18 +90,22 @@
 {#snippet RowActions({ item }: { item: BackupHistoryEntry })}
 	<RowActionsMenu>
 		{#if item.resourceType === 'system'}
-			<DropdownMenu.Item onclick={() => onRestore(item)} disabled={item.status !== 'succeeded'}
-				><RestartIcon class="size-4" />{m.volumes_backups_restore()}</DropdownMenu.Item
-			>
-			<DropdownMenu.Item onclick={() => onRestoreFiles(item)} disabled={item.status !== 'succeeded'}
-				><FileTextIcon class="size-4" />{m.volume_restore_files()}</DropdownMenu.Item
-			>
-			{#if item.localSnapshotId && !item.remoteSnapshotId}
+			{#if canRestoreBackups}
+				<DropdownMenu.Item onclick={() => onRestore(item)} disabled={item.status !== 'succeeded'}
+					><RestartIcon class="size-4" />{m.volumes_backups_restore()}</DropdownMenu.Item
+				>
+				<DropdownMenu.Item onclick={() => onRestoreFiles(item)} disabled={item.status !== 'succeeded'}
+					><FileTextIcon class="size-4" />{m.volume_restore_files()}</DropdownMenu.Item
+				>
+			{/if}
+			{#if canUploadBackups && item.localSnapshotId && !item.remoteSnapshotId}
 				<DropdownMenu.Item onclick={() => onUpload(item)}><UploadIcon class="size-4" />{m.backups_upload_s3()}</DropdownMenu.Item>
 			{/if}
-			<RemoveMenuItem onclick={() => onDelete(item)} label={m.common_delete()} />
+			{#if canDeleteBackups}
+				<RemoveMenuItem onclick={() => onDelete(item)} label={m.common_delete()} />
+			{/if}
 		{:else}
-			{#if onRestoreVolume}
+			{#if onRestoreVolume && canRestoreVolume}
 				<DropdownMenu.Item onclick={() => onRestoreVolume(item)} disabled={item.status !== 'succeeded'}
 					><RestartIcon class="size-4" />{m.volumes_backups_restore()}</DropdownMenu.Item
 				>

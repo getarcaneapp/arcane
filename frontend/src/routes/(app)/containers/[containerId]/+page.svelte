@@ -155,9 +155,9 @@
 	const canViewLogs = $derived(hasPermission('containers:logs', currentEnvId));
 	const canExecShell = $derived(hasPermission('containers:exec', currentEnvId));
 	const canPauseContainer = $derived(hasPermission('containers:pause', currentEnvId));
-	const canUpdateContainer = $derived(hasPermission('containers:autoupdate', currentEnvId));
+	const canUpdateContainer = $derived(hasPermission('image-updates:apply', currentEnvId));
 	const canEditContainer = $derived(
-		hasPermission('containers:edit', currentEnvId) && !container?.composeInfo && !container?.redeployDisabled
+		hasPermission('containers:update', currentEnvId) && !container?.composeInfo && !container?.redeployDisabled
 	);
 	const canKillContainer = $derived(hasPermission('containers:kill', currentEnvId));
 	const canCommitImage = $derived(hasPermission('images:commit', currentEnvId));
@@ -177,7 +177,7 @@
 
 	// The details response carries the stored check for this container's current
 	// policy; an older agent that omits it reports no status rather than "up to date".
-	const updateInfo = $derived(canUpdateContainer ? (container?.updateInfo ?? null) : null);
+	const updateInfo = $derived(hasPermission('image-updates:read', currentEnvId) ? (container?.updateInfo ?? null) : null);
 	let updateLoading = $state(false);
 	let updateViewMounted = false;
 	const updateActivities = createContainerUpdateActivityTracker(

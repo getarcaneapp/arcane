@@ -13,7 +13,9 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { S3DestinationCreate, S3Destination } from '#lib/types/s3-destination.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { discoverDestinationBackups } from '#lib/utils/backups.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
@@ -36,6 +38,7 @@
 	let destinationSession = $state(0);
 	let saving = $state(false);
 	const isReadOnly = $derived(settingsStore.readOnly);
+	const canCreateDestination = $derived(hasPermission('s3-destinations:create', GLOBAL_SCOPE));
 
 	function openCreate() {
 		selected = null;
@@ -107,16 +110,19 @@
 		});
 	}
 
-	const actionButtons: ActionButton[] = $derived.by(() => [
-		{
-			id: 'create',
-			action: 'create',
-			placement: 'primary',
-			label: m.s3_destination_add(),
-			onclick: openCreate,
-			disabled: isReadOnly
-		}
-	]);
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		if (!canCreateDestination) return [];
+		return [
+			{
+				id: 'create',
+				action: 'create',
+				placement: 'primary',
+				label: m.s3_destination_add(),
+				onclick: openCreate,
+				disabled: isReadOnly
+			}
+		];
+	});
 </script>
 
 {#snippet destinationsEmptyState()}
@@ -125,7 +131,7 @@
 		icon={CloudStorageIcon}
 		title={m.s3_destinations_empty_title()}
 		description={m.s3_destinations_empty_description()}
-		actionLabel={isReadOnly ? undefined : m.s3_destination_add()}
+		actionLabel={isReadOnly || !canCreateDestination ? undefined : m.s3_destination_add()}
 		onAction={openCreate}
 	/>
 {/snippet}

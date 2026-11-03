@@ -542,8 +542,8 @@ func (s *JobService) authorizeRun(ctx context.Context, run types.SchedulerRun) e
 	if err != nil {
 		return err
 	}
-	if !permissions.Allows(authz.PermJobsManage, run.EnvironmentID) {
-		return errors.New("requesting user no longer has permission to manage jobs")
+	if !permissions.Allows(authz.PermJobsRun, run.EnvironmentID) {
+		return errors.New("requesting user no longer has permission to run jobs")
 	}
 	return nil
 }

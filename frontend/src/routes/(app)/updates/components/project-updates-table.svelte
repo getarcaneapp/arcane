@@ -176,7 +176,7 @@
 	}
 
 	const bulkActions = $derived<BulkAction[]>(
-		hasShownPermission('image-updates:check')
+		hasShownPermission('image-updates:apply')
 			? [
 					{
 						id: 'update',
@@ -215,7 +215,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ProjectUpdateRow })}
-	<IfPermitted perm={['image-updates:read', 'image-updates:check']} envId={item.environmentId}>
+	<IfPermitted perm={['image-updates:read', 'image-updates:apply']} envId={item.environmentId}>
 		<RowActionsMenu>
 			{#if item.releaseNotesRef}
 				<IfPermitted perm="image-updates:read" envId={item.environmentId}>
@@ -231,7 +231,7 @@
 				</IfPermitted>
 			{/if}
 
-			<IfPermitted perm="image-updates:check" envId={item.environmentId}>
+			<IfPermitted perm="image-updates:apply" envId={item.environmentId}>
 				<DropdownMenu.Item onclick={() => handleUpdateProject(item)} disabled={!!updatingProjectIds[rowKey(item)]}>
 					{#if updatingProjectIds[rowKey(item)]}
 						<Spinner class="size-4" />
@@ -281,6 +281,7 @@
 	items={tableItems}
 	bind:requestOptions
 	bind:selectedIds
+	selectionDisabled={!hasShownPermission('image-updates:apply')}
 	bind:mobileFieldVisibility
 	{onRetry}
 	{columns}

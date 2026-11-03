@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 
 	"github.com/labstack/echo/v5"
 	"go.uber.org/fx"
@@ -20,58 +21,62 @@ import (
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/notification"
 	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/types/v3"
 )
 
-// registerAgentTunnelRoutes configures the manager-side agent tunnel server.
-// It registers the WebSocket route and prepares gRPC service state on the shared listener.
-// Returns the TunnelServer for graceful shutdown.
-func registerAgentTunnelRoutes(
-	ctx context.Context,
-	lifecycle fx.Lifecycle,
-	cfg *config.Config,
-	apiGroup *echo.Group,
-	environmentService *environment.EnvironmentService,
-	eventService *event.EventService,
-	notificationService *notification.NotificationService,
-	registry *agent.TunnelRegistry,
-) *agent.TunnelServer {
+type TunnelServerParams struct {
+	fx.In
+
+	Context             context.Context
+	Lifecycle           fx.Lifecycle
+	Config              *config.Config
+	Registry            *agent.TunnelRegistry
+	EnvironmentService  *environment.EnvironmentService
+	EventService        *event.EventService
+	NotificationService *notification.NotificationService
+}
+
+func newTunnelServer(p TunnelServerParams) *agent.TunnelServer {
+	if p.Config.AgentEnabled {
+		return nil
+	}
 	server := agent.NewTunnelServer(agent.TunnelServerOptions{
-		Registry: registry,
-		Resolver: environmentService.ResolveAgentEnvironmentByToken,
+		Registry: p.Registry,
+		Resolver: p.EnvironmentService.ResolveAgentEnvironmentByToken,
 		StatusCallback: func(ctx context.Context, envID string, connected bool) {
-			handleAgentStatusChange(ctx, environmentService, eventService, envID, connected)
+			handleAgentStatusChange(ctx, p.EnvironmentService, p.EventService, envID, connected)
 		},
 		Config: &agent.Config{
-			AgentMTLSMode:       cfg.AgentMTLSMode,
-			AgentMTLSCAFile:     cfg.AgentMTLSCAFile,
-			AgentMTLSCertFile:   cfg.AgentMTLSCertFile,
-			AgentMTLSKeyFile:    cfg.AgentMTLSKeyFile,
-			AgentMTLSServerName: cfg.AgentMTLSServerName,
-			AgentMTLSAssetsDir:  cfg.AgentMTLSAssetsDir,
-			AppURL:              cfg.GetAppURL(),
-			ManagerApiUrl:       cfg.ManagerApiUrl,
+			AgentMTLSMode:       p.Config.AgentMTLSMode,
+			AgentMTLSCAFile:     p.Config.AgentMTLSCAFile,
+			AgentMTLSCertFile:   p.Config.AgentMTLSCertFile,
+			AgentMTLSKeyFile:    p.Config.AgentMTLSKeyFile,
+			AgentMTLSServerName: p.Config.AgentMTLSServerName,
+			AgentMTLSAssetsDir:  p.Config.AgentMTLSAssetsDir,
+			AppURL:              p.Config.GetAppURL(),
+			ManagerApiUrl:       p.Config.ManagerApiUrl,
 		},
 		NameResolver: func(ctx context.Context, envID string) (string, error) {
-			env, err := environmentService.GetEnvironmentByID(ctx, envID)
+			env, err := p.EnvironmentService.GetEnvironmentByID(ctx, envID)
 			if err != nil {
 				return "", err
 			}
 			return env.Name, nil
 		},
 		EventCallback: func(ctx context.Context, envID string, evt *agent.TunnelEvent) error {
-			return handleAgentEvent(ctx, envID, evt, eventService, notificationService)
+			return handleAgentEvent(ctx, envID, evt, p.EventService, p.NotificationService)
 		},
 		EnrollmentCallback: func(ctx context.Context, envID, remoteAddr string, certIssued, caGenerated, reenrolled bool) {
-			handleAgentEnrollment(ctx, environmentService, eventService, envID, remoteAddr, certIssued, caGenerated, reenrolled)
+			handleAgentEnrollment(ctx, p.EnvironmentService, p.EventService, envID, remoteAddr, certIssued, caGenerated, reenrolled)
 		},
 	})
 
 	var stopCleanup func(context.Context) error
 
-	lifecycle.Append(fx.Hook{
+	p.Lifecycle.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			stopCleanup = concurrency.Supervise(ctx, concurrency.SuperviseConfig{
+			stopCleanup = concurrency.Supervise(p.Context, concurrency.SuperviseConfig{
 				Run: func(runCtx context.Context) error {
 					server.StartCleanupLoop(runCtx)
 					return nil
@@ -88,13 +93,18 @@ func registerAgentTunnelRoutes(
 		},
 	})
 
-	// Rate-limit agent mTLS enrollment per-IP. Enrollment is authenticated
-	// only by the agent token, so we cap bursts to mitigate brute-force or
-	// token-abuse attempts without impacting normal agent lifecycles.
-	apiGroup.POST("/tunnel/mtls/enroll", server.HandleMTLSEnroll, middleware.PerIPRateLimit(10, 3), middleware.PerAgentTokenRateLimit(10, 3))
-	apiGroup.GET("/tunnel/connect", server.HandleConnect, middleware.PerIPRateLimit(60, 30), middleware.PerAgentTokenRateLimit(10, 3))
-	slog.InfoContext(ctx, "Configured agent tunnel server", "grpcEnabled", !cfg.AgentEnabled, "websocketEnabled", true)
+	slog.InfoContext(p.Context, "Configured agent tunnel server", "grpcEnabled", true, "websocketEnabled", true)
 	return server
+}
+
+func tunnelRoutes(server *agent.TunnelServer) []middleware.EchoRoute {
+	return []middleware.EchoRoute{{
+		Method:      http.MethodGet,
+		Path:        "/tunnel/connect",
+		Access:      authz.EndpointAccessAgentToken,
+		Handler:     server.HandleConnect,
+		Middlewares: []echo.MiddlewareFunc{middleware.PerIPRateLimit(60, 30), middleware.PerAgentTokenRateLimit(10, 3)},
+	}}
 }
 
 func handleAgentEnrollment(

@@ -481,7 +481,7 @@ func TestJobService_Submit_PersistsImageUpdateWatcherRun(t *testing.T) {
 	require.NoError(t, db.Create(&role.Role{
 		ID:          "jobs-manager",
 		Name:        "Jobs manager",
-		Permissions: database.StringSlice{authz.PermJobsManage},
+		Permissions: database.StringSlice{authz.PermJobsRun},
 	}).Error)
 	require.NoError(t, db.Create(&role.UserRoleAssignment{UserID: "operator", RoleID: "jobs-manager"}).Error)
 	run, err := jobSvc.Submit(ctx, types.SchedulerRequest{

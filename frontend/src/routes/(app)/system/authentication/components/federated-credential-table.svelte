@@ -12,9 +12,9 @@
 	import * as m from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { federatedCredentialService } from '#lib/services/federated-credential-service.js';
-	import type { FederatedCredential } from '#lib/types/auth.js';
+	import { GLOBAL_SCOPE, type FederatedCredential } from '#lib/types/auth.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import { isGlobalAdmin } from '#lib/utils/auth.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { formatOptionalDateTime, isPastDate } from '#lib/utils/formatting.js';
 
@@ -37,7 +37,8 @@
 	const isLoading = $state({
 		removing: false
 	});
-	const canManageFederatedCredentials = $derived(isGlobalAdmin());
+	const canUpdateFederatedCredentials = $derived(hasPermission('federated:update', GLOBAL_SCOPE));
+	const canDeleteFederatedCredentials = $derived(hasPermission('federated:delete', GLOBAL_SCOPE));
 
 	function getStatusText(credential: FederatedCredential): string {
 		if (isPastDate(credential.expiresAt)) return m.expired();
@@ -120,7 +121,7 @@
 	];
 
 	const bulkActions = $derived.by<BulkAction[]>(() => {
-		if (!canManageFederatedCredentials) return [];
+		if (!canDeleteFederatedCredentials) return [];
 		return [
 			{
 				id: 'remove',
@@ -210,17 +211,21 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: FederatedCredential })}
-	{#if canManageFederatedCredentials}
+	{#if canUpdateFederatedCredentials || canDeleteFederatedCredentials}
 		<RowActionsMenu>
-			<DropdownMenu.Item onclick={() => onEditFederatedCredential(item)}>
-				<EditIcon class="size-4" />
-				{m.common_edit()}
-			</DropdownMenu.Item>
-			<DropdownMenu.Separator />
-			<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteFederatedCredential(item.id, item.name)}>
-				<TrashIcon class="size-4" />
-				{m.common_delete()}
-			</DropdownMenu.Item>
+			{#if canUpdateFederatedCredentials}
+				<DropdownMenu.Item onclick={() => onEditFederatedCredential(item)}>
+					<EditIcon class="size-4" />
+					{m.common_edit()}
+				</DropdownMenu.Item>
+			{/if}
+			{#if canDeleteFederatedCredentials}
+				<DropdownMenu.Separator />
+				<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteFederatedCredential(item.id, item.name)}>
+					<TrashIcon class="size-4" />
+					{m.common_delete()}
+				</DropdownMenu.Item>
+			{/if}
 		</RowActionsMenu>
 	{/if}
 {/snippet}
@@ -232,6 +237,7 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
+	selectionDisabled={!canDeleteFederatedCredentials}
 	{onRetry}
 	{columns}
 	{mobileFields}

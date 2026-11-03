@@ -21,7 +21,7 @@
 	let { data } = $props();
 
 	const pageState = new ResourceListPageState<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
-	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm:read'));
+	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm-nodes:list'));
 	const swarm = $derived(swarmQuery.data ?? data.swarm);
 
 	const nodesQuery = createQuery(() => {
@@ -45,7 +45,7 @@
 
 	let active = true;
 	const reconciled = new Set<string>();
-	const reconcilableManagers = $derived(swarm.managers.filter((env) => hasPermission('swarm:nodes', env.id)));
+	const reconcilableManagers = $derived(swarm.managers.filter((env) => hasPermission('swarm-nodes:update', env.id)));
 
 	async function reconcileEnvironments(pending: typeof reconcilableManagers) {
 		for (const env of pending) reconciled.add(env.id);

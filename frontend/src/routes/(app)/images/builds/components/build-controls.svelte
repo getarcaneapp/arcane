@@ -12,10 +12,12 @@
 		inputs = $bindable(),
 		provider,
 		providerOptions,
+		environmentId,
 		isBuilding = false,
 		onBuild
 	}: {
 		inputs: BuildFormInputs;
+		environmentId: string;
 		provider: 'local' | 'depot';
 		providerOptions: BuildProviderOption[];
 		isBuilding?: boolean;
@@ -42,10 +44,12 @@
 
 	<div class="hidden h-6 w-px bg-border lg:block"></div>
 
-	<div class="flex items-center gap-2">
-		<Switch id="build-push" checked={inputs.push.value} onCheckedChange={(v) => (inputs.push.value = v === true)} />
-		<Label for="build-push">{m.push()}</Label>
-	</div>
+	<IfPermitted perm="images:push" envId={environmentId}>
+		<div class="flex items-center gap-2">
+			<Switch id="build-push" checked={inputs.push.value} onCheckedChange={(v) => (inputs.push.value = v === true)} />
+			<Label for="build-push">{m.push()}</Label>
+		</div>
+	</IfPermitted>
 
 	<div class="flex items-center gap-2">
 		<Switch
@@ -57,7 +61,7 @@
 		<Label for="build-load">{m.load()}</Label>
 	</div>
 
-	<IfPermitted perm="images:build">
+	<IfPermitted perm="images:build" envId={environmentId}>
 		<ArcaneButton
 			action="start_all"
 			type="button"

@@ -4,47 +4,11 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/labstack/echo/v5"
 
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
-	"getarcane.dev/types/v3"
 )
-
-// RegisterFederatedTokenExchange registers the public RFC 8693 token exchange
-// endpoint. It intentionally uses Echo because the standard requires form
-// encoding while the rest of Arcane's Huma API is JSON-first.
-func RegisterFederatedTokenExchange(g *echo.Group, federatedCredentialService *FederatedCredentialService) {
-	g.POST("/auth/federated/token", func(c *echo.Context) error {
-		if federatedCredentialService == nil {
-			return c.JSON(http.StatusInternalServerError, federatedTokenExchangeError{
-				Error:            "server_error",
-				ErrorDescription: "service not available",
-			})
-		}
-		if err := c.Request().ParseForm(); err != nil {
-			return c.JSON(http.StatusBadRequest, federatedTokenExchangeError{
-				Error:            "invalid_request",
-				ErrorDescription: "invalid token exchange request",
-			})
-		}
-
-		form := c.Request().Form
-		resp, err := federatedCredentialService.ExchangeToken(c.Request().Context(), types.TokenExchangeRequest{
-			GrantType:          form.Get("grant_type"),
-			SubjectToken:       form.Get("subject_token"),
-			SubjectTokenType:   form.Get("subject_token_type"),
-			Audience:           form.Get("audience"),
-			Scope:              form.Get("scope"),
-			RequestedTokenType: form.Get("requested_token_type"),
-		})
-		if err != nil {
-			return writeFederatedTokenExchangeError(c, err)
-		}
-		return c.JSON(http.StatusOK, resp)
-	})
-}
 
 // RegisterFederatedCredentials registers federated credential management routes.
 func RegisterFederatedCredentials(api huma.API, federatedCredentialService *FederatedCredentialService) {
@@ -53,6 +17,17 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 	}
 
 	huma.Register(api, huma.Operation{
+		OperationID: "exchange-federated-token",
+		Method:      http.MethodPost,
+		Path:        "/auth/federated/token",
+		Summary:     "Exchange a federated subject token",
+		Tags:        []string{"Federated Credentials"},
+		Hidden:      true,
+		Security:    []map[string][]string{},
+		Metadata:    map[string]any{authz.MetaAccess: authz.EndpointAccessSubjectToken},
+	}, middleware.EchoHandler(h.ExchangeToken))
+
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-federated-credentials",
 		Method:      http.MethodGet,
 		Path:        "/federated/credentials",
@@ -60,10 +35,9 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 		Description: "Get a paginated list of workload identity federation trust rules",
 		Tags:        []string{"Federated Credentials"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermFederatedList),
-	}, h.ListFederatedCredentials)
+	}, authz.PermFederatedList, h.ListFederatedCredentials)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-federated-credential",
 		Method:      http.MethodPost,
 		Path:        "/federated/credentials",
@@ -71,10 +45,9 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 		Description: "Create a workload identity federation trust rule",
 		Tags:        []string{"Federated Credentials"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.CreateFederatedCredential)
+	}, authz.PermFederatedCreate, h.CreateFederatedCredential)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-federated-credential",
 		Method:      http.MethodGet,
 		Path:        "/federated/credentials/{id}",
@@ -82,10 +55,9 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 		Description: "Get details of a workload identity federation trust rule",
 		Tags:        []string{"Federated Credentials"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermFederatedRead),
-	}, h.GetFederatedCredential)
+	}, authz.PermFederatedRead, h.GetFederatedCredential)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-federated-credential",
 		Method:      http.MethodPatch,
 		Path:        "/federated/credentials/{id}",
@@ -93,10 +65,9 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 		Description: "Update a workload identity federation trust rule",
 		Tags:        []string{"Federated Credentials"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.UpdateFederatedCredential)
+	}, authz.PermFederatedUpdate, h.UpdateFederatedCredential)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-federated-credential",
 		Method:      http.MethodDelete,
 		Path:        "/federated/credentials/{id}",
@@ -104,6 +75,5 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 		Description: "Delete a workload identity federation trust rule and its service user",
 		Tags:        []string{"Federated Credentials"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.DeleteFederatedCredential)
+	}, authz.PermFederatedDelete, h.DeleteFederatedCredential)
 }

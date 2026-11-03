@@ -53,7 +53,7 @@
 		</button>
 		<span class="text-2xs text-muted-foreground"><ActivityElapsed activity={lead} /></span>
 		{#if cancelable}
-			<IfPermitted perm="activities:cancel">
+			<IfPermitted perm="activities:cancel" envId={lead.sourceEnvironmentId || lead.environmentId}>
 				<ActivityIconButton
 					label={m.activity_cancel()}
 					tone="danger"

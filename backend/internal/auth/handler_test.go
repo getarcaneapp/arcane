@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/mldsa"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,6 +18,8 @@ import (
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
+	"kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/apikey"
 	"getarcane.dev/arcane/v3/internal/config"
@@ -773,6 +776,148 @@ func TestAuthMiddleware_ManagerAuthEnvironmentAccessToken(t *testing.T) {
 			} else {
 				require.Contains(t, rec.Body.String(), "environment:env-self")
 			}
+		})
+	}
+}
+
+func TestNewHumaMiddleware_AgentAuthUsesForwardedPermissions(t *testing.T) {
+	const agentToken = "agent-token"
+	tests := []struct {
+		name       string
+		token      string
+		forwarded  string
+		wantStatus int
+		wantSudo   bool
+		wantAllow  []string
+		wantDeny   []string
+	}{
+		{name: "no header stays sudo", token: agentToken, wantStatus: http.StatusOK, wantSudo: true},
+		{
+			name:       "forwarded permissions replace sudo",
+			token:      agentToken,
+			forwarded:  `{"global":["users:list","bogus:perm"],"environment":["containers:start","users:create"]}`,
+			wantStatus: http.StatusOK,
+			wantAllow:  []string{authz.PermUsersList, authz.PermContainersStart},
+			wantDeny:   []string{authz.PermUsersCreate, authz.PermContainersDelete},
+		},
+		{
+			name:       "malformed header denies everything",
+			token:      agentToken,
+			forwarded:  `not-json`,
+			wantStatus: http.StatusOK,
+			wantDeny:   []string{authz.PermUsersList, authz.PermContainersStart},
+		},
+		{name: "header without agent token is ignored", forwarded: `{"global":["users:list"],"environment":[]}`, wantStatus: http.StatusUnauthorized},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			router := echo.New()
+			apiGroup := router.Group("/api")
+			humaConfig := huma.DefaultConfig("test", "1.0.0")
+			humaConfig.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
+				"ApiKeyAuth": {Type: "apiKey", In: "header", Name: "X-API-Key"},
+			}
+			api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
+			api.UseMiddleware(NewHumaMiddleware(HumaMiddlewareParams{
+				API:         api,
+				AuthService: &AuthService{},
+				Config: &config.Config{
+					AgentEnabled: true,
+					AgentToken:   agentToken,
+				},
+			}))
+
+			var ps *authz.PermissionSet
+			huma.Register(api, huma.Operation{
+				OperationID: "secure-agent-forwarded-permissions",
+				Method:      http.MethodGet,
+				Path:        "/environments/{id}/forwarded",
+				Security:    []map[string][]string{{"ApiKeyAuth": {}}},
+			}, func(ctx context.Context, _ *struct {
+				ID string `path:"id"`
+			},
+			) (*secureOutput, error) {
+				ps, _ = middleware.PermissionsFromContext(ctx)
+				return &secureOutput{}, nil
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/api/environments/0/forwarded", http.NoBody)
+			if tt.token != "" {
+				req.Header.Set(middleware.HeaderAgentToken, tt.token)
+			}
+			req.Header.Set(middleware.HeaderForwardedPermissions, tt.forwarded)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, tt.wantStatus, rec.Code)
+			if tt.wantStatus != http.StatusOK {
+				require.Nil(t, ps)
+				return
+			}
+			require.Equal(t, tt.wantSudo, ps.Sudo)
+			for _, perm := range tt.wantAllow {
+				require.True(t, ps.Allows(perm, kit.Ternary(authz.IsEnvScoped(perm), types.LocalDockerEnvironmentID, "")), perm)
+			}
+			for _, perm := range tt.wantDeny {
+				require.False(t, ps.Allows(perm, kit.Ternary(authz.IsEnvScoped(perm), types.LocalDockerEnvironmentID, "")), perm)
+			}
+		})
+	}
+}
+
+func TestAuthMiddleware_AgentAuthUsesForwardedPermissions(t *testing.T) {
+	const agentToken = "agent-token"
+	admin := authz.NewPermissionSet()
+	admin.AddGlobal(authz.AllPermissions()...)
+	adminHeader, err := json.Marshal(admin.ForwardedPermissions("env-remote"))
+	require.NoError(t, err)
+
+	tests := []struct {
+		name          string
+		token         string
+		forwarded     string
+		adminRequired bool
+		wantStatus    int
+		wantSudo      bool
+	}{
+		{name: "no header stays sudo on admin route", token: agentToken, adminRequired: true, wantStatus: http.StatusOK, wantSudo: true},
+		{name: "forwarded global admin passes admin route", token: agentToken, forwarded: string(adminHeader), adminRequired: true, wantStatus: http.StatusOK},
+		{name: "forwarded non-admin is rejected on admin route", token: agentToken, forwarded: `{"global":["users:list"],"environment":[]}`, adminRequired: true, wantStatus: http.StatusForbidden},
+		{name: "forwarded non-admin reaches ordinary route", token: agentToken, forwarded: `{"global":[],"environment":["containers:start"]}`, wantStatus: http.StatusOK},
+		{name: "header without agent token is ignored", forwarded: string(adminHeader), wantStatus: http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			authMiddleware := NewAuthMiddleware(nil, &config.Config{
+				AgentEnabled: true,
+				AgentToken:   agentToken,
+			})
+			if tt.adminRequired {
+				authMiddleware = authMiddleware.WithAdminRequired()
+			}
+			router := echo.New()
+			router.Use(authMiddleware.Add())
+			var ps *authz.PermissionSet
+			router.GET("/api/environments/0/secure", func(c *echo.Context) error {
+				ps, _ = c.Get(string(middleware.ContextKeyUserPermissions)).(*authz.PermissionSet)
+				return c.NoContent(http.StatusOK)
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/api/environments/0/secure", http.NoBody)
+			if tt.token != "" {
+				req.Header.Set(middleware.HeaderApiKey, tt.token)
+			}
+			req.Header.Set(middleware.HeaderForwardedPermissions, tt.forwarded)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, tt.wantStatus, rec.Code)
+			if tt.wantStatus != http.StatusOK {
+				require.Nil(t, ps)
+				return
+			}
+			require.Equal(t, tt.wantSudo, ps.Sudo)
+			require.True(t, ps.IsGlobalAdmin() || !tt.adminRequired)
 		})
 	}
 }

@@ -86,7 +86,7 @@
 		return {
 			queryKey: queryKeys.networks.list(requestedEnvironmentId, networkRequest),
 			queryFn: () => networkService.getNetworksForEnvironment(requestedEnvironmentId, networkRequest),
-			enabled: vulnerabilityManagementEnabled && hasPermission('networks:read', requestedEnvironmentId)
+			enabled: vulnerabilityManagementEnabled && hasPermission('networks:list', requestedEnvironmentId)
 		};
 	});
 	const customTrivyNetworkOptions = $derived(
@@ -128,7 +128,7 @@
 		const cache = queryClient.getQueryCache();
 		let lastError: unknown;
 		function reportNetworkError(error: unknown) {
-			if (!error || error === lastError || !hasPermission('networks:read', environmentId)) return;
+			if (!error || error === lastError || !hasPermission('networks:list', environmentId)) return;
 			lastError = error;
 			toast.info(m.security_trivy_network_fetch_failed());
 		}

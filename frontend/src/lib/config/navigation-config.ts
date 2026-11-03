@@ -53,7 +53,6 @@ export type NavigationItem = {
 	shortcut?: ShortcutKey[];
 	items?: NavigationItem[];
 	accessSurfaceId?: string;
-	adminOnly?: boolean;
 	requiredFeature?: FeatureID;
 };
 
@@ -309,8 +308,7 @@ export const navigationItems: NavigationSections = {
 					title: m.system_backups_title(),
 					url: resolve('/(app)/system/backups'),
 					icon: BackupIcon,
-					accessSurfaceId: 'settings.category.systembackups',
-					adminOnly: true
+					accessSurfaceId: 'settings.category.systembackups'
 				},
 				{
 					title: m.users_title(),
@@ -371,7 +369,6 @@ function hasShownFeature(feature: FeatureID): boolean {
 
 function canSeeItem(item: NavigationItem, user: User, accessManifest: PermissionsManifest | null | undefined): boolean {
 	if (item.requiredFeature && !hasShownFeature(item.requiredFeature)) return false;
-	if (item.adminOnly && !user.isGlobalAdmin) return false;
 	if (!item.accessSurfaceId) return true;
 	if (!accessManifest?.accessSurfaces?.length) return true;
 	return canReachShownAccessSurface(accessManifest, item.accessSurfaceId, user);

@@ -21,9 +21,10 @@ export function quadletUnitHref(labels: Record<string, string> | null | undefine
 
 export function shownPodmanEnvironments(
 	statuses: Record<string, PodmanStatus>,
+	permission: string,
 	supports: (status: PodmanStatus) => boolean = () => true
 ): EnvironmentRef[] {
-	return readableEnvironments('podman:read').filter((env) => {
+	return readableEnvironments(permission).filter((env) => {
 		const status = statuses[env.id];
 		return status !== undefined && supports(status);
 	});

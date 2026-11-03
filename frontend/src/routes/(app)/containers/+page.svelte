@@ -72,7 +72,7 @@
 	const containerStatusCounts = $derived(resourcesReady ? (containers.counts ?? countsFallback) : countsFallback);
 
 	const canCreateContainers = $derived(hasShownPermission('containers:create'));
-	const canAutoUpdate = $derived(hasShownPermission('containers:autoupdate'));
+	const canApplyUpdates = $derived(hasShownPermission('image-updates:apply'));
 
 	const actionButtons: ActionButton[] = $derived(
 		[
@@ -86,7 +86,7 @@
 						disabled: !resourcesReady
 					}
 				: null,
-			canAutoUpdate
+			canApplyUpdates
 				? {
 						id: 'check-updates',
 						action: 'update',

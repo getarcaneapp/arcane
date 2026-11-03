@@ -27,7 +27,7 @@
 {#if cancelable || activity.type === 'job_run'}
 	<div class="flex flex-wrap items-center gap-2 empty:hidden">
 		{#if cancelable}
-			<IfPermitted perm="activities:cancel">
+			<IfPermitted perm="activities:cancel" envId={activity.sourceEnvironmentId || activity.environmentId}>
 				<Button
 					variant="outline"
 					size="sm"

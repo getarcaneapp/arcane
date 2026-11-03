@@ -20,7 +20,7 @@ func scopeJobActivityVisibility(ctx context.Context, query *gorm.DB, environment
 	return query.Where("type <> ?", types.ActivityTypeJobRun)
 }
 
-func canReadJobActivity(ctx context.Context, item types.Activity) bool {
+func canReadJobActivity(ctx context.Context, item types.Activity, permission string) bool {
 	if item.Type != types.ActivityTypeJobRun {
 		return true
 	}
@@ -30,12 +30,12 @@ func canReadJobActivity(ctx context.Context, item types.Activity) bool {
 		return false
 	}
 	permissions, _ := middleware.PermissionsFromContext(ctx)
-	return permissions.Allows(authz.PermActivitiesRead, environmentID)
+	return permissions.Allows(permission, environmentID)
 }
 
 func (h *ActivityHandler) canReadActivityStreamEvent(ctx context.Context, event types.ActivityStreamEvent) bool {
 	if event.Activity != nil {
-		return canReadJobActivity(ctx, *event.Activity)
+		return canReadJobActivity(ctx, *event.Activity, authz.PermActivitiesList)
 	}
 	if event.ActivityID == "" {
 		return true
@@ -51,5 +51,5 @@ func (h *ActivityHandler) canReadActivityStreamEvent(ctx context.Context, event 
 	if err := h.activityService.db.WithContext(ctx).Select("type", "environment_id", "metadata").Where("id = ? AND environment_id = ?", event.ActivityID, "0").First(&model).Error; err != nil {
 		return false
 	}
-	return canReadJobActivity(ctx, types.Activity{Type: model.Type, EnvironmentID: model.EnvironmentID, Metadata: model.Metadata})
+	return canReadJobActivity(ctx, types.Activity{Type: model.Type, EnvironmentID: model.EnvironmentID, Metadata: model.Metadata}, authz.PermActivitiesList)
 }

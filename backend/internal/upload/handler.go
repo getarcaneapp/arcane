@@ -75,13 +75,15 @@ func SessionHTTPError(err error) error {
 // because the required permission depends on the {kind} path parameter; the
 // manager-side proxy applies the same mapping for remote environments.
 func requireUploadPermission(ctx context.Context, kind, environmentID string) error {
-	perm, known := authz.UploadKindPermission(kind)
-	if !known {
+	perms := authz.UploadKindConditions.Required("kind", kind)
+	if len(perms) == 0 {
 		return huma.Error403Forbidden("permission denied: unknown upload kind " + kind)
 	}
 	ps, _ := middleware.PermissionsFromContext(ctx)
-	if !ps.Allows(perm, environmentID) {
-		return huma.Error403Forbidden("permission denied: " + perm)
+	for _, perm := range perms {
+		if !ps.Allows(perm, environmentID) {
+			return huma.Error403Forbidden("permission denied: " + perm)
+		}
 	}
 	return nil
 }

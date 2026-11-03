@@ -1,19 +1,13 @@
 package middleware
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
-	"fmt"
-	"io"
 	"log/slog"
-	"mime"
-	"mime/multipart"
 	"net"
 	"net/http"
-	"os"
 	"path"
 	"slices"
 	"strings"
@@ -59,36 +53,22 @@ type (
 		LocalID       string
 		ParamName     string
 	}
-
-	proxiedReplayBody struct {
-		io.Reader
-
-		captured *os.File
-		original io.ReadCloser
-	}
 )
 
 const (
-	apiEnvironmentsPrefix            = "/api/environments/"
-	environmentsPathMarker           = "/environments/"
-	maxProxiedWorkspaceManifestBytes = 1024 * 1024
-	maxProxiedWorkspacePrefixBytes   = 16 * 1024 * 1024
-	maxProxiedGitOpsSyncBodyBytes    = 1024 * 1024
+	apiEnvironmentsPrefix  = "/api/environments/"
+	environmentsPathMarker = "/environments/"
 )
 
-var (
-	errProxiedBodyTooLarge = errors.New("proxied request body is too large")
-
-	// managementEndpointSet contains paths handled locally and never proxied to remote environments.
-	managementEndpointSet = map[string]struct{}{
-		"/test":       {},
-		"/sync":       {},
-		"/deployment": {},
-		"/version":    {},
-		"/settings":   {},
-		"/jobs":       {},
-	}
-)
+// managementEndpointSet contains paths handled locally and never proxied to remote environments.
+var managementEndpointSet = map[string]struct{}{
+	"/test":       {},
+	"/sync":       {},
+	"/deployment": {},
+	"/version":    {},
+	"/settings":   {},
+	"/jobs":       {},
+}
 
 func NewEnvironmentProxyMiddleware(cfg EnvironmentProxyConfig) echo.MiddlewareFunc {
 	m := &EnvironmentMiddleware{
@@ -153,6 +133,15 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		}
 	}
 
+	req.Header.Del(HeaderForwardedPermissions)
+	if !kit.FromPtr(perms).Sudo {
+		forwarded, marshalErr := json.Marshal(perms.ForwardedPermissions(envID))
+		if marshalErr != nil {
+			return writeProxyError(c, http.StatusInternalServerError, "Failed to encode forwarded permissions")
+		}
+		req.Header.Set(HeaderForwardedPermissions, string(forwarded))
+	}
+
 	accessToken, enabled, err := m.resolver(ctx, envID)
 	if err != nil {
 		return writeProxyError(c, http.StatusNotFound, "Environment not found")
@@ -161,19 +150,8 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		return writeProxyError(c, http.StatusBadRequest, "Environment is disabled")
 	}
 
-	// SECURITY: Remote agents trust the manager as sudo, so per-environment authorization happens here.
-	status := m.proxyPermissionStatus(c, perms, envID, suffix)
-	if replay, isReplay := req.Body.(*proxiedReplayBody); isReplay {
-		defer func() { _ = replay.Close() }()
-	}
-	switch status {
-	case http.StatusOK:
-	case http.StatusForbidden:
-		return writeProxyError(c, status, "You don't have permission to perform this action on this environment")
-	case http.StatusRequestEntityTooLarge:
-		return writeProxyError(c, status, "Request body is too large")
-	default:
-		return writeProxyError(c, status, "Invalid request body")
+	if !m.proxyPermitted(c, perms, envID, suffix) {
+		return writeProxyError(c, http.StatusForbidden, "You don't have permission to perform this action on this environment")
 	}
 
 	tunnel, connected := m.registry.WaitForActive(ctx, envID, kit.Ternary(httpx.IsEnvironmentFanOutRequest(ctx), 0, agent.DefaultTunnelAcquireTimeout)).Get()
@@ -181,11 +159,19 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		slog.WarnContext(ctx, "No active agent tunnel for environment", "environmentId", envID)
 		return writeProxyError(c, http.StatusServiceUnavailable, "Agent is not connected")
 	}
+	if !kit.FromPtr(perms).Sudo && !slices.Contains(tunnel.MetadataSnapshot().Capabilities, agent.TunnelCapabilityForwardedPermissions) {
+		slog.WarnContext(ctx, "Refusing to proxy to agent without forwarded permissions support", "environmentId", envID)
+		return writeProxyError(c, http.StatusBadGateway, "Agent must be upgraded to use this environment")
+	}
 
 	slog.DebugContext(ctx, "Routing request through agent tunnel", "environmentId", envID, "path", req.URL.Path)
 	target := agent.MuxAgentBaseURL + path.Join(apiEnvironmentsPrefix, m.localID) + suffix + kit.Ternary(req.URL.RawQuery != "", "?"+req.URL.RawQuery, "")
 	if httpx.IsWebSocketUpgradeRequest(req) {
-		if proxyErr := ws.ProxyHTTP(c.Response(), req, agent.HTTPToWebSocketURL(target), agent.BuildWebSocketHeaders(c, accessToken), m.checkOrigin, tunnel.HTTPClient); proxyErr != nil {
+		wsHeaders := agent.BuildWebSocketHeaders(c, accessToken)
+		if forwarded := req.Header.Get(HeaderForwardedPermissions); forwarded != "" {
+			wsHeaders.Set(HeaderForwardedPermissions, forwarded)
+		}
+		if proxyErr := ws.ProxyHTTP(c.Response(), req, agent.HTTPToWebSocketURL(target), wsHeaders, m.checkOrigin, tunnel.HTTPClient); proxyErr != nil {
 			slog.ErrorContext(ctx, "websocket proxy failed", "err", proxyErr)
 		}
 		return nil
@@ -250,11 +236,9 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	return nil
 }
 
-// proxyPermissionStatus returns http.StatusOK when the caller may perform the proxied request, mirroring local
-// RequirePermission checks. Sudo bypasses it; routes without a permission mapping are denied by default.
-func (m *EnvironmentMiddleware) proxyPermissionStatus(c *echo.Context, ps *authz.PermissionSet, envID, suffix string) int {
+func (m *EnvironmentMiddleware) proxyPermitted(c *echo.Context, ps *authz.PermissionSet, envID, suffix string) bool {
 	if kit.FromPtr(ps).Sudo {
-		return http.StatusOK
+		return true
 	}
 
 	req := c.Request()
@@ -267,164 +251,32 @@ func (m *EnvironmentMiddleware) proxyPermissionStatus(c *echo.Context, ps *authz
 		if len(segments) == 2 && method == http.MethodPost ||
 			len(segments) == 3 && (method == http.MethodGet || method == http.MethodDelete) ||
 			len(segments) == 5 && method == http.MethodPut && segments[3] == "chunks" {
-			perm, known := authz.UploadKindPermission(segments[1])
-			denied := !known || !ps.Allows(perm, envID)
+			perms := authz.UploadKindConditions.Required("kind", segments[1])
+			denied := len(perms) == 0 || slices.ContainsFunc(perms, func(perm string) bool {
+				return !ps.Allows(perm, envID)
+			})
 			if denied {
 				slog.DebugContext(ctx, "Denying proxied upload session request: permission denied",
 					"method", method, "path", suffix, "kind", segments[1], "environmentId", envID)
 			}
-			return kit.Ternary(denied, http.StatusForbidden, http.StatusOK)
+			return !denied
 		}
 	}
 
 	perm, ok := m.matcher.Lookup(method, suffix, req.URL.Query()).Get()
 	if !ok {
 		slog.WarnContext(ctx, "Denying proxied request with no known permission mapping", "method", method, "path", suffix, "environmentId", envID)
-		return http.StatusForbidden
+		return false
 	}
 	if perm == "" {
 		// Explicitly public route: allowed for any authenticated caller.
-		return http.StatusOK
+		return true
 	}
 	if !ps.Allows(perm, kit.Ternary(authz.IsEnvScoped(perm), envID, "")) {
 		slog.DebugContext(ctx, "Denying proxied request: permission denied", "method", method, "path", suffix, "permission", perm, "environmentId", envID)
-		return http.StatusForbidden
+		return false
 	}
-
-	required, err := func() ([]string, error) {
-		if method == http.MethodPatch && len(segments) == 3 && segments[0] == "volumes" && segments[1] != "" && segments[2] == "workspace" {
-			return proxiedVolumeWorkspacePermissions(req)
-		}
-		return proxiedGitOpsSyncPermissions(req, method, segments)
-	}()
-	if err != nil {
-		slog.DebugContext(ctx, "Rejecting proxied request with invalid body", "path", suffix, "environmentId", envID, "error", err)
-		return kit.Ternary(errors.Is(err, errProxiedBodyTooLarge), http.StatusRequestEntityTooLarge, http.StatusBadRequest)
-	}
-	// Resource-sorted container lists collect per-container stats, so they also need containers:read.
-	if method == http.MethodGet && len(segments) == 1 && segments[0] == "containers" && types.IsContainerResourceSort(req.URL.Query().Get("sort")) {
-		required = append(required, authz.PermContainersRead)
-	}
-	for _, operationPermission := range required {
-		if !ps.Allows(operationPermission, envID) {
-			slog.DebugContext(ctx, "Denying proxied request: body-derived permission denied",
-				"path", suffix, "permission", operationPermission, "environmentId", envID)
-			return http.StatusForbidden
-		}
-	}
-	return http.StatusOK
-}
-
-func proxiedVolumeWorkspacePermissions(request *http.Request) ([]string, error) {
-	if request.Body == nil {
-		return nil, errors.New("missing multipart request body")
-	}
-	mediaType, params, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
-	if err != nil || mediaType != "multipart/form-data" || params["boundary"] == "" {
-		return nil, errors.New("invalid multipart content type")
-	}
-
-	originalBody := request.Body
-	// System temp scratch for the multipart replay buffer: no acfs root exists for it.
-	captured, err := os.CreateTemp("", "arcane-volume-workspace-manifest-*")
-	if err != nil {
-		return nil, fmt.Errorf("create workspace manifest buffer: %w", err)
-	}
-	defer func() {
-		_, _ = captured.Seek(0, io.SeekStart)
-		request.Body = &proxiedReplayBody{Reader: io.MultiReader(captured, originalBody), captured: captured, original: originalBody}
-	}()
-
-	prefix := &io.LimitedReader{R: originalBody, N: maxProxiedWorkspacePrefixBytes}
-	reader := multipart.NewReader(io.TeeReader(prefix, captured), params["boundary"])
-	for {
-		part, nextErr := reader.NextPart()
-		if nextErr != nil && prefix.N == 0 {
-			return nil, fmt.Errorf("find workspace manifest part: %w", errProxiedBodyTooLarge)
-		}
-		if nextErr != nil {
-			return nil, fmt.Errorf("find workspace manifest part: %w", nextErr)
-		}
-		if part.FormName() != "manifest" || part.FileName() != "" {
-			if closeErr := part.Close(); closeErr != nil {
-				return nil, fmt.Errorf("skip multipart field before workspace manifest: %w", closeErr)
-			}
-			continue
-		}
-		manifestJSON, readErr := io.ReadAll(io.LimitReader(part, maxProxiedWorkspaceManifestBytes+1))
-		closeErr := part.Close()
-		if readErr != nil && prefix.N == 0 {
-			return nil, fmt.Errorf("read workspace manifest: %w", errProxiedBodyTooLarge)
-		}
-		if readErr != nil {
-			return nil, fmt.Errorf("read workspace manifest: %w", readErr)
-		}
-		if closeErr != nil {
-			return nil, fmt.Errorf("close workspace manifest part: %w", closeErr)
-		}
-		if len(manifestJSON) > maxProxiedWorkspaceManifestBytes {
-			return nil, fmt.Errorf("workspace manifest: %w", errProxiedBodyTooLarge)
-		}
-		var manifest types.VolumeWorkspaceUpdateManifest
-		if unmarshalErr := json.Unmarshal(manifestJSON, &manifest); unmarshalErr != nil {
-			return nil, fmt.Errorf("decode workspace manifest: %w", unmarshalErr)
-		}
-		required, valid := authz.VolumeWorkspaceRequiredPermissions(manifest.FileChanges)
-		if !valid {
-			return nil, errors.New("workspace manifest contains an unknown operation")
-		}
-		return required, nil
-	}
-}
-
-// proxiedGitOpsSyncPermissions mirrors the handler lifecycle and backup gates for gitops sync create, import,
-// and update, since the agent trusts forwarded requests as sudo. Returns nil for any other route.
-func proxiedGitOpsSyncPermissions(request *http.Request, method string, segments []string) ([]string, error) {
-	isCreate := len(segments) == 2 && segments[0] == "gitops" && segments[1] == "syncs" && method == http.MethodPost
-	isImport := len(segments) == 3 && segments[0] == "gitops" && segments[1] == "syncs" && segments[2] == "import" && method == http.MethodPost
-	isUpdate := len(segments) == 3 && segments[0] == "gitops" && segments[1] == "syncs" && segments[2] != "" && method == http.MethodPatch
-	if !isCreate && !isImport && !isUpdate || request.Body == nil {
-		return nil, nil
-	}
-
-	body, readErr := io.ReadAll(io.LimitReader(request.Body, maxProxiedGitOpsSyncBodyBytes+1))
-	closeErr := request.Body.Close()
-	if err := errors.Join(readErr, closeErr); err != nil {
-		return nil, fmt.Errorf("read gitops sync body: %w", err)
-	}
-	if len(body) > maxProxiedGitOpsSyncBodyBytes {
-		return nil, fmt.Errorf("gitops sync body: %w", errProxiedBodyTooLarge)
-	}
-	request.Body = io.NopCloser(bytes.NewReader(body))
-
-	type syncBody struct {
-		types.GitOpsPreDeployConfigRequest
-
-		Mode string `json:"mode"`
-	}
-	var batch []syncBody
-	var single syncBody
-	if err := json.Unmarshal(body, kit.Ternary[any](isImport, &batch, &single)); err != nil {
-		return nil, fmt.Errorf("decode gitops sync body: %w", err)
-	}
-	items := kit.Ternary(isImport, batch, []syncBody{single})
-
-	var required []string
-	if slices.ContainsFunc(items, func(item syncBody) bool { return item.HasPreDeployConfig() }) {
-		required = append(required, authz.PermGitOpsLifecycle)
-	}
-	if isCreate && slices.ContainsFunc(items, func(item syncBody) bool { return item.Mode == types.GitOpsSyncModeBackup }) {
-		required = append(required, authz.PermGitOpsBackup)
-	}
-	return required, nil
-}
-
-func (b *proxiedReplayBody) Close() error {
-	capturedErr := b.captured.Close()
-	originalErr := b.original.Close()
-	// System temp scratch: no acfs root exists for it.
-	removeErr := os.Remove(b.captured.Name())
-	return errors.Join(capturedErr, originalErr, removeErr)
+	return true
 }
 
 // IsManagerLocalPath reports whether an environment-scoped path suffix is served by the manager instead of being proxied.

@@ -16,7 +16,7 @@
 	import { webhookService } from '#lib/services/webhook-service.js';
 	import type { WebhookCreated, WebhookCreate } from '#lib/types/environment.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { readableEnvironments } from '#lib/utils/environments.js';
+	import { hasShownPermission, readableEnvironments } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -74,17 +74,20 @@
 		});
 	}
 
-	const actionButtons: ActionButton[] = $derived.by(() => [
-		{
-			id: 'create',
-			action: 'create',
-			placement: 'primary',
-			label: m.create_webhook(),
-			onclick: () => (isDialogOpen.create = true),
-			loading: isLoading.creating,
-			disabled: isLoading.creating
-		}
-	]);
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		if (!hasShownPermission('webhooks:create')) return [];
+		return [
+			{
+				id: 'create',
+				action: 'create',
+				placement: 'primary',
+				label: m.create_webhook(),
+				onclick: () => (isDialogOpen.create = true),
+				loading: isLoading.creating,
+				disabled: isLoading.creating
+			}
+		];
+	});
 </script>
 
 <SettingsPageLayout

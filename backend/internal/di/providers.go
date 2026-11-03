@@ -39,7 +39,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/volume"
 	"getarcane.dev/arcane/v3/internal/vulnerability"
 	"getarcane.dev/arcane/v3/pkg/agent"
-	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/francis"
 	"getarcane.dev/arcane/v3/pkg/oidc"
 	"getarcane.dev/types/v3"
@@ -123,9 +122,6 @@ func provideBackupEngine(p backupEngineParams) *backup.Engine {
 		}
 		if !permissions.Allows(requester.Permission, requester.EnvironmentID) {
 			return errors.New("requesting user no longer has permission for this backup")
-		}
-		if requester.Permission == authz.PermSystemBackupsManage && !permissions.IsGlobalAdmin() {
-			return errors.New("system backups require a global administrator")
 		}
 		return nil
 	})

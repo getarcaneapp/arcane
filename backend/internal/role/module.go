@@ -43,7 +43,7 @@ func (m *Module) RegisterRoutes(api huma.API) {
 func RegisterRoles(api huma.API, roleService *RoleService) {
 	h := &RoleHandler{roleService: roleService}
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-roles",
 		Method:      http.MethodGet,
 		Path:        "/roles",
@@ -51,20 +51,18 @@ func RegisterRoles(api huma.API, roleService *RoleService) {
 		Description: "Get a paginated list of roles (built-in + custom)",
 		Tags:        []string{"Roles"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermRolesList),
-	}, h.ListRoles)
+	}, authz.PermRolesList, h.ListRoles)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-role",
 		Method:      http.MethodGet,
 		Path:        "/roles/{id}",
 		Summary:     "Get a role",
 		Tags:        []string{"Roles"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermRolesRead),
-	}, h.GetRole)
+	}, authz.PermRolesRead, h.GetRole)
 
-	huma.Register(api, huma.Operation{
+	huma.Register(api, middleware.RequireGlobalAdmin(api, huma.Operation{
 		OperationID: "create-role",
 		Method:      http.MethodPost,
 		Path:        "/roles",
@@ -72,10 +70,9 @@ func RegisterRoles(api huma.API, roleService *RoleService) {
 		Description: "Built-in roles cannot be created via this endpoint; only custom roles are accepted. Reserved for global admins.",
 		Tags:        []string{"Roles"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.CreateRole)
+	}), h.CreateRole)
 
-	huma.Register(api, huma.Operation{
+	huma.Register(api, middleware.RequireGlobalAdmin(api, huma.Operation{
 		OperationID: "update-role",
 		Method:      http.MethodPatch,
 		Path:        "/roles/{id}",
@@ -83,10 +80,9 @@ func RegisterRoles(api huma.API, roleService *RoleService) {
 		Description: "Built-in roles are read-only and return 403 on update. Reserved for global admins.",
 		Tags:        []string{"Roles"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.UpdateRole)
+	}), h.UpdateRole)
 
-	huma.Register(api, huma.Operation{
+	huma.Register(api, middleware.RequireGlobalAdmin(api, huma.Operation{
 		OperationID: "delete-role",
 		Method:      http.MethodDelete,
 		Path:        "/roles/{id}",
@@ -94,8 +90,7 @@ func RegisterRoles(api huma.API, roleService *RoleService) {
 		Description: "Built-in roles are protected; deleting cascades all user assignments. Reserved for global admins.",
 		Tags:        []string{"Roles"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.DeleteRole)
+	}), h.DeleteRole)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-permissions-manifest",
@@ -107,7 +102,7 @@ func RegisterRoles(api huma.API, roleService *RoleService) {
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, h.GetPermissionsManifest)
 
-	huma.Register(api, huma.Operation{
+	huma.Register(api, middleware.RequireGlobalAdmin(api, huma.Operation{
 		OperationID: "list-user-role-assignments",
 		Method:      http.MethodGet,
 		Path:        "/users/{userId}/roles",
@@ -115,10 +110,9 @@ func RegisterRoles(api huma.API, roleService *RoleService) {
 		Description: "Reserved for global admins.",
 		Tags:        []string{"Roles"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.ListUserRoleAssignments)
+	}), h.ListUserRoleAssignments)
 
-	huma.Register(api, huma.Operation{
+	huma.Register(api, middleware.RequireGlobalAdmin(api, huma.Operation{
 		OperationID: "set-user-role-assignments",
 		Method:      http.MethodPut,
 		Path:        "/users/{userId}/roles",
@@ -126,6 +120,5 @@ func RegisterRoles(api huma.API, roleService *RoleService) {
 		Description: "Replaces every source='manual' assignment for the user. source='oidc' assignments are not touched. Reserved for global admins; enforces the last-admin guard.",
 		Tags:        []string{"Roles"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.SetUserRoleAssignments)
+	}), h.SetUserRoleAssignments)
 }

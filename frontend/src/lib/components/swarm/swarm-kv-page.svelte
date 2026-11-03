@@ -34,7 +34,7 @@
 	} = $props();
 
 	const queryClient = useQueryClient();
-	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm:read'));
+	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions(resource.permissions.list));
 	const swarm = $derived(swarmQuery.data ?? initialSwarm);
 
 	const pageState = new ResourceListPageState<SearchPaginationSortRequest>(untrack(() => initialRequestOptions));
@@ -70,6 +70,7 @@
 	}
 
 	async function openEditSheet(item: EnvironmentRow<SwarmKvSummary>) {
+		if (!hasPermission(resource.permissions.read, item.environmentId)) return;
 		await handleApiResultWithCallbacks({
 			result: await tryCatch(swarmService.getKvItem(resource.kind, item.id, item.environmentId)),
 			message: m.common_load_failed({ resource: `${resource.resource()} "${item.spec.Name}"` }),
@@ -85,9 +86,9 @@
 	const actionButtons = $derived(
 		createRefreshActionButtons({
 			create: {
-				allowed: swarm.managers.some((env) => hasPermission(resource.permission, env.id)),
+				allowed: swarm.managers.some((env) => hasPermission(resource.permissions.create, env.id)),
 				label: resource.createLabel(),
-				onclick: () => openSheet(null, destinationEnvironmentId(sheetEnvironmentId, resource.permission, swarm.managers))
+				onclick: () => openSheet(null, destinationEnvironmentId(sheetEnvironmentId, resource.permissions.create, swarm.managers))
 			},
 			refreshLabel: m.common_refresh(),
 			onRefresh: refresh,

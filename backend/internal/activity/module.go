@@ -55,7 +55,7 @@ func RegisterActivities(api huma.API, h *ActivityHandler) {
 		Tags:        []string{"Activities"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
-	}, authz.PermActivitiesRead, h.ListActivities)
+	}, authz.PermActivitiesList, h.ListActivities)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-activity",

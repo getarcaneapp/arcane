@@ -18,7 +18,7 @@
 		<p>{m.features_unavailable()}</p>
 		<ArcaneButton action="base" customLabel={m.common_retry()} onclick={() => void featureStore.refresh(environmentId)} />
 	{/if}
-	{#if hasAnyPermission(['settings:read', 'settings:write'], environmentId) && hasAnyPermission(['environments:list', 'environments:read'], '*')}
+	{#if hasAnyPermission(['environment-settings:read', 'environment-settings:update'], environmentId) && hasAnyPermission(['environments:list', 'environments:read'], '*')}
 		<ArcaneButton
 			action="base"
 			customLabel={m.features_title()}

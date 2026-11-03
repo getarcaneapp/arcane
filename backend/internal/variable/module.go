@@ -56,7 +56,7 @@ func RegisterVariables(api huma.API, variableService *VariableService, environme
 		Description: "List all global variables with their environment scope (secret values are redacted)",
 		Tags:        []string{"Variables"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermVariablesRead, h.ListVariables)
+	}, authz.PermVariablesList, h.ListVariables)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "createVariable",
@@ -115,7 +115,7 @@ func RegisterVariables(api huma.API, variableService *VariableService, environme
 func RegisterMaterializedVariables(api huma.API, variableService *VariableService, environmentService *environment.EnvironmentService) {
 	h := &VariableHandler{variableService: variableService, proxyRemoteJSON: environmentService.ProxyJSONRequest}
 
-	huma.Register(api, huma.Operation{
+	huma.Register(api, middleware.RequireSudo(api, huma.Operation{
 		OperationID: "getGlobalVariables",
 		Method:      "GET",
 		Path:        "/environments/{id}/templates/variables",
@@ -123,10 +123,9 @@ func RegisterMaterializedVariables(api huma.API, variableService *VariableServic
 		Description: "Get the materialized variable set for an environment. Managed via /variables on the manager.",
 		Tags:        []string{"Variables"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireSudo(api),
-	}, h.GetMaterializedVariables)
+	}), h.GetMaterializedVariables)
 
-	huma.Register(api, huma.Operation{
+	huma.Register(api, middleware.RequireSudo(api, huma.Operation{
 		OperationID: "updateGlobalVariables",
 		Method:      "PUT",
 		Path:        "/environments/{id}/templates/variables",
@@ -134,6 +133,5 @@ func RegisterMaterializedVariables(api huma.API, variableService *VariableServic
 		Description: "Replace the materialized variable set for an environment. Managed via /variables on the manager.",
 		Tags:        []string{"Variables"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireSudo(api),
-	}, h.UpdateMaterializedVariables)
+	}), h.UpdateMaterializedVariables)
 }

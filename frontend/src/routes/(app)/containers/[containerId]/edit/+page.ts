@@ -2,19 +2,14 @@ import { redirect } from '@sveltejs/kit';
 
 import { queryKeys } from '#lib/query/query-keys.js';
 import { containerService } from '#lib/services/container-service.js';
-import { userHasPermission } from '#lib/utils/auth.js';
 import { environmentHref, resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ params, parent, url }) => {
-	const { queryClient, user } = await parent();
+	const { queryClient } = await parent();
 	const envId = await resolveDetailEnvironmentId(url);
 	const containerId = params.containerId;
-
-	if (!userHasPermission(user, 'containers:edit', envId)) {
-		redirect(302, environmentHref(`/containers/${containerId}`, envId));
-	}
 
 	const editConfig = await queryClient.query({
 		queryKey: queryKeys.containers.editConfig(envId, containerId),

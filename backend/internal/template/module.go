@@ -39,7 +39,7 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 	h := &TemplateHandler{templateService: templateService}
 
 	// Template registry endpoint.
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "fetchTemplateRegistry",
 		Method:      "GET",
 		Path:        "/templates/fetch",
@@ -47,51 +47,46 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 		Description: "Fetch templates from a remote registry URL",
 		Tags:        []string{"Templates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesRead),
-	}, h.FetchRegistry)
+	}, authz.PermTemplatesRead, h.FetchRegistry)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "listTemplatesPaginated",
 		Method:      "GET",
 		Path:        "/templates",
 		Summary:     "List templates (paginated)",
 		Description: "Get a paginated list of compose templates",
 		Tags:        []string{"Templates"},
-		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesList),
-	}, h.ListTemplates)
+	}, authz.PermTemplatesList, h.ListTemplates)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getAllTemplates",
 		Method:      "GET",
 		Path:        "/templates/all",
 		Summary:     "List all templates",
 		Description: "Get all compose templates without pagination",
 		Tags:        []string{"Templates"},
-		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesList),
-	}, h.GetAllTemplates)
+	}, authz.PermTemplatesList, h.GetAllTemplates)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getTemplate",
 		Method:      "GET",
 		Path:        "/templates/{id}",
 		Summary:     "Get a template",
 		Description: "Get a compose template by ID",
 		Tags:        []string{"Templates"},
-		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesRead),
-	}, h.GetTemplate)
+	}, authz.PermTemplatesRead, h.GetTemplate)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getTemplateContent",
 		Method:      "GET",
 		Path:        "/templates/{id}/content",
 		Summary:     "Get template content",
 		Description: "Get the compose content for a template with parsed data",
 		Tags:        []string{"Templates"},
-		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesRead),
-	}, h.GetTemplateContent)
+	}, authz.PermTemplatesRead, h.GetTemplateContent)
 
 	// Protected endpoints
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "createTemplate",
 		Method:      "POST",
 		Path:        "/templates",
@@ -99,10 +94,9 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 		Description: "Create a new compose template",
 		Tags:        []string{"Templates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesCreate),
-	}, h.CreateTemplate)
+	}, authz.PermTemplatesCreate, h.CreateTemplate)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "updateTemplate",
 		Method:      "PATCH",
 		Path:        "/templates/{id}",
@@ -110,10 +104,9 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 		Description: "Update an existing compose template",
 		Tags:        []string{"Templates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesUpdate),
-	}, h.UpdateTemplate)
+	}, authz.PermTemplatesUpdate, h.UpdateTemplate)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "deleteTemplate",
 		Method:      "DELETE",
 		Path:        "/templates/{id}",
@@ -121,8 +114,7 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 		Description: "Delete a compose template",
 		Tags:        []string{"Templates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesDelete),
-	}, h.DeleteTemplate)
+	}, authz.PermTemplatesDelete, h.DeleteTemplate)
 
 	middleware.RegisterWithActionPermissions(api, huma.Operation{
 		OperationID: "templateAction",
@@ -136,7 +128,7 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 		"download": authz.PermTemplatesCreate,
 	}, h.DownloadTemplate)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getDefaultTemplates",
 		Method:      "GET",
 		Path:        "/templates/default",
@@ -144,10 +136,9 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 		Description: "Get the default compose and env templates",
 		Tags:        []string{"Templates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesRead),
-	}, h.GetDefaultTemplates)
+	}, authz.PermTemplatesRead, h.GetDefaultTemplates)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "saveDefaultTemplates",
 		Method:      "POST",
 		Path:        "/templates/default",
@@ -155,10 +146,9 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 		Description: "Save the default compose and env templates",
 		Tags:        []string{"Templates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesUpdate),
-	}, h.SaveDefaultTemplates)
+	}, authz.PermTemplatesUpdate, h.SaveDefaultTemplates)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getTemplateRegistries",
 		Method:      "GET",
 		Path:        "/templates/registries",
@@ -166,10 +156,9 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 		Description: "Get all template registries",
 		Tags:        []string{"Templates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesList),
-	}, h.GetRegistries)
+	}, authz.PermTemplatesList, h.GetRegistries)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "createTemplateRegistry",
 		Method:      "POST",
 		Path:        "/templates/registries",
@@ -177,10 +166,9 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 		Description: "Create a new template registry",
 		Tags:        []string{"Templates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesCreate),
-	}, h.CreateRegistry)
+	}, authz.PermTemplatesCreate, h.CreateRegistry)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "updateTemplateRegistry",
 		Method:      "PATCH",
 		Path:        "/templates/registries/{id}",
@@ -188,10 +176,9 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 		Description: "Update an existing template registry",
 		Tags:        []string{"Templates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesUpdate),
-	}, h.UpdateRegistry)
+	}, authz.PermTemplatesUpdate, h.UpdateRegistry)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "deleteTemplateRegistry",
 		Method:      "DELETE",
 		Path:        "/templates/registries/{id}",
@@ -199,6 +186,5 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 		Description: "Delete a template registry",
 		Tags:        []string{"Templates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesDelete),
-	}, h.DeleteRegistry)
+	}, authz.PermTemplatesDelete, h.DeleteRegistry)
 }

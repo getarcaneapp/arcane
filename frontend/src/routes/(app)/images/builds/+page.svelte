@@ -47,7 +47,7 @@
 
 	const buildSettingsOptions = (environmentId: string) => ({
 		queryKey: queryKeys.settings.byEnvironment(environmentId),
-		queryFn: () => settingsService.getReadableSettings(environmentId)
+		queryFn: () => settingsService.getSettingsForEnvironmentMerged(environmentId)
 	});
 	const buildsRootOf = (settings: ResolvedSettings | undefined) =>
 		(settings?.values.buildsDirectory ?? '/builds').trim() || '/builds';
@@ -652,7 +652,14 @@
 				</Tabs.List>
 
 				<div class="flex items-center gap-3 pr-2">
-					<BuildControls bind:inputs provider={resolvedProvider} {providerOptions} {isBuilding} onBuild={handleSubmit} />
+					<BuildControls
+						bind:inputs
+						provider={resolvedProvider}
+						{providerOptions}
+						environmentId={buildEnvironmentId}
+						{isBuilding}
+						onBuild={handleSubmit}
+					/>
 					<div class="hidden h-4 w-px bg-border xl:block"></div>
 					<div class="flex items-center gap-2">
 						<div class="relative flex items-center">
@@ -755,7 +762,14 @@
 
 		{#snippet headerActions()}
 			{#if mainTab === 'build'}
-				<BuildControls bind:inputs provider={resolvedProvider} {providerOptions} {isBuilding} onBuild={handleSubmit} />
+				<BuildControls
+					bind:inputs
+					provider={resolvedProvider}
+					{providerOptions}
+					environmentId={buildEnvironmentId}
+					{isBuilding}
+					onBuild={handleSubmit}
+				/>
 			{/if}
 		{/snippet}
 
@@ -779,7 +793,14 @@
 							</div>
 						{/snippet}
 						{#snippet headerActions()}
-							<BuildControls bind:inputs provider={resolvedProvider} {providerOptions} {isBuilding} onBuild={handleSubmit} />
+							<BuildControls
+								bind:inputs
+								provider={resolvedProvider}
+								{providerOptions}
+								environmentId={buildEnvironmentId}
+								{isBuilding}
+								onBuild={handleSubmit}
+							/>
 						{/snippet}
 						{#snippet tabContent(buildTabValue)}
 							{#if buildTabValue === 'workspace'}

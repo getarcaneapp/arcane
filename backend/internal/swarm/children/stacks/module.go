@@ -25,7 +25,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			Security: handlerutil.DefaultOperationSecurity(),
 			Metadata: map[string]any{authz.MetaEnvironmentAggregate: true},
 		},
-		authz.PermSwarmRead,
+		authz.PermSwarmStacksList,
 		h.ListStacks,
 	)
 	middleware.RegisterWithPermission(
@@ -40,7 +40,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmStacks,
+		authz.PermSwarmStacksCreate,
 		h.DeployStack,
 	)
 	middleware.RegisterWithPermission(
@@ -55,7 +55,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmRead,
+		authz.PermSwarmStacksRead,
 		h.GetStack,
 	)
 	middleware.RegisterWithPermission(
@@ -70,7 +70,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmStacks,
+		authz.PermSwarmStacksRead,
 		h.GetStackSource,
 	)
 	middleware.RegisterWithPermission(
@@ -85,7 +85,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmStacks,
+		authz.PermSwarmStacksUpdate,
 		h.UpdateStackSource,
 	)
 	middleware.RegisterWithPermission(
@@ -100,7 +100,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmStacks,
+		authz.PermSwarmStacksDelete,
 		h.DeleteStack,
 	)
 	middleware.RegisterWithPermission(
@@ -115,7 +115,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmRead,
+		authz.PermSwarmStacksRead,
 		h.ListStackServices,
 	)
 	middleware.RegisterWithPermission(
@@ -130,7 +130,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmRead,
+		authz.PermSwarmStacksRead,
 		h.ListStackTasks,
 	)
 	middleware.RegisterWithPermission(
@@ -145,7 +145,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmRead,
+		authz.PermSwarmStacksCreate,
 		h.RenderStackConfig,
 	)
 }

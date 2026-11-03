@@ -1,13 +1,13 @@
 package middleware
 
 import (
-	"bytes"
+	"cmp"
 	"context"
 	"encoding/json/v2"
-	"io"
-	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -279,7 +279,12 @@ func TestEnvironmentMiddleware_KeepsNodeAgentDeploymentCreationLocal(t *testing.
 	assert.True(t, localHandlerHit)
 }
 
-func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.T) {
+func TestEnvironmentMiddleware_ForwardsResolvedHeadersOnly(t *testing.T) {
+	caller := authz.NewPermissionSet()
+	caller.AddGlobal(authz.PermUsersList, authz.PermContainersStart)
+	caller.AddEnv("env-remote", authz.PermContainersUpdate)
+	caller.AddEnv("env-other", authz.PermContainersDelete)
+
 	tests := []struct {
 		name           string
 		catalog        *string
@@ -288,16 +293,22 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 		userID         string
 		userName       string
 		wantInitiator  string
+		perms          *authz.PermissionSet
 	}{
 		{name: "forwards the caller's preference", catalog: new("dashboard-icons"), wantHeader: "dashboard-icons", userID: "user-1", userName: "operator", wantInitiator: "user-1"},
 		{name: "strips a client-supplied header when the caller has no preference", clientSupplied: "dashboard-icons", wantHeader: ""},
+		{name: "forwards a non-sudo caller's permissions", userID: "user-2", userName: "limited", wantInitiator: "user-2", perms: caller},
 	}
+
+	updateMatcher := authz.NewPermissionMatcher()
+	updateMatcher.Add(http.MethodPost, "/containers/{containerId}/update", authz.PermContainersUpdate)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var forwarded string
 			var forwardedInitiator string
 			var forwardedName string
+			var forwardedPermissions string
 			registry := agent.NewTunnelRegistry()
 			manager := echo.New()
 			manager.GET("/api/tunnel/connect", agent.NewTunnelServer(agent.TunnelServerOptions{
@@ -319,6 +330,7 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 				forwarded = r.Header.Get(HeaderIconCatalog)
 				forwardedInitiator = r.Header.Get(HeaderUpdateInitiatorID)
 				forwardedName = r.Header.Get(HeaderUpdateInitiatorName)
+				forwardedPermissions = r.Header.Get(HeaderForwardedPermissions)
 				w.WriteHeader(http.StatusOK)
 			})).StartWithErrorChan(agentCtx, nil)
 			require.True(t, registry.WaitForActive(t.Context(), "env-remote", 5*time.Second).IsPresent())
@@ -336,9 +348,10 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 					u.ID = tt.userID
 					u.Username = tt.userName
 					u.Preferences.IconCatalog = tt.catalog
-					return authz.SudoPermissionSet(), u, true
+					return cmp.Or(tt.perms, authz.SudoPermissionSet()), u, true
 				},
 				registry: registry,
+				matcher:  updateMatcher,
 			}
 
 			router := echo.New()
@@ -350,6 +363,7 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 			req := httptest.NewRequest(http.MethodPost, "/api/environments/env-remote/containers/container-1/update", http.NoBody)
 			req.Header.Set(HeaderUpdateInitiatorID, "spoofed")
 			req.Header.Set(HeaderUpdateInitiatorName, "spoofed")
+			req.Header.Set(HeaderForwardedPermissions, `{"global":["users:create"],"environment":[]}`)
 			if tt.clientSupplied != "" {
 				req.Header.Set(HeaderIconCatalog, tt.clientSupplied)
 			}
@@ -360,6 +374,120 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 			assert.Equal(t, tt.wantHeader, forwarded)
 			assert.Equal(t, tt.wantInitiator, forwardedInitiator)
 			assert.Equal(t, tt.userName, forwardedName)
+			if tt.perms == nil {
+				assert.Empty(t, forwardedPermissions)
+				return
+			}
+			var decoded authz.ForwardedPermissions
+			require.NoError(t, json.Unmarshal([]byte(forwardedPermissions), &decoded))
+			agentPerms := decoded.PermissionSet("0")
+			assert.True(t, agentPerms.Allows(authz.PermUsersList, ""))
+			assert.True(t, agentPerms.Allows(authz.PermContainersStart, "0"))
+			assert.True(t, agentPerms.Allows(authz.PermContainersUpdate, "0"))
+			assert.False(t, agentPerms.Allows(authz.PermContainersUpdate, ""))
+			assert.False(t, agentPerms.Allows(authz.PermContainersDelete, "0"))
+			assert.False(t, agentPerms.Allows(authz.PermUsersCreate, ""))
+			assert.False(t, agentPerms.Sudo)
+		})
+	}
+}
+
+type openTunnelConn struct {
+	agent.TunnelConnection
+}
+
+func (openTunnelConn) IsClosed() bool {
+	return false
+}
+
+func TestEnvironmentMiddleware_RequiresForwardedPermissionsCapability(t *testing.T) {
+	caller := authz.NewPermissionSet()
+	caller.AddEnv("env-remote", authz.PermContainersUpdate)
+
+	tests := []struct {
+		name         string
+		perms        *authz.PermissionSet
+		capabilities []string
+		wantStatus   int
+	}{
+		{
+			name:       "refuses a non-sudo caller when the agent lacks the capability",
+			perms:      caller,
+			wantStatus: http.StatusBadGateway,
+		},
+		{
+			name:         "forwards a non-sudo caller when the agent has the capability",
+			perms:        caller,
+			capabilities: []string{agent.TunnelCapabilityForwardedPermissions},
+			wantStatus:   http.StatusOK,
+		},
+		{
+			name:       "forwards a sudo caller when the agent lacks the capability",
+			perms:      authz.SudoPermissionSet(),
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:         "forwards a sudo caller when the agent has the capability",
+			perms:        authz.SudoPermissionSet(),
+			capabilities: []string{agent.TunnelCapabilityForwardedPermissions},
+			wantStatus:   http.StatusOK,
+		},
+	}
+
+	updateMatcher := authz.NewPermissionMatcher()
+	updateMatcher.Add(http.MethodPost, "/containers/{containerId}/update", authz.PermContainersUpdate)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var agentHits atomic.Int32
+			agentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				agentHits.Add(1)
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer agentServer.Close()
+
+			registry := agent.NewTunnelRegistry()
+			registry.Register("env-remote", &agent.AgentTunnel{
+				Conn: openTunnelConn{},
+				HTTPClient: &http.Client{
+					Transport: &http.Transport{
+						DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+							return (&net.Dialer{}).DialContext(ctx, network, agentServer.Listener.Addr().String())
+						},
+					},
+				},
+				EnvironmentID: "env-remote",
+				State:         "connected",
+				Capabilities:  tt.capabilities,
+			})
+
+			router := echo.New()
+			api := attachMiddleware(router, &EnvironmentMiddleware{
+				localID:   "0",
+				paramName: "id",
+				resolver: func(context.Context, string) (*string, bool, error) {
+					return nil, true, nil
+				},
+				authValidator: func(context.Context, *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
+					return tt.perms, &types.Actor{}, true
+				},
+				registry: registry,
+				matcher:  updateMatcher,
+			})
+			api.POST("/environments/:id/containers/:containerId/update", func(c *echo.Context) error {
+				return c.JSON(http.StatusTeapot, map[string]any{"success": true})
+			})
+
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/environments/env-remote/containers/container-1/update", http.NoBody))
+
+			require.Equal(t, tt.wantStatus, recorder.Code)
+			if tt.wantStatus == http.StatusOK {
+				assert.Equal(t, int32(1), agentHits.Load())
+				return
+			}
+			assert.Zero(t, agentHits.Load())
+			assert.Contains(t, recorder.Body.String(), "Agent must be upgraded to use this environment")
 		})
 	}
 }
@@ -406,7 +534,7 @@ func TestProxyPermissionDeniedBlocksWriteForReadOnlyUser(t *testing.T) {
 
 	c := newProxyRequestContext(http.MethodPost, "/api/environments/"+proxyTestEnvID+"/containers/abc/restart")
 
-	require.Equal(t, http.StatusForbidden, m.proxyPermissionStatus(c, ps, proxyTestEnvID, "/containers/abc/restart"),
+	require.False(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/containers/abc/restart"),
 		"expected restart to be denied for a read-only user")
 }
 
@@ -417,7 +545,7 @@ func TestProxyPermissionDeniedAllowsWriteForPermittedUser(t *testing.T) {
 
 	c := newProxyRequestContext(http.MethodPost, "/api/environments/"+proxyTestEnvID+"/containers/abc/restart")
 
-	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(c, ps, proxyTestEnvID, "/containers/abc/restart"),
+	require.True(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/containers/abc/restart"),
 		"expected restart to be allowed for a user with containers:restart")
 }
 
@@ -428,7 +556,7 @@ func TestProxyPermissionDeniedAllowsRead(t *testing.T) {
 
 	c := newProxyRequestContext(http.MethodGet, "/api/environments/"+proxyTestEnvID+"/containers")
 
-	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(c, ps, proxyTestEnvID, "/containers"),
+	require.True(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/containers"),
 		"expected list to be allowed for a user with containers:list")
 }
 
@@ -440,7 +568,7 @@ func TestProxyPermissionDeniedDeniesPermissionFromDifferentEnv(t *testing.T) {
 
 	c := newProxyRequestContext(http.MethodPost, "/api/environments/"+proxyTestEnvID+"/containers/abc/restart")
 
-	require.Equal(t, http.StatusForbidden, m.proxyPermissionStatus(c, ps, proxyTestEnvID, "/containers/abc/restart"),
+	require.False(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/containers/abc/restart"),
 		"expected denial: permission is scoped to a different environment")
 }
 
@@ -448,7 +576,7 @@ func TestProxyPermissionDeniedSudoBypasses(t *testing.T) {
 	m := newProxyAuthzMiddleware(containerMatcher())
 	c := newProxyRequestContext(http.MethodPost, "/api/environments/"+proxyTestEnvID+"/containers/abc/restart")
 
-	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(c, authz.SudoPermissionSet(), proxyTestEnvID, "/containers/abc/restart"),
+	require.True(t, m.proxyPermitted(c, authz.SudoPermissionSet(), proxyTestEnvID, "/containers/abc/restart"),
 		"expected sudo permission set to bypass the permission check")
 }
 
@@ -459,7 +587,7 @@ func TestProxyPermissionDeniedDefaultDeniesUnmappedRoute(t *testing.T) {
 
 	c := newProxyRequestContext(http.MethodPost, "/api/environments/"+proxyTestEnvID+"/unknown/resource")
 
-	require.Equal(t, http.StatusForbidden, m.proxyPermissionStatus(c, ps, proxyTestEnvID, "/unknown/resource"),
+	require.False(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/unknown/resource"),
 		"expected an unmapped proxied route to be denied by default")
 }
 
@@ -469,93 +597,8 @@ func TestProxyPermissionDeniedAllowsPublicRoute(t *testing.T) {
 
 	c := newProxyRequestContext(http.MethodGet, "/api/environments/"+proxyTestEnvID+"/settings/public")
 
-	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(c, ps, proxyTestEnvID, "/settings/public"),
+	require.True(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/settings/public"),
 		"expected an explicitly public route to be allowed for any authenticated caller")
-}
-
-func newProxyVolumeWorkspaceContext(t *testing.T, changes []types.VolumeWorkspaceFileChange, fileFirst ...bool) (*echo.Context, []byte) {
-	t.Helper()
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-	if len(fileFirst) == 1 && fileFirst[0] {
-		filePart, err := writer.CreateFormFile("files", "example.txt")
-		require.NoError(t, err)
-		_, err = filePart.Write([]byte("content"))
-		require.NoError(t, err)
-	}
-	manifestPart, err := writer.CreateFormField("manifest")
-	require.NoError(t, err)
-	manifestJSON, err := json.Marshal(types.VolumeWorkspaceUpdateManifest{FileTreeRevision: "revision", FileChanges: changes})
-	require.NoError(t, err)
-	_, err = manifestPart.Write(manifestJSON)
-	require.NoError(t, err)
-	require.NoError(t, writer.Close())
-
-	rawBody := append([]byte(nil), body.Bytes()...)
-	e := echo.New()
-	req := httptest.NewRequest(http.MethodPatch, "/api/environments/"+proxyTestEnvID+"/volumes/data/workspace", bytes.NewReader(rawBody))
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	t.Cleanup(func() { _ = req.Body.Close() })
-	return e.NewContext(req, httptest.NewRecorder()), rawBody
-}
-
-func TestProxyPermissionDeniedChecksVolumeWorkspaceManifestPermissions(t *testing.T) {
-	matcher := authz.NewPermissionMatcher()
-	matcher.Add(http.MethodPatch, "/volumes/{volumeName}/workspace", authz.PermVolumesRead)
-	m := newProxyAuthzMiddleware(matcher)
-	changes := []types.VolumeWorkspaceFileChange{{Operation: types.FileOpRename}}
-
-	readOnly := authz.NewPermissionSet()
-	readOnly.AddEnv(proxyTestEnvID, authz.PermVolumesRead)
-	c, _ := newProxyVolumeWorkspaceContext(t, changes)
-	require.Equal(t, http.StatusForbidden, m.proxyPermissionStatus(c, readOnly, proxyTestEnvID, "/volumes/data/workspace"))
-
-	uploadOnly := authz.NewPermissionSet()
-	uploadOnly.AddEnv(proxyTestEnvID, authz.PermVolumesRead, authz.PermVolumesUpload)
-	c, _ = newProxyVolumeWorkspaceContext(t, changes)
-	require.Equal(t, http.StatusForbidden, m.proxyPermissionStatus(c, uploadOnly, proxyTestEnvID, "/volumes/data/workspace"))
-
-	permitted := authz.NewPermissionSet()
-	permitted.AddEnv(proxyTestEnvID, authz.PermVolumesRead, authz.PermVolumesUpload, authz.PermVolumesDelete)
-	c, rawBody := newProxyVolumeWorkspaceContext(t, changes)
-	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(c, permitted, proxyTestEnvID, "/volumes/data/workspace"))
-	replayed, err := io.ReadAll(c.Request().Body)
-	require.NoError(t, err)
-	require.Equal(t, rawBody, replayed)
-
-	c, rawBody = newProxyVolumeWorkspaceContext(t, changes, true)
-	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(c, permitted, proxyTestEnvID, "/volumes/data/workspace"))
-	replayed, err = io.ReadAll(c.Request().Body)
-	require.NoError(t, err)
-	require.Equal(t, rawBody, replayed)
-}
-
-func newProxyGitOpsImportContext(body string) *echo.Context {
-	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/environments/"+proxyTestEnvID+"/gitops/syncs/import", bytes.NewReader([]byte(body)))
-	req.Header.Set("Content-Type", "application/json")
-	return e.NewContext(req, httptest.NewRecorder())
-}
-
-func TestProxyPermissionDeniedChecksGitOpsImportLifecyclePermission(t *testing.T) {
-	matcher := authz.NewPermissionMatcher()
-	matcher.Add(http.MethodPost, "/gitops/syncs/import", authz.PermGitOpsCreate)
-	m := newProxyAuthzMiddleware(matcher)
-	hookBody := `[{"syncName":"a","gitRepo":"r","branch":"main","dockerComposePath":"compose.yaml","preDeployScriptPath":"scripts/run.sh"}]`
-	plainBody := `[{"syncName":"a","gitRepo":"r","branch":"main","dockerComposePath":"compose.yaml"}]`
-
-	createOnly := authz.NewPermissionSet()
-	createOnly.AddEnv(proxyTestEnvID, authz.PermGitOpsCreate)
-	require.Equal(t, http.StatusForbidden, m.proxyPermissionStatus(newProxyGitOpsImportContext(hookBody), createOnly, proxyTestEnvID, "/gitops/syncs/import"))
-	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(newProxyGitOpsImportContext(plainBody), createOnly, proxyTestEnvID, "/gitops/syncs/import"))
-
-	withLifecycle := authz.NewPermissionSet()
-	withLifecycle.AddEnv(proxyTestEnvID, authz.PermGitOpsCreate, authz.PermGitOpsLifecycle)
-	c := newProxyGitOpsImportContext(hookBody)
-	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(c, withLifecycle, proxyTestEnvID, "/gitops/syncs/import"))
-	replayed, err := io.ReadAll(c.Request().Body)
-	require.NoError(t, err)
-	require.Equal(t, hookBody, string(replayed))
 }
 
 func TestProxyPermissionDeniedWSTerminalRequiresExec(t *testing.T) {
@@ -570,41 +613,14 @@ func TestProxyPermissionDeniedWSTerminalRequiresExec(t *testing.T) {
 
 	c := newProxyRequestContext(http.MethodGet, "/api/environments/"+proxyTestEnvID+"/ws/containers/abc/terminal")
 
-	require.Equal(t, http.StatusForbidden, m.proxyPermissionStatus(c, ps, proxyTestEnvID, "/ws/containers/abc/terminal"),
+	require.False(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/ws/containers/abc/terminal"),
 		"expected WS terminal to be denied without containers:exec")
 
 	// Granting containers:exec allows the same stream.
 	ps.AddEnv(proxyTestEnvID, authz.PermContainersExec)
 
-	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(c, ps, proxyTestEnvID, "/ws/containers/abc/terminal"),
+	require.True(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/ws/containers/abc/terminal"),
 		"expected WS terminal to be allowed with containers:exec")
-}
-
-func TestProxyPermissionDeniedResourceSortRequiresRead(t *testing.T) {
-	m := newProxyAuthzMiddleware(containerMatcher())
-
-	listOnly := authz.NewPermissionSet()
-	listOnly.AddEnv(proxyTestEnvID, authz.PermContainersList)
-
-	for _, sort := range []string{"cpuUsage", "memoryUsage"} {
-		c := newProxyRequestContext(http.MethodGet, "/api/environments/"+proxyTestEnvID+"/containers?sort="+sort)
-		require.Equal(t, http.StatusForbidden, m.proxyPermissionStatus(c, listOnly, proxyTestEnvID, "/containers"),
-			"expected resource sort %q to be denied with only containers:list", sort)
-	}
-
-	c := newProxyRequestContext(http.MethodGet, "/api/environments/"+proxyTestEnvID+"/containers?sort=name")
-	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(c, listOnly, proxyTestEnvID, "/containers"),
-		"expected non-resource sorts to stay allowed with containers:list")
-
-	c = newProxyRequestContext(http.MethodGet, "/api/environments/"+proxyTestEnvID+"/containers")
-	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(c, listOnly, proxyTestEnvID, "/containers"),
-		"expected the plain list to stay allowed with containers:list")
-
-	withRead := authz.NewPermissionSet()
-	withRead.AddEnv(proxyTestEnvID, authz.PermContainersList, authz.PermContainersRead)
-	c = newProxyRequestContext(http.MethodGet, "/api/environments/"+proxyTestEnvID+"/containers?sort=memoryUsage&order=desc")
-	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(c, withRead, proxyTestEnvID, "/containers"),
-		"expected resource sort to be allowed with containers:list and containers:read")
 }
 
 func TestEnvironmentMiddleware_ServesMultiEnvironmentScopeLocally(t *testing.T) {

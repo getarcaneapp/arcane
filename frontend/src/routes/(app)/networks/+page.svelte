@@ -15,7 +15,7 @@
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { pinViewAction } from '#lib/utils/dashboard-layout.js';
-	import { readableEnvironments } from '#lib/utils/environments.js';
+	import { hasShownPermission, readableEnvironments } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -69,18 +69,23 @@
 		return countsFallback;
 	});
 
-	const actionButtons: ActionButton[] = $derived([
-		{
-			id: 'create',
-			action: 'create',
-			placement: 'primary',
-			label: m.common_create_button({ resource: m.resource_network_cap() }),
-			onclick: () => (pageState.isCreateDialogOpen = true),
-			loading: createNetworkMutation.isPending,
-			disabled: !resourcesReady || createNetworkMutation.isPending
-		},
-		pinViewAction('networks', pageState.requestOptions, readableEnvironments('networks:list')),
-		{
+	const canCreateNetwork = $derived(hasShownPermission('networks:create'));
+
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [];
+		if (canCreateNetwork) {
+			buttons.push({
+				id: 'create',
+				action: 'create',
+				placement: 'primary',
+				label: m.common_create_button({ resource: m.resource_network_cap() }),
+				onclick: () => (pageState.isCreateDialogOpen = true),
+				loading: createNetworkMutation.isPending,
+				disabled: !resourcesReady || createNetworkMutation.isPending
+			});
+		}
+		buttons.push(pinViewAction('networks', pageState.requestOptions, readableEnvironments('networks:list')));
+		buttons.push({
 			id: 'refresh',
 			action: 'refresh',
 			placement: 'secondary',
@@ -89,8 +94,9 @@
 			onclick: () => networksQuery.refetch(),
 			loading: isRefreshing,
 			disabled: networksQuery.isFetching
-		}
-	]);
+		});
+		return buttons;
+	});
 
 	const statCards: StatCardConfig[] = $derived([
 		{

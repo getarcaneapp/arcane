@@ -27,7 +27,7 @@ func RegisterRoutes(api huma.API, imagePatchService *Service, appCtx handlerutil
 		Description: "Retrieves scanned images with fixable vulnerability counts and their latest patch run",
 		Tags:        []string{"Images"},
 		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
-	}, authz.PermVulnsRead, h.ListPatchTargets)
+	}, authz.PermVulnsList, h.ListPatchTargets)
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation(
 			"patch-image",

@@ -98,10 +98,6 @@ export function userHasPermission(user: User | null | undefined, permission: str
 	return envId ? (user.permissionsByEnv[envId] ?? []).includes(permission) : false;
 }
 
-function isAdminOnlyRoute(path: string): boolean {
-	return path === '/system/roles/new' || (path.startsWith('/system/roles/') && path.split('/')[3] !== '');
-}
-
 const matchesAny = (path: string, prefixes: string[]) =>
 	prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 
@@ -173,10 +169,6 @@ export function getAuthRedirectPath(
 
 	if (path !== '/no-access' && !userHasAnyAccess(user)) {
 		return resolve('/(app)/no-access');
-	}
-
-	if (isAdminOnlyRoute(path) && !isUserGlobalAdmin(user)) {
-		return resolve('/(app)/system/roles');
 	}
 
 	const surface = getRouteAccessSurfaces(accessManifest).find((candidate) => pathMatchesAccessSurface(path, candidate));

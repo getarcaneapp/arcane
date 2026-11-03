@@ -16,8 +16,10 @@
 	let { data } = $props();
 
 	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
-	const quadletEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses, (status) => status.quadletsSupported));
-	const canInstall = $derived(quadletEnvironments.some((env) => hasPermission('podman:quadlets', env.id)));
+	const quadletEnvironments = $derived(
+		shownPodmanEnvironments(data.podmanStatuses, 'podman-quadlets:list', (status) => status.quadletsSupported)
+	);
+	const canInstall = $derived(quadletEnvironments.some((env) => hasPermission('podman-quadlets:create', env.id)));
 
 	const quadletsQuery = createQuery(() => {
 		const scope = pageState.scope;

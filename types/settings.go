@@ -45,10 +45,10 @@ type (
 		// Required: false
 		LockReason string `json:"lockReason,omitempty" enum:"env,readOnly"`
 
-		// Scope is manager for settings only the main environment owns, otherwise environment.
+		// Scope is authentication for login and OIDC settings, manager for other app-wide settings, otherwise environment.
 		//
 		// Required: true
-		Scope string `json:"scope" enum:"manager,environment"`
+		Scope string `json:"scope" enum:"manager,authentication,environment"`
 
 		// EnvName is the environment variable that sets the setting.
 		//

@@ -9,7 +9,7 @@
 	import { ExternalLinkIcon, GithubIcon, BookOpenIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { AppVersionInformation, Settings } from '#lib/types/settings.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -48,7 +48,7 @@
 	const developmentBranding = $derived(usesDevelopmentBranding());
 	const logoUrl = $derived(getApplicationLogo(false, logoColor, logoColor, { development: developmentBranding }));
 
-	const canToggleSettings = $derived(hasPermission('settings:write', LOCAL_DOCKER_ENVIRONMENT_ID));
+	const canToggleSettings = $derived(hasPermission('settings:update', GLOBAL_SCOPE));
 	let savingSetting = $state(false);
 
 	async function updateSetting(update: Partial<Settings>) {

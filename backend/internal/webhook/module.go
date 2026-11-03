@@ -35,17 +35,26 @@ func (m *Module) Service() *WebhookService {
 
 // RegisterRoutes mounts the webhook endpoints. A nil module still registers, so
 // OpenAPI spec generation can discover the routes without a service graph.
-func (m *Module) RegisterRoutes(api huma.API) {
-	if m == nil {
-		RegisterWebhooks(api, nil)
-		return
-	}
-	RegisterWebhooks(api, m.service)
+func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
+	RegisterWebhooks(api, m.Service(), appCtx)
 }
 
-// RegisterWebhooks registers the authenticated CRUD routes for webhook management.
-func RegisterWebhooks(api huma.API, webhookService *WebhookService) {
-	h := &WebhookHandler{webhookService: webhookService}
+func RegisterWebhooks(api huma.API, webhookService *WebhookService, appCtx handlerutil.ActivityAppContext) {
+	h := &WebhookHandler{
+		webhookService: webhookService,
+		appCtx:         appCtx,
+	}
+
+	huma.Register(api, huma.Operation{
+		OperationID: "trigger-webhook",
+		Method:      http.MethodPost,
+		Path:        "/webhooks/trigger/{token}",
+		Summary:     "Trigger webhook",
+		Tags:        []string{"Webhooks"},
+		Hidden:      true,
+		Security:    []map[string][]string{},
+		Metadata:    map[string]any{authz.MetaAccess: authz.EndpointAccessWebhookToken},
+	}, h.TriggerWebhook)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-webhooks",

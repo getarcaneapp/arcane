@@ -5,7 +5,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { PermissionsManifest, PermissionResource, PermissionAction, PermissionPreset } from '#lib/types/auth.js';
-	import { normalizePermissionSelection } from '#lib/utils/permissions.js';
+	import { normalizePermissionSelection, removePermissionSelection } from '#lib/utils/permissions.js';
 
 	type Props = {
 		manifest: PermissionsManifest;
@@ -33,7 +33,9 @@
 				}
 				const actions = resource.actions.filter(
 					(action) =>
-						action.label.toLowerCase().includes(normalizedQuery) || action.permission.toLowerCase().includes(normalizedQuery)
+						action.label.toLowerCase().includes(normalizedQuery) ||
+						action.permission.toLowerCase().includes(normalizedQuery) ||
+						!!action.description?.toLowerCase().includes(normalizedQuery)
 				);
 				return { resource, actions };
 			})
@@ -47,6 +49,10 @@
 
 	function replaceSelected(next: string[]) {
 		selected = normalizePermissionSelection(manifest, next);
+	}
+
+	function removeSelected(removed: string[]) {
+		selected = removePermissionSelection(manifest, selected, removed);
 	}
 
 	function countSelectedInGroup(resource: PermissionResource): number {
@@ -68,10 +74,9 @@
 		if (disabled) return;
 		const groupPerms = resource.actions.map((a) => a.permission);
 		if (checked) {
-			const without = selected.filter((p) => !groupPerms.includes(p));
-			replaceSelected([...without, ...groupPerms]);
+			replaceSelected([...selected, ...groupPerms]);
 		} else {
-			replaceSelected(selected.filter((p) => !groupPerms.includes(p)));
+			removeSelected(groupPerms);
 		}
 	}
 
@@ -82,7 +87,7 @@
 				replaceSelected([...selected, permission]);
 			}
 		} else {
-			replaceSelected(selected.filter((p) => p !== permission));
+			removeSelected([permission]);
 		}
 	}
 
@@ -117,7 +122,7 @@
 		if (checked) {
 			replaceSelected([...selected, ...preset.permissions]);
 		} else {
-			replaceSelected(selected.filter((permission) => !preset.permissions.includes(permission)));
+			removeSelected(preset.permissions);
 		}
 	}
 </script>
@@ -181,6 +186,9 @@
 						</Accordion.Trigger>
 					</div>
 					<Accordion.Content>
+						{#if group.resource.description}
+							<p class="pt-1 pl-7 text-xs text-muted-foreground">{group.resource.description}</p>
+						{/if}
 						<div class="grid grid-cols-1 gap-3 pt-2 pl-7 sm:grid-cols-2">
 							{#each group.actions as action (action.permission)}
 								{@const checked = selectedSet.has(action.permission)}
@@ -200,6 +208,11 @@
 										<code class="text-xs text-muted-foreground">{action.permission}</code>
 										{#if action.description}
 											<span class="text-xs text-muted-foreground">{action.description}</span>
+										{/if}
+										{#if action.requires?.length}
+											<span class="text-xs text-muted-foreground">
+												{m.permissions_requires({ permissions: action.requires.join(', ') })}
+											</span>
 										{/if}
 									</div>
 								</label>

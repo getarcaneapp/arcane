@@ -25,8 +25,10 @@
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import type { SettingsStatCard } from '#lib/layouts/types.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { Diagnostics, GoroutineLeakReport, PprofProfile } from '#lib/types/diagnostics.js';
 	import { cn } from '#lib/utils.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { createDiagnosticsWebSocket, type DiagnosticsWebSocket } from '#lib/utils/ws.js';
@@ -269,6 +271,7 @@
 	}
 
 	let downloading = $state<string | null>(null);
+	const canProfile = $derived(hasPermission('diagnostics:profile', GLOBAL_SCOPE));
 
 	async function download(p: PprofProfile) {
 		downloading = p;
@@ -526,56 +529,58 @@
 							/>
 						</section>
 
-						<section class="space-y-4 border-t border-border/50 pt-8">
-							{@render sectionHeading(m.diagnostics_section_dumps())}
-							<div class="space-y-2">
-								{#each dumps as d (d.id)}
-									<Collapsible.Root open={dumpOpen[d.id]} onOpenChange={(o: boolean) => onDumpToggle(d.id, o)}>
-										<Collapsible.Trigger>
-											{#snippet child({ props })}
-												<button
-													{...props}
-													type="button"
-													class="flex w-full items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-sm font-medium hover:bg-muted/30"
-												>
-													{d.label}
-													<ArrowDownIcon class={cn('size-4 transition-transform', dumpOpen[d.id] && '-rotate-180')} />
-												</button>
-											{/snippet}
-										</Collapsible.Trigger>
-										<Collapsible.Content>
-											<CodeBlock.Root size="sm" class="mt-1">
-												<CodeBlock.Content
-													code={dumpLoading[d.id] ? m.common_loading() : dumpText[d.id] || m.diagnostics_dump_empty()}
-													class="max-h-96"
-												/>
-											</CodeBlock.Root>
-										</Collapsible.Content>
-									</Collapsible.Root>
-								{/each}
-							</div>
-						</section>
+						{#if canProfile}
+							<section class="space-y-4 border-t border-border/50 pt-8">
+								{@render sectionHeading(m.diagnostics_section_dumps())}
+								<div class="space-y-2">
+									{#each dumps as d (d.id)}
+										<Collapsible.Root open={dumpOpen[d.id]} onOpenChange={(o: boolean) => onDumpToggle(d.id, o)}>
+											<Collapsible.Trigger>
+												{#snippet child({ props })}
+													<button
+														{...props}
+														type="button"
+														class="flex w-full items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-sm font-medium hover:bg-muted/30"
+													>
+														{d.label}
+														<ArrowDownIcon class={cn('size-4 transition-transform', dumpOpen[d.id] && '-rotate-180')} />
+													</button>
+												{/snippet}
+											</Collapsible.Trigger>
+											<Collapsible.Content>
+												<CodeBlock.Root size="sm" class="mt-1">
+													<CodeBlock.Content
+														code={dumpLoading[d.id] ? m.common_loading() : dumpText[d.id] || m.diagnostics_dump_empty()}
+														class="max-h-96"
+													/>
+												</CodeBlock.Root>
+											</Collapsible.Content>
+										</Collapsible.Root>
+									{/each}
+								</div>
+							</section>
 
-						<section class="space-y-4 border-t border-border/50 pt-8">
-							{@render sectionHeading(m.diagnostics_section_profiles(), m.diagnostics_profiles_hint())}
-							<ul class="divide-y divide-border/40">
-								{#each profiles as p (p.id)}
-									<li class="flex items-center justify-between gap-4 py-2.5">
-										<span class="text-sm font-medium">{p.label}</span>
-										<ArcaneButton
-											action="base"
-											tone="outline"
-											size="sm"
-											icon={DownloadIcon}
-											customLabel={m.diagnostics_download()}
-											loading={downloading === p.id}
-											disabled={downloading !== null}
-											onclick={() => download(p.id)}
-										/>
-									</li>
-								{/each}
-							</ul>
-						</section>
+							<section class="space-y-4 border-t border-border/50 pt-8">
+								{@render sectionHeading(m.diagnostics_section_profiles(), m.diagnostics_profiles_hint())}
+								<ul class="divide-y divide-border/40">
+									{#each profiles as p (p.id)}
+										<li class="flex items-center justify-between gap-4 py-2.5">
+											<span class="text-sm font-medium">{p.label}</span>
+											<ArcaneButton
+												action="base"
+												tone="outline"
+												size="sm"
+												icon={DownloadIcon}
+												customLabel={m.diagnostics_download()}
+												loading={downloading === p.id}
+												disabled={downloading !== null}
+												onclick={() => download(p.id)}
+											/>
+										</li>
+									{/each}
+								</ul>
+							</section>
+						{/if}
 					</div>
 				</Tabs.Content>
 			</Tabs.Root>

@@ -785,7 +785,7 @@ func TestJobSummaryReopensAndRejectsStaleSnapshots(t *testing.T) {
 	_, err = service.GetActivityDetail(t.Context(), "0", run.ActivityID, 10)
 	require.Error(t, err)
 	permissions := authz.NewPermissionSet()
-	permissions.AddEnv("remote", authz.PermActivitiesRead, authz.PermActivitiesDelete)
+	permissions.AddEnv("remote", authz.PermActivitiesList, authz.PermActivitiesDelete)
 	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, permissions)
 	rows, page, err := service.ListActivitiesPaginated(ctx, "remote", pagination.QueryParams{Limit: 10})
 	require.NoError(t, err)
@@ -839,8 +839,8 @@ func TestJobActivityVisibilityFiltersBeforePagination(t *testing.T) {
 		)
 	}
 	permissions := authz.NewPermissionSet()
-	permissions.PerEnv["0"] = map[string]struct{}{authz.PermActivitiesRead: {}}
-	permissions.PerEnv["allowed"] = map[string]struct{}{authz.PermActivitiesRead: {}}
+	permissions.PerEnv["0"] = map[string]struct{}{authz.PermActivitiesList: {}}
+	permissions.PerEnv["allowed"] = map[string]struct{}{authz.PermActivitiesList: {}}
 	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, permissions)
 	seen := make(map[string]bool)
 	for page := range 2 {
@@ -848,7 +848,7 @@ func TestJobActivityVisibilityFiltersBeforePagination(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, 2, response.TotalItems)
 		require.Len(t, activities, 1)
-		require.True(t, canReadJobActivity(ctx, activities[0]))
+		require.True(t, canReadJobActivity(ctx, activities[0], authz.PermActivitiesList))
 		seen[activities[0].ID] = true
 	}
 	require.Len(t, seen, 2)
@@ -866,15 +866,16 @@ func TestJobActivityVisibilityFiltersBeforePagination(t *testing.T) {
 				EnvironmentID: "private",
 				Metadata:      map[string]any{"environmentId": "allowed"},
 			},
+			authz.PermActivitiesList,
 		),
 	)
-	require.True(t, canReadJobActivity(ctx, types.Activity{Type: types.ActivityTypeJobRun, Metadata: map[string]any{"environmentId": "allowed"}}))
+	require.True(t, canReadJobActivity(ctx, types.Activity{Type: types.ActivityTypeJobRun, Metadata: map[string]any{"environmentId": "allowed"}}, authz.PermActivitiesList))
 	privileged := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
 	activities, response, err = service.ListActivitiesPaginated(privileged, "private", pagination.QueryParams{Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, activities, 2)
 	require.EqualValues(t, 2, response.TotalItems)
-	require.False(t, canReadJobActivity(privileged, types.Activity{Type: types.ActivityTypeJobRun}))
+	require.False(t, canReadJobActivity(privileged, types.Activity{Type: types.ActivityTypeJobRun}, authz.PermActivitiesRead))
 	permissions.PerEnv["0"][authz.PermActivitiesDelete] = struct{}{}
 	deleted, err := service.DeleteHistory(ctx, "private")
 	require.NoError(t, err)

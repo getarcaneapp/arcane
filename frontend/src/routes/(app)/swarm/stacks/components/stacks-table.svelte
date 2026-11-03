@@ -152,8 +152,8 @@
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
-		<DropdownMenu.Separator />
-		<IfPermitted perm="swarm:stacks" envId={item.environmentId}>
+		<IfPermitted perm="swarm-stacks:delete" envId={item.environmentId}>
+			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isLoading}>
 				<TrashIcon class="size-4" />
 				{m.common_delete()}

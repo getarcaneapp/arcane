@@ -190,7 +190,7 @@ export interface SettingState {
 	locked: boolean;
 	lockReason?: 'env' | 'readOnly';
 	sensitive: boolean;
-	scope: 'manager' | 'environment';
+	scope: 'manager' | 'authentication' | 'environment';
 	envName: string;
 }
 

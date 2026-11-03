@@ -30,6 +30,8 @@ type (
 
 	SettingVisibility int
 
+	SettingScope string
+
 	settingFieldMeta struct {
 		key                 string
 		envName             string
@@ -45,8 +47,8 @@ type (
 		isSensitive         bool
 		isEncrypted         bool
 		isInternal          bool
-		isManagerOnly       bool
 		isPropagated        bool
+		scope               SettingScope
 	}
 
 	//nolint:lll // Reflection metadata must remain in single struct-tag literals.
@@ -251,6 +253,10 @@ const (
 	SettingVisibilityNonAdmin SettingVisibility = 1
 	SettingVisibilityAll      SettingVisibility = 2
 	redactionMask                               = "XXXXXXXXXX"
+
+	SettingScopeManager        SettingScope = "manager"
+	SettingScopeAuthentication SettingScope = "authentication"
+	SettingScopeEnvironment    SettingScope = "environment"
 )
 
 var settingsFieldCache struct {
@@ -313,8 +319,8 @@ func buildSettingsFieldCache() {
 			isSensitive:         slices.Contains(attrList, "sensitive"),
 			isEncrypted:         slices.Contains(attrList, "sensitive") && !slices.Contains(attrList, "internal"),
 			isInternal:          slices.Contains(attrList, "internal"),
-			isManagerOnly:       slices.Contains(attrList, "manager"),
 			isPropagated:        slices.Contains(attrList, "propagate"),
+			scope:               settingScope(slices.Contains(attrList, "manager"), metaTag["category"]),
 		}
 		ordered = append(ordered, meta)
 		byKey[key] = meta
@@ -322,6 +328,17 @@ func buildSettingsFieldCache() {
 
 	settingsFieldCache.ordered = ordered
 	settingsFieldCache.byKey = byKey
+}
+
+func settingScope(managerOnly bool, category string) SettingScope {
+	switch {
+	case managerOnly && category == "authentication":
+		return SettingScopeAuthentication
+	case managerOnly:
+		return SettingScopeManager
+	default:
+		return SettingScopeEnvironment
+	}
 }
 
 func settingsFields() ([]settingFieldMeta, map[string]settingFieldMeta) {

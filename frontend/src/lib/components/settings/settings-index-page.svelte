@@ -165,7 +165,6 @@
 
 	function isAccessibleCategory(category: SettingsCategory) {
 		if (!category.url.startsWith(`${rootUrl}/`)) return false;
-		if (category.id === 'systembackups' && !user?.isGlobalAdmin) return false;
 		if (!permissionsManifest?.accessSurfaces?.length) return true;
 		return canReachAccessSurfaceUrl(permissionsManifest, category.url, user);
 	}

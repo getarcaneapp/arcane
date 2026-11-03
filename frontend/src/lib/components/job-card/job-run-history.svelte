@@ -2,7 +2,6 @@
 	import { createQuery, createMutation } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
 
-	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
@@ -12,6 +11,7 @@
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 
 	import { jobStatusLabel, jobStatusTone, jobStepLabel } from './job-status';
@@ -44,7 +44,7 @@
 	const detail = createQuery(() => ({
 		queryKey: queryKeys.jobs.run(environmentId, jobId, activeRunId),
 		queryFn: () => jobScheduleService.getRun(jobId, activeRunId!, environmentId),
-		enabled: !!activeRunId
+		enabled: !!activeRunId && hasPermission('jobs:read', environmentId)
 	}));
 	onMount(() => {
 		let seen: string | undefined;
@@ -113,13 +113,19 @@
 		[
 			{
 				id: 'retry' as const,
-				visible: ['failed', 'partial', 'needs_attention'].includes(selectedRun?.status ?? ''),
+				visible:
+					hasPermission('jobs:retry', environmentId) &&
+					['failed', 'partial', 'needs_attention'].includes(selectedRun?.status ?? ''),
 				variant: 'default' as const,
 				label: m.jobs_retry_run()
 			},
 			{
 				id: 'cancel' as const,
-				visible: selectedRun?.status === 'queued' && selectedRun.attemptCount === 0 && !selectedRun.remoteDeliveryAttempted,
+				visible:
+					hasPermission('jobs:cancel', environmentId) &&
+					selectedRun?.status === 'queued' &&
+					selectedRun.attemptCount === 0 &&
+					!selectedRun.remoteDeliveryAttempted,
 				variant: 'outline' as const,
 				label: m.jobs_cancel_run()
 			}
@@ -259,7 +265,7 @@
 					{#if action.error}<p class="text-destructive">
 							{extractApiErrorMessage(action.error)}
 						</p>{/if}
-					<IfPermitted perm="jobs:manage" envId={environmentId}>
+					{#if availableActions.length > 0}
 						<div class="flex flex-wrap gap-2">
 							{#each availableActions as item (item.id)}
 								<Button
@@ -274,7 +280,7 @@
 								>
 							{/each}
 						</div>
-					</IfPermitted>
+					{/if}
 				</div>
 			{/if}
 		</div>

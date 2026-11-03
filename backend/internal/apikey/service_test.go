@@ -309,13 +309,11 @@ func TestUpdateApiKeyRollsBackMetadataWhenPermissionUpdateFails(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	require.NoError(t, db.Exec("CREATE TRIGGER reject_containers_read BEFORE INSERT ON api_key_permissions WHEN NEW.permission = 'containers:read' BEGIN SELECT RAISE(ABORT, 'rejected'); END").Error)
 	updated, err := service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, ApiKeyUpdate{
 		Request: types.ApiKey{
-			Name: "renamed",
-			Permissions: []types.ApiKeyPermissionGrant{
-				{Permission: authz.PermContainersList},
-				{Permission: authz.PermContainersList},
-			},
+			Name:        "renamed",
+			Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersRead}},
 		},
 		Submitted: map[string]bool{"name": true, "permissions": true},
 	})
@@ -1085,3 +1083,49 @@ func TestGetEnvironmentByAPIKeyRecentLastUsedAtDoesNotRewriteImmediately(t *test
 }
 
 func (testEnvironmentRow) TableName() string { return "environments" }
+
+func TestApiKeyGrantsExpandToRequiredPermissionsInTheirScope(t *testing.T) {
+	ctx := t.Context()
+	service, _, userService := setupAPIKeyService(t)
+	owner := createTestAPIKeyUser(t, ctx, userService, "dependency-owner")
+	grantAPIKeyTestAdmin(t, ctx, service, owner.ID)
+	grantStrings := func(grants []types.ApiKeyPermissionGrant) []string {
+		out := make([]string, len(grants))
+		for i, grant := range grants {
+			out[i] = grant.Permission + "@" + kit.FromPtr(grant.EnvironmentID)
+		}
+		return out
+	}
+
+	created, err := service.CreateApiKey(ctx, owner.ID, authz.SudoPermissionSet(), types.ApiKey{
+		Name: "dependencies",
+		Permissions: []types.ApiKeyPermissionGrant{
+			{EnvironmentID: new("env-a"), Permission: authz.PermContainersStart},
+			{Permission: authz.PermSettingsUpdate},
+		},
+	})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{
+		authz.PermContainersList + "@env-a",
+		authz.PermContainersRead + "@env-a",
+		authz.PermContainersStart + "@env-a",
+		authz.PermActivitiesList + "@env-a",
+		authz.PermActivitiesRead + "@env-a",
+		authz.PermSettingsRead + "@",
+		authz.PermSettingsUpdate + "@",
+	}, grantStrings(created.Permissions))
+
+	updated, err := service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, ApiKeyUpdate{
+		Request: types.ApiKey{
+			Permissions: []types.ApiKeyPermissionGrant{{EnvironmentID: new("env-b"), Permission: authz.PermSwarmNodesPromote}},
+		},
+		Submitted: map[string]bool{"permissions": true},
+	})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{
+		authz.PermSwarmRead + "@env-b",
+		authz.PermSwarmNodesList + "@env-b",
+		authz.PermSwarmNodesRead + "@env-b",
+		authz.PermSwarmNodesPromote + "@env-b",
+	}, grantStrings(updated.Permissions))
+}

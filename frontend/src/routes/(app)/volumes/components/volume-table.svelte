@@ -121,7 +121,7 @@
 				const { values, failures } = await collectAcrossEnvironments(environments, (id) =>
 					queryClient.ensureQueryData({
 						queryKey: queryKeys.settings.byEnvironment(id),
-						queryFn: () => settingsService.getReadableSettings(id)
+						queryFn: () => settingsService.getSettingsForEnvironmentMerged(id)
 					})
 				);
 				const names = new Map(

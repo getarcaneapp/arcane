@@ -9,6 +9,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/types/v3"
 )
@@ -67,12 +68,12 @@ func (h *FederatedCredentialHandler) ListFederatedCredentials(ctx context.Contex
 }
 
 func (h *FederatedCredentialHandler) CreateFederatedCredential(ctx context.Context, input *CreateFederatedCredentialInput) (*handlerutil.Out[types.FederatedCredential], error) {
-	user, err := handlerutil.RequireUser(ctx)
-	if err != nil {
+	if _, err := handlerutil.RequireUser(ctx); err != nil {
 		return nil, err
 	}
 
-	credential, err := h.federatedCredentialService.Create(ctx, user.ID, input.Body)
+	callerPerms, _ := middleware.PermissionsFromContext(ctx)
+	credential, err := h.federatedCredentialService.Create(ctx, callerPerms, input.Body)
 	if err != nil {
 		return nil, federatedCredentialManagementError(err)
 	}
@@ -100,8 +101,7 @@ func (h *FederatedCredentialHandler) GetFederatedCredential(ctx context.Context,
 }
 
 func (h *FederatedCredentialHandler) UpdateFederatedCredential(ctx context.Context, input *UpdateFederatedCredentialInput) (*handlerutil.Out[types.FederatedCredential], error) {
-	user, err := handlerutil.RequireUser(ctx)
-	if err != nil {
+	if _, err := handlerutil.RequireUser(ctx); err != nil {
 		return nil, err
 	}
 
@@ -110,7 +110,8 @@ func (h *FederatedCredentialHandler) UpdateFederatedCredential(ctx context.Conte
 		return nil, huma.Error400BadRequest("invalid request body")
 	}
 
-	credential, err := h.federatedCredentialService.Update(ctx, user.ID, input.ID, CredentialUpdate{
+	callerPerms, _ := middleware.PermissionsFromContext(ctx)
+	credential, err := h.federatedCredentialService.Update(ctx, callerPerms, input.ID, CredentialUpdate{
 		Request:   input.Body,
 		Submitted: submitted,
 	})
@@ -132,6 +133,35 @@ func (h *FederatedCredentialHandler) DeleteFederatedCredential(ctx context.Conte
 	}
 
 	return handlerutil.MessageOutput("Federated credential deleted successfully", ""), nil
+}
+
+func (h *FederatedCredentialHandler) ExchangeToken(c *echo.Context) error {
+	if h.federatedCredentialService == nil {
+		return c.JSON(http.StatusInternalServerError, federatedTokenExchangeError{
+			Error:            "server_error",
+			ErrorDescription: "service not available",
+		})
+	}
+	if err := c.Request().ParseForm(); err != nil {
+		return c.JSON(http.StatusBadRequest, federatedTokenExchangeError{
+			Error:            "invalid_request",
+			ErrorDescription: "invalid token exchange request",
+		})
+	}
+
+	form := c.Request().Form
+	resp, err := h.federatedCredentialService.ExchangeToken(c.Request().Context(), types.TokenExchangeRequest{
+		GrantType:          form.Get("grant_type"),
+		SubjectToken:       form.Get("subject_token"),
+		SubjectTokenType:   form.Get("subject_token_type"),
+		Audience:           form.Get("audience"),
+		Scope:              form.Get("scope"),
+		RequestedTokenType: form.Get("requested_token_type"),
+	})
+	if err != nil {
+		return writeFederatedTokenExchangeError(c, err)
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 func writeFederatedTokenExchangeError(c *echo.Context, err error) error {

@@ -12,7 +12,13 @@
 	import { federatedCredentialListQuery } from '#lib/query/federated-credentials.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { federatedCredentialService } from '#lib/services/federated-credential-service.js';
-	import type { FederatedCredential, FederatedCredentialCreate, FederatedCredentialUpdate, Role } from '#lib/types/auth.js';
+	import {
+		GLOBAL_SCOPE,
+		type FederatedCredential,
+		type FederatedCredentialCreate,
+		type FederatedCredentialUpdate,
+		type Role
+	} from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -121,7 +127,7 @@ steps:
 				<h3 class="text-sm font-semibold">{m.federated_credential_page_title()}</h3>
 				<p class="text-xs text-muted-foreground">{m.federated_credential_page_description()}</p>
 			</div>
-			<IfPermitted adminOnly>
+			<IfPermitted perm="federated:create" envId={GLOBAL_SCOPE}>
 				<ArcaneButton
 					action="create"
 					size="sm"

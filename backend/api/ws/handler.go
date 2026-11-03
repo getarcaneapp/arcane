@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -142,11 +143,7 @@ func NewWebSocketHandler(
 			otel.Handle(err)
 		}
 	})
-	wsGroup := group.Group("/environments/:id/ws", authMiddleware.WithAdminNotRequired().Add())
-	for _, r := range handler.proxiedRoutes() {
-		wsGroup.GET(r.path, r.handler, middleware.RequireEchoPermission(r.perm))
-	}
-	handler.registerDiagnosticsRoutes(group, authMiddleware)
+	middleware.RegisterEchoRoutes(group, slices.Concat(handler.proxiedRoutes(), handler.diagnosticsRoutes()), authMiddleware.WithAdminNotRequired().Add())
 }
 
 // acceptWS upgrades the request to a WebSocket, registers it with the metrics tracker, and starts its lifetime span.

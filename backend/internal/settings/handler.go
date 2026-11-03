@@ -40,6 +40,10 @@ type (
 		EnvironmentID string               `path:"id" doc:"Environment ID"`
 	}
 
+	UpdateScopedSettingsInput struct {
+		Body types.SettingsUpdate `doc:"Setting keys mapped to their new values"`
+	}
+
 	SearchSettingsInput struct {
 		Body types.SearchRequest `doc:"Search query"`
 	}
@@ -80,22 +84,8 @@ func (h *SettingsHandler) runtimeSettings(authenticated bool) types.SettingsRunt
 }
 
 // GetPublicSettings returns public settings for an environment.
-func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *types.EnvironmentInput) (*SettingsSnapshotOutput, error) {
+func (h *SettingsHandler) GetPublicSettings(ctx context.Context, _ *types.EnvironmentInput) (*SettingsSnapshotOutput, error) {
 	_, authenticated := middleware.GetUserIDFromContext(ctx)
-	if input.EnvironmentID != "0" {
-		snapshot, err := h.proxyRemoteJSON.JSON[types.SettingsSnapshot](ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings/public", nil)
-		if err != nil {
-			return nil, err
-		}
-		if !authenticated {
-			_, fieldsByKey := settingsFields()
-			snapshot.Settings = slices.DeleteFunc(snapshot.Settings, func(state types.SettingState) bool {
-				return !fieldsByKey[state.Key].isPublic
-			})
-		}
-		return &SettingsSnapshotOutput{Body: *snapshot}, nil
-	}
-
 	snapshot := h.settingsService.SettingsSnapshot(kit.Ternary(authenticated, SettingVisibilityNonAdmin, SettingVisibilityPublic))
 	return &SettingsSnapshotOutput{Body: types.SettingsSnapshot{
 		Settings: snapshot.Settings,
@@ -104,64 +94,82 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *types.En
 	}}, nil
 }
 
-// GetSettings returns all settings for an environment.
-func (h *SettingsHandler) GetSettings(ctx context.Context, input *types.EnvironmentInput) (*SettingsSnapshotOutput, error) {
-	ps, _ := middleware.PermissionsFromContext(ctx)
-	isAdmin := ps.IsGlobalAdmin()
-
+func (h *SettingsHandler) GetEnvironmentSettings(ctx context.Context, input *types.EnvironmentInput) (*SettingsSnapshotOutput, error) {
 	if input.EnvironmentID != "0" {
 		snapshot, err := h.proxyRemoteJSON.JSON[types.SettingsSnapshot](ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings", nil)
 		if err != nil {
 			return nil, err
 		}
-		if isAdmin {
-			return &SettingsSnapshotOutput{Body: *snapshot}, nil
-		}
-		_, byKey := settingsFields()
-		return &SettingsSnapshotOutput{Body: types.SettingsSnapshot{
-			Settings: slices.DeleteFunc(snapshot.Settings, func(setting types.SettingState) bool {
-				return !byKey[setting.Key].isVisibleToNonAdmin
-			}),
-			Runtime:  snapshot.Runtime,
-			ReadOnly: snapshot.ReadOnly,
-		}}, nil
+		return &SettingsSnapshotOutput{Body: *snapshot}, nil
 	}
+	return h.scopedSnapshot(SettingScopeEnvironment), nil
+}
 
-	snapshot := h.settingsService.SettingsSnapshot(kit.Ternary(isAdmin, SettingVisibilityAll, SettingVisibilityNonAdmin))
+func (h *SettingsHandler) UpdateEnvironmentSettings(ctx context.Context, input *UpdateSettingsInput) (*SettingsSnapshotOutput, error) {
+	if err := h.settingsService.ValidateScope(SettingScopeEnvironment, input.Body); err != nil {
+		return nil, handlerutil.APIError(err)
+	}
+	if input.EnvironmentID != "0" {
+		if _, err := h.proxyRemoteJSON.JSON[struct{}](ctx, input.EnvironmentID, http.MethodPatch, "/api/environments/0/settings", input.Body); err != nil {
+			return nil, err
+		}
+		return h.GetEnvironmentSettings(ctx, &types.EnvironmentInput{EnvironmentID: input.EnvironmentID})
+	}
+	if err := h.updateLocal(ctx, input.Body); err != nil {
+		return nil, err
+	}
+	return h.scopedSnapshot(SettingScopeEnvironment), nil
+}
+
+func (h *SettingsHandler) GetManagerSettings(_ context.Context, _ *struct{}) (*SettingsSnapshotOutput, error) {
+	return h.scopedSnapshot(SettingScopeManager), nil
+}
+
+func (h *SettingsHandler) UpdateManagerSettings(ctx context.Context, input *UpdateScopedSettingsInput) (*SettingsSnapshotOutput, error) {
+	return h.updateScoped(ctx, SettingScopeManager, input.Body)
+}
+
+func (h *SettingsHandler) GetAuthenticationSettings(_ context.Context, _ *struct{}) (*SettingsSnapshotOutput, error) {
+	return h.scopedSnapshot(SettingScopeAuthentication), nil
+}
+
+func (h *SettingsHandler) UpdateAuthenticationSettings(ctx context.Context, input *UpdateScopedSettingsInput) (*SettingsSnapshotOutput, error) {
+	return h.updateScoped(ctx, SettingScopeAuthentication, input.Body)
+}
+
+func (h *SettingsHandler) scopedSnapshot(scope SettingScope) *SettingsSnapshotOutput {
+	snapshot := h.settingsService.SettingsSnapshot(SettingVisibilityAll, scope)
 	return &SettingsSnapshotOutput{Body: types.SettingsSnapshot{
 		Settings: snapshot.Settings,
 		Runtime:  h.runtimeSettings(true),
 		ReadOnly: snapshot.ReadOnly,
-	}}, nil
+	}}
 }
 
-// UpdateSettings updates settings for an environment.
-func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSettingsInput) (*SettingsSnapshotOutput, error) {
-	if input.EnvironmentID != "0" {
-		_, byKey := settingsFields()
-		for key := range input.Body {
-			if byKey[key].isManagerOnly {
-				return nil, huma.Error403Forbidden(key + " can only be updated from the main environment")
-			}
-		}
-		if _, err := h.proxyRemoteJSON.JSON[struct{}](ctx, input.EnvironmentID, http.MethodPatch, "/api/environments/0/settings", input.Body); err != nil {
-			return nil, err
-		}
-		return h.GetSettings(ctx, &types.EnvironmentInput{EnvironmentID: input.EnvironmentID})
+func (h *SettingsHandler) updateScoped(ctx context.Context, scope SettingScope, updates types.SettingsUpdate) (*SettingsSnapshotOutput, error) {
+	if err := h.settingsService.ValidateScope(scope, updates); err != nil {
+		return nil, handlerutil.APIError(err)
 	}
+	if err := h.updateLocal(ctx, updates); err != nil {
+		return nil, err
+	}
+	return h.scopedSnapshot(scope), nil
+}
 
-	if err := h.settingsService.UpdateSettings(ctx, input.Body); err != nil {
-		apiErr := common.ToAPIError(err)
-		switch apiErr.HTTPStatus() {
-		case http.StatusInternalServerError:
-			return nil, huma.Error500InternalServerError("Failed to update settings")
-		case http.StatusBadRequest:
-			return nil, handlerutil.APIError(err)
-		default:
-			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
-		}
+func (h *SettingsHandler) updateLocal(ctx context.Context, updates types.SettingsUpdate) error {
+	err := h.settingsService.UpdateSettings(ctx, updates)
+	if err == nil {
+		return nil
 	}
-	return h.GetSettings(ctx, &types.EnvironmentInput{EnvironmentID: input.EnvironmentID})
+	apiErr := common.ToAPIError(err)
+	switch apiErr.HTTPStatus() {
+	case http.StatusInternalServerError:
+		return huma.Error500InternalServerError("Failed to update settings")
+	case http.StatusBadRequest:
+		return handlerutil.APIError(err)
+	default:
+		return huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
 }
 
 // Search searches settings by query.

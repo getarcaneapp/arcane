@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,12 +27,15 @@ import (
 	gitkit "kit.getarcane.app/git"
 
 	"getarcane.dev/arcane/v3/internal/build/children/workspace"
+	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
 	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/gitrepo"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/gitutil"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -122,6 +126,12 @@ func (
 ) {
 	if s.builder == nil {
 		return nil, errors.New("build service not available")
+	}
+	permissions, _ := middleware.PermissionsFromContext(ctx)
+	for _, perm := range authz.BuildPushConditions.Required("push", strconv.FormatBool(req.Push)) {
+		if !permissions.Allows(perm, environmentID) {
+			return nil, common.Classify(common.ErrForbidden, errors.New("permission denied: "+perm))
+		}
 	}
 
 	// The builder emits raw docker-CLI text. The log capture stores it verbatim

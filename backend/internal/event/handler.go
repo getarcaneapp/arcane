@@ -2,10 +2,15 @@ package event
 
 import (
 	"context"
+	"encoding/json/v2"
+	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/labstack/echo/v5"
 
 	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/types/v3"
 )
@@ -13,7 +18,8 @@ import (
 type (
 	// EventHandler handles event management endpoints.
 	EventHandler struct {
-		eventService *EventService
+		eventService       *EventService
+		resolveEnvironment func(context.Context, string) (string, error)
 	}
 
 	ListEventsInput struct {
@@ -144,4 +150,53 @@ func (h *EventHandler) WaitForEnvironmentChanges(ctx context.Context, input *Wai
 			Data:    h.eventService.WaitForChanges(ctx, input.EnvironmentID, input.Epoch, input.Since, input.Wait),
 		},
 	}, nil
+}
+
+func (h *EventHandler) IngestAgentEvent(c *echo.Context) error {
+	if h.eventService == nil {
+		return c.JSON(http.StatusInternalServerError, types.ApiResponse[types.MessageResponse]{
+			Success: false,
+			Data:    types.MessageResponse{Message: "service not available"},
+		})
+	}
+
+	if h.resolveEnvironment == nil {
+		return c.JSON(http.StatusServiceUnavailable, types.ApiResponse[types.MessageResponse]{
+			Success: false,
+			Data:    types.MessageResponse{Message: "agent event ingestion is not configured"},
+		})
+	}
+	environmentID, err := h.resolveEnvironment(c.Request().Context(), c.Request().Header.Get(middleware.HeaderAgentToken))
+	if err != nil || environmentID == "" || environmentID == "0" {
+		return c.JSON(http.StatusUnauthorized, types.ApiResponse[types.MessageResponse]{
+			Success: false,
+			Data:    types.MessageResponse{Message: "invalid agent token"},
+		})
+	}
+
+	var input CreateEventRequest
+	if unmarshalReadErr := json.UnmarshalRead(http.MaxBytesReader(c.Response(), c.Request().Body, 1<<20), &input); unmarshalReadErr != nil {
+		return c.JSON(http.StatusBadRequest, types.ApiResponse[types.MessageResponse]{
+			Success: false,
+			Data:    types.MessageResponse{Message: "invalid event payload"},
+		})
+	}
+	if strings.TrimSpace(string(input.Type)) == "" || strings.TrimSpace(input.Title) == "" {
+		return c.JSON(http.StatusBadRequest, types.ApiResponse[types.MessageResponse]{
+			Success: false,
+			Data:    types.MessageResponse{Message: "event type and title are required"},
+		})
+	}
+
+	if _, ingestAgentEventErr := h.eventService.IngestAgentEvent(c.Request().Context(), environmentID, input); ingestAgentEventErr != nil {
+		return c.JSON(http.StatusInternalServerError, types.ApiResponse[types.MessageResponse]{
+			Success: false,
+			Data:    types.MessageResponse{Message: "Failed to create event: " + ingestAgentEventErr.Error()},
+		})
+	}
+
+	return c.JSON(http.StatusAccepted, types.ApiResponse[types.MessageResponse]{
+		Success: true,
+		Data:    types.MessageResponse{Message: "event ingested"},
+	})
 }

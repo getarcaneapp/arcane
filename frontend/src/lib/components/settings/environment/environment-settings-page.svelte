@@ -8,6 +8,7 @@
 	import { ConnectionIcon, type IconType } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 
 	import type { EnvironmentSettingsValues } from './environment-form-schema';
 	import EnvironmentSettingsForm from './environment-settings-form.svelte';
@@ -30,7 +31,11 @@
 	} = $props();
 
 	const scope = useEnvironmentSettingsScope(() => permissions);
-	const readOnly = $derived(scope.entries.some(({ settings }) => settings.readOnly));
+	const readOnly = $derived(
+		scope.entries.some(
+			({ environment, settings }) => settings.readOnly || !hasPermission('environment-settings:update', environment.id)
+		)
+	);
 </script>
 
 <SettingsPageLayout {title} {description} {icon} showReadOnlyTag={readOnly}>
@@ -50,7 +55,7 @@
 			{:else}
 				<fieldset disabled={readOnly} class="contents">
 					{#key scope.version}
-						<EnvironmentSettingsForm {scope} {keys} {content} />
+						<EnvironmentSettingsForm {scope} {keys} {content} {readOnly} />
 					{/key}
 				</fieldset>
 			{/if}

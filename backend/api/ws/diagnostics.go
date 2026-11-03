@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/http/pprof"
 	"time"
 
 	"github.com/coder/websocket"
@@ -15,7 +14,6 @@ import (
 
 	"kit.getarcane.app/docker/streams/logs"
 
-	"getarcane.dev/arcane/v3/internal/auth"
 	"getarcane.dev/arcane/v3/internal/diagnostics"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/authz"
@@ -37,7 +35,24 @@ const (
 	diagnosticsPingPeriod = 54 * time.Second
 )
 
-var defaultLogBroadcaster = logs.New(logs.Config{Capacity: 1000})
+var (
+	defaultLogBroadcaster = logs.New(logs.Config{Capacity: 1000})
+
+	diagnosticsCommandConditions = authz.PermissionConditions{
+		{
+			In:         authz.ConditionInMessage,
+			Field:      "type",
+			Value:      "dump",
+			Permission: authz.PermDiagnosticsProfile,
+		},
+		{
+			In:         authz.ConditionInMessage,
+			Field:      "type",
+			Value:      "profile",
+			Permission: authz.PermDiagnosticsProfile,
+		},
+	}
+)
 
 // buildDiagnostics assembles a snapshot: runtime/memory/GC from the
 // DiagnosticsService plus this package's WebSocket metrics and worker-goroutine count.
@@ -54,33 +69,28 @@ func buildDiagnostics(diag *diagnostics.DiagnosticsService) types.Diagnostics {
 	return d
 }
 
-// registerDiagnosticsRoutes wires the global diagnostics WebSocket streams and the
-// net/http/pprof debug endpoints. Streams require the diagnostics permission;
-// pprof keeps the stricter admin-required gate. Called from NewWebSocketHandler.
-func (h *WebSocketHandler) registerDiagnosticsRoutes(group *echo.Group, authMiddleware *auth.AuthMiddleware) {
-	diag := group.Group("/diagnostics",
-		authMiddleware.WithAdminNotRequired().Add(),
-		middleware.RequireEchoPermission(authz.PermDiagnosticsRead),
-	)
-	diag.GET("/stream", h.DiagnosticsStream)
-	diag.GET("/actors/stream", h.ActorDiagnosticsStream)
-	diag.GET("/logs/stream", h.ServerLogsStream)
-
-	pprofGroup := group.Group("/debug/pprof", authMiddleware.WithAdminRequired().Add())
-	pprofGroup.GET("", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
-	pprofGroup.GET("/", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
-	pprofGroup.GET("/cmdline", echo.WrapHandler(http.HandlerFunc(pprof.Cmdline)))
-	pprofGroup.GET("/profile", echo.WrapHandler(http.HandlerFunc(pprof.Profile)))
-	pprofGroup.POST("/symbol", echo.WrapHandler(http.HandlerFunc(pprof.Symbol)))
-	pprofGroup.GET("/symbol", echo.WrapHandler(http.HandlerFunc(pprof.Symbol)))
-	pprofGroup.GET("/trace", echo.WrapHandler(http.HandlerFunc(pprof.Trace)))
-	// pprof.Index only serves a named profile when the request path starts with the
-	// literal "/debug/pprof/". This group is mounted under /api, so that never
-	// matches and every named profile would render the index page instead.
-	pprofGroup.GET("/:name", func(c *echo.Context) error {
-		pprof.Handler(c.Param("name")).ServeHTTP(c.Response(), c.Request())
-		return nil
-	})
+func (h *WebSocketHandler) diagnosticsRoutes() []middleware.EchoRoute {
+	return []middleware.EchoRoute{
+		{
+			Method:     http.MethodGet,
+			Path:       "/diagnostics/stream",
+			Permission: authz.PermDiagnosticsRead,
+			Conditions: diagnosticsCommandConditions,
+			Handler:    h.DiagnosticsStream,
+		},
+		{
+			Method:     http.MethodGet,
+			Path:       "/diagnostics/actors/stream",
+			Permission: authz.PermDiagnosticsRead,
+			Handler:    h.ActorDiagnosticsStream,
+		},
+		{
+			Method:     http.MethodGet,
+			Path:       "/diagnostics/logs/stream",
+			Permission: authz.PermDiagnosticsRead,
+			Handler:    h.ServerLogsStream,
+		},
+	}
 }
 
 // DiagnosticsStream pushes a snapshot on connect and every diagnosticsStreamInterval,
@@ -96,23 +106,23 @@ func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
 			return snapshot(ctx)
 		}
 		result := types.DiagnosticsMessage{Type: "result", ID: cmd.ID}
+		for _, perm := range diagnosticsCommandConditions.Required("type", cmd.Type) {
+			if !ps.Allows(perm, "") {
+				result.Error = "permission denied: " + perm
+				return result
+			}
+		}
 		var err error
 		switch cmd.Type {
 		case "leakScan":
 			report, scanErr := h.diagnosticsService.ScanGoroutineLeaks()
 			result.LeakReport, err = &report, scanErr
-		case "dump", "profile":
-			if !ps.IsGlobalAdmin() {
-				result.Error = "profiles require a global administrator"
-				return result
-			}
-			if cmd.Type == "dump" {
-				var text []byte
-				text, err = h.diagnosticsService.Profile(ctx, cmd.Name, 0, 2)
-				result.Text = string(text)
-			} else {
-				result.Data, err = h.diagnosticsService.Profile(ctx, cmd.Name, min(cmp.Or(cmd.Seconds, 30), 120), 0)
-			}
+		case "dump":
+			var text []byte
+			text, err = h.diagnosticsService.Profile(ctx, cmd.Name, 0, 2)
+			result.Text = string(text)
+		case "profile":
+			result.Data, err = h.diagnosticsService.Profile(ctx, cmd.Name, min(cmp.Or(cmd.Seconds, 30), 120), 0)
 		default:
 			err = fmt.Errorf("unknown diagnostics command %q", cmd.Type)
 		}

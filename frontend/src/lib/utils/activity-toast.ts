@@ -1,6 +1,7 @@
 import { markActivityToastShown } from '#lib/components/activity/activity-completion-toasts.js';
 import { m } from '#lib/paraglide/messages.js';
 import { activityStore } from '#lib/stores/activity.store.svelte.js';
+import userStore from '#lib/stores/user-store.svelte.js';
 
 export function activityToastOptions(activityId?: string, suppressCompletion = true, environmentId?: string) {
 	if (!activityId) {
@@ -10,6 +11,13 @@ export function activityToastOptions(activityId?: string, suppressCompletion = t
 	// The caller is about to show a response toast for this activity; keep the
 	// stream-driven completion toast from duplicating it.
 	if (suppressCompletion) markActivityToastShown(activityId);
+	if (
+		!(environmentId
+			? userStore.hasPermission('activities:read', environmentId)
+			: userStore.hasPermissionInAnyEnvironment('activities:read'))
+	) {
+		return undefined;
+	}
 
 	return {
 		action: {

@@ -50,6 +50,5 @@ func (m *Module) RegisterRoutes(api huma.API) {
 		Description: "Report whether the database and Docker daemon are reachable",
 		Tags:        []string{"Health"},
 		Security:    []map[string][]string{},
-		Hidden:      true,
 	}, handler.ready)
 }

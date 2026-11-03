@@ -14,6 +14,12 @@ export const quadletActionLabels: Record<PodmanQuadletAction, () => string> = {
 
 export const quadletActions: PodmanQuadletAction[] = ['start', 'stop', 'restart'];
 
+export const quadletActionPermissions: Record<PodmanQuadletAction, string> = {
+	start: 'podman-quadlets:start',
+	stop: 'podman-quadlets:stop',
+	restart: 'podman-quadlets:restart'
+};
+
 export async function runQuadletAction(
 	name: string,
 	action: PodmanQuadletAction,

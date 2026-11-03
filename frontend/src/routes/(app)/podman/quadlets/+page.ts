@@ -40,7 +40,7 @@ export const load: PageLoad = async ({ url, parent }) => {
 		queryClient.query(
 			podmanQuadletListQuery(
 				scope,
-				shownPodmanEnvironments(podmanStatuses, (status) => status.quadletsSupported),
+				shownPodmanEnvironments(podmanStatuses, 'podman-quadlets:list', (status) => status.quadletsSupported),
 				requestOptions
 			)
 		)

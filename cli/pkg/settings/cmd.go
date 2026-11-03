@@ -20,7 +20,7 @@ import (
 
 type (
 	settingsListConfig struct {
-		endpoint       func(string) string
+		endpoint       func(*cobra.Command, string) (string, error)
 		failureMessage string
 		totalLabel     string
 	}
@@ -34,20 +34,41 @@ func Command() *cobra.Command {
 		Short:   "Manage settings",
 	}
 	cmdutil.SetScope(cmdutil.ScopeRead, cmd)
-	cmd.AddCommand(newListCmd(), newUpdateCmd(), newSetCmd(), newPublicCmd())
+	scoped := []*cobra.Command{newListCmd(), newUpdateCmd(), newSetCmd()}
+	for _, child := range scoped {
+		child.Flags().String("scope", "environment", "Settings scope: environment, manager (app-wide), or authentication (global admin only)")
+	}
+	cmd.AddCommand(append(scoped, newPublicCmd())...)
 	return cmd
+}
+
+func settingsEndpoint(cmd *cobra.Command, envID string) (string, error) {
+	scope, err := cmd.Flags().GetString("scope")
+	if err != nil {
+		return "", err
+	}
+	switch scope {
+	case "environment":
+		return clitypes.Settings(envID), nil
+	case "manager":
+		return clitypes.ManagerSettings(), nil
+	case "authentication":
+		return clitypes.AuthenticationSettings(), nil
+	default:
+		return "", fmt.Errorf("invalid scope %q: must be environment, manager, or authentication", scope)
+	}
 }
 
 func newListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "list",
 		Aliases:      []string{"ls"},
-		Short:        "List environment settings",
+		Short:        "List settings",
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSettingsList(cmd, settingsListConfig{
-				endpoint:       clitypes.Settings,
+				endpoint:       settingsEndpoint,
 				failureMessage: "failed to get settings",
 				totalLabel:     "settings",
 			})
@@ -61,7 +82,7 @@ func newUpdateCmd() *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:          "update",
-		Short:        "Update environment settings",
+		Short:        "Update settings",
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -87,7 +108,7 @@ func newUpdateCmd() *cobra.Command {
 func newSetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "set <key> <value>",
-		Short:        "Set one environment setting",
+		Short:        "Set one setting",
 		SilenceUsage: true,
 		Args:         cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -104,7 +125,11 @@ func runSettingsUpdate(cmd *cobra.Command, update types.SettingsUpdate) error {
 		return err
 	}
 
-	resp, err := c.Request(cmd.Context(), http.MethodPatch, clitypes.Settings(c.EnvID()), update)
+	endpoint, err := settingsEndpoint(cmd, c.EnvID())
+	if err != nil {
+		return err
+	}
+	resp, err := c.Request(cmd.Context(), http.MethodPatch, endpoint, update)
 	if err != nil {
 		return fmt.Errorf("failed to update settings: %w", err)
 	}
@@ -139,7 +164,9 @@ func newPublicCmd() *cobra.Command {
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSettingsList(cmd, settingsListConfig{
-				endpoint:       clitypes.SettingsPublic,
+				endpoint: func(_ *cobra.Command, envID string) (string, error) {
+					return clitypes.SettingsPublic(envID), nil
+				},
 				failureMessage: "failed to get public settings",
 				totalLabel:     "public settings",
 			})
@@ -153,7 +180,11 @@ func runSettingsList(cmd *cobra.Command, cfg settingsListConfig) error {
 		return err
 	}
 
-	result, err := c.DoJSON[types.SettingsSnapshot](cmd.Context(), http.MethodGet, cfg.endpoint(c.EnvID()), nil)
+	endpoint, err := cfg.endpoint(cmd, c.EnvID())
+	if err != nil {
+		return err
+	}
+	result, err := c.DoJSON[types.SettingsSnapshot](cmd.Context(), http.MethodGet, endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
 	}

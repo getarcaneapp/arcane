@@ -694,8 +694,14 @@ test('administers scoped identities and enforces their browser access immediatel
 			);
 			expect(environmentAdmin.permissionsByEnv.global ?? []).toEqual([]);
 
+			const environmentSettings = await environmentAdminPage.request.get(
+				'/api/environments/0/settings'
+			);
+			expect(environmentSettings.status(), 'environment settings must be readable').toBe(200);
+
 			for (const path of [
-				'/api/environments/0/settings',
+				'/api/settings',
+				'/api/settings/authentication',
 				'/api/templates/all',
 				'/api/templates/default',
 				'/api/variables',

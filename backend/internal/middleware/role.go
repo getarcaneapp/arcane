@@ -16,6 +16,23 @@ import (
 	"getarcane.dev/arcane/v3/pkg/httpx"
 )
 
+type EchoRoute struct {
+	authz.PermissionRoute
+
+	Handler     echo.HandlerFunc
+	Middlewares []echo.MiddlewareFunc
+}
+
+func RegisterEchoRoutes(g *echo.Group, routes []EchoRoute, shared ...echo.MiddlewareFunc) {
+	for _, route := range routes {
+		middlewares := slices.Concat(shared, route.Middlewares)
+		if route.Permission != "" {
+			middlewares = append(middlewares, RequireEchoPermission(route.Permission))
+		}
+		g.Add(route.Method, route.Path, route.Handler, middlewares...)
+	}
+}
+
 // RegisterWithPermission registers a Huma operation that requires perm. It
 // attaches the RequirePermission middleware AND records perm in the operation
 // metadata (authz.MetaRequiredPermission) so the remote environment proxy can
@@ -129,14 +146,18 @@ func permissionAllowed(ctx huma.Context, ps *authz.PermissionSet, perm string) b
 	return ps.Allows(perm, kit.Ternary(authz.IsEnvScoped(perm), authz.EnvIDFromPath(ctx.URL().Path), ""))
 }
 
-// RequireGlobalAdmin returns a per-operation Huma middleware that rejects any
-// caller who is not a global admin (or sudo). Used for operations that are
+// RequireGlobalAdmin returns op with middleware that rejects any caller who is
+// not a global admin (or sudo), recorded as authz.MetaRequireGlobalAdmin. Used for operations that are
 // intentionally not exposed as delegated permissions — role creation/edits,
 // user role assignment, and OIDC mapping management. Keeping these admin-only
 // avoids the meta-escalation surface where a holder of `roles:assign` could
 // promote themselves via a custom role.
-func RequireGlobalAdmin(api huma.API) huma.Middlewares {
-	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+func RequireGlobalAdmin(api huma.API, op huma.Operation) huma.Operation {
+	if op.Metadata == nil {
+		op.Metadata = map[string]any{}
+	}
+	op.Metadata[authz.MetaRequireGlobalAdmin] = true
+	op.Middlewares = append(op.Middlewares, func(ctx huma.Context, next func(huma.Context)) {
 		ps, _ := PermissionsFromContext(ctx.Context())
 		if !ps.IsGlobalAdmin() {
 			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: global admin required"); err != nil {
@@ -145,14 +166,19 @@ func RequireGlobalAdmin(api huma.API) huma.Middlewares {
 			return
 		}
 		next(ctx)
-	}}
+	})
+	return op
 }
 
 // RequireSudo restricts infrastructure-only operations to callers authenticated
 // through the agent-token path. Holding every user-facing permission is not
 // sufficient because these operations may expose materialized secret values.
-func RequireSudo(api huma.API) huma.Middlewares {
-	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+func RequireSudo(api huma.API, op huma.Operation) huma.Operation {
+	if op.Metadata == nil {
+		op.Metadata = map[string]any{}
+	}
+	op.Metadata[authz.MetaRequireSudo] = true
+	op.Middlewares = append(op.Middlewares, func(ctx huma.Context, next func(huma.Context)) {
 		ps, _ := PermissionsFromContext(ctx.Context())
 		if ps == nil || !ps.Sudo {
 			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: agent authentication required"); err != nil {
@@ -161,5 +187,6 @@ func RequireSudo(api huma.API) huma.Middlewares {
 			return
 		}
 		next(ctx)
-	}}
+	})
+	return op
 }

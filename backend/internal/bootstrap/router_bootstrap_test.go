@@ -14,6 +14,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/fx/fxtest"
 
 	"getarcane.dev/arcane/v3/api"
 	"getarcane.dev/arcane/v3/internal/auth"
@@ -25,6 +26,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/swarm"
 	"getarcane.dev/arcane/v3/internal/system"
 	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/cookie"
 )
 
@@ -34,7 +36,7 @@ func TestNewRouter_DecodesPathParams(t *testing.T) {
 		AppUrl:       "http://localhost:3552",
 		Environment:  config.AppEnvironmentTest,
 	}
-	router, _ := newRouter(RouterParams{
+	router := newRouter(RouterParams{
 		Context: t.Context(),
 		Config:  cfg,
 		HandlerDeps: api.HandlerDeps{
@@ -152,7 +154,7 @@ func TestProxiedEnvironmentRoutesAreAgentRoutable(t *testing.T) {
 	}
 
 	cfg := &config.Config{AgentEnabled: true, AppUrl: "http://localhost:3552", Environment: config.AppEnvironmentTest}
-	router, _ := newRouter(RouterParams{
+	router := newRouter(RouterParams{
 		Context: t.Context(),
 		Config:  cfg,
 		HandlerDeps: api.HandlerDeps{
@@ -190,4 +192,59 @@ func TestProxiedEnvironmentRoutesAreAgentRoutable(t *testing.T) {
 	slices.Sort(missing)
 	assert.Empty(t, slices.Compact(missing),
 		"proxied environment routes missing from the agent command allowlist; add them to pkg/agent/commands.go or classify them in middleware.IsManagerLocalPath")
+}
+
+func TestEveryAPIRouteIsInPermissionExport(t *testing.T) {
+	cfg := &config.Config{AppUrl: "http://localhost:3552", Environment: config.AppEnvironmentTest}
+	router := newRouter(RouterParams{
+		Context:   t.Context(),
+		Lifecycle: fxtest.NewLifecycle(t),
+		Config:    cfg,
+		HandlerDeps: api.HandlerDeps{
+			Project:   project.New(&project.ProjectService{}, nil),
+			Container: container.New(&container.ContainerService{}, nil, nil, nil),
+			Swarm:     swarm.New(&swarm.SwarmService{}, nil, nil, nil),
+			System:    system.New(&system.SystemService{}, nil, nil),
+			Health:    health.New(&health.Service{}),
+			Settings:  newTestSettingsModule(t, cfg),
+		},
+		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
+		TunnelRegistry: agent.NewTunnelRegistry(),
+		TunnelServer:   agent.NewTunnelServer(agent.TunnelServerOptions{Registry: agent.NewTunnelRegistry()}),
+	})
+
+	toExportPath := func(path string) string {
+		segments := strings.Split(path, "/")
+		for i, segment := range segments {
+			if name, ok := strings.CutPrefix(segment, ":"); ok {
+				segments[i] = "{" + name + "}"
+			}
+		}
+		return strings.Join(segments, "/")
+	}
+	exported := map[string]bool{}
+	for _, endpoint := range authz.BuildPermissionExport(api.SetupAPIForSpec(), EchoRoutePermissions()).Endpoints {
+		exported[endpoint.Method+" "+endpoint.Path] = true
+	}
+	echoTables := map[string]bool{}
+	for _, route := range EchoRoutePermissions() {
+		echoTables[route.Method+" "+toExportPath(route.Path)] = true
+	}
+
+	var missing []string
+	for _, route := range router.Router().Routes() {
+		path, isAPI := strings.CutPrefix(route.Path, "/api")
+		if !isAPI || route.Method == echo.RouteNotFound || route.Method == http.MethodOptions {
+			continue
+		}
+		key := route.Method + " " + toExportPath(path)
+		if !exported[key] {
+			missing = append(missing, key)
+		}
+		delete(echoTables, key)
+	}
+
+	slices.Sort(missing)
+	assert.Empty(t, missing, "API routes missing from the permission export; register them as Huma operations, or list WebSocket routes in EchoRoutePermissions")
+	assert.Empty(t, echoTables, "EchoRoutePermissions lists routes the manager router does not register")
 }

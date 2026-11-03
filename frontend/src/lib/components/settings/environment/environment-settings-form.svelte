@@ -18,10 +18,12 @@
 	let {
 		scope,
 		keys,
-		content
+		content,
+		readOnly
 	}: {
 		scope: ReturnType<typeof useEnvironmentSettingsScope>;
 		keys: SettingsFormKey[];
+		readOnly: boolean;
 		content: Snippet<[EnvironmentSettingsContent, ReturnType<typeof useEnvironmentSettingsScope>]>;
 	} = $props();
 
@@ -68,7 +70,8 @@
 		schema,
 		currentSettings,
 		onSave: (data) => scope.save(changedFields(currentSettings, data)),
-		onReset: () => toast.info(m.changes_reset())
+		onReset: () => toast.info(m.changes_reset()),
+		readOnly: untrack(() => readOnly)
 	});
 
 	function mixed(key: SettingKey): MixedSettingValue[] | undefined {
