@@ -60,8 +60,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/go/pkg/mod
-          key: arcane-go-${{ runner.os }}-${{ hashFiles('go.work.sum', '*/go.sum') }}
-          restore-keys: arcane-go-${{ runner.os }}-
+          key: arcane-go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('go.work.sum', '*/go.sum') }}
+          restore-keys: arcane-go-${{ runner.os }}-${{ github.job }}-
 
       - name: Capture frontend build versions
         id: frontend-versions

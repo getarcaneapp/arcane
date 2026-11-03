@@ -47,12 +47,11 @@
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import type { ContainersPaginatedResponse } from '#lib/services/container-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { ContainerSummaryDto } from '#lib/types/docker.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { ContainerPaginatedResponse, ContainerSummary } from '#lib/types/container.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
@@ -80,8 +79,8 @@
 	import KillContainerDialog from './kill-container-dialog.svelte';
 
 	type FieldVisibility = Record<string, boolean>;
-	type ContainerRow = EnvironmentRow<ContainerSummaryDto>;
-	type ContainerPage = EnvironmentPage<ContainersPaginatedResponse>;
+	type ContainerRow = EnvironmentRow<ContainerSummary>;
+	type ContainerPage = EnvironmentPage<ContainerPaginatedResponse>;
 
 	let {
 		scope,
@@ -584,7 +583,7 @@
 	<ContainerStatsSync {statsManager} targetIds={shouldConnect} />
 {/if}
 
-{#snippet IPAddressCell({ item, view }: { item: ContainerSummaryDto; view: TableViewMode })}
+{#snippet IPAddressCell({ item, view }: { item: ContainerSummary; view: TableViewMode })}
 	{@const ipAddresses = getContainerIpAddresses(item)}
 	{#if view === 'grid'}
 		<span class="font-mono">{ipAddresses.length > 0 ? ipAddresses.join(', ') : m.common_na()}</span>
@@ -617,7 +616,7 @@
 	percent,
 	unavailable
 }: {
-	item: ContainerSummaryDto;
+	item: ContainerSummary;
 	title: string;
 	percent: number | undefined;
 	unavailable: boolean;
@@ -635,7 +634,7 @@
 	</div>
 {/snippet}
 
-{#snippet CPUCell({ item, view }: { item: ContainerSummaryDto; view: TableViewMode })}
+{#snippet CPUCell({ item, view }: { item: ContainerSummary; view: TableViewMode })}
 	{#if view === 'grid'}
 		{@render UsageTile({
 			item,
@@ -661,7 +660,7 @@
 	{/if}
 {/snippet}
 
-{#snippet MemoryCell({ item, view }: { item: ContainerSummaryDto; view: TableViewMode })}
+{#snippet MemoryCell({ item, view }: { item: ContainerSummary; view: TableViewMode })}
 	{#if view === 'grid'}
 		{@const memoryData = resourceSortActive
 			? { usage: item.resourceSample?.memoryUsageBytes, limit: item.resourceSample?.memoryLimitBytes }
@@ -772,7 +771,7 @@
 	{/if}
 {/snippet}
 
-{#snippet IdCell({ item }: { item: ContainerSummaryDto })}
+{#snippet IdCell({ item }: { item: ContainerSummary })}
 	<span class="font-mono text-sm">{String(item.id)}</span>
 {/snippet}
 
@@ -861,7 +860,7 @@
 	{@render ContainerUpdateItem(item)}
 {/snippet}
 
-{#snippet ImageCell({ item }: { item: ContainerSummaryDto })}
+{#snippet ImageCell({ item }: { item: ContainerSummary })}
 	<ArcaneTooltip.Root>
 		<ArcaneTooltip.Trigger class="flex w-full min-w-0">
 			<span class="min-w-0 flex-1 cursor-default truncate text-left font-mono text-xs">
@@ -874,7 +873,7 @@
 	</ArcaneTooltip.Root>
 {/snippet}
 
-{#snippet CreatedCell({ item }: { item: ContainerSummaryDto })}
+{#snippet CreatedCell({ item }: { item: ContainerSummary })}
 	<span class="text-sm">
 		{item.created ? formatDateTimeShort(Temporal.Instant.fromEpochMilliseconds(item.created * 1000)) : m.common_na()}
 	</span>
@@ -912,21 +911,21 @@
 		fields={[
 			{
 				label: m.common_image(),
-				getValue: (item: ContainerSummaryDto) => item.image,
+				getValue: (item: ContainerSummary) => item.image,
 				icon: ImagesIcon,
 				iconVariant: 'blue' as const,
 				show: mobileFieldVisibility['image'] ?? true
 			},
 			{
 				label: m.common_status(),
-				getValue: (item: ContainerSummaryDto) => item.status,
+				getValue: (item: ContainerSummary) => item.status,
 				icon: ClockIcon,
 				iconVariant: 'purple' as const,
 				show: (mobileFieldVisibility['status'] ?? true) && item.status !== undefined
 			},
 			{
 				label: m.containers_ip_address(),
-				getValue: (item: ContainerSummaryDto) => getContainerIpAddresses(item),
+				getValue: (item: ContainerSummary) => getContainerIpAddresses(item),
 				icon: NetworksIcon,
 				iconVariant: 'sky' as const,
 				type: 'component' as const,
@@ -935,7 +934,7 @@
 			},
 			{
 				label: m.cpu_usage(),
-				getValue: (item: ContainerSummaryDto) => {
+				getValue: (item: ContainerSummary) => {
 					if (item.state !== 'running') return m.common_na();
 					if (resourceSortActive) {
 						const cpu = item.resourceSample?.cpuPercent;
@@ -951,7 +950,7 @@
 			},
 			{
 				label: m.memory_usage(),
-				getValue: (item: ContainerSummaryDto) => {
+				getValue: (item: ContainerSummary) => {
 					if (item.state !== 'running') return m.common_na();
 					if (resourceSortActive) {
 						const usage = item.resourceSample?.memoryUsageBytes;

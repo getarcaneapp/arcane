@@ -1,53 +1,52 @@
-import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
+import type { Paginated } from '#lib/types/base.js';
 import type {
-	SwarmServiceSummary,
-	SwarmNode,
-	SwarmTaskSummary,
-	SwarmStackSummary,
+	NodeAgentBindingRequest,
+	NodeAgentReconcileResponse,
 	SwarmInfo,
-	SwarmRuntimeStatus,
+	SwarmInitRequest,
+	SwarmInitResponse,
+	SwarmJoinCandidate,
+	SwarmJoinEnvironmentsRequest,
+	SwarmJoinEnvironmentsResponse,
+	SwarmJoinRequest,
+	SwarmJoinTokensResponse,
+	SwarmLeaveRequest,
+	SwarmNode,
 	SwarmNodeAgentDeployment,
-	SwarmNodeAgentBindingRequest,
-	SwarmNodeAgentReconcileResponse,
+	SwarmRotateJoinTokensRequest,
+	SwarmRuntimeStatus,
 	SwarmServiceCreateRequest,
-	SwarmServiceUpdateRequest,
 	SwarmServiceCreateResponse,
-	SwarmServiceUpdateResponse,
 	SwarmServiceInspect,
+	SwarmServiceScaleRequest,
+	SwarmServiceUpdateRequest,
+	SwarmServiceUpdateResponse,
 	SwarmStackDeployRequest,
 	SwarmStackDeployResponse,
-	SwarmServiceScaleRequest,
-	SwarmNodeUpdate,
 	SwarmStackInspect,
 	SwarmStackRenderConfigRequest,
 	SwarmStackRenderConfigResponse,
 	SwarmStackSource,
-	SwarmStackSourceUpdate,
-	SwarmInitRequest,
-	SwarmInitResponse,
-	SwarmJoinRequest,
-	SwarmLeaveRequest,
-	SwarmUnlockRequest,
 	SwarmUnlockKeyResponse,
-	SwarmJoinTokensResponse,
-	SwarmRotateJoinTokensRequest,
-	SwarmUpdateRequest,
+	SwarmUnlockRequest,
+	SwarmUpdateRequest
+} from '#lib/types/swarm.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type {
 	SwarmKvCreateRequest,
 	SwarmKvKind,
 	SwarmKvSummary,
 	SwarmKvUpdateRequest,
-	SwarmJoinCandidate,
-	SwarmJoinEnvironmentsRequest,
-	SwarmJoinEnvironmentsResponse
-} from '#lib/types/swarm.js';
+	SwarmNodeUpdate,
+	SwarmNodesPaginatedResponse,
+	SwarmServicesPaginatedResponse,
+	SwarmStackSourceUpdate,
+	SwarmStacksPaginatedResponse,
+	SwarmTasksPaginatedResponse
+} from '#lib/types/ui/swarm.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';
-
-export type SwarmServicesPaginatedResponse = Paginated<SwarmServiceSummary>;
-export type SwarmNodesPaginatedResponse = Paginated<SwarmNode>;
-export type SwarmTasksPaginatedResponse = Paginated<SwarmTaskSummary>;
-export type SwarmStacksPaginatedResponse = Paginated<SwarmStackSummary>;
 
 class SwarmService extends BaseAPIService {
 	async getServices(
@@ -120,11 +119,11 @@ class SwarmService extends BaseAPIService {
 		);
 	}
 
-	async reconcileNodeAgents(environmentId: string): Promise<SwarmNodeAgentReconcileResponse> {
+	async reconcileNodeAgents(environmentId: string): Promise<NodeAgentReconcileResponse> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/nodes/agents/reconcile`, {}));
 	}
 
-	async bindNodeAgent(nodeId: string, request: SwarmNodeAgentBindingRequest, environmentId: string): Promise<SwarmNode> {
+	async bindNodeAgent(nodeId: string, request: NodeAgentBindingRequest, environmentId: string): Promise<SwarmNode> {
 		return this.handleResponse(this.api.put(`/environments/${environmentId}/swarm/nodes/${nodeId}/agent/binding`, request));
 	}
 

@@ -1,6 +1,7 @@
 import { featureDefinitions } from '#lib/config/features.js';
-import type { EnvironmentFeatures, FeatureID } from '#lib/types/features.js';
+import type { FeatureID } from '#lib/types/features.js';
 import type { Settings } from '#lib/types/settings.js';
+import type { EnvironmentFeatures } from '#lib/types/ui/features.js';
 
 export function resolveFeatures(settings: Partial<Settings>): EnvironmentFeatures {
 	const features: EnvironmentFeatures['features'] = {};

@@ -1,4 +1,4 @@
-import type { GoroutineProfile } from '#lib/types/diagnostics.js';
+import type { GoroutineProfile } from '#lib/types/system.js';
 
 import BaseAPIService from './api-service';
 

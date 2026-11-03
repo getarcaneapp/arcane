@@ -12,7 +12,8 @@
 	import { volumeListQuery } from '#lib/query/volumes.js';
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { VolumeCreate, VolumeUsageCounts } from '#lib/types/docker.js';
+	import type { VolumeCreate } from '#lib/types/ui/volume.js';
+	import type { VolumeUsageCounts } from '#lib/types/volume.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { pinViewAction } from '#lib/utils/dashboard-layout.js';

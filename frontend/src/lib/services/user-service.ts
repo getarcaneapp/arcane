@@ -1,5 +1,7 @@
-import type { ProfileUpdate, User, UserCreate, UserUpdate } from '#lib/types/auth.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { Paginated } from '#lib/types/base.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { ProfileUpdate, UserCreate, UserUpdate } from '#lib/types/ui/user.js';
+import type { User } from '#lib/types/user.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService from './api-service';

@@ -5,7 +5,7 @@
 	import { DownloadIcon, EllipsisIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { ThemeDefinition } from '#lib/types/settings.js';
+	import type { ThemeDefinition } from '#lib/types/ui/theme.js';
 	import { downloadBlob } from '#lib/utils/browser-download.js';
 	import { saveUserPreferences } from '#lib/utils/user-preferences.js';
 

@@ -2,7 +2,7 @@ import { queryOptions } from '@tanstack/svelte-query';
 
 import { queryKeys } from '#lib/query/query-keys.js';
 import { containerRegistryService } from '#lib/services/container-registry-service.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 
 export function containerRegistryListQuery(requestOptions: SearchPaginationSortRequest) {
 	return queryOptions({

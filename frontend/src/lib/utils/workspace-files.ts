@@ -10,7 +10,8 @@ import type {
 } from '#lib/types/workspace.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
-export interface WorkspaceDisplayEntry extends Omit<WorkspaceFileDto, 'editable' | 'isSymlink' | 'readOnlyReason'> {
+export interface WorkspaceDisplayEntry extends Omit<WorkspaceFileDto, 'editable' | 'isSymlink' | 'modTime' | 'readOnlyReason'> {
+	modTime?: string;
 	editable?: boolean;
 	isSymlink?: boolean;
 	readOnlyReason?: WorkspaceReadOnlyReason | 'restore_pending';

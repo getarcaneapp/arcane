@@ -1,5 +1,5 @@
-import type { User } from '#lib/types/auth.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { User } from '#lib/types/user.js';
 
 function stableSerialize(value: unknown): string {
 	if (value === null || value === undefined) return 'null';

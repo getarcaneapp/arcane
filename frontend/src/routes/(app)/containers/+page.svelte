@@ -9,7 +9,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerListQuery } from '#lib/query/containers.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import type { ContainerStatusCounts } from '#lib/types/docker.js';
+	import type { ContainerStatusCounts } from '#lib/types/container.js';
 	import { pinViewAction } from '#lib/utils/dashboard-layout.js';
 	import { ENVIRONMENT_FILTER, environmentFilterIds, hasShownPermission, readableEnvironments } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';

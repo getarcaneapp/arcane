@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 
 import { imageDetailQuery } from '#lib/query/images.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
-import type { ImageDetailSummaryDto } from '#lib/types/docker.js';
+import type { ImageDetailSummary } from '#lib/types/image.js';
 import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -11,7 +11,7 @@ import type { PageLoad } from './$types';
 type ImageDetailData = {
 	envId: string;
 	imageId: string;
-	image: ImageDetailSummaryDto;
+	image: ImageDetailSummary;
 	error?: string;
 };
 

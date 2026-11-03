@@ -1,5 +1,5 @@
 import { m } from '#lib/paraglide/messages.js';
-import type { ConfirmDialogOptions, ConfirmDialogState } from '#lib/types/confirm-dialog.js';
+import type { ConfirmDialogOptions, ConfirmDialogState } from '#lib/types/ui/confirmdialog.js';
 
 export const confirmDialogState = $state<ConfirmDialogState>({ current: null });
 

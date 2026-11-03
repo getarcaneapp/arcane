@@ -1,29 +1,8 @@
+import type { UploadProgressCallback } from '#lib/types/ui/upload.js';
+import type { UploadKind, UploadSession } from '#lib/types/upload.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import BaseAPIService from './api-service';
-
-export type UploadKind = 'image' | 'volume-backup' | 'build-workspace';
-
-export interface UploadSession {
-	id: string;
-	kind: UploadKind;
-	filename: string;
-	size: number;
-	chunkSize: number;
-	totalChunks: number;
-	receivedChunks: number[];
-	complete: boolean;
-	createdAt: string;
-}
-
-export interface ChunkedUploadProgress {
-	chunksDone: number;
-	totalChunks: number;
-	bytesDone: number;
-	totalBytes: number;
-}
-
-export type UploadProgressCallback = (progress: ChunkedUploadProgress) => void;
 
 const chunkRetryAttempts = 3;
 const chunkRetryDelayMs = 1000;

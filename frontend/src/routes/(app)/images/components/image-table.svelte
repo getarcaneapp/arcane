@@ -33,13 +33,13 @@
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { imageService, type ImagesPaginatedResponse } from '#lib/services/image-service.js';
+	import { imageService } from '#lib/services/image-service.js';
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import type { ImageSummaryDto } from '#lib/types/docker.js';
-	import type { VulnerabilityScanSummary } from '#lib/types/environment.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { ImageListResponse, ImageSummary } from '#lib/types/image.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import type { VulnerabilityScanSummary } from '#lib/types/vulnerability.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -51,7 +51,7 @@
 
 	import ImageTagDialog from './image-tag-dialog.svelte';
 
-	type ImageRow = EnvironmentRow<ImageSummaryDto>;
+	type ImageRow = EnvironmentRow<ImageSummary>;
 
 	let {
 		images,
@@ -59,7 +59,7 @@
 		requestOptions = $bindable(),
 		onRetry
 	}: {
-		images: EnvironmentPage<ImagesPaginatedResponse>;
+		images: EnvironmentPage<ImageListResponse>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		onRetry: () => Promise<unknown>;
@@ -239,8 +239,7 @@
 			},
 			title: m.updates(),
 			cell: UpdatesCell,
-			align: 'center',
-			class: 'text-center'
+			align: 'center'
 		},
 		{
 			id: 'vulnerabilities',
@@ -261,8 +260,7 @@
 			title: m.vuln_title(),
 			sortable: true,
 			cell: VulnerabilitiesCell,
-			align: 'center',
-			class: 'text-center'
+			align: 'center'
 		},
 		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
 		{ accessorKey: 'created', title: m.common_created(), sortable: true, cellComponent: UnixCreatedCell }
@@ -366,7 +364,7 @@
 	<InUseStatus inUse={item.inUse} />
 {/snippet}
 
-{#snippet UsageBadgeList(usages: NonNullable<ImageSummaryDto['usedBy']>, environmentId: string)}
+{#snippet UsageBadgeList(usages: NonNullable<ImageSummary['usedBy']>, environmentId: string)}
 	{#each usages as usage, usageIndex (`${usage.type}-${usage.id ?? usage.name}-${usageIndex}`)}
 		{#if usage.type === 'project'}
 			{#if usage.id}

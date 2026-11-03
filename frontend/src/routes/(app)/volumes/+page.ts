@@ -1,6 +1,6 @@
 import { volumeListQuery } from '#lib/query/volumes.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { readableEnvironments } from '#lib/utils/environments.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 

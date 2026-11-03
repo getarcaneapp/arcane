@@ -27,8 +27,9 @@
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { settingsSearchService } from '#lib/services/settings-search.js';
-	import type { PermissionsManifest, User } from '#lib/types/auth.js';
-	import type { SettingsCategory } from '#lib/types/shared.js';
+	import type { Category } from '#lib/types/category.js';
+	import type { PermissionsManifest } from '#lib/types/role.js';
+	import type { User } from '#lib/types/user.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { canReachAccessSurfaceUrl, isInAppPath } from '#lib/utils/auth.js';
 	import { normalizeCategory } from '#lib/utils/category-page.js';
@@ -66,8 +67,8 @@
 		permissionsManifest
 	}: Props = $props();
 
-	let settingsCategories = $state<SettingsCategory[]>([]);
-	const categorySearch = useCategorySearch<SettingsCategory>({
+	let settingsCategories = $state<Category[]>([]);
+	const categorySearch = useCategorySearch<Category>({
 		search: (query) => settingsSearchService.search(query),
 		filter: isAccessibleCategory
 	});
@@ -163,13 +164,13 @@
 		if (isInAppPath(categoryUrl)) goto(categoryUrl);
 	}
 
-	function isAccessibleCategory(category: SettingsCategory) {
+	function isAccessibleCategory(category: Category) {
 		if (!category.url.startsWith(`${rootUrl}/`)) return false;
 		if (!permissionsManifest?.accessSurfaces?.length) return true;
 		return canReachAccessSurfaceUrl(permissionsManifest, category.url, user);
 	}
 
-	function normalize(category: SettingsCategory): NormalizedCategory {
+	function normalize(category: Category): NormalizedCategory {
 		return {
 			...normalizeCategory(category, categoryMessages[category.id], iconMap, SettingsIcon),
 			matchingItems: category.matchingSettings

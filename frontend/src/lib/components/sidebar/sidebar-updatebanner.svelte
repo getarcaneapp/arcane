@@ -5,7 +5,7 @@
 	import { useUpgradeCheck } from '#lib/hooks/use-upgrade-check.svelte.js';
 	import { CircleArrowUpIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { AppVersionInformation } from '#lib/types/settings.js';
+	import type { VersionInfo } from '#lib/types/version.js';
 	import { cn } from '#lib/utils.js';
 
 	import UpdateAvailableBanner from './update-available-banner.svelte';
@@ -16,7 +16,7 @@
 		debug = false
 	}: {
 		isCollapsed: boolean;
-		versionInformation?: AppVersionInformation;
+		versionInformation?: VersionInfo;
 		debug?: boolean;
 	} = $props();
 

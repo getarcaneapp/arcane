@@ -10,7 +10,7 @@
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { templateService } from '#lib/services/template-service.js';
-	import type { TemplateRegistryCreate } from '#lib/types/swarm.js';
+	import type { TemplateRegistryCreate } from '#lib/types/ui/template.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
 	type TemplateRegistryFormProps = {

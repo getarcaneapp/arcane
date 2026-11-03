@@ -374,9 +374,6 @@
 
 						<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 							{@render kvTile(m.common_id(), image?.id || m.common_na(), true)}
-							{#if image?.dockerVersion}
-								{@render kvTile(m.common_docker_version(), image.dockerVersion)}
-							{/if}
 							{#if image?.author}
 								{@render kvTile(m.common_author(), image.author)}
 							{/if}
@@ -440,8 +437,7 @@
 		bind:open={tagDialogOpen}
 		imageId={image.id}
 		environmentId={currentEnvId}
-		defaultRepository={image.repoTags?.[0]?.split(':')[0] ??
-			(pinnedRepository || (image.repo && image.repo !== '<none>' ? image.repo : ''))}
+		defaultRepository={image.repoTags?.[0]?.split(':')[0] ?? (pinnedRepository || '')}
 		onTagged={() => queryClient.invalidateQueries({ queryKey: queryKeys.images.detail(currentEnvId, data.imageId) })}
 	/>
 {/if}

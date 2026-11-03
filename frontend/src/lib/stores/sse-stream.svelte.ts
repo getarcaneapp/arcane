@@ -1,7 +1,7 @@
 import { browser } from '$app/env';
 
 import { currentSessionSignal } from '#lib/services/api-service.js';
-import type { SSEEventBase, SSEStreamConfig } from '#lib/types/stream.js';
+import type { SSEEventBase, SSEStreamConfig } from '#lib/types/ui/stream.js';
 import { createAbortLifecycle } from '#lib/utils/abort-lifecycle.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 

@@ -4,7 +4,7 @@
 	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { ContainerSummaryDto } from '#lib/types/docker.js';
+	import type { ContainerSummary } from '#lib/types/container.js';
 	import type { EnvironmentRow } from '#lib/utils/environments.js';
 	import { bytes } from '#lib/utils/formatting.js';
 
@@ -18,7 +18,7 @@
 		loading,
 		failed
 	}: {
-		containers: EnvironmentRow<ContainerSummaryDto>[];
+		containers: EnvironmentRow<ContainerSummary>[];
 		loading: boolean;
 		failed: boolean;
 	} = $props();

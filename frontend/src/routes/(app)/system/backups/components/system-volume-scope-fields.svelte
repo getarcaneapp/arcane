@@ -9,7 +9,7 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { LoadingSpinnerIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import type { SystemVolumeBackupOption, SystemVolumeBackupSelectionMode } from '#lib/types/system-backup.js';
+	import type { SystemVolumeBackupOption, SystemVolumeSelectionMode } from '#lib/types/backup.js';
 
 	let {
 		idPrefix,
@@ -21,16 +21,12 @@
 		onChange
 	}: {
 		idPrefix: string;
-		selectionMode: SystemVolumeBackupSelectionMode;
+		selectionMode: SystemVolumeSelectionMode;
 		volumeNames: string[];
 		ignoreAnonymous: boolean;
 		options: SystemVolumeBackupOption[];
 		loading?: boolean;
-		onChange: (values: {
-			selectionMode?: SystemVolumeBackupSelectionMode;
-			volumeNames?: string[];
-			ignoreAnonymous?: boolean;
-		}) => void;
+		onChange: (values: { selectionMode?: SystemVolumeSelectionMode; volumeNames?: string[]; ignoreAnonymous?: boolean }) => void;
 	} = $props();
 
 	let search = $state('');
@@ -75,7 +71,7 @@
 			id={`${idPrefix}-selection-mode`}
 			hideLabel
 			value={selectionMode}
-			onValueChange={(value) => onChange({ selectionMode: value as SystemVolumeBackupSelectionMode })}
+			onValueChange={(value) => onChange({ selectionMode: value as SystemVolumeSelectionMode })}
 			label={m.system_volume_backups_selection_mode()}
 			options={selectionOptions}
 		/>

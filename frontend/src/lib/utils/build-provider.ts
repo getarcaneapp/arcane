@@ -1,4 +1,4 @@
-import type { ResolvedSettings } from '#lib/types/settings.js';
+import type { ResolvedSettings } from '#lib/types/ui/settings.js';
 
 export function isDepotBuildAvailable(settings: ResolvedSettings | null | undefined): boolean {
 	const projectId = (settings?.values.depotProjectId ?? '').trim();

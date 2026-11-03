@@ -30,14 +30,14 @@
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
-	import type { BackupFileProvider, BackupFileRootLoadState } from '#lib/types/backup.js';
 	import type {
-		BackupHistoryEntry,
+		SystemVolumeBackupHistoryEntry,
 		SystemBackupDestination,
 		SystemVolumeBackupOption,
-		SystemVolumeBackupSelectionMode
-	} from '#lib/types/system-backup.js';
+		SystemVolumeSelectionMode
+	} from '#lib/types/backup.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
+	import type { BackupFileProvider, BackupFileRootLoadState } from '#lib/types/ui/backup.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { hasAnyPermission, hasPermission, isGlobalAdmin } from '#lib/utils/auth.js';
 	import {
@@ -74,13 +74,13 @@
 	let importingKey = $state(false);
 	let actionOpen = $state(false);
 	let action = $state<'create' | 'restore' | 'upload' | 'delete' | 'discover'>('create');
-	let selected = $state<BackupHistoryEntry | null>(null);
+	let selected = $state<SystemVolumeBackupHistoryEntry | null>(null);
 	let backupType = $state<'system' | 'volume'>('system');
 	let backupConfiguration = $state('custom');
 	let destination = $state<SystemBackupDestination>('local');
 	let s3DestinationId = $state('');
 	let stopContainers = $state(false);
-	let selectionMode = $state<SystemVolumeBackupSelectionMode>('all');
+	let selectionMode = $state<SystemVolumeSelectionMode>('all');
 	let volumeNames = $state<string[]>([]);
 	let ignoreAnonymous = $state(true);
 	let systemVolumeOptionsLoading = $state(false);
@@ -90,7 +90,7 @@
 	let loading = $state(false);
 	let generatingKey = $state(false);
 	let restoreFilesOpen = $state(false);
-	let restoreFilesTarget = $state<BackupHistoryEntry | null>(null);
+	let restoreFilesTarget = $state<SystemVolumeBackupHistoryEntry | null>(null);
 	let restoreFilesRecoveryKey = $state('');
 	let restoreFilesProvider = $state<BackupFileProvider | null>(null);
 	let restoreFilesSelectedPaths = $state<string[]>([]);
@@ -226,7 +226,7 @@
 		}
 	}
 
-	function openAction(next: typeof action, backup: BackupHistoryEntry | null = null) {
+	function openAction(next: typeof action, backup: SystemVolumeBackupHistoryEntry | null = null) {
 		action = next;
 		selected = backup;
 		backupType = 'system';
@@ -255,7 +255,7 @@
 		restoreFilesSearch = '';
 	}
 
-	async function openRestoreFiles(backup: BackupHistoryEntry) {
+	async function openRestoreFiles(backup: SystemVolumeBackupHistoryEntry) {
 		restoreFilesTarget = backup;
 		restoreFilesRecoveryKey = '';
 		resetRestoreFilesPicker();
@@ -381,7 +381,7 @@
 		if (backupType === 'volume') void loadSystemVolumeOptions();
 	}
 
-	async function openVolumeBackups(backup: BackupHistoryEntry) {
+	async function openVolumeBackups(backup: SystemVolumeBackupHistoryEntry) {
 		await goto(
 			resolve(`/(app)/volumes/[volumeName]?tab=backups&env=${encodeURIComponent(LOCAL_DOCKER_ENVIRONMENT_ID)}`, {
 				volumeName: encodeURIComponent(backup.resourceName)
@@ -414,7 +414,7 @@
 		void discoverStoredBackups();
 	});
 
-	function openVolumeRestore(backup: BackupHistoryEntry) {
+	function openVolumeRestore(backup: SystemVolumeBackupHistoryEntry) {
 		openConfirmDialog({
 			title: m.volumes_backup_restore_title(),
 			message: m.volumes_backup_restore_message({ volumeName: backup.resourceName }),

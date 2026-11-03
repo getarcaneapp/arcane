@@ -20,9 +20,9 @@
 	import { imageListQuery, imageUsageCountsQuery } from '#lib/query/images.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
-	import type { ChunkedUploadProgress } from '#lib/services/upload-service.js';
 	import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-	import type { ImageUsageCounts } from '#lib/types/docker.js';
+	import type { ImageUsageCounts } from '#lib/types/image.js';
+	import type { ChunkedUploadProgress } from '#lib/types/ui/upload.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { pinViewAction } from '#lib/utils/dashboard-layout.js';

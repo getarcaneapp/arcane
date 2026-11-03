@@ -12,7 +12,7 @@
 	import { ArrowRightIcon, ArrowLeftIcon, type IconType } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import type { SettingsFormContext, SettingsFormState } from '#lib/types/settings-form.js';
+	import type { SettingsFormContext, SettingsFormState } from '#lib/types/ui/settingsform.js';
 	import { cn } from '#lib/utils.js';
 
 	interface Props {

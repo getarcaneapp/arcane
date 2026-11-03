@@ -25,12 +25,12 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
-	import type { ContainersPaginatedResponse } from '#lib/services/container-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { ContainerSummaryDto } from '#lib/types/docker.js';
-	import type { ImageUpdateInfoDto } from '#lib/types/docker.js';
-	import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
+	import type { PaginatedWithCounts } from '#lib/types/base.js';
+	import type { ContainerPaginatedResponse, ContainerSummary } from '#lib/types/container.js';
+	import type { ImageUpdateInfo } from '#lib/types/image.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
@@ -44,7 +44,7 @@
 
 	import { getContainerDisplayName } from '../../containers/container-table.helpers';
 
-	type ContainerRow = EnvironmentRow<ContainerSummaryDto>;
+	type ContainerRow = EnvironmentRow<ContainerSummary>;
 	type ContainerUpdateRow = {
 		id: string;
 		environmentId: string;
@@ -63,12 +63,12 @@
 		/** False when the agent omitted `autoUpdateEnabled`; toggling is then unavailable. */
 		statusAvailable: boolean;
 		autoUpdateTitle: string;
-		updateInfo?: ImageUpdateInfoDto;
+		updateInfo?: ImageUpdateInfo;
 		container: ContainerRow;
 	};
 
 	interface Props {
-		containers: EnvironmentPage<ContainersPaginatedResponse>;
+		containers: EnvironmentPage<ContainerPaginatedResponse>;
 		requestOptions: SearchPaginationSortRequest;
 		onRetry: () => Promise<unknown>;
 		onAutoUpdateChanged?: () => Promise<unknown> | unknown;
@@ -146,7 +146,7 @@
 		};
 	}
 
-	const tableItems = $derived<Paginated<ContainerUpdateRow, ContainersPaginatedResponse['counts']>>({
+	const tableItems = $derived<PaginatedWithCounts<ContainerUpdateRow, ContainerPaginatedResponse['counts']>>({
 		...containers,
 		data: (containers.data ?? []).map(mapContainerRow)
 	});

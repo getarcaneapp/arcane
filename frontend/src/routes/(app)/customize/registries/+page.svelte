@@ -12,8 +12,8 @@
 	import { containerRegistryListQuery, containerRegistryPullUsageQuery } from '#lib/query/container-registries.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
-	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/docker.js';
-	import type { ContainerRegistryCreate, ContainerRegistryUpdate } from '#lib/types/docker.js';
+	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/containerregistry.js';
+	import type { ContainerRegistryCreate, ContainerRegistryUpdate } from '#lib/types/ui/containerregistry.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';

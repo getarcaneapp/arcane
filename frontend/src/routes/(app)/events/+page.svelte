@@ -7,7 +7,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { eventListQuery, eventStatsQuery } from '#lib/query/events.js';
 	import { eventService } from '#lib/services/event-service.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 

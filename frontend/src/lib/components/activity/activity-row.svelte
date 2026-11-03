@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ActivityGroup } from '#lib/types/activity.type.js';
+	import type { ActivityGroup } from '#lib/types/ui/activity.js';
 	import { cn } from '#lib/utils.js';
 	import { formatRelativeTime, formatTime } from '#lib/utils/formatting.js';
 

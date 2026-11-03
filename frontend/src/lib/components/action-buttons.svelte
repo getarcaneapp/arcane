@@ -15,10 +15,9 @@
 	import { projectService } from '#lib/services/project-service.js';
 	import { deployOptionsStore } from '#lib/stores/deploy-options.store.svelte.js';
 	import { operationWatchStore } from '#lib/stores/operation-watch.store.svelte.js';
-	import type { ContainerDetailsDto } from '#lib/types/docker.js';
-	import type { DeployProjectOptions } from '#lib/types/project-deployment.js';
-	import type { MessageResponse } from '#lib/types/shared.js';
-	import type { Project } from '#lib/types/swarm.js';
+	import type { MessageResponse } from '#lib/types/base.js';
+	import type { ContainerDetails } from '#lib/types/container.js';
+	import type { Project, ProjectDeployOptions } from '#lib/types/project.js';
 	import { activityToastOptions, activityIdFromStreamFrame, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -176,7 +175,7 @@
 							// spend the single-shot recreateVolumes opt-in.
 							deployOptionsStore.takeRequestOptions(),
 							target.environmentId
-						)) as Promise<ContainerDetailsDto | Project>
+						)) as Promise<ContainerDetails | Project>
 			),
 		onMutate: () => {
 			redeployActivityId = undefined;
@@ -352,7 +351,7 @@
 						activityToastOptions(activityId)
 					);
 				}
-				const containerData = data as ContainerDetailsDto;
+				const containerData = data as ContainerDetails;
 				if (type === 'container' && containerData?.id) {
 					goto(
 						resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(target.environmentId)}`, {
@@ -380,7 +379,7 @@
 		});
 	}
 
-	async function handleDeploy(options?: DeployProjectOptions, watch = false) {
+	async function handleDeploy(options?: ProjectDeployOptions, watch = false) {
 		setLoading('start', true);
 
 		const operationStartedAt = Math.floor(Temporal.Now.instant().epochMilliseconds / 1000);

@@ -12,8 +12,9 @@
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import type { GlobalVariable } from '#lib/types/env.js';
 	import type { Environment } from '#lib/types/environment.js';
-	import type { GlobalVariable, GlobalVariableCreate, GlobalVariableUpdate } from '#lib/types/variable.js';
+	import type { GlobalVariableCreate, GlobalVariableUpdate } from '#lib/types/ui/env.js';
 	import { applyApiFieldError, extractApiErrorMessage } from '#lib/utils/api.js';
 	import { parseEnvText, normalizeVariableKeyInput } from '#lib/utils/env-file.js';
 	import { changedFields } from '#lib/utils/payload.js';

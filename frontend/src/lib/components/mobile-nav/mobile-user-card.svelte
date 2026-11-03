@@ -6,7 +6,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { User } from '#lib/types/auth.js';
+	import type { User } from '#lib/types/user.js';
 	import { cn } from '#lib/utils.js';
 
 	type Props = {

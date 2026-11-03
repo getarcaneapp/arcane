@@ -1,4 +1,4 @@
-import type { Result } from '#lib/types/result.js';
+import type { Result } from '#lib/types/ui/result.js';
 
 export async function tryCatch<T, E = Error>(promise: Promise<T>): Promise<Result<T, E>> {
 	try {

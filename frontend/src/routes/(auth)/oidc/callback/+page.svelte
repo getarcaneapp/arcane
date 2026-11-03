@@ -15,7 +15,8 @@
 	import { settingsService } from '#lib/services/settings-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
-	import type { AuthenticationResponse, MFAChallenge as MFAChallengeData, User } from '#lib/types/auth.js';
+	import type { AuthenticationResponse, MFAChallenge as MFAChallengeData } from '#lib/types/auth.js';
+	import type { User } from '#lib/types/user.js';
 	import { getAuthRedirectPath, isInAppPath, normalizeAuthenticationError } from '#lib/utils/auth.js';
 	import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -125,14 +126,7 @@
 			const authResult = await authService.handleCallback(code, stateFromUrl);
 
 			if (!authResult.success) {
-				let userMessage = m.auth_oidc_auth_failed();
-				if (authResult.error?.includes('state')) {
-					userMessage = m.auth_oidc_state_mismatch();
-				} else if (authResult.error?.includes('expired')) {
-					userMessage = m.auth_oidc_session_expired();
-				}
-
-				throw failure('oidc_auth_failed', authResult.error || userMessage);
+				throw failure('oidc_auth_failed', m.auth_oidc_auth_failed());
 			}
 
 			if (authResult.status === 'mfa_required') {

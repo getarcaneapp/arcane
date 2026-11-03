@@ -10,7 +10,8 @@
 	import { containerService } from '#lib/services/container-service.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { projectService } from '#lib/services/project-service.js';
-	import type { WebhookActionType, WebhookTargetType, WebhookCreate } from '#lib/types/environment.js';
+	import type { WebhookCreate } from '#lib/types/ui/webhook.js';
+	import type { WebhookActionType, WebhookTargetType } from '#lib/types/webhook.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';

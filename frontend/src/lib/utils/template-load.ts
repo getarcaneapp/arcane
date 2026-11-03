@@ -3,9 +3,9 @@ import type { QueryClient } from '@tanstack/svelte-query';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { templateService } from '#lib/services/template-service.js';
 import { variableService } from '#lib/services/variable-service.js';
-import type { User } from '#lib/types/auth.js';
-import type { Template, TemplateContentData } from '#lib/types/swarm.js';
-import type { GlobalVariable } from '#lib/types/variable.js';
+import type { GlobalVariable } from '#lib/types/env.js';
+import type { Template, TemplateContent } from '#lib/types/template.js';
+import type { User } from '#lib/types/user.js';
 import { extractApiErrorMessage } from '#lib/utils/api.js';
 import { userHasPermission } from '#lib/utils/auth.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -32,7 +32,7 @@ export type TemplateAuthoringPermissions = {
 };
 
 export type SelectedTemplateLoad = {
-	content: TemplateContentData | null;
+	content: TemplateContent | null;
 	/** Server error for an explicitly requested template; null when it loaded or was not requested. */
 	error: string | null;
 	/** True when the template was requested without `templates:read`, so no request was made. */

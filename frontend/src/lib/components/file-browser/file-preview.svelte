@@ -5,12 +5,15 @@
 	import * as Sheet from '#lib/components/ui/sheet/index.js';
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { LoadingSpinnerIcon } from '#lib/icons/index.js';
-	import type { FileEntry } from '#lib/types/shared.js';
+	import type { WorkspaceFileEntry } from '#lib/types/workspace.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { workspaceFileLanguage } from '#lib/utils/workspace-files.js';
 
-	let { file, fetchContent, onClose }: { file: FileEntry; fetchContent: (path: string) => Promise<string>; onClose: () => void } =
-		$props();
+	let {
+		file,
+		fetchContent,
+		onClose
+	}: { file: WorkspaceFileEntry; fetchContent: (path: string) => Promise<string>; onClose: () => void } = $props();
 
 	let content = $state<string | null>(null);
 	let loading = $state(true);

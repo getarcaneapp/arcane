@@ -47,15 +47,16 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { volumeBackupListQuery } from '#lib/query/volumes.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
-	import { volumeBackupService, type VolumeBackupListResponse } from '#lib/services/volume-backup-service.js';
+	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
-	import type { BackupFileProvider } from '#lib/types/backup.js';
-	import type { S3Destination } from '#lib/types/s3-destination.js';
-	import type { BackupEntry, CreateVolumeBackupRequest, VolumeBackupPolicy } from '#lib/types/shared.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { S3Destination } from '#lib/types/backup.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
+	import type { BackupFileProvider } from '#lib/types/ui/backup.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import type { VolumeBackupListResponse } from '#lib/types/ui/volume.js';
+	import type { VolumeBackupEntry, CreateVolumeBackupRequest, VolumeBackupPolicy } from '#lib/types/volume.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -111,7 +112,7 @@
 	let uploadingBackupId = $state<string | null>(null);
 	let restoringFiles = $state(false);
 	let showRestoreFiles = $state(false);
-	let restoreTarget = $state<BackupEntry | null>(null);
+	let restoreTarget = $state<VolumeBackupEntry | null>(null);
 	let backupFileProvider = $state<BackupFileProvider | null>(null);
 	let backupFilesSearch = $state('');
 	let selectedPaths = $state<string[]>([]);
@@ -243,7 +244,7 @@
 		}
 	}
 
-	async function handleDelete(backup: BackupEntry) {
+	async function handleDelete(backup: VolumeBackupEntry) {
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: m.volumes_workspace_backup() }),
 			message: m.volumes_backup_delete_confirm(),
@@ -312,7 +313,7 @@
 		}
 	}
 
-	async function handleUpload(backup: BackupEntry, s3DestinationId: string) {
+	async function handleUpload(backup: VolumeBackupEntry, s3DestinationId: string) {
 		uploadingBackupId = backup.id;
 		try {
 			await runBackupAction(
@@ -325,7 +326,7 @@
 		}
 	}
 
-	function openRestoreFilesDialog(backup: BackupEntry) {
+	function openRestoreFilesDialog(backup: VolumeBackupEntry) {
 		restoreTarget = backup;
 		selectedPaths = [];
 		selectAllBackupFiles = false;
@@ -336,7 +337,7 @@
 		showRestoreFiles = true;
 	}
 
-	async function handleRestore(backup: BackupEntry) {
+	async function handleRestore(backup: VolumeBackupEntry) {
 		const name = volumeName;
 		const environmentId = currentEnvId;
 		// Check if volume is in use
@@ -447,7 +448,7 @@
 			hidden: true
 		},
 		{ accessorKey: 'error', title: m.common_error(), sortable: false, cell: ErrorCell, hidden: true }
-	] satisfies ColumnSpec<BackupEntry>[];
+	] satisfies ColumnSpec<VolumeBackupEntry>[];
 
 	const mobileFields = [
 		...backupRunMobileFields(),
@@ -469,43 +470,43 @@
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
 
-{#snippet IdCell({ item }: { item: BackupEntry })}
+{#snippet IdCell({ item }: { item: VolumeBackupEntry })}
 	<code class="font-mono text-xs font-medium">{item.id}</code>
 {/snippet}
 
-{#snippet StatusCell({ item }: { item: BackupEntry })}
+{#snippet StatusCell({ item }: { item: VolumeBackupEntry })}
 	<BackupStatusCell status={item.status} />
 {/snippet}
 
-{#snippet TypeCell({ item }: { item: BackupEntry })}
+{#snippet TypeCell({ item }: { item: VolumeBackupEntry })}
 	<BackupManagementCell type={item.type} />
 {/snippet}
 
-{#snippet TriggerCell({ item }: { item: BackupEntry })}
+{#snippet TriggerCell({ item }: { item: VolumeBackupEntry })}
 	<BackupTriggerCell trigger={item.trigger} />
 {/snippet}
 
-{#snippet DestinationCell({ item }: { item: BackupEntry })}
+{#snippet DestinationCell({ item }: { item: VolumeBackupEntry })}
 	<BackupDestinationCell {item} />
 {/snippet}
 
-{#snippet SizeCell({ item }: { item: BackupEntry })}
+{#snippet SizeCell({ item }: { item: VolumeBackupEntry })}
 	<BackupSizeCell size={item.size} />
 {/snippet}
 
-{#snippet CreatedCell({ item }: { item: BackupEntry })}
+{#snippet CreatedCell({ item }: { item: VolumeBackupEntry })}
 	<CreatedAtCell value={item.createdAt} />
 {/snippet}
 
-{#snippet RemoteSnapshotCell({ item }: { item: BackupEntry })}
+{#snippet RemoteSnapshotCell({ item }: { item: VolumeBackupEntry })}
 	<code class="text-xs">{item.remoteSnapshotId || m.volume_backup_not_uploaded()}</code>
 {/snippet}
 
-{#snippet ErrorCell({ item }: { item: BackupEntry })}
+{#snippet ErrorCell({ item }: { item: VolumeBackupEntry })}
 	<span class="line-clamp-2 max-w-80 text-xs text-destructive">{item.error || '-'}</span>
 {/snippet}
 
-{#snippet RowActions({ item }: { item: BackupEntry })}
+{#snippet RowActions({ item }: { item: VolumeBackupEntry })}
 	<RowActionsMenu openMenuLabel={m.common_open_menu()}>
 		{#if canBackupVolume}
 			<DropdownMenu.Item onclick={() => handleRestore(item)}>
@@ -606,7 +607,7 @@
 	item,
 	mobileFieldVisibility
 }: {
-	item: BackupEntry;
+	item: VolumeBackupEntry;
 	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard

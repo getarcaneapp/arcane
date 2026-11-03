@@ -1,7 +1,7 @@
 <script lang="ts">
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { FormInput as FormInputType } from '#lib/types/form.js';
+	import type { FormInput as FormInputType } from '#lib/types/ui/form.js';
 
 	interface Props {
 		repository: FormInputType<string | boolean | number | undefined>;

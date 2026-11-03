@@ -15,8 +15,10 @@
 	import * as m from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { apiKeyService } from '#lib/services/api-key-service.js';
-	import { GLOBAL_SCOPE, type ApiKey } from '#lib/types/auth.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { ApiKey } from '#lib/types/apikey.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { confirmDeleteApiKey } from '#lib/utils/api-keys.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';

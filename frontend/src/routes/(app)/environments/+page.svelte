@@ -16,7 +16,7 @@
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission, isGlobalAdmin } from '#lib/utils/auth.js';
 	import { downloadFromUrl } from '#lib/utils/browser-download.js';

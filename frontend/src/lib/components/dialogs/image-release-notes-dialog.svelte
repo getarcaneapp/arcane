@@ -8,7 +8,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
-	import type { ImageReleaseNotesDto } from '#lib/types/docker.js';
+	import type { ImageReleaseNotes } from '#lib/types/image.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
 
 	interface Props {
@@ -21,7 +21,7 @@
 
 	let { open = $bindable(false), environmentId, imageRef, version, digest }: Props = $props();
 
-	const releaseNotesQuery = createQuery<ImageReleaseNotesDto>(() => ({
+	const releaseNotesQuery = createQuery<ImageReleaseNotes>(() => ({
 		queryKey: queryKeys.images.releaseNotes(environmentId, imageRef, version ?? '', digest ?? ''),
 		queryFn: () => imageService.getImageReleaseNotes(environmentId, imageRef, { version, digest }),
 		enabled: open && !!environmentId && !!imageRef,

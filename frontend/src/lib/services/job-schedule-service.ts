@@ -1,5 +1,6 @@
-import type { JobRun, JobRunList } from '#lib/types/job.js';
-import type { JobScheduleConfig, JobScheduleConfigUpdate, JobListResponse } from '#lib/types/settings.js';
+import type { JobScheduleConfig, JobListResponse } from '#lib/types/jobschedule.js';
+import type { SchedulerRun, SchedulerRunList } from '#lib/types/scheduler.js';
+import type { JobScheduleConfigUpdate } from '#lib/types/ui/jobschedule.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';
 
@@ -16,17 +17,17 @@ class JobScheduleService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/jobs`, config));
 	}
 
-	async listRuns(jobId: string, environmentId: string, page = 1): Promise<JobRunList> {
+	async listRuns(jobId: string, environmentId: string, page = 1): Promise<SchedulerRunList> {
 		return this.handleResponse(
 			this.api.get(`/environments/${environmentId}/jobs/${encodeURIComponent(jobId)}/runs`, { params: { page, limit: 20 } })
 		);
 	}
-	async getRun(jobId: string, runId: string, environmentId: string): Promise<JobRun> {
+	async getRun(jobId: string, runId: string, environmentId: string): Promise<SchedulerRun> {
 		return this.handleResponse(
 			this.api.get(`/environments/${environmentId}/jobs/${encodeURIComponent(jobId)}/runs/${encodeURIComponent(runId)}`)
 		);
 	}
-	async updateRun(jobId: string, runId: string, action: 'retry' | 'cancel', environmentId: string): Promise<JobRun> {
+	async updateRun(jobId: string, runId: string, action: 'retry' | 'cancel', environmentId: string): Promise<SchedulerRun> {
 		return this.handleResponse(
 			this.api.post(
 				`/environments/${environmentId}/jobs/${encodeURIComponent(jobId)}/runs/${encodeURIComponent(runId)}`,

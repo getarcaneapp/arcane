@@ -6,7 +6,8 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { MixedSettingValue, SettingKey } from '#lib/types/settings.js';
+	import type { SettingKey } from '#lib/types/settings.js';
+	import type { MixedSettingValue } from '#lib/types/ui/settings.js';
 
 	type LifecycleSecurityFormValues = {
 		lifecycleEnabled: boolean;

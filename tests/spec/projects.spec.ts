@@ -55,9 +55,13 @@ async function clickProjectDetailUpdateAction(page: Page) {
 	return true;
 }
 
-async function fetchProjectDetail(page: Page, projectId: string): Promise<Project> {
+async function fetchProjectDetail(
+	page: Page,
+	projectId: string,
+	section: '' | '/compose' = ''
+): Promise<Project> {
 	const project = await readApiData<Project>(
-		await page.request.get(`/api/environments/0/projects/${projectId}`),
+		await page.request.get(`/api/environments/0/projects/${projectId}${section}`),
 		`Get project ${projectId}`
 	);
 	expect(project.id).toBeTruthy();
@@ -1106,7 +1110,7 @@ test.describe('GitOps Managed Project', () => {
 			await expect(workspaceFilesLabel).not.toBeVisible();
 		}
 
-		const envEditor = (await fetchProjectDetail(page, gitOpsProject.id)).envFileExists
+		const envEditor = (await fetchProjectDetail(page, gitOpsProject.id, '/compose')).envFileExists
 			? page.locator('.cm-editor').filter({ visible: true }).nth(1)
 			: await addEnvFile(page);
 		const marker = `ARCANE_E2E_${Date.now()}`;
@@ -1288,7 +1292,8 @@ test.describe('Project Detail Page', () => {
 		expect(realProjects.length, 'No projects available for configuration test').toBeGreaterThan(0);
 
 		const firstProject = realProjects[0];
-		const hasEnvFile = !!(await fetchProjectDetail(page, firstProject.id!)).envFileExists;
+		const hasEnvFile = !!(await fetchProjectDetail(page, firstProject.id!, '/compose'))
+			.envFileExists;
 		await page.goto(`/projects/${firstProject.id || firstProject.name}?env=0`);
 		await page.waitForLoadState('load');
 

@@ -1,6 +1,5 @@
-import type { SystemPruneRequest } from '#lib/types/automation.js';
-import type { DockerInfo } from '#lib/types/docker.js';
-import type { SystemDiskUsage } from '#lib/types/shared.js';
+import type { DockerInfo } from '#lib/types/dockerinfo.js';
+import type { PruneAllRequest, SystemDiskUsage } from '#lib/types/system.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';
 
@@ -11,7 +10,7 @@ type ConvertedDockerRun = {
 };
 
 class SystemService extends BaseAPIService {
-	async pruneAllForEnvironment(environmentId: string, options: SystemPruneRequest) {
+	async pruneAllForEnvironment(environmentId: string, options: PruneAllRequest) {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/system/prune`, options));
 	}
 

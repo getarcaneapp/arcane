@@ -3,8 +3,9 @@ import { queryOptions } from '@tanstack/svelte-query';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { webhookService } from '#lib/services/webhook-service.js';
 import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-import type { Webhook } from '#lib/types/environment.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { Paginated } from '#lib/types/base.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { Webhook } from '#lib/types/webhook.js';
 import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
 
 function webhookPage(items: Webhook[]): Paginated<Webhook> {

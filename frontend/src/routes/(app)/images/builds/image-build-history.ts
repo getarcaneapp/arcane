@@ -1,5 +1,5 @@
 import * as m from '#lib/paraglide/messages.js';
-import type { ImageBuildRecord, ImageBuildStatus } from '#lib/types/docker.js';
+import type { ImageBuildRecord, ImageBuildStatus } from '#lib/types/image.js';
 import { formatDateTimeShort, sanitizeLogText } from '#lib/utils/formatting.js';
 
 export type BuildOutputEntry = {

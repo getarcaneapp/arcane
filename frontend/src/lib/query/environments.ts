@@ -3,7 +3,7 @@ import { queryOptions } from '@tanstack/svelte-query';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 import { settingsService } from '#lib/services/settings-service.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 
 export function environmentListQuery(requestOptions: SearchPaginationSortRequest) {
 	return queryOptions({

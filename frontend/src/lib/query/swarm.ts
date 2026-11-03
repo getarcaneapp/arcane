@@ -4,8 +4,8 @@ import type { SwarmEnvironments } from '#lib/components/swarm/swarm-environments
 import { queryKeys } from '#lib/query/query-keys.js';
 import { swarmService } from '#lib/services/swarm-service.js';
 import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-import type { SwarmKvKind } from '#lib/types/swarm.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { SwarmKvKind } from '#lib/types/ui/swarm.js';
 import { fetchAcrossEnvironments, withFailedEnvironments } from '#lib/utils/environments.js';
 
 export function swarmStacksScope(swarm: SwarmEnvironments) {

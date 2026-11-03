@@ -2,8 +2,9 @@ import { QueryObserver, type QueryClient } from '@tanstack/svelte-query';
 
 import { queryKeys } from '#lib/query/query-keys.js';
 import { settingsService } from '#lib/services/settings-service.js';
-import type { EnvironmentFeatures, FeatureID } from '#lib/types/features.js';
-import type { ResolvedSettings } from '#lib/types/settings.js';
+import type { FeatureID } from '#lib/types/features.js';
+import type { EnvironmentFeatures } from '#lib/types/ui/features.js';
+import type { ResolvedSettings } from '#lib/types/ui/settings.js';
 import { isFeatureEnabled, isSwarmFeatureEnabled, isVulnerabilityQuery, resolveFeatures } from '#lib/utils/features.js';
 
 let environments = $state.raw<Record<string, EnvironmentFeatures>>({});

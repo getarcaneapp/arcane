@@ -3,7 +3,7 @@ import { queryOptions } from '@tanstack/svelte-query';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { imageService } from '#lib/services/image-service.js';
 import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { parseImageRef } from '#lib/utils/docker.js';
 import { fetchAcrossEnvironments, sumAcrossEnvironments } from '#lib/utils/environments.js';
 

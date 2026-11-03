@@ -3,16 +3,16 @@ import { browser } from '$app/env';
 import { STREAM_CHANNEL_VERSION } from '#lib/services/stream-service.js';
 import { toAppVersionInformation } from '#lib/services/version-service.js';
 import { clientStream } from '#lib/stores/client-stream.svelte.js';
-import type { AppVersionInformation } from '#lib/types/settings.js';
+import type { VersionInfo } from '#lib/types/version.js';
 
 type VersionStreamEvent = {
 	type: string;
-	info?: Partial<AppVersionInformation>;
+	info?: Partial<VersionInfo>;
 };
 
 function createVersionStoreInternal() {
-	let current = $state.raw<AppVersionInformation | undefined>();
-	let loaded = $state.raw<AppVersionInformation | undefined>();
+	let current = $state.raw<VersionInfo | undefined>();
+	let loaded = $state.raw<VersionInfo | undefined>();
 	const buildChanged = $derived(
 		!!loaded?.currentVersion &&
 			!!current?.currentVersion &&
@@ -23,7 +23,7 @@ function createVersionStoreInternal() {
 	let unsubscribeChannel: (() => void) | null = null;
 
 	return {
-		get current(): AppVersionInformation | undefined {
+		get current(): VersionInfo | undefined {
 			return current;
 		},
 		get snapshots(): number {
@@ -32,7 +32,7 @@ function createVersionStoreInternal() {
 		get buildChanged(): boolean {
 			return buildChanged;
 		},
-		seed(info: AppVersionInformation) {
+		seed(info: VersionInfo) {
 			loaded ??= info;
 			if (snapshots === 0) current = info;
 		},

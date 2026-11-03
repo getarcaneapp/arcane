@@ -23,7 +23,7 @@
 	import { networkService } from '#lib/services/network-service.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import { volumeService } from '#lib/services/volume-service.js';
-	import { PODMAN_KUBE_GENERATE_TYPES, type PodmanKubeGenerateType } from '#lib/types/podman.js';
+	import { type KubeGenerateType, PODMAN_KUBE_GENERATE_TYPES } from '#lib/types/podman.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasAnyPermission, hasPermission } from '#lib/utils/auth.js';
 	import { templateBtnClass } from '#lib/utils/compose-flow.js';
@@ -43,7 +43,7 @@
 	let start = $state(true);
 	let replace = $state(false);
 	let generateOpen = $state(false);
-	let generateType = $state<PodmanKubeGenerateType>('pod');
+	let generateType = $state<KubeGenerateType>('pod');
 	let generateService = $state(false);
 	const loading = $state({ play: false, down: false, generate: false });
 
@@ -377,7 +377,7 @@
 		<SelectWithLabel
 			id="kube-generate-type"
 			label={m.common_type()}
-			bind:value={() => generateType, (value) => (generateType = value as PodmanKubeGenerateType)}
+			bind:value={() => generateType, (value) => (generateType = value as KubeGenerateType)}
 			options={PODMAN_KUBE_GENERATE_TYPES.map((type) => ({ label: type, value: type }))}
 		/>
 		<LabeledSwitch id="kube-generate-service" label={m.podman_kube_generate_service()} bind:checked={generateService} />

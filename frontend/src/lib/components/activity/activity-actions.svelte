@@ -4,7 +4,7 @@
 	import { CloseIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
-	import type { Activity, ActivityStatus } from '#lib/types/activity.type.js';
+	import type { Activity, ActivityStatus } from '#lib/types/activity.js';
 
 	import { confirmCancelActivity } from './activity-cancel';
 	import { isActiveActivityStatus } from './activity-groups';

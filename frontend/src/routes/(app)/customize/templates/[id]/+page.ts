@@ -2,8 +2,8 @@ import { error } from '@sveltejs/kit';
 
 import { queryKeys } from '#lib/query/query-keys.js';
 import { templateService } from '#lib/services/template-service.js';
-import type { Template, TemplateContentData } from '#lib/types/swarm.js';
-import type { GlobalVariable } from '#lib/types/variable.js';
+import type { GlobalVariable } from '#lib/types/env.js';
+import type { Template, TemplateContent } from '#lib/types/template.js';
 import { loadGlobalVariablesOrEmpty } from '#lib/utils/template-load.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -13,7 +13,7 @@ export const load: PageLoad = async ({
 	params,
 	parent
 }): Promise<{
-	templateData: TemplateContentData;
+	templateData: TemplateContent;
 	allTemplates: Template[];
 	globalVariables: GlobalVariable[];
 }> => {

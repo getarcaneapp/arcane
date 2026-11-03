@@ -1,6 +1,6 @@
 import { projectService } from '#lib/services/project-service.js';
 import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-import type { ProjectTagOption } from '#lib/types/swarm.js';
+import type { ProjectTagOption } from '#lib/types/project.js';
 import { readAcrossEnvironments, type EnvironmentFailure } from '#lib/utils/environments.js';
 
 export type ActionStatus =

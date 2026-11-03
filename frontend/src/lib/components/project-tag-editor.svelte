@@ -8,7 +8,7 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { AddIcon, CheckIcon, LockIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { ProjectTag, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm.js';
+	import type { ProjectTag, ProjectTagColor, ProjectTagOption } from '#lib/types/project.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	let {

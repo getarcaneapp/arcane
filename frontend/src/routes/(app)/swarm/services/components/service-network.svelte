@@ -4,13 +4,14 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { NetworksIcon, GlobeIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { ServiceNetworkAttachment, ServiceNetworkDetail, ServiceVirtualIP, SwarmServicePort } from '#lib/types/swarm.js';
+	import type { SwarmServiceNetworkDetail, SwarmServicePort } from '#lib/types/swarm.js';
+	import type { ServiceNetworkAttachment, ServiceVirtualIP } from '#lib/types/ui/swarm.js';
 
 	interface Props {
 		ports: SwarmServicePort[];
 		networks: ServiceNetworkAttachment[];
 		virtualIPs: ServiceVirtualIP[];
-		networkDetails: Record<string, ServiceNetworkDetail>;
+		networkDetails: Record<string, SwarmServiceNetworkDetail>;
 	}
 
 	let { ports, networks, virtualIPs, networkDetails }: Props = $props();
@@ -77,7 +78,7 @@
 	</section>
 {/snippet}
 
-{#snippet configurationNetwork(configNetwork: NonNullable<ServiceNetworkDetail['configNetwork']>)}
+{#snippet configurationNetwork(configNetwork: NonNullable<SwarmServiceNetworkDetail['configNetwork']>)}
 	<div class="border-b border-border/50 py-3 lg:col-span-2 2xl:col-span-3">
 		<div>
 			<div class="mb-2 flex items-center justify-between">
@@ -118,7 +119,7 @@
 	</div>
 {/snippet}
 
-{#snippet networkSummary(info: ServiceNetworkDetail | undefined, aliases: string[], networkId: string)}
+{#snippet networkSummary(info: SwarmServiceNetworkDetail | undefined, aliases: string[], networkId: string)}
 	<div class="flex items-center gap-3 pb-1">
 		<div class="rounded-lg bg-info/10 p-2">
 			<NetworksIcon class="size-4 text-info" />
@@ -155,7 +156,7 @@
 {/snippet}
 
 {#snippet IpamConfigList(
-	configs: NonNullable<NonNullable<ServiceNetworkDetail['configNetwork']>['ipv4Configs']>,
+	configs: NonNullable<NonNullable<SwarmServiceNetworkDetail['configNetwork']>['ipv4Configs']>,
 	heading: string
 )}
 	{#each configs as cfg (`${cfg.subnet ?? ''}:${cfg.gateway ?? ''}:${cfg.ipRange ?? ''}`)}

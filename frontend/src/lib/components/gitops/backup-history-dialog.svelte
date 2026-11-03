@@ -9,7 +9,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
-	import type { GitOpsBackupHistoryEntry, GitOpsSync } from '#lib/types/automation.js';
+	import type { GitOpsBackupHistoryEntry, GitOpsSync } from '#lib/types/gitops.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 
 	let {

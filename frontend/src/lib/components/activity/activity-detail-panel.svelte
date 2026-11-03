@@ -3,7 +3,7 @@
 	import { ActivityIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
-	import type { Activity } from '#lib/types/activity.type.js';
+	import type { Activity } from '#lib/types/activity.js';
 	import { cn } from '#lib/utils.js';
 
 	import ActivityOutput from './activity-output.svelte';

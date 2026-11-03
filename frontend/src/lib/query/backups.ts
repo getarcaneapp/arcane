@@ -3,7 +3,7 @@ import { queryOptions } from '@tanstack/svelte-query';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 import { systemBackupService } from '#lib/services/system-backup-service.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 
 export function systemBackupHistoryQuery(requestOptions: SearchPaginationSortRequest) {
 	return queryOptions({

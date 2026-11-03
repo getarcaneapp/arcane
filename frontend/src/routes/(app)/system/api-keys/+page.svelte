@@ -14,14 +14,9 @@
 	import { apiKeyListQuery } from '#lib/query/api-keys.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { apiKeyService } from '#lib/services/api-key-service.js';
-	import {
-		GLOBAL_SCOPE,
-		type ApiKey,
-		type ApiKeyCreated,
-		type ApiKeyPermissionGrant,
-		type ApiKeyUpdate,
-		type PersonalApiKeyCreate
-	} from '#lib/types/auth.js';
+	import type { ApiKey, ApiKeyCreatedDto, ApiKeyPermissionGrant } from '#lib/types/apikey.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
+	import type { ApiKeyUpdate, PersonalApiKeyCreate } from '#lib/types/ui/apikey.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
@@ -46,7 +41,7 @@
 	});
 
 	let apiKeyToEdit = $state<ApiKey | null>(null);
-	let newlyCreatedKey = $state<ApiKeyCreated | null>(null);
+	let newlyCreatedKey = $state<ApiKeyCreatedDto | null>(null);
 
 	const isLoading = $state({
 		creating: false,
@@ -92,7 +87,7 @@
 				onSuccess: async (createdKey) => {
 					toast.success(m.api_key_created_success({ name: safeName }));
 					isDialogOpen.create = false;
-					newlyCreatedKey = createdKey as ApiKeyCreated;
+					newlyCreatedKey = createdKey as ApiKeyCreatedDto;
 					isDialogOpen.showKey = true;
 					await queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all });
 				}

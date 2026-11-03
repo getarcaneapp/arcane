@@ -2,8 +2,8 @@ import { onDestroy } from 'svelte';
 
 import { getSettingsFormContext, hasSettingsFormContext } from '#lib/hooks/settings-form-context.js';
 import settingsStore from '#lib/stores/config-store.svelte.js';
-import type { SettingsFormContext, SettingsFormState } from '#lib/types/settings-form.js';
 import type { Settings } from '#lib/types/settings.js';
+import type { SettingsFormContext, SettingsFormState } from '#lib/types/ui/settingsform.js';
 
 type SettingsPayload = Partial<Settings> & Record<string, unknown>;
 

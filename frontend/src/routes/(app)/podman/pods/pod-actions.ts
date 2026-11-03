@@ -2,7 +2,8 @@ import { toast } from 'svelte-sonner';
 
 import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 import { m } from '#lib/paraglide/messages.js';
-import { podmanService, type PodmanPodAction } from '#lib/services/podman-service.js';
+import { podmanService } from '#lib/services/podman-service.js';
+import type { PodmanPodAction } from '#lib/types/ui/podman.js';
 import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 

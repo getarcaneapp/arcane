@@ -15,8 +15,9 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import type { Paginated } from '#lib/types/base.js';
 	import type { PodmanSecret } from '#lib/types/podman.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import type { EnvironmentPage, EnvironmentRow } from '#lib/utils/environments.js';

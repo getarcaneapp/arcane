@@ -2,7 +2,7 @@ import { PersistedState } from 'runed';
 import { toast } from 'svelte-sonner';
 
 import { m } from '#lib/paraglide/messages.js';
-import type { Activity, ActivityType } from '#lib/types/activity.type.js';
+import type { Activity, ActivityType } from '#lib/types/activity.js';
 
 import { activityTypeLabel } from './activity-labels';
 

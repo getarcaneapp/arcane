@@ -16,8 +16,8 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { getLayoutMode, layoutModeStore, type LayoutMode } from '#lib/stores/layout-mode.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { EditorTabWidth, ProjectEditorLayout, ToastPosition, UserPreferences } from '#lib/types/auth.js';
-	import type { ApplicationTheme, IconCatalog } from '#lib/types/settings.js';
+	import type { EditorTabWidth, ProjectEditorLayout, ToastPosition, UserPreferences } from '#lib/types/user.js';
+	import type { ApplicationTheme, IconCatalog } from '#lib/types/user.js';
 	import { cn } from '#lib/utils.js';
 	import { getMobileNavigation } from '#lib/utils/navigation.js';
 	import { applyAccentColor, applyGlassEffects, applyInterfaceAnimations, applyOledMode } from '#lib/utils/theme.svelte.js';

@@ -18,7 +18,7 @@
 		VerifiedCheckIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { ProjectUpdateInfo } from '#lib/types/swarm.js';
+	import type { ProjectUpdateInfo } from '#lib/types/project.js';
 	import { getProjectUpdateStatus, getProjectUpdateText, parseImageRef } from '#lib/utils/docker.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 

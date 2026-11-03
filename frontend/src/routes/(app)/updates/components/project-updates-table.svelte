@@ -22,9 +22,10 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { ImageUpdateData } from '#lib/types/docker.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import type { Project } from '#lib/types/swarm.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import type { ImageUpdateResponse } from '#lib/types/imageupdate.js';
+	import type { Project } from '#lib/types/project.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { hasShownPermission, rowKey, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
@@ -43,7 +44,7 @@
 		latestValue: string;
 		checkedAt: string;
 		releaseNotesRef: string;
-		releaseNotesInfo?: ImageUpdateData;
+		releaseNotesInfo?: ImageUpdateResponse;
 		project: ProjectRow;
 	};
 

@@ -5,10 +5,10 @@
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { CodeIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { ContainerDetailsDto } from '#lib/types/docker.js';
+	import type { ContainerDetails } from '#lib/types/container.js';
 
 	interface Props {
-		container: ContainerDetailsDto;
+		container: ContainerDetails;
 	}
 
 	let { container }: Props = $props();

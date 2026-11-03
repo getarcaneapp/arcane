@@ -1,6 +1,6 @@
 import { environmentListQuery } from '#lib/query/environments.js';
 import { variableListQuery } from '#lib/query/variables.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 
 import type { PageLoad } from './$types';
 

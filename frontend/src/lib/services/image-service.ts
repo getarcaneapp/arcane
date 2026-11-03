@@ -1,28 +1,28 @@
 import { m } from '#lib/paraglide/messages.js';
-import type { AutoUpdateCheck, AutoUpdateResult } from '#lib/types/automation.js';
-import type { PruneImagesOptions } from '#lib/types/automation.js';
+import type { Paginated, MessageResponse } from '#lib/types/base.js';
+import type { ContainerRegistryCredential } from '#lib/types/containerregistry.js';
 import type {
-	ContainerRegistryCredential,
+	ImageListResponse,
 	ImageBuildRequest,
-	ImageDetailSummaryDto,
+	ImageDetailSummary,
 	ImageLoadResult,
 	ImagePruneReport,
-	ImageSummaryDto,
 	ImageUsageCounts,
-	ImageUpdateInfoDto,
 	ImageBuildRecord,
-	ImageAttestationListDto,
-	ImageAttestationRequestOptions,
-	ImageReleaseNotesDto,
-	ImageHistoryItemDto,
-	ImageSearchResultDto,
-	ImageTagRequest,
-	ImagePatchOptions,
-	ImagePatchRecordDto,
-	ImagePatchTargetDto
-} from '#lib/types/docker.js';
-import type { SearchPaginationSortRequest, Paginated, MessageResponse } from '#lib/types/shared.js';
+	ImageAttestationList,
+	ImageReleaseNotes,
+	ImageHistoryItem,
+	ImageSearchResult,
+	ImageTagRequest
+} from '#lib/types/image.js';
+import type { PatchOptions, PatchRecord, PatchTarget } from '#lib/types/imagepatch.js';
+import type { ImageUpdateResponse } from '#lib/types/imageupdate.js';
 import type { OperationStreamFrame } from '#lib/types/stream.js';
+import type { PruneImagesOptions } from '#lib/types/system.js';
+import type { ImageAttestationRequestOptions, ImagePullResult } from '#lib/types/ui/image.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { UploadProgressCallback } from '#lib/types/ui/upload.js';
+import type { UpdaterOptions, UpdaterResult } from '#lib/types/updater.js';
 import { readNdjsonStream } from '#lib/utils/streaming.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -33,27 +33,14 @@ import BaseAPIService, {
 	isSessionCancelledError,
 	withSessionSignal
 } from './api-service';
-import { uploadService, type UploadProgressCallback } from './upload-service';
-
-export type ImagePullResult = {
-	success: boolean;
-	imageName: string;
-	error?: string;
-	/** The pull was abandoned because the user signed out. */
-	cancelled?: boolean;
-};
-
-/** Image list page plus the upload limit (MB) the environment enforces; absent on older agents. */
-export type ImagesPaginatedResponse = Paginated<ImageSummaryDto> & {
-	maxImageUploadSize?: number;
-};
+import { uploadService } from './upload-service';
 
 class ImageService extends BaseAPIService {
 	async getImagesForEnvironment(
 		environmentId: string,
 		options?: SearchPaginationSortRequest,
 		config?: APIRequestConfig
-	): Promise<ImagesPaginatedResponse> {
+	): Promise<ImageListResponse> {
 		const params = transformPaginationParams(options);
 		const res = await this.api.get(`/environments/${environmentId}/images`, { ...config, params });
 		return res.data;
@@ -64,7 +51,7 @@ class ImageService extends BaseAPIService {
 		return res.data.data;
 	}
 
-	async getImageForEnvironment(environmentId: string, imageId: string): Promise<ImageDetailSummaryDto> {
+	async getImageForEnvironment(environmentId: string, imageId: string): Promise<ImageDetailSummary> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/${imageId}`));
 	}
 
@@ -72,7 +59,7 @@ class ImageService extends BaseAPIService {
 		environmentId: string,
 		imageId: string,
 		options?: ImageAttestationRequestOptions
-	): Promise<ImageAttestationListDto> {
+	): Promise<ImageAttestationList> {
 		const params: Record<string, string> = {};
 		if (options?.platform) params['platform'] = options.platform;
 		if (options?.predicateType) params['predicateType'] = options.predicateType;
@@ -89,7 +76,7 @@ class ImageService extends BaseAPIService {
 		environmentId: string,
 		imageRef: string,
 		options?: { version?: string; digest?: string }
-	): Promise<ImageReleaseNotesDto> {
+	): Promise<ImageReleaseNotes> {
 		const params: Record<string, string> = { imageRef };
 		if (options?.version) params['version'] = options.version;
 		if (options?.digest) params['digest'] = options.digest;
@@ -103,11 +90,11 @@ class ImageService extends BaseAPIService {
 		);
 	}
 
-	async getImageHistory(imageId: string, environmentId: string): Promise<ImageHistoryItemDto[]> {
+	async getImageHistory(imageId: string, environmentId: string): Promise<ImageHistoryItem[]> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/${encodeURIComponent(imageId)}/history`));
 	}
 
-	async searchImages(term: string, environmentId: string): Promise<ImageSearchResultDto[]> {
+	async searchImages(term: string, environmentId: string): Promise<ImageSearchResult[]> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/search`, { params: { term } }));
 	}
 
@@ -220,7 +207,7 @@ class ImageService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/images/prune`, options));
 	}
 
-	async patchImage(imageId: string, options: ImagePatchOptions | undefined, environmentId: string): Promise<ImagePatchRecordDto> {
+	async patchImage(imageId: string, options: PatchOptions | undefined, environmentId: string): Promise<PatchRecord> {
 		return this.handleResponse(
 			this.api.post(`/environments/${environmentId}/images/${encodeURIComponent(imageId)}/patch`, options ?? {})
 		);
@@ -230,29 +217,29 @@ class ImageService extends BaseAPIService {
 		options: SearchPaginationSortRequest | undefined,
 		environmentId: string,
 		config?: APIRequestConfig
-	): Promise<Paginated<ImagePatchTargetDto>> {
+	): Promise<Paginated<PatchTarget>> {
 		const params = transformPaginationParams(options);
 		const res = await this.api.get(`/environments/${environmentId}/images/patches/targets`, { ...config, params });
 		return res.data;
 	}
 
-	async checkImageUpdateByID(imageId: string, environmentId: string): Promise<ImageUpdateInfoDto> {
+	async checkImageUpdateByID(imageId: string, environmentId: string): Promise<ImageUpdateResponse> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/images/updates/check/${imageId}`, {}));
 	}
 
-	async checkAllImages(environmentId: string): Promise<Record<string, ImageUpdateInfoDto>> {
+	async checkAllImages(environmentId: string): Promise<Record<string, ImageUpdateResponse>> {
 		return this.handleResponse(
 			this.api.post(`/environments/${environmentId}/images/updates/check`, {}, { params: { action: 'all' } })
 		);
 	}
 
-	async checkMultipleImages(imageRefs: string[], environmentId: string): Promise<Record<string, ImageUpdateInfoDto>> {
+	async checkMultipleImages(imageRefs: string[], environmentId: string): Promise<Record<string, ImageUpdateResponse>> {
 		return this.handleResponse(
 			this.api.post(`/environments/${environmentId}/images/updates/check`, { imageRefs }, { params: { action: 'batch' } })
 		);
 	}
 
-	async runAutoUpdate(options: AutoUpdateCheck | undefined, environmentId: string): Promise<AutoUpdateResult> {
+	async runAutoUpdate(options: UpdaterOptions | undefined, environmentId: string): Promise<UpdaterResult> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/updater/run`, options));
 	}
 

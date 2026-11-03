@@ -1,4 +1,5 @@
-import type { OidcRoleMapping, OidcRoleMappingCreate, OidcRoleMappingUpdate } from '#lib/types/auth.js';
+import type { OidcRoleMapping } from '#lib/types/role.js';
+import type { OidcRoleMappingCreate, OidcRoleMappingUpdate } from '#lib/types/ui/role.js';
 
 import BaseAPIService from './api-service';
 

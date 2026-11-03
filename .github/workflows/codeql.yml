@@ -43,12 +43,15 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.work
-          cache: true
-          cache-dependency-path: |
-            go.work
-            go.work.sum
-            */go.mod
-            */go.sum
+          cache: false
+
+      - name: Cache Go modules
+        if: matrix.language == 'go'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/pkg/mod
+          key: arcane-go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('go.work.sum', '*/go.sum') }}
+          restore-keys: arcane-go-${{ runner.os }}-${{ github.job }}-
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1

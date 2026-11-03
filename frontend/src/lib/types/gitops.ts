@@ -1,85 +1,3 @@
-import type { CreateRequest, UpdateRequest } from './shared';
-
-// --- Auto-update ---
-
-export type AutoUpdateResourceType = 'image' | 'container' | 'project';
-
-export interface AutoUpdateCheck {
-	/** Scopes `resourceIds`. Matches the backend's `updater.Options.Type` (singular). */
-	type?: AutoUpdateResourceType;
-	resourceIds?: string[];
-	forceUpdate?: boolean;
-	dryRun?: boolean;
-}
-
-export interface AutoUpdateResult {
-	checked: number;
-	updated: number;
-	restarted?: number;
-	skipped: number;
-	failed: number;
-	items: AutoUpdateResourceResult[];
-	duration: string;
-	activityId?: string;
-}
-
-export interface AutoUpdateResourceResult {
-	resourceId: string;
-	resourceName: string;
-	resourceType: AutoUpdateResourceType;
-	status: 'checked' | 'up_to_date' | 'update_available' | 'updated' | 'restarted' | 'failed' | 'skipped';
-	updateAvailable: boolean;
-	updateApplied: boolean;
-	oldImages?: Record<string, string>;
-	newImages?: Record<string, string>;
-	error?: string;
-	details?: Record<string, any>;
-}
-
-// --- Pruning ---
-
-export type PruneContainerMode = 'none' | 'stopped' | 'olderThan';
-export type PruneImageMode = 'none' | 'dangling' | 'all' | 'olderThan';
-export type PruneVolumeMode = 'none' | 'anonymous' | 'all';
-export type PruneNetworkMode = 'none' | 'unused' | 'olderThan';
-export type PruneBuildCacheMode = 'none' | 'unused' | 'all' | 'olderThan';
-
-export interface PruneContainersOptions {
-	mode: Exclude<PruneContainerMode, 'none'>;
-	until?: string;
-}
-
-export interface PruneImagesOptions {
-	mode: Exclude<PruneImageMode, 'none'>;
-	until?: string;
-}
-
-export interface PruneVolumesOptions {
-	mode: Exclude<PruneVolumeMode, 'none'>;
-}
-
-export interface PruneNetworksOptions {
-	mode: Exclude<PruneNetworkMode, 'none'>;
-	until?: string;
-}
-
-export interface PruneBuildCacheOptions {
-	mode: Exclude<PruneBuildCacheMode, 'none'>;
-	until?: string;
-}
-
-export interface SystemPruneRequest {
-	containers?: PruneContainersOptions;
-	images?: PruneImagesOptions;
-	volumes?: PruneVolumesOptions;
-	networks?: PruneNetworksOptions;
-	buildCache?: PruneBuildCacheOptions;
-}
-
-export type PruneType = 'containers' | 'images' | 'networks' | 'volumes' | 'buildCache';
-
-// --- GitOps: repositories, syncs, browsing ---
-
 export interface GitRepository {
 	id: string;
 	name: string;
@@ -101,25 +19,6 @@ export interface GitRepository {
 	signingKey?: string;
 	signingKeyPassphrase?: string;
 }
-
-export type GitRepositoryWritable =
-	| 'name'
-	| 'url'
-	| 'authType'
-	| 'username'
-	| 'sshHostKeyVerification'
-	| 'commitAuthorName'
-	| 'commitAuthorEmail'
-	| 'description'
-	| 'enabled'
-	| 'token'
-	| 'sshKey'
-	| 'signingKey'
-	| 'signingKeyPassphrase';
-
-export type GitRepositoryCreate = CreateRequest<GitRepository, GitRepositoryWritable, 'name' | 'url' | 'authType'>;
-
-export type GitRepositoryUpdate = UpdateRequest<GitRepository, GitRepositoryWritable>;
 
 export type GitOpsSyncMode = 'deploy' | 'backup';
 
@@ -182,37 +81,6 @@ export interface GitOpsSync {
 	updatedAt: string;
 }
 
-export type GitOpsSyncWritable =
-	| 'name'
-	| 'repositoryId'
-	| 'branch'
-	| 'composePath'
-	| 'targetType'
-	| 'mode'
-	| 'projectId'
-	| 'projectName'
-	| 'backupDirectory'
-	| 'backupPaths'
-	| 'backupOnSave'
-	| 'autoSync'
-	| 'syncInterval'
-	| 'syncDirectory'
-	| 'pullImageAfterSync'
-	| 'redeployAfterSync'
-	| 'maxSyncFiles'
-	| 'maxSyncTotalSize'
-	| 'maxSyncBinarySize'
-	| 'preDeployScriptPath'
-	| 'preDeployRunnerImage'
-	| 'preDeployEnv'
-	| 'preDeployExtraMounts'
-	| 'preDeployTimeoutSec'
-	| 'preDeployNetworkMode';
-
-export type GitOpsSyncCreate = CreateRequest<GitOpsSync, GitOpsSyncWritable, 'name' | 'repositoryId' | 'branch'>;
-
-export type GitOpsSyncUpdate = UpdateRequest<GitOpsSync, GitOpsSyncWritable>;
-
 export interface GitOpsSyncCounts {
 	totalSyncs: number;
 	activeSyncs: number;
@@ -221,27 +89,29 @@ export interface GitOpsSyncCounts {
 	backupSyncs: number;
 }
 
-export interface SyncResult {
+export interface GitOpsSyncResult {
 	success: boolean;
 	message: string;
 	error?: string;
 	syncedAt: string;
 }
 
+export type FileTreeNodeType = 'file' | 'directory';
+
 export interface FileTreeNode {
 	name: string;
 	path: string;
-	type: string;
+	type: FileTreeNodeType;
 	size?: number;
 	children?: FileTreeNode[];
 }
 
-export interface BrowseResponse {
+export interface GitOpsBrowseResponse {
 	path: string;
 	files: FileTreeNode[];
 }
 
-export interface SyncStatus {
+export interface GitOpsSyncStatus {
 	id: string;
 	autoSync: boolean;
 	nextSyncAt?: string;
@@ -293,7 +163,7 @@ export interface GitOpsBackupRevision {
 	diffs: GitOpsBackupFileDiff[];
 }
 
-export interface ResolveGitOpsBackupConflictRequest {
+export interface GitOpsResolveBackupConflictRequest {
 	strategy: 'use_arcane';
 }
 
@@ -301,13 +171,13 @@ export interface GitRepositoryTestResponse {
 	message: string;
 }
 
-export interface BranchInfo {
+export interface GitBranchInfo {
 	name: string;
 	isDefault: boolean;
 }
 
-export interface BranchesResponse {
-	branches: BranchInfo[];
+export interface GitBranchesResponse {
+	branches: GitBranchInfo[];
 }
 
 export interface ImportGitOpsSyncRequest {

@@ -10,8 +10,9 @@
 	import { useUpgradeCheck } from '#lib/hooks/use-upgrade-check.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { PermissionsManifest, User } from '#lib/types/auth.js';
-	import type { AppVersionInformation } from '#lib/types/settings.js';
+	import type { PermissionsManifest } from '#lib/types/role.js';
+	import type { User } from '#lib/types/user.js';
+	import type { VersionInfo } from '#lib/types/version.js';
 	import { cn } from '#lib/utils.js';
 
 	import MobileUserCard from './mobile-user-card.svelte';
@@ -27,7 +28,7 @@
 	}: {
 		open: boolean;
 		user?: User | null;
-		versionInformation?: AppVersionInformation;
+		versionInformation?: VersionInfo;
 		swarmItems?: NavigationItem[];
 		podmanItems?: NavigationItem[];
 		permissionsManifest?: PermissionsManifest | null;

@@ -16,9 +16,10 @@
 	import { BackupIcon, RestartIcon, UploadIcon, ClockIcon, VolumesIcon, FileTextIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import type { BackupHistoryEntry } from '#lib/types/system-backup.js';
+	import type { SystemVolumeBackupHistoryEntry } from '#lib/types/backup.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { hasPermission, isGlobalAdmin } from '#lib/utils/auth.js';
 	import {
 		backupManagementFilterOptions,
@@ -40,15 +41,15 @@
 		onOpenVolume,
 		emptyState
 	}: {
-		backups: Paginated<BackupHistoryEntry>;
+		backups: Paginated<SystemVolumeBackupHistoryEntry>;
 		requestOptions: SearchPaginationSortRequest;
 		onRetry: () => Promise<unknown>;
-		onRestore: (backup: BackupHistoryEntry) => void;
-		onRestoreFiles: (backup: BackupHistoryEntry) => void;
-		onRestoreVolume?: (backup: BackupHistoryEntry) => void;
-		onUpload: (backup: BackupHistoryEntry) => void;
-		onDelete: (backup: BackupHistoryEntry) => void;
-		onOpenVolume: (backup: BackupHistoryEntry) => void;
+		onRestore: (backup: SystemVolumeBackupHistoryEntry) => void;
+		onRestoreFiles: (backup: SystemVolumeBackupHistoryEntry) => void;
+		onRestoreVolume?: (backup: SystemVolumeBackupHistoryEntry) => void;
+		onUpload: (backup: SystemVolumeBackupHistoryEntry) => void;
+		onDelete: (backup: SystemVolumeBackupHistoryEntry) => void;
+		onOpenVolume: (backup: SystemVolumeBackupHistoryEntry) => void;
 		emptyState?: Snippet;
 	} = $props();
 
@@ -70,24 +71,26 @@
 		...backupRunColumns({ status: StatusCell, trigger: TriggerCell, destination: DestinationCell, size: SizeCell }),
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cellComponent: CreatedAtCell },
 		{ accessorKey: 'error', title: m.common_error(), sortable: false, cell: ErrorCell }
-	] satisfies ColumnSpec<BackupHistoryEntry>[];
+	] satisfies ColumnSpec<SystemVolumeBackupHistoryEntry>[];
 	const mobileFields = [{ id: 'resourceName', label: m.backups_resource(), defaultVisible: true }, ...backupRunMobileFields()];
 </script>
 
-{#snippet IdCell({ item }: { item: BackupHistoryEntry })}<code class="text-xs">{item.id.slice(0, 18)}…</code>{/snippet}
-{#snippet ResourceCell({ item }: { item: BackupHistoryEntry })}<span class="font-medium">{item.resourceName}</span>{/snippet}
-{#snippet TypeCell({ item }: { item: BackupHistoryEntry })}
+{#snippet IdCell({ item }: { item: SystemVolumeBackupHistoryEntry })}<code class="text-xs">{item.id.slice(0, 18)}…</code
+	>{/snippet}
+{#snippet ResourceCell({ item }: { item: SystemVolumeBackupHistoryEntry })}<span class="font-medium">{item.resourceName}</span
+	>{/snippet}
+{#snippet TypeCell({ item }: { item: SystemVolumeBackupHistoryEntry })}
 	<BackupManagementCell type={item.type} />
 {/snippet}
-{#snippet StatusCell({ item }: { item: BackupHistoryEntry })}<BackupStatusCell status={item.status} />{/snippet}
-{#snippet TriggerCell({ item }: { item: BackupHistoryEntry })}<BackupTriggerCell trigger={item.trigger} />{/snippet}
-{#snippet DestinationCell({ item }: { item: BackupHistoryEntry })}<BackupDestinationCell {item} />{/snippet}
-{#snippet SizeCell({ item }: { item: BackupHistoryEntry })}<BackupSizeCell size={item.size} />{/snippet}
-{#snippet ErrorCell({ item }: { item: BackupHistoryEntry })}<span class="max-w-72 truncate text-destructive"
+{#snippet StatusCell({ item }: { item: SystemVolumeBackupHistoryEntry })}<BackupStatusCell status={item.status} />{/snippet}
+{#snippet TriggerCell({ item }: { item: SystemVolumeBackupHistoryEntry })}<BackupTriggerCell trigger={item.trigger} />{/snippet}
+{#snippet DestinationCell({ item }: { item: SystemVolumeBackupHistoryEntry })}<BackupDestinationCell {item} />{/snippet}
+{#snippet SizeCell({ item }: { item: SystemVolumeBackupHistoryEntry })}<BackupSizeCell size={item.size} />{/snippet}
+{#snippet ErrorCell({ item }: { item: SystemVolumeBackupHistoryEntry })}<span class="max-w-72 truncate text-destructive"
 		>{item.error || '-'}</span
 	>{/snippet}
 
-{#snippet RowActions({ item }: { item: BackupHistoryEntry })}
+{#snippet RowActions({ item }: { item: SystemVolumeBackupHistoryEntry })}
 	<RowActionsMenu>
 		{#if item.resourceType === 'system'}
 			{#if canRestoreBackups}
@@ -117,7 +120,13 @@
 	</RowActionsMenu>
 {/snippet}
 
-{#snippet MobileCard({ item, mobileFieldVisibility }: { item: BackupHistoryEntry; mobileFieldVisibility: MobileFieldVisibility })}
+{#snippet MobileCard({
+	item,
+	mobileFieldVisibility
+}: {
+	item: SystemVolumeBackupHistoryEntry;
+	mobileFieldVisibility: MobileFieldVisibility;
+})}
 	<UniversalMobileCard
 		{item}
 		icon={{ component: BackupIcon, variant: 'blue' }}

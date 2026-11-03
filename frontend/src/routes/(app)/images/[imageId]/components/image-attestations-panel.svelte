@@ -6,20 +6,20 @@
 	import { ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageService } from '#lib/services/image-service.js';
-	import type { ImageAttestationDto, ImageAttestationListDto, ImageDetailSummaryDto } from '#lib/types/docker.js';
+	import type { ImageAttestation, ImageAttestationList, ImageDetailSummary } from '#lib/types/image.js';
 	import { bytes } from '#lib/utils/formatting.js';
 
 	const ALL_FILTER = '__all__';
 
-	let { image, environmentId }: { image: ImageDetailSummaryDto; environmentId: string } = $props();
+	let { image, environmentId }: { image: ImageDetailSummary; environmentId: string } = $props();
 
 	const envId = $derived(environmentId);
 	let selectedPlatform = $state(ALL_FILTER);
 	let selectedPredicateType = $state(ALL_FILTER);
 	let detailsOpen = $state(false);
-	let selectedAttestation = $state<ImageAttestationDto | null>(null);
+	let selectedAttestation = $state<ImageAttestation | null>(null);
 
-	function openDetails(attestation: ImageAttestationDto) {
+	function openDetails(attestation: ImageAttestation) {
 		selectedAttestation = attestation;
 		detailsOpen = true;
 	}
@@ -51,12 +51,12 @@
 		return options.filter((value, index) => options.indexOf(value) === index).sort();
 	}
 
-	function subjectLabel(attestation: ImageAttestationDto): string {
+	function subjectLabel(attestation: ImageAttestation): string {
 		if (!attestation.subject.length) return m.common_na();
 		return attestation.subject.map((subject) => subject.name || Object.values(subject.digest).join(', ')).join(', ');
 	}
 
-	function emptyAttestationList(): ImageAttestationListDto {
+	function emptyAttestationList(): ImageAttestationList {
 		return {
 			imageRef: image.id,
 			subjectDigest: '',

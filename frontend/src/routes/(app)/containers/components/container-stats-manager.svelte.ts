@@ -1,6 +1,6 @@
 import { SvelteMap } from 'svelte/reactivity';
 
-import type { ContainerResourceSample, ContainerResourceSampleBatch } from '#lib/types/docker.js';
+import type { ContainerResourceSample, ContainerResourceSampleBatch } from '#lib/types/container.js';
 import { parseRowKey } from '#lib/utils/environments.js';
 import { createContainersStatsWebSocket } from '#lib/utils/ws.js';
 import type { ReconnectingWebSocket } from '#lib/utils/ws.js';

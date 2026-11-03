@@ -16,7 +16,7 @@
 	import { userService } from '#lib/services/user-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import { avatarUploadLimitBytes, prepareAvatarUploadFile } from '#lib/utils/avatar-upload.js';
 	import { getDefaultProfilePicture } from '#lib/utils/docker.js';
 	import { formatDate, formatRelativeTime } from '#lib/utils/formatting.js';

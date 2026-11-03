@@ -1,6 +1,7 @@
 import { templateListQuery, templateRegistriesQuery } from '#lib/query/templates.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
-import type { Template, TemplateRegistry } from '#lib/types/swarm.js';
+import type { Paginated } from '#lib/types/base.js';
+import type { Template, TemplateRegistry } from '#lib/types/template.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 

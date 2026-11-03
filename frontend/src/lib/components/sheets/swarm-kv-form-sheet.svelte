@@ -14,7 +14,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-	import type { SwarmKvSummary } from '#lib/types/swarm.js';
+	import type { SwarmKvSummary } from '#lib/types/ui/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { keyValueRowsToRecord, recordToKeyValueRows } from '#lib/utils/form-parsers.js';

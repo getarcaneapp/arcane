@@ -7,7 +7,7 @@
 	import MonoCell from '#lib/components/vulnerability/mono-cell.svelte';
 	import { StatsIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { PodmanPodInspectContainer } from '#lib/types/podman.js';
+	import type { PodInspectContainer } from '#lib/types/podman.js';
 	import { rowKey } from '#lib/utils/environments.js';
 	import { bytes } from '#lib/utils/formatting.js';
 
@@ -16,7 +16,7 @@
 	import ContainerStatsSync from '../../../containers/components/container-stats-sync.svelte';
 
 	interface Props {
-		containers: PodmanPodInspectContainer[];
+		containers: PodInspectContainer[];
 		envId: string;
 		isRunning: boolean;
 	}

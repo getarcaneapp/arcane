@@ -7,7 +7,8 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { THEME_TOKENS, type ThemeDefinition, type ThemePalette } from '#lib/types/settings.js';
+	import { THEME_TOKENS, type ThemeDefinition } from '#lib/types/ui/theme.js';
+	import type { CustomTheme, ThemePalette } from '#lib/types/user.js';
 	import { trySync } from '#lib/utils/try-catch.js';
 
 	type ThemeField = 'json' | 'id' | 'name' | 'light' | 'dark';
@@ -26,7 +27,7 @@
 	}: {
 		open: boolean;
 		customThemes: readonly ThemeDefinition[];
-		onSubmit: (theme: ThemeDefinition) => Promise<boolean>;
+		onSubmit: (theme: CustomTheme) => Promise<boolean>;
 	} = $props();
 
 	let jsonContent = $state('');
@@ -91,7 +92,7 @@
 		return Object.fromEntries(THEME_TOKENS.map((token) => [token, String(value[token])])) as ThemePalette;
 	}
 
-	function parseTheme(): ThemeDefinition | null {
+	function parseTheme(): CustomTheme | null {
 		if (!jsonContent.trim()) {
 			errors = { json: [m.git_sync_import_json_required()] };
 			return null;

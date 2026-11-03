@@ -4,8 +4,8 @@ import { markActivityToastShown } from '#lib/components/activity/activity-comple
 import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 import { runWithActivityBatchId } from '#lib/services/api-service.js';
 import { activityStore } from '#lib/stores/activity.store.svelte.js';
-import type { Activity } from '#lib/types/activity.type.js';
-import type { Result } from '#lib/types/result.js';
+import type { Activity } from '#lib/types/activity.js';
+import type { Result } from '#lib/types/ui/result.js';
 import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 import { parseEnvironmentRowKey, parseRowKey } from '#lib/utils/environments.js';

@@ -1,8 +1,8 @@
 import { setMode } from 'mode-watcher';
 
 import { timeFormatStore } from '#lib/stores/time-format.store.svelte.js';
-import type { User } from '#lib/types/auth.js';
-import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/auth.js';
+import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/role.js';
+import type { User } from '#lib/types/user.js';
 import { setLocale } from '#lib/utils/formatting.js';
 import {
 	applyAccentColor,

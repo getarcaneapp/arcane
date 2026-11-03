@@ -15,8 +15,9 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { networkService } from '#lib/services/network-service.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import type { MixedSettingValue, SettingKey, Settings } from '#lib/types/settings.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { SettingKey, Settings } from '#lib/types/settings.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import type { MixedSettingValue } from '#lib/types/ui/settings.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { arcaneImageRegistryOptions, arcaneTrivyDbImages } from '#lib/utils/registry.js';
 

@@ -1,8 +1,8 @@
 import { containerListQuery } from '#lib/query/containers.js';
 import { projectListQuery } from '#lib/query/projects.js';
-import type { ContainerListRequestOptions } from '#lib/services/container-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { ContainerListRequestOptions } from '#lib/types/ui/container.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
 import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '#lib/utils/docker.js';
 import { readableEnvironments } from '#lib/utils/environments.js';

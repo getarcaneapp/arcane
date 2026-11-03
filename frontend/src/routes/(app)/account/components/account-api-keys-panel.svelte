@@ -7,7 +7,8 @@
 	import { AddIcon, ApiKeyIcon, CopyIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { apiKeyService } from '#lib/services/api-key-service.js';
-	import type { ApiKey, ApiKeyCreated, ApiKeyUpdate, PersonalApiKeyCreate } from '#lib/types/auth.js';
+	import type { ApiKey, ApiKeyCreatedDto } from '#lib/types/apikey.js';
+	import type { ApiKeyUpdate, PersonalApiKeyCreate } from '#lib/types/ui/apikey.js';
 	import { confirmDeleteApiKey } from '#lib/utils/api-keys.js';
 	import { formatDate, formatRelativeTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -17,7 +18,7 @@
 	let showCreateKeyForm = $state(false);
 	let creatingKey = $state(false);
 	let deletingKeyId = $state<string | null>(null);
-	let createdKey = $state<ApiKeyCreated | null>(null);
+	let createdKey = $state<ApiKeyCreatedDto | null>(null);
 
 	async function loadApiKeys() {
 		apiKeysLoading = true;

@@ -6,7 +6,8 @@
 
 	import type { useEnvironmentSettingsScope } from '#lib/hooks/use-environment-settings-scope.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { MixedSettingValue, SettingKey } from '#lib/types/settings.js';
+	import type { SettingKey } from '#lib/types/settings.js';
+	import type { MixedSettingValue } from '#lib/types/ui/settings.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import { createSettingsForm } from '#lib/utils/settings-form.js';
 

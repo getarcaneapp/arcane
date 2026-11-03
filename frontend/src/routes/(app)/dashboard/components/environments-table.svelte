@@ -1,7 +1,9 @@
 <script lang="ts" module>
 	import type { ActionButton } from '#lib/components/action-button-group/index.js';
-	import type { Environment, VulnerabilityRiskBand, VulnerabilityScoreStatus } from '#lib/types/environment.js';
-	import type { DashboardLiveStatsStatus, SystemStats } from '#lib/types/shared.js';
+	import type { Environment } from '#lib/types/environment.js';
+	import type { SystemStats } from '#lib/types/system.js';
+	import type { DashboardLiveStatsStatus } from '#lib/types/ui/dashboard.js';
+	import type { RiskBand, VulnerabilityScoreStatus } from '#lib/types/vulnerability.js';
 
 	export interface EnvironmentTableRow {
 		environment: Environment;
@@ -13,7 +15,7 @@
 		podCount: number | null;
 		updates: number;
 		reclaimable: number | null;
-		risk: { score: number; band: VulnerabilityRiskBand; status: VulnerabilityScoreStatus } | null;
+		risk: { score: number; band: RiskBand; status: VulnerabilityScoreStatus } | null;
 		versionText: string | null;
 		updateAvailable: boolean;
 		menuButtons: ActionButton[];

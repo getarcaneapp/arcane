@@ -2,7 +2,8 @@
 	import { ActivityIcon, ArrowLeftIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
-	import type { Activity, ActivityBatchGroup } from '#lib/types/activity.type.js';
+	import type { Activity } from '#lib/types/activity.js';
+	import type { ActivityBatchGroup } from '#lib/types/ui/activity.js';
 	import { cn } from '#lib/utils.js';
 
 	import ActivityBatchSteps from './activity-batch-steps.svelte';

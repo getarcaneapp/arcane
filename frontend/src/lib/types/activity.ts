@@ -17,7 +17,11 @@ export type ActivityType =
 	| 'container_stop'
 	| 'container_restart'
 	| 'container_redeploy'
+	| 'container_edit'
 	| 'container_delete'
+	| 'container_kill'
+	| 'container_pause'
+	| 'container_unpause'
 	| 'vulnerability_scan'
 	| 'auto_update'
 	| 'system_prune'
@@ -26,26 +30,26 @@ export type ActivityType =
 export type ActivityMessageLevel = 'info' | 'warning' | 'error' | 'success';
 
 export interface Activity {
-	id: string;
-	environmentId: string;
-	environmentName?: string;
+	startedAt: string;
+	createdAt: string;
 	batchId?: string;
-	sourceEnvironmentId?: string;
-	sourceEnvironmentName?: string;
-	type: ActivityType;
-	status: ActivityStatus;
 	resourceType?: string;
 	resourceId?: string;
 	resourceName?: string;
-	latestMessage?: string;
 	startedBy?: ActivityStartedBy;
-	startedAt: string;
 	endedAt?: string;
 	durationMs?: number;
 	error?: string;
 	metadata?: Record<string, unknown>;
-	createdAt: string;
 	updatedAt?: string;
+	environmentId: string;
+	environmentName?: string;
+	id: string;
+	sourceEnvironmentId?: string;
+	sourceEnvironmentName?: string;
+	type: ActivityType;
+	status: ActivityStatus;
+	latestMessage?: string;
 }
 
 export interface ActivityStartedBy {
@@ -55,12 +59,12 @@ export interface ActivityStartedBy {
 }
 
 export interface ActivityMessage {
+	createdAt: string;
+	payload?: Record<string, unknown>;
 	id: string;
 	activityId: string;
 	level: ActivityMessageLevel;
 	message: string;
-	payload?: Record<string, unknown>;
-	createdAt: string;
 }
 
 export interface ActivityDetail {
@@ -68,41 +72,17 @@ export interface ActivityDetail {
 	messages: ActivityMessage[];
 }
 
-export interface ActivityBatchGroup {
-	kind: 'batch';
-	batchId: string;
-	items: Activity[];
-	total: number;
-	done: number;
-	failed: number;
-	status: ActivityStatus;
-}
-
-export type ActivityGroup = { kind: 'single'; activity: Activity } | ActivityBatchGroup;
-
-export interface ActivityClearHistoryResult {
-	deleted: number;
-}
-
-export interface ActivityEnvironmentFailure {
-	environmentId: string;
-	environmentName: string;
-	message?: string;
-}
-
-export interface ActivityClearHistorySummary {
-	deleted: number;
-	succeeded: number;
-	failed: ActivityEnvironmentFailure[];
-}
-
 export interface ActivityStreamEvent {
+	timestamp: string;
+	activity?: Activity;
+	message?: ActivityMessage;
 	type: 'snapshot' | 'activity' | 'message' | 'heartbeat' | 'error';
 	environmentId?: string;
 	activityId?: string;
-	activity?: Activity;
-	activities?: Activity[];
-	message?: ActivityMessage;
 	error?: string;
-	timestamp: string;
+	activities?: Activity[];
+}
+
+export interface ActivityClearHistoryResult {
+	deleted: number;
 }

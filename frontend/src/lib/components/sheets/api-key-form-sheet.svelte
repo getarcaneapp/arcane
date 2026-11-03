@@ -7,8 +7,10 @@
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import type { ApiKey, ApiKeyUpdate, PersonalApiKeyCreate } from '#lib/types/auth.js';
-	import type { PermissionsManifest, ApiKeyPermissionGrant } from '#lib/types/auth.js';
+	import type { ApiKey } from '#lib/types/apikey.js';
+	import type { ApiKeyPermissionGrant } from '#lib/types/apikey.js';
+	import type { PermissionsManifest } from '#lib/types/role.js';
+	import type { ApiKeyUpdate, PersonalApiKeyCreate } from '#lib/types/ui/apikey.js';
 	import { plainDateFromInstant, plainDateToInstantString } from '#lib/utils/formatting.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import { normalizePermissionSelection } from '#lib/utils/permissions.js';

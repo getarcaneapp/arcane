@@ -1,10 +1,8 @@
-import type { PortMappingDto } from '#lib/types/docker.js';
-import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { PortsPaginatedResponse } from '#lib/types/ui/port.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';
-
-export type PortsPaginatedResponse = Paginated<PortMappingDto>;
 
 class PortService extends BaseAPIService {
 	async getPortsForEnvironment(

@@ -14,8 +14,9 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import type { SwarmKvSummary } from '#lib/types/swarm.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import type { SwarmKvSummary } from '#lib/types/ui/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import type { EnvironmentPage, EnvironmentRow } from '#lib/utils/environments.js';

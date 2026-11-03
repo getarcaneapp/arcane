@@ -5,7 +5,7 @@ import { m } from '#lib/paraglide/messages.js';
 import BaseAPIService from '#lib/services/api-service.js';
 import { imageService } from '#lib/services/image-service.js';
 import { userService } from '#lib/services/user-service.js';
-import type { AutoUpdateResourceType, AutoUpdateResult } from '#lib/types/automation.js';
+import type { AutoUpdateResourceType, UpdaterResult } from '#lib/types/updater.js';
 import { activityToastOptions } from '#lib/utils/activity-toast.js';
 import { acrossEnvironmentsNote, actionEnvironments, settleAcrossEnvironments } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -22,7 +22,7 @@ type ThrowOnUpdateFailureOptions = {
 	rejectSkipped?: boolean;
 };
 
-export function throwOnUpdateFailure<T extends Pick<AutoUpdateResult, 'failed' | 'items'>>(
+export function throwOnUpdateFailure<T extends Pick<UpdaterResult, 'failed' | 'items'>>(
 	result: T,
 	{ rejectSkipped = false }: ThrowOnUpdateFailureOptions = {}
 ): T {
@@ -40,7 +40,7 @@ export function throwOnUpdateFailure<T extends Pick<AutoUpdateResult, 'failed' |
 }
 
 /** Emits a single toast describing an updater run's updated/failed/skipped tally. */
-export function summarizeUpdateResult(result: AutoUpdateResult) {
+export function summarizeUpdateResult(result: UpdaterResult) {
 	const options = activityToastOptions(result.activityId);
 	const updated = (result.updated ?? 0) + (result.restarted ?? 0);
 	const failed = result.failed ?? 0;

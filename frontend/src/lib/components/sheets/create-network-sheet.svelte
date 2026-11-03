@@ -12,7 +12,7 @@
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { CloseIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { IPAMConfig, NetworkCreateOptions } from '#lib/types/docker.js';
+	import type { NetworkIPAMConfig, NetworkCreateOptions } from '#lib/types/network.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { parseKeyValuePairs } from '#lib/utils/form-parsers.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
@@ -104,7 +104,7 @@
 
 		// Add IPAM configuration if enabled
 		if (data.enableIpam && (data.subnet?.trim() || data.ipRange?.trim() || data.gateway?.trim())) {
-			const ipamConfig: IPAMConfig = {};
+			const ipamConfig: NetworkIPAMConfig = {};
 
 			if (data.subnet?.trim()) {
 				ipamConfig.subnet = data.subnet.trim();

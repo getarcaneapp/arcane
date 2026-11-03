@@ -1,5 +1,6 @@
 import type { Environment } from '#lib/types/environment.js';
-import type { DashboardLiveStatsStatus, SystemStats } from '#lib/types/shared.js';
+import type { SystemStats } from '#lib/types/system.js';
+import type { DashboardLiveStatsStatus } from '#lib/types/ui/dashboard.js';
 import { hasPermission } from '#lib/utils/auth.js';
 import { createStatsWebSocket, type ReconnectingWebSocket } from '#lib/utils/ws.js';
 

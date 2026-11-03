@@ -7,13 +7,9 @@ import { PinOnIcon } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
 import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
-import type {
-	DashboardResourceKind,
-	DashboardWidgetConfig,
-	DashboardWidgetLayout,
-	DashboardWidgetType
-} from '#lib/types/auth.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { DashboardWidgetType } from '#lib/types/ui/user.js';
+import type { DashboardResourceKind, DashboardWidgetConfig, DashboardWidgetLayout } from '#lib/types/user.js';
 import { ENVIRONMENT_FILTER, environmentFilterIds } from '#lib/utils/environments.js';
 import { saveUserPreferences } from '#lib/utils/user-preferences.js';
 

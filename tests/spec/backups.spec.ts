@@ -2,7 +2,7 @@ import { expect, test, type Page, type Route } from '../fixtures/test.fixture';
 import { setCodeMirrorValue } from '../utils/playwright.util';
 import { removeApiResource, readApiData } from '../utils/fetch.util';
 import { openRowActionsMenu } from '../utils/table-actions.util';
-import { type Activity } from '../../frontend/src/lib/types/activity.type';
+import { type Activity } from '../../frontend/src/lib/types/activity';
 
 test.describe('Workspace restore', () => {
 	const VOLUME_NAME = 'backup-picker-e2e';

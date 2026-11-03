@@ -6,9 +6,10 @@ import { environmentStatusStore } from '#lib/stores/environment-status.store.sve
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import { versionStore } from '#lib/stores/version.store.svelte.js';
-import type { User, MFAChallenge, AuthenticationResponse, SessionBootstrap } from '#lib/types/auth.js';
-import type { LoginCredentials, AutoLoginConfig } from '#lib/types/auth.js';
-import type { OidcStatusInfo } from '#lib/types/settings.js';
+import type { MFAChallenge, AuthenticationResponse, SessionBootstrap } from '#lib/types/auth.js';
+import type { AuthLogin, AutoLoginConfig } from '#lib/types/auth.js';
+import type { OidcStatusInfo } from '#lib/types/auth.js';
+import type { User } from '#lib/types/user.js';
 import { parseInstant } from '#lib/utils/formatting.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -206,7 +207,7 @@ class AuthService extends BaseAPIService {
 		throw err;
 	}
 
-	async login(credentials: LoginCredentials): Promise<User> {
+	async login(credentials: AuthLogin): Promise<User> {
 		const data = await this.handleResponse<AuthenticationResponse>(this.api.post('/auth/login', credentials));
 		if (data.status === 'mfa_required') {
 			if (!data.mfa) {

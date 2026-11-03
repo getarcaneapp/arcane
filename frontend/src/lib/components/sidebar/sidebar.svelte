@@ -17,9 +17,10 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { PermissionsManifest, User } from '#lib/types/auth.js';
 	import type { PodmanStatus } from '#lib/types/podman.js';
-	import type { AppVersionInformation } from '#lib/types/settings.js';
+	import type { PermissionsManifest } from '#lib/types/role.js';
+	import type { User } from '#lib/types/user.js';
+	import type { VersionInfo } from '#lib/types/version.js';
 
 	import SidebarItemGroup from './sidebar-itemgroup.svelte';
 	import SidebarLogo from './sidebar-logo.svelte';
@@ -38,7 +39,7 @@
 		permissionsManifest = null,
 		...restProps
 	}: ComponentProps<typeof Sidebar.Root> & {
-		versionInformation: AppVersionInformation;
+		versionInformation: VersionInfo;
 		user?: User | null;
 		swarmEnabled?: boolean;
 		podmanStatuses?: Record<string, PodmanStatus>;

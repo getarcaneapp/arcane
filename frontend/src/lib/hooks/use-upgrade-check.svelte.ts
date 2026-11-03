@@ -3,12 +3,12 @@ import { createQuery } from '@tanstack/svelte-query';
 import { queryKeys } from '#lib/query/query-keys.js';
 import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
-import type { AppVersionInformation } from '#lib/types/settings.js';
+import type { VersionInfo } from '#lib/types/version.js';
 import { hasPermission } from '#lib/utils/auth.js';
 
 type UseUpgradeCheckOptions = {
 	queryScope: 'mobile-nav' | 'sidebar';
-	getVersionInformation: () => AppVersionInformation | undefined;
+	getVersionInformation: () => VersionInfo | undefined;
 	getDebug?: () => boolean;
 };
 

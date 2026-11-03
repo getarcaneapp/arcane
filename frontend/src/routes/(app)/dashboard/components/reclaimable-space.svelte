@@ -4,7 +4,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentColor } from '#lib/stores/environment-colors.store.svelte.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-	import type { SystemDiskUsage } from '#lib/types/shared.js';
+	import type { SystemDiskUsage } from '#lib/types/system.js';
 	import { bytes } from '#lib/utils/formatting.js';
 
 	import { totalReclaimableBytes } from '../overview.helpers';

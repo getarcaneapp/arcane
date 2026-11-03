@@ -14,7 +14,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { networkService } from '#lib/services/network-service.js';
-	import type { ContainerDetailsDto } from '#lib/types/docker.js';
+	import type { ContainerDetails } from '#lib/types/container.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { getCustomHostname } from '#lib/utils/docker.js';
@@ -22,7 +22,7 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	interface Props {
-		container: ContainerDetailsDto;
+		container: ContainerDetails;
 		environmentId: string;
 	}
 
@@ -182,7 +182,7 @@
 										customLabel={m.common_disconnect()}
 										loading={disconnectPending[networkName]}
 										disabled={disconnectPending[networkName]}
-										onclick={() => handleDisconnect(networkName, rawNetworkConfig.networkId)}
+										onclick={() => handleDisconnect(networkName, rawNetworkConfig.networkId || networkName)}
 										class="shrink-0 text-destructive hover:text-destructive"
 									/>
 								{/if}

@@ -17,7 +17,7 @@
 	} from '#lib/stores/environment-colors.store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { EnvironmentLabelStyle } from '#lib/types/auth.js';
+	import type { EnvironmentLabelStyle } from '#lib/types/user.js';
 	import { saveUserPreferences } from '#lib/utils/user-preferences.js';
 
 	const environments = $derived(environmentStore.available.filter((env) => env.enabled));

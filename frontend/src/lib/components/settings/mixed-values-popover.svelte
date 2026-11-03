@@ -4,7 +4,7 @@
 	import * as Popover from '#lib/components/ui/popover/index.js';
 	import { ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { MixedSettingValue } from '#lib/types/settings.js';
+	import type { MixedSettingValue } from '#lib/types/ui/settings.js';
 
 	let { values, class: className, children }: { values: MixedSettingValue[]; class?: string; children: Snippet } = $props();
 </script>

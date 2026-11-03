@@ -3,8 +3,8 @@ import { queryOptions } from '@tanstack/svelte-query';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { projectService } from '#lib/services/project-service.js';
 import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-import type { ProjectStatusCounts } from '#lib/types/swarm.js';
+import type { ProjectStatusCounts } from '#lib/types/project.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { fetchAcrossEnvironments, sumAcrossEnvironments } from '#lib/utils/environments.js';
 
 const emptyStatusCounts: ProjectStatusCounts = {

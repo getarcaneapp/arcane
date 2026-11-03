@@ -23,8 +23,9 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitRepositoryService } from '#lib/services/git-repository-service.js';
-	import type { GitRepository } from '#lib/types/automation.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import type { GitRepository } from '#lib/types/gitops.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';

@@ -2,7 +2,7 @@
 	import type { BadgeVariant } from '#lib/components/ui/badge/badge.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { GitOpsBackupState, GitOpsSync } from '#lib/types/automation.js';
+	import type { GitOpsBackupState, GitOpsSync } from '#lib/types/gitops.js';
 
 	let { sync }: { sync: GitOpsSync } = $props();
 

@@ -9,7 +9,8 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { CopyIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { Role, PermissionsManifest, RoleWritable } from '#lib/types/auth.js';
+	import type { Role, PermissionsManifest } from '#lib/types/role.js';
+	import type { RoleWritable } from '#lib/types/ui/role.js';
 	import { normalizePermissionSelection } from '#lib/utils/permissions.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 

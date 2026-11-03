@@ -1,4 +1,5 @@
-import type { ApplicationTheme, ThemeDefinition, ThemePalette } from '#lib/types/settings.js';
+import type { ThemeDefinition } from '#lib/types/ui/theme.js';
+import type { ApplicationTheme, ThemePalette } from '#lib/types/user.js';
 import { trySync } from '#lib/utils/try-catch.js';
 
 type ThemePreview = Pick<ThemePalette, 'background' | 'sidebar' | 'card' | 'border' | 'foreground' | 'primary'>;

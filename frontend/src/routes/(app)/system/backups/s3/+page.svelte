@@ -13,8 +13,9 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
-	import type { S3DestinationCreate, S3Destination } from '#lib/types/s3-destination.js';
+	import type { S3Destination } from '#lib/types/backup.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
+	import type { S3DestinationCreate } from '#lib/types/ui/backup.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { discoverDestinationBackups } from '#lib/utils/backups.js';
 	import { changedFields } from '#lib/utils/payload.js';

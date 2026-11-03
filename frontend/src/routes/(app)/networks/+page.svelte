@@ -11,7 +11,7 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { networkService } from '#lib/services/network-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { NetworkCreateOptions, NetworkUsageCounts } from '#lib/types/docker.js';
+	import type { NetworkCreateOptions, NetworkUsageCounts } from '#lib/types/network.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { pinViewAction } from '#lib/utils/dashboard-layout.js';

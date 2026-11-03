@@ -5,8 +5,9 @@ import { m } from '#lib/paraglide/messages.js';
 import { APIError } from '#lib/services/api-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
-import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/auth.js';
-import type { PermissionsManifest, User } from '#lib/types/auth.js';
+import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/role.js';
+import type { PermissionsManifest } from '#lib/types/role.js';
+import type { User } from '#lib/types/user.js';
 import {
 	canReachAccessSurface,
 	getFallbackAccessSurfaces,

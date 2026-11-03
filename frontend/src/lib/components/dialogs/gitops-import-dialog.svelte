@@ -7,7 +7,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { ImportGitOpsSyncRequest } from '#lib/types/automation.js';
+	import type { ImportGitOpsSyncRequest } from '#lib/types/gitops.js';
 
 	type GitOpsImportFormProps = {
 		open: boolean;

@@ -2,7 +2,7 @@ import { queryOptions } from '@tanstack/svelte-query';
 
 import { queryKeys } from '#lib/query/query-keys.js';
 import { eventService } from '#lib/services/event-service.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 
 export function eventListQuery(requestOptions: SearchPaginationSortRequest) {
 	return queryOptions({

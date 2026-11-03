@@ -9,7 +9,7 @@
 	import { containerListQuery } from '#lib/query/containers.js';
 	import { projectListQuery } from '#lib/query/projects.js';
 	import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-	import type { DashboardResourceKind } from '#lib/types/auth.js';
+	import type { DashboardResourceKind } from '#lib/types/user.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 

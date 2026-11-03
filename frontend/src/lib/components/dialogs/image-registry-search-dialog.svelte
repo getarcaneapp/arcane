@@ -9,7 +9,7 @@
 	import { SearchIcon, DownloadIcon, VerifiedCheckIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageService } from '#lib/services/image-service.js';
-	import type { ImageSearchResultDto } from '#lib/types/docker.js';
+	import type { ImageSearchResult } from '#lib/types/image.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -23,7 +23,7 @@
 
 	let query = $state('');
 	let tag = $state('latest');
-	let results = $state.raw<ImageSearchResultDto[]>([]);
+	let results = $state.raw<ImageSearchResult[]>([]);
 	let hasSearched = $state(false);
 	let isSearching = $state(false);
 	let pullingImageName = $state<string | null>(null);

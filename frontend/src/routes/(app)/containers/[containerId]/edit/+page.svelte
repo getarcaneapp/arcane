@@ -19,7 +19,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
-	import type { ContainerEditRequest } from '#lib/types/docker.js';
+	import type { ContainerEdit } from '#lib/types/container.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { applyApiFieldError, extractApiErrorMessage } from '#lib/utils/api.js';
 	import { environmentHref } from '#lib/utils/environments.js';
@@ -34,7 +34,7 @@
 	let rows = $state(untrack(() => rowsFromEditConfig(data.editConfig)));
 
 	const editContainerMutation = createMutation(() => ({
-		mutationFn: (request: ContainerEditRequest) => containerService.editContainer(data.containerId, request, data.envId),
+		mutationFn: (request: ContainerEdit) => containerService.editContainer(data.containerId, request, data.envId),
 		onSuccess: async (details) => {
 			toast.success(m.edit_success(), activityToastOptions(extractActivityId(details)));
 			await queryClient.invalidateQueries({ queryKey: queryKeys.containers.all });

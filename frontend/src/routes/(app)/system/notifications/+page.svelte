@@ -12,7 +12,7 @@
 	import { apnsService } from '#lib/services/apns-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { ApnsDevice } from '#lib/types/apns.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';

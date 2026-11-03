@@ -21,7 +21,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
-	import type { RegistryTag } from '#lib/types/docker.js';
+	import type { ContainerRegistryRepositoryTagRow } from '#lib/types/ui/containerregistry.js';
 	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
@@ -85,11 +85,11 @@
 		return buildImageReference(registry.host, '', repository, tag);
 	}
 
-	function platformLabel(platform: RegistryTag['platforms'][number]) {
+	function platformLabel(platform: ContainerRegistryRepositoryTagRow['platforms'][number]) {
 		return [platform.os, platform.architecture, platform.variant].filter(Boolean).join('/');
 	}
 
-	function tagMeta(tag: RegistryTag) {
+	function tagMeta(tag: ContainerRegistryRepositoryTagRow) {
 		if (tag.error) return m.registries_tag_details_unavailable();
 		const parts = [bytes.format(tag.size)];
 		if (tag.created) parts.push(formatRelativeTime(tag.created));

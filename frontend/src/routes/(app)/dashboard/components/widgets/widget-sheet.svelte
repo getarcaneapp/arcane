@@ -2,7 +2,7 @@
 	import { z } from 'zod/v4';
 
 	import { m } from '#lib/paraglide/messages.js';
-	import type { CustomDashboardWidgetType } from '#lib/types/auth.js';
+	import type { CustomDashboardWidgetType } from '#lib/types/ui/user.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 
 	import { MAX_RESOURCE_LIMIT, RESOURCE_KIND_KEYS } from './resource-kinds';
@@ -57,7 +57,7 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
-	import type { DashboardWidgetConfig } from '#lib/types/auth.js';
+	import type { DashboardWidgetConfig } from '#lib/types/user.js';
 	import {
 		createDashboardWidget,
 		DASHBOARD_WIDGET_TYPES,

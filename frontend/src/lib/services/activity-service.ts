@@ -1,5 +1,6 @@
-import type { Activity, ActivityClearHistoryResult, ActivityDetail } from '#lib/types/activity.type.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { Activity, ActivityClearHistoryResult, ActivityDetail } from '#lib/types/activity.js';
+import type { Paginated } from '#lib/types/base.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';

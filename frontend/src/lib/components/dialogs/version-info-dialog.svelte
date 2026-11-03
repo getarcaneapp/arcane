@@ -9,8 +9,9 @@
 	import { ExternalLinkIcon, GithubIcon, BookOpenIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
-	import type { AppVersionInformation, Settings } from '#lib/types/settings.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
+	import type { Settings } from '#lib/types/settings.js';
+	import type { VersionInfo } from '#lib/types/version.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { isDevelopmentBuild, usesDevelopmentBranding } from '#lib/utils/branding.js';
@@ -21,7 +22,7 @@
 	interface Props {
 		open: boolean;
 		onOpenChange: (open: boolean) => void;
-		versionInfo: AppVersionInformation;
+		versionInfo: VersionInfo;
 		debugMode?: boolean;
 	}
 
@@ -39,7 +40,7 @@
 		enabledFeatures: ['autologin'],
 		currentDigest: 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
 		releaseUrl: 'https://github.com/getarcaneapp/arcane/releases/tag/v1.2.4'
-	} as AppVersionInformation;
+	} as VersionInfo;
 
 	const displayInfo = $derived(debugMode ? mockVersionInfo : versionInfo);
 

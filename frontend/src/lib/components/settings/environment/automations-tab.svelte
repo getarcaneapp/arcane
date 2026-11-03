@@ -17,8 +17,9 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import type { ContainerSummaryDto } from '#lib/types/docker.js';
-	import type { JobScheduleConfig, MixedSettingValue } from '#lib/types/settings.js';
+	import type { ContainerSummary } from '#lib/types/container.js';
+	import type { JobScheduleConfig } from '#lib/types/jobschedule.js';
+	import type { MixedSettingValue } from '#lib/types/ui/settings.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import {
@@ -90,7 +91,7 @@
 	const autoUpdateExcluded = $derived(parseExcludedContainerSet(formInputs.autoUpdateExcludedContainers.value));
 	const autoHealExcluded = $derived(parseExcludedContainerSet(formInputs.autoHealExcludedContainers.value));
 
-	function containerName(container: ContainerSummaryDto): string {
+	function containerName(container: ContainerSummary): string {
 		return container.names[0] || container.id.substring(0, 12);
 	}
 
@@ -171,7 +172,7 @@
 {#snippet containerExclusionList(config: {
 	term: string;
 	idPrefix: string;
-	item: (container: ContainerSummaryDto) => ContainerItem;
+	item: (container: ContainerSummary) => ContainerItem;
 	onToggle: (name: string) => void;
 })}
 	<div class="h-64 w-full overflow-hidden rounded-md border">

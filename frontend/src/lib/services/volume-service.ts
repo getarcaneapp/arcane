@@ -1,17 +1,10 @@
-import type {
-	Volume,
-	VolumeUsageDto,
-	VolumeUsageCounts,
-	VolumeCreate,
-	VolumeRenameRequest,
-	VolumeSizeInfo
-} from '#lib/types/docker.js';
-import type { SearchPaginationSortRequest, Paginated, MessageResponse } from '#lib/types/shared.js';
+import type { MessageResponse } from '#lib/types/base.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { VolumeCreate, VolumesPaginatedResponse } from '#lib/types/ui/volume.js';
+import type { Volume, VolumeUsageResponse, VolumeUsageCounts, VolumeRename, VolumeSizeInfo } from '#lib/types/volume.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';
-
-export type VolumesPaginatedResponse = Paginated<Volume, VolumeUsageCounts>;
 
 class VolumeService extends BaseAPIService {
 	async getVolumesForEnvironment(
@@ -28,10 +21,10 @@ class VolumeService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/volumes/${volumeName}`)) as Promise<Volume>;
 	}
 
-	async getVolumeUsage(volumeName: string, environmentId: string): Promise<VolumeUsageDto> {
+	async getVolumeUsage(volumeName: string, environmentId: string): Promise<VolumeUsageResponse> {
 		return this.handleResponse(
 			this.api.get(`/environments/${environmentId}/volumes/${volumeName}/usage`)
-		) as Promise<VolumeUsageDto>;
+		) as Promise<VolumeUsageResponse>;
 	}
 
 	async getVolumeUsageCounts(environmentId: string, config?: APIRequestConfig): Promise<VolumeUsageCounts> {
@@ -48,7 +41,7 @@ class VolumeService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/volumes`, options));
 	}
 
-	async renameVolume(sourceName: string, options: VolumeRenameRequest, environmentId: string): Promise<Volume> {
+	async renameVolume(sourceName: string, options: VolumeRename, environmentId: string): Promise<Volume> {
 		return this.handleResponse(
 			this.api.post(`/environments/${environmentId}/volumes/${encodeURIComponent(sourceName)}/rename`, options)
 		) as Promise<Volume>;

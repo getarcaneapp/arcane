@@ -12,7 +12,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { templateService } from '#lib/services/template-service.js';
-	import type { Template } from '#lib/types/swarm.js';
+	import type { Template } from '#lib/types/template.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 	import {

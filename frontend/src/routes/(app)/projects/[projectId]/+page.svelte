@@ -57,9 +57,10 @@
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
-	import type { ProjectEditorLayout } from '#lib/types/auth.js';
-	import type { ProjectWorkspaceFileChange, ProjectWorkspaceFileContent } from '#lib/types/project-workspace.js';
-	import type { IncludeFile, Project, ProjectTagColor, ProjectUpdate, ProjectWritable } from '#lib/types/swarm.js';
+	import type { Project, ProjectIncludeFile, ProjectTagColor } from '#lib/types/project.js';
+	import type { ProjectUpdate, ProjectWritable } from '#lib/types/ui/project.js';
+	import type { ProjectEditorLayout } from '#lib/types/user.js';
+	import type { WorkspaceFileChange, WorkspaceFileContent } from '#lib/types/workspace.js';
 	import { cn } from '#lib/utils.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -135,15 +136,15 @@
 	let includeFilesState = $state<Record<string, string>>({});
 	let loadedIncludeFileContents = $state<Record<string, string>>({});
 	let loadedDirectoryFileContents = $state<Record<string, string>>({});
-	let projectWorkspaceChanges = $state<ProjectWorkspaceFileChange[]>([]);
+	let projectWorkspaceChanges = $state<WorkspaceFileChange[]>([]);
 	let projectWorkspaceContents = $state<Record<string, string>>({});
 	let loadedProjectWorkspaceContents = $state<Record<string, string>>({});
 	let projectWorkspaceLoadErrors = $state<Record<string, string>>({});
 	let projectWorkspaceLoading = $state<Record<string, boolean>>({});
-	let projectWorkspaceFileMetadata = $state<Record<string, ProjectWorkspaceFileContent>>({});
+	let projectWorkspaceFileMetadata = $state<Record<string, WorkspaceFileContent>>({});
 	let projectWorkspaceStagedFiles = $state<Record<string, File>>({});
 	let projectWorkspaceStagedUploadedText = $state<Record<string, string>>({});
-	let projectWorkspaceFilePromises: Record<string, Promise<IncludeFile | ProjectWorkspaceFileContent> | undefined> = {};
+	let projectWorkspaceFilePromises: Record<string, Promise<ProjectIncludeFile | WorkspaceFileContent> | undefined> = {};
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
 	const projectSettings = useEnvironmentSettings(() => envId);
 	const projectWorkspaceMaxFileSizeMb = $derived(projectSettings.current?.values.projectWorkspaceMaxFileSizeMb ?? 10);
@@ -1017,15 +1018,15 @@
 	function getProjectWorkspaceFileResource(
 		kind: 'workspace',
 		relativePath: string
-	): ProjectWorkspaceFileContent | Promise<ProjectWorkspaceFileContent>;
+	): WorkspaceFileContent | Promise<WorkspaceFileContent>;
 	function getProjectWorkspaceFileResource(
 		kind: 'include' | 'directory',
 		relativePath: string
-	): IncludeFile | Promise<IncludeFile>;
+	): ProjectIncludeFile | Promise<ProjectIncludeFile>;
 	function getProjectWorkspaceFileResource(
 		kind: ProjectWorkspaceSource,
 		relativePath: string
-	): IncludeFile | ProjectWorkspaceFileContent | Promise<IncludeFile | ProjectWorkspaceFileContent> {
+	): ProjectIncludeFile | WorkspaceFileContent | Promise<ProjectIncludeFile | WorkspaceFileContent> {
 		const currentProjectId = project?.id;
 		if (!currentProjectId) {
 			throw new Error(m.projects_workspace_not_loaded());

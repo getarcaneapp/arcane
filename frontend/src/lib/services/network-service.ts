@@ -1,18 +1,16 @@
+import type { MessageResponse } from '#lib/types/base.js';
 import type {
-	NetworkSummaryDto,
 	NetworkUsageCounts,
-	NetworkCreate,
 	NetworkCreateOptions,
 	NetworkCreateResponse,
-	NetworkInspectDto,
-	NetworkTopologyDto
-} from '#lib/types/docker.js';
-import type { SearchPaginationSortRequest, Paginated, MessageResponse } from '#lib/types/shared.js';
+	NetworkInspect,
+	NetworkTopology
+} from '#lib/types/network.js';
+import type { NetworkCreate, NetworksPaginatedResponse } from '#lib/types/ui/network.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';
-
-export type NetworksPaginatedResponse = Paginated<NetworkSummaryDto, NetworkUsageCounts>;
 
 class NetworkService extends BaseAPIService {
 	async getNetworksForEnvironment(
@@ -34,12 +32,12 @@ class NetworkService extends BaseAPIService {
 		environmentId: string,
 		networkId: string,
 		options?: SearchPaginationSortRequest
-	): Promise<NetworkInspectDto> {
+	): Promise<NetworkInspect> {
 		const params = transformPaginationParams(options);
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/networks/${networkId}`, { params }));
 	}
 
-	async getNetworkTopology(environmentId: string, config?: APIRequestConfig): Promise<NetworkTopologyDto> {
+	async getNetworkTopology(environmentId: string, config?: APIRequestConfig): Promise<NetworkTopology> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/networks/topology`, config));
 	}
 

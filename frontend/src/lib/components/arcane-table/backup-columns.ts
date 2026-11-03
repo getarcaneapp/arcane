@@ -1,5 +1,5 @@
 import { m } from '#lib/paraglide/messages.js';
-import type { BackupRun } from '#lib/types/backup.js';
+import type { BackupRun } from '#lib/types/ui/backup.js';
 import { backupManagementLabel } from '#lib/utils/backups.js';
 
 import type { ColumnSpec } from './arcane-table.types.svelte';

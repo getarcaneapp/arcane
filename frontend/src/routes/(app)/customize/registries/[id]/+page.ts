@@ -1,8 +1,9 @@
 import { m } from '#lib/paraglide/messages.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { containerRegistryService } from '#lib/services/container-registry-service.js';
-import type { RegistryRepository, RegistryTag } from '#lib/types/docker.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { Paginated } from '#lib/types/base.js';
+import type { ContainerRegistryRepositoryRow, ContainerRegistryRepositoryTagRow } from '#lib/types/ui/containerregistry.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { extractApiErrorMessage, throwPageLoadError } from '#lib/utils/api.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -30,7 +31,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 
 	// The catalog is only needed for the repository grid. Registries without a
 	// catalog API fail here, and the page offers opening a repository by name instead.
-	let catalog: Paginated<RegistryRepository> | null = null;
+	let catalog: Paginated<ContainerRegistryRepositoryRow> | null = null;
 	let catalogError: string | null = null;
 	if (!repository) {
 		const catalogRequest: SearchPaginationSortRequest = {
@@ -57,7 +58,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 		sort: { column: 'name', direction: 'asc' }
 	};
 
-	let tags: Paginated<RegistryTag> = {
+	let tags: Paginated<ContainerRegistryRepositoryTagRow> = {
 		data: [],
 		pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: tagsPageSize }
 	};

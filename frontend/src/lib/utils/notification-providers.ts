@@ -1,8 +1,8 @@
 import * as m from '#lib/paraglide/messages.js';
+import { type NotificationSettings } from '#lib/types/notification.js';
 import {
 	NOTIFICATION_PROVIDER_KEYS,
 	type NotificationProviderKey,
-	type NotificationSettings,
 	type NotificationSettingsUpsert,
 	type ProviderFormValuesMap,
 	discordSettingsToFormValues,
@@ -27,7 +27,7 @@ import {
 	matrixFormValuesToSettings,
 	googleChatFormValuesToSettings,
 	genericFormValuesToSettings
-} from '#lib/types/notifications.js';
+} from '#lib/types/ui/notification.js';
 
 export type NotificationSettingsByProvider = Record<NotificationProviderKey, NotificationSettings | null>;
 export type NotificationProviderFormState = { [K in NotificationProviderKey]: ProviderFormValuesMap[K] };

@@ -3,8 +3,8 @@
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import * as m from '#lib/paraglide/messages.js';
-	import type { BackupDestination, BackupPolicyForm } from '#lib/types/backup.js';
-	import type { S3Destination } from '#lib/types/s3-destination.js';
+	import type { SystemBackupDestination, S3Destination } from '#lib/types/backup.js';
+	import type { BackupPolicyForm } from '#lib/types/ui/backup.js';
 	import { backupDestinationOptions, s3DestinationOptions } from '#lib/utils/backups.js';
 
 	let {
@@ -93,7 +93,7 @@
 	<SelectWithLabel
 		id={`${idPrefix}-destination`}
 		value={form.destination}
-		onValueChange={(destination) => onChange({ destination: destination as BackupDestination })}
+		onValueChange={(destination) => onChange({ destination: destination as SystemBackupDestination })}
 		label={m.backups_destination_label()}
 		description={m.volume_backup_destination_description()}
 		options={destinationOptions}

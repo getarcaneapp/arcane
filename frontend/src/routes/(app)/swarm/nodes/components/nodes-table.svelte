@@ -24,9 +24,10 @@
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { swarmService, type SwarmNodesPaginatedResponse } from '#lib/services/swarm-service.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { SwarmNodeAgentDeployment, SwarmNode } from '#lib/types/swarm.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import type { SwarmNodesPaginatedResponse } from '#lib/types/ui/swarm.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasAnyPermission, hasPermission } from '#lib/utils/auth.js';
 	import { type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';

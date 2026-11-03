@@ -12,15 +12,12 @@
 	import { federatedCredentialListQuery } from '#lib/query/federated-credentials.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { federatedCredentialService } from '#lib/services/federated-credential-service.js';
-	import {
-		GLOBAL_SCOPE,
-		type FederatedCredential,
-		type FederatedCredentialCreate,
-		type FederatedCredentialUpdate,
-		type Role
-	} from '#lib/types/auth.js';
+	import type { Paginated } from '#lib/types/base.js';
 	import type { Environment } from '#lib/types/environment.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { FederatedCredential } from '#lib/types/federated.js';
+	import { GLOBAL_SCOPE, type Role } from '#lib/types/role.js';
+	import type { FederatedCredentialCreate, FederatedCredentialUpdate } from '#lib/types/ui/federated.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';

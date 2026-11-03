@@ -10,9 +10,10 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { User, UserUpdate } from '#lib/types/auth.js';
-	import type { Role } from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
+	import type { Role } from '#lib/types/role.js';
+	import type { UserUpdate } from '#lib/types/ui/user.js';
+	import type { User } from '#lib/types/user.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 

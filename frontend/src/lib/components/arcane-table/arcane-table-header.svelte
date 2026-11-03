@@ -7,6 +7,8 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { cn } from '#lib/utils.js';
 
+	import type { ColumnAlign } from './arcane-table.types.svelte';
+
 	type DivAttributes = SvelteHTMLElements['div'];
 
 	// Structural shape of the column controls this header drives. v9's `Column<TFeatures, TData>`
@@ -23,21 +25,26 @@
 	let {
 		column,
 		title,
+		align,
 		class: className,
 		...restProps
 	}: {
 		column?: SortableHeaderColumn;
 		title: string;
+		align?: ColumnAlign;
 		class?: string;
 	} & DivAttributes = $props();
 </script>
 
 {#if !column?.getCanSort()}
-	<div class={className} {...restProps}>
+	<div class={cn(align === 'center' && 'text-center', align === 'right' && 'text-right', className)} {...restProps}>
 		{title}
 	</div>
 {:else}
-	<div class={cn('flex items-center', className)} {...restProps}>
+	<div
+		class={cn('flex items-center', align === 'center' && 'justify-center', align === 'right' && 'justify-end', className)}
+		{...restProps}
+	>
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger>
 				{#snippet child({ props })}
@@ -48,7 +55,9 @@
 						size="sm"
 						customLabel={title}
 						class={cn(
-							'-ml-3 h-8 text-xs data-[state=open]:bg-accent',
+							'h-8 text-xs data-[state=open]:bg-accent',
+							(align === undefined || align === 'left') && '-ml-3',
+							align === 'right' && '-mr-3',
 							column.getIsSorted() ? 'text-foreground' : 'text-muted-foreground'
 						)}
 					>

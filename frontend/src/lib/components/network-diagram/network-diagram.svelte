@@ -23,7 +23,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { AlertIcon, EyeOnIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { TopologyEdgeDto } from '#lib/types/docker.js';
+	import type { NetworkTopologyEdge } from '#lib/types/network.js';
 	import { cn } from '#lib/utils.js';
 
 	import type { EnvironmentTopology } from './topology.js';
@@ -38,9 +38,9 @@
 		class?: string;
 	} = $props();
 
-	type TopologyNodeDto = EnvironmentTopology['nodes'][number];
+	type TopologyNode = EnvironmentTopology['nodes'][number];
 
-	function nodeResourceId(node: TopologyNodeDto): string {
+	function nodeResourceId(node: TopologyNode): string {
 		const prefix = `${node.environmentId}/`;
 		return node.id.startsWith(prefix) ? node.id.slice(prefix.length) : node.id;
 	}
@@ -183,7 +183,7 @@
 		}
 	}
 
-	function nodeLabel(node: TopologyNodeDto): string {
+	function nodeLabel(node: TopologyNode): string {
 		if (node.type === 'network') {
 			const suffix = node.metadata.driver ? ` · ${node.metadata.driver}` : '';
 			return `${node.name}${suffix}`;
@@ -193,7 +193,7 @@
 		return `${node.name}${status}`;
 	}
 
-	function nodeTitle(node: TopologyNodeDto): string {
+	function nodeTitle(node: TopologyNode): string {
 		if (node.type === 'network') {
 			return [
 				node.name,
@@ -216,7 +216,7 @@
 			.join('\n');
 	}
 
-	function edgeLabel(edge: TopologyEdgeDto): string | undefined {
+	function edgeLabel(edge: NetworkTopologyEdge): string | undefined {
 		const labels = [edge.ipv4Address, edge.ipv6Address].filter(Boolean);
 		if (labels.length === 0) {
 			return undefined;
@@ -224,7 +224,7 @@
 		return labels.join(' | ');
 	}
 
-	function containerSourceMap(edges: TopologyEdgeDto[]): Record<string, string[]> {
+	function containerSourceMap(edges: NetworkTopologyEdge[]): Record<string, string[]> {
 		const map: Record<string, string[]> = {};
 		for (const edge of edges) {
 			map[edge.target] = [...(map[edge.target] ?? []), edge.source];
@@ -233,8 +233,8 @@
 	}
 
 	function containerConnections(
-		edges: TopologyEdgeDto[],
-		networksById: Record<string, TopologyNodeDto>,
+		edges: NetworkTopologyEdge[],
+		networksById: Record<string, TopologyNode>,
 		sourceOrder: Record<string, number>
 	): Record<string, ContainerConnection[]> {
 		const map: Record<string, ContainerConnection[]> = {};
@@ -266,7 +266,7 @@
 		return map;
 	}
 
-	function containerLabel(node: TopologyNodeDto, connections: ContainerConnection[]): string {
+	function containerLabel(node: TopologyNode, connections: ContainerConnection[]): string {
 		const header = node.metadata.status ? `${node.name} · ${node.metadata.status}` : node.name;
 		if (connections.length === 0) {
 			return header;
@@ -282,16 +282,12 @@
 		return [header, ...details].join('\n');
 	}
 
-	function buildDiagramLayout(
-		networks: TopologyNodeDto[],
-		edges: TopologyEdgeDto[],
-		containers: TopologyNodeDto[]
-	): DiagramLayout {
+	function buildDiagramLayout(networks: TopologyNode[], edges: NetworkTopologyEdge[], containers: TopologyNode[]): DiagramLayout {
 		const networkPositions: Record<string, XYPosition> = {};
 		const containerPositions: Record<string, XYPosition> = {};
 		const sourcesByContainer = containerSourceMap(edges);
 		const networkOrder = Object.fromEntries(networks.map((node, index) => [node.id, index]));
-		const containersByPrimaryNetwork: Record<string, TopologyNodeDto[]> = {};
+		const containersByPrimaryNetwork: Record<string, TopologyNode[]> = {};
 
 		for (const network of networks) {
 			containersByPrimaryNetwork[network.id] = [];

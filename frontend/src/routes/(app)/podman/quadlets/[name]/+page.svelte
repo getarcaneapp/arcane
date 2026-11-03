@@ -20,7 +20,8 @@
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { podmanService, type PodmanQuadletAction } from '#lib/services/podman-service.js';
+	import { podmanService } from '#lib/services/podman-service.js';
+	import type { PodmanQuadletAction } from '#lib/types/ui/podman.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { environmentHref } from '#lib/utils/environments.js';

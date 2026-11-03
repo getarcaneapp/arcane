@@ -11,7 +11,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { diagnosticsService } from '#lib/services/diagnostics-service.js';
 	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
-	import type { GoroutineGroup, GoroutineProfile } from '#lib/types/diagnostics.js';
+	import type { GoroutineGroup, GoroutineProfile } from '#lib/types/system.js';
 	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';

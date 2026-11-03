@@ -8,13 +8,13 @@
 	import { StartIcon, StopIcon, NetworksIcon, VolumesIcon, HealthIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerService } from '#lib/services/container-service.js';
-	import type { ContainerDetailsDto } from '#lib/types/docker.js';
+	import type { ContainerDetails } from '#lib/types/container.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { formatDateTimeShort, formatElapsedTime, formatRelativeTime, parseInstant } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	interface Props {
-		container: ContainerDetailsDto;
+		container: ContainerDetails;
 		environmentId: string;
 		primaryIpAddress: string;
 		autoUpdateEnabled?: boolean;

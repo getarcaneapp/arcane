@@ -8,9 +8,10 @@
 		getSwarmNavigationItems
 	} from '#lib/config/navigation-config.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { PermissionsManifest, User } from '#lib/types/auth.js';
 	import type { PodmanStatus } from '#lib/types/podman.js';
-	import type { AppVersionInformation } from '#lib/types/settings.js';
+	import type { PermissionsManifest } from '#lib/types/role.js';
+	import type { User } from '#lib/types/user.js';
+	import type { VersionInfo } from '#lib/types/version.js';
 	import { cn } from '#lib/utils.js';
 	import { getMobileNavigation } from '#lib/utils/navigation.js';
 
@@ -28,7 +29,7 @@
 		class: className = ''
 	}: {
 		user?: User | null;
-		versionInformation?: AppVersionInformation;
+		versionInformation?: VersionInfo;
 		swarmEnabled?: boolean;
 		podmanStatuses?: Record<string, PodmanStatus>;
 		permissionsManifest?: PermissionsManifest | null;

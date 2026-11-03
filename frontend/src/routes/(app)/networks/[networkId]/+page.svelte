@@ -27,7 +27,7 @@
 	import { ResourceDetailLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { networkService } from '#lib/services/network-service.js';
-	import type { NetworkInspectDto, IPAMSubnetDto } from '#lib/types/docker.js';
+	import type { NetworkInspect, NetworkIPAMConfig } from '#lib/types/network.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
@@ -46,10 +46,7 @@
 	const shortId = $derived(network?.id?.substring(0, 12) ?? m.common_unknown());
 	const createdDate = $derived(network?.created ? formatDateTimeShort(network.created) : m.common_unknown());
 
-	const connectedContainers = $derived(
-		network?.containersList ??
-			(network?.containers ? Object.entries(network.containers).map(([id, info]) => ({ id, ...(info as any) })) : [])
-	);
+	const connectedContainers = $derived(network?.containersList ?? []);
 
 	const inUse = $derived(connectedContainers.length > 0);
 	const isPredefined = $derived(network?.name === 'bridge' || network?.name === 'host' || network?.name === 'none');
@@ -172,7 +169,7 @@
 	</div>
 {/snippet}
 
-{#snippet networkPeers(network: NetworkInspectDto)}
+{#snippet networkPeers(network: NetworkInspect)}
 	{#if network.peers && network.peers.length > 0}
 		<DetailSection title={m.networks_peers_title()} icon={GlobeIcon}>
 			<KeyValueGrid>
@@ -186,7 +183,7 @@
 	{/if}
 {/snippet}
 
-{#snippet ipamSubnet(config: IPAMSubnetDto)}
+{#snippet ipamSubnet(config: NetworkIPAMConfig)}
 	<KeyValueGrid>
 		{#if config.subnet}
 			<KeyValueCard label={m.common_subnet()} valueTitle={m.common_click_to_select()}>{config.subnet}</KeyValueCard>
@@ -207,7 +204,7 @@
 	</KeyValueGrid>
 {/snippet}
 
-{#snippet networkServices(network: NetworkInspectDto)}
+{#snippet networkServices(network: NetworkInspect)}
 	{#if network.services && Object.keys(network.services).length > 0}
 		<DetailSection title={m.services()} icon={LayersIcon}>
 			<div class="divide-y rounded-lg border">
@@ -237,7 +234,7 @@
 	{/if}
 {/snippet}
 
-{#snippet networkIpam(network: NetworkInspectDto)}
+{#snippet networkIpam(network: NetworkInspect)}
 	{#if network.ipam?.config && network.ipam.config.length > 0}
 		<DetailSection title={m.networks_ipam_title()} icon={SettingsIcon}>
 			<div class="space-y-3">
@@ -278,10 +275,7 @@
 
 				<div class="divide-y">
 					{#each connectedContainers as container (container.id)}
-						{@const addresses = [
-							container.ipv4Address ?? container.IPv4Address,
-							container.ipv6Address ?? container.IPv6Address
-						].filter(Boolean)}
+						{@const addresses = [container.ipv4Address, container.ipv6Address].filter(Boolean)}
 						<div class="flex flex-col p-3 sm:flex-row sm:items-center">
 							<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
 								<a
@@ -291,7 +285,7 @@
 									class="flex items-center text-primary hover:underline"
 								>
 									<ContainersIcon class="mr-1.5 size-3.5 text-muted-foreground" />
-									{container.name ?? container.Name}
+									{container.name}
 								</a>
 							</div>
 							<div class="flex w-full flex-wrap gap-1.5 pl-0 sm:w-2/3 sm:pl-4">

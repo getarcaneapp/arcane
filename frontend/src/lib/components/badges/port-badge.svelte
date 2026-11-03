@@ -6,8 +6,8 @@
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { ContainerPorts } from '#lib/types/docker.js';
-	import type { ServicePort } from '#lib/types/swarm.js';
+	import type { ContainerPort } from '#lib/types/container.js';
+	import type { ServicePort } from '#lib/types/project.js';
 	import { cn } from '#lib/utils.js';
 	import { toPortHref } from '#lib/utils/navigation.js';
 
@@ -31,7 +31,7 @@
 
 	const environmentSettings = useEnvironmentSettings(() => environmentId);
 	const baseServerUrl = $derived(environmentSettings.current?.values.baseServerUrl ?? 'http://localhost');
-	type PortBadgePort = ContainerPorts | ServicePort;
+	type PortBadgePort = ContainerPort | ServicePort;
 
 	type NormalizedPort = {
 		hostPort: string | null;
@@ -41,7 +41,7 @@
 		isPublished: boolean;
 	};
 
-	function isContainerPort(p: PortBadgePort): p is ContainerPorts {
+	function isContainerPort(p: PortBadgePort): p is ContainerPort {
 		return 'privatePort' in p;
 	}
 

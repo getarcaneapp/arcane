@@ -4,11 +4,11 @@
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { CpuIcon, HammerIcon, MemoryStickIcon, SecurityIcon, StatsIcon, VolumesIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { PodmanPodInspect } from '#lib/types/podman.js';
+	import type { PodInspect } from '#lib/types/podman.js';
 	import { bytes } from '#lib/utils/formatting.js';
 
 	interface Props {
-		pod: PodmanPodInspect;
+		pod: PodInspect;
 	}
 
 	let { pod }: Props = $props();

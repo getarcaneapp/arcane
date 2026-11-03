@@ -12,7 +12,7 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-	import type { PodmanPodCreateRequest } from '#lib/types/podman.js';
+	import type { PodCreateRequest } from '#lib/types/podman.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { acrossEnvironmentsNote, settleAcrossEnvironments } from '#lib/utils/environments.js';
@@ -44,7 +44,7 @@
 
 	const createPodMutation = createMutation(() => ({
 		mutationKey: ['podman-pods', 'create', pageState.scope],
-		mutationFn: ({ request, environmentId }: { request: PodmanPodCreateRequest; environmentId: string }) =>
+		mutationFn: ({ request, environmentId }: { request: PodCreateRequest; environmentId: string }) =>
 			podmanService.createPod(request, environmentId),
 		onSuccess: async (_data, { request }) => {
 			toast.success(m.common_create_success({ resource: request.name }));
@@ -69,7 +69,7 @@
 		}
 	}));
 
-	async function handleCreate(request: PodmanPodCreateRequest, environmentId: string) {
+	async function handleCreate(request: PodCreateRequest, environmentId: string) {
 		const result = await tryCatch(createPodMutation.mutateAsync({ request, environmentId }));
 		return result.error;
 	}

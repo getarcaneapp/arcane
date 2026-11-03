@@ -1,24 +1,220 @@
-import type { ImageUpdateData } from './docker';
-import type { CreateRequest, UpdateRequest } from './shared';
+export interface SwarmRuntimeStatus {
+	enabled: boolean;
+	clusterId?: string;
+}
 
-// --- Swarm services, ports, mounts ---
+export interface SwarmInfo {
+	id: string;
+	createdAt: string;
+	updatedAt: string;
+	spec: Record<string, unknown>;
+	rootRotationInProgress: boolean;
+}
+
+export interface SwarmKvSpec {
+	Name: string;
+	Labels?: Record<string, string> | null;
+	Data?: string | null;
+	Driver?: { Name: string; Options?: Record<string, string> | null } | null;
+}
+
+export interface SwarmConfig {
+	id: string;
+	environmentId?: string;
+	environmentName?: string;
+	version: { Index?: number };
+	createdAt: string;
+	updatedAt: string;
+	spec: SwarmKvSpec;
+}
+
+export interface SwarmSecret {
+	id: string;
+	environmentId?: string;
+	environmentName?: string;
+	version: { Index?: number };
+	createdAt: string;
+	updatedAt: string;
+	spec: SwarmKvSpec;
+}
+
+export interface SwarmConfigUpdateRequest {
+	version: number;
+	labels: Record<string, string>;
+}
+
+export interface SwarmSecretUpdateRequest {
+	version: number;
+	labels: Record<string, string>;
+}
+
+export interface SwarmInitRequest {
+	listenAddr?: string;
+	advertiseAddr?: string;
+	dataPathAddr?: string;
+	dataPathPort?: number;
+	forceNewCluster?: boolean;
+	spec: Record<string, unknown>;
+	autoLockManagers?: boolean;
+	availability?: 'active' | 'pause' | 'drain';
+	defaultAddrPool?: string[];
+	subnetSize?: number;
+}
+
+export interface SwarmInitResponse {
+	nodeId: string;
+}
+
+export interface SwarmJoinRequest {
+	listenAddr?: string;
+	advertiseAddr?: string;
+	dataPathAddr?: string;
+	remoteAddrs: string[];
+	joinToken: string;
+	availability?: 'active' | 'pause' | 'drain';
+}
+
+export interface SwarmLeaveRequest {
+	force?: boolean;
+}
+
+export interface SwarmUnlockRequest {
+	key: string;
+}
+
+export interface SwarmUnlockKeyResponse {
+	unlockKey: string;
+}
+
+export interface SwarmJoinTokensResponse {
+	worker: string;
+	manager: string;
+}
+
+export interface SwarmRotateJoinTokensRequest {
+	rotateWorkerToken?: boolean;
+	rotateManagerToken?: boolean;
+}
+
+export interface SwarmUpdateRequest {
+	version?: number;
+	spec: Record<string, unknown>;
+	rotateWorkerToken?: boolean;
+	rotateManagerToken?: boolean;
+	rotateManagerUnlockKey?: boolean;
+}
+
+export interface NodeAgentReconcileResult {
+	nodeId: string;
+	state: NodeAgentState;
+	environmentId?: string;
+	candidates?: NodeAgentCandidate[];
+}
+
+export interface NodeAgentReconcileResponse {
+	results: NodeAgentReconcileResult[];
+}
+
+export interface NodeAgentBindingRequest {
+	environmentId: string;
+	rebind?: boolean;
+	replaceDeployment?: boolean;
+}
+
+export type SwarmJoinEnvironmentRole = 'worker' | 'manager';
+
+export type SwarmJoinEnvironmentResultState = 'joined' | 'already_member' | 'joined_unverified' | 'failed';
+
+export interface SwarmJoinCandidate {
+	environmentId: string;
+	environmentName: string;
+	environmentType: string;
+	status: string;
+}
+
+export interface SwarmJoinEnvironmentTarget {
+	environmentId: string;
+	role: SwarmJoinEnvironmentRole;
+	availability?: 'active' | 'pause' | 'drain';
+	listenAddr?: string;
+	advertiseAddr?: string;
+	dataPathAddr?: string;
+}
+
+export interface SwarmJoinEnvironmentsRequest {
+	remoteAddrs: string[];
+	targets: SwarmJoinEnvironmentTarget[];
+}
+
+export interface SwarmJoinEnvironmentResult {
+	environmentId: string;
+	state: SwarmJoinEnvironmentResultState;
+	nodeId?: string;
+	error?: string;
+}
+
+export interface SwarmJoinEnvironmentsResponse {
+	results: SwarmJoinEnvironmentResult[];
+}
+
+export type NodeAgentState = 'none' | 'pending' | 'offline' | 'connected' | 'mismatched' | 'ambiguous';
+
+export type NodeAgentBindingKind = 'local' | 'environment' | 'dedicated';
+
+export interface NodeAgentCandidate {
+	environmentId: string;
+	environmentName: string;
+	environmentType: string;
+}
+
+export interface NodeAgentStatus {
+	state: NodeAgentState;
+	bindingKind?: NodeAgentBindingKind;
+	environmentId?: string;
+	environmentName?: string;
+	environmentType?: string;
+	connected?: boolean;
+	lastHeartbeat?: string;
+	reportedNodeId?: string;
+	reportedHostname?: string;
+	candidates?: NodeAgentCandidate[];
+}
+
+export interface SwarmNodeAgentDeployment {
+	environmentId: string;
+	agent: NodeAgentStatus;
+	dockerRun: string;
+	dockerCompose: string;
+}
+
+export interface SwarmNode {
+	id: string;
+	environmentId?: string;
+	environmentName?: string;
+	name?: string;
+	version?: number;
+	hostname: string;
+	role: string;
+	availability: string;
+	status: string;
+	agent: NodeAgentStatus;
+	address?: string;
+	managerStatus?: string;
+	managerAddress?: string;
+	reachability?: string;
+	labels?: Record<string, string>;
+	systemLabels?: Record<string, string>;
+	engineVersion?: string;
+	platform?: string;
+	createdAt: string;
+	updatedAt: string;
+}
 
 export interface SwarmServicePort {
 	protocol: string;
 	targetPort: number;
 	publishedPort?: number;
 	publishMode?: string;
-}
-
-export interface RawSwarmServicePort {
-	protocol?: string;
-	Protocol?: string;
-	targetPort?: number;
-	TargetPort?: number;
-	publishedPort?: number;
-	PublishedPort?: number;
-	publishMode?: string;
-	PublishMode?: string;
 }
 
 export interface SwarmServiceMount {
@@ -31,51 +227,7 @@ export interface SwarmServiceMount {
 	devicePath?: string;
 }
 
-export interface RawSwarmServiceMount {
-	type?: string;
-	Type?: string;
-	source?: string;
-	Source?: string;
-	target?: string;
-	Target?: string;
-	readOnly?: boolean;
-	ReadOnly?: boolean;
-	volumeDriver?: string;
-	VolumeDriver?: string;
-	volumeOptions?: Record<string, string>;
-	VolumeOptions?: Record<string, string>;
-	devicePath?: string;
-	DevicePath?: string;
-}
-
-export interface ServiceNetworkAttachment {
-	target: string;
-	aliases: string[];
-}
-
-export interface RawServiceNetworkAttachment {
-	Target?: string;
-	target?: string;
-	Aliases?: string[];
-	aliases?: string[];
-}
-
-export interface ServiceVirtualIP {
-	networkID: string;
-	addr: string;
-}
-
-export interface SwarmRuntimeStatus {
-	enabled: boolean;
-	clusterId?: string;
-}
-
-export interface RawServiceVirtualIP {
-	NetworkID?: string;
-	networkID?: string;
-	Addr?: string;
-	addr?: string;
-}
+export type SwarmServiceModeName = 'replicated' | 'global' | 'replicated-job' | 'global-job' | 'unknown';
 
 export interface SwarmServiceSummary {
 	id: string;
@@ -89,14 +241,12 @@ export interface SwarmServiceSummary {
 	ports: SwarmServicePort[];
 	createdAt: string;
 	updatedAt: string;
-	labels?: Record<string, string> | null;
-	stackName?: string | null;
+	labels: Record<string, string>;
+	stackName?: string;
 	nodes: string[];
 	networks: string[];
 	mounts: SwarmServiceMount[];
 }
-
-export type SwarmServiceModeName = 'replicated' | 'global' | 'replicated-job' | 'global-job' | 'unknown';
 
 export interface SwarmReplicatedMode {
 	Replicas?: number;
@@ -114,24 +264,37 @@ export interface SwarmServiceModeSpec {
 	GlobalJob?: Record<string, never>;
 }
 
-export interface ServiceNetworkIPAMConfig {
+export interface SwarmServiceInspect {
+	id: string;
+	version: { index?: number; Index?: number };
+	createdAt: string;
+	updatedAt: string;
+	spec: Record<string, unknown>;
+	endpoint: Record<string, unknown>;
+	updateStatus?: Record<string, unknown>;
+	nodes?: string[];
+	networkDetails?: Record<string, SwarmServiceNetworkDetail>;
+	mounts?: SwarmServiceMount[];
+}
+
+export interface SwarmServiceNetworkIPAMConfig {
 	subnet?: string;
 	gateway?: string;
 	ipRange?: string;
 }
 
-export interface ServiceNetworkConfigDetail {
+export interface SwarmServiceNetworkConfigDetail {
 	name: string;
 	driver: string;
 	scope: string;
 	enableIPv4: boolean;
 	enableIPv6: boolean;
 	options?: Record<string, string>;
-	ipv4Configs?: ServiceNetworkIPAMConfig[];
-	ipv6Configs?: ServiceNetworkIPAMConfig[];
+	ipv4Configs?: SwarmServiceNetworkIPAMConfig[];
+	ipv6Configs?: SwarmServiceNetworkIPAMConfig[];
 }
 
-export interface ServiceNetworkDetail {
+export interface SwarmServiceNetworkDetail {
 	id: string;
 	name: string;
 	driver: string;
@@ -144,26 +307,8 @@ export interface ServiceNetworkDetail {
 	configFrom?: string;
 	configOnly: boolean;
 	options?: Record<string, string>;
-	ipamConfigs?: ServiceNetworkIPAMConfig[];
-	configNetwork?: ServiceNetworkConfigDetail | null;
-}
-
-export interface SwarmServiceInspect {
-	id: string;
-	version: { index?: number; Index?: number };
-	createdAt: string;
-	updatedAt: string;
-	spec: Record<string, unknown>;
-	endpoint: Record<string, unknown>;
-	updateStatus?: Record<string, unknown> | null;
-	nodes?: string[];
-	networkDetails?: Record<string, ServiceNetworkDetail>;
-	mounts?: SwarmServiceMount[];
-}
-
-export interface SwarmServiceCreateOptions {
-	encodedRegistryAuth?: string;
-	queryRegistry?: boolean;
+	ipamConfigs?: SwarmServiceNetworkIPAMConfig[];
+	configNetwork?: SwarmServiceNetworkConfigDetail;
 }
 
 export interface SwarmServiceCreateMountSpec {
@@ -201,13 +346,6 @@ export interface SwarmServiceCreateSpec {
 	};
 }
 
-export interface SwarmServiceUpdateOptions {
-	encodedRegistryAuth?: string;
-	registryAuthFrom?: 'spec' | 'previous-spec';
-	rollback?: 'previous' | 'none' | (string & {});
-	queryRegistry?: boolean;
-}
-
 export interface SwarmServiceCreateRequest {
 	spec: SwarmServiceCreateSpec;
 	options?: SwarmServiceCreateOptions;
@@ -219,10 +357,6 @@ export interface SwarmServiceUpdateRequest {
 	options?: SwarmServiceUpdateOptions;
 }
 
-export interface SwarmServiceScaleRequest {
-	replicas: number;
-}
-
 export interface SwarmServiceCreateResponse {
 	id: string;
 	warnings?: string[];
@@ -232,97 +366,21 @@ export interface SwarmServiceUpdateResponse {
 	warnings?: string[];
 }
 
-export interface SwarmTaskSummary {
-	id: string;
-	environmentId?: string;
-	environmentName?: string;
-	name: string;
-	serviceId: string;
-	serviceName: string;
-	nodeId: string;
-	nodeName: string;
-	desiredState: string;
-	currentState: string;
-	error?: string | null;
-	containerId?: string | null;
-	image?: string | null;
-	slot?: number | null;
-	createdAt: string;
-	updatedAt: string;
+export interface SwarmServiceCreateOptions {
+	encodedRegistryAuth?: string;
+	queryRegistry?: boolean;
 }
 
-export interface SwarmNode {
-	id: string;
-	environmentId?: string;
-	environmentName?: string;
-	name?: string;
-	version?: number;
-	hostname: string;
-	role: string;
-	availability: string;
-	status: string;
-	agent: SwarmNodeAgentStatus;
-	address?: string | null;
-	managerStatus?: string | null;
-	managerAddress?: string | null;
-	reachability?: string | null;
-	labels?: Record<string, string> | null;
-	systemLabels?: Record<string, string> | null;
-	engineVersion?: string | null;
-	platform?: string | null;
-	createdAt: string;
-	updatedAt: string;
+export interface SwarmServiceUpdateOptions {
+	encodedRegistryAuth?: string;
+	registryAuthFrom?: 'spec' | 'previous-spec';
+	rollback?: 'previous' | 'none' | (string & {});
+	queryRegistry?: boolean;
 }
 
-export type SwarmNodeAgentState = 'none' | 'pending' | 'offline' | 'connected' | 'mismatched' | 'ambiguous';
-export type SwarmNodeAgentBindingKind = 'local' | 'environment' | 'dedicated';
-
-export interface SwarmNodeAgentCandidate {
-	environmentId: string;
-	environmentName: string;
-	environmentType: string;
+export interface SwarmServiceScaleRequest {
+	replicas: number;
 }
-
-export interface SwarmNodeAgentStatus {
-	state: SwarmNodeAgentState;
-	bindingKind?: SwarmNodeAgentBindingKind | null;
-	environmentId?: string | null;
-	environmentName?: string | null;
-	environmentType?: string | null;
-	connected?: boolean | null;
-	lastHeartbeat?: string | null;
-	reportedNodeId?: string | null;
-	reportedHostname?: string | null;
-	candidates?: SwarmNodeAgentCandidate[];
-}
-
-export interface SwarmNodeAgentDeployment {
-	environmentId: string;
-	agent: SwarmNodeAgentStatus;
-	dockerRun: string;
-	dockerCompose: string;
-}
-
-export interface SwarmNodeAgentBindingRequest {
-	environmentId: string;
-	rebind?: boolean;
-	replaceDeployment?: boolean;
-}
-
-export interface SwarmNodeAgentReconcileResult {
-	nodeId: string;
-	state: SwarmNodeAgentState;
-	environmentId?: string | null;
-	candidates?: SwarmNodeAgentCandidate[];
-}
-
-export interface SwarmNodeAgentReconcileResponse {
-	results: SwarmNodeAgentReconcileResult[];
-}
-
-export type SwarmNodeWritable = 'name' | 'version' | 'labels' | 'role' | 'availability';
-
-export type SwarmNodeUpdate = UpdateRequest<SwarmNode, SwarmNodeWritable>;
 
 export interface SwarmStackSummary {
 	id: string;
@@ -343,26 +401,6 @@ export interface SwarmStackInspect {
 	services: number;
 	createdAt: string;
 	updatedAt: string;
-}
-
-export interface SwarmSyncFile {
-	relativePath: string;
-	content: string;
-}
-
-export interface SwarmStackDeployRequest {
-	name: string;
-	composeContent: string;
-	overrideContent?: string;
-	envContent?: string;
-	files?: SwarmSyncFile[];
-	withRegistryAuth?: boolean;
-	prune?: boolean;
-	resolveImage?: string;
-}
-
-export interface SwarmStackDeployResponse {
-	name: string;
 }
 
 export interface SwarmStackRenderConfigRequest {
@@ -391,369 +429,41 @@ export interface SwarmStackSource {
 	files?: SwarmSyncFile[];
 }
 
-export type SwarmStackSourceWritable = 'composeContent' | 'overrideContent' | 'envContent' | 'files';
-
-export type SwarmStackSourceUpdate = UpdateRequest<SwarmStackSource, SwarmStackSourceWritable>;
-
-export interface SwarmInfo {
-	id: string;
-	createdAt: string;
-	updatedAt: string;
-	spec: Record<string, unknown>;
-	rootRotationInProgress: boolean;
+export interface SwarmStackDeployRequest {
+	name: string;
+	composeContent: string;
+	overrideContent?: string;
+	envContent?: string;
+	files?: SwarmSyncFile[];
+	withRegistryAuth?: boolean;
+	prune?: boolean;
+	resolveImage?: string;
 }
 
-export interface SwarmInitRequest {
-	listenAddr?: string;
-	advertiseAddr?: string;
-	dataPathAddr?: string;
-	dataPathPort?: number;
-	forceNewCluster?: boolean;
-	spec: Record<string, unknown>;
-	autoLockManagers?: boolean;
-	availability?: 'active' | 'pause' | 'drain';
-	defaultAddrPool?: string[];
-	subnetSize?: number;
+export interface SwarmSyncFile {
+	relativePath: string;
+	content: string;
 }
 
-export interface SwarmInitResponse {
-	nodeId: string;
+export interface SwarmStackDeployResponse {
+	name: string;
 }
 
-export interface SwarmJoinRequest {
-	listenAddr?: string;
-	advertiseAddr?: string;
-	dataPathAddr?: string;
-	remoteAddrs: string[];
-	joinToken: string;
-	availability?: 'active' | 'pause' | 'drain';
-}
-
-export type SwarmJoinEnvironmentRole = 'worker' | 'manager';
-export type SwarmJoinEnvironmentResultState = 'joined' | 'already_member' | 'joined_unverified' | 'failed';
-
-export interface SwarmJoinCandidate {
-	environmentId: string;
-	environmentName: string;
-	environmentType: string;
-	status: string;
-}
-
-export interface SwarmJoinEnvironmentTarget {
-	environmentId: string;
-	role: SwarmJoinEnvironmentRole;
-	availability?: 'active' | 'pause' | 'drain';
-	listenAddr?: string;
-	advertiseAddr?: string;
-	dataPathAddr?: string;
-}
-
-export interface SwarmJoinEnvironmentsRequest {
-	remoteAddrs: string[];
-	targets: SwarmJoinEnvironmentTarget[];
-}
-
-export interface SwarmJoinEnvironmentResult {
-	environmentId: string;
-	state: SwarmJoinEnvironmentResultState;
-	nodeId?: string | null;
-	error?: string | null;
-}
-
-export interface SwarmJoinEnvironmentsResponse {
-	results: SwarmJoinEnvironmentResult[];
-}
-
-export interface SwarmLeaveRequest {
-	force?: boolean;
-}
-
-export interface SwarmUnlockRequest {
-	key: string;
-}
-
-export interface SwarmUnlockKeyResponse {
-	unlockKey: string;
-}
-
-export interface SwarmJoinTokensResponse {
-	worker: string;
-	manager: string;
-}
-
-export interface SwarmRotateJoinTokensRequest {
-	rotateWorkerToken?: boolean;
-	rotateManagerToken?: boolean;
-}
-
-export interface SwarmUpdateRequest {
-	version?: number;
-	spec: Record<string, unknown>;
-	rotateWorkerToken?: boolean;
-	rotateManagerToken?: boolean;
-	rotateManagerUnlockKey?: boolean;
-}
-
-export type SwarmKvKind = 'secrets' | 'configs';
-
-export interface SwarmKvSpec {
-	Name: string;
-	Labels?: Record<string, string> | null;
-	Data?: string | null;
-	Driver?: { Name: string; Options?: Record<string, string> | null } | null;
-}
-
-export interface SwarmKvSummary {
+export interface SwarmTaskSummary {
 	id: string;
 	environmentId?: string;
 	environmentName?: string;
-	version: { Index?: number };
-	createdAt: string;
-	updatedAt: string;
-	spec: SwarmKvSpec;
-}
-
-export interface SwarmKvCreateRequest {
-	spec: SwarmKvSpec;
-}
-
-export interface SwarmKvUpdateRequest {
-	version: number;
-	labels: Record<string, string>;
-}
-
-// --- Compose projects ---
-
-export interface ServicePort {
-	mode?: string;
-	host_ip?: string;
-	target: number;
-	published?: string;
-	protocol?: string;
-}
-
-export interface ServiceVolume {
-	type: string;
-	source: string;
-	target: string;
-	read_only?: boolean;
-	volume?: Record<string, any>;
-	bind?: Record<string, any>;
-}
-
-export interface ProjectService {
-	name?: string;
-	image?: string;
-	build?: string | Record<string, any>;
-	container_name?: string;
-	command?: string[] | string | null;
-	entrypoint?: string[] | string | null;
-	environment?: Record<string, string>;
-	env_file?: string[];
-	ports?: ServicePort[];
-	volumes?: ServiceVolume[];
-	networks?: Record<string, any>;
-	restart?: string;
-	depends_on?: Record<string, any>;
-	labels?: Record<string, string>;
-	healthcheck?: Record<string, any>;
-	deploy?: Record<string, any>;
-	[key: string]: any;
-}
-
-export interface IncludeFile {
-	path: string;
-	relativePath: string;
-	content?: string;
-}
-
-export interface RuntimeService {
 	name: string;
-	image: string;
-	status: string;
+	serviceId: string;
+	serviceName: string;
+	nodeId: string;
+	nodeName: string;
+	desiredState: string;
+	currentState: string;
+	error?: string;
 	containerId?: string;
-	containerName?: string;
-	ports?: string[];
-	health?: string;
-	iconLightUrl?: string;
-	iconDarkUrl?: string;
-	serviceConfig?: ProjectService;
-	redeployDisabled?: boolean;
-}
-
-export interface ProjectUpdateInfo {
-	status: 'has_update' | 'up_to_date' | 'not_pulled' | 'unknown' | 'error';
-	hasUpdate: boolean;
-	imageCount: number;
-	checkedImageCount: number;
-	imagesWithUpdates: number;
-	imagesNotPulled: number;
-	errorCount: number;
-	errorMessage?: string;
-	imageRefs?: string[];
-	updatedImageRefs?: string[];
-	notPulledImageRefs?: string[];
-	updateInfoByRef?: Record<string, ImageUpdateData>;
-	serviceUpdates?: Record<string, { imageRef: string; updateInfo?: ImageUpdateData | null }>;
-	lastCheckedAt?: string;
-}
-
-export type ProjectTagSource = 'ui' | 'compose';
-export type ProjectTagColor = 'gray' | 'purple' | 'blue' | 'green' | 'yellow' | 'orange' | 'red' | 'pink';
-
-export interface ProjectTag {
-	name: string;
-	color: ProjectTagColor;
-	sources: ProjectTagSource[];
-}
-
-export interface ProjectTagOption {
-	name: string;
-	color: ProjectTagColor;
-}
-
-export type ProjectConfigurationError = {
-	code: 'env_file_unreadable';
-	path: string;
-	uid: number;
-	gid: number;
-	blocksOperations: boolean;
-};
-
-export interface Project {
-	id: string;
-	name: string;
-	dirName?: string;
-	relativePath?: string;
-	path: string;
-	iconLightUrl?: string;
-	iconDarkUrl?: string;
-	urls?: string[];
-	tags?: ProjectTag[];
-	runningCount: string;
-	serviceCount: string;
-	status: string;
-	statusReason?: string;
-	configurationError?: ProjectConfigurationError;
-	updatedAt: string;
+	image?: string;
+	slot?: number;
 	createdAt: string;
-	isArchived?: boolean;
-	isDiscovered?: boolean;
-	archivedAt?: string;
-	gitOpsManagedBy?: string;
-	lastSyncCommit?: string;
-	gitRepositoryURL?: string;
-	hasBuildDirective?: boolean;
-	redeployDisabled?: boolean;
-	activityId?: string;
-	updateInfo?: ProjectUpdateInfo;
-	services?: ProjectService[];
-	runtimeServices?: RuntimeService[];
-	composeContent?: string;
-	composeFileName?: string;
-	composeFiles?: string[];
-	overrideContent?: string;
-	overrideFileName?: string;
-	envFileExists?: boolean;
-	envContent?: string;
-	includeFiles?: IncludeFile[];
-}
-
-export type ProjectWritable = 'name' | 'composeContent' | 'envContent' | 'overrideContent';
-
-export type ProjectUpdate = UpdateRequest<Project, ProjectWritable>;
-
-export interface ProjectStatusCounts {
-	runningProjects: number;
-	stoppedProjects: number;
-	totalProjects: number;
-	archivedProjects: number;
-	updatesAvailable: number;
-}
-
-// --- Compose templates ---
-
-export interface TemplateRegistry {
-	id: string;
-	name: string;
-	url: string;
-	enabled: boolean;
-	description: string;
-	lastFetchError?: string;
-}
-
-export type TemplateRegistryWritable = 'name' | 'description' | 'url' | 'enabled';
-
-export type TemplateRegistryCreate = CreateRequest<TemplateRegistry, TemplateRegistryWritable, 'name' | 'url'>;
-
-export type TemplateRegistryUpdate = UpdateRequest<TemplateRegistry, TemplateRegistryWritable>;
-
-export interface Template {
-	id: string;
-	name: string;
-	description: string;
-	content: string;
-	envContent?: string;
-	isCustom: boolean;
-	isRemote: boolean;
-	registryId?: string;
-	registry?: TemplateRegistry;
-	metadata?: {
-		version?: string;
-		author?: string;
-		tags?: string[];
-		remoteUrl?: string;
-		envUrl?: string;
-		documentationUrl?: string;
-		iconUrl?: string;
-		updatedAt?: string;
-	};
-}
-
-export type TemplateWritable = 'name' | 'description' | 'content' | 'envContent';
-
-export type TemplateCreate = CreateRequest<Template, TemplateWritable, 'name' | 'content'>;
-
-export type TemplateUpdate = UpdateRequest<Template, TemplateWritable>;
-
-export interface EnvVariable {
-	key: string;
-	value: string;
-}
-
-export interface TemplateContentData {
-	template: Template;
-	content: string;
-	envContent: string;
-	services: string[];
-	envVariables: EnvVariable[];
-	isFolderTemplate: boolean;
-}
-
-export interface RemoteTemplate {
-	id: string;
-	name: string;
-	description: string;
-	version: string;
-	author: string;
-	tags: string[];
-	compose_url: string;
-	env_url?: string;
-	documentation_url?: string;
-}
-
-export interface RemoteRegistry {
-	$schema?: string;
-	name: string;
-	description: string;
-	version: string;
-	author: string;
-	url: string;
-	templates: RemoteTemplate[];
-}
-
-export interface TemplateRegistryConfig {
-	url: string;
-	name: string;
-	enabled: boolean;
+	updatedAt: string;
 }

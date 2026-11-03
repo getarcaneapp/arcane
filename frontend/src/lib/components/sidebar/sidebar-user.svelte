@@ -9,7 +9,7 @@
 	import { ArrowsUpDownIcon, LogoutIcon, SettingsIcon, UserIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import type { User } from '#lib/types/auth.js';
+	import type { User } from '#lib/types/user.js';
 
 	let {
 		user,

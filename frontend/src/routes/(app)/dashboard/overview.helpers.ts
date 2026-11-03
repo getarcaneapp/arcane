@@ -4,13 +4,17 @@ import { activityTitle } from '#lib/components/activity/activity-labels.js';
 import { jobNameLabel } from '#lib/components/job-card/job-status.js';
 import * as m from '#lib/paraglide/messages.js';
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
-import type { Activity, ActivityType } from '#lib/types/activity.type.js';
-import type { ApiKey } from '#lib/types/auth.js';
-import type { ContainerStatusCounts } from '#lib/types/docker.js';
-import type { Environment, VulnerabilityRiskFinding } from '#lib/types/environment.js';
-import type { JobRunStatus } from '#lib/types/job.js';
-import type { AppVersionInformation, JobStatus } from '#lib/types/settings.js';
-import type { DashboardEnvironmentOverview, Event, SystemDiskUsage, SystemStats } from '#lib/types/shared.js';
+import type { Activity, ActivityType } from '#lib/types/activity.js';
+import type { ApiKey } from '#lib/types/apikey.js';
+import type { ContainerStatusCounts } from '#lib/types/container.js';
+import type { Environment } from '#lib/types/environment.js';
+import type { Event } from '#lib/types/event.js';
+import type { JobStatus } from '#lib/types/jobschedule.js';
+import type { RunStatus } from '#lib/types/scheduler.js';
+import type { SystemDiskUsage, SystemStats } from '#lib/types/system.js';
+import type { DashboardEnvironmentOverview } from '#lib/types/ui/dashboard.js';
+import type { VersionInfo } from '#lib/types/version.js';
+import type { RiskFinding } from '#lib/types/vulnerability.js';
 import { isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker.js';
 import type { EnvironmentRow } from '#lib/utils/environments.js';
 import { bytes, formatDateTime, formatRelativeTime, parseInstant } from '#lib/utils/formatting.js';
@@ -172,12 +176,12 @@ export interface AttentionSources {
 	environments: Environment[];
 	containers: Map<string, ContainerStatusCounts>;
 	events: EnvironmentEvent[];
-	findings: EnvironmentRow<VulnerabilityRiskFinding>[];
+	findings: EnvironmentRow<RiskFinding>[];
 	disk: ReadonlyMap<string, DiskPressure>;
 	jobs: EnvironmentJob[];
 	activityGroups: CollapsedActivity[];
 	expiringApiKeys: ApiKey[];
-	versions: Map<string, AppVersionInformation>;
+	versions: Map<string, VersionInfo>;
 	upgradable: ReadonlySet<string>;
 	now: Temporal.Instant;
 }
@@ -188,7 +192,7 @@ const DISK_WARNING_PERCENT = 85;
 const DISK_CRITICAL_PERCENT = 95;
 const REPEATED_FAILURE_THRESHOLD = 3;
 const REPEATED_FAILURE_WINDOW_HOURS = 24;
-const FAILED_RUN_STATUSES: ReadonlySet<JobRunStatus> = new Set(['failed', 'partial', 'needs_attention']);
+const FAILED_RUN_STATUSES: ReadonlySet<RunStatus> = new Set(['failed', 'partial', 'needs_attention']);
 
 function environmentDetailHref(environmentId: string): string {
 	return resolve('/(app)/environments/[id]', { id: environmentId });

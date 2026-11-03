@@ -1,5 +1,7 @@
-import type { Role, RoleCreate, RoleUpdate, RoleAssignment, SetUserAssignments, PermissionsManifest } from '#lib/types/auth.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { Paginated } from '#lib/types/base.js';
+import type { Role, RoleAssignment, SetUserRoleAssignments, PermissionsManifest } from '#lib/types/role.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { RoleCreate, RoleUpdate } from '#lib/types/ui/role.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService from './api-service';
@@ -44,7 +46,7 @@ class RoleAPIService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/users/${userId}/roles`)) as Promise<RoleAssignment[]>;
 	}
 
-	async setUserAssignments(userId: string, payload: SetUserAssignments): Promise<RoleAssignment[]> {
+	async setUserAssignments(userId: string, payload: SetUserRoleAssignments): Promise<RoleAssignment[]> {
 		return this.handleResponse(this.api.put(`/users/${userId}/roles`, payload)) as Promise<RoleAssignment[]>;
 	}
 }

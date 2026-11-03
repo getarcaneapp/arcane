@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ActivityStatus } from '#lib/types/activity.type.js';
+	import type { ActivityStatus } from '#lib/types/activity.js';
 	import { cn } from '#lib/utils.js';
 
 	import { activityStatusLabel } from './activity-labels';

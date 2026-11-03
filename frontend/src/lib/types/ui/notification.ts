@@ -1,28 +1,8 @@
-import type { CreateRequest } from './shared';
+import type { NotificationSettings } from '../notification';
+import type { CreateRequest } from './pagination';
 
-// --- Notification settings ---
-
-export type NotificationProvider =
-	| 'discord'
-	| 'email'
-	| 'telegram'
-	| 'signal'
-	| 'slack'
-	| 'ntfy'
-	| 'pushover'
-	| 'gotify'
-	| 'matrix'
-	| 'googlechat'
-	| 'generic';
 export type EmailTLSMode = 'none' | 'starttls' | 'ssl';
 export type EmailAuthMode = 'none' | 'auto' | 'plain' | 'login' | 'crammd5';
-
-export interface NotificationSettings {
-	id: number;
-	provider: NotificationProvider;
-	enabled: boolean;
-	config: Record<string, unknown>;
-}
 
 export type NotificationSettingsWritable = 'provider' | 'enabled' | 'config';
 
@@ -31,18 +11,6 @@ export type NotificationSettingsUpsert = CreateRequest<
 	NotificationSettingsWritable,
 	NotificationSettingsWritable
 >;
-
-export interface TestNotificationResponse {
-	success: boolean;
-	data?: {
-		message?: string;
-		warning?: string;
-	};
-	message?: string;
-	error?: string;
-}
-
-// --- Provider keys (source of truth, display order) ---
 
 export const NOTIFICATION_PROVIDER_KEYS = [
 	'email',
@@ -58,8 +26,6 @@ export const NOTIFICATION_PROVIDER_KEYS = [
 	'generic'
 ] as const;
 export type NotificationProviderKey = (typeof NOTIFICATION_PROVIDER_KEYS)[number];
-
-// --- Provider form value shapes ---
 
 export interface BaseProviderFormValues {
 	enabled: boolean;
@@ -196,8 +162,6 @@ export type ProviderFormValuesMap = {
 	googlechat: GoogleChatFormValues;
 	generic: GenericFormValues;
 };
-
-// --- Settings <-> form-values conversion ---
 
 type ProviderConfig = Record<string, unknown>;
 type ProviderEvents = Partial<

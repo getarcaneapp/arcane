@@ -1,9 +1,9 @@
 <script lang="ts" module>
 	import { WorkspaceDraftState } from '#lib/components/workspace-editor/workspace-draft-state.svelte.js';
-	import type { PodmanQuadletFile } from '#lib/types/podman.js';
+	import type { QuadletFile } from '#lib/types/podman.js';
 	import { planWorkspaceFileCreate, planWorkspaceFileMove, planWorkspaceFileRename } from '#lib/utils/workspace-files.js';
 
-	export function createQuadletWorkspace(files: PodmanQuadletFile[] = []): WorkspaceDraftState {
+	export function createQuadletWorkspace(files: QuadletFile[] = []): WorkspaceDraftState {
 		return new WorkspaceDraftState({
 			initialFiles: files.map((file) => ({ relativePath: file.name, isDirectory: false })),
 			initialContents: Object.fromEntries(files.map((file) => [file.name, file.content])),
@@ -19,7 +19,7 @@
 		});
 	}
 
-	export function quadletWorkspaceFiles(workspace: WorkspaceDraftState): PodmanQuadletFile[] {
+	export function quadletWorkspaceFiles(workspace: WorkspaceDraftState): QuadletFile[] {
 		return workspace.files
 			.filter((file) => !file.isDirectory)
 			.map((file) => ({ name: file.relativePath, content: workspace.contents[file.relativePath] ?? '' }));

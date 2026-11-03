@@ -5,7 +5,7 @@ import { m } from '#lib/paraglide/messages.js';
 import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 import { projectService } from '#lib/services/project-service.js';
 import { deployOptionsStore } from '#lib/stores/deploy-options.store.svelte.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';

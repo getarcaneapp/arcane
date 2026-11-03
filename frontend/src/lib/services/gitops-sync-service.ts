@@ -1,19 +1,19 @@
+import type { PaginatedWithCounts } from '#lib/types/base.js';
 import type {
-	GitOpsSyncCreate,
-	GitOpsSyncUpdate,
+	GitOpsBackupHistoryResponse,
+	GitOpsBackupPreview,
+	GitOpsBackupRevision,
+	GitOpsBrowseResponse,
+	GitOpsResolveBackupConflictRequest,
 	GitOpsSync,
 	GitOpsSyncCounts,
-	SyncResult,
-	SyncStatus,
-	BrowseResponse,
+	GitOpsSyncResult,
+	GitOpsSyncStatus,
 	ImportGitOpsSyncRequest,
-	ImportGitOpsSyncResponse,
-	GitOpsBackupPreview,
-	GitOpsBackupHistoryResponse,
-	GitOpsBackupRevision,
-	ResolveGitOpsBackupConflictRequest
-} from '#lib/types/automation.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	ImportGitOpsSyncResponse
+} from '#lib/types/gitops.js';
+import type { GitOpsSyncCreate, GitOpsSyncUpdate } from '#lib/types/ui/gitops.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';
@@ -23,7 +23,7 @@ class GitOpsSyncService extends BaseAPIService {
 		environmentId: string,
 		options?: SearchPaginationSortRequest,
 		config?: APIRequestConfig
-	): Promise<Paginated<GitOpsSync, GitOpsSyncCounts>> {
+	): Promise<PaginatedWithCounts<GitOpsSync, GitOpsSyncCounts>> {
 		const params = transformPaginationParams(options);
 		const res = await this.api.get(`/environments/${environmentId}/gitops/syncs`, { ...config, params });
 		return res.data;
@@ -45,17 +45,17 @@ class GitOpsSyncService extends BaseAPIService {
 		return this.handleResponse(this.api.delete(`/environments/${environmentId}/gitops/syncs/${syncId}`));
 	}
 
-	async performSync(environmentId: string, syncId: string): Promise<SyncResult> {
+	async performSync(environmentId: string, syncId: string): Promise<GitOpsSyncResult> {
 		return this.handleResponse(
 			this.api.post(`/environments/${environmentId}/gitops/syncs/${syncId}`, undefined, { params: { action: 'sync' } })
 		);
 	}
 
-	async getSyncStatus(environmentId: string, syncId: string): Promise<SyncStatus> {
+	async getSyncStatus(environmentId: string, syncId: string): Promise<GitOpsSyncStatus> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/gitops/syncs/${syncId}/status`));
 	}
 
-	async browseFiles(environmentId: string, syncId: string, path?: string): Promise<BrowseResponse> {
+	async browseFiles(environmentId: string, syncId: string, path?: string): Promise<GitOpsBrowseResponse> {
 		const params = path ? { path } : {};
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/gitops/syncs/${syncId}/files`, { params }));
 	}
@@ -83,8 +83,8 @@ class GitOpsSyncService extends BaseAPIService {
 	async resolveBackupConflict(
 		environmentId: string,
 		syncId: string,
-		request: ResolveGitOpsBackupConflictRequest
-	): Promise<SyncResult> {
+		request: GitOpsResolveBackupConflictRequest
+	): Promise<GitOpsSyncResult> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/gitops/syncs/${syncId}/backup/resolve`, request));
 	}
 }

@@ -12,8 +12,10 @@
 	import * as m from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { federatedCredentialService } from '#lib/services/federated-credential-service.js';
-	import { GLOBAL_SCOPE, type FederatedCredential } from '#lib/types/auth.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import type { FederatedCredential } from '#lib/types/federated.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { formatOptionalDateTime, isPastDate } from '#lib/utils/formatting.js';

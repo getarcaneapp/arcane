@@ -1,5 +1,6 @@
 import { m } from '#lib/paraglide/messages.js';
-import type { Activity, ActivityGroup, ActivityStatus } from '#lib/types/activity.type.js';
+import type { Activity, ActivityStatus } from '#lib/types/activity.js';
+import type { ActivityGroup } from '#lib/types/ui/activity.js';
 import { formatDate, plainDateFromInstant } from '#lib/utils/formatting.js';
 
 import { activityTitle } from './activity-labels';

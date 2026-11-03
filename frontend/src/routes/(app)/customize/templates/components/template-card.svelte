@@ -10,7 +10,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { InspectIcon, FolderOpenIcon, GlobeIcon, TrashIcon, DownloadIcon, MoveToFolderIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { Template } from '#lib/types/swarm.js';
+	import type { Template } from '#lib/types/template.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
 
 	let {

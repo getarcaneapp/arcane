@@ -1,4 +1,4 @@
-import type { PermissionsManifest } from '#lib/types/auth.js';
+import type { PermissionsManifest } from '#lib/types/role.js';
 
 function requiresByPermission(manifest: PermissionsManifest): Map<string, string[]> {
 	return new Map(

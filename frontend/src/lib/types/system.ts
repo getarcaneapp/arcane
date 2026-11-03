@@ -1,5 +1,3 @@
-// Mirrors backend/types/system/diagnostics.go (camelCase JSON keys).
-
 export interface RuntimeInfo {
 	goroutines: number;
 	wsWorkerGoroutines: number;
@@ -109,8 +107,8 @@ export interface ActorTypeInfo {
 	completedJobs: number;
 	deadJobs: number;
 	nextAlarmAt?: string;
-	instances: ActorInstance[] | null;
-	recentFailures: ActorJobFailure[] | null;
+	instances: ActorInstance[];
+	recentFailures: ActorJobFailure[];
 }
 
 export interface ActorDiagnostics {
@@ -118,9 +116,9 @@ export interface ActorDiagnostics {
 	environmentName: string;
 	error?: string;
 	ready: boolean;
-	hosts: ActorHostInfo[] | null;
-	actorTypes: ActorTypeInfo[] | null;
-	runs: Record<string, number> | null;
+	hosts: ActorHostInfo[];
+	actorTypes: ActorTypeInfo[];
+	runs: Record<string, number>;
 	checkedAt: string;
 }
 
@@ -137,7 +135,6 @@ export interface DiagnosticsMessage {
 	snapshot?: Diagnostics;
 	leakReport?: GoroutineLeakReport;
 	text?: string;
-	/** Base64-encoded pprof bytes for profile results. */
 	data?: string;
 	error?: string;
 }
@@ -163,9 +160,7 @@ export interface GoroutineFrame {
 
 export interface GoroutineGroup {
 	count: number;
-	/** Outermost non-runtime function, usually the goroutine's entry point. */
 	label: string;
-	/** Stack frames, innermost first. */
 	frames: GoroutineFrame[];
 }
 
@@ -185,3 +180,117 @@ export type PprofProfile =
 	| 'threadcreate'
 	| 'profile'
 	| 'trace';
+
+export type UpgradeJobResultStatus =
+	| 'pending'
+	| 'updating'
+	| 'updated'
+	| 'up_to_date'
+	| 'triggered'
+	| 'skipped_offline'
+	| 'failed';
+
+export type UpgradeJobStage = 'checking' | 'starting' | 'pulling' | 'upgrading' | 'reconnecting' | 'verifying';
+
+export interface UpgradeJobResult {
+	environmentId: string;
+	environmentName: string;
+	status: UpgradeJobResultStatus;
+	fromVersion?: string;
+	fromDigest?: string;
+	toVersion?: string;
+	stage?: UpgradeJobStage;
+	stageStartedAt?: string;
+	percent: number;
+	logs?: string[];
+	error?: string;
+}
+
+export type UpgradeJobStatus = 'pending_restart' | 'running' | 'completed' | 'failed';
+
+export interface UpgradeJob {
+	id: string;
+	createdAt: string;
+	updatedAt?: string;
+	status: UpgradeJobStatus;
+	userId: string;
+	username: string;
+	managerVersionAtStart: string;
+	managerDigestAtStart: string;
+	managerTargetVersion: string;
+	results?: UpgradeJobResult[];
+	error?: string;
+	completedAt?: string;
+}
+
+export interface SystemDiskUsage {
+	unusedImagesBytes: number;
+	buildCacheBytes: number;
+	unusedVolumesBytes: number;
+	stoppedContainersBytes: number;
+}
+
+export interface GPUStats {
+	name: string;
+	index: number;
+	memoryUsed: number;
+	memoryTotal: number;
+}
+
+export interface SystemStats {
+	architecture: string;
+	platform: string;
+	hostname?: string;
+	gpus?: GPUStats[];
+	cpuUsage: number;
+	memoryUsage: number;
+	memoryTotal: number;
+	diskUsage?: number;
+	diskTotal?: number;
+	cpuCount: number;
+	gpuCount: number;
+}
+
+export type PruneContainerMode = 'none' | 'stopped' | 'olderThan';
+export type PruneImageMode = 'none' | 'dangling' | 'all' | 'olderThan';
+export type PruneVolumeMode = 'none' | 'anonymous' | 'all';
+export type PruneNetworkMode = 'none' | 'unused' | 'olderThan';
+export type PruneBuildCacheMode = 'none' | 'unused' | 'all' | 'olderThan';
+
+export interface PruneContainersOptions {
+	mode: Exclude<PruneContainerMode, 'none'>;
+	until?: string;
+}
+
+export interface PruneImagesOptions {
+	mode: Exclude<PruneImageMode, 'none'>;
+	until?: string;
+}
+
+export interface PruneVolumesOptions {
+	mode: Exclude<PruneVolumeMode, 'none'>;
+}
+
+export interface PruneNetworksOptions {
+	mode: Exclude<PruneNetworkMode, 'none'>;
+	until?: string;
+}
+
+export interface PruneBuildCacheOptions {
+	mode: Exclude<PruneBuildCacheMode, 'none'>;
+	until?: string;
+}
+
+export interface PruneAllRequest {
+	containers?: PruneContainersOptions;
+	images?: PruneImagesOptions;
+	volumes?: PruneVolumesOptions;
+	networks?: PruneNetworksOptions;
+	buildCache?: PruneBuildCacheOptions;
+}
+
+export interface UpgradeCheckResult {
+	message: string;
+	canUpgrade: boolean;
+	error: boolean;
+}

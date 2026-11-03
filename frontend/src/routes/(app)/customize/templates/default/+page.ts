@@ -1,5 +1,5 @@
-import type { Template } from '#lib/types/swarm.js';
-import type { GlobalVariable } from '#lib/types/variable.js';
+import type { GlobalVariable } from '#lib/types/env.js';
+import type { Template } from '#lib/types/template.js';
 import { loadTemplateAuthoringData } from '#lib/utils/template-load.js';
 
 import type { PageLoad } from './$types';

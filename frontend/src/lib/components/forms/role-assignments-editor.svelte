@@ -5,14 +5,14 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { CloseIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import type { Environment } from '#lib/types/environment.js';
 	import {
 		type Role,
 		BUILT_IN_ROLE_ADMIN,
 		BUILT_IN_ROLE_EDITOR,
 		BUILT_IN_ROLE_DEPLOYER,
 		BUILT_IN_ROLE_VIEWER
-	} from '#lib/types/auth.js';
-	import type { Environment } from '#lib/types/environment.js';
+	} from '#lib/types/role.js';
 	import {
 		buildGlobalEnvironmentOptions,
 		createRoleEnvironmentLabelers,

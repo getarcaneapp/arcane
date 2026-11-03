@@ -8,7 +8,7 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
-	import type { FormInput } from '#lib/types/form.js';
+	import type { FormInput } from '#lib/types/ui/form.js';
 
 	let {
 		input = $bindable(),

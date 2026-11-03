@@ -8,7 +8,8 @@
 	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte.js';
 	import VirtualRows from '#lib/components/virtual-rows.svelte';
 	import * as m from '#lib/paraglide/messages.js';
-	import type { BackupFileEntry, BackupFileProvider, BackupFileRootLoadState } from '#lib/types/backup.js';
+	import type { BackupFileEntry } from '#lib/types/backup.js';
+	import type { BackupFileProvider, BackupFileRootLoadState } from '#lib/types/ui/backup.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 

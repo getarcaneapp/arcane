@@ -14,12 +14,7 @@
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-	import type {
-		PodmanPodCreateRequest,
-		PodmanPodDeviceLimit,
-		PodmanPodExitPolicy,
-		PodmanPodRestartPolicy
-	} from '#lib/types/podman.js';
+	import type { PodCreateRequest, PodDeviceLimit, PodmanPodExitPolicy, PodmanPodRestartPolicy } from '#lib/types/podman.js';
 	import { applyApiFieldError } from '#lib/utils/api.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { parseList } from '#lib/utils/form-parsers.js';
@@ -28,7 +23,7 @@
 	type CreatePodFormProps = {
 		open: boolean;
 		environments: EnvironmentRef[];
-		onSubmit: (request: PodmanPodCreateRequest, environmentId: string) => Promise<Error | null>;
+		onSubmit: (request: PodCreateRequest, environmentId: string) => Promise<Error | null>;
 		isLoading: boolean;
 	};
 
@@ -207,7 +202,7 @@
 		return pairs.length > 0 ? Object.fromEntries(pairs) : undefined;
 	}
 
-	function deviceLimits(limits: DeviceLimitRow[]): PodmanPodDeviceLimit[] | undefined {
+	function deviceLimits(limits: DeviceLimitRow[]): PodDeviceLimit[] | undefined {
 		return nonEmpty(
 			limits.filter((row) => filled(row.device, row.value)).map((row) => ({ device: row.device.trim(), value: row.value.trim() }))
 		);

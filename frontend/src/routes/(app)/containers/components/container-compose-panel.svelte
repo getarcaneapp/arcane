@@ -3,7 +3,7 @@
 	import { ComposeEditorWrapper } from '#lib/components/compose/index.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
-	import type { Project, IncludeFile } from '#lib/types/swarm.js';
+	import type { Project, ProjectIncludeFile } from '#lib/types/project.js';
 	import { environmentHref } from '#lib/utils/environments.js';
 
 	let {
@@ -16,7 +16,7 @@
 		project: Project;
 		environmentId: string;
 		serviceName: string;
-		includeFile?: IncludeFile | null;
+		includeFile?: ProjectIncludeFile | null;
 		rootFilename?: string;
 	} = $props();
 

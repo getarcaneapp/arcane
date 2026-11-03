@@ -10,8 +10,8 @@
 	import { APIError } from '#lib/services/api-service.js';
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 	import { MANAGER_ENVIRONMENT_ID, isActiveUpgradeJob, upgradeJobStore } from '#lib/stores/upgrade-job.store.svelte.js';
-	import type { AppVersionInformation } from '#lib/types/settings.js';
-	import type { UpgradeJob } from '#lib/types/system-upgrade.js';
+	import type { UpgradeJob } from '#lib/types/system.js';
+	import type { VersionInfo } from '#lib/types/version.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -33,7 +33,7 @@
 		upgrading = $bindable(undefined)
 	}: {
 		open?: boolean;
-		versionInformation?: AppVersionInformation;
+		versionInformation?: VersionInfo;
 		onFinished?: () => void | Promise<void>;
 		environmentName?: string;
 		environmentId?: string;

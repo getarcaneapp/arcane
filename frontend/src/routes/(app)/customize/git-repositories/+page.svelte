@@ -9,7 +9,8 @@
 	import { gitRepositoryListQuery } from '#lib/query/git-repositories.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitRepositoryService } from '#lib/services/git-repository-service.js';
-	import type { GitRepository, GitRepositoryCreate, GitRepositoryUpdate } from '#lib/types/automation.js';
+	import type { GitRepository } from '#lib/types/gitops.js';
+	import type { GitRepositoryCreate, GitRepositoryUpdate } from '#lib/types/ui/gitops.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';

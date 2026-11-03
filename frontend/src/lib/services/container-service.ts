@@ -1,18 +1,17 @@
-import type { Activity } from '#lib/types/activity.type.js';
+import type { Activity } from '#lib/types/activity.js';
+import type { MessageResponse } from '#lib/types/base.js';
 import type {
+	ContainerPaginatedResponse,
 	ContainerStatusCounts,
-	ContainerSummaryDto,
-	ContainerSummaryGroupDto,
-	ContainerCreate,
 	ContainerCreated,
-	ContainerDetailsDto,
+	ContainerDetails,
 	ContainerCommitRequest,
 	ContainerCommitResult,
-	ContainerEditConfigDto,
-	ContainerEditRequest,
-	ContainerProcessesDto
-} from '#lib/types/docker.js';
-import type { SearchPaginationSortRequest, Paginated, MessageResponse } from '#lib/types/shared.js';
+	ContainerEditConfig,
+	ContainerEdit,
+	ContainerProcesses
+} from '#lib/types/container.js';
+import type { ContainerCreate, ContainerListRequestOptions } from '#lib/types/ui/container.js';
 import { downloadFromUrl } from '#lib/utils/browser-download.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -24,20 +23,12 @@ import BaseAPIService, {
 	withSessionSignal
 } from './api-service';
 
-export type ContainersPaginatedResponse = Paginated<ContainerSummaryDto, ContainerStatusCounts> & {
-	groups?: ContainerSummaryGroupDto[];
-	resourceSortSupported?: boolean;
-};
-export type ContainerListRequestOptions = SearchPaginationSortRequest & {
-	groupByProject?: boolean;
-};
-
 class ContainerService extends BaseAPIService {
 	async getContainersForEnvironment(
 		environmentId: string,
 		options?: ContainerListRequestOptions,
 		config?: APIRequestConfig
-	): Promise<ContainersPaginatedResponse> {
+	): Promise<ContainerPaginatedResponse> {
 		const params = transformPaginationParams(options);
 		if (options?.groupByProject) {
 			params['groupBy'] = 'project';
@@ -51,7 +42,7 @@ class ContainerService extends BaseAPIService {
 		return res.data.data;
 	}
 
-	async getContainerForEnvironment(environmentId: string, containerId: string): Promise<ContainerDetailsDto> {
+	async getContainerForEnvironment(environmentId: string, containerId: string): Promise<ContainerDetails> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/containers/${containerId}`));
 	}
 
@@ -59,7 +50,7 @@ class ContainerService extends BaseAPIService {
 		containerId: string,
 		signal: AbortSignal | undefined,
 		environmentId: string
-	): Promise<ContainerProcessesDto> {
+	): Promise<ContainerProcesses> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/containers/${containerId}/processes`, { signal }));
 	}
 
@@ -130,7 +121,7 @@ class ContainerService extends BaseAPIService {
 		).then((activity) => ({ ...activity, sourceEnvironmentId: environmentId }));
 	}
 
-	async redeployContainer(containerId: string, environmentId: string): Promise<ContainerDetailsDto> {
+	async redeployContainer(containerId: string, environmentId: string): Promise<ContainerDetails> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/containers/${containerId}/redeploy`));
 	}
 
@@ -138,11 +129,11 @@ class ContainerService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/containers/compose`, { containerIds }));
 	}
 
-	async getContainerEditConfig(containerId: string, environmentId: string): Promise<ContainerEditConfigDto> {
+	async getContainerEditConfig(containerId: string, environmentId: string): Promise<ContainerEditConfig> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/containers/${containerId}/config`));
 	}
 
-	async editContainer(containerId: string, request: ContainerEditRequest, environmentId: string): Promise<ContainerDetailsDto> {
+	async editContainer(containerId: string, request: ContainerEdit, environmentId: string): Promise<ContainerDetails> {
 		return this.handleResponse(this.api.put(`/environments/${environmentId}/containers/${containerId}/config`, request));
 	}
 

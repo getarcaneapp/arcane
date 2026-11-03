@@ -1,59 +1,5 @@
-import type { Paginated } from './shared';
-
-export type BackupDestination = 'local' | 's3' | 'local_s3';
 export type BackupStatus = 'running' | 'succeeded' | 'failed';
 export type BackupTrigger = 'manual' | 'scheduled' | 'safety';
-export type BackupManagementType = 'system' | 'volume';
-
-export type BackupRun = {
-	remoteAvailable?: boolean;
-	activityId?: string;
-	id: string;
-	size: number;
-	createdAt: string;
-	status: BackupStatus;
-	trigger: BackupTrigger;
-	destination: BackupDestination;
-	format?: 'archive' | 'rustic';
-	localSnapshotId?: string;
-	remoteSnapshotId?: string;
-	s3DestinationId?: string;
-	s3DestinationName?: string;
-	policyId?: string;
-	error?: string;
-	type?: BackupManagementType;
-};
-
-export type BackupPolicyForm = {
-	enabled: boolean;
-	schedule: string;
-	retentionCount: number;
-	destination: BackupDestination;
-	s3DestinationId: string;
-	stopContainers?: boolean;
-};
-
-export type BackupPolicy = {
-	id: string;
-	enabled: boolean;
-	schedule: string;
-	retentionCount: number;
-	stopContainers?: boolean;
-	localEnabled: boolean;
-	s3Enabled: boolean;
-	s3DestinationId?: string;
-};
-
-export type BackupPolicyUpdate = {
-	id: string;
-	enabled: boolean;
-	schedule: string;
-	retentionCount: number;
-	localEnabled: boolean;
-	s3Enabled: boolean;
-	s3DestinationId: string;
-	stopContainers?: boolean;
-};
 
 export type BackupFileEntry = {
 	path: string;
@@ -61,21 +7,157 @@ export type BackupFileEntry = {
 	isDirectory: boolean;
 };
 
-export type BackupFileBrowseRequest = {
-	path?: string;
-	search?: string;
-	start?: number;
-	limit?: number;
-};
-
 export type BackupRestoreSelection = {
-	paths: string[];
-	selectAll: boolean;
 	search?: string;
+	paths?: string[];
+	selectAll?: boolean;
 };
 
-export type BackupFileProvider = {
-	browse(request: BackupFileBrowseRequest): Promise<Paginated<BackupFileEntry>>;
+export type S3Destination = {
+	createdAt: string;
+	updatedAt?: string;
+	id: string;
+	name: string;
+	endpoint?: string;
+	bucket: string;
+	region: string;
+	accessKeyId: string;
+	secretAccessKey?: string;
+	prefix?: string;
+	useSsl: boolean;
+	forcePathStyle: boolean;
+	secretConfigured: boolean;
 };
 
-export type BackupFileRootLoadState = 'loading' | 'ready' | 'error';
+export type SystemBackupDestination = 'local' | 's3' | 'local_s3';
+
+export type SystemBackupRun = {
+	createdAt: string;
+	remoteAvailable?: boolean;
+	activityId?: string;
+	id: string;
+	status: BackupStatus;
+	trigger: BackupTrigger;
+	destination: SystemBackupDestination;
+	localSnapshotId?: string;
+	remoteSnapshotId?: string;
+	s3DestinationId?: string;
+	s3DestinationName?: string;
+	policyId?: string;
+	error?: string;
+	size: number;
+};
+
+export type SystemBackupPolicy = {
+	lastRun?: SystemBackupRun;
+	id: string;
+	schedule: string;
+	s3DestinationId?: string;
+	s3DestinationName?: string;
+	retentionCount: number;
+	enabled: boolean;
+	localEnabled: boolean;
+	s3Enabled: boolean;
+};
+
+export type UpdateBackupPolicy = {
+	id: string;
+	schedule: string;
+	s3DestinationId?: string;
+	retentionCount: number;
+	enabled: boolean;
+	stopContainers?: boolean;
+	localEnabled: boolean;
+	s3Enabled: boolean;
+};
+
+export type SystemBackupPolicyCollection = {
+	policies: SystemBackupPolicy[];
+	recoveryKeyStored: boolean;
+};
+
+export type SystemBackupRecoveryKey = {
+	recoveryKey: string;
+};
+
+export type CreateSystemBackupRequest = {
+	destination?: SystemBackupDestination;
+	s3DestinationId?: string;
+	recoveryKey?: string;
+	policyId?: string;
+};
+
+export type BackupManagementType = 'system' | 'volume';
+
+export type SystemVolumeSelectionMode = 'all' | 'allowlist' | 'blocklist';
+
+export type SystemVolumeBackupPolicy = {
+	lastRun?: SystemBackupRun;
+	id: string;
+	schedule: string;
+	s3DestinationId?: string;
+	s3DestinationName?: string;
+	selectionMode: SystemVolumeSelectionMode;
+	volumeNames: string[];
+	retentionCount: number;
+	enabled: boolean;
+	stopContainers: boolean;
+	localEnabled: boolean;
+	s3Enabled: boolean;
+	ignoreAnonymous: boolean;
+};
+
+export type UpdateSystemVolumeBackupPolicy = UpdateBackupPolicy & {
+	selectionMode: SystemVolumeSelectionMode;
+	volumeNames: string[];
+	ignoreAnonymous: boolean;
+};
+
+export type SystemVolumeBackupPolicyCollection = {
+	policies: SystemVolumeBackupPolicy[];
+};
+
+export type SystemVolumeBackupCustomRun = {
+	destination: SystemBackupDestination;
+	s3DestinationId?: string;
+	selectionMode: SystemVolumeSelectionMode;
+	volumeNames: string[];
+	stopContainers: boolean;
+	ignoreAnonymous: boolean;
+};
+
+export type RunSystemVolumeBackupsRequest = {
+	custom?: SystemVolumeBackupCustomRun;
+	policyId?: string;
+};
+
+export type SystemVolumeBackupOption = {
+	name: string;
+	anonymous: boolean;
+	available: boolean;
+};
+
+export type SystemVolumeBackupHistoryEntry = {
+	createdAt: string;
+	remoteAvailable?: boolean;
+	id: string;
+	status: BackupStatus;
+	trigger: BackupTrigger;
+	destination: SystemBackupDestination;
+	format?: 'archive' | 'rustic';
+	localSnapshotId?: string;
+	remoteSnapshotId?: string;
+	s3DestinationId?: string;
+	s3DestinationName?: string;
+	policyId?: string;
+	error?: string;
+	type: BackupManagementType;
+	resourceType: string;
+	resourceName: string;
+	size: number;
+};
+
+export type BackupRunAccepted = {
+	activityId: string;
+	status: string;
+};

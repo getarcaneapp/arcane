@@ -1,18 +1,19 @@
-import type { FileEntry, FileContentResponse } from '#lib/types/shared.js';
+import type { UploadProgressCallback } from '#lib/types/ui/upload.js';
+import type { WorkspaceFileEntry, BuildFileContentResponse } from '#lib/types/workspace.js';
 import { downloadBlob, filenameFromPath } from '#lib/utils/browser-download.js';
 
 import BaseAPIService from './api-service';
-import { uploadService, type UploadProgressCallback } from './upload-service';
+import { uploadService } from './upload-service';
 
 class BuildWorkspaceService extends BaseAPIService {
-	async listDirectory(path: string = '/', environmentId: string): Promise<FileEntry[]> {
+	async listDirectory(path: string = '/', environmentId: string): Promise<WorkspaceFileEntry[]> {
 		const res = await this.api.get(`/environments/${environmentId}/builds/browse`, {
 			params: { path }
 		});
 		return res.data.data;
 	}
 
-	async getFileContent(path: string, environmentId: string): Promise<FileContentResponse> {
+	async getFileContent(path: string, environmentId: string): Promise<BuildFileContentResponse> {
 		const res = await this.api.get(`/environments/${environmentId}/builds/browse/content`, {
 			params: { path }
 		});

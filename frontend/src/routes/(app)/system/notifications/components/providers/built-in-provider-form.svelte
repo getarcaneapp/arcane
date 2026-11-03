@@ -2,7 +2,7 @@
 	import { z } from 'zod/v4';
 
 	import { m } from '#lib/paraglide/messages.js';
-	import type { NotificationProviderKey, ProviderFormValuesMap } from '#lib/types/notifications.js';
+	import type { NotificationProviderKey, ProviderFormValuesMap } from '#lib/types/ui/notification.js';
 	import { getNotificationProviderDefinition } from '#lib/utils/notification-providers.js';
 
 	import DynamicProviderFormBuilder from './dynamic-provider-form-builder.svelte';

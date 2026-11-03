@@ -6,8 +6,8 @@ import { arcaneButtonVariants, actionConfigs } from '#lib/components/arcane-butt
 import { m } from '#lib/paraglide/messages.js';
 import { templateService } from '#lib/services/template-service.js';
 import userStore from '#lib/stores/user-store.svelte.js';
-import type { ProjectEditorLayout } from '#lib/types/auth.js';
-import type { Template } from '#lib/types/swarm.js';
+import type { Template } from '#lib/types/template.js';
+import type { ProjectEditorLayout } from '#lib/types/user.js';
 import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 

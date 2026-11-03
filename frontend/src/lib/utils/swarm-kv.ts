@@ -1,6 +1,6 @@
 import { LockIcon, TemplateIcon, type IconType } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
-import type { SwarmKvKind } from '#lib/types/swarm.js';
+import type { SwarmKvKind } from '#lib/types/ui/swarm.js';
 
 export type SwarmKvResource = {
 	kind: SwarmKvKind;

@@ -1,7 +1,7 @@
 import { m } from '#lib/paraglide/messages.js';
 import { podmanSecretListQuery } from '#lib/query/podman.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
 import { shownPodmanEnvironments } from '#lib/utils/podman.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';

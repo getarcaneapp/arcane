@@ -7,7 +7,8 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { AlertTriangleIcon, LayersIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { MixedSettingValue, SettingState } from '#lib/types/settings.js';
+	import type { SettingState } from '#lib/types/settings.js';
+	import type { MixedSettingValue } from '#lib/types/ui/settings.js';
 	import { cn } from '#lib/utils.js';
 
 	import MixedValuesPopover from './mixed-values-popover.svelte';

@@ -4,7 +4,7 @@
 	import { TABLE_PAGE_SIZE_ALL, TABLE_PAGE_SIZE_OPTIONS } from '#lib/constants/table-pagination.js';
 	import { ArrowRightIcon, ArrowLeftIcon, DoubleArrowRightIcon, DoubleArrowLeftIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { Paginated } from '#lib/types/shared.js';
+	import type { Paginated } from '#lib/types/base.js';
 
 	let {
 		items,

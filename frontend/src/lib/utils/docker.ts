@@ -1,10 +1,10 @@
 import { m } from '#lib/paraglide/messages.js';
-import type { ContainerDetailsDto, ContainerStats, ContainerSummaryDto } from '#lib/types/docker.js';
+import type { ContainerDetails, ContainerStats, ContainerSummary } from '#lib/types/container.js';
 import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
-import type { VulnerabilityScanSummary } from '#lib/types/environment.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-import type { ProjectUpdateInfo } from '#lib/types/swarm.js';
+import type { ProjectUpdateInfo } from '#lib/types/project.js';
 import type { SwarmServiceModeName, SwarmServiceModeSpec } from '#lib/types/swarm.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { VulnerabilityScanSummary } from '#lib/types/vulnerability.js';
 import { instantEpochMilliseconds } from '#lib/utils/formatting.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -61,7 +61,7 @@ export function calculateMemoryUsage(stats: ContainerStats | null): number {
 	return usage;
 }
 
-export function getContainerIpAddresses(container: ContainerSummaryDto): string[] {
+export function getContainerIpAddresses(container: ContainerSummary): string[] {
 	const networks = container.networkSettings?.networks;
 	if (!networks) return [];
 
@@ -80,7 +80,7 @@ export function getContainerIpAddresses(container: ContainerSummaryDto): string[
 }
 
 // Docker falls back to the container's short ID, so only a hostname that was asked for is worth showing.
-export function getCustomHostname(container: Pick<ContainerDetailsDto, 'id' | 'config'>): string | undefined {
+export function getCustomHostname(container: Pick<ContainerDetails, 'id' | 'config'>): string | undefined {
 	const hostname = container.config?.hostname?.trim();
 	if (!hostname) return undefined;
 	const shortId = container.id.length >= 12 ? container.id.slice(0, 12) : null;

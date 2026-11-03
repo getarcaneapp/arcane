@@ -4,7 +4,7 @@ import { PersistedState } from 'runed';
 import { decodeSort, type CompactTablePrefs } from '#lib/components/arcane-table/arcane-table.types.svelte.js';
 import { TABLE_PAGE_SIZE_ALL, TABLE_PAGE_SIZE_OPTIONS } from '#lib/constants/table-pagination.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-import type { FilterMap, FilterValue, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { FilterMap, FilterValue, SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 
 const DEFAULT_LIMIT = 20;
 

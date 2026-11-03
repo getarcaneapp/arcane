@@ -28,10 +28,11 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
+	import type { Paginated } from '#lib/types/base.js';
 	import type { Environment } from '#lib/types/environment.js';
-	import type { AppVersionInformation } from '#lib/types/settings.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import type { VersionInfo } from '#lib/types/version.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker.js';
@@ -62,7 +63,7 @@
 	const isLoading = $state({ removing: false, testing: false, upgrading: false, toggling: false });
 	let showUpgradeDialog = $state(false);
 	let selectedEnvironmentForUpgrade = $state<Environment | null>(null);
-	let selectedVersionInfoForUpgrade = $state<AppVersionInformation | null>(null);
+	let selectedVersionInfoForUpgrade = $state<VersionInfo | null>(null);
 	let easyJoinDialogOpen = $state(false);
 	let easyJoinSession = $state(0);
 	let easyJoinTarget = $state<Environment | null>(null);
@@ -149,7 +150,7 @@
 		isLoading.testing = false;
 	}
 
-	function handleUpgradeSelected(environment: Environment, versionInfo: AppVersionInformation) {
+	function handleUpgradeSelected(environment: Environment, versionInfo: VersionInfo) {
 		selectedEnvironmentForUpgrade = environment;
 		selectedVersionInfoForUpgrade = versionInfo;
 		showUpgradeDialog = true;

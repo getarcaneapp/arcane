@@ -27,8 +27,9 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { oidcMappingService } from '#lib/services/oidc-mapping-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import type { OidcRoleMapping, OidcRoleMappingWritable } from '#lib/types/auth.js';
+	import type { OidcRoleMapping } from '#lib/types/role.js';
 	import type { Settings } from '#lib/types/settings.js';
+	import type { OidcRoleMappingWritable } from '#lib/types/ui/role.js';
 	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { changedFields } from '#lib/utils/payload.js';

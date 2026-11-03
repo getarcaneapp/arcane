@@ -6,8 +6,9 @@
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { CpuIcon, GpuIcon, MemoryStickIcon, VolumesIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { AppVersionInformation } from '#lib/types/settings.js';
-	import type { DashboardEnvironmentOverview, DashboardLiveStatsStatus, SystemStats } from '#lib/types/shared.js';
+	import type { SystemStats } from '#lib/types/system.js';
+	import type { DashboardEnvironmentOverview, DashboardLiveStatsStatus } from '#lib/types/ui/dashboard.js';
+	import type { VersionInfo } from '#lib/types/version.js';
 	import { cn } from '#lib/utils.js';
 	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 
@@ -49,7 +50,7 @@
 		countsLoading: boolean;
 		menuButtons: ActionButton[];
 		debugUpgrade?: boolean;
-		debugVersionInfo: AppVersionInformation;
+		debugVersionInfo: VersionInfo;
 		canUpgrade: boolean;
 		upgradeOpen?: boolean;
 		upgradeLoading?: boolean;

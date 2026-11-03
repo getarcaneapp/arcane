@@ -8,7 +8,8 @@
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { ContainerRegistry, ContainerRegistryCreate, ContainerRegistryUpdate, RegistryType } from '#lib/types/docker.js';
+	import type { ContainerRegistry, RegistryType } from '#lib/types/containerregistry.js';
+	import type { ContainerRegistryCreate, ContainerRegistryUpdate } from '#lib/types/ui/containerregistry.js';
 	import { parseLines } from '#lib/utils/form-parsers.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';

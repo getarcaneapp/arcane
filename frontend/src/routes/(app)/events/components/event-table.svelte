@@ -25,9 +25,10 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { eventService } from '#lib/services/event-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import type { Event } from '#lib/types/shared.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import type { Event } from '#lib/types/event.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';

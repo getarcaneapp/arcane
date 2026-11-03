@@ -4,7 +4,7 @@ import { swarmEnvironmentsQueryOptions, type SwarmEnvironments } from '#lib/comp
 import { m } from '#lib/paraglide/messages.js';
 import { swarmTaskListQuery } from '#lib/query/swarm.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
 import { environmentName, resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';

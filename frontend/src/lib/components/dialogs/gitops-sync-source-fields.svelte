@@ -6,14 +6,14 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { BranchInfo, GitRepository } from '#lib/types/automation.js';
+	import type { GitBranchInfo, GitRepository } from '#lib/types/gitops.js';
 
 	import type { GitOpsSyncBrowseTarget, GitOpsSyncFormState } from './gitops-sync-form.svelte';
 
 	type Props = {
 		form: GitOpsSyncFormState;
 		repositories: GitRepository[];
-		branches: BranchInfo[];
+		branches: GitBranchInfo[];
 		loadingBranches: boolean;
 		selectedRepository: { value: string; label: string } | undefined;
 		selectedBranch: string;

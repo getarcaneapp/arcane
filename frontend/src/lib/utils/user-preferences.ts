@@ -3,7 +3,7 @@ import { toast } from 'svelte-sonner';
 import { m } from '#lib/paraglide/messages.js';
 import { userService } from '#lib/services/user-service.js';
 import userStore from '#lib/stores/user-store.svelte.js';
-import type { User, UserPreferences } from '#lib/types/auth.js';
+import type { User, UserPreferences } from '#lib/types/user.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 let saves = Promise.resolve();

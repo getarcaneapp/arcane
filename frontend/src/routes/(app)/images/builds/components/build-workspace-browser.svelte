@@ -19,8 +19,8 @@
 	import { UploadIcon, MoveToFolderIcon, EllipsisIcon, CopyIcon, AlertTriangleIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import type { UploadProgressCallback } from '#lib/services/upload-service.js';
-	import type { FileEntry } from '#lib/types/shared.js';
+	import type { UploadProgressCallback } from '#lib/types/ui/upload.js';
+	import type { WorkspaceFileEntry } from '#lib/types/workspace.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -50,7 +50,7 @@
 		queryFn: () => provider.list(currentPath)
 	}));
 
-	const files = $derived.by<FileEntry[]>(() => {
+	const files = $derived.by<WorkspaceFileEntry[]>(() => {
 		const result = (filesQuery.data ?? []).slice();
 		return sortFileEntries(result);
 	});
@@ -63,7 +63,7 @@
 	let showUpload = $state(false);
 
 	let editorOpen = $state(false);
-	let editorFile = $state<FileEntry | null>(null);
+	let editorFile = $state<WorkspaceFileEntry | null>(null);
 	let editorDraft = $state<{ envId: string; path: string; content: string } | null>(null);
 	let editorSaving = $state(false);
 
@@ -155,7 +155,7 @@
 		toast.error(m.common_copy_path_error());
 	}
 
-	async function openEditor(file: FileEntry) {
+	async function openEditor(file: WorkspaceFileEntry) {
 		if (file.isDirectory) return;
 		editorFile = file;
 		editorOpen = true;

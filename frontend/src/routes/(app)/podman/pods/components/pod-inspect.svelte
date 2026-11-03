@@ -5,10 +5,10 @@
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { CodeIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { PodmanPodInspect } from '#lib/types/podman.js';
+	import type { PodInspect } from '#lib/types/podman.js';
 
 	interface Props {
-		pod: PodmanPodInspect;
+		pod: PodInspect;
 	}
 
 	let { pod }: Props = $props();

@@ -5,7 +5,8 @@ import { m } from '#lib/paraglide/messages.js';
 import type { APIRequestConfig } from '#lib/services/api-service.js';
 import settingsStore from '#lib/stores/config-store.svelte.js';
 import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { Paginated } from '#lib/types/base.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { extractApiErrorMessage } from '#lib/utils/api.js';
 import { hasPermission } from '#lib/utils/auth.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -15,7 +16,7 @@ export type EnvironmentRow<T> = T & { environmentId: string; environmentName: st
 export type EnvironmentFailure = { environment: EnvironmentRef; message: string };
 
 type Groups<T> = { groups?: { groupName: string; items: T[] }[] };
-type Page<T> = Paginated<T, unknown> & Groups<T>;
+type Page<T> = Paginated<T> & Groups<T>;
 export type EnvironmentPage<P extends Page<object>> = Omit<P, 'data' | 'groups'> & {
 	data: EnvironmentRow<P['data'][number]>[];
 	groups?: { groupName: string; items: EnvironmentRow<P['data'][number]>[] }[];

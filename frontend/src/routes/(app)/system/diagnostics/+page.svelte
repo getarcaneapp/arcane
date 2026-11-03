@@ -25,8 +25,8 @@
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import type { SettingsStatCard } from '#lib/layouts/types.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
-	import type { Diagnostics, GoroutineLeakReport, PprofProfile } from '#lib/types/diagnostics.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
+	import type { Diagnostics, GoroutineLeakReport, PprofProfile } from '#lib/types/system.js';
 	import { cn } from '#lib/utils.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatTime } from '#lib/utils/formatting.js';

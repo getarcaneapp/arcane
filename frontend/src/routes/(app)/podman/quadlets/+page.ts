@@ -4,7 +4,7 @@ import { m } from '#lib/paraglide/messages.js';
 import { podmanQuadletListQuery } from '#lib/query/podman.js';
 import { podmanService } from '#lib/services/podman-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
 import { environmentHref, resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { shownPodmanEnvironments } from '#lib/utils/podman.js';

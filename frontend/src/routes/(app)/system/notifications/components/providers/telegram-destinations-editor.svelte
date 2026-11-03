@@ -4,7 +4,7 @@
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import { AddIcon, CloseIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { TelegramDestination } from '#lib/types/notifications.js';
+	import type { TelegramDestination } from '#lib/types/ui/notification.js';
 
 	let {
 		destinations = $bindable([]),

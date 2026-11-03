@@ -5,16 +5,15 @@
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import * as m from '#lib/paraglide/messages.js';
 	import { systemBackupService } from '#lib/services/system-backup-service.js';
-	import type { BackupPolicyUpdate } from '#lib/types/backup.js';
-	import type { S3Destination } from '#lib/types/s3-destination.js';
 	import type {
+		UpdateBackupPolicy,
+		S3Destination,
 		SystemBackupPolicy,
 		SystemVolumeBackupOption,
 		SystemVolumeBackupPolicy,
-		SystemVolumeBackupSelectionMode,
-		UpdateSystemBackupPolicy,
+		SystemVolumeSelectionMode,
 		UpdateSystemVolumeBackupPolicy
-	} from '#lib/types/system-backup.js';
+	} from '#lib/types/backup.js';
 	import { backupPolicyUpdateFromPolicy } from '#lib/utils/backups.js';
 
 	import SystemVolumeScopeFields from './system-volume-scope-fields.svelte';
@@ -52,7 +51,7 @@
 	const editing = untrack(() => Boolean(policyId));
 	let backupType = $state<BackupType>(untrack(() => initialType));
 	const initialVolumePolicy = untrack(() => volumePolicies.find((policy) => policy.id === policyId));
-	let selectionMode = $state<SystemVolumeBackupSelectionMode>(initialVolumePolicy?.selectionMode ?? 'all');
+	let selectionMode = $state<SystemVolumeSelectionMode>(initialVolumePolicy?.selectionMode ?? 'all');
 	let volumeNames = $state<string[]>([...(initialVolumePolicy?.volumeNames ?? [])]);
 	let ignoreAnonymous = $state(initialVolumePolicy?.ignoreAnonymous ?? true);
 	const typeOptions = $derived([
@@ -78,7 +77,7 @@
 		};
 	}
 
-	function extendVolumeUpdate(update: BackupPolicyUpdate): UpdateSystemVolumeBackupPolicy {
+	function extendVolumeUpdate(update: UpdateBackupPolicy): UpdateSystemVolumeBackupPolicy {
 		return {
 			...update,
 			stopContainers: update.stopContainers ?? false,
@@ -88,7 +87,7 @@
 		};
 	}
 
-	async function updateSystemPolicies(policies: UpdateSystemBackupPolicy[]) {
+	async function updateSystemPolicies(policies: UpdateBackupPolicy[]) {
 		return (await systemBackupService.updatePolicies(policies)).policies;
 	}
 

@@ -2,7 +2,7 @@ import { error as kitError } from '@sveltejs/kit';
 import { toast } from 'svelte-sonner';
 
 import { APIError, extractServerMessage, isSessionCancelledError } from '#lib/services/api-service.js';
-import type { Result } from '#lib/types/result.js';
+import type { Result } from '#lib/types/ui/result.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 // --- API error extraction ---

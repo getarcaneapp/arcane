@@ -45,9 +45,8 @@
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { volumeWorkspaceService } from '#lib/services/volume-workspace-service.js';
-	import type { Volume } from '#lib/types/docker.js';
-	import type { BackupEntry } from '#lib/types/shared.js';
-	import type { VolumeWorkspaceFileChange, VolumeWorkspaceFileContent } from '#lib/types/volume-workspace.js';
+	import type { VolumeWorkspaceFileContent } from '#lib/types/ui/volume.js';
+	import type { VolumeBackupEntry, VolumeWorkspaceFileChange, Volume } from '#lib/types/volume.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -128,7 +127,7 @@
 
 	let showWorkspaceRestore = $state(false);
 	let workspaceRestorePath = $state('');
-	let workspaceBackups = $state<BackupEntry[]>([]);
+	let workspaceBackups = $state<VolumeBackupEntry[]>([]);
 	let selectedWorkspaceBackupId = $state('');
 	let loadingWorkspaceBackups = $state(false);
 	const workspaceBackupPathQuery = createQuery(() => {
@@ -728,7 +727,7 @@
 		toast.success(m.volumes_workspace_restore_staged());
 	}
 
-	function formatWorkspaceBackupLabel(backup: BackupEntry): string {
+	function formatWorkspaceBackupLabel(backup: VolumeBackupEntry): string {
 		return `${backup.id} · ${bytes.format(backup.size, { unitSeparator: ' ' }) ?? '-'}`;
 	}
 

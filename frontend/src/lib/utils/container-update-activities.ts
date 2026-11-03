@@ -1,5 +1,5 @@
 import { activityStore } from '#lib/stores/activity.store.svelte.js';
-import type { Activity } from '#lib/types/activity.type.js';
+import type { Activity } from '#lib/types/activity.js';
 
 /** Tracks accepted updates and updates that were already running when a view mounted. */
 export function createContainerUpdateActivityTracker(

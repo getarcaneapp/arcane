@@ -9,7 +9,8 @@
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
-	import type { S3DestinationCreate, S3Destination } from '#lib/types/s3-destination.js';
+	import type { S3Destination } from '#lib/types/backup.js';
+	import type { S3DestinationCreate } from '#lib/types/ui/backup.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 

@@ -1,15 +1,15 @@
 import { m } from '#lib/paraglide/messages.js';
 import { currentSessionSignal } from '#lib/services/api-service.js';
+import type { ContainerResourceSampleBatch } from '#lib/types/container.js';
 import type {
+	SystemStats,
 	ActorDiagnostics,
 	Diagnostics,
 	DiagnosticsCommand,
 	DiagnosticsMessage,
 	LogEntry,
 	PprofProfile
-} from '#lib/types/diagnostics.js';
-import type { ContainerResourceSampleBatch } from '#lib/types/docker.js';
-import type { SystemStats } from '#lib/types/shared.js';
+} from '#lib/types/system.js';
 import { downloadBlob } from '#lib/utils/browser-download.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 

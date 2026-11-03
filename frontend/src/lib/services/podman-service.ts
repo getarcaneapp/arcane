@@ -1,40 +1,39 @@
+import type { Paginated } from '#lib/types/base.js';
 import type {
+	KubeDownReport,
+	KubeDownRequest,
+	KubeGenerateRequest,
+	KubeGenerateResponse,
+	KubePlayReport,
+	KubePlayRequest,
+	Pod,
+	PodActionRequest,
+	PodCreateRequest,
+	PodCreateResponse,
+	PodInspect,
+	PodPruneReport,
+	PodTop,
 	PodmanAutoUpdateOptions,
 	PodmanAutoUpdateResult,
 	PodmanInfo,
-	PodmanKubeDownReport,
-	PodmanKubeDownRequest,
-	PodmanKubeGenerateRequest,
-	PodmanKubeGenerateResponse,
-	PodmanKubePlayReport,
-	PodmanKubePlayRequest,
-	PodmanPod,
-	PodmanPodActionRequest,
-	PodmanPodCreateRequest,
-	PodmanPodCreateResponse,
-	PodmanPodInspect,
-	PodmanPodPruneReport,
-	PodmanPodTop,
-	PodmanQuadletDetail,
-	PodmanQuadletFile,
-	PodmanQuadletInstallReport,
-	PodmanQuadletInstallRequest,
-	PodmanQuadletRemoveReport,
-	PodmanQuadletUpdateRequest,
 	PodmanSecret,
 	PodmanSecretCreateRequest,
 	PodmanSecretCreateResponse,
 	PodmanSecretUpdateRequest,
 	PodmanStatus,
-	PodmanUnitStatus
+	PodmanUnitStatus,
+	QuadletDetail,
+	QuadletFile,
+	QuadletInstallReport,
+	QuadletInstallRequest,
+	QuadletRemoveReport,
+	QuadletUpdateRequest
 } from '#lib/types/podman.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { PodmanPodAction, PodmanQuadletAction } from '#lib/types/ui/podman.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';
-
-export type PodmanPodAction = 'start' | 'stop' | 'restart' | 'pause' | 'unpause' | 'kill';
-export type PodmanQuadletAction = 'start' | 'stop' | 'restart';
 
 class PodmanService extends BaseAPIService {
 	async getStatus(environmentId: string, config?: APIRequestConfig): Promise<PodmanStatus> {
@@ -49,7 +48,7 @@ class PodmanService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/podman/autoupdate`, options));
 	}
 
-	async getPods(scope: string, options?: SearchPaginationSortRequest, config?: APIRequestConfig): Promise<Paginated<PodmanPod>> {
+	async getPods(scope: string, options?: SearchPaginationSortRequest, config?: APIRequestConfig): Promise<Paginated<Pod>> {
 		const res = await this.api.get(`/environments/${scope}/podman/pods`, {
 			...config,
 			params: transformPaginationParams(options)
@@ -57,28 +56,23 @@ class PodmanService extends BaseAPIService {
 		return res.data;
 	}
 
-	async getPod(podId: string, environmentId: string): Promise<PodmanPodInspect> {
+	async getPod(podId: string, environmentId: string): Promise<PodInspect> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/podman/pods/${encodeURIComponent(podId)}`));
 	}
 
-	async getPodTop(podId: string, environmentId: string): Promise<PodmanPodTop> {
+	async getPodTop(podId: string, environmentId: string): Promise<PodTop> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/podman/pods/${encodeURIComponent(podId)}/top`));
 	}
 
-	async createPod(request: PodmanPodCreateRequest, environmentId: string): Promise<PodmanPodCreateResponse> {
+	async createPod(request: PodCreateRequest, environmentId: string): Promise<PodCreateResponse> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/podman/pods`, request));
 	}
 
-	async prunePods(environmentId: string): Promise<PodmanPodPruneReport[]> {
+	async prunePods(environmentId: string): Promise<PodPruneReport[]> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/podman/pods/prune`, {}));
 	}
 
-	async podAction(
-		podId: string,
-		action: PodmanPodAction,
-		environmentId: string,
-		request: PodmanPodActionRequest = {}
-	): Promise<void> {
+	async podAction(podId: string, action: PodmanPodAction, environmentId: string, request: PodActionRequest = {}): Promise<void> {
 		await this.handleResponse(
 			this.api.post(`/environments/${environmentId}/podman/pods/${encodeURIComponent(podId)}`, request, { params: { action } })
 		);
@@ -94,7 +88,7 @@ class PodmanService extends BaseAPIService {
 		scope: string,
 		options?: SearchPaginationSortRequest,
 		config?: APIRequestConfig
-	): Promise<Paginated<PodmanQuadletDetail>> {
+	): Promise<Paginated<QuadletDetail>> {
 		const res = await this.api.get(`/environments/${scope}/podman/quadlets`, {
 			...config,
 			params: transformPaginationParams(options)
@@ -102,29 +96,25 @@ class PodmanService extends BaseAPIService {
 		return res.data;
 	}
 
-	async getQuadlet(name: string, environmentId: string): Promise<PodmanQuadletDetail> {
+	async getQuadlet(name: string, environmentId: string): Promise<QuadletDetail> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/podman/quadlets/${encodeURIComponent(name)}`));
 	}
 
-	async getQuadletFile(name: string, environmentId: string): Promise<PodmanQuadletFile> {
+	async getQuadletFile(name: string, environmentId: string): Promise<QuadletFile> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/podman/quadlets/${encodeURIComponent(name)}/file`));
 	}
 
-	async installQuadlet(request: PodmanQuadletInstallRequest, environmentId: string): Promise<PodmanQuadletInstallReport> {
+	async installQuadlet(request: QuadletInstallRequest, environmentId: string): Promise<QuadletInstallReport> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/podman/quadlets`, request));
 	}
 
-	async updateQuadlet(
-		name: string,
-		request: PodmanQuadletUpdateRequest,
-		environmentId: string
-	): Promise<PodmanQuadletInstallReport> {
+	async updateQuadlet(name: string, request: QuadletUpdateRequest, environmentId: string): Promise<QuadletInstallReport> {
 		return this.handleResponse(
 			this.api.put(`/environments/${environmentId}/podman/quadlets/${encodeURIComponent(name)}`, request)
 		);
 	}
 
-	async removeQuadlet(name: string, environmentId: string): Promise<PodmanQuadletRemoveReport> {
+	async removeQuadlet(name: string, environmentId: string): Promise<QuadletRemoveReport> {
 		return this.handleResponse(this.api.delete(`/environments/${environmentId}/podman/quadlets/${encodeURIComponent(name)}`));
 	}
 
@@ -134,15 +124,15 @@ class PodmanService extends BaseAPIService {
 		);
 	}
 
-	async kubePlay(request: PodmanKubePlayRequest, environmentId: string): Promise<PodmanKubePlayReport> {
+	async kubePlay(request: KubePlayRequest, environmentId: string): Promise<KubePlayReport> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/podman/kube/play`, request));
 	}
 
-	async kubeDown(request: PodmanKubeDownRequest, environmentId: string): Promise<PodmanKubeDownReport> {
+	async kubeDown(request: KubeDownRequest, environmentId: string): Promise<KubeDownReport> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/podman/kube/down`, request));
 	}
 
-	async kubeGenerate(request: PodmanKubeGenerateRequest, environmentId: string): Promise<PodmanKubeGenerateResponse> {
+	async kubeGenerate(request: KubeGenerateRequest, environmentId: string): Promise<KubeGenerateResponse> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/podman/kube/generate`, request));
 	}
 

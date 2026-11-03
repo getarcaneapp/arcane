@@ -15,9 +15,10 @@
 	import { LayersIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { swarmService, type SwarmStacksPaginatedResponse } from '#lib/services/swarm-service.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { SwarmStackSummary } from '#lib/types/swarm.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import type { SwarmStacksPaginatedResponse } from '#lib/types/ui/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';

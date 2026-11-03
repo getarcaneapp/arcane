@@ -3,7 +3,7 @@ import type { ResolvedPathname } from '$app/types';
 
 import { ContainersIcon, ImagesIcon, NetworksIcon, ProjectsIcon, VolumesIcon, type IconType } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
-import type { DashboardResourceKind } from '#lib/types/auth.js';
+import type { DashboardResourceKind } from '#lib/types/user.js';
 
 export type ResourceFilterKey = 'status' | 'updates' | 'inUse' | 'label';
 

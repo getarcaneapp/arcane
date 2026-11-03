@@ -13,10 +13,11 @@
 	import { BoxIcon, CalendarIcon, ContainersIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import type { PodmanPodAction } from '#lib/services/podman-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { PodmanPod } from '#lib/types/podman.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import type { Pod } from '#lib/types/podman.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import type { PodmanPodAction } from '#lib/types/ui/podman.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import type { EnvironmentPage, EnvironmentRow } from '#lib/utils/environments.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
@@ -24,14 +25,14 @@
 
 	import { confirmRemovePod, podActionLabels, podActionPermissions, runPodAction } from '../pod-actions';
 
-	type PodRow = EnvironmentRow<PodmanPod>;
+	type PodRow = EnvironmentRow<Pod>;
 
 	let {
 		pods,
 		requestOptions = $bindable(),
 		onRetry
 	}: {
-		pods: EnvironmentPage<Paginated<PodmanPod>>;
+		pods: EnvironmentPage<Paginated<Pod>>;
 		requestOptions: SearchPaginationSortRequest;
 		onRetry: () => Promise<unknown>;
 	} = $props();

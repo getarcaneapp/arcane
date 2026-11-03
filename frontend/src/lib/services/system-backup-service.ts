@@ -1,18 +1,21 @@
-import type { BackupFileBrowseRequest, BackupFileEntry, BackupRestoreSelection } from '#lib/types/backup.js';
-import type { MessageResponse, Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import type {
-	CreateSystemBackup,
-	BackupHistoryEntry,
+	BackupFileEntry,
+	BackupRestoreSelection,
+	CreateSystemBackupRequest,
+	SystemVolumeBackupHistoryEntry,
 	SystemBackupPolicyCollection,
 	SystemBackupRecoveryKey,
 	SystemBackupRun,
-	UpdateSystemBackupPolicy,
+	UpdateBackupPolicy,
 	SystemVolumeBackupPolicyCollection,
 	UpdateSystemVolumeBackupPolicy,
 	SystemVolumeBackupOption,
-	SystemVolumeBackupRunResult,
-	RunSystemVolumeBackups
-} from '#lib/types/system-backup.js';
+	BackupRunAccepted,
+	RunSystemVolumeBackupsRequest
+} from '#lib/types/backup.js';
+import type { MessageResponse, Paginated } from '#lib/types/base.js';
+import type { BackupFileBrowseRequest } from '#lib/types/ui/backup.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService from './api-service';
@@ -23,7 +26,7 @@ class SystemBackupService extends BaseAPIService {
 		return response.data;
 	}
 
-	async listHistory(options?: SearchPaginationSortRequest): Promise<Paginated<BackupHistoryEntry>> {
+	async listHistory(options?: SearchPaginationSortRequest): Promise<Paginated<SystemVolumeBackupHistoryEntry>> {
 		const response = await this.api.get('/backups/history', { params: transformPaginationParams(options) });
 		return response.data;
 	}
@@ -40,7 +43,7 @@ class SystemBackupService extends BaseAPIService {
 		return this.handleResponse(this.api.get('/backups/volumes/options'));
 	}
 
-	async runSystemVolumeBackups(request: RunSystemVolumeBackups = {}): Promise<SystemVolumeBackupRunResult> {
+	async runSystemVolumeBackups(request: RunSystemVolumeBackupsRequest = {}): Promise<BackupRunAccepted> {
 		return this.handleResponse(this.api.post('/backups/volumes/run', request));
 	}
 
@@ -48,7 +51,7 @@ class SystemBackupService extends BaseAPIService {
 		return this.handleResponse(this.api.get('/backups/policies'));
 	}
 
-	async updatePolicies(policies: UpdateSystemBackupPolicy[]): Promise<SystemBackupPolicyCollection> {
+	async updatePolicies(policies: UpdateBackupPolicy[]): Promise<SystemBackupPolicyCollection> {
 		return this.handleResponse(this.api.put('/backups/policies', { policies }));
 	}
 
@@ -60,7 +63,7 @@ class SystemBackupService extends BaseAPIService {
 		return this.handleResponse(this.api.put('/backups/recovery/key', { recoveryKey }));
 	}
 
-	async create(input: CreateSystemBackup): Promise<SystemBackupRun> {
+	async create(input: CreateSystemBackupRequest): Promise<SystemBackupRun> {
 		return this.handleResponse(this.api.post('/backups', input));
 	}
 

@@ -14,8 +14,9 @@
 	import { projectListQuery } from '#lib/query/projects.js';
 	import { volumeListQuery } from '#lib/query/volumes.js';
 	import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-	import type { DashboardResourceKind } from '#lib/types/auth.js';
-	import type { PaginationResponse, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { PaginationResponse } from '#lib/types/base.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import type { DashboardResourceKind } from '#lib/types/user.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import type { DashboardWidget } from '#lib/utils/dashboard-layout.js';

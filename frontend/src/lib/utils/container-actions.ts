@@ -5,7 +5,7 @@ import { m } from '#lib/paraglide/messages.js';
 import { containerService } from '#lib/services/container-service.js';
 import { activityStore } from '#lib/stores/activity.store.svelte.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-import type { Activity } from '#lib/types/activity.type.js';
+import type { Activity } from '#lib/types/activity.js';
 import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 import { hasPermission } from '#lib/utils/auth.js';

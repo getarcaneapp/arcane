@@ -10,8 +10,8 @@
 	import { NotificationsIcon, ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { notificationService } from '#lib/services/notification-service.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
-	import { type NotificationProviderKey, NOTIFICATION_PROVIDER_KEYS } from '#lib/types/notifications.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
+	import { type NotificationProviderKey, NOTIFICATION_PROVIDER_KEYS } from '#lib/types/ui/notification.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import {
@@ -133,8 +133,8 @@
 			toast.error(m.notifications_test_failed({ error: extractApiErrorMessage(result.error) }));
 			return;
 		}
-		if (result.data?.data?.warning) {
-			toast.warning(m.notifications_test_warning({ warning: result.data.data.warning }));
+		if (result.data.warning) {
+			toast.warning(m.notifications_test_warning({ warning: result.data.warning }));
 		} else {
 			toast.success(m.notifications_test_success({ provider: getNotificationProviderDefinition(provider).label() }));
 		}

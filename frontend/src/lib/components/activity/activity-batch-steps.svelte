@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { m } from '#lib/paraglide/messages.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
-	import type { ActivityBatchGroup } from '#lib/types/activity.type.js';
+	import type { ActivityBatchGroup } from '#lib/types/ui/activity.js';
 
 	import { activityGroupMembers } from './activity-groups';
 	import ActivityRow from './activity-row.svelte';

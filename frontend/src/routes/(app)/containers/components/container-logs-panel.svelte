@@ -11,7 +11,7 @@
 	import { CpuIcon, FileTextIcon, MemoryStickIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerService } from '#lib/services/container-service.js';
-	import type { ContainerStats, ContainerStatsHistorySample } from '#lib/types/docker.js';
+	import type { ContainerStats, ContainerStatsHistorySample } from '#lib/types/container.js';
 	import { calculateCPUPercent, calculateMemoryUsage } from '#lib/utils/docker.js';
 	import { bytes } from '#lib/utils/formatting.js';
 	import { refreshLogViewerStream, startLogViewerStream, stopLogViewerStream } from '#lib/utils/log-viewer.js';

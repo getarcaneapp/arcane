@@ -12,15 +12,14 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { InfoIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import type {
-		FederatedCredential,
-		FederatedCredentialCreate,
-		FederatedCredentialMatchType,
-		FederatedCredentialUpdate,
-		FederatedCredentialWritable,
-		Role
-	} from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
+	import type { FederatedCredential, FederatedCredentialMatchType } from '#lib/types/federated.js';
+	import type { Role } from '#lib/types/role.js';
+	import type {
+		FederatedCredentialCreate,
+		FederatedCredentialUpdate,
+		FederatedCredentialWritable
+	} from '#lib/types/ui/federated.js';
 	import { plainDateFromInstant, plainDateToInstantString } from '#lib/utils/formatting.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';

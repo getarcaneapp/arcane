@@ -6,16 +6,16 @@ import type { PortMappingRow } from '#lib/components/form/port-mapping-editor.sv
 import type { VolumeMountRow } from '#lib/components/form/volume-mount-editor.svelte';
 import { m } from '#lib/paraglide/messages.js';
 import type {
-	ContainerCreate,
-	ContainerEditConfigDto,
-	ContainerEditRequest,
+	ContainerEditConfig,
+	ContainerEdit,
 	ContainerHealthcheckCreate,
 	ContainerHostConfigEdit,
-	EndpointSettingsCreate,
-	HostConfigCreate,
-	MountDto,
-	PortBinding
-} from '#lib/types/docker.js';
+	ContainerEndpointSettingsCreate,
+	ContainerHostConfigCreate,
+	ContainerMountCreate,
+	ContainerPortBindingCreate
+} from '#lib/types/container.js';
+import type { ContainerCreate } from '#lib/types/ui/container.js';
 
 // Common Linux capabilities offered by the cap add/drop selectors.
 export const LINUX_CAPABILITIES = [
@@ -160,7 +160,7 @@ function healthTestToString(test: string[] | undefined): string {
 	return joinShellWords(test);
 }
 
-export function formValuesFromEditConfig(cfg: ContainerEditConfigDto): ContainerFormValues {
+export function formValuesFromEditConfig(cfg: ContainerEditConfig): ContainerFormValues {
 	const hc = cfg.hostConfig;
 	return {
 		...emptyContainerFormValues(),
@@ -207,7 +207,7 @@ function serializeBindRow(row: VolumeMountRow): string {
 	return `${row.source.trim()}:${row.target.trim()}${suffix}`;
 }
 
-function portRowsFromEditConfig(cfg: ContainerEditConfigDto): PortMappingRow[] {
+function portRowsFromEditConfig(cfg: ContainerEditConfig): PortMappingRow[] {
 	const ports: PortMappingRow[] = [];
 	for (const [portSpec, bindings] of Object.entries(cfg.hostConfig.portBindings ?? {})) {
 		const [portPart, protocolPart] = portSpec.split('/');
@@ -224,7 +224,7 @@ function portRowsFromEditConfig(cfg: ContainerEditConfigDto): PortMappingRow[] {
 	return ports;
 }
 
-function volumeRowsFromEditConfig(cfg: ContainerEditConfigDto): VolumeMountRow[] {
+function volumeRowsFromEditConfig(cfg: ContainerEditConfig): VolumeMountRow[] {
 	const volumes: VolumeMountRow[] = [];
 
 	for (const bind of cfg.hostConfig.binds ?? []) {
@@ -243,7 +243,7 @@ function volumeRowsFromEditConfig(cfg: ContainerEditConfigDto): VolumeMountRow[]
 	return volumes;
 }
 
-export function rowsFromEditConfig(cfg: ContainerEditConfigDto): ContainerFormRows {
+export function rowsFromEditConfig(cfg: ContainerEditConfig): ContainerFormRows {
 	const rows = emptyContainerFormRows();
 
 	for (const entry of cfg.environment ?? []) {
@@ -296,12 +296,12 @@ function buildLabels(rows: ContainerFormRows): Record<string, string> {
 	return labels;
 }
 
-function buildPortBindings(rows: ContainerFormRows): Record<string, PortBinding[]> {
-	const bindings: Record<string, PortBinding[]> = {};
+function buildPortBindings(rows: ContainerFormRows): Record<string, ContainerPortBindingCreate[]> {
+	const bindings: Record<string, ContainerPortBindingCreate[]> = {};
 	for (const row of rows.ports) {
 		if (!row.containerPort.trim()) continue;
 		const key = `${row.containerPort.trim()}/${row.protocol}`;
-		const binding: PortBinding = { hostPort: row.hostPort.trim() };
+		const binding: ContainerPortBindingCreate = { hostPort: row.hostPort.trim() };
 		if (row.hostIp.trim()) binding.hostIp = row.hostIp.trim();
 		bindings[key] = [...(bindings[key] ?? []), binding];
 	}
@@ -312,7 +312,7 @@ function buildBinds(rows: ContainerFormRows): string[] {
 	return rows.volumes.filter((row) => row.kind !== 'mount' && row.source.trim() && row.target.trim()).map(serializeBindRow);
 }
 
-function buildMounts(rows: ContainerFormRows): MountDto[] {
+function buildMounts(rows: ContainerFormRows): ContainerMountCreate[] {
 	return rows.volumes
 		.filter((row) => row.kind === 'mount')
 		.map((row) => ({
@@ -323,11 +323,11 @@ function buildMounts(rows: ContainerFormRows): MountDto[] {
 		}));
 }
 
-function buildEndpoints(rows: ContainerFormRows): Record<string, EndpointSettingsCreate> {
-	const endpoints: Record<string, EndpointSettingsCreate> = {};
+function buildEndpoints(rows: ContainerFormRows): Record<string, ContainerEndpointSettingsCreate> {
+	const endpoints: Record<string, ContainerEndpointSettingsCreate> = {};
 	for (const row of rows.networks) {
 		if (!row.network.trim()) continue;
-		const endpoint: EndpointSettingsCreate = {};
+		const endpoint: ContainerEndpointSettingsCreate = {};
 		const aliases = row.aliases
 			.split(',')
 			.map((alias) => alias.trim())
@@ -353,7 +353,7 @@ export function toCreateRequest(values: ContainerFormValues, rows: ContainerForm
 	const binds = buildBinds(rows);
 	const endpoints = buildEndpoints(rows);
 
-	const hostConfig: HostConfigCreate = {
+	const hostConfig: ContainerHostConfigCreate = {
 		binds: binds.length > 0 ? binds : undefined,
 		portBindings: Object.keys(portBindings).length > 0 ? portBindings : undefined,
 		restartPolicy: values.restartPolicy !== 'no' ? buildRestartPolicy(values) : undefined,
@@ -386,7 +386,7 @@ export function toCreateRequest(values: ContainerFormValues, rows: ContainerForm
 
 // The edit request always carries every form-owned section (empty included);
 // the backend preserves anything the form does not own.
-export function toEditRequest(values: ContainerFormValues, rows: ContainerFormRows): ContainerEditRequest {
+export function toEditRequest(values: ContainerFormValues, rows: ContainerFormRows): ContainerEdit {
 	const hostConfig: ContainerHostConfigEdit = {
 		binds: buildBinds(rows),
 		mounts: buildMounts(rows),

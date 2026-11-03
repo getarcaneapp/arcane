@@ -9,7 +9,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmNodeListQuery } from '#lib/query/swarm.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';

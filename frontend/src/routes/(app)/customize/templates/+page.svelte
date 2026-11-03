@@ -15,7 +15,7 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { templateListQuery, templateRegistriesQuery } from '#lib/query/templates.js';
 	import { templateService } from '#lib/services/template-service.js';
-	import type { TemplateRegistryCreate, TemplateRegistryUpdate } from '#lib/types/swarm.js';
+	import type { TemplateRegistryCreate, TemplateRegistryUpdate } from '#lib/types/ui/template.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';

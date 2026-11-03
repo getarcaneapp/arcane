@@ -4,7 +4,8 @@ import type { QueryClient } from '@tanstack/svelte-query';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { STREAM_CHANNEL_EVENTS, streamService } from '#lib/services/stream-service.js';
 import { createSSEStream } from '#lib/stores/sse-stream.svelte.js';
-import { PODMAN_STATUS_DEPENDENCY } from '#lib/types/podman.js';
+import type { EnvironmentChanges } from '#lib/types/event.js';
+import { PODMAN_STATUS_DEPENDENCY } from '#lib/types/ui/podman.js';
 
 type StreamEnvelope = {
 	type?: string;
@@ -20,12 +21,6 @@ type ChannelSubscriber = {
 	channel: string;
 	onEvent(event: unknown): void;
 	onConnected?(): void;
-};
-
-type EnvironmentChanges = {
-	environmentId: string;
-	epoch: string;
-	kinds: Record<string, number>;
 };
 
 const CONTAINER_DOMAINS = ['containers', 'container', 'ports', 'projects', 'project'];

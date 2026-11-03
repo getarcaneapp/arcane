@@ -1,4 +1,4 @@
-<script lang="ts" generics="TPolicy extends BackupPolicy, TUpdate extends { id: string } = BackupPolicyUpdate">
+<script lang="ts" generics="TPolicy extends BackupPolicy, TUpdate extends { id: string } = UpdateBackupPolicy">
 	import { createQuery } from '@tanstack/svelte-query';
 	import { untrack, type Snippet } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -8,9 +8,9 @@
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { s3DestinationAllQuery } from '#lib/query/backups.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
-	import type { BackupPolicy, BackupPolicyForm, BackupPolicyUpdate } from '#lib/types/backup.js';
-	import type { S3Destination } from '#lib/types/s3-destination.js';
+	import type { UpdateBackupPolicy, S3Destination } from '#lib/types/backup.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
+	import type { BackupPolicy, BackupPolicyForm } from '#lib/types/ui/backup.js';
 	import { extractApiErrorField, extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { backupDestinationFromFlags, backupPolicyDestinationValues, backupPolicyUpdateFromPolicy } from '#lib/utils/backups.js';
@@ -55,7 +55,7 @@
 		beforeFields?: Snippet;
 		afterFields?: Snippet;
 		policyPayload?: (policy: TPolicy) => TUpdate;
-		extendUpdate?: (update: BackupPolicyUpdate) => TUpdate;
+		extendUpdate?: (update: UpdateBackupPolicy) => TUpdate;
 		updatePolicies: (policies: TUpdate[]) => Promise<TPolicy[]>;
 		messages: { saved: string; saveFailed: string; removed: string };
 		onSaved: (policies: TPolicy[]) => void;
@@ -64,8 +64,6 @@
 
 	let saving = $state(false);
 	let deleting = $state(false);
-	// Destinations are a global resource. Without list access the dialog keeps a
-	// policy's configured destination read-only instead of requesting the list.
 	const canListDestinations = $derived(hasPermission('s3-destinations:list', GLOBAL_SCOPE));
 	const destinationsAccessible = $derived(destinations !== undefined || canListDestinations);
 	const destinationsQuery = createQuery(() => ({

@@ -1,4 +1,5 @@
-import type { NotificationSettings, NotificationSettingsUpsert, TestNotificationResponse } from '#lib/types/notifications.js';
+import type { NotificationSettings, NotificationTestResponse } from '#lib/types/notification.js';
+import type { NotificationSettingsUpsert } from '#lib/types/ui/notification.js';
 
 import BaseAPIService from './api-service';
 
@@ -13,7 +14,7 @@ class NotificationService extends BaseAPIService {
 		return res.data;
 	}
 
-	async testNotification(provider: string, type: string): Promise<TestNotificationResponse> {
+	async testNotification(provider: string, type: string): Promise<NotificationTestResponse> {
 		return this.handleResponse(
 			this.api.post(`/notifications/settings/${provider}`, undefined, {
 				params: { action: 'test', type }

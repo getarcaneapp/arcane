@@ -1,4 +1,4 @@
-import type { GlobalVariable } from '#lib/types/variable.js';
+import type { GlobalVariable } from '#lib/types/env.js';
 import { loadGlobalVariablesOrEmpty } from '#lib/utils/template-load.js';
 
 import type { PageLoad } from './$types';

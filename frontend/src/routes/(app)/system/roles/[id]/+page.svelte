@@ -7,7 +7,8 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { roleService } from '#lib/services/role-service.js';
-	import type { Role, RoleCreate, RoleWritable } from '#lib/types/auth.js';
+	import type { Role } from '#lib/types/role.js';
+	import type { RoleCreate, RoleWritable } from '#lib/types/ui/role.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';

@@ -27,8 +27,9 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import type { Project, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import type { Project, ProjectTagColor, ProjectTagOption } from '#lib/types/project.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions.js';
 	import { getStatusVariant, getThemedIconUrl } from '#lib/utils/docker.js';

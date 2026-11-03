@@ -42,14 +42,18 @@
 	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { BuiltinDashboardWidgetType } from '#lib/types/auth.js';
-	import type { PruneType, SystemPruneRequest } from '#lib/types/automation.js';
-	import type { ContainerStatusCounts, ImageUsageCounts } from '#lib/types/docker.js';
-	import type { Environment, EnvironmentVulnerabilitySummary } from '#lib/types/environment.js';
+	import type { ContainerStatusCounts } from '#lib/types/container.js';
+	import type { Environment } from '#lib/types/environment.js';
+	import type { ImageUsageCounts } from '#lib/types/image.js';
 	import type { PodmanStatus } from '#lib/types/podman.js';
-	import type { AppVersionInformation, Settings } from '#lib/types/settings.js';
-	import type { DashboardEnvironmentCardState, DashboardEnvironmentOverview } from '#lib/types/shared.js';
-	import type { ProjectStatusCounts } from '#lib/types/swarm.js';
+	import type { ProjectStatusCounts } from '#lib/types/project.js';
+	import type { Settings } from '#lib/types/settings.js';
+	import type { PruneAllRequest } from '#lib/types/system.js';
+	import type { DashboardEnvironmentCardState, DashboardEnvironmentOverview } from '#lib/types/ui/dashboard.js';
+	import type { PruneType } from '#lib/types/ui/system.js';
+	import type { BuiltinDashboardWidgetType } from '#lib/types/ui/user.js';
+	import type { VersionInfo } from '#lib/types/version.js';
+	import type { EnvironmentVulnerabilitySummary } from '#lib/types/vulnerability.js';
 	import { cn } from '#lib/utils.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -107,7 +111,7 @@
 		debugUpgrade?: boolean;
 	} = $props();
 
-	const DEBUG_VERSION_INFO: AppVersionInformation = {
+	const DEBUG_VERSION_INFO: VersionInfo = {
 		currentVersion: 'debug',
 		displayVersion: 'debug',
 		revision: 'debug',
@@ -208,7 +212,7 @@
 		return new Map((result?.byEnvironment ?? []).map(({ environment, data }) => [environment.id, data]));
 	}
 
-	function isVersionInformation(value: Partial<AppVersionInformation> | undefined): value is AppVersionInformation {
+	function isVersionInformation(value: Partial<VersionInfo> | undefined): value is VersionInfo {
 		return value?.currentVersion !== undefined;
 	}
 
@@ -314,7 +318,7 @@
 		return {
 			queryKey: dashboardQueryKey('environments', 'versions', environments),
 			queryFn: () =>
-				sumAcrossEnvironments<Partial<AppVersionInformation>>(
+				sumAcrossEnvironments<Partial<VersionInfo>>(
 					environments,
 					(scope, config) => environmentManagementService.getVersion(scope, config),
 					{}
@@ -707,7 +711,7 @@
 		pruneDefaults = null;
 	}
 
-	async function confirmPrune(pruneRequest: SystemPruneRequest) {
+	async function confirmPrune(pruneRequest: PruneAllRequest) {
 		const selectedTypes = Object.keys(pruneRequest) as PruneType[];
 		const targetId = pruneTargetId;
 		const targets = prunableEnvironments.filter((item) => targetId === 'all' || item.environment.id === targetId);

@@ -10,7 +10,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitRepositoryService } from '#lib/services/git-repository-service.js';
-	import type { FileTreeNode } from '#lib/types/automation.js';
+	import type { FileTreeNode } from '#lib/types/gitops.js';
 
 	type FileBrowserDialogProps = {
 		open: boolean;

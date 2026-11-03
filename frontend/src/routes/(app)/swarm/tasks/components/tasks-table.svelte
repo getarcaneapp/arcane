@@ -6,9 +6,9 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { JobsIcon, ConnectionIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { SwarmTasksPaginatedResponse } from '#lib/services/swarm-service.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { SwarmTaskSummary } from '#lib/types/swarm.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import type { SwarmTasksPaginatedResponse } from '#lib/types/ui/swarm.js';
 	import type { EnvironmentPage, EnvironmentRow } from '#lib/utils/environments.js';
 	import { getSwarmTaskIconVariant, getSwarmTaskStateVariant } from '#lib/utils/swarm-tasks.js';
 

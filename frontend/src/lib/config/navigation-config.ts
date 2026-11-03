@@ -40,9 +40,10 @@ import {
 import { m } from '#lib/paraglide/messages.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
-import type { PermissionsManifest, User } from '#lib/types/auth.js';
 import type { FeatureID } from '#lib/types/features.js';
 import type { PodmanStatus } from '#lib/types/podman.js';
+import type { PermissionsManifest } from '#lib/types/role.js';
+import type { User } from '#lib/types/user.js';
 import { canReachShownAccessSurface, userHasAnyAccess } from '#lib/utils/auth.js';
 import type { ShortcutKey } from '#lib/utils/navigation.js';
 

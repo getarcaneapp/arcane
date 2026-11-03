@@ -6,7 +6,7 @@ export interface WorkspaceFileEntry {
 	name: string;
 	isDirectory: boolean;
 	size: number;
-	modTime?: string;
+	modTime: string;
 	mode?: string;
 	isSymlink: boolean;
 	linkTarget?: string;
@@ -44,9 +44,7 @@ export interface WorkspaceFileChange {
 	recursive?: boolean;
 }
 
-export interface WorkspaceFileDraft {
-	relativePath: string;
-	isDirectory?: boolean;
-	content?: string;
-	file?: File;
+export interface BuildFileContentResponse {
+	mimeType: string;
+	content: string;
 }

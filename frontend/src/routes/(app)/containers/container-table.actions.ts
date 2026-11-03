@@ -5,8 +5,8 @@ import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 import { m } from '#lib/paraglide/messages.js';
 import { containerService } from '#lib/services/container-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-import type { Activity } from '#lib/types/activity.type.js';
-import type { ContainerSummaryDto } from '#lib/types/docker.js';
+import type { Activity } from '#lib/types/activity.js';
+import type { ContainerSummary } from '#lib/types/container.js';
 import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 import { hasPermission } from '#lib/utils/auth.js';
@@ -41,7 +41,7 @@ type ActionDeps = {
 	canRefreshUpdates: () => boolean;
 };
 
-type ContainerRow = EnvironmentRow<ContainerSummaryDto>;
+type ContainerRow = EnvironmentRow<ContainerSummary>;
 
 type ContainerActionKind = 'start' | 'stop' | 'restart' | 'pause' | 'unpause' | 'redeploy';
 

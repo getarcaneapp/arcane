@@ -14,7 +14,8 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { webhookListQuery } from '#lib/query/webhooks.js';
 	import { webhookService } from '#lib/services/webhook-service.js';
-	import type { WebhookCreated, WebhookCreate } from '#lib/types/environment.js';
+	import type { WebhookCreate } from '#lib/types/ui/webhook.js';
+	import type { WebhookCreated } from '#lib/types/webhook.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasShownPermission, readableEnvironments } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';

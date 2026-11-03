@@ -7,7 +7,7 @@
 	import { Badge, type BadgeVariant } from '#lib/components/ui/badge/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerDetailQuery } from '#lib/query/containers.js';
-	import type { ContainerResourceSample } from '#lib/types/docker.js';
+	import type { ContainerResourceSample } from '#lib/types/container.js';
 	import { cn } from '#lib/utils.js';
 	import type { DashboardWidget } from '#lib/utils/dashboard-layout.js';
 	import { rowKey } from '#lib/utils/environments.js';

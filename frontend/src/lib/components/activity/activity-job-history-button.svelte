@@ -5,7 +5,7 @@
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { ClockIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { Activity } from '#lib/types/activity.type.js';
+	import type { Activity } from '#lib/types/activity.js';
 
 	let { activity }: { activity: Activity } = $props();
 	let historyOpen = $state(false);

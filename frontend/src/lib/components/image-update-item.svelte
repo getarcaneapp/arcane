@@ -25,14 +25,14 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
-	import type { ImageUpdateData, ImageUpdateInfoDto } from '#lib/types/docker.js';
+	import type { ImageUpdateResponse } from '#lib/types/imageupdate.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatRelativeTime, instantEpochMilliseconds, nowInstantString } from '#lib/utils/formatting.js';
 
 	interface Props {
-		updateInfo?: ImageUpdateData;
+		updateInfo?: ImageUpdateResponse;
 		isLoadingInBackground?: boolean;
 		imageId?: string;
 		containerId?: string;
@@ -43,7 +43,7 @@
 		repo?: string;
 		tag?: string;
 		isLocal?: boolean;
-		onUpdated?: (data: ImageUpdateData) => void;
+		onUpdated?: (data: ImageUpdateResponse) => void;
 		/** Callback when user clicks "Update Container" button */
 		onUpdateContainer?: () => void;
 		/** Debug: force hasUpdate to true for testing */
@@ -66,12 +66,12 @@
 		debugHasUpdate
 	}: Props = $props();
 
-	function getCheckTimeValue(info?: ImageUpdateData): number {
+	function getCheckTimeValue(info?: ImageUpdateResponse): number {
 		if (!info?.checkTime) return 0;
 		return instantEpochMilliseconds(info.checkTime) ?? 0;
 	}
 
-	function errorUpdateInfo(message: string): ImageUpdateData {
+	function errorUpdateInfo(message: string): ImageUpdateResponse {
 		return {
 			hasUpdate: false,
 			updateType: 'error',
@@ -89,8 +89,8 @@
 
 	const updateCheckMutation = createMutation(() => ({
 		mutationKey: queryKeys.images.updateCheck(environmentId, checkKey),
-		mutationFn: async (_key: string): Promise<ImageUpdateData> => {
-			let result: ImageUpdateInfoDto | undefined;
+		mutationFn: async (_key: string): Promise<ImageUpdateResponse> => {
+			let result: ImageUpdateResponse | undefined;
 			if (imageId && !(containerId && imageRef)) {
 				result = await imageService.checkImageUpdateByID(imageId, environmentId);
 			} else {
@@ -129,7 +129,7 @@
 		checkMatches && updateCheckMutation.error ? errorUpdateInfo(extractApiErrorMessage(updateCheckMutation.error)) : undefined
 	);
 
-	const resolvedUpdateInfo = $derived.by((): ImageUpdateData | undefined => {
+	const resolvedUpdateInfo = $derived.by((): ImageUpdateResponse | undefined => {
 		const checkInfo = checkMatches ? updateCheckMutation.data : undefined;
 		const propInfo = updateInfo;
 
@@ -140,7 +140,7 @@
 	});
 
 	// If debug is enabled, override hasUpdate to true
-	const effectiveUpdateInfo = $derived.by((): ImageUpdateData | undefined => {
+	const effectiveUpdateInfo = $derived.by((): ImageUpdateResponse | undefined => {
 		if (!resolvedUpdateInfo) return undefined;
 		if (debugHasUpdate) {
 			return { ...resolvedUpdateInfo, hasUpdate: true, updateType: resolvedUpdateInfo.updateType || 'tag' };

@@ -29,7 +29,7 @@
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { extractApiErrorMessage, parallelRefresh } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import {
@@ -44,7 +44,7 @@
 		mapVulnerabilityRequest,
 		vulnerabilityEnvironments,
 		withVulnerabilityToggles,
-		type RiskOverview
+		type MergedRiskOverview
 	} from '#lib/utils/vulnerability.js';
 
 	import SecurityOverview from './components/security-overview.svelte';
@@ -64,7 +64,7 @@
 		...vulnerabilityOverviewQuery(scope),
 		enabled: vulnerabilityManagementEnabled
 	}));
-	const overview = $derived<RiskOverview | null>(overviewQuery.data ?? null);
+	const overview = $derived<MergedRiskOverview | null>(overviewQuery.data ?? null);
 
 	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.vulnerabilityRequestOptions));
 	let selectedVulnerabilityIds = $state<string[]>([]);

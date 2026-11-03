@@ -18,8 +18,9 @@
 	import { userService } from '#lib/services/user-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { User, UserCreate, UserUpdate } from '#lib/types/auth.js';
 	import type { Settings } from '#lib/types/settings.js';
+	import type { UserCreate, UserUpdate } from '#lib/types/ui/user.js';
+	import type { User } from '#lib/types/user.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';

@@ -4,13 +4,8 @@ import { STREAM_CHANNEL_ENVIRONMENTS } from '#lib/services/stream-service.js';
 import { clientStream } from '#lib/stores/client-stream.svelte.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
-import type { Environment } from '#lib/types/environment.js';
+import type { EnvironmentStreamEvent } from '#lib/types/environment.js';
 import { createAbortLifecycle } from '#lib/utils/abort-lifecycle.js';
-
-type EnvironmentStreamEvent = {
-	type: string;
-	environments?: Environment[];
-};
 
 /**
  * Keeps environmentStore's records live for as long as the app shell is mounted.

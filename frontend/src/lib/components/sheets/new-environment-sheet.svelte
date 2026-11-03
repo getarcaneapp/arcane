@@ -17,7 +17,8 @@
 	import { isSessionCancelledError } from '#lib/services/api-service.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { EnvironmentCreate, DeploymentSnippetFile } from '#lib/types/environment.js';
+	import type { DeploymentSnippetFile } from '#lib/types/environment.js';
+	import type { EnvironmentCreate } from '#lib/types/ui/environment.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { downloadTextFile } from '#lib/utils/formatting.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';

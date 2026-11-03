@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 
-	import type { Activity } from '#lib/types/activity.type.js';
+	import type { Activity } from '#lib/types/activity.js';
 
 	import { activityDurationLabel } from './activity-labels';
 

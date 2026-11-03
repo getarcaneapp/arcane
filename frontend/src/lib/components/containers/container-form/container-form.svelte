@@ -21,7 +21,7 @@
 	import { imageService } from '#lib/services/image-service.js';
 	import { networkService } from '#lib/services/network-service.js';
 	import { volumeService } from '#lib/services/volume-service.js';
-	import type { ImageSearchResultDto } from '#lib/types/docker.js';
+	import type { ImageSearchResult } from '#lib/types/image.js';
 	import { preventDefault, createForm } from '#lib/utils/settings.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -92,7 +92,7 @@
 	);
 
 	// Image suggestions (debounced registry search); free text stays valid.
-	let imageSuggestions = $state.raw<ImageSearchResultDto[]>([]);
+	let imageSuggestions = $state.raw<ImageSearchResult[]>([]);
 	let imageSearchTimer: ReturnType<typeof setTimeout> | undefined;
 	function onImageInput() {
 		clearTimeout(imageSearchTimer);

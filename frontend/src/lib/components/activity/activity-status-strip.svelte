@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { m } from '#lib/paraglide/messages.js';
-	import type { Activity } from '#lib/types/activity.type.js';
+	import type { Activity } from '#lib/types/activity.js';
 	import { cn } from '#lib/utils.js';
 
 	import { activityStatusLabel } from './activity-labels';

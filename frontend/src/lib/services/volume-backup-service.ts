@@ -1,18 +1,19 @@
-import type { BackupFileBrowseRequest, BackupFileEntry, BackupRestoreSelection } from '#lib/types/backup.js';
+import type { BackupFileEntry, BackupRestoreSelection, UpdateBackupPolicy } from '#lib/types/backup.js';
+import type { Paginated, MessageResponse } from '#lib/types/base.js';
+import type { BackupFileBrowseRequest } from '#lib/types/ui/backup.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { UploadProgressCallback } from '#lib/types/ui/upload.js';
+import type { VolumeBackupListResponse } from '#lib/types/ui/volume.js';
 import type {
-	BackupEntry,
+	VolumeBackupEntry,
 	CreateVolumeBackupRequest,
 	DiscoverVolumeBackupsResponse,
-	UpdateVolumeBackupPolicy,
 	VolumeBackupPolicyCollection
-} from '#lib/types/shared.js';
-import type { SearchPaginationSortRequest, Paginated, MessageResponse } from '#lib/types/shared.js';
+} from '#lib/types/volume.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService from './api-service';
-import { uploadService, type UploadProgressCallback } from './upload-service';
-
-export type VolumeBackupListResponse = Paginated<BackupEntry> & { warnings?: string[] };
+import { uploadService } from './upload-service';
 
 class VolumeBackupService extends BaseAPIService {
 	async getPolicies(volumeName: string, environmentId: string): Promise<VolumeBackupPolicyCollection> {
@@ -21,7 +22,7 @@ class VolumeBackupService extends BaseAPIService {
 
 	async updatePolicies(
 		volumeName: string,
-		policies: UpdateVolumeBackupPolicy[],
+		policies: UpdateBackupPolicy[],
 		environmentId: string
 	): Promise<VolumeBackupPolicyCollection> {
 		return this.handleResponse(this.api.put(`/environments/${environmentId}/volumes/${volumeName}/backups/policy`, { policies }));
@@ -31,7 +32,7 @@ class VolumeBackupService extends BaseAPIService {
 		volumeName: string,
 		request: CreateVolumeBackupRequest | undefined,
 		environmentId: string
-	): Promise<BackupEntry> {
+	): Promise<VolumeBackupEntry> {
 		const res = await this.api.post(`/environments/${environmentId}/volumes/${volumeName}/backups`, request);
 		return res.data.data;
 	}
@@ -114,7 +115,7 @@ class VolumeBackupService extends BaseAPIService {
 		return this.handleResponse(this.api.delete(`/environments/${environmentId}/volumes/backups/${backupId}`));
 	}
 
-	async uploadBackup(backupId: string, s3DestinationId: string, environmentId: string): Promise<BackupEntry> {
+	async uploadBackup(backupId: string, s3DestinationId: string, environmentId: string): Promise<VolumeBackupEntry> {
 		return this.handleResponse(
 			this.api.post(`/environments/${environmentId}/volumes/backups/${backupId}/upload`, { s3DestinationId })
 		);

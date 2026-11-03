@@ -1,6 +1,7 @@
 import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-import type { FormInputs } from '#lib/types/form.js';
-import type { MixedSettingValue, ResolvedSettings, SettingKey, SettingState } from '#lib/types/settings.js';
+import type { SettingKey, SettingState } from '#lib/types/settings.js';
+import type { FormInputs } from '#lib/types/ui/form.js';
+import type { MixedSettingValue, ResolvedSettings } from '#lib/types/ui/settings.js';
 
 import type { EnvironmentSettingsValues } from './environment-form-schema';
 

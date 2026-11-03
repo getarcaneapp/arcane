@@ -11,10 +11,11 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { VariableIcon, LockIcon, EditIcon, ClockIcon, GlobeIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import type { GlobalVariable } from '#lib/types/env.js';
 	import type { Environment } from '#lib/types/environment.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import type { GlobalVariable } from '#lib/types/variable.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { hasAnyPermission } from '#lib/utils/auth.js';
 	import { formatDateTime, instantEpochMilliseconds } from '#lib/utils/formatting.js';
 

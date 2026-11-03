@@ -7,7 +7,7 @@
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { AlertTriangleIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { Volume } from '#lib/types/docker.js';
+	import type { Volume } from '#lib/types/volume.js';
 	import { getManagedByLabel } from '#lib/utils/docker.js';
 
 	let {

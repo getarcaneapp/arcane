@@ -38,9 +38,9 @@
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import type { DashboardWidgetConfig } from '#lib/types/auth.js';
-	import type { ContainerDetailsDto, ContainerNetworkSettings, ContainerStats as ContainerStatsType } from '#lib/types/docker.js';
-	import type { IncludeFile } from '#lib/types/swarm.js';
+	import type { ContainerDetails, ContainerNetworkSettings, ContainerStats as ContainerStatsType } from '#lib/types/container.js';
+	import type { ProjectIncludeFile } from '#lib/types/project.js';
+	import type { DashboardWidgetConfig } from '#lib/types/user.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { runContainerLifecycleAction, confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
@@ -70,7 +70,7 @@
 	import { getContainerStatusLabel, getStateBadgeVariant } from '../container-table.helpers';
 	let { data } = $props();
 	const queryClient = useQueryClient();
-	let container = $derived(data?.container as ContainerDetailsDto);
+	let container = $derived(data?.container as ContainerDetails);
 	let stats = $state(null as ContainerStatsType | null);
 
 	let autoScrollLogs = $state(true);
@@ -305,7 +305,7 @@
 		proj: typeof project,
 		svcName: string,
 		info: typeof composeInfo
-	): Promise<{ includeFile: IncludeFile | null } | null> {
+	): Promise<{ includeFile: ProjectIncludeFile | null } | null> {
 		if (!proj || !svcName || !info) return null;
 
 		// Check root compose first (content is always present)
@@ -468,7 +468,7 @@
 	});
 </script>
 
-{#snippet containerHeader(container: ContainerDetailsDto)}
+{#snippet containerHeader(container: ContainerDetails)}
 	<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
 		<IconImage
 			src={containerIconUrl}
@@ -528,7 +528,7 @@
 	{/await}
 {/snippet}
 
-{#snippet containerTabs(container: ContainerDetailsDto, activeTab: string)}
+{#snippet containerTabs(container: ContainerDetails, activeTab: string)}
 	<Tabs.Content value="overview" class="h-full">
 		<ContainerOverview
 			{container}

@@ -14,7 +14,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService } from '#lib/services/podman-service.js';
-	import { PODMAN_QUADLET_TYPES, type PodmanQuadletType } from '#lib/types/podman.js';
+	import { PODMAN_QUADLET_TYPES, type QuadletType } from '#lib/types/podman.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
@@ -30,7 +30,7 @@
 	let { data } = $props();
 	const queryClient = useQueryClient();
 
-	const templates: Record<PodmanQuadletType, string> = {
+	const templates: Record<QuadletType, string> = {
 		container: '[Unit]\nDescription=\n\n[Container]\nImage=\n\n[Install]\nWantedBy=default.target\n',
 		pod: '[Pod]\nPodName=\n',
 		kube: '[Kube]\nYaml=\n\n[Install]\nWantedBy=default.target\n',
@@ -53,7 +53,7 @@
 
 	let baseName = $state('');
 	let nameInputRef = $state<HTMLInputElement | null>(null);
-	let quadletType = $state<PodmanQuadletType>('container');
+	let quadletType = $state<QuadletType>('container');
 	let content = $state(templates.container);
 	let app = $state('');
 	let submitting = $state(false);
@@ -63,7 +63,7 @@
 	const canSubmit = $derived(!!baseName.trim() && !!content.trim() && !submitting);
 
 	function handleTypeChange(value: string) {
-		const next = value as PodmanQuadletType;
+		const next = value as QuadletType;
 		if (content === templates[quadletType]) content = templates[next];
 		quadletType = next;
 	}

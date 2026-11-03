@@ -9,7 +9,7 @@
 	import { TemplateIcon, FileTextIcon, RegistryIcon, VariableIcon, CustomizeIcon, GitBranchIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { customizeSearchService } from '#lib/services/customize-search.js';
-	import type { CustomizeCategory } from '#lib/types/shared.js';
+	import type { Category } from '#lib/types/category.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { canReachAccessSurfaceUrl, isInAppPath } from '#lib/utils/auth.js';
 	import { normalizeCategory, orderCategoriesByNav } from '#lib/utils/category-page.js';
@@ -18,10 +18,10 @@
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
-	let customizeCategories = $state<CustomizeCategory[]>([]);
+	let customizeCategories = $state<Category[]>([]);
 	const user = $derived(data.user);
 	const permissionsManifest = $derived(data.permissionsManifest);
-	const categorySearch = useCategorySearch<CustomizeCategory>({
+	const categorySearch = useCategorySearch<Category>({
 		search: (query) => customizeSearchService.search(query),
 		filter: isAccessibleCategory
 	});
@@ -53,7 +53,7 @@
 		}
 	} as const;
 
-	function isAccessibleCategory(category: CustomizeCategory) {
+	function isAccessibleCategory(category: Category) {
 		if (!permissionsManifest?.accessSurfaces?.length) return true;
 		return canReachAccessSurfaceUrl(permissionsManifest, category.url, user);
 	}
@@ -72,10 +72,10 @@
 		if (isInAppPath(categoryUrl)) goto(categoryUrl);
 	}
 
-	function normalize(category: CustomizeCategory): NormalizedCategory {
+	function normalize(category: Category): NormalizedCategory {
 		return {
 			...normalizeCategory(category, categoryMessages[category.id as keyof typeof categoryMessages], iconMap, CustomizeIcon),
-			matchingItems: category.matchingCustomizations
+			matchingItems: category.matchingSettings
 		};
 	}
 

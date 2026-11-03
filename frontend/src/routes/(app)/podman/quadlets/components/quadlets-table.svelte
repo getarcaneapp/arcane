@@ -14,8 +14,9 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { PodmanQuadletDetail, PodmanStatus } from '#lib/types/podman.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import type { PodmanStatus, QuadletDetail } from '#lib/types/podman.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import type { EnvironmentPage, EnvironmentRow } from '#lib/utils/environments.js';
 	import { podmanStateVariant } from '#lib/utils/podman.js';
@@ -28,7 +29,7 @@
 		runQuadletAction
 	} from '../quadlet-actions';
 
-	type QuadletRow = EnvironmentRow<PodmanQuadletDetail> & { id: string };
+	type QuadletRow = EnvironmentRow<QuadletDetail> & { id: string };
 
 	let {
 		quadlets,
@@ -36,7 +37,7 @@
 		podmanStatuses,
 		onRetry
 	}: {
-		quadlets: EnvironmentPage<Paginated<PodmanQuadletDetail>>;
+		quadlets: EnvironmentPage<Paginated<QuadletDetail>>;
 		requestOptions: SearchPaginationSortRequest;
 		podmanStatuses: Record<string, PodmanStatus>;
 		onRetry: () => Promise<unknown>;

@@ -1,17 +1,18 @@
 import { m } from '#lib/paraglide/messages.js';
-import type { DeployProjectOptions } from '#lib/types/project-deployment.js';
-import type { ProjectWorkspaceFileDraft } from '#lib/types/project-workspace.js';
-import type { MessageResponse, Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
-import type { OperationStreamFrame } from '#lib/types/stream.js';
+import type { MessageResponse, Paginated } from '#lib/types/base.js';
 import type {
 	Project,
+	ProjectDeployOptions,
 	ProjectStatusCounts,
-	ProjectUpdate,
-	ProjectUpdateInfo,
 	ProjectTag,
 	ProjectTagColor,
-	ProjectTagOption
-} from '#lib/types/swarm.js';
+	ProjectTagOption,
+	ProjectUpdateInfo
+} from '#lib/types/project.js';
+import type { OperationStreamFrame } from '#lib/types/stream.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { ProjectUpdate } from '#lib/types/ui/project.js';
+import type { WorkspaceFileDraft } from '#lib/types/ui/workspace.js';
 import { readNdjsonStream } from '#lib/utils/streaming.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
@@ -31,27 +32,27 @@ class ProjectService extends BaseAPIService {
 	deployProject(
 		projectId: string,
 		mode: 'up' | 'redeploy',
-		options: DeployProjectOptions | undefined,
+		options: ProjectDeployOptions | undefined,
 		environmentId: string
 	): Promise<Project>;
 	deployProject(
 		projectId: string,
 		mode: 'up' | 'redeploy',
 		onLine: (data: unknown) => void,
-		options: DeployProjectOptions | undefined,
+		options: ProjectDeployOptions | undefined,
 		environmentId: string
 	): Promise<Project>;
 	async deployProject(
 		projectId: string,
 		mode: 'up' | 'redeploy',
-		onLineOrOptions: ((data: unknown) => void) | DeployProjectOptions | undefined,
-		optionsOrEnvironmentId: DeployProjectOptions | string | undefined,
+		onLineOrOptions: ((data: unknown) => void) | ProjectDeployOptions | undefined,
+		optionsOrEnvironmentId: ProjectDeployOptions | string | undefined,
 		maybeEnvironmentId?: string
 	): Promise<Project> {
 		const onLine = typeof onLineOrOptions === 'function' ? onLineOrOptions : undefined;
 		const options = onLine
-			? (optionsOrEnvironmentId as DeployProjectOptions | undefined)
-			: (onLineOrOptions as DeployProjectOptions);
+			? (optionsOrEnvironmentId as ProjectDeployOptions | undefined)
+			: (onLineOrOptions as ProjectDeployOptions);
 		const environmentId = (onLine ? maybeEnvironmentId : optionsOrEnvironmentId) as string;
 		const url = `/api/environments/${environmentId}/projects/${projectId}/deploy?action=${mode}`;
 
@@ -74,7 +75,7 @@ class ProjectService extends BaseAPIService {
 		projectName: string,
 		composeContent: string,
 		envContent: string | undefined,
-		workspaceFiles: ProjectWorkspaceFileDraft[] = [],
+		workspaceFiles: WorkspaceFileDraft[] = [],
 		tags: ProjectTag[] = [],
 		environmentId: string
 	): Promise<Project> {

@@ -7,7 +7,7 @@
 	import { SuccessIcon, ClockIcon, AlertIcon, AlertTriangleIcon, ArrowDownIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { MANAGER_ENVIRONMENT_ID } from '#lib/stores/upgrade-job.store.svelte.js';
-	import type { UpgradeJobResult, UpgradeJobResultStatus, UpgradeJobStage } from '#lib/types/system-upgrade.js';
+	import type { UpgradeJobResult, UpgradeJobResultStatus, UpgradeJobStage } from '#lib/types/system.js';
 	import { cn } from '#lib/utils.js';
 
 	import UpdateAllElapsed from './update-all-elapsed.svelte';

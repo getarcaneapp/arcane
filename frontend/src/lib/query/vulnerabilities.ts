@@ -4,13 +4,14 @@ import { queryKeys } from '#lib/query/query-keys.js';
 import { imageService } from '#lib/services/image-service.js';
 import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-import type { ImagePatchTargetDto } from '#lib/types/docker.js';
-import type { Vulnerability } from '#lib/types/environment.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { Paginated } from '#lib/types/base.js';
+import type { PatchTarget } from '#lib/types/imagepatch.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { Vulnerability } from '#lib/types/vulnerability.js';
 import { fetchAcrossEnvironments, type EnvironmentFailure, type EnvironmentRow } from '#lib/utils/environments.js';
 import { fetchRiskOverview, mapVulnerabilityPage } from '#lib/utils/vulnerability.js';
 
-export type PatchTargetRow = EnvironmentRow<ImagePatchTargetDto> & { id: string };
+export type PatchTargetRow = EnvironmentRow<PatchTarget> & { id: string };
 export type PatchTargetPage = Paginated<PatchTargetRow> & { failedEnvironments?: EnvironmentFailure[] };
 
 export function vulnerabilityOverviewQuery(scope: string) {

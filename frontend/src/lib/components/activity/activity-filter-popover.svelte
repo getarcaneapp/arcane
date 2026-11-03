@@ -3,7 +3,7 @@
 	import { CheckIcon, FilterIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
-	import type { ActivityStatus, ActivityType } from '#lib/types/activity.type.js';
+	import type { ActivityStatus, ActivityType } from '#lib/types/activity.js';
 	import { cn } from '#lib/utils.js';
 
 	import { activityStatusLabel, activityTypeLabel } from './activity-labels';

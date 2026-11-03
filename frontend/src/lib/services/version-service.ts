@@ -1,6 +1,6 @@
 import { version as currentVersion } from '$app/env';
 
-import type { AppVersionInformation } from '#lib/types/settings.js';
+import type { VersionInfo } from '#lib/types/version.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import { apiClient } from './api-service';
@@ -9,7 +9,7 @@ function getCurrentVersion() {
 	return currentVersion;
 }
 
-export function toAppVersionInformation(data: Partial<AppVersionInformation>): AppVersionInformation {
+export function toAppVersionInformation(data: Partial<VersionInfo>): VersionInfo {
 	return {
 		currentVersion: data.currentVersion || getCurrentVersion(),
 		currentTag: data.currentTag,
@@ -33,13 +33,13 @@ export function toAppVersionInformation(data: Partial<AppVersionInformation>): A
 	};
 }
 
-async function getVersionInformation(): Promise<AppVersionInformation> {
+async function getVersionInformation(): Promise<VersionInfo> {
 	const operationResult = await tryCatch(
 		(async () => {
 			const res = await apiClient.get('/app/version', {
 				timeout: 2000
 			});
-			return toAppVersionInformation(res.data as Partial<AppVersionInformation>);
+			return toAppVersionInformation(res.data as Partial<VersionInfo>);
 		})()
 	);
 	return operationResult.error !== null ? toAppVersionInformation({}) : operationResult.data;

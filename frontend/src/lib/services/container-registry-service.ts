@@ -1,12 +1,17 @@
+import type { MessageResponse, Paginated } from '#lib/types/base.js';
+import type {
+	ContainerRegistryPullUsageResponse,
+	ContainerRegistry,
+	ContainerRegistryRepository,
+	ContainerRegistryRepositoryTag
+} from '#lib/types/containerregistry.js';
 import type {
 	ContainerRegistryCreate,
-	ContainerRegistryPullUsageResponse,
 	ContainerRegistryUpdate,
-	RegistryRepository,
-	RegistryTag
-} from '#lib/types/docker.js';
-import type { ContainerRegistry } from '#lib/types/docker.js';
-import type { MessageResponse, Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	ContainerRegistryRepositoryRow,
+	ContainerRegistryRepositoryTagRow
+} from '#lib/types/ui/containerregistry.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService from './api-service';
@@ -42,17 +47,21 @@ class ContainerRegistryService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/registries/${id}`, undefined, { params: { action: 'test' } }));
 	}
 
-	async getRepositories(id: string, options?: SearchPaginationSortRequest): Promise<Paginated<RegistryRepository>> {
+	async getRepositories(id: string, options?: SearchPaginationSortRequest): Promise<Paginated<ContainerRegistryRepositoryRow>> {
 		const params = transformPaginationParams(options);
 		const res = await this.api.get(`/registries/${id}/repositories`, { params });
-		const page: Paginated<Omit<RegistryRepository, 'id'>> = res.data;
+		const page: Paginated<ContainerRegistryRepository> = res.data;
 		return { ...page, data: page.data.map((repository) => ({ ...repository, id: repository.name })) };
 	}
 
-	async getTags(id: string, repository: string, options?: SearchPaginationSortRequest): Promise<Paginated<RegistryTag>> {
+	async getTags(
+		id: string,
+		repository: string,
+		options?: SearchPaginationSortRequest
+	): Promise<Paginated<ContainerRegistryRepositoryTagRow>> {
 		const params = { ...transformPaginationParams(options), repository };
 		const res = await this.api.get(`/registries/${id}/tags`, { params });
-		const page: Paginated<Omit<RegistryTag, 'id'>> = res.data;
+		const page: Paginated<ContainerRegistryRepositoryTag> = res.data;
 		return { ...page, data: page.data.map((tag) => ({ ...tag, id: tag.name })) };
 	}
 

@@ -4,8 +4,8 @@ import {
 	systemBackupPoliciesQuery,
 	systemVolumeBackupConfigQuery
 } from '#lib/query/backups.js';
-import { GLOBAL_SCOPE } from '#lib/types/auth.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import { GLOBAL_SCOPE } from '#lib/types/role.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { userHasPermission } from '#lib/utils/auth.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 

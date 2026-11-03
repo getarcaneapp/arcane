@@ -1,5 +1,6 @@
-import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
-import type { Event, EventSeverityCounts } from '#lib/types/shared.js';
+import type { Paginated } from '#lib/types/base.js';
+import type { Event, EventSeverityCounts } from '#lib/types/event.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';

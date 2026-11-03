@@ -9,12 +9,12 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { ContainersIcon, ConnectionIcon, GlobeIcon, HashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { PortsPaginatedResponse } from '#lib/services/port-service.js';
-	import type { PortMappingDto } from '#lib/types/docker.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { PortMapping } from '#lib/types/port.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import type { PortsPaginatedResponse } from '#lib/types/ui/port.js';
 	import type { EnvironmentPage, EnvironmentRow } from '#lib/utils/environments.js';
 
-	type PortRow = EnvironmentRow<PortMappingDto>;
+	type PortRow = EnvironmentRow<PortMapping>;
 	type PortPage = EnvironmentPage<PortsPaginatedResponse>;
 
 	let {
@@ -31,18 +31,18 @@
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 
-	function formatHostPort(port: PortMappingDto): string {
+	function formatHostPort(port: PortMapping): string {
 		return port.isPublished && port.hostPort ? String(port.hostPort) : m.ports_no_host_binding();
 	}
 
-	function formatHostIp(port: PortMappingDto): string {
+	function formatHostIp(port: PortMapping): string {
 		if (!port.isPublished) {
 			return m.ports_no_host_binding();
 		}
 		return port.hostIp?.trim() || '0.0.0.0';
 	}
 
-	function mappingTitle(port: PortMappingDto): string {
+	function mappingTitle(port: PortMapping): string {
 		if (port.isPublished && port.hostPort) {
 			return `${port.hostPort} -> ${port.containerPort}`;
 		}
@@ -107,14 +107,14 @@
 {#snippet PortMobileCardSnippet({ item, mobileFieldVisibility }: { item: PortRow; mobileFieldVisibility: MobileFieldVisibility })}
 	<UniversalMobileCard
 		{item}
-		icon={(item: PortMappingDto) => ({
+		icon={(item: PortMapping) => ({
 			component: item.isPublished ? ConnectionIcon : HashIcon,
 			variant: item.isPublished ? 'blue' : 'gray'
 		})}
-		title={(item: PortMappingDto) => mappingTitle(item)}
-		subtitle={(item: PortMappingDto) => ((mobileFieldVisibility['containerName'] ?? true) ? item.containerName : null)}
+		title={(item: PortMapping) => mappingTitle(item)}
+		subtitle={(item: PortMapping) => ((mobileFieldVisibility['containerName'] ?? true) ? item.containerName : null)}
 		badges={[
-			(item: PortMappingDto) =>
+			(item: PortMapping) =>
 				(mobileFieldVisibility['isPublished'] ?? true)
 					? {
 							variant: item.isPublished ? 'blue' : 'gray',
@@ -125,14 +125,14 @@
 		fields={[
 			{
 				label: m.ports_container_port(),
-				getValue: (item: PortMappingDto) => String(item.containerPort),
+				getValue: (item: PortMapping) => String(item.containerPort),
 				icon: HashIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['containerPort'] ?? true
 			},
 			{
 				label: m.common_type(),
-				getValue: (item: PortMappingDto) => item.protocol.toUpperCase(),
+				getValue: (item: PortMapping) => item.protocol.toUpperCase(),
 				icon: ConnectionIcon,
 				iconVariant: 'gray' as const,
 				type: 'badge' as const,
@@ -141,14 +141,14 @@
 			},
 			{
 				label: m.ports_host_ip(),
-				getValue: (item: PortMappingDto) => formatHostIp(item),
+				getValue: (item: PortMapping) => formatHostIp(item),
 				icon: GlobeIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['hostIp'] ?? true
 			},
 			{
 				label: m.container(),
-				getValue: (item: PortMappingDto) => item.containerName,
+				getValue: (item: PortMapping) => item.containerName,
 				icon: ContainersIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['containerName'] ?? true

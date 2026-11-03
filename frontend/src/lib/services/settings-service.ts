@@ -1,7 +1,8 @@
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
-import { GLOBAL_SCOPE } from '#lib/types/auth.js';
-import type { ResolvedSettings, SettingKey, SettingState, Settings, SettingsSnapshot } from '#lib/types/settings.js';
+import { GLOBAL_SCOPE } from '#lib/types/role.js';
+import type { SettingKey, SettingState, Settings, SettingsSnapshot } from '#lib/types/settings.js';
+import type { ResolvedSettings } from '#lib/types/ui/settings.js';
 
 import BaseAPIService from './api-service';
 

@@ -1,5 +1,7 @@
-import type { ApiKey, ApiKeyCreate, ApiKeyCreated, ApiKeyUpdate, PersonalApiKeyCreate } from '#lib/types/auth.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { ApiKey, ApiKeyCreatedDto } from '#lib/types/apikey.js';
+import type { Paginated } from '#lib/types/base.js';
+import type { ApiKeyCreate, ApiKeyUpdate, PersonalApiKeyCreate } from '#lib/types/ui/apikey.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService from './api-service';
@@ -15,8 +17,8 @@ class ApiKeyAPIService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/apikeys/${id}`)) as Promise<ApiKey>;
 	}
 
-	async create(apiKey: ApiKeyCreate): Promise<ApiKeyCreated> {
-		return this.handleResponse(this.api.post('/apikeys', apiKey)) as Promise<ApiKeyCreated>;
+	async create(apiKey: ApiKeyCreate): Promise<ApiKeyCreatedDto> {
+		return this.handleResponse(this.api.post('/apikeys', apiKey)) as Promise<ApiKeyCreatedDto>;
 	}
 
 	async update(id: string, apiKey: ApiKeyUpdate): Promise<ApiKey> {
@@ -31,8 +33,8 @@ class ApiKeyAPIService extends BaseAPIService {
 		return this.handleResponse(this.api.get('/auth/me/apikeys')) as Promise<ApiKey[]>;
 	}
 
-	async createMine(apiKey: PersonalApiKeyCreate): Promise<ApiKeyCreated> {
-		return this.handleResponse(this.api.post('/auth/me/apikeys', apiKey)) as Promise<ApiKeyCreated>;
+	async createMine(apiKey: PersonalApiKeyCreate): Promise<ApiKeyCreatedDto> {
+		return this.handleResponse(this.api.post('/auth/me/apikeys', apiKey)) as Promise<ApiKeyCreatedDto>;
 	}
 
 	async deleteMine(id: string): Promise<void> {

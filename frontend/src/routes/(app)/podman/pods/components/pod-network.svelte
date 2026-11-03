@@ -3,10 +3,10 @@
 	import EmptyState from '#lib/components/states/empty-state.svelte';
 	import { GlobeIcon, NetworksIcon, SettingsIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { PodmanPodInfraConfig } from '#lib/types/podman.js';
+	import type { PodInfraConfig } from '#lib/types/podman.js';
 
 	interface Props {
-		infraConfig: PodmanPodInfraConfig | undefined;
+		infraConfig: PodInfraConfig | undefined;
 	}
 
 	let { infraConfig }: Props = $props();

@@ -1,6 +1,8 @@
-import type { DeploymentSnippets, Environment, EnvironmentCreate, EnvironmentUpdate } from '#lib/types/environment.js';
-import type { AppVersionInformation } from '#lib/types/settings.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { Paginated } from '#lib/types/base.js';
+import type { DeploymentSnippet, Environment } from '#lib/types/environment.js';
+import type { EnvironmentCreate, EnvironmentUpdate } from '#lib/types/ui/environment.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { VersionInfo } from '#lib/types/version.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';
@@ -45,9 +47,9 @@ class EnvironmentManagementService extends BaseAPIService {
 		await this.api.post(`/environments/${environmentId}/sync`);
 	}
 
-	async getDeploymentSnippets(environmentId: string): Promise<DeploymentSnippets> {
+	async getDeploymentSnippets(environmentId: string): Promise<DeploymentSnippet> {
 		const res = await this.api.get(`/environments/${environmentId}/deployment`);
-		return res.data.data as DeploymentSnippets;
+		return res.data.data as DeploymentSnippet;
 	}
 
 	async downloadDeploymentFile(downloadUrl: string): Promise<Blob> {
@@ -55,9 +57,9 @@ class EnvironmentManagementService extends BaseAPIService {
 		return res.data;
 	}
 
-	async getVersion(environmentId: string, config?: APIRequestConfig): Promise<AppVersionInformation> {
+	async getVersion(environmentId: string, config?: APIRequestConfig): Promise<VersionInfo> {
 		const res = await this.api.get(`/environments/${environmentId}/version`, config);
-		return res.data.data as AppVersionInformation;
+		return res.data.data as VersionInfo;
 	}
 }
 

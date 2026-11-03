@@ -14,17 +14,19 @@ import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelt
 import userStore from '#lib/stores/user-store.svelte.js';
 import type {
 	Activity,
-	ActivityBatchGroup,
-	ActivityClearHistorySummary,
 	ActivityDetail,
-	ActivityEnvironmentFailure,
-	ActivityGroup,
 	ActivityMessage,
 	ActivityStatus,
 	ActivityStreamEvent,
 	ActivityType
-} from '#lib/types/activity.type.js';
+} from '#lib/types/activity.js';
 import type { Environment } from '#lib/types/environment.js';
+import type {
+	ActivityBatchGroup,
+	ActivityClearHistorySummary,
+	ActivityEnvironmentFailure,
+	ActivityGroup
+} from '#lib/types/ui/activity.js';
 import { instantEpochMilliseconds, parseInstant } from '#lib/utils/formatting.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 

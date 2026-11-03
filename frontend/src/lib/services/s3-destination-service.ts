@@ -1,5 +1,7 @@
-import type { S3Destination, S3DestinationCreate, S3DestinationUpdate } from '#lib/types/s3-destination.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { S3Destination } from '#lib/types/backup.js';
+import type { Paginated } from '#lib/types/base.js';
+import type { S3DestinationCreate, S3DestinationUpdate } from '#lib/types/ui/backup.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService from './api-service';

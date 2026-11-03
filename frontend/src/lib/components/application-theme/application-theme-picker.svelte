@@ -8,7 +8,7 @@
 	import { AddIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { ApplicationTheme, ThemeDefinition } from '#lib/types/settings.js';
+	import type { ApplicationTheme, CustomTheme } from '#lib/types/user.js';
 	import { cn } from '#lib/utils.js';
 	import {
 		type ApplicationThemeOption,
@@ -97,7 +97,7 @@
 		return themeCopy[theme.id]?.description ?? theme.description ?? '';
 	}
 
-	async function importTheme(theme: ThemeDefinition): Promise<boolean> {
+	async function importTheme(theme: CustomTheme): Promise<boolean> {
 		await saveUserPreferences({
 			customThemes: [...customThemes, theme],
 			applicationTheme: theme.id

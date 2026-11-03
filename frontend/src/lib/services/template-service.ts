@@ -1,14 +1,7 @@
-import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
-import type {
-	TemplateRegistry,
-	TemplateRegistryCreate,
-	TemplateRegistryUpdate,
-	Template,
-	TemplateCreate,
-	TemplateUpdate,
-	RemoteRegistry,
-	TemplateContentData
-} from '#lib/types/swarm.js';
+import type { Paginated } from '#lib/types/base.js';
+import type { Template, TemplateContent, TemplateRegistry, TemplateRemoteRegistry } from '#lib/types/template.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { TemplateCreate, TemplateRegistryCreate, TemplateRegistryUpdate, TemplateUpdate } from '#lib/types/ui/template.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService from './api-service';
@@ -25,7 +18,7 @@ class TemplateService extends BaseAPIService {
 		return response.data?.data ?? [];
 	}
 
-	async getTemplateContent(id: string): Promise<TemplateContentData> {
+	async getTemplateContent(id: string): Promise<TemplateContent> {
 		const encodedId = encodeURIComponent(id);
 		const response = await this.api.get(`/templates/${encodedId}/content`);
 		return response.data?.data;
@@ -74,7 +67,7 @@ class TemplateService extends BaseAPIService {
 		await this.api.patch(`/templates/registries/${id}`, registry);
 	}
 
-	async fetchRegistry(url: string): Promise<RemoteRegistry> {
+	async fetchRegistry(url: string): Promise<TemplateRemoteRegistry> {
 		const response = await this.api.get(`/templates/fetch?url=${encodeURIComponent(url)}`);
 		const manifest = response.data?.data ?? response.data;
 		if (!manifest || typeof manifest !== 'object' || !manifest.name || !Array.isArray(manifest.templates)) {

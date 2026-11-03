@@ -9,8 +9,9 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { variableListQuery } from '#lib/query/variables.js';
 	import { variableService } from '#lib/services/variable-service.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
-	import type { GlobalVariable, GlobalVariableCreate, GlobalVariableUpdate, VariableEnvSyncResult } from '#lib/types/variable.js';
+	import type { GlobalVariable, EnvironmentSyncStatus } from '#lib/types/env.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
+	import type { GlobalVariableCreate, GlobalVariableUpdate } from '#lib/types/ui/env.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -34,7 +35,7 @@
 
 	const canCreateVariables = $derived(hasPermission('variables:create', GLOBAL_SCOPE));
 
-	function reportSyncResults(results?: VariableEnvSyncResult[]) {
+	function reportSyncResults(results?: EnvironmentSyncStatus[]) {
 		const failed = results?.filter((result) => result.status === 'error') ?? [];
 		if (failed.length > 0) {
 			toast.warning(

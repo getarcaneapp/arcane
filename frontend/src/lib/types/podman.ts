@@ -1,12 +1,11 @@
 export const PODMAN_SYSTEMD_UNIT_LABEL = 'PODMAN_SYSTEMD_UNIT';
-export const PODMAN_STATUS_DEPENDENCY = 'app:podman-status';
 
 export type PodmanAutoUpdateMode = 'rest' | 'systemd' | 'unavailable';
 export type PodmanSystemdScope = 'system' | 'user';
-export type PodmanQuadletType = 'container' | 'pod' | 'kube' | 'network' | 'volume' | 'image' | 'build' | 'artifact';
-export type PodmanKubeGenerateType = 'pod' | 'service' | 'deployment' | 'daemonset' | 'job';
+export type QuadletType = 'container' | 'pod' | 'kube' | 'network' | 'volume' | 'image' | 'build' | 'artifact';
+export type KubeGenerateType = 'pod' | 'service' | 'deployment' | 'daemonset' | 'job';
 
-export const PODMAN_QUADLET_TYPES: PodmanQuadletType[] = [
+export const PODMAN_QUADLET_TYPES: QuadletType[] = [
 	'container',
 	'pod',
 	'kube',
@@ -16,7 +15,7 @@ export const PODMAN_QUADLET_TYPES: PodmanQuadletType[] = [
 	'build',
 	'artifact'
 ];
-export const PODMAN_KUBE_GENERATE_TYPES: PodmanKubeGenerateType[] = ['pod', 'service', 'deployment', 'daemonset', 'job'];
+export const PODMAN_KUBE_GENERATE_TYPES: KubeGenerateType[] = ['pod', 'service', 'deployment', 'daemonset', 'job'];
 
 export interface PodmanStatus {
 	detected: boolean;
@@ -32,7 +31,7 @@ export interface PodmanStatus {
 	systemdReason?: string;
 }
 
-export interface PodmanInfoIdMap {
+export interface PodmanInfoIDMap {
 	container_id: number;
 	host_id: number;
 	size: number;
@@ -56,7 +55,7 @@ export interface PodmanInfoHost {
 	distribution: { distribution?: string; variant?: string; version?: string; codename?: string };
 	eventLogger?: string;
 	hostname?: string;
-	idMappings: { uidmap?: PodmanInfoIdMap[]; gidmap?: PodmanInfoIdMap[] };
+	idMappings: { uidmap?: PodmanInfoIDMap[]; gidmap?: PodmanInfoIDMap[] };
 	kernel?: string;
 	logDriver?: string;
 	memFree: number;
@@ -124,14 +123,14 @@ export interface PodmanUnitStatus {
 	subState: string;
 }
 
-export interface PodmanPodContainer {
+export interface PodContainer {
 	id: string;
 	names: string;
 	status: string;
 	restartCount: number;
 }
 
-export interface PodmanPod {
+export interface Pod {
 	id: string;
 	name: string;
 	namespace?: string;
@@ -141,16 +140,16 @@ export interface PodmanPod {
 	cgroup?: string;
 	labels?: Record<string, string>;
 	networks?: string[];
-	containers: PodmanPodContainer[] | null;
+	containers: PodContainer[] | null;
 }
 
-export interface PodmanPodPortBinding {
+export interface PodPortBinding {
 	hostIp?: string;
 	hostPort: string;
 }
 
-export interface PodmanPodInfraConfig {
-	portBindings?: Record<string, PodmanPodPortBinding[]>;
+export interface PodInfraConfig {
+	portBindings?: Record<string, PodPortBinding[]>;
 	hostNetwork: boolean;
 	staticIp?: string;
 	staticMac?: string;
@@ -169,7 +168,7 @@ export interface PodmanPodInfraConfig {
 	utsNs?: string;
 }
 
-export interface PodmanPodInspectContainer {
+export interface PodInspectContainer {
 	id: string;
 	name: string;
 	state: string;
@@ -178,10 +177,10 @@ export interface PodmanPodInspectContainer {
 	created: string;
 	exitCode: number;
 	isInfra: boolean;
-	ports?: PodmanPodPortMapping[];
+	ports?: PodPortMapping[];
 }
 
-export interface PodmanPodMount {
+export interface PodMount {
 	type: string;
 	name?: string;
 	source?: string;
@@ -194,23 +193,23 @@ export interface PodmanPodMount {
 	subPath?: string;
 }
 
-export interface PodmanPodDevice {
+export interface PodDevice {
 	pathOnHost: string;
 	pathInContainer: string;
 	cgroupPermissions?: string;
 }
 
-export interface PodmanPodWeightDevice {
+export interface PodWeightDevice {
 	path: string;
 	weight: number;
 }
 
-export interface PodmanPodThrottleDevice {
+export interface PodThrottleDevice {
 	path: string;
 	rate: number;
 }
 
-export interface PodmanPodInspect {
+export interface PodInspect {
 	id: string;
 	name: string;
 	namespace?: string;
@@ -226,10 +225,10 @@ export interface PodmanPodInspect {
 	cgroupPath?: string;
 	createInfra: boolean;
 	infraContainerId?: string;
-	infraConfig?: PodmanPodInfraConfig;
+	infraConfig?: PodInfraConfig;
 	sharedNamespaces?: string[];
 	numContainers: number;
-	containers: PodmanPodInspectContainer[] | null;
+	containers: PodInspectContainer[] | null;
 	cpuPeriod?: number;
 	cpuQuota?: number;
 	cpuShares?: number;
@@ -238,16 +237,16 @@ export interface PodmanPodInspect {
 	memoryLimit?: number;
 	memorySwap?: number;
 	blkioWeight?: number;
-	blkioWeightDevices?: PodmanPodWeightDevice[];
-	deviceReadBps?: PodmanPodThrottleDevice[];
-	deviceWriteBps?: PodmanPodThrottleDevice[];
-	mounts?: PodmanPodMount[];
-	devices?: PodmanPodDevice[];
+	blkioWeightDevices?: PodWeightDevice[];
+	deviceReadBps?: PodThrottleDevice[];
+	deviceWriteBps?: PodThrottleDevice[];
+	mounts?: PodMount[];
+	devices?: PodDevice[];
 	volumesFrom?: string[];
 	securityOpts?: string[];
 }
 
-export interface PodmanPodPortMapping {
+export interface PodPortMapping {
 	containerPort: number;
 	hostPort?: number;
 	hostIp?: string;
@@ -255,7 +254,7 @@ export interface PodmanPodPortMapping {
 	range?: number;
 }
 
-export interface PodmanPodNetwork {
+export interface PodNetwork {
 	name: string;
 	aliases?: string[];
 	staticIps?: string[];
@@ -263,13 +262,13 @@ export interface PodmanPodNetwork {
 	interfaceName?: string;
 }
 
-export interface PodmanPodVolume {
+export interface PodVolume {
 	source: string;
 	destination: string;
 	options?: string[];
 }
 
-export interface PodmanPodDeviceLimit {
+export interface PodDeviceLimit {
 	device: string;
 	value: string;
 }
@@ -277,7 +276,7 @@ export interface PodmanPodDeviceLimit {
 export type PodmanPodExitPolicy = 'continue' | 'stop';
 export type PodmanPodRestartPolicy = 'no' | 'always' | 'on-failure' | 'unless-stopped';
 
-export interface PodmanPodCreateRequest {
+export interface PodCreateRequest {
 	name: string;
 	hostname?: string;
 	labels?: Record<string, string>;
@@ -299,8 +298,8 @@ export interface PodmanPodCreateRequest {
 	gidMap?: string[];
 	networkMode?: string;
 	networkOptions?: string[];
-	networks?: PodmanPodNetwork[];
-	portMappings?: PodmanPodPortMapping[];
+	networks?: PodNetwork[];
+	portMappings?: PodPortMapping[];
 	dnsServers?: string[];
 	dnsSearch?: string[];
 	dnsOptions?: string[];
@@ -317,12 +316,12 @@ export interface PodmanPodCreateRequest {
 	memory?: string;
 	memorySwap?: string;
 	blkioWeight?: number;
-	blkioWeightDevices?: PodmanPodDeviceLimit[];
-	deviceReadBps?: PodmanPodDeviceLimit[];
-	deviceWriteBps?: PodmanPodDeviceLimit[];
+	blkioWeightDevices?: PodDeviceLimit[];
+	deviceReadBps?: PodDeviceLimit[];
+	deviceWriteBps?: PodDeviceLimit[];
 	devices?: string[];
 	gpus?: string[];
-	volumes?: PodmanPodVolume[];
+	volumes?: PodVolume[];
 	volumesFrom?: string[];
 	shmSize?: string;
 	shmSizeSystemd?: string;
@@ -330,21 +329,21 @@ export interface PodmanPodCreateRequest {
 	sysctl?: Record<string, string>;
 }
 
-export interface PodmanPodActionRequest {
+export interface PodActionRequest {
 	timeout?: number;
 	signal?: string;
 }
 
-export interface PodmanPodCreateResponse {
+export interface PodCreateResponse {
 	id: string;
 }
 
-export interface PodmanPodTop {
+export interface PodTop {
 	titles: string[] | null;
 	processes: string[][] | null;
 }
 
-export interface PodmanPodPruneReport {
+export interface PodPruneReport {
 	id: string;
 }
 
@@ -365,68 +364,68 @@ export interface PodmanContainer {
 	isInfra: boolean;
 }
 
-export interface PodmanQuadletFile {
+export interface QuadletFile {
 	name: string;
 	content: string;
 }
 
-export interface PodmanQuadletInstallRequest {
+export interface QuadletInstallRequest {
 	name: string;
 	content: string;
-	extraFiles?: PodmanQuadletFile[];
+	extraFiles?: QuadletFile[];
 	app?: string;
 }
 
-export interface PodmanQuadletUpdateRequest {
+export interface QuadletUpdateRequest {
 	content: string;
-	extraFiles?: PodmanQuadletFile[];
+	extraFiles?: QuadletFile[];
 }
 
-export interface PodmanQuadletDetail {
+export interface QuadletDetail {
 	name: string;
 	unitName: string;
 	path: string;
 	status: string;
 	app?: string;
-	type: PodmanQuadletType;
+	type: QuadletType;
 	template: boolean;
 	unitStatus?: PodmanUnitStatus;
 	containers?: PodmanContainer[];
 }
 
-export interface PodmanQuadletInstallReport {
+export interface QuadletInstallReport {
 	installedQuadlets: Record<string, string> | null;
 	quadletErrors: Record<string, string> | null;
 }
 
-export interface PodmanQuadletRemoveReport {
+export interface QuadletRemoveReport {
 	removed: string[] | null;
 	errors: Record<string, string> | null;
 }
 
-export interface PodmanKubePlayRequest {
+export interface KubePlayRequest {
 	yaml: string;
 	start?: boolean;
 	replace?: boolean;
 	networks?: string[];
 }
 
-export interface PodmanKubeDownRequest {
+export interface KubeDownRequest {
 	yaml: string;
 	force?: boolean;
 }
 
-export interface PodmanKubeGenerateRequest {
+export interface KubeGenerateRequest {
 	names: string[];
-	type?: PodmanKubeGenerateType;
+	type?: KubeGenerateType;
 	service?: boolean;
 }
 
-export interface PodmanKubeGenerateResponse {
+export interface KubeGenerateResponse {
 	yaml: string;
 }
 
-export interface PodmanKubePlayPod {
+export interface KubePlayPod {
 	id: string;
 	containers: string[] | null;
 	initContainers: string[] | null;
@@ -434,24 +433,24 @@ export interface PodmanKubePlayPod {
 	containerErrors: string[] | null;
 }
 
-export interface PodmanKubePlayVolume {
+export interface KubePlayVolume {
 	name: string;
 }
 
-export interface PodmanKubePlayReport {
-	pods: PodmanKubePlayPod[] | null;
-	volumes: PodmanKubePlayVolume[] | null;
+export interface KubePlayReport {
+	pods: KubePlayPod[] | null;
+	volumes: KubePlayVolume[] | null;
 	serviceContainerId?: string;
 	exitCode?: number;
 }
 
-export interface PodmanKubeDownPod {
+export interface KubeDownPod {
 	id: string;
 }
 
-export interface PodmanKubeDownReport {
-	stopReport: PodmanKubeDownPod[] | null;
-	rmReport: PodmanKubeDownPod[] | null;
+export interface KubeDownReport {
+	stopReport: KubeDownPod[] | null;
+	rmReport: KubeDownPod[] | null;
 }
 
 export interface PodmanSecretDriver {

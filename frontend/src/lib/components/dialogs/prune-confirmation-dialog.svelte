@@ -3,14 +3,14 @@
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { SystemPruneRequest } from '#lib/types/automation.js';
 	import type { Settings } from '#lib/types/settings.js';
+	import type { PruneAllRequest } from '#lib/types/system.js';
 
 	interface Props {
 		open: boolean;
 		isPruning?: boolean;
 		defaults?: Settings | null;
-		onConfirm?: (request: SystemPruneRequest) => void;
+		onConfirm?: (request: PruneAllRequest) => void;
 		onCancel?: () => void;
 		environments?: { id: string; name: string }[];
 		environmentId?: string | null;

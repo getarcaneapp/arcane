@@ -5,15 +5,14 @@ import { systemBackupService } from '#lib/services/system-backup-service.js';
 import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import type {
-	BackupDestination,
+	SystemBackupDestination,
 	BackupManagementType,
-	BackupPolicy,
-	BackupPolicyUpdate,
-	BackupRun,
+	UpdateBackupPolicy,
 	BackupStatus,
-	BackupTrigger
+	BackupTrigger,
+	S3Destination
 } from '#lib/types/backup.js';
-import type { S3Destination } from '#lib/types/s3-destination.js';
+import type { BackupPolicy, BackupRun } from '#lib/types/ui/backup.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 export function backupStatusLabel(status: BackupStatus): string {
@@ -45,13 +44,13 @@ export function backupManagementFilterOptions() {
 	];
 }
 
-export function backupDestinationLabel(destination: BackupDestination): string {
+export function backupDestinationLabel(destination: SystemBackupDestination): string {
 	if (destination === 'local_s3') return m.backups_destination_local_s3();
 	if (destination === 's3') return m.backups_destination_s3();
 	return m.local();
 }
 
-export function backupDestinationFromFlags(localEnabled: boolean, s3Enabled: boolean): BackupDestination {
+export function backupDestinationFromFlags(localEnabled: boolean, s3Enabled: boolean): SystemBackupDestination {
 	if (!s3Enabled) return 'local';
 	return localEnabled ? 'local_s3' : 's3';
 }
@@ -103,7 +102,7 @@ export function s3DestinationOptions(destinations: S3Destination[]) {
 	return destinations.map((item) => ({ label: item.name, value: item.id, description: item.bucket }));
 }
 
-export function backupPolicyDestinationValues(destination: BackupDestination, s3DestinationId: string) {
+export function backupPolicyDestinationValues(destination: SystemBackupDestination, s3DestinationId: string) {
 	return {
 		localEnabled: destination !== 's3',
 		s3Enabled: destination !== 'local',
@@ -111,7 +110,7 @@ export function backupPolicyDestinationValues(destination: BackupDestination, s3
 	};
 }
 
-export function backupPolicyUpdateFromPolicy(policy: BackupPolicy, includeStopContainers = false): BackupPolicyUpdate {
+export function backupPolicyUpdateFromPolicy(policy: BackupPolicy, includeStopContainers = false): UpdateBackupPolicy {
 	return {
 		id: policy.id,
 		enabled: policy.enabled,

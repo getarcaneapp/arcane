@@ -2,7 +2,7 @@ import { environmentListQuery } from '#lib/query/environments.js';
 import { federatedCredentialListQuery } from '#lib/query/federated-credentials.js';
 import { oidcMappingListQuery } from '#lib/query/oidc-mappings.js';
 import { roleAllQuery } from '#lib/query/roles.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 
 import type { PageLoad } from './$types';

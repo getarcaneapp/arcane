@@ -28,7 +28,7 @@
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { templateService } from '#lib/services/template-service.js';
-	import type { Template } from '#lib/types/swarm.js';
+	import type { Template } from '#lib/types/template.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { withOccurrenceKeys } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';

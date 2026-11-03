@@ -1,5 +1,5 @@
 import { m } from '#lib/paraglide/messages.js';
-import type { ContainerSummaryDto } from '#lib/types/docker.js';
+import type { ContainerSummary } from '#lib/types/container.js';
 import { COMPOSE_PROJECT_LABEL } from '#lib/utils/docker.js';
 
 export type ActionStatus =
@@ -16,7 +16,7 @@ export type ActionStatus =
 export type StateBadgeVariant = 'green' | 'red' | 'amber' | 'gray';
 
 /** The lowest published port, else the lowest private one, as the backend sorts ports. */
-function lowestPort(container: ContainerSummaryDto): number | null {
+function lowestPort(container: ContainerSummary): number | null {
 	const ports = container.ports ?? [];
 	const lowest = (values: number[]) => (values.length > 0 ? Math.min(...values) : null);
 	return (
@@ -26,7 +26,7 @@ function lowestPort(container: ContainerSummaryDto): number | null {
 }
 
 /** Sort value for a container column whose sort key is not a row field. */
-export function containerSortValue(container: ContainerSummaryDto, column: string): unknown {
+export function containerSortValue(container: ContainerSummary, column: string): unknown {
 	switch (column) {
 		case 'name':
 			return container.names?.[0];
@@ -40,11 +40,11 @@ export function containerSortValue(container: ContainerSummaryDto, column: strin
 		case 'imageRef':
 			return container.image;
 		default:
-			return container[column as keyof ContainerSummaryDto];
+			return container[column as keyof ContainerSummary];
 	}
 }
 
-export function getContainerDisplayName(container: ContainerSummaryDto): string {
+export function getContainerDisplayName(container: ContainerSummary): string {
 	return container.names?.[0] || container.id.substring(0, 12);
 }
 
@@ -80,7 +80,7 @@ export function getStateBadgeVariant(state: string): StateBadgeVariant {
 	}
 }
 
-export function getProjectName(container: ContainerSummaryDto): string {
+export function getProjectName(container: ContainerSummary): string {
 	const projectLabel = container.labels?.[COMPOSE_PROJECT_LABEL];
 	return projectLabel || 'No Project';
 }

@@ -79,19 +79,11 @@
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
-	import type {
-		BranchInfo,
-		FileTreeNode,
-		GitOpsSync,
-		GitOpsSyncCreate,
-		GitOpsSyncMode,
-		GitOpsSyncUpdate,
-		GitOpsSyncWritable,
-		GitRepository
-	} from '#lib/types/automation.js';
+	import type { FileTreeNode, GitBranchInfo, GitOpsSync, GitOpsSyncMode, GitRepository } from '#lib/types/gitops.js';
+	import type { Project } from '#lib/types/project.js';
 	import type { Settings } from '#lib/types/settings.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import type { Project } from '#lib/types/swarm.js';
+	import type { GitOpsSyncCreate, GitOpsSyncUpdate, GitOpsSyncWritable } from '#lib/types/ui/gitops.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import type { WorkspaceFileEntry } from '#lib/types/workspace.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { changedFields } from '#lib/utils/payload.js';
@@ -219,7 +211,7 @@
 			enabled: open && !!repositoryId
 		};
 	});
-	const branches = $derived<BranchInfo[]>(branchesQuery.data?.branches ?? []);
+	const branches = $derived<GitBranchInfo[]>(branchesQuery.data?.branches ?? []);
 	const loadingBranches = $derived(!!selectedRepository?.value && (branchesQuery.isPending || branchesQuery.isFetching));
 
 	function normalizeLifecycleNetworkModeInternal(value: string | undefined | null): string {

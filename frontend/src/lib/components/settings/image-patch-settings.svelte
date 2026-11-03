@@ -5,7 +5,8 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import type { MixedSettingValue, SettingKey } from '#lib/types/settings.js';
+	import type { SettingKey } from '#lib/types/settings.js';
+	import type { MixedSettingValue } from '#lib/types/ui/settings.js';
 
 	type ImagePatchFormValues = {
 		imagePatchSuffix: string;

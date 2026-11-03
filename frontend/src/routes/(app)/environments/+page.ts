@@ -1,5 +1,5 @@
 import { environmentListQuery } from '#lib/query/environments.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 

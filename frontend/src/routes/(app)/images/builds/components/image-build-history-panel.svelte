@@ -31,8 +31,9 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { ImageBuildRecord, ImageBuildStatus } from '#lib/types/docker.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import type { ImageBuildRecord, ImageBuildStatus } from '#lib/types/image.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { type EnvironmentRow, readableEnvironments } from '#lib/utils/environments.js';
 
 	import {

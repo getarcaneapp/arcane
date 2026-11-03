@@ -6,7 +6,7 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { RegistryIcon, CommunityIcon, ExternalLinkIcon, AlertTriangleIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { TemplateRegistry } from '#lib/types/swarm.js';
+	import type { TemplateRegistry } from '#lib/types/template.js';
 
 	let {
 		registries,

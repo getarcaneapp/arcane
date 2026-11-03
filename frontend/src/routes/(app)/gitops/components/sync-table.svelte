@@ -33,8 +33,9 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { GitOpsSync, GitOpsSyncCounts } from '#lib/types/automation.js';
-	import type { FilterMap, Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { PaginatedWithCounts } from '#lib/types/base.js';
+	import type { GitOpsSync, GitOpsSyncCounts } from '#lib/types/gitops.js';
+	import type { FilterMap, SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -46,7 +47,7 @@
 
 	type FieldVisibility = Record<string, boolean>;
 	type SyncRow = EnvironmentRow<GitOpsSync>;
-	type SyncPage = EnvironmentPage<Paginated<GitOpsSync, GitOpsSyncCounts>>;
+	type SyncPage = EnvironmentPage<PaginatedWithCounts<GitOpsSync, GitOpsSyncCounts>>;
 
 	let {
 		syncs,

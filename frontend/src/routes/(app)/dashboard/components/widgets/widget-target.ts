@@ -1,6 +1,6 @@
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-import type { DashboardWidgetConfig } from '#lib/types/auth.js';
 import type { Environment } from '#lib/types/environment.js';
+import type { DashboardWidgetConfig } from '#lib/types/user.js';
 import { hasPermission } from '#lib/utils/auth.js';
 
 import { shouldLoadEnvironment } from '../../overview.helpers';

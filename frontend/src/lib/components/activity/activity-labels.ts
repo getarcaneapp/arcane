@@ -3,7 +3,10 @@ import type { IconType } from '#lib/icons/index.js';
 import {
 	ActivityIcon,
 	DownloadIcon,
+	EditIcon,
 	HammerIcon,
+	PauseIcon,
+	PlayIcon,
 	RedeployIcon,
 	RefreshIcon,
 	RestartIcon,
@@ -11,11 +14,11 @@ import {
 	ShieldCheckIcon,
 	StartIcon,
 	StopIcon,
-	TrashIcon
+	TrashIcon,
+	ZapIcon
 } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
-import type { Activity } from '#lib/types/activity.type.js';
-import type { ActivityStatus, ActivityType } from '#lib/types/activity.type.js';
+import type { Activity, ActivityStatus, ActivityType } from '#lib/types/activity.js';
 import { parseInstant } from '#lib/utils/formatting.js';
 
 export type ActivityBadgeVariant = 'red' | 'green' | 'blue' | 'gray' | 'amber' | 'purple';
@@ -48,7 +51,11 @@ const typeDisplay = new Map(
 		container_stop: { label: m.activity_type_container_stop, icon: StopIcon },
 		container_restart: { label: m.activity_type_container_restart, icon: RestartIcon },
 		container_redeploy: { label: m.activity_type_container_redeploy, icon: RedeployIcon },
+		container_edit: { label: m.activity_type_container_edit, icon: EditIcon },
 		container_delete: { label: m.activity_type_container_delete, icon: TrashIcon },
+		container_kill: { label: m.activity_type_container_kill, icon: ZapIcon },
+		container_pause: { label: m.activity_type_container_pause, icon: PauseIcon },
+		container_unpause: { label: m.activity_type_container_unpause, icon: PlayIcon },
 		vulnerability_scan: { label: m.activity_type_vulnerability_scan, icon: ScanIcon },
 		auto_update: { label: m.auto_update, icon: RefreshIcon },
 		system_prune: { label: m.activity_type_system_prune, icon: TrashIcon },

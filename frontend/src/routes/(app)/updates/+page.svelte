@@ -14,10 +14,10 @@
 	import { containerListQuery } from '#lib/query/containers.js';
 	import { projectListQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import type { ContainerListRequestOptions } from '#lib/services/container-service.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { ContainerListRequestOptions } from '#lib/types/ui/container.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '#lib/utils/docker.js';
 	import {

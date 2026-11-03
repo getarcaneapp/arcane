@@ -7,7 +7,7 @@
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmTaskListQuery } from '#lib/query/swarm.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';

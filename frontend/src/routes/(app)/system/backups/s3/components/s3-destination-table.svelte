@@ -13,8 +13,9 @@
 	import { EditIcon, RemoteEnvironmentIcon, ClockIcon, GlobeIcon, TestIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
-	import type { S3Destination } from '#lib/types/s3-destination.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { S3Destination } from '#lib/types/backup.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { formatOptionalDateTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 

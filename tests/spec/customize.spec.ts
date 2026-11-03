@@ -468,7 +468,7 @@ test.describe('Registries', () => {
 
 		test('should display title and subtitle, and refresh', async ({ page }) => {
 			await expect(
-				page.getByRole('heading', { name: 'Container Registries', level: 1 })
+				page.getByRole('heading', { name: 'Registries', exact: true, level: 1 })
 			).toBeVisible();
 			await expect(
 				page

@@ -5,9 +5,3 @@ export type FeatureDefinition = {
 	settingKey: 'featureVulnerabilityManagementEnabled' | 'featureSwarmEnabled';
 	defaultEnabled: boolean;
 };
-
-export type FeatureState = { enabled: boolean; supported: boolean };
-export type EnvironmentFeatures = {
-	status: 'loading' | 'ready' | 'unavailable';
-	features: Partial<Record<FeatureID, FeatureState>>;
-};

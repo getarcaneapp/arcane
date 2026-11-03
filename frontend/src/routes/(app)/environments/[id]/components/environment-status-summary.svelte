@@ -6,7 +6,7 @@
 	import { HealthIcon, TagIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
-	import type { AppVersionInformation } from '#lib/types/settings.js';
+	import type { VersionInfo } from '#lib/types/version.js';
 	import { cn } from '#lib/utils.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
 
@@ -20,8 +20,8 @@
 		environment: Environment;
 		currentStatus: EnvironmentStatus;
 		isLoadingVersion: boolean;
-		remoteVersion: AppVersionInformation | null;
-		versionInformation: AppVersionInformation | null | undefined;
+		remoteVersion: VersionInfo | null;
+		versionInformation: VersionInfo | null | undefined;
 	} = $props();
 
 	let statusBadge = $derived.by((): { text: string; variant: 'green' | 'amber' | 'red' } => {

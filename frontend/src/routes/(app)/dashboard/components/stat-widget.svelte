@@ -13,7 +13,7 @@
 		UpdateIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { BuiltinDashboardWidgetType } from '#lib/types/auth.js';
+	import type { BuiltinDashboardWidgetType } from '#lib/types/ui/user.js';
 	import { bytes } from '#lib/utils/formatting.js';
 
 	let {

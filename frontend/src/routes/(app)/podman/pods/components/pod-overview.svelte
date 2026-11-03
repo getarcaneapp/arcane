@@ -11,12 +11,12 @@
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { BoxIcon, ClockIcon, ContainersIcon, InfoIcon, RestartIcon, TagIcon, TerminalIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { PodmanPodInspect } from '#lib/types/podman.js';
+	import type { PodInspect } from '#lib/types/podman.js';
 	import { formatDateTime } from '#lib/utils/formatting.js';
 	import { podmanStateVariant } from '#lib/utils/podman.js';
 
 	interface Props {
-		pod: PodmanPodInspect;
+		pod: PodInspect;
 	}
 
 	let { pod }: Props = $props();

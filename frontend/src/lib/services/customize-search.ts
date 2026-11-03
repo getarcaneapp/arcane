@@ -1,19 +1,20 @@
-import type { CustomizeSearchResponse, CustomizeCategory } from '#lib/types/shared.js';
+import type { Category } from '#lib/types/category.js';
+import type { SearchResponse } from '#lib/types/search.js';
 
 import { apiClient } from './api-service';
 
 class CustomizeSearchService {
 	private baseUrl = '/customize';
 
-	async search(query: string): Promise<CustomizeSearchResponse> {
-		const response = await apiClient.post<CustomizeSearchResponse>(`${this.baseUrl}/search`, {
+	async search(query: string): Promise<SearchResponse> {
+		const response = await apiClient.post<SearchResponse>(`${this.baseUrl}/search`, {
 			query
 		});
 		return response.data;
 	}
 
-	async getCategories(): Promise<CustomizeCategory[]> {
-		const response = await apiClient.get<CustomizeCategory[]>(`${this.baseUrl}/categories`);
+	async getCategories(): Promise<Category[]> {
+		const response = await apiClient.get<Category[]>(`${this.baseUrl}/categories`);
 		return response.data;
 	}
 }

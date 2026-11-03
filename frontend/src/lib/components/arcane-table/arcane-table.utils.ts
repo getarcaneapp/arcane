@@ -1,10 +1,9 @@
 import type { RowData } from '@tanstack/table-core';
 import type { ColumnFiltersState } from '@tanstack/table-core';
 
-import type { FilterMap, FilterValue } from '#lib/types/shared.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-import type { TableDisplayEntry } from '#lib/types/table-display.js';
-import type { PersistedPreferencesSnapshot } from '#lib/types/table-preferences.js';
+import type { FilterMap, FilterValue, SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { TableDisplayEntry } from '#lib/types/ui/tabledisplay.js';
+import type { PersistedPreferencesSnapshot } from '#lib/types/ui/tablepreferences.js';
 import { ENVIRONMENT_FILTER, environmentFilterIds, rowKey } from '#lib/utils/environments.js';
 
 import type { CardSlot, CompactTablePrefs, GroupedData } from './arcane-table.types.svelte';

@@ -4,13 +4,13 @@
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { SystemPruneRequest } from '#lib/types/automation.js';
 	import type { Settings } from '#lib/types/settings.js';
+	import type { PruneAllRequest } from '#lib/types/system.js';
 
 	interface Props {
 		defaults?: Settings | null;
 		isPruning?: boolean;
-		onConfirm?: (request: SystemPruneRequest) => void;
+		onConfirm?: (request: PruneAllRequest) => void;
 		onCancel?: () => void;
 	}
 
@@ -70,8 +70,8 @@
 		{ value: 'olderThan', label: m.prune_mode_older_than() }
 	];
 
-	function buildPruneRequestInternal(): SystemPruneRequest {
-		const request: SystemPruneRequest = {};
+	function buildPruneRequestInternal(): PruneAllRequest {
+		const request: PruneAllRequest = {};
 		if (containerMode !== 'none') {
 			request.containers = {
 				mode: containerMode,

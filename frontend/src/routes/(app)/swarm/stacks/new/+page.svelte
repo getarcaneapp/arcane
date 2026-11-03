@@ -22,7 +22,8 @@
 	import { ArrowLeftIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import type { SwarmStackSourceUpdate, SwarmStackSourceWritable, SwarmSyncFile } from '#lib/types/swarm.js';
+	import type { SwarmSyncFile } from '#lib/types/swarm.js';
+	import type { SwarmStackSourceUpdate, SwarmStackSourceWritable } from '#lib/types/ui/swarm.js';
 	import {
 		createComposeEditorSchema,
 		createComposeTemplateDialogFlow,

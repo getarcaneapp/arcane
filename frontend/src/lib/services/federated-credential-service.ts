@@ -1,5 +1,7 @@
-import type { FederatedCredential, FederatedCredentialCreate, FederatedCredentialUpdate } from '#lib/types/auth.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { Paginated } from '#lib/types/base.js';
+import type { FederatedCredential } from '#lib/types/federated.js';
+import type { FederatedCredentialCreate, FederatedCredentialUpdate } from '#lib/types/ui/federated.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService from './api-service';

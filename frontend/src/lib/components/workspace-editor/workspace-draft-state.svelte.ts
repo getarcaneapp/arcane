@@ -1,5 +1,5 @@
 import { m } from '#lib/paraglide/messages.js';
-import type { WorkspaceFileDraft } from '#lib/types/workspace.js';
+import type { WorkspaceFileDraft } from '#lib/types/ui/workspace.js';
 import {
 	isWorkspaceFileSelectionUnder,
 	readWorkspaceUpload,

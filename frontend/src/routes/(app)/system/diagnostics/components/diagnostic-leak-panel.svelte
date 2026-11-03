@@ -3,8 +3,8 @@
 	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import { AlertTriangleIcon, DownloadIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
-	import type { GoroutineLeakReport } from '#lib/types/diagnostics.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
+	import type { GoroutineLeakReport } from '#lib/types/system.js';
 	import { cn } from '#lib/utils.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatTime } from '#lib/utils/formatting.js';

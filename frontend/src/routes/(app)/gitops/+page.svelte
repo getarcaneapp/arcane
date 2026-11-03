@@ -14,14 +14,8 @@
 	import { gitOpsSyncListQuery } from '#lib/query/gitops.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
-	import type {
-		GitOpsSync,
-		GitOpsSyncCounts,
-		GitOpsSyncCreate,
-		GitOpsSyncMode,
-		GitOpsSyncUpdate,
-		ImportGitOpsSyncRequest
-	} from '#lib/types/automation.js';
+	import type { GitOpsSync, GitOpsSyncCounts, GitOpsSyncMode, ImportGitOpsSyncRequest } from '#lib/types/gitops.js';
+	import type { GitOpsSyncCreate, GitOpsSyncUpdate } from '#lib/types/ui/gitops.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { destinationEnvironmentId, hasShownPermission, readableEnvironments } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';

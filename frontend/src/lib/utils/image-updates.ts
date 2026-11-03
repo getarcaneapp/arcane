@@ -1,7 +1,11 @@
-import type { ImageUpdateInfoDto } from '#lib/types/docker.js';
+import type { ImageUpdateInfo } from '#lib/types/image.js';
+import type { ImageUpdateResponse } from '#lib/types/imageupdate.js';
 import { formatDateTimeShort } from '#lib/utils/formatting.js';
 
-export function formatImageUpdateValue(updateInfo: ImageUpdateInfoDto | undefined, mode: 'current' | 'latest') {
+export function formatImageUpdateValue(
+	updateInfo: ImageUpdateInfo | ImageUpdateResponse | undefined,
+	mode: 'current' | 'latest'
+) {
 	if (!updateInfo) return '-';
 
 	const version = (mode === 'current' ? updateInfo.currentVersion : updateInfo.latestVersion)?.trim() ?? '';

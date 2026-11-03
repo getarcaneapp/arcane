@@ -1,6 +1,6 @@
 <script lang="ts">
 	import PinnedScrollRegion from '#lib/components/pinned-scroll-region.svelte';
-	import type { ActivityMessage } from '#lib/types/activity.type.js';
+	import type { ActivityMessage } from '#lib/types/activity.js';
 	import { cn } from '#lib/utils.js';
 	import { ansiToHtml } from '#lib/utils/formatting.js';
 

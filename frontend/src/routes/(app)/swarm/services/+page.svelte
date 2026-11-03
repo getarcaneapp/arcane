@@ -11,8 +11,8 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmServiceListQuery } from '#lib/query/swarm.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { SwarmServiceCreateSpec } from '#lib/types/swarm.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';

@@ -13,8 +13,8 @@
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 	import { clientStream } from '#lib/stores/client-stream.svelte.js';
 	import { MANAGER_ENVIRONMENT_ID, isActiveUpgradeJob, upgradeJobStore } from '#lib/stores/upgrade-job.store.svelte.js';
-	import type { AppVersionInformation } from '#lib/types/settings.js';
-	import type { UpgradeJob, UpgradeJobResult, UpgradeJobResultStatus, UpgradeJobStage } from '#lib/types/system-upgrade.js';
+	import type { UpgradeJob, UpgradeJobResult, UpgradeJobResultStatus, UpgradeJobStage } from '#lib/types/system.js';
+	import type { VersionInfo } from '#lib/types/version.js';
 	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { formatRelativeTime, nowInstantString } from '#lib/utils/formatting.js';
@@ -34,7 +34,7 @@
 		onFinished
 	}: {
 		open?: boolean;
-		versionInformation?: AppVersionInformation;
+		versionInformation?: VersionInfo;
 		canConfirm?: boolean;
 		/** Dev-only: run a scripted fake set of environments instead of calling the API. */
 		debugDemo?: boolean;

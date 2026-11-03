@@ -14,8 +14,8 @@
 	import { StartIcon, StopIcon, RefreshIcon, TrashIcon, InspectIcon, LayersIcon, BoxIcon, HealthIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectService } from '#lib/services/project-service.js';
-	import type { ImageUpdateData } from '#lib/types/docker.js';
-	import type { RuntimeService } from '#lib/types/swarm.js';
+	import type { ImageUpdateResponse } from '#lib/types/imageupdate.js';
+	import type { ProjectRuntimeService } from '#lib/types/project.js';
 	import { cn } from '#lib/utils.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -25,16 +25,16 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	interface Props {
-		services?: RuntimeService[];
+		services?: ProjectRuntimeService[];
 		projectId?: string;
 		environmentId: string;
-		updateInfoByRef?: Record<string, ImageUpdateData>;
+		updateInfoByRef?: Record<string, ImageUpdateResponse>;
 		onRefresh?: () => Promise<void>;
 	}
 
 	let { services = [], projectId, environmentId, updateInfoByRef = {}, onRefresh }: Props = $props();
 
-	function serviceImageRef(service: RuntimeService): string {
+	function serviceImageRef(service: ProjectRuntimeService): string {
 		return service.serviceConfig?.image || service.image || '';
 	}
 
@@ -44,7 +44,7 @@
 	const canRestartProject = $derived(hasPermission('projects:restart', currentEnvId));
 	const canDeleteContainer = $derived(hasPermission('containers:delete', currentEnvId));
 
-	type ServiceWithId = RuntimeService & { id: string };
+	type ServiceWithId = ProjectRuntimeService & { id: string };
 
 	const servicesWithIds = $derived<ServiceWithId[]>(
 		(services ?? []).map((service) => ({

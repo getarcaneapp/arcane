@@ -31,18 +31,20 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type {
+		SwarmServiceInspect,
+		SwarmServiceModeSpec,
+		SwarmServiceMount,
+		SwarmServiceNetworkDetail,
+		SwarmServicePort
+	} from '#lib/types/swarm.js';
+	import type {
 		RawServiceNetworkAttachment,
 		RawServiceVirtualIP,
 		RawSwarmServiceMount,
 		RawSwarmServicePort,
 		ServiceNetworkAttachment,
-		ServiceNetworkDetail,
-		ServiceVirtualIP,
-		SwarmServiceInspect,
-		SwarmServiceMount,
-		SwarmServicePort,
-		SwarmServiceModeSpec
-	} from '#lib/types/swarm.js';
+		ServiceVirtualIP
+	} from '#lib/types/ui/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import {
@@ -166,7 +168,7 @@
 	const virtualIPs = $derived<ServiceVirtualIP[]>(
 		((service?.endpoint?.['VirtualIPs'] as RawServiceVirtualIP[] | undefined) ?? []).map(normalizeVirtualIP)
 	);
-	const networkDetails = $derived<Record<string, ServiceNetworkDetail>>(service?.networkDetails ?? {});
+	const networkDetails = $derived<Record<string, SwarmServiceNetworkDetail>>(service?.networkDetails ?? {});
 
 	const hasEnvVars = $derived(envVars.length > 0);
 	const hasLabels = $derived(Object.keys(labels).length > 0);

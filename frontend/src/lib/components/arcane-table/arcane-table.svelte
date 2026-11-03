@@ -14,7 +14,8 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { rowKey, type EnvironmentFailure } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -455,6 +456,7 @@
 					return renderComponent(ArcaneTableHeader, {
 						column: spec.sortable || spec.clientSort ? column : undefined,
 						title: spec.title,
+						align: spec.align,
 						class: spec.class
 					});
 				},

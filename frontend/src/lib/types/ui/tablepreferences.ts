@@ -1,6 +1,6 @@
 import type { ColumnFiltersState } from '@tanstack/table-core';
 
-import type { FilterMap } from './shared';
+import type { FilterMap } from './pagination';
 
 export type PersistedPreferencesSnapshot = {
 	hiddenColumns: string[];

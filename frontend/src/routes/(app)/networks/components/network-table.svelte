@@ -1,9 +1,10 @@
 <script module lang="ts">
 	import { resolve } from '$app/paths';
 
-	import type { NetworkSummaryDto } from '#lib/types/docker.js';
+	import type { NetworkSummary } from '#lib/types/network.js';
+	import type { NetworksPaginatedResponse } from '#lib/types/ui/network.js';
 
-	function ipamValues(item: NetworkSummaryDto, key: 'subnet' | 'gateway'): string[] {
+	function ipamValues(item: NetworkSummary, key: 'subnet' | 'gateway'): string[] {
 		return (item.ipam?.config ?? []).map((c) => c[key]).filter((v): v is string => !!v);
 	}
 </script>
@@ -26,9 +27,9 @@
 	import { NetworksIcon, GlobeIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { networkService, type NetworksPaginatedResponse } from '#lib/services/network-service.js';
+	import { networkService } from '#lib/services/network-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -38,7 +39,7 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	type FieldVisibility = Record<string, boolean>;
-	type NetworkRow = EnvironmentRow<NetworkSummaryDto>;
+	type NetworkRow = EnvironmentRow<NetworkSummary>;
 	type NetworkPage = EnvironmentPage<NetworksPaginatedResponse>;
 
 	let {

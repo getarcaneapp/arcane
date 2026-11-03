@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { m } from '#lib/paraglide/messages.js';
-	import type { AppVersionInformation } from '#lib/types/settings.js';
+	import type { VersionInfo } from '#lib/types/version.js';
 
 	let {
 		versionInformation,
 		newestVersion,
 		releasedAgo = ''
 	}: {
-		versionInformation?: AppVersionInformation;
+		versionInformation?: VersionInfo;
 		newestVersion?: string;
 		releasedAgo?: string;
 	} = $props();

@@ -9,7 +9,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
-	import type { GitOpsBackupFileChange, GitOpsSync } from '#lib/types/automation.js';
+	import type { GitOpsBackupFileChange, GitOpsSync } from '#lib/types/gitops.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 

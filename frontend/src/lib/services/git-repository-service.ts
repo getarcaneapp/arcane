@@ -1,12 +1,7 @@
-import type {
-	GitRepositoryCreate,
-	GitRepositoryUpdate,
-	GitRepository,
-	GitRepositoryTestResponse,
-	BranchesResponse,
-	BrowseResponse
-} from '#lib/types/automation.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { Paginated } from '#lib/types/base.js';
+import type { GitBranchesResponse, GitOpsBrowseResponse, GitRepository, GitRepositoryTestResponse } from '#lib/types/gitops.js';
+import type { GitRepositoryCreate, GitRepositoryUpdate } from '#lib/types/ui/gitops.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService from './api-service';
@@ -39,11 +34,11 @@ class GitRepositoryService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/customize/git/repositories/${id}`, {}, { params }));
 	}
 
-	async getBranches(id: string): Promise<BranchesResponse> {
+	async getBranches(id: string): Promise<GitBranchesResponse> {
 		return this.handleResponse(this.api.get(`/customize/git/repositories/${id}/branches`));
 	}
 
-	async browseFiles(id: string, branch: string, path?: string): Promise<BrowseResponse> {
+	async browseFiles(id: string, branch: string, path?: string): Promise<GitOpsBrowseResponse> {
 		const params = { branch, ...(path && { path }) };
 		return this.handleResponse(this.api.get(`/customize/git/repositories/${id}/files`, { params }));
 	}

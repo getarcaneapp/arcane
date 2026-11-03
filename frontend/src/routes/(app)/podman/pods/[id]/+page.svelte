@@ -24,7 +24,8 @@
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { podmanService, type PodmanPodAction } from '#lib/services/podman-service.js';
+	import { podmanService } from '#lib/services/podman-service.js';
+	import type { PodmanPodAction } from '#lib/types/ui/podman.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { podmanStateVariant } from '#lib/utils/podman.js';

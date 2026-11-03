@@ -17,8 +17,9 @@
 		ExternalLinkIcon
 	} from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import type { FileEntry } from '#lib/types/shared.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import type { WorkspaceFileEntry } from '#lib/types/workspace.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { bytes, formatDateTimeShort, instantEpochMilliseconds } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -37,15 +38,15 @@
 		onRestoreFromBackup,
 		minimal = false
 	}: {
-		files: FileEntry[];
+		files: WorkspaceFileEntry[];
 		currentPath: string;
 		persistKey?: string;
 		onNavigate: (path: string) => void;
 		onRefresh: () => void;
-		onDelete?: (file: FileEntry) => Promise<unknown>;
-		onDownload: (file: FileEntry) => Promise<void>;
-		onPreview: (file: FileEntry) => void;
-		onRestoreFromBackup?: (file: FileEntry) => void;
+		onDelete?: (file: WorkspaceFileEntry) => Promise<unknown>;
+		onDownload: (file: WorkspaceFileEntry) => Promise<void>;
+		onPreview: (file: WorkspaceFileEntry) => void;
+		onRestoreFromBackup?: (file: WorkspaceFileEntry) => void;
 		minimal?: boolean;
 	} = $props();
 
@@ -63,7 +64,12 @@
 	// svelte-ignore state_referenced_locally
 	void mobileFieldVisibility;
 
-	function compareByColumn(a: FileEntry, b: FileEntry, column: string, modTimeMs: Map<FileEntry, number> | null): number {
+	function compareByColumn(
+		a: WorkspaceFileEntry,
+		b: WorkspaceFileEntry,
+		column: string,
+		modTimeMs: Map<WorkspaceFileEntry, number> | null
+	): number {
 		switch (column) {
 			case 'size':
 				return Number(a.size) - Number(b.size);
@@ -91,7 +97,7 @@
 		});
 	});
 
-	const itemsPaginated = $derived<Paginated<FileEntry & { id: string }>>({
+	const itemsPaginated = $derived<Paginated<WorkspaceFileEntry & { id: string }>>({
 		data: sortedFiles.map((f) => ({ ...f, id: f.path })),
 		pagination: {
 			currentPage: 1,
@@ -105,7 +111,7 @@
 		return bytes.format(value, { unitSeparator: ' ' }) ?? '-';
 	}
 
-	async function handleDelete(file: FileEntry) {
+	async function handleDelete(file: WorkspaceFileEntry) {
 		if (!onDelete) return;
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: file.name }),
@@ -131,7 +137,7 @@
 		});
 	}
 
-	async function handleDownload(file: FileEntry) {
+	async function handleDownload(file: WorkspaceFileEntry) {
 		const operationResult2 = await tryCatch(
 			(async () => {
 				await onDownload(file);
@@ -148,7 +154,7 @@
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
 		{ accessorKey: 'modTime', title: m.common_created(), sortable: true, cell: CreatedCell }
-	] satisfies ColumnSpec<FileEntry & { id: string }>[];
+	] satisfies ColumnSpec<WorkspaceFileEntry & { id: string }>[];
 
 	const mobileFields = [
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
@@ -156,7 +162,7 @@
 	];
 </script>
 
-{#snippet NameCell({ item }: { item: FileEntry })}
+{#snippet NameCell({ item }: { item: WorkspaceFileEntry })}
 	<div class="flex items-center gap-2">
 		{#if item.isDirectory}
 			<FolderOpenIcon class={minimal ? 'size-4 text-muted-foreground' : 'size-4 text-info'} />
@@ -193,7 +199,7 @@
 	</div>
 {/snippet}
 
-{#snippet SizeCell({ item, value }: { item: FileEntry; value: any })}
+{#snippet SizeCell({ item, value }: { item: WorkspaceFileEntry; value: any })}
 	<span class="text-sm text-muted-foreground">
 		{item.isDirectory ? '--' : formatBytes(Number(value))}
 	</span>
@@ -205,7 +211,7 @@
 	</span>
 {/snippet}
 
-{#snippet RowActions({ item }: { item: FileEntry })}
+{#snippet RowActions({ item }: { item: WorkspaceFileEntry })}
 	<RowActionsMenu openMenuLabel={m.common_open_menu()}>
 		{#if !item.isDirectory}
 			<DropdownMenu.Item onclick={() => onPreview(item)}>
@@ -237,7 +243,7 @@
 	item,
 	mobileFieldVisibility
 }: {
-	item: FileEntry;
+	item: WorkspaceFileEntry;
 	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard

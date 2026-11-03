@@ -9,7 +9,8 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { settingsService } from '#lib/services/settings-service.js';
-	import type { GitOpsSync, GitOpsSyncCreate, GitOpsSyncMode, GitOpsSyncUpdate } from '#lib/types/automation.js';
+	import type { GitOpsSync, GitOpsSyncMode } from '#lib/types/gitops.js';
+	import type { GitOpsSyncCreate, GitOpsSyncUpdate } from '#lib/types/ui/gitops.js';
 
 	import GitOpsSyncForm from './gitops-sync-form.svelte';
 

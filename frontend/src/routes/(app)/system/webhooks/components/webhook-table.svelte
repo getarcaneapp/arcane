@@ -17,8 +17,9 @@
 	import * as m from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { webhookService } from '#lib/services/webhook-service.js';
-	import type { Webhook } from '#lib/types/environment.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import type { Webhook } from '#lib/types/webhook.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import type { EnvironmentPage, EnvironmentRow } from '#lib/utils/environments.js';
 	import { formatDateTime } from '#lib/utils/formatting.js';

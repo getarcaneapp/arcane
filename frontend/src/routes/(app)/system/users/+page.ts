@@ -1,7 +1,7 @@
 import { environmentListQuery } from '#lib/query/environments.js';
 import { roleAllQuery } from '#lib/query/roles.js';
 import { userListQuery } from '#lib/query/users.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 
 import type { PageLoad } from './$types';

@@ -14,19 +14,19 @@
 	import { AlertTriangleIcon, ArrowDownIcon, ArrowUpIcon, InfoIcon, ScanIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import type { VulnerabilityRiskDrivers, VulnerabilityRiskImage } from '#lib/types/environment.js';
+	import type { RiskDrivers, RiskImage } from '#lib/types/vulnerability.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
 	import {
 		getRiskBandDisplay,
 		getSeverityBarClass,
 		getSeverityLabel,
 		getSeveritySegments,
-		type RiskOverview,
+		type MergedRiskOverview,
 		type ShareBarSegment
 	} from '#lib/utils/vulnerability.js';
 
 	interface Props {
-		overview: RiskOverview;
+		overview: MergedRiskOverview;
 		onRetry: () => Promise<void>;
 		onSelectVulnerability: (vulnerabilityId: string) => void;
 	}
@@ -56,7 +56,7 @@
 	});
 
 	type Driver = {
-		key: keyof VulnerabilityRiskDrivers;
+		key: keyof RiskDrivers;
 		label: string;
 		help: string;
 		// Worsening drivers show a week-over-week delta; the rest show their denominator.
@@ -105,13 +105,13 @@
 		}
 	]);
 
-	function driverDelta(key: keyof VulnerabilityRiskDrivers): number | null {
+	function driverDelta(key: keyof RiskDrivers): number | null {
 		const previous = overview.drivers7dAgo;
 		if (!previous) return null;
 		return overview.drivers[key] - previous[key];
 	}
 
-	function imageUsageLabel(image: VulnerabilityRiskImage): string {
+	function imageUsageLabel(image: RiskImage): string {
 		switch (image.exposure) {
 			case 'running':
 				return m.security_running_containers({ count: image.runningContainers });

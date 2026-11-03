@@ -7,7 +7,7 @@
 	import { Progress } from '#lib/components/ui/progress/index.js';
 	import { CloseIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import type { ChunkedUploadProgress, UploadProgressCallback } from '#lib/services/upload-service.js';
+	import type { ChunkedUploadProgress, UploadProgressCallback } from '#lib/types/ui/upload.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 

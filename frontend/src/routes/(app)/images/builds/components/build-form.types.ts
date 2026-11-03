@@ -1,4 +1,4 @@
-import type { FormInput } from '#lib/types/form.js';
+import type { FormInput } from '#lib/types/ui/form.js';
 
 export type SelectOption = {
 	label: string;

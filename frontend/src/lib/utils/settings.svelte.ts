@@ -1,6 +1,6 @@
 import { z } from 'zod/v4';
 
-import type { FormInputs } from '#lib/types/form.js';
+import type { FormInputs } from '#lib/types/ui/form.js';
 
 export function preventDefault<T extends Event>(fn: (event: T) => unknown) {
 	return (event: T) => {

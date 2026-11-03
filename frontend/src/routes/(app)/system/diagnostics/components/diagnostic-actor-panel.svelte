@@ -8,7 +8,7 @@
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { ActorDiagnostics, ActorTypeInfo } from '#lib/types/diagnostics.js';
+	import type { ActorDiagnostics, ActorTypeInfo } from '#lib/types/system.js';
 	import { cn } from '#lib/utils.js';
 	import { formatTime } from '#lib/utils/formatting.js';
 	import { createActorDiagnosticsWebSocket, ReconnectingWebSocket } from '#lib/utils/ws.js';

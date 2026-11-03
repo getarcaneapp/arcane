@@ -9,7 +9,7 @@
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import { ArrowLeftIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { FormInputs } from '#lib/types/form.js';
+	import type { FormInputs } from '#lib/types/ui/form.js';
 	import { preventDefault } from '#lib/utils/settings.svelte.js';
 
 	import EditableName from '../../../projects/components/editable-name.svelte';

@@ -3,13 +3,13 @@
 	import { Progress } from '#lib/components/ui/progress/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { ContainerDetailsDto, ContainerStats as ContainerStatsType } from '#lib/types/docker.js';
+	import type { ContainerDetails, ContainerStats as ContainerStatsType } from '#lib/types/container.js';
 	import { bytes } from '#lib/utils/formatting.js';
 
 	import { getUsageTone } from '../container-table.helpers';
 
 	interface Props {
-		container: ContainerDetailsDto;
+		container: ContainerDetails;
 		stats: ContainerStatsType | null;
 		cpuUsagePercent: number;
 		cpuLimit: number;

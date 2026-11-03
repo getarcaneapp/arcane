@@ -27,7 +27,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
-	import type { GitOpsBackupHistoryEntry, GitOpsBackupState } from '#lib/types/automation.js';
+	import type { GitOpsBackupHistoryEntry, GitOpsBackupState } from '#lib/types/gitops.js';
 	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';

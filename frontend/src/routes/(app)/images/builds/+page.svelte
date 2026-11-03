@@ -18,9 +18,9 @@
 	import { imageService } from '#lib/services/image-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { ImageBuildRecord, ImageBuildRequest } from '#lib/types/docker.js';
-	import type { ResolvedSettings } from '#lib/types/settings.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { ImageBuildRecord, ImageBuildRequest } from '#lib/types/image.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import type { ResolvedSettings } from '#lib/types/ui/settings.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { isDepotBuildAvailable } from '#lib/utils/build-provider.js';
 	import { extractErrorMessage } from '#lib/utils/docker.js';

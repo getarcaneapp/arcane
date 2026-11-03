@@ -1,19 +1,20 @@
-import type { SettingsSearchResponse, SettingsCategory } from '#lib/types/shared.js';
+import type { Category } from '#lib/types/category.js';
+import type { SearchResponse } from '#lib/types/search.js';
 
 import { apiClient } from './api-service';
 
 class SettingsSearchService {
 	private baseUrl = '/settings';
 
-	async search(query: string): Promise<SettingsSearchResponse> {
-		const response = await apiClient.post<SettingsSearchResponse>(`${this.baseUrl}/search`, {
+	async search(query: string): Promise<SearchResponse> {
+		const response = await apiClient.post<SearchResponse>(`${this.baseUrl}/search`, {
 			query
 		});
 		return response.data;
 	}
 
-	async getCategories(): Promise<SettingsCategory[]> {
-		const response = await apiClient.get<SettingsCategory[]>(`${this.baseUrl}/categories`);
+	async getCategories(): Promise<Category[]> {
+		const response = await apiClient.get<Category[]>(`${this.baseUrl}/categories`);
 		return response.data;
 	}
 }

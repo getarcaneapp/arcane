@@ -7,7 +7,7 @@
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { ArrowRightIcon, ArrowDownIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { TableDisplayEntry } from '#lib/types/table-display.js';
+	import type { TableDisplayEntry } from '#lib/types/ui/tabledisplay.js';
 	import { cn } from '#lib/utils.js';
 
 	import { createVirtualizer } from '../ui/virtualizer.svelte';

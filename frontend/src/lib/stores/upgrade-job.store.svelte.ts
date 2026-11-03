@@ -6,7 +6,7 @@ import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 import { STREAM_CHANNEL_UPGRADE } from '#lib/services/stream-service.js';
 import { clientStream } from '#lib/stores/client-stream.svelte.js';
 import { versionStore } from '#lib/stores/version.store.svelte.js';
-import type { UpgradeJob } from '#lib/types/system-upgrade.js';
+import type { UpgradeJob } from '#lib/types/system.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 export const MANAGER_ENVIRONMENT_ID = '0';

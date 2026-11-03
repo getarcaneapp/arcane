@@ -15,9 +15,10 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { DockIcon, GlobeIcon, TrashIcon, NetworksIcon, InspectIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { swarmService, type SwarmServicesPaginatedResponse } from '#lib/services/swarm-service.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { SwarmServiceSummary, SwarmServicePort } from '#lib/types/swarm.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import type { SwarmServicesPaginatedResponse } from '#lib/types/ui/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { getSwarmServiceModeLabel, getSwarmServiceModeVariant } from '#lib/utils/docker.js';
 	import { type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';

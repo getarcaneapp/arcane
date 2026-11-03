@@ -1,4 +1,5 @@
-import type { Webhook, WebhookCreated, WebhookCreate, WebhookUpdate } from '#lib/types/environment.js';
+import type { WebhookCreate, WebhookUpdate } from '#lib/types/ui/webhook.js';
+import type { Webhook, WebhookCreated } from '#lib/types/webhook.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';
 

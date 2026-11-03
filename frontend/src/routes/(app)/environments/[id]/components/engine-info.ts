@@ -1,6 +1,6 @@
 import { m } from '#lib/paraglide/messages.js';
-import type { DockerInfo } from '#lib/types/docker.js';
-import type { PodmanInfo, PodmanInfoIdMap, PodmanStatus } from '#lib/types/podman.js';
+import type { DockerInfo } from '#lib/types/dockerinfo.js';
+import type { PodmanInfo, PodmanInfoIDMap, PodmanStatus } from '#lib/types/podman.js';
 import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
 
 type Value = string | number | null | undefined;
@@ -48,7 +48,7 @@ function firstLine(value: string | undefined): string {
 	return value?.split('\n')[0]?.trim() ?? '';
 }
 
-function formatIdMap(entries: PodmanInfoIdMap[] | undefined): string {
+function formatIdMap(entries: PodmanInfoIDMap[] | undefined): string {
 	return (entries ?? []).map((entry) => `${entry.container_id}:${entry.host_id}:${entry.size}`).join(', ');
 }
 

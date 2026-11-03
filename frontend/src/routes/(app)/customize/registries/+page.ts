@@ -1,5 +1,5 @@
 import { containerRegistryListQuery, containerRegistryPullUsageQuery } from '#lib/query/container-registries.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 

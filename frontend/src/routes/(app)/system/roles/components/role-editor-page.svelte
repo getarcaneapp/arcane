@@ -3,7 +3,8 @@
 	import { ShieldAlertIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { PermissionsManifest, Role, RoleWritable } from '#lib/types/auth.js';
+	import type { PermissionsManifest, Role } from '#lib/types/role.js';
+	import type { RoleWritable } from '#lib/types/ui/role.js';
 
 	type Props = {
 		title: string;

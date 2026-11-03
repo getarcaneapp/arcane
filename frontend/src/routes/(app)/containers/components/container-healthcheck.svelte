@@ -6,16 +6,16 @@
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { HealthIcon, SettingsIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { ContainerDetailsDto, ContainerHealthLogEntry, ContainerHealthcheckDto } from '#lib/types/docker.js';
+	import type { ContainerDetails, ContainerHealthLogEntry, ContainerHealthcheck } from '#lib/types/container.js';
 	import { formatDateTime, formatRelativeTime, parseInstant } from '#lib/utils/formatting.js';
 
 	interface Props {
-		container: ContainerDetailsDto;
+		container: ContainerDetails;
 	}
 
 	let { container }: Props = $props();
 
-	const healthcheck = $derived<ContainerHealthcheckDto | undefined>(container?.config?.healthcheck);
+	const healthcheck = $derived<ContainerHealthcheck | undefined>(container?.config?.healthcheck);
 	const health = $derived(container?.state?.health);
 
 	// Docker sends duration values in nanoseconds. Convert to a compact human string.

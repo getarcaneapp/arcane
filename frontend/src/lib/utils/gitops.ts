@@ -1,4 +1,4 @@
-import type { GitOpsSync } from '#lib/types/automation.js';
+import type { GitOpsSync } from '#lib/types/gitops.js';
 import { toGitRouteUrl, toGitWebUrl } from '#lib/utils/navigation.js';
 
 function composeDirectory(sync: GitOpsSync): string {

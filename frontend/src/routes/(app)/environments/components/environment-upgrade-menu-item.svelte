@@ -7,7 +7,7 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 	import type { Environment } from '#lib/types/environment.js';
-	import type { AppVersionInformation } from '#lib/types/settings.js';
+	import type { VersionInfo } from '#lib/types/version.js';
 
 	let {
 		environment,
@@ -20,7 +20,7 @@
 		isOnline: boolean;
 		disabled?: boolean;
 		isUpgradingThis?: boolean;
-		onSelect: (env: Environment, versionInfo: AppVersionInformation) => void;
+		onSelect: (env: Environment, versionInfo: VersionInfo) => void;
 	} = $props();
 
 	const versionQuery = createQuery(() => ({

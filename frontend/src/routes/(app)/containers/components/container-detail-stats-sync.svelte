@@ -2,7 +2,7 @@
 	import { refreshAll } from '$app/navigation';
 	import { onDestroy } from 'svelte';
 
-	import type { ContainerStats as ContainerStatsType, ContainerStatsHistorySample } from '#lib/types/docker.js';
+	import type { ContainerStats as ContainerStatsType, ContainerStatsHistorySample } from '#lib/types/container.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { createContainerStatsWebSocket, type ReconnectingWebSocket } from '#lib/utils/ws.js';
 

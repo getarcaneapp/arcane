@@ -479,8 +479,6 @@
   "auth_oidc_access_denied": "Access was denied. You may have cancelled the login or lack permission.",
   "auth_oidc_invalid_request": "Invalid authentication request. Please try again.",
   "auth_oidc_auth_failed": "Authentication failed. Please try again.",
-  "auth_oidc_state_mismatch": "Security validation failed. Please try logging in again.",
-  "auth_oidc_session_expired": "Authentication session expired. Please try again.",
   "auth_oidc_user_info_missing": "Authentication succeeded but user information is missing.",
   "auth_oidc_callback_error": "An error occurred during authentication. Please try again.",
   "auth_oidc_network_error": "Network error during authentication. Please check your connection and try again.",
@@ -4388,5 +4386,9 @@
   "restart_tunnel_confirm_description": "This closes the agent tunnel and waits for the agent to reconnect. Open logs, terminals, and streams for this environment will disconnect.",
   "restart_tunnel_success": "Agent tunnel reconnected",
   "restart_tunnel_pending": "Agent tunnel closed. The agent has not reconnected yet.",
-  "restart_tunnel_failed": "Failed to restart agent tunnel"
+  "restart_tunnel_failed": "Failed to restart agent tunnel",
+  "activity_type_container_edit": "Container Edit",
+  "activity_type_container_kill": "Container Kill",
+  "activity_type_container_pause": "Container Pause",
+  "activity_type_container_unpause": "Container Unpause"
 }

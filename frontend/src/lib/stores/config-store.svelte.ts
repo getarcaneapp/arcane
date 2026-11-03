@@ -1,6 +1,7 @@
 import { settingsService } from '#lib/services/settings-service.js';
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
-import type { ResolvedSettings, SettingKey, Settings } from '#lib/types/settings.js';
+import type { SettingKey, Settings } from '#lib/types/settings.js';
+import type { ResolvedSettings } from '#lib/types/ui/settings.js';
 
 let resolved = $state.raw<ResolvedSettings>();
 

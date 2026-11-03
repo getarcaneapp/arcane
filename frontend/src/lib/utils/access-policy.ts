@@ -1,5 +1,6 @@
-import type { AccessSurface, PermissionsManifest, User } from '#lib/types/auth.js';
-import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/auth.js';
+import type { AccessSurface, PermissionsManifest } from '#lib/types/role.js';
+import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/role.js';
+import type { User } from '#lib/types/user.js';
 
 type SurfaceIndex = Map<string, AccessSurface>;
 

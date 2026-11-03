@@ -19,11 +19,15 @@ import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/envir
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import { versionStore } from '#lib/stores/version.store.svelte.js';
-import type { PermissionsManifest, SessionBootstrap, User } from '#lib/types/auth.js';
+import type { SessionBootstrap } from '#lib/types/auth.js';
 import type { Environment } from '#lib/types/environment.js';
-import { PODMAN_STATUS_DEPENDENCY, type PodmanStatus } from '#lib/types/podman.js';
-import type { AppVersionInformation, ResolvedSettings } from '#lib/types/settings.js';
+import { type PodmanStatus } from '#lib/types/podman.js';
+import type { PermissionsManifest } from '#lib/types/role.js';
 import type { SwarmRuntimeStatus } from '#lib/types/swarm.js';
+import { PODMAN_STATUS_DEPENDENCY } from '#lib/types/ui/podman.js';
+import type { ResolvedSettings } from '#lib/types/ui/settings.js';
+import type { User } from '#lib/types/user.js';
+import type { VersionInfo } from '#lib/types/version.js';
 import { extractApiErrorStatus, isAuthRejectionError } from '#lib/utils/api.js';
 import { getAuthRedirectPath } from '#lib/utils/auth.js';
 import { isEnvironmentOnline } from '#lib/utils/docker.js';
@@ -75,7 +79,7 @@ let knownPodmanStatuses: Record<string, PodmanStatus> = {};
 let appliedUser: User | undefined;
 let appliedEnvironments: Environment[] | undefined;
 let appliedSettings: ResolvedSettings | undefined;
-let appliedVersion: AppVersionInformation | undefined;
+let appliedVersion: VersionInfo | undefined;
 let seededBootstrap: SessionBootstrap | undefined;
 
 function dataOrNull<T>(promise: Promise<T>): Promise<T | null> {

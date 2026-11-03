@@ -1,6 +1,6 @@
 import { networkService } from '#lib/services/network-service.js';
 import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-import type { TopologyEdgeDto, TopologyNodeDto } from '#lib/types/docker.js';
+import type { NetworkTopologyEdge, NetworkTopologyNode } from '#lib/types/network.js';
 import {
 	environmentRows,
 	readAcrossEnvironments,
@@ -10,8 +10,8 @@ import {
 } from '#lib/utils/environments.js';
 
 export type EnvironmentTopology = {
-	nodes: EnvironmentRow<TopologyNodeDto>[];
-	edges: TopologyEdgeDto[];
+	nodes: EnvironmentRow<NetworkTopologyNode>[];
+	edges: NetworkTopologyEdge[];
 	failedEnvironments: EnvironmentFailure[];
 	excludedEnvironments: EnvironmentRef[];
 };
