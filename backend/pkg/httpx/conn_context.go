@@ -134,6 +134,8 @@ func tcpConnFrom(conn net.Conn) *net.TCPConn {
 			return typed
 		case interface{ NetConn() net.Conn }:
 			conn = typed.NetConn()
+		case interface{ Raw() net.Conn }:
+			conn = typed.Raw()
 		default:
 			return nil
 		}
