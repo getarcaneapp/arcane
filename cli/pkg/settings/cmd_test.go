@@ -44,8 +44,8 @@ func TestSettingsSetSendsSingleKeyPatch(t *testing.T) {
 func TestSettingsSetRoutesScopeToEndpoint(t *testing.T) {
 	tests := []struct {
 		name     string
-		args     []string
 		wantPath string
+		args     []string
 	}{
 		{name: "environment", args: []string{"--env", "3", "settings", "set", "dockerApiTimeout", "60"}, wantPath: "/api/environments/3/settings"},
 		{name: "manager", args: []string{"--env", "3", "settings", "set", "--scope", "manager", "analyticsEnabled", "false"}, wantPath: "/api/settings"},

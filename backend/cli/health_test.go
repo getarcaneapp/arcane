@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -38,6 +39,13 @@ func TestBuildHealthURLInternalDefaults(t *testing.T) {
 
 		require.True(t, strings.HasPrefix(healthURL, "http://127.0.0.1:8443"),
 			"unexpected health URL: %s", healthURL)
+	})
+
+	t.Run("tls_enabled", func(t *testing.T) {
+		healthURL, err := buildHealthURL(&config.Config{TLSEnabled: true})
+
+		require.NoError(t, err)
+		require.Equal(t, "https://127.0.0.1:3552/api/health", healthURL)
 	})
 }
 
@@ -84,6 +92,18 @@ func TestRunHealthCommand(t *testing.T) {
 		require.NoError(t, err,
 			"health command failed: %v", err)
 	}
+}
+
+func TestRunHealthCommandTLS(t *testing.T) {
+	s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer s.Close()
+
+	_, port, err := net.SplitHostPort(s.Listener.Addr().String())
+	require.NoError(t, err)
+
+	require.NoError(t, runHealthCommand(t.Context(), &config.Config{Port: port, TLSEnabled: true}, 2*time.Second))
 }
 
 func TestRunHealthCommandInternalNon2xx(t *testing.T) {

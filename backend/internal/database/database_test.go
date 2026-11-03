@@ -469,7 +469,9 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 	assert.Contains(t, rolePermissionsWhere(`id = 'r8'`)["r8"], "build-workspaces:list")
 	assert.Contains(t, apiKeyPermissionsFor("k3"), "build-workspaces:list@e1")
 	var shortIDs int
-	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_permissions WHERE id NOT IN ('p2', 'p3', 'p4', 'p7', 'p8') AND id NOT LIKE 'a%' AND id <> 'b1' AND length(id) <> 36`).Scan(&shortIDs))
+	require.NoError(t, rawDB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM api_key_permissions WHERE id NOT IN ('p2', 'p3', 'p4', 'p7', 'p8') AND id NOT LIKE 'a%' AND id <> 'b1' AND length(id) <> 36`,
+	).Scan(&shortIDs))
 	assert.Zero(t, shortIDs)
 
 	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 101))

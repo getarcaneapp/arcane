@@ -21,6 +21,10 @@ import (
 	"getarcane.dev/types/v3"
 )
 
+type openTunnelConn struct {
+	agent.TunnelConnection
+}
+
 const (
 	proxyTestEnvID = "remote-1"
 )
@@ -286,14 +290,14 @@ func TestEnvironmentMiddleware_ForwardsResolvedHeadersOnly(t *testing.T) {
 	caller.AddEnv("env-other", authz.PermContainersDelete)
 
 	tests := []struct {
-		name           string
 		catalog        *string
+		perms          *authz.PermissionSet
+		name           string
 		clientSupplied string
 		wantHeader     string
 		userID         string
 		userName       string
 		wantInitiator  string
-		perms          *authz.PermissionSet
 	}{
 		{name: "forwards the caller's preference", catalog: new("dashboard-icons"), wantHeader: "dashboard-icons", userID: "user-1", userName: "operator", wantInitiator: "user-1"},
 		{name: "strips a client-supplied header when the caller has no preference", clientSupplied: "dashboard-icons", wantHeader: ""},
@@ -390,10 +394,6 @@ func TestEnvironmentMiddleware_ForwardsResolvedHeadersOnly(t *testing.T) {
 			assert.False(t, agentPerms.Sudo)
 		})
 	}
-}
-
-type openTunnelConn struct {
-	agent.TunnelConnection
 }
 
 func (openTunnelConn) IsClosed() bool {

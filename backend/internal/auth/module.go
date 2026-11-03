@@ -14,8 +14,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-var buildableRoutes []func(huma.API, *AuthService)
-
 type (
 	Module struct {
 		service                *AuthService
@@ -24,6 +22,8 @@ type (
 		beginMFAAuthentication func(context.Context, string, types.SessionMeta, string) (*types.MFAChallenge, error)
 	}
 )
+
+var buildableRoutes []func(huma.API, *AuthService)
 
 func New(
 	service *AuthService,

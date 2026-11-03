@@ -37,6 +37,7 @@ type (
 		envName             string
 		defaultValue        string
 		valueType           string
+		scope               SettingScope
 		values              []string
 		min                 mo.Option[float64]
 		max                 mo.Option[float64]
@@ -48,7 +49,6 @@ type (
 		isEncrypted         bool
 		isInternal          bool
 		isPropagated        bool
-		scope               SettingScope
 	}
 
 	//nolint:lll // Reflection metadata must remain in single struct-tag literals.

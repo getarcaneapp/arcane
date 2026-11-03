@@ -28,8 +28,8 @@ type (
 	}
 
 	TriggerWebhookOutput struct {
-		Status int
 		Body   map[string]any
+		Status int
 	}
 
 	CreateWebhookInput struct {

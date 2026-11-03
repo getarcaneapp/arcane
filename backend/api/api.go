@@ -121,8 +121,6 @@ type (
 	}
 )
 
-var featureRoutes []func(huma.API, SetupParams)
-
 const (
 	openAPIPath    = "/openapi"
 	schemasPath    = "/schemas"
@@ -148,6 +146,8 @@ const (
   </body>
 </html>`
 )
+
+var featureRoutes []func(huma.API, SetupParams)
 
 // SetupAPI creates and configures the Huma API attached to the Echo router.
 func SetupAPI(p SetupParams) *authz.OperationRecorder {

@@ -342,8 +342,8 @@ func TestBuildService_BuildImage_FailureRecordsHistoryAndEvent(t *testing.T) {
 
 func TestBuildService_BuildImage_PushRequiresImagesPushPermission(t *testing.T) {
 	tests := []struct {
-		name        string
 		permissions *authz.PermissionSet
+		name        string
 		wantErr     bool
 	}{
 		{name: "no permissions", wantErr: true},

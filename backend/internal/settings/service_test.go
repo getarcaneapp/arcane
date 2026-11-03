@@ -223,13 +223,13 @@ func TestSettingsServiceValidateScope(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := svc.ValidateScope(tt.scope, types.SettingsUpdate{tt.key: "x"})
+			scopeErr := svc.ValidateScope(tt.scope, types.SettingsUpdate{tt.key: "x"})
 			if !tt.wantErr {
-				require.NoError(t, err)
+				require.NoError(t, scopeErr)
 				return
 			}
-			require.ErrorIs(t, err, common.ErrValidation)
-			fieldErr, ok := errors.AsType[*types.FieldError](err)
+			require.ErrorIs(t, scopeErr, common.ErrValidation)
+			fieldErr, ok := errors.AsType[*types.FieldError](scopeErr)
 			require.True(t, ok)
 			require.Equal(t, tt.key, fieldErr.Field)
 		})
