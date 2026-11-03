@@ -320,6 +320,16 @@ export interface SwarmNodeAgentReconcileResponse {
 	results: SwarmNodeAgentReconcileResult[];
 }
 
+export interface SwarmNodeAgentEnrollment {
+	enabled: boolean;
+}
+
+export interface SwarmNodeAgentEnrollmentToken {
+	token: string;
+	deployCommand: string;
+	stack: string;
+}
+
 export type SwarmNodeWritable = 'name' | 'version' | 'labels' | 'role' | 'availability';
 
 export type SwarmNodeUpdate = UpdateRequest<SwarmNode, SwarmNodeWritable>;

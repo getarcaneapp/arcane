@@ -17,8 +17,10 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SwarmNodesTable from './components/nodes-table.svelte';
+	import SwarmAgentEnrollmentDialog from './components/swarm-agent-enrollment-dialog.svelte';
 
 	let { data } = $props();
+	let isEnrollmentDialogOpen = $state(false);
 
 	const pageState = new ResourceListPageState<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
 	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm-nodes:list'));
@@ -46,6 +48,7 @@
 	let active = true;
 	const reconciled = new Set<string>();
 	const reconcilableManagers = $derived(swarm.managers.filter((env) => hasPermission('swarm-nodes:update', env.id)));
+	const enrollableEnvironments = $derived(swarm.environments.filter((env) => hasPermission('swarm-nodes:update', env.id)));
 
 	async function reconcileEnvironments(pending: typeof reconcilableManagers) {
 		for (const env of pending) reconciled.add(env.id);
@@ -72,13 +75,23 @@
 	);
 	const uncoveredNodeCount = $derived(uncoveredNodes.length);
 
-	const actionButtons = $derived(
-		createRefreshActionButtons({
+	const actionButtons = $derived.by(() => {
+		const buttons = createRefreshActionButtons({
 			refreshLabel: m.common_refresh(),
 			onRefresh: refresh,
 			refreshing: isRefreshing
-		})
-	);
+		});
+		if (enrollableEnvironments.length > 0) {
+			buttons.unshift({
+				id: 'agent-enrollment',
+				action: 'deploy',
+				placement: 'primary',
+				label: m.deploy_to_all_nodes(),
+				onclick: () => (isEnrollmentDialogOpen = true)
+			});
+		}
+		return buttons;
+	});
 
 	const statCards: StatCardConfig[] = $derived([
 		{
@@ -110,3 +123,5 @@
 		</div>
 	{/snippet}
 </ResourcePageLayout>
+
+<SwarmAgentEnrollmentDialog bind:open={isEnrollmentDialogOpen} environments={enrollableEnvironments} />

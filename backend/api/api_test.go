@@ -243,6 +243,7 @@ func TestSetupAPIForSpec_PublicRoutesOverrideSecurity(t *testing.T) {
 		{path: "/oidc/device/token", method: "POST"},
 		{path: "/environments/{id}/settings/public", method: "GET"},
 		{path: "/environments/pair", method: "POST"},
+		{path: "/swarm/agents/enroll", method: "POST"},
 		{path: "/version", method: "GET"},
 		{path: "/app/version", method: "GET"},
 	}
