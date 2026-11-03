@@ -392,9 +392,9 @@ func (a *coordinatorActor) install(ctx context.Context, state types.SchedulerCoo
 
 // repair flushes coordinators so schedule alarms and dispatches are restored.
 // Unless all is set, it skips records without unfinished runs so idle coordinators can deactivate.
-func (q *Coordinator) repair(ctx context.Context, states []types.SchedulerCoordinatorState, all bool) (busy bool, err error) {
-	unfinished := func(state types.SchedulerCoordinatorState) bool {
-		return slices.ContainsFunc(state.Record.Runs, func(run types.SchedulerRun) bool {
+func (q *Coordinator) repair(ctx context.Context, states []coordinatorSummary, all bool) (busy bool, err error) {
+	unfinished := func(state coordinatorSummary) bool {
+		return slices.ContainsFunc(state.Record.Runs, func(run runSummary) bool {
 			return !run.Status.Terminal() && run.Status != types.RunStatusNeedsAttention
 		})
 	}

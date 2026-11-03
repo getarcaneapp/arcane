@@ -111,7 +111,7 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 	for _, jobID := range []string{"gitops-sync:first", "gitops-sync:second"} {
 		history, listErr := restored.List(t.Context(), "0", jobID, 1, 100)
 		require.NoError(t, listErr)
-		require.Equal(t, 100, history.Total)
+		require.Equal(t, retainedRuns, history.Total)
 		require.Equal(t, types.RunStatusFailed, history.Runs[0].Status)
 		state, nextRun, stateErr := restored.ScheduleState(t.Context(), jobID)
 		require.NoError(t, stateErr)
@@ -127,7 +127,7 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 	require.Equal(t, 1, history.Total)
 	require.Equal(t, time.UTC, history.Runs[0].CreatedAt.Location())
 	observer.unavailable.Store(false)
-	require.False(t, restored.retryActivitySync(t.Context(), coordinatorStates(t, restored)))
+	require.False(t, restored.retryActivitySync(t.Context(), coordinatorSummaries(t, restored)))
 	require.False(t, pendingActivitySync(t, restored))
 	require.Positive(t, observer.observed.Load())
 	_, exists, err := store.Get(t.Context(), key)
@@ -451,7 +451,7 @@ func TestLostDispatchAcknowledgementRetainsOneExecution(t *testing.T) {
 	state.Dispatches[key] = intent
 	state.Revision++
 	require.NoError(t, q.service.SetState(t.Context(), coordinatorType, id, state, nil))
-	_, err = q.repair(t.Context(), coordinatorStates(t, q), false)
+	_, err = q.repair(t.Context(), coordinatorSummaries(t, q), false)
 	require.NoError(t, err)
 	require.NoError(t, q.service.GetState(t.Context(), coordinatorType, id, &state))
 	require.Equal(t, original, state.Dispatches[key].JobID)

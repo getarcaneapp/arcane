@@ -50,6 +50,26 @@ type (
 		stopping     bool
 		started      bool
 	}
+
+	coordinatorSummary struct {
+		PendingActivitySync map[string]time.Time
+		Record              recordSummary
+	}
+
+	recordSummary struct {
+		EnvironmentID string
+		JobID         string
+		Runs          []runSummary
+	}
+
+	runSummary struct {
+		Status types.RunStatus
+	}
+
+	stateEntry[T any] struct {
+		State   T
+		ActorID string
+	}
 )
 
 // Submit persists acceptance before waking the dispatcher. Run IDs deduplicate
@@ -263,19 +283,23 @@ func (q *Coordinator) dispatch(ctx context.Context) {
 }
 
 func (q *Coordinator) pass(ctx context.Context, all, retain bool) (busy, pendingActivity, pruned bool, err error) {
-	states, err := q.states(ctx)
+	summaries, err := q.summaries(ctx)
 	if err != nil {
 		return false, true, false, err
 	}
-	pendingActivity = q.retryActivitySync(ctx, states)
+	pendingActivity = q.retryActivitySync(ctx, summaries)
 	if retain {
+		states, statesErr := q.states(ctx)
+		if statesErr != nil {
+			return false, true, false, statesErr
+		}
 		pruneErr := q.prune(ctx, states)
 		if pruneErr != nil && ctx.Err() == nil {
 			slog.ErrorContext(ctx, "Job retention failed", "error", pruneErr)
 		}
 		pruned = pruneErr == nil
 	}
-	busy, err = q.repair(ctx, states, all)
+	busy, err = q.repair(ctx, summaries, all)
 	return busy, pendingActivity, pruned, err
 }
 

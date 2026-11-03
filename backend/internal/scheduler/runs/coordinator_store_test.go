@@ -89,6 +89,7 @@ func benchmarkState(runs, receipts int) types.SchedulerCoordinatorState {
 func TestPrepareMutationMarksOnlyChangedActivity(t *testing.T) {
 	q := &Coordinator{}
 	state := benchmarkState(3, 2)
+	state.Record.Runs[1].Status = types.RunStatusRunning
 	unchanged := state.Record.Runs[0].UpdatedAt
 	finished := unchanged.Add(time.Minute)
 	explicit := unchanged.Add(2 * time.Minute)
@@ -188,4 +189,83 @@ func BenchmarkUpdateRun(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+func TestSummariesMatchFullStates(t *testing.T) {
+	q := newTestCoordinator(t)
+	observer := &activityObserverFake{}
+	observer.unavailable.Store(true)
+	q.SetObserver(observer)
+	_, err := q.Submit(t.Context(), types.SchedulerRequest{JobID: "local-job", Trigger: "manual"})
+	require.NoError(t, err)
+	_, err = q.Submit(t.Context(), types.SchedulerRequest{JobID: "remote-job", EnvironmentID: "e1", Trigger: "scheduled"})
+	require.NoError(t, err)
+
+	states := coordinatorStates(t, q)
+	want := make([]coordinatorSummary, 0, len(states))
+	for _, state := range states {
+		runs := make([]runSummary, 0, len(state.Record.Runs))
+		for _, run := range state.Record.Runs {
+			runs = append(runs, runSummary{Status: run.Status})
+		}
+		want = append(want, coordinatorSummary{
+			PendingActivitySync: state.PendingActivitySync,
+			Record: recordSummary{
+				EnvironmentID: state.Record.EnvironmentID,
+				JobID:         state.Record.JobID,
+				Runs:          runs,
+			},
+		})
+	}
+	require.Len(t, want, 2)
+	require.True(t, slices.ContainsFunc(want, func(summary coordinatorSummary) bool { return len(summary.PendingActivitySync) > 0 }))
+	require.ElementsMatch(t, want, coordinatorSummaries(t, q))
+}
+
+func TestRecordReadsOnlyRequestedJob(t *testing.T) {
+	q := newTestCoordinator(t)
+	local, err := q.Submit(t.Context(), types.SchedulerRequest{JobID: "shared-job", Trigger: "manual"})
+	require.NoError(t, err)
+	_, err = q.Submit(t.Context(), types.SchedulerRequest{JobID: "shared-job", EnvironmentID: "e1", Trigger: "manual"})
+	require.NoError(t, err)
+	_, err = q.Submit(t.Context(), types.SchedulerRequest{JobID: "other-job", Trigger: "manual"})
+	require.NoError(t, err)
+
+	record, err := q.Record(t.Context(), "0", "shared-job")
+	require.NoError(t, err)
+	require.Equal(t, "0", record.EnvironmentID)
+	require.Len(t, record.Runs, 1)
+	require.Equal(t, local.ID, record.Runs[0].ID)
+
+	missing, err := q.Record(t.Context(), "e2", "shared-job")
+	require.NoError(t, err)
+	require.Empty(t, missing.Runs)
+
+	list, err := q.List(t.Context(), "0", "shared-job", 1, 100)
+	require.NoError(t, err)
+	require.Equal(t, 1, list.Total)
+	require.Equal(t, local.ID, list.Runs[0].ID)
+
+	all, err := q.List(t.Context(), "0", "", 1, 100)
+	require.NoError(t, err)
+	require.Equal(t, 2, all.Total)
+}
+
+func TestPruneRunsCompactsOlderSucceededRuns(t *testing.T) {
+	q := &Coordinator{}
+	state := benchmarkState(retainedRuns+5, 0)
+	failed := retainedRuns - detailedRuns - 2
+	state.Record.Runs[failed].Status = types.RunStatusFailed
+	require.NoError(t, q.prepareMutation(&state, "0", "bench", func(record *types.SchedulerQueueRecord) error {
+		require.True(t, pruneRuns(record, time.Now().UTC()))
+		return nil
+	}))
+	runs := state.Record.Runs
+	require.Len(t, runs, retainedRuns)
+	for index, run := range runs {
+		detailed := index >= len(runs)-detailedRuns || run.Status == types.RunStatusFailed
+		require.Equal(t, detailed, run.Attempts != nil, run.ID)
+		require.Equal(t, detailed, run.Outcome.Targets != nil, run.ID)
+	}
+	require.Empty(t, state.PendingActivitySync)
 }

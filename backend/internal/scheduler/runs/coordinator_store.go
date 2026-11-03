@@ -23,10 +23,14 @@ import (
 )
 
 const (
-	queuePrefix = "jobs."
+	queuePrefix  = "jobs."
+	retainedRuns = 50
+	detailedRuns = 10
 )
 
 var (
+	compactableStatuses = []types.RunStatus{types.RunStatusSucceeded, types.RunStatusSkipped, types.RunStatusCanceled}
+
 	// ErrRunNotFound indicates that neither a run nor its receipt exists.
 	ErrRunNotFound = errors.New("job run not found")
 
@@ -109,11 +113,11 @@ func snapshotRuns(record types.SchedulerQueueRecord, digest *maphash.Hash) (map[
 	versions := make(map[string]time.Time, len(record.Runs)+len(record.Receipts))
 	for _, runs := range [][]types.SchedulerRun{record.Runs, slices.Collect(maps.Values(record.Receipts))} {
 		for _, run := range runs {
-			digest.Reset()
-			if err := json.MarshalWrite(digest, run); err != nil {
+			sum, err := activityDigest(digest, run)
+			if err != nil {
 				return nil, nil, err
 			}
-			digests[run.ID] = digest.Sum64()
+			digests[run.ID] = sum
 			versions[run.ID] = run.UpdatedAt
 		}
 	}
@@ -186,42 +190,70 @@ func (q *Coordinator) Records(ctx context.Context) ([]types.SchedulerQueueRecord
 }
 
 func (q *Coordinator) states(ctx context.Context) ([]types.SchedulerCoordinatorState, error) {
-	states := []types.SchedulerCoordinatorState{}
+	entries, err := listStates[types.SchedulerCoordinatorState](ctx, q.service)
+	if err != nil {
+		return nil, err
+	}
+	states := make([]types.SchedulerCoordinatorState, 0, len(entries))
+	for _, entry := range entries {
+		normalizeRecordTimes(&entry.State.Record)
+		q.runtime.NameActor(entry.ActorID, entry.State.Record.JobID+"@"+entry.State.Record.EnvironmentID)
+		states = append(states, entry.State)
+	}
+	return states, nil
+}
+
+func (q *Coordinator) summaries(ctx context.Context) ([]coordinatorSummary, error) {
+	entries, err := listStates[coordinatorSummary](ctx, q.service)
+	if err != nil {
+		return nil, err
+	}
+	summaries := make([]coordinatorSummary, 0, len(entries))
+	for _, entry := range entries {
+		q.runtime.NameActor(entry.ActorID, entry.State.Record.JobID+"@"+entry.State.Record.EnvironmentID)
+		summaries = append(summaries, entry.State)
+	}
+	return summaries, nil
+}
+
+func listStates[T any](ctx context.Context, service *actor.Service) ([]stateEntry[T], error) {
+	entries := []stateEntry[T]{}
 	cursor := ""
 	for {
-		page, err := q.service.ListStates(ctx, coordinatorType, &actor.ListStatesOpts{IncludeData: true, After: cursor, Limit: 100})
+		page, err := service.ListStates(ctx, coordinatorType, &actor.ListStatesOpts{IncludeData: true, After: cursor, Limit: 100})
 		if err != nil {
 			return nil, fmt.Errorf("list job coordinator states: %w", err)
 		}
 		for _, entry := range page.States {
-			var state types.SchedulerCoordinatorState
+			var state T
 			if decodeErr := entry.Data.Decode(&state); decodeErr != nil {
 				return nil, fmt.Errorf("decode job coordinator %q: %w", entry.ActorID, decodeErr)
 			}
-			normalizeRecordTimes(&state.Record)
-			q.runtime.NameActor(entry.ActorID, state.Record.JobID+"@"+state.Record.EnvironmentID)
-			states = append(states, state)
+			entries = append(entries, stateEntry[T]{State: state, ActorID: entry.ActorID})
 		}
 		cursor = page.AfterID()
 		if cursor == "" {
-			return states, nil
+			return entries, nil
 		}
 	}
+}
+
+func (q *Coordinator) Record(ctx context.Context, environmentID, jobID string) (types.SchedulerQueueRecord, error) {
+	var state types.SchedulerCoordinatorState
+	if err := q.service.GetState(ctx, coordinatorType, kit.SHA256Hex(environmentID+"\x00"+jobID), &state); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
+		return types.SchedulerQueueRecord{}, err
+	}
+	normalizeRecordTimes(&state.Record)
+	return state.Record, nil
 }
 
 // Get retrieves a run by environment, job, and run ID, including compacted
 // idempotency receipts. It returns ErrRunNotFound when no matching record exists.
 func (q *Coordinator) Get(ctx context.Context, environmentID, jobID, runID string) (types.SchedulerRun, error) {
-	var state types.SchedulerCoordinatorState
-	err := q.service.GetState(ctx, coordinatorType, kit.SHA256Hex(environmentID+"\x00"+jobID), &state)
-	if errors.Is(err, actor.ErrStateNotFound) {
-		return types.SchedulerRun{}, ErrRunNotFound
-	}
+	record, err := q.Record(ctx, environmentID, jobID)
 	if err != nil {
 		return types.SchedulerRun{}, err
 	}
-	normalizeRecordTimes(&state.Record)
-	record := state.Record
 	for _, run := range record.Runs {
 		if run.ID == runID {
 			q.associateActivity(&run)
@@ -235,10 +267,18 @@ func (q *Coordinator) Get(ctx context.Context, environmentID, jobID, runID strin
 	return types.SchedulerRun{}, ErrRunNotFound
 }
 
+func (q *Coordinator) listRecords(ctx context.Context, environmentID, jobID string) ([]types.SchedulerQueueRecord, error) {
+	if jobID == "" {
+		return q.Records(ctx)
+	}
+	record, err := q.Record(ctx, environmentID, jobID)
+	return []types.SchedulerQueueRecord{record}, err
+}
+
 // List returns retained run history newest first, excluding compacted receipts.
 // An empty job ID includes every job in the environment; pages are one-based.
 func (q *Coordinator) List(ctx context.Context, environmentID, jobID string, page, limit int) (types.SchedulerRunList, error) {
-	records, err := q.Records(ctx)
+	records, err := q.listRecords(ctx, environmentID, jobID)
 	if err != nil {
 		return types.SchedulerRunList{}, err
 	}
@@ -325,7 +365,12 @@ func pruneRuns(record *types.SchedulerQueueRecord, now time.Time) bool {
 			continue
 		}
 		terminal++
-		if terminal <= 100 && now.Sub(run.UpdatedAt) < 7*24*time.Hour {
+		if terminal <= retainedRuns && now.Sub(run.UpdatedAt) < 7*24*time.Hour {
+			if terminal > detailedRuns && slices.Contains(compactableStatuses, run.Status) && (run.Attempts != nil || run.Outcome.Targets != nil) {
+				record.Runs[index].Attempts = nil
+				record.Runs[index].Outcome.Targets = nil
+				changed = true
+			}
 			continue
 		}
 		if separateTrigger(run.Trigger) {
@@ -380,11 +425,11 @@ func markChangedActivity(state *types.SchedulerCoordinatorState, run *types.Sche
 	if run.ActivityID == "" {
 		return nil
 	}
-	digest.Reset()
-	if err := json.MarshalWrite(digest, run); err != nil {
+	sum, err := activityDigest(digest, *run)
+	if err != nil {
 		return err
 	}
-	if previousDigest, found := previous[run.ID]; found && previousDigest == digest.Sum64() {
+	if previousDigest, found := previous[run.ID]; found && previousDigest == sum {
 		return nil
 	}
 	if run.UpdatedAt.IsZero() || run.UpdatedAt.Equal(previousUpdated[run.ID]) {
@@ -395,6 +440,18 @@ func markChangedActivity(state *types.SchedulerCoordinatorState, run *types.Sche
 	}
 	state.PendingActivitySync[run.ID] = run.UpdatedAt
 	return nil
+}
+
+func activityDigest(digest *maphash.Hash, run types.SchedulerRun) (uint64, error) {
+	if slices.Contains(compactableStatuses, run.Status) {
+		run.Attempts = nil
+		run.Outcome.Targets = nil
+	}
+	digest.Reset()
+	if err := json.MarshalWrite(digest, run); err != nil {
+		return 0, err
+	}
+	return digest.Sum64(), nil
 }
 
 func markActivitySync(state *types.SchedulerCoordinatorState, run types.SchedulerRun) {

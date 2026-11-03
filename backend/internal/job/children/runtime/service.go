@@ -5,6 +5,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -18,18 +19,21 @@ import (
 // ApplyStatuses merges durable runs for one environment into jobs. The local
 // environment also gains dynamic children and scheduler worker health.
 func ApplyStatuses(ctx context.Context, coordinator *runs.Coordinator, controller types.JobController, environmentID string, jobs []types.JobStatus) ([]types.JobStatus, error) {
-	records, err := coordinator.Records(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("load durable job status: %w", err)
-	}
-	runsByJob := make(map[string][]types.SchedulerRun)
-	for _, record := range records {
-		if record.EnvironmentID == environmentID {
-			runsByJob[record.JobID] = append(runsByJob[record.JobID], record.Runs...)
-		}
-	}
 	jobScheduler, hasScheduler := controller.(types.JobScheduler)
 	jobs, dynamicChildren := appendDynamicJobStatuses(ctx, controller, environmentID, jobs)
+	runsByJob := make(map[string][]types.SchedulerRun)
+	for _, job := range slices.Concat(jobs, slices.Concat(slices.Collect(maps.Values(dynamicChildren))...)) {
+		for _, listed := range slices.Concat([]types.JobStatus{job}, job.Children) {
+			if _, loaded := runsByJob[listed.ID]; loaded {
+				continue
+			}
+			record, err := coordinator.Record(ctx, environmentID, listed.ID)
+			if err != nil {
+				return nil, fmt.Errorf("load durable job status: %w", err)
+			}
+			runsByJob[listed.ID] = record.Runs
+		}
+	}
 
 	statuses := make([]types.JobStatus, 0, len(jobs))
 	for _, job := range jobs {

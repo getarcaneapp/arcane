@@ -391,7 +391,7 @@ func (s *Service) Runs(ctx context.Context, environmentID, jobID string) ([]type
 	if _, err := s.environments.GetEnvironmentByID(ctx, environmentID); err != nil {
 		return nil, err
 	}
-	records, err := s.runs.Records(ctx)
+	record, err := s.runs.Record(ctx, environmentID, jobID)
 	if err != nil {
 		return nil, err
 	}
@@ -442,13 +442,8 @@ func (s *Service) Runs(ctx context.Context, environmentID, jobID string) ([]type
 			break
 		}
 	}
-	for _, record := range records {
-		if record.EnvironmentID != environmentID || record.JobID != jobID {
-			continue
-		}
-		for _, run := range record.Runs {
-			merged[run.ID] = run
-		}
+	for _, run := range record.Runs {
+		merged[run.ID] = run
 	}
 	return slices.Collect(maps.Values(merged)), nil
 }

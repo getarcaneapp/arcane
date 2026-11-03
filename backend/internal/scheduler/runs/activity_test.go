@@ -43,6 +43,13 @@ func coordinatorStates(t *testing.T, q *Coordinator) []types.SchedulerCoordinato
 	return states
 }
 
+func coordinatorSummaries(t *testing.T, q *Coordinator) []coordinatorSummary {
+	t.Helper()
+	summaries, err := q.summaries(t.Context())
+	require.NoError(t, err)
+	return summaries
+}
+
 func pendingActivitySync(t *testing.T, q *Coordinator) bool {
 	t.Helper()
 	return slices.ContainsFunc(coordinatorStates(t, q), func(state types.SchedulerCoordinatorState) bool { return len(state.PendingActivitySync) > 0 })
@@ -74,7 +81,7 @@ func TestActivityFailureNeverReplaysAcceptedExecution(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond)
 	require.True(t, pendingActivitySync(t, q))
 	observer.unavailable.Store(false)
-	require.False(t, q.retryActivitySync(t.Context(), coordinatorStates(t, q)))
+	require.False(t, q.retryActivitySync(t.Context(), coordinatorSummaries(t, q)))
 	require.False(t, pendingActivitySync(t, q))
 	require.Positive(t, observer.observed.Load())
 	duplicate, err := q.Submit(t.Context(), types.SchedulerRequest{JobID: run.JobID, RunID: run.ID, Trigger: "manual"})

@@ -56,7 +56,7 @@ func (q *Coordinator) syncActivity(ctx context.Context, run types.SchedulerRun) 
 	return false
 }
 
-func (q *Coordinator) retryActivitySync(ctx context.Context, states []types.SchedulerCoordinatorState) bool {
+func (q *Coordinator) retryActivitySync(ctx context.Context, states []coordinatorSummary) bool {
 	pending := false
 	for _, state := range states {
 		for runID := range state.PendingActivitySync {
