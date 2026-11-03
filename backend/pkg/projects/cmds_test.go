@@ -26,10 +26,8 @@ func TestDetachFromHTTPContext(t *testing.T) {
 		detached, detachedCancel := detachFromHTTPContext(parent, defaultComposeTimeout)
 		defer detachedCancel()
 
-		// Cancel the parent (simulates HTTP request ending).
 		parentCancel()
 
-		// The detached context must still be alive.
 		require.NoError(t, detached.Err())
 
 		deadline, ok := detached.Deadline()
@@ -69,32 +67,63 @@ func TestDetachFromHTTPContext(t *testing.T) {
 func TestComposeStopSkipsWhenNoServicesSpecified(t *testing.T) {
 	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:9")
 
-	err := ComposeStop(t.Context(), "", &composetypes.Project{Name: "test"}, nil)
+	err := ComposeStop(t.Context(), types.ComposeTarget{Project: &composetypes.Project{Name: "test"}})
 	require.NoError(t, err)
 
-	err = ComposeStop(t.Context(), "", &composetypes.Project{Name: "test"}, []string{})
+	err = ComposeStop(t.Context(), types.ComposeTarget{
+		Project:  &composetypes.Project{Name: "test"},
+		Services: []string{},
+	})
 	require.NoError(t, err)
 }
 
 func TestComposeUpOptions_RemoveOrphans(t *testing.T) {
-	proj := &composetypes.Project{Name: "test"}
-
 	t.Run("removeOrphans is independent of forceRecreate", func(t *testing.T) {
-		// forceRecreate drives the Recreate policy, not RemoveOrphans.
-		upOptions, _ := composeUpOptions(proj, types.ComposeUpOptions{RemoveOrphans: true, ForceRecreate: true}, 0, ComposeEnvOptions{})
-		require.True(t, upOptions.RemoveOrphans)
-		require.Equal(t, api.RecreateForce, upOptions.Recreate)
+		upOptions := composeUpOptions(types.ComposeUpOptions{RemoveOrphans: true, ForceRecreate: true}, 0, ComposeEnvOptions{})
+		require.True(t, upOptions.Create.RemoveOrphans)
+		require.Equal(t, api.RecreateForce, upOptions.Create.Recreate)
 
-		upOptions, _ = composeUpOptions(proj, types.ComposeUpOptions{ForceRecreate: true}, 0, ComposeEnvOptions{})
-		require.False(t, upOptions.RemoveOrphans)
-		require.Equal(t, api.RecreateForce, upOptions.Recreate)
+		upOptions = composeUpOptions(types.ComposeUpOptions{ForceRecreate: true}, 0, ComposeEnvOptions{})
+		require.False(t, upOptions.Create.RemoveOrphans)
+		require.Equal(t, api.RecreateForce, upOptions.Create.Recreate)
 	})
 
 	t.Run("COMPOSE_REMOVE_ORPHANS / COMPOSE_IGNORE_ORPHANS propagate", func(t *testing.T) {
-		upOptions, _ := composeUpOptions(proj, types.ComposeUpOptions{}, 0, ComposeEnvOptions{RemoveOrphans: true, IgnoreOrphans: true})
-		require.True(t, upOptions.RemoveOrphans)
-		require.True(t, upOptions.IgnoreOrphans)
+		upOptions := composeUpOptions(types.ComposeUpOptions{}, 0, ComposeEnvOptions{RemoveOrphans: true, IgnoreOrphans: true})
+		require.True(t, upOptions.Create.RemoveOrphans)
+		require.True(t, upOptions.Create.IgnoreOrphans)
 	})
+}
+
+func TestComposeUpOptions_Validate(t *testing.T) {
+	tests := []struct {
+		name string
+		opts types.ComposeUpOptions
+	}{
+		{
+			name: "deploy",
+			opts: types.ComposeUpOptions{
+				RemoveOrphans:   true,
+				ForceRecreate:   true,
+				RecreateVolumes: true,
+			},
+		},
+		{
+			name: "service update",
+			opts: types.ComposeUpOptions{
+				Services:      []string{"app", "sidecar"},
+				ForceRecreate: true,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upOptions := composeUpOptions(tt.opts, time.Minute, ComposeEnvOptions{})
+			require.NoError(t, upOptions.Validate())
+			require.True(t, upOptions.Start.Wait)
+			require.Equal(t, time.Minute, upOptions.Start.WaitTimeout)
+		})
+	}
 }
 
 func TestListGlobalComposeContainersUsesProvidedClient(t *testing.T) {
@@ -116,8 +145,7 @@ func TestListGlobalComposeContainersUsesProvidedClient(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = apiClient.Close() })
 
-	// The bogus dockerHost proves the provided client wins over the
-	// fallback host.
+	// The bogus dockerHost proves the provided client wins over the fallback host.
 	containers, err := ListGlobalComposeContainers(t.Context(), apiClient, "tcp://unused.example.com:2375")
 	require.NoError(t, err)
 	require.Len(t, containers, 1)

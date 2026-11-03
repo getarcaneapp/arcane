@@ -50,13 +50,6 @@ type (
 )
 
 func (h *WebhookHandler) TriggerWebhook(ctx context.Context, input *TriggerWebhookInput) (*TriggerWebhookOutput, error) {
-	if h.webhookService == nil {
-		return &TriggerWebhookOutput{
-			Status: http.StatusInternalServerError,
-			Body:   map[string]any{"success": false, "error": "service not available"},
-		}, nil
-	}
-
 	err := h.webhookService.TriggerByToken(activity.ActivityRuntimeContext(ctx, h.appCtx.Context()), input.Token)
 	switch {
 	case err == nil:
@@ -104,7 +97,7 @@ func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *types.Environm
 	}, nil
 }
 
-// CreateWebhook creates a new webhook and returns the raw token (shown once only).
+// CreateWebhook returns the raw token, shown only once.
 func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhookInput) (*handlerutil.Out[types.WebhookCreated], error) {
 	currentUser, _ := handlerutil.CurrentUserFromContext(ctx)
 
@@ -140,7 +133,6 @@ func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhook
 	}, nil
 }
 
-// UpdateWebhook updates a webhook's enabled state.
 func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhookInput) (*handlerutil.Out[any], error) {
 	submitted, err := input.SubmittedFields()
 	if err != nil {
@@ -162,7 +154,6 @@ func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhook
 	}, nil
 }
 
-// DeleteWebhook removes a webhook.
 func (h *WebhookHandler) DeleteWebhook(ctx context.Context, input *DeleteWebhookInput) (*handlerutil.Out[any], error) {
 	currentUser, _ := handlerutil.CurrentUserFromContext(ctx)
 

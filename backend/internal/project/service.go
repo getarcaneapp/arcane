@@ -80,13 +80,9 @@ type (
 		composeCoordinator types.ComposeCoordinator
 
 		parsedCompose types.ComposeCache[*composetypes.Project]
-		// metaCache holds per-project icon/URL metadata, keyed by project ID. Deriving
-		// it costs a full compose load (interpolation plus .env reads) and, for GitOps
-		// projects, a gitops_syncs lookup — per project, on every list request.
-		// Entries are validated by compose/include/env file mtimes rather than a TTL.
+		// metaCache is validated by compose/include/env file mtimes, not a TTL, since each entry costs a full compose load.
 		metaCache types.ComposeCache[projects.ArcaneComposeMetadata]
-		// composeIdentities caches filesystem-sync compose identities by project path,
-		// so a sync only re-parses projects whose compose or env files changed.
+		// composeIdentities lets a sync re-parse only projects whose compose or env files changed.
 		composeIdentities types.ComposeCache[types.ComposeIdentity]
 
 		db                          *database.DB
@@ -105,22 +101,17 @@ type (
 		config                      *config.Config
 		RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
 
-		// FilesChanged fires with the project ID after project files are saved
-		// through Arcane, so Git backups can react without polling.
+		// FilesChanged lets Git backups react to saved project files without polling.
 		FilesChanged *concurrency.Signal[string]
 
-		// opLock serializes mutating operations on the same project.
 		opLock concurrency.KeyedMutex
 
 		composeNames composeNameCache
 
-		// syncMu serializes SyncProjectsFromFileSystem: its discovery walk and its
-		// cleanup pass must not interleave with another run's.
+		// syncMu keeps one sync's discovery walk and cleanup pass from interleaving with another's.
 		syncMu sync.Mutex
 	}
 
-	// CreateGitOpsManagedProject persists a promoted GitOps project, links both
-	// records, updates the compose-name cache, and records the creation event.
 	GitOpsProjectRequest struct {
 		Sync      *GitOpsSync
 		Project   *Project
@@ -142,8 +133,7 @@ type (
 		RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
 	}
 
-	// LifecycleService runs a GitOps sync's pre-deploy script in a throwaway container.
-	// The script is trusted like the repo's compose.yaml; configuring its path is the trust event.
+	// The pre-deploy script is trusted like the repo's compose.yaml; configuring its path is the trust event.
 	LifecycleService struct {
 		db              *database.DB
 		settingsService *settings.SettingsService
@@ -175,11 +165,9 @@ type (
 
 const (
 	maxConcurrentComposeReads = 8
-	// inferredServiceCountBatchSize keeps one inferred count update under
-	// SQLite's bound variable limit (three placeholders per id).
+	// inferredServiceCountBatchSize stays under SQLite's bound variable limit (three placeholders per id).
 	inferredServiceCountBatchSize = 200
-	// leaseWaitTimeout bounds how long a project operation waits for one already running on the same project.
-	leaseWaitTimeout = 30 * time.Second
+	leaseWaitTimeout              = 30 * time.Second
 )
 
 var (
@@ -187,8 +175,6 @@ var (
 	composeUpProjectServices   = projects.ComposeUp
 )
 
-// EnsureGitOpsProjectLinked persists the bidirectional GitOps/project binding
-// and refreshes the compose-name cache as one domain operation.
 func (s *ProjectService) EnsureGitOpsProjectLinked(ctx context.Context, gitOpsSync *GitOpsSync, project *Project) error {
 	if gitOpsSync == nil || project == nil {
 		return nil
@@ -281,8 +267,7 @@ func (s *ProjectService) EnsureGitOpsProjectLinked(ctx context.Context, gitOpsSy
 	return nil
 }
 
-// ValidateComposeDirectory loads a staged compose tree with the same settings,
-// Docker path mapping, and validation rules used by managed projects.
+// ValidateComposeDirectory uses the same settings, path mapping and validation as managed projects.
 func (s *ProjectService) ValidateComposeDirectory(ctx context.Context, projectName, projectPath, composeFileName string) (int, error) {
 	projectsDirectory, err := s.GetProjectsDirectory(ctx)
 	if err != nil {
@@ -337,8 +322,6 @@ func (s *ProjectService) CreateGitOpsManagedProject(ctx context.Context, req Git
 	return nil
 }
 
-// newProjectMetadataEnv resolves the shared inputs once and preloads
-// the GitOps compose paths of every listed project in a single query.
 func (s *ProjectService) newProjectMetadataEnv(ctx context.Context, projectsList []Project) *projectMetadataEnv {
 	projectsDirectory, err := s.GetProjectsDirectory(ctx)
 	if err != nil {
@@ -356,9 +339,7 @@ func (s *ProjectService) newProjectMetadataEnv(ctx context.Context, projectsList
 	return env
 }
 
-// preloadGitOpsComposePaths fetches the GitOps compose paths of the
-// given projects in one query and merges them into env, so list paths can
-// widen the preloaded set to the rows they end up enriching.
+// preloadGitOpsComposePaths merges into env so list paths can widen the preloaded set.
 func (s *ProjectService) preloadGitOpsComposePaths(ctx context.Context, env *projectMetadataEnv, projectsList []Project) {
 	syncIDs := make([]string, 0, len(projectsList))
 	for _, proj := range projectsList {
@@ -438,12 +419,10 @@ func NewProjectService(p ProjectServiceParams) *ProjectService {
 	return s
 }
 
-// RecoverProjectRenameJournals replays renames interrupted by a restart.
 func (s *ProjectService) RecoverProjectRenameJournals(ctx context.Context) error {
 	return s.updates.RecoverAll(ctx)
 }
 
-// RecoverStuckProjectStatuses re-derives the status of projects left Deploying or Restarting by a restart.
 func (s *ProjectService) RecoverStuckProjectStatuses(ctx context.Context) error {
 	var stuck []Project
 	if err := s.db.WithContext(ctx).Where("status IN ?", []ProjectStatus{ProjectStatusDeploying, ProjectStatusRestarting}).Find(&stuck).Error; err != nil {
@@ -516,7 +495,6 @@ func (s *ProjectService) getMutableProject(ctx context.Context, projectID string
 	return proj, nil
 }
 
-// lockProject takes the project's operation lease, waiting up to leaseWaitTimeout for an operation already running on it.
 func (s *ProjectService) lockProject(ctx context.Context, op, projectID string) (func(), error) {
 	waitCtx, cancel := context.WithTimeout(ctx, leaseWaitTimeout)
 	defer cancel()
@@ -569,7 +547,6 @@ func (s *ProjectService) GetProjectFromDatabaseByID(ctx context.Context, id stri
 	return projectModel, nil
 }
 
-// FindProjectByID reports a missing project as found=false instead of an error.
 func (s *ProjectService) FindProjectByID(ctx context.Context, projectID string) (*Project, bool, error) {
 	var project Project
 	if err := s.db.WithContext(ctx).Where("id = ?", projectID).First(&project).Error; err != nil {
@@ -630,8 +607,6 @@ func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name strin
 	return nil, common.Classify(common.ErrNotFound, fmt.Errorf("project not found: %s", name))
 }
 
-// ComposeServiceImage returns the effective image of serviceName in the
-// Arcane project deployed as composeName.
 func (s *ProjectService) ComposeServiceImage(ctx context.Context, composeName, serviceName string) (projectID, imageRef string, err error) {
 	proj, err := s.GetProjectByComposeName(ctx, composeName)
 	if err != nil {
@@ -648,8 +623,7 @@ func (s *ProjectService) ComposeServiceImage(ctx context.Context, composeName, s
 	return proj.ID, service.Image, nil
 }
 
-// EnsureProjectPathUnderRoot normalizes a path outside the projects root to `<projectsRoot>/<dirName or sanitized name>`.
-// When persist=true, it saves the updated project path to the database.
+// EnsureProjectPathUnderRoot moves an outside path to `<projectsRoot>/<dirName or sanitized name>`.
 func (s *ProjectService) EnsureProjectPathUnderRoot(ctx context.Context, proj *Project, persist bool) error {
 	projectsDirectory, err := s.GetProjectsDirectory(ctx)
 	if err != nil {
@@ -709,14 +683,12 @@ func (s *ProjectService) invalidateProjectCaches(projectID string) {
 	s.metaCache.Invalidate(projectID)
 }
 
-// ResolveProjectComposeFile returns the base compose file for a project, mirroring `docker compose`: COMPOSE_FILE
-// in the merged environment wins, then a GitOps sync's configured compose path, then standard detection.
+// ResolveProjectComposeFile mirrors `docker compose`: COMPOSE_FILE, then the GitOps compose path, then detection.
 func (s *ProjectService) ResolveProjectComposeFile(ctx context.Context, proj *Project) (string, error) {
 	return s.resolveProjectComposeFile(ctx, proj, nil)
 }
 
-// resolveProjectComposeFile is ResolveProjectComposeFile with the
-// request-scoped inputs supplied by env; a nil env resolves them per call.
+// resolveProjectComposeFile resolves request-scoped inputs per call when env is nil.
 func (s *ProjectService) resolveProjectComposeFile(ctx context.Context, proj *Project, env *projectMetadataEnv) (string, error) {
 	if proj == nil {
 		return "", errors.New("project is nil")
@@ -781,8 +753,7 @@ func (s *ProjectService) resolveProjectComposeFile(ctx context.Context, proj *Pr
 	})
 }
 
-// loadComposeProjectForProject loads the executable compose model for proj. prepare is optional and runs before
-// host path translation; deployment paths use it to create missing bind directories, read paths pass nil.
+// loadComposeProjectForProject runs prepare before host path translation; read paths pass nil.
 func (s *ProjectService) loadComposeProjectForProject(ctx context.Context, proj *Project, prepare projects.PrepareProjectFunc, services ...string) (*composetypes.Project, error) {
 	composeFileFullPath, err := s.ResolveProjectComposeFile(ctx, proj)
 	if err != nil {
@@ -899,10 +870,7 @@ func (s *ProjectService) refreshComposeProjectName(ctx context.Context, proj *Pr
 	}
 }
 
-// NewLifecycleService constructs a LifecycleService wired against shared
-// infrastructure. The Docker client is obtained lazily on each hook run via
-// dockerService.GetClient so reconnects are transparent. Runner image pulls go
-// through imageService so configured registry credentials apply.
+// NewLifecycleService gets the Docker client per hook run so reconnects are transparent.
 func NewLifecycleService(p LifecycleServiceParams) *LifecycleService {
 	return &LifecycleService{
 		db:              p.DB,
@@ -912,8 +880,7 @@ func NewLifecycleService(p LifecycleServiceParams) *LifecycleService {
 	}
 }
 
-// runPreDeploy runs the sync's pre-deploy hook, if configured and enabled. Any
-// failure aborts the deploy; every run records its last-run state on the sync.
+// runPreDeploy aborts the deploy on any hook failure and records the last run on the sync.
 func (s *LifecycleService) runPreDeploy(ctx context.Context, project *Project, actor types.Actor) error {
 	if strings.TrimSpace(kit.FromPtr(project.GitOpsManagedBy)) == "" || !s.settingsService.GetBoolSetting(ctx, "lifecycleEnabled") {
 		return nil
@@ -1029,10 +996,7 @@ func (s *LifecycleService) runPreDeploy(ctx context.Context, project *Project, a
 	return nil
 }
 
-// ParseEnvText reads admin-configured env config as the
-// same KEY=VALUE text format used by .env files: one entry per line, blank
-// and "#"-prefixed lines ignored, keys must match POSIX identifier syntax.
-// Reuses the strict parser also used for stdout-capture.
+// ParseEnvText reuses the strict .env parser: POSIX keys, blank and "#" lines ignored.
 func ParseEnvText(raw *string) (map[string]string, error) {
 	if strings.TrimSpace(kit.FromPtr(raw)) == "" {
 		return map[string]string{}, nil
@@ -1044,10 +1008,7 @@ func ParseEnvText(raw *string) (map[string]string, error) {
 	return env, nil
 }
 
-// ParseExtraMountsText reads admin-configured bind mounts
-// in docker-CLI "src:tgt[:ro|:rw]" form, one per line. Blank and
-// "#"-prefixed lines are ignored. Both source and target must be absolute
-// paths; mode defaults to read-write.
+// ParseExtraMountsText parses docker-CLI "src:tgt[:ro|:rw]" lines with absolute paths, read-write by default.
 func ParseExtraMountsText(raw *string) ([]types.LifecycleExtraMount, error) {
 	if strings.TrimSpace(kit.FromPtr(raw)) == "" {
 		return nil, nil
@@ -1075,9 +1036,7 @@ func ParseExtraMountsText(raw *string) ([]types.LifecycleExtraMount, error) {
 		}
 		mount := types.LifecycleExtraMount{Source: parts[0], Target: parts[1], Readonly: len(parts) == 3 && parts[2] == "ro"}
 
-		// Mount sources/targets are interpreted by the Docker daemon as POSIX
-		// host/container paths, so use path.IsAbs to avoid host-OS quirks
-		// (filepath.IsAbs("/x") returns false on Windows).
+		// path.IsAbs, not filepath.IsAbs: the daemon reads these as POSIX paths on every host OS.
 		if !path.IsAbs(filepath.ToSlash(mount.Source)) {
 			return nil, fmt.Errorf("line %d: source %q must be an absolute path", lineNum, mount.Source)
 		}
@@ -1124,7 +1083,6 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 	}
 	previousStatus := proj.Status
 
-	// 1. Load project
 	prepare := deployment.PrepareProjectBindDirectories(proj.Path)
 	compProj, err := s.loadComposeProjectForProject(ctx, proj, prepare, servicesToUpdate...)
 	if err != nil {
@@ -1140,7 +1098,6 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 
 	defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
 
-	// 2. Set status to deploying/restarting
 	if updateProjectStatusErr := s.updateProjectStatus(ctx, projectID, ProjectStatusDeploying); updateProjectStatusErr != nil {
 		return updateProjectStatusErr
 	}
@@ -1174,7 +1131,6 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 		return updateServicesErr
 	}
 
-	// 6. Finalize status
 	if updateProjectStatusandCountsErr := s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusRunning)); updateProjectStatusandCountsErr != nil {
 		return updateProjectStatusandCountsErr
 	}
@@ -1211,10 +1167,7 @@ func (s *ProjectService) ArchiveProject(ctx context.Context, projectID string, u
 		return nil
 	}
 
-	// Gate on live Docker state, not the persisted status row, which can go
-	// stale when containers are stopped outside an Arcane project action.
-	// A project without a compose file cannot have managed containers running
-	// and is a prime archive candidate, so it is allowed through.
+	// Live Docker state, not the possibly stale status row; a project without a compose file is allowed through.
 	services, servicesErr := s.projectServices(ctx, projectID)
 	switch {
 	case servicesErr != nil && !errors.Is(servicesErr, common.ErrProjectComposeFileNotFound):
@@ -1372,7 +1325,6 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 	return s.downProject(ctx, projectFromDb, user)
 }
 
-// downProject brings the project down and restores its previous status on failure.
 func (s *ProjectService) downProject(ctx context.Context, projectFromDb *Project, user types.Actor) error {
 	projectID := projectFromDb.ID
 	proj, lerr := s.loadComposeProjectForProject(ctx, projectFromDb, nil)
@@ -1386,7 +1338,10 @@ func (s *ProjectService) downProject(ctx context.Context, projectFromDb *Project
 
 	defer s.eventService.BeginComposeSuppressionWindow(proj.Name)()
 
-	if composeDownErr := projects.ComposeDown(ctx, s.dockerService.DockerHost(), proj, false); composeDownErr != nil {
+	if composeDownErr := projects.ComposeDown(ctx, types.ComposeDownOptions{
+		Project:    proj,
+		DockerHost: s.dockerService.DockerHost(),
+	}); composeDownErr != nil {
 		_ = s.updateProjectStatus(context.WithoutCancel(ctx), projectID, projectFromDb.Status)
 		return fmt.Errorf("failed to bring down project: %w", composeDownErr)
 	}
@@ -1400,8 +1355,7 @@ func (s *ProjectService) downProject(ctx context.Context, projectFromDb *Project
 	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusStopped))
 }
 
-// CreateProject creates a project's directory, files, and DB row. A directory
-// collision appends "-N" unless allowNameSuffix is false, which returns projects.ErrProjectDirExists.
+// CreateProject appends "-N" on a directory collision unless allowNameSuffix is false.
 func (s *ProjectService) CreateProject(
 	ctx context.Context,
 	name, composeContent string,
@@ -1430,8 +1384,7 @@ func (s *ProjectService) CreateProject(
 		return nil, fmt.Errorf("failed to get projects directory: %w", err)
 	}
 
-	// Held through the DB insert so concurrent creates and filesystem syncs
-	// cannot claim the directory while it is half written.
+	// Held through the DB insert so concurrent creates and syncs cannot claim a half-written directory.
 	s.syncMu.Lock()
 	defer s.syncMu.Unlock()
 	if nameErr := s.ensureProjectNameAvailable(ctx, name, ""); nameErr != nil {
@@ -1459,11 +1412,7 @@ func (s *ProjectService) CreateProject(
 		return nil, fmt.Errorf("failed to resolve created project directory: %w", err)
 	}
 
-	// A new directory is removed on failure. A reused one only gains files:
-	// every path creation can write must be absent (an existing .env file is
-	// kept as is), so the backup records only absent paths and rollback removes just
-	// what was added. Blank env content keeps an existing .env; different
-	// content conflicts with it.
+	// A reused directory only gains absent paths, so rollback removes just what was added.
 	cleanupCtx := context.WithoutCancel(ctx)
 	undo := func() error { return acfs.Root{Path: projectsDirectory}.RemoveAll(cleanupCtx, projectLogical) }
 	if reused {
@@ -1518,9 +1467,7 @@ func (s *ProjectService) CreateProject(
 		return nil, rollback(workspace.WrapProjectWorkspaceError(applyProjectWorkspaceChangesErr))
 	}
 
-	// GitOps-originated creates (allowNameSuffix=false) tolerate not-yet-supplied
-	// ${VAR} references the same way single-file git sync updates do; interactive
-	// creates (allowNameSuffix=true) stay strict.
+	// GitOps creates tolerate unset ${VAR} references like git sync updates; interactive creates stay strict.
 	if validateComposeContentForUpdateErr := projects.ValidateComposeContentForUpdate(ctx, projects.ValidateComposeRequest{
 		ProjectsDirectory: projectsDirectory,
 		ProjectPath:       projectPath,
@@ -1608,8 +1555,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 		"projectName", proj.Name,
 		"projectPath", proj.Path)
 
-	// Teardown runs down, volumes, files, then the DB row, stopping at the first real failure.
-	// Missing Docker resources and a missing compose file leave nothing to tear down.
+	// Stops at the first real failure; missing Docker resources or compose file leave nothing to tear down.
 	missing := func(err error) bool {
 		return errdefs.IsNotFound(err) || errors.Is(err, common.ErrProjectComposeFileNotFound)
 	}
@@ -1622,7 +1568,11 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 		switch {
 		case lerr == nil:
 			defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
-			if derr := projects.ComposeDown(ctx, s.dockerService.DockerHost(), compProj, true); derr != nil && !missing(derr) {
+			if derr := projects.ComposeDown(ctx, types.ComposeDownOptions{
+				Project:       compProj,
+				DockerHost:    s.dockerService.DockerHost(),
+				RemoveVolumes: true,
+			}); derr != nil && !missing(derr) {
 				return fmt.Errorf("failed to remove project volumes: %w", derr)
 			}
 		case !missing(lerr):
@@ -1632,8 +1582,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 
 	if opts.RemoveFiles {
 		slog.DebugContext(ctx, "Removing project files", "path", proj.Path)
-		// An imported project can live anywhere, so the removal is rooted at the
-		// parent directory and names the project directory itself.
+		// An imported project can live anywhere, so removal is rooted at its parent directory.
 		if removeAllErr := (acfs.Root{Path: filepath.Dir(proj.Path)}).RemoveAll(ctx, "/"+filepath.Base(proj.Path)); removeAllErr != nil {
 			slog.ErrorContext(ctx, "Failed to remove project files", "path", proj.Path, "error", removeAllErr)
 			return fmt.Errorf("failed to remove project files: %w", removeAllErr)
@@ -1689,8 +1638,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		return resolveProjectComposeFileErr
 	}
 
-	// Arcane's own server container must go through the system upgrade flow. A
-	// failed container listing skips the guard rather than blocking the redeploy.
+	// Arcane's own container goes through the system upgrade flow; a failed listing skips the guard.
 	if containers, listErr := s.details.ComposeContainers(ctx); listErr != nil {
 		slog.WarnContext(ctx, "could not list compose containers to check self-redeploy guard; skipping guard", "error", listErr)
 	} else {
@@ -1792,7 +1740,11 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 
 	defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
 
-	if composeRestartErr := projects.ComposeRestart(ctx, s.dockerService.DockerHost(), compProj, services); composeRestartErr != nil {
+	if composeRestartErr := projects.ComposeRestart(ctx, types.ComposeTarget{
+		Project:    compProj,
+		DockerHost: s.dockerService.DockerHost(),
+		Services:   services,
+	}); composeRestartErr != nil {
 		s.restoreRuntimeProjectStatus(ctx, projectID)
 		return fmt.Errorf("failed to restart project: %w", composeRestartErr)
 	}
@@ -1835,7 +1787,6 @@ func (s *ProjectService) updateProjectStatusAndCounts(ctx context.Context, proje
 	return nil
 }
 
-// restoreRuntimeProjectStatus re-derives status from the running services after a failed deploy, falling back to Stopped.
 func (s *ProjectService) restoreRuntimeProjectStatus(ctx context.Context, projectID string) {
 	restoreCtx := context.WithoutCancel(ctx)
 	services, err := s.projectServices(restoreCtx, projectID)
@@ -2083,8 +2034,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfo(
 		return projectdetails.ExcludeHiddenRuntimeServices(details)
 	}()
 
-	// Bounded fan-out over compose loads; a cancelled request leaves the
-	// remaining projects without configured services.
+	// A cancelled request leaves the remaining projects without configured services.
 	refsByIndex := make([][]string, len(projectsList))
 	servicesByIndex := make([][]composetypes.ServiceConfig, len(projectsList))
 	var g errgroup.Group
@@ -2191,7 +2141,6 @@ func (s *ProjectService) enrichProjectsWithUpdateInfo(
 	return out
 }
 
-// BuildConfiguredUpdateInfo matches checks to current services and aggregates their results.
 func BuildConfiguredUpdateInfo(
 	projectID string,
 	services []composetypes.ServiceConfig,
@@ -2228,8 +2177,7 @@ func BuildConfiguredUpdateInfo(
 		}()
 
 		if len(runtimeUpdates) > 0 && runtimeUpdates[0][service.Name] != nil {
-			// A newer clean runtime check clears a stale update preview (#4306);
-			// digest checks must match the configured reference to count.
+			// A newer clean runtime check clears a stale preview (#4306); digest checks must match the configured reference.
 			runtime := runtimeUpdates[0][service.Name]
 			stored := byRef[imageRef]
 			attributed := policyErr == nil && (policy.Strategy != "digest" || (stored != nil && !stored.HasUpdate && stored.Error == "" &&
@@ -2268,7 +2216,6 @@ func BuildConfiguredUpdateInfo(
 	return buildUpdateInfoSummary(projects.ImageRefsFromComposeConfigs(services), merged, serviceUpdates)
 }
 
-// buildUpdateInfoSummary aggregates image checks into a project update summary.
 func buildUpdateInfoSummary(
 	imageRefs []string,
 	updateInfoByRef map[string]*types.ImageUpdateInfo,
@@ -2371,8 +2318,7 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 		)
 	}
 
-	// Update and label filters read the container snapshot, so they page in memory over every candidate;
-	// otherwise the database pages and only the page gets live status and compose-backed presentation fields.
+	// Update and label filters page in memory over the container snapshot; otherwise the database pages.
 	paginateInDB := updatesFilter == "" && strings.TrimSpace(params.Filters["label"]) == ""
 	if !paginateInDB && params.Limit != -1 {
 		params.Limit = kit.Ternary(params.Limit <= 0, 20, min(params.Limit, 100))
@@ -2484,8 +2430,6 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	return result.Items, kit.Ternary(paginateInDB, paginationResp, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)), nil
 }
 
-// CountProjectsWithPendingUpdates counts active projects and untracked compose
-// projects with a pending update from the caller's inventory snapshot.
 func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, allContainers []container.Summary, allProjects []Project) int {
 	activeProjects := make([]Project, 0, len(allProjects))
 	for _, proj := range allProjects {
@@ -2524,14 +2468,12 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 			visibleContainers = append(visibleContainers, c)
 		}
 	}
-	// Untracked compose projects with a pending update count too, so the
-	// dashboard badge matches the projects table.
+	// Untracked compose projects count too, so the dashboard badge matches the projects table.
 	known := listing.KnownComposeProjectNames(projectRecords(allProjects))
 	return count + s.listing.CountDiscoveredUpdates(ctx, visibleContainers, known, IconCatalogForContext(ctx))
 }
 
-// ProjectMetadata resolves a project's icon sets and service URLs, cached until
-// a merged compose or env file changes. A nil env resolves the shared inputs here.
+// ProjectMetadata is cached until a merged compose or env file changes; a nil env resolves inputs here.
 func (s *ProjectService) ProjectMetadata(ctx context.Context, p Project, env *projectMetadataEnv) projects.ArcaneComposeMetadata {
 	empty := projects.ArcaneComposeMetadata{ServiceIconSets: map[string]projects.IconSet{}}
 
@@ -2565,10 +2507,7 @@ func (s *ProjectService) ProjectMetadata(ctx context.Context, p Project, env *pr
 	return meta
 }
 
-// IconCatalogForContext resolves the icon catalog of the requesting
-// user. On agent-proxied calls the caller is a synthetic user whose preference
-// is populated from the X-Arcane-Icon-Catalog header the manager forwards.
-// Background jobs have no user attached and fall back to the default catalog.
+// IconCatalogForContext reads proxied users' X-Arcane-Icon-Catalog preference; background jobs use the default.
 func IconCatalogForContext(ctx context.Context) string {
 	u, _ := handlerutil.CurrentUserFromContext(ctx)
 	return cmp.Or(kit.FromPtr(kit.FromPtr(u).Preferences.IconCatalog), iconcatalog.DefaultCatalog)
@@ -2681,10 +2620,7 @@ func (s *ProjectService) BackfillProjectImageRefs(ctx context.Context) (int, err
 }
 
 func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
-	// Serialized because the walk and the cleanup are two halves of one
-	// decision: overlapping syncs let an older walk's cleanup delete a project a
-	// newer walk had just upserted, because the older walk's `seen` set predates
-	// it. Filesystem-watcher debounces fire these back to back.
+	// Serialized so an older walk's cleanup cannot delete a project a newer walk just upserted.
 	s.syncMu.Lock()
 	defer s.syncMu.Unlock()
 
@@ -2718,8 +2654,7 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 	}
 	maps.Copy(seen, renameSyncState.ProtectSeenPaths)
 
-	// Decide deletions before performing any, so the mass-wipe guard can veto a
-	// suspicious pass (e.g. an unmounted projects volume) as a whole.
+	// Decided up front so the mass-wipe guard can veto a suspicious pass as a whole.
 	var all []Project
 	if findErr := s.db.WithContext(ctx).Select("id", "name", "dir_name", "path", "gitops_managed_by").Find(&all).Error; findErr != nil {
 		slog.WarnContext(ctx, "error during DB cleanup of projects", "error", fmt.Errorf("list projects for cleanup failed: %w", findErr))
@@ -2731,14 +2666,11 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 		if _, ok := seen[p.Path]; ok {
 			continue
 		}
-		// GitOps owns these projects' lifecycle: their compose files may not exist
-		// yet during a sync or after an SSH/clone failure.
+		// GitOps-owned compose files may not exist yet during a sync or after a clone failure.
 		if strings.TrimSpace(kit.FromPtr((&p).GitOpsManagedBy)) != "" {
 			continue
 		}
-		// Rows imported from Arcane's own scratch dirs (project-update preview/backup,
-		// GitOps stage/backup) or from filesystem snapshot/trash dirs are never real
-		// projects. The decision is name-based, so it bypasses the mass-wipe guard.
+		// Rows from Arcane scratch or snapshot dirs are never real projects, so they bypass the mass-wipe guard.
 		if projects.IsInternalScratchDirName(p.Name) || projects.IsInternalScratchDirName(filepath.Base(p.Path)) || projects.IsInternalScratchDirName(kit.FromPtr(p.DirName)) {
 			deletions = append(deletions, projectCleanupDecision{project: p, reason: "removed internal Arcane scratch record (project-update/gitops temp dir)"})
 			continue
@@ -2774,8 +2706,7 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 			slog.WarnContext(ctx, "project directory present but compose file unresolved during cleanup; keeping DB record", "projectId", p.ID, "path", p.Path, "error", resolveErr)
 		}
 	}
-	// Pruning more than one project and over half the candidates usually means an
-	// unmounted or mis-mapped projects directory, so that pass keeps every record.
+	// Pruning over half the candidates usually means an unmounted projects directory, so keep every record.
 	if len(pendingDeletions) <= 1 || len(pendingDeletions)*2 <= candidates {
 		deletions = append(deletions, pendingDeletions...)
 	} else {
@@ -2882,9 +2813,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	return s.reconcileComposeTagsForProject(ctx, &existing)
 }
 
-// ApplyGitSyncEnvToDirectory applies the same managed three-file environment
-// merge used by single-file project syncs and returns the effective content
-// before and after the update.
+// ApplyGitSyncEnvToDirectory returns the effective env content before and after the managed merge.
 func (s *ProjectService) ApplyGitSyncEnvToDirectory(ctx context.Context, projectPath, projectsDirectory string, gitEnvContent *string) (before, after string, err error) {
 	return projectsync.ApplyGitSyncEnv(ctx, projectPath, projectsDirectory, gitEnvContent)
 }
@@ -3057,8 +2986,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	return proj, nil
 }
 
-// applyProjectUpdate renames, persists files, migrates volumes, and
-// saves the row; a failure before the save rolls an applied volume migration back.
+// applyProjectUpdate rolls an applied volume migration back on any failure before the save.
 func (s *ProjectService) applyProjectUpdate(
 	ctx context.Context,
 	proj *Project,
@@ -3086,8 +3014,7 @@ func (s *ProjectService) applyProjectUpdate(
 			if logicalErr != nil {
 				return fmt.Errorf("failed to resolve project directory rename target: %w", logicalErr)
 			}
-			// An imported project outside the projects directory crosses roots, so it cannot be a confined rename;
-			// that move checks cancellation itself, as acfs.Rename would.
+			// Crossing roots cannot be a confined rename, so that move checks cancellation itself.
 			if renameErr := func() error {
 				currentLogical, currentErr := acfs.Root{Path: projectsDirectory}.LogicalPath(filepath.Clean(proj.Path))
 				if currentErr == nil {
@@ -3197,8 +3124,7 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(
 	}
 	defer cleanupBackup()
 
-	// The env is persisted first so WriteComposeFile targets the COMPOSE_FILE base the updated .env selects.
-	// A failure before the row save restores the backup, so new env values never pair with an old compose file set.
+	// Env first, so WriteComposeFile targets the base the new .env selects; a pre-save failure restores the backup.
 	if applyErr := func() error {
 		if envErr := projectsync.PersistGitSyncEnvFiles(ctx, proj.Path, projectsDirectory, envUpdate); envErr != nil {
 			return fmt.Errorf("failed to sync git env files: %w", envErr)
@@ -3267,8 +3193,7 @@ func (s *ProjectService) ensureProjectNameAvailable(ctx context.Context, name, e
 	return nil
 }
 
-// prepareProjectRenameVolumeMigration rejects an unusable rename target, then plans the volume rename for a stopped
-// project. Content changes are applied to a scratch preview first so the plan reflects the updated compose files.
+// prepareProjectRenameVolumeMigration plans against a scratch preview so content changes are reflected.
 func (s *ProjectService) prepareProjectRenameVolumeMigration(
 	ctx context.Context,
 	proj *Project,
@@ -3303,8 +3228,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigration(
 		}
 		previewPath := filepath.Join(projectsDirectory, filepath.FromSlash(strings.TrimPrefix(previewLogical, "/")))
 		defer func() {
-			// acfs refuses an already-cancelled context, so cleanup runs detached
-			// or a cancelled update leaks the preview directory.
+			// acfs refuses a cancelled context, so cleanup runs detached or the preview directory leaks.
 			cleanupCtx := context.WithoutCancel(ctx)
 			if removeErr := (acfs.Root{Path: projectsDirectory}).RemoveAll(cleanupCtx, previewLogical); removeErr != nil {
 				slog.WarnContext(cleanupCtx, "failed to remove project update preview", "path", previewPath, "error", removeErr)
@@ -3357,7 +3281,6 @@ func (s *ProjectService) prepareProjectRenameVolumeMigration(
 	return projects.PlanVolumeMigration(ctx, dockerClient, composeProject, oldComposeName, newComposeName, volumes.ToolsImage(s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value))
 }
 
-// UpdateProjectServiceImages persists selected service image tags before recreating them.
 func (s *ProjectService) UpdateProjectServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange, user types.Actor) error {
 	unlock, err := s.lockProject(ctx, "update project service images", projectID)
 	if err != nil {
@@ -3369,13 +3292,10 @@ func (s *ProjectService) UpdateProjectServiceImages(ctx context.Context, project
 	if err != nil {
 		return err
 	}
-	// Keep the desired source on deployment failure: Compose may have partially
-	// recreated services, and the pending update must remain retryable.
+	// The desired source stays on failure so a partially recreated update remains retryable.
 	return s.updateProjectServices(ctx, projectID, services, user, false)
 }
 
-// SaveProjectServiceImages persists selected service image tags without
-// deploying them and returns the changed services.
 func (s *ProjectService) SaveProjectServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange) ([]string, error) {
 	unlock, err := s.lockProject(ctx, "save project service images", projectID)
 	if err != nil {
@@ -3458,9 +3378,7 @@ func (s *ProjectService) UpdateProjectWorkspace(
 	if err != nil {
 		return nil, err
 	}
-	// Only the paths the GitOps sync owns are locked; the rest of the
-	// directory is operator-owned overlay (e.g. secret env files a public
-	// repo cannot carry) and stays editable (#3634).
+	// Only GitOps-owned paths are locked; the rest is an operator overlay that stays editable (#3634).
 	ownedPaths, err := s.gitOpsOwnedWorkspacePaths(ctx, proj)
 	if err != nil {
 		return nil, err
@@ -3502,9 +3420,7 @@ func (s *ProjectService) workspaceComposeFileName(ctx context.Context, proj *Pro
 	return projects.DefaultComposeFileName
 }
 
-// gitOpsOwnedWorkspacePaths returns the workspace-relative paths owned
-// by the project's GitOps sync. Returns nil for projects without a live sync,
-// including a stale gitops_managed_by marker.
+// gitOpsOwnedWorkspacePaths returns nil without a live sync, including a stale gitops_managed_by marker.
 func (s *ProjectService) gitOpsOwnedWorkspacePaths(ctx context.Context, proj *Project) (map[string]struct{}, error) {
 	if strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy)) == "" {
 		return nil, nil
@@ -3649,7 +3565,6 @@ func (s *ProjectService) AggregateProjectTags(ctx context.Context) (types.ApiRes
 	return types.ApiResponse[[]types.ProjectTagOption]{Success: true, Data: options, FailedEnvironments: collection.Failures}, nil
 }
 
-// GetProjectTags returns the effective UI and Compose tag associations for a project.
 func (s *ProjectService) GetProjectTags(ctx context.Context, projectID string) ([]types.ProjectTag, error) {
 	var rows []types.ProjectTagAssignment
 	if err := s.db.WithContext(ctx).Model(&ProjectTag{}).Where("project_id = ?", projectID).Order("name, source, color").Find(&rows).Error; err != nil {
@@ -3658,7 +3573,6 @@ func (s *ProjectService) GetProjectTags(ctx context.Context, projectID string) (
 	return tags.Group(rows)[projectID], nil
 }
 
-// ListProjectTagOptions returns the distinct tag names and colors available in the current environment.
 func (s *ProjectService) ListProjectTagOptions(ctx context.Context) ([]types.ProjectTagOption, error) {
 	var rows []types.ProjectTagAssignment
 	if err := s.db.WithContext(ctx).Model(&ProjectTag{}).Order("name, source DESC, color").Find(&rows).Error; err != nil {
@@ -3674,7 +3588,6 @@ func (s *ProjectService) ListProjectTagOptions(ctx context.Context) ([]types.Pro
 	return options, nil
 }
 
-// ListProjectReferences returns the ID and name of every project, including archived ones, without runtime state.
 func (s *ProjectService) ListProjectReferences(ctx context.Context) ([]types.ProjectReference, error) {
 	references := []types.ProjectReference{}
 	if err := s.db.WithContext(ctx).Model(&Project{}).Select("id", "name").Order("name").Find(&references).Error; err != nil {
@@ -3683,7 +3596,7 @@ func (s *ProjectService) ListProjectReferences(ctx context.Context) ([]types.Pro
 	return references, nil
 }
 
-// UpdateProjectTag attaches or detaches a UI-managed tag and rejects Compose-owned names.
+// UpdateProjectTag rejects Compose-owned tag names.
 func (s *ProjectService) UpdateProjectTag(ctx context.Context, projectID string, tagUpdate ProjectTagUpdate, user types.Actor) ([]types.ProjectTag, error) {
 	normalized, normalizedColor, err := tags.NormalizeUpdate(tagUpdate.Name, tagUpdate.Color, tagUpdate.Attached)
 	if err != nil {

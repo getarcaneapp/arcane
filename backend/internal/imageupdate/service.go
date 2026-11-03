@@ -64,8 +64,7 @@ type (
 		engine              *flow.Engine
 		checkWorkflow       *flow.Workflow
 		credentials         *hot.HotCache[string, []types.ContainerRegistryCredential]
-		// requestCredentials holds credentials a caller supplied for one check, by its input's CredentialsKey,
-		// so they never reach the workflow journal. They expire with the check's timeout if nothing deletes them.
+		// requestCredentials keeps caller credentials out of the workflow journal; they expire with the check's timeout.
 		requestCredentials *hot.HotCache[string, []types.ContainerRegistryCredential]
 		notifyMu           sync.Mutex
 	}
@@ -92,8 +91,7 @@ type (
 		Report bool `json:"report,omitempty"`
 	}
 
-	// imageCheckOutput is the image-check outcome plus, when reported, each ref's result and the current
-	// container tag results, failed checks included.
+	// imageCheckOutput is the check outcome plus, when reported, every ref and container tag result.
 	imageCheckOutput struct {
 		Results          types.ImageUpdateBatchResponse        `json:"results,omitempty"`
 		ContainerUpdates map[string]*types.ImageUpdateResponse `json:"containerUpdates,omitempty"`
@@ -116,13 +114,9 @@ type (
 		IsLocalBuild      bool
 	}
 
-	// monitoringEligibility records, per image ID and normalized
-	// reference, whether at least one consuming container still permits update
-	// checks. Only the update-check label is consulted: containers excluded from
-	// automatic installation keep being monitored.
+	// monitoringEligibility records whether any consumer still permits update checks; only the update-check label counts.
 	monitoringEligibility struct {
-		// True when at least one container using the image ID or reference has
-		// not opted out; present but false when every such container opted out.
+		// Present but false when every consumer of the image ID or reference opted out.
 		byImageID   map[string]bool
 		byRef       map[string]bool
 		byContainer map[string]bool
@@ -142,10 +136,8 @@ type (
 )
 
 const (
-	imageCheckConcurrency = 10
-	imageCheckAttempts    = 3
-	// staleDigestRecordDeleteChunk bounds the IN list used to clear container
-	// records whose policy switched to digest tracking.
+	imageCheckConcurrency        = 10
+	imageCheckAttempts           = 3
 	staleDigestRecordDeleteChunk = 500
 )
 
@@ -189,9 +181,7 @@ func (s *ImageUpdateService) composeBuildImageRefs(ctx context.Context) (map[str
 		return nil, fmt.Errorf("load project build image references: %w", err)
 	}
 
-	// Copacetic-patched tags only exist in the local daemon, so treat them like
-	// locally built images instead of failing a remote registry lookup. Never
-	// fail the update check over patch history.
+	// Copacetic-patched tags exist only locally, so treat them as local builds; patch history never fails a check.
 	var patchedRefs []string
 	if err := s.db.WithContext(ctx).
 		Table("image_patches").
@@ -214,8 +204,7 @@ func (s *ImageUpdateService) composeBuildImageRefs(ctx context.Context) (map[str
 	return buildRefs, nil
 }
 
-// appendImageUpdateActivityMessage appends a check message; a nil
-// progress leaves progress to the activity's owner, such as the workflow engine.
+// appendImageUpdateActivityMessage leaves progress to the activity's owner when progress is nil.
 func (s *ImageUpdateService) appendImageUpdateActivityMessage(ctx context.Context, activityID string, level types.ActivityMessageLevel, message string, progress *int, step string) {
 	if activityID == "" || strings.TrimSpace(message) == "" {
 		return
@@ -247,8 +236,7 @@ func (s *ImageUpdateService) completeImageUpdateActivity(ctx context.Context, ac
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	if _, err := s.activityService.CompleteActivity(writeCtx, activityID, status, finalMessage, errMessage, "Image update check complete"); err != nil {
-		// A lost terminal write strands the activity in running forever, so it
-		// must be loud enough to correlate with a stuck activity panel entry.
+		// A lost terminal write strands the activity in running, so log loudly.
 		slog.ErrorContext(ctx, "failed to complete image update activity", "activityId", activityID, "error", err)
 	}
 }
@@ -443,12 +431,10 @@ func isLocalBuildImageRef(imageRef string, composeBuildRefs map[string]struct{})
 }
 
 func (s *ImageUpdateService) parseImageReference(imageRef string) *ImageParts {
-	// Use the official Docker reference parser to handle all edge cases
 	if named, err := reference.ParseNormalizedNamed(imageRef); err == nil {
 		return &ImageParts{
 			Registry:   kitregistry.Normalize(reference.Domain(named)),
 			Repository: reference.Path(named),
-			// Extract tag or default to latest
 			Tag: func() string {
 				if tagged, ok := named.(reference.NamedTagged); ok {
 					return tagged.Tag()
@@ -458,7 +444,6 @@ func (s *ImageUpdateService) parseImageReference(imageRef string) *ImageParts {
 		}
 	}
 
-	// Fallback to manual parsing if the official parser fails
 	splitTag := func(repository string) (string, string) {
 		repoParts := strings.Split(repository, ":")
 		if len(repoParts) == 1 {
@@ -537,8 +522,7 @@ func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string
 		return imageRef, nil
 	}
 
-	// Fallback: if the image was pruned, look up the image reference from
-	// running containers that were started from this image ID.
+	// Pruned images: look up the reference from containers started from this image ID.
 	if imageRef, ok := func() (string, bool) {
 		containers, listErr := s.dockerService.ListContainers(ctx, false)
 		if listErr != nil {
@@ -592,8 +576,7 @@ func newMonitoringEligibility(containers []container.Summary) monitoringEligibil
 	return eligibility
 }
 
-// imageEligible reports whether an image may be checked: unused images are
-// eligible, used images need one consumer that has not opted out.
+// imageEligible: unused images are eligible; used ones need a consumer that has not opted out.
 func (e monitoringEligibility) imageEligible(imageID, normalizedRef string) bool {
 	eligibleByID, usedByID := e.byImageID[strings.TrimSpace(imageID)]
 	eligibleRef, usedByRef := e.byRef[normalizedRef]
@@ -606,8 +589,7 @@ func filterImageSummariesByContainerOptOut(images []image.Summary, containers []
 	seen := make(map[string]struct{})
 	filtered := make([]string, 0)
 
-	// Equivalent spellings share one candidate; the first one seen is kept.
-	// Digest-pinned refs do not normalize, so they dedupe on their own spelling.
+	// Equivalent spellings share one candidate; digest-pinned refs dedupe on their own spelling.
 	addCandidate := func(imageRef, imageID string) bool {
 		imageRef = strings.TrimSpace(imageRef)
 		if imageRef == "" || imageRef == "<none>:<none>" || refs.IsImageIDLikeReference(imageRef) {
@@ -628,8 +610,7 @@ func filterImageSummariesByContainerOptOut(images []image.Summary, containers []
 	}
 
 	for _, summary := range images {
-		// A digest name kept beside a real tag (containerd image store) would save a
-		// skipped result under the same image ID and replace the tag's result.
+		// A containerd digest name beside a real tag would overwrite the tag's result under the same image ID.
 		hasTag := slices.ContainsFunc(summary.RepoTags, func(imageRef string) bool {
 			return imageRef != "<none>:<none>" && !refs.IsDigestPinnedReference(imageRef)
 		})
@@ -643,8 +624,7 @@ func filterImageSummariesByContainerOptOut(images []image.Summary, containers []
 		}
 	}
 
-	// Containers can run images whose tag is no longer present locally, so
-	// their references are candidates too.
+	// Containers may run images whose tag is gone locally.
 	for _, summary := range containers {
 		if addCandidate(summary.Image, summary.ImageID) {
 			return filtered
@@ -665,7 +645,6 @@ func (s *ImageUpdateService) inspectLocalImageSnapshot(ctx context.Context, imag
 	var allDigests, repositoryDigests []string
 	requested, referenceErr := refs.NormalizeReference(imageRef)
 
-	// Extract all digests from RepoDigests
 	for _, repoDigest := range inspectResponse.RepoDigests {
 		digestValue, ok := digest.FromReferenceSuffix(repoDigest)
 		if !ok {
@@ -682,10 +661,9 @@ func (s *ImageUpdateService) inspectLocalImageSnapshot(ctx context.Context, imag
 	repo, tag := extractRepoAndTagFromImage(inspectResponse.InspectResponse, s.parseImageReference(imageRef))
 
 	return &localImageSnapshot{
-		ImageID:    inspectResponse.ID,
-		Repository: repo,
-		Tag:        tag,
-		// Use the first repository digest, else the first digest; fallback to image ID if no repo digests available
+		ImageID:           inspectResponse.ID,
+		Repository:        repo,
+		Tag:               tag,
 		PrimaryDigest:     slices.Concat(repositoryDigests, allDigests, []string{inspectResponse.ID})[0],
 		AllDigests:        kit.Ternary(len(allDigests) > 0, allDigests, []string{inspectResponse.ID}),
 		RepositoryDigests: repositoryDigests,
@@ -765,8 +743,7 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshot(ctx context.Context, i
 			"repository", repository,
 			"tag", parts.Tag,
 			"syntheticId", syntheticID)
-		// Persist registry results even when the local image no longer exists. This keeps
-		// project/image update status available for pruned images using a ref-scoped record.
+		// Persist registry results under a ref-scoped record so pruned images keep their update status.
 		return s.savePreparedUpdateResult(ctx, syntheticID, repository, parts.Tag, result)
 	}
 
@@ -833,12 +810,10 @@ func buildImageUpdateRecord(imageID, repo, tag string, result *types.ImageUpdate
 }
 
 func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, result *types.ImageUpdateResponse) error {
-	// Check if there's an existing record to compare state changes
 	var existingRecord ImageUpdateRecord
 	hasExisting := tx.Where("id = ?", imageID).First(&existingRecord).Error == nil
 
-	// A registry rate limit (429) is transient: keep the previous good result
-	// instead of clobbering it with an error record
+	// A registry rate limit is transient, so keep the previous good result.
 	if hasExisting &&
 		strings.TrimSpace(result.Error) != "" &&
 		registry.IsRateLimitErrorString(result.Error) &&
@@ -849,13 +824,10 @@ func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, resu
 	}
 
 	sameLatest := kit.FromPtr(existingRecord.LatestDigest) == result.LatestDigest && kit.FromPtr(existingRecord.LatestVersion) == result.LatestVersion
-	// A failed check keeps a pending target and when it was first seen, so a
-	// transient registry error does not restart the auto-update delay.
+	// A failed check keeps its pending target so transient errors do not restart the auto-update delay.
 	failed := !result.HasUpdate && strings.TrimSpace(result.Error) != "" && existingRecord.LatestSeenAt != nil
 
-	// Reset notification_sent if the update state changed in any way; keep the existing
-	// value if nothing changed. New records start with notification_sent = false.
-	// latest_seen_at keeps the time the pending update was first seen until it changes.
+	// Reset notification_sent only when the update state changed; latest_seen_at keeps the first-seen time.
 	return tx.Save(buildImageUpdateRecord(imageID, repo, tag, result,
 		existingRecord.NotificationSent &&
 			(failed || hasExisting &&
@@ -894,8 +866,7 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 
 	checkTime := time.Now().UTC()
 	_, tag, repositoryCandidates, hasLookup := imageref.ParseUpdateLookup(imageRef)
-	// projectChecks are the digest previews a pull of imageRef satisfies. Previews that were disabled,
-	// local, or not pulled carry no digest result and are left for the next project check.
+	// projectChecks are the digest previews this pull satisfies; previews without a digest result wait for the next check.
 	projectChecks, confirmedDigest, err := func() ([]ImageUpdateRecord, string, error) {
 		if len(repositoryCandidates) == 0 || len(snapshot.RepositoryDigests) == 0 {
 			return nil, "", nil
@@ -914,9 +885,7 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 			return records, "", nil
 		}
 
-		// Digests have no ordering. Confirm a moved tag without using the digest cache.
-		// A registry failure leaves the differing previews untouched rather than
-		// blocking the reconciliation of the pulled image state.
+		// Confirm a moved tag without the digest cache; a registry failure leaves differing previews untouched.
 		registryCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
 		defer cancel()
 		latest, inspectErr := s.registryService.InspectImageDigest(registryCtx, imageRef, nil)
@@ -932,9 +901,7 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 	}
 	if transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if hasLookup && len(repositoryCandidates) > 0 {
-			// Only clear synthetic ref:: records, not real sha256 image ID records.
-			// Clearing sha256 records would incorrectly mark containers that are still
-			// running the old image as up-to-date (see: #2453).
+			// Only clear synthetic ref:: records; clearing sha256 records marks old-image containers up to date (#2453).
 			if clearStaleUpdatesErr := tx.Model(&ImageUpdateRecord{}).
 				Where("id LIKE 'ref::%' AND tag = ? AND repository IN ?", tag, slices.Collect(maps.Keys(repositoryCandidates))).
 				Updates(map[string]any{"has_update": false, "latest_seen_at": nil}).Error; clearStaleUpdatesErr != nil {
@@ -1009,7 +976,6 @@ func (s *ImageUpdateService) StoredUpdateByImageID(ctx context.Context, imageID 
 	return &record, true, nil
 }
 
-// GetUnnotifiedUpdates returns a map of image IDs that have updates but haven't been notified yet
 func (s *ImageUpdateService) GetUnnotifiedUpdates(ctx context.Context) (map[string]*ImageUpdateRecord, error) {
 	var records []ImageUpdateRecord
 	if err := s.db.WithContext(ctx).
@@ -1047,9 +1013,7 @@ func (s *ImageUpdateService) MarkUpdatesAsNotified(ctx context.Context, records 
 	})
 }
 
-// groupImageRefs dedupes refs naming the same registry/repo:tag into one
-// check; the first ref of a group is canonical. Digest-pinned and invalid refs
-// each form their own group.
+// groupImageRefs groups refs naming the same registry/repo:tag; digest-pinned and invalid refs stay alone.
 func (s *ImageUpdateService) groupImageRefs(imageRefs []string) [][]string {
 	var groups [][]string
 	indexByNormalizedRef := make(map[string]int)
@@ -1090,8 +1054,7 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 			ActivityID:     mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 		}, snapshot, nil
 	}
-	// A compose build ref whose image is not present locally has no registry to
-	// check against, so the registry lookup is skipped entirely.
+	// A missing compose build image has no registry to check.
 	if ldErr != nil && errdefs.IsNotFound(ldErr) && isLocalBuildImageRef(imageRef, composeBuildRefs) {
 		return &types.ImageUpdateResponse{
 			UpdateType:     UpdateTypeLocal,
@@ -1106,7 +1069,6 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 	digestResult, digestErr := s.registryService.InspectImageDigest(registryCtx, imageRef, externalCreds)
 	registryCancel()
 	if digestErr != nil {
-		// digestResult may contain auth metadata even on error
 		return &types.ImageUpdateResponse{
 			Error:          digestErr.Error(),
 			CheckTime:      time.Now(),
@@ -1123,10 +1085,7 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 		snapshot, ldErr = s.inspectLocalImageSnapshot(ctx, imageRef, composeBuildRefs)
 		if ldErr != nil {
 			if errdefs.IsNotFound(ldErr) {
-				// The ref resolved remotely but was never pulled locally (e.g. a
-				// stopped project whose compose pin changed): there is nothing
-				// local to compare, so report a distinct not-pulled state rather
-				// than a failed check or an available update.
+				// Resolved remotely but never pulled locally, so report not-pulled instead of failure or update.
 				return &types.ImageUpdateResponse{
 					UpdateType:     UpdateTypeNotPulled,
 					LatestDigest:   digestResult.Digest,
@@ -1152,8 +1111,7 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 		}
 	}
 
-	// Deliberately index-level: local RepoDigests and the registry digest are both the index digest a tag resolves to,
-	// so this answers "would a pull fetch something new". Do not align it to platform-level digests.
+	// Deliberately index-level: both digests are the tag's index digest, so do not compare platform digests.
 	slog.DebugContext(ctx, "digest comparison",
 		"imageRef", imageRef,
 		"primaryLocalDigest", kit.Ternary(slices.Contains(snapshot.AllDigests, digestResult.Digest), digestResult.Digest, snapshot.PrimaryDigest),
@@ -1176,15 +1134,12 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 	}, snapshot, nil
 }
 
-// resolveBatchCredentials returns the caller's credentials for the check, or else the enabled stored
-// registry credentials, cached per scan so its tasks decrypt them once while each new scan sees registry edits.
-// Failures are not cached. Caller credentials live only in memory, so a check resumed after a restart uses the stored ones.
+// resolveBatchCredentials prefers caller credentials, else caches stored ones per scan; a resumed check uses stored ones.
 func (s *ImageUpdateService) resolveBatchCredentials(ctx context.Context, t flow.Task, input imageCheckInput) []types.ContainerRegistryCredential {
 	if supplied, ok, _ := s.requestCredentials.Get(input.CredentialsKey); ok && input.CredentialsKey != "" {
 		return supplied
 	}
 	credentials, _, err := s.credentials.GetWithLoaders(t.ActivityID(), func([]string) (map[string][]types.ContainerRegistryCredential, error) {
-		// Decrypt the enabled stored registry credentials.
 		registries, loadErr := s.registryService.GetEnabledRegistries(ctx)
 		if loadErr != nil {
 			return nil, loadErr
@@ -1220,8 +1175,6 @@ func (s *ImageUpdateService) resolveBatchCredentials(ctx context.Context, t flow
 	return credentials
 }
 
-// recordDigestPinnedSkip notes a digest-pinned ref as skipped on the
-// activity stream and persists its unchanged result.
 func (s *ImageUpdateService) recordDigestPinnedSkip(ctx context.Context, activityID, imageRef string, result *types.ImageUpdateResponse, progress *int) {
 	s.appendImageUpdateActivityMessage(ctx, activityID, types.ActivityMessageLevelInfo, imageRef+" — digest pinned, skipped", progress, kit.Ternary(progress != nil, "Skipping image update check", ""))
 	if err := s.saveUpdateResultWithSnapshot(ctx, imageRef, result, nil); err != nil {
@@ -1276,17 +1229,13 @@ func (s *ImageUpdateService) RegisterWorkflows(engine *flow.Engine) error {
 	return nil
 }
 
-// CheckWorkflow is the image-check workflow, for use as a child step.
 func (s *ImageUpdateService) CheckWorkflow() *flow.Workflow { return s.checkWorkflow }
 
-// RunImageCheck checks the requested images and returns the check outcome;
-// failed images are reported as failed targets.
 func (s *ImageUpdateService) RunImageCheck(ctx context.Context, request types.ImageUpdateCheckRequest) (types.SchedulerOutcome, error) {
 	return s.engine.Run(ctx, s.checkWorkflow, request, activitylib.StartRequest{}, nil)
 }
 
-// CheckImages checks the requested images and returns each ref's result. Usable credentials replace the stored
-// registries for this check, as they always have.
+// CheckImages returns each ref's result; usable credentials replace the stored registries for this check.
 func (s *ImageUpdateService) CheckImages(ctx context.Context, request types.ImageUpdateCheckRequest, credentials []types.ContainerRegistryCredential) (types.ImageUpdateBatchResponse, error) {
 	if !request.All && len(request.ImageRefs) == 0 {
 		return types.ImageUpdateBatchResponse{}, nil
@@ -1386,8 +1335,7 @@ func (s *ImageUpdateService) discoverImages(ctx context.Context, t flow.Task) (a
 	return s.groupImageRefs(imageRefs), nil
 }
 
-// checkImage checks one group of refs. Retryable failures are recorded
-// only on the last attempt so earlier attempts never replace a good result.
+// checkImage records retryable failures only on the last attempt so a good result is never replaced.
 func (s *ImageUpdateService) checkImage(ctx context.Context, t flow.Task) (any, error) {
 	var group []string
 	if err := t.DecodeItem(&group); err != nil || len(group) == 0 {
@@ -1432,8 +1380,7 @@ func (s *ImageUpdateService) checkImage(ctx context.Context, t flow.Task) (any, 
 	if checkErr != nil && flow.Retryable(checkErr) && !input.Report && t.Attempt() < imageCheckAttempts {
 		return nil, checkErr
 	}
-	// Save the result and report it on the activity: errors become ERROR, available updates
-	// become SUCCESS, and up-to-date images stay INFO.
+	// Errors log as ERROR, updates as SUCCESS, and up-to-date images as INFO.
 	level, message := func() (types.ActivityMessageLevel, string) {
 		switch {
 		case strings.TrimSpace(res.Error) != "":
@@ -1462,7 +1409,6 @@ func (s *ImageUpdateService) checkImage(ctx context.Context, t flow.Task) (any, 
 	return imageCheckResult{Local: res.UpdateType == UpdateTypeLocal, Result: kit.Ternary(input.Report, res, nil)}, nil
 }
 
-// checkTagPolicies checks container tag policies for the non-local refs.
 func (s *ImageUpdateService) checkTagPolicies(ctx context.Context, t flow.Task) (any, error) {
 	groups, results, err := imageCheckResults(t)
 	if err != nil {
@@ -1567,7 +1513,6 @@ func (s *ImageUpdateService) finalizeImageCheck(ctx context.Context, t flow.Task
 	}, nil
 }
 
-// imageCheckResults reads the discovered groups and their check slots.
 func imageCheckResults(t flow.Task) ([][]string, []flow.Result[imageCheckResult], error) {
 	var groups [][]string
 	if err := t.DecodeOutput("discover", &groups); err != nil {
@@ -1590,25 +1535,13 @@ func imageCheckResults(t flow.Task) ([][]string, []flow.Result[imageCheckResult]
 	return groups, merged, nil
 }
 
-// SendBatchUpdateNotifications delivers pending update notifications. It
-// returns an error only when the pending set could not be determined, so a
-// caller about to consume the records can stop before their notifications
-// are lost; delivery failures leave the records unnotified for the next flush.
+// SendBatchUpdateNotifications errors only when the pending set is unknown; failed deliveries retry on the next flush.
 func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) error {
-	// Serialize the query→send→mark sequence so the poll-end flush and the
-	// updater consumption-path flush can't both read the same unnotified set
-	// and double-send.
+	// Serialize query, send, and mark so concurrent flushes cannot double-send.
 	s.notifyMu.Lock()
 	defer s.notifyMu.Unlock()
 
-	// completeImageUpdateActivity cancels the activity-tracked ctx before
-	// we reach here, so detach from that cancellation — otherwise the
-	// unnotified-updates query dies with "context canceled" and no notification is
-	// ever dispatched. Deliberately not utils.ActivityRuntimeContext: that helper
-	// short-circuits (returns ctx unchanged) for app-lifecycle-marked contexts, and
-	// every request/scheduler ctx carries that marker via the server BaseContext,
-	// making the detach a no-op in production. WithoutCancel keeps all values and
-	// the WithTimeout below keeps the flush bounded.
+	// Detach from the activity's cancellation; ActivityRuntimeContext would be a no-op for app-lifecycle contexts.
 	ctx = context.WithoutCancel(ctx)
 
 	notifCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -1619,16 +1552,13 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) e
 		if recordsErr != nil || len(records) == 0 {
 			return records, recordsErr
 		}
-		// Records for resources that opted out of monitoring since the check, or
-		// whose container is gone, stay unnotified: they resurface if monitoring
-		// is re-enabled and are otherwise removed by orphan cleanup.
+		// Opted-out or vanished resources stay unnotified until monitoring returns or orphan cleanup removes them.
 		listed, listErr := s.dockerService.ListContainers(notifCtx, false)
 		if listErr != nil {
 			return records, fmt.Errorf("list containers for update-check eligibility: %w", listErr)
 		}
 		eligibility := newMonitoringEligibility(listed)
 		maps.DeleteFunc(records, func(id string, record *ImageUpdateRecord) bool {
-			// Results scoped to a container that no longer exists are stale and not eligible.
 			if kit.Ternary(record.ContainerID != "",
 				eligibility.byContainer[record.ContainerID],
 				eligibility.imageEligible(record.ID, refs.NormalizeImageUpdateRef(record.Repository+":"+record.Tag))) {
@@ -1678,9 +1608,7 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) e
 		if notifErr != nil {
 			slog.WarnContext(ctx, "Failed to send batch update notification", "error", notifErr.Error())
 		}
-		// Mark notified when at least one provider delivered — a partial provider
-		// failure must not make every healthy provider re-send the same updates on
-		// the next poll. Failures remain visible in the delivery history.
+		// Mark notified once any provider delivered so healthy providers do not re-send.
 		if delivered == 0 {
 			slog.DebugContext(ctx, "No providers delivered image update notifications; leaving records unnotified", "count", len(unnotifiedUpdates))
 			return nil
@@ -1694,8 +1622,7 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) e
 	return nil
 }
 
-// DeleteRecordsForImages removes image-level rows (keyed by id) and
-// container/project rows (keyed by image_id) for the given images.
+// DeleteRecordsForImages removes rows keyed by id or image_id for the given images.
 func (s *ImageUpdateService) DeleteRecordsForImages(ctx context.Context, imageIDs []string) error {
 	if s == nil || len(imageIDs) == 0 {
 		return nil
@@ -1751,10 +1678,6 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 }
 
 func (s *ImageUpdateService) GetUpdateSummary(ctx context.Context) (*types.ImageUpdateSummary, error) {
-	if s == nil {
-		return nil, errors.New("docker service unavailable")
-	}
-
 	dockerImages, err := s.dockerService.ListImages(ctx)
 	if err != nil {
 		return nil, err

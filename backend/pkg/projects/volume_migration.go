@@ -1,7 +1,10 @@
 package projects
 
 import (
+	"cmp"
 	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,8 +16,8 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/compose/v5/pkg/api"
-	composepkg "github.com/docker/compose/v5/pkg/compose"
 	"github.com/moby/moby/client"
+	"github.com/opencontainers/go-digest"
 	"go.yaml.in/yaml/v4"
 
 	"kit.getarcane.app/docker"
@@ -24,9 +27,6 @@ import (
 )
 
 func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, composeProject *composetypes.Project, oldComposeName, newComposeName, toolsImage string) (types.VolumeMigration, error) {
-	if dockerClient == nil {
-		return nil, errors.New("docker service unavailable")
-	}
 	if composeProject == nil || len(composeProject.Volumes) == 0 {
 		return nil, nil
 	}
@@ -143,11 +143,17 @@ func renamedVolumeCreateOptions(config composetypes.VolumeConfig, oldLabels map[
 	maps.Copy(labels, oldLabels)
 	maps.Copy(labels, config.Labels)
 	maps.Copy(labels, config.CustomLabels)
-	hash, err := composepkg.VolumeHash(config)
+	raw, err := json.Marshal(composetypes.VolumeConfig{
+		Name:       config.Name,
+		Driver:     cmp.Or(config.Driver, "local"),
+		DriverOpts: config.DriverOpts,
+		External:   config.External,
+		Labels:     config.Labels,
+	}, json.Deterministic(true), json.OmitZeroStructFields(true), jsontext.EscapeForHTML(true))
 	if err != nil {
 		return client.VolumeCreateOptions{}, fmt.Errorf("hash target volume %s: %w", config.Name, err)
 	}
-	labels[api.ConfigHashLabel] = hash
+	labels[api.ConfigHashLabel] = digest.SHA256.FromBytes(raw).Encoded()
 	return client.VolumeCreateOptions{Name: config.Name, Driver: config.Driver, DriverOpts: config.DriverOpts, Labels: labels}, nil
 }
 
@@ -170,8 +176,7 @@ func composeVolumeKeysWithExplicitName(composeFiles []string) (map[string]struct
 }
 
 func composeVolumeKeysWithExplicitNameInFile(path string) (map[string]struct{}, error) {
-	// os.* rather than acfs: compose config files may live outside the project
-	// directory (e.g. via include), so no single confinement root covers them.
+	// os.* rather than acfs: compose files may live outside the project directory via include.
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read compose file: %w", err)

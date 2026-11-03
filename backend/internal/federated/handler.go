@@ -15,8 +15,6 @@ import (
 )
 
 type (
-	// FederatedCredentialHandler provides Huma-based federated credential
-	// management endpoints.
 	FederatedCredentialHandler struct {
 		federatedCredentialService *FederatedCredentialService
 	}
@@ -136,12 +134,6 @@ func (h *FederatedCredentialHandler) DeleteFederatedCredential(ctx context.Conte
 }
 
 func (h *FederatedCredentialHandler) ExchangeToken(c *echo.Context) error {
-	if h.federatedCredentialService == nil {
-		return c.JSON(http.StatusInternalServerError, federatedTokenExchangeError{
-			Error:            "server_error",
-			ErrorDescription: "service not available",
-		})
-	}
 	if err := c.Request().ParseForm(); err != nil {
 		return c.JSON(http.StatusBadRequest, federatedTokenExchangeError{
 			Error:            "invalid_request",

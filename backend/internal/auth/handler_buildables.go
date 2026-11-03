@@ -52,10 +52,6 @@ func registerAutoLogin(api huma.API, authService *AuthService) {
 }
 
 func (h *autoLoginHandler) GetConfig(c *echo.Context) error {
-	if h.authService == nil {
-		return c.JSON(http.StatusInternalServerError, types.ErrorResponse{Error: "service not available"})
-	}
-
 	config, err := h.authService.GetAutoLoginConfig(c.Request().Context())
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, types.ErrorResponse{Error: "failed to get auto-login config"})
@@ -68,10 +64,6 @@ func (h *autoLoginHandler) GetConfig(c *echo.Context) error {
 }
 
 func (h *autoLoginHandler) Login(c *echo.Context) error {
-	if h.authService == nil {
-		return c.JSON(http.StatusInternalServerError, types.ErrorResponse{Error: "service not available"})
-	}
-
 	autoLoginConfig, err := h.authService.GetAutoLoginConfig(c.Request().Context())
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, types.ErrorResponse{Error: "failed to get auto-login config"})

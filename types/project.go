@@ -674,7 +674,6 @@ type (
 		BuildProvider string
 	}
 
-	// ComposeDeployment supplies application actions in deployment order.
 	ComposeDeployment struct {
 		Progress          io.Writer
 		Options           *ProjectDeployOptions
@@ -691,7 +690,6 @@ type (
 		GitOpsManaged     bool
 	}
 
-	// ComposeServiceUpdate supplies an already authorized service update.
 	ComposeServiceUpdate struct {
 		Progress              io.Writer
 		Project               *composetypes.Project
@@ -701,31 +699,48 @@ type (
 		Images                ComposeImageOperations
 		DockerHost            string
 		Services              []string
-		// Dependents are recreated alongside Services because they share a member's
-		// namespace or volumes; they are never pulled. StoppedDependents are
-		// recreated without being started so an operator's stop is preserved.
+		// Dependents share a member's namespace or volumes and are never pulled; StoppedDependents stay stopped.
 		Dependents        []string
 		StoppedDependents []string
 		WaitTimeout       time.Duration
 	}
 
+	ComposeTarget struct {
+		Project    *composetypes.Project
+		DockerHost string
+		Services   []string
+	}
+
 	ComposeUpOptions struct {
-		AuthConfigs     map[string]registry.AuthConfig
-		Services        []string
+		AuthConfigs map[string]registry.AuthConfig
+		ComposeTarget
 		WaitTimeout     time.Duration
 		RemoveOrphans   bool
 		ForceRecreate   bool
 		RecreateVolumes bool
 	}
 
-	// ComposeCommands supplies the SDK operations used by the coordinator.
-	ComposeCommands struct {
-		Stop   func(context.Context, string, *composetypes.Project, []string) error
-		Up     func(context.Context, string, *composetypes.Project, ComposeUpOptions) error
-		Create func(context.Context, string, *composetypes.Project, []string, map[string]registry.AuthConfig) error
+	ComposeCreateOptions struct {
+		AuthConfigs map[string]registry.AuthConfig
+		ComposeTarget
 	}
 
-	// ComposeCoordinator executes Compose workflows through application collaborators.
+	ComposeDownOptions struct {
+		ComposeTarget
+		RemoveVolumes bool
+	}
+
+	ComposePsOptions struct {
+		ComposeTarget
+		All bool
+	}
+
+	ComposeCommands struct {
+		Stop   func(context.Context, ComposeTarget) error
+		Up     func(context.Context, ComposeUpOptions) error
+		Create func(context.Context, ComposeCreateOptions) error
+	}
+
 	ComposeCoordinator interface {
 		Deploy(ctx context.Context, request ComposeDeployment) (*composetypes.Project, error)
 		UpdateServices(ctx context.Context, request ComposeServiceUpdate) error

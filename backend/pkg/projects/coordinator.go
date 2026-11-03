@@ -26,7 +26,6 @@ type (
 	}
 )
 
-// NewCoordinator owns Compose workflow sequencing using the configured SDK commands.
 func NewCoordinator(commands types.ComposeCommands) types.ComposeCoordinator {
 	if commands.Stop == nil {
 		commands.Stop = ComposeStop
@@ -40,7 +39,6 @@ func NewCoordinator(commands types.ComposeCommands) types.ComposeCoordinator {
 	return &composeCoordinator{commands: commands}
 }
 
-// Deploy runs hooks before loading, prepares images, then reconciles the project.
 func (c *composeCoordinator) Deploy(ctx context.Context, request types.ComposeDeployment) (_ *composetypes.Project, err error) {
 	defer func() {
 		if err != nil && request.Recover != nil {
@@ -72,7 +70,9 @@ func (c *composeCoordinator) Deploy(ctx context.Context, request types.ComposeDe
 	}
 	removeOrphans := ResolveRemoveOrphans(request.GitOpsManaged, request.Options)
 	slog.InfoContext(ctx, "starting compose up with health check support", "projectId", request.ProjectID, "projectName", model.Name, "services", len(model.Services), "removeOrphans", removeOrphans)
-	if upErr := c.commands.Up(ctx, request.DockerHost, model, types.ComposeUpOptions{
+	if upErr := c.commands.Up(ctx, types.ComposeUpOptions{
+		Project:         model,
+		DockerHost:      request.DockerHost,
 		RemoveOrphans:   removeOrphans,
 		ForceRecreate:   forceRecreate,
 		RecreateVolumes: recreateVolumes,
@@ -92,7 +92,6 @@ func (c *composeCoordinator) Deploy(ctx context.Context, request types.ComposeDe
 	return model, nil
 }
 
-// ResolveRemoveOrphans preserves GitOps reconciliation and explicit caller opt-in.
 func ResolveRemoveOrphans(gitOpsManaged bool, options *types.ProjectDeployOptions) bool {
 	return gitOpsManaged || (options != nil && options.RemoveOrphans)
 }
@@ -113,10 +112,16 @@ func (c *composeCoordinator) UpdateServices(ctx context.Context, request types.C
 		}
 		return fmt.Errorf("pull updated service images: %w", pullServicesErr)
 	}
-	if stopErr := c.commands.Stop(ctx, request.DockerHost, selected, scope); stopErr != nil {
+	if stopErr := c.commands.Stop(ctx, types.ComposeTarget{
+		Project:    selected,
+		DockerHost: request.DockerHost,
+		Services:   scope,
+	}); stopErr != nil {
 		slog.WarnContext(ctx, "compose stop failed, continuing", "error", stopErr)
 	}
-	if upErr := c.commands.Up(ctx, request.DockerHost, selected, types.ComposeUpOptions{
+	if upErr := c.commands.Up(ctx, types.ComposeUpOptions{
+		Project:       selected,
+		DockerHost:    request.DockerHost,
 		Services:      scope,
 		ForceRecreate: true,
 		AuthConfigs:   request.AuthConfigs,
@@ -127,10 +132,14 @@ func (c *composeCoordinator) UpdateServices(ctx context.Context, request types.C
 		}
 		return fmt.Errorf("failed to up services: %w", upErr)
 	}
-	// Stopped dependents are recreated after the up so they resolve the new
-	// provider containers, and are left stopped.
+	// Recreated after the up so they resolve the new provider containers.
 	if len(request.StoppedDependents) > 0 {
-		if createErr := c.commands.Create(ctx, request.DockerHost, selected, request.StoppedDependents, request.AuthConfigs); createErr != nil {
+		if createErr := c.commands.Create(ctx, types.ComposeCreateOptions{
+			Project:     selected,
+			DockerHost:  request.DockerHost,
+			Services:    request.StoppedDependents,
+			AuthConfigs: request.AuthConfigs,
+		}); createErr != nil {
 			if request.Recover != nil {
 				request.Recover(context.WithoutCancel(ctx))
 			}
@@ -156,9 +165,7 @@ func SelectServices(model *composetypes.Project, services []string) (*composetyp
 	return selected.WithoutUnnecessaryResources(), nil
 }
 
-// NamespaceDependents returns the services outside services that join a member's
-// network/ipc/pid namespace or use volumes_from it, transitively. Mirrors compose's
-// parentNamespaceRecreated cascade; services inactive for model.Profiles are skipped.
+// NamespaceDependents mirrors compose's parentNamespaceRecreated cascade, transitively.
 func NamespaceDependents(model *composetypes.Project, services []string) []string {
 	if model == nil {
 		return nil
@@ -205,7 +212,6 @@ func NamespaceDependents(model *composetypes.Project, services []string) []strin
 	return slices.Sorted(maps.Keys(added))
 }
 
-// PullServices pulls each selected registry image once through the application image service.
 func (c *composeCoordinator) PullServices(ctx context.Context, model *composetypes.Project, services []string, operations types.ComposeImageOperations, progress io.Writer) error {
 	for _, imageRef := range SelectedImageRefs(model, services) {
 		if err := operations.Pull(ctx, imageRef, progress); err != nil {
@@ -229,7 +235,6 @@ func (c *composeCoordinator) EnsureImagesPresent(ctx context.Context, model *com
 		exists, ierr := operations.Exists(ctx, img)
 		if ierr != nil && step.Mode != ImagePullModeAlways {
 			slog.WarnContext(ctx, "failed to check local image existence", "image", img, "error", ierr)
-			// Non-fatal: attempt to pull to be safe
 		}
 
 		if step.Mode == ImagePullModeNever {
@@ -300,8 +305,7 @@ func (c *composeCoordinator) PrepareImagesForDeploy(
 			return err
 		}
 
-		// pre_start hook images and type:image volume sources cannot be built:
-		// they follow the service's pull decision minus the build/fallback paths.
+		// pre_start hook images and type:image volume sources cannot be built.
 		dependentDecision := DeployImageDecision{PullIfMissing: true}
 		switch {
 		case decision.RequireLocalOnly:
@@ -359,8 +363,7 @@ func (c *composeCoordinator) ensureDeployServiceImageReady(
 		var tagErr error
 		lastTagged, tagErr = operations.LastTagged(ctx, imageName)
 		if tagErr != nil {
-			// Unknown last-tag time counts as stale, matching the missing-record
-			// behavior of compose's refresh handling.
+			// Unknown last-tag time counts as stale, matching compose's refresh handling.
 			slog.WarnContext(ctx, "failed to resolve image last-tag time; treating refresh as due", "image", imageName, "error", tagErr)
 		}
 	}
@@ -456,8 +459,7 @@ func (c *composeCoordinator) BuildServices(ctx context.Context,
 	return nil
 }
 
-// NormalizeBuildSelections turns a user-supplied service list into a lookup set,
-// dropping blanks. An empty set means "every service".
+// NormalizeBuildSelections drops blanks; an empty set means every service.
 func NormalizeBuildSelections(services []string) map[string]struct{} {
 	selected := map[string]struct{}{}
 	for _, name := range services {
@@ -470,8 +472,7 @@ func NormalizeBuildSelections(services []string) map[string]struct{} {
 	return selected
 }
 
-// ServiceSelected reports whether name is in the selection built by
-// NormalizeBuildSelections. An empty selection selects everything.
+// ServiceSelected treats an empty selection as selecting everything.
 func ServiceSelected(selected map[string]struct{}, name string) bool {
 	if len(selected) == 0 {
 		return true
@@ -480,9 +481,7 @@ func ServiceSelected(selected map[string]struct{}, name string) bool {
 	return ok
 }
 
-// EnsureServiceImage gives a build-only service a deterministic local image tag
-// so the built image has a stable name to deploy from. It reports whether the
-// service config was changed.
+// EnsureServiceImage gives a build-only service a deterministic local tag and reports whether it changed.
 func EnsureServiceImage(projectID, projectName, serviceName string, svc composetypes.ServiceConfig) (string, composetypes.ServiceConfig, bool) {
 	imageName := strings.TrimSpace(svc.Image)
 	if imageName == "" {
@@ -493,9 +492,6 @@ func EnsureServiceImage(projectID, projectName, serviceName string, svc composet
 	return imageName, svc, false
 }
 
-// PrepareDeployServiceConfig resolves the image a service deploys as, naming
-// build-only services via EnsureServiceImage. It reports whether the service
-// config was changed.
 func PrepareDeployServiceConfig(projectID, projectName, serviceName string, svc composetypes.ServiceConfig) (composetypes.ServiceConfig, string, bool) {
 	if svc.Build == nil {
 		return svc, strings.TrimSpace(svc.Image), false
@@ -505,11 +501,7 @@ func PrepareDeployServiceConfig(projectID, projectName, serviceName string, svc 
 	return updatedSvc, resolvedImage, updated
 }
 
-// ShouldPullDeployImage reports whether a deploy must pull, given the resolved
-// pull decision, whether the image is already present locally, and when the
-// local image was last tagged (zero when unknown). Refresh policies mirror
-// compose v5.5.0's `up`: a present image is re-pulled only once its window
-// has elapsed since the engine's last-tag time.
+// ShouldPullDeployImage mirrors compose up: a present image is re-pulled only once its refresh window elapsed.
 func ShouldPullDeployImage(decision DeployImageDecision, exists bool, lastTagged time.Time) bool {
 	if decision.PullAlways {
 		return true
@@ -523,8 +515,7 @@ func ShouldPullDeployImage(decision DeployImageDecision, exists bool, lastTagged
 	return false
 }
 
-// SelectedImageRefs returns the distinct pullable image refs of the selected
-// services — build services are excluded, since their images come from a build.
+// SelectedImageRefs excludes build services, since their images come from a build.
 func SelectedImageRefs(compProj *composetypes.Project, servicesToUpdate []string) []string {
 	if compProj == nil {
 		return nil

@@ -28,11 +28,10 @@ type (
 		Password        func(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error)
 		SanitizePath    func(input string) (string, error)
 		ArchiveFilename func(backupID string) (string, error)
-		TempContainer   func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (string, func(), error)
+		TempContainer   func(ctx context.Context, target string, readOnly bool) (string, func(), error)
 		Exec            func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 	}
 
-	// Service lists and browses the files stored in volume backups.
 	Service struct {
 		deps Dependencies
 	}
@@ -147,11 +146,7 @@ func (s *Service) ArchivePaths(ctx context.Context, backupID string) ([]string, 
 	if err != nil {
 		return nil, err
 	}
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	containerID, cleanup, err := s.deps.TempContainer(ctx, dockerClient, "/volume", true)
+	containerID, cleanup, err := s.deps.TempContainer(ctx, "/volume", true)
 	if err != nil {
 		return nil, err
 	}

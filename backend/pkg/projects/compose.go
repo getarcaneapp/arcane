@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/docker/cli/cli/command"
 	clitypes "github.com/docker/cli/cli/config/types"
@@ -33,9 +34,10 @@ type (
 
 	ClientConfig struct {
 		AuthConfigs    map[string]registry.AuthConfig
-		Prompt         compose.Prompt
 		DockerHost     string
-		ServiceOptions []compose.Option
+		MaxConcurrency int
+		Timeout        time.Duration
+		AcceptPrompts  bool
 		DemuxLogs      bool
 	}
 
@@ -50,8 +52,7 @@ type (
 		apiClient client.APIClient
 	}
 
-	// writerConsumer serializes compose log events: compose may stream several
-	// containers concurrently into one consumer.
+	// writerConsumer is locked because compose streams several containers into one consumer.
 	writerConsumer struct {
 		out            io.Writer
 		mu             sync.Mutex
@@ -60,26 +61,20 @@ type (
 )
 
 const (
-	// stderrLogLinePrefix marks stderr content so the project-log parser
-	// (pkg/ws) can classify lines the same way container logs do.
+	// stderrLogLinePrefix lets the pkg/ws log parser classify stderr lines like container logs.
 	stderrLogLinePrefix = "[STDERR] "
 )
 
 var plainComposeClientCache atomic.Pointer[plainComposeClientEntry]
 
-// NewClient builds a compose client. dockerHost, when non-empty, pins the
-// docker CLI to that daemon endpoint instead of letting it resolve one from
-// the environment.
 func NewClient(ctx context.Context, config ClientConfig) (*Client, error) {
 	cli, err := command.NewDockerCli()
 	if err != nil {
 		return nil, err
 	}
-	opts := flags.NewClientOptions()
-	if config.DockerHost != "" {
-		opts.Hosts = []string{config.DockerHost}
-	}
-	if initializeErr := cli.Initialize(opts); initializeErr != nil {
+	if initializeErr := cli.Initialize(&flags.ClientOptions{
+		Hosts: kit.Ternary(config.DockerHost != "", []string{config.DockerHost}, nil),
+	}); initializeErr != nil {
 		return nil, initializeErr
 	}
 	if composeAuthConfigs := buildComposeAuthConfigs(config.AuthConfigs); len(composeAuthConfigs) > 0 {
@@ -95,31 +90,13 @@ func NewClient(ctx context.Context, config ClientConfig) (*Client, error) {
 		composeCLI = wrapDockerCLIWithLogsDemux(cli)
 	}
 
-	// When the caller streams operation output, render compose's own progress
-	// events exactly as `docker compose --progress=plain` prints them.
 	var logWriter io.WriteCloser
 	if progressWriter, ok := ctx.Value(types.ProgressWriterKey{}).(io.Writer); ok && progressWriter != nil {
 		logWriter = docker.NewLogLineWriter(progressWriter)
 	}
 
-	prompt := config.Prompt
-	if prompt == nil {
-		// Compose consults the prompt before destructive plan decisions (today:
-		// recreating a volume whose config diverged, which loses its data).
-		// Without an interactive channel, answer with the default (decline) and
-		// surface the question in the deploy log so the user can opt in.
-		prompt = func(message string, defaultValue bool) (bool, error) {
-			slog.WarnContext(ctx, "compose prompt declined by default", "message", message)
-			if logWriter != nil {
-				_, _ = io.WriteString(logWriter, "WARNING: "+message+" Declined; enable volume recreation on deploy to apply this change.\n")
-			}
-			return defaultValue, nil
-		}
-	}
-
-	serviceOptions := []compose.Option{
-		compose.WithPrompt(prompt),
-	}
+	prompt := kit.Ternary(config.AcceptPrompts, compose.AlwaysOkPrompt(), declinePrompt(ctx, logWriter))
+	serviceOptions := []compose.Option{compose.WithPrompt(prompt)}
 	if logWriter != nil {
 		serviceOptions = append(serviceOptions,
 			compose.WithEventProcessor(display.Plain(logWriter)),
@@ -127,7 +104,9 @@ func NewClient(ctx context.Context, config ClientConfig) (*Client, error) {
 			compose.WithErrorStream(logWriter),
 		)
 	}
-	serviceOptions = append(serviceOptions, config.ServiceOptions...)
+	if config.MaxConcurrency > 0 {
+		serviceOptions = append(serviceOptions, compose.WithMaxConcurrency(config.MaxConcurrency))
+	}
 
 	svc, err := compose.NewComposeService(composeCLI, serviceOptions...)
 	if err != nil {
@@ -140,14 +119,24 @@ func NewClient(ctx context.Context, config ClientConfig) (*Client, error) {
 	return &Client{svc: svc, dockerCli: composeCLI, logWriter: logWriter}, nil
 }
 
+// declinePrompt declines destructive plans like volume recreation and logs the question so the user can opt in.
+func declinePrompt(ctx context.Context, logWriter io.Writer) compose.Prompt {
+	return func(message string, defaultValue bool) (bool, error) {
+		slog.WarnContext(ctx, "compose prompt declined by default", "message", message)
+		if logWriter != nil {
+			_, _ = io.WriteString(logWriter, "WARNING: "+message+" Declined; enable volume recreation on deploy to apply this change.\n")
+		}
+		return defaultValue, nil
+	}
+}
+
 func plainComposeClient(dockerHost string) (*Client, error) {
 	current := plainComposeClientCache.Load()
 	if current != nil && current.host == dockerHost {
 		return current.client, nil
 	}
 
-	// Built on context.Background so request-scoped values (progress
-	// writers, deadlines) do not leak into the long-lived client.
+	// Built on context.Background so request values and deadlines do not leak into the cached client.
 	c, err := NewClient(context.Background(), ClientConfig{DockerHost: dockerHost}) //nolint:contextcheck,forbidigo // Cached Compose client must not retain request values or cancellation.
 	if err != nil {
 		return nil, err

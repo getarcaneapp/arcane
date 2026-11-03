@@ -48,7 +48,6 @@ import (
 )
 
 type (
-	// Store persists volume backup records for this feature.
 	Store struct {
 		Create            func(ctx context.Context, entry *types.VolumeBackup) error
 		Save              func(ctx context.Context, entry *types.VolumeBackup) error
@@ -83,7 +82,6 @@ type (
 		EncryptionKey    string
 	}
 
-	// Service runs volume backups and owns their policies, file browser, and restores.
 	Service struct {
 		policies *policies.Service
 		browser  *browser.Service
@@ -218,8 +216,7 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 	return s.policies.RegisterWorkflows(engine)
 }
 
-// SetScheduler injects the dynamic scheduler and admission gate for per-policy
-// backup jobs. Agent mode passes them too: agents run their own volume backups.
+// SetScheduler injects the scheduler and admission gate; agents run their own volume backups too.
 func (s *Service) SetScheduler(ctx context.Context, dynamicScheduler types.DynamicScheduler, admissionGate *runs.Admission) error {
 	return s.policies.SetScheduler(ctx, dynamicScheduler, admissionGate)
 }
@@ -233,7 +230,6 @@ func (s *Service) HasEnabledBackupPolicy(ctx context.Context, volumeName string)
 	return s.policies.HasEnabledBackupPolicy(ctx, volumeName)
 }
 
-// RemovePolicies drops the backup schedules of a removed volume.
 func (s *Service) RemovePolicies(ctx context.Context, volumeName string) {
 	s.policies.Remove(ctx, volumeName)
 }
@@ -243,7 +239,6 @@ func (s *Service) RenamePolicies(tx *gorm.DB, oldName, newName string) error {
 	return s.policies.Rename(tx, oldName, newName)
 }
 
-// backupEntry converts a backup row to its API entry for policy last runs and accepted manual starts.
 func (s *Service) List(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, pagination.Response, error) {
 	slog.DebugContext(ctx, "volume service: list backups paginated", "volume", volumeName, "search", params.Search, "sort", params.Sort,
 		"order", params.Order, "start", params.Start, "limit", params.Limit)
@@ -387,8 +382,7 @@ func (s *Service) prepareBackup(ctx context.Context, volumeName, trigger, policy
 }
 
 func (s *Service) completeBackup(ctx context.Context, entry *types.VolumeBackup, err error) error {
-	// A workflow task stopped by shutdown, a plain cancel, is handed back, so its row stays running for the resumed
-	// task to finish; a user cancel, a workflow that ended or timed out, or work outside a workflow records the failure.
+	// A shutdown-cancelled workflow task is handed back with its row still running; any other cancel records the failure.
 	if _, resumable := jobcontext.Run(ctx); resumable && errors.Is(context.Cause(ctx), context.Canceled) {
 		return ctx.Err()
 	}
@@ -422,7 +416,6 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 	if err != nil {
 		return err
 	}
-	// stopped holds the containers still awaiting a restart.
 	var stopped []container.Summary
 	if plan.Policy != nil && plan.Policy.StopContainers {
 		stopped, err = s.stopRunningContainersForBackup(ctx, volumeName, user, false)
@@ -444,8 +437,7 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 			return err
 		}
 	}
-	// Retention failures must not fail the run: the status save would mark the
-	// succeeded backup failed and hide it from ExpiredRunIDs forever.
+	// Retention failures must not fail the run, or the backup would hide from ExpiredRunIDs forever.
 	if entry.Trigger != types.VolumeBackupTriggerSafety && plan.Policy != nil && plan.Policy.RetentionCount > 0 {
 		expired, retentionErr := backup.ExpiredRunIDs(ctx, s.deps.DB, "volume_backups", plan.Policy.ID, plan.Policy.RetentionCount)
 		if retentionErr == nil && len(expired) > 0 {
@@ -581,8 +573,7 @@ func (s *Service) DeleteBackup(ctx context.Context, backupID string, user *types
 	if err != nil {
 		return err
 	}
-	// Deletes share the volume's run lease with create/restore/upload so a slow
-	// operation cannot resurrect or double-forget snapshots.
+	// Deletes share the run lease so a slow operation cannot resurrect or double-forget snapshots.
 	lease, err := s.acquireVolumeRun(ctx, entry.VolumeName)
 	if err != nil {
 		return err
@@ -598,7 +589,7 @@ func (s *Service) DeleteBackup(ctx context.Context, backupID string, user *types
 	if deleteErr := s.deps.Store.Delete(ctx, backupID); deleteErr != nil {
 		return deleteErr
 	}
-	containerID, cleanup, err := s.createBackupTempContainer(ctx, nil, "/volume", false)
+	containerID, cleanup, err := s.createBackupTempContainer(ctx, "/volume", false)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to create container for backup file cleanup", "backupId", backupID, "error", err.Error())
 	} else {
@@ -689,8 +680,7 @@ func (s *Service) deleteRusticBackups(ctx context.Context, entries []*types.Volu
 	return deleteErr
 }
 
-// PruneLocalRepository frees the data of deleted local volume backups once Rustic's keep-delete window passes.
-// Without local backups there is nothing worth pruning, so no Rustic helper, image, or volume is created.
+// PruneLocalRepository frees deleted local backups' data, creating no Rustic helper when there are none.
 func (s *Service) PruneLocalRepository(ctx context.Context) error {
 	localBackups, err := s.deps.Store.CountLocal(ctx)
 	if err != nil || localBackups == 0 {
@@ -719,8 +709,7 @@ func (s *Service) forgetSnapshots(ctx context.Context, dockerClient *client.Clie
 	return s.deps.Engine.ForgetSnapshots(ctx, dockerClient, repository, password, snapshotIDs)
 }
 
-// DownloadBackup streams a backup as a tar.gz archive: legacy archives stream their stored
-// file, and local Rustic snapshots are restored into a scratch volume and packaged on the fly.
+// DownloadBackup streams legacy archives as stored and packages local Rustic snapshots via a scratch volume.
 func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *types.Actor) (io.ReadCloser, int64, error) {
 	entry, err := s.deps.Store.Run(ctx, backupID)
 	if err != nil {
@@ -741,9 +730,8 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 			return nil, 0, filenameErr
 		}
 		archivePath = path.Join("/volume", filename)
-		containerID, cleanup, err = s.createBackupTempContainer(ctx, dockerClient, "/volume", true)
+		containerID, cleanup, err = s.createBackupTempContainer(ctx, "/volume", true)
 	} else {
-		// Restore the local snapshot into a scratch volume and tar it inside a helper container.
 		archivePath = "/tmp/" + entry.ID + ".tar.gz"
 		repository, repoErr := s.localRusticRepository(ctx, dockerClient, true)
 		if repoErr != nil {
@@ -795,8 +783,7 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 	return reader, size, nil
 }
 
-// ArchiveFileTarget resolves a legacy archive backup of volumeName and the
-// sanitized member path for a single-file workspace restore.
+// ArchiveFileTarget resolves a legacy archive and the sanitized member path for a single-file restore.
 func (s *Service) ArchiveFileTarget(ctx context.Context, volumeName, backupID, rel string) (string, string, error) {
 	filename, err := backupArchiveFilename(backupID)
 	if err != nil {
@@ -935,7 +922,6 @@ func (s *Service) MigrateRepositoryPasswords(ctx context.Context, previousKey, n
 	return nil
 }
 
-// StartBackup persists a running backup and submits its workflow.
 func (s *Service) StartBackup(ctx context.Context, environmentID, volumeName string, user types.Actor, request types.CreateVolumeBackupRequest) (types.VolumeBackupEntry, error) {
 	plan, err := s.resolveBackupPlan(ctx, volumeName, types.VolumeBackupTriggerManual, request, nil)
 	if err != nil {
@@ -984,8 +970,7 @@ func (s *Service) WatchAcceptedBackups(ctx context.Context) error {
 	return nil
 }
 
-// watchBackup fails the backup's row when its workflow ends without the task completing it, such as a cancel
-// before the task started.
+// watchBackup fails the row when the workflow ends without its task completing it.
 func (s *Service) watchBackup(ctx context.Context, backupID, instanceID string) {
 	outcome, err := s.flow.Wait(ctx, s.backupWorkflow, instanceID)
 	if err != nil || outcome.Status == types.RunStatusSucceeded {
@@ -1018,8 +1003,7 @@ func (s *Service) ReconcileBackup(ctx context.Context, previous types.SchedulerR
 	if err != nil {
 		return outcome, err
 	}
-	// Only an interrupted backup is still running; a failed one was settled by its attempt, even if its volume
-	// was renamed since, and the caller starts a new backup under the current name.
+	// A failed backup was settled by its attempt; only an interrupted one is still running.
 	if entry.Status == types.VolumeBackupStatusFailed {
 		return outcome, backup.ErrBackupSettled
 	}
@@ -1027,8 +1011,7 @@ func (s *Service) ReconcileBackup(ctx context.Context, previous types.SchedulerR
 		return outcome, gorm.ErrRecordNotFound
 	}
 	if entry.Status != types.VolumeBackupStatusSucceeded {
-		// Resuming would copy data its stopped containers may since have changed, so the row fails and the
-		// caller starts a new backup that stops them again.
+		// Its stopped containers may have changed since, so fail rather than resume.
 		if checkpoint.Policy != nil && checkpoint.Policy.StopContainers {
 			if failErr := s.deps.Store.Fail(ctx, entry.ID, "Backup was interrupted while its containers were stopped"); failErr != nil {
 				return outcome, failErr
@@ -1039,8 +1022,7 @@ func (s *Service) ReconcileBackup(ctx context.Context, previous types.SchedulerR
 		if acquireErr != nil {
 			return outcome, acquireErr
 		}
-		// Another backup of this volume is running; the task is handed back, without spending its one attempt,
-		// so a later delivery resumes this one rather than leaving it running.
+		// Another backup of this volume is running; hand the task back without spending its attempt.
 		if !admitted {
 			return outcome, fmt.Errorf("%w: %w", actor.ErrJobRejected, s.deps.AlreadyRunning)
 		}
@@ -1114,8 +1096,7 @@ func (s *Service) resumeBackup(ctx context.Context, previous types.SchedulerRun,
 	return s.completeBackup(ctx, entry, s.executeBackup(ctx, entry, types.SystemUser, checkpoint))
 }
 
-// runManualBackup is the volume-backup step. A delivery that finds the checkpoint it recorded
-// resumes that backup; otherwise it takes over the admission StartBackup won and runs it.
+// runManualBackup resumes a recorded checkpoint or takes over the admission StartBackup won.
 func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err error) {
 	var input manualBackupInput
 	if decodeErr := t.Payload(&input); decodeErr != nil {

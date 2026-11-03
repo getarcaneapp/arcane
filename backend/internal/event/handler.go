@@ -16,7 +16,6 @@ import (
 )
 
 type (
-	// EventHandler handles event management endpoints.
 	EventHandler struct {
 		eventService       *EventService
 		resolveEnvironment func(context.Context, string) (string, error)
@@ -59,7 +58,6 @@ type (
 	}
 )
 
-// ListEvents returns a paginated list of events.
 func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (*handlerutil.Page[types.Event], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	params.SkipCount = !input.IncludeTotal
@@ -100,7 +98,6 @@ func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput)
 	}, nil
 }
 
-// GetEventsByEnvironment returns events for a specific environment.
 func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEventsByEnvironmentInput) (*handlerutil.Page[types.Event], error) {
 	if input.EnvironmentID == "" {
 		return nil, huma.Error400BadRequest("Environment ID is required")
@@ -130,7 +127,6 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 	}, nil
 }
 
-// DeleteEvent deletes an event.
 func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if input.EventID == "" {
 		return nil, huma.Error400BadRequest("Event ID is required")
@@ -153,13 +149,6 @@ func (h *EventHandler) WaitForEnvironmentChanges(ctx context.Context, input *Wai
 }
 
 func (h *EventHandler) IngestAgentEvent(c *echo.Context) error {
-	if h.eventService == nil {
-		return c.JSON(http.StatusInternalServerError, types.ApiResponse[types.MessageResponse]{
-			Success: false,
-			Data:    types.MessageResponse{Message: "service not available"},
-		})
-	}
-
 	if h.resolveEnvironment == nil {
 		return c.JSON(http.StatusServiceUnavailable, types.ApiResponse[types.MessageResponse]{
 			Success: false,

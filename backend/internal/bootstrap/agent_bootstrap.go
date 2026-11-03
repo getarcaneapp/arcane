@@ -114,10 +114,6 @@ func handleAgentEnrollment(
 	envID, remoteAddr string,
 	certIssued, caGenerated, reenrolled bool,
 ) {
-	if eventService == nil {
-		return
-	}
-
 	env, err := environmentService.GetEnvironmentByID(ctx, envID)
 	if err != nil {
 		env = &environment.Environment{}
@@ -162,9 +158,7 @@ func createAgentMTLSIssueEvents(ctx context.Context, eventService *event.EventSe
 	}
 }
 
-// handleAgentStatusChange records a tunnel up/down transition: it updates the
-// stored connection state, logs an event when the state actually changed, and
-// wakes any open status streams.
+// handleAgentStatusChange stores the tunnel state, logs real transitions, and wakes status streams.
 func handleAgentStatusChange(ctx context.Context, environmentService *environment.EnvironmentService, eventService *event.EventService, envID string, connected bool) {
 	env, getErr := environmentService.GetEnvironmentByID(ctx, envID)
 	if getErr != nil {
@@ -186,17 +180,11 @@ func handleAgentStatusChange(ctx context.Context, environmentService *environmen
 		}
 	}
 
-	// This is the only funnel for "an agent tunnel came up or went down"
-	// (register, unregister and stale reaping all route through it)
-	// so it is where open status streams learn about it without polling.
+	// Every tunnel up/down path funnels here, so status streams learn about it without polling.
 	environmentService.NotifyRuntimeStateChanged()
 }
 
 func createAgentConnectionEvent(ctx context.Context, eventService *event.EventService, envID, envName string, connected bool) error {
-	if eventService == nil {
-		return nil
-	}
-
 	eventType := event.EventTypeEnvironmentDisconnect
 	title := "Agent Disconnected"
 	description := fmt.Sprintf("Agent for environment '%s' disconnected", envName)
@@ -232,9 +220,6 @@ func handleAgentEvent(ctx context.Context, envID string, evt *agent.TunnelEvent,
 	}
 
 	if evt.Type == agent.TunnelEventTypeNotificationDispatch {
-		if notificationService == nil {
-			return errors.New("notification service is not available for agent dispatch")
-		}
 		var payload types.NotificationDispatchRequest
 		if err := json.Unmarshal(evt.MetadataJSON, &payload); err != nil {
 			return fmt.Errorf("failed to decode agent notification dispatch payload: %w", err)

@@ -6,6 +6,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"kit.getarcane.app"
+
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
@@ -43,10 +45,7 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	if m == nil {
 		m = &Module{}
 	}
-	service := m.service
-	if service == nil {
-		service = &SwarmService{}
-	}
+	service := kit.FromPtr(m.service)
 
 	h := NewHandler(m.service, m.event)
 	RegisterSwarm(api, h)
@@ -63,7 +62,6 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	secrets.RegisterRoutes(api, secrets.NewHandler(service.secrets, h.auditSwarmMutation, mapSwarmServiceError))
 }
 
-// RegisterSwarm registers the swarm task and cluster lifecycle operations.
 func RegisterSwarm(api huma.API, h *SwarmHandler) {
 	middleware.RegisterWithPermission(
 		api,

@@ -324,7 +324,7 @@ test.describe('Activity Center', () => {
 		const scopedUser = user('scoped-stream-user', {
 			global: [],
 			'0': ['containers:list'],
-			'remote-activity-test': ['activities:read']
+			'remote-activity-test': ['activities:list']
 		});
 		const activityReads: string[] = [];
 		const countRequests: string[] = [];

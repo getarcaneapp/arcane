@@ -56,8 +56,7 @@ func resolveBackupStorageMountFromMounts(ctx context.Context, mounts []container
 	return mirroredMount
 }
 
-// localRusticRepositoryInitialized reports whether the local repository has a Rustic config.
-// Only a /backups mount in the Arcane container can be checked without Rustic; other setups count as initialized.
+// localRusticRepositoryInitialized checks a /backups mount for a Rustic config; other setups count as initialized.
 func (s *Service) localRusticRepositoryInitialized(ctx context.Context, dockerClient *client.Client) bool {
 	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
 	if err != nil || docker.MountForDestination(inspect.Mounts, "/backups", "/backups") == nil {
@@ -77,7 +76,6 @@ func backupMountWarningFromArcaneMounts(mounts []container.MountPoint) string {
 }
 
 func (s *Service) backupMountWarning(ctx context.Context) string {
-	// Cannot determine Arcane mount status (e.g. running outside Docker); suppress warning.
 	inspect, err := s.deps.Docker.Call(ctx, selfcontainer.InspectCurrentArcaneContainer)
 	if err != nil {
 		return ""
@@ -85,16 +83,13 @@ func (s *Service) backupMountWarning(ctx context.Context) string {
 	return backupMountWarningFromArcaneMounts(inspect.Mounts)
 }
 
-// StorageMount resolves the backup repository mount shared with system-backup and workspace operations.
-// It mirrors Arcane's own /backups mount and otherwise falls back to the dedicated named backup volume.
+// StorageMount mirrors Arcane's /backups mount or falls back to the named backup volume.
 func (s *Service) StorageMount(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error) {
-	if dockerClient != nil {
-		inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
-		if err != nil {
-			slog.WarnContext(ctx, "volume service: failed to inspect arcane container for backup mount resolution, falling back to named volume", "error", err.Error())
-		} else if mirrored := resolveBackupStorageMountFromMounts(ctx, inspect.Mounts, target, readOnly); mirrored != nil {
-			return *mirrored, nil
-		}
+	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
+	if err != nil {
+		slog.WarnContext(ctx, "volume service: failed to inspect arcane container for backup mount resolution, falling back to named volume", "error", err.Error())
+	} else if mirrored := resolveBackupStorageMountFromMounts(ctx, inspect.Mounts, target, readOnly); mirrored != nil {
+		return *mirrored, nil
 	}
 	slog.DebugContext(ctx, "volume service: ensure backup volume", "backupVolume", s.deps.BackupVolumeName)
 	if _, inspectErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
@@ -127,15 +122,13 @@ func (s *Service) stopRunningContainersForBackup(ctx context.Context, volumeName
 			arcaneOwned = append(arcaneOwned, candidate)
 			continue
 		}
-		// Arcane's helper containers are auto-removed when stopped, so stopping
-		// one would leave nothing for the restart pass and fail the operation.
+		// Arcane helpers auto-remove on stop, which would leave nothing to restart.
 		if strings.EqualFold(candidate.Labels[selfcontainer.InternalResourceLabel], "true") {
 			continue
 		}
 		eligible = append(eligible, candidate)
 	}
-	// Restores rewrite the volume in place; refusing beats corrupting the data
-	// under a labeled container this pass deliberately never stops.
+	// Restores rewrite the volume in place, so refuse rather than corrupt data under a labeled container.
 	if refuseArcaneWriters {
 		if writers := docker.FilterContainersUsingVolume(arcaneOwned, volumeName); len(writers) > 0 {
 			return nil, fmt.Errorf("volume %s is mounted by a running Arcane-managed container; restoring under it would corrupt its data", volumeName)
@@ -375,13 +368,11 @@ func (s *Service) createBackupTempContainerWithMount(ctx context.Context, backup
 	}, nil
 }
 
-func (s *Service) createBackupTempContainer(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (string, func(), error) {
+func (s *Service) createBackupTempContainer(ctx context.Context, target string, readOnly bool) (string, func(), error) {
 	slog.DebugContext(ctx, "volume service: create backup temp container", "target", target, "readOnly", readOnly)
-	var err error
-	if dockerClient == nil {
-		if dockerClient, err = s.deps.Docker.GetClient(ctx); err != nil {
-			return "", nil, err
-		}
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return "", nil, err
 	}
 	backupMount, err := s.StorageMount(ctx, dockerClient, target, readOnly)
 	if err != nil {
