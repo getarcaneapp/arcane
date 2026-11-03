@@ -115,6 +115,17 @@ func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, re
 	return s.stacks.DeployStack(ctx, environmentID, req)
 }
 
+func (s *SwarmService) LocalNodeID(ctx context.Context) (string, error) {
+	identity, err := s.nodes.GetLocalNodeIdentity(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !identity.SwarmActive {
+		return "", errors.New("this Docker engine is not an active swarm node")
+	}
+	return identity.SwarmNodeID, nil
+}
+
 // StreamServiceLogs streams swarm service logs for the WebSocket log endpoint.
 func (s *SwarmService) StreamServiceLogs(ctx context.Context, serviceID string, logsChan chan<- string, opts types.LogStreamOptions) error {
 	return s.services.StreamServiceLogs(ctx, serviceID, logsChan, opts)

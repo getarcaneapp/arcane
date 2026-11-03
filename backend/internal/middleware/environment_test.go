@@ -500,6 +500,10 @@ func TestIsManagementPath_SwarmIsMethodAware(t *testing.T) {
 	assert.True(t, IsManagerLocalPath(http.MethodDelete, "/swarm/nodes/node-1/agent/deployment"))
 	assert.True(t, IsManagerLocalPath(http.MethodPut, "/swarm/nodes/node-1/agent/binding"))
 	assert.True(t, IsManagerLocalPath(http.MethodDelete, "/swarm/nodes/node-1/agent/binding"))
+	assert.True(t, IsManagerLocalPath(http.MethodGet, "/swarm/nodes/agents/enrollment"))
+	assert.True(t, IsManagerLocalPath(http.MethodPost, "/swarm/nodes/agents/enrollment"))
+	assert.True(t, IsManagerLocalPath(http.MethodDelete, "/swarm/nodes/agents/enrollment"))
+	assert.False(t, IsManagerLocalPath(http.MethodPut, "/swarm/nodes/agents/enrollment"))
 }
 
 func TestIsManagementPath_VolumeBackupPolicyIsMethodAware(t *testing.T) {

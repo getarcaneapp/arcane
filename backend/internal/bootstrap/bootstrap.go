@@ -37,6 +37,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/gitops"
 	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/kv"
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -73,6 +74,8 @@ type (
 		Role        *role.RoleService
 		User        *user.UserService
 		ApiKey      *apikey.ApiKeyService
+		Swarm       *swarm.SwarmService
+		KV          *kv.KVService
 	}
 )
 
@@ -429,6 +432,9 @@ func initializeStartupState(p initializeStartupStateParams) {
 	if p.Config.AgentEnabled {
 		if config.DirectAgentRequested(os.Getenv) {
 			slog.WarnContext(p.AppCtx, "ARCANE_AGENT_MODE is ignored", "guidance", config.ErrDirectAgentRemoved.Error())
+		}
+		if p.Config.AgentToken == "" {
+			p.Config.AgentToken = enrollSwarmAgent(p.AppCtx, p.Config, p.KV, p.Swarm.LocalNodeID)
 		}
 		if err := handleAgentBootstrapPairing(p.AppCtx, p.Config); err != nil {
 			slog.WarnContext(p.AppCtx, "Failed to auto-pair agent with manager", "error", err)

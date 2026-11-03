@@ -1,6 +1,8 @@
 import type { Paginated } from '#lib/types/base.js';
 import type {
 	NodeAgentBindingRequest,
+	NodeAgentEnrollment,
+	NodeAgentEnrollmentToken,
 	NodeAgentReconcileResponse,
 	SwarmInfo,
 	SwarmInitRequest,
@@ -121,6 +123,18 @@ class SwarmService extends BaseAPIService {
 
 	async reconcileNodeAgents(environmentId: string): Promise<NodeAgentReconcileResponse> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/nodes/agents/reconcile`, {}));
+	}
+
+	async getNodeAgentEnrollment(environmentId: string): Promise<NodeAgentEnrollment> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/nodes/agents/enrollment`));
+	}
+
+	async rotateNodeAgentEnrollment(environmentId: string): Promise<NodeAgentEnrollmentToken> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/nodes/agents/enrollment`));
+	}
+
+	async revokeNodeAgentEnrollment(environmentId: string): Promise<void> {
+		await this.handleResponse(this.api.delete(`/environments/${environmentId}/swarm/nodes/agents/enrollment`));
 	}
 
 	async bindNodeAgent(nodeId: string, request: NodeAgentBindingRequest, environmentId: string): Promise<SwarmNode> {

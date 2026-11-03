@@ -46,19 +46,20 @@ type (
 
 		OidcRoleMappings string `env:"ARCANE_OIDC_ROLE_MAPPINGS" default:"" options:"file"`
 
-		PUID                string `env:"PUID" default:""`
-		PGID                string `env:"PGID" default:""`
-		DockerConfig        string `env:"DOCKER_CONFIG" default:""`
-		LogLevel            string `env:"ARCANE_LOG_LEVEL" default:"info" options:"toLower"`
-		AgentToken          string `env:"ARCANE_AGENT_TOKEN" default:"" options:"file"`
-		ManagerApiUrl       string `env:"ARCANE_MANAGER_API_URL" default:""`
-		AgentTransport      string `env:"ARCANE_AGENT_TRANSPORT" default:"auto" options:"toLower"`
-		AgentMTLSMode       string `env:"ARCANE_AGENT_MTLS_MODE" default:"disabled" options:"toLower"`
-		AgentMTLSCAFile     string `env:"ARCANE_AGENT_MTLS_CA_FILE" default:""`
-		AgentMTLSCertFile   string `env:"ARCANE_AGENT_MTLS_CERT_FILE" default:""`
-		AgentMTLSKeyFile    string `env:"ARCANE_AGENT_MTLS_KEY_FILE" default:""`
-		AgentMTLSServerName string `env:"ARCANE_AGENT_MTLS_SERVER_NAME" default:""`
-		AgentMTLSAssetsDir  string `env:"ARCANE_AGENT_MTLS_ASSETS_DIR" default:""`
+		PUID                 string `env:"PUID" default:""`
+		PGID                 string `env:"PGID" default:""`
+		DockerConfig         string `env:"DOCKER_CONFIG" default:""`
+		LogLevel             string `env:"ARCANE_LOG_LEVEL" default:"info" options:"toLower"`
+		AgentToken           string `env:"ARCANE_AGENT_TOKEN" default:"" options:"file"`
+		AgentEnrollmentToken string `env:"ARCANE_AGENT_ENROLLMENT_TOKEN" default:"" options:"file"`
+		ManagerApiUrl        string `env:"ARCANE_MANAGER_API_URL" default:""`
+		AgentTransport       string `env:"ARCANE_AGENT_TRANSPORT" default:"auto" options:"toLower"`
+		AgentMTLSMode        string `env:"ARCANE_AGENT_MTLS_MODE" default:"disabled" options:"toLower"`
+		AgentMTLSCAFile      string `env:"ARCANE_AGENT_MTLS_CA_FILE" default:""`
+		AgentMTLSCertFile    string `env:"ARCANE_AGENT_MTLS_CERT_FILE" default:""`
+		AgentMTLSKeyFile     string `env:"ARCANE_AGENT_MTLS_KEY_FILE" default:""`
+		AgentMTLSServerName  string `env:"ARCANE_AGENT_MTLS_SERVER_NAME" default:""`
+		AgentMTLSAssetsDir   string `env:"ARCANE_AGENT_MTLS_ASSETS_DIR" default:""`
 
 		TrustedProxies          string        `env:"ARCANE_TRUSTED_PROXIES" default:""`
 		GitWorkDir              string        `env:"ARCANE_GIT_WORK_DIR" default:"data/git"`
@@ -307,8 +308,8 @@ func (c *Config) Validate() error {
 	if DirectAgentRequested(os.Getenv) && !c.AgentEnabled {
 		return ErrDirectAgentRemoved
 	}
-	if c.AgentEnabled && (c.ManagerApiUrl == "" || c.AgentToken == "") {
-		return errors.New("ARCANE_AGENT=true requires ARCANE_MANAGER_API_URL and ARCANE_AGENT_TOKEN")
+	if c.AgentEnabled && (c.ManagerApiUrl == "" || cmp.Or(c.AgentToken, c.AgentEnrollmentToken) == "") {
+		return errors.New("ARCANE_AGENT=true requires ARCANE_MANAGER_API_URL and ARCANE_AGENT_TOKEN or ARCANE_AGENT_ENROLLMENT_TOKEN")
 	}
 	if !slices.Contains([]string{agent.TransportAuto, agent.TransportGRPC, agent.TransportWebSocket}, c.AgentTransport) {
 		return fmt.Errorf("unsupported ARCANE_AGENT_TRANSPORT %q: use auto, grpc, or websocket", c.AgentTransport)

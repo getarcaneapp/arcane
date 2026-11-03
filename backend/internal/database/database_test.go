@@ -535,6 +535,22 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 	assert.Equal(t, grants("e1", sorted("images:build", "images:list", "images:read", "activities:read")), apiKeyPermissionsFor("k3"))
 }
 
+func TestMigration103_AddsSwarmEnrollmentTokenHash(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-swarm-enrollment.db")
+	hasColumn := func() bool {
+		var count int
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('environments') WHERE name = 'swarm_enrollment_token_hash'`).Scan(&count))
+		return count == 1
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 103))
+	assert.True(t, hasColumn())
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 102))
+	assert.False(t, hasColumn())
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := t.Context()
 	rawDB, dsn := newSQLiteSQLDB(t, t.TempDir(), "arcane-future.db")

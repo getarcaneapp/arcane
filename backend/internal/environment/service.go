@@ -170,6 +170,7 @@ var (
 	ErrEnvironmentNotFound            = common.Classify(common.ErrNotFound, errors.New("environment not found"))
 	ErrLocalEnvironmentTunnel         = common.Classify(common.ErrValidation, errors.New("local environment has no agent tunnel"))
 	ErrAgentTunnelNotConnected        = common.Classify(common.ErrConflict, errors.New("agent tunnel is not connected"))
+	ErrInvalidSwarmEnrollmentToken    = common.Classify(common.ErrUnauthorized, errors.New("invalid swarm enrollment token"))
 	agentSlugPattern                  = regexp.MustCompile(`[^a-z0-9]+`)
 )
 
@@ -436,15 +437,16 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, env *Environ
 		Name:   env.Name,
 		ApiUrl: kit.Ternary(apiURLTaken > 0, apiURL+"-"+id, apiURL),
 		// Only set status to offline if not already set (e.g., API key flow sets it to pending)
-		Status:              cmp.Or(env.Status, string(EnvironmentStatusOffline)),
-		Enabled:             env.Enabled,
-		Hidden:              env.Hidden,
-		LastSeen:            env.LastSeen,
-		LastAgentTransport:  env.LastAgentTransport,
-		AccessToken:         env.AccessToken,
-		ApiKeyID:            env.ApiKeyID,
-		ParentEnvironmentID: env.ParentEnvironmentID,
-		SwarmNodeID:         env.SwarmNodeID,
+		Status:                   cmp.Or(env.Status, string(EnvironmentStatusOffline)),
+		Enabled:                  env.Enabled,
+		Hidden:                   env.Hidden,
+		LastSeen:                 env.LastSeen,
+		LastAgentTransport:       env.LastAgentTransport,
+		AccessToken:              env.AccessToken,
+		ApiKeyID:                 env.ApiKeyID,
+		ParentEnvironmentID:      env.ParentEnvironmentID,
+		SwarmNodeID:              env.SwarmNodeID,
+		SwarmEnrollmentTokenHash: env.SwarmEnrollmentTokenHash,
 	}
 
 	if err := s.db.WithContext(ctx).Create(env).Error; err != nil {
@@ -676,17 +678,18 @@ func (s *EnvironmentService) linkEnvironmentApiKey(ctx context.Context, envID, n
 				CreatedAt: envRecord.CreatedAt,
 				UpdatedAt: new(time.Now()),
 			},
-			Name:                envRecord.Name,
-			ApiUrl:              envRecord.ApiUrl,
-			Status:              string(EnvironmentStatusPending),
-			Enabled:             envRecord.Enabled,
-			Hidden:              envRecord.Hidden,
-			LastSeen:            nil,
-			LastAgentTransport:  envRecord.LastAgentTransport,
-			AccessToken:         &apiKey,
-			ApiKeyID:            &newApiKeyID,
-			ParentEnvironmentID: envRecord.ParentEnvironmentID,
-			SwarmNodeID:         envRecord.SwarmNodeID,
+			Name:                     envRecord.Name,
+			ApiUrl:                   envRecord.ApiUrl,
+			Status:                   string(EnvironmentStatusPending),
+			Enabled:                  envRecord.Enabled,
+			Hidden:                   envRecord.Hidden,
+			LastSeen:                 nil,
+			LastAgentTransport:       envRecord.LastAgentTransport,
+			AccessToken:              &apiKey,
+			ApiKeyID:                 &newApiKeyID,
+			ParentEnvironmentID:      envRecord.ParentEnvironmentID,
+			SwarmNodeID:              envRecord.SwarmNodeID,
+			SwarmEnrollmentTokenHash: envRecord.SwarmEnrollmentTokenHash,
 		}
 	}
 	s.remoteEnvs.mu.Unlock()
@@ -1713,5 +1716,58 @@ func (s *EnvironmentService) UpdateSwarmNodeIdentity(ctx context.Context, envID,
 	s.invalidateEnvironmentCache(envID)
 	s.NotifyRuntimeStateChanged()
 
+	return nil
+}
+
+func (s *EnvironmentService) RotateSwarmEnrollmentToken(ctx context.Context, environmentID string, agentCfg *agent.Config) (*types.NodeAgentEnrollmentToken, error) {
+	token := kit.RandomString(48)
+	if err := s.setSwarmEnrollmentTokenHash(ctx, environmentID, new(kit.SHA256Hex(token))); err != nil {
+		return nil, err
+	}
+	deployCommand, stack := snippets.Swarm(strings.TrimRight(agentCfg.AppURL, "/"), token, agentCfg.AgentMTLSMode)
+	return &types.NodeAgentEnrollmentToken{Token: token, DeployCommand: deployCommand, Stack: stack}, nil
+}
+
+func (s *EnvironmentService) RevokeSwarmEnrollmentToken(ctx context.Context, environmentID string) error {
+	return s.setSwarmEnrollmentTokenHash(ctx, environmentID, nil)
+}
+
+func (s *EnvironmentService) HasSwarmEnrollmentToken(ctx context.Context, environmentID string) (bool, error) {
+	env, err := s.GetEnvironmentByID(ctx, environmentID)
+	if err != nil {
+		return false, err
+	}
+	return env.SwarmEnrollmentTokenHash != nil, nil
+}
+
+func (s *EnvironmentService) ResolveSwarmEnrollmentToken(ctx context.Context, token string) (string, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return "", ErrInvalidSwarmEnrollmentToken
+	}
+
+	var env Environment
+	err := s.db.WithContext(ctx).
+		Select("id").
+		Where("swarm_enrollment_token_hash = ? AND enabled = ?", kit.SHA256Hex(token), true).
+		First(&env).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", ErrInvalidSwarmEnrollmentToken
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve swarm enrollment token: %w", err)
+	}
+	return env.ID, nil
+}
+
+func (s *EnvironmentService) setSwarmEnrollmentTokenHash(ctx context.Context, environmentID string, hash *string) error {
+	result := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", environmentID).Update("swarm_enrollment_token_hash", hash)
+	if result.Error != nil {
+		return fmt.Errorf("failed to update swarm enrollment token: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrEnvironmentNotFound
+	}
+	s.invalidateEnvironmentCache(environmentID)
 	return nil
 }

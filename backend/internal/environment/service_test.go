@@ -1928,6 +1928,62 @@ func TestEnvironmentService_RestartTunnel(t *testing.T) {
 	})
 }
 
+func TestEnvironmentService_SwarmEnrollmentToken_RotateResolveRevoke(t *testing.T) {
+	ctx := t.Context()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(EnvironmentServiceParams{DB: db})
+	createTestEnvironment(t, db, "swarm-env", "agent://swarm-env", nil)
+
+	enabled, err := svc.HasSwarmEnrollmentToken(ctx, "swarm-env")
+	require.NoError(t, err)
+	assert.False(t, enabled)
+
+	first, err := svc.RotateSwarmEnrollmentToken(ctx, "swarm-env", &agent.Config{AppURL: "https://arcane.example.com/"})
+	require.NoError(t, err)
+	require.NotEmpty(t, first.Token)
+	assert.Contains(t, first.Stack, "ARCANE_AGENT_ENROLLMENT_TOKEN="+first.Token)
+	assert.Contains(t, first.Stack, "ARCANE_MANAGER_API_URL=https://arcane.example.com\n")
+	assert.Contains(t, first.Stack, "mode: global")
+	assert.NotContains(t, first.Stack, "ARCANE_AGENT_MTLS_MODE")
+	assert.Equal(t, "docker stack deploy -c arcane-agent.yml arcane-agent", first.DeployCommand)
+
+	var stored Environment
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "swarm-env").First(&stored).Error)
+	require.NotNil(t, stored.SwarmEnrollmentTokenHash)
+	assert.NotEqual(t, first.Token, *stored.SwarmEnrollmentTokenHash, "only a hash of the token is stored")
+
+	resolved, err := svc.ResolveSwarmEnrollmentToken(ctx, first.Token)
+	require.NoError(t, err)
+	assert.Equal(t, "swarm-env", resolved)
+
+	second, err := svc.RotateSwarmEnrollmentToken(ctx, "swarm-env", &agent.Config{AppURL: "https://arcane.example.com", AgentMTLSMode: agent.MTLSModeRequired})
+	require.NoError(t, err)
+	assert.Contains(t, second.Stack, "ARCANE_AGENT_MTLS_MODE=required")
+	assert.Contains(t, second.Stack, "ARCANE_AGENT_MTLS_ASSETS_DIR=/app/data/agent-mtls-client")
+	_, err = svc.ResolveSwarmEnrollmentToken(ctx, first.Token)
+	require.ErrorIs(t, err, ErrInvalidSwarmEnrollmentToken, "rotation invalidates the previous token")
+
+	require.NoError(t, db.WithContext(ctx).Model(&Environment{}).Where("id = ?", "swarm-env").Update("enabled", false).Error)
+	_, err = svc.ResolveSwarmEnrollmentToken(ctx, second.Token)
+	require.ErrorIs(t, err, ErrInvalidSwarmEnrollmentToken, "a disabled environment accepts no enrollments")
+	require.NoError(t, db.WithContext(ctx).Model(&Environment{}).Where("id = ?", "swarm-env").Update("enabled", true).Error)
+	resolved, err = svc.ResolveSwarmEnrollmentToken(ctx, second.Token)
+	require.NoError(t, err)
+	assert.Equal(t, "swarm-env", resolved)
+
+	require.NoError(t, svc.RevokeSwarmEnrollmentToken(ctx, "swarm-env"))
+	enabled, err = svc.HasSwarmEnrollmentToken(ctx, "swarm-env")
+	require.NoError(t, err)
+	assert.False(t, enabled)
+	_, err = svc.ResolveSwarmEnrollmentToken(ctx, second.Token)
+	require.ErrorIs(t, err, ErrInvalidSwarmEnrollmentToken)
+
+	_, err = svc.ResolveSwarmEnrollmentToken(ctx, " ")
+	require.ErrorIs(t, err, ErrInvalidSwarmEnrollmentToken)
+	_, err = svc.RotateSwarmEnrollmentToken(ctx, "missing", &agent.Config{})
+	require.ErrorIs(t, err, ErrEnvironmentNotFound)
+}
+
 func (*environmentTestVariableSyncer) SyncEnvironment(context.Context, string) error {
 	return nil
 }

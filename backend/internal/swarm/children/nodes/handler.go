@@ -86,6 +86,16 @@ type (
 		NodeID        string `path:"nodeId" doc:"Node ID"`
 	}
 
+	SwarmNodeAgentEnrollmentInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+	}
+
+	EnrollSwarmNodeAgentInput struct {
+		EnrollmentToken string `header:"X-Arcane-Enrollment-Token" doc:"Swarm enrollment token"`
+		AgentToken      string `header:"X-Arcane-Agent-Token" doc:"The agent's current token, if it has one"`
+		Body            types.NodeAgentEnrollRequest
+	}
+
 	GetSwarmNodeIdentityInput struct{}
 
 	UpdateSwarmNodeInput struct {
@@ -310,6 +320,48 @@ func (h *Handler) DeleteNodeAgentDeployment(ctx context.Context, input *DeleteSw
 		return nil, huma.Error500InternalServerError(deleteSwarmNodeAgentDeploymentErr.Error())
 	}
 	return handlerutil.MessageOutput("Dedicated swarm node agent registration removed", ""), nil
+}
+
+func (h *Handler) GetNodeAgentEnrollment(ctx context.Context, input *SwarmNodeAgentEnrollmentInput) (*handlerutil.Out[types.NodeAgentEnrollment], error) {
+	enabled, err := h.environmentService.HasSwarmEnrollmentToken(ctx, input.EnvironmentID)
+	if err != nil {
+		return nil, h.mapError(err, "Failed to load swarm agent enrollment")
+	}
+	return &handlerutil.Out[types.NodeAgentEnrollment]{
+		Body: types.ApiResponse[types.NodeAgentEnrollment]{Success: true, Data: types.NodeAgentEnrollment{Enabled: enabled}},
+	}, nil
+}
+
+func (h *Handler) RotateNodeAgentEnrollment(ctx context.Context, input *SwarmNodeAgentEnrollmentInput) (*handlerutil.Out[types.NodeAgentEnrollmentToken], error) {
+	enrollment, err := h.environmentService.RotateSwarmEnrollmentToken(ctx, input.EnvironmentID, &agent.Config{
+		AgentMTLSMode: h.cfg.AgentMTLSMode,
+		AppURL:        h.cfg.GetAppURL(),
+	})
+	if err != nil {
+		return nil, h.mapError(err, "Failed to generate swarm agent enrollment token")
+	}
+	h.audit(ctx, input.EnvironmentID, "node.agent_enrollment.rotate", "swarm", input.EnvironmentID, "", nil)
+	return &handlerutil.Out[types.NodeAgentEnrollmentToken]{
+		Body: types.ApiResponse[types.NodeAgentEnrollmentToken]{Success: true, Data: *enrollment},
+	}, nil
+}
+
+func (h *Handler) DeleteNodeAgentEnrollment(ctx context.Context, input *SwarmNodeAgentEnrollmentInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if err := h.environmentService.RevokeSwarmEnrollmentToken(ctx, input.EnvironmentID); err != nil {
+		return nil, h.mapError(err, "Failed to revoke swarm agent enrollment token")
+	}
+	h.audit(ctx, input.EnvironmentID, "node.agent_enrollment.revoke", "swarm", input.EnvironmentID, "", nil)
+	return handlerutil.MessageOutput("Swarm agent enrollment token revoked", ""), nil
+}
+
+func (h *Handler) EnrollNodeAgent(ctx context.Context, input *EnrollSwarmNodeAgentInput) (*handlerutil.Out[types.NodeAgentEnrollResponse], error) {
+	enrollment, err := h.service.EnrollNodeAgent(ctx, input.EnrollmentToken, input.AgentToken, input.Body.NodeID)
+	if err != nil {
+		return nil, h.mapError(err, "Failed to enroll swarm node agent")
+	}
+	return &handlerutil.Out[types.NodeAgentEnrollResponse]{
+		Body: types.ApiResponse[types.NodeAgentEnrollResponse]{Success: true, Data: *enrollment},
+	}, nil
 }
 
 // GetNodeIdentity returns the swarm identity of the node serving the current request.
