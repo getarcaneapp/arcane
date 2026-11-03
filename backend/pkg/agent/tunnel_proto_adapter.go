@@ -66,6 +66,7 @@ func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, erro
 		AgentInstanceId: msg.AgentInstance,
 		Capabilities:    slices.Clone(msg.Capabilities),
 		ResumeSessionId: msg.ResumeSession,
+		Host:            agentHostInfoToProto(msg.Host),
 	}}}, nil
 }
 
@@ -82,8 +83,41 @@ func agentProtoToTunnelMessage(msg *tunnelpb.AgentMessage) (*TunnelMessage, erro
 			AgentInstance: payload.Register.GetAgentInstanceId(),
 			Capabilities:  slices.Clone(payload.Register.GetCapabilities()),
 			ResumeSession: payload.Register.GetResumeSessionId(),
+			Host:          protoToAgentHostInfo(payload.Register.GetHost()),
 		}, nil
 	default:
 		return nil, fmt.Errorf("agent payload %T: %w", payload, errUnknownTunnelPayload)
+	}
+}
+
+func agentHostInfoToProto(host *AgentHostInfo) *tunnelpb.AgentHostInfo {
+	if host == nil {
+		return nil
+	}
+	return &tunnelpb.AgentHostInfo{
+		Hostname:      host.Hostname,
+		Os:            host.OS,
+		KernelVersion: host.KernelVersion,
+		Architecture:  host.Architecture,
+		DockerVersion: host.DockerVersion,
+		AgentVersion:  host.AgentVersion,
+		Cpus:          host.CPUs,
+		MemoryBytes:   host.MemoryBytes,
+	}
+}
+
+func protoToAgentHostInfo(host *tunnelpb.AgentHostInfo) *AgentHostInfo {
+	if host == nil {
+		return nil
+	}
+	return &AgentHostInfo{
+		Hostname:      host.GetHostname(),
+		OS:            host.GetOs(),
+		KernelVersion: host.GetKernelVersion(),
+		Architecture:  host.GetArchitecture(),
+		DockerVersion: host.GetDockerVersion(),
+		AgentVersion:  host.GetAgentVersion(),
+		CPUs:          host.GetCpus(),
+		MemoryBytes:   host.GetMemoryBytes(),
 	}
 }

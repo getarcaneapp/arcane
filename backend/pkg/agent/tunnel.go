@@ -29,7 +29,7 @@ type (
 		Close() error
 		IsClosed() bool
 		Transport() string
-		muxConn(ctx context.Context) io.ReadWriteCloser
+		muxConn(ctx context.Context) *muxConn
 	}
 
 	grpcManagerStream interface {
@@ -98,7 +98,7 @@ func (t *TunnelConn) Receive() (*TunnelMessage, error) {
 }
 
 // muxConn switches the connection to binary frames carrying the multiplexed session.
-func (t *TunnelConn) muxConn(ctx context.Context) io.ReadWriteCloser {
+func (t *TunnelConn) muxConn(ctx context.Context) *muxConn {
 	t.muxed.Store(true)
 	recv := func() ([]byte, error) {
 		for {
@@ -201,7 +201,7 @@ func (t *GRPCManagerTunnelConn) Send(msg *TunnelMessage) error {
 }
 
 // muxConn switches the stream to MuxData messages carrying the multiplexed session.
-func (t *GRPCManagerTunnelConn) muxConn(context.Context) io.ReadWriteCloser {
+func (t *GRPCManagerTunnelConn) muxConn(context.Context) *muxConn {
 	t.muxed.Store(true)
 	send := func(p []byte) error {
 		return t.send(&tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_MuxData{MuxData: &tunnelpb.MuxData{Data: p}}})
@@ -278,7 +278,7 @@ func (t *GRPCAgentTunnelConn) Send(msg *TunnelMessage) error {
 }
 
 // muxConn switches the stream to MuxData messages carrying the multiplexed session.
-func (t *GRPCAgentTunnelConn) muxConn(context.Context) io.ReadWriteCloser {
+func (t *GRPCAgentTunnelConn) muxConn(context.Context) *muxConn {
 	t.muxed.Store(true)
 	send := func(p []byte) error {
 		return t.send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_MuxData{MuxData: &tunnelpb.MuxData{Data: p}}})

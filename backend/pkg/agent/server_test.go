@@ -499,7 +499,7 @@ func (f *registerResponseOrderConn) Receive() (*TunnelMessage, error) {
 	return nil, io.EOF
 }
 
-func (f *registerResponseOrderConn) muxConn(context.Context) io.ReadWriteCloser {
+func (f *registerResponseOrderConn) muxConn(context.Context) *muxConn {
 	return newMuxConn(
 		func([]byte) error {
 			return nil
@@ -531,7 +531,7 @@ func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterRe
 		return nil
 	}
 
-	server.manageConnectedTunnel(t.Context(), envID, conn, &TunnelMessage{Type: MessageTypeRegister, Capabilities: []string{tunnelCapabilityMux}}, "token")
+	server.manageConnectedTunnel(t.Context(), envID, conn, &TunnelMessage{Type: MessageTypeRegister, Capabilities: []string{tunnelCapabilityMux}}, "token", "")
 
 	_, ok := server.registry.Get(envID).Get()
 	assert.False(t, ok)
@@ -545,7 +545,7 @@ func TestTunnelServer_ManageConnectedTunnel_UnregistersAfterConnectionContextCan
 
 	connectionCtx, cancelConnection := context.WithCancel(t.Context())
 	cancelConnection()
-	server.manageConnectedTunnel(connectionCtx, envID, conn, &TunnelMessage{Type: MessageTypeRegister, Capabilities: []string{tunnelCapabilityMux}}, "token")
+	server.manageConnectedTunnel(connectionCtx, envID, conn, &TunnelMessage{Type: MessageTypeRegister, Capabilities: []string{tunnelCapabilityMux}}, "token", "")
 
 	_, ok := registry.Get(envID).Get()
 	require.False(t, ok)

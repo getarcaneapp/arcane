@@ -4373,5 +4373,14 @@
   "whole_number_range": "Enter a whole number from {min} to {max}.",
   "bytes_per_second": "{value}/s",
   "no_cpu_limit": "No CPU limit",
-  "permissions_requires": "Requires: {permissions}"
+  "permissions_requires": "Requires: {permissions}",
+  "agent_version": "Agent Version",
+  "public_ip": "Public IP",
+  "data_received": "Data Received",
+  "data_sent": "Data Sent",
+  "streams_opened": "Streams Opened",
+  "reconnects": "Reconnects",
+  "last_disconnect": "Last Disconnect",
+  "last_disconnect_time": "Last disconnect {time}",
+  "round_trip_min_avg_max": "min / avg / max: {min} / {avg} / {max} ms"
 }

@@ -15,6 +15,7 @@
 	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
 	import { cn } from '#lib/utils.js';
 	import {
+		bytes,
 		formatDateTimeShort,
 		formatElapsedTime,
 		formatRelativeTime,
@@ -77,6 +78,30 @@
 	let securityLabel = $derived(
 		environment.agentSecurityMode === 'mtls' ? m.environments_agent_mtls_label() : m.environments_agent_security_token()
 	);
+	let tunnelStats = $derived(environment.agentTunnelStats);
+
+	let roundTripRange = $derived.by(() => {
+		const min = tunnelStats?.roundTripMinMs;
+		const avg = tunnelStats?.roundTripAvgMs;
+		const max = tunnelStats?.roundTripMaxMs;
+		if (min === undefined || avg === undefined || max === undefined) return undefined;
+		return m.round_trip_min_avg_max({ min: min.toFixed(1), avg: avg.toFixed(1), max: max.toFixed(1) });
+	});
+
+	let lastDisconnectSummary = $derived.by(() => {
+		const at = tunnelStats?.lastDisconnectAt;
+		if (!at) return undefined;
+		return [m.last_disconnect_time({ time: formatRelativeTime(at, { base: now }) }), tunnelStats?.lastDisconnectReason]
+			.filter(Boolean)
+			.join(' · ');
+	});
+
+	let lastDisconnectDetail = $derived.by(() => {
+		const at = tunnelStats?.lastDisconnectAt;
+		if (!at) return undefined;
+		return [formatDateTimeShort(at) || m.common_unknown(), tunnelStats?.lastDisconnectReason].filter(Boolean).join(' · ');
+	});
+
 	let pathCaption = $derived(
 		[transportLabel, environment.connected && m.environments_agent_data_plane_mux()].filter(Boolean).join(' · ')
 	);
@@ -135,6 +160,9 @@
 				{/if}
 			</p>
 		{/if}
+		{#if !environment.connected && lastDisconnectSummary}
+			<p class="text-xs text-muted-foreground">{lastDisconnectSummary}</p>
+		{/if}
 	</div>
 
 	<div class="flow-agent flex items-start gap-3">
@@ -161,10 +189,17 @@
 			{#if environment.agentRoundTripMs !== undefined}
 				{@render stat(
 					m.environments_agent_stat_round_trip(),
-					m.environments_agent_round_trip_ms({ ms: environment.agentRoundTripMs.toFixed(1) })
+					m.environments_agent_round_trip_ms({ ms: environment.agentRoundTripMs.toFixed(1) }),
+					roundTripRange
 				)}
 			{/if}
 			{@render stat(m.environments_agent_stat_open_streams(), String(environment.agentOpenStreams ?? 0))}
+			{#if tunnelStats}
+				{@render stat(m.streams_opened(), String(tunnelStats.streamsOpened))}
+				{@render stat(m.data_received(), bytes.format(tunnelStats.bytesIn) ?? '-')}
+				{@render stat(m.data_sent(), bytes.format(tunnelStats.bytesOut) ?? '-')}
+				{@render stat(m.reconnects(), String(Math.max(tunnelStats.sessions - 1, 0)))}
+			{/if}
 			{@render stat(m.environments_agent_stat_mode(), m.environments_agent_mode_persistent())}
 			{@render stat(m.environments_agent_stat_security(), securityLabel)}
 		</div>
@@ -195,6 +230,9 @@
 						{@render detail(m.environments_agent_instance(), environment.agentInstance, true)}
 					{/if}
 					{@render detail(m.environments_agent_features(), (environment.agentCapabilities ?? []).join(' · '))}
+					{#if lastDisconnectDetail}
+						{@render detail(m.last_disconnect(), lastDisconnectDetail)}
+					{/if}
 				</dl>
 			</Collapsible.Content>
 		</Collapsible.Root>

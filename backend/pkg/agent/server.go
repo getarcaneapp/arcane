@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -206,7 +207,7 @@ func (s *TunnelServer) HandleConnect(c *echo.Context) error {
 		return reject("client certificate does not match environment")
 	}
 
-	s.manageConnectedTunnel(ctx, envID, tunnelConn, registerMsg, kit.Ternary(hasVerifiedPeerCertificate(req.TLS), "mtls", "token"))
+	s.manageConnectedTunnel(ctx, envID, tunnelConn, registerMsg, kit.Ternary(hasVerifiedPeerCertificate(req.TLS), "mtls", "token"), c.RealIP())
 	return nil
 }
 
@@ -334,8 +335,20 @@ func (s *TunnelServer) Connect(stream grpc.BidiStreamingServer[tunnelpb.AgentMes
 		return status.Error(codes.Unauthenticated, "authenticated environment is missing from stream context")
 	}
 
-	s.manageConnectedTunnel(ctx, identity.environmentID, NewGRPCManagerTunnelConn(stream), registerMsg, identity.securityMode)
+	s.manageConnectedTunnel(ctx, identity.environmentID, NewGRPCManagerTunnelConn(stream), registerMsg, identity.securityMode, grpcPeerHost(ctx))
 	return nil
+}
+
+func grpcPeerHost(ctx context.Context) string {
+	p, ok := peer.FromContext(ctx)
+	if !ok || p.Addr == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(p.Addr.String())
+	if err != nil {
+		return p.Addr.String()
+	}
+	return host
 }
 
 func (s *TunnelServer) resolveEnvironment(ctx context.Context, token string) (string, error) {
@@ -366,7 +379,7 @@ func agentToken(values func(key string) []string) (string, string) {
 }
 
 // manageConnectedTunnel registers an authenticated agent session and serves its multiplexed session until it disconnects.
-func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, envID string, conn TunnelConnection, registerMsg *TunnelMessage, securityMode string) {
+func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, envID string, conn TunnelConnection, registerMsg *TunnelMessage, securityMode, remoteAddr string) {
 	callbackCtx := context.WithoutCancel(ctx)
 	tunnel := NewAgentTunnelWithConn(envID, conn)
 	tunnel.SessionID = uuid.New().String()
@@ -374,6 +387,8 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, envID string, 
 	tunnel.AgentInstance = strings.TrimSpace(registerMsg.AgentInstance)
 	tunnel.Capabilities = registerMsg.Capabilities
 	tunnel.Transport = conn.Transport()
+	tunnel.RemoteAddr = remoteAddr
+	tunnel.Host = registerMsg.Host
 
 	// The span covers the connection lifetime; ctx stays unparented so per-message work doesn't nest under it.
 	_, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "agent.tunnel "+tunnel.Transport,

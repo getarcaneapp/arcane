@@ -64,7 +64,7 @@ func (c *blockingRegistrationConn) Receive() (*TunnelMessage, error) {
 	return nil, io.EOF
 }
 
-func (c *blockingRegistrationConn) muxConn(context.Context) io.ReadWriteCloser { return nil }
+func (c *blockingRegistrationConn) muxConn(context.Context) *muxConn { return nil }
 
 func (c *blockingRegistrationConn) Close() error {
 	if c.closeCount.Add(1) == 1 {
@@ -820,7 +820,7 @@ func (f *fakeTunnelConn) Receive() (*TunnelMessage, error) {
 	return nil, f.receiveErr
 }
 
-func (f *fakeTunnelConn) muxConn(context.Context) io.ReadWriteCloser {
+func (f *fakeTunnelConn) muxConn(context.Context) *muxConn {
 	return nil
 }
 

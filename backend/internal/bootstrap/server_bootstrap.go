@@ -12,10 +12,12 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
+	"github.com/moby/moby/client"
 	"go.uber.org/fx"
 	"google.golang.org/grpc"
 
 	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	tunnelpb "getarcane.dev/arcane/v3/proto/tunnel/v1"
@@ -62,7 +64,7 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 	slog.InfoContext(p.AppCtx, "Using shared HTTP/gRPC listener for agent tunnel", "addr", listenAddr)
 	httpHandler, protocols := configureHTTPProtocols(useTLS, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isTunnelGRPCRequest(r) {
-			grpcServer.ServeHTTP(w, normalizeTunnelGRPCRequestPath(r))
+			grpcServer.ServeHTTP(w, normalizeTunnelGRPCRequestPath(withClientRemoteAddr(r, p.Router.IPExtractor)))
 			return
 		}
 		p.Router.ServeHTTP(w, r)
@@ -171,7 +173,7 @@ func prepareServerTLS(ctx context.Context, cfg *config.Config) (bool, string, st
 	useTLS := cfg.TLSEnabled
 	tlsCertFile := strings.TrimSpace(cfg.TLSCertFile)
 	tlsKeyFile := strings.TrimSpace(cfg.TLSKeyFile)
-	agentCfg := buildAgentRuntimeConfig(cfg, "")
+	agentCfg := buildAgentRuntimeConfig(cfg, "", agent.AgentHostInfo{})
 	if useTLS && (tlsCertFile == "" || tlsKeyFile == "") {
 		return false, "", "", nil, errors.New("ARCANE_TLS_ENABLED requires both ARCANE_TLS_CERT_FILE and ARCANE_TLS_KEY_FILE")
 	}
@@ -210,7 +212,7 @@ func configureHTTPProtocols(useTLS bool, handler http.Handler) (http.Handler, *h
 	return handler, &protocols
 }
 
-func buildAgentRuntimeConfig(cfg *config.Config, agentToken string) *agent.Config {
+func buildAgentRuntimeConfig(cfg *config.Config, agentToken string, hostInfo agent.AgentHostInfo) *agent.Config {
 	return &agent.Config{
 		AgentEnabled:           cfg.AgentEnabled,
 		AgentTransport:         cfg.AgentTransport,
@@ -226,6 +228,7 @@ func buildAgentRuntimeConfig(cfg *config.Config, agentToken string) *agent.Confi
 		AgentToken:             agentToken,
 		Port:                   cfg.Port,
 		Listen:                 cfg.Listen,
+		HostInfo:               hostInfo,
 	}
 }
 
@@ -263,6 +266,16 @@ func normalizeTunnelGRPCRequestPath(r *http.Request) *http.Request {
 	return clone
 }
 
+func withClientRemoteAddr(r *http.Request, extractIP echo.IPExtractor) *http.Request {
+	_, port, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r
+	}
+	clone := r.Clone(r.Context())
+	clone.RemoteAddr = net.JoinHostPort(extractIP(r), port)
+	return clone
+}
+
 func isTunnelGRPCRequest(r *http.Request) bool {
 	if r == nil || r.URL == nil {
 		return false
@@ -280,4 +293,29 @@ func isTunnelGRPCRequest(r *http.Request) bool {
 
 	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
 	return strings.HasPrefix(contentType, "application/grpc")
+}
+
+func agentHostInfo(ctx context.Context, dockerService *docker.DockerClientService) agent.AgentHostInfo {
+	infoCtx, cancel := context.WithTimeout(ctx, startupTaskTimeout)
+	defer cancel()
+	dockerClient, err := dockerService.GetClient(infoCtx)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to connect to Docker for agent host info", "error", err)
+		return agent.AgentHostInfo{AgentVersion: config.Version}
+	}
+	result, err := dockerClient.Info(infoCtx, client.InfoOptions{})
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to read Docker info for agent host info", "error", err)
+		return agent.AgentHostInfo{AgentVersion: config.Version}
+	}
+	return agent.AgentHostInfo{
+		Hostname:      result.Info.Name,
+		OS:            result.Info.OperatingSystem,
+		KernelVersion: result.Info.KernelVersion,
+		Architecture:  result.Info.Architecture,
+		DockerVersion: result.Info.ServerVersion,
+		AgentVersion:  config.Version,
+		MemoryBytes:   result.Info.MemTotal,
+		CPUs:          int32(result.Info.NCPU),
+	}
 }

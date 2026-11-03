@@ -1439,8 +1439,49 @@ func ApplyEnvironmentRuntimeState(env types.Environment) types.Environment {
 		ConnectedAt:          kit.FromPtr(runtimeState).ConnectedAt,
 		LastHeartbeat:        kit.FromPtr(runtimeState).LastHeartbeat,
 		AgentMTLSCertificate: env.AgentMTLSCertificate,
+		AgentHost:            agentHostInfo(runtimeState),
+		AgentTunnelStats:     agentTunnelStats(runtimeState, agent.GetTunnelHistory(env.ID)),
 		ApiKey:               env.ApiKey,
 		RegenerateApiKey:     false,
+	}
+}
+
+func agentHostInfo(runtimeState *agent.TunnelRuntimeState) *types.AgentHostInfo {
+	host := kit.FromPtr(runtimeState).Host
+	if host == nil {
+		return nil
+	}
+	return &types.AgentHostInfo{
+		Hostname:      host.Hostname,
+		OS:            host.OS,
+		KernelVersion: host.KernelVersion,
+		Architecture:  host.Architecture,
+		DockerVersion: host.DockerVersion,
+		AgentVersion:  host.AgentVersion,
+		PublicIP:      runtimeState.RemoteAddr,
+		MemoryBytes:   host.MemoryBytes,
+		CPUs:          host.CPUs,
+	}
+}
+
+func agentTunnelStats(runtimeState *agent.TunnelRuntimeState, history mo.Option[agent.TunnelHistory]) *types.AgentTunnelStats {
+	record, hasHistory := history.Get()
+	if runtimeState == nil && !hasHistory {
+		return nil
+	}
+	return &types.AgentTunnelStats{
+		RoundTripMinMs: kit.Ternary(kit.FromPtr(runtimeState).RTTMin != nil,
+			new(float64(kit.FromPtr(kit.FromPtr(runtimeState).RTTMin).Microseconds())/1000), nil),
+		RoundTripAvgMs: kit.Ternary(kit.FromPtr(runtimeState).RTTAvg != nil,
+			new(float64(kit.FromPtr(kit.FromPtr(runtimeState).RTTAvg).Microseconds())/1000), nil),
+		RoundTripMaxMs: kit.Ternary(kit.FromPtr(runtimeState).RTTMax != nil,
+			new(float64(kit.FromPtr(kit.FromPtr(runtimeState).RTTMax).Microseconds())/1000), nil),
+		LastDisconnectAt:     kit.Ternary(record.LastDisconnectAt.IsZero(), nil, new(record.LastDisconnectAt)),
+		LastDisconnectReason: record.LastDisconnectReason,
+		BytesIn:              kit.FromPtr(runtimeState).BytesIn,
+		BytesOut:             kit.FromPtr(runtimeState).BytesOut,
+		StreamsOpened:        kit.FromPtr(runtimeState).StreamsOpened,
+		Sessions:             record.Sessions,
 	}
 }
 
@@ -1650,6 +1691,7 @@ func (s *EnvironmentService) GenerateAgentDeploymentSnippets(ctx context.Context
 				AgentToken:             agentCfg.AgentToken,
 				Port:                   agentCfg.Port,
 				Listen:                 agentCfg.Listen,
+				HostInfo:               agentCfg.HostInfo,
 			}
 		}(),
 		envID,

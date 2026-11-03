@@ -76,6 +76,7 @@ type (
 		done       chan struct{}
 
 		mux           *muxSession
+		Host          *AgentHostInfo
 		EnvironmentID string
 		SessionID     string
 		AgentInstance string
@@ -83,6 +84,7 @@ type (
 		SecurityMode  string
 		State         string
 		DisconnectErr string
+		RemoteAddr    string
 		Capabilities  []string
 		mu            sync.RWMutex
 		closeOnce     sync.Once
@@ -91,7 +93,14 @@ type (
 	// TunnelRegistry manages active agent tunnel connections
 	TunnelRegistry struct {
 		tunnels *concurrency.StateMap[string, *AgentTunnel]
+		history *concurrency.StateMap[string, TunnelHistory]
 		stopped atomic.Bool
+	}
+
+	TunnelHistory struct {
+		LastDisconnectAt     time.Time
+		LastDisconnectReason string
+		Sessions             int
 	}
 
 	// TunnelServer handles incoming agent connections on the manager side.
@@ -173,24 +182,44 @@ type (
 		AgentToken             string
 		Port                   string
 		Listen                 string
+		HostInfo               AgentHostInfo
 		AgentReconnectInterval int
 		AgentEnabled           bool
+	}
+
+	AgentHostInfo struct {
+		Hostname      string `json:"hostname,omitempty"`
+		OS            string `json:"os,omitempty"`
+		KernelVersion string `json:"kernel_version,omitempty"`
+		Architecture  string `json:"architecture,omitempty"`
+		DockerVersion string `json:"docker_version,omitempty"`
+		AgentVersion  string `json:"agent_version,omitempty"`
+		MemoryBytes   int64  `json:"memory_bytes,omitempty"`
+		CPUs          int32  `json:"cpus,omitempty"`
 	}
 
 	// TunnelRuntimeState describes the live, in-memory state of an active agent tunnel.
 	TunnelRuntimeState struct {
 		// RoundTripTime is the last keepalive round trip.
 		RoundTripTime *time.Duration
+		RTTMin        *time.Duration
+		RTTAvg        *time.Duration
+		RTTMax        *time.Duration
 		ConnectedAt   *time.Time
 		LastHeartbeat *time.Time
+		Host          *AgentHostInfo
 		Transport     string
 		SessionID     string
 		AgentInstance string
 		SecurityMode  string
 		State         string
+		RemoteAddr    string
 		Capabilities  []string
 		// OpenStreams counts open mux streams, including pooled idle ones.
-		OpenStreams int
+		OpenStreams   int
+		BytesIn       int64
+		BytesOut      int64
+		StreamsOpened int64
 	}
 
 	// TunnelMessage is the register handshake both peers exchange before switching to the multiplexed data plane.
@@ -204,6 +233,7 @@ type (
 		ResumeSession string            `json:"resume_session,omitempty"`
 		AgentInstance string            `json:"agent_instance,omitempty"`
 		SecurityMode  string            `json:"security_mode,omitempty"`
+		Host          *AgentHostInfo    `json:"host,omitempty"`
 		Capabilities  []string          `json:"capabilities,omitempty"`
 		Accepted      bool              `json:"accepted,omitempty"`
 		DrainPrevious bool              `json:"drain_previous,omitempty"`
@@ -254,8 +284,14 @@ type (
 		ready   chan struct{}
 		closed  chan struct{}
 		session *yamux.Session
+		conn    *muxConn
 		// rtt is the last keepalive round trip in nanoseconds, zero until the first ping.
 		rtt       atomic.Int64
+		rttMin    atomic.Int64
+		rttMax    atomic.Int64
+		rttSum    atomic.Int64
+		rttCount  atomic.Int64
+		opened    atomic.Int64
 		closeOnce sync.Once
 		mu        sync.Mutex
 	}
@@ -271,6 +307,8 @@ type (
 		pending   []byte
 		closeOnce sync.Once
 
+		rx atomic.Int64
+		tx atomic.Int64
 		mu sync.Mutex
 	}
 

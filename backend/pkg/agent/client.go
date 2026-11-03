@@ -282,6 +282,7 @@ func (c *TunnelClient) serveTunnelSession(ctx context.Context, conn TunnelConnec
 		AgentInstance: c.agentInstanceID,
 		Capabilities:  []string{tunnelCapabilityMux, TunnelCapabilityForwardedPermissions},
 		ResumeSession: sessionID,
+		Host:          &c.cfg.HostInfo,
 	}); err != nil {
 		// A rejected gRPC stream can report EOF from Send; Recv carries the RPC status.
 		if conn.Transport() != TransportGRPC || !errors.Is(err, io.EOF) {

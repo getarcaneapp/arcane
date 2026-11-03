@@ -17,19 +17,23 @@ import (
 type (
 	// TunnelMetadataSnapshot is a consistent copy of a tunnel's mutable metadata.
 	TunnelMetadataSnapshot struct {
-		ConnectedAt   time.Time
-		LastHeartbeat time.Time
-		SessionID     string
-		AgentInstance string
-		SecurityMode  string
-		State         string
-		Capabilities  []string
+		ConnectedAt      time.Time
+		LastHeartbeat    time.Time
+		Host             *AgentHostInfo
+		SessionID        string
+		AgentInstance    string
+		SecurityMode     string
+		State            string
+		RemoteAddr       string
+		DisconnectReason string
+		Capabilities     []string
 	}
 
 	registerSessionResult struct {
 		previous      *AgentTunnel
 		reason        string
 		accepted      bool
+		stored        bool
 		drainPrevious bool
 	}
 )
@@ -91,13 +95,16 @@ func (t *AgentTunnel) MetadataSnapshot() TunnelMetadataSnapshot {
 	defer t.mu.RUnlock()
 
 	return TunnelMetadataSnapshot{
-		ConnectedAt:   t.ConnectedAt,
-		LastHeartbeat: t.LastHeartbeat,
-		SessionID:     t.SessionID,
-		AgentInstance: t.AgentInstance,
-		SecurityMode:  t.SecurityMode,
-		Capabilities:  append([]string(nil), t.Capabilities...),
-		State:         t.State,
+		ConnectedAt:      t.ConnectedAt,
+		LastHeartbeat:    t.LastHeartbeat,
+		Host:             t.Host,
+		SessionID:        t.SessionID,
+		AgentInstance:    t.AgentInstance,
+		SecurityMode:     t.SecurityMode,
+		Capabilities:     append([]string(nil), t.Capabilities...),
+		State:            t.State,
+		RemoteAddr:       t.RemoteAddr,
+		DisconnectReason: t.DisconnectErr,
 	}
 }
 
@@ -155,6 +162,35 @@ func (r *TunnelRegistry) WaitForActive(ctx context.Context, envID string, timeou
 func NewTunnelRegistry() *TunnelRegistry {
 	return &TunnelRegistry{
 		tunnels: concurrency.NewStateMap[string, *AgentTunnel](),
+		history: concurrency.NewStateMap[string, TunnelHistory](),
+	}
+}
+
+func (r *TunnelRegistry) recordSession(ctx context.Context, envID string) {
+	if err := r.history.Apply(ctx, "record agent tunnel session", func(history map[string]TunnelHistory) (bool, error) {
+		previous := history[envID]
+		history[envID] = TunnelHistory{
+			LastDisconnectAt:     previous.LastDisconnectAt,
+			LastDisconnectReason: previous.LastDisconnectReason,
+			Sessions:             previous.Sessions + 1,
+		}
+		return true, nil
+	}); err != nil {
+		slog.ErrorContext(ctx, "Failed to record agent tunnel session", "environmentId", envID, "error", err)
+	}
+}
+
+func (r *TunnelRegistry) recordDisconnect(ctx context.Context, tunnel *AgentTunnel) {
+	reason := tunnel.MetadataSnapshot().DisconnectReason
+	if err := r.history.Apply(ctx, "record agent tunnel disconnect", func(history map[string]TunnelHistory) (bool, error) {
+		history[tunnel.EnvironmentID] = TunnelHistory{
+			LastDisconnectAt:     time.Now(),
+			LastDisconnectReason: reason,
+			Sessions:             history[tunnel.EnvironmentID].Sessions,
+		}
+		return true, nil
+	}); err != nil {
+		slog.ErrorContext(ctx, "Failed to record agent tunnel disconnect", "environmentId", tunnel.EnvironmentID, "error", err)
 	}
 }
 
@@ -230,6 +266,7 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 
 		tunnels[envID] = tunnel
 		result.accepted = true
+		result.stored = true
 		return result, true, nil
 	})
 	if err != nil {
@@ -237,6 +274,10 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 	}
 	if result.previous != nil {
 		_ = result.previous.CloseWithReason("replaced by newer agent tunnel session")
+		r.recordDisconnect(ctx, result.previous)
+	}
+	if result.stored {
+		r.recordSession(ctx, envID)
 	}
 	metadata := tunnel.MetadataSnapshot()
 	slog.InfoContext(ctx, "Agent tunnel registered", "environmentId", envID, "sessionId", metadata.SessionID, "securityMode", metadata.SecurityMode)
@@ -253,6 +294,7 @@ func (r *TunnelRegistry) Unregister(envID string) {
 	}
 	if removed {
 		_ = tunnel.CloseWithReason("")
+		r.recordDisconnect(ctx, tunnel)
 		slog.InfoContext(ctx, "Agent tunnel unregistered")
 	}
 }
@@ -288,6 +330,7 @@ func (r *TunnelRegistry) UnregisterCurrent(ctx context.Context, envID string, cu
 	}
 
 	_ = current.CloseWithReason("")
+	r.recordDisconnect(ctx, current)
 	metadata := current.MetadataSnapshot()
 	slog.InfoContext(ctx, "Agent tunnel unregistered", "environmentId", envID, "sessionId", metadata.SessionID)
 	return true, false
@@ -309,6 +352,7 @@ func (r *TunnelRegistry) CleanupStale(ctx context.Context, maxAge time.Duration)
 		}
 		slog.WarnContext(ctx, "Removing stale agent tunnel", "lastHeartbeat", tunnel.GetLastHeartbeat())
 		_ = tunnel.CloseWithReason("agent tunnel heartbeat expired")
+		r.recordDisconnect(ctx, tunnel)
 	}
 
 	return removed

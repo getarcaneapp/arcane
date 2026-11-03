@@ -12,6 +12,30 @@ export type AgentMTLSCertificate = {
 	expiringSoon: boolean;
 };
 
+export type AgentHostInfo = {
+	hostname?: string;
+	os?: string;
+	kernelVersion?: string;
+	architecture?: string;
+	dockerVersion?: string;
+	agentVersion?: string;
+	publicIp?: string;
+	memoryBytes?: number;
+	cpus?: number;
+};
+
+export type AgentTunnelStats = {
+	roundTripMinMs?: number;
+	roundTripAvgMs?: number;
+	roundTripMaxMs?: number;
+	lastDisconnectAt?: string;
+	lastDisconnectReason?: string;
+	bytesIn: number;
+	bytesOut: number;
+	streamsOpened: number;
+	sessions: number;
+};
+
 export type Environment = {
 	id: string;
 	name: string;
@@ -31,6 +55,8 @@ export type Environment = {
 	lastHeartbeat?: string;
 	lastSeen?: string;
 	agentMTLSCertificate?: AgentMTLSCertificate;
+	agentHost?: AgentHostInfo;
+	agentTunnelStats?: AgentTunnelStats;
 	apiKey?: string;
 	regenerateApiKey?: boolean;
 };
