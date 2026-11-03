@@ -38,6 +38,7 @@
 	--orange: oklch(0.646 0.222 41.116);
 	--lime: oklch(0.648 0.2 131.684);
 	--teal: oklch(0.6 0.118 184.704);
+	--mint: oklch(0.6 0.12 172);
 	--cyan: oklch(0.609 0.126 221.723);
 	--sky: oklch(0.588 0.158 241.966);
 	--indigo: oklch(0.511 0.262 276.966);
@@ -121,6 +122,7 @@
 	--orange: oklch(0.75 0.183 55.934);
 	--lime: oklch(0.841 0.238 128.85);
 	--teal: oklch(0.777 0.152 181.912);
+	--mint: oklch(0.78 0.13 175);
 	--cyan: oklch(0.789 0.154 211.53);
 	--sky: oklch(0.746 0.16 232.661);
 	--indigo: oklch(0.673 0.182 276.935);
@@ -263,6 +265,7 @@ html.reduce-effects *::after {
 	--color-orange: var(--orange);
 	--color-lime: var(--lime);
 	--color-teal: var(--teal);
+	--color-mint: var(--mint);
 	--color-cyan: var(--cyan);
 	--color-sky: var(--sky);
 	--color-indigo: var(--indigo);
