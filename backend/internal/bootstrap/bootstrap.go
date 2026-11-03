@@ -242,14 +242,14 @@ func applicationOptions(
 			},
 			initializeStartupState,
 			registerJobs,
-			func(lc fx.Lifecycle, router *echo.Echo, _ *http.Server) {
+			func(lc fx.Lifecycle, router *echo.Echo, dockerService *docker.DockerClientService, _ *http.Server) {
 				if !cfg.AgentEnabled {
 					return
 				}
 				var stop func(context.Context) error
 				lc.Append(fx.Hook{
 					OnStart: func(context.Context) error {
-						tunnelStop, err := agent.StartTunnelClient(appCtx, buildAgentRuntimeConfig(cfg, cfg.AgentToken), router)
+						tunnelStop, err := agent.StartTunnelClient(appCtx, buildAgentRuntimeConfig(cfg, cfg.AgentToken, agentHostInfo(appCtx, dockerService)), router)
 						if err != nil {
 							slog.ErrorContext(appCtx, "Failed to start agent tunnel client", "error", err)
 							return nil
@@ -459,7 +459,7 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config) error 
 
 	req.Header.Set("X-Api-Key", cfg.AgentToken)
 
-	httpClient, err := agent.NewManagerHTTPClient(buildAgentRuntimeConfig(cfg, cfg.AgentToken), 10*time.Second)
+	httpClient, err := agent.NewManagerHTTPClient(buildAgentRuntimeConfig(cfg, cfg.AgentToken, agent.AgentHostInfo{}), 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to configure agent pairing client: %w", err)
 	}

@@ -154,6 +154,7 @@ func (c *muxConn) Write(p []byte) (int, error) {
 	}
 	c.pending = append(c.pending, p...)
 	c.cond.Broadcast()
+	c.tx.Add(int64(len(p)))
 	return len(p), nil
 }
 
@@ -169,6 +170,7 @@ func (c *muxConn) Read(p []byte) (int, error) {
 	}
 	n := copy(p, c.unread)
 	c.unread = c.unread[n:]
+	c.rx.Add(int64(n))
 	return n, nil
 }
 

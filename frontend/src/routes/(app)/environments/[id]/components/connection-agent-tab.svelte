@@ -6,6 +6,7 @@
 	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 
+	import AgentHostDetails from './agent-host-details.svelte';
 	import EnvironmentConnectionDetails from './environment-connection-details.svelte';
 
 	let {
@@ -41,6 +42,10 @@
 
 <div class="space-y-8">
 	<EnvironmentConnectionDetails {environment} {currentStatus} />
+
+	{#if environment.agentHost}
+		<AgentHostDetails host={environment.agentHost} />
+	{/if}
 
 	<section class="flex flex-col gap-4">
 		<h2 class="px-1 text-base font-semibold">{m.environments_agent_security_title()}</h2>

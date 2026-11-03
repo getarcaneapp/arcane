@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,7 +25,7 @@ func (c *controlledCloseTunnelConn) Send(*TunnelMessage) error { return nil }
 
 func (c *controlledCloseTunnelConn) Receive() (*TunnelMessage, error) { return nil, nil }
 
-func (c *controlledCloseTunnelConn) muxConn(context.Context) io.ReadWriteCloser { return nil }
+func (c *controlledCloseTunnelConn) muxConn(context.Context) *muxConn { return nil }
 
 func (c *controlledCloseTunnelConn) Transport() string { return TransportWebSocket }
 
@@ -278,4 +277,71 @@ func TestTunnelRegistry_CleanupStale(t *testing.T) {
 	_, ok := r.Get(envID).Get()
 	assert.False(t, ok)
 	assert.True(t, tunnel.Conn.IsClosed())
+}
+
+func TestTunnelRegistry_RecordsSessionHistory(t *testing.T) {
+	registry := NewTunnelRegistry()
+	SetDefaultRegistry(registry)
+	t.Cleanup(func() {
+		ClearDefaultRegistry(registry)
+	})
+	envID := "env-history"
+
+	conn1 := createTestConn(t)
+	defer func() { _ = conn1.CloseNow() }()
+	tunnel1 := newWebSocketAgentTunnel(envID, conn1)
+	accepted, _, _, err := registry.RegisterSession(t.Context(), tunnel1, TunnelStaleTimeout)
+	require.NoError(t, err)
+	require.True(t, accepted)
+
+	history, ok := GetTunnelHistory(envID).Get()
+	require.True(t, ok)
+	assert.Equal(t, 1, history.Sessions)
+	assert.True(t, history.LastDisconnectAt.IsZero())
+
+	before := time.Now()
+	require.NoError(t, tunnel1.CloseWithReason("agent tunnel keepalive failed"))
+	removed, _ := registry.UnregisterCurrent(t.Context(), envID, tunnel1)
+	require.True(t, removed)
+
+	history, ok = GetTunnelHistory(envID).Get()
+	require.True(t, ok)
+	assert.Equal(t, 1, history.Sessions)
+	assert.Equal(t, "agent tunnel keepalive failed", history.LastDisconnectReason)
+	assert.False(t, history.LastDisconnectAt.Before(before))
+
+	conn2 := createTestConn(t)
+	defer func() { _ = conn2.CloseNow() }()
+	accepted, _, _, err = registry.RegisterSession(t.Context(), newWebSocketAgentTunnel(envID, conn2), TunnelStaleTimeout)
+	require.NoError(t, err)
+	require.True(t, accepted)
+
+	history, ok = GetTunnelHistory(envID).Get()
+	require.True(t, ok)
+	assert.Equal(t, 2, history.Sessions)
+	assert.Equal(t, "agent tunnel keepalive failed", history.LastDisconnectReason)
+	assert.True(t, GetTunnelHistory("env-unknown").IsAbsent())
+}
+
+func TestTunnelRegistry_RecordsStaleCleanupDisconnect(t *testing.T) {
+	registry := NewTunnelRegistry()
+	envID := "env-stale-history"
+
+	conn := createTestConn(t)
+	defer func() { _ = conn.CloseNow() }()
+	tunnel := newWebSocketAgentTunnel(envID, conn)
+	accepted, _, _, err := registry.RegisterSession(t.Context(), tunnel, TunnelStaleTimeout)
+	require.NoError(t, err)
+	require.True(t, accepted)
+
+	tunnel.mu.Lock()
+	tunnel.LastHeartbeat = time.Now().Add(-time.Hour)
+	tunnel.mu.Unlock()
+	require.Len(t, registry.CleanupStale(t.Context(), time.Minute), 1)
+
+	history, ok := registry.history.Get(envID)
+	require.True(t, ok)
+	assert.Equal(t, 1, history.Sessions)
+	assert.Equal(t, "agent tunnel heartbeat expired", history.LastDisconnectReason)
+	assert.False(t, history.LastDisconnectAt.IsZero())
 }

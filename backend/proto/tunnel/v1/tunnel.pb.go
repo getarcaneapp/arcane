@@ -194,8 +194,9 @@ type RegisterRequest struct {
 	AgentToken      string                 `protobuf:"bytes,1,opt,name=agent_token,json=agentToken,proto3" json:"agent_token,omitempty"`
 	AgentInstanceId string                 `protobuf:"bytes,2,opt,name=agent_instance_id,json=agentInstanceId,proto3" json:"agent_instance_id,omitempty"`
 	// Offered features, e.g. mux-v1 to switch to the multiplexed data plane.
-	Capabilities    []string `protobuf:"bytes,3,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
-	ResumeSessionId string   `protobuf:"bytes,4,opt,name=resume_session_id,json=resumeSessionId,proto3" json:"resume_session_id,omitempty"`
+	Capabilities    []string       `protobuf:"bytes,3,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	ResumeSessionId string         `protobuf:"bytes,4,opt,name=resume_session_id,json=resumeSessionId,proto3" json:"resume_session_id,omitempty"`
+	Host            *AgentHostInfo `protobuf:"bytes,5,opt,name=host,proto3" json:"host,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -258,6 +259,113 @@ func (x *RegisterRequest) GetResumeSessionId() string {
 	return ""
 }
 
+func (x *RegisterRequest) GetHost() *AgentHostInfo {
+	if x != nil {
+		return x.Host
+	}
+	return nil
+}
+
+type AgentHostInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hostname      string                 `protobuf:"bytes,1,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	Os            string                 `protobuf:"bytes,2,opt,name=os,proto3" json:"os,omitempty"`
+	KernelVersion string                 `protobuf:"bytes,3,opt,name=kernel_version,json=kernelVersion,proto3" json:"kernel_version,omitempty"`
+	Architecture  string                 `protobuf:"bytes,4,opt,name=architecture,proto3" json:"architecture,omitempty"`
+	DockerVersion string                 `protobuf:"bytes,5,opt,name=docker_version,json=dockerVersion,proto3" json:"docker_version,omitempty"`
+	AgentVersion  string                 `protobuf:"bytes,6,opt,name=agent_version,json=agentVersion,proto3" json:"agent_version,omitempty"`
+	Cpus          int32                  `protobuf:"varint,7,opt,name=cpus,proto3" json:"cpus,omitempty"`
+	MemoryBytes   int64                  `protobuf:"varint,8,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentHostInfo) Reset() {
+	*x = AgentHostInfo{}
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentHostInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentHostInfo) ProtoMessage() {}
+
+func (x *AgentHostInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentHostInfo.ProtoReflect.Descriptor instead.
+func (*AgentHostInfo) Descriptor() ([]byte, []int) {
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *AgentHostInfo) GetHostname() string {
+	if x != nil {
+		return x.Hostname
+	}
+	return ""
+}
+
+func (x *AgentHostInfo) GetOs() string {
+	if x != nil {
+		return x.Os
+	}
+	return ""
+}
+
+func (x *AgentHostInfo) GetKernelVersion() string {
+	if x != nil {
+		return x.KernelVersion
+	}
+	return ""
+}
+
+func (x *AgentHostInfo) GetArchitecture() string {
+	if x != nil {
+		return x.Architecture
+	}
+	return ""
+}
+
+func (x *AgentHostInfo) GetDockerVersion() string {
+	if x != nil {
+		return x.DockerVersion
+	}
+	return ""
+}
+
+func (x *AgentHostInfo) GetAgentVersion() string {
+	if x != nil {
+		return x.AgentVersion
+	}
+	return ""
+}
+
+func (x *AgentHostInfo) GetCpus() int32 {
+	if x != nil {
+		return x.Cpus
+	}
+	return 0
+}
+
+func (x *AgentHostInfo) GetMemoryBytes() int64 {
+	if x != nil {
+		return x.MemoryBytes
+	}
+	return 0
+}
+
 type RegisterResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
@@ -275,7 +383,7 @@ type RegisterResponse struct {
 
 func (x *RegisterResponse) Reset() {
 	*x = RegisterResponse{}
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[3]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -287,7 +395,7 @@ func (x *RegisterResponse) String() string {
 func (*RegisterResponse) ProtoMessage() {}
 
 func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[3]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -300,7 +408,7 @@ func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterResponse.ProtoReflect.Descriptor instead.
 func (*RegisterResponse) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{3}
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RegisterResponse) GetAccepted() bool {
@@ -369,7 +477,7 @@ type MuxData struct {
 
 func (x *MuxData) Reset() {
 	*x = MuxData{}
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[4]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -381,7 +489,7 @@ func (x *MuxData) String() string {
 func (*MuxData) ProtoMessage() {}
 
 func (x *MuxData) ProtoReflect() protoreflect.Message {
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[4]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -394,7 +502,7 @@ func (x *MuxData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MuxData.ProtoReflect.Descriptor instead.
 func (*MuxData) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{4}
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *MuxData) GetData() []byte {
@@ -420,13 +528,23 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\bmux_data\x18\x0f \x01(\v2\x12.tunnel.v1.MuxDataH\x00R\amuxDataB\t\n" +
 	"\apayloadJ\x04\b\x01\x10\x06J\x04\b\a\x10\x0fR\fhttp_requestR\x0eheartbeat_pongR\bws_startR\aws_dataR\bws_closeR\x0fcommand_requestR\vstream_openR\fstream_closeR\x0ecancel_requestR\n" +
 	"file_chunkR\vstream_dataR\n" +
-	"stream_endR\x0ecommand_credit\"\xae\x01\n" +
+	"stream_endR\x0ecommand_credit\"\xdc\x01\n" +
 	"\x0fRegisterRequest\x12\x1f\n" +
 	"\vagent_token\x18\x01 \x01(\tR\n" +
 	"agentToken\x12*\n" +
 	"\x11agent_instance_id\x18\x02 \x01(\tR\x0fagentInstanceId\x12\"\n" +
 	"\fcapabilities\x18\x03 \x03(\tR\fcapabilities\x12*\n" +
-	"\x11resume_session_id\x18\x04 \x01(\tR\x0fresumeSessionId\"\x8a\x02\n" +
+	"\x11resume_session_id\x18\x04 \x01(\tR\x0fresumeSessionId\x12,\n" +
+	"\x04host\x18\x05 \x01(\v2\x18.tunnel.v1.AgentHostInfoR\x04host\"\x89\x02\n" +
+	"\rAgentHostInfo\x12\x1a\n" +
+	"\bhostname\x18\x01 \x01(\tR\bhostname\x12\x0e\n" +
+	"\x02os\x18\x02 \x01(\tR\x02os\x12%\n" +
+	"\x0ekernel_version\x18\x03 \x01(\tR\rkernelVersion\x12\"\n" +
+	"\farchitecture\x18\x04 \x01(\tR\farchitecture\x12%\n" +
+	"\x0edocker_version\x18\x05 \x01(\tR\rdockerVersion\x12#\n" +
+	"\ragent_version\x18\x06 \x01(\tR\fagentVersion\x12\x12\n" +
+	"\x04cpus\x18\a \x01(\x05R\x04cpus\x12!\n" +
+	"\fmemory_bytes\x18\b \x01(\x03R\vmemoryBytes\"\x8a\x02\n" +
 	"\x10RegisterResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12%\n" +
 	"\x0eenvironment_id\x18\x02 \x01(\tR\renvironmentId\x12\x14\n" +
@@ -454,26 +572,28 @@ func file_tunnel_v1_tunnel_proto_rawDescGZIP() []byte {
 	return file_tunnel_v1_tunnel_proto_rawDescData
 }
 
-var file_tunnel_v1_tunnel_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_tunnel_v1_tunnel_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_tunnel_v1_tunnel_proto_goTypes = []any{
 	(*AgentMessage)(nil),     // 0: tunnel.v1.AgentMessage
 	(*ManagerMessage)(nil),   // 1: tunnel.v1.ManagerMessage
 	(*RegisterRequest)(nil),  // 2: tunnel.v1.RegisterRequest
-	(*RegisterResponse)(nil), // 3: tunnel.v1.RegisterResponse
-	(*MuxData)(nil),          // 4: tunnel.v1.MuxData
+	(*AgentHostInfo)(nil),    // 3: tunnel.v1.AgentHostInfo
+	(*RegisterResponse)(nil), // 4: tunnel.v1.RegisterResponse
+	(*MuxData)(nil),          // 5: tunnel.v1.MuxData
 }
 var file_tunnel_v1_tunnel_proto_depIdxs = []int32{
 	2, // 0: tunnel.v1.AgentMessage.register:type_name -> tunnel.v1.RegisterRequest
-	4, // 1: tunnel.v1.AgentMessage.mux_data:type_name -> tunnel.v1.MuxData
-	3, // 2: tunnel.v1.ManagerMessage.register_response:type_name -> tunnel.v1.RegisterResponse
-	4, // 3: tunnel.v1.ManagerMessage.mux_data:type_name -> tunnel.v1.MuxData
-	0, // 4: tunnel.v1.TunnelService.Connect:input_type -> tunnel.v1.AgentMessage
-	1, // 5: tunnel.v1.TunnelService.Connect:output_type -> tunnel.v1.ManagerMessage
-	5, // [5:6] is the sub-list for method output_type
-	4, // [4:5] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	5, // 1: tunnel.v1.AgentMessage.mux_data:type_name -> tunnel.v1.MuxData
+	4, // 2: tunnel.v1.ManagerMessage.register_response:type_name -> tunnel.v1.RegisterResponse
+	5, // 3: tunnel.v1.ManagerMessage.mux_data:type_name -> tunnel.v1.MuxData
+	3, // 4: tunnel.v1.RegisterRequest.host:type_name -> tunnel.v1.AgentHostInfo
+	0, // 5: tunnel.v1.TunnelService.Connect:input_type -> tunnel.v1.AgentMessage
+	1, // 6: tunnel.v1.TunnelService.Connect:output_type -> tunnel.v1.ManagerMessage
+	6, // [6:7] is the sub-list for method output_type
+	5, // [5:6] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_tunnel_v1_tunnel_proto_init() }
@@ -495,7 +615,7 @@ func file_tunnel_v1_tunnel_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tunnel_v1_tunnel_proto_rawDesc), len(file_tunnel_v1_tunnel_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

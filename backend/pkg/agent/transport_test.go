@@ -85,6 +85,48 @@ func TestGetTunnelRuntimeState(t *testing.T) {
 		}
 	})
 
+	t.Run("returns host and tunnel stats for active tunnel", func(t *testing.T) {
+		envID := "env-runtime-stats"
+		GetRegistry().Unregister(envID)
+		defer GetRegistry().Unregister(envID)
+
+		tunnel := NewAgentTunnelWithConn(envID, NewGRPCManagerTunnelConn(nil))
+		tunnel.RemoteAddr = "203.0.113.7"
+		tunnel.Host = &AgentHostInfo{Hostname: "edge-1", CPUs: 4}
+		tunnel.mux.recordRTT(10 * time.Millisecond)
+		tunnel.mux.recordRTT(30 * time.Millisecond)
+		tunnel.mux.opened.Add(2)
+		GetRegistry().Register(envID, tunnel)
+
+		state, ok := GetTunnelRuntimeState(envID).Get()
+		require.True(t, ok)
+		assert.Equal(t, "203.0.113.7", state.RemoteAddr)
+		assert.Equal(t, tunnel.Host, state.Host)
+		assert.Equal(t, int64(2), state.StreamsOpened)
+		assert.Zero(t, state.BytesIn)
+		assert.Zero(t, state.BytesOut)
+		require.NotNil(t, state.RTTMin)
+		require.NotNil(t, state.RTTAvg)
+		require.NotNil(t, state.RTTMax)
+		assert.Equal(t, 10*time.Millisecond, *state.RTTMin)
+		assert.Equal(t, 20*time.Millisecond, *state.RTTAvg)
+		assert.Equal(t, 30*time.Millisecond, *state.RTTMax)
+	})
+
+	t.Run("omits round trip stats before the first ping", func(t *testing.T) {
+		envID := "env-runtime-no-ping"
+		GetRegistry().Unregister(envID)
+		defer GetRegistry().Unregister(envID)
+
+		GetRegistry().Register(envID, NewAgentTunnelWithConn(envID, NewGRPCManagerTunnelConn(nil)))
+
+		state, ok := GetTunnelRuntimeState(envID).Get()
+		require.True(t, ok)
+		assert.Nil(t, state.RTTMin)
+		assert.Nil(t, state.RTTAvg)
+		assert.Nil(t, state.RTTMax)
+	})
+
 	t.Run("returns false for closed tunnel", func(t *testing.T) {
 		envID := "env-runtime-closed"
 		GetRegistry().Unregister(envID)

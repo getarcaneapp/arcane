@@ -80,9 +80,19 @@ func GetTunnelRuntimeState(envID string) mo.Option[*TunnelRuntimeState] {
 	meta := tunnel.MetadataSnapshot()
 
 	rtt := time.Duration(tunnel.mux.rtt.Load())
+	rttCount := tunnel.mux.rttCount.Load()
+	bytesIn, bytesOut := tunnel.mux.traffic()
 	return mo.Some(&TunnelRuntimeState{
 		RoundTripTime: kit.Ternary(rtt > 0, &rtt, nil),
+		RTTMin:        kit.Ternary(rttCount > 0, new(time.Duration(tunnel.mux.rttMin.Load())), nil),
+		RTTAvg:        kit.Ternary(rttCount > 0, new(time.Duration(tunnel.mux.rttSum.Load()/max(rttCount, 1))), nil),
+		RTTMax:        kit.Ternary(rttCount > 0, new(time.Duration(tunnel.mux.rttMax.Load())), nil),
 		OpenStreams:   tunnel.openStreams(),
+		BytesIn:       bytesIn,
+		BytesOut:      bytesOut,
+		StreamsOpened: tunnel.mux.opened.Load(),
+		Host:          meta.Host,
+		RemoteAddr:    meta.RemoteAddr,
 		Transport:     tunnel.Conn.Transport(),
 		ConnectedAt:   new(meta.ConnectedAt),
 		LastHeartbeat: new(meta.LastHeartbeat),
@@ -92,4 +102,9 @@ func GetTunnelRuntimeState(envID string) mo.Option[*TunnelRuntimeState] {
 		Capabilities:  meta.Capabilities,
 		State:         meta.State,
 	})
+}
+
+func GetTunnelHistory(envID string) mo.Option[TunnelHistory] {
+	history, ok := GetRegistry().history.Get(envID)
+	return mo.TupleToOption(history, ok)
 }

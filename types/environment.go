@@ -43,6 +43,30 @@ type (
 		ExpiringSoon bool `json:"expiringSoon"`
 	}
 
+	AgentHostInfo struct {
+		Hostname      string `json:"hostname,omitempty"`
+		OS            string `json:"os,omitempty"`
+		KernelVersion string `json:"kernelVersion,omitempty"`
+		Architecture  string `json:"architecture,omitempty"`
+		DockerVersion string `json:"dockerVersion,omitempty"`
+		AgentVersion  string `json:"agentVersion,omitempty"`
+		PublicIP      string `json:"publicIp,omitempty"`
+		MemoryBytes   int64  `json:"memoryBytes,omitempty"`
+		CPUs          int32  `json:"cpus,omitempty"`
+	}
+
+	AgentTunnelStats struct {
+		RoundTripMinMs       *float64   `json:"roundTripMinMs,omitempty"`
+		RoundTripAvgMs       *float64   `json:"roundTripAvgMs,omitempty"`
+		RoundTripMaxMs       *float64   `json:"roundTripMaxMs,omitempty"`
+		LastDisconnectAt     *time.Time `json:"lastDisconnectAt,omitempty"`
+		LastDisconnectReason string     `json:"lastDisconnectReason,omitempty"`
+		BytesIn              int64      `json:"bytesIn"`
+		BytesOut             int64      `json:"bytesOut"`
+		StreamsOpened        int64      `json:"streamsOpened"`
+		Sessions             int        `json:"sessions"`
+	}
+
 	// Environment represents an environment in API responses.
 	Environment struct {
 		// LastSeen is the last successful manager-side health/contact timestamp.
@@ -109,6 +133,10 @@ type (
 		//
 		// Required: false
 		AgentMTLSCertificate *AgentMTLSCertificate `json:"agentMTLSCertificate,omitempty" readOnly:"true"`
+
+		AgentHost *AgentHostInfo `json:"agentHost,omitempty" readOnly:"true"`
+
+		AgentTunnelStats *AgentTunnelStats `json:"agentTunnelStats,omitempty" readOnly:"true"`
 
 		// ApiKey is returned only when creating or regenerating
 		//

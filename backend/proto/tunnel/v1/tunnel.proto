@@ -40,6 +40,18 @@ message RegisterRequest {
   // Offered features, e.g. mux-v1 to switch to the multiplexed data plane.
   repeated string capabilities = 3;
   string resume_session_id = 4;
+  AgentHostInfo host = 5;
+}
+
+message AgentHostInfo {
+  string hostname = 1;
+  string os = 2;
+  string kernel_version = 3;
+  string architecture = 4;
+  string docker_version = 5;
+  string agent_version = 6;
+  int32 cpus = 7;
+  int64 memory_bytes = 8;
 }
 
 message RegisterResponse {

@@ -5,7 +5,6 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -35,7 +34,12 @@ func (m *muxSession) dial(ctx context.Context) (net.Conn, error) {
 	if session == nil {
 		return nil, ErrTunnelConnectionClosed
 	}
-	return openMuxStream(ctx, session)
+	conn, err := openMuxStream(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+	m.opened.Add(1)
+	return conn, nil
 }
 
 // close tears the session down and fails waiting and future dials with ErrTunnelConnectionClosed.
@@ -74,8 +78,36 @@ func (m *muxSession) alive(ctx context.Context, timeout time.Duration) bool {
 	}
 }
 
+func (m *muxSession) recordRTT(rtt time.Duration) {
+	ns := int64(rtt)
+	m.rtt.Store(ns)
+	m.rttSum.Add(ns)
+	first := m.rttCount.Add(1) == 1
+	for {
+		current := m.rttMin.Load()
+		if (!first && current <= ns) || m.rttMin.CompareAndSwap(current, ns) {
+			break
+		}
+	}
+	for {
+		current := m.rttMax.Load()
+		if current >= ns || m.rttMax.CompareAndSwap(current, ns) {
+			break
+		}
+	}
+}
+
+func (m *muxSession) traffic() (int64, int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.conn == nil {
+		return 0, 0
+	}
+	return m.conn.rx.Load(), m.conn.tx.Load()
+}
+
 // start publishes session to waiting dials. It reports false when the tunnel already closed.
-func (m *muxSession) start(session *yamux.Session) bool {
+func (m *muxSession) start(session *yamux.Session, conn *muxConn) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	select {
@@ -83,20 +115,21 @@ func (m *muxSession) start(session *yamux.Session) bool {
 		return false
 	default:
 		m.session = session
+		m.conn = conn
 		close(m.ready)
 		return true
 	}
 }
 
 // serveMuxTunnel runs the manager end of a multiplexed session until the agent disconnects or the tunnel closes.
-func (s *TunnelServer) serveMuxTunnel(ctx context.Context, tunnel *AgentTunnel, rw io.ReadWriteCloser) error {
+func (s *TunnelServer) serveMuxTunnel(ctx context.Context, tunnel *AgentTunnel, rw *muxConn) error {
 	defer tunnel.mux.close()
 	session, err := yamux.Server(rw, newMuxConfig(false))
 	if err != nil {
 		_ = rw.Close()
 		return fmt.Errorf("start agent tunnel session: %w", err)
 	}
-	if !tunnel.mux.start(session) {
+	if !tunnel.mux.start(session, rw) {
 		return session.Close()
 	}
 
@@ -134,7 +167,7 @@ func (s *TunnelServer) serveMuxTunnel(ctx context.Context, tunnel *AgentTunnel, 
 				_ = tunnel.CloseWithReason("agent tunnel keepalive failed")
 				return fmt.Errorf("agent tunnel keepalive failed: %w", pingErr)
 			}
-			tunnel.mux.rtt.Store(int64(rtt))
+			tunnel.mux.recordRTT(rtt)
 			tunnel.UpdateHeartbeat()
 		}
 	}

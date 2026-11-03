@@ -1801,3 +1801,72 @@ func TestAggregateVersionsReportsEachEnvironment(t *testing.T) {
 	}, body.Environments)
 	require.Len(t, body.FailedEnvironments, 1)
 }
+
+func TestApplyEnvironmentRuntimeState_MapsAgentHostAndTunnelStats(t *testing.T) {
+	envID := "env-runtime-host-stats"
+	tunnel := agent.NewAgentTunnelWithConn(envID, agent.NewGRPCManagerTunnelConn(nil))
+	tunnel.RemoteAddr = "203.0.113.7"
+	tunnel.Host = &agent.AgentHostInfo{
+		Hostname:      "edge-1",
+		OS:            "Debian GNU/Linux 13",
+		KernelVersion: "6.12.0",
+		Architecture:  "x86_64",
+		DockerVersion: "28.5.0",
+		AgentVersion:  "3.0.0",
+		MemoryBytes:   8 << 30,
+		CPUs:          4,
+	}
+	accepted, _, _, err := agent.GetRegistry().RegisterSession(t.Context(), tunnel, agent.TunnelStaleTimeout)
+	require.NoError(t, err)
+	require.True(t, accepted)
+	t.Cleanup(func() {
+		agent.GetRegistry().Unregister(envID)
+	})
+
+	env := ApplyEnvironmentRuntimeState(types.Environment{ID: envID, Status: string(EnvironmentStatusOffline)})
+
+	assert.Equal(t, &types.AgentHostInfo{
+		Hostname:      "edge-1",
+		OS:            "Debian GNU/Linux 13",
+		KernelVersion: "6.12.0",
+		Architecture:  "x86_64",
+		DockerVersion: "28.5.0",
+		AgentVersion:  "3.0.0",
+		PublicIP:      "203.0.113.7",
+		MemoryBytes:   8 << 30,
+		CPUs:          4,
+	}, env.AgentHost)
+	require.NotNil(t, env.AgentTunnelStats)
+	assert.Equal(t, 1, env.AgentTunnelStats.Sessions)
+	assert.Nil(t, env.AgentTunnelStats.LastDisconnectAt)
+	assert.Nil(t, env.AgentTunnelStats.RoundTripAvgMs)
+}
+
+func TestApplyEnvironmentRuntimeState_DisconnectedAgentKeepsTunnelHistory(t *testing.T) {
+	envID := "env-runtime-history"
+	tunnel := agent.NewAgentTunnelWithConn(envID, agent.NewGRPCManagerTunnelConn(nil))
+	tunnel.Host = &agent.AgentHostInfo{Hostname: "edge-2"}
+	accepted, _, _, err := agent.GetRegistry().RegisterSession(t.Context(), tunnel, agent.TunnelStaleTimeout)
+	require.NoError(t, err)
+	require.True(t, accepted)
+	require.NoError(t, tunnel.CloseWithReason("agent tunnel keepalive failed"))
+	removed, _ := agent.GetRegistry().UnregisterCurrent(t.Context(), envID, tunnel)
+	require.True(t, removed)
+
+	env := ApplyEnvironmentRuntimeState(types.Environment{ID: envID, Status: string(EnvironmentStatusOnline)})
+
+	assert.Nil(t, env.AgentHost)
+	require.NotNil(t, env.AgentTunnelStats)
+	assert.Equal(t, 1, env.AgentTunnelStats.Sessions)
+	assert.Equal(t, "agent tunnel keepalive failed", env.AgentTunnelStats.LastDisconnectReason)
+	assert.NotNil(t, env.AgentTunnelStats.LastDisconnectAt)
+	assert.Zero(t, env.AgentTunnelStats.BytesIn)
+	assert.False(t, kit.FromPtr(env.Connected))
+}
+
+func TestApplyEnvironmentRuntimeState_OmitsTunnelStatsWithoutHistory(t *testing.T) {
+	env := ApplyEnvironmentRuntimeState(types.Environment{ID: "env-runtime-never-connected", Status: string(EnvironmentStatusOffline)})
+
+	assert.Nil(t, env.AgentHost)
+	assert.Nil(t, env.AgentTunnelStats)
+}

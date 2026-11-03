@@ -64,6 +64,33 @@ func (w *blockingBusWatcher) Start(ctx context.Context) error {
 
 func (w *blockingBusWatcher) RunNow(context.Context) error { return nil }
 
+func TestWithClientRemoteAddr(t *testing.T) {
+	_, proxyNet, err := net.ParseCIDR("10.0.0.0/8")
+	require.NoError(t, err)
+	extractIP := echo.ExtractIPFromXFFHeader(
+		echo.TrustLoopback(false),
+		echo.TrustLinkLocal(false),
+		echo.TrustPrivateNet(false),
+		echo.TrustIPRange(proxyNet),
+	)
+
+	t.Run("trusted proxy forwards the client address", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/tunnel/connect", http.NoBody)
+		req.RemoteAddr = "10.1.2.3:4567"
+		req.Header.Set("X-Forwarded-For", "203.0.113.9")
+
+		assert.Equal(t, "203.0.113.9:4567", withClientRemoteAddr(req, extractIP).RemoteAddr)
+	})
+
+	t.Run("untrusted peer keeps its own address", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/tunnel/connect", http.NoBody)
+		req.RemoteAddr = "198.51.100.7:4567"
+		req.Header.Set("X-Forwarded-For", "203.0.113.9")
+
+		assert.Equal(t, "198.51.100.7:4567", withClientRemoteAddr(req, extractIP).RemoteAddr)
+	})
+}
+
 func TestNormalizeTunnelGRPCRequestPath(t *testing.T) {
 	fullMethodPath := tunnelpb.TunnelService_Connect_FullMethodName
 
