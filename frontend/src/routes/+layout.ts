@@ -121,27 +121,35 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 	if (sessionRejected) queryClient.removeQueries({ queryKey: queryKeys.auth.sessionBootstrap() });
 	const bootstrap = sessionResult.data;
 	let user: User | null = bootstrap?.user ?? (sessionRejected ? null : userStore.current);
-	const versionInformation = bootstrap
-		? bootstrap.version
-		: await queryClient.query({
+	const versionInformation =
+		bootstrap?.version ??
+		(await dataOrNull(
+			queryClient.query({
 				...rootQuery,
 				queryKey: queryKeys.system.appVersion(),
 				queryFn: () => versionService.getVersionInformation()
-			});
+			})
+		)) ??
+		versionStore.current ??
+		toAppVersionInformation({});
 	const autoLoginConfig =
 		browser && versionInformation.enabledFeatures?.includes('autologin')
-			? await queryClient.query({
-					queryKey: queryKeys.auth.autoLoginConfig(),
-					queryFn: () => authService.getAutoLoginConfig()
-				})
+			? await dataOrNull(
+					queryClient.query({
+						queryKey: queryKeys.auth.autoLoginConfig(),
+						queryFn: () => authService.getAutoLoginConfig()
+					})
+				)
 			: null;
 
 	settingsStore.autoLoginEnabled.set(autoLoginConfig?.enabled === true);
 	if (autoLoginConfig?.enabled && !user) {
-		user = await queryClient.query({
-			queryKey: queryKeys.auth.autoLoginAttempt(),
-			queryFn: () => authService.attemptAutoLogin()
-		});
+		user = await dataOrNull(
+			queryClient.query({
+				queryKey: queryKeys.auth.autoLoginAttempt(),
+				queryFn: () => authService.attemptAutoLogin()
+			})
+		);
 	}
 
 	const nextAuthenticatedUserId = user?.id ?? null;

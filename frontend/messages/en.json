@@ -1997,7 +1997,7 @@
   "templates_save_failed": "Failed to save default templates",
   "templates_save_success": "Default templates saved successfully",
   "changes_reset": "Changes reset",
-  "registries_title": "Container Registries",
+  "registries_title": "Registries",
   "registries_subtitle": "Configure access credentials for private Docker registries and container repositories",
   "registries_refreshed": "Registries Refreshed!",
   "registries_remove_selected_title": "Remove {count} Registry(ies)",
