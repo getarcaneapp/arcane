@@ -1,11 +1,11 @@
 package runs
 
 import (
-	"bytes"
 	"context"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"maps"
 	"math/rand/v2"
 	"slices"
@@ -74,8 +74,9 @@ func (q *Coordinator) mutate(ctx context.Context, environmentID, jobID string, c
 
 func (q *Coordinator) prepareMutation(state *types.SchedulerCoordinatorState, environmentID, jobID string, change func(*types.SchedulerQueueRecord) error) error {
 	normalizeRecordTimes(&state.Record)
-	previousRuns := slices.Clone(state.Record.Runs)
-	previous, versions, err := snapshotRuns(state.Record)
+	previousRuns := slices.Clone(state.Record.Runs[:kit.Ternary(len(state.PendingActivitySync) > 0, len(state.Record.Runs), 0)])
+	var digest maphash.Hash
+	previous, versions, err := snapshotRuns(state.Record, &digest)
 	if err != nil {
 		return err
 	}
@@ -88,13 +89,13 @@ func (q *Coordinator) prepareMutation(state *types.SchedulerCoordinatorState, en
 	preserveUnsyncedRuns(state, previousRuns)
 	for i := range state.Record.Runs {
 		q.associateActivity(&state.Record.Runs[i])
-		if markChangedActivityErr := markChangedActivity(state, &state.Record.Runs[i], previous, versions); markChangedActivityErr != nil {
+		if markChangedActivityErr := markChangedActivity(state, &state.Record.Runs[i], previous, versions, &digest); markChangedActivityErr != nil {
 			return markChangedActivityErr
 		}
 	}
 	for id, run := range state.Record.Receipts {
 		q.associateActivity(&run)
-		if markChangedActivityErr2 := markChangedActivity(state, &run, previous, versions); markChangedActivityErr2 != nil {
+		if markChangedActivityErr2 := markChangedActivity(state, &run, previous, versions, &digest); markChangedActivityErr2 != nil {
 			return markChangedActivityErr2
 		}
 		state.Record.Receipts[id] = run
@@ -103,18 +104,20 @@ func (q *Coordinator) prepareMutation(state *types.SchedulerCoordinatorState, en
 	return nil
 }
 
-func snapshotRuns(record types.SchedulerQueueRecord) (map[string][]byte, map[string]time.Time, error) {
-	encoded := make(map[string][]byte, len(record.Runs)+len(record.Receipts))
+func snapshotRuns(record types.SchedulerQueueRecord, digest *maphash.Hash) (map[string]uint64, map[string]time.Time, error) {
+	digests := make(map[string]uint64, len(record.Runs)+len(record.Receipts))
 	versions := make(map[string]time.Time, len(record.Runs)+len(record.Receipts))
-	for _, run := range append(slices.Clone(record.Runs), receiptRuns(record.Receipts)...) {
-		data, err := json.Marshal(run)
-		if err != nil {
-			return nil, nil, err
+	for _, runs := range [][]types.SchedulerRun{record.Runs, slices.Collect(maps.Values(record.Receipts))} {
+		for _, run := range runs {
+			digest.Reset()
+			if err := json.MarshalWrite(digest, run); err != nil {
+				return nil, nil, err
+			}
+			digests[run.ID] = digest.Sum64()
+			versions[run.ID] = run.UpdatedAt
 		}
-		encoded[run.ID] = data
-		versions[run.ID] = run.UpdatedAt
 	}
-	return encoded, versions, nil
+	return digests, versions, nil
 }
 
 func preserveUnsyncedRuns(state *types.SchedulerCoordinatorState, previous []types.SchedulerRun) {
@@ -372,24 +375,16 @@ func (q *Coordinator) ScheduleState(ctx context.Context, jobID string) (types.Sc
 
 func (q *Coordinator) Activate() { q.enabled.Store(true); q.signal() }
 
-func receiptRuns(receipts map[string]types.SchedulerRun) []types.SchedulerRun {
-	runs := make([]types.SchedulerRun, 0, len(receipts))
-	for _, run := range receipts {
-		runs = append(runs, run)
-	}
-	return runs
-}
-
-func markChangedActivity(state *types.SchedulerCoordinatorState, run *types.SchedulerRun, previous map[string][]byte, previousUpdated map[string]time.Time) error {
+func markChangedActivity(state *types.SchedulerCoordinatorState, run *types.SchedulerRun, previous map[string]uint64, previousUpdated map[string]time.Time, digest *maphash.Hash) error {
 	normalizeRunTimes(run)
 	if run.ActivityID == "" {
 		return nil
 	}
-	encoded, err := json.Marshal(run)
-	if err != nil {
+	digest.Reset()
+	if err := json.MarshalWrite(digest, run); err != nil {
 		return err
 	}
-	if bytes.Equal(previous[run.ID], encoded) {
+	if previousDigest, found := previous[run.ID]; found && previousDigest == digest.Sum64() {
 		return nil
 	}
 	if run.UpdatedAt.IsZero() || run.UpdatedAt.Equal(previousUpdated[run.ID]) {

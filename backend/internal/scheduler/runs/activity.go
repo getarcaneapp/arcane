@@ -33,7 +33,7 @@ func (q *Coordinator) observeRun(ctx context.Context, run types.SchedulerRun) bo
 func (q *Coordinator) syncActivity(ctx context.Context, run types.SchedulerRun) bool {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	var state types.SchedulerCoordinatorState
+	var state struct{ PendingActivitySync map[string]time.Time }
 	id := kit.SHA256Hex(run.EnvironmentID + "\x00" + run.JobID)
 	if err := q.service.GetState(ctx, coordinatorType, id, &state); err != nil {
 		return true

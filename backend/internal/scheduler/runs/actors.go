@@ -56,30 +56,15 @@ func (q *Coordinator) Register(runtime *francis.Runtime) error {
 }
 
 func (a *coordinatorActor) Invoke(ctx context.Context, method string, data actor.Envelope) (any, error) {
+	if method == "replace" {
+		return a.replace(ctx, data)
+	}
 	var state types.SchedulerCoordinatorState
 	if err := a.q.service.GetState(ctx, coordinatorType, a.id, &state); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
 		return nil, err
 	}
 	normalizeRecordTimes(&state.Record)
 	switch method {
-	case "replace":
-		var next types.SchedulerCoordinatorState
-		if err := data.Decode(&next); err != nil {
-			return nil, err
-		}
-		if next.Revision != state.Revision {
-			return false, nil
-		}
-		next.Revision++
-		if err := a.q.service.SetState(ctx, coordinatorType, a.id, next, nil); err != nil {
-			return nil, err
-		}
-		// Acceptance is persisted; dispatch failures are retried.
-		if err := a.flush(ctx, &next); err != nil {
-			slog.WarnContext(ctx, "Job dispatch requires reconciliation", "jobId", next.Record.JobID, "environmentId", next.Record.EnvironmentID, "error", err)
-			a.q.signal()
-		}
-		return true, nil
 	case "activity-synced":
 		var command types.SchedulerActivitySyncCommand
 		if err := data.Decode(&command); err != nil {
@@ -133,6 +118,30 @@ func (a *coordinatorActor) Invoke(ctx context.Context, method string, data actor
 	default:
 		return nil, fmt.Errorf("unknown coordinator command: %s", method)
 	}
+}
+
+func (a *coordinatorActor) replace(ctx context.Context, data actor.Envelope) (any, error) {
+	var current struct{ Revision uint64 }
+	if err := a.q.service.GetState(ctx, coordinatorType, a.id, &current); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
+		return nil, err
+	}
+	var next types.SchedulerCoordinatorState
+	if err := data.Decode(&next); err != nil {
+		return nil, err
+	}
+	if next.Revision != current.Revision {
+		return false, nil
+	}
+	next.Revision++
+	if err := a.q.service.SetState(ctx, coordinatorType, a.id, next, nil); err != nil {
+		return nil, err
+	}
+	// Acceptance is persisted; dispatch failures are retried.
+	if err := a.flush(ctx, &next); err != nil {
+		slog.WarnContext(ctx, "Job dispatch requires reconciliation", "jobId", next.Record.JobID, "environmentId", next.Record.EnvironmentID, "error", err)
+		a.q.signal()
+	}
+	return true, nil
 }
 
 func (a *coordinatorActor) flush(ctx context.Context, state *types.SchedulerCoordinatorState) error {

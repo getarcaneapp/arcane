@@ -27,7 +27,7 @@ type (
 	}
 )
 
-func newTestCoordinator(t *testing.T) *Coordinator {
+func newTestCoordinator(t testing.TB) *Coordinator {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)

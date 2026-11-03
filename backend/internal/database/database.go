@@ -169,7 +169,7 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		return nil, fmt.Errorf("failed to register database instrumentation: %w", err)
 	}
 	if dbProvider == dbProviderPostgres {
-		sqlDB.SetMaxIdleConns(15)
+		sqlDB.SetMaxIdleConns(4)
 		sqlDB.SetMaxOpenConns(50)
 		sqlDB.SetConnMaxLifetime(5 * time.Minute)
 		sqlDB.SetConnMaxIdleTime(3 * time.Minute)

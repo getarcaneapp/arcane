@@ -203,6 +203,7 @@ INSERT INTO rbac_permission_map (old_permission, new_permission) VALUES
     ('environments:delete', 'environments:delete'),
     ('environments:pair', 'environments:pair'),
     ('environments:sync', 'environments:sync'),
+    ('environments:restart', 'environments:restart'),
     ('registries:list', 'registries:list'),
     ('registries:read', 'registries:read'),
     ('registries:create', 'registries:create'),
@@ -439,6 +440,8 @@ INSERT INTO rbac_permission_map (old_permission, new_permission) VALUES
     ('environments:pair', 'environments:read'),
     ('environments:sync', 'environments:list'),
     ('environments:sync', 'environments:read'),
+    ('environments:restart', 'environments:list'),
+    ('environments:restart', 'environments:read'),
     ('registries:read', 'registries:list'),
     ('registries:create', 'registries:list'),
     ('registries:create', 'registries:read'),
@@ -871,12 +874,20 @@ INSERT INTO rbac_permission_map (old_permission, new_permission) VALUES
 `
 	v102SQLiteGrantFullCatalog = `
 UPDATE roles
-SET permissions = json_insert(roles.permissions, '$[#]', 'diagnostics:profile')
+SET permissions = (
+    SELECT json_group_array(permission)
+    FROM (
+        SELECT value AS permission FROM json_each(roles.permissions)
+        UNION
+        SELECT 'diagnostics:profile'
+        UNION
+        SELECT 'environments:restart'
+    )
+)
 WHERE NOT roles.built_in
-    AND NOT EXISTS (SELECT 1 FROM json_each(roles.permissions) WHERE value = 'diagnostics:profile')
     AND NOT EXISTS (
         SELECT 1 FROM rbac_permission_map AS catalog
-        WHERE catalog.old_permission <> 'diagnostics:profile'
+        WHERE catalog.old_permission NOT IN ('diagnostics:profile', 'environments:restart')
             AND NOT EXISTS (SELECT 1 FROM json_each(roles.permissions) WHERE value = catalog.old_permission)
     );
 INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id, created_at)
@@ -884,19 +895,20 @@ SELECT
     lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' ||
         substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))),
     scope.api_key_id,
-    'diagnostics:profile',
+    added.permission,
     NULL,
     CURRENT_TIMESTAMP
 FROM (SELECT DISTINCT api_key_id FROM api_key_permissions WHERE environment_id IS NULL) AS scope
+CROSS JOIN (SELECT 'diagnostics:profile' AS permission UNION ALL SELECT 'environments:restart') AS added
 WHERE NOT EXISTS (
         SELECT 1 FROM api_key_permissions AS held
         WHERE held.api_key_id = scope.api_key_id
-            AND held.permission = 'diagnostics:profile'
+            AND held.permission = added.permission
             AND held.environment_id IS NULL
     )
     AND NOT EXISTS (
         SELECT 1 FROM rbac_permission_map AS catalog
-        WHERE catalog.old_permission <> 'diagnostics:profile'
+        WHERE catalog.old_permission NOT IN ('diagnostics:profile', 'environments:restart')
             AND NOT EXISTS (
                 SELECT 1 FROM api_key_permissions AS held
                 WHERE held.api_key_id = scope.api_key_id
@@ -906,31 +918,35 @@ WHERE NOT EXISTS (
     );
 `
 	v102PostgresGrantFullCatalog = `
-UPDATE roles SET permissions = permissions || '["diagnostics:profile"]'::jsonb
+UPDATE roles
+SET permissions = (
+    SELECT jsonb_agg(DISTINCT permission)
+    FROM jsonb_array_elements_text(roles.permissions || '["diagnostics:profile","environments:restart"]'::jsonb) AS permission
+)
 WHERE NOT roles.built_in
-    AND NOT permissions @> '["diagnostics:profile"]'::jsonb
     AND NOT EXISTS (
         SELECT 1 FROM rbac_permission_map AS catalog
-        WHERE catalog.old_permission <> 'diagnostics:profile'
+        WHERE catalog.old_permission NOT IN ('diagnostics:profile', 'environments:restart')
             AND NOT roles.permissions @> jsonb_build_array(catalog.old_permission)
     );
 INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id, created_at)
 SELECT
     gen_random_uuid()::text,
     scope.api_key_id,
-    'diagnostics:profile',
+    added.permission,
     NULL,
     CURRENT_TIMESTAMP
 FROM (SELECT DISTINCT api_key_id FROM api_key_permissions WHERE environment_id IS NULL) AS scope
+CROSS JOIN (VALUES ('diagnostics:profile'), ('environments:restart')) AS added(permission)
 WHERE NOT EXISTS (
         SELECT 1 FROM api_key_permissions AS held
         WHERE held.api_key_id = scope.api_key_id
-            AND held.permission = 'diagnostics:profile'
+            AND held.permission = added.permission
             AND held.environment_id IS NULL
     )
     AND NOT EXISTS (
         SELECT 1 FROM rbac_permission_map AS catalog
-        WHERE catalog.old_permission <> 'diagnostics:profile'
+        WHERE catalog.old_permission NOT IN ('diagnostics:profile', 'environments:restart')
             AND NOT EXISTS (
                 SELECT 1 FROM api_key_permissions AS held
                 WHERE held.api_key_id = scope.api_key_id
@@ -949,7 +965,7 @@ SET permissions = (
     FROM (
         SELECT granted.value AS permission
         FROM json_each(roles.permissions) AS granted
-        WHERE granted.value <> 'diagnostics:profile'
+        WHERE granted.value NOT IN ('diagnostics:profile', 'environments:restart')
             AND granted.value NOT IN (SELECT new_permission FROM rbac_permission_map)
         UNION
         SELECT split.old_permission
@@ -963,7 +979,7 @@ SET permissions = (
 )
 WHERE EXISTS (
     SELECT 1 FROM json_each(roles.permissions) AS granted
-    WHERE granted.value = 'diagnostics:profile'
+    WHERE granted.value IN ('diagnostics:profile', 'environments:restart')
         OR granted.value IN (SELECT new_permission FROM rbac_permission_map)
 );
 INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id, created_at)
@@ -993,7 +1009,7 @@ WHERE NOT EXISTS (
             )
     );
 DELETE FROM api_key_permissions
-WHERE (permission = 'diagnostics:profile' OR permission IN (SELECT new_permission FROM rbac_permission_map))
+WHERE (permission IN ('diagnostics:profile', 'environments:restart') OR permission IN (SELECT new_permission FROM rbac_permission_map))
     AND NOT EXISTS (
         SELECT 1 FROM rbac_permission_map AS split
         WHERE split.old_permission = api_key_permissions.permission
@@ -1016,7 +1032,7 @@ SET permissions = COALESCE((
     FROM (
         SELECT granted.value AS permission
         FROM jsonb_array_elements_text(roles.permissions) AS granted(value)
-        WHERE granted.value <> 'diagnostics:profile'
+        WHERE granted.value NOT IN ('diagnostics:profile', 'environments:restart')
             AND granted.value NOT IN (SELECT new_permission FROM rbac_permission_map)
         UNION
         SELECT split.old_permission
@@ -1030,7 +1046,7 @@ SET permissions = COALESCE((
 ), '[]'::jsonb)
 WHERE EXISTS (
     SELECT 1 FROM jsonb_array_elements_text(roles.permissions) AS granted(value)
-    WHERE granted.value = 'diagnostics:profile'
+    WHERE granted.value IN ('diagnostics:profile', 'environments:restart')
         OR granted.value IN (SELECT new_permission FROM rbac_permission_map)
 );
 INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id, created_at)
@@ -1059,7 +1075,7 @@ WHERE NOT EXISTS (
             )
     );
 DELETE FROM api_key_permissions
-WHERE (permission = 'diagnostics:profile' OR permission IN (SELECT new_permission FROM rbac_permission_map))
+WHERE (permission IN ('diagnostics:profile', 'environments:restart') OR permission IN (SELECT new_permission FROM rbac_permission_map))
     AND NOT EXISTS (
         SELECT 1 FROM rbac_permission_map AS split
         WHERE split.old_permission = api_key_permissions.permission
