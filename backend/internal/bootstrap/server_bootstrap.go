@@ -13,6 +13,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 	"github.com/moby/moby/client"
+	"github.com/pires/go-proxyproto"
 	"go.uber.org/fx"
 	"google.golang.org/grpc"
 
@@ -119,9 +120,9 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 				defer func() { _ = listener.Close() }()
 				var serveErr error
 				if useTLS {
-					serveErr = srv.ServeTLS(listener, "", "")
+					serveErr = srv.ServeTLS(proxyProtocolListener(p.AppCtx, listener, p.Config.TrustedProxies), "", "")
 				} else {
-					serveErr = srv.Serve(listener)
+					serveErr = srv.Serve(proxyProtocolListener(p.AppCtx, listener, p.Config.TrustedProxies))
 				}
 				if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 					slog.ErrorContext(p.AppCtx, "HTTP server exited with error", "error", serveErr)
@@ -264,6 +265,22 @@ func normalizeTunnelGRPCRequestPath(r *http.Request) *http.Request {
 	clone.URL.Path = normalizedPath
 	clone.RequestURI = normalizedPath
 	return clone
+}
+
+func proxyProtocolListener(ctx context.Context, listener net.Listener, trustedProxies string) net.Listener {
+	ranges := strings.Fields(strings.ReplaceAll(trustedProxies, ",", " "))
+	if len(ranges) == 0 {
+		return listener
+	}
+	policy, err := proxyproto.PolicyFromRanges(ranges, proxyproto.USE, proxyproto.SKIP)
+	if err != nil {
+		slog.WarnContext(ctx, "Invalid ARCANE_TRUSTED_PROXIES; PROXY protocol is disabled", "error", err)
+		return listener
+	}
+	return &proxyproto.Listener{
+		Listener:   listener,
+		ConnPolicy: policy,
+	}
 }
 
 func withClientRemoteAddr(r *http.Request, extractIP echo.IPExtractor) *http.Request {

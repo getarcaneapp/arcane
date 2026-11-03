@@ -64,6 +64,51 @@ func (w *blockingBusWatcher) Start(ctx context.Context) error {
 
 func (w *blockingBusWatcher) RunNow(context.Context) error { return nil }
 
+func TestProxyProtocolListener(t *testing.T) {
+	acceptRemoteAddr := func(t *testing.T, trustedProxies, payload string) string {
+		t.Helper()
+		raw, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		listener := proxyProtocolListener(t.Context(), raw, trustedProxies)
+		t.Cleanup(func() { _ = listener.Close() })
+
+		client, err := net.Dial("tcp", raw.Addr().String())
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = client.Close() })
+		_, err = client.Write([]byte(payload))
+		require.NoError(t, err)
+
+		conn, err := listener.Accept()
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = conn.Close() })
+		buf := make([]byte, len("hello"))
+		_, err = io.ReadFull(conn, buf)
+		require.NoError(t, err)
+		require.Equal(t, "hello", string(buf))
+
+		host, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+		require.NoError(t, err)
+		return host
+	}
+
+	t.Run("trusted proxy header sets the client address", func(t *testing.T) {
+		host := acceptRemoteAddr(t, "127.0.0.1/32", "PROXY TCP4 203.0.113.9 127.0.0.1 4567 3552\r\nhello")
+		assert.Equal(t, "203.0.113.9", host)
+	})
+
+	t.Run("trusted proxy without header keeps the peer address", func(t *testing.T) {
+		host := acceptRemoteAddr(t, "127.0.0.1/32", "hello")
+		assert.Equal(t, "127.0.0.1", host)
+	})
+
+	t.Run("no trusted proxies leaves the listener unwrapped", func(t *testing.T) {
+		raw, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = raw.Close() })
+		assert.Same(t, raw, proxyProtocolListener(t.Context(), raw, ""))
+	})
+}
+
 func TestWithClientRemoteAddr(t *testing.T) {
 	_, proxyNet, err := net.ParseCIDR("10.0.0.0/8")
 	require.NoError(t, err)

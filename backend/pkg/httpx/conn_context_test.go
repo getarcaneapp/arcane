@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pires/go-proxyproto"
 	"github.com/stretchr/testify/require"
 )
 
@@ -52,6 +53,20 @@ func TestAcquireDeadPeerTimeoutHoldsUntilLastRelease(t *testing.T) {
 // Handlers reached over a non-TCP transport (or a request whose base context
 // never passed through WithConn) must degrade quietly rather than fail the
 // stream.
+func TestTCPConnFromUnwrapsProxyProtocolConn(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = listener.Close() })
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	tcpConn, ok := conn.(*net.TCPConn)
+	require.True(t, ok)
+	require.Same(t, tcpConn, tcpConnFrom(proxyproto.NewConn(conn)))
+}
+
 func TestAcquireDeadPeerTimeoutIgnoresMissingConn(t *testing.T) {
 	release, err := AcquireDeadPeerTimeout(t.Context(), 45*time.Second)
 	require.NoError(t, err)
