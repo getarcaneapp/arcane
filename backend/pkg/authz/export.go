@@ -9,18 +9,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-const (
-	EndpointAccessPermission        = "permission"
-	EndpointAccessActionPermissions = "actionPermissions"
-	EndpointAccessGlobalAdmin       = "globalAdmin"
-	EndpointAccessSudo              = "sudo"
-	EndpointAccessPublic            = "public"
-	EndpointAccessAuthenticated     = "authenticated"
-	EndpointAccessAgentToken        = "agentToken"
-	EndpointAccessWebhookToken      = "webhookToken"
-	EndpointAccessSubjectToken      = "subjectToken"
-)
-
 type (
 	OperationRecorder struct {
 		huma.API
@@ -61,12 +49,12 @@ type (
 	}
 
 	PermissionExportEndpointRef struct {
+		Action      *PermissionExportActionSelect `json:"action,omitzero"`
+		Condition   *PermissionCondition          `json:"condition,omitzero"`
 		Method      string                        `json:"method"`
 		Path        string                        `json:"path"`
 		OperationID string                        `json:"operationId,omitempty"`
 		Summary     string                        `json:"summary,omitempty"`
-		Action      *PermissionExportActionSelect `json:"action,omitzero"`
-		Condition   *PermissionCondition          `json:"condition,omitzero"`
 	}
 
 	PermissionExportActionSelect struct {
@@ -87,6 +75,18 @@ type (
 		Conditions        PermissionConditions `json:"conditionalPermissions,omitempty"`
 		GlobalAdmin       bool                 `json:"globalAdmin,omitzero"`
 	}
+)
+
+const (
+	EndpointAccessPermission        = "permission"
+	EndpointAccessActionPermissions = "actionPermissions"
+	EndpointAccessGlobalAdmin       = "globalAdmin"
+	EndpointAccessSudo              = "sudo"
+	EndpointAccessPublic            = "public"
+	EndpointAccessAuthenticated     = "authenticated"
+	EndpointAccessAgentToken        = "agentToken"
+	EndpointAccessWebhookToken      = "webhookToken"
+	EndpointAccessSubjectToken      = "subjectToken"
 )
 
 func (r *OperationRecorder) DocumentOperation(op *huma.Operation) {

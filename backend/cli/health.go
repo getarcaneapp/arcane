@@ -3,6 +3,7 @@ package cli
 import (
 	"cmp"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -13,6 +14,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/config/schema"
@@ -67,7 +70,7 @@ func buildHealthURL(cfg *config.Config) (string, error) {
 	hostPort := net.JoinHostPort(healthHost, port)
 
 	u := &url.URL{
-		Scheme: "http",
+		Scheme: kit.Ternary(cfg.TLSEnabled, "https", "http"),
 		Host:   hostPort,
 		Path:   healthPath,
 	}
@@ -91,6 +94,17 @@ func runHealthCommand(ctx context.Context, cfg *config.Config, timeout time.Dura
 	}
 
 	client := &http.Client{Timeout: timeout}
+	if cfg.TLSEnabled {
+		client = &http.Client{
+			Timeout: timeout,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					MinVersion:         tls.VersionTLS12,
+					InsecureSkipVerify: true,
+				},
+			},
+		}
+	}
 	resp, err := client.Do(request)
 	if err != nil {
 		return fmt.Errorf("health check request failed: %w", err)

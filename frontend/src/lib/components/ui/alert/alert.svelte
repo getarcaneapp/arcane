@@ -16,7 +16,7 @@
 			},
 			size: {
 				default: '',
-				sm: 'py-2 [&>svg]:top-2 [&:has(>svg+[data-slot=alert-description])>svg]:top-2'
+				sm: 'py-2.5 [&>svg]:top-1/2 [&>svg]:-translate-y-1/2 [&:has(>svg+[data-slot=alert-description])>svg]:top-1/2'
 			}
 		},
 		defaultVariants: {

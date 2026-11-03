@@ -6,14 +6,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-const (
-	ConditionInQuery    = "query"
-	ConditionInPath     = "path"
-	ConditionInBody     = "body"
-	ConditionInMessage  = "message"
-	ConditionInResource = "resource"
-)
-
 type (
 	PermissionCondition struct {
 		In         string `json:"in"`
@@ -23,6 +15,14 @@ type (
 	}
 
 	PermissionConditions []PermissionCondition
+)
+
+const (
+	ConditionInQuery    = "query"
+	ConditionInPath     = "path"
+	ConditionInBody     = "body"
+	ConditionInMessage  = "message"
+	ConditionInResource = "resource"
 )
 
 var (

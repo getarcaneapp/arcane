@@ -48,6 +48,13 @@ type (
 	}
 )
 
+const (
+	clientStreamHeartbeatInterval = 15 * time.Second
+	clientStreamDeadPeerTimeout   = 45 * time.Second
+	clientStreamEventBuffer       = 64
+	clientStreamChannelBuffer     = 16
+)
+
 var streamChannelConditions = authz.PermissionConditions{
 	{
 		In:         authz.ConditionInQuery,
@@ -62,13 +69,6 @@ var streamChannelConditions = authz.PermissionConditions{
 		Permission: authz.PermSystemRead,
 	},
 }
-
-const (
-	clientStreamHeartbeatInterval = 15 * time.Second
-	clientStreamDeadPeerTimeout   = 45 * time.Second
-	clientStreamEventBuffer       = 64
-	clientStreamChannelBuffer     = 16
-)
 
 // RegisterStream registers the multiplexed client stream, reusing each domain's producer for its channel.
 func RegisterStream(

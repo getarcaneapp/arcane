@@ -786,10 +786,10 @@ func TestNewHumaMiddleware_AgentAuthUsesForwardedPermissions(t *testing.T) {
 		name       string
 		token      string
 		forwarded  string
-		wantStatus int
-		wantSudo   bool
 		wantAllow  []string
 		wantDeny   []string
+		wantStatus int
+		wantSudo   bool
 	}{
 		{name: "no header stays sudo", token: agentToken, wantStatus: http.StatusOK, wantSudo: true},
 		{
@@ -876,8 +876,8 @@ func TestAuthMiddleware_AgentAuthUsesForwardedPermissions(t *testing.T) {
 		name          string
 		token         string
 		forwarded     string
-		adminRequired bool
 		wantStatus    int
+		adminRequired bool
 		wantSudo      bool
 	}{
 		{name: "no header stays sudo on admin route", token: agentToken, adminRequired: true, wantStatus: http.StatusOK, wantSudo: true},

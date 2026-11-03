@@ -193,7 +193,7 @@
 		</Collapsible.Trigger>
 		<Collapsible.Content>
 			<div class="space-y-3 pt-3">
-				<Alert.Root variant="warning-subtle" size="sm" class="[&>svg]:top-1/2 [&>svg]:-translate-y-1/2">
+				<Alert.Root variant="warning-subtle" size="sm">
 					<InfoIcon class="size-4" />
 					<Alert.Description>
 						{m.git_sync_pre_deploy_acknowledgement()}
