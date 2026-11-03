@@ -7,6 +7,16 @@
 	import { InfoIcon, type IconType } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 
+	type SegmentTone = 'success' | 'warning' | 'destructive' | 'info' | 'muted';
+
+	const segmentToneClass: Record<SegmentTone, string> = {
+		success: 'bg-success',
+		warning: 'bg-warning',
+		destructive: 'bg-destructive',
+		info: 'bg-info',
+		muted: 'bg-muted-foreground/40'
+	};
+
 	interface Props {
 		label: string;
 		value: string | number | null;
@@ -15,6 +25,7 @@
 		help?: string;
 		href?: ResolvedPathname;
 		loading?: boolean;
+		segments?: { value: number; tone: SegmentTone }[];
 		children?: Snippet;
 	}
 
@@ -26,8 +37,11 @@
 		help,
 		href,
 		loading = false,
+		segments = [],
 		children
 	}: Props = $props();
+
+	const visibleSegments = $derived(segments.filter((segment) => segment.value > 0));
 </script>
 
 {#snippet labelContent()}
@@ -74,6 +88,13 @@
 				<span class="text-3xl font-semibold text-muted-foreground" aria-label={unavailableLabel}>–</span>
 			{:else}
 				<span class="text-3xl font-semibold tabular-nums">{value}</span>
+			{/if}
+			{#if visibleSegments.length > 0}
+				<div class="my-1 flex h-1 w-24 gap-0.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+					{#each visibleSegments as segment, index (index)}
+						<span class={['h-full grow-(--segment)', segmentToneClass[segment.tone]]} style:--segment={segment.value}></span>
+					{/each}
+				</div>
 			{/if}
 			{#if children}
 				<div class="text-xs text-muted-foreground tabular-nums">

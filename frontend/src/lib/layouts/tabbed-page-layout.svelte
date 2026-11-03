@@ -44,7 +44,7 @@
 		class={cn('shrink-0 border-b transition-opacity duration-300', floatingHeaderVisible && 'pointer-events-none opacity-0')}
 		inert={floatingHeaderVisible || undefined}
 	>
-		<div class="max-w-full px-4 py-3">
+		<div class="max-w-full px-4 pt-3">
 			<div class="flex items-start gap-3">
 				<div class="flex max-w-7-10 min-w-0 items-start gap-2">
 					{#if backUrl}
@@ -68,7 +68,7 @@
 				{@render subHeader()}
 			{/if}
 
-			<div class="mt-4">
+			<div class="mt-4 -mb-px">
 				<TabBar items={tabItems} value={selectedTab} onValueChange={onTabChange} />
 			</div>
 		</div>

@@ -39,7 +39,7 @@
 	<Empty.Header>
 		{#if Icon}
 			<Empty.Media variant="icon">
-				<Icon class="size-8 text-muted-foreground" aria-hidden="true" />
+				<Icon class="size-6" aria-hidden="true" />
 			</Empty.Media>
 		{/if}
 		<Empty.Title>{title}</Empty.Title>

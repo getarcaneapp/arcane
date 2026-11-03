@@ -173,9 +173,7 @@
 
 <form class="flex min-h-0 flex-col" onsubmit={preventDefault(handleSubmit)}>
 	<Tabs.Root value={selectedTab} class="flex min-h-0 flex-1 flex-col">
-		<div class="border-b pb-3">
-			<TabBar items={tabItems} value={selectedTab} onValueChange={(value) => (selectedTab = value)} />
-		</div>
+		<TabBar items={tabItems} value={selectedTab} onValueChange={(value) => (selectedTab = value)} />
 
 		<div class="flex-1 py-6">
 			<!-- General -->

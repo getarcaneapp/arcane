@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { VolumesIcon, TerminalIcon, FolderOpenIcon } from '#lib/icons/index.js';
@@ -58,7 +59,7 @@
 		</Card.Header>
 		<Card.Content>
 			{#if mounts.length > 0}
-				<div class="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+				<div class="divide-y divide-border/60">
 					{#each mounts as mount (mount.target)}
 						{@const type = getMountType(mount)}
 						{@const source = getMountSource(mount)}
@@ -66,21 +67,21 @@
 						{@const readOnly = getMountReadOnly(mount)}
 						{@const iconColor = getMountIconColor(type, mount)}
 						{@const bindBacked = type === 'volume' && isBindBackedVolume(mount)}
-						<Card.Root>
-							<Card.Content>
-								<div class="mb-4 flex items-center justify-between border-b border-border pb-4">
+						<section class="py-5 first:pt-0 last:pb-0">
+							<div>
+								<div class="flex items-center justify-between gap-3 pb-1">
 									<div class="flex items-center gap-3">
 										<div class="rounded-lg p-2 {iconColor.bg}">
 											{#if type === 'volume' && !bindBacked}
-												<VolumesIcon class="size-5 {iconColor.text}" />
+												<VolumesIcon class="size-4 {iconColor.text}" />
 											{:else if type === 'bind' || bindBacked}
-												<FolderOpenIcon class="size-5 {iconColor.text}" />
+												<FolderOpenIcon class="size-4 {iconColor.text}" />
 											{:else}
-												<TerminalIcon class="size-5 {iconColor.text}" />
+												<TerminalIcon class="size-4 {iconColor.text}" />
 											{/if}
 										</div>
 										<div class="min-w-0 flex-1">
-											<div class="text-base font-semibold break-all text-foreground">
+											<div class="text-sm font-semibold break-all text-foreground">
 												{type === 'tmpfs' ? m.containers_mount_type_tmpfs() : source || m.image_update_auth_anonymous()}
 											</div>
 											<div class="mt-1 flex flex-wrap items-center gap-1.5">
@@ -96,57 +97,27 @@
 									</Badge>
 								</div>
 
-								<div class="grid grid-cols-1 gap-3">
-									<Card.Root size="sm">
-										<Card.Content class="flex flex-col">
-											<div class="mb-2 text-xs font-semibold text-muted-foreground">
-												{m.containers_mount_label_container()}
-											</div>
-											<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
-												{target}
-											</div>
-										</Card.Content>
-									</Card.Root>
+								<KeyValueGrid>
+									<KeyValueCard label={m.containers_mount_label_container()}>{target}</KeyValueCard>
 
 									{#if source && type !== 'tmpfs'}
-										<Card.Root size="sm">
-											<Card.Content class="flex flex-col">
-												<div class="mb-2 text-xs font-semibold text-muted-foreground">
-													{type === 'volume' ? m.containers_mount_label_volume() : m.containers_mount_label_host()}
-												</div>
-												<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
-													{source}
-												</div>
-											</Card.Content>
-										</Card.Root>
+										<KeyValueCard label={type === 'volume' ? m.containers_mount_label_volume() : m.containers_mount_label_host()}>
+											{source}
+										</KeyValueCard>
 									{/if}
 
 									{#if bindBacked && mount.volumeOptions?.['device']}
-										<Card.Root size="sm">
-											<Card.Content class="flex flex-col">
-												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.dashboard_meter_gpu_device()}:</div>
-												<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
-													{mount.volumeOptions['device']}
-												</div>
-											</Card.Content>
-										</Card.Root>
+										<KeyValueCard label={m.dashboard_meter_gpu_device()}>{mount.volumeOptions['device']}</KeyValueCard>
 									{/if}
 
 									{#if mount.devicePath}
-										<Card.Root size="sm">
-											<Card.Content class="flex flex-col">
-												<div class="mb-2 text-xs font-semibold text-muted-foreground">
-													{bindBacked ? m.containers_mount_label_volume() : m.containers_mount_label_host()}
-												</div>
-												<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
-													{mount.devicePath}
-												</div>
-											</Card.Content>
-										</Card.Root>
+										<KeyValueCard label={bindBacked ? m.containers_mount_label_volume() : m.containers_mount_label_host()}>
+											{mount.devicePath}
+										</KeyValueCard>
 									{/if}
-								</div>
-							</Card.Content>
-						</Card.Root>
+								</KeyValueGrid>
+							</div>
+						</section>
 					{/each}
 				</div>
 			{:else}

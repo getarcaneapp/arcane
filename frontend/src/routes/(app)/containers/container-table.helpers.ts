@@ -13,7 +13,7 @@ export type ActionStatus =
 	| 'removing'
 	| 'redeploying'
 	| '';
-export type StateBadgeVariant = 'green' | 'red' | 'amber';
+export type StateBadgeVariant = 'green' | 'red' | 'amber' | 'gray';
 
 /** The lowest published port, else the lowest private one, as the backend sorts ports. */
 function lowestPort(container: ContainerSummaryDto): number | null {
@@ -66,9 +66,18 @@ export function getActionStatusMessage(status: ActionStatus): string {
 }
 
 export function getStateBadgeVariant(state: string): StateBadgeVariant {
-	if (state === 'running') return 'green';
-	if (state === 'exited') return 'red';
-	return 'amber';
+	switch (state) {
+		case 'running':
+			return 'green';
+		case 'dead':
+			return 'red';
+		case 'exited':
+		case 'created':
+		case 'paused':
+			return 'gray';
+		default:
+			return 'amber';
+	}
 }
 
 export function getProjectName(container: ContainerSummaryDto): string {

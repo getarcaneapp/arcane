@@ -10,7 +10,7 @@
 <Empty.Root variant="plain" class="h-full" role="status" aria-live="polite">
 	<Empty.Header>
 		<Empty.Media variant="icon">
-			<FolderXIcon class="size-10 text-muted-foreground/60" />
+			<FolderXIcon class="size-6" />
 		</Empty.Media>
 		<Empty.Title><span class="font-semibold">{m.common_no_results_found()}</span></Empty.Title>
 		<Empty.Description>{m.common_no_results_hint()}</Empty.Description>

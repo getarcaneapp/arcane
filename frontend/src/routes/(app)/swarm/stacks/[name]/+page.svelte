@@ -285,7 +285,7 @@
 			{/if}
 
 			<Tabs.Root value={selectedTab} class="flex min-h-0 flex-1 flex-col">
-				<div class="w-fit pb-3">
+				<div class="pb-3">
 					<TabBar items={tabItems} value={selectedTab} onValueChange={urlTab.select} />
 				</div>
 

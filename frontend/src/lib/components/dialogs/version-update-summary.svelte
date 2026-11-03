@@ -23,7 +23,7 @@
 {#if isSemver && (semverCurrent || semverNew)}
 	<div class="flex flex-wrap items-center gap-2 text-sm">
 		{#if semverCurrent}
-			<span class="inline-flex items-center rounded-md bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
+			<span class="inline-flex items-center rounded-xl bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
 				{semverCurrent}
 			</span>
 		{/if}
@@ -31,7 +31,7 @@
 			<span class="text-muted-foreground/60">→</span>
 		{/if}
 		{#if semverNew}
-			<span class="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 font-mono text-xs font-medium text-primary">
+			<span class="inline-flex items-center rounded-xl bg-primary/10 px-2 py-0.5 font-mono text-xs font-medium text-primary">
 				{semverNew}
 			</span>
 		{/if}

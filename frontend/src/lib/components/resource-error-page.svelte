@@ -23,7 +23,7 @@
 <div class="flex h-full flex-1 flex-col items-center justify-center p-8">
 	<Empty.Root class="flex-none">
 		<Empty.Header>
-			<Empty.Media variant="icon">
+			<Empty.Media>
 				<AlertIcon class="size-16 text-destructive" aria-hidden="true" />
 			</Empty.Media>
 			<Empty.Title>

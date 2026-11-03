@@ -34,9 +34,9 @@
 	onDestroy(() => ws?.close());
 </script>
 
-<div class="space-y-4">
+<div class="divide-y divide-border/60">
 	{#each environments as env (env.environmentId)}
-		<div class="space-y-3 rounded-xl border border-border/60 p-4">
+		<div class="space-y-3 py-4 first:pt-0 last:pb-0">
 			<div class="flex flex-wrap items-center gap-2">
 				<h3 class="text-sm font-semibold">{env.environmentName || env.environmentId}</h3>
 				{#if !env.error && !env.ready}

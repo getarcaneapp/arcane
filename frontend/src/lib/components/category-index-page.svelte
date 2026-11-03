@@ -222,7 +222,7 @@
 													{#if item.keywords && item.keywords.length > 0}
 														<div class="mt-2 flex flex-wrap gap-1">
 															{#each item.keywords.slice(0, 6) as keyword (keyword)}
-																<span class="rounded-md bg-foreground/5 px-2 py-0.5 text-xs text-muted-foreground">
+																<span class="rounded-xl bg-foreground/5 px-2 py-0.5 text-xs text-muted-foreground">
 																	{keyword}
 																</span>
 															{/each}
@@ -235,7 +235,7 @@
 													{/if}
 												</div>
 												<span
-													class="shrink-0 rounded-md bg-foreground/5 px-2 py-1 font-mono text-2xs text-muted-foreground ring-1 ring-border/70 ring-inset"
+													class="shrink-0 rounded-xl bg-foreground/5 px-2 py-1 font-mono text-2xs text-muted-foreground ring-1 ring-border/70 ring-inset"
 												>
 													{item.type}
 												</span>

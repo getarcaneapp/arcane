@@ -4,6 +4,7 @@
 
 	import AgentCommandBlock from '#lib/components/agent-command-block.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { KeyValueCard } from '#lib/components/resource-detail/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
@@ -85,29 +86,14 @@
 			<Alert.Description>{m.swarm_node_agent_dialog_blurb_description()}</Alert.Description>
 		</Alert.Root>
 
-		<div class="grid gap-3 sm:grid-cols-3">
-			<div class="rounded-lg border bg-muted/40 p-4">
-				<div class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-					{m.swarm_node_agent_binding_kind()}
-				</div>
-				<div class="mt-2 text-sm font-medium">{bindingLabel}</div>
-			</div>
-
-			<div class="rounded-lg border bg-muted/40 p-4">
-				<div class="text-xs font-medium tracking-wide text-muted-foreground uppercase">{m.common_status()}</div>
-				<div class="mt-2 flex items-center gap-2">
-					<Badge variant={getSwarmNodeAgentVariant(agentStatus.state)} minWidth="20">{agentStatusLabel}</Badge>
-				</div>
-			</div>
-
-			<div class="rounded-lg border bg-muted/40 p-4">
-				<div class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-					{m.swarm_node_agent_environment_id()}
-				</div>
-				<div class="mt-2 font-mono text-sm break-all">
-					{agentStatus.environmentName ?? deployment?.environmentId ?? agentStatus.environmentId ?? m.common_na()}
-				</div>
-			</div>
+		<div class="grid gap-x-6 sm:grid-cols-3">
+			<KeyValueCard label={m.swarm_node_agent_binding_kind()} valueFormat="text">{bindingLabel}</KeyValueCard>
+			<KeyValueCard label={m.common_status()} valueFormat="custom">
+				<Badge variant={getSwarmNodeAgentVariant(agentStatus.state)} minWidth="20">{agentStatusLabel}</Badge>
+			</KeyValueCard>
+			<KeyValueCard label={m.swarm_node_agent_environment_id()}>
+				{agentStatus.environmentName ?? deployment?.environmentId ?? agentStatus.environmentId ?? m.common_na()}
+			</KeyValueCard>
 		</div>
 
 		{#if agentStatus.candidates?.length}

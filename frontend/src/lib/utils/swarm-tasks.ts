@@ -19,8 +19,7 @@ const taskStateVariants = new Map<string, 'green' | 'amber' | 'red'>([
 	['pending', 'amber'],
 	['starting', 'amber'],
 	['failed', 'red'],
-	['rejected', 'red'],
-	['shutdown', 'red']
+	['rejected', 'red']
 ]);
 
 export function getSwarmTaskStateVariant(state: string): 'green' | 'amber' | 'red' | 'gray' {

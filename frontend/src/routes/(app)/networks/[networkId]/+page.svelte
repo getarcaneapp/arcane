@@ -256,9 +256,9 @@
 			{#if network.ipam.options && Object.keys(network.ipam.options).length > 0}
 				<div>
 					<p class="mb-2 text-sm font-medium text-muted-foreground">{m.networks_ipam_options_label()}</p>
-					<div class="rounded-lg border bg-muted/50 p-3">
+					<div class="divide-y divide-border/50">
 						{#each Object.entries(network.ipam.options) as [key, value] (key)}
-							<div class="mb-1 flex justify-between font-mono text-xs last:mb-0">
+							<div class="flex justify-between py-1.5 font-mono text-xs">
 								<span class="text-muted-foreground">{key}:</span>
 								<span>{value}</span>
 							</div>

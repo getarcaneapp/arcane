@@ -4,6 +4,7 @@
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import { badgeVariants } from '#lib/components/ui/badge/index.js';
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
+	import { ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { ContainerPorts } from '#lib/types/docker.js';
 	import type { ServicePort } from '#lib/types/swarm.js';
@@ -117,19 +118,22 @@
 				<ArcaneTooltip.Trigger>
 					{#snippet child({ props })}
 						{@const triggerProps = mergeProps(props, {
-							class: cn(
-								badgeVariants({ variant: 'sky', size: 'sm' }),
-								'shrink-0 hover:bg-info/20 hover:border-info/40 focus-visible:outline-none'
-							),
+							class:
+								'inline-flex h-6.5 shrink-0 items-stretch overflow-hidden rounded-xl border border-border font-mono text-xs font-medium transition-colors hover:border-sky/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
 							href: toPortHref(p.hostPort!, baseServerUrl),
 							target: '_blank',
 							rel: 'noopener noreferrer'
 						})}
 						<a {...triggerProps}>
-							<span class="font-medium tabular-nums">{p.hostPort}:{p.containerPort}</span>
-							{#if p.proto}
-								<span class="text-muted-foreground uppercase">{p.proto}</span>
-							{/if}
+							<span class="flex items-center bg-sky/10 pr-2 pl-2.5 leading-none text-sky tabular-nums">{p.hostPort}</span>
+							<span class="flex items-center pr-2.5 pl-0.5 leading-none text-muted-foreground tabular-nums">
+								<ArrowRightIcon class="size-3.5 shrink-0 opacity-50" />
+								<span>
+									<span class="text-foreground">{p.containerPort}</span>{#if p.proto}<span class="lowercase opacity-70"
+											>/{p.proto}</span
+										>{/if}
+								</span>
+							</span>
 						</a>
 					{/snippet}
 				</ArcaneTooltip.Trigger>
@@ -150,11 +154,12 @@
 		{#each exposedOnly as p (portKey(p))}
 			<ArcaneTooltip.Root>
 				<ArcaneTooltip.Trigger>
-					<span class={cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'shrink-0')}>
-						<span class="tabular-nums">{p.containerPort}</span>
-						{#if p.proto}
-							<span class="text-muted-foreground uppercase">{p.proto}</span>
-						{/if}
+					<span
+						class="inline-flex h-6.5 shrink-0 items-center gap-1.5 rounded-xl border border-border px-2.5 font-mono text-xs font-medium text-muted-foreground tabular-nums"
+					>
+						<span
+							>{p.containerPort}{#if p.proto}<span class="lowercase opacity-70">/{p.proto}</span>{/if}</span
+						>
 					</span>
 				</ArcaneTooltip.Trigger>
 				<ArcaneTooltip.Content>
@@ -170,7 +175,10 @@
 					{#snippet child({ props })}
 						{@const triggerProps = mergeProps(props, {
 							onclick: () => (expanded = !expanded),
-							class: cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'shrink-0 hover:bg-muted cursor-pointer')
+							class: cn(
+								badgeVariants({ variant: 'gray', size: 'sm' }),
+								'h-6.5 shrink-0 cursor-pointer px-2.5 text-xs hover:text-foreground'
+							)
 						})}
 						<button {...triggerProps}>{expanded ? '−' : `+${hiddenCount}`}</button>
 					{/snippet}
