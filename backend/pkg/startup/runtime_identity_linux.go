@@ -4,59 +4,43 @@ package startup
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"syscall"
 
 	"github.com/samber/mo"
 )
 
-func reexecWithRuntimeIdentity(ctx context.Context, req runtimeIdentityRequest) error {
+func reexecWithRuntimeIdentity(_ context.Context, req runtimeIdentityRequest) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve executable: %w", err)
 	}
 
 	groups := runtimeIdentitySupplementaryGroups(req.DockerHost, resolveSocketGroup)
-
-	cmd := exec.CommandContext(ctx, executable, os.Args[1:]...) //nolint:gosec // re-executing our own binary with the same args under a different UID/GID
-	// Forward shutdown instead of the default SIGKILL so the child can unregister its actor host.
-	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
-	cmd.Env = append(os.Environ(), "DOCKER_HOST="+req.DockerHost)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Credential: &syscall.Credential{
-			Uid:    req.CredentialUID,
-			Gid:    req.CredentialGID,
-			Groups: groups,
-		},
+	gids := make([]int, 0, len(groups))
+	for _, group := range groups {
+		gids = append(gids, int(group))
 	}
 
-	if startErr := cmd.Start(); startErr != nil {
-		return fmt.Errorf("start runtime identity child: %w", startErr)
+	if setgroupsErr := syscall.Setgroups(gids); setgroupsErr != nil {
+		return fmt.Errorf("set runtime identity groups: %w", setgroupsErr)
+	}
+	if setgidErr := syscall.Setgid(int(req.CredentialGID)); setgidErr != nil {
+		return fmt.Errorf("set runtime identity gid: %w", setgidErr)
+	}
+	if setuidErr := syscall.Setuid(int(req.CredentialUID)); setuidErr != nil {
+		return fmt.Errorf("set runtime identity uid: %w", setuidErr)
 	}
 
-	waitErr := cmd.Wait()
-	// After a forwarded shutdown Wait reports ctx.Err() even when the child exited cleanly.
-	if cmd.ProcessState != nil && cmd.ProcessState.Success() {
-		os.Exit(0)
+	if setenvErr := os.Setenv("DOCKER_HOST", req.DockerHost); setenvErr != nil {
+		return fmt.Errorf("set runtime identity docker host: %w", setenvErr)
 	}
-
-	if exitErr, ok := errors.AsType[*exec.ExitError](waitErr); ok {
-		if status, hasStatus := exitErr.Sys().(syscall.WaitStatus); hasStatus {
-			if status.Signaled() {
-				os.Exit(128 + int(status.Signal()))
-			}
-			os.Exit(status.ExitStatus())
-		}
-		os.Exit(exitErr.ExitCode())
+	//nolint:gosec // re-executing our own binary with the same args under the dropped UID/GID
+	if execErr := syscall.Exec(executable, append([]string{executable}, os.Args[1:]...), os.Environ()); execErr != nil {
+		return fmt.Errorf("exec runtime identity: %w", execErr)
 	}
-
-	return fmt.Errorf("wait for runtime identity child: %w", waitErr)
+	return nil
 }
 
 func resolveSocketGroup(socketPath string) mo.Option[uint32] {
