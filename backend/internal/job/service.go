@@ -364,6 +364,7 @@ func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, erro
 		IsAgent:     s.cfg.AgentEnabled,
 		DurableRuns: true,
 		ObservedAt:  time.Now().UTC(),
+		Timezone:    s.cfg.TimezoneName(),
 	}, nil
 }
 
@@ -772,6 +773,7 @@ func (s *JobService) ListRemoteJobs(ctx context.Context, environmentID string) (
 	return &types.JobListResponse{ //exhaustruct:enforce
 		DurableRuns: catalog.DurableRuns,
 		ObservedAt:  catalog.ObservedAt,
+		Timezone:    catalog.Timezone,
 		Offline:     catalog.Offline,
 		Jobs:        jobs,
 		IsAgent:     catalog.IsAgent,

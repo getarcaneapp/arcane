@@ -295,6 +295,7 @@ func (s *Service) Catalog(ctx context.Context, environmentID string) (*types.Job
 		observed := types.JobListResponse{ //exhaustruct:enforce
 			DurableRuns: catalog.DurableRuns,
 			ObservedAt:  time.Now().UTC(),
+			Timezone:    catalog.Timezone,
 			Offline:     false,
 			Jobs:        catalog.Jobs,
 			IsAgent:     catalog.IsAgent,
@@ -330,6 +331,7 @@ func (s *Service) Catalog(ctx context.Context, environmentID string) (*types.Job
 	return &types.JobListResponse{ //exhaustruct:enforce
 		DurableRuns: catalog.DurableRuns,
 		ObservedAt:  catalog.ObservedAt,
+		Timezone:    catalog.Timezone,
 		Offline:     true,
 		Jobs:        jobs,
 		IsAgent:     catalog.IsAgent || !found,

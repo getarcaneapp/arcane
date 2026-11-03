@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/robfig/cron/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -517,4 +518,51 @@ func setEnv(t *testing.T, key, value string) {
 func unsetEnv(t *testing.T, key string) {
 	t.Helper()
 	require.NoError(t, os.Unsetenv(key))
+}
+
+func TestConfig_TimezoneName(t *testing.T) {
+	tests := []struct {
+		name     string
+		timezone string
+		expected string
+	}{
+		{name: "unset uses UTC", timezone: "", expected: "UTC"},
+		{name: "named zone", timezone: "America/New_York", expected: "America/New_York"},
+		{name: "invalid zone falls back to UTC", timezone: "Not/AZone", expected: "UTC"},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			assert.Equal(t, testCase.expected, (&Config{Timezone: testCase.timezone}).TimezoneName())
+		})
+	}
+}
+
+func TestConfig_GetLocationSchedulesInZone(t *testing.T) {
+	location := (&Config{Timezone: "America/New_York"}).GetLocation()
+	schedule, err := cron.ParseStandard("CRON_TZ=" + location.String() + " 0 2 * * *")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		from     time.Time
+		expected time.Time
+	}{
+		{
+			name:     "standard time",
+			from:     time.Date(2026, time.January, 10, 12, 0, 0, 0, time.UTC),
+			expected: time.Date(2026, time.January, 11, 7, 0, 0, 0, time.UTC),
+		},
+		{
+			name:     "daylight time",
+			from:     time.Date(2026, time.July, 10, 12, 0, 0, 0, time.UTC),
+			expected: time.Date(2026, time.July, 11, 6, 0, 0, 0, time.UTC),
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			assert.True(t, testCase.expected.Equal(schedule.Next(testCase.from)))
+		})
+	}
 }

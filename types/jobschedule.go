@@ -51,6 +51,7 @@ type (
 	// JobListResponse contains all jobs and system mode information.
 	JobListResponse struct {
 		ObservedAt  time.Time   `json:"observedAt"`
+		Timezone    string      `json:"timezone,omitempty"`
 		Jobs        []JobStatus `json:"jobs"`
 		DurableRuns bool        `json:"durableRuns"`
 		Offline     bool        `json:"offline,omitempty"`

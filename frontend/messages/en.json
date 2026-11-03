@@ -4382,5 +4382,6 @@
   "reconnects": "Reconnects",
   "last_disconnect": "Last Disconnect",
   "last_disconnect_time": "Last disconnect {time}",
-  "round_trip_min_avg_max": "min / avg / max: {min} / {avg} / {max} ms"
+  "round_trip_min_avg_max": "min / avg / max: {min} / {avg} / {max} ms",
+  "schedule_timezone": "Schedules run in the {timezone} timezone. Set the TZ environment variable to change it."
 }

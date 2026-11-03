@@ -299,6 +299,7 @@ export type JobStatus = {
 export type JobListResponse = {
 	durableRuns: boolean;
 	observedAt: string;
+	timezone?: string;
 	offline?: boolean;
 	jobs: JobStatus[];
 	isAgent: boolean;
