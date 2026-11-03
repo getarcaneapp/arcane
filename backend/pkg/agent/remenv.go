@@ -6,12 +6,7 @@ import (
 	"maps"
 	"net/http"
 	"strings"
-
-	"github.com/labstack/echo/v5"
-
-	"kit.getarcane.app"
-
-	"getarcane.dev/arcane/v3/pkg/cookie"
+	"sync"
 )
 
 const (
@@ -37,6 +32,11 @@ var (
 		"Upgrade": {}, "Content-Length": {}, "Accept-Encoding": {}, "Origin": {}, "Referer": {},
 		"Access-Control-Request-Method": {}, "Access-Control-Request-Headers": {}, "Cookie": {},
 	}
+	copyBufferPool = sync.Pool{
+		New: func() any {
+			return new(make([]byte, 64<<10))
+		},
+	}
 )
 
 func CopyRequestHeaders(from, to http.Header) {
@@ -51,54 +51,13 @@ func CopyRequestHeaders(from, to http.Header) {
 	}
 }
 
-func SetAuthHeader(headers http.Header, c *echo.Context) {
-	// Forward API key header if present
-	if apiKey := c.Request().Header.Get(HeaderAPIKey); apiKey != "" {
-		headers.Set(HeaderAPIKey, apiKey)
-	}
-
-	// Forward Authorization header or cookie token
-	if auth := c.Request().Header.Get(HeaderAuthorization); auth != "" {
-		headers.Set(HeaderAuthorization, auth)
-	} else if token, err := cookie.GetTokenCookie(c.Request()); err == nil {
-		SetBearer(headers, token)
-	}
-}
-
-func SetBearer(headers http.Header, token string) {
-	if strings.TrimSpace(token) == "" {
-		return
-	}
-	headers.Set(HeaderAuthorization, bearerScheme+token)
-}
-
-// SetAgentToken sets the agent token in both X- header forms. It never sets
-// Authorization, which carries the proxied user's own token.
+// SetAgentToken sets the agent token in both X- header forms.
 func SetAgentToken(headers http.Header, token string) {
 	if strings.TrimSpace(token) == "" {
 		return
 	}
 	headers.Set(HeaderAgentToken, token)
 	headers.Set(HeaderAPIKey, token)
-}
-
-// BuildWebSocketHeaders constructs a header set for proxying WebSocket requests
-// to a remote environment, forwarding authentication in the same way as HTTP proxying.
-func BuildWebSocketHeaders(c *echo.Context, accessToken *string) http.Header {
-	headers := http.Header{}
-	SetAuthHeader(headers, c)
-
-	// Forward cookies if no other auth is present
-	if headers.Get(HeaderAuthorization) == "" && headers.Get(HeaderAPIKey) == "" {
-		if cookies := c.Request().Header.Get(HeaderCookie); cookies != "" {
-			headers.Set(HeaderCookie, cookies)
-		}
-	}
-
-	// Set agent token for remote environment authentication
-	SetAgentToken(headers, kit.FromPtr(accessToken))
-
-	return headers
 }
 
 // HTTPToWebSocketURL converts an HTTP(S) URL to WS(S).
@@ -113,19 +72,21 @@ func HTTPToWebSocketURL(url string) string {
 	}
 }
 
-// CopyBodyWithFlush streams body to w, flushing after each write when supported. It returns the first error
-// other than io.EOF, so a response cut short upstream is not mistaken for a complete one.
-func CopyBodyWithFlush(w http.ResponseWriter, body io.Reader) error {
-	buf := make([]byte, 32*1024)
+// CopyResponseBody streams resp's body to w, flushing after each write for event streams and responses of unknown
+// length. It returns the first error other than io.EOF, so a response cut short upstream is not mistaken for a complete one.
+func CopyResponseBody(w http.ResponseWriter, resp *http.Response) error {
+	buf := copyBufferPool.Get().(*[]byte)
+	defer copyBufferPool.Put(buf)
 	flusher, canFlush := w.(http.Flusher)
+	flushEachWrite := canFlush && (resp.ContentLength < 0 || strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream"))
 
 	for {
-		n, readErr := body.Read(buf)
+		n, readErr := resp.Body.Read(*buf)
 		if n > 0 {
-			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+			if _, writeErr := w.Write((*buf)[:n]); writeErr != nil {
 				return writeErr
 			}
-			if canFlush {
+			if flushEachWrite {
 				flusher.Flush()
 			}
 		}

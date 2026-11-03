@@ -13,7 +13,6 @@ import (
 )
 
 const (
-	DefaultTunnelAcquirePollEvery = 100 * time.Millisecond
 	// DefaultTunnelAcquireTimeout bounds how long a request waits for a reconnecting agent tunnel.
 	DefaultTunnelAcquireTimeout = 4 * time.Second
 )

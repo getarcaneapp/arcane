@@ -167,10 +167,8 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	slog.DebugContext(ctx, "Routing request through agent tunnel", "environmentId", envID, "path", req.URL.Path)
 	target := agent.MuxAgentBaseURL + path.Join(apiEnvironmentsPrefix, m.localID) + suffix + kit.Ternary(req.URL.RawQuery != "", "?"+req.URL.RawQuery, "")
 	if httpx.IsWebSocketUpgradeRequest(req) {
-		wsHeaders := agent.BuildWebSocketHeaders(c, accessToken)
-		if forwarded := req.Header.Get(HeaderForwardedPermissions); forwarded != "" {
-			wsHeaders.Set(HeaderForwardedPermissions, forwarded)
-		}
+		wsHeaders := http.Header{HeaderForwardedPermissions: req.Header.Values(HeaderForwardedPermissions)}
+		agent.SetAgentToken(wsHeaders, kit.FromPtr(accessToken))
 		if proxyErr := ws.ProxyHTTP(c.Response(), req, agent.HTTPToWebSocketURL(target), wsHeaders, m.checkOrigin, tunnel.HTTPClient); proxyErr != nil {
 			slog.ErrorContext(ctx, "websocket proxy failed", "err", proxyErr)
 		}
@@ -200,7 +198,6 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	}).WithContext(ctx)
 
 	agent.CopyRequestHeaders(req.Header, proxyReq.Header)
-	agent.SetAuthHeader(proxyReq.Header, c)
 	agent.SetAgentToken(proxyReq.Header, kit.FromPtr(accessToken))
 	proxyReq.Header.Set("X-Forwarded-For", c.RealIP())
 	proxyReq.Header.Set("X-Forwarded-Host", req.Host)
@@ -227,7 +224,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	agent.CopyResponseHeaders(resp.Header, w.Header(), agent.BuildHopByHopHeaders(resp.Header))
 	w.WriteHeader(resp.StatusCode)
 	if req.Method != http.MethodHead {
-		if copyErr := agent.CopyBodyWithFlush(w, resp.Body); copyErr != nil {
+		if copyErr := agent.CopyResponseBody(w, resp); copyErr != nil {
 			slog.WarnContext(ctx, "Proxied response ended early", "environmentId", envID, "error", copyErr)
 			// Headers are already sent, so abort the connection instead of ending a truncated response as complete.
 			panic(http.ErrAbortHandler)

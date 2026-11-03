@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -86,12 +87,12 @@ func (t *TunnelConn) Send(msg *TunnelMessage) error {
 
 // Receive receives a register message from the WebSocket connection.
 func (t *TunnelConn) Receive() (*TunnelMessage, error) {
-	_, data, err := t.read(context.Background()) //nolint:forbidigo // Tunnel connection owns timed I/O independent of individual HTTP requests.
-	if err != nil {
+	var data bytes.Buffer
+	if _, err := t.read(context.Background(), &data); err != nil { //nolint:forbidigo // Tunnel connection owns timed I/O independent of individual HTTP requests.
 		return nil, err
 	}
 	var msg TunnelMessage
-	if unmarshalErr := json.Unmarshal(data, &msg); unmarshalErr != nil {
+	if unmarshalErr := json.Unmarshal(data.Bytes(), &msg); unmarshalErr != nil {
 		return nil, unmarshalErr
 	}
 	return &msg, nil
@@ -100,11 +101,12 @@ func (t *TunnelConn) Receive() (*TunnelMessage, error) {
 // muxConn switches the connection to binary frames carrying the multiplexed session.
 func (t *TunnelConn) muxConn(ctx context.Context) *muxConn {
 	t.muxed.Store(true)
+	var frame bytes.Buffer
 	recv := func() ([]byte, error) {
 		for {
-			messageType, data, err := t.read(ctx)
+			messageType, err := t.read(ctx, &frame)
 			if err != nil || messageType == websocket.MessageBinary {
-				return data, err
+				return frame.Bytes(), err
 			}
 		}
 	}
@@ -132,17 +134,21 @@ func (t *TunnelConn) write(ctx context.Context, messageType websocket.MessageTyp
 
 // read receives one frame. Read-timeout expiry and network errors are terminal: coder/websocket
 // closes the connection when a read context expires.
-func (t *TunnelConn) read(ctx context.Context) (websocket.MessageType, []byte, error) {
+func (t *TunnelConn) read(ctx context.Context, buf *bytes.Buffer) (websocket.MessageType, error) {
 	if t.closed.Load() {
-		return 0, nil, ErrTunnelConnectionClosed
+		return 0, ErrTunnelConnectionClosed
 	}
 	rctx, cancel := context.WithTimeout(ctx, tunnelReadWait)
 	defer cancel()
-	messageType, data, err := t.conn.Read(rctx)
+	buf.Reset()
+	messageType, r, err := t.conn.Reader(rctx)
+	if err == nil {
+		_, err = buf.ReadFrom(r)
+	}
 	if err != nil {
 		t.closed.Store(true)
 	}
-	return messageType, data, err
+	return messageType, err
 }
 
 // Close closes the WebSocket tunnel connection, sending a close frame on the

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -53,7 +54,7 @@ func (c *controlledCloseTunnelConn) Close() error {
 	return nil
 }
 
-func createTestConn(t *testing.T) *websocket.Conn {
+func createTestConn(t testing.TB) *websocket.Conn {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
@@ -344,4 +345,48 @@ func TestTunnelRegistry_RecordsStaleCleanupDisconnect(t *testing.T) {
 	assert.Equal(t, 1, history.Sessions)
 	assert.Equal(t, "agent tunnel heartbeat expired", history.LastDisconnectReason)
 	assert.False(t, history.LastDisconnectAt.IsZero())
+}
+
+func BenchmarkWaitForActive(b *testing.B) {
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.DiscardHandler))
+	b.Cleanup(func() {
+		slog.SetDefault(previousLogger)
+	})
+
+	r := NewTunnelRegistry()
+	conn := createTestConn(b)
+	b.Cleanup(func() { _ = conn.CloseNow() })
+	r.Register("env-1", newWebSocketAgentTunnel("env-1", conn))
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if !r.WaitForActive(b.Context(), "env-1", DefaultTunnelAcquireTimeout).IsPresent() {
+			b.Fatal("tunnel not active")
+		}
+	}
+}
+
+func BenchmarkWaitForActiveReconnect(b *testing.B) {
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.DiscardHandler))
+	b.Cleanup(func() {
+		slog.SetDefault(previousLogger)
+	})
+
+	r := NewTunnelRegistry()
+	conn := createTestConn(b)
+	b.Cleanup(func() { _ = conn.CloseNow() })
+	tunnel := newWebSocketAgentTunnel("env-1", conn)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		_, _, _ = r.tunnels.Remove(b.Context(), "reset benchmark tunnel", "env-1")
+		time.AfterFunc(time.Millisecond, func() {
+			r.Register("env-1", tunnel)
+		})
+		if !r.WaitForActive(b.Context(), "env-1", DefaultTunnelAcquireTimeout).IsPresent() {
+			b.Fatal("tunnel not active")
+		}
+	}
 }
