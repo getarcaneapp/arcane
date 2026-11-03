@@ -41,13 +41,30 @@
 <Card.Root interactive class="h-full min-w-0">
 	<dl class="flex h-full w-full items-center justify-center p-5">
 		{#if id === 'healthy'}
-			<StatStrip.Item label={m.health_status_healthy()} value={`${healthy.online}/${healthy.total}`} icon={EnvironmentsIcon}>
+			<StatStrip.Item
+				label={m.health_status_healthy()}
+				value={`${healthy.online}/${healthy.total}`}
+				icon={EnvironmentsIcon}
+				segments={[
+					{ value: healthy.online, tone: 'success' },
+					{ value: healthy.total - healthy.online, tone: 'muted' }
+				]}
+			>
 				<span class="line-clamp-1">
 					{healthy.offlineNames.length > 0 ? healthy.offlineNames.join(', ') : m.all_online()}
 				</span>
 			</StatStrip.Item>
 		{:else if id === 'attentionCount'}
-			<StatStrip.Item label={m.needs_attention()} value={attention.count} icon={AlertTriangleIcon} loading={attention.loading}>
+			<StatStrip.Item
+				label={m.needs_attention()}
+				value={attention.count}
+				icon={AlertTriangleIcon}
+				loading={attention.loading}
+				segments={[
+					{ value: attention.critical, tone: 'destructive' },
+					{ value: attention.count - attention.critical, tone: 'warning' }
+				]}
+			>
 				{m.count_critical({ count: attention.critical })}
 			</StatStrip.Item>
 		{:else if id === 'updates'}

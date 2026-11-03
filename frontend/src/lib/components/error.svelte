@@ -70,7 +70,7 @@
 <div class="grid h-full min-h-screen place-items-center px-6">
 	<Empty.Root>
 		<Empty.Header>
-			<Empty.Media variant="icon">
+			<Empty.Media>
 				<ErrorNotFoundIcon class="size-20 text-destructive" aria-hidden="true" />
 			</Empty.Media>
 			<Empty.Title role="heading" aria-level={1}>{showConnectionError ? connectionErrorTitle : title}</Empty.Title>

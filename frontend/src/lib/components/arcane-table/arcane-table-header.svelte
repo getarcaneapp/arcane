@@ -47,14 +47,17 @@
 						tone="ghost"
 						size="sm"
 						customLabel={title}
-						class="-ml-3 h-8 data-[state=open]:bg-accent"
+						class={cn(
+							'-ml-3 h-8 text-xs data-[state=open]:bg-accent',
+							column.getIsSorted() ? 'text-foreground' : 'text-muted-foreground'
+						)}
 					>
 						{#if column.getIsSorted() === 'desc'}
-							<ArrowDownIcon class="size-4 text-foreground" />
+							<ArrowDownIcon class="size-3.5 text-primary dark:text-primary-tint" />
 						{:else if column.getIsSorted() === 'asc'}
-							<ArrowUpIcon class="size-4 text-foreground" />
+							<ArrowUpIcon class="size-3.5 text-primary dark:text-primary-tint" />
 						{:else}
-							<ArrowsUpDownIcon class="size-4 text-muted-foreground/70" />
+							<ArrowsUpDownIcon class="size-3.5 text-muted-foreground/50" />
 						{/if}
 					</ArcaneButton>
 				{/snippet}

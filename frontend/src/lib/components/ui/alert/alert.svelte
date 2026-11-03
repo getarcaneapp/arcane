@@ -3,16 +3,16 @@
 
 	// Without a title the icon centers on the description's first 20px line: 1rem of padding plus 2px.
 	export const alertVariants = tv({
-		base: 'group/alert [&>svg]:text-foreground relative w-full rounded-xl border p-4 backdrop-blur-sm bg-card/80 [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&:has(>svg+[data-slot=alert-description])>svg]:top-[1.125rem] [&>svg~*]:pl-7',
+		base: 'group/alert [&>svg]:text-foreground relative w-full rounded-xl border bg-card p-4 [&_[data-slot=alert-description]]:text-muted-foreground [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&:has(>svg+[data-slot=alert-description])>svg]:top-[1.125rem] [&>svg~*]:pl-7',
 		variants: {
 			variant: {
 				default: 'text-foreground',
-				warning: 'border-warning/50 text-warning [&>svg]:text-warning',
-				destructive: 'border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive',
-				info: 'border-info/30 bg-info/10 text-info [&>svg]:text-info',
-				'warning-subtle': 'border-warning/30 bg-warning/10',
-				'destructive-subtle': 'border-destructive/30 bg-destructive/10',
-				'primary-subtle': 'border-primary/20 bg-primary/5 dark:border-primary/30 dark:bg-primary/10'
+				warning: 'border-warning/30 bg-warning/8 text-foreground [&>svg]:text-warning',
+				destructive: 'border-destructive/30 bg-destructive/8 text-foreground [&>svg]:text-destructive',
+				info: 'border-info/30 bg-info/8 text-foreground [&>svg]:text-info',
+				'warning-subtle': 'border-warning/20 bg-warning/5 [&>svg]:text-warning',
+				'destructive-subtle': 'border-destructive/20 bg-destructive/5 [&>svg]:text-destructive',
+				'primary-subtle': 'border-primary/20 bg-primary/5 [&>svg]:text-primary dark:border-primary/30 dark:bg-primary/10'
 			},
 			size: {
 				default: '',

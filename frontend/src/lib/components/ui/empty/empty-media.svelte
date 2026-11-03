@@ -6,7 +6,7 @@
 		variants: {
 			variant: {
 				default: 'bg-transparent',
-				icon: "bg-muted text-foreground flex size-25 shrink-0 items-center justify-center rounded-lg [&_svg:not([class*='size-'])]:size-6"
+				icon: "flex size-13 shrink-0 items-center justify-center rounded-xl border border-primary/25 bg-primary/5 text-primary ring-6 ring-primary/5 [&_svg:not([class*='size-'])]:size-6"
 			}
 		},
 		defaultVariants: {

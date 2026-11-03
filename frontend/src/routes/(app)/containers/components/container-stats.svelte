@@ -237,9 +237,9 @@
 
 		{#if networkInterfaces.length > 0}
 			<DetailSection title={m.containers_stats_network_interfaces()}>
-				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+				<div class="grid grid-cols-1 gap-x-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 					{#each networkInterfaces as [interfaceName, interfaceStats] (interfaceName)}
-						<div class="rounded-lg border border-border/50 p-3">
+						<div class="border-b border-border/50 py-3">
 							<div class="mb-2 text-sm font-semibold text-foreground">
 								{interfaceName}
 							</div>

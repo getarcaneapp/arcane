@@ -404,13 +404,13 @@ export type StatusVariant = 'red' | 'purple' | 'green' | 'blue' | 'gray' | 'ambe
 const STATUS_VARIANT_MAP: Record<string, StatusVariant> = {
 	running: 'green',
 	deployed: 'green',
-	stopped: 'red',
+	stopped: 'gray',
 	failed: 'red',
 	pending: 'amber',
 	creating: 'blue',
 	updating: 'blue',
 	deleting: 'purple',
-	exited: 'red'
+	exited: 'gray'
 };
 
 export function getStatusVariant(status?: string | null): StatusVariant {

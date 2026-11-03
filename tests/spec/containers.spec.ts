@@ -736,7 +736,7 @@ test.describe('Lifecycle', () => {
 				.toContain(networkName);
 
 			const networkCard = page
-				.locator('[data-slot="card"]')
+				.locator('section')
 				.filter({ has: page.getByText(networkName, { exact: true }) })
 				.filter({ has: page.getByRole('button', { name: 'Disconnect', exact: true }) })
 				.last();

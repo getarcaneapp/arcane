@@ -67,80 +67,27 @@
 				</div>
 			</Card.Header>
 			<Card.Content>
-				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+				<KeyValueGrid>
 					{#if command.length > 0}
-						<Card.Root class="sm:col-span-2 lg:col-span-3 xl:col-span-4">
-							<Card.Content>
-								<div class="flex flex-col gap-2">
-									<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-										{m.common_command()}
-									</div>
-									<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
-										{command.join(' ')}
-									</div>
-								</div>
-							</Card.Content>
-						</Card.Root>
+						<KeyValueCard label={m.common_command()} class="lg:col-span-2 2xl:col-span-3">{command.join(' ')}</KeyValueCard>
 					{/if}
 
 					{#if args.length > 0}
-						<Card.Root class="sm:col-span-2 lg:col-span-3 xl:col-span-4">
-							<Card.Content>
-								<div class="flex flex-col gap-2">
-									<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-										{m.common_args()}
-									</div>
-									<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
-										{args.join(' ')}
-									</div>
-								</div>
-							</Card.Content>
-						</Card.Root>
+						<KeyValueCard label={m.common_args()} class="lg:col-span-2 2xl:col-span-3">{args.join(' ')}</KeyValueCard>
 					{/if}
 
 					{#if workingDir}
-						<Card.Root>
-							<Card.Content>
-								<div class="flex flex-col gap-2">
-									<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-										{m.common_working_directory()}
-									</div>
-									<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
-										{workingDir}
-									</div>
-								</div>
-							</Card.Content>
-						</Card.Root>
+						<KeyValueCard label={m.common_working_directory()}>{workingDir}</KeyValueCard>
 					{/if}
 
 					{#if user}
-						<Card.Root>
-							<Card.Content>
-								<div class="flex flex-col gap-2">
-									<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-										{m.common_user()}
-									</div>
-									<div class="cursor-pointer font-mono text-sm font-medium text-foreground select-all">
-										{user}
-									</div>
-								</div>
-							</Card.Content>
-						</Card.Root>
+						<KeyValueCard label={m.common_user()}>{user}</KeyValueCard>
 					{/if}
 
 					{#if hostname}
-						<Card.Root>
-							<Card.Content>
-								<div class="flex flex-col gap-2">
-									<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.hostname()}</div>
-									<div class="cursor-pointer font-mono text-sm font-medium text-foreground select-all">
-										{hostname}
-									</div>
-								</div>
-							</Card.Content>
-						</Card.Root>
+						<KeyValueCard label={m.hostname()}>{hostname}</KeyValueCard>
 					{/if}
-				</div>
+				</KeyValueGrid>
 			</Card.Content>
 		</Card.Root>
 	{/if}

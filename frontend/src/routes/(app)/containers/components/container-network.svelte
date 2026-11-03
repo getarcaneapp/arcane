@@ -7,6 +7,7 @@
 	import { PortBadge } from '#lib/components/badges/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import SearchableSelect from '#lib/components/form/searchable-select.svelte';
+	import { KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { NetworksIcon } from '#lib/icons/index.js';
@@ -163,126 +164,78 @@
 		</Card.Header>
 		<Card.Content>
 			{#if container.networkSettings?.networks && Object.keys(container.networkSettings.networks).length > 0}
-				<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+				<div class="divide-y divide-border/60">
 					<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service network; typed props diverge across the boundary -->
 					{#each Object.entries(container.networkSettings.networks) as [networkName, rawNetworkConfig] (networkName)}
-						<Card.Root>
-							<Card.Content>
-								<div class="mb-4 flex items-center gap-3 border-b border-border pb-4">
-									<div class="rounded-lg bg-info/10 p-2">
-										<NetworksIcon class="size-5 text-info" />
-									</div>
-									<div class="min-w-0 flex-1">
-										<div class="text-base font-semibold break-all text-foreground">
-											{networkName}
-										</div>
-										<div class="text-xs text-muted-foreground">{m.network_interface()}</div>
-									</div>
-									{#if canDisconnect}
-										<ArcaneButton
-											action="base"
-											tone="outline"
-											size="sm"
-											customLabel={m.common_disconnect()}
-											loading={disconnectPending[networkName]}
-											disabled={disconnectPending[networkName]}
-											onclick={() => handleDisconnect(networkName, rawNetworkConfig.networkId)}
-											class="shrink-0 text-destructive hover:text-destructive"
-										/>
-									{/if}
+						<section class="py-5 first:pt-0 last:pb-0">
+							<div class="flex items-center gap-3 pb-1">
+								<NetworksIcon class="size-4 shrink-0 text-info" />
+								<div class="min-w-0 flex-1">
+									<div class="text-sm font-semibold break-all text-foreground">{networkName}</div>
+									<div class="text-xs text-muted-foreground">{m.network_interface()}</div>
 								</div>
+								{#if canDisconnect}
+									<ArcaneButton
+										action="base"
+										tone="outline"
+										size="sm"
+										customLabel={m.common_disconnect()}
+										loading={disconnectPending[networkName]}
+										disabled={disconnectPending[networkName]}
+										onclick={() => handleDisconnect(networkName, rawNetworkConfig.networkId)}
+										class="shrink-0 text-destructive hover:text-destructive"
+									/>
+								{/if}
+							</div>
 
-								<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-									{#each [{ label: m.containers_ip_address(), value: rawNetworkConfig.ipAddress || m.common_na() }, { label: m.common_gateway(), value: rawNetworkConfig.gateway || m.common_na() }, { label: m.containers_mac_address(), value: rawNetworkConfig.macAddress || m.common_na() }, { label: m.common_subnet(), value: rawNetworkConfig.ipPrefixLen ? `${rawNetworkConfig.ipAddress}/${rawNetworkConfig.ipPrefixLen}` : m.common_na() }] as field (field.label)}
-										<Card.Root size="sm">
-											<Card.Content class="flex flex-col">
-												<div class="mb-2 text-xs font-semibold text-muted-foreground">{field.label}</div>
-												<div
-													class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
-													title={m.common_click_to_select()}
-												>
-													{field.value}
-												</div>
-											</Card.Content>
-										</Card.Root>
-									{/each}
+							<KeyValueGrid>
+								{#each [{ label: m.containers_ip_address(), value: rawNetworkConfig.ipAddress || m.common_na() }, { label: m.common_gateway(), value: rawNetworkConfig.gateway || m.common_na() }, { label: m.containers_mac_address(), value: rawNetworkConfig.macAddress || m.common_na() }, { label: m.common_subnet(), value: rawNetworkConfig.ipPrefixLen ? `${rawNetworkConfig.ipAddress}/${rawNetworkConfig.ipPrefixLen}` : m.common_na() }] as field (field.label)}
+									<KeyValueCard label={field.label} valueTitle={m.common_click_to_select()}>{field.value}</KeyValueCard>
+								{/each}
 
-									{#if rawNetworkConfig.globalIPv6Address}
-										<Card.Root size="sm">
-											<Card.Content class="flex flex-col">
-												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.ipv6_address()}</div>
-												<div
-													class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
-													title={m.common_click_to_select()}
-												>
-													{rawNetworkConfig.globalIPv6PrefixLen
-														? `${rawNetworkConfig.globalIPv6Address}/${rawNetworkConfig.globalIPv6PrefixLen}`
-														: rawNetworkConfig.globalIPv6Address}
-												</div>
-											</Card.Content>
-										</Card.Root>
+								{#if rawNetworkConfig.globalIPv6Address}
+									<KeyValueCard label={m.ipv6_address()} valueTitle={m.common_click_to_select()}>
+										{rawNetworkConfig.globalIPv6PrefixLen
+											? `${rawNetworkConfig.globalIPv6Address}/${rawNetworkConfig.globalIPv6PrefixLen}`
+											: rawNetworkConfig.globalIPv6Address}
+									</KeyValueCard>
+									<KeyValueCard label={m.ipv6_gateway()} valueTitle={m.common_click_to_select()}>
+										{rawNetworkConfig.ipv6Gateway || m.common_na()}
+									</KeyValueCard>
+								{/if}
 
-										<Card.Root size="sm">
-											<Card.Content class="flex flex-col">
-												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.ipv6_gateway()}</div>
-												<div
-													class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
-													title={m.common_click_to_select()}
-												>
-													{rawNetworkConfig.ipv6Gateway || m.common_na()}
-												</div>
-											</Card.Content>
-										</Card.Root>
-									{/if}
+								{#if rawNetworkConfig.networkId}
+									<KeyValueCard
+										label={m.network_id()}
+										valueTitle={m.common_click_to_select()}
+										class="lg:col-span-2 2xl:col-span-3"
+									>
+										{rawNetworkConfig.networkId}
+									</KeyValueCard>
+								{/if}
 
-									{#if rawNetworkConfig.networkId}
-										<Card.Root class="sm:col-span-2" size="sm">
-											<Card.Content class="flex flex-col">
-												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.network_id()}</div>
-												<div
-													class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
-													title={m.common_click_to_select()}
-												>
-													{rawNetworkConfig.networkId}
-												</div>
-											</Card.Content>
-										</Card.Root>
-									{/if}
+								{#if rawNetworkConfig.endpointId}
+									<KeyValueCard
+										label={m.container_endpoint_id()}
+										valueTitle={m.common_click_to_select()}
+										class="lg:col-span-2 2xl:col-span-3"
+									>
+										{rawNetworkConfig.endpointId}
+									</KeyValueCard>
+								{/if}
 
-									{#if rawNetworkConfig.endpointId}
-										<Card.Root class="sm:col-span-2" size="sm">
-											<Card.Content class="flex flex-col">
-												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.container_endpoint_id()}</div>
-												<div
-													class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
-													title={m.common_click_to_select()}
-												>
-													{rawNetworkConfig.endpointId}
-												</div>
-											</Card.Content>
-										</Card.Root>
-									{/if}
-
-									{#if rawNetworkConfig.aliases && rawNetworkConfig.aliases.length > 0}
-										<Card.Root class="sm:col-span-2" size="sm">
-											<Card.Content class="flex flex-col">
-												<div class="mb-2 text-xs font-semibold text-muted-foreground">
-													{m.containers_aliases()}
-												</div>
-												<div class="space-y-1 text-sm font-medium text-foreground">
-													{#each withOccurrenceKeys(rawNetworkConfig.aliases) as alias (alias.key)}
-														<div class="cursor-pointer font-mono break-all select-all" title={m.common_click_to_select()}>
-															{alias.value}
-														</div>
-														<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service network; typed props diverge across the boundary -->
-													{/each}
-												</div>
-											</Card.Content>
-										</Card.Root>
-									{/if}
-								</div>
-							</Card.Content>
-						</Card.Root>
+								{#if rawNetworkConfig.aliases && rawNetworkConfig.aliases.length > 0}
+									<KeyValueCard label={m.containers_aliases()} stacked class="lg:col-span-2 2xl:col-span-3">
+										{#each withOccurrenceKeys(rawNetworkConfig.aliases) as alias (alias.key)}
+											<div class="cursor-pointer font-mono break-all select-all" title={m.common_click_to_select()}>
+												{alias.value}
+											</div>
+											<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service network; typed props diverge across the boundary -->
+										{/each}
+									</KeyValueCard>
+								{/if}
+							</KeyValueGrid>
+						</section>
 					{/each}
 				</div>
 			{:else}
@@ -292,7 +245,7 @@
 			{/if}
 
 			{#if canConnect}
-				<div class="mt-4 space-y-3 rounded-lg border border-border/50 p-4">
+				<div class="mt-5 space-y-3 border-t border-border/60 pt-5">
 					<div>
 						<h3 class="text-sm font-semibold">{m.network_connect()}</h3>
 						<p class="mt-1 text-xs text-muted-foreground">{m.network_live_change_note()}</p>
@@ -330,17 +283,9 @@
 			{/if}
 
 			{#if customHostname}
-				<Card.Root size="sm" class="mt-4">
-					<Card.Content class="flex flex-col">
-						<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.hostname()}</div>
-						<div
-							class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
-							title={m.common_click_to_select()}
-						>
-							{customHostname}
-						</div>
-					</Card.Content>
-				</Card.Root>
+				<KeyValueGrid>
+					<KeyValueCard label={m.hostname()} valueTitle={m.common_click_to_select()}>{customHostname}</KeyValueCard>
+				</KeyValueGrid>
 			{/if}
 		</Card.Content>
 	</Card.Root>

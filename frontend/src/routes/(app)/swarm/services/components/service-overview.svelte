@@ -136,24 +136,19 @@
 			>
 
 			{#if updateStatus?.['State']}
-				<Card.Root class="sm:col-span-2">
-					<Card.Content>
-						<div class="flex flex-col gap-2">
-							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.common_status()}</div>
-							<div class="flex items-center gap-2">
-								<Badge variant={updateStatusVariant} minWidth="20">{updateStatus['State']}</Badge>
-								{#if updateStatus['Message']}
-									<span class="text-sm text-muted-foreground">{updateStatus['Message']}</span>
-								{/if}
-							</div>
-							{#if updateStatus['CompletedAt']}
-								<div class="text-xs text-muted-foreground">
-									{formatRelativeTime(String(updateStatus['CompletedAt'])) || m.common_na()}
-								</div>
-							{/if}
+				<KeyValueCard label={m.common_status()} valueFormat="custom" stacked class="lg:col-span-2 2xl:col-span-3">
+					<div class="flex items-center gap-2">
+						<Badge variant={updateStatusVariant} minWidth="20">{updateStatus['State']}</Badge>
+						{#if updateStatus['Message']}
+							<span class="text-sm text-muted-foreground">{updateStatus['Message']}</span>
+						{/if}
+					</div>
+					{#if updateStatus['CompletedAt']}
+						<div class="text-xs text-muted-foreground">
+							{formatRelativeTime(String(updateStatus['CompletedAt'])) || m.common_na()}
 						</div>
-					</Card.Content>
-				</Card.Root>
+					{/if}
+				</KeyValueCard>
 			{/if}
 		</div>
 	</Card.Content>

@@ -63,44 +63,42 @@
 				<div class="text-sm">{m.swarm_service_tasks_empty()}</div>
 			</div>
 		{:else}
-			<div class="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+			<div class="grid grid-cols-1 gap-x-8 lg:grid-cols-2 xl:grid-cols-3">
 				{#each tasks as task (task.id)}
-					<Card.Root>
-						<Card.Content>
-							<div class="mb-3 flex items-center justify-between border-b border-border pb-3">
-								<div class="min-w-0 flex-1">
-									<div class="truncate text-sm font-semibold text-foreground" title={task.name}>
-										{task.name}
-									</div>
-									<div class="font-mono text-xs text-muted-foreground">{task.id.slice(0, 12)}</div>
+					<div class="border-b border-border/50 py-3">
+						<div class="mb-2 flex items-center justify-between">
+							<div class="min-w-0 flex-1">
+								<div class="truncate text-sm font-semibold text-foreground" title={task.name}>
+									{task.name}
 								</div>
-								<Badge variant={getSwarmTaskStateVariant(task.currentState)} minWidth="20">{task.currentState}</Badge>
+								<div class="font-mono text-xs text-muted-foreground">{task.id.slice(0, 12)}</div>
 							</div>
-							<div class="grid grid-cols-2 gap-2">
-								<div>
-									<div class="mb-1 text-xs font-semibold text-muted-foreground">
-										{m.swarm_node()}
-									</div>
-									<div class="flex items-center gap-1">
-										<ConnectionIcon class="size-3 text-muted-foreground" />
-										<span class="truncate text-sm text-foreground">{task.nodeName || m.common_na()}</span>
-									</div>
+							<Badge variant={getSwarmTaskStateVariant(task.currentState)} minWidth="20">{task.currentState}</Badge>
+						</div>
+						<div class="grid grid-cols-2 gap-2">
+							<div>
+								<div class="mb-1 text-xs font-semibold text-muted-foreground">
+									{m.swarm_node()}
 								</div>
-								<div>
-									<div class="mb-1 text-xs font-semibold text-muted-foreground">
-										{m.swarm_desired_state()}
-									</div>
-									<Badge variant={getSwarmTaskStateVariant(task.desiredState)} size="sm" minWidth="20">{task.desiredState}</Badge>
+								<div class="flex items-center gap-1">
+									<ConnectionIcon class="size-3 text-muted-foreground" />
+									<span class="truncate text-sm text-foreground">{task.nodeName || m.common_na()}</span>
 								</div>
-								{#if task.error}
-									<div class="col-span-2">
-										<div class="mb-1 text-xs font-semibold text-muted-foreground">{m.common_error()}</div>
-										<div class="text-sm break-all text-destructive">{task.error}</div>
-									</div>
-								{/if}
 							</div>
-						</Card.Content>
-					</Card.Root>
+							<div>
+								<div class="mb-1 text-xs font-semibold text-muted-foreground">
+									{m.swarm_desired_state()}
+								</div>
+								<Badge variant={getSwarmTaskStateVariant(task.desiredState)} size="sm" minWidth="20">{task.desiredState}</Badge>
+							</div>
+							{#if task.error}
+								<div class="col-span-2">
+									<div class="mb-1 text-xs font-semibold text-muted-foreground">{m.common_error()}</div>
+									<div class="text-sm break-all text-destructive">{task.error}</div>
+								</div>
+							{/if}
+						</div>
+					</div>
 				{/each}
 			</div>
 		{/if}

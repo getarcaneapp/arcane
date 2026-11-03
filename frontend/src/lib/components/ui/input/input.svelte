@@ -30,7 +30,7 @@
 		bind:this={ref}
 		data-slot="input"
 		class={cn(
-			'flex h-10 w-full rounded-lg border bg-input/80 px-3 py-2 text-base ring-offset-background backdrop-blur-sm transition-all file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:bg-input/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:backdrop-blur-md focus-visible:outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
+			'flex h-10 w-full rounded-xl border bg-input/80 px-3 py-2 text-base ring-offset-background backdrop-blur-sm transition-all file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:bg-input/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:backdrop-blur-md focus-visible:outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
 			size === 'sm' && 'text-xs md:text-xs',
 			size === 'lg' && 'text-lg font-semibold md:text-lg',
 			mono && 'font-mono',
@@ -46,7 +46,7 @@
 		bind:this={ref}
 		data-slot="input"
 		class={cn(
-			'flex h-9 w-full min-w-0 rounded-lg bg-input/80 px-3 py-1 text-base ring-offset-background backdrop-blur-sm transition-all outline-none selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
+			'flex h-9 w-full min-w-0 rounded-xl bg-input/80 px-3 py-1 text-base ring-offset-background backdrop-blur-sm transition-all outline-none selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
 			'focus-visible:border-ring focus-visible:bg-input/90 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:backdrop-blur-md',
 			'aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40',
 			size === 'sm' && 'text-xs md:text-xs',

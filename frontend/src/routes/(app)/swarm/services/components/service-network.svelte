@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { NetworksIcon, GlobeIcon } from '#lib/icons/index.js';
@@ -51,66 +52,35 @@
 	{@const aliases = network.aliases}
 	{@const vip = vipMap[networkId]}
 	{@const info = networkDetails[networkId]}
-	<Card.Root>
-		<Card.Content>
-			{@render networkSummary(info, aliases, networkId)}
+	<section class="py-5 first:pt-0 last:pb-0">
+		{@render networkSummary(info, aliases, networkId)}
 
-			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-				{#if vip}
-					<Card.Root size="sm">
-						<Card.Content class="flex flex-col">
-							<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.networks_service_vip_label()}</div>
-							<code
-								class="cursor-pointer rounded-xl bg-muted px-1.5 py-0.5 font-mono text-sm break-all text-muted-foreground select-all"
-							>
-								{vip}
-							</code>
-						</Card.Content>
-					</Card.Root>
-				{/if}
+		<KeyValueGrid>
+			{#if vip}
+				<KeyValueCard label={m.networks_service_vip_label()}>{vip}</KeyValueCard>
+			{/if}
 
-				<Card.Root size="sm">
-					<Card.Content class="flex flex-col">
-						<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.common_id()}</div>
-						<code
-							class="cursor-pointer rounded-xl bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
-						>
-							{networkId}
-						</code>
-					</Card.Content>
-				</Card.Root>
+			<KeyValueCard label={m.common_id()}>{networkId}</KeyValueCard>
 
-				{#if aliases.length > 0}
-					<Card.Root size="sm">
-						<Card.Content class="flex flex-col">
-							<div class="mb-2 text-xs font-semibold text-muted-foreground">
-								{m.containers_aliases()}
-							</div>
-							<div class="space-y-1">
-								{#each aliases as alias (alias)}
-									<code
-										class="cursor-pointer rounded-xl bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
-									>
-										{alias}
-									</code>
-								{/each}
-							</div>
-						</Card.Content>
-					</Card.Root>
-				{/if}
+			{#if aliases.length > 0}
+				<KeyValueCard label={m.containers_aliases()} stacked>
+					{#each aliases as alias (alias)}
+						<span class="cursor-pointer font-mono break-all select-all">{alias}</span>
+					{/each}
+				</KeyValueCard>
+			{/if}
 
-				{#if info?.configNetwork}
-					{@render configurationNetwork(info.configNetwork)}
-				{/if}
-			</div>
-		</Card.Content>
-	</Card.Root>
+			{#if info?.configNetwork}
+				{@render configurationNetwork(info.configNetwork)}
+			{/if}
+		</KeyValueGrid>
+	</section>
 {/snippet}
 
 {#snippet configurationNetwork(configNetwork: NonNullable<ServiceNetworkDetail['configNetwork']>)}
-	<Card.Root class="sm:col-span-2" size="sm">
-		<Card.Content>
-			<div class="mb-3 flex items-center justify-between border-b border-border pb-3">
+	<div class="border-b border-border/50 py-3 lg:col-span-2 2xl:col-span-3">
+		<div>
+			<div class="mb-2 flex items-center justify-between">
 				<div>
 					<div class="text-sm font-semibold text-foreground">
 						{m.config_only()}: {configNetwork.name}
@@ -144,17 +114,17 @@
 					{@render IpamConfigList(configNetwork.ipv6Configs, m.ipv6_enabled())}
 				{/if}
 			</div>
-		</Card.Content>
-	</Card.Root>
+		</div>
+	</div>
 {/snippet}
 
 {#snippet networkSummary(info: ServiceNetworkDetail | undefined, aliases: string[], networkId: string)}
-	<div class="mb-4 flex items-center gap-3 border-b border-border pb-4">
+	<div class="flex items-center gap-3 pb-1">
 		<div class="rounded-lg bg-info/10 p-2">
-			<NetworksIcon class="size-5 text-info" />
+			<NetworksIcon class="size-4 text-info" />
 		</div>
 		<div class="min-w-0 flex-1">
-			<div class="text-base font-semibold break-all text-foreground">
+			<div class="text-sm font-semibold break-all text-foreground">
 				{info?.name ?? (aliases.length > 0 ? aliases[0] : networkId.slice(0, 12))}
 			</div>
 			<div class="mt-1 flex flex-wrap items-center gap-2">
@@ -189,7 +159,7 @@
 	heading: string
 )}
 	{#each configs as cfg (`${cfg.subnet ?? ''}:${cfg.gateway ?? ''}:${cfg.ipRange ?? ''}`)}
-		<div class="space-y-1 rounded-lg bg-muted/30 p-2.5">
+		<div class="space-y-1">
 			<div class="mb-1 text-xs font-semibold text-muted-foreground">{heading}</div>
 			{#if cfg.subnet}
 				<div class="flex flex-col sm:flex-row sm:items-center">
@@ -259,7 +229,7 @@
 		</Card.Header>
 		<Card.Content>
 			{#if networks.length > 0 || virtualIPs.length > 0}
-				<div class="grid grid-cols-1 gap-4">
+				<div class="divide-y divide-border/60">
 					{#each networks as network (network.target)}
 						{@render networkAttachment(network)}
 					{/each}

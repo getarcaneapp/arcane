@@ -1263,7 +1263,10 @@ test.describe('Project Detail Page', () => {
 			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('services');
 			await expect(servicesTab).toHaveAttribute('data-state', 'active');
 
-			const port = page.getByText('8081:80', { exact: true }).filter({ visible: true }).first();
+			const port = page
+				.locator('a[href*=":8081"]')
+				.filter({ hasText: '80/tcp', visible: true })
+				.first();
 			await expect(port).toBeVisible();
 			await port.hover();
 			await expect(

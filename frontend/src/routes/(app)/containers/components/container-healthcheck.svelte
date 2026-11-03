@@ -239,38 +239,36 @@
 					<div class="text-sm">{m.health_no_probes_yet()}</div>
 				</div>
 			{:else}
-				<div class="space-y-2">
+				<div class="divide-y divide-border/60">
 					{#each recentProbes as probe (probeKey(probe))}
 						{@const key = probeKey(probe)}
-						<Card.Root>
-							<Card.Content>
-								<div class="flex flex-col gap-2">
-									<div class="flex flex-wrap items-center justify-between gap-2">
-										<div class="flex items-center gap-3">
-											<Badge variant={probe.exitCode === 0 ? 'green' : 'red'} size="sm" minWidth="20"
-												>{`${m.health_exit_code()}: ${probe.exitCode}`}</Badge
-											>
-											<span class="text-xs text-muted-foreground" title={formatProbeDate(probe.start)}>
-												{probe.start ? formatRelativeTime(probe.start) : '—'}
-											</span>
-											<span class="text-xs text-muted-foreground">
-												{m.duration()}: {probeDuration(probe.start, probe.end)}
-											</span>
-										</div>
-										{#if probe.output}
-											<button type="button" class="text-xs text-primary hover:underline" onclick={() => toggleExpanded(key)}>
-												{expanded[key] ? m.common_hide() : m.common_show()}
-											</button>
-										{/if}
+						<div class="py-3 first:pt-0 last:pb-0">
+							<div class="flex flex-col gap-2">
+								<div class="flex flex-wrap items-center justify-between gap-2">
+									<div class="flex items-center gap-3">
+										<Badge variant={probe.exitCode === 0 ? 'green' : 'red'} size="sm" minWidth="20"
+											>{`${m.health_exit_code()}: ${probe.exitCode}`}</Badge
+										>
+										<span class="text-xs text-muted-foreground" title={formatProbeDate(probe.start)}>
+											{probe.start ? formatRelativeTime(probe.start) : '—'}
+										</span>
+										<span class="text-xs text-muted-foreground">
+											{m.duration()}: {probeDuration(probe.start, probe.end)}
+										</span>
 									</div>
-									{#if probe.output && expanded[key]}
-										<CodeBlock.Root size="sm">
-											<CodeBlock.Content wrap code={probe.output} class="max-h-64" />
-										</CodeBlock.Root>
+									{#if probe.output}
+										<button type="button" class="text-xs text-primary hover:underline" onclick={() => toggleExpanded(key)}>
+											{expanded[key] ? m.common_hide() : m.common_show()}
+										</button>
 									{/if}
 								</div>
-							</Card.Content>
-						</Card.Root>
+								{#if probe.output && expanded[key]}
+									<CodeBlock.Root size="sm">
+										<CodeBlock.Content wrap code={probe.output} class="max-h-64" />
+									</CodeBlock.Root>
+								{/if}
+							</div>
+						</div>
 					{/each}
 				</div>
 			{/if}

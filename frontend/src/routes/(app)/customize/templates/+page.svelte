@@ -212,9 +212,7 @@
 		<div class="space-y-6">
 			<Tabs.Root value={activeView}>
 				<div class="pb-6">
-					<div class="w-fit">
-						<TabBar items={tabItems} value={activeView} onValueChange={urlTab.select} />
-					</div>
+					<TabBar items={tabItems} value={activeView} onValueChange={urlTab.select} />
 				</div>
 
 				<Tabs.Content value="browse">
