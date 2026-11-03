@@ -92,9 +92,10 @@ type (
 
 	// TunnelRegistry manages active agent tunnel connections
 	TunnelRegistry struct {
-		tunnels *concurrency.StateMap[string, *AgentTunnel]
-		history *concurrency.StateMap[string, TunnelHistory]
-		stopped atomic.Bool
+		tunnels    *concurrency.StateMap[string, *AgentTunnel]
+		history    *concurrency.StateMap[string, TunnelHistory]
+		registered *concurrency.Signal[string]
+		stopped    atomic.Bool
 	}
 
 	TunnelHistory struct {

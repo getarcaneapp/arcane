@@ -149,7 +149,7 @@ func BenchmarkAgentTunnelProxyRequest(b *testing.B) {
 		slog.SetDefault(previousLogger)
 	})
 
-	payloadSizes := []int{64, 1024, 4096}
+	payloadSizes := []int{64, 1024, 4096, 64 << 10, 1 << 20, 16 << 20}
 	for _, payloadSize := range payloadSizes {
 		b.Run(fmt.Sprintf("grpc_payload_%d", payloadSize), func(b *testing.B) {
 			tunnel, cleanup := setupGRPCBenchmarkTunnel(b, payloadSize)
@@ -163,6 +163,42 @@ func BenchmarkAgentTunnelProxyRequest(b *testing.B) {
 			runProxyRequestBenchmark(b, tunnel, payloadSize)
 		})
 	}
+
+	for _, payloadSize := range []int{1024, 1 << 20} {
+		b.Run(fmt.Sprintf("grpc_parallel_payload_%d", payloadSize), func(b *testing.B) {
+			tunnel, cleanup := setupGRPCBenchmarkTunnel(b, payloadSize)
+			defer cleanup()
+			runParallelProxyRequestBenchmark(b, tunnel, payloadSize)
+		})
+
+		b.Run(fmt.Sprintf("websocket_parallel_payload_%d", payloadSize), func(b *testing.B) {
+			tunnel, cleanup := setupWebSocketBenchmarkTunnel(b, payloadSize)
+			defer cleanup()
+			runParallelProxyRequestBenchmark(b, tunnel, payloadSize)
+		})
+	}
+}
+
+func runParallelProxyRequestBenchmark(b *testing.B, tunnel *AgentTunnel, payloadSize int) {
+	b.Helper()
+
+	ctx := b.Context()
+	body := make([]byte, payloadSize)
+	headers := http.Header{"Content-Type": {"application/octet-stream"}}
+
+	b.ReportAllocs()
+	b.SetBytes(int64(payloadSize))
+	b.ResetTimer()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			statusCode, _, respBody, err := ProxyRequest(ctx, tunnel, http.MethodPost, "/api/environments/0/images/upload", "", headers, body)
+			if err != nil || statusCode != http.StatusOK || len(respBody) != payloadSize {
+				b.Errorf("proxy request failed: status=%d len=%d err=%v", statusCode, len(respBody), err)
+				return
+			}
+		}
+	})
 }
 
 func runProxyRequestBenchmark(b *testing.B, tunnel *AgentTunnel, payloadSize int) {

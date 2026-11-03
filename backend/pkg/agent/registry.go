@@ -140,12 +140,24 @@ func (r *TunnelRegistry) Active(envID string) mo.Option[*AgentTunnel] {
 	return mo.None[*AgentTunnel]()
 }
 
-// WaitForActive polls until the environment has an open tunnel or timeout elapses.
+// WaitForActive waits until the environment has an open tunnel or timeout elapses.
 func (r *TunnelRegistry) WaitForActive(ctx context.Context, envID string, timeout time.Duration) mo.Option[*AgentTunnel] {
+	if tunnel := r.Active(envID); tunnel.IsPresent() {
+		return tunnel
+	}
+	registered := make(chan struct{}, 1)
+	unsubscribe := r.registered.Subscribe(func(id string) {
+		if id != envID {
+			return
+		}
+		select {
+		case registered <- struct{}{}:
+		default:
+		}
+	})
+	defer unsubscribe()
 	waitCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	ticker := time.NewTicker(DefaultTunnelAcquirePollEvery)
-	defer ticker.Stop()
 	for {
 		if tunnel := r.Active(envID); tunnel.IsPresent() {
 			return tunnel
@@ -153,7 +165,7 @@ func (r *TunnelRegistry) WaitForActive(ctx context.Context, envID string, timeou
 		select {
 		case <-waitCtx.Done():
 			return mo.None[*AgentTunnel]()
-		case <-ticker.C:
+		case <-registered:
 		}
 	}
 }
@@ -161,8 +173,9 @@ func (r *TunnelRegistry) WaitForActive(ctx context.Context, envID string, timeou
 // NewTunnelRegistry creates a new tunnel registry
 func NewTunnelRegistry() *TunnelRegistry {
 	return &TunnelRegistry{
-		tunnels: concurrency.NewStateMap[string, *AgentTunnel](),
-		history: concurrency.NewStateMap[string, TunnelHistory](),
+		tunnels:    concurrency.NewStateMap[string, *AgentTunnel](),
+		history:    concurrency.NewStateMap[string, TunnelHistory](),
+		registered: concurrency.NewSignal[string](),
 	}
 }
 
@@ -223,6 +236,7 @@ func (r *TunnelRegistry) Register(envID string, tunnel *AgentTunnel) {
 		slog.InfoContext(ctx, "Replacing existing agent tunnel")
 		_ = previous.CloseWithReason("")
 	}
+	r.registered.Publish(envID)
 	slog.InfoContext(ctx, "Agent tunnel registered")
 }
 
@@ -242,32 +256,28 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 	}
 
 	result, err := r.tunnels.ApplyTyped(ctx, "register agent tunnel session", func(tunnels map[string]*AgentTunnel) (registerSessionResult, bool, error) {
-		var result registerSessionResult
 		if r.stopped.Load() {
-			return result, false, errors.New("agent tunnel registry stopped")
+			return registerSessionResult{}, false, errors.New("agent tunnel registry stopped")
 		}
-		if existing := tunnels[envID]; existing != nil {
-			if existing == tunnel {
-				result.accepted = true
-				return result, false, nil
-			}
+		existing := tunnels[envID]
+		if existing == tunnel {
+			return registerSessionResult{accepted: true}, false, nil
+		}
 
-			existingMetadata := existing.MetadataSnapshot()
-			tunnelMetadata := tunnel.MetadataSnapshot()
-			existingStale := staleAfter > 0 && time.Since(existingMetadata.LastHeartbeat) > staleAfter
-			sameAgentInstance := existingMetadata.AgentInstance != "" && tunnelMetadata.AgentInstance != "" && existingMetadata.AgentInstance == tunnelMetadata.AgentInstance
-			if existing.Conn != nil && !existing.Conn.IsClosed() && !existingStale && !sameAgentInstance {
-				result.reason = "another agent session is already active"
-				return result, false, nil
-			}
-			result.previous = existing
-			result.drainPrevious = sameAgentInstance
+		existingMetadata := existing.MetadataSnapshot()
+		sameAgentInstance := existingMetadata.AgentInstance != "" && existingMetadata.AgentInstance == tunnel.MetadataSnapshot().AgentInstance
+		if existing != nil && existing.Conn != nil && !existing.Conn.IsClosed() &&
+			(staleAfter <= 0 || time.Since(existingMetadata.LastHeartbeat) <= staleAfter) && !sameAgentInstance {
+			return registerSessionResult{reason: "another agent session is already active"}, false, nil
 		}
 
 		tunnels[envID] = tunnel
-		result.accepted = true
-		result.stored = true
-		return result, true, nil
+		return registerSessionResult{
+			previous:      existing,
+			accepted:      true,
+			stored:        true,
+			drainPrevious: sameAgentInstance,
+		}, true, nil
 	})
 	if err != nil {
 		return false, false, "", err
@@ -278,6 +288,7 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 	}
 	if result.stored {
 		r.recordSession(ctx, envID)
+		r.registered.Publish(envID)
 	}
 	metadata := tunnel.MetadataSnapshot()
 	slog.InfoContext(ctx, "Agent tunnel registered", "environmentId", envID, "sessionId", metadata.SessionID, "securityMode", metadata.SecurityMode)
@@ -311,15 +322,12 @@ func (r *TunnelRegistry) UnregisterCurrent(ctx context.Context, envID string, cu
 		activeReplacement bool
 	}
 	result, err := r.tunnels.ApplyTyped(ctx, "unregister current agent tunnel", func(tunnels map[string]*AgentTunnel) (unregisterResult, bool, error) {
-		var result unregisterResult
 		existing := tunnels[envID]
 		if existing != current {
-			result.activeReplacement = (existing != nil && existing.Conn != nil && !existing.Conn.IsClosed())
-			return result, false, nil
+			return unregisterResult{activeReplacement: existing != nil && existing.Conn != nil && !existing.Conn.IsClosed()}, false, nil
 		}
 		delete(tunnels, envID)
-		result.removed = true
-		return result, true, nil
+		return unregisterResult{removed: true}, true, nil
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to unregister current agent tunnel", "environmentId", envID, "error", err)

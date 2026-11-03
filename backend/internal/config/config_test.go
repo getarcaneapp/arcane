@@ -544,9 +544,9 @@ func TestConfig_GetLocationSchedulesInZone(t *testing.T) {
 	require.NoError(t, err)
 
 	tests := []struct {
-		name     string
 		from     time.Time
 		expected time.Time
+		name     string
 	}{
 		{
 			name:     "standard time",

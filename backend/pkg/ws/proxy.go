@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -64,8 +65,13 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 	errc := make(chan struct{}, 2)
 	pump := func(src, dst *websocket.Conn) {
 		defer func() { errc <- struct{}{} }()
+		var msg bytes.Buffer
 		for {
-			mt, msg, readErr := src.Read(pumpCtx)
+			mt, reader, readErr := src.Reader(pumpCtx)
+			if readErr == nil {
+				msg.Reset()
+				_, readErr = msg.ReadFrom(reader)
+			}
 			if readErr != nil {
 				// Forward the peer's close status so the terminating reason survives the proxy hop.
 				if ce, ok := errors.AsType[websocket.CloseError](readErr); ok {
@@ -79,7 +85,7 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 				}
 				return
 			}
-			if writeErr := dst.Write(pumpCtx, mt, msg); writeErr != nil {
+			if writeErr := dst.Write(pumpCtx, mt, msg.Bytes()); writeErr != nil {
 				return
 			}
 		}

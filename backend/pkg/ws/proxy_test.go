@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -219,5 +220,53 @@ func TestProxyHTTP_HeadersForwarded(t *testing.T) {
 		assert.Equal(t, "Bearer token123", receivedHeaders.Get("Authorization"))
 	case <-time.After(2 * time.Second):
 		require.FailNow(t, "timed out waiting for headers")
+	}
+}
+
+func BenchmarkProxyHTTP_Frames(b *testing.B) {
+	remoteServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+		var frame bytes.Buffer
+		for {
+			mt, reader, readErr := conn.Reader(r.Context())
+			if readErr != nil {
+				return
+			}
+			frame.Reset()
+			if _, copyErr := frame.ReadFrom(reader); copyErr != nil {
+				return
+			}
+			if writeErr := conn.Write(r.Context(), mt, frame.Bytes()); writeErr != nil {
+				return
+			}
+		}
+	}))
+	b.Cleanup(remoteServer.Close)
+
+	remoteWS := "ws" + strings.TrimPrefix(remoteServer.URL, "http")
+	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = ProxyHTTP(w, r, remoteWS, nil, allowAnyOriginForTest, http.DefaultClient)
+	}))
+	b.Cleanup(proxyServer.Close)
+
+	clientConn, _, err := websocket.Dial(b.Context(), "ws"+strings.TrimPrefix(proxyServer.URL, "http"), nil)
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = clientConn.CloseNow() })
+
+	payload := make([]byte, 4096)
+	var frame bytes.Buffer
+	b.ReportAllocs()
+	b.SetBytes(int64(len(payload)))
+	for b.Loop() {
+		require.NoError(b, clientConn.Write(b.Context(), websocket.MessageBinary, payload))
+		_, reader, readErr := clientConn.Reader(b.Context())
+		require.NoError(b, readErr)
+		frame.Reset()
+		_, readErr = frame.ReadFrom(reader)
+		require.NoError(b, readErr)
 	}
 }
