@@ -1,3 +1,5 @@
+import { isCancelledError } from '@tanstack/svelte-query';
+
 import { vulnerabilityListQuery, vulnerabilityOverviewQuery } from '#lib/query/vulnerabilities.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
@@ -64,14 +66,13 @@ export const load: PageLoad = async ({ parent }) => {
 			queryClient.query(vulnerabilityListQuery(scope, vulnerabilityEnvironments(), requestForApi))
 		])
 	);
-	if (operationResult.error !== null) {
+	if (operationResult.error !== null && !isCancelledError(operationResult.error)) {
 		throwPageLoadError(operationResult.error, 'Failed to load security data');
 	}
-	const [overview] = operationResult.data;
 
 	return {
 		featureDisabled: false,
-		overview,
+		overview: operationResult.data?.[0] ?? null,
 		vulnerabilityRequestOptions,
 		patchRequestOptions
 	};
