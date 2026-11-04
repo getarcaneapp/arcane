@@ -4394,5 +4394,13 @@
   "api_reference": "API 文件",
   "api_key_page_description_suffix": "有關使用詳情。",
   "github_token": "GitHub 憑證",
-  "github_token_description": "用於從 GitHub 擷取映像檔發行說明的可選憑證。將 API 請求速率限制從每小時 60 次提高至 5,000 次。"
+  "github_token_description": "用於從 GitHub 擷取映像檔發行說明的可選憑證。將 API 請求速率限制從每小時 60 次提高至 5,000 次。",
+  "image_auto_patch": "圖片自動修補",
+  "analytics_heartbeat": "分析心跳",
+  "docker_client_refresh": "Docker 客戶端更新",
+  "event_cleanup": "事件清理",
+  "upgrade_log_cleanup": "升級日誌清理",
+  "expired_sessions_cleanup": "過期會話清理",
+  "filesystem_watcher": "檔案系統監控器",
+  "vulnerability_risk": "漏洞風險"
 }
