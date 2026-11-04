@@ -1,16 +1,13 @@
 package notification
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"maps"
-	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -34,11 +31,9 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
-	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/notification/children/templates"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/agent"
-	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/logging"
 	"getarcane.dev/arcane/v3/pkg/notifications"
 	"getarcane.dev/arcane/v3/pkg/validation"
@@ -54,7 +49,6 @@ type (
 		apnsSvc         *apns.ApnsService
 		settingsService *settings.SettingsService
 		templates       *templates.Service
-		httpClient      *http.Client
 	}
 
 	NotificationTarget struct {
@@ -167,7 +161,6 @@ func NewNotificationService(p NotificationServiceParams) *NotificationService {
 		apnsSvc:         p.APNSSvc,
 		settingsService: p.SettingsService,
 		templates:       templates.NewService(p.Config.GetAppURL),
-		httpClient:      &http.Client{Timeout: 15 * time.Second},
 	}
 }
 
@@ -203,53 +196,14 @@ func (s *NotificationService) dispatchNotificationToManager(ctx context.Context,
 		return types.NotificationDispatchResponse{}, fmt.Errorf("failed to marshal notification dispatch payload: %w", err)
 	}
 
-	publishViaTunnel := func() error {
-		return agent.PublishEventToManager(ctx, &agent.TunnelEvent{
-			Type:         agent.TunnelEventTypeNotificationDispatch,
-			Title:        string(payload.Kind),
-			MetadataJSON: body,
-		})
+	if publishErr := agent.PublishEventToManager(ctx, &agent.TunnelEvent{
+		Type:         agent.TunnelEventTypeNotificationDispatch,
+		Title:        string(payload.Kind),
+		MetadataJSON: body,
+	}); publishErr != nil {
+		return types.NotificationDispatchResponse{}, fmt.Errorf("failed to dispatch notification over agent tunnel: %w", publishErr)
 	}
-
-	// Tunnel-connected agents often lack MANAGER_API_URL/AGENT_TOKEN, so they dispatch over the tunnel (#3002).
-	agentToken := strings.TrimSpace(s.config.AgentToken)
-	if strings.TrimSpace(httpx.ManagerBaseURL(s.config.ManagerApiUrl)) == "" || agentToken == "" {
-		if publishViaTunnelErr := publishViaTunnel(); publishViaTunnelErr != nil {
-			return types.NotificationDispatchResponse{}, fmt.Errorf("notification dispatch needs either ARCANE_MANAGER_API_URL + ARCANE_AGENT_TOKEN or a connected agent tunnel: %w", publishViaTunnelErr)
-		}
-		return types.NotificationDispatchResponse{Message: "notification dispatched via agent tunnel", Delivered: 1}, nil
-	}
-
-	dispatchURL := strings.TrimRight(httpx.ManagerBaseURL(s.config.ManagerApiUrl), "/") + "/api/notifications/dispatch"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, dispatchURL, bytes.NewReader(body))
-	if err != nil {
-		return types.NotificationDispatchResponse{}, fmt.Errorf("failed to create notification dispatch request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(middleware.HeaderApiKey, agentToken)
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		// An agent configured for HTTP may still hold a healthy agent tunnel, so try it before giving up.
-		if tunnelErr := publishViaTunnel(); tunnelErr == nil {
-			return types.NotificationDispatchResponse{Message: "notification dispatched via agent tunnel", Delivered: 1}, nil
-		}
-		return types.NotificationDispatchResponse{}, fmt.Errorf("failed to dispatch notification to manager: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
-		var apiResponse struct {
-			Data types.NotificationDispatchResponse `json:"data"`
-		}
-		if unmarshalReadErr := json.UnmarshalRead(resp.Body, &apiResponse); unmarshalReadErr != nil {
-			return types.NotificationDispatchResponse{}, fmt.Errorf("failed to decode manager notification dispatch response: %w", unmarshalReadErr)
-		}
-		return apiResponse.Data, nil
-	}
-
-	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
-	return types.NotificationDispatchResponse{}, fmt.Errorf("manager notification dispatch failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(responseBody)))
+	return types.NotificationDispatchResponse{Message: "notification dispatched via agent tunnel", Delivered: 1}, nil
 }
 
 func (s *NotificationService) DispatchNotification(ctx context.Context, accessToken string, payload types.NotificationDispatchRequest) (types.NotificationDispatchResponse, error) {

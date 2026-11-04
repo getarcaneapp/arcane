@@ -3,7 +3,6 @@ package notification
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,6 +25,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/notifications"
 	"getarcane.dev/types/v3"
 )
@@ -164,101 +164,6 @@ func TestNotificationService_DispatchNotification_UnsupportedKindReturnsSentinel
 	unsupportedErr := ErrUnsupportedDispatchKind
 	require.ErrorIs(t, err, unsupportedErr)
 	require.Contains(t, err.Error(), "bogus_kind")
-}
-
-func TestNotificationService_SendImageUpdateNotification_AgentModeDispatchesToManager(t *testing.T) {
-	ctx := t.Context()
-	db := setupNotificationTestDB(t)
-
-	var calls atomic.Int32
-	var dispatched types.NotificationDispatchRequest
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !assert.Equal(t, http.MethodPost, r.Method) {
-			return
-		}
-		if !assert.Equal(t, "/api/notifications/dispatch", r.URL.Path) {
-			return
-		}
-		if !assert.Equal(t, "agent-token", r.Header.Get("X-API-Key")) {
-			return
-		}
-		if !assert.NoError(t, json.UnmarshalRead(r.Body, &dispatched)) {
-			return
-		}
-		calls.Add(1)
-		if !assert.NoError(t, json.MarshalWrite(w, map[string]any{
-			"success": true,
-			"data": types.NotificationDispatchResponse{
-				Message:   "Notification dispatched successfully",
-				Delivered: 2,
-			},
-		})) {
-			return
-		}
-	}))
-	defer server.Close()
-
-	svc := newNotificationTestService(t, db, &config.Config{
-		AppUrl:        "http://localhost:3552",
-		AgentEnabled:  true,
-		AgentToken:    "agent-token",
-		ManagerApiUrl: server.URL,
-	})
-
-	delivered, err := svc.SendImageUpdateNotification(ctx, "nginx:latest", newNotificationTestUpdateInfo(), notifications.NotificationEventImageUpdate)
-	require.NoError(t, err)
-	require.Equal(t, 2, delivered)
-	require.EqualValues(t, 1, calls.Load())
-	require.Equal(t, types.NotificationDispatchKindImageUpdate, dispatched.Kind)
-	require.NotNil(t, dispatched.ImageUpdate)
-	require.Equal(t, "nginx:latest", dispatched.ImageUpdate.ImageRef)
-}
-
-func TestNotificationService_SendBatchImageUpdateNotification_AgentModeUsesManagerDeliveredCount(t *testing.T) {
-	ctx := t.Context()
-	db := setupNotificationTestDB(t)
-
-	var dispatched types.NotificationDispatchRequest
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !assert.Equal(t, http.MethodPost, r.Method) {
-			return
-		}
-		if !assert.Equal(t, "/api/notifications/dispatch", r.URL.Path) {
-			return
-		}
-		if !assert.Equal(t, "agent-token", r.Header.Get("X-API-Key")) {
-			return
-		}
-		if !assert.NoError(t, json.UnmarshalRead(r.Body, &dispatched)) {
-			return
-		}
-		if !assert.NoError(t, json.MarshalWrite(w, map[string]any{
-			"success": true,
-			"data": types.NotificationDispatchResponse{
-				Message:   "Notification dispatched successfully",
-				Delivered: 0,
-			},
-		})) {
-			return
-		}
-	}))
-	defer server.Close()
-
-	svc := newNotificationTestService(t, db, &config.Config{
-		AppUrl:        "http://localhost:3552",
-		AgentEnabled:  true,
-		AgentToken:    "agent-token",
-		ManagerApiUrl: server.URL,
-	})
-
-	delivered, err := svc.SendBatchImageUpdateNotification(ctx, map[string]*types.ImageUpdateResponse{
-		"nginx:latest": newNotificationTestUpdateInfo(),
-	})
-	require.NoError(t, err)
-	require.Equal(t, 0, delivered)
-	require.Equal(t, types.NotificationDispatchKindBatchImageUpdate, dispatched.Kind)
-	require.NotNil(t, dispatched.BatchImageUpdate)
-	require.Contains(t, dispatched.BatchImageUpdate.Updates, "nginx:latest")
 }
 
 func TestNotificationService_SendImageUpdateNotification_AgentModeRequiresUpdateInfo(t *testing.T) {
@@ -745,13 +650,11 @@ func TestNotificationService_DispatchNotificationForEnvironment_ResolvesTunnelSe
 	require.ErrorIs(t, err, ErrUnsupportedDispatchKind)
 }
 
-func TestNotificationService_AgentDispatchWithoutHTTPConfigFallsBackToTunnel(t *testing.T) {
+func TestNotificationService_AgentDispatchRequiresTunnel(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
 	svc := newNotificationTestService(t, db, &config.Config{AgentEnabled: true})
 
-	// No MANAGER_API_URL/AGENT_TOKEN and no active tunnel: the error must point
-	// at both options instead of only the HTTP env vars (#3002).
 	_, err := svc.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
 		Kind: types.NotificationDispatchKindImageUpdate,
 		ImageUpdate: &types.NotificationDispatchImageUpdate{
@@ -759,25 +662,5 @@ func TestNotificationService_AgentDispatchWithoutHTTPConfigFallsBackToTunnel(t *
 			UpdateInfo: *newNotificationTestUpdateInfo(),
 		},
 	})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "connected agent tunnel")
-}
-
-func TestNotificationService_AgentDispatchHTTPFailureFallsBackToTunnel(t *testing.T) {
-	ctx := t.Context()
-	db := setupNotificationTestDB(t)
-	cfg := &config.Config{AgentEnabled: true, ManagerApiUrl: "http://127.0.0.1:0", AgentToken: "token"}
-	svc := newNotificationTestService(t, db, cfg)
-
-	// HTTP dispatch fails and no tunnel is connected either: the fallback must
-	// not mask the HTTP transport error.
-	_, err := svc.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
-		Kind: types.NotificationDispatchKindImageUpdate,
-		ImageUpdate: &types.NotificationDispatchImageUpdate{
-			ImageRef:   "nginx:latest",
-			UpdateInfo: *newNotificationTestUpdateInfo(),
-		},
-	})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to dispatch notification to manager")
+	require.ErrorIs(t, err, agent.ErrNoActiveAgentTunnel)
 }
