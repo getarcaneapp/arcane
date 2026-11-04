@@ -566,8 +566,22 @@ func TestMigration104_AddsAgentEnrollmentToken(t *testing.T) {
 	assert.False(t, maxUses.Valid, "max uses defaults to unlimited")
 	assert.False(t, environmentID.Valid)
 
+	hasRequestHashColumn := func() bool {
+		var count int
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('environments') WHERE name = 'enrollment_request_hash'`).Scan(&count))
+		return count == 1
+	}
+	assert.True(t, hasRequestHashColumn())
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO environments (id, name, api_url, status, enabled) VALUES ('e1', 'one', 'agent://e1', 'pending', true), ('e2', 'two', 'agent://e2', 'pending', true)`)
+	require.NoError(t, err, "environments without an enrollment request are not limited by the request index")
+	_, err = rawDB.ExecContext(ctx, `UPDATE environments SET enrollment_request_hash = 'request' WHERE id = 'e1'`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `UPDATE environments SET enrollment_request_hash = 'request' WHERE id = 'e2'`)
+	require.Error(t, err, "an enrollment request belongs to at most one environment")
+
 	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 103))
 	assert.False(t, hasTable())
+	assert.False(t, hasRequestHashColumn())
 }
 
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {

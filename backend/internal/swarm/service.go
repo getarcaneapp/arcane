@@ -61,6 +61,12 @@ type (
 		secrets  *secrets.Service
 	}
 
+	EnrollNodeAgentParams struct {
+		EnrollmentRequestHash *string
+		ParentEnvironmentID   string
+		NodeID                string
+	}
+
 	SwarmServiceParams struct {
 		fx.In
 
@@ -135,8 +141,12 @@ func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, re
 	return s.stacks.DeployStack(ctx, environmentID, req)
 }
 
-func (s *SwarmService) EnrollNodeAgent(ctx context.Context, parentEnvironmentID, nodeID string) (*types.AgentEnrollResponse, error) {
-	return s.nodes.EnrollNodeAgent(ctx, parentEnvironmentID, nodeID)
+func (s *SwarmService) EnrollNodeAgent(ctx context.Context, p EnrollNodeAgentParams) (*types.AgentEnrollResponse, error) {
+	return s.nodes.EnrollNodeAgent(ctx, nodes.EnrollNodeAgentParams{
+		ParentEnvironmentID:   p.ParentEnvironmentID,
+		NodeID:                p.NodeID,
+		EnrollmentRequestHash: p.EnrollmentRequestHash,
+	})
 }
 
 func (s *SwarmService) FindClusterManagerEnvironment(ctx context.Context, clusterID string) (mo.Option[string], error) {
@@ -175,7 +185,8 @@ func (s *SwarmService) FindClusterManagerEnvironment(ctx context.Context, cluste
 		return mo.None[string](), waitErr
 	}
 	if index := slices.Index(clusterIDs, clusterID); index >= 0 {
-		return mo.Some(cmp.Or(kit.FromPtr(remotes[index].ParentEnvironmentID), remotes[index].ID)), nil
+		parentID := kit.FromPtr(remotes[index].ParentEnvironmentID)
+		return mo.Some(kit.Ternary(parentID == types.LocalDockerEnvironmentID || s.tunnels.Active(parentID).IsPresent(), parentID, remotes[index].ID)), nil
 	}
 	if probeErr := errors.Join(probeErrs...); probeErr != nil {
 		slog.WarnContext(ctx, "Could not reach every environment while matching a swarm cluster", "clusterId", clusterID, "error", probeErr)

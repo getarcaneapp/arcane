@@ -314,7 +314,10 @@ func TestEnrollmentService_BoundTokenEnrollsIntoItsEnvironment(t *testing.T) {
 
 	enrolled, err := h.service.Enroll(ctx, EnrollParams{
 		EnrollmentToken: deployment.EnrollmentToken,
-		Request:         types.AgentEnrollRequest{Hostname: "prod-host"},
+		Request: types.AgentEnrollRequest{
+			Hostname:  "prod-host",
+			RequestID: "request-prod",
+		},
 	})
 	require.NoError(t, err)
 	assert.Equal(t, env.ID, enrolled.EnvironmentID)
@@ -328,19 +331,30 @@ func TestEnrollmentService_BoundTokenEnrollsIntoItsEnvironment(t *testing.T) {
 
 	retried, err := h.service.Enroll(ctx, EnrollParams{
 		EnrollmentToken: deployment.EnrollmentToken,
-		Request:         types.AgentEnrollRequest{Hostname: "prod-host"},
+		Request: types.AgentEnrollRequest{
+			Hostname:  "prod-host",
+			RequestID: "request-prod",
+		},
 	})
-	require.NoError(t, err, "a lost enrollment reply can be retried until the agent connects")
+	require.NoError(t, err, "a lost enrollment reply is recovered with the same request ID")
 	assert.Equal(t, enrolled, retried)
+	assert.Equal(t, 1, h.token(t, func(token types.EnrollmentToken) bool { return kit.FromPtr(token.EnvironmentID) == env.ID }).UseCount)
 
-	require.NoError(t, h.environment.GetDB().WithContext(ctx).Model(&environment.Environment{}).
-		Where("id = ?", env.ID).
-		Update("status", string(environment.EnvironmentStatusOnline)).Error)
-	_, err = h.service.Enroll(ctx, EnrollParams{
-		EnrollmentToken: deployment.EnrollmentToken,
-		Request:         types.AgentEnrollRequest{Hostname: "other-host"},
-	})
-	require.ErrorIs(t, err, common.ErrUnauthorized, "a deployment token is single-use once its agent connected")
+	for _, requestID := range []string{"", "request-other"} {
+		stolen, stealErr := h.service.Enroll(ctx, EnrollParams{
+			EnrollmentToken: deployment.EnrollmentToken,
+			Request: types.AgentEnrollRequest{
+				Hostname:  "other-host",
+				RequestID: requestID,
+			},
+		})
+		require.ErrorIs(t, stealErr, common.ErrUnauthorized, "a spent deployment token yields no key without the enrollment's request ID")
+		assert.Nil(t, stolen)
+	}
+	pending, err := h.environment.GetEnvironmentByID(ctx, env.ID)
+	require.NoError(t, err)
+	assert.Equal(t, string(environment.EnvironmentStatusPending), pending.Status)
+	assert.Equal(t, enrolled.Token, kit.FromPtr(pending.AccessToken))
 
 	again, err := h.environment.MintDeploymentSnippets(ctx, env.ID, agentCfg)
 	require.NoError(t, err)
@@ -351,6 +365,113 @@ func TestEnrollmentService_BoundTokenEnrollsIntoItsEnvironment(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, env.ID, rotated.EnvironmentID)
 	assert.NotEqual(t, enrolled.Token, rotated.Token, "re-enrolling a bound environment rotates its API key")
+
+	_, err = h.service.Enroll(ctx, EnrollParams{
+		EnrollmentToken: again.EnrollmentToken,
+		Request: types.AgentEnrollRequest{
+			Hostname:  "prod-host",
+			RequestID: "request-prod",
+		},
+	})
+	require.ErrorIs(t, err, common.ErrUnauthorized, "a later enrollment replaces the recorded request of the environment")
+}
+
+func TestEnrollmentService_RequestIDRecoversLostUnboundEnrollment(t *testing.T) {
+	ctx := t.Context()
+	h := newEnrollmentTestHarness(t)
+	limited := h.createToken(t, new(1))
+	request := types.AgentEnrollRequest{
+		Hostname:  "host-1",
+		RequestID: "request-limited",
+	}
+
+	enrolled, err := h.service.Enroll(ctx, EnrollParams{
+		EnrollmentToken: limited.Token,
+		Request:         request,
+	})
+	require.NoError(t, err)
+	retried, err := h.service.Enroll(ctx, EnrollParams{
+		EnrollmentToken: limited.Token,
+		Request:         request,
+	})
+	require.NoError(t, err, "an exhausted token still recovers its own lost reply")
+	assert.Equal(t, enrolled, retried)
+	assert.Equal(t, 1, h.useCount(t, limited.ID))
+
+	_, err = h.service.Enroll(ctx, EnrollParams{
+		EnrollmentToken: limited.Token,
+		Request: types.AgentEnrollRequest{
+			Hostname:  "host-2",
+			RequestID: "request-other",
+		},
+	})
+	require.ErrorIs(t, err, common.ErrUnauthorized)
+
+	unlimited := h.createToken(t, nil)
+	first, err := h.service.Enroll(ctx, EnrollParams{
+		EnrollmentToken: unlimited.Token,
+		Request: types.AgentEnrollRequest{
+			Hostname:  "host-3",
+			RequestID: "request-unlimited",
+		},
+	})
+	require.NoError(t, err)
+	second, err := h.service.Enroll(ctx, EnrollParams{
+		EnrollmentToken: unlimited.Token,
+		Request: types.AgentEnrollRequest{
+			Hostname:  "host-3",
+			RequestID: "request-unlimited",
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, first, second)
+	assert.Equal(t, 1, h.useCount(t, unlimited.ID))
+
+	environments, err := h.environment.ListActiveRemoteEnvironments(ctx)
+	require.NoError(t, err)
+	assert.Len(t, environments, 2, "retried requests create no second environment")
+}
+
+func TestEnrollmentService_RequestIDDoesNotCrossBoundTokens(t *testing.T) {
+	ctx := t.Context()
+	h := newEnrollmentTestHarness(t)
+	agentCfg := agent.NewMTLS(agent.MTLSConfig{AppURL: "https://arcane.example.com"})
+	mint := func(name string) (*environment.Environment, *environment.DeploymentSnippets) {
+		env, err := h.environment.CreateEnvironment(ctx, &environment.Environment{
+			Name:    name,
+			Status:  string(environment.EnvironmentStatusPending),
+			Enabled: true,
+		}, nil, nil)
+		require.NoError(t, err)
+		deployment, err := h.environment.MintDeploymentSnippets(ctx, env.ID, agentCfg)
+		require.NoError(t, err)
+		return env, deployment
+	}
+	firstEnv, firstDeployment := mint("first")
+	secondEnv, secondDeployment := mint("second")
+	request := types.AgentEnrollRequest{
+		Hostname:  "host",
+		RequestID: "request-shared",
+	}
+
+	first, err := h.service.Enroll(ctx, EnrollParams{
+		EnrollmentToken: firstDeployment.EnrollmentToken,
+		Request:         request,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, firstEnv.ID, first.EnvironmentID)
+
+	second, err := h.service.Enroll(ctx, EnrollParams{
+		EnrollmentToken: secondDeployment.EnrollmentToken,
+		Request:         request,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, secondEnv.ID, second.EnvironmentID, "another bound token enrolls into its own environment")
+	assert.NotEqual(t, first.Token, second.Token)
+
+	kept, err := h.environment.GetEnvironmentByID(ctx, firstEnv.ID)
+	require.NoError(t, err)
+	assert.Equal(t, first.Token, kit.FromPtr(kept.AccessToken))
 }
 
 func TestEnrollmentService_RefundsUseWhenEnrollmentFails(t *testing.T) {
@@ -438,6 +559,52 @@ func TestEnrollmentService_EnrollSwarmNodeOfKnownCluster(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, enrolled.Token, kit.FromPtr(kept.AccessToken))
 	assert.Equal(t, 1, h.useCount(t, created.ID), "a refused enrollment gives its use back")
+}
+
+func TestEnrollmentService_SwarmNodeEnrollsThroughManagerWhenItsParentIsOffline(t *testing.T) {
+	ctx := t.Context()
+	h := newEnrollmentTestHarness(t)
+	now := time.Now()
+	require.NoError(t, h.db.Create(&environment.Environment{
+		BaseModel: database.BaseModel{
+			ID:        "joined-manager",
+			CreatedAt: now,
+			UpdatedAt: &now,
+		},
+		Name:                "joined manager",
+		ApiUrl:              "agent://joined-manager",
+		Status:              string(environment.EnvironmentStatusOnline),
+		Enabled:             true,
+		AccessToken:         new("joined-manager-token"),
+		ParentEnvironmentID: new("offline-parent"),
+		SwarmNodeID:         new("managernode5"),
+	}).Error)
+	startEnrollmentTestAgent(t, h.tunnels, "joined-manager", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/environments/0/swarm/status":
+			_, _ = w.Write([]byte(`{"success":true,"data":{"enabled":true,"clusterId":"cluster5"}}`))
+		case "/api/environments/0/swarm/nodes/workernode5":
+			_, _ = w.Write([]byte(`{"success":true,"data":{"id":"workernode5","hostname":"worker-5","role":"worker","agent":{"state":"none"}}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	created := h.createToken(t, nil)
+
+	enrolled, err := h.service.Enroll(ctx, EnrollParams{
+		EnrollmentToken: created.Token,
+		Request: types.AgentEnrollRequest{
+			Hostname:       "worker-5",
+			SwarmNodeID:    "workernode5",
+			SwarmClusterID: "cluster5",
+		},
+	})
+	require.NoError(t, err)
+	env, err := h.environment.GetEnvironmentByID(ctx, enrolled.EnvironmentID)
+	require.NoError(t, err)
+	assert.Equal(t, "joined-manager", kit.FromPtr(env.ParentEnvironmentID), "an unreachable parent is skipped for the manager that answered")
+	assert.Equal(t, "workernode5", kit.FromPtr(env.SwarmNodeID))
 }
 
 func TestEnrollmentService_SwarmNodeDeploymentTokenEnrollsIntoNodeEnvironment(t *testing.T) {

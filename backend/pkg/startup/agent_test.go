@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -61,10 +62,12 @@ func TestEnrollAgent_RetriesUntilEnrolledAndStoresEncryptedToken(t *testing.T) {
 			!assert.Equal(t, "arc_etkn_enrollment-secret", r.Header.Get(agent.HeaderEnrollmentToken)) ||
 			!assert.Empty(t, r.Header.Get(agent.HeaderAgentToken)) ||
 			!assert.NoError(t, json.UnmarshalRead(r.Body, &request)) ||
+			!assert.NotEmpty(t, request.RequestID) ||
 			!assert.Equal(t, types.AgentEnrollRequest{
 				Hostname:       "host-1",
 				SwarmNodeID:    "node1",
 				SwarmClusterID: "cluster1",
+				RequestID:      request.RequestID,
 			}, request) {
 			http.Error(w, "unexpected enrollment request", http.StatusBadRequest)
 			return
@@ -107,6 +110,58 @@ func TestEnrollAgent_RetriesUntilEnrolledAndStoresEncryptedToken(t *testing.T) {
 	decrypted, err := crypto.Decrypt(stored)
 	require.NoError(t, err)
 	assert.Equal(t, "node-token", decrypted)
+}
+
+func TestEnrollAgent_ReusesStoredRequestIDAcrossRetriesAndRestarts(t *testing.T) {
+	kvService := newEnrollmentTestStore(t)
+
+	var (
+		mu         sync.Mutex
+		requestIDs []string
+		calls      atomic.Int32
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request types.AgentEnrollRequest
+		if !assert.NoError(t, json.UnmarshalRead(r.Body, &request)) {
+			http.Error(w, "unexpected enrollment request", http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		requestIDs = append(requestIDs, request.RequestID)
+		mu.Unlock()
+		if calls.Add(1) == 1 {
+			http.Error(w, "reply lost", http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"environmentId":"env-1","token":"node-token"}}`))
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	opts := EnrollAgentOptions{
+		Config: &agent.Config{
+			MTLS:       agent.NewMTLS(agent.MTLSConfig{ManagerURL: server.URL, AssetsDir: t.TempDir()}),
+			AgentToken: "arc_etkn_enrollment-secret",
+		},
+		Store:        kvService,
+		DescribeHost: describeSwarmHost,
+	}
+	for range 2 {
+		token, err := EnrollAgent(ctx, opts)
+		require.NoError(t, err)
+		assert.Equal(t, "node-token", token)
+	}
+
+	storedID, found, err := kvService.Get(t.Context(), enrollmentRequestIDKey)
+	require.NoError(t, err)
+	require.True(t, found)
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, requestIDs, 3)
+	assert.Len(t, storedID, 43)
+	assert.Equal(t, []string{storedID, storedID, storedID}, requestIDs, "every attempt and restart resends the stored request ID")
 }
 
 func TestEnrollAgent_SendsStoredTokenAndKeepsItWhenEnrollmentFails(t *testing.T) {

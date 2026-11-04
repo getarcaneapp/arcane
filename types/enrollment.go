@@ -37,6 +37,7 @@ type (
 		Hostname       string `json:"hostname" maxLength:"253" doc:"Hostname of the enrolling agent" trim:"true"`
 		SwarmNodeID    string `json:"swarmNodeId,omitempty" required:"false" maxLength:"64" doc:"Swarm node ID when the agent runs on an active swarm node"`
 		SwarmClusterID string `json:"swarmClusterId,omitempty" required:"false" maxLength:"64" doc:"Swarm cluster ID when the agent runs on an active swarm node"`
+		RequestID      string `json:"requestId,omitempty" required:"false" maxLength:"128" doc:"Random ID the agent reuses on every retry of one enrollment so a lost reply can be recovered"`
 	}
 
 	AgentEnrollResponse struct {

@@ -34,13 +34,23 @@ type (
 		DescribeHost func(context.Context) (types.AgentEnrollRequest, error)
 	}
 
+	agentEnrollmentAttempt struct {
+		config       *agent.Config
+		describeHost func(context.Context) (types.AgentEnrollRequest, error)
+		storedToken  string
+		requestID    string
+	}
+
 	enrollmentRejectedError struct {
 		detail string
 		status int
 	}
 )
 
-const enrolledAgentTokenKey = "agent.enrolledToken"
+const (
+	enrolledAgentTokenKey  = "agent.enrolledToken"
+	enrollmentRequestIDKey = "agent.enrollmentRequestId"
+)
 
 func (e *enrollmentRejectedError) Error() string {
 	return fmt.Sprintf("enrollment failed with status %d: %s", e.status, e.detail)
@@ -51,9 +61,15 @@ func EnrollAgent(ctx context.Context, opts EnrollAgentOptions) (string, error) {
 		return opts.Config.AgentToken, nil
 	}
 	stored := loadEnrolledAgentToken(ctx, opts.Store)
+	requestID := loadEnrollmentRequestID(ctx, opts.Store)
 
 	token, err := backoff.Retry(ctx, func() (string, error) {
-		token, err := requestAgentEnrollment(ctx, opts.Config, stored, opts.DescribeHost)
+		token, err := requestAgentEnrollment(ctx, agentEnrollmentAttempt{
+			config:       opts.Config,
+			storedToken:  stored,
+			requestID:    requestID,
+			describeHost: opts.DescribeHost,
+		})
 		if rejected, ok := errors.AsType[*enrollmentRejectedError](err); ok &&
 			rejected.status < http.StatusInternalServerError && rejected.status != http.StatusRequestTimeout && rejected.status != http.StatusTooManyRequests {
 			return "", backoff.Permanent(err)
@@ -151,27 +167,47 @@ func loadEnrolledAgentToken(ctx context.Context, store AgentTokenStore) string {
 	return token
 }
 
-func requestAgentEnrollment(ctx context.Context, cfg *agent.Config, storedToken string, describeHost func(context.Context) (types.AgentEnrollRequest, error)) (string, error) {
-	enrollRequest, err := describeHost(ctx)
+func loadEnrollmentRequestID(ctx context.Context, store AgentTokenStore) string {
+	stored, found, err := store.Get(ctx, enrollmentRequestIDKey)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to load the stored enrollment request ID; starting a new enrollment request", "error", err)
+	}
+	if found && stored != "" {
+		return stored
+	}
+	requestID := kit.RandomString(43)
+	if setErr := store.Set(ctx, enrollmentRequestIDKey, requestID); setErr != nil {
+		slog.WarnContext(ctx, "Failed to store the enrollment request ID; a restart cannot recover a lost enrollment reply", "error", setErr)
+	}
+	return requestID
+}
+
+func requestAgentEnrollment(ctx context.Context, attempt agentEnrollmentAttempt) (string, error) {
+	enrollRequest, err := attempt.describeHost(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to describe the agent host: %w", err)
 	}
-	body, err := json.Marshal(enrollRequest)
+	body, err := json.Marshal(types.AgentEnrollRequest{
+		Hostname:       enrollRequest.Hostname,
+		SwarmNodeID:    enrollRequest.SwarmNodeID,
+		SwarmClusterID: enrollRequest.SwarmClusterID,
+		RequestID:      attempt.requestID,
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to encode enrollment request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, httpx.ManagerBaseURL(cfg.MTLS.ManagerURL)+"/api/agents/enroll", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, httpx.ManagerBaseURL(attempt.config.MTLS.ManagerURL)+"/api/agents/enroll", bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("failed to create enrollment request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(agent.HeaderEnrollmentToken, cfg.AgentToken)
-	if storedToken != "" {
-		req.Header.Set(agent.HeaderAgentToken, storedToken)
+	req.Header.Set(agent.HeaderEnrollmentToken, attempt.config.AgentToken)
+	if attempt.storedToken != "" {
+		req.Header.Set(agent.HeaderAgentToken, attempt.storedToken)
 	}
 
-	httpClient, err := cfg.MTLS.ManagerClient(ctx, agent.ManagerClientOptions{Timeout: 30 * time.Second})
+	httpClient, err := attempt.config.MTLS.ManagerClient(ctx, agent.ManagerClientOptions{Timeout: 30 * time.Second})
 	if err != nil {
 		return "", fmt.Errorf("failed to configure enrollment client: %w", err)
 	}

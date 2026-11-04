@@ -56,6 +56,12 @@ type (
 		Tunnels            *agent.TunnelRegistry
 	}
 
+	EnrollNodeAgentParams struct {
+		EnrollmentRequestHash *string
+		ParentEnvironmentID   string
+		NodeID                string
+	}
+
 	SwarmNodeIdentity struct {
 		SwarmNodeID   string `json:"swarmNodeId"`
 		Hostname      string `json:"hostname"`
@@ -250,13 +256,13 @@ func (s *Service) BindNodeAgent(ctx context.Context, parentEnvironmentID, nodeID
 	return bound, nil
 }
 
-func (s *Service) EnrollNodeAgent(ctx context.Context, parentEnvironmentID, nodeID string) (*types.AgentEnrollResponse, error) {
-	if nodeID == "" || len(nodeID) > 64 || strings.Trim(nodeID, "abcdefghijklmnopqrstuvwxyz0123456789") != "" {
+func (s *Service) EnrollNodeAgent(ctx context.Context, p EnrollNodeAgentParams) (*types.AgentEnrollResponse, error) {
+	if p.NodeID == "" || len(p.NodeID) > 64 || strings.Trim(p.NodeID, "abcdefghijklmnopqrstuvwxyz0123456789") != "" {
 		return nil, common.Classify(common.ErrBadRequest, errors.New("a valid swarm node ID is required"))
 	}
 
-	enrolled, err, _ := s.enrollments.Do(parentEnvironmentID+"/"+nodeID, func() (any, error) {
-		return s.enrollNodeAgent(ctx, parentEnvironmentID, nodeID)
+	enrolled, err, _ := s.enrollments.Do(p.ParentEnvironmentID+"/"+p.NodeID, func() (any, error) {
+		return s.enrollNodeAgent(ctx, p)
 	})
 	if err != nil {
 		return nil, err
@@ -264,16 +270,16 @@ func (s *Service) EnrollNodeAgent(ctx context.Context, parentEnvironmentID, node
 	return enrolled.(*types.AgentEnrollResponse), nil
 }
 
-func (s *Service) enrollNodeAgent(ctx context.Context, parentEnvironmentID, nodeID string) (*types.AgentEnrollResponse, error) {
-	node, err := s.inspectNode(ctx, parentEnvironmentID, nodeID)
+func (s *Service) enrollNodeAgent(ctx context.Context, p EnrollNodeAgentParams) (*types.AgentEnrollResponse, error) {
+	node, err := s.inspectNode(ctx, p.ParentEnvironmentID, p.NodeID)
 	if err != nil {
 		return nil, err
 	}
-	if node.ID != nodeID {
+	if node.ID != p.NodeID {
 		return nil, common.Classify(common.ErrBadRequest, errors.New("the full swarm node ID is required"))
 	}
 
-	agentEnvs, err := s.environmentService.ListSwarmNodeAgentEnvironments(ctx, parentEnvironmentID)
+	agentEnvs, err := s.environmentService.ListSwarmNodeAgentEnvironments(ctx, p.ParentEnvironmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -287,28 +293,31 @@ func (s *Service) enrollNodeAgent(ctx context.Context, parentEnvironmentID, node
 	agentEnvs = slices.DeleteFunc(agentEnvs, func(bound environment.Environment) bool {
 		return strings.TrimSpace(kit.FromPtr(bound.SwarmNodeID)) != node.ID
 	})
-	coverage, err := s.buildNodeAgentCoverage(ctx, parentEnvironmentID, agentEnvs, liveCandidateEnvs)
+	coverage, err := s.buildNodeAgentCoverage(ctx, p.ParentEnvironmentID, agentEnvs, liveCandidateEnvs)
 	if err != nil {
 		return nil, err
 	}
-	s.applyNodeAgentCoverage(parentEnvironmentID, node, coverage)
+	nodeEnvironments, err := s.environmentService.CountSwarmNodeEnvironments(ctx, node.ID)
+	if err != nil {
+		return nil, err
+	}
+	s.applyNodeAgentCoverage(p.ParentEnvironmentID, node, coverage)
 	switch {
 	case node.Agent.State == types.NodeAgentStateConnected, node.Agent.State == types.NodeAgentStateMismatched:
 		return nil, common.Classify(common.ErrConflict, errors.New("this swarm node is already covered by a connected Arcane agent"))
 	case node.Agent.State == types.NodeAgentStateAmbiguous, len(node.Agent.Candidates) > 0:
 		return nil, common.Classify(common.ErrConflict, errors.New("this swarm node is already covered by an unbound Arcane agent; reconcile node agents to bind it"))
-	case len(agentEnvs) > 0, slices.ContainsFunc(candidateEnvs, func(candidate environment.Environment) bool {
-		return strings.TrimSpace(kit.FromPtr(candidate.SwarmNodeID)) == node.ID
-	}):
+	case nodeEnvironments > 0:
 		return nil, common.Classify(common.ErrConflict, errors.New("this swarm node already has an Arcane environment; enroll it with that environment's enrollment token"))
 	}
 
 	env, err := s.environmentService.EnsureSwarmNodeAgentEnvironment(ctx, environment.SwarmNodeAgentEnvironmentParams{
-		ParentEnvironmentID: parentEnvironmentID,
-		NodeID:              node.ID,
-		Hostname:            node.Hostname,
-		UserID:              types.SystemUser.ID,
-		Username:            types.SystemUser.Username,
+		ParentEnvironmentID:   p.ParentEnvironmentID,
+		NodeID:                node.ID,
+		Hostname:              node.Hostname,
+		UserID:                types.SystemUser.ID,
+		Username:              types.SystemUser.Username,
+		EnrollmentRequestHash: p.EnrollmentRequestHash,
 	})
 	if err != nil {
 		return nil, err

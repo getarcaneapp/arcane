@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS enrollment_tokens (
     updated_at      DATETIME
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollment_tokens_environment_id ON enrollment_tokens(environment_id) WHERE environment_id IS NOT NULL;
+ALTER TABLE environments ADD COLUMN enrollment_request_hash TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_environments_enrollment_request_hash ON environments(enrollment_request_hash) WHERE enrollment_request_hash IS NOT NULL;
 `
 	v104PostgresUp = `
 CREATE TABLE IF NOT EXISTS enrollment_tokens (
@@ -34,8 +36,12 @@ CREATE TABLE IF NOT EXISTS enrollment_tokens (
     updated_at timestamp with time zone
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollment_tokens_environment_id ON enrollment_tokens(environment_id) WHERE environment_id IS NOT NULL;
+ALTER TABLE environments ADD COLUMN IF NOT EXISTS enrollment_request_hash text;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_environments_enrollment_request_hash ON environments(enrollment_request_hash) WHERE enrollment_request_hash IS NOT NULL;
 `
 	v104Down = `
+DROP INDEX IF EXISTS idx_environments_enrollment_request_hash;
+ALTER TABLE environments DROP COLUMN enrollment_request_hash;
 DROP TABLE IF EXISTS enrollment_tokens;
 `
 )

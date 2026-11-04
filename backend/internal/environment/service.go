@@ -125,11 +125,17 @@ type (
 	}
 
 	SwarmNodeAgentEnvironmentParams struct {
-		ParentEnvironmentID string
-		NodeID              string
-		Hostname            string
-		UserID              string
-		Username            string
+		EnrollmentRequestHash *string
+		ParentEnvironmentID   string
+		NodeID                string
+		Hostname              string
+		UserID                string
+		Username              string
+	}
+
+	EnrollAgentEnvironmentParams struct {
+		EnrollmentRequestHash *string
+		Hostname              string
 	}
 
 	CreateEnrollmentTokenParams struct {
@@ -476,15 +482,16 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, env *Environ
 		Name:   env.Name,
 		ApiUrl: kit.Ternary(apiURLTaken > 0, apiURL+"-"+id, apiURL),
 		// Only set status to offline if not already set (e.g., API key flow sets it to pending)
-		Status:              cmp.Or(env.Status, string(EnvironmentStatusOffline)),
-		Enabled:             env.Enabled,
-		Hidden:              env.Hidden,
-		LastSeen:            env.LastSeen,
-		LastAgentTransport:  env.LastAgentTransport,
-		AccessToken:         env.AccessToken,
-		ApiKeyID:            env.ApiKeyID,
-		ParentEnvironmentID: env.ParentEnvironmentID,
-		SwarmNodeID:         env.SwarmNodeID,
+		Status:                cmp.Or(env.Status, string(EnvironmentStatusOffline)),
+		Enabled:               env.Enabled,
+		Hidden:                env.Hidden,
+		LastSeen:              env.LastSeen,
+		LastAgentTransport:    env.LastAgentTransport,
+		AccessToken:           env.AccessToken,
+		ApiKeyID:              env.ApiKeyID,
+		ParentEnvironmentID:   env.ParentEnvironmentID,
+		SwarmNodeID:           env.SwarmNodeID,
+		EnrollmentRequestHash: env.EnrollmentRequestHash,
 	}
 
 	if err := s.db.WithContext(ctx).Create(env).Error; err != nil {
@@ -719,17 +726,18 @@ func (s *EnvironmentService) linkEnvironmentApiKey(ctx context.Context, envID, n
 				CreatedAt: envRecord.CreatedAt,
 				UpdatedAt: new(time.Now()),
 			},
-			Name:                envRecord.Name,
-			ApiUrl:              envRecord.ApiUrl,
-			Status:              string(EnvironmentStatusPending),
-			Enabled:             envRecord.Enabled,
-			Hidden:              envRecord.Hidden,
-			LastSeen:            nil,
-			LastAgentTransport:  envRecord.LastAgentTransport,
-			AccessToken:         &apiKey,
-			ApiKeyID:            &newApiKeyID,
-			ParentEnvironmentID: envRecord.ParentEnvironmentID,
-			SwarmNodeID:         envRecord.SwarmNodeID,
+			Name:                  envRecord.Name,
+			ApiUrl:                envRecord.ApiUrl,
+			Status:                string(EnvironmentStatusPending),
+			Enabled:               envRecord.Enabled,
+			Hidden:                envRecord.Hidden,
+			LastSeen:              nil,
+			LastAgentTransport:    envRecord.LastAgentTransport,
+			AccessToken:           &apiKey,
+			ApiKeyID:              &newApiKeyID,
+			ParentEnvironmentID:   envRecord.ParentEnvironmentID,
+			SwarmNodeID:           envRecord.SwarmNodeID,
+			EnrollmentRequestHash: envRecord.EnrollmentRequestHash,
 		}
 	}
 	s.remoteEnvs.mu.Unlock()
@@ -1534,6 +1542,14 @@ func (s *EnvironmentService) ListSwarmNodeCandidateEnvironments(ctx context.Cont
 	return envs, nil
 }
 
+func (s *EnvironmentService) CountSwarmNodeEnvironments(ctx context.Context, nodeID string) (int64, error) {
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("swarm_node_id = ?", nodeID).Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("failed to count swarm node environments: %w", err)
+	}
+	return count, nil
+}
+
 // BindSwarmNodeEnvironment binds a visible environment to a swarm node, keeping its connection and token.
 func (s *EnvironmentService) BindSwarmNodeEnvironment(
 	ctx context.Context,
@@ -1648,12 +1664,13 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(ctx context.Context
 	}
 
 	created, err := s.CreateEnvironment(ctx, &Environment{
-		Name:                agentName,
-		ApiUrl:              agentURL,
-		Status:              string(EnvironmentStatusPending),
-		Enabled:             true,
-		ParentEnvironmentID: new(params.ParentEnvironmentID),
-		SwarmNodeID:         new(params.NodeID),
+		Name:                  agentName,
+		ApiUrl:                agentURL,
+		Status:                string(EnvironmentStatusPending),
+		Enabled:               true,
+		ParentEnvironmentID:   new(params.ParentEnvironmentID),
+		SwarmNodeID:           new(params.NodeID),
+		EnrollmentRequestHash: params.EnrollmentRequestHash,
 	}, new(params.UserID), new(params.Username))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create swarm node agent environment: %w", err)
@@ -1676,11 +1693,12 @@ func (s *EnvironmentService) UpdateSwarmNodeIdentity(ctx context.Context, envID,
 	return nil
 }
 
-func (s *EnvironmentService) EnrollAgentEnvironment(ctx context.Context, hostname string) (*types.AgentEnrollResponse, error) {
+func (s *EnvironmentService) EnrollAgentEnvironment(ctx context.Context, p EnrollAgentEnvironmentParams) (*types.AgentEnrollResponse, error) {
 	env, err := s.CreateEnvironment(ctx, &Environment{
-		Name:    cmp.Or(strings.TrimSpace(hostname), "Agent"),
-		Status:  string(EnvironmentStatusPending),
-		Enabled: true,
+		Name:                  cmp.Or(strings.TrimSpace(p.Hostname), "Agent"),
+		Status:                string(EnvironmentStatusPending),
+		Enabled:               true,
+		EnrollmentRequestHash: p.EnrollmentRequestHash,
 	}, new(types.SystemUser.ID), new(types.SystemUser.Username))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create enrolled agent environment: %w", err)
@@ -1700,6 +1718,26 @@ func (s *EnvironmentService) EnrollAgentEnvironment(ctx context.Context, hostnam
 		EnvironmentID: env.ID,
 		Token:         apiKey,
 	}, nil
+}
+
+func (s *EnvironmentService) FindEnrollmentRequestEnvironment(ctx context.Context, requestHash string) (mo.Option[Environment], error) {
+	var env Environment
+	err := s.db.WithContext(ctx).Where("enrollment_request_hash = ?", requestHash).First(&env).Error
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return mo.None[Environment](), nil
+	case err != nil:
+		return mo.None[Environment](), fmt.Errorf("failed to find the environment of an enrollment request: %w", err)
+	}
+	return mo.Some(env), nil
+}
+
+func (s *EnvironmentService) SetEnrollmentRequestHash(ctx context.Context, envID string, requestHash *string) error {
+	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", envID).Update("enrollment_request_hash", requestHash).Error; err != nil {
+		return fmt.Errorf("failed to record the enrollment request of an environment: %w", err)
+	}
+	s.invalidateEnvironmentCache(envID)
+	return nil
 }
 
 func (s *EnvironmentService) ListEnrollmentTokens(ctx context.Context) ([]types.EnrollmentToken, error) {

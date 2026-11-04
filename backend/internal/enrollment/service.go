@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"time"
 
 	"go.uber.org/fx"
 
@@ -52,8 +51,6 @@ type (
 	}
 )
 
-const lostEnrollmentReplyWindow = 10 * time.Minute
-
 var (
 	errMTLSEnrollUnavailable = common.Classify(common.ErrNotFound, agent.ErrMTLSEnrollUnavailable)
 	errAgentTokenRequired    = common.Classify(common.ErrUnauthorized, errors.New("agent token required"))
@@ -89,18 +86,17 @@ func (s *EnrollmentService) Enroll(ctx context.Context, p EnrollParams) (enrolle
 		}, nil
 	}
 
-	if token.EnvironmentID != nil && token.MaxUses != nil && token.UseCount >= *token.MaxUses &&
-		time.Since(kit.FromPtr(token.LastUsedAt)) < lostEnrollmentReplyWindow {
-		bound, getErr := s.environmentService.GetEnvironmentByID(ctx, *token.EnvironmentID)
-		if getErr != nil {
-			return nil, getErr
-		}
-		if bound.Status == string(environment.EnvironmentStatusPending) && kit.FromPtr(bound.AccessToken) != "" {
-			return &types.AgentEnrollResponse{
-				EnvironmentID: bound.ID,
-				Token:         kit.FromPtr(bound.AccessToken),
-			}, nil
-		}
+	requestHash := kit.SHA256Hex(p.Request.RequestID)
+	recorded, err := s.environmentService.FindEnrollmentRequestEnvironment(ctx, requestHash)
+	if err != nil {
+		return nil, err
+	}
+	if env, ok := recorded.Get(); ok && env.Enabled && kit.FromPtr(env.AccessToken) != "" &&
+		slices.Contains([]string{"", env.ID}, kit.FromPtr(token.EnvironmentID)) {
+		return &types.AgentEnrollResponse{
+			EnvironmentID: env.ID,
+			Token:         kit.FromPtr(env.AccessToken),
+		}, nil
 	}
 
 	if consumeErr := s.environmentService.ConsumeEnrollmentToken(ctx, token.ID); consumeErr != nil {
@@ -115,6 +111,13 @@ func (s *EnrollmentService) Enroll(ctx context.Context, p EnrollParams) (enrolle
 		}
 	}()
 
+	if env, ok := recorded.Get(); ok {
+		if clearErr := s.environmentService.SetEnrollmentRequestHash(ctx, env.ID, nil); clearErr != nil {
+			return nil, clearErr
+		}
+	}
+	stamp := kit.Ternary(p.Request.RequestID != "", new(requestHash), nil)
+
 	if token.EnvironmentID != nil {
 		env, getErr := s.environmentService.GetEnvironmentByID(ctx, *token.EnvironmentID)
 		if getErr != nil {
@@ -123,6 +126,9 @@ func (s *EnrollmentService) Enroll(ctx context.Context, p EnrollParams) (enrolle
 		apiKey, rotateErr := s.environmentService.RegenerateEnvironmentApiKey(ctx, env, types.SystemUser.ID, types.SystemUser.Username)
 		if rotateErr != nil {
 			return nil, rotateErr
+		}
+		if stampErr := s.environmentService.SetEnrollmentRequestHash(ctx, env.ID, stamp); stampErr != nil {
+			return nil, stampErr
 		}
 		return &types.AgentEnrollResponse{
 			EnvironmentID: env.ID,
@@ -136,10 +142,17 @@ func (s *EnrollmentService) Enroll(ctx context.Context, p EnrollParams) (enrolle
 			return nil, findErr
 		}
 		if parentEnvironmentID, ok := parent.Get(); ok {
-			return s.swarmService.EnrollNodeAgent(ctx, parentEnvironmentID, p.Request.SwarmNodeID)
+			return s.swarmService.EnrollNodeAgent(ctx, swarm.EnrollNodeAgentParams{
+				ParentEnvironmentID:   parentEnvironmentID,
+				NodeID:                p.Request.SwarmNodeID,
+				EnrollmentRequestHash: stamp,
+			})
 		}
 	}
-	return s.environmentService.EnrollAgentEnvironment(ctx, p.Request.Hostname)
+	return s.environmentService.EnrollAgentEnvironment(ctx, environment.EnrollAgentEnvironmentParams{
+		Hostname:              p.Request.Hostname,
+		EnrollmentRequestHash: stamp,
+	})
 }
 
 func (s *EnrollmentService) EnrollMTLS(ctx context.Context, p EnrollMTLSParams) ([]agent.GeneratedMTLSFile, error) {
