@@ -92,7 +92,8 @@ func (s *EnrollmentService) Enroll(ctx context.Context, p EnrollParams) (enrolle
 		return nil, err
 	}
 	if env, ok := recorded.Get(); ok && env.Enabled && kit.FromPtr(env.AccessToken) != "" &&
-		slices.Contains([]string{"", env.ID}, kit.FromPtr(token.EnvironmentID)) {
+		slices.Contains([]string{"", env.ID}, kit.FromPtr(token.EnvironmentID)) &&
+		slices.Contains([]string{"", p.Request.SwarmNodeID}, strings.TrimSpace(kit.FromPtr(env.SwarmNodeID))) {
 		return &types.AgentEnrollResponse{
 			EnvironmentID: env.ID,
 			Token:         kit.FromPtr(env.AccessToken),
