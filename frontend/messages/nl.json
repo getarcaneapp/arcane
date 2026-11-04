@@ -4394,5 +4394,13 @@
   "api_reference": "API Referentie",
   "api_key_page_description_suffix": "voor meer informatie over het gebruik.",
   "github_token": "GitHub-token",
-  "github_token_description": "Optioneel token dat wordt gebruikt om release-opmerkingen bij afbeeldingen op te halen van GitHub. Verhoogt de API-limiet van 60 naar 5.000 verzoeken per uur."
+  "github_token_description": "Optioneel token dat wordt gebruikt om release-opmerkingen bij afbeeldingen op te halen van GitHub. Verhoogt de API-limiet van 60 naar 5.000 verzoeken per uur.",
+  "image_auto_patch": "Afbeelding automatisch bijwerken",
+  "analytics_heartbeat": "Analytics Heartbeat",
+  "docker_client_refresh": "Docker-client vernieuwen",
+  "event_cleanup": "Opruimen na het evenement",
+  "upgrade_log_cleanup": "Opschonen van het upgrad logboek",
+  "expired_sessions_cleanup": "Opschonen van verlopen sessies",
+  "filesystem_watcher": "Bestandssysteem-monitor",
+  "vulnerability_risk": "Risico op kwetsbaarheid"
 }
