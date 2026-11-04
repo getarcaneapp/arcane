@@ -8,7 +8,6 @@ import (
 
 	"kit.getarcane.app"
 
-	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/middleware"
@@ -17,6 +16,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/swarm/children/secrets"
 	"getarcane.dev/arcane/v3/internal/swarm/children/services"
 	"getarcane.dev/arcane/v3/internal/swarm/children/stacks"
+	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
@@ -26,12 +26,17 @@ type (
 		service     *SwarmService
 		environment *environment.EnvironmentService
 		event       *event.EventService
-		config      *config.Config
+		mtls        *agent.MTLS
 	}
 )
 
-func New(service *SwarmService, environmentService *environment.EnvironmentService, eventService *event.EventService, cfg *config.Config) *Module {
-	return &Module{service: service, environment: environmentService, event: eventService, config: cfg}
+func New(service *SwarmService, environmentService *environment.EnvironmentService, eventService *event.EventService, mtls *agent.MTLS) *Module {
+	return &Module{
+		service:     service,
+		environment: environmentService,
+		event:       eventService,
+		mtls:        mtls,
+	}
 }
 
 func (m *Module) Service() *SwarmService {
@@ -55,7 +60,7 @@ func (m *Module) RegisterRoutes(api huma.API) {
 		Audit:              h.auditSwarmMutation,
 		MapError:           mapSwarmServiceError,
 		EnvironmentService: m.environment,
-		Config:             m.config,
+		MTLS:               m.mtls,
 	}))
 	stacks.RegisterRoutes(api, stacks.NewHandler(service.stacks, h.auditSwarmMutation, mapSwarmServiceError))
 	configs.RegisterRoutes(api, configs.NewHandler(service.configs, h.auditSwarmMutation, mapSwarmServiceError))

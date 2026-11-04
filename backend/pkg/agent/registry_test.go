@@ -81,7 +81,7 @@ func TestTunnelRegistry(t *testing.T) {
 	tunnel := newWebSocketAgentTunnel(envID, conn)
 
 	// Register
-	r.Register(envID, tunnel)
+	registerTestTunnel(t, r, tunnel)
 
 	// Get
 	got, ok := r.Get(envID).Get()
@@ -97,59 +97,35 @@ func TestTunnelRegistry(t *testing.T) {
 	assert.True(t, tunnel.Conn.IsClosed())
 }
 
-func TestTunnelRegistry_RegisterReplace(t *testing.T) {
-	r := NewTunnelRegistry()
-	envID := "env-1"
-
-	conn1 := createTestConn(t)
-	defer func() { _ = conn1.CloseNow() }()
-	tunnel1 := newWebSocketAgentTunnel(envID, conn1)
-	r.Register(envID, tunnel1)
-
-	conn2 := createTestConn(t)
-	defer func() { _ = conn2.CloseNow() }()
-	tunnel2 := newWebSocketAgentTunnel(envID, conn2)
-
-	// Register replacement
-	r.Register(envID, tunnel2)
-
-	// Check replacement
-	got, ok := r.Get(envID).Get()
-	assert.True(t, ok)
-	assert.Equal(t, tunnel2, got)
-
-	// First tunnel should be closed
-	assert.True(t, tunnel1.Conn.IsClosed())
-	assert.False(t, tunnel2.Conn.IsClosed())
-}
-
 func TestTunnelRegistry_RegisterSessionRejectsCompetingAgent(t *testing.T) {
 	r := NewTunnelRegistry()
 	envID := "env-session-reject"
 
 	conn1 := createTestConn(t)
 	defer func() { _ = conn1.CloseNow() }()
-	tunnel1 := newWebSocketAgentTunnel(envID, conn1)
-	tunnel1.AgentInstance = "agent-a"
-	tunnel1.SessionID = "session-a"
+	tunnel1 := NewAgentTunnel(AgentTunnelConfig{
+		Conn:          NewWebSocketTunnelConn(conn1),
+		EnvironmentID: envID,
+		SessionID:     "session-a",
+		AgentInstance: "agent-a",
+	})
 
-	accepted, drainPrevious, reason, err := r.RegisterSession(t.Context(), tunnel1, TunnelStaleTimeout)
+	result, err := r.RegisterSession(t.Context(), tunnel1)
 	require.NoError(t, err)
-	assert.True(t, accepted)
-	assert.False(t, drainPrevious)
-	assert.Empty(t, reason)
+	assert.Equal(t, RegisterResult{Accepted: true}, result)
 
 	conn2 := createTestConn(t)
 	defer func() { _ = conn2.CloseNow() }()
-	tunnel2 := newWebSocketAgentTunnel(envID, conn2)
-	tunnel2.AgentInstance = "agent-b"
-	tunnel2.SessionID = "session-b"
+	tunnel2 := NewAgentTunnel(AgentTunnelConfig{
+		Conn:          NewWebSocketTunnelConn(conn2),
+		EnvironmentID: envID,
+		SessionID:     "session-b",
+		AgentInstance: "agent-b",
+	})
 
-	accepted, drainPrevious, reason, err = r.RegisterSession(t.Context(), tunnel2, TunnelStaleTimeout)
+	result, err = r.RegisterSession(t.Context(), tunnel2)
 	require.NoError(t, err)
-	assert.False(t, accepted)
-	assert.False(t, drainPrevious)
-	assert.Equal(t, "another agent session is already active", reason)
+	assert.Equal(t, RegisterResult{Reason: "another agent session is already active"}, result)
 
 	got, ok := r.Get(envID).Get()
 	assert.True(t, ok)
@@ -163,25 +139,27 @@ func TestTunnelRegistry_RegisterSessionReplacesSameAgentInstance(t *testing.T) {
 
 	conn1 := createTestConn(t)
 	defer func() { _ = conn1.CloseNow() }()
-	tunnel1 := newWebSocketAgentTunnel(envID, conn1)
-	tunnel1.AgentInstance = "agent-a"
-	tunnel1.SessionID = "session-a"
-	accepted, drainPrevious, reason, err := r.RegisterSession(t.Context(), tunnel1, TunnelStaleTimeout)
+	tunnel1 := NewAgentTunnel(AgentTunnelConfig{
+		Conn:          NewWebSocketTunnelConn(conn1),
+		EnvironmentID: envID,
+		SessionID:     "session-a",
+		AgentInstance: "agent-a",
+	})
+	result, err := r.RegisterSession(t.Context(), tunnel1)
 	require.NoError(t, err)
-	assert.True(t, accepted)
-	assert.False(t, drainPrevious)
-	assert.Empty(t, reason)
+	assert.Equal(t, RegisterResult{Accepted: true}, result)
 
 	conn2 := createTestConn(t)
 	defer func() { _ = conn2.CloseNow() }()
-	tunnel2 := newWebSocketAgentTunnel(envID, conn2)
-	tunnel2.AgentInstance = "agent-a"
-	tunnel2.SessionID = "session-b"
-	accepted, drainPrevious, reason, err = r.RegisterSession(t.Context(), tunnel2, TunnelStaleTimeout)
+	tunnel2 := NewAgentTunnel(AgentTunnelConfig{
+		Conn:          NewWebSocketTunnelConn(conn2),
+		EnvironmentID: envID,
+		SessionID:     "session-b",
+		AgentInstance: "agent-a",
+	})
+	result, err = r.RegisterSession(t.Context(), tunnel2)
 	require.NoError(t, err)
-	assert.True(t, accepted)
-	assert.True(t, drainPrevious)
-	assert.Empty(t, reason)
+	assert.Equal(t, RegisterResult{Accepted: true, DrainPrevious: true}, result)
 	assert.True(t, tunnel1.Conn.IsClosed())
 
 	got, ok := r.Get(envID).Get()
@@ -197,11 +175,14 @@ func TestTunnelRegistryPublishesReplacementBeforeClosingPrevious(t *testing.T) {
 		releaseClose: make(chan struct{}),
 		closed:       make(chan struct{}),
 	}
-	previous := NewAgentTunnelWithConn("env-actor-registry", previousConn)
-	previous.AgentInstance = "agent-a"
-	accepted, _, reason, err := registry.RegisterSession(t.Context(), previous, TunnelStaleTimeout)
+	previous := NewAgentTunnel(AgentTunnelConfig{
+		Conn:          previousConn,
+		EnvironmentID: "env-actor-registry",
+		AgentInstance: "agent-a",
+	})
+	result, err := registry.RegisterSession(t.Context(), previous)
 	require.NoError(t, err)
-	require.True(t, accepted, reason)
+	require.True(t, result.Accepted, result.Reason)
 
 	replacementConn := &controlledCloseTunnelConn{
 		closeStarted: make(chan struct{}),
@@ -209,15 +190,18 @@ func TestTunnelRegistryPublishesReplacementBeforeClosingPrevious(t *testing.T) {
 		closed:       make(chan struct{}),
 	}
 	close(replacementConn.releaseClose)
-	replacement := NewAgentTunnelWithConn("env-actor-registry", replacementConn)
-	replacement.AgentInstance = "agent-a"
+	replacement := NewAgentTunnel(AgentTunnelConfig{
+		Conn:          replacementConn,
+		EnvironmentID: "env-actor-registry",
+		AgentInstance: "agent-a",
+	})
 	registered := make(chan bool, 1)
 	go func() {
-		localAccepted, _, _, registerErr := registry.RegisterSession(t.Context(), replacement, TunnelStaleTimeout)
+		localResult, registerErr := registry.RegisterSession(t.Context(), replacement)
 		if !assert.NoError(t, registerErr) {
 			return
 		}
-		registered <- localAccepted
+		registered <- localResult.Accepted
 	}()
 
 	select {
@@ -243,16 +227,17 @@ func TestTunnelRegistryRejectsRegistrationAfterStop(t *testing.T) {
 	defer cancel()
 	require.NoError(t, registry.Stop(stopCtx))
 
-	tunnel := NewAgentTunnelWithConn("env-stopped-registry", &controlledCloseTunnelConn{
-		closeStarted: make(chan struct{}),
-		releaseClose: make(chan struct{}),
-		closed:       make(chan struct{}),
+	tunnel := NewAgentTunnel(AgentTunnelConfig{
+		Conn: &controlledCloseTunnelConn{
+			closeStarted: make(chan struct{}),
+			releaseClose: make(chan struct{}),
+			closed:       make(chan struct{}),
+		},
+		EnvironmentID: "env-stopped-registry",
 	})
-	accepted, drainPrevious, reason, err := registry.RegisterSession(t.Context(), tunnel, TunnelStaleTimeout)
+	result, err := registry.RegisterSession(t.Context(), tunnel)
 	require.Error(t, err)
-	require.False(t, accepted)
-	require.False(t, drainPrevious)
-	require.Empty(t, reason)
+	require.Equal(t, RegisterResult{}, result)
 }
 
 func TestTunnelRegistry_CleanupStale(t *testing.T) {
@@ -268,7 +253,7 @@ func TestTunnelRegistry_CleanupStale(t *testing.T) {
 	tunnel.LastHeartbeat = time.Now().Add(-10 * time.Minute)
 	tunnel.mu.Unlock()
 
-	r.Register(envID, tunnel)
+	registerTestTunnel(t, r, tunnel)
 
 	// Cleanup
 	removed := r.CleanupStale(t.Context(), 5*time.Minute)
@@ -282,30 +267,25 @@ func TestTunnelRegistry_CleanupStale(t *testing.T) {
 
 func TestTunnelRegistry_RecordsSessionHistory(t *testing.T) {
 	registry := NewTunnelRegistry()
-	SetDefaultRegistry(registry)
-	t.Cleanup(func() {
-		ClearDefaultRegistry(registry)
-	})
 	envID := "env-history"
 
 	conn1 := createTestConn(t)
 	defer func() { _ = conn1.CloseNow() }()
 	tunnel1 := newWebSocketAgentTunnel(envID, conn1)
-	accepted, _, _, err := registry.RegisterSession(t.Context(), tunnel1, TunnelStaleTimeout)
+	result, err := registry.RegisterSession(t.Context(), tunnel1)
 	require.NoError(t, err)
-	require.True(t, accepted)
+	require.True(t, result.Accepted)
 
-	history, ok := GetTunnelHistory(envID).Get()
+	history, ok := registry.History(envID).Get()
 	require.True(t, ok)
 	assert.Equal(t, 1, history.Sessions)
 	assert.True(t, history.LastDisconnectAt.IsZero())
 
 	before := time.Now()
 	require.NoError(t, tunnel1.CloseWithReason("agent tunnel keepalive failed"))
-	removed, _ := registry.UnregisterCurrent(t.Context(), envID, tunnel1)
-	require.True(t, removed)
+	require.True(t, registry.UnregisterCurrent(t.Context(), tunnel1))
 
-	history, ok = GetTunnelHistory(envID).Get()
+	history, ok = registry.History(envID).Get()
 	require.True(t, ok)
 	assert.Equal(t, 1, history.Sessions)
 	assert.Equal(t, "agent tunnel keepalive failed", history.LastDisconnectReason)
@@ -313,15 +293,15 @@ func TestTunnelRegistry_RecordsSessionHistory(t *testing.T) {
 
 	conn2 := createTestConn(t)
 	defer func() { _ = conn2.CloseNow() }()
-	accepted, _, _, err = registry.RegisterSession(t.Context(), newWebSocketAgentTunnel(envID, conn2), TunnelStaleTimeout)
+	result, err = registry.RegisterSession(t.Context(), newWebSocketAgentTunnel(envID, conn2))
 	require.NoError(t, err)
-	require.True(t, accepted)
+	require.True(t, result.Accepted)
 
-	history, ok = GetTunnelHistory(envID).Get()
+	history, ok = registry.History(envID).Get()
 	require.True(t, ok)
 	assert.Equal(t, 2, history.Sessions)
 	assert.Equal(t, "agent tunnel keepalive failed", history.LastDisconnectReason)
-	assert.True(t, GetTunnelHistory("env-unknown").IsAbsent())
+	assert.True(t, registry.History("env-unknown").IsAbsent())
 }
 
 func TestTunnelRegistry_RecordsStaleCleanupDisconnect(t *testing.T) {
@@ -331,9 +311,9 @@ func TestTunnelRegistry_RecordsStaleCleanupDisconnect(t *testing.T) {
 	conn := createTestConn(t)
 	defer func() { _ = conn.CloseNow() }()
 	tunnel := newWebSocketAgentTunnel(envID, conn)
-	accepted, _, _, err := registry.RegisterSession(t.Context(), tunnel, TunnelStaleTimeout)
+	result, err := registry.RegisterSession(t.Context(), tunnel)
 	require.NoError(t, err)
-	require.True(t, accepted)
+	require.True(t, result.Accepted)
 
 	tunnel.mu.Lock()
 	tunnel.LastHeartbeat = time.Now().Add(-time.Hour)
@@ -357,7 +337,7 @@ func BenchmarkWaitForActive(b *testing.B) {
 	r := NewTunnelRegistry()
 	conn := createTestConn(b)
 	b.Cleanup(func() { _ = conn.CloseNow() })
-	r.Register("env-1", newWebSocketAgentTunnel("env-1", conn))
+	registerTestTunnel(b, r, newWebSocketAgentTunnel("env-1", conn))
 
 	b.ReportAllocs()
 	for b.Loop() {
@@ -383,10 +363,32 @@ func BenchmarkWaitForActiveReconnect(b *testing.B) {
 	for b.Loop() {
 		_, _, _ = r.tunnels.Remove(b.Context(), "reset benchmark tunnel", "env-1")
 		time.AfterFunc(time.Millisecond, func() {
-			r.Register("env-1", tunnel)
+			_, _ = r.RegisterSession(b.Context(), tunnel)
 		})
 		if !r.WaitForActive(b.Context(), "env-1", DefaultTunnelAcquireTimeout).IsPresent() {
 			b.Fatal("tunnel not active")
 		}
 	}
+}
+
+func TestTunnelRegistryActive(t *testing.T) {
+	tunnels := NewTunnelRegistry()
+	conn := createTestConn(t)
+	defer func() { _ = conn.CloseNow() }()
+	tunnel := newWebSocketAgentTunnel("env-active", conn)
+	registerTestTunnel(t, tunnels, tunnel)
+	defer tunnels.Unregister("env-active")
+
+	assert.True(t, tunnels.Active("env-active").IsPresent())
+	assert.False(t, tunnels.Active("non-existent").IsPresent())
+
+	_ = tunnel.CloseWithReason("")
+	assert.False(t, tunnels.Active("env-active").IsPresent())
+}
+
+func registerTestTunnel(tb testing.TB, registry *TunnelRegistry, tunnel *AgentTunnel) {
+	tb.Helper()
+	result, err := registry.RegisterSession(tb.Context(), tunnel)
+	require.NoError(tb, err)
+	require.True(tb, result.Accepted, result.Reason)
 }

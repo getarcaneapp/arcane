@@ -85,7 +85,13 @@ func setupVariableServiceTest(t *testing.T, environments environment.RemoteProxy
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.UpdateSetting(t.Context(), "projectsDirectory", projectsDir))
 
-	service := NewVariableService(dbWrap, environments, settingsSvc, kv.NewKVService(dbWrap))
+	service := NewVariableService(VariableServiceParams{
+		DB:              dbWrap,
+		Environments:    environments,
+		Tunnels:         agent.NewTunnelRegistry(),
+		SettingsService: settingsSvc,
+		KVService:       kv.NewKVService(dbWrap),
+	})
 	return service, dbWrap, projectsDir
 }
 

@@ -1,24 +1,28 @@
 package agent
 
 import (
-	"cmp"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"maps"
 	"net"
 	"net/http"
 	"strings"
 	"time"
+
+	"kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/pkg/timeouts"
 )
 
 type (
 	RemoteRequest struct {
+		Headers       http.Header
 		EnvironmentID string
 		Method        string
 		Path          string
-		Headers       http.Header
 		Body          []byte
 	}
 
@@ -27,23 +31,6 @@ type (
 		Body       []byte
 		StatusCode int
 	}
-
-	TunnelTransport interface {
-		EnsureAvailable(ctx context.Context, envID string) error
-		Do(ctx context.Context, envID, method, path string, headers http.Header, body []byte) (*RemoteResponse, error)
-	}
-
-	RemoteClientConfig struct {
-		Tunnel         TunnelTransport
-		DefaultTimeout time.Duration
-	}
-
-	RemoteClient struct {
-		tunnel         TunnelTransport
-		defaultTimeout time.Duration
-	}
-
-	registryTunnel struct{}
 
 	TransportError struct {
 		Err error
@@ -59,60 +46,38 @@ type (
 	}
 )
 
+const DefaultTunnelAcquireTimeout = 4 * time.Second
+
 var ErrEnvironmentUnavailable = errors.New("agent is not connected")
 
-func NewRemoteClient(cfg RemoteClientConfig) *RemoteClient {
-	return &RemoteClient{
-		tunnel:         cmp.Or[TunnelTransport](cfg.Tunnel, registryTunnel{}),
-		defaultTimeout: cmp.Or(cfg.DefaultTimeout, timeouts.DefaultAgentProxy),
-	}
-}
-
-func (c *RemoteClient) Do(ctx context.Context, req RemoteRequest) (*RemoteResponse, error) {
-	ctx, cancel := timeouts.WithDefault(ctx, c.defaultTimeout)
+func (r *TunnelRegistry) Do(ctx context.Context, req RemoteRequest) (*RemoteResponse, error) {
+	ctx, cancel := timeouts.WithDefault(ctx, timeouts.DefaultAgentProxy)
 	defer cancel()
 
-	if err := c.tunnel.EnsureAvailable(ctx, req.EnvironmentID); err != nil {
-		return nil, &TransportError{Err: err}
-	}
-	resp, err := c.tunnel.Do(ctx, req.EnvironmentID, req.Method, req.Path, req.Headers.Clone(), req.Body)
-	if err != nil {
-		return nil, &TransportError{Err: err}
-	}
-	return resp, nil
-}
-
-func (registryTunnel) EnsureAvailable(ctx context.Context, envID string) error {
-	if GetRegistry().Active(envID).IsPresent() {
-		return nil
-	}
-	if _, ok := GetRegistry().WaitForActive(ctx, envID, DefaultTunnelAcquireTimeout).Get(); ok {
-		return nil
-	}
-	return ErrEnvironmentUnavailable
-}
-
-func (registryTunnel) Do(ctx context.Context, envID, method, path string, headers http.Header, body []byte) (*RemoteResponse, error) {
-	tunnel, ok := GetRegistry().Get(envID).Get()
+	tunnel, ok := r.WaitForActive(ctx, req.EnvironmentID, DefaultTunnelAcquireTimeout).Get()
 	if !ok {
-		return nil, fmt.Errorf("no active tunnel for environment %s: %w", envID, ErrEnvironmentUnavailable)
+		return nil, &TransportError{Err: ErrEnvironmentUnavailable}
 	}
-	if tunnel.Conn.IsClosed() {
-		return nil, fmt.Errorf("tunnel for environment %s is closed: %w", envID, ErrEnvironmentUnavailable)
-	}
-
-	statusCode, respHeaders, respBody, err := ProxyRequest(ctx, tunnel, method, path, "", headers, body)
+	httpReq, err := http.NewRequestWithContext(ctx, req.Method, MuxAgentBaseURL+req.Path, bytes.NewReader(req.Body))
 	if err != nil {
-		if errors.Is(err, ErrTunnelConnectionClosed) {
-			err = errors.Join(ErrEnvironmentUnavailable, err)
-		}
-		return nil, fmt.Errorf("tunnel request failed: %w", err)
+		return nil, &TransportError{Err: fmt.Errorf("create agent tunnel request: %w", err)}
 	}
-
+	maps.Copy(httpReq.Header, req.Headers.Clone())
+	resp, err := tunnel.HTTPClient.Do(httpReq)
+	if err != nil {
+		return nil, &TransportError{Err: fmt.Errorf("tunnel request failed: %w",
+			kit.Ternary(errors.Is(err, ErrTunnelConnectionClosed), errors.Join(ErrEnvironmentUnavailable, err), err))}
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, &TransportError{Err: fmt.Errorf("read agent tunnel response: %w",
+			kit.Ternary(errors.Is(err, ErrTunnelConnectionClosed), errors.Join(ErrEnvironmentUnavailable, err), err))}
+	}
 	return &RemoteResponse{
-		StatusCode: statusCode,
-		Body:       respBody,
-		Headers:    respHeaders,
+		Headers:    flattenResponseHeaders(resp.Header),
+		Body:       body,
+		StatusCode: resp.StatusCode,
 	}, nil
 }
 

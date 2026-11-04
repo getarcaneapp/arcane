@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
+	mobyswarm "github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 	"github.com/subosito/gotenv"
 	"go.opentelemetry.io/contrib/bridges/otelslog"
@@ -52,6 +52,7 @@ import (
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
 	"getarcane.dev/arcane/v3/pkg/startup"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -74,8 +75,8 @@ type (
 		Role        *role.RoleService
 		User        *user.UserService
 		ApiKey      *apikey.ApiKeyService
-		Swarm       *swarm.SwarmService
 		KV          *kv.KVService
+		Docker      *docker.DockerClientService
 	}
 )
 
@@ -250,7 +251,10 @@ func applicationOptions(
 				var stop func(context.Context) error
 				lc.Append(fx.Hook{
 					OnStart: func(context.Context) error {
-						tunnelStop, err := agent.StartTunnelClient(appCtx, buildAgentRuntimeConfig(cfg, cfg.AgentToken, agentHostInfo(appCtx, dockerService)), router)
+						tunnelStop, err := agent.NewTunnelClient(agent.TunnelClientConfig{
+							Config:  buildAgentRuntimeConfig(cfg, cfg.AgentToken, agentHostInfo(appCtx, dockerService)),
+							Handler: router,
+						}).Start(appCtx)
 						if err != nil {
 							slog.ErrorContext(appCtx, "Failed to start agent tunnel client", "error", err)
 							return nil
@@ -347,7 +351,7 @@ func applicationOptions(
 	)
 }
 
-func initializeStartupState(p initializeStartupStateParams) {
+func initializeStartupState(p initializeStartupStateParams) error {
 	p.Activity.Changes.Subscribe(func(environmentID string) {
 		p.Event.PublishChange(environmentID, "activity")
 	})
@@ -356,7 +360,6 @@ func initializeStartupState(p initializeStartupStateParams) {
 	startup.CleanupOrphanedVolumeHelpers(helperCtx, p.Volume.CleanupOrphanedVolumeHelpers)
 	cancelHelpers()
 
-	// Startup repairs are best-effort: log each failure and continue.
 	for _, task := range []struct {
 		run  func(context.Context) error
 		name string
@@ -393,8 +396,6 @@ func initializeStartupState(p initializeStartupStateParams) {
 	startup.InitializeNonAgentFeatures(p.AppCtx, p.Config.AgentEnabled,
 		p.Role.EnsureBuiltInRoles,
 		func(ctx context.Context) error {
-			// Backfill legacy users.roles first so CreateDefaultAdmin's zero-global-admin gate sees them;
-			// the role startup tasks below repeat it for agent mode and retries.
 			if err := p.Role.BackfillLegacyRoleAssignments(ctx); err != nil {
 				slog.WarnContext(ctx, "Failed to backfill legacy role assignments before admin bootstrap", "error", err)
 			}
@@ -413,7 +414,6 @@ func initializeStartupState(p initializeStartupStateParams) {
 	if err := p.Role.EnsureBuiltInRoles(p.AppCtx); err != nil {
 		slog.ErrorContext(p.AppCtx, "Failed to reconcile built-in roles", "error", err)
 	}
-	// Runs after EnsureBuiltInRoles seeds role IDs and before the API key backfill and admin guard read assignments.
 	if err := p.Role.BackfillLegacyRoleAssignments(p.AppCtx); err != nil {
 		slog.ErrorContext(p.AppCtx, "Failed to backfill legacy users.roles into user_role_assignments", "error", err)
 	}
@@ -433,54 +433,31 @@ func initializeStartupState(p initializeStartupStateParams) {
 		if config.DirectAgentRequested(os.Getenv) {
 			slog.WarnContext(p.AppCtx, "ARCANE_AGENT_MODE is ignored", "guidance", config.ErrDirectAgentRemoved.Error())
 		}
-		if p.Config.AgentToken == "" {
-			p.Config.AgentToken = enrollSwarmAgent(p.AppCtx, p.Config, p.KV, p.Swarm.LocalNodeID)
+		describeHost := func(ctx context.Context) (types.AgentEnrollRequest, error) {
+			result, err := p.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
+				return dockerClient.Info(ctx, client.InfoOptions{})
+			})
+			if err != nil {
+				return types.AgentEnrollRequest{}, fmt.Errorf("failed to read Docker info: %w", err)
+			}
+			return types.AgentEnrollRequest{
+				Hostname:       result.Info.Name,
+				SwarmNodeID:    kit.Ternary(result.Info.Swarm.LocalNodeState == mobyswarm.LocalNodeStateActive, result.Info.Swarm.NodeID, ""),
+				SwarmClusterID: kit.Ternary(result.Info.Swarm.LocalNodeState == mobyswarm.LocalNodeStateActive, kit.FromPtr(result.Info.Swarm.Cluster).ID, ""),
+			}, nil
 		}
-		if err := handleAgentBootstrapPairing(p.AppCtx, p.Config); err != nil {
-			slog.WarnContext(p.AppCtx, "Failed to auto-pair agent with manager", "error", err)
+		agentToken, err := startup.EnrollAgent(p.AppCtx, startup.EnrollAgentOptions{
+			Config:       buildAgentRuntimeConfig(p.Config, p.Config.AgentToken, agent.AgentHostInfo{}),
+			Store:        p.KV,
+			DescribeHost: describeHost,
+		})
+		if err != nil {
+			return err
+		}
+		p.Config.AgentToken = agentToken
+		if pairErr := startup.PairAgent(p.AppCtx, buildAgentRuntimeConfig(p.Config, p.Config.AgentToken, agent.AgentHostInfo{})); pairErr != nil {
+			slog.WarnContext(p.AppCtx, "Failed to auto-pair agent with manager", "error", pairErr)
 		}
 	}
-}
-
-func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config) error {
-	slog.InfoContext(ctx, "Agent mode detected with token, attempting auto-pairing", "managerUrl", cfg.ManagerApiUrl)
-
-	pairURL := strings.TrimRight(httpx.ManagerBaseURL(cfg.ManagerApiUrl), "/") + "/api/environments/pair"
-
-	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, pairURL, http.NoBody)
-	if err != nil {
-		return fmt.Errorf("failed to create pairing request: %w", err)
-	}
-
-	req.Header.Set("X-Api-Key", cfg.AgentToken)
-
-	httpClient, err := agent.NewManagerHTTPClient(buildAgentRuntimeConfig(cfg, cfg.AgentToken, agent.AgentHostInfo{}), 10*time.Second)
-	if err != nil {
-		return fmt.Errorf("failed to configure agent pairing client: %w", err)
-	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("pairing request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-
-	switch {
-	case resp.StatusCode == http.StatusOK:
-		slog.InfoContext(ctx, "Successfully paired agent with manager", "managerUrl", cfg.ManagerApiUrl)
-		return nil
-	case resp.StatusCode == http.StatusBadRequest && strings.Contains(string(body), "not in pending status"):
-		slog.InfoContext(ctx, "Agent already paired with manager", "managerUrl", cfg.ManagerApiUrl)
-		return nil
-	case resp.StatusCode == http.StatusUnauthorized:
-		// Not fatal: the key may belong to an earlier pairing, and a configured token still works.
-		slog.WarnContext(ctx, "Manager did not recognize ARCANE_AGENT_TOKEN; regenerate the API key for this environment in the manager and update ARCANE_AGENT_TOKEN", "managerUrl", cfg.ManagerApiUrl)
-		return nil
-	}
-	return fmt.Errorf("pairing failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	return nil
 }

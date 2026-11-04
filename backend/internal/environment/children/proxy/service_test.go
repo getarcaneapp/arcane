@@ -13,6 +13,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/pkg/agent"
 )
 
 type testEnvironmentRow struct {
@@ -33,7 +34,11 @@ func setupProxyTestService(t *testing.T, rows []testEnvironmentRow) *Service {
 	require.NoError(t, gormDB.AutoMigrate(&testEnvironmentRow{}))
 	require.NoError(t, gormDB.Create(&rows).Error)
 
-	return New(&database.DB{DB: gormDB}, nil, &concurrency.SyncGate{})
+	return New(Config{
+		DB:       &database.DB{DB: gormDB},
+		Tunnels:  agent.NewTunnelRegistry(),
+		SyncGate: &concurrency.SyncGate{},
+	})
 }
 
 func TestListEnabledRemoteEnvironmentIDs(t *testing.T) {

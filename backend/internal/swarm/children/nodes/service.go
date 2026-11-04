@@ -42,6 +42,7 @@ type (
 		listTasks          func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
 		localJoinTokens    func(ctx context.Context) (*types.SwarmJoinTokensResponse, error)
 		environmentService *environment.EnvironmentService
+		tunnels            *agent.TunnelRegistry
 		identityCache      *hot.HotCache[string, SwarmNodeIdentity]
 		enrollments        singleflight.Group
 	}
@@ -52,6 +53,7 @@ type (
 		ListTasks          func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
 		LocalJoinTokens    func(ctx context.Context) (*types.SwarmJoinTokensResponse, error)
 		EnvironmentService *environment.EnvironmentService
+		Tunnels            *agent.TunnelRegistry
 	}
 
 	SwarmNodeIdentity struct {
@@ -91,6 +93,7 @@ func NewService(p ServiceParams) *Service {
 		listTasks:          p.ListTasks,
 		localJoinTokens:    p.LocalJoinTokens,
 		environmentService: p.EnvironmentService,
+		tunnels:            p.Tunnels,
 		identityCache: hot.NewHotCache[string, SwarmNodeIdentity](hot.LRU, 512).
 			WithTTL(swarmNodeIdentityCacheTTL).
 			WithJanitor().
@@ -247,20 +250,9 @@ func (s *Service) BindNodeAgent(ctx context.Context, parentEnvironmentID, nodeID
 	return bound, nil
 }
 
-func (s *Service) EnrollNodeAgent(ctx context.Context, enrollmentToken, agentToken, nodeID string) (*types.NodeAgentEnrollResponse, error) {
-	parentEnvironmentID, err := s.environmentService.ResolveSwarmEnrollmentToken(ctx, enrollmentToken)
-	if err != nil {
-		return nil, err
-	}
-	nodeID = strings.TrimSpace(nodeID)
-	if nodeID == "" || len(nodeID) > 64 || strings.ContainsFunc(nodeID, func(r rune) bool { return (r < 'a' || r > 'z') && (r < '0' || r > '9') }) {
+func (s *Service) EnrollNodeAgent(ctx context.Context, parentEnvironmentID, nodeID string) (*types.AgentEnrollResponse, error) {
+	if nodeID == "" || len(nodeID) > 64 || strings.Trim(nodeID, "abcdefghijklmnopqrstuvwxyz0123456789") != "" {
 		return nil, common.Classify(common.ErrBadRequest, errors.New("a valid swarm node ID is required"))
-	}
-
-	current, currentErr := s.environmentService.ResolveEnvironmentByAccessToken(ctx, agentToken)
-	if currentErr == nil && current.Enabled &&
-		kit.FromPtr(current.ParentEnvironmentID) == parentEnvironmentID && strings.TrimSpace(kit.FromPtr(current.SwarmNodeID)) == nodeID {
-		return &types.NodeAgentEnrollResponse{EnvironmentID: current.ID, Token: kit.FromPtr(current.AccessToken)}, nil
 	}
 
 	enrolled, err, _ := s.enrollments.Do(parentEnvironmentID+"/"+nodeID, func() (any, error) {
@@ -269,10 +261,10 @@ func (s *Service) EnrollNodeAgent(ctx context.Context, enrollmentToken, agentTok
 	if err != nil {
 		return nil, err
 	}
-	return enrolled.(*types.NodeAgentEnrollResponse), nil
+	return enrolled.(*types.AgentEnrollResponse), nil
 }
 
-func (s *Service) enrollNodeAgent(ctx context.Context, parentEnvironmentID, nodeID string) (*types.NodeAgentEnrollResponse, error) {
+func (s *Service) enrollNodeAgent(ctx context.Context, parentEnvironmentID, nodeID string) (*types.AgentEnrollResponse, error) {
 	node, err := s.inspectNode(ctx, parentEnvironmentID, nodeID)
 	if err != nil {
 		return nil, err
@@ -285,18 +277,17 @@ func (s *Service) enrollNodeAgent(ctx context.Context, parentEnvironmentID, node
 	if err != nil {
 		return nil, err
 	}
-	// Unbound environments count too: a connected agent that hasn't been reconciled yet already covers the node.
-	// Only live tunnels are probed, so offline environments can't stall enrollment.
 	candidateEnvs, err := s.environmentService.ListSwarmNodeCandidateEnvironments(ctx)
 	if err != nil {
 		return nil, err
 	}
 	candidateEnvs = slices.DeleteFunc(candidateEnvs, func(candidate environment.Environment) bool {
-		return !agent.GetRegistry().Active(candidate.ID).IsPresent()
+		return !s.tunnels.Active(candidate.ID).IsPresent()
 	})
-	coverage, err := s.buildNodeAgentCoverage(ctx, parentEnvironmentID, slices.DeleteFunc(agentEnvs, func(bound environment.Environment) bool {
+	agentEnvs = slices.DeleteFunc(agentEnvs, func(bound environment.Environment) bool {
 		return strings.TrimSpace(kit.FromPtr(bound.SwarmNodeID)) != node.ID
-	}), candidateEnvs)
+	})
+	coverage, err := s.buildNodeAgentCoverage(ctx, parentEnvironmentID, agentEnvs, candidateEnvs)
 	if err != nil {
 		return nil, err
 	}
@@ -306,13 +297,28 @@ func (s *Service) enrollNodeAgent(ctx context.Context, parentEnvironmentID, node
 		return nil, common.Classify(common.ErrConflict, errors.New("this swarm node is already covered by a connected Arcane agent"))
 	case node.Agent.State == types.NodeAgentStateAmbiguous, len(node.Agent.Candidates) > 0:
 		return nil, common.Classify(common.ErrConflict, errors.New("this swarm node is already covered by an unbound Arcane agent; reconcile node agents to bind it"))
+	case len(agentEnvs) > 0:
+		return nil, common.Classify(common.ErrConflict, errors.New("this swarm node already has an Arcane environment; enroll it with that environment's enrollment token"))
 	}
 
-	env, token, err := s.environmentService.EnsureSwarmNodeAgentEnvironment(ctx, parentEnvironmentID, node.ID, node.Hostname, types.SystemUser.ID, types.SystemUser.Username, true)
+	env, err := s.environmentService.EnsureSwarmNodeAgentEnvironment(ctx, environment.SwarmNodeAgentEnvironmentParams{
+		ParentEnvironmentID: parentEnvironmentID,
+		NodeID:              node.ID,
+		Hostname:            node.Hostname,
+		UserID:              types.SystemUser.ID,
+		Username:            types.SystemUser.Username,
+	})
 	if err != nil {
 		return nil, err
 	}
-	return &types.NodeAgentEnrollResponse{EnvironmentID: env.ID, Token: token}, nil
+	token, err := s.environmentService.RegenerateEnvironmentApiKey(ctx, env, types.SystemUser.ID, types.SystemUser.Username)
+	if err != nil {
+		return nil, err
+	}
+	return &types.AgentEnrollResponse{
+		EnvironmentID: env.ID,
+		Token:         token,
+	}, nil
 }
 
 func (s *Service) GetLocalNodeIdentity(ctx context.Context) (*SwarmNodeIdentity, error) {
@@ -483,8 +489,8 @@ func (s *Service) resolveSwarmNodeAgentRuntime(ctx context.Context, env *environ
 		}
 	}
 	return swarmNodeAgentRuntime{
-		connected:     found || agent.GetRegistry().Active(env.ID).IsPresent(),
-		lastHeartbeat: kit.FromPtr(agent.GetTunnelRuntimeState(env.ID).OrEmpty()).LastHeartbeat,
+		connected:     found || s.tunnels.Active(env.ID).IsPresent(),
+		lastHeartbeat: kit.FromPtr(s.tunnels.RuntimeState(env.ID).OrEmpty()).LastHeartbeat,
 		identity:      kit.Ternary(found, &identity, nil),
 	}
 }

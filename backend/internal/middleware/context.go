@@ -21,7 +21,6 @@ const (
 	// place so a change to a header name applies to every route type at once.
 	HeaderAgentToken                 = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
 	HeaderApiKey                     = "X-Api-Key"            // #nosec G101: header name, not a credential
-	HeaderEnrollmentToken            = "X-Arcane-Enrollment-Token"
 	HeaderActivityBatchID            = "X-Arcane-Batch-Id"
 	HeaderUpdateInitiatorID          = "X-Arcane-Update-Initiator-Id"
 	HeaderUpdateInitiatorName        = "X-Arcane-Update-Initiator-Name"

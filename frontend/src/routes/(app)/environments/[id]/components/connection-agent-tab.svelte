@@ -13,14 +13,14 @@
 		environment,
 		currentStatus,
 		showMTLSDownloads,
-		isRegeneratingKey,
-		onRegenerateApiKey
+		isGeneratingToken,
+		onGenerateEnrollmentToken
 	}: {
 		environment: Environment;
 		currentStatus: EnvironmentStatus;
 		showMTLSDownloads: boolean;
-		isRegeneratingKey: boolean;
-		onRegenerateApiKey: () => void;
+		isGeneratingToken: boolean;
+		onGenerateEnrollmentToken: () => void;
 	} = $props();
 
 	let mtlsBundleDownloadHref = $derived(`/api/environments/${environment.id}/deployment/mtls/bundle`);
@@ -116,17 +116,17 @@
 
 			<div class="flex flex-wrap items-center justify-between gap-4 py-5 first:pt-0 last:pb-0">
 				<div class="min-w-0">
-					<div class="text-sm font-semibold">{m.environments_regenerate_api_key()}</div>
-					<p class="text-xs text-muted-foreground">{m.environments_regenerate_api_key_description()}</p>
+					<div class="text-sm font-semibold">{m.generate_enrollment_token()}</div>
+					<p class="text-xs text-muted-foreground">{m.generate_enrollment_token_description()}</p>
 				</div>
 				<ArcaneButton
 					action="base"
 					tone="outline-destructive"
-					onclick={onRegenerateApiKey}
-					disabled={isRegeneratingKey}
-					loading={isRegeneratingKey}
+					onclick={onGenerateEnrollmentToken}
+					disabled={isGeneratingToken}
+					loading={isGeneratingToken}
 					icon={ResetIcon}
-					customLabel={m.environments_regenerate_api_key()}
+					customLabel={m.generate_enrollment_token()}
 				/>
 			</div>
 		</div>

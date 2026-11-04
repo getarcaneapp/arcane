@@ -17,12 +17,12 @@ import (
 )
 
 type (
-	// TunnelClient represents the agent-side tunnel client
 	TunnelClient struct {
-		preferWebSocketUntil   time.Time
 		handler                http.Handler
 		cfg                    *Config
+		errCh                  chan error
 		conn                   atomic.Pointer[connBox]
+		preference             atomic.Pointer[transportPreference]
 		sessionID              concurrency.Snapshot[string]
 		managerURL             string
 		managerGRPCAddr        string
@@ -31,8 +31,11 @@ type (
 		registrationTimeout    time.Duration
 		websocketPreferenceTTL time.Duration
 		healthySessionDuration time.Duration
-		grpcFailureStreak      int
-		transportPreferenceMu  sync.RWMutex
+	}
+
+	transportPreference struct {
+		webSocketUntil time.Time
+		grpcFailures   int
 	}
 
 	// connBox lets the active connection swap atomically on reconnect: an atomic.Value would panic when the
@@ -66,7 +69,6 @@ type (
 
 	commandRouteIndex map[commandRouteKey]*commandRouteNode
 
-	// AgentTunnel represents an active tunnel connection from an agent
 	AgentTunnel struct {
 		ConnectedAt   time.Time
 		LastHeartbeat time.Time
@@ -80,7 +82,6 @@ type (
 		EnvironmentID string
 		SessionID     string
 		AgentInstance string
-		Transport     string
 		SecurityMode  string
 		State         string
 		DisconnectErr string
@@ -90,7 +91,6 @@ type (
 		closeOnce     sync.Once
 	}
 
-	// TunnelRegistry manages active agent tunnel connections
 	TunnelRegistry struct {
 		tunnels    *concurrency.StateMap[string, *AgentTunnel]
 		history    *concurrency.StateMap[string, TunnelHistory]
@@ -104,34 +104,22 @@ type (
 		Sessions             int
 	}
 
-	// TunnelServer handles incoming agent connections on the manager side.
 	TunnelServer struct {
-		// Config holds the agent runtime settings; set it before serving.
-		Config *Config
-		// NameResolver, when set, names environments in generated mTLS assets.
-		NameResolver EnvironmentNameResolver
-		// EventCallback, when set, receives agent events.
-		EventCallback EventCallback
-		// EnrollmentCallback, when set, runs after a successful agent mTLS enrollment.
-		EnrollmentCallback EnrollmentCallback
+		MTLS *MTLS
 
-		registry        *TunnelRegistry
-		resolver        EnvironmentResolver
-		statusCallback  StatusUpdateCallback
-		cleanupDone     chan struct{}
-		cleanupDoneOnce sync.Once
-		statusMu        sync.Mutex
+		registry       *TunnelRegistry
+		resolver       EnvironmentResolver
+		statusCallback StatusUpdateCallback
+		eventCallback  EventCallback
+		statusMu       sync.Mutex
 	}
 
-	// TunnelServerOptions configures NewTunnelServer.
 	TunnelServerOptions struct {
-		Registry           *TunnelRegistry
-		Resolver           EnvironmentResolver
-		StatusCallback     StatusUpdateCallback
-		Config             *Config
-		NameResolver       EnvironmentNameResolver
-		EventCallback      EventCallback
-		EnrollmentCallback EnrollmentCallback
+		Registry       *TunnelRegistry
+		Resolver       EnvironmentResolver
+		StatusCallback StatusUpdateCallback
+		MTLS           *MTLS
+		EventCallback  EventCallback
 	}
 
 	streamIdentityKey struct{}
@@ -162,30 +150,64 @@ type (
 		Files       []GeneratedMTLSFile `json:"files"`
 		CertIssued  bool                `json:"-"`
 		CAGenerated bool                `json:"-"`
-		Reenrolled  bool                `json:"-"`
 	}
 
-	enrollMTLSResponse struct {
+	EnrollMTLSResponse struct {
 		Files []GeneratedMTLSFile `json:"files"`
 	}
 
-	// Config contains the public agent-tunnel runtime settings needed by pkg/agent.
+	MTLSEnrollment struct {
+		Assets     *GeneratedMTLSAssets
+		Cached     bool
+		Reenrolled bool
+	}
+
 	Config struct {
+		MTLS                   *MTLS
 		AgentTransport         string
-		AgentMTLSMode          string
-		AgentMTLSCAFile        string
-		AgentMTLSCertFile      string
-		AgentMTLSKeyFile       string
-		AgentMTLSServerName    string
-		AgentMTLSAssetsDir     string
-		AppURL                 string
-		ManagerApiUrl          string
 		AgentToken             string
-		Port                   string
-		Listen                 string
 		HostInfo               AgentHostInfo
 		AgentReconnectInterval int
 		AgentEnabled           bool
+	}
+
+	GRPCTunnelHandlerConfig struct {
+		GRPC      http.Handler
+		Next      http.Handler
+		ExtractIP func(*http.Request) string
+	}
+
+	TunnelClientConfig struct {
+		Config  *Config
+		Handler http.Handler
+		Errors  chan error
+	}
+
+	MTLSConfig struct {
+		Mode       string
+		CAFile     string
+		CertFile   string
+		KeyFile    string
+		ServerName string
+		AssetsDir  string
+		AppURL     string
+		ManagerURL string
+	}
+
+	MTLS struct {
+		MTLSConfig
+	}
+
+	IssueClientOptions struct {
+		EnvironmentID   string
+		EnvironmentName string
+		FallbackAppURL  string
+	}
+
+	ManagerClientOptions struct {
+		AgentToken string
+		Timeout    time.Duration
+		Enroll     bool
 	}
 
 	AgentHostInfo struct {
@@ -254,8 +276,7 @@ type (
 		MetadataJSON []byte `json:"metadata_json,omitempty"`
 	}
 
-	// TunnelConn wraps a WebSocket connection with send/receive helpers.
-	TunnelConn struct {
+	WebSocketTunnelConn struct {
 		conn   *websocket.Conn
 		mu     sync.Mutex
 		closed atomic.Bool
@@ -284,8 +305,8 @@ type (
 	muxSession struct {
 		ready   chan struct{}
 		closed  chan struct{}
-		session *yamux.Session
-		conn    *muxConn
+		session atomic.Pointer[yamux.Session]
+		conn    atomic.Pointer[muxConn]
 		// rtt is the last keepalive round trip in nanoseconds, zero until the first ping.
 		rtt       atomic.Int64
 		rttMin    atomic.Int64

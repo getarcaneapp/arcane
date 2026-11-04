@@ -658,7 +658,7 @@ test.describe('Arcane upgrades', () => {
 			await dialog.getByRole('button', { name: 'Close', exact: true }).first().click();
 			await expect(dialog).toBeHidden();
 			await expect.poll(() => currentReloadCount(page)).toBe(1);
-			await expect(page).toHaveURL('/environments');
+			await expect(page).toHaveURL(/\/environments(?:\?tab=environments)?$/);
 		});
 
 		test('Update All leaves failed manager results visible without reloading', async ({ page }) => {

@@ -18,11 +18,15 @@ import (
 )
 
 type Lister struct {
-	db *database.DB
+	db      *database.DB
+	tunnels *agent.TunnelRegistry
 }
 
-func NewLister(db *database.DB) *Lister {
-	return &Lister{db: db}
+func NewLister(db *database.DB, tunnels *agent.TunnelRegistry) *Lister {
+	return &Lister{
+		db:      db,
+		tunnels: tunnels,
+	}
 }
 
 func (l *Lister) ListAccessibleEnvironments(ctx context.Context, ps *authz.PermissionSet, params pagination.QueryParams) (types.Paginated[types.Environment], error) {
@@ -32,7 +36,7 @@ func (l *Lister) ListAccessibleEnvironments(ctx context.Context, ps *authz.Permi
 	}
 	rows := make([]types.Environment, 0, len(envs))
 	for _, env := range envs {
-		rows = append(rows, ApplyEnvironmentRuntimeState(env))
+		rows = append(rows, l.ApplyRuntimeState(env))
 	}
 	return types.Paginated[types.Environment]{
 		Success:    true,
@@ -63,7 +67,7 @@ func (l *Lister) ListEnvironmentsPaginated(ctx context.Context, params paginatio
 
 		rows := make([]types.Environment, 0, len(items))
 		for _, item := range items {
-			rows = append(rows, ApplyEnvironmentRuntimeState(item))
+			rows = append(rows, l.ApplyRuntimeState(item))
 		}
 
 		result := pagination.Config[types.Environment]{
@@ -178,4 +182,45 @@ func (l *Lister) ListEnvironmentsPaginated(ctx context.Context, params paginatio
 	}
 
 	return out, paginationResp, nil
+}
+
+// ApplyRuntimeState overlays in-memory tunnel state onto an agent environment without mutating persisted state.
+func (l *Lister) ApplyRuntimeState(env types.Environment) types.Environment {
+	if env.ID == LocalEnvironmentID {
+		return env
+	}
+
+	runtimeState, connected := l.tunnels.RuntimeState(env.ID).Get()
+	return types.Environment{ //exhaustruct:enforce
+		ID:     env.ID,
+		Name:   env.Name,
+		ApiUrl: env.ApiUrl,
+		Status: func() string {
+			switch {
+			case connected:
+				return string(EnvironmentStatusOnline)
+			case env.Status != string(EnvironmentStatusPending):
+				return string(EnvironmentStatusOffline)
+			default:
+				return env.Status
+			}
+		}(),
+		Enabled:            env.Enabled,
+		LastSeen:           env.LastSeen,
+		AgentTransport:     kit.Ternary(kit.FromPtr(runtimeState).Transport != "", new(kit.FromPtr(runtimeState).Transport), nil),
+		LastAgentTransport: env.LastAgentTransport,
+		AgentSecurityMode:  kit.Ternary(kit.FromPtr(runtimeState).SecurityMode != "", new(kit.FromPtr(runtimeState).SecurityMode), nil),
+		AgentSessionID:     kit.Ternary(kit.FromPtr(runtimeState).SessionID != "", new(kit.FromPtr(runtimeState).SessionID), nil),
+		AgentInstance:      kit.Ternary(kit.FromPtr(runtimeState).AgentInstance != "", new(kit.FromPtr(runtimeState).AgentInstance), nil),
+		AgentCapabilities:  kit.Ternary(len(kit.FromPtr(runtimeState).Capabilities) > 0, slices.Clone(kit.FromPtr(runtimeState).Capabilities), nil),
+		AgentRoundTripMs: kit.Ternary(kit.FromPtr(runtimeState).RoundTripTime != nil,
+			new(float64(kit.FromPtr(kit.FromPtr(runtimeState).RoundTripTime).Microseconds())/1000), nil),
+		AgentOpenStreams:     kit.Ternary(connected, new(kit.FromPtr(runtimeState).OpenStreams), nil),
+		Connected:            new(connected),
+		ConnectedAt:          kit.FromPtr(runtimeState).ConnectedAt,
+		LastHeartbeat:        kit.FromPtr(runtimeState).LastHeartbeat,
+		AgentMTLSCertificate: env.AgentMTLSCertificate,
+		AgentHost:            agentHostInfo(runtimeState),
+		AgentTunnelStats:     agentTunnelStats(runtimeState, l.tunnels.History(env.ID)),
+	}
 }

@@ -7,17 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
-	"uuid"
 
 	"github.com/labstack/echo/v5"
 	"go.opentelemetry.io/otel"
@@ -32,7 +28,6 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
-	"kit.getarcane.app/fs/atomic"
 
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/logging"
@@ -42,55 +37,34 @@ import (
 )
 
 type (
-	// EnvironmentResolver resolves an agent token to an environment ID.
 	EnvironmentResolver func(ctx context.Context, token string) (environmentID string, err error)
 
-	// EnvironmentNameResolver resolves a display name for an environment ID.
-	EnvironmentNameResolver func(ctx context.Context, environmentID string) (environmentName string, err error)
-
-	// StatusUpdateCallback is called when an agent connects or disconnects.
-	// The connected parameter is true on connect, false on disconnect.
 	StatusUpdateCallback func(ctx context.Context, environmentID string, connected bool)
 
-	// EventCallback is called when an agent publishes an event.
 	EventCallback func(ctx context.Context, environmentID string, event *TunnelEvent) error
-
-	// EnrollmentCallback is called after a successful manager-side agent mTLS enrollment.
-	// reenrolled is true when the environment had already enrolled before the cooldown.
-	EnrollmentCallback func(ctx context.Context, environmentID, remoteAddr string, certIssued, caGenerated, reenrolled bool)
 )
 
 const (
-	// TunnelStaleTimeout is how long before a tunnel is considered stale.
 	TunnelStaleTimeout = 2 * time.Minute
 	// tunnelStaleSweepInterval backs up read-deadline liveness, so it runs well under TunnelStaleTimeout.
 	tunnelStaleSweepInterval = time.Minute
 )
 
-// observeAgentsOnce registers the connected-agents gauge for the first (manager) tunnel server.
 var observeAgentsOnce sync.Once
 
-// NewTunnelServer creates a new tunnel server. A nil Registry gets a fresh one.
 func NewTunnelServer(opts TunnelServerOptions) *TunnelServer {
-	registry := opts.Registry
-	if registry == nil {
-		registry = NewTunnelRegistry()
-	}
 	observeAgentsOnce.Do(func() {
-		if _, err := registry.ObserveAgents(otel.Meter(logging.InstrumentationName)); err != nil {
+		if _, err := opts.Registry.ObserveAgents(otel.Meter(logging.InstrumentationName)); err != nil {
 			otel.Handle(err)
 		}
 	})
 
 	return &TunnelServer{
-		Config:             opts.Config,
-		NameResolver:       opts.NameResolver,
-		EventCallback:      opts.EventCallback,
-		EnrollmentCallback: opts.EnrollmentCallback,
-		registry:           registry,
-		resolver:           opts.Resolver,
-		statusCallback:     opts.StatusCallback,
-		cleanupDone:        make(chan struct{}),
+		MTLS:           opts.MTLS,
+		registry:       opts.Registry,
+		resolver:       opts.Resolver,
+		statusCallback: opts.StatusCallback,
+		eventCallback:  opts.EventCallback,
 	}
 }
 
@@ -123,7 +97,6 @@ func (s *TunnelServer) GRPCServerOptions() []grpc.ServerOption {
 	}
 
 	auth := func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		// TunnelService only exposes Connect; keep this gate aligned with tunnel.proto.
 		if info.FullMethod != tunnelpb.TunnelService_Connect_FullMethodName {
 			return handler(srv, ss)
 		}
@@ -136,18 +109,20 @@ func (s *TunnelServer) GRPCServerOptions() []grpc.ServerOption {
 			return status.Error(codes.Unauthenticated, "invalid agent token")
 		}
 
-		var state *tls.ConnectionState
-		if p, ok := peer.FromContext(ctx); ok {
-			if tlsInfo, isTLS := p.AuthInfo.(credentials.TLSInfo); isTLS {
-				state = &tlsInfo.State
-			}
-		}
+		p, _ := peer.FromContext(ctx)
+		tlsInfo, isTLS := kit.FromPtr(p).AuthInfo.(credentials.TLSInfo)
+		state := kit.Ternary(isTLS, &tlsInfo.State, nil)
 		if identityErr := s.requireCertificateIdentity(state, envID); identityErr != nil {
 			return status.Error(codes.Unauthenticated, identityErr.Error())
 		}
 
-		identity := streamIdentity{environmentID: envID, securityMode: kit.Ternary(hasVerifiedPeerCertificate(state), "mtls", "token")}
-		return handler(srv, &contextualServerStream{ServerStream: ss, ctx: context.WithValue(ctx, streamIdentityKey{}, identity)})
+		return handler(srv, &contextualServerStream{
+			ServerStream: ss,
+			ctx: context.WithValue(ctx, streamIdentityKey{}, streamIdentity{
+				environmentID: envID,
+				securityMode:  kit.Ternary(hasVerifiedPeerCertificate(state), "mtls", "token"),
+			}),
+		})
 	}
 
 	return []grpc.ServerOption{
@@ -156,20 +131,46 @@ func (s *TunnelServer) GRPCServerOptions() []grpc.ServerOption {
 	}
 }
 
-// HandleConnect is the WebSocket handler for agent connections.
-// This is registered at /api/tunnel/connect.
+func GRPCTunnelHandler(cfg GRPCTunnelHandlerConfig) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, tunnelpb.TunnelService_Connect_FullMethodName) &&
+			!strings.HasPrefix(strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type"))), "application/grpc") {
+			cfg.Next.ServeHTTP(w, r)
+			return
+		}
+
+		_, methodSuffix, hasMethod := strings.Cut(r.URL.Path, tunnelpb.TunnelService_Connect_FullMethodName)
+		path := cmp.Or(
+			kit.Ternary(strings.HasSuffix(r.URL.Path, tunnelConnectPath), tunnelpb.TunnelService_Connect_FullMethodName, ""),
+			kit.Ternary(hasMethod, tunnelpb.TunnelService_Connect_FullMethodName+methodSuffix, ""),
+			r.URL.Path,
+		)
+		_, port, splitErr := net.SplitHostPort(r.RemoteAddr)
+		remoteAddr := kit.Ternary(splitErr == nil, net.JoinHostPort(cfg.ExtractIP(r), port), r.RemoteAddr)
+		if path == r.URL.Path && remoteAddr == r.RemoteAddr {
+			cfg.GRPC.ServeHTTP(w, r)
+			return
+		}
+
+		routed := r.Clone(r.Context())
+		routed.URL.Path = path
+		routed.RequestURI = kit.Ternary(path == r.URL.Path, r.RequestURI, path)
+		routed.RemoteAddr = remoteAddr
+		cfg.GRPC.ServeHTTP(w, routed)
+	})
+}
+
 func (s *TunnelServer) HandleConnect(c *echo.Context) error {
 	req := c.Request()
 	ctx := req.Context()
 
-	// Agents authenticate with tokens or mTLS rather than browser cookies, so no Origin check is needed.
 	conn, err := wshub.Accept(c.Response(), req, nil)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to upgrade agent tunnel connection", "error", err)
 		return nil
 	}
 
-	tunnelConn := NewTunnelConn(conn)
+	tunnelConn := NewWebSocketTunnelConn(conn)
 	reject := func(reason string) error {
 		if reason != "" {
 			_ = tunnelConn.Send(&TunnelMessage{Type: MessageTypeRegisterResponse, Error: reason})
@@ -188,10 +189,9 @@ func (s *TunnelServer) HandleConnect(c *echo.Context) error {
 		return reject("")
 	}
 
-	// Headers can be lost on the upgrade path, and proxy-terminated mTLS consumes the client
-	// certificate, so the register message's token is the fallback environment claim.
-	token, _ := agentToken(req.Header.Values)
-	token = cmp.Or(token, strings.TrimSpace(registerMsg.AgentToken))
+	// Proxies can drop upgrade headers or consume the client certificate, so the register message's token is the fallback claim.
+	headerToken, _ := agentToken(req.Header.Values)
+	token := cmp.Or(headerToken, strings.TrimSpace(registerMsg.AgentToken))
 	if token == "" {
 		slog.WarnContext(ctx, "Agent tunnel connection attempt without token")
 		return reject("agent token required")
@@ -207,109 +207,13 @@ func (s *TunnelServer) HandleConnect(c *echo.Context) error {
 		return reject("client certificate does not match environment")
 	}
 
-	s.manageConnectedTunnel(ctx, envID, tunnelConn, registerMsg, kit.Ternary(hasVerifiedPeerCertificate(req.TLS), "mtls", "token"), c.RealIP())
+	s.manageConnectedTunnel(ctx, registerMsg, AgentTunnelConfig{
+		Conn:          tunnelConn,
+		EnvironmentID: envID,
+		SecurityMode:  kit.Ternary(hasVerifiedPeerCertificate(req.TLS), "mtls", "token"),
+		RemoteAddr:    c.RealIP(),
+	})
 	return nil
-}
-
-// HandleMTLSEnroll returns manager-generated agent client certificates for the calling environment.
-// The response contains private keys, so response-body logging must stay disabled here.
-func (s *TunnelServer) HandleMTLSEnroll(c *echo.Context) error {
-	req := c.Request()
-	ctx := req.Context()
-	c.Response().Header().Set("Cache-Control", "no-store")
-	c.Response().Header().Set("Pragma", "no-cache")
-
-	if !usesGeneratedManagerCA(s.Config) {
-		return c.JSON(http.StatusNotFound, map[string]any{"error": "agent mTLS enrollment is not available"})
-	}
-
-	token, _ := agentToken(req.Header.Values)
-	if token == "" {
-		return c.JSON(http.StatusUnauthorized, map[string]any{"error": "agent token required"})
-	}
-
-	envID, err := s.resolveEnvironment(ctx, token)
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to resolve agent token for mTLS enrollment", "error", err)
-		return c.JSON(http.StatusUnauthorized, map[string]any{"error": "invalid agent token"})
-	}
-
-	envName := ""
-	if s.NameResolver != nil {
-		resolvedName, resolveErr := s.NameResolver(ctx, envID)
-		if resolveErr != nil {
-			slog.WarnContext(ctx, "Failed to resolve environment name for agent mTLS enrollment", "environmentId", envID, "error", resolveErr)
-		} else {
-			envName = resolvedName
-		}
-	}
-
-	// The marker holds the last enrollment time; within the cooldown the existing assets are re-served.
-	failState := func(stateErr error) error {
-		slog.ErrorContext(ctx, "Failed to read agent mTLS enrollment state", "environmentId", envID, "error", stateErr)
-		return c.JSON(http.StatusInternalServerError, map[string]any{"error": "failed to read agent mTLS enrollment state"})
-	}
-	assetsDir, err := agentMTLSAssetsDir(s.Config, managerMTLSDirName)
-	if err != nil {
-		return failState(err)
-	}
-	safeEnvID := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(envID), "_")
-	if safeEnvID == "" {
-		return failState(errors.New("environment ID is required"))
-	}
-	markerPath := filepath.Join(assetsDir, generatedClientMTLSSubdir, safeEnvID, generatedMTLSEnrolledName)
-	marker, readErr := os.ReadFile(markerPath)
-	if readErr != nil && !errors.Is(readErr, fs.ErrNotExist) {
-		return failState(readErr)
-	}
-	now := time.Now()
-	previouslyEnrolled := readErr == nil
-	enrollmentLimited := false
-	if trimmed := strings.TrimSpace(string(marker)); trimmed != "" {
-		enrolledAt, parseErr := time.Parse(time.RFC3339Nano, trimmed)
-		if parseErr != nil {
-			return failState(fmt.Errorf("failed to parse agent mTLS enrollment marker %s: %w", markerPath, parseErr))
-		}
-		enrollmentLimited = now.Sub(enrolledAt) < managerMTLSReenrollCooldown
-	}
-
-	if enrollmentLimited {
-		cachedAssets, cacheErr := GenerateManagerClientMTLSAssetsWithContext(ctx, s.Config, envID, envName)
-		if cacheErr == nil && cachedAssets != nil {
-			slog.InfoContext(ctx, "Served cached agent mTLS enrollment during cooldown", "environmentId", envID, "remoteAddr", c.RealIP())
-			return c.JSON(http.StatusOK, enrollMTLSResponse{Files: cachedAssets.Files})
-		}
-		if cacheErr != nil {
-			slog.WarnContext(ctx, "Failed to re-serve cached agent mTLS enrollment during cooldown", "environmentId", envID, "error", cacheErr)
-		}
-		slog.WarnContext(ctx, "Rejected repeated agent mTLS enrollment during cooldown", "environmentId", envID, "remoteAddr", c.RealIP())
-		return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "agent mTLS enrollment was recently completed; retry later"})
-	}
-
-	assets, err := GenerateManagerClientMTLSAssetsWithContext(ctx, s.Config, envID, envName)
-	if err != nil {
-		slog.ErrorContext(ctx, "Failed to generate agent mTLS enrollment assets", "environmentId", envID, "error", err)
-		return c.JSON(http.StatusInternalServerError, map[string]any{"error": "failed to generate agent mTLS assets"})
-	}
-	if assets == nil {
-		return c.JSON(http.StatusNotFound, map[string]any{"error": "agent mTLS enrollment assets unavailable"})
-	}
-	assets.Reenrolled = previouslyEnrolled
-	if recordErr := atomic.WriteFile(markerPath, []byte(now.UTC().Format(time.RFC3339Nano)+"\n"), 0o600); recordErr != nil {
-		slog.ErrorContext(ctx, "Failed to record agent mTLS enrollment state", "environmentId", envID, "error", recordErr)
-		return c.JSON(http.StatusInternalServerError, map[string]any{"error": "failed to record agent mTLS enrollment state"})
-	}
-	if assets.Reenrolled {
-		slog.WarnContext(ctx, "Agent mTLS certificate assets re-enrolled", "environmentId", envID, "remoteAddr", c.RealIP(), "certIssued", assets.CertIssued)
-	} else {
-		slog.InfoContext(ctx, "Agent mTLS certificate assets enrolled", "environmentId", envID, "remoteAddr", c.RealIP(), "certIssued", assets.CertIssued)
-	}
-
-	if s.EnrollmentCallback != nil {
-		s.EnrollmentCallback(context.WithoutCancel(ctx), envID, c.RealIP(), assets.CertIssued, assets.CAGenerated, assets.Reenrolled)
-	}
-
-	return c.JSON(http.StatusOK, enrollMTLSResponse{Files: assets.Files})
 }
 
 // Connect is the gRPC bidi stream handler for agent connections.
@@ -317,10 +221,10 @@ func (s *TunnelServer) Connect(stream grpc.BidiStreamingServer[tunnelpb.AgentMes
 	ctx := stream.Context()
 
 	firstMsg, err := stream.Recv()
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return status.Error(codes.Unauthenticated, "register message required")
-		}
+	switch {
+	case errors.Is(err, io.EOF):
+		return status.Error(codes.Unauthenticated, "register message required")
+	case err != nil:
 		return err
 	}
 
@@ -329,13 +233,17 @@ func (s *TunnelServer) Connect(stream grpc.BidiStreamingServer[tunnelpb.AgentMes
 		return status.Error(codes.Unauthenticated, "first message must be register")
 	}
 
-	// The auth interceptor already verified the token and client certificate for this stream.
 	identity, _ := ctx.Value(streamIdentityKey{}).(streamIdentity)
 	if strings.TrimSpace(identity.environmentID) == "" {
 		return status.Error(codes.Unauthenticated, "authenticated environment is missing from stream context")
 	}
 
-	s.manageConnectedTunnel(ctx, identity.environmentID, NewGRPCManagerTunnelConn(stream), registerMsg, identity.securityMode, grpcPeerHost(ctx))
+	s.manageConnectedTunnel(ctx, registerMsg, AgentTunnelConfig{
+		Conn:          NewGRPCManagerTunnelConn(stream),
+		EnvironmentID: identity.environmentID,
+		SecurityMode:  identity.securityMode,
+		RemoteAddr:    grpcPeerHost(ctx),
+	})
 	return nil
 }
 
@@ -378,88 +286,80 @@ func agentToken(values func(key string) []string) (string, string) {
 	return "", ""
 }
 
-// manageConnectedTunnel registers an authenticated agent session and serves its multiplexed session until it disconnects.
-func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, envID string, conn TunnelConnection, registerMsg *TunnelMessage, securityMode, remoteAddr string) {
-	callbackCtx := context.WithoutCancel(ctx)
-	tunnel := NewAgentTunnelWithConn(envID, conn)
-	tunnel.SessionID = uuid.New().String()
-	tunnel.SecurityMode = securityMode
-	tunnel.AgentInstance = strings.TrimSpace(registerMsg.AgentInstance)
-	tunnel.Capabilities = registerMsg.Capabilities
-	tunnel.Transport = conn.Transport()
-	tunnel.RemoteAddr = remoteAddr
-	tunnel.Host = registerMsg.Host
+func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, registerMsg *TunnelMessage, cfg AgentTunnelConfig) {
+	tunnel := NewAgentTunnel(AgentTunnelConfig{
+		Conn:          cfg.Conn,
+		Host:          registerMsg.Host,
+		EnvironmentID: cfg.EnvironmentID,
+		AgentInstance: strings.TrimSpace(registerMsg.AgentInstance),
+		SecurityMode:  cfg.SecurityMode,
+		RemoteAddr:    cfg.RemoteAddr,
+		Capabilities:  registerMsg.Capabilities,
+	})
 
 	// The span covers the connection lifetime; ctx stays unparented so per-message work doesn't nest under it.
-	_, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "agent.tunnel "+tunnel.Transport,
+	_, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "agent.tunnel "+cfg.Conn.Transport(),
 		trace.WithSpanKind(trace.SpanKindServer),
 		trace.WithAttributes(
-			attribute.String("arcane.agent.transport", tunnel.Transport),
-			attribute.String("arcane.environment.id", envID),
+			attribute.String("arcane.agent.transport", cfg.Conn.Transport()),
+			attribute.String("arcane.environment.id", tunnel.EnvironmentID),
 			attribute.String("arcane.agent.session_id", tunnel.SessionID),
-			attribute.String("arcane.agent.security_mode", securityMode),
+			attribute.String("arcane.agent.security_mode", tunnel.SecurityMode),
 			attribute.String("arcane.agent.instance", tunnel.AgentInstance),
 		))
-	var spanErr error
-	defer func() { logging.EndSpan(span, spanErr) }()
+	logging.EndSpan(span, s.serveConnectedTunnel(ctx, tunnel))
+}
 
-	if !slices.Contains(registerMsg.Capabilities, tunnelCapabilityMux) {
+func (s *TunnelServer) serveConnectedTunnel(ctx context.Context, tunnel *AgentTunnel) error {
+	callbackCtx := context.WithoutCancel(ctx)
+	envID := tunnel.EnvironmentID
+	if !slices.Contains(tunnel.Capabilities, tunnelCapabilityMux) {
 		slog.WarnContext(ctx, "Rejected agent without multiplexed data plane support", "environmentId", envID, "agentInstanceId", tunnel.AgentInstance)
-		_ = conn.Send(&TunnelMessage{Type: MessageTypeRegisterResponse, EnvironmentID: envID, Error: errAgentMuxRequired.Error()})
+		_ = tunnel.Conn.Send(&TunnelMessage{Type: MessageTypeRegisterResponse, EnvironmentID: envID, Error: errAgentMuxRequired.Error()})
 		_ = tunnel.CloseWithReason(errAgentMuxRequired.Error())
-		spanErr = errAgentMuxRequired
-		return
+		return errAgentMuxRequired
 	}
 
-	accepted, drainPrevious, rejectReason, err := s.registry.RegisterSession(callbackCtx, tunnel, TunnelStaleTimeout)
+	registration, err := s.registry.RegisterSession(callbackCtx, tunnel)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to register agent session", "environmentId", envID, "agentInstanceId", tunnel.AgentInstance, "error", err)
 		_ = tunnel.CloseWithReason("agent session registration unavailable")
-		spanErr = err
-		return
+		return err
 	}
-	if !accepted {
-		slog.WarnContext(ctx, "Rejected duplicate agent session", "environmentId", envID, "agentInstanceId", tunnel.AgentInstance, "reason", rejectReason)
-		_ = conn.Send(&TunnelMessage{Type: MessageTypeRegisterResponse, EnvironmentID: envID, Error: rejectReason})
-		_ = tunnel.CloseWithReason(rejectReason)
-		spanErr = errors.New(rejectReason)
-		return
+	if !registration.Accepted {
+		slog.WarnContext(ctx, "Rejected duplicate agent session", "environmentId", envID, "agentInstanceId", tunnel.AgentInstance, "reason", registration.Reason)
+		_ = tunnel.Conn.Send(&TunnelMessage{Type: MessageTypeRegisterResponse, EnvironmentID: envID, Error: registration.Reason})
+		_ = tunnel.CloseWithReason(registration.Reason)
+		return errors.New(registration.Reason)
 	}
 
 	defer func() {
-		removed, active := s.registry.UnregisterCurrent(callbackCtx, envID, tunnel)
-		if !removed {
-			return
-		}
-		slog.InfoContext(ctx, "Agent disconnected", "environmentId", envID, "sessionId", tunnel.SessionID)
-		if !active {
+		if s.registry.UnregisterCurrent(callbackCtx, tunnel) {
+			slog.InfoContext(ctx, "Agent disconnected", "environmentId", envID, "sessionId", tunnel.SessionID)
 			s.updateConnectionStatus(callbackCtx, tunnel, false)
 		}
 	}()
 
 	slog.InfoContext(ctx, "Agent connected", "environmentId", envID, "sessionId", tunnel.SessionID, "securityMode", tunnel.SecurityMode,
-		"transport", tunnel.Transport)
+		"transport", tunnel.Conn.Transport())
 
-	if sendErr := conn.Send(&TunnelMessage{
+	if sendErr := tunnel.Conn.Send(&TunnelMessage{
 		Type:          MessageTypeRegisterResponse,
 		Accepted:      true,
 		EnvironmentID: envID,
 		SessionID:     tunnel.SessionID,
 		SecurityMode:  tunnel.SecurityMode,
 		Capabilities:  []string{tunnelCapabilityMuxGrant},
-		DrainPrevious: drainPrevious,
+		DrainPrevious: registration.DrainPrevious,
 	}); sendErr != nil {
 		slog.WarnContext(ctx, "Failed to send register response", "environmentId", envID, "error", sendErr)
 		_ = tunnel.CloseWithReason("")
-		spanErr = sendErr
-		return
+		return sendErr
 	}
-	spanErr = s.serveMuxTunnel(ctx, tunnel, conn.muxConn(ctx))
+	return s.serveMuxTunnel(ctx, tunnel, tunnel.Conn.muxConn(ctx))
 }
 
-// StartCleanupLoop periodically cleans up stale tunnels.
 func (s *TunnelServer) StartCleanupLoop(ctx context.Context) {
-	defer s.cleanupDoneOnce.Do(func() { close(s.cleanupDone) })
 	ticker := time.NewTicker(tunnelStaleSweepInterval)
 	defer ticker.Stop()
 
@@ -479,8 +379,6 @@ func (s *TunnelServer) StartCleanupLoop(ctx context.Context) {
 	}
 }
 
-// updateConnectionStatus reports a connect or disconnect, skipping a disconnect
-// when a newer live tunnel already serves the environment.
 func (s *TunnelServer) updateConnectionStatus(ctx context.Context, tunnel *AgentTunnel, connected bool) {
 	if s.statusCallback == nil {
 		return
@@ -488,17 +386,10 @@ func (s *TunnelServer) updateConnectionStatus(ctx context.Context, tunnel *Agent
 
 	s.statusMu.Lock()
 	defer s.statusMu.Unlock()
-	if !connected {
-		if active, _ := s.registry.Get(tunnel.EnvironmentID).Get(); active != tunnel && (active != nil && active.Conn != nil && !active.Conn.IsClosed()) {
-			return
-		}
+	if active, ok := s.registry.Active(tunnel.EnvironmentID).Get(); !connected && ok && active != tunnel {
+		return
 	}
 	s.statusCallback(ctx, tunnel.EnvironmentID, connected)
-}
-
-// WaitForCleanupDone blocks until the cleanup loop has stopped.
-func (s *TunnelServer) WaitForCleanupDone() {
-	<-s.cleanupDone
 }
 
 func (s *contextualServerStream) Context() context.Context {
@@ -508,15 +399,11 @@ func (s *contextualServerStream) Context() context.Context {
 // requireCertificateIdentity checks a direct-TLS client certificate against envID. A nil state
 // means TLS ended before Arcane, such as at a proxy, so only the token applies.
 func (s *TunnelServer) requireCertificateIdentity(state *tls.ConnectionState, envID string) error {
-	mode := MTLSModeDisabled
-	if s.Config != nil {
-		mode = NormalizeMTLSMode(s.Config.AgentMTLSMode)
-	}
-	if mode == MTLSModeDisabled || state == nil {
+	if s.MTLS.Mode == MTLSModeDisabled || state == nil {
 		return nil
 	}
 	if !hasVerifiedPeerCertificate(state) {
-		if mode == MTLSModeRequired {
+		if s.MTLS.Mode == MTLSModeRequired {
 			return errors.New("verified agent mTLS client certificate is required")
 		}
 		return nil
@@ -526,7 +413,7 @@ func (s *TunnelServer) requireCertificateIdentity(state *tls.ConnectionState, en
 	if safeEnvID == "" {
 		return errors.New("environment ID is required for agent mTLS certificate identity check")
 	}
-	appURL := cmp.Or(strings.TrimSpace(s.Config.AppURL), strings.TrimSpace(httpx.ManagerBaseURL(s.Config.ManagerApiUrl)))
+	appURL := cmp.Or(strings.TrimSpace(s.MTLS.AppURL), strings.TrimSpace(httpx.ManagerBaseURL(s.MTLS.ManagerURL)))
 	expected := certgen.BuildAgentMTLSURISAN(appURL, safeEnvID)
 	if expected == nil {
 		return errors.New("agent mTLS trust domain is required for certificate identity check")

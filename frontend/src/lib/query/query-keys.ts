@@ -20,7 +20,6 @@ export const queryKeys = {
 		environments: (scope: string, permission: string) => ['swarm', scope, 'environments', permission] as const,
 		joinTokens: (environmentId: string) => ['swarm', environmentId, 'join-tokens'] as const,
 		unlockKey: (environmentId: string) => ['swarm', environmentId, 'unlock-key'] as const,
-		agentEnrollment: (environmentId: string) => ['swarm', environmentId, 'agent-enrollment'] as const,
 		joinCandidates: (environmentId: string | null, user: Pick<User, 'id' | 'permissionsByEnv'> | null) =>
 			['swarm', environmentId, 'join-candidates', user?.id ?? null, stableSerialize(user?.permissionsByEnv)] as const,
 		serviceTasks: (environmentId: string, serviceId: string) => ['swarm', environmentId, 'service-tasks', serviceId] as const,
@@ -111,7 +110,7 @@ export const queryKeys = {
 		list: (options: SearchPaginationSortRequest) => ['environments', stableSerialize(options)] as const,
 		detail: (environmentId: string) => ['environment', environmentId] as const,
 		settings: (environmentId: string) => ['environment-settings', environmentId] as const,
-		deploymentSnippets: (environmentId: string) => ['environment', environmentId, 'deployment-snippets'] as const
+		enrollmentTokens: ['enrollment-tokens'] as const
 	},
 	gitRepositories: {
 		all: ['git-repositories'] as const,

@@ -221,7 +221,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		return writeProxyError(c, http.StatusBadGateway, "Remote environment rejected the manager's credentials")
 	}
 	w := c.Response()
-	agent.CopyResponseHeaders(resp.Header, w.Header(), agent.BuildHopByHopHeaders(resp.Header))
+	agent.CopyResponseHeaders(resp.Header, w.Header())
 	w.WriteHeader(resp.StatusCode)
 	if req.Method != http.MethodHead {
 		if copyErr := agent.CopyResponseBody(w, resp); copyErr != nil {
@@ -293,7 +293,6 @@ func IsManagerLocalPath(method, suffix string) bool {
 
 	switch method + " " + suffix {
 	case "GET /swarm/join/candidates", "GET /swarm/nodes", "POST /swarm/join/environments", "POST /swarm/nodes/agents/reconcile",
-		"GET /swarm/nodes/agents/enrollment", "POST /swarm/nodes/agents/enrollment", "DELETE /swarm/nodes/agents/enrollment",
 		"POST /system/upgrade/jobs", "GET /system/upgrade/jobs/current", "POST /tunnel/restart":
 		return true
 	}

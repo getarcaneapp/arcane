@@ -17,11 +17,15 @@ type (
 	// Service runs connectivity probes; the parent persists the resulting status.
 	Service struct {
 		dockerService *docker.DockerClientService
+		tunnels       *agent.TunnelRegistry
 	}
 )
 
-func New(dockerService *docker.DockerClientService) *Service {
-	return &Service{dockerService: dockerService}
+func New(dockerService *docker.DockerClientService, tunnels *agent.TunnelRegistry) *Service {
+	return &Service{
+		dockerService: dockerService,
+		tunnels:       tunnels,
+	}
 }
 
 func (s *Service) Probe(ctx context.Context, id string, authenticated func(context.Context) (int, error)) (string, error) {
@@ -36,7 +40,7 @@ func (s *Service) Probe(ctx context.Context, id string, authenticated func(conte
 		}
 		return "online", nil
 	}
-	if !agent.GetRegistry().Active(id).IsPresent() {
+	if !s.tunnels.Active(id).IsPresent() {
 		return "offline", errors.New("agent is not connected")
 	}
 

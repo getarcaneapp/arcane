@@ -66,14 +66,12 @@ var (
 	tunnelReadWait = 3 * DefaultHeartbeatInterval
 )
 
-// NewTunnelConn creates a new WebSocket tunnel connection wrapper.
-func NewTunnelConn(conn *websocket.Conn) *TunnelConn {
+func NewWebSocketTunnelConn(conn *websocket.Conn) *WebSocketTunnelConn {
 	conn.SetReadLimit(maxWebSocketTunnelMessageSize)
-	return &TunnelConn{conn: conn}
+	return &WebSocketTunnelConn{conn: conn}
 }
 
-// Send sends a register message over the WebSocket connection.
-func (t *TunnelConn) Send(msg *TunnelMessage) error {
+func (t *WebSocketTunnelConn) Send(msg *TunnelMessage) error {
 	if t.muxed.Load() {
 		return errTunnelMuxActive
 	}
@@ -85,8 +83,7 @@ func (t *TunnelConn) Send(msg *TunnelMessage) error {
 	return t.write(context.Background(), websocket.MessageText, data, DefaultWriteTimeout)
 }
 
-// Receive receives a register message from the WebSocket connection.
-func (t *TunnelConn) Receive() (*TunnelMessage, error) {
+func (t *WebSocketTunnelConn) Receive() (*TunnelMessage, error) {
 	var data bytes.Buffer
 	if _, err := t.read(context.Background(), &data); err != nil { //nolint:forbidigo // Tunnel connection owns timed I/O independent of individual HTTP requests.
 		return nil, err
@@ -99,7 +96,7 @@ func (t *TunnelConn) Receive() (*TunnelMessage, error) {
 }
 
 // muxConn switches the connection to binary frames carrying the multiplexed session.
-func (t *TunnelConn) muxConn(ctx context.Context) *muxConn {
+func (t *WebSocketTunnelConn) muxConn(ctx context.Context) *muxConn {
 	t.muxed.Store(true)
 	var frame bytes.Buffer
 	recv := func() ([]byte, error) {
@@ -117,7 +114,7 @@ func (t *TunnelConn) muxConn(ctx context.Context) *muxConn {
 }
 
 // write sends one frame. coder/websocket closes the connection after a failed or expired write.
-func (t *TunnelConn) write(ctx context.Context, messageType websocket.MessageType, data []byte, timeout time.Duration) error {
+func (t *WebSocketTunnelConn) write(ctx context.Context, messageType websocket.MessageType, data []byte, timeout time.Duration) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.closed.Load() {
@@ -134,7 +131,7 @@ func (t *TunnelConn) write(ctx context.Context, messageType websocket.MessageTyp
 
 // read receives one frame. Read-timeout expiry and network errors are terminal: coder/websocket
 // closes the connection when a read context expires.
-func (t *TunnelConn) read(ctx context.Context, buf *bytes.Buffer) (websocket.MessageType, error) {
+func (t *WebSocketTunnelConn) read(ctx context.Context, buf *bytes.Buffer) (websocket.MessageType, error) {
 	if t.closed.Load() {
 		return 0, ErrTunnelConnectionClosed
 	}
@@ -153,26 +150,22 @@ func (t *TunnelConn) read(ctx context.Context, buf *bytes.Buffer) (websocket.Mes
 
 // Close closes the WebSocket tunnel connection, sending a close frame on the
 // first call so the peer observes a normal closure instead of 1006.
-func (t *TunnelConn) Close() error {
+func (t *WebSocketTunnelConn) Close() error {
 	if t.closed.Swap(true) {
 		return t.conn.CloseNow()
 	}
 
-	// Close performs the close handshake with its own internal timeout and is
-	// safe concurrently with a data writer, so a stuck Send cannot block teardown.
 	if err := t.conn.Close(websocket.StatusNormalClosure, ""); err != nil {
 		return t.conn.CloseNow()
 	}
 	return nil
 }
 
-// IsClosed returns whether the connection is closed.
-func (t *TunnelConn) IsClosed() bool {
+func (t *WebSocketTunnelConn) IsClosed() bool {
 	return t.closed.Load()
 }
 
-// Transport identifies the underlying tunnel transport.
-func (t *TunnelConn) Transport() string {
+func (t *WebSocketTunnelConn) Transport() string {
 	return TransportWebSocket
 }
 
@@ -194,7 +187,6 @@ func NewGRPCManagerTunnelConn(stream grpcManagerStream) *GRPCManagerTunnelConn {
 	}
 }
 
-// Send sends a manager->agent register message over gRPC.
 func (t *GRPCManagerTunnelConn) Send(msg *TunnelMessage) error {
 	if t.muxed.Load() {
 		return errTunnelMuxActive
@@ -236,7 +228,6 @@ func (t *GRPCManagerTunnelConn) send(msg *tunnelpb.ManagerMessage) error {
 	return nil
 }
 
-// Receive receives an agent->manager tunnel message from gRPC.
 func (t *GRPCManagerTunnelConn) Receive() (*TunnelMessage, error) {
 	if t.stream == nil {
 		return nil, ErrTunnelConnectionClosed
@@ -244,7 +235,6 @@ func (t *GRPCManagerTunnelConn) Receive() (*TunnelMessage, error) {
 	return receiveGRPC(t.stream.Context(), t.stream.Recv, agentProtoToTunnelMessage, &t.closed)
 }
 
-// Close marks the stream closed on manager side.
 func (t *GRPCManagerTunnelConn) Close() error {
 	t.closed.Store(true)
 	if t.cancel != nil {
@@ -253,27 +243,21 @@ func (t *GRPCManagerTunnelConn) Close() error {
 	return nil
 }
 
-// IsClosed returns whether the stream is closed.
 func (t *GRPCManagerTunnelConn) IsClosed() bool {
 	return t.closed.Load()
 }
 
-// Transport identifies the underlying tunnel transport.
 func (t *GRPCManagerTunnelConn) Transport() string {
 	return TransportGRPC
 }
 
-// NewGRPCAgentTunnelConn creates an agent-side gRPC tunnel wrapper.
-func NewGRPCAgentTunnelConn(stream grpcAgentStream, cancelFns ...context.CancelFunc) *GRPCAgentTunnelConn {
-	var cancel context.CancelFunc
-	if len(cancelFns) > 0 {
-		cancel = cancelFns[0]
+func NewGRPCAgentTunnelConn(stream grpcAgentStream, cancel context.CancelFunc) *GRPCAgentTunnelConn {
+	return &GRPCAgentTunnelConn{
+		stream: stream,
+		cancel: cancel,
 	}
-
-	return &GRPCAgentTunnelConn{stream: stream, cancel: cancel}
 }
 
-// Send sends an agent->manager register message over gRPC.
 func (t *GRPCAgentTunnelConn) Send(msg *TunnelMessage) error {
 	if t.muxed.Load() {
 		return errTunnelMuxActive
@@ -294,9 +278,6 @@ func (t *GRPCAgentTunnelConn) muxConn(context.Context) *muxConn {
 		}.Build())
 	}
 	recv := func() ([]byte, error) {
-		if t.stream == nil {
-			return nil, ErrTunnelConnectionClosed
-		}
 		return receiveMuxData(t.stream.Recv, &t.closed)
 	}
 	return newMuxConn(send, recv, t.Close)
@@ -305,7 +286,7 @@ func (t *GRPCAgentTunnelConn) muxConn(context.Context) *muxConn {
 func (t *GRPCAgentTunnelConn) send(msg *tunnelpb.AgentMessage) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.IsClosed() || t.stream == nil {
+	if t.IsClosed() {
 		return ErrTunnelConnectionClosed
 	}
 	if err := t.stream.Send(msg); err != nil {
@@ -315,11 +296,7 @@ func (t *GRPCAgentTunnelConn) send(msg *tunnelpb.AgentMessage) error {
 	return nil
 }
 
-// Receive receives a manager->agent tunnel message from gRPC.
 func (t *GRPCAgentTunnelConn) Receive() (*TunnelMessage, error) {
-	if t.stream == nil {
-		return nil, ErrTunnelConnectionClosed
-	}
 	return receiveGRPC(t.stream.Context(), t.stream.Recv, managerProtoToTunnelMessage, &t.closed)
 }
 
@@ -330,32 +307,24 @@ func (t *GRPCAgentTunnelConn) Close() error {
 		return nil
 	}
 
-	// Preserve a clean half-close unless an in-flight send must be cancelled first.
 	locked := t.mu.TryLock()
 	if !locked {
-		if t.cancel != nil {
-			t.cancel()
-		}
+		t.cancel()
 		t.mu.Lock()
 	}
 	defer t.mu.Unlock()
 
-	var err error
-	if t.stream != nil {
-		err = t.stream.CloseSend()
-	}
-	if locked && t.cancel != nil {
+	err := t.stream.CloseSend()
+	if locked {
 		t.cancel()
 	}
 	return err
 }
 
-// IsClosed returns whether the stream is closed.
 func (t *GRPCAgentTunnelConn) IsClosed() bool {
 	return t.closed.Load()
 }
 
-// Transport identifies the underlying tunnel transport.
 func (t *GRPCAgentTunnelConn) Transport() string {
 	return TransportGRPC
 }

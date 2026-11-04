@@ -63,24 +63,54 @@ var (
 	generatedAssetNameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 	managerCALocks              concurrency.KeyedMutex
 	errEnrollUnreachable        = errors.New("agent mTLS enrollment request failed")
+	ErrMTLSEnrollUnavailable    = errors.New("agent mTLS enrollment is not available")
+	ErrMTLSEnrollCooldown       = errors.New("agent mTLS enrollment was recently completed; retry later")
 	// caKeyEncrypt is a variable so tests can force encryption failures.
 	caKeyEncrypt = libcrypto.Encrypt
 )
 
-// BuildManagerServerTLSConfig returns the manager TLS configuration needed to
-// support optional agent mTLS on the shared Arcane listener.
-func BuildManagerServerTLSConfig(cfg *Config) (*tls.Config, error) {
-	if cfg == nil || NormalizeMTLSMode(cfg.AgentMTLSMode) == MTLSModeDisabled {
+func NewMTLS(cfg MTLSConfig) *MTLS {
+	return &MTLS{
+		Mode:       NormalizeMTLSMode(cfg.Mode),
+		CAFile:     strings.TrimSpace(cfg.CAFile),
+		CertFile:   strings.TrimSpace(cfg.CertFile),
+		KeyFile:    strings.TrimSpace(cfg.KeyFile),
+		ServerName: strings.TrimSpace(cfg.ServerName),
+		AssetsDir:  strings.TrimSpace(cfg.AssetsDir),
+		AppURL:     cfg.AppURL,
+		ManagerURL: cfg.ManagerURL,
+	}
+}
+
+func (m *MTLS) Server(ctx context.Context) (*tls.Config, error) {
+	if m.Mode == MTLSModeDisabled {
 		return nil, nil
+	}
+	if m.CAFile == "" {
+		assetsDir, err := m.assetsDir(managerMTLSDirName)
+		if err != nil {
+			return nil, err
+		}
+		if _, _, caErr := ensureManagerCA(ctx, assetsDir); caErr != nil {
+			return nil, caErr
+		}
+		m.MTLSConfig = MTLSConfig{
+			Mode:       m.Mode,
+			CAFile:     filepath.Join(assetsDir, generatedMTLSCACertFileName),
+			CertFile:   m.CertFile,
+			KeyFile:    m.KeyFile,
+			ServerName: m.ServerName,
+			AssetsDir:  m.AssetsDir,
+			AppURL:     m.AppURL,
+			ManagerURL: m.ManagerURL,
+		}
 	}
 
 	caPool := x509.NewCertPool()
-	if err := appendCAFile(caPool, cfg.AgentMTLSCAFile); err != nil {
+	if err := appendCAFile(caPool, m.CAFile); err != nil {
 		return nil, fmt.Errorf("failed to load agent mTLS CA file: %w", err)
 	}
-
-	// Even "required" mode only verifies certificates when given: agents enroll before owning one,
-	// so identity is enforced per request. TODO: reload ClientCAs when CA rotation support is added.
+	// Agents enroll before owning a certificate, so even "required" mode verifies only given certificates.
 	return &tls.Config{
 		MinVersion: tls.VersionTLS12,
 		ClientAuth: tls.VerifyClientCertIfGiven,
@@ -88,51 +118,14 @@ func BuildManagerServerTLSConfig(cfg *Config) (*tls.Config, error) {
 	}, nil
 }
 
-// NewManagerHTTPClient creates an HTTP client for agent-to-manager requests,
-// applying agent TLS settings when the manager URL uses HTTPS.
-func NewManagerHTTPClient(cfg *Config, timeout time.Duration) (*http.Client, error) {
-	tlsConfig, err := buildManagerClientTLSConfig(cfg)
-	if err != nil {
-		return nil, err
-	}
-	return httpx.NewHTTPClient(httpx.ClientConfig{
-		TLSClientConfig: tlsConfig,
-		Timeout:         timeout,
-		Instrument:      true,
-	}), nil
-}
-
-// PrepareManagerMTLSAssetsWithContext generates the manager CA when agent mTLS is
-// enabled and no explicit manager CA file is configured.
-func PrepareManagerMTLSAssetsWithContext(ctx context.Context, cfg *Config) error {
-	if cfg == nil || NormalizeMTLSMode(cfg.AgentMTLSMode) == MTLSModeDisabled || strings.TrimSpace(cfg.AgentMTLSCAFile) != "" {
-		return nil
-	}
-
-	assetsDir, err := agentMTLSAssetsDir(cfg, managerMTLSDirName)
-	if err != nil {
-		return err
-	}
-	if _, _, caErr := ensureManagerCA(ctx, assetsDir); caErr != nil {
-		return caErr
-	}
-
-	cfg.AgentMTLSCAFile = filepath.Join(assetsDir, generatedMTLSCACertFileName)
-	return nil
-}
-
-// AvailableManagerMTLSCAPath resolves an existing manager CA certificate.
-func AvailableManagerMTLSCAPath(cfg *Config) (string, error) {
-	if cfg == nil {
-		return "", errors.New("agent config is required")
-	}
-	if NormalizeMTLSMode(cfg.AgentMTLSMode) == MTLSModeDisabled {
+func (m *MTLS) CAPath() (string, error) {
+	if m.Mode == MTLSModeDisabled {
 		return "", errors.New("agent mTLS is disabled")
 	}
 
-	caPath := strings.TrimSpace(cfg.AgentMTLSCAFile)
+	caPath := m.CAFile
 	if caPath == "" {
-		assetsDir, err := agentMTLSAssetsDir(cfg, managerMTLSDirName)
+		assetsDir, err := m.assetsDir(managerMTLSDirName)
 		if err != nil {
 			return "", fmt.Errorf("resolve agent mTLS CA path: %w", err)
 		}
@@ -145,18 +138,16 @@ func AvailableManagerMTLSCAPath(cfg *Config) (string, error) {
 	return caPath, nil
 }
 
-// GenerateManagerClientMTLSAssetsWithContext ensures the generated CA and the environment's client
-// certificate, reusing a client certificate that is still valid for the environment's identity.
-func GenerateManagerClientMTLSAssetsWithContext(ctx context.Context, cfg *Config, envID, envName string) (*GeneratedMTLSAssets, error) {
-	if !usesGeneratedManagerCA(cfg) {
+func (m *MTLS) IssueClient(ctx context.Context, opts IssueClientOptions) (*GeneratedMTLSAssets, error) {
+	if !m.UsesGeneratedCA() {
 		return nil, nil
 	}
-	safeEnvID := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(envID), "_")
+	safeEnvID := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(opts.EnvironmentID), "_")
 	if safeEnvID == "" {
 		return nil, errors.New("environment ID is required")
 	}
 
-	assetsDir, err := agentMTLSAssetsDir(cfg, managerMTLSDirName)
+	assetsDir, err := m.assetsDir(managerMTLSDirName)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +169,7 @@ func GenerateManagerClientMTLSAssetsWithContext(ctx context.Context, cfg *Config
 
 	certPath := filepath.Join(clientDir, generatedMTLSClientCertName)
 	keyPath := filepath.Join(clientDir, generatedMTLSClientKeyName)
-	appURL := cmp.Or(strings.TrimSpace(cfg.AppURL), strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl)))
+	appURL := cmp.Or(strings.TrimSpace(m.AppURL), strings.TrimSpace(opts.FallbackAppURL), strings.TrimSpace(httpx.ManagerBaseURL(m.ManagerURL)))
 	uriSAN := certgen.BuildAgentMTLSURISAN(appURL, safeEnvID)
 
 	// The URI SAN is the stable identity, so renaming an environment keeps its certificate.
@@ -198,7 +189,7 @@ func GenerateManagerClientMTLSAssetsWithContext(ctx context.Context, cfg *Config
 		}
 
 		// The common name is display metadata: "<name>-<id>", capped at 64 characters.
-		safeEnvName := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(envName), "-")
+		safeEnvName := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(opts.EnvironmentName), "-")
 		commonName := safeEnvID
 		if name := strings.Trim(safeEnvName, "-_"); name != "" && len(safeEnvID) < 63 {
 			if name = strings.Trim(name[:min(len(name), 63-len(safeEnvID))], "-_"); name != "" {
@@ -263,34 +254,120 @@ func GenerateManagerClientMTLSAssetsWithContext(ctx context.Context, cfg *Config
 	}, nil
 }
 
-// GeneratedManagerClientMTLSCertPath returns the manager-side generated client certificate path for an environment.
-func GeneratedManagerClientMTLSCertPath(cfg *Config, envID string) (string, error) {
-	assetsDir, err := agentMTLSAssetsDir(cfg, managerMTLSDirName)
+func (m *MTLS) IssueEnrollment(ctx context.Context, opts IssueClientOptions) (*MTLSEnrollment, error) {
+	assetsDir, err := m.assetsDir(managerMTLSDirName)
 	if err != nil {
-		return "", err
+		return nil, err
+	}
+	safeEnvID := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(opts.EnvironmentID), "_")
+	if safeEnvID == "" {
+		return nil, errors.New("environment ID is required")
+	}
+	markerPath := filepath.Join(assetsDir, generatedClientMTLSSubdir, safeEnvID, generatedMTLSEnrolledName)
+	marker, readErr := os.ReadFile(markerPath)
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		return nil, fmt.Errorf("failed to read agent mTLS enrollment marker: %w", readErr)
+	}
+	now := time.Now()
+	enrolledMarker := strings.TrimSpace(string(marker))
+	enrolledAt, parseErr := time.Parse(time.RFC3339Nano, enrolledMarker)
+	if enrolledMarker != "" && parseErr != nil {
+		return nil, fmt.Errorf("failed to parse agent mTLS enrollment marker %s: %w", markerPath, parseErr)
+	}
+
+	if enrolledMarker != "" && now.Sub(enrolledAt) < managerMTLSReenrollCooldown {
+		cached, cacheErr := m.IssueClient(ctx, opts)
+		if cacheErr != nil || cached == nil {
+			return nil, errors.Join(ErrMTLSEnrollCooldown, cacheErr)
+		}
+		return &MTLSEnrollment{Assets: cached, Cached: true}, nil
+	}
+
+	assets, err := m.IssueClient(ctx, opts)
+	switch {
+	case err != nil:
+		return nil, fmt.Errorf("failed to generate agent mTLS assets: %w", err)
+	case assets == nil:
+		return nil, ErrMTLSEnrollUnavailable
+	}
+	if writeErr := atomic.WriteFile(markerPath, []byte(now.UTC().Format(time.RFC3339Nano)+"\n"), 0o600); writeErr != nil {
+		return nil, fmt.Errorf("failed to record agent mTLS enrollment state: %w", writeErr)
+	}
+	return &MTLSEnrollment{Assets: assets, Reenrolled: readErr == nil}, nil
+}
+
+func (m *MTLS) ClientCertificate(envID string) (*x509.Certificate, error) {
+	if m.Mode == MTLSModeDisabled {
+		return nil, errors.New("agent mTLS is disabled")
+	}
+	assetsDir, err := m.assetsDir(managerMTLSDirName)
+	if err != nil {
+		return nil, err
 	}
 	safeEnvID := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(envID), "_")
 	if safeEnvID == "" {
-		return "", errors.New("environment ID is required")
+		return nil, errors.New("environment ID is required")
 	}
-	return filepath.Join(assetsDir, generatedClientMTLSSubdir, safeEnvID, generatedMTLSClientCertName), nil
+	// os rather than acfs: the assets dir may be configured anywhere on the host.
+	certPEM, err := os.ReadFile(filepath.Join(assetsDir, generatedClientMTLSSubdir, safeEnvID, generatedMTLSClientCertName))
+	if err != nil {
+		return nil, err
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return nil, errors.New("agent mTLS client certificate is not PEM encoded")
+	}
+	return x509.ParseCertificate(block.Bytes)
 }
 
-// EnsureAgentMTLSAssets downloads manager-generated client certificates when agent mTLS is
-// enabled without configured client cert/key files, and renews them before they expire.
-func EnsureAgentMTLSAssets(ctx context.Context, cfg *Config) error {
-	if cfg == nil || NormalizeMTLSMode(cfg.AgentMTLSMode) == MTLSModeDisabled {
+func (m *MTLS) ManagerClient(ctx context.Context, opts ManagerClientOptions) (*http.Client, error) {
+	if opts.Enroll {
+		if err := m.enrollClient(ctx, opts.AgentToken); err != nil {
+			return nil, err
+		}
+		if m.Mode != MTLSModeDisabled && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL(m.ManagerURL))), "https://") {
+			return nil, errors.New("ARCANE_AGENT_MTLS_MODE requires ARCANE_MANAGER_API_URL to use https")
+		}
+	}
+	tlsConfig, err := m.clientTLS(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return httpx.NewHTTPClient(httpx.ClientConfig{
+		TLSClientConfig: tlsConfig,
+		Timeout:         opts.Timeout,
+		Instrument:      true,
+	}), nil
+}
+
+func (m *MTLS) ResetClient(ctx context.Context) error {
+	assetsDir, err := m.assetsDir(agentMTLSDirName)
+	if err != nil {
+		return err
+	}
+	if _, statErr := os.Stat(assetsDir); errors.Is(statErr, os.ErrNotExist) {
+		return nil
+	}
+	for _, name := range []string{generatedMTLSClientCertName, generatedMTLSClientKeyName} {
+		if removeErr := (acfs.Root{Path: assetsDir}).RemoveAll(ctx, "/"+name); removeErr != nil {
+			return fmt.Errorf("failed to remove agent mTLS %s: %w", name, removeErr)
+		}
+	}
+	return nil
+}
+
+func (m *MTLS) enrollClient(ctx context.Context, agentToken string) error {
+	if m.Mode == MTLSModeDisabled {
 		return nil
 	}
 
-	assetsDir, err := agentMTLSAssetsDir(cfg, agentMTLSDirName)
+	assetsDir, err := m.assetsDir(agentMTLSDirName)
 	if err != nil {
 		return err
 	}
 	certPath := filepath.Join(assetsDir, generatedMTLSClientCertName)
 	keyPath := filepath.Join(assetsDir, generatedMTLSClientKeyName)
-	configuredCert, configuredKey := strings.TrimSpace(cfg.AgentMTLSCertFile), strings.TrimSpace(cfg.AgentMTLSKeyFile)
-	if configuredCert != "" && configuredKey != "" && (filepath.Clean(configuredCert) != certPath || filepath.Clean(configuredKey) != keyPath) {
+	if m.CertFile != "" && m.KeyFile != "" && (filepath.Clean(m.CertFile) != certPath || filepath.Clean(m.KeyFile) != keyPath) {
 		return nil
 	}
 
@@ -299,12 +376,12 @@ func EnsureAgentMTLSAssets(ctx context.Context, cfg *Config) error {
 		if fileExists(certPath) {
 			slog.WarnContext(ctx, "Existing agent mTLS assets need renewal; enrolling new assets", "reason", reason, "certPath", certPath)
 		}
-		if enrollErr := enrollAgentMTLSAssets(ctx, cfg, assetsDir, certPath, keyPath); enrollErr != nil {
+		if enrollErr := m.downloadClientAssets(ctx, agentToken, assetsDir, certPath, keyPath); enrollErr != nil {
 			_, currentReason := loadClientCertificate(certPath, keyPath, time.Now(), 0)
 			switch {
 			case currentReason == "" && errors.Is(enrollErr, errEnrollUnreachable):
 				slog.WarnContext(ctx, "Agent mTLS renewal failed; keeping the current client certificate until it expires", "error", enrollErr, "certPath", certPath)
-			case NormalizeMTLSMode(cfg.AgentMTLSMode) != MTLSModeRequired:
+			case m.Mode != MTLSModeRequired:
 				slog.WarnContext(ctx, "Agent mTLS enrollment failed; proceeding without client certificate", "error", enrollErr)
 				return nil
 			default:
@@ -319,52 +396,35 @@ func EnsureAgentMTLSAssets(ctx context.Context, cfg *Config) error {
 			return fmt.Errorf("failed to write agent mTLS enrollment marker: %w", writeErr)
 		}
 	}
-	if configuredCert != certPath || configuredKey != keyPath {
-		cfg.AgentMTLSCertFile = certPath
-		cfg.AgentMTLSKeyFile = keyPath
-	}
-	if caPath := filepath.Join(assetsDir, generatedMTLSCACertFileName); fileExists(caPath) && strings.TrimSpace(cfg.AgentMTLSCAFile) == "" {
-		cfg.AgentMTLSCAFile = caPath
-	}
-	return nil
-}
-
-// DiscardAgentMTLSClientCertificate removes the manager-issued client certificate, which names one
-// environment, so the next EnsureAgentMTLSAssets enrolls a certificate for the agent's current environment.
-func DiscardAgentMTLSClientCertificate(ctx context.Context, cfg *Config) error {
-	assetsDir, err := agentMTLSAssetsDir(cfg, agentMTLSDirName)
-	if err != nil {
-		return err
-	}
-	// os rather than acfs: the assets dir may be configured anywhere on the host.
-	if _, statErr := os.Stat(assetsDir); errors.Is(statErr, os.ErrNotExist) {
-		return nil
-	}
-	for _, name := range []string{generatedMTLSClientCertName, generatedMTLSClientKeyName} {
-		if removeErr := (acfs.Root{Path: assetsDir}).RemoveAll(ctx, "/"+name); removeErr != nil {
-			return fmt.Errorf("failed to remove agent mTLS %s: %w", name, removeErr)
-		}
+	caPath := filepath.Join(assetsDir, generatedMTLSCACertFileName)
+	m.MTLSConfig = MTLSConfig{
+		Mode:       m.Mode,
+		CAFile:     cmp.Or(m.CAFile, kit.Ternary(fileExists(caPath), caPath, "")),
+		CertFile:   certPath,
+		KeyFile:    keyPath,
+		ServerName: m.ServerName,
+		AssetsDir:  m.AssetsDir,
+		AppURL:     m.AppURL,
+		ManagerURL: m.ManagerURL,
 	}
 	return nil
 }
 
-// enrollAgentMTLSAssets downloads and writes the manager-issued client assets. It stays separate
-// from EnsureAgentMTLSAssets to keep that function under the cognitive-complexity limit.
-func enrollAgentMTLSAssets(ctx context.Context, cfg *Config, assetsDir, certPath, keyPath string) error {
-	managerBaseURL := strings.TrimRight(strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl)), "/")
+func (m *MTLS) downloadClientAssets(ctx context.Context, agentToken, assetsDir, certPath, keyPath string) error {
+	managerBaseURL := strings.TrimRight(strings.TrimSpace(httpx.ManagerBaseURL(m.ManagerURL)), "/")
 	if managerBaseURL == "" {
 		return errors.New("ARCANE_MANAGER_API_URL is required to enroll agent mTLS assets")
 	}
-	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl))), "https://") {
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL(m.ManagerURL))), "https://") {
 		return errors.New("ARCANE_AGENT_MTLS_MODE requires ARCANE_MANAGER_API_URL to use https for certificate enrollment")
 	}
 
-	httpClient, clientErr := NewManagerHTTPClient(&Config{
-		AgentMTLSMode:       cfg.AgentMTLSMode,
-		AgentMTLSCAFile:     cfg.AgentMTLSCAFile,
-		AgentMTLSServerName: cfg.AgentMTLSServerName,
-		ManagerApiUrl:       cfg.ManagerApiUrl,
-	}, 30*time.Second)
+	httpClient, clientErr := (&MTLS{
+		Mode:       m.Mode,
+		CAFile:     m.CAFile,
+		ServerName: m.ServerName,
+		ManagerURL: m.ManagerURL,
+	}).ManagerClient(ctx, ManagerClientOptions{Timeout: 30 * time.Second})
 	if clientErr != nil {
 		return fmt.Errorf("failed to configure agent mTLS enrollment client: %w", clientErr)
 	}
@@ -372,7 +432,7 @@ func enrollAgentMTLSAssets(ctx context.Context, cfg *Config, assetsDir, certPath
 	if reqErr != nil {
 		return fmt.Errorf("failed to create agent mTLS enrollment request: %w", reqErr)
 	}
-	for header, value := range agentAuthCredentials(cfg.AgentToken) {
+	for header, value := range agentAuthCredentials(agentToken) {
 		req.Header.Set(header, value)
 	}
 
@@ -391,7 +451,7 @@ func enrollAgentMTLSAssets(ctx context.Context, cfg *Config, assetsDir, certPath
 		return fmt.Errorf("agent mTLS enrollment failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	var enrollResp enrollMTLSResponse
+	var enrollResp EnrollMTLSResponse
 	if decodeErr := json.UnmarshalRead(io.LimitReader(resp.Body, maxEnrollResponseBytes), &enrollResp); decodeErr != nil {
 		return fmt.Errorf("failed to decode agent mTLS enrollment response: %w", decodeErr)
 	}
@@ -415,35 +475,31 @@ func enrollAgentMTLSAssets(ctx context.Context, cfg *Config, assetsDir, certPath
 	return nil
 }
 
-// buildManagerClientTLSConfig returns the agent's TLS config for an https manager URL, adding the
-// configured CA to the system roots and the configured client certificate.
-func buildManagerClientTLSConfig(cfg *Config) (*tls.Config, error) {
-	if cfg == nil || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl))), "https://") {
+func (m *MTLS) clientTLS(ctx context.Context) (*tls.Config, error) {
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL(m.ManagerURL))), "https://") {
 		return nil, nil
 	}
-	ctx := context.Background() //nolint:forbidigo // TLS configuration is built at startup without a request context.
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: strings.TrimSpace(cfg.AgentMTLSServerName)}
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: m.ServerName}
 
-	if strings.TrimSpace(cfg.AgentMTLSCAFile) != "" {
+	if m.CAFile != "" {
 		pool, err := x509.SystemCertPool()
 		if err != nil || pool == nil {
 			slog.WarnContext(ctx, "Failed to load system certificate pool; falling back to configured agent mTLS CA only", "error", err)
 			pool = x509.NewCertPool()
 		}
-		if appendErr := appendCAFile(pool, cfg.AgentMTLSCAFile); appendErr != nil {
+		if appendErr := appendCAFile(pool, m.CAFile); appendErr != nil {
 			return nil, fmt.Errorf("failed to load agent mTLS CA file: %w", appendErr)
 		}
 		tlsConfig.RootCAs = pool
 	}
 
-	certPath, keyPath := strings.TrimSpace(cfg.AgentMTLSCertFile), strings.TrimSpace(cfg.AgentMTLSKeyFile)
-	if certPath == "" || keyPath == "" {
+	if m.CertFile == "" || m.KeyFile == "" {
 		return tlsConfig, nil
 	}
-	cert, reason := loadClientCertificate(certPath, keyPath, time.Now(), 0)
+	cert, reason := loadClientCertificate(m.CertFile, m.KeyFile, time.Now(), 0)
 	if reason != "" {
-		if NormalizeMTLSMode(cfg.AgentMTLSMode) == MTLSModeOptional {
-			slog.WarnContext(ctx, "Ignoring unusable optional agent mTLS client certificate; falling back to token auth", "certPath", certPath, "reason", reason)
+		if m.Mode == MTLSModeOptional {
+			slog.WarnContext(ctx, "Ignoring unusable optional agent mTLS client certificate; falling back to token auth", "certPath", m.CertFile, "reason", reason)
 			return tlsConfig, nil
 		}
 		return nil, fmt.Errorf("agent mTLS client certificate is unusable: %s", reason)
@@ -456,31 +512,35 @@ func buildManagerClientTLSConfig(cfg *Config) (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
-// ValidateAgentMTLSConfig validates the agent TLS configuration before the
-// reverse tunnel client starts.
-func ValidateAgentMTLSConfig(cfg *Config) error {
-	if cfg == nil || NormalizeMTLSMode(cfg.AgentMTLSMode) == MTLSModeDisabled {
-		return nil
+func (m *MTLS) UsesGeneratedCA() bool {
+	if m.Mode == MTLSModeDisabled {
+		return false
 	}
-	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl))), "https://") {
-		return errors.New("ARCANE_AGENT_MTLS_MODE requires ARCANE_MANAGER_API_URL to use https")
+	if m.CAFile == "" {
+		return true
 	}
-	_, err := buildManagerClientTLSConfig(cfg)
-	return err
+	assetsDir, err := m.assetsDir(managerMTLSDirName)
+	return err == nil && filepath.Clean(m.CAFile) == filepath.Join(assetsDir, generatedMTLSCACertFileName)
 }
 
-// ValidateManagerMTLSConfig validates a configured manager CA file. An empty CA file is
-// allowed because PrepareManagerMTLSAssetsWithContext generates one.
-func ValidateManagerMTLSConfig(cfg *Config) error {
-	if cfg == nil || strings.TrimSpace(cfg.AgentMTLSCAFile) == "" {
-		return nil
+func (m *MTLS) assetsDir(name string) (string, error) {
+	if m.AssetsDir != "" {
+		return m.AssetsDir, nil
 	}
-	_, err := BuildManagerServerTLSConfig(cfg)
-	return err
+
+	baseDir := filepath.Join("data", name)
+	// Probes the fixed system path /app/data, which is not under any acfs root.
+	if _, err := os.Stat("/app/data"); err == nil {
+		baseDir = "/app/data/" + name
+	}
+	resolved, err := filepath.Abs(baseDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve agent mTLS assets dir: %w", err)
+	}
+	return resolved, nil
 }
 
-// appendCAFile adds the PEM certificates in caFile to pool. The path may be configured
-// anywhere on the host, so it is read with os rather than acfs.
+// appendCAFile reads with os rather than acfs: the path may be configured anywhere on the host.
 func appendCAFile(pool *x509.CertPool, caFile string) error {
 	caFile = strings.TrimSpace(caFile)
 	if caFile == "" {
@@ -496,20 +556,6 @@ func appendCAFile(pool *x509.CertPool, caFile string) error {
 	return nil
 }
 
-// usesGeneratedManagerCA reports whether agent mTLS runs on the Arcane-generated CA. The configured
-// CA also counts once PrepareManagerMTLSAssetsWithContext has pointed it at the generated file.
-func usesGeneratedManagerCA(cfg *Config) bool {
-	if cfg == nil || NormalizeMTLSMode(cfg.AgentMTLSMode) == MTLSModeDisabled {
-		return false
-	}
-	configuredCA := strings.TrimSpace(cfg.AgentMTLSCAFile)
-	if configuredCA == "" {
-		return true
-	}
-	assetsDir, err := agentMTLSAssetsDir(cfg, managerMTLSDirName)
-	return err == nil && filepath.Clean(configuredCA) == filepath.Join(assetsDir, generatedMTLSCACertFileName)
-}
-
 func hasVerifiedPeerCertificate(state *tls.ConnectionState) bool {
 	return state != nil && len(state.PeerCertificates) > 0 && len(state.VerifiedChains) > 0
 }
@@ -520,27 +566,6 @@ func certificateHasURISAN(cert *x509.Certificate, expected *url.URL) bool {
 		return uri != nil && strings.EqualFold(uri.Scheme, expected.Scheme) && uri.Path == expected.Path &&
 			strings.EqualFold(strings.TrimSuffix(uri.Host, "."), strings.TrimSuffix(expected.Host, "."))
 	})
-}
-
-// agentMTLSAssetsDir returns the configured assets dir, else data/<name> under /app when it exists.
-func agentMTLSAssetsDir(cfg *Config, name string) (string, error) {
-	if cfg == nil {
-		return "", errors.New("agent config is required")
-	}
-	if configured := strings.TrimSpace(cfg.AgentMTLSAssetsDir); configured != "" {
-		return configured, nil
-	}
-
-	baseDir := filepath.Join("data", name)
-	// Probes the fixed system path /app/data, which is not under any acfs root.
-	if _, err := os.Stat("/app/data"); err == nil {
-		baseDir = "/app/data/" + name
-	}
-	resolved, err := filepath.Abs(baseDir)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve agent mTLS assets dir: %w", err)
-	}
-	return resolved, nil
 }
 
 // ensureManagerCA returns the generated CA, creating it unless the existing one decrypts,

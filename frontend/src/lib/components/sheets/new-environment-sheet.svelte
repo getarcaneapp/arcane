@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 
@@ -12,7 +12,6 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { AgentConnectionIcon, DownloadIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { environmentDeploymentSnippetsQuery } from '#lib/query/environments.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { isSessionCancelledError } from '#lib/services/api-service.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
@@ -32,32 +31,23 @@
 	let { open = $bindable(false), onEnvironmentCreated }: NewEnvironmentSheetProps = $props();
 	const queryClient = useQueryClient();
 
-	let createdEnvironment = $state<{ id: string; apiKey: string; useMTLS: boolean } | null>(null);
+	let createdEnvironment = $state<{ id: string; useMTLS: boolean } | null>(null);
 
-	const snippetsQuery = createQuery(() => ({
-		...environmentDeploymentSnippetsQuery(createdEnvironment?.id ?? ''),
-		enabled: createdEnvironment !== null
+	const snippetsMutation = createMutation(() => ({
+		mutationFn: (environmentId: string) => environmentManagementService.generateDeploymentSnippets(environmentId)
 	}));
-	const mtlsAssetsUnavailable = $derived(!!createdEnvironment?.useMTLS && !!snippetsQuery.data && !snippetsQuery.data.mtls);
-	const generatedMTLS = $derived(createdEnvironment?.useMTLS ? snippetsQuery.data?.mtls : undefined);
-	const createdSnippets = $derived(generatedMTLS ?? snippetsQuery.data);
+	const mtlsAssetsUnavailable = $derived(!!createdEnvironment?.useMTLS && !!snippetsMutation.data && !snippetsMutation.data.mtls);
+	const generatedMTLS = $derived(createdEnvironment?.useMTLS ? snippetsMutation.data?.mtls : undefined);
+	const createdSnippets = $derived(generatedMTLS ?? snippetsMutation.data);
 
 	const createEnvironmentMutation = createMutation(() => ({
 		mutationFn: (variables: { dto: EnvironmentCreate; useMTLS: boolean }) => environmentManagementService.create(variables.dto),
 		onSuccess: async (created, variables) => {
 			await environmentStore.initialize([...environmentStore.available, created]);
 			await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
-
-			if (created.apiKey) {
-				createdEnvironment = {
-					id: created.id,
-					apiKey: created.apiKey,
-					useMTLS: variables.useMTLS
-				};
-				toast.success(m.environments_created_success());
-			} else {
-				toast.error(m.environments_api_key_error());
-			}
+			createdEnvironment = { id: created.id, useMTLS: variables.useMTLS };
+			snippetsMutation.mutate(created.id);
+			toast.success(m.environments_created_success());
 		},
 		onError: (error) => {
 			toast.error(m.environments_create_failed(), { description: extractApiErrorMessage(error) });
@@ -142,18 +132,18 @@
 					<span>{m.env_agent_desc()}</span>
 				</div>
 
-				<div class="space-y-2">
-					<div class="text-sm font-medium">{m.environments_api_key()}</div>
-					<div class="flex items-center gap-2">
-						<code class="flex-1 rounded-md bg-muted px-3 py-2 font-mono text-sm break-all">
-							{createdEnvironment.apiKey}
-						</code>
-						{#if createdEnvironment.apiKey}
-							<CopyButton text={createdEnvironment.apiKey} size="icon" class="size-7" />
-						{/if}
+				{#if snippetsMutation.data}
+					<div class="space-y-2">
+						<div class="text-sm font-medium">{m.enrollment_token()}</div>
+						<div class="flex items-center gap-2">
+							<code class="flex-1 rounded-md bg-muted px-3 py-2 font-mono text-sm break-all">
+								{snippetsMutation.data.enrollmentToken}
+							</code>
+							<CopyButton text={snippetsMutation.data.enrollmentToken} size="icon" class="size-7" />
+						</div>
+						<p class="text-xs text-muted-foreground">{m.enrollment_token_single_use_description()}</p>
 					</div>
-					<p class="text-xs text-muted-foreground">{m.environments_api_key_warning()}</p>
-				</div>
+				{/if}
 
 				{#if generatedMTLS}
 					<div class="space-y-3 rounded-lg border border-info/25 bg-info/8 p-4">
@@ -190,12 +180,12 @@
 					<p class="text-sm text-warning">{m.environments_new_agent_mtls_assets_unavailable()}</p>
 				{/if}
 
-				{#if snippetsQuery.isPending}
+				{#if snippetsMutation.isPending}
 					<div class="flex items-center justify-center py-8">
 						<Spinner class="size-6" />
 					</div>
-				{:else if snippetsQuery.isError}
-					<p class="text-sm text-destructive">{extractApiErrorMessage(snippetsQuery.error)}</p>
+				{:else if snippetsMutation.isError}
+					<p class="text-sm text-destructive">{extractApiErrorMessage(snippetsMutation.error)}</p>
 				{:else if createdSnippets?.dockerRun && createdSnippets.dockerCompose}
 					<AgentCommandBlock
 						dockerRunLabel={m.docker_run_command()}

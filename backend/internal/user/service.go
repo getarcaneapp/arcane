@@ -180,7 +180,7 @@ func (s *UserService) CreateUser(ctx context.Context, localUser *User) (*User, e
 			}
 		}
 		if createUserErr := tx.Create(localUser).Error; createUserErr != nil {
-			if isDuplicateKeyError(tx, createUserErr) {
+			if database.IsDuplicateKeyError(tx, createUserErr) {
 				return ErrUsernameTaken
 			}
 			return fmt.Errorf("failed to create user: %w", createUserErr)
@@ -337,7 +337,7 @@ func (s *UserService) UpdateUser(ctx context.Context, localUser *User, actorPerm
 				FontSize:    localUser.FontSize,
 				Preferences: localUser.Preferences,
 			}).Error; err != nil {
-			if isDuplicateKeyError(tx, err) {
+			if database.IsDuplicateKeyError(tx, err) {
 				return ErrUsernameTaken
 			}
 			return fmt.Errorf("failed to update user: %w", err)
@@ -399,14 +399,6 @@ func normalizeUsername(username string) (string, error) {
 		return "", ErrUsernameRequired
 	}
 	return username, nil
-}
-
-func isDuplicateKeyError(db *gorm.DB, err error) bool {
-	if errors.Is(err, gorm.ErrDuplicatedKey) {
-		return true
-	}
-	translator, ok := db.Dialector.(gorm.ErrorTranslator)
-	return ok && errors.Is(translator.Translate(err), gorm.ErrDuplicatedKey)
 }
 
 // SetPassword hashes and persists a new password for the given user and clears

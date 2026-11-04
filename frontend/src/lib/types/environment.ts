@@ -53,8 +53,6 @@ export type Environment = {
 	agentMTLSCertificate?: AgentMTLSCertificate;
 	agentHost?: AgentHostInfo;
 	agentTunnelStats?: AgentTunnelStats;
-	apiKey?: string;
-	regenerateApiKey?: boolean;
 };
 
 export type EnvironmentStreamEvent = {
@@ -81,5 +79,34 @@ export interface DeploymentSnippetMTLS {
 export interface DeploymentSnippet {
 	dockerRun: string;
 	dockerCompose: string;
+	enrollmentToken: string;
 	mtls?: DeploymentSnippetMTLS;
+}
+
+export interface EnrollmentToken {
+	id: string;
+	name: string;
+	environmentId?: string;
+	environmentName?: string;
+	maxUses?: number;
+	useCount: number;
+	createdAt: string;
+	lastUsedAt?: string;
+}
+
+export interface EnrollmentTokenCreate {
+	name: string;
+	maxUses?: number;
+}
+
+export interface EnrollmentTokenCreated {
+	id: string;
+	name: string;
+	maxUses?: number;
+	createdAt: string;
+	token: string;
+}
+
+export interface EnrollmentTokenSecret {
+	token: string;
 }

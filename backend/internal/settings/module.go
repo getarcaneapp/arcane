@@ -8,6 +8,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
@@ -19,12 +20,27 @@ type (
 		search          *SettingsSearchService
 		proxyRemoteJSON handlerutil.RemoteJSONProxy
 		config          *config.Config
+		mtls            *agent.MTLS
+	}
+
+	ModuleParams struct {
+		Service         *SettingsService
+		Search          *SettingsSearchService
+		ProxyRemoteJSON handlerutil.RemoteJSONProxy
+		Config          *config.Config
+		MTLS            *agent.MTLS
 	}
 )
 
 // New builds the settings domain around its initialized service.
-func New(service *SettingsService, search *SettingsSearchService, proxyRemoteJSON handlerutil.RemoteJSONProxy, cfg *config.Config) *Module {
-	return &Module{service: service, search: search, proxyRemoteJSON: proxyRemoteJSON, config: cfg}
+func New(p ModuleParams) *Module {
+	return &Module{
+		service:         p.Service,
+		search:          p.Search,
+		proxyRemoteJSON: p.ProxyRemoteJSON,
+		config:          p.Config,
+		mtls:            p.MTLS,
+	}
 }
 
 // Service exposes settings operations to collaborating domains.
@@ -38,21 +54,20 @@ func (m *Module) Service() *SettingsService {
 // RegisterRoutes mounts settings endpoints for runtime and schema discovery.
 func (m *Module) RegisterRoutes(api huma.API) {
 	if m == nil {
-		RegisterSettings(api, nil, nil, nil, nil)
+		RegisterSettings(api, &SettingsHandler{})
 		return
 	}
-	RegisterSettings(api, m.service, m.search, m.proxyRemoteJSON, m.config)
+	RegisterSettings(api, &SettingsHandler{
+		settingsService:       m.service,
+		settingsSearchService: m.search,
+		proxyRemoteJSON:       m.proxyRemoteJSON,
+		cfg:                   m.config,
+		mtls:                  m.mtls,
+	})
 }
 
 // RegisterSettings registers settings management routes using Huma.
-func RegisterSettings(api huma.API, settingsService *SettingsService, settingsSearchService *SettingsSearchService, proxyRemoteJSON handlerutil.RemoteJSONProxy, cfg *config.Config) {
-	h := &SettingsHandler{
-		settingsService:       settingsService,
-		settingsSearchService: settingsSearchService,
-		proxyRemoteJSON:       proxyRemoteJSON,
-		cfg:                   cfg,
-	}
-
+func RegisterSettings(api huma.API, h *SettingsHandler) {
 	// Environment-scoped settings endpoints
 	huma.Register(api, huma.Operation{
 		OperationID: "get-public-settings",

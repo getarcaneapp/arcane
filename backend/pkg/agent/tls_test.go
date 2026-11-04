@@ -47,40 +47,42 @@ func initAgentTestCrypto(t *testing.T) {
 	})
 }
 
-func TestPrepareManagerMTLSAssetsWithContext(t *testing.T) {
-	cfg := &Config{
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSAssetsDir: t.TempDir(),
-		AppURL:             "https://manager.example.com",
-	}
+func TestMTLSServer_GeneratesManagerCA(t *testing.T) {
+	cfg := NewMTLS(MTLSConfig{
+		Mode:      MTLSModeRequired,
+		AssetsDir: t.TempDir(),
+		AppURL:    "https://manager.example.com",
+	})
 
-	require.NoError(t, PrepareManagerMTLSAssetsWithContext(t.Context(), cfg))
-	require.NotEmpty(t, cfg.AgentMTLSCAFile)
-	require.FileExists(t, cfg.AgentMTLSCAFile)
+	_, err := cfg.Server(t.Context())
+	require.NoError(t, err)
+	require.NotEmpty(t, cfg.CAFile)
+	require.FileExists(t, cfg.CAFile)
 
-	configured := &Config{
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSAssetsDir: t.TempDir(),
-		AgentMTLSCAFile:    filepath.Join(t.TempDir(), "ca.crt"),
-	}
-	require.NoError(t, PrepareManagerMTLSAssetsWithContext(t.Context(), configured))
-	require.NoFileExists(t, filepath.Join(configured.AgentMTLSAssetsDir, generatedMTLSCACertFileName))
+	configured := NewMTLS(MTLSConfig{
+		Mode:      MTLSModeRequired,
+		CAFile:    filepath.Join(t.TempDir(), "ca.crt"),
+		AssetsDir: t.TempDir(),
+	})
+	_, err = configured.Server(t.Context())
+	require.ErrorContains(t, err, "failed to load agent mTLS CA file")
+	require.NoFileExists(t, filepath.Join(configured.AssetsDir, generatedMTLSCACertFileName))
 }
 
-func TestGenerateManagerClientMTLSAssetsWithContext(t *testing.T) {
-	cfg := &Config{
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSAssetsDir: t.TempDir(),
-		AppURL:             "https://manager.example.com",
-	}
+func TestMTLSIssueClient(t *testing.T) {
+	cfg := NewMTLS(MTLSConfig{
+		Mode:      MTLSModeRequired,
+		AssetsDir: t.TempDir(),
+		AppURL:    "https://manager.example.com",
+	})
 
-	assets, err := GenerateManagerClientMTLSAssetsWithContext(t.Context(), cfg, "env-123", "Lab Server")
+	assets, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-123", EnvironmentName: "Lab Server"})
 	require.NoError(t, err)
 	require.NotNil(t, assets)
-	require.Empty(t, cfg.AgentMTLSCAFile)
-	clientCertPath, err := GeneratedManagerClientMTLSCertPath(cfg, "env-123")
+	require.Empty(t, cfg.CAFile)
+	issued, err := cfg.ClientCertificate("env-123")
 	require.NoError(t, err)
-	require.FileExists(t, clientCertPath)
+	require.Equal(t, "Lab-Server-env-123", issued.Subject.CommonName)
 	require.Equal(t, "./arcane-agent-certs", assets.HostDirHint)
 	require.Len(t, assets.Files, 3)
 	require.Equal(t, "ca.crt", assets.Files[0].Name)
@@ -112,13 +114,13 @@ func TestGenerateManagerClientMTLSAssetsWithContext(t *testing.T) {
 }
 
 func TestGeneratedClientCertificate_IncludesSANs(t *testing.T) {
-	cfg := &Config{
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSAssetsDir: t.TempDir(),
-		AppURL:             "https://manager.example.com",
-	}
+	cfg := NewMTLS(MTLSConfig{
+		Mode:      MTLSModeRequired,
+		AssetsDir: t.TempDir(),
+		AppURL:    "https://manager.example.com",
+	})
 
-	assets, err := GenerateManagerClientMTLSAssetsWithContext(t.Context(), cfg, "env-abc", "Lab Server")
+	assets, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-abc", EnvironmentName: "Lab Server"})
 	require.NoError(t, err)
 	require.NotNil(t, assets)
 
@@ -150,24 +152,23 @@ func TestGeneratedClientCertificate_IncludesSANs(t *testing.T) {
 	require.Positive(t, skew)
 }
 
-func TestEnsureAgentMTLSAssets_RejectsPlainHTTPEnrollment(t *testing.T) {
-	cfg := &Config{
-		ManagerApiUrl:      "http://manager.example.com/api",
-		AgentToken:         "valid-token",
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSAssetsDir: t.TempDir(),
-	}
+func TestMTLSManagerClientEnroll_RejectsPlainHTTPEnrollment(t *testing.T) {
+	cfg := NewMTLS(MTLSConfig{
+		Mode:       MTLSModeRequired,
+		AssetsDir:  t.TempDir(),
+		ManagerURL: "http://manager.example.com/api",
+	})
 
-	err := EnsureAgentMTLSAssets(t.Context(), cfg)
+	err := cfg.enrollClient(t.Context(), "valid-token")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "ARCANE_MANAGER_API_URL to use https for certificate enrollment")
 
-	cfg.AgentMTLSCertFile = filepath.Join(t.TempDir(), "agent.crt")
-	cfg.AgentMTLSKeyFile = filepath.Join(t.TempDir(), "agent.key")
-	require.NoError(t, EnsureAgentMTLSAssets(t.Context(), cfg), "configured client files skip enrollment")
+	cfg.CertFile = filepath.Join(t.TempDir(), "agent.crt")
+	cfg.KeyFile = filepath.Join(t.TempDir(), "agent.key")
+	require.NoError(t, cfg.enrollClient(t.Context(), "valid-token"), "configured client files skip enrollment")
 }
 
-func TestEnsureAgentMTLSAssets_LimitsEnrollmentErrorBody(t *testing.T) {
+func TestMTLSManagerClientEnroll_LimitsEnrollmentErrorBody(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(strings.Repeat("a", maxEnrollResponseBytes*2)))
@@ -180,26 +181,25 @@ func TestEnsureAgentMTLSAssets_LimitsEnrollmentErrorBody(t *testing.T) {
 		Bytes: server.Certificate().Raw,
 	}), 0o600))
 
-	cfg := &Config{
-		ManagerApiUrl:      server.URL + "/api",
-		AgentToken:         "valid-token",
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSCAFile:    caPath,
-		AgentMTLSAssetsDir: t.TempDir(),
-	}
+	cfg := NewMTLS(MTLSConfig{
+		Mode:       MTLSModeRequired,
+		CAFile:     caPath,
+		AssetsDir:  t.TempDir(),
+		ManagerURL: server.URL + "/api",
+	})
 
-	err := EnsureAgentMTLSAssets(t.Context(), cfg)
+	err := cfg.enrollClient(t.Context(), "valid-token")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent mTLS enrollment failed with status 500")
 	require.LessOrEqual(t, len(err.Error()), maxEnrollResponseBytes+128)
 }
 
-func TestEnsureAgentMTLSAssets_EnrollsWithoutUnusableGeneratedCert(t *testing.T) {
-	generated, err := GenerateManagerClientMTLSAssetsWithContext(t.Context(), &Config{
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSAssetsDir: t.TempDir(),
-		AppURL:             "https://manager.example.com",
-	}, "env-renew", "Renew")
+func TestMTLSManagerClientEnroll_EnrollsWithoutUnusableGeneratedCert(t *testing.T) {
+	generated, err := NewMTLS(MTLSConfig{
+		Mode:      MTLSModeRequired,
+		AssetsDir: t.TempDir(),
+		AppURL:    "https://manager.example.com",
+	}).IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-renew", EnvironmentName: "Renew"})
 	require.NoError(t, err)
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +207,7 @@ func TestEnsureAgentMTLSAssets_EnrollsWithoutUnusableGeneratedCert(t *testing.T)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		_ = json.MarshalWrite(w, enrollMTLSResponse{Files: generated.Files})
+		_ = json.MarshalWrite(w, EnrollMTLSResponse{Files: generated.Files})
 	}))
 	t.Cleanup(server.Close)
 
@@ -224,30 +224,29 @@ func TestEnsureAgentMTLSAssets_EnrollsWithoutUnusableGeneratedCert(t *testing.T)
 	require.NoError(t, os.WriteFile(certPath, []byte("not a certificate"), 0o600))
 	require.NoError(t, os.WriteFile(keyPath, []byte("not a key"), 0o600))
 
-	cfg := &Config{
-		ManagerApiUrl:      server.URL + "/api",
-		AgentToken:         "valid-token",
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSCAFile:    caPath,
-		AgentMTLSCertFile:  certPath,
-		AgentMTLSKeyFile:   keyPath,
-		AgentMTLSAssetsDir: assetsDir,
-	}
+	cfg := NewMTLS(MTLSConfig{
+		Mode:       MTLSModeRequired,
+		CAFile:     caPath,
+		CertFile:   certPath,
+		KeyFile:    keyPath,
+		AssetsDir:  assetsDir,
+		ManagerURL: server.URL + "/api",
+	})
 
-	require.NoError(t, EnsureAgentMTLSAssets(t.Context(), cfg))
+	require.NoError(t, cfg.enrollClient(t.Context(), "valid-token"))
 	_, reason := loadClientCertificate(certPath, keyPath, time.Now(), 0)
 	require.Empty(t, reason)
 }
 
-func TestEnsureAgentMTLSAssets_UsesDownloadedCAPathWhenPresent(t *testing.T) {
+func TestMTLSManagerClientEnroll_UsesDownloadedCAPathWhenPresent(t *testing.T) {
 	assetsDir := t.TempDir()
 	caPath := filepath.Join(assetsDir, generatedMTLSCACertFileName)
 
-	generated, err := GenerateManagerClientMTLSAssetsWithContext(t.Context(), &Config{
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSAssetsDir: t.TempDir(),
-		AppURL:             "https://manager.example.com",
-	}, "env-existing", "Existing")
+	generated, err := NewMTLS(MTLSConfig{
+		Mode:      MTLSModeRequired,
+		AssetsDir: t.TempDir(),
+		AppURL:    "https://manager.example.com",
+	}).IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-existing", EnvironmentName: "Existing"})
 	require.NoError(t, err)
 	require.NotNil(t, generated)
 	for _, file := range generated.Files {
@@ -256,18 +255,18 @@ func TestEnsureAgentMTLSAssets_UsesDownloadedCAPathWhenPresent(t *testing.T) {
 		require.NoError(t, os.WriteFile(targetPath, []byte(file.Content), perm))
 	}
 
-	cfg := &Config{
-		ManagerApiUrl:      "https://manager.example.com/api",
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSAssetsDir: assetsDir,
-	}
+	cfg := NewMTLS(MTLSConfig{
+		Mode:       MTLSModeRequired,
+		AssetsDir:  assetsDir,
+		ManagerURL: "https://manager.example.com/api",
+	})
 
-	require.NoError(t, EnsureAgentMTLSAssets(t.Context(), cfg))
-	require.NotEmpty(t, cfg.AgentMTLSCertFile)
-	require.NotEmpty(t, cfg.AgentMTLSKeyFile)
-	require.FileExists(t, cfg.AgentMTLSCertFile)
-	require.FileExists(t, cfg.AgentMTLSKeyFile)
-	require.Equal(t, caPath, cfg.AgentMTLSCAFile)
+	require.NoError(t, cfg.enrollClient(t.Context(), "valid-token"))
+	require.NotEmpty(t, cfg.CertFile)
+	require.NotEmpty(t, cfg.KeyFile)
+	require.FileExists(t, cfg.CertFile)
+	require.FileExists(t, cfg.KeyFile)
+	require.Equal(t, caPath, cfg.CAFile)
 }
 
 func TestRemoveStaleLock_PreservesLivePID(t *testing.T) {
@@ -287,25 +286,26 @@ func TestRemoveStaleLock_RemovesOldLockDespiteLivePID(t *testing.T) {
 	require.NoFileExists(t, lockPath)
 }
 
-func TestBuildManagerClientTLSConfig_OptionalIgnoresBrokenClientCertificate(t *testing.T) {
+func TestMTLSClientTLS_OptionalIgnoresBrokenClientCertificate(t *testing.T) {
 	assetsDir := t.TempDir()
 	certPath := filepath.Join(assetsDir, generatedMTLSClientCertName)
 	keyPath := filepath.Join(assetsDir, generatedMTLSClientKeyName)
 	require.NoError(t, os.WriteFile(certPath, []byte("not a cert"), 0o644))
 	require.NoError(t, os.WriteFile(keyPath, []byte("not a key"), 0o600))
 
-	tlsConfig, err := buildManagerClientTLSConfig(&Config{
-		ManagerApiUrl:     "https://manager.example.com",
-		AgentMTLSMode:     MTLSModeOptional,
-		AgentMTLSCertFile: certPath,
-		AgentMTLSKeyFile:  keyPath,
-	})
+	tlsConfig, err := NewMTLS(MTLSConfig{
+		Mode:       MTLSModeOptional,
+		CertFile:   certPath,
+		KeyFile:    keyPath,
+		ManagerURL: "https://manager.example.com",
+	}).clientTLS(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, tlsConfig)
 	require.Empty(t, tlsConfig.Certificates)
 }
 
 func TestTunnelServerRequireCertificateIdentity_RejectsWrongEnvironmentURI(t *testing.T) {
+	tunnels := NewTunnelRegistry()
 	uriSAN, err := url.Parse("spiffe://manager.example.com/agent/env-a")
 	require.NoError(t, err)
 	cert := &x509.Certificate{URIs: []*url.URL{uriSAN}}
@@ -314,43 +314,33 @@ func TestTunnelServerRequireCertificateIdentity_RejectsWrongEnvironmentURI(t *te
 		VerifiedChains:   [][]*x509.Certificate{{cert}},
 	}
 	server := NewTunnelServer(TunnelServerOptions{
-		Registry: GetRegistry(),
-		Config: &Config{
-			AgentMTLSMode: MTLSModeRequired,
-			AppURL:        "https://manager.example.com",
-		},
+		Registry: tunnels,
+		MTLS:     NewMTLS(MTLSConfig{Mode: MTLSModeRequired, AppURL: "https://manager.example.com"}),
 	})
 
 	require.NoError(t, server.requireCertificateIdentity(state, "env-a"))
 	require.Error(t, server.requireCertificateIdentity(state, "env-b"))
 
-	server.Config.AppURL = "https://other.example.com"
+	server.MTLS.AppURL = "https://other.example.com"
 	require.Error(t, server.requireCertificateIdentity(state, "env-a"), "a different trust domain must not match")
 }
 
-func TestValidateManagerMTLSConfig_DoesNotRequireArcaneTLSTermination(t *testing.T) {
-	require.NoError(t, ValidateManagerMTLSConfig(&Config{
-		AgentMTLSMode: MTLSModeRequired,
-	}))
+func TestMTLSServer_DoesNotRequireArcaneTLSTermination(t *testing.T) {
+	_, err := NewMTLS(MTLSConfig{Mode: MTLSModeRequired, AssetsDir: t.TempDir()}).Server(t.Context())
+	require.NoError(t, err)
 
 	assetsDir := t.TempDir()
-	_, _, err := ensureManagerCA(t.Context(), assetsDir)
+	_, _, err = ensureManagerCA(t.Context(), assetsDir)
 	require.NoError(t, err)
 	caPath := filepath.Join(assetsDir, generatedMTLSCACertFileName)
 
-	err = ValidateManagerMTLSConfig(&Config{
-		AgentMTLSMode:   MTLSModeRequired,
-		AgentMTLSCAFile: caPath,
-	})
+	_, err = NewMTLS(MTLSConfig{Mode: MTLSModeRequired, CAFile: caPath}).Server(t.Context())
 	require.NoError(t, err)
 }
 
-func TestValidateManagerMTLSConfig_RejectsMissingOrMalformedCAFile(t *testing.T) {
+func TestMTLSServer_RejectsMissingOrMalformedCAFile(t *testing.T) {
 	t.Run("missing file", func(t *testing.T) {
-		err := ValidateManagerMTLSConfig(&Config{
-			AgentMTLSMode:   MTLSModeRequired,
-			AgentMTLSCAFile: filepath.Join(t.TempDir(), "missing-ca.crt"),
-		})
+		_, err := NewMTLS(MTLSConfig{Mode: MTLSModeRequired, CAFile: filepath.Join(t.TempDir(), "missing-ca.crt")}).Server(t.Context())
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to load agent mTLS CA file")
 	})
@@ -359,22 +349,17 @@ func TestValidateManagerMTLSConfig_RejectsMissingOrMalformedCAFile(t *testing.T)
 		caPath := filepath.Join(t.TempDir(), "ca.crt")
 		require.NoError(t, os.WriteFile(caPath, []byte("not a pem"), 0o600))
 
-		err := ValidateManagerMTLSConfig(&Config{
-			AgentMTLSMode:   MTLSModeRequired,
-			AgentMTLSCAFile: caPath,
-		})
+		_, err := NewMTLS(MTLSConfig{Mode: MTLSModeRequired, CAFile: caPath}).Server(t.Context())
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to load agent mTLS CA file")
 	})
 }
 
 func TestTunnelServerRequiredMTLS_AllowsHTTPRequestsWithoutVisibleTLSState(t *testing.T) {
+	tunnels := NewTunnelRegistry()
 	server := NewTunnelServer(TunnelServerOptions{
-		Registry: GetRegistry(),
-		Config: &Config{
-			AgentMTLSMode: MTLSModeRequired,
-			AppURL:        "https://manager.example.com",
-		},
+		Registry: tunnels,
+		MTLS:     NewMTLS(MTLSConfig{Mode: MTLSModeRequired, AppURL: "https://manager.example.com"}),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tunnel/connect", http.NoBody)
@@ -382,26 +367,25 @@ func TestTunnelServerRequiredMTLS_AllowsHTTPRequestsWithoutVisibleTLSState(t *te
 }
 
 func TestTunnelServerRequiredMTLS_RejectsDirectTLSWithoutVerifiedClientCertificate(t *testing.T) {
+	tunnels := NewTunnelRegistry()
 	server := NewTunnelServer(TunnelServerOptions{
-		Registry: GetRegistry(),
-		Config:   &Config{AgentMTLSMode: MTLSModeRequired},
+		Registry: tunnels,
+		MTLS:     NewMTLS(MTLSConfig{Mode: MTLSModeRequired}),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "https://manager.example.com/api/tunnel/connect", http.NoBody)
 	req.TLS = &tls.ConnectionState{}
 	require.ErrorContains(t, server.requireCertificateIdentity(req.TLS, "env-a"), "verified agent mTLS client certificate is required")
 
-	server.Config = &Config{AgentMTLSMode: MTLSModeOptional}
+	server.MTLS = NewMTLS(MTLSConfig{Mode: MTLSModeOptional})
 	require.NoError(t, server.requireCertificateIdentity(req.TLS, "env-a"))
 }
 
 func TestTunnelServerRequiredMTLS_DetectsOnlyDirectTLSForRequestSecurityMode(t *testing.T) {
+	tunnels := NewTunnelRegistry()
 	server := NewTunnelServer(TunnelServerOptions{
-		Registry: GetRegistry(),
-		Config: &Config{
-			AgentMTLSMode: MTLSModeRequired,
-			AppURL:        "https://manager.example.com",
-		},
+		Registry: tunnels,
+		MTLS:     NewMTLS(MTLSConfig{Mode: MTLSModeRequired, AppURL: "https://manager.example.com"}),
 	})
 
 	cert := &x509.Certificate{}
@@ -420,11 +404,11 @@ func TestTunnelServerRequiredMTLS_DetectsOnlyDirectTLSForRequestSecurityMode(t *
 
 func TestLoadClientCertificate_RenewsExpiredCertificate(t *testing.T) {
 	assetsDir := t.TempDir()
-	assets, err := GenerateManagerClientMTLSAssetsWithContext(t.Context(), &Config{
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSAssetsDir: t.TempDir(),
-		AppURL:             "https://manager.example.com",
-	}, "env-renew", "Renew")
+	assets, err := NewMTLS(MTLSConfig{
+		Mode:      MTLSModeRequired,
+		AssetsDir: t.TempDir(),
+		AppURL:    "https://manager.example.com",
+	}).IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-renew", EnvironmentName: "Renew"})
 	require.NoError(t, err)
 
 	for _, file := range assets.Files {
@@ -444,11 +428,11 @@ func TestLoadClientCertificate_RenewsExpiredCertificate(t *testing.T) {
 
 func TestLoadClientCertificate_RenewBeforeOnlyAppliesWhenRequested(t *testing.T) {
 	assetsDir := t.TempDir()
-	assets, err := GenerateManagerClientMTLSAssetsWithContext(t.Context(), &Config{
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSAssetsDir: t.TempDir(),
-		AppURL:             "https://manager.example.com",
-	}, "env-window", "Window")
+	assets, err := NewMTLS(MTLSConfig{
+		Mode:      MTLSModeRequired,
+		AssetsDir: t.TempDir(),
+		AppURL:    "https://manager.example.com",
+	}).IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-window", EnvironmentName: "Window"})
 	require.NoError(t, err)
 
 	for _, file := range assets.Files {
@@ -470,39 +454,39 @@ func TestLoadClientCertificate_RenewBeforeOnlyAppliesWhenRequested(t *testing.T)
 	require.Contains(t, reason, "expires soon")
 }
 
-func TestGenerateManagerClientMTLSAssets_ReissuesMismatchedKeyPair(t *testing.T) {
-	cfg := &Config{
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSAssetsDir: t.TempDir(),
-		AppURL:             "https://manager.example.com",
-	}
-	_, err := GenerateManagerClientMTLSAssetsWithContext(t.Context(), cfg, "env-123", "Lab Server")
+func TestMTLSIssueClient_ReissuesMismatchedKeyPair(t *testing.T) {
+	cfg := NewMTLS(MTLSConfig{
+		Mode:      MTLSModeRequired,
+		AssetsDir: t.TempDir(),
+		AppURL:    "https://manager.example.com",
+	})
+	_, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-123", EnvironmentName: "Lab Server"})
 	require.NoError(t, err)
 
 	replacementKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	require.NoError(t, err)
 	replacementKeyDER, err := x509.MarshalECPrivateKey(replacementKey)
 	require.NoError(t, err)
-	clientKeyPath := filepath.Join(cfg.AgentMTLSAssetsDir, generatedClientMTLSSubdir, "env-123", generatedMTLSClientKeyName)
+	clientKeyPath := filepath.Join(cfg.AssetsDir, generatedClientMTLSSubdir, "env-123", generatedMTLSClientKeyName)
 	require.NoError(t, os.WriteFile(clientKeyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: replacementKeyDER}), 0o600))
 
-	assets, err := GenerateManagerClientMTLSAssetsWithContext(t.Context(), cfg, "env-123", "Lab Server")
+	assets, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-123", EnvironmentName: "Lab Server"})
 	require.NoError(t, err)
 	require.True(t, assets.CertIssued, "a key that no longer matches the certificate must be reissued")
 	_, err = tls.X509KeyPair([]byte(assets.Files[1].Content), []byte(assets.Files[2].Content))
 	require.NoError(t, err)
 }
 
-func TestGenerateManagerClientMTLSAssets_PreservesCertificateWhenEnvironmentNameChanges(t *testing.T) {
-	cfg := &Config{
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSAssetsDir: t.TempDir(),
-		AppURL:             "https://manager.example.com",
-	}
-	original, err := GenerateManagerClientMTLSAssetsWithContext(t.Context(), cfg, "env-123", "")
+func TestMTLSIssueClient_PreservesCertificateWhenEnvironmentNameChanges(t *testing.T) {
+	cfg := NewMTLS(MTLSConfig{
+		Mode:      MTLSModeRequired,
+		AssetsDir: t.TempDir(),
+		AppURL:    "https://manager.example.com",
+	})
+	original, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-123", EnvironmentName: ""})
 	require.NoError(t, err)
 
-	renamed, err := GenerateManagerClientMTLSAssetsWithContext(t.Context(), cfg, "env-123", "Lab Server")
+	renamed, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-123", EnvironmentName: "Lab Server"})
 	require.NoError(t, err)
 	require.False(t, renamed.CertIssued)
 	require.Equal(t, original.Files[1].Content, renamed.Files[1].Content)
@@ -532,11 +516,11 @@ func TestCAKey_EncryptedOnDiskWhenCryptoInitialized(t *testing.T) {
 	require.False(t, generated, "the encrypted CA key must decrypt and be reused")
 	require.Equal(t, ca.Certificate, reused.Certificate)
 
-	_, err = GenerateManagerClientMTLSAssetsWithContext(t.Context(), &Config{
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSAssetsDir: assetsDir,
-		AppURL:             "https://manager.example.com",
-	}, "env-round", "Round Trip")
+	_, err = NewMTLS(MTLSConfig{
+		Mode:      MTLSModeRequired,
+		AssetsDir: assetsDir,
+		AppURL:    "https://manager.example.com",
+	}).IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-round", EnvironmentName: "Round Trip"})
 	require.NoError(t, err)
 }
 
@@ -588,13 +572,14 @@ func TestCAKey_EmptyEncryptionPayloadReturnsError(t *testing.T) {
 }
 
 func TestGeneratedMLDSAAssets_HandshakeWithVerifiedClientCertificate(t *testing.T) {
+	tunnels := NewTunnelRegistry()
 	assetsDir := t.TempDir()
-	cfg := &Config{
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSAssetsDir: assetsDir,
-		AppURL:             "https://manager.example.com",
-	}
-	_, err := GenerateManagerClientMTLSAssetsWithContext(t.Context(), cfg, "env-hs", "Handshake")
+	cfg := NewMTLS(MTLSConfig{
+		Mode:      MTLSModeRequired,
+		AssetsDir: assetsDir,
+		AppURL:    "https://manager.example.com",
+	})
+	_, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-hs", EnvironmentName: "Handshake"})
 	require.NoError(t, err)
 
 	caCertPath := filepath.Join(assetsDir, "ca.crt")
@@ -609,24 +594,20 @@ func TestGeneratedMLDSAAssets_HandshakeWithVerifiedClientCertificate(t *testing.
 	serverDER, err := x509.CreateCertificate(rand.Reader, serverTemplate, ca.Leaf, serverKey.PublicKey(), ca.PrivateKey)
 	require.NoError(t, err)
 
-	serverTLS, err := BuildManagerServerTLSConfig(&Config{
-		AgentMTLSMode:   MTLSModeRequired,
-		AgentMTLSCAFile: caCertPath,
-	})
+	serverTLS, err := NewMTLS(MTLSConfig{Mode: MTLSModeRequired, CAFile: caCertPath}).Server(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, serverTLS)
 	serverTLS.Certificates = []tls.Certificate{{Certificate: [][]byte{serverDER}, PrivateKey: serverKey}}
 
-	clientCertPath, err := GeneratedManagerClientMTLSCertPath(cfg, "env-hs")
-	require.NoError(t, err)
-	clientTLS, err := buildManagerClientTLSConfig(&Config{
-		AgentMTLSMode:       MTLSModeRequired,
-		AgentMTLSCAFile:     caCertPath,
-		AgentMTLSCertFile:   clientCertPath,
-		AgentMTLSKeyFile:    filepath.Join(filepath.Dir(clientCertPath), "agent.key"),
-		AgentMTLSServerName: "localhost",
-		ManagerApiUrl:       "https://localhost/api",
-	})
+	clientCertPath := filepath.Join(assetsDir, generatedClientMTLSSubdir, "env-hs", generatedMTLSClientCertName)
+	clientTLS, err := NewMTLS(MTLSConfig{
+		Mode:       MTLSModeRequired,
+		CAFile:     caCertPath,
+		CertFile:   clientCertPath,
+		KeyFile:    filepath.Join(filepath.Dir(clientCertPath), "agent.key"),
+		ServerName: "localhost",
+		ManagerURL: "https://localhost/api",
+	}).clientTLS(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, clientTLS)
 	require.Equal(t, uint16(tls.VersionTLS13), clientTLS.MinVersion)
@@ -664,6 +645,6 @@ func TestGeneratedMLDSAAssets_HandshakeWithVerifiedClientCertificate(t *testing.
 	require.NoError(t, result.err)
 	require.Equal(t, uint16(tls.VersionTLS13), result.state.Version)
 	require.True(t, hasVerifiedPeerCertificate(&result.state))
-	server := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry(), Config: cfg})
+	server := NewTunnelServer(TunnelServerOptions{Registry: tunnels, MTLS: cfg})
 	require.NoError(t, server.requireCertificateIdentity(&result.state, "env-hs"))
 }

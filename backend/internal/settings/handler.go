@@ -29,6 +29,7 @@ type (
 		settingsSearchService *SettingsSearchService
 		proxyRemoteJSON       handlerutil.RemoteJSONProxy
 		cfg                   *config.Config
+		mtls                  *agent.MTLS
 	}
 
 	SettingsSnapshotOutput struct {
@@ -67,11 +68,7 @@ func (h *SettingsHandler) runtimeSettings(authenticated bool) types.SettingsRunt
 		return telemetryRuntime
 	}
 
-	_, agentMTLSCAErr := agent.AvailableManagerMTLSCAPath(&agent.Config{
-		AgentMTLSMode:      h.cfg.AgentMTLSMode,
-		AgentMTLSCAFile:    h.cfg.AgentMTLSCAFile,
-		AgentMTLSAssetsDir: h.cfg.AgentMTLSAssetsDir,
-	})
+	_, agentMTLSCAErr := h.mtls.CAPath()
 	settingsCfg := h.settingsService.GetSettingsConfig()
 	return types.SettingsRuntime{
 		FrontendTracingEnabled:      telemetryRuntime.FrontendTracingEnabled,

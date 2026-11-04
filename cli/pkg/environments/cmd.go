@@ -7,8 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kit.getarcane.app"
-
 	"getarcane.dev/cli/v3/internal/cmdutil"
 	"getarcane.dev/cli/v3/internal/output"
 	clitypes "getarcane.dev/cli/v3/internal/types"
@@ -273,13 +271,13 @@ func newCreateCmd() *cobra.Command {
 					output.KeyValue("Name", data.Name)
 					output.KeyValue("API URL", data.ApiUrl)
 					output.KeyValue("Enabled", data.Enabled)
-					output.Warning("Agent API key (shown only once) — store it now:")
-					output.KeyValue("API Key", kit.FromPtr(data.ApiKey))
 
-					snippets, snippetsErr := c.GetJSON[types.DeploymentSnippet](cmd.Context(), clitypes.EnvironmentDeployment(data.ID))
+					snippets, snippetsErr := c.PostJSON[types.DeploymentSnippet](cmd.Context(), clitypes.EnvironmentDeployment(data.ID), nil)
 					if snippetsErr != nil {
-						return fmt.Errorf("failed to get deployment snippets: %w", snippetsErr)
+						return fmt.Errorf("failed to create deployment snippets: %w", snippetsErr)
 					}
+					output.Warning("Single-use agent enrollment token (shown only once):")
+					output.KeyValue("Enrollment Token", snippets.Data.EnrollmentToken)
 					output.Header("Docker Run")
 					_, _ = fmt.Fprintf(output.Stdout(), "\n%s\n", snippets.Data.DockerRun)
 					output.Header("Docker Compose")

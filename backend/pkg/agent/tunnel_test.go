@@ -29,7 +29,7 @@ type (
 )
 
 func newWebSocketAgentTunnel(envID string, conn *websocket.Conn) *AgentTunnel {
-	return NewAgentTunnelWithConn(envID, NewTunnelConn(conn))
+	return NewAgentTunnel(AgentTunnelConfig{EnvironmentID: envID, Conn: NewWebSocketTunnelConn(conn)})
 }
 
 func TestTunnelConn(t *testing.T) {
@@ -61,7 +61,7 @@ func TestTunnelConn(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = conn.CloseNow() }()
 
-	tunnelConn := NewTunnelConn(conn)
+	tunnelConn := NewWebSocketTunnelConn(conn)
 
 	// Test Send and Receive
 	msg := &TunnelMessage{
@@ -154,7 +154,7 @@ func TestTunnelConn_CloseSendsCloseFrame(t *testing.T) {
 	conn, _, err := websocket.Dial(t.Context(), wsURL, nil)
 	require.NoError(t, err)
 
-	tunnelConn := NewTunnelConn(conn)
+	tunnelConn := NewWebSocketTunnelConn(conn)
 	require.NoError(t, tunnelConn.Close())
 
 	select {
@@ -186,7 +186,7 @@ func TestTunnelConn_ReceiveDeadlineMarksClosed(t *testing.T) {
 	conn, _, err := websocket.Dial(t.Context(), wsURL, nil)
 	require.NoError(t, err)
 
-	tunnelConn := NewTunnelConn(conn)
+	tunnelConn := NewWebSocketTunnelConn(conn)
 	_, err = tunnelConn.Receive()
 	require.Error(t, err)
 	assert.True(t, tunnelConn.IsClosed())

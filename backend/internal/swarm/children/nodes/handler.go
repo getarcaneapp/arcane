@@ -8,7 +8,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/moby/moby/api/types/swarm"
 
-	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/agent"
@@ -25,7 +24,7 @@ type (
 		audit              func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
 		mapError           func(err error, fallback string) error
 		environmentService *environment.EnvironmentService
-		cfg                *config.Config
+		mtls               *agent.MTLS
 	}
 
 	HandlerParams struct {
@@ -33,7 +32,7 @@ type (
 		Audit              func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
 		MapError           func(err error, fallback string) error
 		EnvironmentService *environment.EnvironmentService
-		Config             *config.Config
+		MTLS               *agent.MTLS
 	}
 
 	ListSwarmNodesInput struct {
@@ -53,9 +52,6 @@ type (
 	GetSwarmNodeAgentDeploymentInput struct {
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		NodeID        string `path:"nodeId" doc:"Node ID"`
-		Body          struct {
-			Rotate bool `json:"rotate,omitempty" doc:"Rotate the environment token before generating snippets"`
-		}
 	}
 
 	SwarmNodeAgentDeployment struct {
@@ -84,16 +80,6 @@ type (
 	DeleteSwarmNodeAgentDeploymentInput struct {
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		NodeID        string `path:"nodeId" doc:"Node ID"`
-	}
-
-	SwarmNodeAgentEnrollmentInput struct {
-		EnvironmentID string `path:"id" doc:"Environment ID"`
-	}
-
-	EnrollSwarmNodeAgentInput struct {
-		EnrollmentToken string `header:"X-Arcane-Enrollment-Token" doc:"Swarm enrollment token"`
-		AgentToken      string `header:"X-Arcane-Agent-Token" doc:"The agent's current token, if it has one"`
-		Body            types.NodeAgentEnrollRequest
 	}
 
 	GetSwarmNodeIdentityInput struct{}
@@ -133,7 +119,13 @@ type (
 )
 
 func NewHandler(p HandlerParams) *Handler {
-	return &Handler{service: p.Service, audit: p.Audit, mapError: p.MapError, environmentService: p.EnvironmentService, cfg: p.Config}
+	return &Handler{
+		service:            p.Service,
+		audit:              p.Audit,
+		mapError:           p.MapError,
+		environmentService: p.EnvironmentService,
+		mtls:               p.MTLS,
+	}
 }
 
 // ListNodes lists swarm nodes for an environment and returns a paginated response.
@@ -186,22 +178,6 @@ func (h *Handler) GetNode(ctx context.Context, input *GetSwarmNodeInput) (*handl
 	return &handlerutil.Out[types.SwarmNode]{Body: types.ApiResponse[types.SwarmNode]{Success: true, Data: *node}}, nil
 }
 
-// GetNodeAgentDeployment returns deployment snippets for attaching an Arcane Remote Environment to a swarm node.
-//
-// It ensures a visible node-bound Remote Environment exists for new
-// deployments, reuses legacy hidden registrations when present, optionally
-// rotates the environment token, generates the appropriate deployment snippets,
-// and refreshes the node summary so the response includes the latest agent
-// status.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the environment and node and optionally requests token rotation.
-//
-// Returns deployment snippets, the backing environment ID, and the refreshed agent status.
-// Returns an authorization error for non-admin callers, `401 Unauthorized`
-// when the current user cannot be resolved, `404 Not Found` when the node does
-// not exist, or `500 Internal Server Error` when environment provisioning or
-// snippet generation fails.
 func (h *Handler) GetNodeAgentDeployment(ctx context.Context, input *GetSwarmNodeAgentDeploymentInput) (*handlerutil.Out[SwarmNodeAgentDeployment], error) {
 	node, err := h.service.GetNode(ctx, input.EnvironmentID, input.NodeID)
 	if err != nil {
@@ -216,25 +192,18 @@ func (h *Handler) GetNodeAgentDeployment(ctx context.Context, input *GetSwarmNod
 		return nil, err
 	}
 
-	env, apiKey, err := h.environmentService.EnsureSwarmNodeAgentEnvironment(
-		ctx,
-		input.EnvironmentID,
-		input.NodeID,
-		node.Hostname,
-		user.ID,
-		user.Username,
-		input.Body.Rotate,
-	)
+	env, err := h.environmentService.EnsureSwarmNodeAgentEnvironment(ctx, environment.SwarmNodeAgentEnvironmentParams{
+		ParentEnvironmentID: input.EnvironmentID,
+		NodeID:              input.NodeID,
+		Hostname:            node.Hostname,
+		UserID:              user.ID,
+		Username:            user.Username,
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	snippets, err := h.environmentService.GenerateAgentDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), apiKey, &agent.Config{
-		AgentMTLSMode:      h.cfg.AgentMTLSMode,
-		AgentMTLSCAFile:    h.cfg.AgentMTLSCAFile,
-		AgentMTLSAssetsDir: h.cfg.AgentMTLSAssetsDir,
-		AppURL:             h.cfg.GetAppURL(),
-	})
+	snippets, err := h.environmentService.MintDeploymentSnippets(ctx, env.ID, h.mtls)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
@@ -249,8 +218,9 @@ func (h *Handler) GetNodeAgentDeployment(ctx context.Context, input *GetSwarmNod
 			Success: true,
 			Data: SwarmNodeAgentDeployment{
 				DeploymentSnippet: types.DeploymentSnippet{
-					DockerRun:     snippets.DockerRun,
-					DockerCompose: snippets.DockerCompose,
+					DockerRun:       snippets.DockerRun,
+					DockerCompose:   snippets.DockerCompose,
+					EnrollmentToken: snippets.EnrollmentToken,
 				},
 				EnvironmentID: env.ID,
 				Agent:         updatedNode.Agent,
@@ -320,48 +290,6 @@ func (h *Handler) DeleteNodeAgentDeployment(ctx context.Context, input *DeleteSw
 		return nil, huma.Error500InternalServerError(deleteSwarmNodeAgentDeploymentErr.Error())
 	}
 	return handlerutil.MessageOutput("Dedicated swarm node agent registration removed", ""), nil
-}
-
-func (h *Handler) GetNodeAgentEnrollment(ctx context.Context, input *SwarmNodeAgentEnrollmentInput) (*handlerutil.Out[types.NodeAgentEnrollment], error) {
-	enabled, err := h.environmentService.HasSwarmEnrollmentToken(ctx, input.EnvironmentID)
-	if err != nil {
-		return nil, h.mapError(err, "Failed to load swarm agent enrollment")
-	}
-	return &handlerutil.Out[types.NodeAgentEnrollment]{
-		Body: types.ApiResponse[types.NodeAgentEnrollment]{Success: true, Data: types.NodeAgentEnrollment{Enabled: enabled}},
-	}, nil
-}
-
-func (h *Handler) RotateNodeAgentEnrollment(ctx context.Context, input *SwarmNodeAgentEnrollmentInput) (*handlerutil.Out[types.NodeAgentEnrollmentToken], error) {
-	enrollment, err := h.environmentService.RotateSwarmEnrollmentToken(ctx, input.EnvironmentID, &agent.Config{
-		AgentMTLSMode: h.cfg.AgentMTLSMode,
-		AppURL:        h.cfg.GetAppURL(),
-	})
-	if err != nil {
-		return nil, h.mapError(err, "Failed to generate swarm agent enrollment token")
-	}
-	h.audit(ctx, input.EnvironmentID, "node.agent_enrollment.rotate", "swarm", input.EnvironmentID, "", nil)
-	return &handlerutil.Out[types.NodeAgentEnrollmentToken]{
-		Body: types.ApiResponse[types.NodeAgentEnrollmentToken]{Success: true, Data: *enrollment},
-	}, nil
-}
-
-func (h *Handler) DeleteNodeAgentEnrollment(ctx context.Context, input *SwarmNodeAgentEnrollmentInput) (*handlerutil.Out[types.MessageResponse], error) {
-	if err := h.environmentService.RevokeSwarmEnrollmentToken(ctx, input.EnvironmentID); err != nil {
-		return nil, h.mapError(err, "Failed to revoke swarm agent enrollment token")
-	}
-	h.audit(ctx, input.EnvironmentID, "node.agent_enrollment.revoke", "swarm", input.EnvironmentID, "", nil)
-	return handlerutil.MessageOutput("Swarm agent enrollment token revoked", ""), nil
-}
-
-func (h *Handler) EnrollNodeAgent(ctx context.Context, input *EnrollSwarmNodeAgentInput) (*handlerutil.Out[types.NodeAgentEnrollResponse], error) {
-	enrollment, err := h.service.EnrollNodeAgent(ctx, input.EnrollmentToken, input.AgentToken, input.Body.NodeID)
-	if err != nil {
-		return nil, h.mapError(err, "Failed to enroll swarm node agent")
-	}
-	return &handlerutil.Out[types.NodeAgentEnrollResponse]{
-		Body: types.ApiResponse[types.NodeAgentEnrollResponse]{Success: true, Data: *enrollment},
-	}, nil
 }
 
 // GetNodeIdentity returns the swarm identity of the node serving the current request.

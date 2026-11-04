@@ -12,7 +12,6 @@
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
 	import type { TabItem } from '#lib/components/tab-bar/index.js';
-	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
@@ -22,16 +21,16 @@
 	import { AlertIcon, ResetIcon, ConnectionIcon, SettingsIcon, InfoIcon, JobsIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
-	import { environmentDeploymentSnippetsQuery, environmentDetailQuery } from '#lib/query/environments.js';
+	import { environmentDetailQuery } from '#lib/query/environments.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import type { Environment } from '#lib/types/environment.js';
+	import type { DeploymentSnippet, Environment } from '#lib/types/environment.js';
 	import type { FeatureID } from '#lib/types/features.js';
 	import { cn } from '#lib/utils.js';
-	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { createDashboardWidget, pinDashboardAction } from '#lib/utils/dashboard-layout.js';
 	import { isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker.js';
@@ -75,14 +74,8 @@
 	let isTestingConnection = $state(false);
 	let isSyncing = $state(false);
 	let isRestartingTunnel = $state(false);
-	let isRegeneratingKey = $state(false);
-	let showRegenerateDialog = $state(false);
-	let regeneratedApiKey = $state<string | null>(null);
-	const regeneratedSnippetsQuery = createQuery(() => ({
-		...environmentDeploymentSnippetsQuery(environment.id),
-		enabled: regeneratedApiKey !== null
-	}));
-	const regeneratedSnippets = $derived(regeneratedApiKey ? regeneratedSnippetsQuery.data : undefined);
+	let isGeneratingToken = $state(false);
+	let generatedEnrollment = $state<DeploymentSnippet | null>(null);
 	let easyJoinDialogOpen = $state(false);
 	let easyJoinSession = $state(0);
 	let nameInputRef = $state<HTMLInputElement | null>(null);
@@ -435,39 +428,26 @@
 		});
 	}
 
-	async function handleRegenerateApiKey() {
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					isRegeneratingKey = true;
-
-					// Delete the old API key and create a new one
-					const result = await environmentManagementService.update(environment.id, {
-						regenerateApiKey: true
+	function generateEnrollmentToken() {
+		openConfirmDialog({
+			title: m.generate_enrollment_token(),
+			message: m.generate_enrollment_token_dialog_message(),
+			confirm: {
+				label: m.generate_enrollment_token(),
+				destructive: true,
+				action: async () => {
+					isGeneratingToken = true;
+					await handleApiResultWithCallbacks({
+						result: await tryCatch(environmentManagementService.generateDeploymentSnippets(environment.id)),
+						message: m.common_action_failed(),
+						setLoadingState: (value) => (isGeneratingToken = value),
+						onSuccess: (snippets) => {
+							generatedEnrollment = snippets;
+						}
 					});
-
-					if (result.apiKey) {
-						queryClient.removeQueries({
-							queryKey: environmentDeploymentSnippetsQuery(environment.id).queryKey
-						});
-						regeneratedApiKey = result.apiKey;
-						toast.success(m.environments_regenerate_key_success());
-						await refreshAll();
-					} else {
-						toast.error(m.environments_regenerate_key_failed());
-					}
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.error('Failed to regenerate API key:', error);
-				toast.error(m.environments_regenerate_key_failed());
+				}
 			}
-		} finally {
-			isRegeneratingKey = false;
-			showRegenerateDialog = false;
-		}
+		});
 	}
 </script>
 
@@ -560,38 +540,30 @@
 			</div>
 		</div>
 	{/if}
-	{#if regeneratedApiKey}
+	{#if generatedEnrollment}
 		<div class="rounded-lg border border-success/30 bg-success/10 p-4 text-success">
 			<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 				<div class="min-w-0 flex-1 space-y-2">
-					<p class="text-sm font-medium">
-						{m.environments_new_api_key()}
-					</p>
+					<p class="text-sm font-medium">{m.enrollment_token()}</p>
 					<div class="flex items-center gap-2">
 						<code class="flex-1 rounded-md bg-background/70 px-3 py-2 font-mono text-sm break-all">
-							{regeneratedApiKey}
+							{generatedEnrollment.enrollmentToken}
 						</code>
-						<CopyButton text={regeneratedApiKey} size="icon" class="size-8 shrink-0" />
+						<CopyButton text={generatedEnrollment.enrollmentToken} size="icon" class="size-8 shrink-0" />
 					</div>
-					<p class="text-sm">
-						{m.environments_api_key_save_warning()}
-					</p>
-					{#if regeneratedSnippets}
-						<AgentCommandBlock
-							dockerRunLabel={m.docker_run_command()}
-							dockerRun={regeneratedSnippets.dockerRun}
-							dockerComposeLabel={m.common_docker_compose()}
-							dockerCompose={regeneratedSnippets.dockerCompose}
-						/>
-					{/if}
+					<p class="text-sm">{m.enrollment_token_single_use_description()}</p>
+					<AgentCommandBlock
+						dockerRunLabel={m.docker_run_command()}
+						dockerRun={generatedEnrollment.dockerRun}
+						dockerComposeLabel={m.common_docker_compose()}
+						dockerCompose={generatedEnrollment.dockerCompose}
+					/>
 				</div>
 
 				<ArcaneButton
 					action="base"
 					tone="outline"
-					onclick={() => {
-						regeneratedApiKey = null;
-					}}
+					onclick={() => (generatedEnrollment = null)}
 					customLabel={m.common_dismiss()}
 					class="shrink-0"
 				/>
@@ -693,30 +665,14 @@
 					environment={runtimeEnvironment}
 					{currentStatus}
 					{showMTLSDownloads}
-					{isRegeneratingKey}
-					onRegenerateApiKey={() => (showRegenerateDialog = true)}
+					{isGeneratingToken}
+					onGenerateEnrollmentToken={generateEnrollmentToken}
 				/>
 			</Tabs.Content>
 		{/if}
 	{/snippet}
 </TabbedPageLayout>
 
-<AlertDialog.Root bind:open={showRegenerateDialog}>
-	<AlertDialog.Content>
-		<AlertDialog.Header>
-			<AlertDialog.Title>{m.environments_regenerate_dialog_title()}</AlertDialog.Title>
-			<AlertDialog.Description>
-				{m.environments_regenerate_dialog_message()}
-			</AlertDialog.Description>
-		</AlertDialog.Header>
-		<AlertDialog.Footer>
-			<AlertDialog.Cancel>{m.common_cancel()}</AlertDialog.Cancel>
-			<AlertDialog.Action onclick={handleRegenerateApiKey}>
-				{m.environments_regenerate_api_key()}
-			</AlertDialog.Action>
-		</AlertDialog.Footer>
-	</AlertDialog.Content>
-</AlertDialog.Root>
 {#key `${easyJoinSession}:${easyJoinCandidates.managerFor(runtimeEnvironment.id)}`}
 	<EasyJoinDialog
 		bind:open={easyJoinDialogOpen}

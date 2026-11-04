@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 
 	"getarcane.dev/arcane/v3/internal/database"
@@ -19,6 +18,12 @@ type (
 	Service struct {
 		eventService *event.EventService
 	}
+
+	AgentParams struct {
+		ManagerURL string
+		Token      string
+		MTLSMode   string
+	}
 )
 
 const (
@@ -30,23 +35,26 @@ func New(eventService *event.EventService) *Service {
 	return &Service{eventService: eventService}
 }
 
-// Agent renders docker run and compose snippets for an agent, which
-// connects outbound and needs no exposed ports.
-func Agent(managerURL, apiKey string) (string, string) {
-	dockerRun := strings.Join([]string{
+func Agent(p AgentParams) (string, string) {
+	env := []string{
+		"ARCANE_AGENT=true",
+		"ARCANE_AGENT_TRANSPORT=auto",
+		"ARCANE_AGENT_TOKEN=" + p.Token,
+		"ARCANE_MANAGER_API_URL=" + p.ManagerURL,
+	}
+	if mode := agent.NormalizeMTLSMode(p.MTLSMode); mode != agent.MTLSModeDisabled {
+		env = append(env,
+			"ARCANE_AGENT_MTLS_MODE="+mode,
+			"ARCANE_AGENT_MTLS_ASSETS_DIR="+DeploymentSnippetsMTLSPath,
+		)
+	}
+
+	dockerRun := []string{
 		"docker run -d \\",
 		"  --name arcane-agent \\",
 		"  --restart unless-stopped \\",
-		"  -e ARCANE_AGENT=true \\",
-		"  -e ARCANE_AGENT_TRANSPORT=auto \\",
-		fmt.Sprintf("  -e ARCANE_AGENT_TOKEN=%s \\", apiKey),
-		fmt.Sprintf("  -e ARCANE_MANAGER_API_URL=%s \\", managerURL),
-		"  -v /var/run/docker.sock:/var/run/docker.sock \\",
-		fmt.Sprintf("  -v arcane-data:%s \\", DeploymentSnippetsDataPath),
-		"  ghcr.io/getarcaneapp/agent:latest",
-	}, "\n")
-
-	dockerCompose := strings.Join([]string{
+	}
+	dockerCompose := []string{
 		"# Agent - connects outbound, no exposed ports required",
 		"services:",
 		"  arcane-agent:",
@@ -54,60 +62,35 @@ func Agent(managerURL, apiKey string) (string, string) {
 		"    container_name: arcane-agent",
 		"    restart: unless-stopped",
 		"    environment:",
-		"      - ARCANE_AGENT=true",
-		"      - ARCANE_AGENT_TRANSPORT=auto",
-		"      - ARCANE_AGENT_TOKEN=" + apiKey,
-		"      - ARCANE_MANAGER_API_URL=" + managerURL,
-		"    volumes:",
-		"      - /var/run/docker.sock:/var/run/docker.sock",
-		"      - arcane-data:" + DeploymentSnippetsDataPath,
-		"",
-		"volumes:",
-		"  arcane-data:",
-	}, "\n")
-
-	return dockerRun, dockerCompose
-}
-
-func Swarm(managerURL, enrollmentToken, mtlsMode string) (string, string) {
-	env := []string{
-		"      - ARCANE_AGENT=true",
-		"      - ARCANE_AGENT_TRANSPORT=auto",
-		"      - ARCANE_AGENT_ENROLLMENT_TOKEN=" + enrollmentToken,
-		"      - ARCANE_MANAGER_API_URL=" + managerURL,
 	}
-	if mode := agent.NormalizeMTLSMode(mtlsMode); mode != agent.MTLSModeDisabled {
-		env = append(env,
-			"      - ARCANE_AGENT_MTLS_MODE="+mode,
-			"      - ARCANE_AGENT_MTLS_ASSETS_DIR="+DeploymentSnippetsMTLSPath,
-		)
+	for _, entry := range env {
+		dockerRun = append(dockerRun, "  -e "+entry+" \\")
+		dockerCompose = append(dockerCompose, "      - "+entry)
 	}
 
-	stack := strings.Join(slices.Concat([]string{
-		"# Runs an Arcane agent on every Swarm node, including nodes that join later.",
-		"# To limit the nodes, add deploy.placement.constraints (for example node.role == manager).",
-		"services:",
-		"  arcane-agent:",
-		"    image: ghcr.io/getarcaneapp/agent:latest",
-		"    environment:",
-	}, env, []string{
-		"    volumes:",
-		"      - /var/run/docker.sock:/var/run/docker.sock",
-		"      - arcane-data:" + DeploymentSnippetsDataPath,
-		"    deploy:",
-		"      mode: global",
-		"",
-		"volumes:",
-		"  arcane-data:",
-	}), "\n")
-
-	return "docker stack deploy -c arcane-agent.yml arcane-agent", stack
+	return strings.Join(append(dockerRun,
+			"  -v /var/run/docker.sock:/var/run/docker.sock \\",
+			fmt.Sprintf("  -v arcane-data:%s \\", DeploymentSnippetsDataPath),
+			"  ghcr.io/getarcaneapp/agent:latest",
+		), "\n"),
+		strings.Join(append(dockerCompose,
+			"    volumes:",
+			"      - /var/run/docker.sock:/var/run/docker.sock",
+			"      - arcane-data:"+DeploymentSnippetsDataPath,
+			"",
+			"volumes:",
+			"  arcane-data:",
+		), "\n")
 }
 
 // GenerateMTLS issues manager-signed agent mTLS assets and renders the snippets
 // that enroll with them. Nil assets mean only the basic snippets apply.
-func (s *Service) GenerateMTLS(ctx context.Context, agentCfg *agent.Config, envID, envName, managerURL, apiKey string) (*agent.GeneratedMTLSAssets, string, string) {
-	generatedAssets, err := agent.GenerateManagerClientMTLSAssetsWithContext(ctx, agentCfg, envID, envName)
+func (s *Service) GenerateMTLS(ctx context.Context, mtls *agent.MTLS, envID, envName, managerURL, apiKey string) (*agent.GeneratedMTLSAssets, string, string) {
+	generatedAssets, err := mtls.IssueClient(ctx, agent.IssueClientOptions{
+		EnvironmentID:   envID,
+		EnvironmentName: envName,
+		FallbackAppURL:  managerURL,
+	})
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to generate agent mTLS assets; returning basic snippets only", "environmentId", envID, "error", err)
 		return nil, "", ""

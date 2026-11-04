@@ -9,6 +9,12 @@ import {
 	type Route
 } from '../fixtures/test.fixture';
 
+type DeploymentSnippet = {
+	enrollmentToken: string;
+	dockerRun: string;
+	dockerCompose: string;
+};
+
 test.describe('Settings', () => {
 	const LOCAL_ENV_ID = '0';
 	const NAME_PLACEHOLDER = 'My Lab Server';
@@ -52,6 +58,11 @@ test.describe('Settings', () => {
 				response.request().method() === 'POST' &&
 				new URL(response.url()).pathname === '/api/environments'
 		);
+		const deploymentResponsePromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				/^\/api\/environments\/[^/]+\/deployment$/.test(new URL(response.url()).pathname)
+		);
 		await page.getByRole('button', { name: 'Generate Agent Configuration', exact: true }).click();
 		const createResponse = await createResponsePromise;
 		expect(createResponse.ok(), 'Create agent environment').toBeTruthy();
@@ -59,18 +70,31 @@ test.describe('Settings', () => {
 		const created: { data: { id: string; apiKey?: string } } = await createResponse.json();
 		environmentIds.add(created.data.id);
 		expect(created.data.id).toBeTruthy();
-		if (!created.data.apiKey) throw new Error('New agent environment did not return an API key');
+		expect(created.data.apiKey).toBeUndefined();
+
+		const deploymentResponse = await deploymentResponsePromise;
+		expect(new URL(deploymentResponse.url()).pathname).toBe(
+			`/api/environments/${created.data.id}/deployment`
+		);
+		expect(deploymentResponse.ok(), 'Generate deployment snippets').toBeTruthy();
+		const deployment = await readApiData<DeploymentSnippet>(
+			deploymentResponse,
+			'Generate deployment snippets'
+		);
+		expect(deployment.enrollmentToken.startsWith('arc_etkn_')).toBe(true);
+		expect(deployment.dockerRun).toContain(`ARCANE_AGENT_TOKEN=${deployment.enrollmentToken}`);
+		expect(deployment.dockerCompose).toContain(`ARCANE_AGENT_TOKEN=${deployment.enrollmentToken}`);
 
 		await expect(
 			page.getByRole('heading', { name: 'Environment Created Successfully', exact: true })
 		).toBeVisible();
-		await expect(dialog.getByText(created.data.apiKey, { exact: true })).toBeVisible();
+		await expect(dialog.getByText(deployment.enrollmentToken, { exact: true })).toBeVisible();
 		await expect(
-			dialog.locator('pre code').filter({ hasText: 'ARCANE_AGENT=true' }).first()
+			dialog.locator('pre code').filter({ hasText: 'ARCANE_AGENT_TOKEN=' }).first()
 		).toBeVisible();
 		await page.getByRole('button', { name: 'Done', exact: true }).click();
 		await expect(page.getByRole('button', { name: environmentName, exact: true })).toBeVisible();
-		return { id: created.data.id, apiKey: created.data.apiKey };
+		return { id: created.data.id, enrollmentToken: deployment.enrollmentToken };
 	}
 
 	async function openLocalSettings(page: Page, category: string) {
@@ -225,7 +249,7 @@ test.describe('Settings', () => {
 			const environmentIds = new Set<string>();
 
 			registerCleanup(() => removeCreatedEnvironments(page, environmentIds, envName));
-			const { id: environmentId, apiKey } = await createAgentEnvironmentViaUI(
+			const { id: environmentId, enrollmentToken } = await createAgentEnvironmentViaUI(
 				page,
 				envName,
 				environmentIds
@@ -233,7 +257,7 @@ test.describe('Settings', () => {
 			const environmentPath = `/api/environments/${environmentId}`;
 			await expect.poll(() => activityStatuses.get(environmentId)).toBe(200);
 			expect((await page.request.get('/api/auth/me', { timeout: 5_000 })).status()).toBe(200);
-			await expect(page).toHaveURL('/environments');
+			await expect(page).toHaveURL(/\/environments(?:\?tab=environments)?$/);
 			await page.getByRole('button', { name: envName, exact: true }).click();
 			await expect(page).toHaveURL(/\/environments\/[^/?]+\?tab=[a-z]+$/);
 			await expect(page.getByText(/^agent:\/\/settings-ui-/).first()).toBeVisible();
@@ -246,32 +270,36 @@ test.describe('Settings', () => {
 			await expect(environmentTitleButton(page)).toHaveText(updatedName);
 
 			await page.getByRole('tab', { name: 'Connection & Agent', exact: true }).click();
-			await page.getByRole('button', { name: 'Regenerate API Key', exact: true }).click();
-			const regenerateDialog = page.getByRole('alertdialog');
+			const deploymentPath = `${environmentPath}/deployment`;
+			await page.getByRole('button', { name: 'Generate Enrollment Token', exact: true }).click();
+			const tokenDialog = page.getByRole('alertdialog');
 			await expect(
-				regenerateDialog.getByRole('heading', { name: 'Regenerate API Key?', exact: true })
+				tokenDialog.getByRole('heading', { name: 'Generate Enrollment Token', exact: true })
 			).toBeVisible();
-			const regenerateResponsePromise = page.waitForResponse(
+			const tokenResponsePromise = page.waitForResponse(
 				(response) =>
-					response.request().method() === 'PATCH' &&
-					new URL(response.url()).pathname === environmentPath
+					response.request().method() === 'POST' &&
+					new URL(response.url()).pathname === deploymentPath
 			);
-			await regenerateDialog
-				.getByRole('button', { name: 'Regenerate API Key', exact: true })
+			await tokenDialog
+				.getByRole('button', { name: 'Generate Enrollment Token', exact: true })
 				.click();
-			const regenerateResponse = await regenerateResponsePromise;
-			expect(regenerateResponse.ok(), 'Regenerate API key').toBeTruthy();
-			expect(regenerateResponse.request().postDataJSON()).toEqual({ regenerateApiKey: true });
-			const regenerated: { data: { apiKey?: string } } = await regenerateResponse.json();
-			if (!regenerated.data.apiKey) throw new Error('Regenerating did not return an API key');
-			expect(regenerated.data.apiKey === apiKey).toBe(false);
+			const tokenResponse = await tokenResponsePromise;
+			expect(tokenResponse.ok(), 'Generate enrollment token').toBeTruthy();
+			const generated = await readApiData<DeploymentSnippet>(
+				tokenResponse,
+				'Generate enrollment token'
+			);
+			expect(generated.enrollmentToken.startsWith('arc_etkn_')).toBe(true);
+			expect(generated.enrollmentToken === enrollmentToken).toBe(false);
 
-			await expect(page.getByText('New API Key', { exact: true })).toBeVisible();
-			await expect(page.getByText(regenerated.data.apiKey, { exact: true })).toBeVisible();
-			const regeneratedSnippet = page.locator('pre code').filter({ hasText: 'ARCANE_AGENT=true' });
-			await expect(regeneratedSnippet.first()).toBeVisible();
+			await expect(page.getByText(generated.enrollmentToken, { exact: true })).toBeVisible();
+			const generatedSnippet = page
+				.locator('pre code')
+				.filter({ hasText: `ARCANE_AGENT_TOKEN=${generated.enrollmentToken}` });
+			await expect(generatedSnippet.first()).toBeVisible();
 			await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
-			await expect(page.getByText('New API Key', { exact: true })).toBeHidden();
+			await expect(page.getByText(generated.enrollmentToken, { exact: true })).toBeHidden();
 
 			await renameEnvironmentInHeader(page, `${updatedName}-again`);
 			const secondNameRequest = await saveAndWaitForPatch(page, environmentPath);
@@ -384,7 +412,7 @@ test.describe('Settings', () => {
 			await renameEnvironmentInHeader(page, `${envName}-discarded`);
 			await expect(saveButton).toBeEnabled();
 			await page.getByRole('link', { name: 'Back', exact: true }).first().click();
-			await expect(page).toHaveURL(/\/environments$/);
+			await expect(page).toHaveURL(/\/environments(?:\?tab=environments)?$/);
 			await expect(page.getByRole('heading', { name: 'Environments', exact: true })).toBeVisible();
 			await page.getByRole('button', { name: envName, exact: true }).click();
 			await expect(page).toHaveURL(new RegExp(`/environments/${environmentId}(?:\\?|$)`));

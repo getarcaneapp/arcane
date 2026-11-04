@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"github.com/cenkalti/backoff/v5"
 	"github.com/coder/websocket"
 
+	"kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -52,36 +54,63 @@ var (
 	errEstablishedTunnelSessionEnded = errors.New("established agent tunnel session ended")
 )
 
-// NewTunnelClient creates a new tunnel client
-func NewTunnelClient(cfg *Config, handler http.Handler) *TunnelClient {
-	reconnectInterval := time.Duration(cfg.AgentReconnectInterval) * time.Second
+func NewTunnelClient(cfg TunnelClientConfig) *TunnelClient {
+	reconnectInterval := time.Duration(cfg.Config.AgentReconnectInterval) * time.Second
 	if reconnectInterval < time.Second {
 		reconnectInterval = 5 * time.Second
 	}
 
 	return &TunnelClient{
-		cfg:                    cfg,
-		handler:                handler,
+		cfg:                    cfg.Config,
+		errCh:                  cfg.Errors,
+		handler:                cfg.Handler,
 		reconnectInterval:      reconnectInterval,
 		registrationTimeout:    DefaultGRPCRegistrationTimeout,
 		websocketPreferenceTTL: DefaultWebSocketPreferenceTTL,
 		healthySessionDuration: healthyTunnelSessionDuration,
-		managerGRPCAddr:        httpx.ManagerGRPCAddr(cfg.ManagerApiUrl),
+		managerGRPCAddr:        httpx.ManagerGRPCAddr(cfg.Config.MTLS.ManagerURL),
 		agentInstanceID:        uuid.New().String(),
 	}
 }
 
-// StartWithErrorChan runs the tunnel client and optionally emits connection errors.
-func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error) {
-	if errCh != nil {
-		defer close(errCh)
+func (c *TunnelClient) Start(ctx context.Context) (func(context.Context) error, error) {
+	transport := NormalizeTransport(c.cfg.AgentTransport)
+	switch {
+	case !c.cfg.AgentEnabled:
+		return nil, errors.New("agent tunnel disabled")
+	case transport != TransportWebSocket && httpx.ManagerGRPCAddr(c.cfg.MTLS.ManagerURL) == "":
+		return nil, errors.New("ARCANE_MANAGER_API_URL with a valid host is required for gRPC transport")
+	case transport != TransportGRPC && strings.TrimSpace(httpx.ManagerBaseURL(c.cfg.MTLS.ManagerURL)) == "":
+		return nil, errors.New("ARCANE_MANAGER_API_URL is required for websocket transport")
+	case c.cfg.AgentToken == "":
+		return nil, errors.New("ARCANE_AGENT_TOKEN is required")
 	}
-	if parsed, err := url.Parse(httpx.ManagerBaseURL(c.cfg.ManagerApiUrl)); err == nil && strings.Trim(parsed.Path, "/") != "" && c.managerGRPCAddr != "" {
+	if parsed, err := url.Parse(httpx.ManagerBaseURL(c.cfg.MTLS.ManagerURL)); transport == TransportGRPC && err == nil && strings.Trim(parsed.Path, "/") != "" {
+		return nil, errors.New("gRPC transport cannot use an ARCANE_MANAGER_API_URL with a path prefix; use ARCANE_AGENT_TRANSPORT=websocket or auto")
+	}
+	if c.cfg.MTLS.Mode != MTLSModeDisabled && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL(c.cfg.MTLS.ManagerURL))), "https://") {
+		return nil, errors.New("ARCANE_AGENT_MTLS_MODE requires ARCANE_MANAGER_API_URL to use https")
+	}
+
+	return concurrency.Supervise(ctx, concurrency.SuperviseConfig{
+		Run: func(runCtx context.Context) error {
+			c.run(runCtx)
+			return nil
+		},
+		Name: "Agent tunnel client",
+	}).Stop, nil
+}
+
+func (c *TunnelClient) run(ctx context.Context) {
+	if c.errCh != nil {
+		defer close(c.errCh)
+	}
+	if parsed, err := url.Parse(httpx.ManagerBaseURL(c.cfg.MTLS.ManagerURL)); err == nil && strings.Trim(parsed.Path, "/") != "" && c.managerGRPCAddr != "" {
 		slog.WarnContext(ctx, "ARCANE_MANAGER_API_URL has a path prefix that gRPC cannot route; gRPC agent tunnel transport is unavailable", "pathPrefix", parsed.Path)
 		c.managerGRPCAddr = ""
 	}
 	// Log only the endpoints this agent will dial.
-	attrs := []any{"securityMode", NormalizeMTLSMode(c.cfg.AgentMTLSMode)}
+	attrs := []any{"securityMode", c.cfg.MTLS.Mode}
 	transports := c.managedTunnelTransports()
 	if transports.grpc {
 		attrs = append(attrs, "grpcAddr", c.managerGRPCAddr)
@@ -96,13 +125,14 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 	reconnectBackoff.InitialInterval = c.reconnectInterval
 	reconnectBackoff.MaxInterval = maxReconnectInterval
 	serve := func(ctx context.Context) error {
-		if err := EnsureAgentMTLSAssets(ctx, c.cfg); err != nil {
+		httpClient, err := c.cfg.MTLS.ManagerClient(ctx, ManagerClientOptions{
+			AgentToken: c.cfg.AgentToken,
+			Enroll:     true,
+		})
+		if err != nil {
 			return err
 		}
-		if err := ValidateAgentMTLSConfig(c.cfg); err != nil {
-			return err
-		}
-		return c.connectAndServeManagedTunnel(ctx)
+		return c.connectAndServeManagedTunnel(ctx, httpClient)
 	}
 
 	for {
@@ -113,11 +143,9 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 		sessionStart := time.Now()
 		if err := serve(ctx); err != nil {
 			slog.WarnContext(ctx, "Agent tunnel disconnected", "error", err)
-			if errCh != nil {
-				select {
-				case errCh <- err:
-				default:
-				}
+			select {
+			case c.errCh <- err:
+			default:
 			}
 		}
 		var delay time.Duration
@@ -138,61 +166,54 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 	}
 }
 
-func (c *TunnelClient) connectAndServeManagedTunnel(ctx context.Context) error {
+func (c *TunnelClient) connectAndServeManagedTunnel(ctx context.Context, httpClient *http.Client) error {
 	transports := c.managedTunnelTransports()
-	if transports.grpc {
-		c.transportPreferenceMu.RLock()
-		preferredUntil, grpcFailureStreak := c.preferWebSocketUntil, c.grpcFailureStreak
-		c.transportPreferenceMu.RUnlock()
-		if transports.websocket && time.Now().Before(preferredUntil) {
-			slog.InfoContext(ctx, "Temporarily preferring websocket agent tunnel transport after recent websocket success",
-				"preferredUntil", preferredUntil,
-				"grpcFailureStreak", grpcFailureStreak,
-				"managerWsUrl", c.managerWebSocketURL(),
-			)
-			return c.connectAndServeWebSocket(ctx)
-		}
+	preference := kit.FromPtr(c.preference.Load())
+	switch {
+	case !transports.grpc && !transports.websocket:
+		return errors.New("no agent tunnel transport is available")
+	case !transports.grpc:
+		return c.connectAndServeWebSocket(ctx, httpClient)
+	case transports.websocket && time.Now().Before(preference.webSocketUntil):
+		slog.InfoContext(ctx, "Temporarily preferring websocket agent tunnel transport after recent websocket success",
+			"preferredUntil", preference.webSocketUntil,
+			"grpcFailureStreak", preference.grpcFailures,
+			"managerWsUrl", c.managerWebSocketURL(),
+		)
+		return c.connectAndServeWebSocket(ctx, httpClient)
+	}
 
-		sessionStart := time.Now()
-		if err := c.connectAndServeGRPC(ctx); err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			// A healthy session the manager dropped (restart, redeploy) is not a broken gRPC path:
-			// let the outer loop back off and retry gRPC instead of racing a websocket dial.
-			if errors.Is(err, errEstablishedTunnelSessionEnded) && time.Since(sessionStart) >= c.healthySessionDuration {
-				return err
-			}
-			c.transportPreferenceMu.Lock()
-			c.grpcFailureStreak++
-			c.transportPreferenceMu.Unlock()
-			if transports.websocket {
-				slog.WarnContext(ctx, "gRPC agent tunnel connection failed, falling back to websocket transport",
-					"error", err,
-					"managerGrpcAddr", c.managerGRPCAddr,
-					"managerWsUrl", c.managerWebSocketURL(),
-				)
-				if wsErr := c.connectAndServeWebSocket(ctx); wsErr != nil {
-					// Keep both transport failures in the chain for errors.Is/errors.As traversal.
-					return fmt.Errorf("gRPC agent tunnel failed: %w; websocket fallback failed: %w", err, wsErr)
-				}
-				return nil
-			}
-			return err
-		}
+	sessionStart := time.Now()
+	err := c.connectAndServeGRPC(ctx)
+	switch {
+	case err == nil:
 		return nil
+	case ctx.Err() != nil:
+		return ctx.Err()
+	case errors.Is(err, errEstablishedTunnelSessionEnded) && time.Since(sessionStart) >= c.healthySessionDuration:
+		return err
 	}
-	if transports.websocket {
-		return c.connectAndServeWebSocket(ctx)
+
+	failed := kit.FromPtr(c.preference.Load())
+	c.preference.Store(&transportPreference{
+		webSocketUntil: failed.webSocketUntil,
+		grpcFailures:   failed.grpcFailures + 1,
+	})
+	if !transports.websocket {
+		return err
 	}
-	return errors.New("no agent tunnel transport is available")
+	slog.WarnContext(ctx, "gRPC agent tunnel connection failed, falling back to websocket transport",
+		"error", err,
+		"managerGrpcAddr", c.managerGRPCAddr,
+		"managerWsUrl", c.managerWebSocketURL(),
+	)
+	if wsErr := c.connectAndServeWebSocket(ctx, httpClient); wsErr != nil {
+		return fmt.Errorf("gRPC agent tunnel failed: %w; websocket fallback failed: %w", err, wsErr)
+	}
+	return nil
 }
 
 func (c *TunnelClient) managedTunnelTransports() tunnelTransports {
-	if c == nil || c.cfg == nil {
-		return tunnelTransports{}
-	}
-
 	managerGRPCAvailable := strings.TrimSpace(c.managerGRPCAddr) != ""
 	managerWebSocketAvailable := c.managerWebSocketURL() != ""
 	switch NormalizeTransport(c.cfg.AgentTransport) {
@@ -208,17 +229,11 @@ func (c *TunnelClient) managedTunnelTransports() tunnelTransports {
 }
 
 func (c *TunnelClient) managerWebSocketURL() string {
-	if managerURL := strings.TrimSpace(c.managerURL); managerURL != "" {
-		return managerURL
-	}
-	if c.cfg == nil {
-		return ""
-	}
-	managerBaseURL := strings.TrimRight(strings.TrimSpace(httpx.ManagerBaseURL(c.cfg.ManagerApiUrl)), "/")
+	managerBaseURL := strings.TrimRight(strings.TrimSpace(httpx.ManagerBaseURL(c.cfg.MTLS.ManagerURL)), "/")
 	if managerBaseURL == "" {
-		return ""
+		return strings.TrimSpace(c.managerURL)
 	}
-	return HTTPToWebSocketURL(managerBaseURL) + tunnelConnectPath
+	return cmp.Or(strings.TrimSpace(c.managerURL), HTTPToWebSocketURL(managerBaseURL)+tunnelConnectPath)
 }
 
 func (c *TunnelClient) awaitRegistration(ctx context.Context, conn TunnelConnection) (*TunnelMessage, error) {
@@ -304,18 +319,18 @@ func (c *TunnelClient) serveTunnelSession(ctx context.Context, conn TunnelConnec
 		"environmentId", registerResp.EnvironmentID,
 		"sessionId", registerResp.SessionID,
 	)
-	c.transportPreferenceMu.Lock()
-	switch conn.Transport() {
-	case TransportGRPC:
-		c.preferWebSocketUntil, c.grpcFailureStreak = time.Time{}, 0
-	case TransportWebSocket:
-		if transports := c.managedTunnelTransports(); transports.grpc && transports.websocket {
-			// Back off the preference window while gRPC keeps failing so reconnects do not re-pay its timeout.
-			ttl := min(c.websocketPreferenceTTL<<min(c.grpcFailureStreak, 4), maxWebSocketPreferenceTTL)
-			c.preferWebSocketUntil = time.Now().Add(ttl)
-		}
+	transports := c.managedTunnelTransports()
+	switch {
+	case conn.Transport() == TransportGRPC:
+		c.preference.Store(&transportPreference{})
+	case conn.Transport() == TransportWebSocket && transports.grpc && transports.websocket:
+		grpcFailures := kit.FromPtr(c.preference.Load()).grpcFailures
+		// Back off the preference window while gRPC keeps failing so reconnects do not re-pay its timeout.
+		c.preference.Store(&transportPreference{
+			webSocketUntil: time.Now().Add(min(c.websocketPreferenceTTL<<min(grpcFailures, 4), maxWebSocketPreferenceTTL)),
+			grpcFailures:   grpcFailures,
+		})
 	}
-	c.transportPreferenceMu.Unlock()
 
 	return fmt.Errorf("%w: %w", errEstablishedTunnelSessionEnded, c.serveMuxSession(connCtx, conn.muxConn(connCtx)))
 }
@@ -340,45 +355,10 @@ func flattenResponseHeaders(headers http.Header) map[string]string {
 	return out
 }
 
-// StartTunnelClient starts the tunnel client with an owned background worker.
-func StartTunnelClient(ctx context.Context, cfg *Config, handler http.Handler) (func(context.Context) error, error) {
-	if !cfg.AgentEnabled {
-		return nil, errors.New("agent tunnel disabled")
-	}
-	if UseGRPCTransport(cfg) && httpx.ManagerGRPCAddr(cfg.ManagerApiUrl) == "" {
-		return nil, errors.New("ARCANE_MANAGER_API_URL with a valid host is required for gRPC transport")
-	}
-	if UseWebSocketTransport(cfg) && strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl)) == "" {
-		return nil, errors.New("ARCANE_MANAGER_API_URL is required for websocket transport")
-	}
-	if cfg.AgentToken == "" {
-		return nil, errors.New("ARCANE_AGENT_TOKEN is required")
-	}
-	if parsed, err := url.Parse(httpx.ManagerBaseURL(cfg.ManagerApiUrl)); NormalizeTransport(cfg.AgentTransport) == TransportGRPC && err == nil && strings.Trim(parsed.Path, "/") != "" {
-		return nil, errors.New("gRPC transport cannot use an ARCANE_MANAGER_API_URL with a path prefix; use ARCANE_AGENT_TRANSPORT=websocket or auto")
-	}
-	if NormalizeMTLSMode(cfg.AgentMTLSMode) != MTLSModeDisabled && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl))), "https://") {
-		return nil, errors.New("ARCANE_AGENT_MTLS_MODE requires ARCANE_MANAGER_API_URL to use https")
-	}
-
-	client := NewTunnelClient(cfg, handler)
-	return concurrency.Supervise(ctx, concurrency.SuperviseConfig{
-		Run: func(runCtx context.Context) error {
-			client.StartWithErrorChan(runCtx, nil)
-			return nil
-		},
-		Name: "Agent tunnel client",
-	}).Stop, nil
-}
-
-func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
+func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context, httpClient *http.Client) error {
 	managerWSURL := c.managerWebSocketURL()
 	if managerWSURL == "" {
 		return errors.New("manager WebSocket URL is empty")
-	}
-	httpClient, err := NewManagerHTTPClient(c.cfg, 0)
-	if err != nil {
-		return fmt.Errorf("failed to configure agent websocket TLS: %w", err)
 	}
 
 	headers := http.Header{}
@@ -404,5 +384,5 @@ func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 		return fmt.Errorf("failed to connect to manager websocket endpoint: %w", err)
 	}
 
-	return c.serveTunnelSession(ctx, NewTunnelConn(conn), managerWSURL)
+	return c.serveTunnelSession(ctx, NewWebSocketTunnelConn(conn), managerWSURL)
 }

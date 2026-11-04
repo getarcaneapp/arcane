@@ -40,6 +40,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment/children/enrollment"
 	"getarcane.dev/arcane/v3/internal/environment/children/health"
 	"getarcane.dev/arcane/v3/internal/environment/children/proxy"
 	"getarcane.dev/arcane/v3/internal/environment/children/snippets"
@@ -68,6 +69,7 @@ type (
 		variableSyncer   VariableSyncer
 		db               *database.DB
 		dockerService    *docker.DockerClientService
+		tunnels          *agent.TunnelRegistry
 		eventService     *event.EventService
 		settingsService  *settings.SettingsService
 		agentTokens      *agentTokenCache
@@ -82,6 +84,7 @@ type (
 		health          *health.Service
 		snippets        *snippets.Service
 		swarm           *swarm.Service
+		enrollment      *enrollment.Service
 		runtimeWatchers runtimeWatchers
 		environmentGens [environmentCacheStripes]atomic.Uint64
 	}
@@ -120,11 +123,32 @@ type (
 		kind string
 	}
 
+	SwarmNodeAgentEnvironmentParams struct {
+		ParentEnvironmentID string
+		NodeID              string
+		Hostname            string
+		UserID              string
+		Username            string
+	}
+
+	CreateEnrollmentTokenParams struct {
+		Request types.CreateEnrollmentTokenRequest
+		Actor   types.Actor
+	}
+
+	AgentDeploymentSnippetsParams struct {
+		MTLS          *agent.MTLS
+		EnvironmentID string
+		ManagerURL    string
+		Token         string
+	}
+
 	// DeploymentSnippets contains deployment configuration snippets for an environment.
 	DeploymentSnippets struct {
-		MTLS          *types.DeploymentSnippetMTLS
-		DockerRun     string
-		DockerCompose string
+		MTLS            *types.DeploymentSnippetMTLS
+		DockerRun       string
+		DockerCompose   string
+		EnrollmentToken string
 	}
 
 	EnvironmentServiceParams struct {
@@ -143,6 +167,7 @@ type (
 		Ctx             context.Context
 		Scheduler       types.DynamicScheduler
 		Admission       *runs.Admission
+		Tunnels         *agent.TunnelRegistry
 	}
 )
 
@@ -170,7 +195,6 @@ var (
 	ErrEnvironmentNotFound            = common.Classify(common.ErrNotFound, errors.New("environment not found"))
 	ErrLocalEnvironmentTunnel         = common.Classify(common.ErrValidation, errors.New("local environment has no agent tunnel"))
 	ErrAgentTunnelNotConnected        = common.Classify(common.ErrConflict, errors.New("agent tunnel is not connected"))
-	ErrInvalidSwarmEnrollmentToken    = common.Classify(common.ErrUnauthorized, errors.New("invalid swarm enrollment token"))
 	agentSlugPattern                  = regexp.MustCompile(`[^a-z0-9]+`)
 )
 
@@ -180,8 +204,13 @@ func (s *EnvironmentService) ForgetSyncState(environmentID string) {
 	s.variableSyncer.ForgetSyncState(environmentID)
 }
 
-func NewRemoteTransport(db *database.DB, settingsService *settings.SettingsService) RemoteTransport {
-	return remoteTransport{Service: proxy.New(db, settingsService, &concurrency.SyncGate{Expiry: SyncDeliveryExpiry})}
+func NewRemoteTransport(db *database.DB, settingsService *settings.SettingsService, tunnels *agent.TunnelRegistry) RemoteTransport {
+	return remoteTransport{Service: proxy.New(proxy.Config{
+		DB:              db,
+		Tunnels:         tunnels,
+		SettingsService: settingsService,
+		SyncGate:        &concurrency.SyncGate{Expiry: SyncDeliveryExpiry},
+	})}
 }
 
 func (t remoteTransport) ProxyJSONRequestForEnvironment(ctx context.Context, env Environment, method, path string, body []byte, out any) error {
@@ -204,6 +233,7 @@ func NewEnvironmentService(p EnvironmentServiceParams) *EnvironmentService {
 		invalidateUser:  p.InvalidateUser,
 		db:              p.DB,
 		dockerService:   p.DockerService,
+		tunnels:         p.Tunnels,
 		eventService:    p.EventService,
 		settingsService: p.SettingsService,
 		agentTokens: &agentTokenCache{
@@ -235,9 +265,10 @@ func NewEnvironmentService(p EnvironmentServiceParams) *EnvironmentService {
 			running: make(map[string]bool),
 			pending: make(map[string]bool),
 		},
-		health:   health.New(p.DockerService),
-		snippets: snippets.New(p.EventService),
-		swarm:    swarm.New(p.APIKeyService),
+		health:     health.New(p.DockerService, p.Tunnels),
+		snippets:   snippets.New(p.EventService),
+		swarm:      swarm.New(p.APIKeyService),
+		enrollment: enrollment.New(p.DB),
 	}
 }
 
@@ -437,16 +468,15 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, env *Environ
 		Name:   env.Name,
 		ApiUrl: kit.Ternary(apiURLTaken > 0, apiURL+"-"+id, apiURL),
 		// Only set status to offline if not already set (e.g., API key flow sets it to pending)
-		Status:                   cmp.Or(env.Status, string(EnvironmentStatusOffline)),
-		Enabled:                  env.Enabled,
-		Hidden:                   env.Hidden,
-		LastSeen:                 env.LastSeen,
-		LastAgentTransport:       env.LastAgentTransport,
-		AccessToken:              env.AccessToken,
-		ApiKeyID:                 env.ApiKeyID,
-		ParentEnvironmentID:      env.ParentEnvironmentID,
-		SwarmNodeID:              env.SwarmNodeID,
-		SwarmEnrollmentTokenHash: env.SwarmEnrollmentTokenHash,
+		Status:              cmp.Or(env.Status, string(EnvironmentStatusOffline)),
+		Enabled:             env.Enabled,
+		Hidden:              env.Hidden,
+		LastSeen:            env.LastSeen,
+		LastAgentTransport:  env.LastAgentTransport,
+		AccessToken:         env.AccessToken,
+		ApiKeyID:            env.ApiKeyID,
+		ParentEnvironmentID: env.ParentEnvironmentID,
+		SwarmNodeID:         env.SwarmNodeID,
 	}
 
 	if err := s.db.WithContext(ctx).Create(env).Error; err != nil {
@@ -513,7 +543,7 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 			} else {
 				s.jobs.Unregister(ctx, id)
 				s.agentTokens.sync(id, "")
-				agent.GetRegistry().Unregister(id)
+				s.tunnels.Unregister(id)
 			}
 		}
 	}
@@ -576,6 +606,9 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 		if deleteVariableScopesErr := tx.Exec("DELETE FROM global_variable_environments WHERE environment_id = ?", id).Error; deleteVariableScopesErr != nil {
 			return fmt.Errorf("failed to delete environment global variable scopes: %w", deleteVariableScopesErr)
 		}
+		if deleteTokensErr := tx.Exec("DELETE FROM enrollment_tokens WHERE environment_id = ?", id).Error; deleteTokensErr != nil {
+			return fmt.Errorf("failed to delete environment enrollment tokens: %w", deleteTokensErr)
+		}
 		if deleteEnvironmentErr := tx.Delete(&Environment{}, "id = ?", id).Error; deleteEnvironmentErr != nil {
 			return fmt.Errorf("failed to delete environment: %w", deleteEnvironmentErr)
 		}
@@ -598,7 +631,7 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 
 	s.agentTokens.sync(id, "")
 	s.accessTokenIndex.sync(id, "")
-	agent.GetRegistry().Unregister(id)
+	s.tunnels.Unregister(id)
 	s.ForgetSyncState(id)
 	s.remoteEnvs.mu.Lock()
 	delete(s.remoteEnvs.envs, id)
@@ -641,7 +674,7 @@ func (s *EnvironmentService) createEnvironmentEvent(
 
 // RegenerateEnvironmentApiKey rotates the key and updates its environment binding.
 func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, env *Environment, userID, username string) (string, error) {
-	return s.swarm.EnsureApiKey(ctx, env.ID, env.AccessToken, env.ApiKeyID, true,
+	return s.swarm.RotateApiKey(ctx, env.ID, env.ApiKeyID,
 		func(linkCtx context.Context, apiKeyID, apiKey string) error {
 			return s.linkEnvironmentApiKey(linkCtx, env.ID, apiKeyID, apiKey, userID, username, env.Name)
 		})
@@ -678,22 +711,21 @@ func (s *EnvironmentService) linkEnvironmentApiKey(ctx context.Context, envID, n
 				CreatedAt: envRecord.CreatedAt,
 				UpdatedAt: new(time.Now()),
 			},
-			Name:                     envRecord.Name,
-			ApiUrl:                   envRecord.ApiUrl,
-			Status:                   string(EnvironmentStatusPending),
-			Enabled:                  envRecord.Enabled,
-			Hidden:                   envRecord.Hidden,
-			LastSeen:                 nil,
-			LastAgentTransport:       envRecord.LastAgentTransport,
-			AccessToken:              &apiKey,
-			ApiKeyID:                 &newApiKeyID,
-			ParentEnvironmentID:      envRecord.ParentEnvironmentID,
-			SwarmNodeID:              envRecord.SwarmNodeID,
-			SwarmEnrollmentTokenHash: envRecord.SwarmEnrollmentTokenHash,
+			Name:                envRecord.Name,
+			ApiUrl:              envRecord.ApiUrl,
+			Status:              string(EnvironmentStatusPending),
+			Enabled:             envRecord.Enabled,
+			Hidden:              envRecord.Hidden,
+			LastSeen:            nil,
+			LastAgentTransport:  envRecord.LastAgentTransport,
+			AccessToken:         &apiKey,
+			ApiKeyID:            &newApiKeyID,
+			ParentEnvironmentID: envRecord.ParentEnvironmentID,
+			SwarmNodeID:         envRecord.SwarmNodeID,
 		}
 	}
 	s.remoteEnvs.mu.Unlock()
-	agent.GetRegistry().Unregister(envID)
+	s.tunnels.Unregister(envID)
 
 	s.createEnvironmentEvent(ctx, envID, envName, event.EventTypeEnvironmentApiKeyRegenerated,
 		"API Key Regenerated", "Environment API key was regenerated and status set to pending", event.EventSeverityInfo, new(userID), new(username))
@@ -922,7 +954,7 @@ func (s *EnvironmentService) invalidateEnvironmentCache(id string) {
 	s.environmentCache.Delete(environmentCacheKey{gen: previous, id: id})
 }
 
-// ListVisibleEnvironments returns persisted rows; callers apply ApplyEnvironmentRuntimeState.
+// ListVisibleEnvironments returns persisted rows; callers apply Lister.ApplyRuntimeState.
 func (s *EnvironmentService) ListVisibleEnvironments(ctx context.Context) ([]types.Environment, error) {
 	var envs []Environment
 	if err := s.db.WithContext(ctx).
@@ -1163,7 +1195,7 @@ func (s *EnvironmentService) RestartTunnel(ctx context.Context, id string, userI
 	if err != nil {
 		return types.EnvironmentTunnelRestart{}, err
 	}
-	tunnel, ok := agent.GetRegistry().Active(id).Get()
+	tunnel, ok := s.tunnels.Active(id).Get()
 	if !ok {
 		return types.EnvironmentTunnelRestart{}, ErrAgentTunnelNotConnected
 	}
@@ -1174,7 +1206,7 @@ func (s *EnvironmentService) RestartTunnel(ctx context.Context, id string, userI
 	s.createEnvironmentEvent(ctx, id, envRecord.Name, event.EventTypeEnvironmentTunnelRestarted,
 		"Agent Tunnel Restarted", fmt.Sprintf("Agent tunnel for environment '%s' was restarted", envRecord.Name), event.EventSeverityInfo, userID, username)
 
-	replacement, reconnected := agent.GetRegistry().WaitForActive(ctx, id, tunnelReconnectTimeout).Get()
+	replacement, reconnected := s.tunnels.WaitForActive(ctx, id, tunnelReconnectTimeout).Get()
 	return types.EnvironmentTunnelRestart{
 		SessionID:   replacement.MetadataSnapshot().SessionID,
 		Reconnected: reconnected,
@@ -1244,7 +1276,7 @@ func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Contex
 		updates["status"] = string(EnvironmentStatusOnline)
 		updates["last_seen"] = &now
 		// Remember the transport so the UI can show it after the tunnel drops.
-		if state, ok := agent.GetTunnelRuntimeState(id).Get(); ok && state.Transport != "" {
+		if state, ok := s.tunnels.RuntimeState(id).Get(); ok && state.Transport != "" {
 			updates["last_agent_transport"] = state.Transport
 		}
 	} else {
@@ -1262,50 +1294,6 @@ func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Contex
 	s.NotifyRuntimeStateChanged()
 
 	return nil
-}
-
-// ApplyEnvironmentRuntimeState overlays in-memory tunnel state onto an
-// agent environment without mutating persisted state.
-func ApplyEnvironmentRuntimeState(env types.Environment) types.Environment {
-	if env.ID == LocalEnvironmentID {
-		return env
-	}
-
-	runtimeState, connected := agent.GetTunnelRuntimeState(env.ID).Get()
-	return types.Environment{ //exhaustruct:enforce
-		ID:     env.ID,
-		Name:   env.Name,
-		ApiUrl: env.ApiUrl,
-		Status: func() string {
-			switch {
-			case connected:
-				return string(EnvironmentStatusOnline)
-			case env.Status != string(EnvironmentStatusPending):
-				return string(EnvironmentStatusOffline)
-			default:
-				return env.Status
-			}
-		}(),
-		Enabled:            env.Enabled,
-		LastSeen:           env.LastSeen,
-		AgentTransport:     kit.Ternary(kit.FromPtr(runtimeState).Transport != "", new(kit.FromPtr(runtimeState).Transport), nil),
-		LastAgentTransport: env.LastAgentTransport,
-		AgentSecurityMode:  kit.Ternary(kit.FromPtr(runtimeState).SecurityMode != "", new(kit.FromPtr(runtimeState).SecurityMode), nil),
-		AgentSessionID:     kit.Ternary(kit.FromPtr(runtimeState).SessionID != "", new(kit.FromPtr(runtimeState).SessionID), nil),
-		AgentInstance:      kit.Ternary(kit.FromPtr(runtimeState).AgentInstance != "", new(kit.FromPtr(runtimeState).AgentInstance), nil),
-		AgentCapabilities:  kit.Ternary(len(kit.FromPtr(runtimeState).Capabilities) > 0, slices.Clone(kit.FromPtr(runtimeState).Capabilities), nil),
-		AgentRoundTripMs: kit.Ternary(kit.FromPtr(runtimeState).RoundTripTime != nil,
-			new(float64(kit.FromPtr(kit.FromPtr(runtimeState).RoundTripTime).Microseconds())/1000), nil),
-		AgentOpenStreams:     kit.Ternary(connected, new(kit.FromPtr(runtimeState).OpenStreams), nil),
-		Connected:            new(connected),
-		ConnectedAt:          kit.FromPtr(runtimeState).ConnectedAt,
-		LastHeartbeat:        kit.FromPtr(runtimeState).LastHeartbeat,
-		AgentMTLSCertificate: env.AgentMTLSCertificate,
-		AgentHost:            agentHostInfo(runtimeState),
-		AgentTunnelStats:     agentTunnelStats(runtimeState, agent.GetTunnelHistory(env.ID)),
-		ApiKey:               env.ApiKey,
-		RegenerateApiKey:     false,
-	}
 }
 
 func agentHostInfo(runtimeState *agent.TunnelRuntimeState) *types.AgentHostInfo {
@@ -1465,42 +1453,24 @@ func (s *EnvironmentService) CheckS3DestinationReferences(ctx context.Context, d
 
 // GenerateAgentDeploymentSnippets generates Docker deployment snippets for an
 // agent, which dials the manager and exposes no ports.
-func (s *EnvironmentService) GenerateAgentDeploymentSnippets(ctx context.Context, envID, managerURL, apiKey string, agentCfg *agent.Config) (*DeploymentSnippets, error) {
-	managerURL = strings.TrimRight(managerURL, "/")
-	dockerRun, dockerCompose := snippets.Agent(managerURL, apiKey)
+func (s *EnvironmentService) GenerateAgentDeploymentSnippets(ctx context.Context, p AgentDeploymentSnippetsParams) (*DeploymentSnippets, error) {
+	managerURL := strings.TrimRight(p.ManagerURL, "/")
+	dockerRun, dockerCompose := snippets.Agent(snippets.AgentParams{
+		ManagerURL: managerURL,
+		Token:      p.Token,
+	})
 	generatedAssets, mtlsDockerRun, mtlsDockerCompose := s.snippets.GenerateMTLS(ctx,
-		func() *agent.Config {
-			if agentCfg == nil {
-				return nil
-			}
-			return &agent.Config{ //exhaustruct:enforce
-				AgentEnabled:           agentCfg.AgentEnabled,
-				AgentTransport:         agentCfg.AgentTransport,
-				AgentReconnectInterval: agentCfg.AgentReconnectInterval,
-				AgentMTLSMode:          agentCfg.AgentMTLSMode,
-				AgentMTLSCAFile:        agentCfg.AgentMTLSCAFile,
-				AgentMTLSCertFile:      agentCfg.AgentMTLSCertFile,
-				AgentMTLSKeyFile:       agentCfg.AgentMTLSKeyFile,
-				AgentMTLSServerName:    agentCfg.AgentMTLSServerName,
-				AgentMTLSAssetsDir:     agentCfg.AgentMTLSAssetsDir,
-				AppURL:                 kit.Ternary(strings.TrimSpace(agentCfg.AppURL) == "", managerURL, agentCfg.AppURL),
-				ManagerApiUrl:          agentCfg.ManagerApiUrl,
-				AgentToken:             agentCfg.AgentToken,
-				Port:                   agentCfg.Port,
-				Listen:                 agentCfg.Listen,
-				HostInfo:               agentCfg.HostInfo,
-			}
-		}(),
-		envID,
+		p.MTLS,
+		p.EnvironmentID,
 		func() string {
-			env, getErr := s.GetEnvironmentByID(ctx, envID)
+			env, getErr := s.GetEnvironmentByID(ctx, p.EnvironmentID)
 			if getErr != nil {
 				return ""
 			}
 			return env.Name
 		}(),
 		managerURL,
-		apiKey,
+		p.Token,
 	)
 	if generatedAssets == nil {
 		return &DeploymentSnippets{
@@ -1650,58 +1620,37 @@ func (s *EnvironmentService) DeleteSwarmNodeAgentDeployment(ctx context.Context,
 	return s.DeleteEnvironment(ctx, envRecord.ID, userID, username)
 }
 
-func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
-	ctx context.Context,
-	parentEnvironmentID, nodeID, hostname, userID, username string,
-	rotate bool,
-) (*Environment, string, error) {
-	agentName, agentURL, err := s.swarm.AgentIdentity(parentEnvironmentID, nodeID, hostname)
+func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(ctx context.Context, params SwarmNodeAgentEnvironmentParams) (*Environment, error) {
+	agentName, agentURL, err := s.swarm.AgentIdentity(params.ParentEnvironmentID, params.NodeID, params.Hostname)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	var env Environment
-	// Prefer a visible binding; legacy hidden registrations stay reusable, but new
-	// node agents are normal remote environments so one token serves both uses.
 	err = s.db.WithContext(ctx).
-		Where("parent_environment_id = ?", parentEnvironmentID).
-		Where("swarm_node_id = ?", nodeID).
+		Where("parent_environment_id = ?", params.ParentEnvironmentID).
+		Where("swarm_node_id = ?", params.NodeID).
 		Order("hidden ASC").
 		First(&env).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, "", fmt.Errorf("failed to load swarm node agent environment: %w", err)
+	if err == nil {
+		return &env, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("failed to load swarm node agent environment: %w", err)
 	}
 
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		createdEnv := &Environment{
-			Name:                agentName,
-			ApiUrl:              agentURL,
-			Status:              string(EnvironmentStatusPending),
-			Enabled:             true,
-			Hidden:              false,
-			ParentEnvironmentID: new(parentEnvironmentID),
-			SwarmNodeID:         new(nodeID),
-		}
-
-		if _, createErr := s.CreateEnvironment(ctx, createdEnv, new(userID), new(username)); createErr != nil {
-			return nil, "", fmt.Errorf("failed to create swarm node agent environment: %w", createErr)
-		}
-		env = *createdEnv
-	}
-
-	apiKey, err := s.swarm.EnsureApiKey(ctx, env.ID, env.AccessToken, env.ApiKeyID, rotate, func(ctx context.Context, apiKeyID, apiKey string) error {
-		return s.linkEnvironmentApiKey(ctx, env.ID, apiKeyID, apiKey, userID, username, env.Name)
-	})
+	created, err := s.CreateEnvironment(ctx, &Environment{
+		Name:                agentName,
+		ApiUrl:              agentURL,
+		Status:              string(EnvironmentStatusPending),
+		Enabled:             true,
+		ParentEnvironmentID: new(params.ParentEnvironmentID),
+		SwarmNodeID:         new(params.NodeID),
+	}, new(params.UserID), new(params.Username))
 	if err != nil {
-		return nil, "", err
+		return nil, fmt.Errorf("failed to create swarm node agent environment: %w", err)
 	}
-
-	refreshedEnv, err := s.GetEnvironmentByID(ctx, env.ID)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to refresh swarm node agent environment: %w", err)
-	}
-
-	return refreshedEnv, apiKey, nil
+	return created, nil
 }
 
 func (s *EnvironmentService) UpdateSwarmNodeIdentity(ctx context.Context, envID, swarmNodeID string) error {
@@ -1719,55 +1668,147 @@ func (s *EnvironmentService) UpdateSwarmNodeIdentity(ctx context.Context, envID,
 	return nil
 }
 
-func (s *EnvironmentService) RotateSwarmEnrollmentToken(ctx context.Context, environmentID string, agentCfg *agent.Config) (*types.NodeAgentEnrollmentToken, error) {
-	token := kit.RandomString(48)
-	if err := s.setSwarmEnrollmentTokenHash(ctx, environmentID, new(kit.SHA256Hex(token))); err != nil {
+func (s *EnvironmentService) EnrollAgentEnvironment(ctx context.Context, hostname string) (*types.AgentEnrollResponse, error) {
+	env, err := s.CreateEnvironment(ctx, &Environment{
+		Name:    cmp.Or(strings.TrimSpace(hostname), "Agent"),
+		Status:  string(EnvironmentStatusPending),
+		Enabled: true,
+	}, new(types.SystemUser.ID), new(types.SystemUser.Username))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create enrolled agent environment: %w", err)
+	}
+
+	apiKey, err := s.swarm.RotateApiKey(ctx, env.ID, nil, func(ctx context.Context, apiKeyID, apiKey string) error {
+		return s.linkEnvironmentApiKey(ctx, env.ID, apiKeyID, apiKey, types.SystemUser.ID, types.SystemUser.Username, env.Name)
+	})
+	if err != nil {
+		if deleteErr := s.DeleteEnvironment(ctx, env.ID, new(types.SystemUser.ID), new(types.SystemUser.Username)); deleteErr != nil {
+			slog.ErrorContext(ctx, "Failed to remove enrolled agent environment without an API key", "environmentId", env.ID, "error", deleteErr)
+		}
 		return nil, err
 	}
-	deployCommand, stack := snippets.Swarm(strings.TrimRight(agentCfg.AppURL, "/"), token, agentCfg.AgentMTLSMode)
-	return &types.NodeAgentEnrollmentToken{Token: token, DeployCommand: deployCommand, Stack: stack}, nil
+
+	return &types.AgentEnrollResponse{
+		EnvironmentID: env.ID,
+		Token:         apiKey,
+	}, nil
 }
 
-func (s *EnvironmentService) RevokeSwarmEnrollmentToken(ctx context.Context, environmentID string) error {
-	return s.setSwarmEnrollmentTokenHash(ctx, environmentID, nil)
+func (s *EnvironmentService) ListEnrollmentTokens(ctx context.Context) ([]types.EnrollmentToken, error) {
+	return s.enrollment.List(ctx)
 }
 
-func (s *EnvironmentService) HasSwarmEnrollmentToken(ctx context.Context, environmentID string) (bool, error) {
-	env, err := s.GetEnvironmentByID(ctx, environmentID)
+func (s *EnvironmentService) CreateEnrollmentToken(ctx context.Context, p CreateEnrollmentTokenParams) (*types.EnrollmentTokenCreated, error) {
+	created, err := s.enrollment.Create(ctx, enrollment.CreateParams{
+		MaxUses: p.Request.MaxUses,
+		Name:    p.Request.Name,
+	})
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	return env.SwarmEnrollmentTokenHash != nil, nil
+	if _, eventErr := s.eventService.CreateEvent(ctx, event.CreateEventRequest{
+		Type:         event.EventTypeEnrollmentTokenCreate,
+		Severity:     event.EventSeveritySuccess,
+		Title:        "Enrollment token created",
+		Description:  fmt.Sprintf("Created enrollment token '%s'", created.Name),
+		ResourceType: new("enrollment_token"),
+		ResourceID:   new(created.ID),
+		ResourceName: new(created.Name),
+		UserID:       new(p.Actor.ID),
+		Username:     new(p.Actor.Username),
+	}); eventErr != nil {
+		slog.WarnContext(ctx, "Failed to record enrollment token event", "tokenId", created.ID, "error", eventErr)
+	}
+	return &created, nil
 }
 
-func (s *EnvironmentService) ResolveSwarmEnrollmentToken(ctx context.Context, token string) (string, error) {
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return "", ErrInvalidSwarmEnrollmentToken
-	}
-
-	var env Environment
-	err := s.db.WithContext(ctx).
-		Select("id").
-		Where("swarm_enrollment_token_hash = ? AND enabled = ?", kit.SHA256Hex(token), true).
-		First(&env).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return "", ErrInvalidSwarmEnrollmentToken
-	}
+func (s *EnvironmentService) DeleteEnrollmentToken(ctx context.Context, id string, actor types.Actor) error {
+	deleted, err := s.enrollment.Delete(ctx, id)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve swarm enrollment token: %w", err)
+		return err
 	}
-	return env.ID, nil
-}
-
-func (s *EnvironmentService) setSwarmEnrollmentTokenHash(ctx context.Context, environmentID string, hash *string) error {
-	result := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", environmentID).Update("swarm_enrollment_token_hash", hash)
-	if result.Error != nil {
-		return fmt.Errorf("failed to update swarm enrollment token: %w", result.Error)
+	if _, eventErr := s.eventService.CreateEvent(ctx, event.CreateEventRequest{
+		Type:          event.EventTypeEnrollmentTokenDelete,
+		Severity:      event.EventSeverityWarning,
+		Title:         "Enrollment token revoked",
+		Description:   fmt.Sprintf("Revoked enrollment token '%s'", deleted.Name),
+		ResourceType:  new("enrollment_token"),
+		ResourceID:    new(deleted.ID),
+		ResourceName:  new(deleted.Name),
+		UserID:        new(actor.ID),
+		Username:      new(actor.Username),
+		EnvironmentID: deleted.EnvironmentID,
+	}); eventErr != nil {
+		slog.WarnContext(ctx, "Failed to record enrollment token event", "tokenId", deleted.ID, "error", eventErr)
 	}
-	if result.RowsAffected == 0 {
-		return ErrEnvironmentNotFound
-	}
-	s.invalidateEnvironmentCache(environmentID)
 	return nil
+}
+
+func (s *EnvironmentService) RevealEnrollmentToken(ctx context.Context, id string, actor types.Actor) (*types.EnrollmentTokenSecret, error) {
+	token, secret, err := s.enrollment.Reveal(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if _, eventErr := s.eventService.CreateEvent(ctx, event.CreateEventRequest{
+		Type:          event.EventTypeEnrollmentTokenReveal,
+		Severity:      event.EventSeverityInfo,
+		Title:         "Enrollment token revealed",
+		Description:   fmt.Sprintf("Revealed enrollment token '%s'", token.Name),
+		ResourceType:  new("enrollment_token"),
+		ResourceID:    new(token.ID),
+		ResourceName:  new(token.Name),
+		UserID:        new(actor.ID),
+		Username:      new(actor.Username),
+		EnvironmentID: token.EnvironmentID,
+	}); eventErr != nil {
+		slog.WarnContext(ctx, "Failed to record enrollment token event", "tokenId", token.ID, "error", eventErr)
+	}
+	return &types.EnrollmentTokenSecret{Token: secret}, nil
+}
+
+func (s *EnvironmentService) MintDeploymentSnippets(ctx context.Context, envID string, agentMTLS *agent.MTLS) (*DeploymentSnippets, error) {
+	if envID == LocalEnvironmentID {
+		return nil, ErrLocalEnvironmentTunnel
+	}
+	env, err := s.GetEnvironmentByID(ctx, envID)
+	if err != nil {
+		return nil, err
+	}
+
+	created, err := s.enrollment.Create(ctx, enrollment.CreateParams{
+		EnvironmentID: &env.ID,
+		MaxUses:       new(1),
+		Name:          env.Name,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	generated, err := s.GenerateAgentDeploymentSnippets(ctx, AgentDeploymentSnippetsParams{
+		EnvironmentID: env.ID,
+		ManagerURL:    agentMTLS.AppURL,
+		Token:         created.Token,
+		MTLS:          agentMTLS,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &DeploymentSnippets{
+		MTLS:            generated.MTLS,
+		DockerRun:       generated.DockerRun,
+		DockerCompose:   generated.DockerCompose,
+		EnrollmentToken: created.Token,
+	}, nil
+}
+
+func (s *EnvironmentService) ResolveEnrollmentToken(ctx context.Context, token string) (types.EnrollmentToken, error) {
+	return s.enrollment.Resolve(ctx, token)
+}
+
+func (s *EnvironmentService) ConsumeEnrollmentToken(ctx context.Context, id string) error {
+	return s.enrollment.Consume(ctx, id)
+}
+
+func (s *EnvironmentService) RefundEnrollmentToken(ctx context.Context, id string) error {
+	return s.enrollment.Refund(ctx, id)
 }

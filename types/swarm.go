@@ -146,25 +146,6 @@ type (
 		ReplaceDeployment bool   `json:"replaceDeployment,omitempty"`
 	}
 
-	NodeAgentEnrollment struct {
-		Enabled bool `json:"enabled"`
-	}
-
-	NodeAgentEnrollmentToken struct {
-		Token         string `json:"token"`
-		DeployCommand string `json:"deployCommand"`
-		Stack         string `json:"stack"`
-	}
-
-	NodeAgentEnrollRequest struct {
-		NodeID string `json:"nodeId"`
-	}
-
-	NodeAgentEnrollResponse struct {
-		EnvironmentID string `json:"environmentId"`
-		Token         string `json:"token"`
-	}
-
 	SwarmJoinEnvironmentRole string
 
 	SwarmJoinEnvironmentResultState string

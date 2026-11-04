@@ -5,8 +5,6 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -52,6 +50,7 @@ type (
 		apiKeyService      *apikey.ApiKeyService
 		eventService       *event.EventService
 		cfg                *config.Config
+		mtls               *agent.MTLS
 		streamHub          *agg.Hub[[]types.Environment]
 		changeHub          *agg.Hub[struct{}]
 		changeCursors      *concurrency.StateMap[string, types.EnvironmentChanges]
@@ -102,8 +101,20 @@ type (
 		XAPIKey string `header:"X-API-Key" doc:"API key for environment pairing"`
 	}
 
-	GetDeploymentSnippetsInput struct {
+	CreateDeploymentSnippetsInput struct {
 		ID string `path:"id" doc:"Environment ID"`
+	}
+
+	CreateEnrollmentTokenInput struct {
+		Body types.CreateEnrollmentTokenRequest
+	}
+
+	DeleteEnrollmentTokenInput struct {
+		ID string `path:"id" doc:"Enrollment token ID"`
+	}
+
+	GetEnrollmentTokenSecretInput struct {
+		ID string `path:"id" doc:"Enrollment token ID"`
 	}
 
 	GetEnvironmentVersionInput struct {
@@ -127,6 +138,7 @@ type (
 		APIKeyService      *apikey.ApiKeyService
 		EventService       *event.EventService
 		Config             *config.Config
+		MTLS               *agent.MTLS
 		ActivityService    activity.Service
 	}
 )
@@ -155,6 +167,7 @@ func NewHandler(p HandlerParams) *EnvironmentHandler {
 		apiKeyService:      p.APIKeyService,
 		eventService:       p.EventService,
 		cfg:                p.Config,
+		mtls:               p.MTLS,
 		streamHub:          &agg.Hub[[]types.Environment]{},
 		changeHub:          &agg.Hub[struct{}]{},
 		changeCursors:      concurrency.NewStateMap[string, types.EnvironmentChanges](),
@@ -200,7 +213,7 @@ func (h *EnvironmentHandler) RunStreamProducer(ctx context.Context, ps *authz.Pe
 			}
 			envs := make([]types.Environment, 0, len(rows))
 			for _, row := range rows {
-				envs = append(envs, ApplyEnvironmentRuntimeState(row))
+				envs = append(envs, h.environmentService.ApplyRuntimeState(row))
 			}
 			publish(envs)
 		}
@@ -380,45 +393,15 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
-	created, apiKey, err := func() (*Environment, *string, error) {
-		apiKeyDto, keyErr := h.apiKeyService.CreateEnvironmentApiKey(ctx, created.ID)
-		if keyErr != nil {
-			slog.ErrorContext(ctx, "Failed to create environment API key", "environmentId", created.ID, "error", keyErr.Error())
-			return nil, nil, huma.Error500InternalServerError("Failed to create environment API key")
-		}
-
-		// The full key doubles as the manager-to-agent access token.
-		updated, updateErr := h.environmentService.UpdateEnvironment(ctx, created.ID, map[string]any{
-			"api_key_id":   apiKeyDto.ID,
-			"access_token": apiKeyDto.Key,
-		}, &user.ID, &user.Username)
-		if updateErr != nil {
-			// ErrApiKeyProtected means the link landed, so the key belongs to the environment and must survive.
-			if delErr := h.apiKeyService.DeleteApiKey(ctx, apiKeyDto.ID); delErr != nil &&
-				!errors.Is(delErr, apikey.ErrApiKeyNotFound) && !errors.Is(delErr, apikey.ErrApiKeyProtected) {
-				slog.ErrorContext(ctx, "Failed to clean up unlinked environment API key", "environmentId", created.ID, "error", delErr.Error())
-			}
-			slog.ErrorContext(ctx, "Failed to link API key to environment", "environmentId", created.ID, "error", updateErr.Error())
-			return nil, nil, huma.Error500InternalServerError("Failed to link API key")
-		}
-		return updated, new(apiKeyDto.Key), nil
-	}()
-	if err != nil {
-		return nil, err
-	}
-
 	out, mapErr := mapping.MapOne[*Environment, types.Environment](created)
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError("Failed to map environment")
 	}
 
-	out = ApplyEnvironmentRuntimeState(out)
-	out.ApiKey = apiKey // keep: optional field on a 22-field mapped DTO
-
 	return &handlerutil.Out[types.Environment]{
 		Body: types.ApiResponse[types.Environment]{
 			Success: true,
-			Data:    out,
+			Data:    h.environmentService.ApplyRuntimeState(out),
 		},
 	}, nil
 }
@@ -434,28 +417,11 @@ func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvir
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError("Failed to map environment")
 	}
-	out = ApplyEnvironmentRuntimeState(out)
+	out = h.environmentService.ApplyRuntimeState(out)
 	if env.ID != LocalEnvironmentID {
 		out.AgentMTLSCertificate = func() *types.AgentMTLSCertificate { // keep: optional field on a 22-field mapped DTO
-			agentCfg := h.agentMTLSConfig()
-			if agent.NormalizeMTLSMode(agentCfg.AgentMTLSMode) == agent.MTLSModeDisabled {
-				return nil
-			}
-			certPath, pathErr := agent.GeneratedManagerClientMTLSCertPath(agentCfg, env.ID)
-			if pathErr != nil {
-				return nil
-			}
-			// os rather than acfs: the assets dir may be configured anywhere on the host.
-			certPEM, readErr := os.ReadFile(certPath)
-			if readErr != nil {
-				return nil
-			}
-			block, _ := pem.Decode(certPEM)
-			if block == nil {
-				return nil
-			}
-			cert, parseErr := x509.ParseCertificate(block.Bytes)
-			if parseErr != nil {
+			cert, certErr := h.mtls.ClientCertificate(env.ID)
+			if certErr != nil {
 				return nil
 			}
 
@@ -518,43 +484,14 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 		}(context.WithoutCancel(ctx), input.ID, updated.Name)
 	}
 
-	updated, newApiKey, err := func() (*Environment, *string, error) {
-		if !input.Body.RegenerateApiKey {
-			return updated, nil, nil
-		}
-		localUser, userErr := handlerutil.RequireUser(ctx)
-		if userErr != nil {
-			return nil, nil, userErr
-		}
-
-		apiKey, regenerateErr := h.environmentService.RegenerateEnvironmentApiKey(ctx, updated, localUser.ID, localUser.Username)
-		if regenerateErr != nil {
-			slog.ErrorContext(ctx, "Failed to regenerate API key", "environmentId", input.ID, "error", regenerateErr.Error())
-			return nil, nil, huma.Error500InternalServerError("Failed to regenerate API key")
-		}
-
-		refreshed, refreshErr := h.environmentService.GetEnvironmentByID(ctx, input.ID)
-		if refreshErr != nil {
-			slog.ErrorContext(ctx, "Failed to fetch updated environment", "environmentId", input.ID, "error", refreshErr.Error())
-			return nil, nil, huma.Error500InternalServerError("Failed to fetch updated environment")
-		}
-		return refreshed, new(apiKey), nil
-	}()
-	if err != nil {
-		return nil, err
-	}
-
 	out, mapErr := mapping.MapOne[*Environment, types.Environment](updated)
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError("Failed to map environment")
 	}
-	out = ApplyEnvironmentRuntimeState(out)
-	out.ApiKey = newApiKey // keep: optional field on a 22-field mapped DTO
-
 	return &handlerutil.Out[types.Environment]{
 		Body: types.ApiResponse[types.Environment]{
 			Success: true,
-			Data:    out,
+			Data:    h.environmentService.ApplyRuntimeState(out),
 		},
 	}, nil
 }
@@ -694,33 +631,20 @@ func (h *EnvironmentHandler) PairEnvironment(ctx context.Context, input *PairEnv
 	return handlerutil.MessageOutput("Environment pairing completed successfully", ""), nil
 }
 
-// GetDeploymentSnippets returns deployment snippets for an environment.
-func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *GetDeploymentSnippetsInput) (*handlerutil.Out[types.DeploymentSnippet], error) {
-	env, err := h.environmentService.GetEnvironmentByID(ctx, input.ID)
+func (h *EnvironmentHandler) CreateDeploymentSnippets(ctx context.Context, input *CreateDeploymentSnippetsInput) (*handlerutil.Out[types.DeploymentSnippet], error) {
+	snippets, err := h.environmentService.MintDeploymentSnippets(ctx, input.ID, h.mtls)
 	if err != nil {
-		return nil, huma.Error404NotFound("Environment not found")
-	}
-
-	if env.ApiKeyID == nil {
-		return nil, huma.Error400BadRequest("Environment does not have an API key configured")
-	}
-
-	if kit.FromPtr(env.AccessToken) == "" {
-		return nil, huma.Error400BadRequest("Environment is missing access token")
-	}
-
-	snippets, err := h.environmentService.GenerateAgentDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken, h.agentMTLSConfig())
-	if err != nil {
-		slog.ErrorContext(ctx, "Failed to generate deployment snippets", "environmentId", input.ID, "error", err.Error())
-		return nil, huma.Error500InternalServerError("Failed to generate deployment snippets")
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
 	return &handlerutil.Out[types.DeploymentSnippet]{
 		Body: types.ApiResponse[types.DeploymentSnippet]{
 			Success: true,
 			Data: types.DeploymentSnippet{
-				DockerRun:     snippets.DockerRun,
-				DockerCompose: snippets.DockerCompose,
+				DockerRun:       snippets.DockerRun,
+				DockerCompose:   snippets.DockerCompose,
+				EnrollmentToken: snippets.EnrollmentToken,
 				MTLS: func() *types.DeploymentSnippetMTLS {
 					if snippets.MTLS == nil {
 						return nil
@@ -731,7 +655,7 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 						files = append(files, types.DeploymentSnippetFile{
 							Name:          file.Name,
 							Content:       kit.Ternary(isSensitiveMTLSAssetName(file.Name), "", file.Content),
-							DownloadURL:   fmt.Sprintf("/api/environments/%s/deployment/mtls/%s", env.ID, file.Name),
+							DownloadURL:   fmt.Sprintf("/api/environments/%s/deployment/mtls/%s", input.ID, file.Name),
 							Sensitive:     isSensitiveMTLSAssetName(file.Name),
 							ContainerPath: file.ContainerPath,
 							Permissions:   file.Permissions,
@@ -747,6 +671,59 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 			},
 		},
 	}, nil
+}
+
+func (h *EnvironmentHandler) ListEnrollmentTokens(ctx context.Context, _ *struct{}) (*handlerutil.Out[[]types.EnrollmentToken], error) {
+	tokens, err := h.environmentService.ListEnrollmentTokens(ctx)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+	return &handlerutil.Out[[]types.EnrollmentToken]{
+		Body: types.ApiResponse[[]types.EnrollmentToken]{
+			Success: true,
+			Data:    tokens,
+		},
+	}, nil
+}
+
+func (h *EnvironmentHandler) CreateEnrollmentToken(ctx context.Context, input *CreateEnrollmentTokenInput) (*handlerutil.Out[types.EnrollmentTokenCreated], error) {
+	created, err := h.environmentService.CreateEnrollmentToken(ctx, CreateEnrollmentTokenParams{
+		Request: input.Body,
+		Actor:   handlerutil.CurrentActor(ctx),
+	})
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+	return &handlerutil.Out[types.EnrollmentTokenCreated]{
+		Body: types.ApiResponse[types.EnrollmentTokenCreated]{
+			Success: true,
+			Data:    *created,
+		},
+	}, nil
+}
+
+func (h *EnvironmentHandler) GetEnrollmentTokenSecret(ctx context.Context, input *GetEnrollmentTokenSecretInput) (*handlerutil.Out[types.EnrollmentTokenSecret], error) {
+	secret, err := h.environmentService.RevealEnrollmentToken(ctx, input.ID, handlerutil.CurrentActor(ctx))
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+	return &handlerutil.Out[types.EnrollmentTokenSecret]{
+		Body: types.ApiResponse[types.EnrollmentTokenSecret]{
+			Success: true,
+			Data:    *secret,
+		},
+	}, nil
+}
+
+func (h *EnvironmentHandler) DeleteEnrollmentToken(ctx context.Context, input *DeleteEnrollmentTokenInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if err := h.environmentService.DeleteEnrollmentToken(ctx, input.ID, handlerutil.CurrentActor(ctx)); err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+	return handlerutil.MessageOutput("Enrollment token revoked", ""), nil
 }
 
 // GetEnvironmentVersion returns the version of the local or a remote environment.
@@ -789,7 +766,7 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 
 // DownloadAgentMTLSCA downloads the Arcane-managed agent mTLS CA certificate.
 func (h *EnvironmentHandler) DownloadAgentMTLSCA(ctx context.Context, _ *DownloadAgentMTLSCAInput) (*huma.StreamResponse, error) {
-	caPath, err := agent.AvailableManagerMTLSCAPath(h.agentMTLSConfig())
+	caPath, err := h.mtls.CAPath()
 	if err != nil {
 		return nil, huma.Error404NotFound("Arcane-managed agent mTLS CA is not available")
 	}
@@ -868,16 +845,6 @@ func (h *EnvironmentHandler) DownloadEnvironmentMTLSFile(ctx context.Context, in
 		database.JSON{"fileName": file.Name, "kind": "file", "sensitive": isSensitiveMTLSAssetName(file.Name)}), nil
 }
 
-// agentMTLSConfig maps the handler config to agent mTLS settings, or nil without config.
-func (h *EnvironmentHandler) agentMTLSConfig() *agent.Config {
-	return &agent.Config{
-		AgentMTLSMode:      h.cfg.AgentMTLSMode,
-		AgentMTLSCAFile:    h.cfg.AgentMTLSCAFile,
-		AgentMTLSAssetsDir: h.cfg.AgentMTLSAssetsDir,
-		AppURL:             h.cfg.GetAppURL(),
-	}
-}
-
 func (h *EnvironmentHandler) loadEnvironmentMTLSFiles(ctx context.Context, environmentID string) (*Environment, []types.DeploymentSnippetFile, error) {
 	env, err := h.environmentService.GetEnvironmentByID(ctx, environmentID)
 	if err != nil {
@@ -886,14 +853,11 @@ func (h *EnvironmentHandler) loadEnvironmentMTLSFiles(ctx context.Context, envir
 	if env.ID == LocalEnvironmentID {
 		return nil, nil, huma.Error400BadRequest("Environment is not an agent")
 	}
-	if env.ApiKeyID == nil {
-		return nil, nil, huma.Error400BadRequest("Environment does not have an API key configured")
-	}
-	if kit.FromPtr(env.AccessToken) == "" {
-		return nil, nil, huma.Error400BadRequest("Environment is missing access token")
-	}
-
-	snippets, err := h.environmentService.GenerateAgentDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken, h.agentMTLSConfig())
+	snippets, err := h.environmentService.GenerateAgentDeploymentSnippets(ctx, AgentDeploymentSnippetsParams{
+		EnvironmentID: env.ID,
+		ManagerURL:    h.cfg.GetAppURL(),
+		MTLS:          h.mtls,
+	})
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to generate environment mTLS assets", "environmentId", environmentID, "error", err.Error())
 		return nil, nil, huma.Error500InternalServerError("Failed to generate environment mTLS assets")

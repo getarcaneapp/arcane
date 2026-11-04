@@ -29,9 +29,9 @@ export function environmentSettingsQuery(environmentId: string, canReadSettings:
 	});
 }
 
-export function environmentDeploymentSnippetsQuery(environmentId: string) {
+export function enrollmentTokensQuery() {
 	return queryOptions({
-		queryKey: queryKeys.environments.deploymentSnippets(environmentId),
-		queryFn: () => environmentManagementService.getDeploymentSnippets(environmentId)
+		queryKey: queryKeys.environments.enrollmentTokens,
+		queryFn: () => environmentManagementService.listEnrollmentTokens()
 	});
 }

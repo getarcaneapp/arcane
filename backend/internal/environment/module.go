@@ -14,6 +14,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/types/v3"
@@ -33,6 +34,7 @@ type (
 		APIKey          *apikey.ApiKeyService
 		EventService    *event.EventService
 		Config          *config.Config
+		MTLS            *agent.MTLS
 		ActivityService activity.Service
 	}
 )
@@ -46,6 +48,7 @@ func New(p Params) *Module {
 			APIKeyService:      p.APIKey,
 			EventService:       p.EventService,
 			Config:             p.Config,
+			MTLS:               p.MTLS,
 			ActivityService:    p.ActivityService,
 		}),
 	}
@@ -77,6 +80,7 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 		apiKeyService:      m.handler.apiKeyService,
 		eventService:       m.handler.eventService,
 		cfg:                m.handler.cfg,
+		mtls:               m.handler.mtls,
 		streamHub:          m.handler.streamHub,
 		changeHub:          m.handler.changeHub,
 		changeCursors:      m.handler.changeCursors,
@@ -186,13 +190,50 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getDeploymentSnippets",
-		Method:      "GET",
+		Method:      "POST",
 		Path:        "/environments/{id}/deployment",
-		Summary:     "Get deployment snippets",
-		Description: "Get Docker run and compose snippets for environment deployment",
+		Summary:     "Create deployment snippets",
+		Description: "Mint a single-use enrollment token for the environment and return Docker run and compose snippets that use it",
 		Tags:        []string{"Environments"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermEnvironmentsPair, h.GetDeploymentSnippets)
+	}, authz.PermEnvironmentsPair, h.CreateDeploymentSnippets)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "list-enrollment-tokens",
+		Method:      "GET",
+		Path:        "/enrollment-tokens",
+		Summary:     "List enrollment tokens",
+		Tags:        []string{"Enrollment"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermEnvironmentsCreate, h.ListEnrollmentTokens)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "create-enrollment-token",
+		Method:      "POST",
+		Path:        "/enrollment-tokens",
+		Summary:     "Create an enrollment token",
+		Description: "Create a token agents use to register themselves.",
+		Tags:        []string{"Enrollment"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermEnvironmentsCreate, h.CreateEnrollmentToken)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-enrollment-token-secret",
+		Method:      "GET",
+		Path:        "/enrollment-tokens/{id}/token",
+		Summary:     "Get an enrollment token secret",
+		Tags:        []string{"Enrollment"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermEnvironmentsCreate, h.GetEnrollmentTokenSecret)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "delete-enrollment-token",
+		Method:      "DELETE",
+		Path:        "/enrollment-tokens/{id}",
+		Summary:     "Revoke an enrollment token",
+		Tags:        []string{"Enrollment"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermEnvironmentsCreate, h.DeleteEnrollmentToken)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "downloadEnvironmentMTLSBundle",

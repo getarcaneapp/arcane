@@ -1,5 +1,12 @@
 import type { Paginated } from '#lib/types/base.js';
-import type { DeploymentSnippet, Environment } from '#lib/types/environment.js';
+import type {
+	DeploymentSnippet,
+	EnrollmentToken,
+	EnrollmentTokenCreate,
+	EnrollmentTokenCreated,
+	EnrollmentTokenSecret,
+	Environment
+} from '#lib/types/environment.js';
 import type { EnvironmentCreate, EnvironmentUpdate } from '#lib/types/ui/environment.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import type { VersionInfo } from '#lib/types/version.js';
@@ -47,9 +54,8 @@ class EnvironmentManagementService extends BaseAPIService {
 		await this.api.post(`/environments/${environmentId}/sync`);
 	}
 
-	async getDeploymentSnippets(environmentId: string): Promise<DeploymentSnippet> {
-		const res = await this.api.get(`/environments/${environmentId}/deployment`);
-		return res.data.data as DeploymentSnippet;
+	async generateDeploymentSnippets(environmentId: string): Promise<DeploymentSnippet> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/deployment`));
 	}
 
 	async downloadDeploymentFile(downloadUrl: string): Promise<Blob> {
@@ -60,6 +66,22 @@ class EnvironmentManagementService extends BaseAPIService {
 	async getVersion(environmentId: string, config?: APIRequestConfig): Promise<VersionInfo> {
 		const res = await this.api.get(`/environments/${environmentId}/version`, config);
 		return res.data.data as VersionInfo;
+	}
+
+	async listEnrollmentTokens(): Promise<EnrollmentToken[]> {
+		return this.handleResponse(this.api.get('/enrollment-tokens'));
+	}
+
+	async createEnrollmentToken(request: EnrollmentTokenCreate): Promise<EnrollmentTokenCreated> {
+		return this.handleResponse(this.api.post('/enrollment-tokens', request));
+	}
+
+	async getEnrollmentTokenSecret(id: string): Promise<EnrollmentTokenSecret> {
+		return this.handleResponse(this.api.get(`/enrollment-tokens/${id}/token`));
+	}
+
+	async deleteEnrollmentToken(id: string): Promise<void> {
+		await this.handleResponse(this.api.delete(`/enrollment-tokens/${id}`));
 	}
 }
 

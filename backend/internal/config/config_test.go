@@ -293,14 +293,9 @@ func TestConfig_ValidateRequiresAgentManagerAndToken(t *testing.T) {
 	t.Setenv("ARCANE_AGENT", "true")
 	t.Setenv("ARCANE_MANAGER_API_URL", "https://manager.example.com")
 	t.Setenv("ARCANE_AGENT_TOKEN", "")
-	t.Setenv("ARCANE_AGENT_ENROLLMENT_TOKEN", "")
 
-	require.EqualError(t, mustLoad(t).Validate(), "ARCANE_AGENT=true requires ARCANE_MANAGER_API_URL and ARCANE_AGENT_TOKEN or ARCANE_AGENT_ENROLLMENT_TOKEN")
+	require.EqualError(t, mustLoad(t).Validate(), "ARCANE_AGENT=true requires ARCANE_MANAGER_API_URL and ARCANE_AGENT_TOKEN")
 
-	t.Setenv("ARCANE_AGENT_ENROLLMENT_TOKEN", "enrollment-token")
-	require.NoError(t, mustLoad(t).Validate())
-
-	t.Setenv("ARCANE_AGENT_ENROLLMENT_TOKEN", "")
 	t.Setenv("ARCANE_AGENT_TOKEN", "agent-token")
 	require.NoError(t, mustLoad(t).Validate())
 }

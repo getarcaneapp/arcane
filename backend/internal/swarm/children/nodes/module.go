@@ -76,61 +76,6 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(
 		api,
 		huma.Operation{
-			OperationID: "get-swarm-node-agent-enrollment",
-			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/nodes/agents/enrollment",
-			Summary:     "Get swarm node agent enrollment status",
-			Tags: []string{
-				"Swarm",
-			},
-			Security: handlerutil.DefaultOperationSecurity(),
-		},
-		authz.PermSwarmNodesRead,
-		h.GetNodeAgentEnrollment,
-	)
-	middleware.RegisterWithPermission(
-		api,
-		huma.Operation{
-			OperationID: "rotate-swarm-node-agent-enrollment",
-			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/nodes/agents/enrollment",
-			Summary:     "Generate the swarm node agent enrollment token",
-			Tags: []string{
-				"Swarm",
-			},
-			Security: handlerutil.DefaultOperationSecurity(),
-		},
-		authz.PermSwarmNodesUpdate,
-		h.RotateNodeAgentEnrollment,
-	)
-	middleware.RegisterWithPermission(
-		api,
-		huma.Operation{
-			OperationID: "delete-swarm-node-agent-enrollment",
-			Method:      http.MethodDelete,
-			Path:        "/environments/{id}/swarm/nodes/agents/enrollment",
-			Summary:     "Revoke the swarm node agent enrollment token",
-			Tags: []string{
-				"Swarm",
-			},
-			Security: handlerutil.DefaultOperationSecurity(),
-		},
-		authz.PermSwarmNodesUpdate,
-		h.DeleteNodeAgentEnrollment,
-	)
-	huma.Register(api, huma.Operation{
-		OperationID:  "enroll-swarm-node-agent",
-		Method:       http.MethodPost,
-		Path:         "/swarm/agents/enroll",
-		Summary:      "Enroll a swarm node agent",
-		Description:  "A node agent presents the swarm enrollment token to register itself and receive its own agent token",
-		Tags:         []string{"Swarm"},
-		MaxBodyBytes: 1024,
-		Security:     []map[string][]string{},
-	}, h.EnrollNodeAgent)
-	middleware.RegisterWithPermission(
-		api,
-		huma.Operation{
 			OperationID: "put-swarm-node-agent-binding",
 			Method:      http.MethodPut,
 			Path:        "/environments/{id}/swarm/nodes/{nodeId}/agent/binding",

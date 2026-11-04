@@ -3,7 +3,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
-	import { onePerCluster, swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
+	import { swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { AlertTriangleIcon, UsersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
@@ -18,10 +18,8 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SwarmNodesTable from './components/nodes-table.svelte';
-	import SwarmAgentEnrollmentDialog from './components/swarm-agent-enrollment-dialog.svelte';
 
 	let { data } = $props();
-	let isEnrollmentDialogOpen = $state(false);
 
 	const pageState = new ResourceListPageState<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
 	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm-nodes:list'));
@@ -49,7 +47,6 @@
 	let active = true;
 	const reconciled = new SvelteSet<string>();
 	const reconcilableManagers = $derived(swarm.managers.filter((env) => hasPermission('swarm-nodes:update', env.id)));
-	const enrollableEnvironments = $derived(onePerCluster(reconcilableManagers, swarm.clusterIds));
 
 	async function reconcileEnvironments(pending: typeof reconcilableManagers) {
 		for (const env of pending) reconciled.add(env.id);
@@ -76,23 +73,13 @@
 	);
 	const uncoveredNodeCount = $derived(uncoveredNodes.length);
 
-	const actionButtons = $derived.by(() => {
-		const buttons = createRefreshActionButtons({
+	const actionButtons = $derived(
+		createRefreshActionButtons({
 			refreshLabel: m.common_refresh(),
 			onRefresh: refresh,
 			refreshing: isRefreshing
-		});
-		if (enrollableEnvironments.length > 0) {
-			buttons.unshift({
-				id: 'agent-enrollment',
-				action: 'deploy',
-				placement: 'primary',
-				label: m.deploy_to_all_nodes(),
-				onclick: () => (isEnrollmentDialogOpen = true)
-			});
-		}
-		return buttons;
-	});
+		})
+	);
 
 	const statCards: StatCardConfig[] = $derived([
 		{
@@ -124,5 +111,3 @@
 		</div>
 	{/snippet}
 </ResourcePageLayout>
-
-<SwarmAgentEnrollmentDialog bind:open={isEnrollmentDialogOpen} environments={enrollableEnvironments} />

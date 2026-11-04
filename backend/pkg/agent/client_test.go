@@ -22,6 +22,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"kit.getarcane.app"
+
 	tunnelpb "getarcane.dev/arcane/v3/proto/tunnel/v1"
 )
 
@@ -95,11 +97,11 @@ func (s *stallingTunnelService) Connect(stream grpc.BidiStreamingServer[tunnelpb
 }
 
 func TestTunnelClient_GRPC_EndToEnd(t *testing.T) {
+	tunnels := NewTunnelRegistry()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 
 	envID := "env-e2e-grpc-1"
-	GetRegistry().Unregister(envID)
-	defer GetRegistry().Unregister(envID)
+	defer tunnels.Unregister(envID)
 
 	resolver := func(ctx context.Context, token string) (string, error) {
 		if token != "valid-token" {
@@ -108,12 +110,12 @@ func TestTunnelClient_GRPC_EndToEnd(t *testing.T) {
 		return envID, nil
 	}
 
-	tunnelServer := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry(), Resolver: resolver})
-	go tunnelServer.StartCleanupLoop(ctx)
-	defer func() {
-		cancel()
-		tunnelServer.WaitForCleanupDone()
-	}()
+	tunnelServer := NewTunnelServer(TunnelServerOptions{
+		Registry: tunnels,
+		Resolver: resolver,
+		MTLS:     NewMTLS(MTLSConfig{}),
+	})
+	defer cancel()
 
 	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPath(t, ctx, tunnelServer)
 	defer stopManager()
@@ -130,32 +132,37 @@ func TestTunnelClient_GRPC_EndToEnd(t *testing.T) {
 	})
 
 	cfg := &Config{
+		MTLS:                   NewMTLS(MTLSConfig{ManagerURL: managerURL}),
 		AgentTransport:         TransportGRPC,
-		ManagerApiUrl:          managerURL,
 		AgentToken:             "valid-token",
 		AgentReconnectInterval: 1,
-		Port:                   "3552",
 	}
 
-	client := NewTunnelClient(cfg, localHandler)
 	errCh := make(chan error, 4)
-	go client.StartWithErrorChan(ctx, errCh)
+	client := NewTunnelClient(TunnelClientConfig{
+		Config:  cfg,
+		Handler: localHandler,
+		Errors:  errCh,
+	})
+	go client.run(ctx)
 
-	var tunnel *AgentTunnel
 	require.Eventually(t, func() bool {
-		var ok bool
-		tunnel, ok = GetRegistry().Get(envID).Get()
-		return ok && tunnel != nil && !tunnel.Conn.IsClosed()
+		return tunnels.Active(envID).IsPresent()
 	}, 5*time.Second, 20*time.Millisecond)
 
 	proxyCtx, proxyCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer proxyCancel()
 
-	localStatus, headers, body, err := ProxyRequest(proxyCtx, tunnel, http.MethodGet, "/api/health", "", http.Header{"Accept": {"text/plain"}}, nil)
+	resp, err := tunnels.Do(proxyCtx, RemoteRequest{
+		Headers:       http.Header{"Accept": {"text/plain"}},
+		EnvironmentID: envID,
+		Method:        http.MethodGet,
+		Path:          "/api/health",
+	})
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, localStatus)
-	assert.Equal(t, "text/plain", headers["Content-Type"])
-	assert.Equal(t, "ok-from-agent", string(body))
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "text/plain", resp.Headers["Content-Type"])
+	assert.Equal(t, "ok-from-agent", string(resp.Body))
 
 	select {
 	case clientErr := <-errCh:
@@ -164,62 +171,80 @@ func TestTunnelClient_GRPC_EndToEnd(t *testing.T) {
 	}
 }
 
-func TestStartTunnelClient_GRPCValidation(t *testing.T) {
+func TestTunnelClientStart_GRPCValidation(t *testing.T) {
 	ctx := t.Context()
 
 	t.Run("agent mode required", func(t *testing.T) {
-		_, err := StartTunnelClient(ctx, &Config{}, http.NotFoundHandler())
+		_, err := NewTunnelClient(TunnelClientConfig{
+			Config:  &Config{MTLS: NewMTLS(MTLSConfig{})},
+			Handler: http.NotFoundHandler(),
+		}).Start(ctx)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "agent tunnel disabled")
 	})
 
 	t.Run("manager url required for grpc transport", func(t *testing.T) {
-		_, err := StartTunnelClient(ctx, &Config{
-			AgentEnabled:   true,
-			AgentTransport: TransportGRPC,
-			AgentToken:     "token",
-		}, http.NotFoundHandler())
+		_, err := NewTunnelClient(TunnelClientConfig{
+			Config: &Config{
+				MTLS:           NewMTLS(MTLSConfig{}),
+				AgentEnabled:   true,
+				AgentTransport: TransportGRPC,
+				AgentToken:     "token",
+			},
+			Handler: http.NotFoundHandler(),
+		}).Start(ctx)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "ARCANE_MANAGER_API_URL")
 	})
 
 	t.Run("agent token required", func(t *testing.T) {
-		_, err := StartTunnelClient(ctx, &Config{
-			AgentEnabled:   true,
-			AgentTransport: TransportGRPC,
-			ManagerApiUrl:  "https://manager.example.com/arcane/api",
-		}, http.NotFoundHandler())
+		_, err := NewTunnelClient(TunnelClientConfig{
+			Config: &Config{
+				MTLS:           NewMTLS(MTLSConfig{ManagerURL: "https://manager.example.com/arcane/api"}),
+				AgentEnabled:   true,
+				AgentTransport: TransportGRPC,
+			},
+			Handler: http.NotFoundHandler(),
+		}).Start(ctx)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "ARCANE_AGENT_TOKEN is required")
 	})
 
 	t.Run("mtls requires https manager url", func(t *testing.T) {
-		_, err := StartTunnelClient(ctx, &Config{
-			AgentEnabled:   true,
-			AgentTransport: TransportGRPC,
-			ManagerApiUrl:  "http://manager.example.com/api",
-			AgentToken:     "token",
-			AgentMTLSMode:  MTLSModeRequired,
-		}, http.NotFoundHandler())
+		_, err := NewTunnelClient(TunnelClientConfig{
+			Config: &Config{
+				MTLS:           NewMTLS(MTLSConfig{Mode: MTLSModeRequired, ManagerURL: "http://manager.example.com/api"}),
+				AgentEnabled:   true,
+				AgentTransport: TransportGRPC,
+				AgentToken:     "token",
+			},
+			Handler: http.NotFoundHandler(),
+		}).Start(ctx)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "ARCANE_MANAGER_API_URL to use https")
 	})
 }
 
-func TestTunnelClient_StartWithErrorChan_RetriesMTLSEnrollmentEachAttempt(t *testing.T) {
-	client := NewTunnelClient(&Config{
-		AgentEnabled:       true,
-		AgentTransport:     TransportGRPC,
-		ManagerApiUrl:      "https://127.0.0.1:1/api",
-		AgentToken:         "token",
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSAssetsDir: t.TempDir(),
-	}, http.NotFoundHandler())
+func TestTunnelClient_Run_RetriesMTLSEnrollmentEachAttempt(t *testing.T) {
+	errCh := make(chan error, 1)
+	client := NewTunnelClient(TunnelClientConfig{
+		Config: &Config{
+			MTLS: NewMTLS(MTLSConfig{
+				Mode:       MTLSModeRequired,
+				AssetsDir:  t.TempDir(),
+				ManagerURL: "https://127.0.0.1:1/api",
+			}),
+			AgentEnabled:   true,
+			AgentTransport: TransportGRPC,
+			AgentToken:     "token",
+		},
+		Handler: http.NotFoundHandler(),
+		Errors:  errCh,
+	})
 	client.reconnectInterval = 10 * time.Millisecond
 
 	ctx, cancel := context.WithCancel(t.Context())
-	errCh := make(chan error, 1)
-	go client.StartWithErrorChan(ctx, errCh)
+	go client.run(ctx)
 
 	for range 2 {
 		select {
@@ -237,10 +262,14 @@ func TestTunnelClient_StartWithErrorChan_RetriesMTLSEnrollmentEachAttempt(t *tes
 }
 
 func TestTunnelClient_connectAndServeGRPC_EmptyManagerAddress(t *testing.T) {
-	client := NewTunnelClient(&Config{
-		AgentTransport: TransportGRPC,
-		AgentToken:     "valid-token",
-	}, http.NotFoundHandler())
+	client := NewTunnelClient(TunnelClientConfig{
+		Config: &Config{
+			MTLS:           NewMTLS(MTLSConfig{}),
+			AgentTransport: TransportGRPC,
+			AgentToken:     "valid-token",
+		},
+		Handler: http.NotFoundHandler(),
+	})
 
 	err := client.connectAndServeGRPC(t.Context())
 	require.Error(t, err)
@@ -248,11 +277,11 @@ func TestTunnelClient_connectAndServeGRPC_EmptyManagerAddress(t *testing.T) {
 }
 
 func TestTunnelClient_connectAndServeGRPC_RegistrationRejected(t *testing.T) {
+	tunnels := NewTunnelRegistry()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 
 	envID := "env-e2e-grpc-reject-1"
-	GetRegistry().Unregister(envID)
-	defer GetRegistry().Unregister(envID)
+	defer tunnels.Unregister(envID)
 
 	resolver := func(ctx context.Context, token string) (string, error) {
 		if token != "valid-token" {
@@ -261,23 +290,25 @@ func TestTunnelClient_connectAndServeGRPC_RegistrationRejected(t *testing.T) {
 		return envID, nil
 	}
 
-	tunnelServer := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry(), Resolver: resolver})
-	go tunnelServer.StartCleanupLoop(ctx)
-	defer func() {
-		cancel()
-		tunnelServer.WaitForCleanupDone()
-	}()
+	tunnelServer := NewTunnelServer(TunnelServerOptions{
+		Registry: tunnels,
+		Resolver: resolver,
+		MTLS:     NewMTLS(MTLSConfig{}),
+	})
+	defer cancel()
 
 	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPath(t, ctx, tunnelServer)
 	defer stopManager()
 
-	client := NewTunnelClient(&Config{
-		AgentTransport:         TransportGRPC,
-		ManagerApiUrl:          managerURL,
-		AgentToken:             "invalid-token",
-		AgentReconnectInterval: 1,
-		Port:                   "3552",
-	}, http.NotFoundHandler())
+	client := NewTunnelClient(TunnelClientConfig{
+		Config: &Config{
+			MTLS:                   NewMTLS(MTLSConfig{ManagerURL: managerURL}),
+			AgentTransport:         TransportGRPC,
+			AgentToken:             "invalid-token",
+			AgentReconnectInterval: 1,
+		},
+		Handler: http.NotFoundHandler(),
+	})
 
 	err := client.connectAndServeGRPC(ctx)
 	require.Error(t, err)
@@ -293,11 +324,14 @@ func TestTunnelClient_connectAndServeGRPC_TimesOutWithoutRegisterResponse(t *tes
 	managerURL, stopManager := startTestTunnelServiceOnAPIPath(t, ctx, service)
 	defer stopManager()
 
-	client := NewTunnelClient(&Config{
-		AgentTransport: TransportGRPC,
-		ManagerApiUrl:  managerURL,
-		AgentToken:     "valid-token",
-	}, http.NotFoundHandler())
+	client := NewTunnelClient(TunnelClientConfig{
+		Config: &Config{
+			MTLS:           NewMTLS(MTLSConfig{ManagerURL: managerURL}),
+			AgentTransport: TransportGRPC,
+			AgentToken:     "valid-token",
+		},
+		Handler: http.NotFoundHandler(),
+	})
 	client.registrationTimeout = 100 * time.Millisecond
 
 	err := client.connectAndServeGRPC(ctx)
@@ -403,13 +437,16 @@ func TestTunnelClient_connectAndServeManagedTunnel_WebSocketConfigFallsBackToWeb
 	defer managerServer.Close()
 
 	cfg := &Config{
+		MTLS:           NewMTLS(MTLSConfig{ManagerURL: managerServer.URL}),
 		AgentTransport: TransportWebSocket,
-		ManagerApiUrl:  managerServer.URL,
 		AgentToken:     "valid-token",
 	}
 
-	client := NewTunnelClient(cfg, http.NotFoundHandler())
-	err := client.connectAndServeManagedTunnel(ctx)
+	client := NewTunnelClient(TunnelClientConfig{
+		Config:  cfg,
+		Handler: http.NotFoundHandler(),
+	})
+	err := client.connectAndServeManagedTunnel(ctx, http.DefaultClient)
 	require.Error(t, err)
 
 	select {
@@ -420,11 +457,14 @@ func TestTunnelClient_connectAndServeManagedTunnel_WebSocketConfigFallsBackToWeb
 }
 
 func TestTunnelClient_managedTunnelTransports_AutoEnablesGRPCAndWebSocket(t *testing.T) {
-	client := NewTunnelClient(&Config{
-		AgentTransport: TransportAuto,
-		ManagerApiUrl:  "http://manager.example.com",
-		AgentToken:     "valid-token",
-	}, http.NotFoundHandler())
+	client := NewTunnelClient(TunnelClientConfig{
+		Config: &Config{
+			MTLS:           NewMTLS(MTLSConfig{ManagerURL: "http://manager.example.com"}),
+			AgentTransport: TransportAuto,
+			AgentToken:     "valid-token",
+		},
+		Handler: http.NotFoundHandler(),
+	})
 
 	transports := client.managedTunnelTransports()
 	assert.True(t, transports.grpc)
@@ -438,11 +478,14 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoFallsBackToWebSocketWhenG
 	managerURL, wsConnectedCh, stopManager := startTestWebSocketTunnelManager(t, ctx)
 	defer stopManager()
 
-	client := NewTunnelClient(&Config{
-		AgentTransport: TransportAuto,
-		ManagerApiUrl:  managerURL,
-		AgentToken:     "valid-token",
-	}, http.NotFoundHandler())
+	client := NewTunnelClient(TunnelClientConfig{
+		Config: &Config{
+			MTLS:           NewMTLS(MTLSConfig{ManagerURL: managerURL}),
+			AgentTransport: TransportAuto,
+			AgentToken:     "valid-token",
+		},
+		Handler: http.NotFoundHandler(),
+	})
 	grpcAddr, releaseGRPCAddr := reserveTCPAddress(t)
 	defer releaseGRPCAddr()
 	client.managerGRPCAddr = grpcAddr
@@ -450,7 +493,7 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoFallsBackToWebSocketWhenG
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- client.connectAndServeManagedTunnel(ctx)
+		errCh <- client.connectAndServeManagedTunnel(ctx, http.DefaultClient)
 	}()
 
 	select {
@@ -479,17 +522,20 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoFallsBackToWebSocketWhenG
 	managerURL, wsConnectedCh, stopManager := startTestWebSocketTunnelManager(t, ctx)
 	defer stopManager()
 
-	client := NewTunnelClient(&Config{
-		AgentTransport: TransportAuto,
-		ManagerApiUrl:  managerURL,
-		AgentToken:     "valid-token",
-	}, http.NotFoundHandler())
+	client := NewTunnelClient(TunnelClientConfig{
+		Config: &Config{
+			MTLS:           NewMTLS(MTLSConfig{ManagerURL: managerURL}),
+			AgentTransport: TransportAuto,
+			AgentToken:     "valid-token",
+		},
+		Handler: http.NotFoundHandler(),
+	})
 	client.managerGRPCAddr = grpcAddr
 	client.registrationTimeout = 100 * time.Millisecond
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- client.connectAndServeManagedTunnel(ctx)
+		errCh <- client.connectAndServeManagedTunnel(ctx, http.DefaultClient)
 	}()
 
 	select {
@@ -515,17 +561,20 @@ func TestTunnelClient_connectAndServeManagedTunnel_GRPCDoesNotFallbackToWebSocke
 	managerURL, wsConnectedCh, stopManager := startTestWebSocketTunnelManager(t, ctx)
 	defer stopManager()
 
-	client := NewTunnelClient(&Config{
-		AgentTransport: TransportGRPC,
-		ManagerApiUrl:  managerURL,
-		AgentToken:     "valid-token",
-	}, http.NotFoundHandler())
+	client := NewTunnelClient(TunnelClientConfig{
+		Config: &Config{
+			MTLS:           NewMTLS(MTLSConfig{ManagerURL: managerURL}),
+			AgentTransport: TransportGRPC,
+			AgentToken:     "valid-token",
+		},
+		Handler: http.NotFoundHandler(),
+	})
 	grpcAddr, releaseGRPCAddr := reserveTCPAddress(t)
 	defer releaseGRPCAddr()
 	client.managerGRPCAddr = grpcAddr
 	client.registrationTimeout = 100 * time.Millisecond
 
-	err := client.connectAndServeManagedTunnel(ctx)
+	err := client.connectAndServeManagedTunnel(ctx, http.DefaultClient)
 	require.Error(t, err)
 
 	select {
@@ -536,12 +585,12 @@ func TestTunnelClient_connectAndServeManagedTunnel_GRPCDoesNotFallbackToWebSocke
 }
 
 func TestTunnelClient_connectAndServeManagedTunnel_OpensGRPCWhenAvailable(t *testing.T) {
+	tunnels := NewTunnelRegistry()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	envID := "env-auto-grpc"
-	GetRegistry().Unregister(envID)
-	defer GetRegistry().Unregister(envID)
+	defer tunnels.Unregister(envID)
 
 	resolver := func(ctx context.Context, token string) (string, error) {
 		if token != "valid-token" {
@@ -550,26 +599,31 @@ func TestTunnelClient_connectAndServeManagedTunnel_OpensGRPCWhenAvailable(t *tes
 		return envID, nil
 	}
 
-	tunnelServer := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry(), Resolver: resolver})
-	go tunnelServer.StartCleanupLoop(ctx)
-	defer tunnelServer.WaitForCleanupDone()
+	tunnelServer := NewTunnelServer(TunnelServerOptions{
+		Registry: tunnels,
+		Resolver: resolver,
+		MTLS:     NewMTLS(MTLSConfig{}),
+	})
 
 	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPath(t, ctx, tunnelServer)
 	defer stopManager()
 
-	client := NewTunnelClient(&Config{
-		AgentTransport: TransportGRPC,
-		ManagerApiUrl:  managerURL,
-		AgentToken:     "valid-token",
-	}, http.NotFoundHandler())
+	client := NewTunnelClient(TunnelClientConfig{
+		Config: &Config{
+			MTLS:           NewMTLS(MTLSConfig{ManagerURL: managerURL}),
+			AgentTransport: TransportGRPC,
+			AgentToken:     "valid-token",
+		},
+		Handler: http.NotFoundHandler(),
+	})
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- client.connectAndServeManagedTunnel(ctx)
+		errCh <- client.connectAndServeManagedTunnel(ctx, http.DefaultClient)
 	}()
 
 	require.Eventually(t, func() bool {
-		tunnel, ok := GetRegistry().Get(envID).Get()
+		tunnel, ok := tunnels.Get(envID).Get()
 		if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
 			return false
 		}
@@ -740,12 +794,12 @@ func startTestTunnelServiceOnAPIPath(t *testing.T, ctx context.Context, service 
 }
 
 func TestTunnelClient_connectAndServeManagedTunnel_AutoDoesNotFallbackWhenEstablishedGRPCSessionDrops(t *testing.T) {
+	tunnels := NewTunnelRegistry()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	envID := "env-auto-grpc-drop"
-	GetRegistry().Unregister(envID)
-	defer GetRegistry().Unregister(envID)
+	defer tunnels.Unregister(envID)
 
 	resolver := func(ctx context.Context, token string) (string, error) {
 		if token != "valid-token" {
@@ -754,9 +808,11 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoDoesNotFallbackWhenEstabl
 		return envID, nil
 	}
 
-	tunnelServer := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry(), Resolver: resolver})
-	go tunnelServer.StartCleanupLoop(ctx)
-	defer tunnelServer.WaitForCleanupDone()
+	tunnelServer := NewTunnelServer(TunnelServerOptions{
+		Registry: tunnels,
+		Resolver: resolver,
+		MTLS:     NewMTLS(MTLSConfig{}),
+	})
 
 	grpcManagerURL, stopGRPCManager := startTestGRPCTunnelServerOnAPIPath(t, ctx, tunnelServer)
 	defer stopGRPCManager()
@@ -764,11 +820,14 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoDoesNotFallbackWhenEstabl
 	wsManagerURL, wsConnectedCh, stopWSManager := startTestWebSocketTunnelManager(t, ctx)
 	defer stopWSManager()
 
-	client := NewTunnelClient(&Config{
-		AgentTransport: TransportAuto,
-		ManagerApiUrl:  wsManagerURL,
-		AgentToken:     "valid-token",
-	}, http.NotFoundHandler())
+	client := NewTunnelClient(TunnelClientConfig{
+		Config: &Config{
+			MTLS:           NewMTLS(MTLSConfig{ManagerURL: wsManagerURL}),
+			AgentTransport: TransportAuto,
+			AgentToken:     "valid-token",
+		},
+		Handler: http.NotFoundHandler(),
+	})
 	grpcAddr, err := url.Parse(grpcManagerURL)
 	require.NoError(t, err)
 	client.managerGRPCAddr = grpcAddr.Host
@@ -776,12 +835,12 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoDoesNotFallbackWhenEstabl
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- client.connectAndServeManagedTunnel(ctx)
+		errCh <- client.connectAndServeManagedTunnel(ctx, http.DefaultClient)
 	}()
 
 	var tunnel *AgentTunnel
 	require.Eventually(t, func() bool {
-		registered, ok := GetRegistry().Get(envID).Get()
+		registered, ok := tunnels.Get(envID).Get()
 		if !ok || registered == nil || registered.Conn == nil || registered.Conn.IsClosed() {
 			return false
 		}
@@ -805,7 +864,7 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoDoesNotFallbackWhenEstabl
 		require.FailNow(t, "dropped gRPC session must not fall back to websocket")
 	default:
 	}
-	assert.Zero(t, client.grpcFailureStreak)
+	assert.Zero(t, kit.FromPtr(client.preference.Load()).grpcFailures)
 	cancel()
 }
 
@@ -850,7 +909,10 @@ func TestTunnelClient_serveTunnelSession_GRPCSendEOFSurfacesRegistrationError(t 
 		receiveErr: status.Error(codes.Unauthenticated, "invalid agent token"),
 		transport:  TransportGRPC,
 	}
-	client := NewTunnelClient(&Config{}, http.NotFoundHandler())
+	client := NewTunnelClient(TunnelClientConfig{
+		Config:  &Config{MTLS: NewMTLS(MTLSConfig{})},
+		Handler: http.NotFoundHandler(),
+	})
 
 	err := client.serveTunnelSession(t.Context(), conn, "manager.test")
 	require.Error(t, err)
@@ -889,16 +951,19 @@ func TestConnectAndServeWebSocket_CancelUnblocksMessageLoop(t *testing.T) {
 	defer managerServer.Close()
 
 	cfg := &Config{
+		MTLS:           NewMTLS(MTLSConfig{ManagerURL: managerServer.URL}),
 		AgentTransport: TransportWebSocket,
-		ManagerApiUrl:  managerServer.URL,
 		AgentToken:     "test-token",
 	}
-	client := NewTunnelClient(cfg, http.NotFoundHandler())
+	client := NewTunnelClient(TunnelClientConfig{
+		Config:  cfg,
+		Handler: http.NotFoundHandler(),
+	})
 	client.managerURL = "ws" + strings.TrimPrefix(managerServer.URL, "http")
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
-	go func() { done <- client.connectAndServeWebSocket(ctx) }()
+	go func() { done <- client.connectAndServeWebSocket(ctx, http.DefaultClient) }()
 
 	select {
 	case <-registered:

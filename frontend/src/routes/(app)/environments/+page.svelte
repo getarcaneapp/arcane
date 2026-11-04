@@ -9,7 +9,10 @@
 
 	import UpdateAllDialog from '#lib/components/dialogs/update-all-dialog.svelte';
 	import NewEnvironmentSheet from '#lib/components/sheets/new-environment-sheet.svelte';
-	import { DownloadIcon, SettingsIcon, UpdateIcon } from '#lib/icons/index.js';
+	import { TabBar } from '#lib/components/tab-bar/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
+	import { ApiKeyIcon, DownloadIcon, EnvironmentsIcon, SettingsIcon, UpdateIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentListQuery } from '#lib/query/environments.js';
@@ -25,6 +28,7 @@
 	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 
+	import EnrollmentTokensTab from './components/enrollment-tokens-tab.svelte';
 	import EnvironmentSettingsDialog from './components/environment-settings-dialog.svelte';
 	import EnvironmentTable from './components/environment-table.svelte';
 
@@ -60,6 +64,23 @@
 	const canCreateEnvironment = $derived(hasPermission('environments:create', GLOBAL_SCOPE));
 	const canDeleteEnvironment = $derived(hasPermission('environments:delete', GLOBAL_SCOPE));
 	const canUpdateEnvironments = $derived(hasShownPermission('system:upgrade'));
+
+	const urlTab = useUrlTab({
+		tabs: () => [
+			{
+				value: 'environments',
+				label: m.environments_title(),
+				icon: EnvironmentsIcon
+			},
+			{
+				value: 'enrollment-tokens',
+				label: m.enrollment_tokens(),
+				icon: ApiKeyIcon,
+				visible: canCreateEnvironment
+			}
+		],
+		defaultTab: () => 'environments'
+	});
 
 	function handleBulkDelete(ids: string[] = pageState.selectedIds) {
 		if (ids.length === 0) return;
@@ -185,14 +206,28 @@
 
 <ResourcePageLayout title={m.environments_title()} subtitle={m.environments_subtitle()} {actionButtons}>
 	{#snippet mainContent()}
-		<EnvironmentTable
-			{environments}
-			bind:selectedIds={pageState.selectedIds}
-			bind:requestOptions={pageState.requestOptions}
-			onRetry={() => environmentsQuery.refetch()}
-			onDeleteSelected={handleBulkDelete}
-			bulkDeleteLoading={isDeleting}
-		/>
+		<Tabs.Root value={urlTab.value}>
+			<div class="pb-6">
+				<TabBar items={urlTab.items} onValueChange={urlTab.select} />
+			</div>
+
+			<Tabs.Content value="environments">
+				<EnvironmentTable
+					{environments}
+					bind:selectedIds={pageState.selectedIds}
+					bind:requestOptions={pageState.requestOptions}
+					onRetry={() => environmentsQuery.refetch()}
+					onDeleteSelected={handleBulkDelete}
+					bulkDeleteLoading={isDeleting}
+				/>
+			</Tabs.Content>
+
+			{#if canCreateEnvironment}
+				<Tabs.Content value="enrollment-tokens">
+					<EnrollmentTokensTab />
+				</Tabs.Content>
+			{/if}
+		</Tabs.Root>
 	{/snippet}
 
 	{#snippet additionalContent()}

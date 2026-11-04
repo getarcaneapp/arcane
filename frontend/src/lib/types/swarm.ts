@@ -121,16 +121,6 @@ export interface NodeAgentBindingRequest {
 	replaceDeployment?: boolean;
 }
 
-export interface NodeAgentEnrollment {
-	enabled: boolean;
-}
-
-export interface NodeAgentEnrollmentToken {
-	token: string;
-	deployCommand: string;
-	stack: string;
-}
-
 export type SwarmJoinEnvironmentRole = 'worker' | 'manager';
 
 export type SwarmJoinEnvironmentResultState = 'joined' | 'already_member' | 'joined_unverified' | 'failed';
@@ -195,6 +185,7 @@ export interface SwarmNodeAgentDeployment {
 	agent: NodeAgentStatus;
 	dockerRun: string;
 	dockerCompose: string;
+	enrollmentToken: string;
 }
 
 export interface SwarmNode {

@@ -180,15 +180,13 @@ func provideAdmissionGate(runtime *francis.Runtime) (*runs.Admission, error) {
 }
 
 func provideTunnelRegistry(lc fx.Lifecycle) *agent.TunnelRegistry {
-	localRegistry := agent.NewTunnelRegistry()
-	agent.SetDefaultRegistry(localRegistry)
+	registry := agent.NewTunnelRegistry()
 	lc.Append(fx.Hook{OnStop: func(ctx context.Context) error {
-		defer agent.ClearDefaultRegistry(localRegistry)
 		stopCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
-		return localRegistry.Stop(stopCtx)
+		return registry.Stop(stopCtx)
 	}})
-	return localRegistry
+	return registry
 }
 
 func provideDockerClientService(p dockerClientServiceParams) *docker.DockerClientService {

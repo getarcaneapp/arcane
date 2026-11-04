@@ -320,23 +320,28 @@ func TestEnvironmentMiddleware_ForwardsResolvedHeadersOnly(t *testing.T) {
 				Resolver: func(context.Context, string) (string, error) {
 					return "env-remote", nil
 				},
+				MTLS: agent.NewMTLS(agent.MTLSConfig{}),
 			}).HandleConnect)
 			managerServer := httptest.NewServer(manager)
 			defer managerServer.Close()
 			agentCtx, cancelAgent := context.WithCancel(t.Context())
 			defer cancelAgent()
-			go agent.NewTunnelClient(&agent.Config{
-				AgentEnabled:   true,
-				AgentTransport: agent.TransportWebSocket,
-				ManagerApiUrl:  managerServer.URL,
-				AgentToken:     "agent-token",
-			}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				forwarded = r.Header.Get(HeaderIconCatalog)
-				forwardedInitiator = r.Header.Get(HeaderUpdateInitiatorID)
-				forwardedName = r.Header.Get(HeaderUpdateInitiatorName)
-				forwardedPermissions = r.Header.Get(HeaderForwardedPermissions)
-				w.WriteHeader(http.StatusOK)
-			})).StartWithErrorChan(agentCtx, nil)
+			_, startErr := agent.NewTunnelClient(agent.TunnelClientConfig{
+				Config: &agent.Config{
+					MTLS:           agent.NewMTLS(agent.MTLSConfig{ManagerURL: managerServer.URL}),
+					AgentEnabled:   true,
+					AgentTransport: agent.TransportWebSocket,
+					AgentToken:     "agent-token",
+				},
+				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					forwarded = r.Header.Get(HeaderIconCatalog)
+					forwardedInitiator = r.Header.Get(HeaderUpdateInitiatorID)
+					forwardedName = r.Header.Get(HeaderUpdateInitiatorName)
+					forwardedPermissions = r.Header.Get(HeaderForwardedPermissions)
+					w.WriteHeader(http.StatusOK)
+				}),
+			}).Start(agentCtx)
+			require.NoError(t, startErr)
 			require.True(t, registry.WaitForActive(t.Context(), "env-remote", 5*time.Second).IsPresent())
 
 			mw := &EnvironmentMiddleware{
@@ -447,7 +452,7 @@ func TestEnvironmentMiddleware_RequiresForwardedPermissionsCapability(t *testing
 			defer agentServer.Close()
 
 			registry := agent.NewTunnelRegistry()
-			registry.Register("env-remote", &agent.AgentTunnel{
+			registered, err := registry.RegisterSession(t.Context(), &agent.AgentTunnel{
 				Conn: openTunnelConn{},
 				HTTPClient: &http.Client{
 					Transport: &http.Transport{
@@ -460,6 +465,8 @@ func TestEnvironmentMiddleware_RequiresForwardedPermissionsCapability(t *testing
 				State:         "connected",
 				Capabilities:  tt.capabilities,
 			})
+			require.NoError(t, err)
+			require.True(t, registered.Accepted, registered.Reason)
 
 			router := echo.New()
 			api := attachMiddleware(router, &EnvironmentMiddleware{
@@ -500,10 +507,6 @@ func TestIsManagementPath_SwarmIsMethodAware(t *testing.T) {
 	assert.True(t, IsManagerLocalPath(http.MethodDelete, "/swarm/nodes/node-1/agent/deployment"))
 	assert.True(t, IsManagerLocalPath(http.MethodPut, "/swarm/nodes/node-1/agent/binding"))
 	assert.True(t, IsManagerLocalPath(http.MethodDelete, "/swarm/nodes/node-1/agent/binding"))
-	assert.True(t, IsManagerLocalPath(http.MethodGet, "/swarm/nodes/agents/enrollment"))
-	assert.True(t, IsManagerLocalPath(http.MethodPost, "/swarm/nodes/agents/enrollment"))
-	assert.True(t, IsManagerLocalPath(http.MethodDelete, "/swarm/nodes/agents/enrollment"))
-	assert.False(t, IsManagerLocalPath(http.MethodPut, "/swarm/nodes/agents/enrollment"))
 }
 
 func TestIsManagementPath_VolumeBackupPolicyIsMethodAware(t *testing.T) {

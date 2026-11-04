@@ -350,6 +350,14 @@ func (db *DB) FindEnvironmentIDByApiKey(ctx context.Context, apiKey string) (str
 	return envID, nil
 }
 
+func IsDuplicateKeyError(db *gorm.DB, err error) bool {
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	translator, ok := db.Dialector.(gorm.ErrorTranslator)
+	return ok && errors.Is(translator.Translate(err), gorm.ErrDuplicatedKey)
+}
+
 func (db *DB) Close() error {
 	sqlDB, err := db.DB.DB()
 	if err != nil {

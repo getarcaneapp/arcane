@@ -535,20 +535,39 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 	assert.Equal(t, grants("e1", sorted("images:build", "images:list", "images:read", "activities:read")), apiKeyPermissionsFor("k3"))
 }
 
-func TestMigration103_AddsSwarmEnrollmentTokenHash(t *testing.T) {
+func TestMigration104_AddsAgentEnrollmentToken(t *testing.T) {
 	ctx := t.Context()
-	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-swarm-enrollment.db")
-	hasColumn := func() bool {
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-enrollment-tokens.db")
+	hasTable := func() bool {
 		var count int
-		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('environments') WHERE name = 'swarm_enrollment_token_hash'`).Scan(&count))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'enrollment_tokens'`).Scan(&count))
 		return count == 1
 	}
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 103))
-	assert.True(t, hasColumn())
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 104))
+	assert.True(t, hasTable())
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO enrollment_tokens (id, name, token_hash, token_encrypted) VALUES ('t1', 'first', 'hash', 'enc-1')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO enrollment_tokens (id, name, token_hash, token_encrypted) VALUES ('t2', 'second', 'hash', 'enc-2')`)
+	require.Error(t, err, "token hashes are unique")
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO enrollment_tokens (id, name, token_hash, token_encrypted, environment_id, max_uses) VALUES ('t3', 'bound', 'hash-3', 'enc-3', 'env-1', 1)`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO enrollment_tokens (id, name, token_hash, token_encrypted, environment_id) VALUES ('t4', 'bound again', 'hash-4', 'enc-4', 'env-1')`)
+	require.Error(t, err, "an environment holds at most one bound token")
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO enrollment_tokens (id, name, token_hash, token_encrypted) VALUES ('t5', 'unbound', 'hash-5', 'enc-5')`)
+	require.NoError(t, err, "unbound tokens are not limited by the environment index")
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO enrollment_tokens (id, name, token_hash) VALUES ('t6', 'no secret', 'hash-6')`)
+	require.Error(t, err, "the encrypted token is required")
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 102))
-	assert.False(t, hasColumn())
+	var useCount int
+	var maxUses, environmentID stdsql.NullString
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT use_count, max_uses, environment_id FROM enrollment_tokens WHERE id = 't1'`).Scan(&useCount, &maxUses, &environmentID))
+	assert.Zero(t, useCount)
+	assert.False(t, maxUses.Valid, "max uses defaults to unlimited")
+	assert.False(t, environmentID.Valid)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 103))
+	assert.False(t, hasTable())
 }
 
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
