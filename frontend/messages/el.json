@@ -4394,5 +4394,13 @@
   "api_reference": "Αναφορά API",
   "api_key_page_description_suffix": "για λεπτομέρειες σχετικά με τη χρήση.",
   "github_token": "Διακριτικό GitHub",
-  "github_token_description": "Προαιρετικό διακριτικό που χρησιμοποιείται για τη λήψη των σημειώσεων έκδοσης εικόνων από το GitHub. Αυξάνει το όριο συχνότητας κλήσεων του API από 60 σε 5.000 αιτήματα ανά ώρα."
+  "github_token_description": "Προαιρετικό διακριτικό που χρησιμοποιείται για τη λήψη των σημειώσεων έκδοσης εικόνων από το GitHub. Αυξάνει το όριο συχνότητας κλήσεων του API από 60 σε 5.000 αιτήματα ανά ώρα.",
+  "image_auto_patch": "Αυτόματη ενημέρωση εικόνας",
+  "analytics_heartbeat": "Analytics Heartbeat",
+  "docker_client_refresh": "Ανανέωση του προγράμματος-πελάτη Docker",
+  "event_cleanup": "Εκκαθάριση εκδήλωσης",
+  "upgrade_log_cleanup": "Εκκαθάριση αρχείου καταγραφής αναβαθμίσεων",
+  "expired_sessions_cleanup": "Εκκαθάριση λήξαντων συνεδριών",
+  "filesystem_watcher": "Παρακολούθηση συστήματος αρχείων",
+  "vulnerability_risk": "Κίνδυνος ευπάθειας"
 }
