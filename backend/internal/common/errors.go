@@ -112,6 +112,7 @@ var (
 	ErrInvalidNotificationPayloadTemplate      = Classify(ErrValidation, errors.New("invalid generic webhook payload template"))
 	ErrRedeployAfterSyncFailed                 = errors.New("redeploy failed")
 	ErrGitOpsSyncProjectBindingBroken          = errors.New("GitOps sync project binding broken")
+	ErrProjectRollbackFailed                   = errors.New("project file rollback failed")
 	ErrUploadSessionNotFound                   = Classify(ErrNotFound, errors.New("Upload session not found"))
 	ErrUploadSessionIncomplete                 = Classify(ErrConflict, errors.New("Upload session is incomplete"))
 	ErrUploadKindMismatch                      = Classify(ErrBadRequest, errors.New("Upload session kind does not match this endpoint"))

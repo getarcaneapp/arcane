@@ -104,6 +104,7 @@ type (
 		SyncDirectory       bool                 `json:"syncDirectory" gorm:"column:sync_directory"` // Sync entire directory containing compose file
 		PullImageAfterSync  bool                 `json:"pullImageAfterSync" gorm:"column:pull_image_after_sync;default:false"`
 		RedeployAfterSync   bool                 `json:"redeployAfterSync" gorm:"column:redeploy_after_sync;default:false"`
+		PendingRedeploy     bool                 `json:"-" gorm:"column:pending_redeploy;not null;default:false"`
 
 		BackupOnSave   bool `json:"backupOnSave" gorm:"column:backup_on_save;default:true"`
 		BackupPending  bool `json:"backupPending" gorm:"column:backup_pending;default:false"`
