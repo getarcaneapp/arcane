@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { refreshAll } from '$app/navigation';
-	import { untrack } from 'svelte';
 	import type { Attachment } from 'svelte/attachments';
 
 	import ReleaseNotes from '#lib/components/release-notes.svelte';
@@ -84,15 +83,14 @@
 	async function restoreActiveJob() {
 		const attempt = ++startAttempt;
 		starting = true;
-		await upgradeJobStore.load();
-		if (attempt === startAttempt) starting = false;
+		const current = await upgradeJobStore.load();
+		if (attempt !== startAttempt) return;
+		if (isActiveUpgradeJob(current)) {
+			followJob(current);
+			return;
+		}
+		starting = false;
 	}
-
-	$effect(() => {
-		if (!open || debugDemo || jobId || starting) return;
-		const current = upgradeJobStore.job;
-		if (isActiveUpgradeJob(current)) untrack(() => followJob(current));
-	});
 
 	// Dialog.Content only exists while the dialog is open, so this runs once per
 	// opening and its cleanup once per close.

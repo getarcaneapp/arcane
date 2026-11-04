@@ -195,7 +195,11 @@ func newVersionSettingsService(t *testing.T, updateCheckEnabled bool) *settings.
 	gdb, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gdb.AutoMigrate(&settings.SettingVariable{}))
-	svc, err := settings.NewSettingsService(t.Context(), &database.DB{DB: gdb}, &config.Config{}, settings.Env{})
+	svc, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+		DB:     &database.DB{DB: gdb},
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	require.NoError(t, svc.SetBoolSetting(t.Context(), "updateCheckEnabled", updateCheckEnabled))

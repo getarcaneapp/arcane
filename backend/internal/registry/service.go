@@ -352,6 +352,7 @@ func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string
 		return nil, err
 	}
 
+	awsAccessKeyID := kit.Ternary(submitted["awsAccessKeyId"], req.AWSAccessKeyID, registryRecord.AWSAccessKeyID)
 	if registryRecord.RegistryType == RegistryTypeECR {
 		if endpointErr := validateECRRegistryEndpoint(
 			kit.Ternary(submitted["url"], req.URL, registryRecord.URL),
@@ -359,13 +360,13 @@ func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string
 		); endpointErr != nil {
 			return nil, endpointErr
 		}
-		if req.AWSSecretAccessKey != "" && strings.TrimSpace(kit.Ternary(submitted["awsAccessKeyId"], req.AWSAccessKeyID, registryRecord.AWSAccessKeyID)) == "" {
+		if req.AWSSecretAccessKey != "" && strings.TrimSpace(awsAccessKeyID) == "" {
 			return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "awsAccessKeyId", Err: errors.New("AWS Access Key ID is required")})
 		}
 		if strings.TrimSpace(kit.Ternary(submitted["awsRegion"], req.AWSRegion, registryRecord.AWSRegion)) == "" {
 			return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "awsRegion", Err: errors.New("AWS Region is required")})
 		}
-		if strings.TrimSpace(kit.Ternary(submitted["awsAccessKeyId"], req.AWSAccessKeyID, registryRecord.AWSAccessKeyID)) != "" &&
+		if strings.TrimSpace(awsAccessKeyID) != "" &&
 			req.AWSSecretAccessKey == "" && registryRecord.AWSSecretAccessKey == "" {
 			return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "awsSecretAccessKey", Err: errors.New("AWS Secret Access Key is required")})
 		}
@@ -378,7 +379,7 @@ func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string
 		return nil, fmt.Errorf("failed to encrypt token: %w", err)
 	}
 	encryptedSecret, err := crypto.Encrypt(kit.Ternary(
-		registryRecord.RegistryType == RegistryTypeECR && strings.TrimSpace(kit.Ternary(submitted["awsAccessKeyId"], req.AWSAccessKeyID, registryRecord.AWSAccessKeyID)) != "",
+		registryRecord.RegistryType == RegistryTypeECR && strings.TrimSpace(awsAccessKeyID) != "",
 		req.AWSSecretAccessKey,
 		"",
 	))
@@ -389,22 +390,21 @@ func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string
 	updated := ContainerRegistry{ //exhaustruct:enforce
 		BaseModel:       registryRecord.BaseModel,
 		URL:             kit.Ternary(submitted["url"], req.URL, registryRecord.URL),
-		Username:        kit.Ternary(registryRecord.RegistryType == RegistryTypeECR, registryRecord.Username, kit.Ternary(submitted["username"], req.Username, registryRecord.Username)),
+		Username:        kit.Ternary(registryRecord.RegistryType != RegistryTypeECR && submitted["username"], req.Username, registryRecord.Username),
 		Token:           cmp.Or(encryptedToken, registryRecord.Token),
 		Description:     kit.Ternary(submitted["description"], req.Description, registryRecord.Description),
 		Insecure:        kit.Ternary(submitted["insecure"], req.Insecure, registryRecord.Insecure),
 		Enabled:         kit.Ternary(submitted["enabled"], req.Enabled, registryRecord.Enabled),
 		RegistryType:    registryRecord.RegistryType,
 		RepositoryNames: kit.Ternary(submitted["repositoryNames"], repositoryNames, registryRecord.RepositoryNames),
-		AWSAccessKeyID: kit.Ternary(registryRecord.RegistryType == RegistryTypeECR,
-			kit.Ternary(submitted["awsAccessKeyId"], req.AWSAccessKeyID, registryRecord.AWSAccessKeyID), registryRecord.AWSAccessKeyID),
+		AWSAccessKeyID:  kit.Ternary(registryRecord.RegistryType == RegistryTypeECR, awsAccessKeyID, registryRecord.AWSAccessKeyID),
 		// No static key: the default AWS credential chain applies, so drop any stored secret.
 		AWSSecretAccessKey: kit.Ternary(
-			registryRecord.RegistryType == RegistryTypeECR && strings.TrimSpace(kit.Ternary(submitted["awsAccessKeyId"], req.AWSAccessKeyID, registryRecord.AWSAccessKeyID)) == "",
+			registryRecord.RegistryType == RegistryTypeECR && strings.TrimSpace(awsAccessKeyID) == "",
 			"",
 			cmp.Or(encryptedSecret, registryRecord.AWSSecretAccessKey),
 		),
-		AWSRegion: kit.Ternary(registryRecord.RegistryType == RegistryTypeECR, kit.Ternary(submitted["awsRegion"], req.AWSRegion, registryRecord.AWSRegion), registryRecord.AWSRegion),
+		AWSRegion: kit.Ternary(registryRecord.RegistryType == RegistryTypeECR && submitted["awsRegion"], req.AWSRegion, registryRecord.AWSRegion),
 		ECRToken: kit.Ternary(
 			registryRecord.RegistryType == RegistryTypeECR && (submitted["awsAccessKeyId"] || submitted["awsSecretAccessKey"] || submitted["awsRegion"]),
 			"",

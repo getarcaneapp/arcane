@@ -351,7 +351,11 @@ func setupQueuedActivityService(t *testing.T) (*ActivityService, *settings.Setti
 
 func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	svc, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
+	svc, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}

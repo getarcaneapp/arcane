@@ -258,7 +258,11 @@ func TestBuildService_BuildImage_PreservesRemoteSourceInHistory(t *testing.T) {
 	repoPath := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(repoPath, "Dockerfile"), []byte("FROM alpine:3.20\n"), 0o644))
 
-	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 

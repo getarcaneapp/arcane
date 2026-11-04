@@ -40,7 +40,11 @@ func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.D
 	require.NoError(t, err)
 	cfg, err := config.Load()
 	require.NoError(t, err)
-	svc, err := NewSettingsService(ctx, db, cfg, env)
+	svc, err := NewSettingsService(ctx, SettingsServiceParams{
+		DB:     db,
+		Config: cfg,
+		Env:    env,
+	})
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}

@@ -202,7 +202,11 @@ func TestResolveSelfUpgradeTargetImage(t *testing.T) {
 			t.Setenv("ARCANE_PROJECTS_DIRECTORY", directory)
 			settingsEnv, err := settings.LoadEnv()
 			require.NoError(t, err)
-			settingsSvc, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settingsEnv)
+			settingsSvc, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+				DB:     db,
+				Config: &config.Config{},
+				Env:    settingsEnv,
+			})
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, settingsSvc.Stop(context.WithoutCancel(t.Context()))) })
 			require.NoError(t, settingsSvc.UpdateSetting(t.Context(), "projectsDirectory", directory))
@@ -565,7 +569,11 @@ func TestResumeUpgradeJobFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 
 	db := &database.DB{DB: gormDB}
 	require.NoError(t, db.AutoMigrate(&UpgradeJob{}, &event.Event{}, &settings.SettingVariable{}))
-	versionSettings, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
+	versionSettings, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, versionSettings.Stop(context.WithoutCancel(t.Context()))) })
 	require.NoError(t, versionSettings.SetBoolSetting(ctx, "updateCheckEnabled", false))
@@ -785,7 +793,11 @@ func TestAcquireAgentSlotHonorsParallelSetting(t *testing.T) {
 
 	db := &database.DB{DB: gormDB}
 	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
-	settingsSvc, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
+	settingsSvc, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsSvc.Stop(context.WithoutCancel(t.Context()))) })
 	require.NoError(t, settingsSvc.SetIntSetting(ctx, "upgradeMaxParallelAgents", 1))
@@ -832,7 +844,11 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
 	db := &database.DB{DB: gormDB}
-	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	return dockerInternal.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)

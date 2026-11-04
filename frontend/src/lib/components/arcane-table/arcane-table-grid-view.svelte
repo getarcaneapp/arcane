@@ -1,4 +1,4 @@
-<script lang="ts" generics="TData extends Record<string, any> & { id: string }">
+<script lang="ts" generics="TData extends Record<string, unknown> & { id: string }">
 	import { FlexRender as FlexRenderBase } from '@tanstack/svelte-table';
 	import type { Snippet, Component } from 'svelte';
 

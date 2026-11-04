@@ -252,7 +252,11 @@ func TestUpdaterService_ApplyPendingNoRecords(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&notification.NotificationSettings{}, &settings.SettingVariable{}))
-	settingsService, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
+	settingsService, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
 	notif := newTestNotificationService(t, db)
@@ -470,7 +474,11 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 	t.Run("delegates to Arcane image puller", func(t *testing.T) {
 		db := setupProjectTestDB(t)
 		require.NoError(t, db.AutoMigrate(&registry.ContainerRegistry{}, &kv.KVEntry{}))
-		settingsService, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
+		settingsService, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+			DB:     db,
+			Config: &config.Config{},
+			Env:    settings.Env{},
+		})
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
 		server := newImagePullServerWithObserver(t, nil, nil)
@@ -533,7 +541,11 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 				gotAuth = authHeader
 			}
 		})
-		settingsService, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
+		settingsService, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+			DB:     db,
+			Config: &config.Config{},
+			Env:    settings.Env{},
+		})
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
 		dockerSvc := newSettingsDockerService(t, newTestDockerClient(t, server))
@@ -1838,7 +1850,11 @@ func TestSingleUpdatePersistsSuccessfulActivity(t *testing.T) {
 	}))
 	defer server.Close()
 	dockerSvc := newSettingsDockerService(t, newTestDockerClient(t, server))
-	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	activityService := activity.NewActivityService(db, settingsService)
@@ -1912,7 +1928,11 @@ func TestUpdaterService_AutoUpdateDeferral(t *testing.T) {
 			HasUpdate:  true,
 		},
 	}).Error)
-	settingsService, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
+	settingsService, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
 	require.NoError(t, settingsService.SetIntSetting(ctx, "autoUpdateDelay", 24))
@@ -1994,7 +2014,11 @@ func TestAggregateHistoryMergesNewestFirst(t *testing.T) {
 
 func newTestNotificationService(t *testing.T, db *database.DB) *notification.NotificationService {
 	t.Helper()
-	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))

@@ -37,7 +37,11 @@ func setupDashboardServiceTestSettings(t *testing.T) (*database.DB, *settings.Se
 
 	settingsEnv, err := settings.LoadEnv()
 	require.NoError(t, err)
-	settingsSvc, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settingsEnv)
+	settingsSvc, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settingsEnv,
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsSvc.Stop(context.WithoutCancel(t.Context()))) })
 

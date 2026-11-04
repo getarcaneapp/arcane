@@ -339,7 +339,11 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-workspace-stale-revision?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
-	settingsService, err := settings.NewSettingsService(t.Context(), &database.DB{DB: gormDB}, &config.Config{}, settings.Env{})
+	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+		DB:     &database.DB{DB: gormDB},
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))

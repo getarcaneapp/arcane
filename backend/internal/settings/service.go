@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.uber.org/fx"
 	"go.yaml.in/yaml/v4"
 	"gorm.io/gorm"
 
@@ -66,6 +67,14 @@ type (
 	SettingsSearchService struct {
 		categories []types.Category
 	}
+
+	SettingsServiceParams struct {
+		fx.In
+
+		DB     *database.DB
+		Config *config.Config
+		Env    Env
+	}
 )
 
 const (
@@ -81,24 +90,24 @@ const (
 	LockReasonReadOnly LockReason = "readOnly"
 )
 
-func NewSettingsService(ctx context.Context, db *database.DB, appConfig *config.Config, env Env) (*SettingsService, error) {
+func NewSettingsService(ctx context.Context, p SettingsServiceParams) (*SettingsService, error) {
 	if ctx == nil {
 		return nil, errors.New("settings lifecycle context unavailable")
 	}
 	svc := &SettingsService{
-		db:           db,
-		appConfig:    appConfig,
-		env:          env,
+		db:           p.DB,
+		appConfig:    p.Config,
+		env:          p.Env,
 		effectsWake:  make(chan struct{}, 1),
 		effectsDone:  make(chan struct{}),
 		lifecycleCtx: ctx,
 		changes:      concurrency.NewSignal[[]types.SettingUpdate](),
 	}
-	if len(env) > 0 {
-		slog.InfoContext(ctx, "Loaded environment settings", "count", len(env))
+	if len(p.Env) > 0 {
+		slog.InfoContext(ctx, "Loaded environment settings", "count", len(p.Env))
 	}
 
-	if _, err := EnsureInstanceID(ctx, db); err != nil {
+	if _, err := EnsureInstanceID(ctx, p.DB); err != nil {
 		return nil, fmt.Errorf("failed to setup instance ID: %w", err)
 	}
 	if err := svc.LoadDatabaseSettings(ctx); err != nil {

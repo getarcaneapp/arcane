@@ -171,7 +171,11 @@ func newSettingsServiceForTest(t *testing.T, ctx context.Context, db *database.D
 	t.Helper()
 	settingsEnv, err := settings.LoadEnv()
 	require.NoError(t, err)
-	svc, err := settings.NewSettingsService(ctx, db, &config.Config{}, settingsEnv)
+	svc, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settingsEnv,
+	})
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}
@@ -10072,7 +10076,11 @@ func newLifecycleTestService(t *testing.T, db *database.DB) (*LifecycleService, 
 	t.Helper()
 	settingsEnv, err := settings.LoadEnv()
 	require.NoError(t, err)
-	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settingsEnv)
+	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settingsEnv,
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	events := event.NewEventService(db, nil, nil)
@@ -10562,7 +10570,11 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
 	db := &database.DB{DB: gormDB}
-	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)

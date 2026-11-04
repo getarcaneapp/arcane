@@ -14,12 +14,8 @@
 
 	let { onClose }: { onClose: () => void } = $props();
 
-	// The detail pane is never blank while there is something to show.
-	$effect(() => {
-		if (activityStore.focusedKey) return;
-		const first = activityStore.runningGroups[0] ?? activityStore.historyGroups[0];
-		if (first) activityStore.focus(activityGroupKey(first));
-	});
+	const firstGroup = $derived(activityStore.runningGroups[0] ?? activityStore.historyGroups[0]);
+	const selectedKey = $derived(activityStore.focusedKey ?? (firstGroup ? activityGroupKey(firstGroup) : null));
 </script>
 
 <div class="grid min-h-0 flex-1 grid-cols-aside-90 grid-rows-1">
@@ -35,13 +31,13 @@
 		</div>
 		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-border/50">
 			<ActivityListStates>
-				<ActivitySectionList selectedKey={activityStore.focusedKey} onSelect={(key) => activityStore.focus(key)} />
+				<ActivitySectionList {selectedKey} onSelect={(key) => activityStore.focus(key)} />
 			</ActivityListStates>
 		</div>
 	</div>
 	<div class="flex min-h-0 min-w-0 flex-col">
-		{#if activityStore.focusedKey}
-			<ActivityDetailView focusKey={activityStore.focusedKey} />
+		{#if selectedKey}
+			<ActivityDetailView focusKey={selectedKey} />
 		{/if}
 	</div>
 </div>

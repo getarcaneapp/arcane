@@ -242,6 +242,25 @@ func TestMigration101_ConvertsCronSchedulesToFiveFields(t *testing.T) {
 	require.NoError(t, err)
 	_, err = rawDB.ExecContext(ctx, `INSERT INTO volume_backup_policies (id, volume_name, schedule) VALUES ('v1', 'data', '0 */15 * * * *')`)
 	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES ('systemVolumeBackupConfig',
+		'{"policies":[{"id":"p1","enabled":true,"schedule":"0 0 2 * * *"},{"id":"p2","schedule":"@weekly"},{"id":"p3","schedule":"15 4 * * *"}]}')`)
+	require.NoError(t, err)
+
+	volumeConfigSchedules := func() []string {
+		var value string
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = 'systemVolumeBackupConfig'`).Scan(&value))
+		var config struct {
+			Policies []struct {
+				Schedule string `json:"schedule"`
+			} `json:"policies"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(value), &config))
+		schedules := make([]string, 0, len(config.Policies))
+		for _, policy := range config.Policies {
+			schedules = append(schedules, policy.Schedule)
+		}
+		return schedules
+	}
 
 	schedules := func() map[string]string {
 		values := map[string]string{}
@@ -270,6 +289,7 @@ func TestMigration101_ConvertsCronSchedulesToFiveFields(t *testing.T) {
 		"s2":                     "@daily",
 		"v1":                     "*/15 * * * *",
 	}, schedules())
+	assert.Equal(t, []string{"0 2 * * *", "@weekly", "15 4 * * *"}, volumeConfigSchedules())
 
 	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 100))
 	assert.Equal(t, map[string]string{
@@ -281,6 +301,7 @@ func TestMigration101_ConvertsCronSchedulesToFiveFields(t *testing.T) {
 		"s2":                     "@daily",
 		"v1":                     "0 */15 * * * *",
 	}, schedules())
+	assert.Equal(t, []string{"0 0 2 * * *", "@weekly", "0 15 4 * * *"}, volumeConfigSchedules())
 }
 
 func TestMigration102_CleansUpRBACPermissions(t *testing.T) {

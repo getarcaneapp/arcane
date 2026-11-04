@@ -33,7 +33,11 @@ func TestHistoryDestinationDecoration(t *testing.T) {
 	destination := s3.S3Destination{Name: "Offsite", Bucket: "backups"}
 	require.NoError(t, db.Create(&destination).Error)
 	store := &database.DB{DB: db}
-	settingsService, err := settings.NewSettingsService(t.Context(), store, &config.Config{}, settings.Env{})
+	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+		DB:     store,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	service := NewService(Dependencies{
@@ -74,7 +78,11 @@ func TestRecoveryEnvironmentIncludesRuntimeSecrets(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
-	settingsService, err := settings.NewSettingsService(t.Context(), &database.DB{DB: db}, &config.Config{}, settings.Env{})
+	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+		DB:     &database.DB{DB: db},
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	environment := NewService(Dependencies{
@@ -95,7 +103,11 @@ func TestRecoveryEnvironmentIncludesEnvSourcedSettings(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
-	settingsService, err := settings.NewSettingsService(t.Context(), &database.DB{DB: db}, &config.Config{}, settingsEnv)
+	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+		DB:     &database.DB{DB: db},
+		Config: &config.Config{},
+		Env:    settingsEnv,
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	environment := NewService(Dependencies{
@@ -159,7 +171,11 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
 	db := &database.DB{DB: gormDB}
-	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)

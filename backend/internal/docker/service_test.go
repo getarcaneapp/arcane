@@ -530,7 +530,11 @@ func newDockerClientServiceForTest(t *testing.T, host string) *DockerClientServi
 	require.NoError(t, err)
 	require.NoError(t, gdb.AutoMigrate(&settings.SettingVariable{}))
 	db := &database.DB{DB: gdb}
-	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	require.NoError(t, settingsService.UpdateSettings(t.Context(), types.SettingsUpdate{"dockerHost": host}))

@@ -192,7 +192,11 @@ func TestDockerEventLifecycle(t *testing.T) {
 			require.NoError(t, db.AutoMigrate(&event.Event{}, &settings.SettingVariable{}))
 			databaseDB := &database.DB{DB: db}
 			cfg := &config.Config{AgentEnabled: mode == "agent"}
-			settingsService, err := settings.NewSettingsService(t.Context(), databaseDB, cfg, settings.Env{"dockerHost": server.URL})
+			settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+				DB:     databaseDB,
+				Config: cfg,
+				Env:    settings.Env{"dockerHost": server.URL},
+			})
 			require.NoError(t, err)
 			lifecycle := fxtest.NewLifecycle(t)
 			eventService := event.NewEventService(databaseDB, cfg, nil)

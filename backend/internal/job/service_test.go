@@ -56,7 +56,11 @@ func setupSettingsTestDB(t *testing.T) *database.DB {
 
 func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	service, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
+	service, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
 	if err == nil {
 		t.Cleanup(func() {
 			stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
