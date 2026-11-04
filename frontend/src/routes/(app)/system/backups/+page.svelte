@@ -29,7 +29,6 @@
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type {
 		SystemVolumeBackupHistoryEntry,
 		SystemBackupDestination,
@@ -46,6 +45,7 @@
 		runAutomaticBackupDiscovery,
 		s3DestinationOptions
 	} from '#lib/utils/backups.js';
+	import { readableEnvironments, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -57,7 +57,7 @@
 	const queryClient = useQueryClient();
 	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
 	const backupsQuery = createQuery(() => ({
-		...systemBackupHistoryQuery(pageState.requestOptions),
+		...systemBackupHistoryQuery(pageState.scope, readableEnvironments('volumes:read'), pageState.requestOptions),
 		placeholderData: (previous) => previous
 	}));
 	const backups = $derived(backupsQuery.data ?? data.backups);
@@ -381,9 +381,9 @@
 		if (backupType === 'volume') void loadSystemVolumeOptions();
 	}
 
-	async function openVolumeBackups(backup: SystemVolumeBackupHistoryEntry) {
+	async function openVolumeBackups(backup: EnvironmentRow<SystemVolumeBackupHistoryEntry>) {
 		await goto(
-			resolve(`/(app)/volumes/[volumeName]?tab=backups&env=${encodeURIComponent(LOCAL_DOCKER_ENVIRONMENT_ID)}`, {
+			resolve(`/(app)/volumes/[volumeName]?tab=backups&env=${encodeURIComponent(backup.environmentId)}`, {
 				volumeName: encodeURIComponent(backup.resourceName)
 			})
 		);
@@ -414,7 +414,7 @@
 		void discoverStoredBackups();
 	});
 
-	function openVolumeRestore(backup: SystemVolumeBackupHistoryEntry) {
+	function openVolumeRestore(backup: EnvironmentRow<SystemVolumeBackupHistoryEntry>) {
 		openConfirmDialog({
 			title: m.volumes_backup_restore_title(),
 			message: m.volumes_backup_restore_message({ volumeName: backup.resourceName }),
@@ -423,7 +423,7 @@
 				action: async () => {
 					const operationResult = await tryCatch(
 						(async () => {
-							const result = await volumeBackupService.restoreBackup(backup.resourceName, backup.id, LOCAL_DOCKER_ENVIRONMENT_ID);
+							const result = await volumeBackupService.restoreBackup(backup.resourceName, backup.id, backup.environmentId);
 							toast.success(m.volumes_backup_restore_success(), activityToastOptions(extractActivityId(result)));
 						})()
 					);

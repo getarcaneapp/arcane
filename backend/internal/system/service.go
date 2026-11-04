@@ -741,6 +741,7 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 				)
 			}
 			query = pagination.ApplyFilter(query, "type", params.Filters["type"])
+			query = pagination.ApplyFilter(query, "resource_type", params.Filters["resourceType"])
 			var history []types.SystemVolumeBackupHistoryEntry
 			page, err := pagination.PaginateAndSortDB(pagination.QueryParams{
 				SearchQuery: params.SearchQuery,

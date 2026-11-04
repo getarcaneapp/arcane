@@ -229,6 +229,7 @@ type (
 
 	// SystemVolumeBackupHistoryEntry is a common view over Arcane recovery and volume backup records.
 	SystemVolumeBackupHistoryEntry struct {
+		EnvironmentTag
 		CreatedAt         time.Time               `json:"createdAt" sortable:"true"`
 		RemoteAvailable   *bool                   `json:"remoteAvailable,omitempty" gorm:"-"`
 		ID                string                  `json:"id" sortable:"true"`

@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"uuid"
@@ -52,6 +54,8 @@ import (
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/backupbrowser"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/logging"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/projects"
@@ -1936,6 +1940,87 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 	return succeeded, nil
 }
 
+func (s *Service) AggregateBackupHistory(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.SystemVolumeBackupHistoryEntry], error) {
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.SystemVolumeBackupHistoryEntry]](ctx, url.Values{
+		"start":        {"0"},
+		"limit":        {strconv.Itoa(kit.Ternary(params.Limit > 0 && params.Start+params.Limit <= 100, params.Start+params.Limit, -1))},
+		"includeTotal": {"true"},
+		"sort":         {kit.Ternary(params.Sort == "environment", "createdAt", cmp.Or(params.Sort, "createdAt"))},
+		"order":        {kit.Ternary(params.Sort == "environment", string(pagination.SortAsc), cmp.Or(string(params.Order), string(pagination.SortDesc)))},
+	})
+	if err != nil {
+		return types.Paginated[types.SystemVolumeBackupHistoryEntry]{}, fmt.Errorf("collect backup history: %w", err)
+	}
+	pages := make([]pagination.EnvironmentPage[types.SystemVolumeBackupHistoryEntry], 0, len(collection.Results))
+	var total int64
+	for _, result := range collection.Results {
+		total += result.Value.Pagination.TotalItems
+		pages = append(pages, pagination.EnvironmentPage[types.SystemVolumeBackupHistoryEntry]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
+	}
+	data, page := pagination.MergeEnvironmentPages(pagination.Config[types.SystemVolumeBackupHistoryEntry]{
+		SortBindings: historySortBindings(),
+	}, pages, pagination.QueryParams{
+		SearchQuery: params.SearchQuery,
+		SortParams: pagination.SortParams{
+			Sort:  params.Sort,
+			Order: kit.Ternary(params.Sort == "", pagination.SortDesc, params.Order),
+		},
+		Params:  params.Params,
+		Filters: params.Filters,
+	})
+	return types.Paginated[types.SystemVolumeBackupHistoryEntry]{
+		Success: true,
+		Data:    data,
+		Pagination: handlerutil.PaginationResponse(pagination.BuildResponse(total, total, pagination.QueryParams{
+			Params: pagination.Params{
+				Start: (page.CurrentPage - 1) * params.Limit,
+				Limit: params.Limit,
+			},
+		})),
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
+func historySortBindings() []pagination.SortBinding[types.SystemVolumeBackupHistoryEntry] {
+	keys := []string{"createdAt", "resourceName", "type", "status", "trigger", "destination", "size"}
+	bindings := make([]pagination.SortBinding[types.SystemVolumeBackupHistoryEntry], 0, len(keys))
+	for _, key := range keys {
+		bindings = append(bindings, pagination.SortBinding[types.SystemVolumeBackupHistoryEntry]{
+			Key: key,
+			Fn: func(a, b types.SystemVolumeBackupHistoryEntry) int {
+				return cmp.Or(compareHistoryEntries(key, a, b), strings.Compare(a.ID, b.ID))
+			},
+			DescFn: func(a, b types.SystemVolumeBackupHistoryEntry) int {
+				return cmp.Or(compareHistoryEntries(key, b, a), strings.Compare(a.ID, b.ID))
+			},
+		})
+	}
+	return bindings
+}
+
+func compareHistoryEntries(key string, a, b types.SystemVolumeBackupHistoryEntry) int {
+	switch key {
+	case "createdAt":
+		return a.CreatedAt.Compare(b.CreatedAt)
+	case "resourceName":
+		return strings.Compare(a.ResourceName, b.ResourceName)
+	case "type":
+		return strings.Compare(string(a.Type), string(b.Type))
+	case "status":
+		return strings.Compare(a.Status, b.Status)
+	case "trigger":
+		return strings.Compare(a.Trigger, b.Trigger)
+	case "destination":
+		return strings.Compare(string(a.Destination), string(b.Destination))
+	default:
+		return cmp.Compare(a.Size, b.Size)
+	}
+}
+
 // ListBackupHistory returns a unified, server-paginated view of local backup records.
 func (s *Service) ListBackupHistory(ctx context.Context, params pagination.QueryParams) ([]types.SystemVolumeBackupHistoryEntry, pagination.Response, error) {
 	history, page, err := s.store.ListHistory(ctx, params)
@@ -1960,6 +2045,7 @@ func (s *Service) ListBackupHistory(ctx context.Context, params pagination.Query
 			}
 		}()
 		decorated = append(decorated, types.SystemVolumeBackupHistoryEntry{ //exhaustruct:enforce
+			EnvironmentTag:    entry.EnvironmentTag,
 			RemoteAvailable:   remoteAvailable(entry.S3DestinationID, root, entry.RemoteSnapshotID),
 			ID:                entry.ID,
 			Size:              entry.Size,

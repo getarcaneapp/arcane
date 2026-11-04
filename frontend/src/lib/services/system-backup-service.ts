@@ -18,7 +18,7 @@ import type { BackupFileBrowseRequest } from '#lib/types/ui/backup.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
-import BaseAPIService from './api-service';
+import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 class SystemBackupService extends BaseAPIService {
 	async list(options?: SearchPaginationSortRequest): Promise<Paginated<SystemBackupRun>> {
@@ -26,8 +26,23 @@ class SystemBackupService extends BaseAPIService {
 		return response.data;
 	}
 
-	async listHistory(options?: SearchPaginationSortRequest): Promise<Paginated<SystemVolumeBackupHistoryEntry>> {
-		const response = await this.api.get('/backups/history', { params: transformPaginationParams(options) });
+	async listManagerHistory(
+		options?: SearchPaginationSortRequest,
+		config?: APIRequestConfig
+	): Promise<Paginated<SystemVolumeBackupHistoryEntry>> {
+		const response = await this.api.get('/backups/history', { ...config, params: transformPaginationParams(options) });
+		return response.data;
+	}
+
+	async listHistory(
+		environmentId: string,
+		options?: SearchPaginationSortRequest,
+		config?: APIRequestConfig
+	): Promise<Paginated<SystemVolumeBackupHistoryEntry>> {
+		const response = await this.api.get(`/environments/${environmentId}/backups/history`, {
+			...config,
+			params: transformPaginationParams(options)
+		});
 		return response.data;
 	}
 
