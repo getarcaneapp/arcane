@@ -4394,5 +4394,13 @@
   "api_reference": "Referencia API",
   "api_key_page_description_suffix": "para obtener más información sobre su uso.",
   "github_token": "Token de GitHub",
-  "github_token_description": "Token opcional que se utiliza para recuperar las notas de la versión de las imágenes de GitHub. Aumenta el límite de solicitudes de la API de 60 a 5.000 solicitudes por hora."
+  "github_token_description": "Token opcional que se utiliza para recuperar las notas de la versión de las imágenes de GitHub. Aumenta el límite de solicitudes de la API de 60 a 5.000 solicitudes por hora.",
+  "image_auto_patch": "Parche automático de imágenes",
+  "analytics_heartbeat": "Analytics Heartbeat",
+  "docker_client_refresh": "Actualización del cliente de Docker",
+  "event_cleanup": "Limpieza tras el evento",
+  "upgrade_log_cleanup": "Limpieza del registro de actualizaciones",
+  "expired_sessions_cleanup": "Limpieza de sesiones caducadas",
+  "filesystem_watcher": "Vigilante del sistema de archivos",
+  "vulnerability_risk": "Riesgo de vulnerabilidad"
 }
