@@ -4394,5 +4394,13 @@
   "api_reference": "API 참조",
   "api_key_page_description_suffix": "사용 방법에 대한 자세한 내용은 다음을 참조하십시오.",
   "github_token": "GitHub 토큰",
-  "github_token_description": "GitHub에서 이미지 릴리스 노트를 가져오는 데 사용되는 선택적 토큰입니다. API 요청 제한을 시간당 60회에서 5,000회로 늘려줍니다."
+  "github_token_description": "GitHub에서 이미지 릴리스 노트를 가져오는 데 사용되는 선택적 토큰입니다. API 요청 제한을 시간당 60회에서 5,000회로 늘려줍니다.",
+  "image_auto_patch": "이미지 자동 패치",
+  "analytics_heartbeat": "애널리틱스 하트비트",
+  "docker_client_refresh": "Docker 클라이언트 새로 고침",
+  "event_cleanup": "이벤트 정리",
+  "upgrade_log_cleanup": "업그레이드 로그 정리",
+  "expired_sessions_cleanup": "만료된 세션 정리",
+  "filesystem_watcher": "파일 시스템 감시기",
+  "vulnerability_risk": "취약점 위험"
 }
