@@ -4394,5 +4394,13 @@
   "api_reference": "API-reference",
   "api_key_page_description_suffix": "for yderligere oplysninger om brugen.",
   "github_token": "GitHub-token",
-  "github_token_description": "Valgfrit token, der bruges til at hente release notes for billeder fra GitHub. Øger API-begrænsningen fra 60 til 5.000 anmodninger i timen."
+  "github_token_description": "Valgfrit token, der bruges til at hente release notes for billeder fra GitHub. Øger API-begrænsningen fra 60 til 5.000 anmodninger i timen.",
+  "image_auto_patch": "Automatisk billedopdatering",
+  "analytics_heartbeat": "Analytics Heartbeat",
+  "docker_client_refresh": "Opdatering af Docker-klienten",
+  "event_cleanup": "Oprydning efter arrangementet",
+  "upgrade_log_cleanup": "Oprydning af opgraderingsloggen",
+  "expired_sessions_cleanup": "Rydning af udløbne sessioner",
+  "filesystem_watcher": "Filsystemovervåger",
+  "vulnerability_risk": "Sårbarhedsrisiko"
 }
