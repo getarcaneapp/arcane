@@ -324,7 +324,7 @@ func MergeProjectContainerUpdateInfo(base map[string]*types.ImageUpdateInfo, ser
 	return result
 }
 
-func (s *Service) ConfiguredRuntimeServices(ctx context.Context, services []project.RuntimeService) []project.RuntimeService {
+func (s *Service) ConfiguredRuntimeServices(ctx context.Context, services []types.ProjectRuntimeService) []types.ProjectRuntimeService {
 	cli, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return services
