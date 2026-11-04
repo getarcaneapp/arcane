@@ -284,10 +284,10 @@ func (s *VariableService) DeleteVariable(ctx context.Context, id string) error {
 // environment: all-environment variables first, env-scoped variables override
 // (including their injection flag). Secret values are decrypted; variables
 // that fail to decrypt are skipped.
-func (s *VariableService) resolveEffectiveVariables(ctx context.Context, envID string) (types.EnvSummary, error) {
+func (s *VariableService) resolveEffectiveVariables(ctx context.Context, envID string) ([]types.EnvVariable, error) {
 	variables, err := s.loadVariables(ctx)
 	if err != nil {
-		return types.EnvSummary{}, err
+		return nil, err
 	}
 
 	effective := make(map[string]string)
@@ -317,15 +317,11 @@ func (s *VariableService) resolveEffectiveVariables(ctx context.Context, envID s
 
 	keys := slices.Sorted(maps.Keys(effective))
 
-	envVariables := make([]types.EnvVariable, 0, len(effective))
-	var noInjectKeys []string
+	result := make([]types.EnvVariable, 0, len(effective))
 	for _, key := range keys {
-		envVariables = append(envVariables, types.EnvVariable{Key: key, Value: effective[key]})
-		if !injected[key] {
-			noInjectKeys = append(noInjectKeys, key)
-		}
+		result = append(result, types.EnvVariable{Key: key, Value: effective[key], NoInject: !injected[key]})
 	}
-	return types.EnvSummary{Variables: envVariables, NoInjectKeys: noInjectKeys}, nil
+	return result, nil
 }
 
 // SyncEnvironment materializes the effective variable set into one
@@ -352,16 +348,16 @@ func (s *VariableService) syncEnvironment(ctx context.Context, envID string) err
 		}
 	}
 
-	summary, err := s.resolveEffectiveVariables(ctx, envID)
+	vars, err := s.resolveEffectiveVariables(ctx, envID)
 	if err != nil {
 		return err
 	}
 
 	if envID == environment.LocalEnvironmentID {
-		return s.WriteLocalEnvFile(ctx, summary)
+		return s.WriteLocalEnvFile(ctx, vars)
 	}
 
-	body, err := json.Marshal(summary)
+	body, err := json.Marshal(types.EnvSummary{Variables: vars})
 	if err != nil {
 		return fmt.Errorf("failed to marshal variables for sync: %w", err)
 	}
@@ -513,6 +509,7 @@ func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]types.EnvVari
 		return nil, fmt.Errorf("failed to open global variables file: %w", err)
 	}
 
+	noInject := projects.ParseNoInjectDirectives(string(content))
 	vars := []types.EnvVariable{}
 	scanner := bufio.NewScanner(bytes.NewReader(content))
 	lineNum := 0
@@ -543,9 +540,11 @@ func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]types.EnvVari
 			}
 		}
 
+		_, marked := noInject[key]
 		vars = append(vars, types.EnvVariable{
-			Key:   key,
-			Value: value,
+			Key:      key,
+			Value:    value,
+			NoInject: marked,
 		})
 	}
 
@@ -556,10 +555,10 @@ func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]types.EnvVari
 	return vars, nil
 }
 
-// WriteLocalEnvFile materializes summary into .env.global. Interpolation-only
-// keys are marked in the header, ahead of every value, so values and marks are
-// always read from one consistent snapshot.
-func (s *VariableService) WriteLocalEnvFile(ctx context.Context, summary types.EnvSummary) error {
+// WriteLocalEnvFile materializes vars into .env.global. Interpolation-only
+// keys are marked in the header and the file is replaced atomically, so values
+// and marks are always read from one consistent snapshot.
+func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []types.EnvVariable) error {
 	envPath, err := s.localEnvFilePath(ctx)
 	if err != nil {
 		return err
@@ -576,15 +575,14 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, summary types.E
 	builder.WriteString("# Global Environment Variables\n")
 	builder.WriteString("# These variables are available to all projects\n")
 
-	for _, key := range summary.NoInjectKeys {
-		if validateKeyErr := validateVariableKey(key); validateKeyErr != nil {
-			return validateKeyErr
+	for _, v := range vars {
+		if v.NoInject {
+			_, _ = fmt.Fprintf(&builder, "# %s %s\n", projects.GlobalEnvNoInjectDirective, strings.TrimSpace(v.Key))
 		}
-		_, _ = fmt.Fprintf(&builder, "# %s %s\n", projects.GlobalEnvNoInjectDirective, key)
 	}
 	builder.WriteString("\n")
 
-	for _, v := range summary.Variables {
+	for _, v := range vars {
 		if strings.TrimSpace(v.Key) == "" {
 			continue
 		}
@@ -608,14 +606,13 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, summary types.E
 	if entry, statErr := (acfs.Root{Path: projectsDirectory}).Stat(ctx, "/"+projects.GlobalEnvFileName, acfstypes.StatOptions{}); statErr == nil {
 		mode = os.FileMode(entry.UnixMode).Perm()
 	}
-	if writeErr := (acfs.Root{Path: projectsDirectory}).Write(ctx, "/"+projects.GlobalEnvFileName, []byte(builder.String()), acfs.WriteOptions{Mode: mode, InPlace: true}); writeErr != nil {
+	if writeErr := (acfs.Root{Path: projectsDirectory}).Write(ctx, "/"+projects.GlobalEnvFileName, []byte(builder.String()), acfs.WriteOptions{Mode: mode}); writeErr != nil {
 		return fmt.Errorf("failed to write global variables file: %w", writeErr)
 	}
 
 	slog.DebugContext(ctx, "Synchronized global variables file",
 		"path", envPath,
-		"count", len(summary.Variables),
-		"noInjectCount", len(summary.NoInjectKeys))
+		"count", len(vars))
 
 	return nil
 }
@@ -681,12 +678,12 @@ func (s *VariableService) importVariables(ctx context.Context, vars []types.EnvV
 			continue
 		}
 
-		// Legacy .env.global entries were always injected into every container.
+		// Unmarked legacy entries were always injected into every container.
 		variable := GlobalVariable{
 			Key:                  key,
 			Value:                entry.Value,
 			AllEnvironments:      scopeEnvID == "",
-			InjectIntoContainers: true,
+			InjectIntoContainers: !entry.NoInject,
 		}
 		transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			if createImportedVariableErr := tx.Omit("Environments").Create(&variable).Error; createImportedVariableErr != nil {

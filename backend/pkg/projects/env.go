@@ -98,8 +98,7 @@ const (
 	ProjectEnvModeOverride ProjectEnvMode = "override"
 	// GlobalEnvNoInjectDirective, in a "# arcane:noinject KEY" comment, marks a
 	// .env.global key as only available for ${VAR} interpolation. Marks are only
-	// read before the first variable line: placing them ahead of every value
-	// keeps values and marks consistent even in a partially rewritten file.
+	// read before the first variable line, so a value is never read as a mark.
 	GlobalEnvNoInjectDirective = "arcane:noinject"
 	// Docker Compose pre-defined variable names that compose-go's consts package
 	// does not export. See https://docs.docker.com/compose/how-tos/environment-variables/envvars.
@@ -289,7 +288,7 @@ func loadCachedEnvFile(_ context.Context, envCache *hot.HotCache[string, envFile
 			size:         info.Size(),
 			exists:       true,
 			values:       parsed,
-			noInjectKeys: parseNoInjectDirectives(string(content)),
+			noInjectKeys: ParseNoInjectDirectives(string(content)),
 		}}, nil
 	})
 	if err != nil {
@@ -330,10 +329,10 @@ func parseProjectEnvFileExisting(path string, contextEnv EnvMap) (EnvMap, error)
 	return ParseProjectEnvContent(string(content), contextEnv)
 }
 
-// parseNoInjectDirectives collects the keys marked with
+// ParseNoInjectDirectives collects the keys marked with
 // GlobalEnvNoInjectDirective in the leading comment block. Scanning stops at
 // the first other line so a variable value is never read as a mark.
-func parseNoInjectDirectives(content string) map[string]struct{} {
+func ParseNoInjectDirectives(content string) map[string]struct{} {
 	var keys map[string]struct{}
 	for line := range strings.Lines(content) {
 		line = strings.TrimSpace(line)

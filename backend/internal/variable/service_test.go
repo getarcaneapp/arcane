@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"kit.getarcane.app"
 	"kit.getarcane.app/fs"
 	"kit.getarcane.app/sys/crypto"
 
@@ -209,14 +210,14 @@ func TestResolveEffectiveVariables_EnvScopedOverridesAllEnv(t *testing.T) {
 
 	forA, err := service.resolveEffectiveVariables(ctx, "env-a")
 	require.NoError(t, err)
-	require.Equal(t, []types.EnvVariable{{Key: "REGION", Value: "eu-west"}}, forA.Variables)
+	require.Equal(t, []types.EnvVariable{{Key: "REGION", Value: "eu-west", NoInject: true}}, forA)
 
 	forB, err := service.resolveEffectiveVariables(ctx, "env-b")
 	require.NoError(t, err)
-	require.Equal(t, []types.EnvVariable{{Key: "REGION", Value: "default"}}, forB.Variables)
+	require.Equal(t, []types.EnvVariable{{Key: "REGION", Value: "default", NoInject: true}}, forB)
 }
 
-func TestResolveEffectiveVariables_ListsInterpolationOnlyKeys(t *testing.T) {
+func TestResolveEffectiveVariables_MarksInterpolationOnlyVariables(t *testing.T) {
 	service, db, _ := setupVariableServiceTest(t, &variableTestRemoteProxy{})
 	ctx := t.Context()
 	createVariableTestEnvironment(t, db, "env-a")
@@ -242,11 +243,17 @@ func TestResolveEffectiveVariables_ListsInterpolationOnlyKeys(t *testing.T) {
 
 	forA, err := service.resolveEffectiveVariables(ctx, "env-a")
 	require.NoError(t, err)
-	require.Equal(t, []string{"DB_PASSWORD", "TZ"}, forA.NoInjectKeys)
+	require.Equal(t, []types.EnvVariable{
+		{Key: "DB_PASSWORD", Value: "hunter2", NoInject: true},
+		{Key: "TZ", Value: "Europe/Paris", NoInject: true},
+	}, forA)
 
 	forB, err := service.resolveEffectiveVariables(ctx, "env-b")
 	require.NoError(t, err)
-	require.Equal(t, []string{"DB_PASSWORD"}, forB.NoInjectKeys)
+	require.Equal(t, []types.EnvVariable{
+		{Key: "DB_PASSWORD", Value: "hunter2", NoInject: true},
+		{Key: "TZ", Value: "UTC"},
+	}, forB)
 }
 
 func TestUpdateVariable_InjectIntoContainersKeptUnlessSubmitted(t *testing.T) {
@@ -270,26 +277,77 @@ func TestUpdateVariable_InjectIntoContainersKeptUnlessSubmitted(t *testing.T) {
 	require.True(t, stored.InjectIntoContainers)
 }
 
-func TestImportVariables_KeepsInjectingImportedVariables(t *testing.T) {
+func TestImportVariables_InjectsOnlyUnmarkedEntries(t *testing.T) {
 	service, db, _ := setupVariableServiceTest(t, &variableTestRemoteProxy{})
 	ctx := t.Context()
 	createVariableTestEnvironment(t, db, "env-a")
 
-	require.NoError(t, service.importVariables(ctx, []types.EnvVariable{{Key: "PUID", Value: "1000"}}, "env-a"))
+	require.NoError(t, service.importVariables(ctx, []types.EnvVariable{
+		{Key: "PUID", Value: "1000"},
+		{Key: "DB_PASSWORD", Value: "hunter2", NoInject: true},
+	}, "env-a"))
 
 	listed, err := service.ListVariables(ctx)
 	require.NoError(t, err)
-	require.Len(t, listed, 1)
-	require.Equal(t, "PUID", listed[0].Key)
-	require.True(t, listed[0].InjectIntoContainers, "legacy .env.global entries were always injected")
+	injected := map[string]bool{}
+	for _, variable := range listed {
+		injected[variable.Key] = variable.InjectIntoContainers
+	}
+	require.Equal(t, map[string]bool{"PUID": true, "DB_PASSWORD": false}, injected, "unmarked legacy entries were always injected; marked ones stay interpolation-only")
+}
+
+func TestReadLocalEnvFile_ReportsNoInjectMarks(t *testing.T) {
+	service, _, _ := setupVariableServiceTest(t, &variableTestRemoteProxy{})
+	ctx := t.Context()
+	vars := []types.EnvVariable{
+		{Key: "DB_PASSWORD", Value: "hunter2", NoInject: true},
+		{Key: "TZ", Value: "UTC"},
+	}
+
+	require.NoError(t, service.WriteLocalEnvFile(ctx, vars))
+
+	read, err := service.ReadLocalEnvFile(ctx)
+	require.NoError(t, err)
+	require.Equal(t, vars, read, "a re-added agent must report which keys are interpolation-only")
+}
+
+func TestWriteLocalEnvFile_ConcurrentRewritesNeverInterleave(t *testing.T) {
+	service, _, projectsDir := setupVariableServiceTest(t, &variableTestRemoteProxy{})
+	ctx := t.Context()
+	envPath := filepath.Join(projectsDir, ".env.global")
+	withSecret := []types.EnvVariable{
+		{Key: "DB_PASSWORD", Value: strings.Repeat("s", 512), NoInject: true},
+		{Key: "TZ", Value: "UTC"},
+	}
+	afterDelete := []types.EnvVariable{{Key: "TZ", Value: "UTC"}}
+
+	rendered := map[string]bool{}
+	for _, vars := range [][]types.EnvVariable{withSecret, afterDelete} {
+		require.NoError(t, service.WriteLocalEnvFile(ctx, vars))
+		content, err := os.ReadFile(envPath)
+		require.NoError(t, err)
+		rendered[string(content)] = true
+	}
+
+	for range 100 {
+		var wg sync.WaitGroup
+		for i := range 8 {
+			vars := kit.Ternary(i%2 == 0, withSecret, afterDelete)
+			wg.Go(func() { require.NoError(t, service.WriteLocalEnvFile(ctx, vars)) })
+		}
+		wg.Wait()
+		content, err := os.ReadFile(envPath)
+		require.NoError(t, err)
+		require.True(t, rendered[string(content)], "overlapping rewrites produced a mixed file:\n%s", content)
+	}
 }
 
 func TestWriteLocalEnvFile_RejectsNewlineInjectionKey(t *testing.T) {
 	service, _, projectsDir := setupVariableServiceTest(t, &variableTestRemoteProxy{})
 
-	err := service.WriteLocalEnvFile(t.Context(), types.EnvSummary{Variables: []types.EnvVariable{
+	err := service.WriteLocalEnvFile(t.Context(), []types.EnvVariable{
 		{Key: "BENIGN\nINJECTED", Value: "x"},
-	}})
+	})
 	require.ErrorIs(t, err, common.ErrInvalidEnvKey, "expected InvalidEnvKeyError, got %v", err)
 
 	_, statErr := os.Stat(filepath.Join(projectsDir, ".env.global"))
@@ -304,13 +362,13 @@ func TestWriteLocalEnvFile_PreservesExistingFileMode(t *testing.T) {
 	ctx := t.Context()
 	envPath := filepath.Join(projectsDir, ".env.global")
 
-	require.NoError(t, service.WriteLocalEnvFile(ctx, types.EnvSummary{Variables: []types.EnvVariable{{Key: "A", Value: "1"}}}))
+	require.NoError(t, service.WriteLocalEnvFile(ctx, []types.EnvVariable{{Key: "A", Value: "1"}}))
 	info, err := os.Stat(envPath)
 	require.NoError(t, err)
 	require.Equal(t, fs.FilePerm, info.Mode().Perm(), "new file must use the configured default mode")
 
 	require.NoError(t, os.Chmod(envPath, 0o600))
-	require.NoError(t, service.WriteLocalEnvFile(ctx, types.EnvSummary{Variables: []types.EnvVariable{{Key: "A", Value: "2"}}}))
+	require.NoError(t, service.WriteLocalEnvFile(ctx, []types.EnvVariable{{Key: "A", Value: "2"}}))
 	info, err = os.Stat(envPath)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), info.Mode().Perm(), "rewrite must keep the existing mode")
@@ -360,21 +418,9 @@ func TestSyncEnvironment_LocalSkipsInjectionForInterpolationOnlyVariables(t *tes
 	require.NoError(t, err)
 	require.Equal(t, "hunter2", envMap["DB_PASSWORD"], "interpolation-only variables stay available for ${VAR}")
 	require.Equal(t, projects.EnvMap{"TZ": "UTC"}, injectionVars)
-
-	// The in-place rewrite truncates then writes, so a concurrent reader can see
-	// any prefix of the new file: none of them may inject the marked secret.
-	content, err := os.ReadFile(filepath.Join(projectsDir, ".env.global"))
-	require.NoError(t, err)
-	partialDir := t.TempDir()
-	for size := range len(content) + 1 {
-		require.NoError(t, os.WriteFile(filepath.Join(partialDir, ".env.global"), content[:size], fs.FilePerm))
-		_, partialInjection, loadErr := projects.NewEnvLoader(partialDir, filepath.Join(partialDir, "app"), false).LoadEnvironment(ctx)
-		require.NoError(t, loadErr)
-		require.NotContains(t, partialInjection, "DB_PASSWORD", "a %d-byte prefix injected the interpolation-only secret", size)
-	}
 }
 
-func TestSyncEnvironment_AgentPayloadOmitsNoInjectKeysWhenAllInjected(t *testing.T) {
+func TestSyncEnvironment_AgentPayloadOmitsNoInjectWhenAllInjected(t *testing.T) {
 	var putBodies [][]byte
 	service, db, _ := setupVariableServiceTest(t, &variableTestRemoteProxy{
 		proxyJSON: func(_ context.Context, _, method, _ string, body []byte, response any) error {
@@ -410,10 +456,13 @@ func TestSyncEnvironment_AgentPayloadOmitsNoInjectKeysWhenAllInjected(t *testing
 
 	require.Len(t, putBodies, 2)
 	// Agents that predate the field reject unknown properties.
-	require.NotContains(t, string(putBodies[0]), "noInjectKeys")
+	require.NotContains(t, string(putBodies[0]), "noInject")
 	var materialized types.EnvSummary
 	require.NoError(t, json.Unmarshal(putBodies[1], &materialized))
-	require.Equal(t, []string{"DB_PASSWORD"}, materialized.NoInjectKeys)
+	require.Equal(t, []types.EnvVariable{
+		{Key: "DB_PASSWORD", Value: "hunter2", NoInject: true},
+		{Key: "TZ", Value: "UTC"},
+	}, materialized.Variables)
 }
 
 func TestSyncEnvironment_AgentMaterializesSecretsThroughAgentRoute(t *testing.T) {
@@ -485,7 +534,7 @@ func requireMaterializationRequests(t *testing.T, requests []capturedVariableSyn
 	require.Equal(t, token, requests[1].Headers[agent.HeaderAgentToken])
 	var materialized types.EnvSummary
 	require.NoError(t, json.Unmarshal(requests[1].Body, &materialized))
-	require.Equal(t, []types.EnvVariable{{Key: "API_TOKEN", Value: "super-secret"}}, materialized.Variables)
+	require.Equal(t, []types.EnvVariable{{Key: "API_TOKEN", Value: "super-secret", NoInject: true}}, materialized.Variables)
 }
 
 func (p *variableTestRemoteProxy) ProxyJSONRequest(ctx context.Context, envID, method, path string, body []byte, out any) error {

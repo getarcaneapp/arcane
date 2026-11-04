@@ -1,6 +1,7 @@
 export interface EnvVariable {
 	key: string;
 	value: string;
+	noInject?: boolean;
 }
 
 export interface GlobalVariable {

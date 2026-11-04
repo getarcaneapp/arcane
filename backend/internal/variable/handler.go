@@ -164,7 +164,7 @@ func (h *VariableHandler) UpdateMaterializedVariables(ctx context.Context, input
 		return &handlerutil.Out[types.MessageResponse]{Body: *response}, nil
 	}
 
-	if err := h.variableService.WriteLocalEnvFile(ctx, input.Body); err != nil {
+	if err := h.variableService.WriteLocalEnvFile(ctx, input.Body.Variables); err != nil {
 		return nil, handlerutil.APIError(err)
 	}
 

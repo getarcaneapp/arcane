@@ -8,14 +8,14 @@ type (
 	EnvVariable struct {
 		Key   string `json:"key"`
 		Value string `json:"value"`
+		// NoInject marks a materialized variable as only available for ${VAR}
+		// interpolation. It is omitted when false, so payloads where every key
+		// is injected stay readable by agents that predate the field.
+		NoInject bool `json:"noInject,omitzero"`
 	}
 
-	// EnvSummary is the materialized variable set pushed to an environment.
-	// NoInjectKeys lists keys that are only available for ${VAR} interpolation;
-	// it is omitted when every key is injected.
 	EnvSummary struct {
-		Variables    []EnvVariable `json:"variables"`
-		NoInjectKeys []string      `json:"noInjectKeys,omitempty"`
+		Variables []EnvVariable `json:"variables"`
 	}
 
 	// GlobalVariable is the manager-level variable resource. Value is empty on
