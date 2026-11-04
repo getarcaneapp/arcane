@@ -196,7 +196,7 @@ var (
 			func(localDocker *docker.DockerClientService, notificationService *notification.NotificationService) *podman.Service {
 				return podman.NewService(podman.Config{
 					Engine: localDocker.Engine,
-					Host:   localDocker.DockerHost(),
+					Host:   localDocker.DockerHost,
 					NewSystemd: func(rootless bool) libpodman.Systemd {
 						return libpodman.NewSystemd(localDocker.DockerHost(), rootless, os.Getenv)
 					},

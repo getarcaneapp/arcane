@@ -96,6 +96,13 @@ type (
 		closeOnce    sync.Once
 	}
 
+	recreateHostConfigs struct {
+		restore   *container.HostConfig
+		create    *container.HostConfig
+		engine    compat.EngineCompatibilityInfo
+		sanitized bool
+	}
+
 	demuxedLogs struct {
 		io.Reader
 
@@ -828,6 +835,20 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	)
 }
 
+func prepareRecreateHostConfigs(ctx context.Context, dockerClient *client.Client, containerID string, restoreHostConfig, createHostConfig *container.HostConfig) (recreateHostConfigs, error) {
+	restore, _, _, err := compat.PrepareRecreateHostConfigForEngine(ctx, dockerClient, containerID, restoreHostConfig)
+	if err != nil {
+		return recreateHostConfigs{}, err
+	}
+	create, sanitized, engine, err := compat.PrepareRecreateHostConfigForEngine(ctx, dockerClient, containerID, createHostConfig)
+	return recreateHostConfigs{
+		restore:   restore,
+		create:    create,
+		engine:    engine,
+		sanitized: sanitized,
+	}, err
+}
+
 // recreateContainer replaces an existing container with one created from the supplied config, using
 // rename-as-backup so the original can be restored when create or start fails. Shared by redeploy and edit.
 func (s *ContainerService) recreateContainer(
@@ -864,17 +885,18 @@ func (s *ContainerService) recreateContainer(
 	if err != nil {
 		return "", fmt.Errorf("preserve volumes of container %s: %w", containerName, err)
 	}
-	engine, err := s.dockerService.Engine(ctx)
+	prepared, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (recreateHostConfigs, error) {
+		return prepareRecreateHostConfigs(ctx, dockerClient, containerInfo.ID, &restoreHostConfig, &createHostConfig)
+	})
 	if err != nil {
-		return "", fmt.Errorf("detect container engine for %s: %w", containerName, err)
+		return "", fmt.Errorf("prepare host config of container %s: %w", containerName, err)
 	}
-	engine.SanitizeRecreateHostConfig(&restoreHostConfig)
-	if engine.SanitizeRecreateHostConfig(&createHostConfig) {
+	if prepared.sanitized {
 		slog.InfoContext(ctx, "Stripped unsupported host config field for recreate",
 			"container", containerName,
 			"containerId", containerInfo.ID,
-			"engine", engine.Name,
-			"cgroupVersion", engine.CgroupVersion,
+			"engine", prepared.engine.Name,
+			"cgroupVersion", prepared.engine.CgroupVersion,
 			"field", "memorySwappiness",
 		)
 	}
@@ -895,7 +917,7 @@ func (s *ContainerService) recreateContainer(
 			return compat.ContainerCreateWithCompatibility(ctx, dockerClient, compat.CreateRequest{
 				Options: client.ContainerCreateOptions{
 					Config:           &originalConfig,
-					HostConfig:       &restoreHostConfig,
+					HostConfig:       prepared.restore,
 					NetworkingConfig: buildCleanNetworkingConfig(containerInfo, apiVersion),
 					Name:             containerName,
 				},
@@ -983,7 +1005,7 @@ func (s *ContainerService) recreateContainer(
 		return compat.ContainerCreateWithCompatibility(ctx, dockerClient, compat.CreateRequest{
 			Options: client.ContainerCreateOptions{
 				Config:           newConfig,
-				HostConfig:       &createHostConfig,
+				HostConfig:       prepared.create,
 				NetworkingConfig: networkingConfig,
 				Name:             newName,
 			},

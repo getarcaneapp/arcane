@@ -111,7 +111,9 @@ func TestDashboardService_ReportsPodmanPods(t *testing.T) {
 		Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
 			return compat.EngineCompatibilityInfo{Name: "podman"}, nil
 		},
-		Host: libpodServer.URL,
+		Host: func() string {
+			return libpodServer.URL
+		},
 		NewSystemd: func(rootless bool) libpodman.Systemd {
 			return libpodman.NewSystemd("", rootless, func(string) string {
 				return ""

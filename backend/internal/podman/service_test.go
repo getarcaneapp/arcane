@@ -24,6 +24,7 @@ import (
 
 type (
 	fakeSystemd struct {
+		startErr     error
 		availability types.PodmanSystemdAvailability
 		statuses     []types.PodmanUnitStatus
 		calls        []string
@@ -45,7 +46,7 @@ func (f *fakeSystemd) Availability(context.Context) types.PodmanSystemdAvailabil
 
 func (f *fakeSystemd) Start(_ context.Context, unit string) error {
 	f.calls = append(f.calls, "start "+unit)
-	return nil
+	return f.startErr
 }
 
 func (f *fakeSystemd) Stop(_ context.Context, unit string) error {
@@ -71,7 +72,7 @@ func (f *fakeSystemd) UnitStatus(_ context.Context, unit string) (types.PodmanUn
 	}, nil
 }
 
-func newTestService(t *testing.T, host *testHost) *Service {
+func newTestServer(t *testing.T, host *testHost) *httptest.Server {
 	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -91,12 +92,20 @@ func newTestService(t *testing.T, host *testHost) *Service {
 		}
 	}))
 	t.Cleanup(server.Close)
+	return server
+}
 
+func newTestService(t *testing.T, host *testHost) *Service {
+	t.Helper()
+
+	server := newTestServer(t, host)
 	return NewService(Config{
 		Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
 			return compat.EngineCompatibilityInfo{Name: host.engine}, nil
 		},
-		Host: server.URL,
+		Host: func() string {
+			return server.URL
+		},
 		NewSystemd: func(rootless bool) libpodman.Systemd {
 			assert.Equal(t, host.rootless, rootless)
 			return host.systemd
@@ -126,6 +135,9 @@ func TestServiceStatusEngineErrorReportsNotDetected(t *testing.T) {
 	svc := NewService(Config{
 		Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
 			return compat.EngineCompatibilityInfo{}, errors.New("daemon unreachable")
+		},
+		Host: func() string {
+			return "unix:///run/podman/podman.sock"
 		},
 	})
 
@@ -173,14 +185,29 @@ func TestServiceStatusOnPodman(t *testing.T) {
 		},
 	}
 
+	var host *testHost
+	var hostURL string
+	svc := NewService(Config{
+		Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
+			return compat.EngineCompatibilityInfo{Name: "podman"}, nil
+		},
+		Host: func() string {
+			return hostURL
+		},
+		NewSystemd: func(bool) libpodman.Systemd {
+			return host.systemd
+		},
+	})
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := newTestService(t, &testHost{
+			host = &testHost{
 				engine:   "podman",
 				version:  tt.version,
 				rootless: true,
 				systemd:  &fakeSystemd{availability: tt.systemd},
-			})
+			}
+			hostURL = newTestServer(t, host).URL
 			assert.Equal(t, tt.want, svc.Status(t.Context()))
 		})
 	}
@@ -231,21 +258,48 @@ func TestServiceAutoUpdateSystemdMode(t *testing.T) {
 }
 
 func TestServiceAutoUpdateSystemdFailureReported(t *testing.T) {
-	systemd := &fakeSystemd{
-		availability: types.PodmanSystemdAvailability{Available: true},
-		statuses: []types.PodmanUnitStatus{
-			{ActiveState: "failed", SubState: "failed"},
+	tests := []struct {
+		startErr error
+		wantErr  error
+		name     string
+	}{
+		{
+			name:     "failed job reported as result",
+			startErr: common.Classify(common.ErrConflict, errors.New("start systemd unit podman-auto-update.service: job failed")),
+		},
+		{
+			name:     "bus error propagates",
+			startErr: common.Classify(common.ErrUnavailable, errors.New("connect to systemd bus")),
+			wantErr:  common.ErrUnavailable,
 		},
 	}
-	svc := newTestService(t, &testHost{
-		engine:  "podman",
-		version: "5.8.0",
-		systemd: systemd,
-	})
 
-	result, err := svc.AutoUpdate(t.Context(), types.PodmanAutoUpdateOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, []string{"podman-auto-update.service failed: failed"}, result.Errors)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := newTestService(t, &testHost{
+				engine:  "podman",
+				version: "5.8.0",
+				systemd: &fakeSystemd{
+					startErr:     tt.startErr,
+					availability: types.PodmanSystemdAvailability{Available: true},
+					statuses: []types.PodmanUnitStatus{
+						{ActiveState: "failed", SubState: "failed"},
+					},
+				},
+			})
+
+			result, err := svc.AutoUpdate(t.Context(), types.PodmanAutoUpdateOptions{})
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, types.PodmanAutoUpdateModeSystemd, result.Mode)
+			assert.Equal(t, []string{"podman-auto-update.service failed: failed"}, result.Errors)
+			require.NotNil(t, result.Unit)
+			assert.Equal(t, "failed", result.Unit.ActiveState)
+		})
+	}
 }
 
 func TestServiceAutoUpdateRESTModeNotifiesUpdatedContainers(t *testing.T) {
@@ -294,42 +348,57 @@ func TestServiceAutoUpdateUnavailable(t *testing.T) {
 }
 
 func TestServiceContainerUnitAction(t *testing.T) {
-	systemd := &fakeSystemd{availability: types.PodmanSystemdAvailability{Available: true}}
-	svc := newTestService(t, &testHost{
-		engine:  "podman",
-		version: "6.1.0",
-		systemd: systemd,
-		routes: map[string]http.HandlerFunc{
-			"/containers/json": func(w http.ResponseWriter, r *http.Request) {
-				assert.JSONEq(t, `{"label":["PODMAN_SYSTEMD_UNIT"]}`, r.URL.Query().Get("filters"))
-				_, _ = w.Write([]byte(`[
-					{"Id":"abc123def456","Names":["web"],"Labels":{"PODMAN_SYSTEMD_UNIT":"web.service"}},
-					{"Id":"fed654cba321","Names":["spoof"],"Labels":{"PODMAN_SYSTEMD_UNIT":"nginx.service"}}
-				]`))
-			},
-			"/quadlets/json": func(w http.ResponseWriter, _ *http.Request) {
-				_, _ = w.Write([]byte(`[{"Name":"web.container","UnitName":"web.service"}]`))
-			},
-		},
-	})
+	tests := []struct {
+		name    string
+		ref     string
+		want    []string
+		handled bool
+	}{
+		{name: "unique id prefix", ref: "abc123", want: []string{"stop web.service"}, handled: true},
+		{name: "exact id", ref: "abc123def456", want: []string{"stop web.service"}, handled: true},
+		{name: "name with slash", ref: "/web", want: []string{"stop web.service"}, handled: true},
+		{name: "unlabelled name beats managed id prefix", ref: "abc"},
+		{name: "prefix shared with unlabelled container", ref: "cd"},
+		{name: "template instance", ref: "cd1", want: []string{"stop worker@1.service"}, handled: true},
+		{name: "instance quadlet", ref: "solo", want: []string{"stop solo@1.service"}, handled: true},
+		{name: "unmanaged unit label", ref: "spoof"},
+		{name: "no match", ref: "zzz"},
+	}
 
-	handled, err := svc.ContainerUnitAction(t.Context(), "abc123", libpodman.Systemd.Restart)
-	require.NoError(t, err)
-	assert.True(t, handled)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			systemd := &fakeSystemd{availability: types.PodmanSystemdAvailability{Available: true}}
+			svc := newTestService(t, &testHost{
+				engine:  "podman",
+				version: "6.1.0",
+				systemd: systemd,
+				routes: map[string]http.HandlerFunc{
+					"/containers/json": func(w http.ResponseWriter, _ *http.Request) {
+						_, _ = w.Write([]byte(`[
+							{"Id":"abc123def456","Names":["web"],"Labels":{"PODMAN_SYSTEMD_UNIT":"web.service"}},
+							{"Id":"fed654cba321","Names":["spoof"],"Labels":{"PODMAN_SYSTEMD_UNIT":"nginx.service"}},
+							{"Id":"ab7777000222","Names":["abc"]},
+							{"Id":"cd1111000333","Names":["worker"],"Labels":{"PODMAN_SYSTEMD_UNIT":"worker@1.service"}},
+							{"Id":"cd2222000444","Names":["plain"]},
+							{"Id":"ef5555000555","Names":["solo"],"Labels":{"PODMAN_SYSTEMD_UNIT":"solo@1.service"}}
+						]`))
+					},
+					"/quadlets/json": func(w http.ResponseWriter, _ *http.Request) {
+						_, _ = w.Write([]byte(`[
+							{"Name":"web.container","UnitName":"web.service"},
+							{"Name":"worker@.container","UnitName":"worker@.service"},
+							{"Name":"solo@1.container","UnitName":"solo@1.service"}
+						]`))
+					},
+				},
+			})
 
-	handled, err = svc.ContainerUnitAction(t.Context(), "/web", libpodman.Systemd.Stop)
-	require.NoError(t, err)
-	assert.True(t, handled)
-
-	handled, err = svc.ContainerUnitAction(t.Context(), "other", libpodman.Systemd.Start)
-	require.NoError(t, err)
-	assert.False(t, handled)
-
-	handled, err = svc.ContainerUnitAction(t.Context(), "spoof", libpodman.Systemd.Stop)
-	require.NoError(t, err)
-	assert.False(t, handled)
-
-	assert.Equal(t, []string{"restart web.service", "stop web.service"}, systemd.calls)
+			handled, err := svc.ContainerUnitAction(t.Context(), tt.ref, libpodman.Systemd.Stop)
+			require.NoError(t, err)
+			assert.Equal(t, tt.handled, handled)
+			assert.Equal(t, tt.want, systemd.calls)
+		})
+	}
 }
 
 func TestServiceContainerUnitActionFallsBackWithoutQuadletSupport(t *testing.T) {
@@ -374,6 +443,9 @@ func TestServiceGuardQuadletManaged(t *testing.T) {
 	}{
 		{name: "unlabelled", engine: "podman", version: "6.1.0"},
 		{name: "installed quadlet", engine: "podman", version: "6.1.0", unit: "web.service", wantErr: true},
+		{name: "template instance", engine: "podman", version: "6.1.0", unit: "worker@1.service", wantErr: true},
+		{name: "instance quadlet", engine: "podman", version: "6.1.0", unit: "solo@1.service", wantErr: true},
+		{name: "unknown template instance", engine: "podman", version: "6.1.0", unit: "other@1.service"},
 		{name: "stale label", engine: "podman", version: "6.1.0", unit: "gone.service"},
 		{name: "unverifiable before 5.8", engine: "podman", version: "5.4.0", unit: "gone.service", wantErr: true},
 		{name: "docker host", engine: "docker", unit: "web.service"},
@@ -387,7 +459,7 @@ func TestServiceGuardQuadletManaged(t *testing.T) {
 				systemd: &fakeSystemd{},
 				routes: map[string]http.HandlerFunc{
 					"/quadlets/json": func(w http.ResponseWriter, _ *http.Request) {
-						_, _ = w.Write([]byte(`[{"Name":"web.container","UnitName":"web.service"}]`))
+						_, _ = w.Write([]byte(`[{"Name":"web.container","UnitName":"web.service"},{"Name":"worker@.container","UnitName":"worker@.service"},{"Name":"solo@1.container","UnitName":"solo@1.service"}]`))
 					},
 				},
 			})

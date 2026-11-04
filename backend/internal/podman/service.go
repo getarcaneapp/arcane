@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -32,7 +33,7 @@ type (
 		Engine        func(context.Context) (compat.EngineCompatibilityInfo, error)
 		NewSystemd    func(rootless bool) libpodman.Systemd
 		NotifyUpdates func(context.Context, []notifications.ContainerUpdateBatchEntry) error
-		Host          string
+		Host          func() string
 	}
 
 	Service struct {
@@ -45,15 +46,19 @@ type (
 	}
 
 	detector struct {
-		cachedAt  time.Time
-		clientErr error
-
-		client *libpodman.Client
-
-		config Config
-		cached libpodman.Runtime
+		config     Config
+		conn       *hostClient
+		cachedAt   time.Time
+		cachedHost string
+		cached     libpodman.Runtime
 
 		mu sync.Mutex
+	}
+
+	hostClient struct {
+		err    error
+		client *libpodman.Client
+		host   string
 	}
 )
 
@@ -64,12 +69,7 @@ const (
 )
 
 func NewService(cfg Config) *Service {
-	client, clientErr := libpodman.NewClient(cfg.Host)
-	d := &detector{
-		config:    cfg,
-		client:    client,
-		clientErr: clientErr,
-	}
+	d := &detector{config: cfg}
 	return &Service{
 		detector: d,
 		pods:     pods.NewService(d.detect),
@@ -148,20 +148,18 @@ func (s *Service) ContainerUnitAction(ctx context.Context, containerRef string, 
 		return false, nil
 	}
 
-	containers, err := rt.Client.ContainerList(ctx, []string{types.PodmanSystemdUnitLabel}, nil)
+	containers, err := rt.Client.ContainerList(ctx, nil, nil)
 	if err != nil {
-		slog.WarnContext(ctx, "Could not list quadlet-managed containers", "container", containerRef, "error", err)
+		slog.WarnContext(ctx, "Could not list containers", "container", containerRef, "error", err)
 		return false, nil
 	}
 
-	index := slices.IndexFunc(containers, func(c types.PodmanContainer) bool {
-		return strings.HasPrefix(c.ID, containerRef) || slices.Contains(c.Names, strings.TrimPrefix(containerRef, "/"))
-	})
-	if index < 0 {
+	match, found := resolveContainer(containers, containerRef)
+	if !found {
 		return false, nil
 	}
 
-	unit := types.QuadletUnit(containers[index].Labels)
+	unit := types.QuadletUnit(match.Labels)
 	if unit == "" {
 		return false, nil
 	}
@@ -208,9 +206,30 @@ func (s *Service) quadletManaged(ctx context.Context, rt libpodman.Runtime, unit
 	if err != nil {
 		return false, err
 	}
+	name, instance, templated := strings.Cut(unit, "@")
 	return slices.ContainsFunc(installed, func(quadlet types.QuadletDetail) bool {
-		return quadlet.UnitName == unit
+		return quadlet.UnitName == unit || (templated && quadlet.UnitName == name+"@"+path.Ext(instance))
 	}), nil
+}
+
+func resolveContainer(containers []types.PodmanContainer, ref string) (types.PodmanContainer, bool) {
+	if index := slices.IndexFunc(containers, func(c types.PodmanContainer) bool {
+		return c.ID == ref
+	}); index >= 0 {
+		return containers[index], true
+	}
+	if index := slices.IndexFunc(containers, func(c types.PodmanContainer) bool {
+		return slices.Contains(c.Names, strings.TrimPrefix(ref, "/"))
+	}); index >= 0 {
+		return containers[index], true
+	}
+	matches := slices.DeleteFunc(slices.Clone(containers), func(c types.PodmanContainer) bool {
+		return !strings.HasPrefix(c.ID, ref)
+	})
+	if len(matches) != 1 {
+		return types.PodmanContainer{}, false
+	}
+	return matches[0], true
 }
 
 func (s *Service) AutoUpdate(ctx context.Context, opts types.PodmanAutoUpdateOptions) (types.PodmanAutoUpdateResult, error) {
@@ -248,7 +267,8 @@ func (s *Service) AutoUpdate(ctx context.Context, opts types.PodmanAutoUpdateOpt
 		if len(opts.Filters) > 0 || opts.Rollback != nil || opts.TLSVerify != nil || opts.Authfile != "" {
 			return types.PodmanAutoUpdateResult{}, common.Classify(common.ErrBadRequest, errors.New("auto-update filters, rollback, TLS verification and authfile options require Podman 6.2 or later"))
 		}
-		if startErr := rt.Systemd.Start(ctx, autoUpdateUnit); startErr != nil {
+		startErr := rt.Systemd.Start(ctx, autoUpdateUnit)
+		if startErr != nil && !errors.Is(startErr, common.ErrConflict) {
 			return types.PodmanAutoUpdateResult{}, startErr
 		}
 		unit, statusErr := rt.Systemd.UnitStatus(ctx, autoUpdateUnit)
@@ -266,7 +286,7 @@ func (s *Service) AutoUpdate(ctx context.Context, opts types.PodmanAutoUpdateOpt
 		return types.PodmanAutoUpdateResult{
 			Mode:    types.PodmanAutoUpdateModeSystemd,
 			Reports: []types.PodmanAutoUpdateReport{},
-			Errors:  kit.Ternary(unit.ActiveState == "failed", []string{autoUpdateUnit + " failed: " + unit.SubState}, []string{}),
+			Errors:  kit.Ternary(unit.ActiveState == "failed" || startErr != nil, []string{autoUpdateUnit + " failed: " + unit.SubState}, []string{}),
 			Unit:    &unit,
 		}, nil
 	default:
@@ -275,8 +295,9 @@ func (s *Service) AutoUpdate(ctx context.Context, opts types.PodmanAutoUpdateOpt
 }
 
 func (s *detector) detect(ctx context.Context) (libpodman.Runtime, error) {
+	host := s.config.Host()
 	s.mu.Lock()
-	cached, fresh := s.cached, time.Since(s.cachedAt) < detectionTTL
+	cached, fresh := s.cached, s.cachedHost == host && time.Since(s.cachedAt) < detectionTTL
 	s.mu.Unlock()
 	if fresh {
 		return cached, nil
@@ -289,27 +310,38 @@ func (s *detector) detect(ctx context.Context) (libpodman.Runtime, error) {
 	if engine.Name != "podman" {
 		return libpodman.Runtime{}, common.ErrPodmanNotDetected
 	}
-	if s.clientErr != nil {
-		return libpodman.Runtime{}, s.clientErr
+	s.mu.Lock()
+	if s.conn == nil || s.conn.host != host {
+		client, clientErr := libpodman.NewClient(host)
+		s.conn = &hostClient{
+			err:    clientErr,
+			client: client,
+			host:   host,
+		}
+	}
+	conn := s.conn
+	s.mu.Unlock()
+	if conn.err != nil {
+		return libpodman.Runtime{}, conn.err
 	}
 
-	version, err := s.client.Version(ctx)
+	version, err := conn.client.Version(ctx)
 	if err != nil {
 		return libpodman.Runtime{}, err
 	}
-	info, err := s.client.Info(ctx)
+	info, err := conn.client.Info(ctx)
 	if err != nil {
 		return libpodman.Runtime{}, err
 	}
 
 	rt := libpodman.Runtime{
-		Client:   s.client,
+		Client:   conn.client,
 		Version:  version,
 		Rootless: info.Host.Security.Rootless,
 		Systemd:  s.config.NewSystemd(info.Host.Security.Rootless),
 	}
 	s.mu.Lock()
-	s.cached, s.cachedAt = rt, time.Now()
+	s.cached, s.cachedAt, s.cachedHost = rt, time.Now(), host
 	s.mu.Unlock()
 	return rt, nil
 }

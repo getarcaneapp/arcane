@@ -188,7 +188,10 @@ func setupVolumeBackupLifecycleTest(t *testing.T, handler http.Handler) *Service
 	containerService := containerdomain.NewContainerService(containerdomain.ContainerServiceParams{
 		EventService:  eventService,
 		DockerService: dockerService,
-		PodmanService: podman.NewService(podman.Config{Engine: dockerService.Engine}),
+		PodmanService: podman.NewService(podman.Config{
+			Engine: dockerService.Engine,
+			Host:   dockerService.DockerHost,
+		}),
 	})
 	return NewService(Dependencies{
 		Docker:         dockerService,

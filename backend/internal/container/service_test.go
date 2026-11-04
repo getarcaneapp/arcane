@@ -744,91 +744,136 @@ func TestContainerServiceResizeExec(t *testing.T) {
 }
 
 func TestRecreateContainerDaemonCorrelation(t *testing.T) {
-	db := setupProjectTestDB(t)
-	events := event.NewEventService(db, nil, nil)
-	observed := make(chan string, 8)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := dockerTestPath(r.URL.Path)
-		if path == "/version" || path == "/info" {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte("{}"))
-			return
-		}
-		id, name := "old-id", "web"
-		if path == "/containers/create" {
-			id = ""
-		}
-		if path == "/containers/new-id/start" {
-			id = "new-id"
-		}
-		if !events.ShouldSuppressDaemonEvent("container", id, name, "") {
-			t.Errorf("missing correlation before Docker mutation %s", path)
-		}
-		if events.ShouldSuppressDaemonEvent("container", "unrelated", "other", "") {
-			t.Errorf("unrelated container suppressed during %s", path)
-		}
-		observed <- path
-		if path == "/containers/create" {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusCreated)
-			if err := json.MarshalWrite(w, map[string]any{"Id": "new-id", "Warnings": []string{}}); err != nil {
-				t.Errorf("encode container creation response: %v", err)
-			}
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	t.Cleanup(server.Close)
-	kvService := kv.NewKVService(db)
-	svc := NewContainerService(ContainerServiceParams{
-		EventService:  events,
-		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
-		KVService:     kvService,
-	})
-	info := container.InspectResponse{
-		ID:         "old-id",
-		Name:       "/web",
-		State:      &container.State{Running: true},
-		Config:     &container.Config{Image: "app:latest"},
-		HostConfig: &container.HostConfig{},
+	tests := []struct {
+		hostConfig container.HostConfig
+		name       string
+		version    string
+		wantUserns container.UsernsMode
+	}{
+		{
+			name:    "docker",
+			version: `{}`,
+		},
+		{
+			name:       "podman restores keep-id",
+			version:    `{"Platform":{"Name":"Podman Engine"}}`,
+			hostConfig: container.HostConfig{UsernsMode: "private"},
+			wantUserns: "keep-id:uid=1000,gid=1000",
+		},
 	}
-	id, err := svc.recreateContainer(
-		t.Context(),
-		info,
-		"redeploy",
-		"web",
-		info.Config,
-		info.HostConfig,
-		nil,
-		"1.41",
-		event.EventTypeContainerDeploy,
-		types.SystemUser,
-	)
-	require.NoError(t, err)
-	require.Equal(t, "new-id", id)
-	require.Len(t, observed, 5)
-	require.Equal(
-		t,
-		[]string{
-			"/containers/old-id/rename",
-			"/containers/old-id/stop",
-			"/containers/create",
-			"/containers/new-id/start",
-			"/containers/old-id",
-		},
-		[]string{
-			<-observed,
-			<-observed,
-			<-observed,
-			<-observed,
-			<-observed,
-		},
-	)
-	require.True(t, events.ShouldSuppressDaemonEvent("container", "old-id", "", ""))
-	require.True(t, events.ShouldSuppressDaemonEvent("container", "new-id", "", ""))
-	journals, err := kvService.ListByPrefix(t.Context(), redeployJournalKeyPrefix)
-	require.NoError(t, err)
-	require.Empty(t, journals)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupProjectTestDB(t)
+			events := event.NewEventService(db, nil, nil)
+			observed := make(chan string, 8)
+			var createdUserns container.UsernsMode
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				path := dockerTestPath(r.URL.Path)
+				switch {
+				case r.URL.Path == "/v4.0.0/libpod/containers/old-id/json":
+					_, _ = w.Write([]byte(`{"HostConfig":{"IDMappings":{"UidMap":["0:1:1000","1000:0:1"],"GidMap":["0:1:1000","1000:0:1"]}}}`))
+					return
+				case path == "/version":
+					_, _ = w.Write([]byte(tt.version))
+					return
+				case path == "/info":
+					_, _ = w.Write([]byte(`{"CgroupVersion":"2"}`))
+					return
+				}
+				id, name := "old-id", "web"
+				if path == "/containers/create" {
+					id = ""
+				}
+				if path == "/containers/new-id/start" {
+					id = "new-id"
+				}
+				if !events.ShouldSuppressDaemonEvent("container", id, name, "") {
+					t.Errorf("missing correlation before Docker mutation %s", path)
+				}
+				if events.ShouldSuppressDaemonEvent("container", "unrelated", "other", "") {
+					t.Errorf("unrelated container suppressed during %s", path)
+				}
+				observed <- path
+				if path == "/containers/create" {
+					var body struct {
+						HostConfig container.HostConfig
+					}
+					if err := json.UnmarshalRead(r.Body, &body); err != nil {
+						t.Errorf("decode container creation request: %v", err)
+					}
+					createdUserns = body.HostConfig.UsernsMode
+					w.WriteHeader(http.StatusCreated)
+					if err := json.MarshalWrite(w, map[string]any{"Id": "new-id", "Warnings": []string{}}); err != nil {
+						t.Errorf("encode container creation response: %v", err)
+					}
+					return
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			t.Cleanup(server.Close)
+			dockerClient, err := client.New(
+				client.WithHost("tcp://"+server.Listener.Addr().String()),
+				client.WithAPIVersion("1.41"),
+			)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				_ = dockerClient.Close()
+			})
+			kvService := kv.NewKVService(db)
+			svc := NewContainerService(ContainerServiceParams{
+				EventService:  events,
+				DockerService: newSettingsDockerService(t, dockerClient),
+				KVService:     kvService,
+			})
+			info := container.InspectResponse{
+				ID:         "old-id",
+				Name:       "/web",
+				State:      &container.State{Running: true},
+				Config:     &container.Config{Image: "app:latest"},
+				HostConfig: &tt.hostConfig,
+			}
+			id, err := svc.recreateContainer(
+				t.Context(),
+				info,
+				"redeploy",
+				"web",
+				info.Config,
+				info.HostConfig,
+				nil,
+				"1.41",
+				event.EventTypeContainerDeploy,
+				types.SystemUser,
+			)
+			require.NoError(t, err)
+			require.Equal(t, "new-id", id)
+			require.Equal(t, tt.wantUserns, createdUserns)
+			require.Len(t, observed, 5)
+			require.Equal(
+				t,
+				[]string{
+					"/containers/old-id/rename",
+					"/containers/old-id/stop",
+					"/containers/create",
+					"/containers/new-id/start",
+					"/containers/old-id",
+				},
+				[]string{
+					<-observed,
+					<-observed,
+					<-observed,
+					<-observed,
+					<-observed,
+				},
+			)
+			require.True(t, events.ShouldSuppressDaemonEvent("container", "old-id", "", ""))
+			require.True(t, events.ShouldSuppressDaemonEvent("container", "new-id", "", ""))
+			journals, err := kvService.ListByPrefix(t.Context(), redeployJournalKeyPrefix)
+			require.NoError(t, err)
+			require.Empty(t, journals)
+		})
+	}
 }
 
 func TestRecreateContainerRollsBackAfterRequestCancellation(t *testing.T) {
@@ -1889,7 +1934,9 @@ func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTe
 			Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
 				return compat.EngineCompatibilityInfo{Name: "podman"}, nil
 			},
-			Host: libpodServer.URL,
+			Host: func() string {
+				return libpodServer.URL
+			},
 			NewSystemd: func(bool) libpodman.Systemd {
 				return systemd
 			},
