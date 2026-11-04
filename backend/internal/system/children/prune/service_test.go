@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +20,7 @@ import (
 
 	"kit.getarcane.app/docker/streams/bus"
 
+	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
@@ -174,4 +176,163 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
+}
+
+func TestPreparePrunePlanRequestsOnlySelectedUsageTypes(t *testing.T) {
+	var mu sync.Mutex
+	var requested []string
+	service := newPruneTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/system/df") {
+			http.Error(w, "unexpected request "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		mu.Lock()
+		requested = r.URL.Query()["type"]
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"Images":[`+
+			`{"Id":"sha256:dangling","Containers":0,"Size":500,"SharedSize":0},`+
+			`{"Id":"sha256:tagged","Containers":0,"Size":900,"SharedSize":0,"RepoTags":["app:latest"]}]}`)
+	}))
+
+	plan, err := service.preparePrunePlan(t.Context(), types.PruneAllRequest{
+		Images: &types.PruneImagesOptions{Mode: types.PruneImageModeDangling},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []pruneResource{{Kind: "image", ID: "sha256:dangling", Size: 500}}, plan.Resources)
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []string{"image"}, requested)
+}
+
+func TestPreparePrunePlanMarksDiskUsageFailure(t *testing.T) {
+	service := newPruneTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "df failed", http.StatusInternalServerError)
+	}))
+
+	_, err := service.preparePrunePlan(t.Context(), types.PruneAllRequest{
+		Images: &types.PruneImagesOptions{Mode: types.PruneImageModeDangling},
+	})
+	require.ErrorIs(t, err, errDiskUsageUnavailable)
+}
+
+func newPruneTestService(t *testing.T, handler http.Handler) *Service {
+	t.Helper()
+
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	dialer := &net.Dialer{}
+	dockerClient, err := client.New(
+		client.WithHost(server.URL),
+		client.WithAPIVersion("1.41"),
+		client.WithHTTPClient(server.Client()),
+		client.WithDialContext(func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, "tcp", server.Listener.Addr().String())
+		}),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = dockerClient.Close() })
+
+	return NewService(ServiceParams{
+		Location:      time.UTC,
+		DockerService: newSettingsDockerService(t, dockerClient),
+	})
+}
+
+func TestPruneVolumesFallsBackToVolumeListWithoutDiskUsage(t *testing.T) {
+	service, deleted := newVolumeFallbackService(t)
+
+	result, err := service.pruneVolumes(t.Context(), types.PruneVolumesOptions{Mode: types.PruneVolumeModeAll})
+	require.NoError(t, err)
+	require.Equal(t, []string{"orphan"}, result.VolumesDeleted)
+	require.Equal(t, []string{"orphan"}, deleted())
+}
+
+func TestReconcileScheduledPruneReportsInterruptedFallbackWithoutReplaying(t *testing.T) {
+	service, deleted := newVolumeFallbackService(t)
+
+	outcome, err := service.ReconcileScheduledPrune(t.Context(), types.SchedulerRun{
+		EnvironmentID: "0",
+		Outcome: types.SchedulerOutcome{
+			Targets: []types.TargetOutcome{{
+				ResourceType: "prune_fallback",
+				ID:           "prune-fallback",
+				Status:       types.RunStatusRunning,
+				ActivityID:   "activity-1",
+			}},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, types.RunStatusFailed, outcome.Status)
+	require.Equal(t, "activity-1", outcome.ActivityID)
+	require.Empty(t, deleted())
+}
+
+func newVolumeFallbackService(t *testing.T) (*Service, func() []string) {
+	t.Helper()
+
+	var mu sync.Mutex
+	var deleted []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/system/df"):
+			http.Error(w, "df failed", http.StatusInternalServerError)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"Volumes":[`+
+				`{"Name":"orphan","Driver":"local"},`+
+				`{"Name":"arcane-backups","Driver":"local"},`+
+				`{"Name":"helper","Driver":"local","Labels":{"com.getarcaneapp.internal.resource":"true"}}]}`)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `[]`)
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/volumes/"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"Name":"`+path.Base(r.URL.Path)+`","Driver":"local"}`)
+		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/volumes/"):
+			mu.Lock()
+			deleted = append(deleted, path.Base(r.URL.Path))
+			mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected request "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	dialer := &net.Dialer{}
+	dockerClient, err := client.New(
+		client.WithHost(server.URL),
+		client.WithAPIVersion("1.41"),
+		client.WithHTTPClient(server.Client()),
+		client.WithDialContext(func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, "tcp", server.Listener.Addr().String())
+		}),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = dockerClient.Close() })
+
+	gormDB, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&event.Event{}, &activity.Activity{}, &activity.ActivityMessage{}))
+	db := &database.DB{DB: gormDB}
+
+	dockerService := newSettingsDockerService(t, dockerClient)
+	service := NewService(ServiceParams{
+		Location:        time.UTC,
+		DockerService:   dockerService,
+		ActivityService: activity.NewActivityService(db, nil),
+		VolumeService: volume.NewVolumeService(volume.VolumeServiceParams{
+			Config:        &config.Config{},
+			DB:            db,
+			DockerService: dockerService,
+			EventService:  event.NewEventService(db, nil, nil),
+		}),
+	})
+	return service, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(deleted)
+	}
 }
