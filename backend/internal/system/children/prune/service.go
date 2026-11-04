@@ -31,6 +31,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/internal/volume"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/rustic"
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/types/v3"
@@ -709,7 +710,7 @@ func (s *Service) selectPruneImages(req types.PruneAllRequest, usage client.Disk
 	}
 	var resources []pruneResource
 	for _, item := range usage.Images.Items {
-		if item.Containers > int64(imageRefs[item.ID]) ||
+		if item.Containers > int64(imageRefs[item.ID]) || slices.Contains(item.RepoTags, rustic.DefaultImage) ||
 			(req.Images.Mode == types.PruneImageModeDangling && len(item.RepoTags) > 0) ||
 			(!until.IsZero() && !time.Unix(item.Created, 0).Before(until)) {
 			continue
