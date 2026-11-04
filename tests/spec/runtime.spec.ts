@@ -349,15 +349,14 @@ test.describe.serial('Docker runtime identity', () => {
 			await waitForFile(containerName, '/app/data/arcane.db');
 
 			const status = pidOneStatus(containerName);
-			expect(status.uid).toBe('0\t0\t0\t0');
-			expect(status.gid).toBe('0\t0\t0\t0');
+			expect(status.uid).toBe('65532\t65532\t65532\t65532');
+			expect(status.gid).toBe('65532\t65532\t65532\t65532');
 
 			const processStatuses = arcaneProcessStatuses(containerName);
 			expect(
 				processStatuses.some(
 					(status) =>
-						status.pid !== '1' &&
-						status.ppid === '1' &&
+						status.pid === '1' &&
 						status.uid.startsWith('65532\t') &&
 						status.gid.startsWith('65532\t')
 				)
@@ -411,16 +410,8 @@ test.describe.serial('Docker runtime identity', () => {
 			const processStatuses = arcaneProcessStatuses(containerName);
 			expect(
 				processStatuses.some(
-					(status) => status.pid === '1' && status.ppid === '0' && status.uid.startsWith('0\t')
-				)
-			).toBe(true);
-			expect(
-				processStatuses.some(
 					(status) =>
-						status.pid !== '1' &&
-						status.ppid === '1' &&
-						status.uid.startsWith('1001\t') &&
-						status.gid.startsWith('1001\t')
+						status.pid === '1' && status.uid.startsWith('1001\t') && status.gid.startsWith('1001\t')
 				)
 			).toBe(true);
 
@@ -464,8 +455,7 @@ test.describe.serial('Docker runtime identity', () => {
 			expect(
 				processStatuses.some(
 					(status) =>
-						status.pid !== '1' &&
-						status.ppid === '1' &&
+						status.pid === '1' &&
 						status.uid.startsWith('65532\t') &&
 						status.gid.startsWith('65532\t')
 				)
@@ -555,16 +545,8 @@ test.describe.serial('Docker runtime identity', () => {
 			const processStatuses = arcaneProcessStatuses(containerName);
 			expect(
 				processStatuses.some(
-					(status) => status.pid === '1' && status.ppid === '0' && status.uid.startsWith('0\t')
-				)
-			).toBe(true);
-			expect(
-				processStatuses.some(
 					(status) =>
-						status.pid !== '1' &&
-						status.ppid === '1' &&
-						status.uid.startsWith('1001\t') &&
-						status.gid.startsWith('1001\t')
+						status.pid === '1' && status.uid.startsWith('1001\t') && status.gid.startsWith('1001\t')
 				)
 			).toBe(true);
 		} finally {

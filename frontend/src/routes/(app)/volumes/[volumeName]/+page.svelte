@@ -518,11 +518,60 @@
 		loadSelectedWorkspaceFile();
 	}
 
-	function deleteVolumeWorkspaceFile(relativePath: string) {
+	async function deleteVolumeWorkspaceFile(relativePath: string) {
 		const entry = visibleWorkspaceFiles.find((file) => file.relativePath === relativePath);
 		if (!entry) return;
-		workspaceFileChanges = [...workspaceFileChanges, { operation: 'delete', relativePath, recursive: entry.isDirectory }];
-		removeVolumeWorkspaceState(relativePath);
+		if (
+			workspaceFileChanges.some(
+				(change) =>
+					(change.operation === 'rename' || change.operation === 'move') &&
+					(entry.pending || workspaceFilePathMatches(change.relativePath, relativePath))
+			)
+		) {
+			workspaceFileChanges = [...workspaceFileChanges, { operation: 'delete', relativePath, recursive: entry.isDirectory }];
+			removeVolumeWorkspaceState(relativePath);
+			return;
+		}
+		if (
+			workspaceFileChanges.some(
+				(change) =>
+					(change.operation === 'create_file' || change.operation === 'create_folder') &&
+					workspaceFilePathMatches(relativePath, change.relativePath)
+			)
+		) {
+			workspaceFileChanges = workspaceFileChanges.filter(
+				(change) => !workspaceFilePathMatches(change.relativePath, relativePath)
+			);
+			removeVolumeWorkspaceState(relativePath);
+			return;
+		}
+		const environmentId = currentEnvId;
+		const volumeName = volume?.name;
+		if (!active || !volumeName || !workspaceQuery.data) return;
+		const result = await tryCatch(
+			volumeWorkspaceService.updateWorkspace(
+				volumeName,
+				{
+					fileTreeRevision: workspaceQuery.data.fileTreeRevision,
+					fileChanges: [{ operation: 'delete', relativePath, recursive: entry.isDirectory }]
+				},
+				[],
+				environmentId
+			)
+		);
+		if (!active || environmentId !== currentEnvId || volumeName !== volume?.name) return;
+		await handleApiResultWithCallbacks({
+			result,
+			message: m.common_delete_failed({ resource: entry.name }),
+			onSuccess: (workspace) => {
+				queryClient.setQueryData(queryKeys.volumes.workspace(environmentId, volumeName), workspace);
+				workspaceFileChanges = workspaceFileChanges.filter(
+					(change) => !workspaceFilePathMatches(change.relativePath, relativePath)
+				);
+				removeVolumeWorkspaceState(relativePath);
+				toast.success(m.common_delete_success({ resource: entry.name }), activityToastOptions(workspace.activityId));
+			}
+		});
 	}
 
 	async function stageVolumeUpload(parentPath: string, file: File, overwrite: boolean) {

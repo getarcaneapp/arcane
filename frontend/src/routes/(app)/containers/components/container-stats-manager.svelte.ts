@@ -17,7 +17,7 @@ interface EnvironmentStream {
 
 /** One batched stats socket per environment; samples are keyed by table row key. */
 export class ContainerStatsManager {
-	private streams = new SvelteMap<string, EnvironmentStream>();
+	private streams = new Map<string, EnvironmentStream>();
 	private samples = new SvelteMap<string, ContainerResourceSample>();
 	private history = new SvelteMap<string, ContainerResourceSample[]>();
 	private loadingStates = new SvelteMap<string, boolean>();
@@ -51,7 +51,7 @@ export class ContainerStatsManager {
 
 	/** Table row keys; each container is sampled on its row's environment stream. */
 	set targetIds(value: Set<string>) {
-		const byEnvironment = new SvelteMap(
+		const byEnvironment = new Map(
 			Array.from(
 				Map.groupBy(
 					[...value].flatMap((key) => {
@@ -62,7 +62,7 @@ export class ContainerStatsManager {
 				),
 				([environmentId, entries]): [string, Map<string, string>] => [
 					environmentId,
-					new SvelteMap(entries.map((entry) => [entry.id, entry.key]))
+					new Map(entries.map((entry) => [entry.id, entry.key]))
 				]
 			)
 		);

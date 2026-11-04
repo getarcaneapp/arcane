@@ -1,5 +1,3 @@
-import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-
 import {
 	discardPendingActivityToasts,
 	queueActivityCompletionToast
@@ -183,9 +181,9 @@ function createActivityStore() {
 	let _activeUpdateKeys = $state.raw<ReadonlySet<string>>(new Set());
 	let session = new AbortController();
 	let requestedEnvironments: Record<string, string> = {};
-	const observedStatusById = new SvelteMap<string, ActivityStatus>();
-	const completionToastQueuedIds = new SvelteSet<string>();
-	const activitySubscribers = new SvelteSet<(activities: readonly Activity[]) => void>();
+	const observedStatusById = new Map<string, ActivityStatus>();
+	const completionToastQueuedIds = new Set<string>();
+	const activitySubscribers = new Set<(activities: readonly Activity[]) => void>();
 
 	function setActivitiesInternal(activities: Activity[]) {
 		_activities = activities;

@@ -1,5 +1,4 @@
 import { QueryObserver, type QueryClient } from '@tanstack/svelte-query';
-import { SvelteMap } from 'svelte/reactivity';
 
 import { queryKeys } from '#lib/query/query-keys.js';
 import { settingsService } from '#lib/services/settings-service.js';
@@ -9,8 +8,8 @@ import type { ResolvedSettings } from '#lib/types/ui/settings.js';
 import { isFeatureEnabled, isSwarmFeatureEnabled, isVulnerabilityQuery, resolveFeatures } from '#lib/utils/features.js';
 
 let environments = $state.raw<Record<string, EnvironmentFeatures>>({});
-const unsubscribers = new SvelteMap<string, () => void>();
-const appliedAt = new SvelteMap<string, number>();
+const unsubscribers = new Map<string, () => void>();
+const appliedAt = new Map<string, number>();
 let queryClient: QueryClient | undefined;
 
 function featureQuery(environmentId: string) {

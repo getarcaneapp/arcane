@@ -63,7 +63,7 @@
 	import type { WorkspaceFileChange, WorkspaceFileContent } from '#lib/types/workspace.js';
 	import { cn } from '#lib/utils.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import {
 		composeTreeSplitProps,
@@ -90,6 +90,7 @@
 		planWorkspaceFileMove,
 		workspaceFileBasename,
 		workspaceFileLanguage,
+		workspaceFilePathMatches,
 		remapWorkspaceFileRecord,
 		remapSelectedWorkspaceFileKey,
 		removeWorkspaceFileRecord,
@@ -1472,11 +1473,57 @@
 		remapProjectWorkspaceState(relativePath, newPath);
 	}
 
-	function deleteProjectWorkspaceFile(relativePath: string) {
+	async function deleteProjectWorkspaceFile(relativePath: string) {
 		const entry = projectWorkspaceEntries.find((file) => file.relativePath === relativePath);
 		if (!entry) return;
-		projectWorkspaceChanges = [...projectWorkspaceChanges, { operation: 'delete', relativePath, recursive: entry.isDirectory }];
+		if (
+			projectWorkspaceChanges.some(
+				(change) =>
+					(change.operation === 'rename' || change.operation === 'move') &&
+					(entry.pending || workspaceFilePathMatches(change.relativePath, relativePath))
+			)
+		) {
+			projectWorkspaceChanges = [...projectWorkspaceChanges, { operation: 'delete', relativePath, recursive: entry.isDirectory }];
+			removeProjectWorkspaceState(relativePath);
+			return;
+		}
+		if (
+			projectWorkspaceChanges.some(
+				(change) =>
+					(change.operation === 'create_file' || change.operation === 'create_folder') &&
+					workspaceFilePathMatches(relativePath, change.relativePath)
+			)
+		) {
+			projectWorkspaceChanges = projectWorkspaceChanges.filter(
+				(change) => !workspaceFilePathMatches(change.relativePath, relativePath)
+			);
+			removeProjectWorkspaceState(relativePath);
+			return;
+		}
+		const environmentId = envId;
+		const result = await tryCatch(
+			projectWorkspaceService.updateWorkspace(
+				projectId,
+				{
+					fileTreeRevision: projectWorkspaceQuery.data?.fileTreeRevision ?? '',
+					fileChanges: [{ operation: 'delete', relativePath, recursive: entry.isDirectory }]
+				},
+				[],
+				environmentId
+			)
+		);
+		if (result.error !== null) {
+			toast.error(m.common_delete_failed({ resource: entry.name }), {
+				description: extractApiErrorMessage(result.error)
+			});
+			return;
+		}
+		queryClient.setQueryData(queryKeys.projects.workspace(environmentId, projectId), result.data);
+		projectWorkspaceChanges = projectWorkspaceChanges.filter(
+			(change) => !workspaceFilePathMatches(change.relativePath, relativePath)
+		);
 		removeProjectWorkspaceState(relativePath);
+		toast.success(m.common_delete_success({ resource: entry.name }), activityToastOptions(result.data.activityId));
 	}
 
 	function toggleIncludeFileTab(relativePath: string) {

@@ -1,5 +1,3 @@
-import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 
@@ -41,8 +39,8 @@ function savedColors(): Record<string, string> {
 
 /** Every environment's color: saved picks first, then unique defaults for the rest. */
 function effectiveColors(saved: Record<string, string>): Map<string, string> {
-	const colors = new SvelteMap<string, string>();
-	const used = new SvelteSet<string>();
+	const colors = new Map<string, string>();
+	const used = new Set<string>();
 	for (const [id, color] of Object.entries(saved)) {
 		const normalized = normalizeColor(color);
 		if (used.has(normalized)) continue;

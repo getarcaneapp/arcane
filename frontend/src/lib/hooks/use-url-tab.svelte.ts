@@ -2,7 +2,6 @@ import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import type { ResolvedPathname } from '$app/types';
 import { onMount, untrack } from 'svelte';
-import { SvelteURL } from 'svelte/reactivity';
 
 import type { TabItem } from '#lib/components/tab-bar/index.js';
 import { isInAppPath } from '#lib/utils/auth.js';
@@ -31,7 +30,7 @@ export function useUrlTab<T extends string>({
 	}
 
 	function currentUrl() {
-		return new SvelteURL((page.shallow?.url ?? page.url).href);
+		return new URL((page.shallow?.url ?? page.url).href);
 	}
 
 	function updateUrl(url: URL) {

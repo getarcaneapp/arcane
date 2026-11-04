@@ -1,6 +1,5 @@
 import { invalidate } from '$app/navigation';
 import type { QueryClient } from '@tanstack/svelte-query';
-import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
 import { queryKeys } from '#lib/query/query-keys.js';
 import { STREAM_CHANNEL_EVENTS, streamService } from '#lib/services/stream-service.js';
@@ -67,10 +66,10 @@ function kindDomains(kind: string): readonly string[] {
 
 function createChangeInvalidator() {
 	let queryClient: QueryClient | undefined;
-	const revisions = new SvelteMap<string, EnvironmentChanges>();
+	const revisions = new Map<string, EnvironmentChanges>();
 	let seeded = false;
-	const pending = new SvelteMap<string, number>();
-	const lastRun = new SvelteMap<string, number>();
+	const pending = new Map<string, number>();
+	const lastRun = new Map<string, number>();
 	let timer: ReturnType<typeof setTimeout> | undefined;
 
 	function schedule() {
@@ -81,8 +80,8 @@ function createChangeInvalidator() {
 	function flush() {
 		timer = undefined;
 		const now = Date.now();
-		const due = new SvelteMap<string, Set<string>>();
-		const dueGlobal = new SvelteSet<string>();
+		const due = new Map<string, Set<string>>();
+		const dueGlobal = new Set<string>();
 		let rediscover = false;
 		let eventsDue = false;
 		for (const [key, at] of pending) {
@@ -162,7 +161,7 @@ function createChangeInvalidator() {
 }
 
 function createClientStreamInternal() {
-	const subscribers = new SvelteSet<ChannelSubscriber>();
+	const subscribers = new Set<ChannelSubscriber>();
 	let params: Record<string, string> = {};
 	const changes = createChangeInvalidator();
 

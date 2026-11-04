@@ -1,7 +1,6 @@
 import { refreshAll } from '$app/navigation';
 import { page } from '$app/state';
 import { createQueries, useQueryClient } from '@tanstack/svelte-query';
-import { SvelteSet } from 'svelte/reactivity';
 
 import { environmentSettingsQuery } from '#lib/query/environments.js';
 import { queryKeys } from '#lib/query/query-keys.js';
@@ -43,7 +42,7 @@ export function useEnvironmentSettingsScope(permissions: () => string[]) {
 	);
 	const first = $derived(entries[0]?.settings);
 	const mixedKeys = $derived(
-		new SvelteSet(
+		new Set(
 			(Object.keys(first?.values ?? {}) as SettingKey[]).filter(
 				(key) =>
 					first?.meta[key]?.scope === 'environment' && entries.some(({ settings }) => settings.values[key] !== first.values[key])
