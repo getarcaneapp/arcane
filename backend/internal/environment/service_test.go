@@ -2005,10 +2005,16 @@ func TestEnvironmentService_CreateEnrollmentToken(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, unlimited.MaxUses)
 
-	revealed, err := svc.RevealEnrollmentToken(t.Context(), plain.ID, actor)
+	revealed, err := svc.RevealEnrollmentToken(t.Context(), RevealEnrollmentTokenParams{
+		ID:    plain.ID,
+		Actor: actor,
+	})
 	require.NoError(t, err)
 	assert.Equal(t, plain.Token, revealed.Token)
-	_, err = svc.RevealEnrollmentToken(t.Context(), "missing", actor)
+	_, err = svc.RevealEnrollmentToken(t.Context(), RevealEnrollmentTokenParams{
+		ID:    "missing",
+		Actor: actor,
+	})
 	require.ErrorIs(t, err, common.ErrNotFound)
 
 	var storedSecret string

@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
+
+	"go.uber.org/fx"
 
 	"kit.getarcane.app"
 
@@ -28,6 +31,15 @@ type (
 		mtls               *agent.MTLS
 	}
 
+	EnrollmentServiceParams struct {
+		fx.In
+
+		EnvironmentService *environment.EnvironmentService
+		SwarmService       *swarm.SwarmService
+		EventService       *event.EventService
+		MTLS               *agent.MTLS
+	}
+
 	EnrollParams struct {
 		EnrollmentToken string
 		AgentToken      string
@@ -40,6 +52,8 @@ type (
 	}
 )
 
+const lostEnrollmentReplyWindow = 10 * time.Minute
+
 var (
 	errMTLSEnrollUnavailable = common.Classify(common.ErrNotFound, agent.ErrMTLSEnrollUnavailable)
 	errAgentTokenRequired    = common.Classify(common.ErrUnauthorized, errors.New("agent token required"))
@@ -48,17 +62,12 @@ var (
 	errMTLSEnrollFailed      = errors.New("failed to generate agent mTLS assets")
 )
 
-func NewEnrollmentService(
-	environmentService *environment.EnvironmentService,
-	swarmService *swarm.SwarmService,
-	eventService *event.EventService,
-	mtls *agent.MTLS,
-) *EnrollmentService {
+func NewEnrollmentService(p EnrollmentServiceParams) *EnrollmentService {
 	return &EnrollmentService{
-		environmentService: environmentService,
-		swarmService:       swarmService,
-		eventService:       eventService,
-		mtls:               mtls,
+		environmentService: p.EnvironmentService,
+		swarmService:       p.SwarmService,
+		eventService:       p.EventService,
+		mtls:               p.MTLS,
 	}
 }
 
@@ -78,6 +87,20 @@ func (s *EnrollmentService) Enroll(ctx context.Context, p EnrollParams) (enrolle
 			EnvironmentID: current.ID,
 			Token:         kit.FromPtr(current.AccessToken),
 		}, nil
+	}
+
+	if token.EnvironmentID != nil && token.MaxUses != nil && token.UseCount >= *token.MaxUses &&
+		time.Since(kit.FromPtr(token.LastUsedAt)) < lostEnrollmentReplyWindow {
+		bound, getErr := s.environmentService.GetEnvironmentByID(ctx, *token.EnvironmentID)
+		if getErr != nil {
+			return nil, getErr
+		}
+		if bound.Status == string(environment.EnvironmentStatusPending) && kit.FromPtr(bound.AccessToken) != "" {
+			return &types.AgentEnrollResponse{
+				EnvironmentID: bound.ID,
+				Token:         kit.FromPtr(bound.AccessToken),
+			}, nil
+		}
 	}
 
 	if consumeErr := s.environmentService.ConsumeEnrollmentToken(ctx, token.ID); consumeErr != nil {

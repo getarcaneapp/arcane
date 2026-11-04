@@ -705,7 +705,12 @@ func (h *EnvironmentHandler) CreateEnrollmentToken(ctx context.Context, input *C
 }
 
 func (h *EnvironmentHandler) GetEnrollmentTokenSecret(ctx context.Context, input *GetEnrollmentTokenSecretInput) (*handlerutil.Out[types.EnrollmentTokenSecret], error) {
-	secret, err := h.environmentService.RevealEnrollmentToken(ctx, input.ID, handlerutil.CurrentActor(ctx))
+	ps, _ := middleware.PermissionsFromContext(ctx)
+	secret, err := h.environmentService.RevealEnrollmentToken(ctx, RevealEnrollmentTokenParams{
+		Permissions: ps,
+		ID:          input.ID,
+		Actor:       handlerutil.CurrentActor(ctx),
+	})
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)

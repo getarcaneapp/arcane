@@ -54,6 +54,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/logging"
 	"getarcane.dev/types/v3"
@@ -136,6 +137,12 @@ type (
 		Actor   types.Actor
 	}
 
+	RevealEnrollmentTokenParams struct {
+		Permissions *authz.PermissionSet
+		ID          string
+		Actor       types.Actor
+	}
+
 	AgentDeploymentSnippetsParams struct {
 		MTLS          *agent.MTLS
 		EnvironmentID string
@@ -195,6 +202,7 @@ var (
 	ErrEnvironmentNotFound            = common.Classify(common.ErrNotFound, errors.New("environment not found"))
 	ErrLocalEnvironmentTunnel         = common.Classify(common.ErrValidation, errors.New("local environment has no agent tunnel"))
 	ErrAgentTunnelNotConnected        = common.Classify(common.ErrConflict, errors.New("agent tunnel is not connected"))
+	ErrEnrollmentTokenRevealForbidden = common.Classify(common.ErrForbidden, errors.New("revealing an environment's enrollment token requires the environments:pair permission for that environment"))
 	agentSlugPattern                  = regexp.MustCompile(`[^a-z0-9]+`)
 )
 
@@ -1744,10 +1752,13 @@ func (s *EnvironmentService) DeleteEnrollmentToken(ctx context.Context, id strin
 	return nil
 }
 
-func (s *EnvironmentService) RevealEnrollmentToken(ctx context.Context, id string, actor types.Actor) (*types.EnrollmentTokenSecret, error) {
-	token, secret, err := s.enrollment.Reveal(ctx, id)
+func (s *EnvironmentService) RevealEnrollmentToken(ctx context.Context, p RevealEnrollmentTokenParams) (*types.EnrollmentTokenSecret, error) {
+	token, secret, err := s.enrollment.Reveal(ctx, p.ID)
 	if err != nil {
 		return nil, err
+	}
+	if token.EnvironmentID != nil && !p.Permissions.Allows(authz.PermEnvironmentsPair, *token.EnvironmentID) {
+		return nil, ErrEnrollmentTokenRevealForbidden
 	}
 	if _, eventErr := s.eventService.CreateEvent(ctx, event.CreateEventRequest{
 		Type:          event.EventTypeEnrollmentTokenReveal,
@@ -1757,8 +1768,8 @@ func (s *EnvironmentService) RevealEnrollmentToken(ctx context.Context, id strin
 		ResourceType:  new("enrollment_token"),
 		ResourceID:    new(token.ID),
 		ResourceName:  new(token.Name),
-		UserID:        new(actor.ID),
-		Username:      new(actor.Username),
+		UserID:        new(p.Actor.ID),
+		Username:      new(p.Actor.Username),
 		EnvironmentID: token.EnvironmentID,
 	}); eventErr != nil {
 		slog.WarnContext(ctx, "Failed to record enrollment token event", "tokenId", token.ID, "error", eventErr)

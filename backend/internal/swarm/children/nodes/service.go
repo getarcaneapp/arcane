@@ -281,13 +281,13 @@ func (s *Service) enrollNodeAgent(ctx context.Context, parentEnvironmentID, node
 	if err != nil {
 		return nil, err
 	}
-	candidateEnvs = slices.DeleteFunc(candidateEnvs, func(candidate environment.Environment) bool {
+	liveCandidateEnvs := slices.DeleteFunc(slices.Clone(candidateEnvs), func(candidate environment.Environment) bool {
 		return !s.tunnels.Active(candidate.ID).IsPresent()
 	})
 	agentEnvs = slices.DeleteFunc(agentEnvs, func(bound environment.Environment) bool {
 		return strings.TrimSpace(kit.FromPtr(bound.SwarmNodeID)) != node.ID
 	})
-	coverage, err := s.buildNodeAgentCoverage(ctx, parentEnvironmentID, agentEnvs, candidateEnvs)
+	coverage, err := s.buildNodeAgentCoverage(ctx, parentEnvironmentID, agentEnvs, liveCandidateEnvs)
 	if err != nil {
 		return nil, err
 	}
@@ -297,7 +297,9 @@ func (s *Service) enrollNodeAgent(ctx context.Context, parentEnvironmentID, node
 		return nil, common.Classify(common.ErrConflict, errors.New("this swarm node is already covered by a connected Arcane agent"))
 	case node.Agent.State == types.NodeAgentStateAmbiguous, len(node.Agent.Candidates) > 0:
 		return nil, common.Classify(common.ErrConflict, errors.New("this swarm node is already covered by an unbound Arcane agent; reconcile node agents to bind it"))
-	case len(agentEnvs) > 0:
+	case len(agentEnvs) > 0, slices.ContainsFunc(candidateEnvs, func(candidate environment.Environment) bool {
+		return strings.TrimSpace(kit.FromPtr(candidate.SwarmNodeID)) == node.ID
+	}):
 		return nil, common.Classify(common.ErrConflict, errors.New("this swarm node already has an Arcane environment; enroll it with that environment's enrollment token"))
 	}
 
@@ -313,6 +315,9 @@ func (s *Service) enrollNodeAgent(ctx context.Context, parentEnvironmentID, node
 	}
 	token, err := s.environmentService.RegenerateEnvironmentApiKey(ctx, env, types.SystemUser.ID, types.SystemUser.Username)
 	if err != nil {
+		if deleteErr := s.environmentService.DeleteEnvironment(ctx, env.ID, new(types.SystemUser.ID), new(types.SystemUser.Username)); deleteErr != nil {
+			slog.ErrorContext(ctx, "Failed to remove swarm node agent environment without an API key", "environmentId", env.ID, "error", deleteErr)
+		}
 		return nil, err
 	}
 	return &types.AgentEnrollResponse{

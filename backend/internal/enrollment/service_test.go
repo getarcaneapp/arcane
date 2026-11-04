@@ -118,7 +118,12 @@ func newEnrollmentTestHarness(t *testing.T) enrollmentTestHarness {
 		swarm:       swarmSvc,
 		events:      eventSvc,
 		mtls:        mtls,
-		service:     NewEnrollmentService(envSvc, swarmSvc, eventSvc, mtls),
+		service: NewEnrollmentService(EnrollmentServiceParams{
+			EnvironmentService: envSvc,
+			SwarmService:       swarmSvc,
+			EventService:       eventSvc,
+			MTLS:               mtls,
+		}),
 	}
 }
 
@@ -321,11 +326,21 @@ func TestEnrollmentService_BoundTokenEnrollsIntoItsEnvironment(t *testing.T) {
 	assert.NotEmpty(t, kit.FromPtr(updated.ApiKeyID))
 	assert.Equal(t, "Production", updated.Name)
 
+	retried, err := h.service.Enroll(ctx, EnrollParams{
+		EnrollmentToken: deployment.EnrollmentToken,
+		Request:         types.AgentEnrollRequest{Hostname: "prod-host"},
+	})
+	require.NoError(t, err, "a lost enrollment reply can be retried until the agent connects")
+	assert.Equal(t, enrolled, retried)
+
+	require.NoError(t, h.environment.GetDB().WithContext(ctx).Model(&environment.Environment{}).
+		Where("id = ?", env.ID).
+		Update("status", string(environment.EnvironmentStatusOnline)).Error)
 	_, err = h.service.Enroll(ctx, EnrollParams{
 		EnrollmentToken: deployment.EnrollmentToken,
 		Request:         types.AgentEnrollRequest{Hostname: "other-host"},
 	})
-	require.ErrorIs(t, err, common.ErrUnauthorized, "a deployment token is single-use")
+	require.ErrorIs(t, err, common.ErrUnauthorized, "a deployment token is single-use once its agent connected")
 
 	again, err := h.environment.MintDeploymentSnippets(ctx, env.ID, agentCfg)
 	require.NoError(t, err)
@@ -527,7 +542,12 @@ func TestEnrollmentService_ManagerRejectingSwarmProbeIsNotTheCluster(t *testing.
 func TestEnrollmentService_EnrollMTLS_Unavailable(t *testing.T) {
 	h := newEnrollmentTestHarness(t)
 	h.createAgentEnvironment(t, "env-disabled", "Disabled", "disabled-token")
-	service := NewEnrollmentService(h.environment, h.swarm, h.events, agent.NewMTLS(agent.MTLSConfig{}))
+	service := NewEnrollmentService(EnrollmentServiceParams{
+		EnvironmentService: h.environment,
+		SwarmService:       h.swarm,
+		EventService:       h.events,
+		MTLS:               agent.NewMTLS(agent.MTLSConfig{}),
+	})
 
 	_, err := service.EnrollMTLS(t.Context(), EnrollMTLSParams{
 		AgentToken: "disabled-token",

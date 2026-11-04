@@ -22,7 +22,6 @@ type (
 	AgentParams struct {
 		ManagerURL string
 		Token      string
-		MTLSMode   string
 	}
 )
 
@@ -41,12 +40,6 @@ func Agent(p AgentParams) (string, string) {
 		"ARCANE_AGENT_TRANSPORT=auto",
 		"ARCANE_AGENT_TOKEN=" + p.Token,
 		"ARCANE_MANAGER_API_URL=" + p.ManagerURL,
-	}
-	if mode := agent.NormalizeMTLSMode(p.MTLSMode); mode != agent.MTLSModeDisabled {
-		env = append(env,
-			"ARCANE_AGENT_MTLS_MODE="+mode,
-			"ARCANE_AGENT_MTLS_ASSETS_DIR="+DeploymentSnippetsMTLSPath,
-		)
 	}
 
 	dockerRun := []string{

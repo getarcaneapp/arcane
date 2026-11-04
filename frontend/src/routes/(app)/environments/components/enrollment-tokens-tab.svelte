@@ -20,6 +20,7 @@
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import type { EnrollmentToken, EnrollmentTokenCreate, EnrollmentTokenCreated } from '#lib/types/environment.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatDate, formatRelativeTime } from '#lib/utils/formatting.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -184,18 +185,20 @@
 								</div>
 							</div>
 							<div class="flex shrink-0 items-center gap-1">
-								<ArcaneButton
-									action="base"
-									tone="ghost"
-									size="icon"
-									icon={CopyIcon}
-									customLabel={m.common_copy()}
-									showLabel={false}
-									loading={copyingTokenId === token.id}
-									disabled={copyingTokenId !== null}
-									class="text-muted-foreground"
-									onclick={() => copyToken(token)}
-								/>
+								{#if !token.environmentId || hasPermission('environments:pair', token.environmentId)}
+									<ArcaneButton
+										action="base"
+										tone="ghost"
+										size="icon"
+										icon={CopyIcon}
+										customLabel={m.common_copy()}
+										showLabel={false}
+										loading={copyingTokenId === token.id}
+										disabled={copyingTokenId !== null}
+										class="text-muted-foreground"
+										onclick={() => copyToken(token)}
+									/>
+								{/if}
 								<ArcaneButton
 									action="remove"
 									tone="ghost"

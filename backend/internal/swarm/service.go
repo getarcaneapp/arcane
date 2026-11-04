@@ -153,7 +153,7 @@ func (s *SwarmService) FindClusterManagerEnvironment(ctx context.Context, cluste
 		return mo.None[string](), err
 	}
 	remotes = slices.DeleteFunc(remotes, func(env environment.Environment) bool {
-		return kit.FromPtr(env.ParentEnvironmentID) != "" || !s.tunnels.Active(env.ID).IsPresent()
+		return !s.tunnels.Active(env.ID).IsPresent()
 	})
 	clusterIDs := make([]string, len(remotes))
 	probeErrs := make([]error, len(remotes))
@@ -175,7 +175,7 @@ func (s *SwarmService) FindClusterManagerEnvironment(ctx context.Context, cluste
 		return mo.None[string](), waitErr
 	}
 	if index := slices.Index(clusterIDs, clusterID); index >= 0 {
-		return mo.Some(remotes[index].ID), nil
+		return mo.Some(cmp.Or(kit.FromPtr(remotes[index].ParentEnvironmentID), remotes[index].ID)), nil
 	}
 	if probeErr := errors.Join(probeErrs...); probeErr != nil {
 		slog.WarnContext(ctx, "Could not reach every environment while matching a swarm cluster", "clusterId", clusterID, "error", probeErr)
