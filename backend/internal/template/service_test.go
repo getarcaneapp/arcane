@@ -518,7 +518,8 @@ func minimalSettingsServiceForTest(t *testing.T) *settings.SettingsService {
 
 func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	svc, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+	svc, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    ctx,
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settings.Env{},

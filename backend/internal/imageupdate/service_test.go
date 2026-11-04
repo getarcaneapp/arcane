@@ -2179,7 +2179,8 @@ func newImageUpdateDefaultSettingsService(t *testing.T) *settings.SettingsServic
 	dbWrap := &database.DB{DB: db}
 	settingsEnv, err := settings.LoadEnv()
 	require.NoError(t, err)
-	service, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+	service, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    ctx,
 		DB:     dbWrap,
 		Config: &config.Config{},
 		Env:    settingsEnv,
@@ -3107,7 +3108,8 @@ func (noopActivities) AwaitActivitySlotBounded(context.Context, string, string) 
 
 func newTestNotificationService(t *testing.T, db *database.DB) *notification.NotificationService {
 	t.Helper()
-	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settings.Env{},

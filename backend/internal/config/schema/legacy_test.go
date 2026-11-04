@@ -78,6 +78,7 @@ func TestCheckLegacyEnvWarnsForRetiredNames(t *testing.T) {
 	t.Cleanup(func() {
 		slog.SetDefault(previous)
 	})
+	t.Setenv("DEPOT_TOKEN", "")
 	t.Setenv("JWT_SECRET", "legacy")
 	t.Setenv("ANALYTICS_DISABLED", "true")
 

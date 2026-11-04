@@ -252,7 +252,8 @@ func TestUpdaterService_ApplyPendingNoRecords(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&notification.NotificationSettings{}, &settings.SettingVariable{}))
-	settingsService, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    ctx,
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settings.Env{},
@@ -474,7 +475,8 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 	t.Run("delegates to Arcane image puller", func(t *testing.T) {
 		db := setupProjectTestDB(t)
 		require.NoError(t, db.AutoMigrate(&registry.ContainerRegistry{}, &kv.KVEntry{}))
-		settingsService, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+		settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+			Ctx:    ctx,
 			DB:     db,
 			Config: &config.Config{},
 			Env:    settings.Env{},
@@ -541,7 +543,8 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 				gotAuth = authHeader
 			}
 		})
-		settingsService, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+		settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+			Ctx:    ctx,
 			DB:     db,
 			Config: &config.Config{},
 			Env:    settings.Env{},
@@ -1850,7 +1853,8 @@ func TestSingleUpdatePersistsSuccessfulActivity(t *testing.T) {
 	}))
 	defer server.Close()
 	dockerSvc := newSettingsDockerService(t, newTestDockerClient(t, server))
-	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settings.Env{},
@@ -1928,7 +1932,8 @@ func TestUpdaterService_AutoUpdateDeferral(t *testing.T) {
 			HasUpdate:  true,
 		},
 	}).Error)
-	settingsService, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    ctx,
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settings.Env{},
@@ -2014,7 +2019,8 @@ func TestAggregateHistoryMergesNewestFirst(t *testing.T) {
 
 func newTestNotificationService(t *testing.T, db *database.DB) *notification.NotificationService {
 	t.Helper()
-	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settings.Env{},

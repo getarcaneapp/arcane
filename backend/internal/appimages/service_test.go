@@ -27,7 +27,8 @@ func newServiceForVersion(t *testing.T, version string) (*ApplicationImagesServi
 	gdb, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gdb.AutoMigrate(&settings.SettingVariable{}))
-	settingsSvc, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+	settingsSvc, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
 		DB:     &database.DB{DB: gdb},
 		Config: &config.Config{},
 		Env:    settings.Env{},

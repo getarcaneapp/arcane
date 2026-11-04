@@ -71,6 +71,7 @@ type (
 	SettingsServiceParams struct {
 		fx.In
 
+		Ctx    context.Context
 		DB     *database.DB
 		Config *config.Config
 		Env    Env
@@ -90,27 +91,24 @@ const (
 	LockReasonReadOnly LockReason = "readOnly"
 )
 
-func NewSettingsService(ctx context.Context, p SettingsServiceParams) (*SettingsService, error) {
-	if ctx == nil {
-		return nil, errors.New("settings lifecycle context unavailable")
-	}
+func NewSettingsService(p SettingsServiceParams) (*SettingsService, error) {
 	svc := &SettingsService{
 		db:           p.DB,
 		appConfig:    p.Config,
 		env:          p.Env,
 		effectsWake:  make(chan struct{}, 1),
 		effectsDone:  make(chan struct{}),
-		lifecycleCtx: ctx,
+		lifecycleCtx: p.Ctx,
 		changes:      concurrency.NewSignal[[]types.SettingUpdate](),
 	}
 	if len(p.Env) > 0 {
-		slog.InfoContext(ctx, "Loaded environment settings", "count", len(p.Env))
+		slog.InfoContext(p.Ctx, "Loaded environment settings", "count", len(p.Env))
 	}
 
-	if _, err := EnsureInstanceID(ctx, p.DB); err != nil {
+	if _, err := EnsureInstanceID(p.Ctx, p.DB); err != nil {
 		return nil, fmt.Errorf("failed to setup instance ID: %w", err)
 	}
-	if err := svc.LoadDatabaseSettings(ctx); err != nil {
+	if err := svc.LoadDatabaseSettings(p.Ctx); err != nil {
 		return nil, fmt.Errorf("failed to load settings: %w", err)
 	}
 

@@ -198,7 +198,8 @@ func newVolumeTestSettingsService(t *testing.T) *settings.SettingsService {
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
-	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
 		DB:     &database.DB{DB: gormDB},
 		Config: &config.Config{},
 		Env:    settings.Env{},

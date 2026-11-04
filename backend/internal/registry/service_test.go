@@ -1738,7 +1738,8 @@ func TestClassifyDigestError(t *testing.T) {
 func newRegistryTestService(t *testing.T, db *database.DB, dockerClient registryDaemonGetter, httpClients ...*http.Client) *ContainerRegistryService {
 	t.Helper()
 
-	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settings.Env{},

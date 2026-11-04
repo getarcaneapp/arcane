@@ -64,7 +64,8 @@ func newSettingsServiceForAuthTest(t testing.TB, ctx context.Context, db *databa
 	t.Helper()
 	settingsEnv, err := settings.LoadEnv()
 	require.NoError(t, err)
-	svc, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+	svc, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    ctx,
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settingsEnv,

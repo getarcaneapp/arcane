@@ -40,7 +40,8 @@ func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.D
 	require.NoError(t, err)
 	cfg, err := config.Load()
 	require.NoError(t, err)
-	svc, err := NewSettingsService(ctx, SettingsServiceParams{
+	svc, err := NewSettingsService(SettingsServiceParams{
+		Ctx:    ctx,
 		DB:     db,
 		Config: cfg,
 		Env:    env,

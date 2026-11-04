@@ -171,7 +171,8 @@ func newSettingsServiceForTest(t *testing.T, ctx context.Context, db *database.D
 	t.Helper()
 	settingsEnv, err := settings.LoadEnv()
 	require.NoError(t, err)
-	svc, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+	svc, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    ctx,
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settingsEnv,
@@ -10076,7 +10077,8 @@ func newLifecycleTestService(t *testing.T, db *database.DB) (*LifecycleService, 
 	t.Helper()
 	settingsEnv, err := settings.LoadEnv()
 	require.NoError(t, err)
-	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settingsEnv,
@@ -10570,7 +10572,8 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
 	db := &database.DB{DB: gormDB}
-	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settings.Env{},

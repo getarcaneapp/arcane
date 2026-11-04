@@ -62,7 +62,8 @@ func setupNotificationTestService(t *testing.T) (*database.DB, *NotificationServ
 func newNotificationTestService(t *testing.T, db *database.DB, cfg *config.Config) *NotificationService {
 	t.Helper()
 
-	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
 		DB:     db,
 		Config: cfg,
 		Env:    settings.Env{},

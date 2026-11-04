@@ -202,7 +202,8 @@ func TestResolveSelfUpgradeTargetImage(t *testing.T) {
 			t.Setenv("ARCANE_PROJECTS_DIRECTORY", directory)
 			settingsEnv, err := settings.LoadEnv()
 			require.NoError(t, err)
-			settingsSvc, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+			settingsSvc, err := settings.NewSettingsService(settings.SettingsServiceParams{
+				Ctx:    t.Context(),
 				DB:     db,
 				Config: &config.Config{},
 				Env:    settingsEnv,
@@ -569,7 +570,8 @@ func TestResumeUpgradeJobFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 
 	db := &database.DB{DB: gormDB}
 	require.NoError(t, db.AutoMigrate(&UpgradeJob{}, &event.Event{}, &settings.SettingVariable{}))
-	versionSettings, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+	versionSettings, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    ctx,
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settings.Env{},
@@ -793,7 +795,8 @@ func TestAcquireAgentSlotHonorsParallelSetting(t *testing.T) {
 
 	db := &database.DB{DB: gormDB}
 	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
-	settingsSvc, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+	settingsSvc, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    ctx,
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settings.Env{},
@@ -844,7 +847,8 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
 	db := &database.DB{DB: gormDB}
-	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settings.Env{},

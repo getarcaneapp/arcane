@@ -620,7 +620,8 @@ func newImageTestDockerService(t *testing.T, server *httptest.Server) *docker.Do
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, gdb.AutoMigrate(&settings.SettingVariable{}))
-	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
 		DB:     &database.DB{DB: gdb},
 		Config: &config.Config{},
 		Env:    settings.Env{},

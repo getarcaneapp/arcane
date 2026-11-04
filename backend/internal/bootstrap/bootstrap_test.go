@@ -274,7 +274,8 @@ func newTestSettingsModule(t *testing.T, cfg *config.Config) *settings.Module {
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
 		DB:     &database.DB{DB: db},
 		Config: cfg,
 		Env:    settings.Env{},

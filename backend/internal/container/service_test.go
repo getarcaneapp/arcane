@@ -160,7 +160,8 @@ func TestPaginateContainerProjectGroupsSelectsRequestedPage(t *testing.T) {
 
 func TestContainerSummaryIconsAppliedAfterGrouping(t *testing.T) {
 	db := setupProjectTestDB(t)
-	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settings.Env{},
@@ -999,7 +1000,8 @@ func TestRecoverInterruptedRedeploys(t *testing.T) {
 }
 
 func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
-	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
 		DB:     setupProjectTestDB(t),
 		Config: &config.Config{},
 		Env:    settings.Env{},
@@ -1117,7 +1119,8 @@ func TestContainerServiceGetContainerProcesses(t *testing.T) {
 				}
 			}))
 			t.Cleanup(server.Close)
-			settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+			settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+				Ctx:    t.Context(),
 				DB:     setupProjectTestDB(t),
 				Config: &config.Config{},
 				Env:    settings.Env{},
@@ -1152,7 +1155,8 @@ func TestContainerServiceGetContainerProcessesPropagatesContext(t *testing.T) {
 		close(requestDone)
 	}))
 	t.Cleanup(server.Close)
-	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
 		DB:     setupProjectTestDB(t),
 		Config: &config.Config{},
 		Env:    settings.Env{},
@@ -1300,7 +1304,8 @@ func newResourceSortService(t *testing.T, fixture *resourceStatsServer) *Contain
 	t.Cleanup(server.Close)
 
 	db := setupProjectTestDB(t)
-	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settings.Env{},
@@ -2026,7 +2031,8 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
 	db := &database.DB{DB: gormDB}
-	settingsService, err := settings.NewSettingsService(t.Context(), settings.SettingsServiceParams{
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settings.Env{},

@@ -112,7 +112,8 @@ func newGitOpsSettingsServiceForTest(t testing.TB, ctx context.Context, db *data
 	t.Helper()
 	settingsEnv, err := settings.LoadEnv()
 	require.NoError(t, err)
-	service, err := settings.NewSettingsService(ctx, settings.SettingsServiceParams{
+	service, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    ctx,
 		DB:     db,
 		Config: &config.Config{},
 		Env:    settingsEnv,
