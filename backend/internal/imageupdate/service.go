@@ -606,13 +606,8 @@ func filterImageSummariesByContainerOptOut(images []image.Summary, containers []
 	}
 
 	for _, summary := range images {
-		// A digest name kept beside a real tag (containerd image store) would save a
-		// skipped result under the same image ID and replace the tag's result.
-		hasTag := slices.ContainsFunc(summary.RepoTags, func(imageRef string) bool {
-			return imageRef != "<none>:<none>" && !refs.IsDigestPinnedReference(imageRef)
-		})
 		for _, imageRef := range summary.RepoTags {
-			if hasTag && refs.IsDigestPinnedReference(imageRef) {
+			if refs.IsDigestPinnedReference(imageRef) {
 				continue
 			}
 			if addCandidate(imageRef, summary.ID) {

@@ -689,7 +689,7 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotifications(t *testin
 	require.NoError(t, svcErr)
 
 	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{
-		ID:               "sha256:pending-unnotified",
+		ID:               "pending-unnotified",
 		Repository:       "test/repo",
 		Tag:              "latest",
 		HasUpdate:        true,
@@ -702,7 +702,7 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotifications(t *testin
 	require.Len(t, records, 1)
 	require.EqualValues(t, 1, calls.Load())
 	var reloaded imageupdate.ImageUpdateRecord
-	require.NoError(t, db.First(&reloaded, "id = ?", "sha256:pending-unnotified").Error)
+	require.NoError(t, db.First(&reloaded, "id = ?", "pending-unnotified").Error)
 	assert.True(t, reloaded.NotificationSent)
 }
 
@@ -720,7 +720,7 @@ func TestUpdaterService_PendingImageUpdatesNoProvidersLeavesUnnotified(t *testin
 	require.NoError(t, svcErr)
 
 	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{
-		ID:               "sha256:pending-no-provider",
+		ID:               "pending-no-provider",
 		Repository:       "test/repo",
 		Tag:              "latest",
 		HasUpdate:        true,
@@ -732,7 +732,7 @@ func TestUpdaterService_PendingImageUpdatesNoProvidersLeavesUnnotified(t *testin
 	require.NoError(t, err)
 	require.Len(t, records, 1)
 	var reloaded imageupdate.ImageUpdateRecord
-	require.NoError(t, db.First(&reloaded, "id = ?", "sha256:pending-no-provider").Error)
+	require.NoError(t, db.First(&reloaded, "id = ?", "pending-no-provider").Error)
 	assert.False(t, reloaded.NotificationSent)
 }
 
