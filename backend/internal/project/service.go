@@ -1937,25 +1937,26 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 			if !opts.IncludeUpdateInfo {
 				return nil
 			}
+			configured := s.details.ConfiguredRuntimeServices(ctx, runtimeServices)
 			imageRefs := projects.ImageRefsFromComposeConfigs(composeServices)
 			if len(imageRefs) == 0 {
-				imageRefs = projects.ImageRefsFromRuntimeServices(runtimeServices)
+				imageRefs = projects.ImageRefsFromRuntimeServices(configured)
 			}
 			updateInfoByRef, updateInfoErr := s.imageService.GetUpdateInfoByImageRefs(ctx, imageRefs)
 			if updateInfoErr != nil {
 				slog.WarnContext(ctx, "failed to fetch project update info", "projectId", proj.ID, "projectName", proj.Name, "error", updateInfoErr)
 			}
-			scoped := s.details.ContainerUpdateInfo(ctx, runtimeServices)
+			scoped := s.details.ContainerUpdateInfo(ctx, configured)
 			if len(composeServices) > 0 {
 				return BuildConfiguredUpdateInfo(
 					proj.ID,
 					composeServices,
 					updateInfoByRef,
 					s.details.ServiceUpdateRecords(ctx, []string{proj.ID}),
-					projectdetails.ConfiguredRuntimeServiceUpdateInfo(composeServices, runtimeServices, scoped),
+					projectdetails.ConfiguredRuntimeServiceUpdateInfo(composeServices, configured, scoped),
 				)
 			}
-			return buildUpdateInfoSummary(imageRefs, projectdetails.MergeProjectContainerUpdateInfo(updateInfoByRef, runtimeServices, scoped), nil)
+			return buildUpdateInfoSummary(imageRefs, projectdetails.MergeProjectContainerUpdateInfo(updateInfoByRef, configured, scoped), nil)
 		}(),
 		ArchivedAt:       proj.ArchivedAt,
 		Status:           kit.Ternary(serr == nil && services != nil, listing.ProjectStatus(services), string(proj.Status)),
@@ -2066,7 +2067,11 @@ func (s *ProjectService) enrichProjectsWithUpdateInfo(
 	for _, record := range s.details.ServiceUpdateRecords(ctx, projectIDs) {
 		recordsByProjectID[record.ProjectID] = append(recordsByProjectID[record.ProjectID], record)
 	}
-	scoped := s.details.ContainerUpdateInfo(ctx, slices.Concat(runtimeByIndex...))
+	configuredByIndex := make([][]projecttypes.RuntimeService, len(runtimeByIndex))
+	for i, runtime := range runtimeByIndex {
+		configuredByIndex[i] = s.details.ConfiguredRuntimeServices(ctx, runtime)
+	}
+	scoped := s.details.ContainerUpdateInfo(ctx, slices.Concat(configuredByIndex...))
 	out := make([]projecttypes.Details, 0, len(details))
 	for i, d := range details {
 		out = append(out, projecttypes.Details{ //exhaustruct:enforce
@@ -2083,14 +2088,14 @@ func (s *ProjectService) enrichProjectsWithUpdateInfo(
 						services,
 						updateInfoByRef,
 						recordsByProjectID[d.ID],
-						projectdetails.ConfiguredRuntimeServiceUpdateInfo(services, runtimeByIndex[i], scoped),
+						projectdetails.ConfiguredRuntimeServiceUpdateInfo(services, configuredByIndex[i], scoped),
 					)
 				}
 				refs := imageRefsByProjectID[d.ID]
 				if len(refs) == 0 {
-					refs = projects.ImageRefsFromRuntimeServices(runtimeByIndex[i])
+					refs = projects.ImageRefsFromRuntimeServices(configuredByIndex[i])
 				}
-				return buildUpdateInfoSummary(refs, projectdetails.MergeProjectContainerUpdateInfo(updateInfoByRef, runtimeByIndex[i], scoped), nil)
+				return buildUpdateInfoSummary(refs, projectdetails.MergeProjectContainerUpdateInfo(updateInfoByRef, configuredByIndex[i], scoped), nil)
 			}(),
 			ArchivedAt:         d.ArchivedAt,
 			Status:             d.Status,

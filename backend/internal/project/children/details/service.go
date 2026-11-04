@@ -319,6 +319,21 @@ func MergeProjectContainerUpdateInfo(base map[string]*imagetypes.UpdateInfo, ser
 	return result
 }
 
+func (s *Service) ConfiguredRuntimeServices(ctx context.Context, services []project.RuntimeService) []project.RuntimeService {
+	cli, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return services
+	}
+	resolved := slices.Clone(services)
+	for i := range resolved {
+		resolved[i].Image = imageref.ConfiguredImage(ctx, cli, container.Summary{
+			ID:    resolved[i].ContainerID,
+			Image: resolved[i].Image,
+		})
+	}
+	return resolved
+}
+
 // ConfiguredRuntimeServiceUpdateInfo binds runtime checks to the current Compose source, since labels may predate an edit.
 func ConfiguredRuntimeServiceUpdateInfo(services []types.ServiceConfig, runtime []project.RuntimeService, scoped map[string]*imagetypes.UpdateInfo) map[string]*imagetypes.UpdateInfo {
 	configs := make(map[string]types.ServiceConfig, len(services))
