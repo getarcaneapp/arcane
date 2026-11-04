@@ -4394,5 +4394,13 @@
   "api_reference": "Référence API",
   "api_key_page_description_suffix": "pour plus de détails sur son utilisation.",
   "github_token": "Jeton GitHub",
-  "github_token_description": "Jeton facultatif utilisé pour récupérer les notes de mise à jour des images depuis GitHub. Permet d'augmenter la limite de requêtes de l'API de 60 à 5 000 requêtes par heure."
+  "github_token_description": "Jeton facultatif utilisé pour récupérer les notes de mise à jour des images depuis GitHub. Permet d'augmenter la limite de requêtes de l'API de 60 à 5 000 requêtes par heure.",
+  "image_auto_patch": "Mise à jour automatique des images",
+  "analytics_heartbeat": "Analytics Heartbeat",
+  "docker_client_refresh": "Actualisation du client Docker",
+  "event_cleanup": "Nettoyage après un événement",
+  "upgrade_log_cleanup": "Nettoyage du journal de mise à jour",
+  "expired_sessions_cleanup": "Nettoyage des sessions expirées",
+  "filesystem_watcher": "Surveillant du système de fichiers",
+  "vulnerability_risk": "Risque lié aux vulnérabilités"
 }
