@@ -937,18 +937,22 @@ func (s *UpdaterService) loadPendingImageUpdates(ctx context.Context) ([]updater
 	}
 	s.appendAutoUpdateActivityMessage(ctx, activityIDFromContext(ctx), fmt.Sprintf("Found %d pending image update records", len(records)), "Planning updates", 10)
 
-	// Once container-scoped records exist, an unscoped record applies per running non-tag-policy container of its image.
+	// Image-ID records, and any unscoped record once container-scoped records exist, apply per running non-tag-policy container of that image.
 	var scopedCount int64
 	if err := s.deps.DB.WithContext(ctx).Model(&imageupdate.ImageUpdateRecord{}).Where("container_id <> ?", "").Limit(1).Count(&scopedCount).Error; err != nil {
 		return nil, err
 	}
 	// Resolve each container's policy and normalized configured ref once, not per record.
 	type eligibleContainer struct {
-		id  string
-		ref string
+		id      string
+		ref     string
+		imageID string
+	}
+	imageLevel := func(record imageupdate.ImageUpdateRecord) bool {
+		return record.ContainerID == "" && refs.IsImageIDLikeReference(record.ID)
 	}
 	eligible, err := func() ([]eligibleContainer, error) {
-		if scopedCount == 0 && !isScoped {
+		if scopedCount == 0 && !isScoped && !slices.ContainsFunc(records, imageLevel) {
 			return nil, nil
 		}
 		listed, listErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
@@ -966,7 +970,11 @@ func (s *UpdaterService) loadPendingImageUpdates(ctx context.Context) ([]updater
 			if policyErr != nil || resolved.Strategy == "tag" {
 				continue
 			}
-			matched = append(matched, eligibleContainer{id: cnt.ID, ref: refs.NormalizeImageUpdateRef(configured)})
+			matched = append(matched, eligibleContainer{
+				id:      cnt.ID,
+				ref:     refs.NormalizeImageUpdateRef(configured),
+				imageID: cnt.ImageID,
+			})
 		}
 		return matched, nil
 	}()
@@ -1013,13 +1021,13 @@ func (s *UpdaterService) loadPendingImageUpdates(ctx context.Context) ([]updater
 		}
 	}
 	for _, record := range records {
-		if (scopedCount == 0 && !isScoped) || record.ContainerID != "" {
+		if (scopedCount == 0 && !isScoped && !imageLevel(record)) || record.ContainerID != "" {
 			out = append(out, converted(record, record.ContainerID))
 			continue
 		}
 		recordRef := refs.NormalizeImageUpdateRef(converted(record, "").ImageRef())
 		for _, cnt := range eligible {
-			if cnt.ref == recordRef {
+			if cnt.ref == recordRef && (!imageLevel(record) || cnt.imageID == record.ID) {
 				out = append(out, converted(record, cnt.id))
 			}
 		}
