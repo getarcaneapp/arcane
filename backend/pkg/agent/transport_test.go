@@ -261,11 +261,12 @@ func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel, func
 		require.FailNowf(b, "unexpected failure", "failed to open gRPC stream: %v", err)
 	}
 
-	if sendErr := stream.Send(&tunnelpb.AgentMessage{
-		Payload: &tunnelpb.AgentMessage_Register{
-			Register: &tunnelpb.RegisterRequest{AgentToken: "valid-token", Capabilities: []string{tunnelCapabilityMux}},
-		},
-	}); sendErr != nil {
+	if sendErr := stream.Send(tunnelpb.AgentMessage_builder{
+		Register: tunnelpb.RegisterRequest_builder{
+			AgentToken:   "valid-token",
+			Capabilities: []string{tunnelCapabilityMux},
+		}.Build(),
+	}.Build()); sendErr != nil {
 		_ = conn.Close()
 		cancel()
 		tunnelServer.WaitForCleanupDone()
