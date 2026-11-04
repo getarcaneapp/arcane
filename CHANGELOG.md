@@ -1,3 +1,16 @@
+## v2.17.3
+
+### Bug fixes
+
+- warn at startup when direct agent mode is used ([\#4619](https://github.com/getarcaneapp/arcane/pull/4619) by @kmendell)
+- sort containers by name case-insensitively ([\#4620](https://github.com/getarcaneapp/arcane/pull/4620) by @kmendell)
+- redact secrets from logged request paths ([\#4623](https://github.com/getarcaneapp/arcane/pull/4623) by @kmendell)
+- mount CA bundle into Rustic container via staged volume ([\#4621](https://github.com/getarcaneapp/arcane/pull/4621) by @kmendell)
+- skip superseded workflow cancel when instance is missing ([\#4624](https://github.com/getarcaneapp/arcane/pull/4624) by @kmendell)
+- drop stale image-level pending updates before planning ([\#4637](https://github.com/getarcaneapp/arcane/pull/4637) by @kmendell)
+- show configured image for compose services ([\#4638](https://github.com/getarcaneapp/arcane/pull/4638) by @kmendell)
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.17.2...v2.17.3
 ## v2.17.2
 
 ### Bug fixes
