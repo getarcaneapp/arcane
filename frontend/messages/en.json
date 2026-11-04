@@ -4394,5 +4394,13 @@
   "api_reference": "API Reference",
   "api_key_page_description_suffix": "for usage details.",
   "github_token": "GitHub Token",
-  "github_token_description": "Optional token used to fetch image release notes from GitHub. Raises the API rate limit from 60 to 5,000 requests per hour."
+  "github_token_description": "Optional token used to fetch image release notes from GitHub. Raises the API rate limit from 60 to 5,000 requests per hour.",
+  "image_auto_patch": "Image Auto Patch",
+  "analytics_heartbeat": "Analytics Heartbeat",
+  "docker_client_refresh": "Docker Client Refresh",
+  "event_cleanup": "Event Cleanup",
+  "upgrade_log_cleanup": "Upgrade Log Cleanup",
+  "expired_sessions_cleanup": "Expired Sessions Cleanup",
+  "filesystem_watcher": "Filesystem Watcher",
+  "vulnerability_risk": "Vulnerability Risk"
 }

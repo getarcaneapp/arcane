@@ -45,7 +45,21 @@ export function jobNameLabel(job: JobStatus): string {
 	const labels: Record<string, () => string> = {
 		'gitops-sync': m.gitops,
 		'volume-backup': m.jobs_volume_backup_group,
-		'system-backup': m.jobs_system_backup_group
+		'system-backup': m.jobs_system_backup_group,
+		'environment-health': m.jobs_health_check,
+		'auto-update': m.auto_update,
+		'image-polling': m.image_update_watcher,
+		'scheduled-prune': m.scheduled_prune,
+		'auto-heal': m.notifications_test_auto_heal_notification,
+		'vulnerability-scan': m.activity_type_vulnerability_scan,
+		'vulnerability-risk': m.vulnerability_risk,
+		'auto-patch': m.image_auto_patch,
+		'analytics-heartbeat': m.analytics_heartbeat,
+		'docker-client-refresh': m.docker_client_refresh,
+		'event-cleanup': m.event_cleanup,
+		'upgrade-log-cleanup': m.upgrade_log_cleanup,
+		'expired-sessions-cleanup': m.expired_sessions_cleanup,
+		'filesystem-watcher': m.filesystem_watcher
 	};
 	if (group === 'environment-health' && target.length) return m.jobs_health_check();
 	const label = labels[group]?.();
