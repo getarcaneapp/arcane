@@ -4394,5 +4394,13 @@
   "api_reference": "API-útmutató",
   "api_key_page_description_suffix": "a használat részleteiről.",
   "github_token": "GitHub-token",
-  "github_token_description": "Opcionális token, amely a GitHubról származó képkiadási megjegyzések lekéréséhez szolgál. Az API kéréskorlátját óránként 60-ról 5 000 kérésre emeli."
+  "github_token_description": "Opcionális token, amely a GitHubról származó képkiadási megjegyzések lekéréséhez szolgál. Az API kéréskorlátját óránként 60-ról 5 000 kérésre emeli.",
+  "image_auto_patch": "Kép automatikus javítása",
+  "analytics_heartbeat": "Analytics Heartbeat",
+  "docker_client_refresh": "A Docker-kliens frissítése",
+  "event_cleanup": "Események utómunkálatai",
+  "upgrade_log_cleanup": "A frissítési napló tisztítása",
+  "expired_sessions_cleanup": "A lejárt munkamenetek törlése",
+  "filesystem_watcher": "Fájlrendszer-figyelő",
+  "vulnerability_risk": "Sebezhetőségi kockázat"
 }
