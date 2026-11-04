@@ -4394,5 +4394,13 @@
   "api_reference": "Dokumentacja API",
   "api_key_page_description_suffix": "aby uzyskać szczegółowe informacje na temat użytkowania.",
   "github_token": "Token GitHub",
-  "github_token_description": "Opcjonalny token służący do pobierania informacji o wydaniu obrazu z serwisu GitHub. Zwiększa limit żądań API z 60 do 5 000 na godzinę."
+  "github_token_description": "Opcjonalny token służący do pobierania informacji o wydaniu obrazu z serwisu GitHub. Zwiększa limit żądań API z 60 do 5 000 na godzinę.",
+  "image_auto_patch": "Automatyczna aktualizacja obrazu",
+  "analytics_heartbeat": "Analytics Heartbeat",
+  "docker_client_refresh": "Odświeżenie klienta Docker",
+  "event_cleanup": "Sprzątanie po wydarzeniu",
+  "upgrade_log_cleanup": "Czyszczenie dziennika aktualizacji",
+  "expired_sessions_cleanup": "Czyszczenie wygasłych sesji",
+  "filesystem_watcher": "Monitor systemu plików",
+  "vulnerability_risk": "Ryzyko związane z lukami w zabezpieczeniach"
 }
