@@ -80,14 +80,22 @@ func TestEnrollSwarmAgent_SendsStoredTokenAndKeepsItWhenRefused(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, kvService.Set(t.Context(), enrolledAgentTokenKey, encrypted))
 
+	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "stored-token", r.Header.Get(middleware.HeaderAgentToken))
+		if calls.Add(1) == 1 {
+			http.Error(w, "manager is starting", http.StatusServiceUnavailable)
+			return
+		}
 		http.Error(w, "invalid swarm enrollment token", http.StatusUnauthorized)
 	}))
 	defer server.Close()
 
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
 	cfg := &config.Config{ManagerApiUrl: server.URL, AgentEnrollmentToken: "revoked-secret"}
-	assert.Equal(t, "stored-token", enrollSwarmAgent(t.Context(), cfg, kvService, localSwarmNodeID))
+	assert.Equal(t, "stored-token", enrollSwarmAgent(ctx, cfg, kvService, localSwarmNodeID))
+	assert.Equal(t, int32(2), calls.Load(), "an unavailable manager is retried; only a refusal falls back to the stored token")
 
 	stillStored, _, err := kvService.Get(t.Context(), enrolledAgentTokenKey)
 	require.NoError(t, err)

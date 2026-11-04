@@ -14,7 +14,6 @@ import (
 
 	"github.com/cenkalti/backoff/v5"
 
-	"kit.getarcane.app"
 	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/config"
@@ -25,7 +24,16 @@ import (
 	"getarcane.dev/types/v3"
 )
 
+type enrollmentRejectedError struct {
+	detail string
+	status int
+}
+
 const enrolledAgentTokenKey = "agent.enrolledToken"
+
+func (e *enrollmentRejectedError) Error() string {
+	return fmt.Sprintf("enrollment failed with status %d: %s", e.status, e.detail)
+}
 
 func enrollSwarmAgent(ctx context.Context, cfg *config.Config, kvService *kv.KVService, localNodeID func(context.Context) (string, error)) string {
 	stored := ""
@@ -38,7 +46,13 @@ func enrollSwarmAgent(ctx context.Context, cfg *config.Config, kvService *kv.KVS
 	}
 
 	token, err := backoff.Retry(ctx, func() (string, error) {
-		return requestSwarmAgentEnrollment(ctx, cfg, stored, localNodeID)
+		token, err := requestSwarmAgentEnrollment(ctx, cfg, stored, localNodeID)
+		// Fall back to the stored token only on a definitive refusal; an unreachable manager can't confirm the token still works.
+		if rejected, ok := errors.AsType[*enrollmentRejectedError](err); ok && stored != "" &&
+			rejected.status < http.StatusInternalServerError && rejected.status != http.StatusRequestTimeout && rejected.status != http.StatusTooManyRequests {
+			return "", backoff.Permanent(err)
+		}
+		return token, err
 	},
 		backoff.WithBackOff(&backoff.ExponentialBackOff{
 			InitialInterval:     max(time.Duration(cfg.AgentReconnectInterval)*time.Second, time.Second),
@@ -47,14 +61,13 @@ func enrollSwarmAgent(ctx context.Context, cfg *config.Config, kvService *kv.KVS
 			MaxInterval:         5 * time.Minute,
 		}),
 		backoff.WithMaxElapsedTime(0),
-		backoff.WithMaxTries(kit.Ternary(stored == "", uint(0), uint(1))),
 		backoff.WithNotify(func(err error, next time.Duration) {
 			slog.WarnContext(ctx, "Swarm agent enrollment failed; retrying", "error", err, "retryIn", next.String())
 		}),
 	)
 	if err != nil {
 		if stored != "" {
-			slog.WarnContext(ctx, "Swarm agent enrollment failed; using the stored agent token", "error", err)
+			slog.WarnContext(ctx, "Manager refused swarm agent enrollment; using the stored agent token", "error", err)
 		}
 		return stored
 	}
@@ -108,7 +121,7 @@ func requestSwarmAgentEnrollment(ctx context.Context, cfg *config.Config, stored
 
 	if resp.StatusCode != http.StatusOK {
 		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return "", fmt.Errorf("enrollment failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(detail)))
+		return "", &enrollmentRejectedError{status: resp.StatusCode, detail: strings.TrimSpace(string(detail))}
 	}
 
 	var enrolled types.ApiResponse[types.NodeAgentEnrollResponse]
