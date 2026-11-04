@@ -4394,5 +4394,13 @@
   "api_reference": "Справочник по API",
   "api_key_page_description_suffix": "подробнее об использовании.",
   "github_token": "Токен GitHub",
-  "github_token_description": "Дополнительный токен, используемый для получения информации об обновлениях образов с GitHub. Позволяет увеличить лимит запросов к API с 60 до 5 000 запросов в час."
+  "github_token_description": "Дополнительный токен, используемый для получения информации об обновлениях образов с GitHub. Позволяет увеличить лимит запросов к API с 60 до 5 000 запросов в час.",
+  "image_auto_patch": "Автоматическое исправление изображений",
+  "analytics_heartbeat": "Аналитика Heartbeat",
+  "docker_client_refresh": "Обновление клиента Docker",
+  "event_cleanup": "Очистка после мероприятия",
+  "upgrade_log_cleanup": "Очистка журнала обновлений",
+  "expired_sessions_cleanup": "Очистка просроченных сессий",
+  "filesystem_watcher": "Наблюдатель за файловой системой",
+  "vulnerability_risk": "Риск уязвимости"
 }
