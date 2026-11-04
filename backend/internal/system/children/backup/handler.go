@@ -6,11 +6,16 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"kit.getarcane.app"
+
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
 )
 
@@ -35,9 +40,15 @@ type (
 		Sort         string `query:"sort" default:"createdAt"`
 		Order        string `query:"order" default:"desc"`
 		Type         string `query:"type"`
+		ResourceType string `query:"resourceType" doc:"Resource filter: system or volume"`
 		Start        int    `query:"start" default:"0"`
 		Limit        int    `query:"limit" default:"20"`
 		IncludeTotal bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
+	}
+
+	ListEnvironmentBackupHistoryInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ListBackupHistoryInput
 	}
 
 	SystemBackupPoliciesOutput struct {
@@ -108,6 +119,8 @@ func (h *Handler) ListHistory(ctx context.Context, input *ListBackupHistoryInput
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	params.SkipCount = !input.IncludeTotal
 	params.Filters["type"] = input.Type
+	ps, _ := middleware.PermissionsFromContext(ctx)
+	params.Filters["resourceType"] = kit.Ternary(ps.Allows(authz.PermSystemBackupsList, ""), input.ResourceType, "volume")
 	history, page, err := h.service.ListBackupHistory(ctx, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -119,6 +132,17 @@ func (h *Handler) ListHistory(ctx context.Context, input *ListBackupHistoryInput
 			Pagination: handlerutil.PaginationResponse(page),
 		},
 	}, nil
+}
+
+func (h *Handler) ListEnvironmentHistory(ctx context.Context, input *ListEnvironmentBackupHistoryInput) (*handlerutil.Page[types.SystemVolumeBackupHistoryEntry], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); !ok {
+		return h.ListHistory(ctx, &input.ListBackupHistoryInput)
+	}
+	body, err := h.service.AggregateBackupHistory(ctx, handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search))
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &handlerutil.Page[types.SystemVolumeBackupHistoryEntry]{Body: body}, nil
 }
 
 func (h *Handler) List(ctx context.Context, input *ListSystemBackupsInput) (*handlerutil.Page[types.SystemBackupRun], error) {

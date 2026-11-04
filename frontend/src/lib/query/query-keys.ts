@@ -144,7 +144,8 @@ export const queryKeys = {
 	},
 	systemBackups: {
 		historyPrefix: () => ['system-backups', 'history'] as const,
-		history: (options: SearchPaginationSortRequest) => ['system-backups', 'history', stableSerialize(options)] as const,
+		history: (scope: string, options: SearchPaginationSortRequest) =>
+			['system-backups', 'history', scope, stableSerialize(options)] as const,
 		policies: () => ['system-backups', 'policies'] as const,
 		systemVolumeConfig: () => ['system-backups', 'system-volume-config'] as const
 	},

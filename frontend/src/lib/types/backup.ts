@@ -138,6 +138,8 @@ export type SystemVolumeBackupOption = {
 };
 
 export type SystemVolumeBackupHistoryEntry = {
+	environmentId?: string;
+	environmentName?: string;
 	createdAt: string;
 	remoteAvailable?: boolean;
 	id: string;

@@ -10,12 +10,12 @@
 	import BackupTriggerCell from '#lib/components/arcane-table/cells/backup-trigger-cell.svelte';
 	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
 	import RemoveMenuItem from '#lib/components/arcane-table/cells/remove-menu-item.svelte';
+	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { BackupIcon, RestartIcon, UploadIcon, ClockIcon, VolumesIcon, FileTextIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type { SystemVolumeBackupHistoryEntry } from '#lib/types/backup.js';
 	import type { Paginated } from '#lib/types/base.js';
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
@@ -27,7 +27,10 @@
 		backupStatusVariant,
 		backupTriggerLabel
 	} from '#lib/utils/backups.js';
+	import type { EnvironmentPage, EnvironmentRow } from '#lib/utils/environments.js';
 	import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
+
+	type BackupRow = EnvironmentRow<SystemVolumeBackupHistoryEntry>;
 
 	let {
 		backups,
@@ -41,15 +44,15 @@
 		onOpenVolume,
 		emptyState
 	}: {
-		backups: Paginated<SystemVolumeBackupHistoryEntry>;
+		backups: EnvironmentPage<Paginated<SystemVolumeBackupHistoryEntry>>;
 		requestOptions: SearchPaginationSortRequest;
 		onRetry: () => Promise<unknown>;
-		onRestore: (backup: SystemVolumeBackupHistoryEntry) => void;
-		onRestoreFiles: (backup: SystemVolumeBackupHistoryEntry) => void;
-		onRestoreVolume?: (backup: SystemVolumeBackupHistoryEntry) => void;
-		onUpload: (backup: SystemVolumeBackupHistoryEntry) => void;
-		onDelete: (backup: SystemVolumeBackupHistoryEntry) => void;
-		onOpenVolume: (backup: SystemVolumeBackupHistoryEntry) => void;
+		onRestore: (backup: BackupRow) => void;
+		onRestoreFiles: (backup: BackupRow) => void;
+		onRestoreVolume?: (backup: BackupRow) => void;
+		onUpload: (backup: BackupRow) => void;
+		onDelete: (backup: BackupRow) => void;
+		onOpenVolume: (backup: BackupRow) => void;
 		emptyState?: Snippet;
 	} = $props();
 
@@ -57,8 +60,8 @@
 	const canUploadBackups = $derived(hasPermission('system-backups:upload', GLOBAL_SCOPE));
 	const canDeleteBackups = $derived(hasPermission('system-backups:delete', GLOBAL_SCOPE));
 	const canRestoreBackups = $derived(isGlobalAdmin());
-	const canRestoreVolume = $derived(hasPermission('volumes:backup', LOCAL_DOCKER_ENVIRONMENT_ID));
 	const columns = [
+		...environmentColumns<BackupRow>(),
 		{ accessorKey: 'id', title: m.system_backups_id(), sortable: false, cell: IdCell },
 		{ accessorKey: 'resourceName', title: m.backups_resource(), sortable: true, cell: ResourceCell },
 		{
@@ -71,26 +74,23 @@
 		...backupRunColumns({ status: StatusCell, trigger: TriggerCell, destination: DestinationCell, size: SizeCell }),
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cellComponent: CreatedAtCell },
 		{ accessorKey: 'error', title: m.common_error(), sortable: false, cell: ErrorCell }
-	] satisfies ColumnSpec<SystemVolumeBackupHistoryEntry>[];
+	] satisfies ColumnSpec<BackupRow>[];
 	const mobileFields = [{ id: 'resourceName', label: m.backups_resource(), defaultVisible: true }, ...backupRunMobileFields()];
 </script>
 
-{#snippet IdCell({ item }: { item: SystemVolumeBackupHistoryEntry })}<code class="text-xs">{item.id.slice(0, 18)}…</code
-	>{/snippet}
-{#snippet ResourceCell({ item }: { item: SystemVolumeBackupHistoryEntry })}<span class="font-medium">{item.resourceName}</span
-	>{/snippet}
-{#snippet TypeCell({ item }: { item: SystemVolumeBackupHistoryEntry })}
+{#snippet IdCell({ item }: { item: BackupRow })}<code class="text-xs">{item.id.slice(0, 18)}…</code>{/snippet}
+{#snippet ResourceCell({ item }: { item: BackupRow })}<span class="font-medium">{item.resourceName}</span>{/snippet}
+{#snippet TypeCell({ item }: { item: BackupRow })}
 	<BackupManagementCell type={item.type} />
 {/snippet}
-{#snippet StatusCell({ item }: { item: SystemVolumeBackupHistoryEntry })}<BackupStatusCell status={item.status} />{/snippet}
-{#snippet TriggerCell({ item }: { item: SystemVolumeBackupHistoryEntry })}<BackupTriggerCell trigger={item.trigger} />{/snippet}
-{#snippet DestinationCell({ item }: { item: SystemVolumeBackupHistoryEntry })}<BackupDestinationCell {item} />{/snippet}
-{#snippet SizeCell({ item }: { item: SystemVolumeBackupHistoryEntry })}<BackupSizeCell size={item.size} />{/snippet}
-{#snippet ErrorCell({ item }: { item: SystemVolumeBackupHistoryEntry })}<span class="max-w-72 truncate text-destructive"
-		>{item.error || '-'}</span
+{#snippet StatusCell({ item }: { item: BackupRow })}<BackupStatusCell status={item.status} />{/snippet}
+{#snippet TriggerCell({ item }: { item: BackupRow })}<BackupTriggerCell trigger={item.trigger} />{/snippet}
+{#snippet DestinationCell({ item }: { item: BackupRow })}<BackupDestinationCell {item} />{/snippet}
+{#snippet SizeCell({ item }: { item: BackupRow })}<BackupSizeCell size={item.size} />{/snippet}
+{#snippet ErrorCell({ item }: { item: BackupRow })}<span class="max-w-72 truncate text-destructive">{item.error || '-'}</span
 	>{/snippet}
 
-{#snippet RowActions({ item }: { item: SystemVolumeBackupHistoryEntry })}
+{#snippet RowActions({ item }: { item: BackupRow })}
 	<RowActionsMenu>
 		{#if item.resourceType === 'system'}
 			{#if canRestoreBackups}
@@ -108,7 +108,7 @@
 				<RemoveMenuItem onclick={() => onDelete(item)} label={m.common_delete()} />
 			{/if}
 		{:else}
-			{#if onRestoreVolume && canRestoreVolume}
+			{#if onRestoreVolume && hasPermission('volumes:backup', item.environmentId)}
 				<DropdownMenu.Item onclick={() => onRestoreVolume(item)} disabled={item.status !== 'succeeded'}
 					><RestartIcon class="size-4" />{m.volumes_backups_restore()}</DropdownMenu.Item
 				>
@@ -120,13 +120,7 @@
 	</RowActionsMenu>
 {/snippet}
 
-{#snippet MobileCard({
-	item,
-	mobileFieldVisibility
-}: {
-	item: SystemVolumeBackupHistoryEntry;
-	mobileFieldVisibility: MobileFieldVisibility;
-})}
+{#snippet MobileCard({ item, mobileFieldVisibility }: { item: BackupRow; mobileFieldVisibility: MobileFieldVisibility })}
 	<UniversalMobileCard
 		{item}
 		icon={{ component: BackupIcon, variant: 'blue' }}

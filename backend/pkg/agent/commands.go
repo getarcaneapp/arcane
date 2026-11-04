@@ -149,6 +149,7 @@ var (
 		{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}/upload", CommandName: "volume.backup.upload"},
 		{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/{volumeName}/backups/upload", CommandName: "volume.backup.import"},
 		{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/backups/discover", CommandName: "volume.backup.discover"},
+		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/backups/history", CommandName: "backup.history.list"},
 
 		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/builds/browse", CommandName: "build_workspace.browse.list"},
 		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/builds/browse/content", CommandName: "build_workspace.browse.read_file"},

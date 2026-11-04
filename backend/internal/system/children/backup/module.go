@@ -10,6 +10,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/system/children/backup/children/volumes"
 	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
 // RegisterRoutes registers the system backup endpoints, including the
@@ -42,6 +43,22 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		},
 		authz.PermSystemBackupsList,
 		h.ListHistory,
+	)
+	middleware.RegisterWithPermission(
+		api,
+		huma.Operation{
+			OperationID: "list-environment-backup-history",
+			Method:      http.MethodGet,
+			Path:        "/environments/{id}/backups/history",
+			Summary:     "List an environment's backup history",
+			Tags: []string{
+				"System Backups",
+			},
+			Security: handlerutil.DefaultOperationSecurity(),
+			Metadata: map[string]any{authz.MetaEnvironmentAggregate: true},
+		},
+		authz.PermVolumesRead,
+		h.ListEnvironmentHistory,
 	)
 	middleware.RegisterWithPermission(
 		api,
