@@ -4394,5 +4394,13 @@
   "api_reference": "API-Referenz",
   "api_key_page_description_suffix": "Weitere Informationen zur Verwendung.",
   "github_token": "GitHub-Token",
-  "github_token_description": "Optionales Token zum Abrufen der Release-Hinweise zu Images von GitHub. Erhöht das API-Ratenlimit von 60 auf 5.000 Anfragen pro Stunde."
+  "github_token_description": "Optionales Token zum Abrufen der Release-Hinweise zu Images von GitHub. Erhöht das API-Ratenlimit von 60 auf 5.000 Anfragen pro Stunde.",
+  "image_auto_patch": "Bild-Auto-Patch",
+  "analytics_heartbeat": "Analytics Heartbeat",
+  "docker_client_refresh": "Docker-Client aktualisieren",
+  "event_cleanup": "Bereinigung nach der Veranstaltung",
+  "upgrade_log_cleanup": "Bereinigung des Upgrade-Protokolls",
+  "expired_sessions_cleanup": "Bereinigung abgelaufener Sitzungen",
+  "filesystem_watcher": "Dateisystem-Überwachung",
+  "vulnerability_risk": "Sicherheitsrisiko"
 }
