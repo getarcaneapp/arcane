@@ -95,11 +95,7 @@ func BuildImageUpdateNotificationMessage(format MessageFormat, environmentName, 
 			return message.String()
 		}
 
-		current, latest := updateInfo.CurrentVersion, updateInfo.LatestVersion
-		if (updateInfo.UpdateType != "tag" || (current == "" && latest == "")) && (updateInfo.CurrentDigest != "" || updateInfo.LatestDigest != "") {
-			current = shortenNotificationDigest(updateInfo.CurrentDigest)
-			latest = shortenNotificationDigest(updateInfo.LatestDigest)
-		}
+		current, latest := notificationUpdateVersions(updateInfo)
 		if !writeNtfyTransition(&message, current, latest, "") {
 			fmt.Fprintln(&message, "⚠️ Update available")
 		}
@@ -117,12 +113,13 @@ func BuildImageUpdateNotificationMessage(format MessageFormat, environmentName, 
 	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Image"), imageRef)
 	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Status"), updateStatus)
 	if updateInfo != nil {
+		current, latest := notificationUpdateVersions(updateInfo)
 		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Update Type"), updateInfo.UpdateType)
-		if updateInfo.CurrentDigest != "" {
-			fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Current Digest"), formatNotificationCode(format, updateInfo.CurrentDigest))
+		if current != "" {
+			fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Current"), formatNotificationCode(format, current))
 		}
-		if updateInfo.LatestDigest != "" {
-			fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Latest Digest"), formatNotificationCode(format, updateInfo.LatestDigest))
+		if latest != "" {
+			fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Latest"), formatNotificationCode(format, latest))
 		}
 	}
 
@@ -158,10 +155,10 @@ func BuildContainerUpdateNotificationMessage(format MessageFormat, environmentNa
 	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Image"), imageRef)
 	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Status"), status)
 	if oldDigest != "" {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Previous Version"), formatNotificationCode(format, oldDigest))
+		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Previous Version"), formatNotificationCode(format, shortenNotificationDigest(oldDigest)))
 	}
 	if newDigest != "" {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Current Version"), formatNotificationCode(format, newDigest))
+		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Current Version"), formatNotificationCode(format, shortenNotificationDigest(newDigest)))
 	}
 
 	return message.String()
@@ -179,14 +176,7 @@ func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentN
 
 			fmt.Fprintf(&message, "\n📦 **%s**\n", imageRef)
 
-			var current, latest string
-			if update != nil {
-				current, latest = update.CurrentVersion, update.LatestVersion
-				if (update.UpdateType != "tag" || (current == "" && latest == "")) && (update.CurrentDigest != "" || update.LatestDigest != "") {
-					current = shortenNotificationDigest(update.CurrentDigest)
-					latest = shortenNotificationDigest(update.LatestDigest)
-				}
-			}
+			current, latest := notificationUpdateVersions(update)
 			if !writeNtfyTransition(&message, current, latest, "   ") {
 				fmt.Fprintln(&message, "   ⚠️ Update available")
 			}
@@ -210,36 +200,37 @@ func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentN
 	for _, imageRef := range imageRefs {
 		update := updates[imageRef]
 		releaseURL := kit.Ternary(includeReleaseLinks, update.ReleaseURL, "")
+		current, latest := notificationUpdateVersions(update)
 		switch format {
 		case MessageFormatPlain:
 			fmt.Fprintf(&message, "%s\n", imageRef)
 			fmt.Fprintf(&message, "• Type: %s\n", update.UpdateType)
-			fmt.Fprintf(&message, "• Current: %s\n", update.CurrentDigest)
-			fmt.Fprintf(&message, "• Latest: %s\n", update.LatestDigest)
+			fmt.Fprintf(&message, "• Current: %s\n", current)
+			fmt.Fprintf(&message, "• Latest: %s\n", latest)
 			if releaseURL != "" {
 				fmt.Fprintf(&message, "• Release notes: %s\n", releaseURL)
 			}
 		case MessageFormatMarkdown:
 			fmt.Fprintf(&message, "**%s**\n", imageRef)
 			fmt.Fprintf(&message, "• **Type:** %s\n", update.UpdateType)
-			fmt.Fprintf(&message, "• **Current:** %s\n", formatNotificationCode(format, update.CurrentDigest))
-			fmt.Fprintf(&message, "• **Latest:** %s\n", formatNotificationCode(format, update.LatestDigest))
+			fmt.Fprintf(&message, "• **Current:** %s\n", formatNotificationCode(format, current))
+			fmt.Fprintf(&message, "• **Latest:** %s\n", formatNotificationCode(format, latest))
 			if releaseURL != "" {
 				fmt.Fprintf(&message, "• **Release notes:** <%s>\n", releaseURL)
 			}
 		case MessageFormatSlack:
 			fmt.Fprintf(&message, "*%s*\n", imageRef)
 			fmt.Fprintf(&message, "• *Type:* %s\n", update.UpdateType)
-			fmt.Fprintf(&message, "• *Current:* %s\n", formatNotificationCode(format, update.CurrentDigest))
-			fmt.Fprintf(&message, "• *Latest:* %s\n", formatNotificationCode(format, update.LatestDigest))
+			fmt.Fprintf(&message, "• *Current:* %s\n", formatNotificationCode(format, current))
+			fmt.Fprintf(&message, "• *Latest:* %s\n", formatNotificationCode(format, latest))
 			if releaseURL != "" {
 				fmt.Fprintf(&message, "• <%s|Release notes>\n", releaseURL)
 			}
 		case MessageFormatHTML:
 			fmt.Fprintf(&message, "<b>%s</b>\n", imageRef)
 			fmt.Fprintf(&message, "• <b>Type:</b> %s\n", update.UpdateType)
-			fmt.Fprintf(&message, "• <b>Current:</b> %s\n", formatNotificationCode(format, update.CurrentDigest))
-			fmt.Fprintf(&message, "• <b>Latest:</b> %s\n", formatNotificationCode(format, update.LatestDigest))
+			fmt.Fprintf(&message, "• <b>Current:</b> %s\n", formatNotificationCode(format, current))
+			fmt.Fprintf(&message, "• <b>Latest:</b> %s\n", formatNotificationCode(format, latest))
 			if releaseURL != "" {
 				fmt.Fprintf(&message, "• <b>Release notes:</b> <a href=\"%s\">%s</a>\n", html.EscapeString(releaseURL), html.EscapeString(releaseURL))
 			}
@@ -299,10 +290,10 @@ func BuildBatchContainerUpdateNotificationMessage(format MessageFormat, environm
 		}
 		fmt.Fprintf(&message, "• Image: %s\n", entry.ImageRef)
 		if entry.OldDigest != "" {
-			fmt.Fprintf(&message, "• Previous Version: %s\n", formatNotificationCode(format, entry.OldDigest))
+			fmt.Fprintf(&message, "• Previous Version: %s\n", formatNotificationCode(format, shortenNotificationDigest(entry.OldDigest)))
 		}
 		if entry.NewDigest != "" {
-			fmt.Fprintf(&message, "• Current Version: %s\n\n", formatNotificationCode(format, entry.NewDigest))
+			fmt.Fprintf(&message, "• Current Version: %s\n\n", formatNotificationCode(format, shortenNotificationDigest(entry.NewDigest)))
 		} else {
 			fmt.Fprintf(&message, "\n")
 		}
@@ -417,6 +408,17 @@ func BuildAutoHealNotificationMessage(format MessageFormat, environmentName, con
 	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Container"), containerName)
 	fmt.Fprintf(&message, "%s Automatically restarted because it was unhealthy.\n", formatNotificationLabel(format, "Status"))
 	return message.String()
+}
+
+func notificationUpdateVersions(update *types.ImageUpdateResponse) (string, string) {
+	info := kit.FromPtr(update)
+	if info.UpdateType == "tag" && (info.CurrentVersion != "" || info.LatestVersion != "") {
+		return info.CurrentVersion, info.LatestVersion
+	}
+	if info.CurrentDigest == "" && info.LatestDigest == "" {
+		return info.CurrentVersion, info.LatestVersion
+	}
+	return shortenNotificationDigest(info.CurrentDigest), shortenNotificationDigest(info.LatestDigest)
 }
 
 func shortenNotificationDigest(value string) string {
