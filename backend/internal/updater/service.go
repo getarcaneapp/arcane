@@ -304,7 +304,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options types.Updater
 }
 
 // applyBatch runs one update batch into out, records its events, and sends its notifications
-// as one batch, capped by a whole-run timeout.
+// as one batch; an update-all run is capped by a whole-run timeout.
 func (s *UpdaterService) applyBatch(ctx context.Context, options types.UpdaterOptions, out *types.UpdaterResult) error {
 	batch := &containerUpdateBatch{}
 	ctx = context.WithValue(context.WithValue(ctx, containerUpdateBatchContextKey{}, batch), ignoreSettingsExclusionsKey{}, options.IgnoreSettingsExclusions)
@@ -321,8 +321,13 @@ func (s *UpdaterService) applyBatch(ctx context.Context, options types.UpdaterOp
 			slog.ErrorContext(ctx, "failed to send batched container update notification", "error", err, "count", len(entries))
 		}
 	}()
-	runCtx, cancelRun := context.WithTimeout(ctx, timeouts.DefaultAutoUpdateApply)
+	runCtx, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
+	if len(options.ResourceIds) == 0 {
+		var cancelApply context.CancelFunc
+		runCtx, cancelApply = context.WithTimeout(runCtx, timeouts.DefaultAutoUpdateApply)
+		defer cancelApply()
+	}
 	activityID := activityIDFromContext(ctx)
 
 	s.recordAutoUpdateEvent(ctx, event.EventSeverityInfo, database.JSON{
@@ -665,7 +670,9 @@ func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options types.U
 	}
 	s.logResultItems(ctx, &types.UpdaterResult{Items: items})
 	completed = true
-	// Like the unscoped engine error, these surface after every container was attempted.
+	if failed > 0 {
+		return nil
+	}
 	return errors.Join(engineErrs...)
 }
 
