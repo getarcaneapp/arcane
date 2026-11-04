@@ -286,7 +286,7 @@
 
 			<Tabs.Root value={selectedTab} class="flex min-h-0 flex-1 flex-col">
 				<div class="pb-3">
-					<TabBar items={tabItems} value={selectedTab} onValueChange={urlTab.select} />
+					<TabBar items={tabItems} onValueChange={urlTab.select} />
 				</div>
 
 				<Tabs.Content value="services" class="min-h-0 flex-1">

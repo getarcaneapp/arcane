@@ -105,80 +105,78 @@
 	{description}
 	contentClass="sm:max-w-150"
 >
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
-			{#if !existing}
-				<EnvironmentDestinationSelect
-					bind:value={() => environmentId, (next) => (pickedEnvironmentId = next)}
-					permission="podman-secrets:create"
-					{environments}
-					variant="field"
-				/>
-			{/if}
-
-			<TextInputWithLabel
-				id="podman-secret-name"
-				label={m.common_name()}
-				placeholder={m.swarm_secrets_name_placeholder()}
-				bind:value={name}
-				helpText={existing ? m.swarm_secrets_name_locked() : undefined}
-				disabled={!!existing || submitting || !canManage}
-				required={!existing}
+	<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+		{#if !existing}
+			<EnvironmentDestinationSelect
+				bind:value={() => environmentId, (next) => (pickedEnvironmentId = next)}
+				permission="podman-secrets:create"
+				{environments}
+				variant="field"
 			/>
+		{/if}
 
-			<TextInputWithLabel
-				id="podman-secret-driver"
-				label={m.common_driver()}
-				placeholder={m.podman_secrets_driver_placeholder()}
-				bind:value={driver}
+		<TextInputWithLabel
+			id="podman-secret-name"
+			label={m.common_name()}
+			placeholder={m.swarm_secrets_name_placeholder()}
+			bind:value={name}
+			helpText={existing ? m.swarm_secrets_name_locked() : undefined}
+			disabled={!!existing || submitting || !canManage}
+			required={!existing}
+		/>
+
+		<TextInputWithLabel
+			id="podman-secret-driver"
+			label={m.common_driver()}
+			placeholder={m.podman_secrets_driver_placeholder()}
+			bind:value={driver}
+			disabled={submitting || !canManage}
+		/>
+
+		<div class="space-y-2.5">
+			<Label>{m.common_driver_options()}</Label>
+			<KeyValueEditor
+				bind:rows={driverOptions}
+				keyPlaceholder={m.podman_secrets_driver_option_key_placeholder()}
+				valuePlaceholder={m.podman_secrets_driver_option_value_placeholder()}
 				disabled={submitting || !canManage}
 			/>
+		</div>
 
-			<div class="space-y-2.5">
-				<Label>{m.common_driver_options()}</Label>
-				<KeyValueEditor
-					bind:rows={driverOptions}
-					keyPlaceholder={m.podman_secrets_driver_option_key_placeholder()}
-					valuePlaceholder={m.podman_secrets_driver_option_value_placeholder()}
-					disabled={submitting || !canManage}
-				/>
+		<div class="space-y-2.5">
+			<div>
+				<Label>{m.common_labels()}</Label>
+				<p class="mt-0.5 text-xs text-muted-foreground">{m.common_labels_description({ resource: m.swarm_secret() })}</p>
 			</div>
+			<KeyValueEditor
+				bind:rows={labels}
+				keyPlaceholder={m.swarm_secrets_label_key_placeholder()}
+				valuePlaceholder={m.swarm_secrets_label_value_placeholder()}
+				addLabel={m.add_label()}
+				disabled={submitting || !canManage}
+			/>
+		</div>
 
-			<div class="space-y-2.5">
-				<div>
-					<Label>{m.common_labels()}</Label>
-					<p class="mt-0.5 text-xs text-muted-foreground">{m.common_labels_description({ resource: m.swarm_secret() })}</p>
-				</div>
-				<KeyValueEditor
-					bind:rows={labels}
-					keyPlaceholder={m.swarm_secrets_label_key_placeholder()}
-					valuePlaceholder={m.swarm_secrets_label_value_placeholder()}
-					addLabel={m.add_label()}
-					disabled={submitting || !canManage}
-				/>
-			</div>
-
-			<div class="space-y-2.5">
-				<Label for="podman-secret-value">
-					{valueLabel}{#if !existing}<span class="ml-0.5 text-destructive">*</span>{/if}
-				</Label>
-				<Textarea
-					id="podman-secret-value"
-					rows={6}
-					mono
-					size="sm"
-					autocomplete="off"
-					spellcheck={false}
-					bind:value
-					placeholder={existing ? m.podman_secrets_new_value_placeholder() : m.swarm_secrets_data_placeholder()}
-					disabled={submitting || !canManage}
-				/>
-				<p class="text-xs text-muted-foreground">
-					{existing ? m.podman_secrets_new_value_help() : m.swarm_secrets_value_help()}
-				</p>
-			</div>
-		</form>
-	{/snippet}
+		<div class="space-y-2.5">
+			<Label for="podman-secret-value">
+				{valueLabel}{#if !existing}<span class="ml-0.5 text-destructive">*</span>{/if}
+			</Label>
+			<Textarea
+				id="podman-secret-value"
+				rows={6}
+				mono
+				size="sm"
+				autocomplete="off"
+				spellcheck={false}
+				bind:value
+				placeholder={existing ? m.podman_secrets_new_value_placeholder() : m.swarm_secrets_data_placeholder()}
+				disabled={submitting || !canManage}
+			/>
+			<p class="text-xs text-muted-foreground">
+				{existing ? m.podman_secrets_new_value_help() : m.swarm_secrets_value_help()}
+			</p>
+		</div>
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions

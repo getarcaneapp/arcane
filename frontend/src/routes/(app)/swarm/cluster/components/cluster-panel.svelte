@@ -561,41 +561,39 @@
 		description={m.swarm_cluster_unlock_leave_subtitle()}
 		contentClass="sm:max-w-lg"
 	>
-		{#snippet children()}
-			<div class="space-y-6 py-4">
-				<div class="space-y-3">
-					{#if unlockKey}
-						<div class="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/15 px-3 py-2 text-sm">
-							<span class="text-muted-foreground">{m.swarm_cluster_stat_unlock_key()}</span>
-							<CopyButton text={unlockKey} />
-						</div>
-					{/if}
-					<Input placeholder={m.swarm_cluster_unlock_key_placeholder()} bind:value={unlockInput} mono size="sm" />
-					<div class="flex items-center gap-2">
-						<ArcaneButton
-							action="save"
-							customLabel={m.swarm_cluster_unlock_action()}
-							onclick={handleUnlock}
-							disabled={!hasPermission('swarm:unlock', environmentId) || isLoading.unlock}
-							loading={isLoading.unlock}
-						/>
+		<div class="space-y-6 py-4">
+			<div class="space-y-3">
+				{#if unlockKey}
+					<div class="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/15 px-3 py-2 text-sm">
+						<span class="text-muted-foreground">{m.swarm_cluster_stat_unlock_key()}</span>
+						<CopyButton text={unlockKey} />
 					</div>
-				</div>
-
-				<div class="space-y-3 border-t pt-4">
-					<label class="flex items-center gap-2 text-sm">
-						<input type="checkbox" bind:checked={leaveForce} />
-						{m.swarm_cluster_force_leave()}
-					</label>
+				{/if}
+				<Input placeholder={m.swarm_cluster_unlock_key_placeholder()} bind:value={unlockInput} mono size="sm" />
+				<div class="flex items-center gap-2">
 					<ArcaneButton
-						action="remove"
-						customLabel={m.swarm_cluster_leave_action()}
-						onclick={handleLeave}
-						disabled={!hasPermission('swarm:leave', environmentId) || isLoading.leave}
-						loading={isLoading.leave}
+						action="save"
+						customLabel={m.swarm_cluster_unlock_action()}
+						onclick={handleUnlock}
+						disabled={!hasPermission('swarm:unlock', environmentId) || isLoading.unlock}
+						loading={isLoading.unlock}
 					/>
 				</div>
 			</div>
-		{/snippet}
+
+			<div class="space-y-3 border-t pt-4">
+				<label class="flex items-center gap-2 text-sm">
+					<input type="checkbox" bind:checked={leaveForce} />
+					{m.swarm_cluster_force_leave()}
+				</label>
+				<ArcaneButton
+					action="remove"
+					customLabel={m.swarm_cluster_leave_action()}
+					onclick={handleLeave}
+					disabled={!hasPermission('swarm:leave', environmentId) || isLoading.leave}
+					loading={isLoading.leave}
+				/>
+			</div>
+		</div>
 	</ResponsiveDialog>
 </div>

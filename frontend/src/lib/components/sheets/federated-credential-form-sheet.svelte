@@ -182,124 +182,122 @@
 		: m.federated_credential_create_description()}
 	contentClass="sm:max-w-140"
 >
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} novalidate class="grid gap-4 py-6">
+	<form onsubmit={preventDefault(handleSubmit)} novalidate class="grid gap-4 py-6">
+		<FormInput
+			label={m.common_name()}
+			type="text"
+			placeholder={m.federated_credential_name_placeholder()}
+			bind:input={form.inputs.name}
+			disabled={isLoading}
+		/>
+		<FormInput
+			label={m.common_description()}
+			type="text"
+			placeholder={m.optional_description_placeholder()}
+			bind:input={form.inputs.description}
+			disabled={isLoading}
+		/>
+		<FormInput
+			label={m.federated_credential_issuer_label()}
+			type="text"
+			placeholder={m.federated_credential_issuer_placeholder()}
+			description={m.federated_credential_issuer_description()}
+			bind:input={form.inputs.issuerUrl}
+			disabled={isLoading}
+		/>
+		<FormInput
+			label={m.federated_credential_audiences_label()}
+			type="textarea"
+			rows={3}
+			placeholder={m.federated_credential_audiences_placeholder()}
+			description={m.federated_credential_audiences_description()}
+			bind:input={form.inputs.audience}
+			disabled={isLoading}
+		/>
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 			<FormInput
-				label={m.common_name()}
+				label={m.federated_credential_subject_claim_label()}
 				type="text"
-				placeholder={m.federated_credential_name_placeholder()}
-				bind:input={form.inputs.name}
+				placeholder={m.federated_credential_subject_claim_placeholder()}
+				bind:input={form.inputs.subjectClaim}
 				disabled={isLoading}
 			/>
-			<FormInput
-				label={m.common_description()}
-				type="text"
-				placeholder={m.optional_description_placeholder()}
-				bind:input={form.inputs.description}
-				disabled={isLoading}
-			/>
-			<FormInput
-				label={m.federated_credential_issuer_label()}
-				type="text"
-				placeholder={m.federated_credential_issuer_placeholder()}
-				description={m.federated_credential_issuer_description()}
-				bind:input={form.inputs.issuerUrl}
-				disabled={isLoading}
-			/>
-			<FormInput
-				label={m.federated_credential_audiences_label()}
-				type="textarea"
-				rows={3}
-				placeholder={m.federated_credential_audiences_placeholder()}
-				description={m.federated_credential_audiences_description()}
-				bind:input={form.inputs.audience}
-				disabled={isLoading}
-			/>
-			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-				<FormInput
-					label={m.federated_credential_subject_claim_label()}
-					type="text"
-					placeholder={m.federated_credential_subject_claim_placeholder()}
-					bind:input={form.inputs.subjectClaim}
-					disabled={isLoading}
-				/>
-				<div class="space-y-2">
-					<Label for="federated-match-type" class="mb-0">{m.federated_credential_match_type_label()}</Label>
-					<Select.Root type="single" bind:value={form.inputs.matchType.value} disabled={isLoading}>
-						<Select.Trigger id="federated-match-type" class="w-full">
-							<span>{matchTypeLabel(form.inputs.matchType.value)}</span>
-						</Select.Trigger>
-						<Select.Content>
-							{#each MATCH_TYPES as option (option.value)}
-								<Select.Item value={option.value} label={option.label}>
-									{option.label}
-								</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
+			<div class="space-y-2">
+				<Label for="federated-match-type" class="mb-0">{m.federated_credential_match_type_label()}</Label>
+				<Select.Root type="single" bind:value={form.inputs.matchType.value} disabled={isLoading}>
+					<Select.Trigger id="federated-match-type" class="w-full">
+						<span>{matchTypeLabel(form.inputs.matchType.value)}</span>
+					</Select.Trigger>
+					<Select.Content>
+						{#each MATCH_TYPES as option (option.value)}
+							<Select.Item value={option.value} label={option.label}>
+								{option.label}
+							</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
 			</div>
+		</div>
+		<FormInput
+			label={m.federated_credential_subject_match_label()}
+			type="text"
+			placeholder={m.federated_credential_subject_match_placeholder()}
+			description={m.federated_credential_subject_match_description()}
+			bind:input={form.inputs.subjectMatch}
+			disabled={isLoading}
+		/>
+		{#if hasWildcardWarning}
+			<Alert.Root variant="warning-subtle">
+				<InfoIcon class="h-4 w-4 text-warning" />
+				<Alert.Title>{m.federated_credential_wildcard_warning_title()}</Alert.Title>
+				<Alert.Description>
+					{m.federated_credential_wildcard_warning_description()}
+				</Alert.Description>
+			</Alert.Root>
+		{/if}
+		<RoleScopeSelects
+			idPrefix="federated"
+			roleLabel={m.common_role()}
+			scopeLabel={m.common_scope()}
+			{roles}
+			{envOptions}
+			bind:roleValue={form.inputs.roleId.value}
+			bind:environmentValue={form.inputs.environmentId.value}
+			roleError={form.inputs.roleId.error}
+			{roleSelectedLabel}
+			{envSelectedLabel}
+			disabled={isLoading}
+			class="grid grid-cols-1 gap-4 sm:grid-cols-2"
+		/>
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 			<FormInput
-				label={m.federated_credential_subject_match_label()}
-				type="text"
-				placeholder={m.federated_credential_subject_match_placeholder()}
-				description={m.federated_credential_subject_match_description()}
-				bind:input={form.inputs.subjectMatch}
+				label={m.federated_credential_ttl_label()}
+				type="number"
+				description={m.federated_credential_ttl_description()}
+				bind:input={form.inputs.tokenTtlSeconds}
 				disabled={isLoading}
 			/>
-			{#if hasWildcardWarning}
-				<Alert.Root variant="warning-subtle">
-					<InfoIcon class="h-4 w-4 text-warning" />
-					<Alert.Title>{m.federated_credential_wildcard_warning_title()}</Alert.Title>
-					<Alert.Description>
-						{m.federated_credential_wildcard_warning_description()}
-					</Alert.Description>
-				</Alert.Root>
-			{/if}
-			<RoleScopeSelects
-				idPrefix="federated"
-				roleLabel={m.common_role()}
-				scopeLabel={m.common_scope()}
-				{roles}
-				{envOptions}
-				bind:roleValue={form.inputs.roleId.value}
-				bind:environmentValue={form.inputs.environmentId.value}
-				roleError={form.inputs.roleId.error}
-				{roleSelectedLabel}
-				{envSelectedLabel}
+			<FormInput
+				label={m.federated_credential_expires_at_label()}
+				type="date"
+				description={m.federated_credential_expires_at_description()}
+				bind:input={form.inputs.expiresAt}
 				disabled={isLoading}
-				class="grid grid-cols-1 gap-4 sm:grid-cols-2"
 			/>
-			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-				<FormInput
-					label={m.federated_credential_ttl_label()}
-					type="number"
-					description={m.federated_credential_ttl_description()}
-					bind:input={form.inputs.tokenTtlSeconds}
-					disabled={isLoading}
-				/>
-				<FormInput
-					label={m.federated_credential_expires_at_label()}
-					type="date"
-					description={m.federated_credential_expires_at_description()}
-					bind:input={form.inputs.expiresAt}
-					disabled={isLoading}
-				/>
+		</div>
+		<div class="flex items-center space-x-2">
+			<Switch id="federated-enabled" bind:checked={form.inputs.enabled.value} disabled={isLoading} />
+			<div class="grid gap-1.5 leading-none">
+				<Label for="federated-enabled" class="mb-0">
+					{m.common_enabled()}
+				</Label>
+				<p class="text-xs text-muted-foreground">
+					{m.federated_credential_enabled_description()}
+				</p>
 			</div>
-			<div class="flex items-center space-x-2">
-				<Switch id="federated-enabled" bind:checked={form.inputs.enabled.value} disabled={isLoading} />
-				<div class="grid gap-1.5 leading-none">
-					<Label for="federated-enabled" class="mb-0">
-						{m.common_enabled()}
-					</Label>
-					<p class="text-xs text-muted-foreground">
-						{m.federated_credential_enabled_description()}
-					</p>
-				</div>
-				<!-- fallow-ignore-next-line code-duplication -- per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
-			</div>
-		</form>
-	{/snippet}
+			<!-- fallow-ignore-next-line code-duplication -- per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
+		</div>
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions

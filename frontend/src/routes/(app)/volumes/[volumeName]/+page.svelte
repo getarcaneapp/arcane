@@ -5,6 +5,7 @@
 	import { PersistedState } from 'runed';
 	import { onMount, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { SvelteMap } from 'svelte/reactivity';
 
 	import { ActionButtonGroup } from '#lib/components/action-button-group/index.js';
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
@@ -117,7 +118,7 @@
 	let workspaceRestoreRecords = $state<Record<string, true>>({});
 	let workspaceStagedFiles = $state<Record<string, File>>({});
 	let workspaceStagedUploadedText = $state<Record<string, string>>({});
-	const workspaceFileLoadVersions = new Map<string, number>();
+	const workspaceFileLoadVersions = new SvelteMap<string, number>();
 	let selectedWorkspaceFile = $state('');
 	let openWorkspaceTabs = $state<string[]>([]);
 	let workspaceTreePaneWidth = $state(420);
@@ -1154,9 +1155,7 @@
 	description={m.volumes_workspace_backup_restore_desc()}
 	contentClass="sm:max-w-130"
 >
-	{#snippet children()}
-		{@render workspaceRestoreForm()}
-	{/snippet}
+	{@render workspaceRestoreForm()}
 
 	{#snippet footer()}
 		<ArcaneButton action="cancel" onclick={() => (showWorkspaceRestore = false)} />

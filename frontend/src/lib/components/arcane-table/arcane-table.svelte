@@ -5,6 +5,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
 	import type { Component } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -168,7 +169,7 @@
 	const getEffectiveLimit = () => requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? DEFAULT_LIMIT;
 	let prefs = $state<PersistedState<CompactTablePrefs> | null>(null);
 
-	let expandedRows = $state<Set<string>>(new Set());
+	const expandedRows = new SvelteSet<string>();
 
 	const wrapTextPref = new PersistedState<boolean>('arcane-table-wrap-text', false);
 	const wrapText = $derived(wrapTextPref.current);
@@ -237,25 +238,26 @@
 	}
 
 	function toggleRowExpanded(rowId: string) {
-		const next = new Set(expandedRows);
-		if (next.has(rowId)) {
-			next.delete(rowId);
+		if (expandedRows.has(rowId)) {
+			expandedRows.delete(rowId);
 		} else {
-			next.add(rowId);
+			expandedRows.add(rowId);
 		}
-		expandedRows = next;
 	}
 
 	const clientSortAccessors = $derived.by(() => {
-		const accessors = new Map<string, (row: TData) => unknown>();
-		columns.forEach((spec, i) => {
-			if (!spec.clientSort) return;
-			const id = spec.id ?? (spec.accessorKey as string) ?? `col_${i}`;
-			const accessorKey = spec.accessorKey;
-			const accessorFn = spec.accessorFn;
-			accessors.set(id, accessorFn ?? ((row: TData) => (accessorKey ? row[accessorKey] : undefined)));
-		});
-		return accessors;
+		return new Map(
+			columns.flatMap((spec, i): [string, (row: TData) => unknown][] => {
+				if (!spec.clientSort) return [];
+				const accessorKey = spec.accessorKey;
+				return [
+					[
+						spec.id ?? (spec.accessorKey as string) ?? `col_${i}`,
+						spec.accessorFn ?? ((row: TData) => (accessorKey ? row[accessorKey] : undefined))
+					]
+				];
+			})
+		);
 	});
 
 	const sortedData = $derived.by(() => {
@@ -662,16 +664,7 @@
 		if (groupedRows) return groupedRows;
 		if (!groupBy) return null;
 
-		const groups = new Map<string, TData[]>();
-		for (const item of items.data ?? []) {
-			const groupName = groupBy(item);
-			if (!groups.has(groupName)) {
-				groups.set(groupName, []);
-			}
-			groups.get(groupName)!.push(item);
-		}
-
-		return Array.from(groups.entries()).map(([groupName, groupItems]) => ({
+		return Array.from(Map.groupBy(items.data ?? [], groupBy).entries()).map(([groupName, groupItems]) => ({
 			groupName,
 			items: groupItems
 		}));

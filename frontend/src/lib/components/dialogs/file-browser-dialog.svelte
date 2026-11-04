@@ -28,8 +28,6 @@
 		// must live inside the sync directory so the deploy-time runner can find
 		// it). Default empty = full repo.
 		rootPath?: string;
-		// fileFilter decides which files are selectable. Directories are
-		// always navigable. Default accepts everything; callers narrow it.
 		fileFilter?: (file: FileTreeNode) => boolean;
 		// Optional UI decorations rendered per file (badge) and beneath the
 		// list (hint). Callers compose these to add domain-specific affordances

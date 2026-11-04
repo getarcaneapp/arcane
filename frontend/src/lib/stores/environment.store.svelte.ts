@@ -1,4 +1,5 @@
 import { untrack } from 'svelte';
+import { SvelteSet } from 'svelte/reactivity';
 
 import type { Environment } from '#lib/types/environment.js';
 import { isEnvironmentOnline } from '#lib/utils/docker.js';
@@ -10,7 +11,7 @@ export type EnvironmentRef = Pick<Environment, 'id' | 'name'>;
 function createEnvironmentManagementStore() {
 	let _availableEnvironments = $state.raw<Environment[]>([]);
 	let _initialized = false;
-	const _availableListeners = new Set<(environments: Environment[]) => void>();
+	const _availableListeners = new SvelteSet<(environments: Environment[]) => void>();
 
 	let _resolveReadyPromiseFunction: () => void;
 	const _readyPromise = new Promise<void>((resolve) => {

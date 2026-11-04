@@ -17,7 +17,7 @@ interface EnvironmentStream {
 
 /** One batched stats socket per environment; samples are keyed by table row key. */
 export class ContainerStatsManager {
-	private streams = new Map<string, EnvironmentStream>();
+	private streams = new SvelteMap<string, EnvironmentStream>();
 	private samples = new SvelteMap<string, ContainerResourceSample>();
 	private history = new SvelteMap<string, ContainerResourceSample[]>();
 	private loadingStates = new SvelteMap<string, boolean>();
@@ -51,14 +51,21 @@ export class ContainerStatsManager {
 
 	/** Table row keys; each container is sampled on its row's environment stream. */
 	set targetIds(value: Set<string>) {
-		const byEnvironment = new Map<string, Map<string, string>>();
-		for (const key of value) {
-			const { id, environmentId } = parseRowKey(key);
-			if (!environmentId) continue;
-			const rowKeys = byEnvironment.get(environmentId) ?? new Map<string, string>();
-			rowKeys.set(id, key);
-			byEnvironment.set(environmentId, rowKeys);
-		}
+		const byEnvironment = new SvelteMap(
+			Array.from(
+				Map.groupBy(
+					[...value].flatMap((key) => {
+						const { id, environmentId } = parseRowKey(key);
+						return environmentId ? [{ id, environmentId, key }] : [];
+					}),
+					(entry) => entry.environmentId
+				),
+				([environmentId, entries]): [string, Map<string, string>] => [
+					environmentId,
+					new SvelteMap(entries.map((entry) => [entry.id, entry.key]))
+				]
+			)
+		);
 
 		for (const [environmentId, stream] of this.streams) {
 			if (byEnvironment.has(environmentId)) continue;

@@ -137,90 +137,88 @@
 	description={isEditMode ? m.registries_edit_description() : m.registries_add_description()}
 	contentClass="sm:max-w-125"
 >
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
-			<SelectWithLabel
-				id="registryTypeSelect"
-				label={m.registries_type_label()}
-				options={registryTypeOptions}
-				bind:value={form.inputs.registryType.value}
-				disabled={isEditMode}
-			/>
+	<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+		<SelectWithLabel
+			id="registryTypeSelect"
+			label={m.registries_type_label()}
+			options={registryTypeOptions}
+			bind:value={form.inputs.registryType.value}
+			disabled={isEditMode}
+		/>
 
+		<FormInput
+			label={m.registries_url()}
+			type="text"
+			placeholder={m.registries_url_placeholder()}
+			description={m.registries_url_description()}
+			bind:input={form.inputs.url}
+		/>
+
+		{#if !isECR}
 			<FormInput
-				label={m.registries_url()}
+				label={m.common_username()}
 				type="text"
-				placeholder={m.registries_url_placeholder()}
-				description={m.registries_url_description()}
-				bind:input={form.inputs.url}
+				description={m.common_username_required()}
+				bind:input={form.inputs.username}
 			/>
-
-			{#if !isECR}
-				<FormInput
-					label={m.common_username()}
-					type="text"
-					description={m.common_username_required()}
-					bind:input={form.inputs.username}
-				/>
-				<FormInput
-					label={m.common_token()}
-					type="password"
-					placeholder={isEditMode ? m.registries_token_keep_placeholder() : m.registries_token_placeholder()}
-					description={m.registries_token_description()}
-					bind:input={form.inputs.token}
-				/>
-			{:else}
-				<FormInput
-					label={m.registries_aws_access_key_id()}
-					type="text"
-					description={m.registries_aws_credentials_description()}
-					bind:input={form.inputs.awsAccessKeyId}
-				/>
-				<FormInput
-					label={m.registries_aws_secret_access_key()}
-					type="password"
-					placeholder={isEditMode && registryToEdit?.awsAccessKeyId ? m.registries_token_keep_placeholder() : ''}
-					bind:input={form.inputs.awsSecretAccessKey}
-				/>
-				<FormInput
-					label={m.registries_aws_region()}
-					type="text"
-					placeholder={m.registries_aws_region_placeholder()}
-					bind:input={form.inputs.awsRegion}
-				/>
-			{/if}
-
 			<FormInput
-				label={m.common_description()}
+				label={m.common_token()}
+				type="password"
+				placeholder={isEditMode ? m.registries_token_keep_placeholder() : m.registries_token_placeholder()}
+				description={m.registries_token_description()}
+				bind:input={form.inputs.token}
+			/>
+		{:else}
+			<FormInput
+				label={m.registries_aws_access_key_id()}
 				type="text"
-				placeholder={m.registries_description_placeholder()}
-				bind:input={form.inputs.description}
+				description={m.registries_aws_credentials_description()}
+				bind:input={form.inputs.awsAccessKeyId}
 			/>
 			<FormInput
-				label={m.registries_repository_names()}
-				type="textarea"
-				rows={3}
-				placeholder={m.registries_repository_names_placeholder()}
-				description={m.registries_repository_names_description()}
-				bind:input={form.inputs.repositoryNames}
+				label={m.registries_aws_secret_access_key()}
+				type="password"
+				placeholder={isEditMode && registryToEdit?.awsAccessKeyId ? m.registries_token_keep_placeholder() : ''}
+				bind:input={form.inputs.awsSecretAccessKey}
 			/>
+			<FormInput
+				label={m.registries_aws_region()}
+				type="text"
+				placeholder={m.registries_aws_region_placeholder()}
+				bind:input={form.inputs.awsRegion}
+			/>
+		{/if}
+
+		<FormInput
+			label={m.common_description()}
+			type="text"
+			placeholder={m.registries_description_placeholder()}
+			bind:input={form.inputs.description}
+		/>
+		<FormInput
+			label={m.registries_repository_names()}
+			type="textarea"
+			rows={3}
+			placeholder={m.registries_repository_names_placeholder()}
+			description={m.registries_repository_names_description()}
+			bind:input={form.inputs.repositoryNames}
+		/>
+		<SwitchWithLabel
+			id="isEnabledSwitch"
+			label={m.common_enabled()}
+			description={m.registries_enabled_description()}
+			bind:checked={form.inputs.enabled.value}
+		/>
+		{#if !isECR}
 			<SwitchWithLabel
-				id="isEnabledSwitch"
-				label={m.common_enabled()}
-				description={m.registries_enabled_description()}
-				bind:checked={form.inputs.enabled.value}
+				id="insecureSwitch"
+				label={m.registries_allow_insecure_label()}
+				description={m.registries_allow_insecure_description()}
+				bind:checked={form.inputs.insecure.value}
 			/>
-			{#if !isECR}
-				<SwitchWithLabel
-					id="insecureSwitch"
-					label={m.registries_allow_insecure_label()}
-					description={m.registries_allow_insecure_description()}
-					bind:checked={form.inputs.insecure.value}
-				/>
-			{/if}
-			<!-- fallow-ignore-next-line code-duplication -- per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
-		</form>
-	{/snippet}
+		{/if}
+		<!-- fallow-ignore-next-line code-duplication -- per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions

@@ -114,95 +114,93 @@
 	description={m.images_search_registry_description()}
 	contentClass="sm:max-w-180"
 >
-	{#snippet children()}
-		<div class="grid gap-4 py-4">
-			<EnvironmentDestinationSelect
-				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
-				permission="images:pull"
-				variant="field"
-			/>
-			<div class="grid gap-3 sm:grid-cols-content-36-action">
-				<div class="space-y-2">
-					<Label for="image-registry-search-query">{m.images_search_query()}</Label>
-					<InputGroup.Root>
-						<InputGroup.Addon>
-							<SearchIcon class="size-4" />
-						</InputGroup.Addon>
-						<InputGroup.Input
-							id="image-registry-search-query"
-							placeholder={m.images_search_query_placeholder()}
-							bind:value={query}
-							disabled={isSearching || !!pullingImageName}
-							onkeydown={(event) => {
-								if (event.key === 'Enter') {
-									event.preventDefault();
-									void handleSearch();
-								}
-							}}
-						/>
-					</InputGroup.Root>
-				</div>
-
-				<div class="space-y-2">
-					<Label for="image-registry-search-tag">{m.tag()}</Label>
-					<InputGroup.Root>
-						<InputGroup.Input
-							id="image-registry-search-tag"
-							placeholder={m.images_tag_latest()}
-							bind:value={tag}
-							disabled={isSearching || !!pullingImageName}
-						/>
-					</InputGroup.Root>
-				</div>
-
-				<div class="flex items-end">
-					<ArcaneButton
-						action="inspect"
-						type="button"
-						customLabel={m.images_search_registry()}
-						loading={isSearching}
-						disabled={!canSearch}
-						onclick={handleSearch}
+	<div class="grid gap-4 py-4">
+		<EnvironmentDestinationSelect
+			bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
+			permission="images:pull"
+			variant="field"
+		/>
+		<div class="grid gap-3 sm:grid-cols-content-36-action">
+			<div class="space-y-2">
+				<Label for="image-registry-search-query">{m.images_search_query()}</Label>
+				<InputGroup.Root>
+					<InputGroup.Addon>
+						<SearchIcon class="size-4" />
+					</InputGroup.Addon>
+					<InputGroup.Input
+						id="image-registry-search-query"
+						placeholder={m.images_search_query_placeholder()}
+						bind:value={query}
+						disabled={isSearching || !!pullingImageName}
+						onkeydown={(event) => {
+							if (event.key === 'Enter') {
+								event.preventDefault();
+								void handleSearch();
+							}
+						}}
 					/>
-				</div>
+				</InputGroup.Root>
 			</div>
 
-			{#if results.length > 0}
-				<div class="max-h-105 overflow-auto rounded-lg border border-border">
-					{#each results as result (result.name)}
-						<div class="grid gap-3 border-b p-3 last:border-b-0 sm:grid-cols-content-action sm:items-center">
-							<div class="min-w-0 space-y-1">
-								<div class="flex flex-wrap items-center gap-2">
-									<span class="font-mono text-sm font-medium break-all">{result.name}</span>
-									{#if result.official}
-										<span class="text-success" title={m.common_verified()} aria-label={m.common_verified()}>
-											<VerifiedCheckIcon class="size-3.5" aria-hidden="true" />
-										</span>
-									{/if}
-								</div>
-								<p class="line-clamp-2 text-sm text-muted-foreground">
-									{result.description || m.common_no_description()}
-								</p>
-								<p class="text-xs text-muted-foreground">{m.images_search_stars({ count: result.starCount })}</p>
-							</div>
-							<ArcaneButton
-								action="pull"
-								type="button"
-								size="sm"
-								icon={DownloadIcon}
-								customLabel={m.pull()}
-								loading={pullingImageName === buildPullRef(result.name)}
-								disabled={!!pullingImageName}
-								onclick={() => pullImage(result.name)}
-							/>
-						</div>
-					{/each}
-				</div>
-			{:else if hasSearched && !isSearching}
-				<div class="rounded-lg border border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
-					{m.images_search_empty()}
-				</div>
-			{/if}
+			<div class="space-y-2">
+				<Label for="image-registry-search-tag">{m.tag()}</Label>
+				<InputGroup.Root>
+					<InputGroup.Input
+						id="image-registry-search-tag"
+						placeholder={m.images_tag_latest()}
+						bind:value={tag}
+						disabled={isSearching || !!pullingImageName}
+					/>
+				</InputGroup.Root>
+			</div>
+
+			<div class="flex items-end">
+				<ArcaneButton
+					action="inspect"
+					type="button"
+					customLabel={m.images_search_registry()}
+					loading={isSearching}
+					disabled={!canSearch}
+					onclick={handleSearch}
+				/>
+			</div>
 		</div>
-	{/snippet}
+
+		{#if results.length > 0}
+			<div class="max-h-105 overflow-auto rounded-lg border border-border">
+				{#each results as result (result.name)}
+					<div class="grid gap-3 border-b p-3 last:border-b-0 sm:grid-cols-content-action sm:items-center">
+						<div class="min-w-0 space-y-1">
+							<div class="flex flex-wrap items-center gap-2">
+								<span class="font-mono text-sm font-medium break-all">{result.name}</span>
+								{#if result.official}
+									<span class="text-success" title={m.common_verified()} aria-label={m.common_verified()}>
+										<VerifiedCheckIcon class="size-3.5" aria-hidden="true" />
+									</span>
+								{/if}
+							</div>
+							<p class="line-clamp-2 text-sm text-muted-foreground">
+								{result.description || m.common_no_description()}
+							</p>
+							<p class="text-xs text-muted-foreground">{m.images_search_stars({ count: result.starCount })}</p>
+						</div>
+						<ArcaneButton
+							action="pull"
+							type="button"
+							size="sm"
+							icon={DownloadIcon}
+							customLabel={m.pull()}
+							loading={pullingImageName === buildPullRef(result.name)}
+							disabled={!!pullingImageName}
+							onclick={() => pullImage(result.name)}
+						/>
+					</div>
+				{/each}
+			</div>
+		{:else if hasSearched && !isSearching}
+			<div class="rounded-lg border border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+				{m.images_search_empty()}
+			</div>
+		{/if}
+	</div>
 </ResponsiveDialog.Root>

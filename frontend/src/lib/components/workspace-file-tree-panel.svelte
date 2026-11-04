@@ -60,8 +60,6 @@
 		label: string;
 		iconClass?: string;
 		locked?: boolean;
-		action?: boolean;
-		onSelect?: () => void;
 		menuItems?: WorkspaceTreeMenuItem[];
 	};
 	type FolderDestinationOption = {
@@ -76,6 +74,7 @@
 	interface Props {
 		title?: string;
 		leadingRows?: WorkspaceTreeLeadingRow[];
+		rootMenuItems?: WorkspaceTreeMenuItem[];
 		entries: WorkspaceDisplayEntry[];
 		selectedFile?: string;
 		disabled?: boolean;
@@ -108,6 +107,7 @@
 	let {
 		title = m.workspace_files(),
 		leadingRows = [],
+		rootMenuItems = [],
 		entries,
 		selectedFile = '',
 		disabled = false,
@@ -207,13 +207,7 @@
 	}
 
 	function flattenRows(files: WorkspaceDisplayEntry[], folderStates: Record<string, boolean>): TreeRow[] {
-		const byParent = new Map<string, WorkspaceDisplayEntry[]>();
-		for (const entry of files) {
-			const parentPath = workspaceFileParentPath(entry.relativePath);
-			const siblings = byParent.get(parentPath) ?? [];
-			siblings.push(entry);
-			byParent.set(parentPath, siblings);
-		}
+		const byParent = Map.groupBy(files, (entry) => workspaceFileParentPath(entry.relativePath));
 		for (const siblings of byParent.values()) {
 			siblings.sort(compareWorkspaceFileEntries);
 		}
@@ -283,13 +277,15 @@
 	}
 
 	function buildDestinationChildCounts(): Map<string, number> {
-		const childCounts = new Map<string, number>();
-		for (const entry of entries) {
-			if (!entry.isDirectory) continue;
-			const parentPath = workspaceFileParentPath(entry.relativePath);
-			childCounts.set(parentPath, (childCounts.get(parentPath) ?? 0) + 1);
-		}
-		return childCounts;
+		return new Map(
+			Array.from(
+				Map.groupBy(
+					entries.filter((entry) => entry.isDirectory),
+					(entry) => workspaceFileParentPath(entry.relativePath)
+				),
+				([parentPath, children]): [string, number] => [parentPath, children.length]
+			)
+		);
 	}
 
 	function buildFolderDestinationOptions(): FolderDestinationOption[] {
@@ -624,17 +620,12 @@
 		return [createItems, actionItems].filter((group) => group.length > 0);
 	}
 
-	function selectLeadingRow(leadingRow: WorkspaceTreeLeadingRow) {
-		if (leadingRow.onSelect) leadingRow.onSelect();
-		else onSelect?.(leadingRow.key);
-	}
-
 	function leadingRowMenuGroups(leadingRow: WorkspaceTreeLeadingRow): WorkspaceTreeMenuItem[][] {
 		const primary = {
-			id: leadingRow.action ? leadingRow.key : 'open',
-			label: leadingRow.action ? leadingRow.label : m.open(),
-			icon: leadingRow.action ? CreateFileIcon : FileTextIcon,
-			onSelect: () => selectLeadingRow(leadingRow)
+			id: 'open',
+			label: m.open(),
+			icon: FileTextIcon,
+			onSelect: () => onSelect?.(leadingRow.key)
 		};
 		return [[primary], leadingRow.menuItems ?? []].filter((group) => group.length > 0);
 	}
@@ -822,19 +813,14 @@
 		type="button"
 		class={cn(
 			'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs-plus hover:bg-accent',
-			selectedFile === leadingRow.key && 'bg-accent',
-			leadingRow.action && 'text-muted-foreground hover:text-foreground'
+			selectedFile === leadingRow.key && 'bg-accent'
 		)}
-		onclick={() => selectLeadingRow(leadingRow)}
+		onclick={() => onSelect?.(leadingRow.key)}
 	>
 		{#if hasDirectories}
 			<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
 		{/if}
-		{#if leadingRow.action}
-			<CreateFileIcon class="size-4 shrink-0" />
-		{:else}
-			<FileTextIcon class={cn('size-4 shrink-0', leadingRow.iconClass ?? 'text-muted-foreground')} />
-		{/if}
+		<FileTextIcon class={cn('size-4 shrink-0', leadingRow.iconClass ?? 'text-muted-foreground')} />
 		<span class="min-w-0 flex-1 truncate">{leadingRow.label}</span>
 		{#if leadingRow.locked}
 			<span class="inline-flex size-6 shrink-0 items-center justify-center">
@@ -859,13 +845,13 @@
 {/snippet}
 
 {#snippet workspaceTree()}
-	{@const rootItems = createMenuItems('')}
-	{#if rootItems.length > 0}
+	{@const rootGroups = [createMenuItems(''), rootMenuItems].filter((group) => group.length > 0)}
+	{#if rootGroups.length > 0}
 		<ContextMenu.Root>
 			<ContextMenu.Trigger class="block min-h-0 flex-1 overflow-auto select-auto" bind:ref={treeScrollElement}>
 				{@render workspaceTreeBody()}
 			</ContextMenu.Trigger>
-			{@render workspaceMenuContent([rootItems])}
+			{@render workspaceMenuContent(rootGroups)}
 		</ContextMenu.Root>
 	{:else}
 		<div bind:this={treeScrollElement} class="min-h-0 flex-1 overflow-auto">

@@ -158,12 +158,11 @@
 			retry: false
 		};
 	});
-	const sizesMap = $derived.by(() => {
-		const sizes = new Map<string, VolumeSizeInfo>();
-		if (!sizesEnabled) return sizes;
-		for (const size of sizesQuery.data ?? []) sizes.set(rowKey({ ...size, id: size.name }), size);
-		return sizes;
-	});
+	const sizesMap = $derived(
+		new Map<string, VolumeSizeInfo>(
+			sizesEnabled ? (sizesQuery.data ?? []).map((size) => [rowKey({ ...size, id: size.name }), size]) : []
+		)
+	);
 	const sizesLoading = $derived(sizesEnabled && sizesQuery.isFetching);
 
 	onMount(() => {

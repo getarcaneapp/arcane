@@ -96,25 +96,23 @@
 	description={m.containers_commit_description()}
 	contentClass="sm:max-w-140"
 >
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
-			<Alert.Root variant="info">
-				<InfoIcon class="size-4" />
-				<Alert.Description>{m.containers_commit_registry_note()}</Alert.Description>
-			</Alert.Root>
-			<RepoTagFields bind:repository={form.inputs.repository} bind:tag={form.inputs.tag} />
-			<FormInput
-				label={m.common_description()}
-				placeholder={m.containers_commit_comment_placeholder()}
-				bind:input={form.inputs.comment}
-			/>
-			<FormInput label={m.common_author()} placeholder={m.arcane_placeholder()} bind:input={form.inputs.author} />
-			<label class="flex items-center gap-2 text-sm">
-				<input type="checkbox" bind:checked={form.inputs.noPause.value} class="size-4 accent-primary" />
-				<span>{m.containers_commit_no_pause()}</span>
-			</label>
-		</form>
-	{/snippet}
+	<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
+		<Alert.Root variant="info">
+			<InfoIcon class="size-4" />
+			<Alert.Description>{m.containers_commit_registry_note()}</Alert.Description>
+		</Alert.Root>
+		<RepoTagFields bind:repository={form.inputs.repository} bind:tag={form.inputs.tag} />
+		<FormInput
+			label={m.common_description()}
+			placeholder={m.containers_commit_comment_placeholder()}
+			bind:input={form.inputs.comment}
+		/>
+		<FormInput label={m.common_author()} placeholder={m.arcane_placeholder()} bind:input={form.inputs.author} />
+		<label class="flex items-center gap-2 text-sm">
+			<input type="checkbox" bind:checked={form.inputs.noPause.value} class="size-4 accent-primary" />
+			<span>{m.containers_commit_no_pause()}</span>
+		</label>
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions

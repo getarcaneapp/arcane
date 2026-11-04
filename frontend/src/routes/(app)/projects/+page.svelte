@@ -219,8 +219,10 @@
 		} else {
 			url.searchParams.delete('archived');
 		}
-		const href = url.searchParams.size > 0 ? resolve(`/(app)/projects?${url.searchParams}`) : resolve('/(app)/projects');
-		await goto(href, { reset: false, replace: true });
+		await goto(`${resolve('/(app)/projects')}${url.searchParams.size > 0 ? `?${url.searchParams}` : ''}`, {
+			reset: false,
+			replace: true
+		});
 	}
 
 	const canCreateProject = $derived(hasShownPermission('projects:create'));

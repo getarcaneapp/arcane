@@ -429,15 +429,17 @@
 			(failure, index) => failures.findIndex((other) => other.environment.id === failure.environment.id) === index
 		);
 	});
-	const failedEnvironmentMessages = $derived.by(() => {
-		const messages = new Map<string, string[]>();
-		for (const query of environmentQueries) {
-			for (const { environment, message } of query.data?.failedEnvironments ?? []) {
-				messages.set(environment.id, [...(messages.get(environment.id) ?? []), message]);
-			}
-		}
-		return messages;
-	});
+	const failedEnvironmentMessages = $derived(
+		new Map(
+			Array.from(
+				Map.groupBy(
+					environmentQueries.flatMap((query) => query.data?.failedEnvironments ?? []),
+					(failure) => failure.environment.id
+				),
+				([environmentId, failures]): [string, string[]] => [environmentId, failures.map((failure) => failure.message)]
+			)
+		)
+	);
 	const queryErrors = $derived(
 		[...environmentQueries, apiKeysQuery].flatMap((query) => (query.error ? [extractApiErrorMessage(query.error)] : []))
 	);

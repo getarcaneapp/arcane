@@ -216,7 +216,7 @@
 
 	{#if currentUser}
 		<Tabs.Root value={activeTab}>
-			<TabBar items={accountTabItems} value={activeTab} onValueChange={urlTab.select} />
+			<TabBar items={accountTabItems} onValueChange={urlTab.select} />
 
 			<Tabs.Content value="account" class="mt-6">
 				<div class="space-y-10">

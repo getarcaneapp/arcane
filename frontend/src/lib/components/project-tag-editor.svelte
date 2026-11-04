@@ -34,14 +34,13 @@
 	const visibleTags = $derived(tags.slice(0, maxVisible));
 	const overflow = $derived(Math.max(tags.length - maxVisible, 0));
 	const options = $derived.by(() => {
-		const byName = new Map<string, ProjectTagOption>();
-		for (const tag of availableTags) {
-			const name = normalizeTagInternal(tag.name);
-			if (name) byName.set(name, { name, color: tag.color ?? 'gray' });
-		}
-		for (const tag of tags) {
-			byName.set(tag.name, { name: tag.name, color: tag.color ?? 'gray' });
-		}
+		const byName = new Map<string, ProjectTagOption>([
+			...availableTags.flatMap((tag): [string, ProjectTagOption][] => {
+				const name = normalizeTagInternal(tag.name);
+				return name ? [[name, { name, color: tag.color ?? 'gray' }]] : [];
+			}),
+			...tags.map((tag): [string, ProjectTagOption] => [tag.name, { name: tag.name, color: tag.color ?? 'gray' }])
+		]);
 		return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
 	});
 	const canCreate = $derived(

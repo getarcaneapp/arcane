@@ -134,106 +134,104 @@
 	description={createdEnvironment ? m.environments_created_description() : m.environments_create_new_agent_description()}
 	contentClass="sm:max-w-2xl"
 >
-	{#snippet children()}
-		<div class="space-y-6 px-6 py-6">
-			{#if createdEnvironment}
-				<div class="space-y-4">
-					<div class="flex items-center gap-2 rounded-lg bg-primary/10 p-3 text-sm text-primary">
-						<AgentConnectionIcon class="size-5" />
-						<span>{m.env_agent_desc()}</span>
-					</div>
-
-					<div class="space-y-2">
-						<div class="text-sm font-medium">{m.environments_api_key()}</div>
-						<div class="flex items-center gap-2">
-							<code class="flex-1 rounded-md bg-muted px-3 py-2 font-mono text-sm break-all">
-								{createdEnvironment.apiKey}
-							</code>
-							{#if createdEnvironment.apiKey}
-								<CopyButton text={createdEnvironment.apiKey} size="icon" class="size-7" />
-							{/if}
-						</div>
-						<p class="text-xs text-muted-foreground">{m.environments_api_key_warning()}</p>
-					</div>
-
-					{#if generatedMTLS}
-						<div class="space-y-3 rounded-lg border border-info/25 bg-info/8 p-4">
-							<div class="space-y-1">
-								<p class="text-sm font-medium">{m.environments_new_agent_mtls_enabled()}</p>
-								<p class="text-xs text-muted-foreground">
-									{m.environments_new_agent_mtls_auto_enroll()}
-								</p>
-							</div>
-							<div class="flex flex-col gap-2 sm:flex-row">
-								<ArcaneButton
-									action="base"
-									tone="outline"
-									class="flex-1"
-									icon={DownloadIcon}
-									customLabel={m.environments_agent_mtls_download_certificate()}
-									onclick={() => downloadCreatedMTLSFile('agent.crt')}
-									disabled={!findCreatedMTLSFile('agent.crt')}
-								/>
-								<ArcaneButton
-									action="base"
-									tone="outline"
-									class="flex-1"
-									icon={DownloadIcon}
-									customLabel={m.environments_agent_mtls_download_key()}
-									onclick={() => downloadCreatedMTLSFile('agent.key')}
-									disabled={!findCreatedMTLSFile('agent.key')}
-								/>
-							</div>
-						</div>
-					{/if}
-
-					{#if mtlsAssetsUnavailable}
-						<p class="text-sm text-warning">{m.environments_new_agent_mtls_assets_unavailable()}</p>
-					{/if}
-
-					{#if snippetsQuery.isPending}
-						<div class="flex items-center justify-center py-8">
-							<Spinner class="size-6" />
-						</div>
-					{:else if snippetsQuery.isError}
-						<p class="text-sm text-destructive">{extractApiErrorMessage(snippetsQuery.error)}</p>
-					{:else if createdSnippets?.dockerRun && createdSnippets.dockerCompose}
-						<AgentCommandBlock
-							dockerRunLabel={m.docker_run_command()}
-							dockerRun={createdSnippets.dockerRun}
-							dockerComposeLabel={m.common_docker_compose()}
-							dockerCompose={createdSnippets.dockerCompose}
-						/>
-					{/if}
-
-					<ArcaneButton action="base" class="w-full" onclick={handleDone} customLabel={m.common_done()} />
+	<div class="space-y-6 px-6 py-6">
+		{#if createdEnvironment}
+			<div class="space-y-4">
+				<div class="flex items-center gap-2 rounded-lg bg-primary/10 p-3 text-sm text-primary">
+					<AgentConnectionIcon class="size-5" />
+					<span>{m.env_agent_desc()}</span>
 				</div>
-			{:else}
-				<p class="text-sm text-muted-foreground">
-					{m.environments_agent_desc()}
-				</p>
-				<form onsubmit={preventDefault(handleAgentSubmit)} class="space-y-4">
-					<FormInput label={m.common_name()} placeholder={m.env_remote_docker_host()} bind:input={agentInputs.name} />
 
-					<LabeledSwitch
-						id="new-agent-mtls"
-						label={m.environments_agent_mtls_enable()}
-						description={m.environments_agent_mtls_desc()}
-						checked={agentMTLSEnabled}
-						onCheckedChange={(checked) => (agentMTLSEnabled = checked)}
-						disabled={isSubmittingNewAgent}
-					/>
+				<div class="space-y-2">
+					<div class="text-sm font-medium">{m.environments_api_key()}</div>
+					<div class="flex items-center gap-2">
+						<code class="flex-1 rounded-md bg-muted px-3 py-2 font-mono text-sm break-all">
+							{createdEnvironment.apiKey}
+						</code>
+						{#if createdEnvironment.apiKey}
+							<CopyButton text={createdEnvironment.apiKey} size="icon" class="size-7" />
+						{/if}
+					</div>
+					<p class="text-xs text-muted-foreground">{m.environments_api_key_warning()}</p>
+				</div>
 
-					<ArcaneButton
-						action="confirm"
-						type="submit"
-						class="w-full"
-						disabled={isSubmittingNewAgent}
-						loading={isSubmittingNewAgent}
-						customLabel={m.environments_generate_config()}
+				{#if generatedMTLS}
+					<div class="space-y-3 rounded-lg border border-info/25 bg-info/8 p-4">
+						<div class="space-y-1">
+							<p class="text-sm font-medium">{m.environments_new_agent_mtls_enabled()}</p>
+							<p class="text-xs text-muted-foreground">
+								{m.environments_new_agent_mtls_auto_enroll()}
+							</p>
+						</div>
+						<div class="flex flex-col gap-2 sm:flex-row">
+							<ArcaneButton
+								action="base"
+								tone="outline"
+								class="flex-1"
+								icon={DownloadIcon}
+								customLabel={m.environments_agent_mtls_download_certificate()}
+								onclick={() => downloadCreatedMTLSFile('agent.crt')}
+								disabled={!findCreatedMTLSFile('agent.crt')}
+							/>
+							<ArcaneButton
+								action="base"
+								tone="outline"
+								class="flex-1"
+								icon={DownloadIcon}
+								customLabel={m.environments_agent_mtls_download_key()}
+								onclick={() => downloadCreatedMTLSFile('agent.key')}
+								disabled={!findCreatedMTLSFile('agent.key')}
+							/>
+						</div>
+					</div>
+				{/if}
+
+				{#if mtlsAssetsUnavailable}
+					<p class="text-sm text-warning">{m.environments_new_agent_mtls_assets_unavailable()}</p>
+				{/if}
+
+				{#if snippetsQuery.isPending}
+					<div class="flex items-center justify-center py-8">
+						<Spinner class="size-6" />
+					</div>
+				{:else if snippetsQuery.isError}
+					<p class="text-sm text-destructive">{extractApiErrorMessage(snippetsQuery.error)}</p>
+				{:else if createdSnippets?.dockerRun && createdSnippets.dockerCompose}
+					<AgentCommandBlock
+						dockerRunLabel={m.docker_run_command()}
+						dockerRun={createdSnippets.dockerRun}
+						dockerComposeLabel={m.common_docker_compose()}
+						dockerCompose={createdSnippets.dockerCompose}
 					/>
-				</form>
-			{/if}
-		</div>
-	{/snippet}
+				{/if}
+
+				<ArcaneButton action="base" class="w-full" onclick={handleDone} customLabel={m.common_done()} />
+			</div>
+		{:else}
+			<p class="text-sm text-muted-foreground">
+				{m.environments_agent_desc()}
+			</p>
+			<form onsubmit={preventDefault(handleAgentSubmit)} class="space-y-4">
+				<FormInput label={m.common_name()} placeholder={m.env_remote_docker_host()} bind:input={agentInputs.name} />
+
+				<LabeledSwitch
+					id="new-agent-mtls"
+					label={m.environments_agent_mtls_enable()}
+					description={m.environments_agent_mtls_desc()}
+					checked={agentMTLSEnabled}
+					onCheckedChange={(checked) => (agentMTLSEnabled = checked)}
+					disabled={isSubmittingNewAgent}
+				/>
+
+				<ArcaneButton
+					action="confirm"
+					type="submit"
+					class="w-full"
+					disabled={isSubmittingNewAgent}
+					loading={isSubmittingNewAgent}
+					customLabel={m.environments_generate_config()}
+				/>
+			</form>
+		{/if}
+	</div>
 </ResponsiveDialog.Root>

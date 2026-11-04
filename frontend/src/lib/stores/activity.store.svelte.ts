@@ -1,3 +1,5 @@
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+
 import {
 	discardPendingActivityToasts,
 	queueActivityCompletionToast
@@ -76,10 +78,10 @@ function activitySearchHaystackInternal(activity: Activity): string {
 }
 
 function groupActivitiesInternal(items: Activity[]): ActivityGroup[] {
-	const batchItems = new Map<string, Activity[]>();
-	for (const activity of items) {
-		if (activity.batchId) batchItems.set(activity.batchId, [...(batchItems.get(activity.batchId) ?? []), activity]);
-	}
+	const batchItems = Map.groupBy(
+		items.filter((activity) => activity.batchId),
+		(activity) => activity.batchId
+	);
 	return items.flatMap((activity): ActivityGroup[] => {
 		const members = activity.batchId ? batchItems.get(activity.batchId) : undefined;
 		if (!activity.batchId || !members || members.length === 1) {
@@ -181,9 +183,9 @@ function createActivityStore() {
 	let _activeUpdateKeys = $state.raw<ReadonlySet<string>>(new Set());
 	let session = new AbortController();
 	let requestedEnvironments: Record<string, string> = {};
-	const observedStatusById = new Map<string, ActivityStatus>();
-	const completionToastQueuedIds = new Set<string>();
-	const activitySubscribers = new Set<(activities: readonly Activity[]) => void>();
+	const observedStatusById = new SvelteMap<string, ActivityStatus>();
+	const completionToastQueuedIds = new SvelteSet<string>();
+	const activitySubscribers = new SvelteSet<(activities: readonly Activity[]) => void>();
 
 	function setActivitiesInternal(activities: Activity[]) {
 		_activities = activities;

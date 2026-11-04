@@ -60,14 +60,10 @@ const clearUser = () => {
 const permissions = (envId?: string): Set<string> => {
 	const user = current;
 	if (!user?.permissionsByEnv) return new Set();
-	const out = new Set<string>();
-	const global = user.permissionsByEnv[GLOBAL_SCOPE];
-	if (global) for (const p of global) out.add(p);
-	if (envId && envId !== GLOBAL_SCOPE) {
-		const env = user.permissionsByEnv[envId];
-		if (env) for (const p of env) out.add(p);
-	}
-	return out;
+	return new Set([
+		...(user.permissionsByEnv[GLOBAL_SCOPE] ?? []),
+		...((envId && envId !== GLOBAL_SCOPE && user.permissionsByEnv[envId]) || [])
+	]);
 };
 
 const hasPermission = (perm: string, envId?: string): boolean => {

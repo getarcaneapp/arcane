@@ -54,33 +54,31 @@
 	description={m.volumes_rename_description()}
 	contentClass="sm:max-w-125"
 >
-	{#snippet children()}
-		<form
-			id="rename-volume-form"
-			onsubmit={(event) => {
-				event.preventDefault();
-				submit();
-			}}
-			class="space-y-4 py-4"
-		>
-			<TextInputWithLabel
-				id="rename-volume-name"
-				bind:value={newName}
-				label={m.volumes_rename_new_name()}
-				{error}
-				disabled={isLoading}
-				autocomplete="off"
-			/>
+	<form
+		id="rename-volume-form"
+		onsubmit={(event) => {
+			event.preventDefault();
+			submit();
+		}}
+		class="space-y-4 py-4"
+	>
+		<TextInputWithLabel
+			id="rename-volume-name"
+			bind:value={newName}
+			label={m.volumes_rename_new_name()}
+			{error}
+			disabled={isLoading}
+			autocomplete="off"
+		/>
 
-			{#if isManaged}
-				<Alert.Root variant="warning">
-					<AlertTriangleIcon class="size-4" />
-					<Alert.Title>{m.volumes_rename_managed_warning_title()}</Alert.Title>
-					<Alert.Description>{m.volumes_rename_managed_warning_description()}</Alert.Description>
-				</Alert.Root>
-			{/if}
-		</form>
-	{/snippet}
+		{#if isManaged}
+			<Alert.Root variant="warning">
+				<AlertTriangleIcon class="size-4" />
+				<Alert.Title>{m.volumes_rename_managed_warning_title()}</Alert.Title>
+				<Alert.Description>{m.volumes_rename_managed_warning_description()}</Alert.Description>
+			</Alert.Root>
+		{/if}
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions

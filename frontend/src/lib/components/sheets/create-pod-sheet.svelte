@@ -349,555 +349,549 @@
 	description={m.podman_pod_create_description()}
 	contentClass="sm:max-w-150"
 >
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
-			<EnvironmentDestinationSelect
-				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
-				permission="podman-pods:create"
-				{environments}
-				variant="field"
-			/>
-			<FormInput
-				label={m.common_name()}
-				placeholder={m.podman_pod_name_placeholder()}
-				disabled={isLoading}
-				bind:input={inputs.name}
-			/>
-			<FormInput
-				label={m.hostname()}
-				placeholder={m.podman_pod_hostname_placeholder()}
-				disabled={isLoading}
-				bind:input={inputs.hostname}
-			/>
+	<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+		<EnvironmentDestinationSelect
+			bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
+			permission="podman-pods:create"
+			{environments}
+			variant="field"
+		/>
+		<FormInput
+			label={m.common_name()}
+			placeholder={m.podman_pod_name_placeholder()}
+			disabled={isLoading}
+			bind:input={inputs.name}
+		/>
+		<FormInput
+			label={m.hostname()}
+			placeholder={m.podman_pod_hostname_placeholder()}
+			disabled={isLoading}
+			bind:input={inputs.hostname}
+		/>
 
-			<Accordion.Root type="single" class="w-full">
-				<Accordion.Item value="networking">
-					<Accordion.Trigger>{m.podman_pod_section_networking()}</Accordion.Trigger>
-					<Accordion.Content>
-						<div class="space-y-4 pt-4">
-							<SelectWithLabel
-								id="pod-network-mode"
-								bind:value={inputs.networkMode.value}
-								label={m.podman_pod_network_mode()}
-								description={m.podman_pod_network_mode_description()}
-								options={networkModes}
-								disabled={isLoading}
-							/>
-							{#if inputs.networkMode.value === 'path'}
-								<FormInput
-									label={m.podman_pod_network_namespace_path()}
-									placeholder={m.podman_pod_network_namespace_path_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.networkPath}
-								/>
-							{/if}
-							{#if inputs.networkMode.value === 'pasta' || inputs.networkMode.value === 'slirp4netns'}
-								<FormInput
-									label={m.podman_pod_network_options()}
-									description={m.podman_pod_network_options_description()}
-									placeholder={inputs.networkMode.value === 'pasta'
-										? m.podman_pod_network_options_pasta_placeholder()
-										: m.podman_pod_network_options_slirp_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.networkOptions}
-								/>
-							{/if}
-							<div class="space-y-2">
-								<Label>{m.podman_pod_networks()}</Label>
-								<p class="text-xs text-muted-foreground">{m.podman_pod_networks_description()}</p>
-								<RowListEditor
-									bind:rows={rows.networks}
-									disabled={isLoading}
-									createRow={() => ({ name: '', aliases: '', staticIps: '', staticMac: '', interfaceName: '' })}
-									addLabel={m.podman_pod_add_network()}
-								>
-									{#snippet children(row)}
-										<div class="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-2">
-											<Input
-												type="text"
-												placeholder={m.podman_pod_network_name_placeholder()}
-												bind:value={row.name}
-												disabled={isLoading}
-												mono
-											/>
-											<Input
-												type="text"
-												placeholder={m.podman_pod_network_aliases_placeholder()}
-												title={m.containers_aliases()}
-												bind:value={row.aliases}
-												disabled={isLoading}
-												mono
-											/>
-											<Input
-												type="text"
-												placeholder={m.podman_pod_network_ip_placeholder()}
-												title={m.static_ip()}
-												bind:value={row.staticIps}
-												disabled={isLoading}
-												mono
-											/>
-											<Input
-												type="text"
-												placeholder={m.podman_pod_network_mac_placeholder()}
-												title={m.containers_mac_address()}
-												bind:value={row.staticMac}
-												disabled={isLoading}
-												mono
-											/>
-											<Input
-												type="text"
-												placeholder={m.podman_pod_network_interface_placeholder()}
-												title={m.podman_pod_interface_name()}
-												bind:value={row.interfaceName}
-												disabled={isLoading}
-												mono
-											/>
-										</div>
-									{/snippet}
-								</RowListEditor>
-								{@render rowsError(networksInvalid)}
-							</div>
-							<div class="space-y-2">
-								<Label>{m.common_port_mappings()}</Label>
-								<PortMappingEditor bind:rows={rows.ports} disabled={isLoading} />
-								{@render rowsError(portsInvalid)}
-							</div>
-						</div>
-					</Accordion.Content>
-				</Accordion.Item>
-
-				<Accordion.Item value="dns">
-					<Accordion.Trigger>{m.podman_pod_section_dns_hosts()}</Accordion.Trigger>
-					<Accordion.Content>
-						<div class="space-y-4 pt-4">
+		<Accordion.Root type="single" class="w-full">
+			<Accordion.Item value="networking">
+				<Accordion.Trigger>{m.podman_pod_section_networking()}</Accordion.Trigger>
+				<Accordion.Content>
+					<div class="space-y-4 pt-4">
+						<SelectWithLabel
+							id="pod-network-mode"
+							bind:value={inputs.networkMode.value}
+							label={m.podman_pod_network_mode()}
+							description={m.podman_pod_network_mode_description()}
+							options={networkModes}
+							disabled={isLoading}
+						/>
+						{#if inputs.networkMode.value === 'path'}
 							<FormInput
-								label={m.podman_pod_dns_servers()}
-								description={m.podman_comma_separated()}
-								placeholder={m.podman_pod_dns_servers_placeholder()}
+								label={m.podman_pod_network_namespace_path()}
+								placeholder={m.podman_pod_network_namespace_path_placeholder()}
 								disabled={isLoading}
-								bind:input={inputs.dnsServers}
+								bind:input={inputs.networkPath}
 							/>
+						{/if}
+						{#if inputs.networkMode.value === 'pasta' || inputs.networkMode.value === 'slirp4netns'}
 							<FormInput
-								label={m.podman_pod_dns_search()}
-								description={m.podman_comma_separated()}
-								placeholder={m.podman_pod_dns_search_placeholder()}
+								label={m.podman_pod_network_options()}
+								description={m.podman_pod_network_options_description()}
+								placeholder={inputs.networkMode.value === 'pasta'
+									? m.podman_pod_network_options_pasta_placeholder()
+									: m.podman_pod_network_options_slirp_placeholder()}
 								disabled={isLoading}
-								bind:input={inputs.dnsSearch}
+								bind:input={inputs.networkOptions}
 							/>
-							<FormInput
-								label={m.podman_pod_dns_options()}
-								description={m.podman_comma_separated()}
-								placeholder={m.podman_pod_dns_options_placeholder()}
+						{/if}
+						<div class="space-y-2">
+							<Label>{m.podman_pod_networks()}</Label>
+							<p class="text-xs text-muted-foreground">{m.podman_pod_networks_description()}</p>
+							<RowListEditor
+								bind:rows={rows.networks}
 								disabled={isLoading}
-								bind:input={inputs.dnsOptions}
-							/>
-							<FormInput
-								label={m.podman_pod_no_resolv_conf()}
-								description={m.podman_pod_no_resolv_conf_description()}
-								type="switch"
-								disabled={isLoading}
-								bind:input={inputs.noResolvConf}
-							/>
-							<div class="space-y-2">
-								<Label>{m.podman_pod_add_hosts()}</Label>
-								<p class="text-xs text-muted-foreground">{m.podman_pod_add_hosts_description()}</p>
-								<RowListEditor
-									bind:rows={rows.hosts}
-									disabled={isLoading}
-									createRow={() => ({ host: '', ip: '' })}
-									addLabel={m.podman_pod_add_host()}
-								>
-									{#snippet children(row)}
+								createRow={() => ({ name: '', aliases: '', staticIps: '', staticMac: '', interfaceName: '' })}
+								addLabel={m.podman_pod_add_network()}
+							>
+								{#snippet children(row)}
+									<div class="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-2">
 										<Input
 											type="text"
-											placeholder={m.podman_pod_host_name_placeholder()}
-											bind:value={row.host}
+											placeholder={m.podman_pod_network_name_placeholder()}
+											bind:value={row.name}
 											disabled={isLoading}
 											mono
-											class="flex-1"
 										/>
 										<Input
 											type="text"
-											placeholder={m.podman_pod_host_ip_placeholder()}
-											bind:value={row.ip}
+											placeholder={m.podman_pod_network_aliases_placeholder()}
+											title={m.containers_aliases()}
+											bind:value={row.aliases}
 											disabled={isLoading}
 											mono
-											class="flex-1"
-										/>
-									{/snippet}
-								</RowListEditor>
-								{@render rowsError(hostsInvalid)}
-							</div>
-							<FormInput
-								label={m.podman_pod_hosts_file()}
-								description={m.podman_pod_hosts_file_description()}
-								placeholder={m.podman_pod_hosts_file_placeholder()}
-								disabled={isLoading || inputs.noHosts.value}
-								bind:input={inputs.hostsFile}
-							/>
-							<FormInput label={m.podman_pod_no_hosts()} type="switch" disabled={isLoading} bind:input={inputs.noHosts} />
-							<FormInput label={m.podman_pod_no_hostname()} type="switch" disabled={isLoading} bind:input={inputs.noHostname} />
-						</div>
-					</Accordion.Content>
-				</Accordion.Item>
-
-				<Accordion.Item value="resources">
-					<Accordion.Trigger>{m.common_resources()}</Accordion.Trigger>
-					<Accordion.Content>
-						<div class="space-y-4 pt-4">
-							<div class="grid gap-4 sm:grid-cols-2">
-								<FormInput
-									label={m.common_cpus()}
-									description={m.podman_pod_cpus_description()}
-									placeholder={m.podman_pod_cpus_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.cpus}
-								/>
-								<FormInput
-									label={m.cpu_shares()}
-									description={m.podman_pod_cpu_shares_description()}
-									placeholder={m.podman_pod_cpu_shares_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.cpuShares}
-								/>
-								<FormInput
-									label={m.podman_pod_cpuset_cpus()}
-									description={m.podman_pod_cpuset_cpus_description()}
-									placeholder={m.podman_pod_cpuset_cpus_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.cpusetCpus}
-								/>
-								<FormInput
-									label={m.podman_pod_cpuset_mems()}
-									description={m.podman_pod_cpuset_mems_description()}
-									placeholder={m.podman_pod_cpuset_mems_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.cpusetMems}
-								/>
-								<FormInput
-									label={m.podman_pod_memory()}
-									description={m.podman_pod_size_description()}
-									placeholder={m.podman_pod_memory_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.memory}
-								/>
-								<FormInput
-									label={m.podman_pod_memory_swap()}
-									description={m.podman_pod_memory_swap_description()}
-									placeholder={m.podman_pod_memory_swap_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.memorySwap}
-								/>
-								<FormInput
-									label={m.podman_pod_blkio_weight()}
-									description={m.podman_pod_blkio_weight_description()}
-									placeholder={m.podman_pod_blkio_weight_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.blkioWeight}
-								/>
-								<FormInput
-									label={m.podman_pod_cgroup_parent()}
-									description={m.podman_pod_cgroup_parent_description()}
-									placeholder={m.podman_pod_cgroup_parent_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.cgroupParent}
-								/>
-							</div>
-							<p class="text-xs text-muted-foreground">{m.podman_pod_device_limit_description()}</p>
-							{@render deviceLimitEditor(
-								m.podman_pod_blkio_weight_devices(),
-								rows.weightDevices,
-								m.podman_pod_blkio_weight_device_placeholder()
-							)}
-							{@render deviceLimitEditor(
-								m.podman_pod_device_read_bps(),
-								rows.readBps,
-								m.podman_pod_device_read_bps_placeholder()
-							)}
-							{@render deviceLimitEditor(
-								m.podman_pod_device_write_bps(),
-								rows.writeBps,
-								m.podman_pod_device_write_bps_placeholder()
-							)}
-						</div>
-					</Accordion.Content>
-				</Accordion.Item>
-
-				<Accordion.Item value="storage">
-					<Accordion.Trigger>{m.podman_pod_section_storage()}</Accordion.Trigger>
-					<Accordion.Content>
-						<div class="space-y-4 pt-4">
-							<div class="space-y-2">
-								<Label>{m.volume_mounts_title()}</Label>
-								<p class="text-xs text-muted-foreground">{m.podman_pod_volumes_description()}</p>
-								<RowListEditor
-									bind:rows={rows.volumes}
-									disabled={isLoading}
-									createRow={() => ({ source: '', destination: '', options: '' })}
-									addLabel={m.add_volume_mount_button()}
-								>
-									{#snippet children(row)}
-										<Input
-											type="text"
-											placeholder={m.podman_pod_volume_source_placeholder()}
-											title={m.container_source_path_or_volume()}
-											bind:value={row.source}
-											disabled={isLoading}
-											mono
-											class="flex-1"
 										/>
 										<Input
 											type="text"
-											placeholder={m.podman_pod_volume_target_placeholder()}
-											title={m.container_path()}
-											bind:value={row.destination}
+											placeholder={m.podman_pod_network_ip_placeholder()}
+											title={m.static_ip()}
+											bind:value={row.staticIps}
 											disabled={isLoading}
 											mono
-											class="flex-1"
 										/>
 										<Input
 											type="text"
-											placeholder={m.podman_pod_volume_options_placeholder()}
-											title={m.podman_pod_volume_options()}
-											bind:value={row.options}
+											placeholder={m.podman_pod_network_mac_placeholder()}
+											title={m.containers_mac_address()}
+											bind:value={row.staticMac}
 											disabled={isLoading}
 											mono
-											class="flex-1"
 										/>
-									{/snippet}
-								</RowListEditor>
-								{@render rowsError(volumesInvalid)}
-							</div>
-							<FormInput
-								label={m.podman_pod_volumes_from()}
-								description={m.podman_pod_volumes_from_description()}
-								placeholder={m.podman_pod_volumes_from_placeholder()}
-								disabled={isLoading}
-								bind:input={inputs.volumesFrom}
-							/>
-							<div class="grid gap-4 sm:grid-cols-2">
-								<FormInput
-									label={m.podman_pod_shm_size()}
-									description={m.podman_pod_size_description()}
-									placeholder={m.podman_pod_shm_size_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.shmSize}
-								/>
-								<FormInput
-									label={m.podman_pod_shm_size_systemd()}
-									description={m.podman_pod_shm_size_systemd_description()}
-									placeholder={m.podman_pod_shm_size_systemd_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.shmSizeSystemd}
-								/>
-							</div>
-							<div class="space-y-2">
-								<Label>{m.podman_pod_devices()}</Label>
-								<p class="text-xs text-muted-foreground">{m.podman_pod_devices_description()}</p>
-								<RowListEditor
-									bind:rows={rows.devices}
-									disabled={isLoading}
-									createRow={() => ({ device: '' })}
-									addLabel={m.podman_pod_add_device()}
-								>
-									{#snippet children(row)}
 										<Input
 											type="text"
-											placeholder={m.podman_pod_device_placeholder()}
-											bind:value={row.device}
+											placeholder={m.podman_pod_network_interface_placeholder()}
+											title={m.podman_pod_interface_name()}
+											bind:value={row.interfaceName}
 											disabled={isLoading}
 											mono
-											class="flex-1"
 										/>
-									{/snippet}
-								</RowListEditor>
-							</div>
-							<FormInput
-								label={m.podman_pod_gpus()}
-								description={m.podman_pod_gpus_description()}
-								placeholder={m.podman_pod_gpus_placeholder()}
+									</div>
+								{/snippet}
+							</RowListEditor>
+							{@render rowsError(networksInvalid)}
+						</div>
+						<div class="space-y-2">
+							<Label>{m.common_port_mappings()}</Label>
+							<PortMappingEditor bind:rows={rows.ports} disabled={isLoading} />
+							{@render rowsError(portsInvalid)}
+						</div>
+					</div>
+				</Accordion.Content>
+			</Accordion.Item>
+
+			<Accordion.Item value="dns">
+				<Accordion.Trigger>{m.podman_pod_section_dns_hosts()}</Accordion.Trigger>
+				<Accordion.Content>
+					<div class="space-y-4 pt-4">
+						<FormInput
+							label={m.podman_pod_dns_servers()}
+							description={m.podman_comma_separated()}
+							placeholder={m.podman_pod_dns_servers_placeholder()}
+							disabled={isLoading}
+							bind:input={inputs.dnsServers}
+						/>
+						<FormInput
+							label={m.podman_pod_dns_search()}
+							description={m.podman_comma_separated()}
+							placeholder={m.podman_pod_dns_search_placeholder()}
+							disabled={isLoading}
+							bind:input={inputs.dnsSearch}
+						/>
+						<FormInput
+							label={m.podman_pod_dns_options()}
+							description={m.podman_comma_separated()}
+							placeholder={m.podman_pod_dns_options_placeholder()}
+							disabled={isLoading}
+							bind:input={inputs.dnsOptions}
+						/>
+						<FormInput
+							label={m.podman_pod_no_resolv_conf()}
+							description={m.podman_pod_no_resolv_conf_description()}
+							type="switch"
+							disabled={isLoading}
+							bind:input={inputs.noResolvConf}
+						/>
+						<div class="space-y-2">
+							<Label>{m.podman_pod_add_hosts()}</Label>
+							<p class="text-xs text-muted-foreground">{m.podman_pod_add_hosts_description()}</p>
+							<RowListEditor
+								bind:rows={rows.hosts}
 								disabled={isLoading}
-								bind:input={inputs.gpus}
+								createRow={() => ({ host: '', ip: '' })}
+								addLabel={m.podman_pod_add_host()}
+							>
+								{#snippet children(row)}
+									<Input
+										type="text"
+										placeholder={m.podman_pod_host_name_placeholder()}
+										bind:value={row.host}
+										disabled={isLoading}
+										mono
+										class="flex-1"
+									/>
+									<Input
+										type="text"
+										placeholder={m.podman_pod_host_ip_placeholder()}
+										bind:value={row.ip}
+										disabled={isLoading}
+										mono
+										class="flex-1"
+									/>
+								{/snippet}
+							</RowListEditor>
+							{@render rowsError(hostsInvalid)}
+						</div>
+						<FormInput
+							label={m.podman_pod_hosts_file()}
+							description={m.podman_pod_hosts_file_description()}
+							placeholder={m.podman_pod_hosts_file_placeholder()}
+							disabled={isLoading || inputs.noHosts.value}
+							bind:input={inputs.hostsFile}
+						/>
+						<FormInput label={m.podman_pod_no_hosts()} type="switch" disabled={isLoading} bind:input={inputs.noHosts} />
+						<FormInput label={m.podman_pod_no_hostname()} type="switch" disabled={isLoading} bind:input={inputs.noHostname} />
+					</div>
+				</Accordion.Content>
+			</Accordion.Item>
+
+			<Accordion.Item value="resources">
+				<Accordion.Trigger>{m.common_resources()}</Accordion.Trigger>
+				<Accordion.Content>
+					<div class="space-y-4 pt-4">
+						<div class="grid gap-4 sm:grid-cols-2">
+							<FormInput
+								label={m.common_cpus()}
+								description={m.podman_pod_cpus_description()}
+								placeholder={m.podman_pod_cpus_placeholder()}
+								disabled={isLoading}
+								bind:input={inputs.cpus}
+							/>
+							<FormInput
+								label={m.cpu_shares()}
+								description={m.podman_pod_cpu_shares_description()}
+								placeholder={m.podman_pod_cpu_shares_placeholder()}
+								disabled={isLoading}
+								bind:input={inputs.cpuShares}
+							/>
+							<FormInput
+								label={m.podman_pod_cpuset_cpus()}
+								description={m.podman_pod_cpuset_cpus_description()}
+								placeholder={m.podman_pod_cpuset_cpus_placeholder()}
+								disabled={isLoading}
+								bind:input={inputs.cpusetCpus}
+							/>
+							<FormInput
+								label={m.podman_pod_cpuset_mems()}
+								description={m.podman_pod_cpuset_mems_description()}
+								placeholder={m.podman_pod_cpuset_mems_placeholder()}
+								disabled={isLoading}
+								bind:input={inputs.cpusetMems}
+							/>
+							<FormInput
+								label={m.podman_pod_memory()}
+								description={m.podman_pod_size_description()}
+								placeholder={m.podman_pod_memory_placeholder()}
+								disabled={isLoading}
+								bind:input={inputs.memory}
+							/>
+							<FormInput
+								label={m.podman_pod_memory_swap()}
+								description={m.podman_pod_memory_swap_description()}
+								placeholder={m.podman_pod_memory_swap_placeholder()}
+								disabled={isLoading}
+								bind:input={inputs.memorySwap}
+							/>
+							<FormInput
+								label={m.podman_pod_blkio_weight()}
+								description={m.podman_pod_blkio_weight_description()}
+								placeholder={m.podman_pod_blkio_weight_placeholder()}
+								disabled={isLoading}
+								bind:input={inputs.blkioWeight}
+							/>
+							<FormInput
+								label={m.podman_pod_cgroup_parent()}
+								description={m.podman_pod_cgroup_parent_description()}
+								placeholder={m.podman_pod_cgroup_parent_placeholder()}
+								disabled={isLoading}
+								bind:input={inputs.cgroupParent}
 							/>
 						</div>
-					</Accordion.Content>
-				</Accordion.Item>
+						<p class="text-xs text-muted-foreground">{m.podman_pod_device_limit_description()}</p>
+						{@render deviceLimitEditor(
+							m.podman_pod_blkio_weight_devices(),
+							rows.weightDevices,
+							m.podman_pod_blkio_weight_device_placeholder()
+						)}
+						{@render deviceLimitEditor(m.podman_pod_device_read_bps(), rows.readBps, m.podman_pod_device_read_bps_placeholder())}
+						{@render deviceLimitEditor(
+							m.podman_pod_device_write_bps(),
+							rows.writeBps,
+							m.podman_pod_device_write_bps_placeholder()
+						)}
+					</div>
+				</Accordion.Content>
+			</Accordion.Item>
 
-				<Accordion.Item value="namespaces">
-					<Accordion.Trigger>{m.podman_pod_section_namespaces()}</Accordion.Trigger>
-					<Accordion.Content>
-						<div class="space-y-4 pt-4">
-							<FormInput
-								label={m.podman_pod_shared_namespaces()}
-								description={m.podman_pod_shared_namespaces_description()}
-								placeholder={m.podman_pod_shared_namespaces_placeholder()}
-								disabled={isLoading || inputs.noInfra.value}
-								bind:input={inputs.sharedNamespaces}
-							/>
-							<FormInput
-								label={m.podman_pod_share_parent()}
-								description={m.podman_pod_share_parent_description()}
-								type="switch"
+			<Accordion.Item value="storage">
+				<Accordion.Trigger>{m.podman_pod_section_storage()}</Accordion.Trigger>
+				<Accordion.Content>
+					<div class="space-y-4 pt-4">
+						<div class="space-y-2">
+							<Label>{m.volume_mounts_title()}</Label>
+							<p class="text-xs text-muted-foreground">{m.podman_pod_volumes_description()}</p>
+							<RowListEditor
+								bind:rows={rows.volumes}
 								disabled={isLoading}
-								bind:input={inputs.shareParent}
-							/>
-							<div class="grid gap-4 sm:grid-cols-2">
-								<FormInput
-									label={m.podman_pod_pid_namespace()}
-									description={m.podman_pod_namespace_description()}
-									placeholder={m.podman_pod_pid_namespace_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.pid}
-								/>
-								<FormInput
-									label={m.podman_pod_ipc_namespace()}
-									description={m.podman_pod_namespace_description()}
-									placeholder={m.podman_pod_ipc_namespace_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.ipc}
-								/>
-								<FormInput
-									label={m.podman_pod_uts_namespace()}
-									description={m.podman_pod_namespace_description()}
-									placeholder={m.podman_pod_uts_namespace_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.uts}
-								/>
-								<FormInput
-									label={m.podman_pod_user_namespace()}
-									description={m.podman_pod_user_namespace_description()}
-									placeholder={m.podman_pod_user_namespace_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.userns}
-								/>
-								<FormInput
-									label={m.podman_pod_uid_map()}
-									description={m.podman_pod_id_map_description()}
-									placeholder={m.podman_pod_uid_map_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.uidMap}
-								/>
-								<FormInput
-									label={m.podman_pod_gid_map()}
-									description={m.podman_pod_id_map_description()}
-									placeholder={m.podman_pod_gid_map_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.gidMap}
-								/>
-							</div>
-							<FormInput
-								label={m.podman_pod_security_opt()}
-								description={m.podman_pod_security_opt_description()}
-								placeholder={m.podman_pod_security_opt_placeholder()}
-								disabled={isLoading}
-								bind:input={inputs.securityOpt}
-							/>
-							<div class="space-y-2">
-								<Label>{m.podman_pod_sysctl()}</Label>
-								<p class="text-xs text-muted-foreground">{m.podman_pod_sysctl_description()}</p>
-								<KeyValueEditor
-									bind:rows={rows.sysctls}
-									keyPlaceholder={m.podman_pod_sysctl_key_placeholder()}
-									valuePlaceholder={m.podman_pod_sysctl_value_placeholder()}
-									disabled={isLoading}
-								/>
-							</div>
+								createRow={() => ({ source: '', destination: '', options: '' })}
+								addLabel={m.add_volume_mount_button()}
+							>
+								{#snippet children(row)}
+									<Input
+										type="text"
+										placeholder={m.podman_pod_volume_source_placeholder()}
+										title={m.container_source_path_or_volume()}
+										bind:value={row.source}
+										disabled={isLoading}
+										mono
+										class="flex-1"
+									/>
+									<Input
+										type="text"
+										placeholder={m.podman_pod_volume_target_placeholder()}
+										title={m.container_path()}
+										bind:value={row.destination}
+										disabled={isLoading}
+										mono
+										class="flex-1"
+									/>
+									<Input
+										type="text"
+										placeholder={m.podman_pod_volume_options_placeholder()}
+										title={m.podman_pod_volume_options()}
+										bind:value={row.options}
+										disabled={isLoading}
+										mono
+										class="flex-1"
+									/>
+								{/snippet}
+							</RowListEditor>
+							{@render rowsError(volumesInvalid)}
 						</div>
-					</Accordion.Content>
-				</Accordion.Item>
-
-				<Accordion.Item value="lifecycle">
-					<Accordion.Trigger>{m.podman_pod_section_lifecycle()}</Accordion.Trigger>
-					<Accordion.Content>
-						<div class="space-y-4 pt-4">
-							<SelectWithLabel
-								id="pod-exit-policy"
-								bind:value={inputs.exitPolicy.value}
-								label={m.podman_pod_exit_policy()}
-								description={m.podman_pod_exit_policy_description()}
-								options={exitPolicies}
+						<FormInput
+							label={m.podman_pod_volumes_from()}
+							description={m.podman_pod_volumes_from_description()}
+							placeholder={m.podman_pod_volumes_from_placeholder()}
+							disabled={isLoading}
+							bind:input={inputs.volumesFrom}
+						/>
+						<div class="grid gap-4 sm:grid-cols-2">
+							<FormInput
+								label={m.podman_pod_shm_size()}
+								description={m.podman_pod_size_description()}
+								placeholder={m.podman_pod_shm_size_placeholder()}
 								disabled={isLoading}
+								bind:input={inputs.shmSize}
 							/>
-							<SelectWithLabel
-								id="pod-restart-policy"
-								bind:value={inputs.restartPolicy.value}
-								label={m.restart_policy_label()}
-								description={m.podman_pod_restart_policy_description()}
-								options={restartPolicies}
+							<FormInput
+								label={m.podman_pod_shm_size_systemd()}
+								description={m.podman_pod_shm_size_systemd_description()}
+								placeholder={m.podman_pod_shm_size_systemd_placeholder()}
 								disabled={isLoading}
-							/>
-							{#if inputs.restartPolicy.value === 'on-failure'}
-								<FormInput
-									label={m.max_retry_label()}
-									description={m.podman_pod_restart_retries_description()}
-									placeholder={m.max_retry_placeholder()}
-									disabled={isLoading}
-									bind:input={inputs.restartRetries}
-								/>
-							{/if}
-						</div>
-					</Accordion.Content>
-				</Accordion.Item>
-
-				<Accordion.Item value="infra">
-					<Accordion.Trigger>{m.podman_pod_infra()}</Accordion.Trigger>
-					<Accordion.Content>
-						<div class="space-y-4 pt-4">
-							<FormInput
-								label={m.podman_pod_no_infra()}
-								description={m.podman_pod_no_infra_description()}
-								type="switch"
-								disabled={isLoading}
-								bind:input={inputs.noInfra}
-							/>
-							<FormInput
-								label={m.podman_pod_infra_image()}
-								description={m.podman_pod_infra_image_description()}
-								placeholder={m.podman_pod_infra_image_placeholder()}
-								disabled={isLoading || inputs.noInfra.value}
-								bind:input={inputs.infraImage}
-							/>
-							<FormInput
-								label={m.podman_pod_infra_command()}
-								description={m.podman_pod_infra_command_description()}
-								placeholder={m.podman_pod_infra_command_placeholder()}
-								disabled={isLoading || inputs.noInfra.value}
-								bind:input={inputs.infraCommand}
-							/>
-							<FormInput
-								label={m.podman_pod_infra_name()}
-								placeholder={m.podman_pod_infra_name_placeholder()}
-								disabled={isLoading || inputs.noInfra.value}
-								bind:input={inputs.infraName}
-							/>
-							<FormInput
-								label={m.podman_pod_infra_conmon_pidfile()}
-								description={m.podman_pod_infra_conmon_pidfile_description()}
-								placeholder={m.podman_pod_infra_conmon_pidfile_placeholder()}
-								disabled={isLoading || inputs.noInfra.value}
-								bind:input={inputs.infraConmonPidFile}
+								bind:input={inputs.shmSizeSystemd}
 							/>
 						</div>
-					</Accordion.Content>
-				</Accordion.Item>
+						<div class="space-y-2">
+							<Label>{m.podman_pod_devices()}</Label>
+							<p class="text-xs text-muted-foreground">{m.podman_pod_devices_description()}</p>
+							<RowListEditor
+								bind:rows={rows.devices}
+								disabled={isLoading}
+								createRow={() => ({ device: '' })}
+								addLabel={m.podman_pod_add_device()}
+							>
+								{#snippet children(row)}
+									<Input
+										type="text"
+										placeholder={m.podman_pod_device_placeholder()}
+										bind:value={row.device}
+										disabled={isLoading}
+										mono
+										class="flex-1"
+									/>
+								{/snippet}
+							</RowListEditor>
+						</div>
+						<FormInput
+							label={m.podman_pod_gpus()}
+							description={m.podman_pod_gpus_description()}
+							placeholder={m.podman_pod_gpus_placeholder()}
+							disabled={isLoading}
+							bind:input={inputs.gpus}
+						/>
+					</div>
+				</Accordion.Content>
+			</Accordion.Item>
 
-				<Accordion.Item value="labels">
-					<Accordion.Trigger>{m.common_labels()}</Accordion.Trigger>
-					<Accordion.Content>
-						<div class="pt-4">
+			<Accordion.Item value="namespaces">
+				<Accordion.Trigger>{m.podman_pod_section_namespaces()}</Accordion.Trigger>
+				<Accordion.Content>
+					<div class="space-y-4 pt-4">
+						<FormInput
+							label={m.podman_pod_shared_namespaces()}
+							description={m.podman_pod_shared_namespaces_description()}
+							placeholder={m.podman_pod_shared_namespaces_placeholder()}
+							disabled={isLoading || inputs.noInfra.value}
+							bind:input={inputs.sharedNamespaces}
+						/>
+						<FormInput
+							label={m.podman_pod_share_parent()}
+							description={m.podman_pod_share_parent_description()}
+							type="switch"
+							disabled={isLoading}
+							bind:input={inputs.shareParent}
+						/>
+						<div class="grid gap-4 sm:grid-cols-2">
+							<FormInput
+								label={m.podman_pod_pid_namespace()}
+								description={m.podman_pod_namespace_description()}
+								placeholder={m.podman_pod_pid_namespace_placeholder()}
+								disabled={isLoading}
+								bind:input={inputs.pid}
+							/>
+							<FormInput
+								label={m.podman_pod_ipc_namespace()}
+								description={m.podman_pod_namespace_description()}
+								placeholder={m.podman_pod_ipc_namespace_placeholder()}
+								disabled={isLoading}
+								bind:input={inputs.ipc}
+							/>
+							<FormInput
+								label={m.podman_pod_uts_namespace()}
+								description={m.podman_pod_namespace_description()}
+								placeholder={m.podman_pod_uts_namespace_placeholder()}
+								disabled={isLoading}
+								bind:input={inputs.uts}
+							/>
+							<FormInput
+								label={m.podman_pod_user_namespace()}
+								description={m.podman_pod_user_namespace_description()}
+								placeholder={m.podman_pod_user_namespace_placeholder()}
+								disabled={isLoading}
+								bind:input={inputs.userns}
+							/>
+							<FormInput
+								label={m.podman_pod_uid_map()}
+								description={m.podman_pod_id_map_description()}
+								placeholder={m.podman_pod_uid_map_placeholder()}
+								disabled={isLoading}
+								bind:input={inputs.uidMap}
+							/>
+							<FormInput
+								label={m.podman_pod_gid_map()}
+								description={m.podman_pod_id_map_description()}
+								placeholder={m.podman_pod_gid_map_placeholder()}
+								disabled={isLoading}
+								bind:input={inputs.gidMap}
+							/>
+						</div>
+						<FormInput
+							label={m.podman_pod_security_opt()}
+							description={m.podman_pod_security_opt_description()}
+							placeholder={m.podman_pod_security_opt_placeholder()}
+							disabled={isLoading}
+							bind:input={inputs.securityOpt}
+						/>
+						<div class="space-y-2">
+							<Label>{m.podman_pod_sysctl()}</Label>
+							<p class="text-xs text-muted-foreground">{m.podman_pod_sysctl_description()}</p>
 							<KeyValueEditor
-								bind:rows={rows.labels}
-								keyPlaceholder={m.podman_pod_label_key_placeholder()}
-								valuePlaceholder={m.podman_pod_label_value_placeholder()}
-								addLabel={m.add_label()}
+								bind:rows={rows.sysctls}
+								keyPlaceholder={m.podman_pod_sysctl_key_placeholder()}
+								valuePlaceholder={m.podman_pod_sysctl_value_placeholder()}
 								disabled={isLoading}
 							/>
 						</div>
-					</Accordion.Content>
-				</Accordion.Item>
-			</Accordion.Root>
-		</form>
-	{/snippet}
+					</div>
+				</Accordion.Content>
+			</Accordion.Item>
+
+			<Accordion.Item value="lifecycle">
+				<Accordion.Trigger>{m.podman_pod_section_lifecycle()}</Accordion.Trigger>
+				<Accordion.Content>
+					<div class="space-y-4 pt-4">
+						<SelectWithLabel
+							id="pod-exit-policy"
+							bind:value={inputs.exitPolicy.value}
+							label={m.podman_pod_exit_policy()}
+							description={m.podman_pod_exit_policy_description()}
+							options={exitPolicies}
+							disabled={isLoading}
+						/>
+						<SelectWithLabel
+							id="pod-restart-policy"
+							bind:value={inputs.restartPolicy.value}
+							label={m.restart_policy_label()}
+							description={m.podman_pod_restart_policy_description()}
+							options={restartPolicies}
+							disabled={isLoading}
+						/>
+						{#if inputs.restartPolicy.value === 'on-failure'}
+							<FormInput
+								label={m.max_retry_label()}
+								description={m.podman_pod_restart_retries_description()}
+								placeholder={m.max_retry_placeholder()}
+								disabled={isLoading}
+								bind:input={inputs.restartRetries}
+							/>
+						{/if}
+					</div>
+				</Accordion.Content>
+			</Accordion.Item>
+
+			<Accordion.Item value="infra">
+				<Accordion.Trigger>{m.podman_pod_infra()}</Accordion.Trigger>
+				<Accordion.Content>
+					<div class="space-y-4 pt-4">
+						<FormInput
+							label={m.podman_pod_no_infra()}
+							description={m.podman_pod_no_infra_description()}
+							type="switch"
+							disabled={isLoading}
+							bind:input={inputs.noInfra}
+						/>
+						<FormInput
+							label={m.podman_pod_infra_image()}
+							description={m.podman_pod_infra_image_description()}
+							placeholder={m.podman_pod_infra_image_placeholder()}
+							disabled={isLoading || inputs.noInfra.value}
+							bind:input={inputs.infraImage}
+						/>
+						<FormInput
+							label={m.podman_pod_infra_command()}
+							description={m.podman_pod_infra_command_description()}
+							placeholder={m.podman_pod_infra_command_placeholder()}
+							disabled={isLoading || inputs.noInfra.value}
+							bind:input={inputs.infraCommand}
+						/>
+						<FormInput
+							label={m.podman_pod_infra_name()}
+							placeholder={m.podman_pod_infra_name_placeholder()}
+							disabled={isLoading || inputs.noInfra.value}
+							bind:input={inputs.infraName}
+						/>
+						<FormInput
+							label={m.podman_pod_infra_conmon_pidfile()}
+							description={m.podman_pod_infra_conmon_pidfile_description()}
+							placeholder={m.podman_pod_infra_conmon_pidfile_placeholder()}
+							disabled={isLoading || inputs.noInfra.value}
+							bind:input={inputs.infraConmonPidFile}
+						/>
+					</div>
+				</Accordion.Content>
+			</Accordion.Item>
+
+			<Accordion.Item value="labels">
+				<Accordion.Trigger>{m.common_labels()}</Accordion.Trigger>
+				<Accordion.Content>
+					<div class="pt-4">
+						<KeyValueEditor
+							bind:rows={rows.labels}
+							keyPlaceholder={m.podman_pod_label_key_placeholder()}
+							valuePlaceholder={m.podman_pod_label_value_placeholder()}
+							addLabel={m.add_label()}
+							disabled={isLoading}
+						/>
+					</div>
+				</Accordion.Content>
+			</Accordion.Item>
+		</Accordion.Root>
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions

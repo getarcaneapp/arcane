@@ -153,15 +153,20 @@
 	const newProjectWorkspaceEntries = $derived(workspaceDraft.entries);
 	const newProjectWorkspaceLeadingRows = $derived([
 		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-info', locked: true },
-		envRequested
-			? {
-					key: 'env',
-					label: '.env',
-					iconClass: 'text-success',
-					menuItems: [{ id: 'remove', label: m.common_delete(), icon: TrashIcon, destructive: true, onSelect: handleRemoveEnv }]
-				}
-			: { key: 'add-env', label: m.add_env_file(), action: true, onSelect: handleAddEnv }
+		...(envRequested
+			? [
+					{
+						key: 'env',
+						label: '.env',
+						iconClass: 'text-success',
+						menuItems: [{ id: 'remove', label: m.common_delete(), icon: TrashIcon, destructive: true, onSelect: handleRemoveEnv }]
+					}
+				]
+			: [])
 	]);
+	const newProjectWorkspaceRootMenuItems = $derived(
+		envRequested ? [] : [{ id: 'add-env', label: m.add_env_file(), icon: CreateFileIcon, onSelect: handleAddEnv }]
+	);
 	let treeOutlineOpen = $state(false);
 	let treeDiffOpen = $state(false);
 	let treeCommandPaletteOpen = $state(false);
@@ -493,6 +498,7 @@
 							{#snippet first()}
 								<WorkspaceFileTreePanel
 									leadingRows={newProjectWorkspaceLeadingRows}
+									rootMenuItems={newProjectWorkspaceRootMenuItems}
 									entries={newProjectWorkspaceEntries}
 									selectedFile={workspaceDraft.selectedKey}
 									disabled={ui.saving || ui.isLoadingTemplateContent}

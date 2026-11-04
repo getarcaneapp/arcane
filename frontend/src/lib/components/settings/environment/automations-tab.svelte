@@ -104,14 +104,16 @@
 	}
 
 	function mixedSchedules(key: ScheduleKey, name: string): MixedSettingValue[] {
-		const groups = new Map<string, string[]>();
-		environments.forEach((environment, index) => {
-			const value = scheduleResults[index]?.data?.[key];
-			if (value) groups.set(value, [...(groups.get(value) ?? []), environment.name]);
-		});
-		return [...groups].map(([value, names]) => ({
+		const groups = Map.groupBy(
+			environments.flatMap((environment, index) => {
+				const value = scheduleResults[index]?.data?.[key];
+				return value ? [{ value, name: environment.name }] : [];
+			}),
+			(entry) => entry.value
+		);
+		return [...groups].map(([value, entries]) => ({
 			label: value,
-			environments: names,
+			environments: entries.map((entry) => entry.name),
 			apply: () => openSchedule(key, name, value)
 		}));
 	}

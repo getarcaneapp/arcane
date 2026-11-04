@@ -325,7 +325,7 @@
 
 		<Tabs.Root value={activeTab}>
 			<div class="space-y-6">
-				<TabBar items={urlTab.items} value={activeTab} onValueChange={(value) => urlTab.select(value)} />
+				<TabBar items={urlTab.items} onValueChange={(value) => urlTab.select(value)} />
 
 				<Tabs.Content value="overview">
 					<div class="space-y-6">

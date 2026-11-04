@@ -76,36 +76,34 @@
 	description={m.git_sync_import_description()}
 	contentClass="sm:max-w-2xl"
 >
-	{#snippet children()}
-		<div class="grid gap-y-3 py-4">
-			<EnvironmentDestinationSelect bind:value={environmentId} permission="gitops:create" variant="field" />
-			<div class="space-y-1.5">
-				<Label for="json-file">{m.git_sync_import_upload_label()}</Label>
-				<input
-					id="json-file"
-					type="file"
-					accept=".json"
-					onchange={handleFileUpload}
-					class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-				/>
-			</div>
-
-			<div class="space-y-1.5">
-				<Label for="json-content">{m.git_sync_import_content_label()}</Label>
-				<Textarea
-					id="json-content"
-					bind:value={jsonContent}
-					placeholder={`[\n  {\n    "syncName": "example-sync",\n    "gitRepo": "my-repo",\n    "branch": "main",\n    "dockerComposePath": "docker-compose.yml",\n    "autoSync": true,\n    "syncInterval": 10,\n    "projectName": "example",\n    "redeployAfterSync": true\n  }\n]`}
-					mono
-					size="sm"
-					class="h-75"
-				/>
-				{#if error}
-					<p class="text-sm text-destructive">{error}</p>
-				{/if}
-			</div>
+	<div class="grid gap-y-3 py-4">
+		<EnvironmentDestinationSelect bind:value={environmentId} permission="gitops:create" variant="field" />
+		<div class="space-y-1.5">
+			<Label for="json-file">{m.git_sync_import_upload_label()}</Label>
+			<input
+				id="json-file"
+				type="file"
+				accept=".json"
+				onchange={handleFileUpload}
+				class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+			/>
 		</div>
-	{/snippet}
+
+		<div class="space-y-1.5">
+			<Label for="json-content">{m.git_sync_import_content_label()}</Label>
+			<Textarea
+				id="json-content"
+				bind:value={jsonContent}
+				placeholder={`[\n  {\n    "syncName": "example-sync",\n    "gitRepo": "my-repo",\n    "branch": "main",\n    "dockerComposePath": "docker-compose.yml",\n    "autoSync": true,\n    "syncInterval": 10,\n    "projectName": "example",\n    "redeployAfterSync": true\n  }\n]`}
+				mono
+				size="sm"
+				class="h-75"
+			/>
+			{#if error}
+				<p class="text-sm text-destructive">{error}</p>
+			{/if}
+		</div>
+	</div>
 
 	{#snippet footer()}
 		<GitopsDialogFooter cancelLabel={m.common_cancel()} {isLoading} onCancel={() => (open = false)}>

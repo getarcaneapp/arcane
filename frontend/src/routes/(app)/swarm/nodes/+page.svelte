@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createQuery } from '@tanstack/svelte-query';
 	import { onMount, untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	import { swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -44,7 +45,7 @@
 	}
 
 	let active = true;
-	const reconciled = new Set<string>();
+	const reconciled = new SvelteSet<string>();
 	const reconcilableManagers = $derived(swarm.managers.filter((env) => hasPermission('swarm-nodes:update', env.id)));
 
 	async function reconcileEnvironments(pending: typeof reconcilableManagers) {

@@ -70,8 +70,8 @@
 				</div>
 			{:else}
 				{#each logLines as line, idx (idx)}
-					<!-- eslint-disable-next-line svelte/no-at-html-tags -- ansiToHtml escapes markup before adding color spans -->
 					<div class="rounded-xl px-1 py-0.5 break-words whitespace-pre-wrap transition-colors hover:bg-white/[0.03]">
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -- ansiToHtml escapes markup before adding color spans -->
 						{@html ansiToHtml(line)}
 					</div>
 				{/each}

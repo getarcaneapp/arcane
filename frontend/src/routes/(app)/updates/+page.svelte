@@ -233,7 +233,7 @@
 	{#snippet mainContent()}
 		<div class="space-y-6">
 			<Tabs.Root value={effectiveTab}>
-				<TabBar items={tabItems} value={effectiveTab} onValueChange={handleTabChange} />
+				<TabBar items={tabItems} onValueChange={handleTabChange} />
 
 				<Tabs.Content value="containers" class="mt-4">
 					{#key `${scope}-containers`}

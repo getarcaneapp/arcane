@@ -174,178 +174,176 @@
 	description={isEditMode ? m.common_edit_description() : m.common_add_description()}
 	contentClass="sm:max-w-md"
 >
-	{#snippet children()}
-		<form id="git-repository-form" onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
-			<FormInput label={m.git_repository_name()} type="text" placeholder={m.common_name_placeholder()} bind:input={inputs.name} />
+	<form id="git-repository-form" onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+		<FormInput label={m.git_repository_name()} type="text" placeholder={m.common_name_placeholder()} bind:input={inputs.name} />
 
+		<FormInput
+			label={m.git_repository_url()}
+			type="text"
+			placeholder={m.git_repository_url_placeholder()}
+			oninput={clearCredentialErrors}
+			bind:input={inputs.url}
+		/>
+
+		<div class="space-y-2">
+			<Label for="authType">{m.git_repository_auth_type()}</Label>
+			<Select.Root
+				type="single"
+				bind:value={selectedAuthType.value}
+				onValueChange={(v) => {
+					if (v === 'none' || v === 'http' || v === 'ssh') {
+						selectedAuthType = { value: v, label: getAuthTypeLabel(v) };
+						inputs.authType.value = v;
+					}
+				}}
+			>
+				<Select.Trigger id="authType" class="w-full">
+					<span>{selectedAuthType.label}</span>
+				</Select.Trigger>
+				<Select.Content>
+					<Select.Item value="none">{m.none()}</Select.Item>
+					<Select.Item value="http">{m.git_repository_auth_http()}</Select.Item>
+					<Select.Item value="ssh">{m.git_repository_auth_ssh()}</Select.Item>
+				</Select.Content>
+			</Select.Root>
+		</div>
+
+		{#if selectedAuthType.value === 'http'}
+			<FormInput label={m.common_username()} type="text" bind:input={inputs.username} />
+		{/if}
+		{#if selectedAuthType.value === 'http' || hasToken}
 			<FormInput
-				label={m.git_repository_url()}
-				type="text"
-				placeholder={m.git_repository_url_placeholder()}
+				label={m.common_token()}
+				type="password"
+				placeholder={hasToken && !urlChanged ? m.common_keep_placeholder() : m.common_token_placeholder()}
+				warningText={tokenNeedsAttention ? m.git_repository_token_url_change() : undefined}
+				disabled={clearToken}
 				oninput={clearCredentialErrors}
-				bind:input={inputs.url}
+				bind:input={inputs.token}
 			/>
-
+			{#if hasToken}
+				<SwitchWithLabel
+					id="clearRepositoryToken"
+					label={m.git_repository_clear_token()}
+					onCheckedChange={clearCredentialErrors}
+					bind:checked={clearToken}
+				/>
+			{/if}
+		{/if}
+		{#if selectedAuthType.value === 'ssh' || hasSshKey}
+			<FormInput
+				label={m.git_repository_ssh_key_label()}
+				type="textarea"
+				placeholder={hasSshKey && !urlChanged ? m.common_keep_placeholder() : m.git_repository_ssh_key_placeholder()}
+				warningText={sshKeyNeedsAttention ? m.git_repository_ssh_key_url_change() : undefined}
+				disabled={clearSshKey}
+				rows={6}
+				oninput={clearCredentialErrors}
+				bind:input={inputs.sshKey}
+			/>
+			{#if hasSshKey}
+				<SwitchWithLabel
+					id="clearRepositorySshKey"
+					label={m.git_repository_clear_ssh_key()}
+					onCheckedChange={clearCredentialErrors}
+					bind:checked={clearSshKey}
+				/>
+			{/if}
+		{/if}
+		{#if selectedAuthType.value === 'ssh'}
 			<div class="space-y-2">
-				<Label for="authType">{m.git_repository_auth_type()}</Label>
+				<Label for="sshHostKeyVerification">{m.git_repository_ssh_host_key_verification()}</Label>
 				<Select.Root
 					type="single"
-					bind:value={selectedAuthType.value}
+					bind:value={selectedSshHostKeyVerification.value}
 					onValueChange={(v) => {
-						if (v === 'none' || v === 'http' || v === 'ssh') {
-							selectedAuthType = { value: v, label: getAuthTypeLabel(v) };
-							inputs.authType.value = v;
+						if (v === 'strict' || v === 'accept_new' || v === 'skip') {
+							selectedSshHostKeyVerification = { value: v, label: getSshHostKeyVerificationLabel(v) };
+							inputs.sshHostKeyVerification.value = v;
 						}
 					}}
 				>
-					<Select.Trigger id="authType" class="w-full">
-						<span>{selectedAuthType.label}</span>
+					<Select.Trigger id="sshHostKeyVerification" class="w-full">
+						<span>{selectedSshHostKeyVerification.label}</span>
 					</Select.Trigger>
 					<Select.Content>
-						<Select.Item value="none">{m.none()}</Select.Item>
-						<Select.Item value="http">{m.git_repository_auth_http()}</Select.Item>
-						<Select.Item value="ssh">{m.git_repository_auth_ssh()}</Select.Item>
+						<Select.Item value="accept_new">
+							<div class="flex flex-col">
+								<span>{m.git_repository_ssh_host_key_accept_new()}</span>
+								<span class="text-xs text-muted-foreground">{m.git_repository_ssh_host_key_accept_new_description()}</span>
+							</div>
+						</Select.Item>
+						<Select.Item value="strict">
+							<div class="flex flex-col">
+								<span>{m.git_repository_ssh_host_key_strict()}</span>
+								<span class="text-xs text-muted-foreground">{m.git_repository_ssh_host_key_strict_description()}</span>
+							</div>
+						</Select.Item>
+						<Select.Item value="skip">
+							<div class="flex flex-col">
+								<span>{m.git_repository_ssh_host_key_skip()}</span>
+								<span class="text-xs text-muted-foreground">{m.git_repository_ssh_host_key_skip_description()}</span>
+							</div>
+						</Select.Item>
 					</Select.Content>
 				</Select.Root>
+				<p class="text-xs text-muted-foreground">{m.git_repository_ssh_host_key_verification_description()}</p>
 			</div>
+		{/if}
 
-			{#if selectedAuthType.value === 'http'}
-				<FormInput label={m.common_username()} type="text" bind:input={inputs.username} />
-			{/if}
-			{#if selectedAuthType.value === 'http' || hasToken}
-				<FormInput
-					label={m.common_token()}
-					type="password"
-					placeholder={hasToken && !urlChanged ? m.common_keep_placeholder() : m.common_token_placeholder()}
-					warningText={tokenNeedsAttention ? m.git_repository_token_url_change() : undefined}
-					disabled={clearToken}
-					oninput={clearCredentialErrors}
-					bind:input={inputs.token}
-				/>
-				{#if hasToken}
-					<SwitchWithLabel
-						id="clearRepositoryToken"
-						label={m.git_repository_clear_token()}
-						onCheckedChange={clearCredentialErrors}
-						bind:checked={clearToken}
-					/>
-				{/if}
-			{/if}
-			{#if selectedAuthType.value === 'ssh' || hasSshKey}
-				<FormInput
-					label={m.git_repository_ssh_key_label()}
-					type="textarea"
-					placeholder={hasSshKey && !urlChanged ? m.common_keep_placeholder() : m.git_repository_ssh_key_placeholder()}
-					warningText={sshKeyNeedsAttention ? m.git_repository_ssh_key_url_change() : undefined}
-					disabled={clearSshKey}
-					rows={6}
-					oninput={clearCredentialErrors}
-					bind:input={inputs.sshKey}
-				/>
-				{#if hasSshKey}
-					<SwitchWithLabel
-						id="clearRepositorySshKey"
-						label={m.git_repository_clear_ssh_key()}
-						onCheckedChange={clearCredentialErrors}
-						bind:checked={clearSshKey}
-					/>
-				{/if}
-			{/if}
-			{#if selectedAuthType.value === 'ssh'}
-				<div class="space-y-2">
-					<Label for="sshHostKeyVerification">{m.git_repository_ssh_host_key_verification()}</Label>
-					<Select.Root
-						type="single"
-						bind:value={selectedSshHostKeyVerification.value}
-						onValueChange={(v) => {
-							if (v === 'strict' || v === 'accept_new' || v === 'skip') {
-								selectedSshHostKeyVerification = { value: v, label: getSshHostKeyVerificationLabel(v) };
-								inputs.sshHostKeyVerification.value = v;
-							}
-						}}
-					>
-						<Select.Trigger id="sshHostKeyVerification" class="w-full">
-							<span>{selectedSshHostKeyVerification.label}</span>
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="accept_new">
-								<div class="flex flex-col">
-									<span>{m.git_repository_ssh_host_key_accept_new()}</span>
-									<span class="text-xs text-muted-foreground">{m.git_repository_ssh_host_key_accept_new_description()}</span>
-								</div>
-							</Select.Item>
-							<Select.Item value="strict">
-								<div class="flex flex-col">
-									<span>{m.git_repository_ssh_host_key_strict()}</span>
-									<span class="text-xs text-muted-foreground">{m.git_repository_ssh_host_key_strict_description()}</span>
-								</div>
-							</Select.Item>
-							<Select.Item value="skip">
-								<div class="flex flex-col">
-									<span>{m.git_repository_ssh_host_key_skip()}</span>
-									<span class="text-xs text-muted-foreground">{m.git_repository_ssh_host_key_skip_description()}</span>
-								</div>
-							</Select.Item>
-						</Select.Content>
-					</Select.Root>
-					<p class="text-xs text-muted-foreground">{m.git_repository_ssh_host_key_verification_description()}</p>
-				</div>
-			{/if}
-
-			<div class="space-y-3 border-t border-border/50 pt-4">
-				<div>
-					<p class="text-sm font-medium">{m.commit_identity()}</p>
-					<p class="text-xs text-muted-foreground">{m.commit_identity_description()}</p>
-				</div>
-				<div class="grid gap-3 sm:grid-cols-2">
-					<FormInput label={m.commit_author_name()} type="text" placeholder="Arcane" bind:input={inputs.commitAuthorName} />
-					<FormInput
-						label={m.commit_author_email()}
-						type="text"
-						placeholder="arcane@localhost"
-						bind:input={inputs.commitAuthorEmail}
-					/>
-				</div>
-				<FormInput
-					label={m.signing_key()}
-					type="textarea"
-					placeholder={hasSigningKey ? m.common_keep_placeholder() : m.signing_key_placeholder()}
-					disabled={clearSigningKey}
-					rows={4}
-					bind:input={inputs.signingKey}
-				/>
-				{#if hasSigningKey}
-					<SwitchWithLabel
-						id="clearRepositorySigningKey"
-						label={m.git_repository_clear_signing_key()}
-						bind:checked={clearSigningKey}
-					/>
-				{/if}
-				{#if !clearSigningKey}
-					<FormInput
-						label={m.signing_key_passphrase()}
-						type="password"
-						placeholder={hasSigningKey ? m.common_keep_placeholder() : ''}
-						bind:input={inputs.signingKeyPassphrase}
-					/>
-				{/if}
+		<div class="space-y-3 border-t border-border/50 pt-4">
+			<div>
+				<p class="text-sm font-medium">{m.commit_identity()}</p>
+				<p class="text-xs text-muted-foreground">{m.commit_identity_description()}</p>
 			</div>
-
+			<div class="grid gap-3 sm:grid-cols-2">
+				<FormInput label={m.commit_author_name()} type="text" placeholder="Arcane" bind:input={inputs.commitAuthorName} />
+				<FormInput
+					label={m.commit_author_email()}
+					type="text"
+					placeholder="arcane@localhost"
+					bind:input={inputs.commitAuthorEmail}
+				/>
+			</div>
 			<FormInput
-				label={m.common_description()}
-				type="text"
-				placeholder={m.common_description_placeholder()}
-				bind:input={inputs.description}
+				label={m.signing_key()}
+				type="textarea"
+				placeholder={hasSigningKey ? m.common_keep_placeholder() : m.signing_key_placeholder()}
+				disabled={clearSigningKey}
+				rows={4}
+				bind:input={inputs.signingKey}
 			/>
+			{#if hasSigningKey}
+				<SwitchWithLabel
+					id="clearRepositorySigningKey"
+					label={m.git_repository_clear_signing_key()}
+					bind:checked={clearSigningKey}
+				/>
+			{/if}
+			{#if !clearSigningKey}
+				<FormInput
+					label={m.signing_key_passphrase()}
+					type="password"
+					placeholder={hasSigningKey ? m.common_keep_placeholder() : ''}
+					bind:input={inputs.signingKeyPassphrase}
+				/>
+			{/if}
+		</div>
 
-			<SwitchWithLabel
-				id="isEnabledSwitch"
-				label={m.common_enabled()}
-				description={m.common_enabled_description()}
-				bind:checked={inputs.enabled.value}
-			/>
-		</form>
-	{/snippet}
+		<FormInput
+			label={m.common_description()}
+			type="text"
+			placeholder={m.common_description_placeholder()}
+			bind:input={inputs.description}
+		/>
+
+		<SwitchWithLabel
+			id="isEnabledSwitch"
+			label={m.common_enabled()}
+			description={m.common_enabled_description()}
+			bind:checked={inputs.enabled.value}
+		/>
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions

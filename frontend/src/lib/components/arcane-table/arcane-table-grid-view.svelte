@@ -78,17 +78,13 @@
 
 	// Cards render the list's own cells; each visible column gets a card slot once per column change.
 	const cardLayout = $derived.by(() => {
-		const slots = new Map<string, CardSlot>();
-		let titleId: string | undefined;
-		for (const column of table.getVisibleLeafColumns()) {
-			if (CONTROL_COLUMNS.has(column.id)) continue;
-			const slot = getCardSlot(column.id, column.columnDef.meta?.card);
-			if (slot === 'title' && !titleId) titleId = column.id;
-			slots.set(column.id, slot);
-		}
-		titleId ??= [...slots].find(([, slot]) => slot === 'field')?.[0] ?? slots.keys().next().value;
-		if (titleId) slots.set(titleId, 'title');
-		return slots;
+		const slots = table
+			.getVisibleLeafColumns()
+			.filter((column) => !CONTROL_COLUMNS.has(column.id))
+			.map((column): [string, CardSlot] => [column.id, getCardSlot(column.id, column.columnDef.meta?.card)]);
+		const titleId =
+			slots.find(([, slot]) => slot === 'title')?.[0] ?? slots.find(([, slot]) => slot === 'field')?.[0] ?? slots[0]?.[0];
+		return new Map<string, CardSlot>(slots.map(([id, slot]) => [id, id === titleId ? 'title' : slot]));
 	});
 	const layoutCounts = $derived.by(() => {
 		const slots = [...cardLayout.values()];

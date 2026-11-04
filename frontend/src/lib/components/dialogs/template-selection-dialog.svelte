@@ -78,17 +78,9 @@
 	const groupedTemplates = $derived.by(() => {
 		if (!groupByRegistry) return [];
 
-		const groups = new Map<string, Template[]>();
-		for (const template of sortedTemplates) {
-			const key = registryLabel(template);
-			const items = groups.get(key) ?? [];
-			items.push(template);
-			groups.set(key, items);
-		}
-
-		return Array.from(groups.entries())
-			.map(([name, items]) => ({ name, items }))
-			.sort((a, b) => a.name.localeCompare(b.name));
+		return Array.from(Map.groupBy(sortedTemplates, registryLabel), ([name, items]) => ({ name, items })).sort((a, b) =>
+			a.name.localeCompare(b.name)
+		);
 	});
 
 	const filters = {
@@ -309,106 +301,104 @@
 		if (!next) searchQuery = '';
 	}}
 >
-	{#snippet children()}
-		<div class="space-y-4">
-			<SearchInput
-				onClear={clearSearch}
-				placeholder={m.templates_search_placeholder()}
-				aria-label={m.common_search()}
-				bind:value={searchQuery}
-				bind:ref={searchInput}
-			/>
+	<div class="space-y-4">
+		<SearchInput
+			onClear={clearSearch}
+			placeholder={m.templates_search_placeholder()}
+			aria-label={m.common_search()}
+			bind:value={searchQuery}
+			bind:ref={searchInput}
+		/>
 
-			<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-				<div class="flex items-center gap-3">
-					<SwitchWithLabel
-						id="groupByRegistrySwitch"
-						label={m.templates_group_by_registry_label()}
-						description={m.templates_group_by_registry_description()}
-						bind:checked={groupByRegistry}
-					/>
-				</div>
-				<div class="flex items-center gap-3">
-					<Label for="sortBy" class="whitespace-nowrap">{m.common_sort_by()}</Label>
-					<Select.Root bind:value={sortBy} type="single">
-						<Select.Trigger id="sortBy" class="h-9">
-							{filters[sortBy]}
-						</Select.Trigger>
-						<Select.Content>
-							{#each Object.entries(filters) as [value, label] (value)}
-								<Select.Item {value}>{label}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
+		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+			<div class="flex items-center gap-3">
+				<SwitchWithLabel
+					id="groupByRegistrySwitch"
+					label={m.templates_group_by_registry_label()}
+					description={m.templates_group_by_registry_description()}
+					bind:checked={groupByRegistry}
+				/>
 			</div>
-
-			<ScrollArea class="max-h-(--max-height-screen-70)">
-				{#if allTemplates.length === 0}
-					<div class="py-10 text-center text-muted-foreground">
-						<FileTextIcon class="mx-auto mb-4 size-12 opacity-50" />
-						<p class="mb-2">{m.templates_no_templates()}</p>
-						<p class="text-sm">
-							{m.templates_add_registry_prompt_part1()}
-							<a href={resolve('/(app)/customize/templates')} class="text-primary hover:underline"
-								>{m.templates_template_settings()}</a
-							>
-							{m.templates_add_registry_prompt_part2()}
-						</p>
-					</div>
-				{:else if filteredTemplates.length === 0}
-					<EmptyState
-						icon={SearchIcon}
-						title={m.common_no_results_found()}
-						description={m.common_no_results_hint()}
-						actionLabel={m.common_clear_search()}
-						onAction={clearSearch}
-					/>
-				{:else if groupByRegistry}
-					<div class="space-y-3">
-						{#each groupedTemplates as group (group.name)}
-							{#if normalizedQuery}
-								<!-- Static headings while searching so matches are never hidden in a collapsed group. -->
-								<Card>
-									<div class="flex items-center gap-2 px-4 py-3">
-										<span class="font-semibold">{group.name}</span>
-										<Badge variant="secondary" class="ml-2">{group.items.length}</Badge>
-									</div>
-									{@render groupGrid(group.items)}
-								</Card>
-							{:else}
-								<Collapsible.Root class="w-full">
-									<Card>
-										<Collapsible.Trigger>
-											{#snippet child({ props })}
-												<button {...props} type="button" class="flex w-full items-center justify-between px-4 py-3 text-left">
-													<div class="flex items-center gap-2">
-														<ArrowDownIcon class="hidden size-4 data-[state=open]:block" />
-														<ArrowRightIcon class="block size-4 data-[state=open]:hidden" />
-														<span class="font-semibold">{group.name}</span>
-														<Badge variant="secondary" class="ml-2">{group.items.length}</Badge>
-													</div>
-												</button>
-											{/snippet}
-										</Collapsible.Trigger>
-										<Collapsible.Content>
-											{@render groupGrid(group.items)}
-										</Collapsible.Content>
-									</Card>
-								</Collapsible.Root>
-							{/if}
+			<div class="flex items-center gap-3">
+				<Label for="sortBy" class="whitespace-nowrap">{m.common_sort_by()}</Label>
+				<Select.Root bind:value={sortBy} type="single">
+					<Select.Trigger id="sortBy" class="h-9">
+						{filters[sortBy]}
+					</Select.Trigger>
+					<Select.Content>
+						{#each Object.entries(filters) as [value, label] (value)}
+							<Select.Item {value}>{label}</Select.Item>
 						{/each}
-					</div>
-				{:else}
-					<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-						{#each sortedTemplates as template (template.id)}
-							{@render templateCard(template, true)}
-						{/each}
-					</div>
-				{/if}
-			</ScrollArea>
+					</Select.Content>
+				</Select.Root>
+			</div>
 		</div>
-	{/snippet}
+
+		<ScrollArea class="max-h-(--max-height-screen-70)">
+			{#if allTemplates.length === 0}
+				<div class="py-10 text-center text-muted-foreground">
+					<FileTextIcon class="mx-auto mb-4 size-12 opacity-50" />
+					<p class="mb-2">{m.templates_no_templates()}</p>
+					<p class="text-sm">
+						{m.templates_add_registry_prompt_part1()}
+						<a href={resolve('/(app)/customize/templates')} class="text-primary hover:underline"
+							>{m.templates_template_settings()}</a
+						>
+						{m.templates_add_registry_prompt_part2()}
+					</p>
+				</div>
+			{:else if filteredTemplates.length === 0}
+				<EmptyState
+					icon={SearchIcon}
+					title={m.common_no_results_found()}
+					description={m.common_no_results_hint()}
+					actionLabel={m.common_clear_search()}
+					onAction={clearSearch}
+				/>
+			{:else if groupByRegistry}
+				<div class="space-y-3">
+					{#each groupedTemplates as group (group.name)}
+						{#if normalizedQuery}
+							<!-- Static headings while searching so matches are never hidden in a collapsed group. -->
+							<Card>
+								<div class="flex items-center gap-2 px-4 py-3">
+									<span class="font-semibold">{group.name}</span>
+									<Badge variant="secondary" class="ml-2">{group.items.length}</Badge>
+								</div>
+								{@render groupGrid(group.items)}
+							</Card>
+						{:else}
+							<Collapsible.Root class="w-full">
+								<Card>
+									<Collapsible.Trigger>
+										{#snippet child({ props })}
+											<button {...props} type="button" class="flex w-full items-center justify-between px-4 py-3 text-left">
+												<div class="flex items-center gap-2">
+													<ArrowDownIcon class="hidden size-4 data-[state=open]:block" />
+													<ArrowRightIcon class="block size-4 data-[state=open]:hidden" />
+													<span class="font-semibold">{group.name}</span>
+													<Badge variant="secondary" class="ml-2">{group.items.length}</Badge>
+												</div>
+											</button>
+										{/snippet}
+									</Collapsible.Trigger>
+									<Collapsible.Content>
+										{@render groupGrid(group.items)}
+									</Collapsible.Content>
+								</Card>
+							</Collapsible.Root>
+						{/if}
+					{/each}
+				</div>
+			{:else}
+				<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+					{#each sortedTemplates as template (template.id)}
+						{@render templateCard(template, true)}
+					{/each}
+				</div>
+			{/if}
+		</ScrollArea>
+	</div>
 
 	{#snippet footer()}
 		<ArcaneButton action="cancel" onclick={closeDialog} />

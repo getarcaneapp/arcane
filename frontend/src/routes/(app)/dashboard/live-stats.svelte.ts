@@ -1,3 +1,5 @@
+import { SvelteMap } from 'svelte/reactivity';
+
 import type { Environment } from '#lib/types/environment.js';
 import type { SystemStats } from '#lib/types/system.js';
 import type { DashboardLiveStatsStatus } from '#lib/types/ui/dashboard.js';
@@ -47,11 +49,11 @@ export class DashboardLiveStats {
 		return this.#byEnvironmentId[environmentId] ?? null;
 	}
 
-	#diskPressure: ReadonlyMap<string, DiskPressure> = new Map();
+	#diskPressure: ReadonlyMap<string, DiskPressure> = new SvelteMap();
 
 	readonly diskPressureByEnvironment = $derived.by((): ReadonlyMap<string, DiskPressure> => {
 		const previous = this.#diskPressure;
-		const next = new Map(
+		const next = new SvelteMap(
 			Object.entries(this.#byEnvironmentId).flatMap(([environmentId, state]) => {
 				const pressure = diskPressure(state.stats);
 				return pressure ? [[environmentId, pressure] as const] : [];
@@ -86,9 +88,9 @@ export class DashboardLiveStats {
 	}
 
 	sync(environments: Environment[]) {
-		const activeEnvironmentIds = new Set(environments.map((environment) => environment.id));
+		const activeEnvironmentIds = environments.map((environment) => environment.id);
 		for (const environmentId of Object.keys(this.#byEnvironmentId)) {
-			if (!activeEnvironmentIds.has(environmentId)) {
+			if (!activeEnvironmentIds.includes(environmentId)) {
 				this.#remove(environmentId);
 			}
 		}

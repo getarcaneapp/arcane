@@ -3,6 +3,7 @@
 	// informed by amir20/dozzle's LogItem.vue and GroupedLogItem.vue.
 	import { dev } from '$app/env';
 	import { onDestroy, untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -102,7 +103,7 @@
 	});
 
 	const displayLogs = $derived(buildLogDisplayEntries(visibleLogs, { groupAdjacentLines, type }));
-	let expandedGroups = $state<Set<number>>(new Set());
+	const expandedGroups = new SvelteSet<number>();
 	let hasAutoEnabledStructuredView = $state(false);
 
 	function scheduleFlush() {
@@ -134,7 +135,7 @@
 	function resetLogState() {
 		clearBuffer();
 		seq = 0;
-		expandedGroups = new Set();
+		expandedGroups.clear();
 		hasAutoEnabledStructuredView = false;
 	}
 
@@ -440,13 +441,11 @@
 	});
 
 	function setGroupExpanded(displayEntry: LogViewerDisplayEntry, open: boolean) {
-		const next = new Set(expandedGroups);
 		if (open) {
-			next.add(displayEntry.id);
+			expandedGroups.add(displayEntry.id);
 		} else {
-			next.delete(displayEntry.id);
+			expandedGroups.delete(displayEntry.id);
 		}
-		expandedGroups = next;
 	}
 </script>
 

@@ -87,29 +87,27 @@
 	description={m.images_pull_description()}
 	contentClass="sm:max-w-150"
 >
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
-			<EnvironmentDestinationSelect
-				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
-				permission="images:pull"
-				variant="field"
-			/>
-			<FormInput
-				label={m.images_image_name_label()}
-				type="text"
-				placeholder={m.images_image_name_placeholder()}
-				description={m.images_image_name_description()}
-				bind:input={form.inputs.imageRef}
-			/>
-			<FormInput
-				label={m.tag()}
-				type="text"
-				placeholder={m.images_tag_latest()}
-				description={m.images_tag_description()}
-				bind:input={form.inputs.tag}
-			/>
-		</form>
-	{/snippet}
+	<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+		<EnvironmentDestinationSelect
+			bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
+			permission="images:pull"
+			variant="field"
+		/>
+		<FormInput
+			label={m.images_image_name_label()}
+			type="text"
+			placeholder={m.images_image_name_placeholder()}
+			description={m.images_image_name_description()}
+			bind:input={form.inputs.imageRef}
+		/>
+		<FormInput
+			label={m.tag()}
+			type="text"
+			placeholder={m.images_tag_latest()}
+			description={m.images_tag_description()}
+			bind:input={form.inputs.tag}
+		/>
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions bind:open submitAction="pull" onSubmit={handleSubmit} submitDisabled={isPulling} />

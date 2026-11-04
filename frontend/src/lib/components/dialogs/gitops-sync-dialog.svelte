@@ -56,26 +56,24 @@
 	description={isEditMode ? m.common_edit_description() : m.git_sync_add_description()}
 	contentClass="sm:max-w-3xl"
 >
-	{#snippet children()}
-		{#if settingsQuery.data}
-			{#key environmentId}
-				<GitOpsSyncForm
-					{open}
-					{syncToEdit}
-					bind:environmentId
-					bind:mode={selectedMode}
-					{targetType}
-					{projectId}
-					settings={settingsQuery.data.values}
-					{onSubmit}
-				/>
-			{/key}
-		{:else}
-			<div class="flex items-center justify-center py-8">
-				<Spinner class="size-6" />
-			</div>
-		{/if}
-	{/snippet}
+	{#if settingsQuery.data}
+		{#key environmentId}
+			<GitOpsSyncForm
+				{open}
+				{syncToEdit}
+				bind:environmentId
+				bind:mode={selectedMode}
+				{targetType}
+				{projectId}
+				settings={settingsQuery.data.values}
+				{onSubmit}
+			/>
+		{/key}
+	{:else}
+		<div class="flex items-center justify-center py-8">
+			<Spinner class="size-6" />
+		</div>
+	{/if}
 
 	{#snippet footer()}
 		<GitopsDialogFooter cancelLabel={m.common_cancel()} {isLoading} onCancel={() => (open = false)}>

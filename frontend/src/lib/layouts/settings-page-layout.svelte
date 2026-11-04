@@ -16,7 +16,7 @@
 
 	interface Props {
 		title: string;
-		description?: string;
+		description?: string | Snippet;
 		icon: IconType;
 		pageType?: SettingsPageType;
 		showReadOnlyTag?: boolean;
@@ -59,7 +59,9 @@
 				<div class="min-w-0">
 					<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
 					{#if description}
-						<p class="mt-1 hidden text-sm text-muted-foreground sm:block sm:text-base">{@html description}</p>
+						<p class="mt-1 hidden text-sm text-muted-foreground sm:block sm:text-base">
+							{#if typeof description === 'function'}{@render description()}{:else}{description}{/if}
+						</p>
 					{/if}
 					{#if pageType === 'management' && statCards.length > 0}
 						<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">

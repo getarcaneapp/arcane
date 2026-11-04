@@ -197,53 +197,51 @@
 	description={m.webhook_create_description()}
 	contentClass="sm:max-w-125"
 >
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
-			<EnvironmentDestinationSelect
-				bind:value={() => environmentId, handleEnvironmentChange}
-				permission="webhooks:create"
-				variant="field"
-			/>
-			<FormInput
-				label={m.common_name()}
-				type="text"
-				placeholder={m.webhook_name_placeholder()}
-				description={m.webhook_name_description()}
-				bind:input={form.inputs.name}
-			/>
+	<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+		<EnvironmentDestinationSelect
+			bind:value={() => environmentId, handleEnvironmentChange}
+			permission="webhooks:create"
+			variant="field"
+		/>
+		<FormInput
+			label={m.common_name()}
+			type="text"
+			placeholder={m.webhook_name_placeholder()}
+			description={m.webhook_name_description()}
+			bind:input={form.inputs.name}
+		/>
 
+		<SelectWithLabel
+			id="webhook-target-type"
+			label={m.target_type()}
+			description={m.webhook_target_type_description()}
+			value={selectedTargetType}
+			options={targetTypeOptions}
+			onValueChange={handleTargetTypeChange}
+		/>
+
+		<SelectWithLabel
+			id="webhook-action-type"
+			label={m.webhook_action_type_label()}
+			description={m.webhook_action_type_description()}
+			value={selectedActionType}
+			options={actionTypeOptions}
+			onValueChange={(value) => (selectedActionType = value as WebhookActionType)}
+			disabled={actionTypeOptions.length === 1}
+		/>
+
+		{#if selectedTargetType !== 'updater'}
 			<SelectWithLabel
-				id="webhook-target-type"
-				label={m.target_type()}
-				description={m.webhook_target_type_description()}
-				value={selectedTargetType}
-				options={targetTypeOptions}
-				onValueChange={handleTargetTypeChange}
+				id="webhook-target-id"
+				label={targetLabel}
+				description={m.webhook_target_resource_description()}
+				bind:value={selectedTargetId}
+				options={targetOptions}
+				disabled={targetOptionsLoading || targetOptions.length === 0}
+				placeholder={targetOptionsLoading ? m.webhook_target_resource_loading() : m.webhook_target_resource_placeholder()}
 			/>
-
-			<SelectWithLabel
-				id="webhook-action-type"
-				label={m.webhook_action_type_label()}
-				description={m.webhook_action_type_description()}
-				value={selectedActionType}
-				options={actionTypeOptions}
-				onValueChange={(value) => (selectedActionType = value as WebhookActionType)}
-				disabled={actionTypeOptions.length === 1}
-			/>
-
-			{#if selectedTargetType !== 'updater'}
-				<SelectWithLabel
-					id="webhook-target-id"
-					label={targetLabel}
-					description={m.webhook_target_resource_description()}
-					bind:value={selectedTargetId}
-					options={targetOptions}
-					disabled={targetOptionsLoading || targetOptions.length === 0}
-					placeholder={targetOptionsLoading ? m.webhook_target_resource_loading() : m.webhook_target_resource_placeholder()}
-				/>
-			{/if}
-		</form>
-	{/snippet}
+		{/if}
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions

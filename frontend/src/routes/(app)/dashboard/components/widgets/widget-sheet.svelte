@@ -136,45 +136,39 @@
 	description={step === 'type' ? m.widget_type_description() : DASHBOARD_WIDGET_TYPES[type].label()}
 	contentClass="sm:max-w-125"
 >
-	{#snippet children()}
-		<form id="dashboard-widget-form" onsubmit={preventDefault(save)} novalidate class="grid gap-4 py-6">
-			{#if step === 'type'}
-				<div>
-					<Label class="mb-0">{m.widget_type()}</Label>
-					<RadioGroup.Root
-						class="mt-2"
-						value={type}
-						onValueChange={(value) =>
-							(form.inputs.type.value = WIDGET_OPTIONS.find((option) => option.type === value)?.type ?? type)}
-					>
-						<div class="grid gap-2">
-							{#each WIDGET_OPTIONS as option (option.type)}
-								<label class="flex cursor-pointer items-start gap-3 rounded-md border border-border/50 p-3 hover:bg-accent/40">
-									<RadioGroup.Item value={option.type} class="mt-0.5" />
-									<div class="grid gap-1 leading-none">
-										<span class="text-sm font-medium">{DASHBOARD_WIDGET_TYPES[option.type].label()}</span>
-										<span class="text-xs text-muted-foreground">{option.description()}</span>
-									</div>
-								</label>
-							{/each}
-						</div>
-					</RadioGroup.Root>
-				</div>
-			{:else if type === 'resourceQuery'}
-				<ResourceQueryConfig {form} />
-			{:else if type === 'resource'}
-				<WidgetTargetConfig
-					{form}
-					kinds={['containers', 'projects']}
-					titlePlaceholder={DASHBOARD_WIDGET_TYPES.resource.label()}
-				/>
-			{:else if type === 'environment'}
-				<WidgetTargetConfig {form} kinds={[]} titlePlaceholder={DASHBOARD_WIDGET_TYPES.environment.label()} />
-			{:else}
-				<WidgetTargetConfig {form} kinds={['containers']} titlePlaceholder={DASHBOARD_WIDGET_TYPES[type].label()} />
-			{/if}
-		</form>
-	{/snippet}
+	<form id="dashboard-widget-form" onsubmit={preventDefault(save)} novalidate class="grid gap-4 py-6">
+		{#if step === 'type'}
+			<div>
+				<Label class="mb-0">{m.widget_type()}</Label>
+				<RadioGroup.Root
+					class="mt-2"
+					value={type}
+					onValueChange={(value) =>
+						(form.inputs.type.value = WIDGET_OPTIONS.find((option) => option.type === value)?.type ?? type)}
+				>
+					<div class="grid gap-2">
+						{#each WIDGET_OPTIONS as option (option.type)}
+							<label class="flex cursor-pointer items-start gap-3 rounded-md border border-border/50 p-3 hover:bg-accent/40">
+								<RadioGroup.Item value={option.type} class="mt-0.5" />
+								<div class="grid gap-1 leading-none">
+									<span class="text-sm font-medium">{DASHBOARD_WIDGET_TYPES[option.type].label()}</span>
+									<span class="text-xs text-muted-foreground">{option.description()}</span>
+								</div>
+							</label>
+						{/each}
+					</div>
+				</RadioGroup.Root>
+			</div>
+		{:else if type === 'resourceQuery'}
+			<ResourceQueryConfig {form} />
+		{:else if type === 'resource'}
+			<WidgetTargetConfig {form} kinds={['containers', 'projects']} titlePlaceholder={DASHBOARD_WIDGET_TYPES.resource.label()} />
+		{:else if type === 'environment'}
+			<WidgetTargetConfig {form} kinds={[]} titlePlaceholder={DASHBOARD_WIDGET_TYPES.environment.label()} />
+		{:else}
+			<WidgetTargetConfig {form} kinds={['containers']} titlePlaceholder={DASHBOARD_WIDGET_TYPES[type].label()} />
+		{/if}
+	</form>
 
 	{#snippet footer()}
 		<div class="flex w-full flex-row gap-2">

@@ -455,11 +455,11 @@
 		const data = node.data as DiagramNodeData | undefined;
 		if (!data) return;
 		const env = encodeURIComponent(data.environmentId);
-		void goto(
-			data.kind === 'network'
-				? resolve(`/(app)/networks/[networkId]?env=${env}`, { networkId: data.resourceId })
-				: resolve(`/(app)/containers/[containerId]?env=${env}`, { containerId: data.resourceId })
-		);
+		if (data.kind === 'network') {
+			void goto(resolve(`/(app)/networks/[networkId]?env=${env}`, { networkId: data.resourceId }));
+		} else {
+			void goto(resolve(`/(app)/containers/[containerId]?env=${env}`, { containerId: data.resourceId }));
+		}
 	}
 </script>
 

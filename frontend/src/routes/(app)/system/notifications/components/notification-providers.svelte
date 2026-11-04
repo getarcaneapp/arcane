@@ -161,12 +161,7 @@
 {:else if isLoaded}
 	<Tabs.Root value={providerTab} class="flex min-h-0 w-full min-w-0 flex-col">
 		<div class="flex flex-wrap items-center justify-between gap-3">
-			<TabBar
-				items={tabItems}
-				value={providerTab}
-				onValueChange={(value) => (providerTab = value as NotificationProviderKey)}
-				class="self-start"
-			/>
+			<TabBar items={tabItems} onValueChange={(value) => (providerTab = value as NotificationProviderKey)} class="self-start" />
 			<div class="flex items-center gap-2">
 				{#if hasChanges}
 					<ArcaneButton

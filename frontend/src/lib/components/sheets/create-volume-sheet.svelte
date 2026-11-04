@@ -81,62 +81,60 @@
 	description={m.create_volume_description()}
 	contentClass="sm:max-w-150"
 >
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
-			<EnvironmentDestinationSelect
-				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
-				permission="volumes:create"
-				variant="field"
-			/>
-			<FormInput
-				label={m.volume_name_label()}
-				id="volume-name"
-				type="text"
-				placeholder={m.volume_name_placeholder()}
-				description={m.volume_name_description()}
-				disabled={isLoading}
-				bind:input={form.inputs.volumeName}
-			/>
+	<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+		<EnvironmentDestinationSelect
+			bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
+			permission="volumes:create"
+			variant="field"
+		/>
+		<FormInput
+			label={m.volume_name_label()}
+			id="volume-name"
+			type="text"
+			placeholder={m.volume_name_placeholder()}
+			description={m.volume_name_description()}
+			disabled={isLoading}
+			bind:input={form.inputs.volumeName}
+		/>
 
-			<SelectWithLabel
-				id="driver-select"
-				bind:value={form.inputs.volumeDriver.value}
-				label={m.volume_driver_label()}
-				description={m.volume_driver_description()}
-				options={drivers}
-				placeholder={m.select_a_driver_placeholder()}
-			/>
+		<SelectWithLabel
+			id="driver-select"
+			bind:value={form.inputs.volumeDriver.value}
+			label={m.volume_driver_label()}
+			description={m.volume_driver_description()}
+			options={drivers}
+			placeholder={m.select_a_driver_placeholder()}
+		/>
 
-			<Accordion.Root type="single" class="w-full">
-				<Accordion.Item value="advanced">
-					<Accordion.Trigger>{m.volume_advanced_settings()}</Accordion.Trigger>
-					<Accordion.Content>
-						<div class="space-y-4 pt-4">
-							<FormInput
-								label={m.common_driver_options()}
-								type="textarea"
-								placeholder={m.volume_driver_options_placeholder()}
-								description={m.volume_driver_options_description()}
-								disabled={isLoading}
-								rows={3}
-								bind:input={form.inputs.volumeOptText}
-							/>
+		<Accordion.Root type="single" class="w-full">
+			<Accordion.Item value="advanced">
+				<Accordion.Trigger>{m.volume_advanced_settings()}</Accordion.Trigger>
+				<Accordion.Content>
+					<div class="space-y-4 pt-4">
+						<FormInput
+							label={m.common_driver_options()}
+							type="textarea"
+							placeholder={m.volume_driver_options_placeholder()}
+							description={m.volume_driver_options_description()}
+							disabled={isLoading}
+							rows={3}
+							bind:input={form.inputs.volumeOptText}
+						/>
 
-							<FormInput
-								label={m.common_labels()}
-								type="textarea"
-								placeholder={m.volume_labels_placeholder()}
-								description={m.volumes_labels_description()}
-								disabled={isLoading}
-								rows={3}
-								bind:input={form.inputs.volumeLabels}
-							/>
-						</div>
-					</Accordion.Content>
-				</Accordion.Item>
-			</Accordion.Root>
-		</form>
-	{/snippet}
+						<FormInput
+							label={m.common_labels()}
+							type="textarea"
+							placeholder={m.volume_labels_placeholder()}
+							description={m.volumes_labels_description()}
+							disabled={isLoading}
+							rows={3}
+							bind:input={form.inputs.volumeLabels}
+						/>
+					</div>
+				</Accordion.Content>
+			</Accordion.Item>
+		</Accordion.Root>
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions

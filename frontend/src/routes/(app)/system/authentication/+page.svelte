@@ -281,7 +281,7 @@
 >
 	{#snippet mainContent()}
 		<Tabs.Root value={activeTab}>
-			<TabBar items={authenticationTabItems} value={activeTab} onValueChange={urlTab.select} />
+			<TabBar items={authenticationTabItems} onValueChange={urlTab.select} />
 
 			<Tabs.Content value="settings" class="mt-6">
 				<fieldset disabled={isReadOnly} class="relative space-y-8">

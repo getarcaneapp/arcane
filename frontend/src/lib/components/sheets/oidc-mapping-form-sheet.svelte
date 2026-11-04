@@ -75,32 +75,30 @@
 	description={m.oidc_mappings_subtitle()}
 	contentClass="sm:max-w-125"
 >
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} novalidate class="grid gap-4 py-6">
-			<FormInput
-				label={m.claim_value()}
-				type="text"
-				placeholder={m.oidc_mappings_claim_placeholder()}
-				disabled={isLoading}
-				bind:input={form.inputs.claimValue}
-			/>
+	<form onsubmit={preventDefault(handleSubmit)} novalidate class="grid gap-4 py-6">
+		<FormInput
+			label={m.claim_value()}
+			type="text"
+			placeholder={m.oidc_mappings_claim_placeholder()}
+			disabled={isLoading}
+			bind:input={form.inputs.claimValue}
+		/>
 
-			<RoleScopeSelects
-				idPrefix="oidc-mapping"
-				roleLabel={m.common_role()}
-				scopeLabel={m.oidc_mappings_scope_label()}
-				{roles}
-				{envOptions}
-				bind:roleValue={form.inputs.roleId.value}
-				bind:environmentValue={form.inputs.environmentId.value}
-				roleError={form.inputs.roleId.error}
-				roleSelectedLabel={selectedLabel.role}
-				envSelectedLabel={selectedLabel.environment}
-				disabled={isLoading}
-			/>
-			<!-- fallow-ignore-next-line code-duplication -- per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
-		</form>
-	{/snippet}
+		<RoleScopeSelects
+			idPrefix="oidc-mapping"
+			roleLabel={m.common_role()}
+			scopeLabel={m.oidc_mappings_scope_label()}
+			{roles}
+			{envOptions}
+			bind:roleValue={form.inputs.roleId.value}
+			bind:environmentValue={form.inputs.environmentId.value}
+			roleError={form.inputs.roleId.error}
+			roleSelectedLabel={selectedLabel.role}
+			envSelectedLabel={selectedLabel.environment}
+			disabled={isLoading}
+		/>
+		<!-- fallow-ignore-next-line code-duplication -- per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions

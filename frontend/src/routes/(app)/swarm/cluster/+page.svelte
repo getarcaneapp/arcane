@@ -141,13 +141,11 @@
 				description={m.swarm_cluster_subtitle()}
 				contentClass="sm:max-w-5xl"
 			>
-				{#snippet children()}
-					{#key environment.id}
-						<div class="px-6 py-6">
-							<ClusterPanel environmentId={environment.id} onChanged={refresh} />
-						</div>
-					{/key}
-				{/snippet}
+				{#key environment.id}
+					<div class="px-6 py-6">
+						<ClusterPanel environmentId={environment.id} onChanged={refresh} />
+					</div>
+				{/key}
 			</ResponsiveDialog>
 		{/if}
 

@@ -188,72 +188,70 @@
 		: m.users_create_description()}
 	contentClass="sm:max-w-160"
 >
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} novalidate class="grid gap-4 py-6">
-			<FormInput
-				label={m.common_username()}
-				type="text"
-				description={m.users_username_description()}
-				disabled={!canEditUsername || isOidcUser}
-				bind:input={form.inputs.username}
-			/>
-			<FormInput
-				label={isEditMode ? m.common_password() : m.users_password_required_label()}
-				type="password"
-				placeholder={passwordPlaceholder}
-				description={passwordDescription}
-				disabled={isOidcUser}
-				bind:input={form.inputs.password}
-			/>
-			<FormInput
-				label={m.common_display_name()}
-				type="text"
-				placeholder={m.users_display_name_placeholder()}
-				description={m.users_display_name_description()}
-				disabled={isOidcUser}
-				bind:input={form.inputs.displayName}
-			/>
-			<FormInput
-				label={m.common_email()}
-				type="text"
-				placeholder={m.user_example_com_placeholder()}
-				description={m.users_email_description()}
-				autocomplete="email"
-				disabled={isOidcUser}
-				bind:input={form.inputs.email}
-			/>
-			<IfPermitted adminOnly>
-				<div>
-					<label for="roleAssignments" class="text-sm font-medium">{m.users_role_assignments_label()}</label>
-					<p class="mb-2 text-xs text-muted-foreground">{m.users_role_assignments_description()}</p>
-					{#if oidcAssignments.length > 0}
-						<div class="mb-3">
-							<p class="text-xs text-muted-foreground">
-								{m.oidc_synced_role_assignments()}
-								<a href={resolve('/(app)/system/authentication')} class="ml-1 text-primary underline"
-									>{m.users_role_assignments_oidc_link()}</a
-								>
-							</p>
-							<div class="mt-2 flex flex-wrap gap-2">
-								{#each oidcAssignments as assignment (`${assignment.roleId}-${assignment.environmentId ?? 'global'}`)}
-									<Badge variant="outline">
-										{roles.find((r) => r.id === assignment.roleId)?.name ?? assignment.roleId}
-										·
-										{environments.find((e) => e.id === assignment.environmentId)?.name ?? m.global_org_wide()}
-									</Badge>
-								{/each}
-							</div>
+	<form onsubmit={preventDefault(handleSubmit)} novalidate class="grid gap-4 py-6">
+		<FormInput
+			label={m.common_username()}
+			type="text"
+			description={m.users_username_description()}
+			disabled={!canEditUsername || isOidcUser}
+			bind:input={form.inputs.username}
+		/>
+		<FormInput
+			label={isEditMode ? m.common_password() : m.users_password_required_label()}
+			type="password"
+			placeholder={passwordPlaceholder}
+			description={passwordDescription}
+			disabled={isOidcUser}
+			bind:input={form.inputs.password}
+		/>
+		<FormInput
+			label={m.common_display_name()}
+			type="text"
+			placeholder={m.users_display_name_placeholder()}
+			description={m.users_display_name_description()}
+			disabled={isOidcUser}
+			bind:input={form.inputs.displayName}
+		/>
+		<FormInput
+			label={m.common_email()}
+			type="text"
+			placeholder={m.user_example_com_placeholder()}
+			description={m.users_email_description()}
+			autocomplete="email"
+			disabled={isOidcUser}
+			bind:input={form.inputs.email}
+		/>
+		<IfPermitted adminOnly>
+			<div>
+				<label for="roleAssignments" class="text-sm font-medium">{m.users_role_assignments_label()}</label>
+				<p class="mb-2 text-xs text-muted-foreground">{m.users_role_assignments_description()}</p>
+				{#if oidcAssignments.length > 0}
+					<div class="mb-3">
+						<p class="text-xs text-muted-foreground">
+							{m.oidc_synced_role_assignments()}
+							<a href={resolve('/(app)/system/authentication')} class="ml-1 text-primary underline"
+								>{m.users_role_assignments_oidc_link()}</a
+							>
+						</p>
+						<div class="mt-2 flex flex-wrap gap-2">
+							{#each oidcAssignments as assignment (`${assignment.roleId}-${assignment.environmentId ?? 'global'}`)}
+								<Badge variant="outline">
+									{roles.find((r) => r.id === assignment.roleId)?.name ?? assignment.roleId}
+									·
+									{environments.find((e) => e.id === assignment.environmentId)?.name ?? m.global_org_wide()}
+								</Badge>
+							{/each}
 						</div>
-					{/if}
-					<RoleAssignmentsEditor bind:assignments={form.inputs.roleAssignments.value} {roles} {environments} />
-					{#if form.inputs.roleAssignments.error}
-						<p class="mt-1 text-xs text-destructive">{form.inputs.roleAssignments.error}</p>
-					{/if}
-				</div>
-			</IfPermitted>
-			<!-- fallow-ignore-next-line code-duplication -- per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
-		</form>
-	{/snippet}
+					</div>
+				{/if}
+				<RoleAssignmentsEditor bind:assignments={form.inputs.roleAssignments.value} {roles} {environments} />
+				{#if form.inputs.roleAssignments.error}
+					<p class="mt-1 text-xs text-destructive">{form.inputs.roleAssignments.error}</p>
+				{/if}
+			</div>
+		</IfPermitted>
+		<!-- fallow-ignore-next-line code-duplication -- per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions

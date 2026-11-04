@@ -6,7 +6,6 @@
 
 	interface Props {
 		items: TabItem[];
-		value: string;
 		onValueChange: (value: string) => void;
 		class?: string;
 	}

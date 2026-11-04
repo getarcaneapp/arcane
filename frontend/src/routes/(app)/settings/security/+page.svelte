@@ -74,7 +74,6 @@
 			<div class="mb-4">
 				<TabBar
 					items={securityTabItems(trivyEnvironmentId !== undefined)}
-					value={activeTab}
 					onValueChange={(value) => {
 						securitySubTab = value;
 					}}

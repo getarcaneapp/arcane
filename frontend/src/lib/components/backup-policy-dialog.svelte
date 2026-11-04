@@ -186,32 +186,30 @@
 	{description}
 	contentClass={contentClass === 'sm:max-w-190' ? 'sm:max-w-190' : 'sm:max-w-180'}
 >
-	{#snippet children()}
-		<div class="space-y-4 py-2">
-			{#if beforeFields}
-				{@render beforeFields()}
-			{/if}
-			<BackupPolicyFields
-				{idPrefix}
-				{form}
-				destinations={destinationList}
-				{scheduleError}
-				{retentionError}
-				{destinationError}
-				enabledError={activeEnabledError}
-				{enabledDescription}
-				schedulePlaceholder={defaultSchedule}
-				{showStopContainers}
-				{destinationsLoading}
-				destinationReadOnly={!destinationsAccessible}
-				{destinationsLoadError}
-				onChange={updateForm}
-			/>
-			{#if afterFields}
-				{@render afterFields()}
-			{/if}
-		</div>
-	{/snippet}
+	<div class="space-y-4 py-2">
+		{#if beforeFields}
+			{@render beforeFields()}
+		{/if}
+		<BackupPolicyFields
+			{idPrefix}
+			{form}
+			destinations={destinationList}
+			{scheduleError}
+			{retentionError}
+			{destinationError}
+			enabledError={activeEnabledError}
+			{enabledDescription}
+			schedulePlaceholder={defaultSchedule}
+			{showStopContainers}
+			{destinationsLoading}
+			destinationReadOnly={!destinationsAccessible}
+			{destinationsLoadError}
+			onChange={updateForm}
+		/>
+		{#if afterFields}
+			{@render afterFields()}
+		{/if}
+	</div>
 	{#snippet footer()}
 		{#if policyId}
 			<ArcaneButton

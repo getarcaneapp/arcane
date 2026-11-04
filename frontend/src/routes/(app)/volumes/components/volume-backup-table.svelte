@@ -735,43 +735,41 @@
 	description={m.volumes_backup_restore_desc()}
 	contentClass="sm:max-w-160"
 >
-	{#snippet children()}
-		<div class="space-y-3 py-2">
-			<Alert.Root size="sm">
-				<InfoIcon class="size-4" />
-				<Alert.Description>
-					{m.volume_backup_restore_files_lifecycle_info()}
-				</Alert.Description>
-			</Alert.Root>
+	<div class="space-y-3 py-2">
+		<Alert.Root size="sm">
+			<InfoIcon class="size-4" />
+			<Alert.Description>
+				{m.volume_backup_restore_files_lifecycle_info()}
+			</Alert.Description>
+		</Alert.Root>
 
-			{#if backupFileProvider}
-				{#key backupFileProvider}
-					<BackupFilePicker
-						provider={backupFileProvider}
-						bind:selectedPaths
-						bind:selectAll={selectAllBackupFiles}
-						bind:search={backupFilesSearch}
-					/>
-				{/key}
-			{/if}
+		{#if backupFileProvider}
+			{#key backupFileProvider}
+				<BackupFilePicker
+					provider={backupFileProvider}
+					bind:selectedPaths
+					bind:selectAll={selectAllBackupFiles}
+					bind:search={backupFilesSearch}
+				/>
+			{/key}
+		{/if}
 
+		<Alert.Root variant="warning" size="sm">
+			<AlertIcon class="size-4" />
+			<Alert.Description>
+				{m.volumes_backup_overwrite_warning()}
+			</Alert.Description>
+		</Alert.Root>
+
+		{#if hasWorkspaceChanges}
 			<Alert.Root variant="warning" size="sm">
 				<AlertIcon class="size-4" />
 				<Alert.Description>
-					{m.volumes_backup_overwrite_warning()}
+					{m.volumes_backup_restore_discard_changes()}
 				</Alert.Description>
 			</Alert.Root>
-
-			{#if hasWorkspaceChanges}
-				<Alert.Root variant="warning" size="sm">
-					<AlertIcon class="size-4" />
-					<Alert.Description>
-						{m.volumes_backup_restore_discard_changes()}
-					</Alert.Description>
-				</Alert.Root>
-			{/if}
-		</div>
-	{/snippet}
+		{/if}
+	</div>
 
 	{#snippet footer()}
 		<ArcaneButton
@@ -798,21 +796,19 @@
 	description={m.volume_backup_choose_s3_destination_description()}
 	contentClass="sm:max-w-130"
 >
-	{#snippet children()}
-		<div class="py-2">
-			<SelectWithLabel
-				id="on-demand-volume-backup-s3-destination"
-				value={onDemandS3DestinationId}
-				onValueChange={(value) => (onDemandS3DestinationId = value)}
-				label={m.volume_backup_s3_destination_label()}
-				description={m.volume_backup_s3_destination_description()}
-				options={s3DestinationOptions}
-			/>
-			{#if s3Destinations.length === 0}
-				<p class="mt-2 text-xs text-muted-foreground">{m.volume_backup_no_s3_destinations()}</p>
-			{/if}
-		</div>
-	{/snippet}
+	<div class="py-2">
+		<SelectWithLabel
+			id="on-demand-volume-backup-s3-destination"
+			value={onDemandS3DestinationId}
+			onValueChange={(value) => (onDemandS3DestinationId = value)}
+			label={m.volume_backup_s3_destination_label()}
+			description={m.volume_backup_s3_destination_description()}
+			options={s3DestinationOptions}
+		/>
+		{#if s3Destinations.length === 0}
+			<p class="mt-2 text-xs text-muted-foreground">{m.volume_backup_no_s3_destinations()}</p>
+		{/if}
+	</div>
 	{#snippet footer()}
 		<ArcaneButton action="cancel" onclick={() => (showS3DestinationDialog = false)} disabled={creating} />
 		<ArcaneButton

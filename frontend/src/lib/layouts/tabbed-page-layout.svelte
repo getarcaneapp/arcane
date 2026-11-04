@@ -69,7 +69,7 @@
 			{/if}
 
 			<div class="mt-4 -mb-px">
-				<TabBar items={tabItems} value={selectedTab} onValueChange={onTabChange} />
+				<TabBar items={tabItems} onValueChange={onTabChange} />
 			</div>
 		</div>
 	</div>

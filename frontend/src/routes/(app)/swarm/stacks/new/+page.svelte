@@ -19,7 +19,7 @@
 	import { WorkspaceDraftState } from '#lib/components/workspace-editor/workspace-draft-state.svelte.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
-	import { ArrowLeftIcon, TrashIcon } from '#lib/icons/index.js';
+	import { ArrowLeftIcon, CreateFileIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { SwarmSyncFile } from '#lib/types/swarm.js';
@@ -159,16 +159,30 @@
 						]
 					}
 				]
-			: [{ key: 'add-override', label: m.compose_override_add(), action: true, onSelect: addOverride }]),
-		envActive
-			? {
-					key: 'env',
-					label: '.env',
-					iconClass: 'text-success',
-					menuItems: [{ id: 'remove', label: m.common_delete(), icon: TrashIcon, destructive: true, onSelect: removeEnv }]
-				}
-			: { key: 'add-env', label: m.add_env_file(), action: true, onSelect: addEnv }
+			: []),
+		...(envActive
+			? [
+					{
+						key: 'env',
+						label: '.env',
+						iconClass: 'text-success',
+						menuItems: [{ id: 'remove', label: m.common_delete(), icon: TrashIcon, destructive: true, onSelect: removeEnv }]
+					}
+				]
+			: [])
 	]);
+	const stackWorkspaceRootMenuItems = $derived(
+		[
+			{
+				visible: !overrideActive,
+				id: 'add-override',
+				label: m.compose_override_add(),
+				icon: CreateFileIcon,
+				onSelect: addOverride
+			},
+			{ visible: !envActive, id: 'add-env', label: m.add_env_file(), icon: CreateFileIcon, onSelect: addEnv }
+		].filter((item) => item.visible)
+	);
 
 	let stackTreeWidth = $state<number | null>(null);
 	let treeOutlineOpen = $state(false);
@@ -463,6 +477,7 @@
 							{#snippet first()}
 								<WorkspaceFileTreePanel
 									leadingRows={stackWorkspaceLeadingRows}
+									rootMenuItems={stackWorkspaceRootMenuItems}
 									entries={stackFileEntries}
 									selectedFile={stackWorkspace.selectedKey}
 									disabled={ui.saving || ui.isLoadingTemplateContent}

@@ -77,17 +77,9 @@
 
 	// Bindings that differ only by host IP (e.g. 0.0.0.0 and ::) share one badge.
 	function uniquePorts(list: PortBadgePort[]): NormalizedPort[] {
-		const map = new Map<string, NormalizedPort>();
-		for (const p of list) {
-			const n = normalize(p);
-			const existing = map.get(portKey(n));
-			if (!existing) {
-				map.set(portKey(n), n);
-				continue;
-			}
-			for (const ip of n.ips) if (!existing.ips.includes(ip)) existing.ips.push(ip);
-		}
-		return Array.from(map.values()).sort((a, b) => {
+		return Array.from(Map.groupBy(list.map(normalize), portKey).values(), (group) =>
+			group.reduce((merged, n) => ({ ...merged, ips: [...new Set([...merged.ips, ...n.ips])] }))
+		).sort((a, b) => {
 			// Published ports first
 			if (a.isPublished !== b.isPublished) {
 				return a.isPublished ? -1 : 1;

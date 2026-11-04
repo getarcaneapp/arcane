@@ -145,8 +145,10 @@
 		for (const param of ['action', 'targetType', 'mode', 'projectId', 'syncId', 'env']) {
 			newUrl.searchParams.delete(param);
 		}
-		const href = newUrl.searchParams.size > 0 ? resolve(`/(app)/gitops?${newUrl.searchParams}`) : resolve('/(app)/gitops');
-		void goto(href, { replace: true, reset: false });
+		void goto(`${resolve('/(app)/gitops')}${newUrl.searchParams.size > 0 ? `?${newUrl.searchParams}` : ''}`, {
+			replace: true,
+			reset: false
+		});
 	});
 
 	function openCreateSyncDialog(targetType?: string | Event, mode?: GitOpsSyncMode, projectId?: string) {

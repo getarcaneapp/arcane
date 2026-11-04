@@ -186,47 +186,45 @@
 	description={m.import_theme_description()}
 	contentClass="sm:max-w-2xl"
 >
-	{#snippet children()}
-		<div class="grid gap-y-3 py-4">
-			{#if atLimit}
-				<p class="text-sm text-destructive">{m.theme_limit_reached({ max: MAX_CUSTOM_THEMES })}</p>
-			{/if}
-			<div class="space-y-1.5">
-				<Label for="theme-json-file">{m.git_sync_import_upload_label()}</Label>
-				<FileDropZone
-					id="theme-json-file"
-					accept=".json,application/json"
-					multiple={false}
-					disabled={atLimit || isLoading}
-					{onUpload}
-					{onFileRejected}
-				/>
-			</div>
-
-			<div class="space-y-1.5">
-				<Label for="theme-json-content">{m.git_sync_import_content_label()}</Label>
-				<Textarea
-					id="theme-json-content"
-					bind:value={jsonContent}
-					placeholder={`{\n  "id": "custom-my-theme",\n  "name": "My Theme",\n  "light": { "background": "#ffffff", ... },\n  "dark": { "background": "#18181b", ... }\n}`}
-					mono
-					size="sm"
-					rows={12}
-					disabled={atLimit || isLoading}
-				/>
-			</div>
-
-			{#if Object.keys(errors).length > 0}
-				<ul class="space-y-1 text-sm text-destructive">
-					{#each Object.entries(errors) as [field, messages] (field)}
-						{#each messages as message (message)}
-							<li><span class="font-medium">{fieldLabels[field as ThemeField]}:</span> {message}</li>
-						{/each}
-					{/each}
-				</ul>
-			{/if}
+	<div class="grid gap-y-3 py-4">
+		{#if atLimit}
+			<p class="text-sm text-destructive">{m.theme_limit_reached({ max: MAX_CUSTOM_THEMES })}</p>
+		{/if}
+		<div class="space-y-1.5">
+			<Label for="theme-json-file">{m.git_sync_import_upload_label()}</Label>
+			<FileDropZone
+				id="theme-json-file"
+				accept=".json,application/json"
+				multiple={false}
+				disabled={atLimit || isLoading}
+				{onUpload}
+				{onFileRejected}
+			/>
 		</div>
-	{/snippet}
+
+		<div class="space-y-1.5">
+			<Label for="theme-json-content">{m.git_sync_import_content_label()}</Label>
+			<Textarea
+				id="theme-json-content"
+				bind:value={jsonContent}
+				placeholder={`{\n  "id": "custom-my-theme",\n  "name": "My Theme",\n  "light": { "background": "#ffffff", ... },\n  "dark": { "background": "#18181b", ... }\n}`}
+				mono
+				size="sm"
+				rows={12}
+				disabled={atLimit || isLoading}
+			/>
+		</div>
+
+		{#if Object.keys(errors).length > 0}
+			<ul class="space-y-1 text-sm text-destructive">
+				{#each Object.entries(errors) as [field, messages] (field)}
+					{#each messages as message (message)}
+						<li><span class="font-medium">{fieldLabels[field as ThemeField]}:</span> {message}</li>
+					{/each}
+				{/each}
+			</ul>
+		{/if}
+	</div>
 
 	{#snippet footer()}
 		<GitopsDialogFooter cancelLabel={m.common_cancel()} {isLoading} onCancel={close}>

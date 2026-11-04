@@ -144,50 +144,48 @@
 	description={sheetDescription}
 	contentClass="sm:max-w-125"
 >
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
-			{#if isBootstrapApiKey && !isStaticApiKey}
-				<p class="text-sm text-muted-foreground">{m.api_key_bootstrap_locked_description()}</p>
+	<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+		{#if isBootstrapApiKey && !isStaticApiKey}
+			<p class="text-sm text-muted-foreground">{m.api_key_bootstrap_locked_description()}</p>
+		{/if}
+		<FormInput
+			label={m.common_name()}
+			type="text"
+			placeholder={m.api_key_name_placeholder()}
+			description={m.api_key_name_description()}
+			bind:input={form.inputs.name}
+			disabled={isReadOnlyApiKey}
+		/>
+		<FormInput
+			label={m.common_description()}
+			type="text"
+			placeholder={m.optional_description_placeholder()}
+			description={m.api_key_description_help()}
+			bind:input={form.inputs.description}
+			disabled={isReadOnlyApiKey}
+		/>
+		<FormInput
+			label={m.api_key_expires_at()}
+			type="date"
+			description={m.api_key_expires_at_description()}
+			bind:input={form.inputs.expiresAt}
+			disabled={isReadOnlyApiKey}
+		/>
+		{#if !isReadOnlyApiKey}
+			{#if hidePermissions}
+				<p class="text-sm text-muted-foreground">{m.api_key_personal_inherits_description()}</p>
+			{:else if manifest}
+				<div>
+					<label for="permissions" class="text-sm font-medium">{m.permissions()}</label>
+					<p class="mb-3 text-xs text-muted-foreground">{m.api_key_permissions_description()}</p>
+					<PermissionPicker {manifest} bind:selected={form.inputs.permissions.value} showSearch />
+					{#if form.inputs.permissions.error}
+						<p class="mt-1 text-xs text-destructive">{form.inputs.permissions.error}</p>
+					{/if}
+				</div>
 			{/if}
-			<FormInput
-				label={m.common_name()}
-				type="text"
-				placeholder={m.api_key_name_placeholder()}
-				description={m.api_key_name_description()}
-				bind:input={form.inputs.name}
-				disabled={isReadOnlyApiKey}
-			/>
-			<FormInput
-				label={m.common_description()}
-				type="text"
-				placeholder={m.optional_description_placeholder()}
-				description={m.api_key_description_help()}
-				bind:input={form.inputs.description}
-				disabled={isReadOnlyApiKey}
-			/>
-			<FormInput
-				label={m.api_key_expires_at()}
-				type="date"
-				description={m.api_key_expires_at_description()}
-				bind:input={form.inputs.expiresAt}
-				disabled={isReadOnlyApiKey}
-			/>
-			{#if !isReadOnlyApiKey}
-				{#if hidePermissions}
-					<p class="text-sm text-muted-foreground">{m.api_key_personal_inherits_description()}</p>
-				{:else if manifest}
-					<div>
-						<label for="permissions" class="text-sm font-medium">{m.permissions()}</label>
-						<p class="mb-3 text-xs text-muted-foreground">{m.api_key_permissions_description()}</p>
-						<PermissionPicker {manifest} bind:selected={form.inputs.permissions.value} showSearch />
-						{#if form.inputs.permissions.error}
-							<p class="mt-1 text-xs text-destructive">{form.inputs.permissions.error}</p>
-						{/if}
-					</div>
-				{/if}
-			{/if}
-		</form>
-	{/snippet}
+		{/if}
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions

@@ -73,28 +73,21 @@
 	const uniquePorts = $derived.by(() => {
 		if (!container.ports?.length) return { published: 0, exposed: 0, total: 0 };
 
-		const seen = new Set<string>();
-		let published = 0;
-		let exposed = 0;
+		const publicPorts = Array.from(
+			Map.groupBy(
+				container.ports.map((p) => {
+					const privatePort = (p as any).privatePort ?? (p as any).target ?? 0;
+					const publicPort = (p as any).publicPort ?? (p as any).hostPort ?? (p as any).published ?? null;
+					const proto = (p as any).type ?? (p as any).protocol ?? 'tcp';
+					return { key: `${publicPort ?? ''}:${privatePort}/${proto}`, publicPort };
+				}),
+				(entry) => entry.key
+			).values(),
+			(group) => group[0]?.publicPort
+		);
+		const published = publicPorts.filter((publicPort) => publicPort && publicPort !== 0).length;
 
-		for (const p of container.ports) {
-			const privatePort = (p as any).privatePort ?? (p as any).target ?? 0;
-			const publicPort = (p as any).publicPort ?? (p as any).hostPort ?? (p as any).published ?? null;
-			const proto = (p as any).type ?? (p as any).protocol ?? 'tcp';
-
-			// Create unique key for deduplication
-			const key = `${publicPort ?? ''}:${privatePort}/${proto}`;
-			if (seen.has(key)) continue;
-			seen.add(key);
-
-			if (publicPort && publicPort !== 0) {
-				published++;
-			} else {
-				exposed++;
-			}
-		}
-
-		return { published, exposed, total: published + exposed };
+		return { published, exposed: publicPorts.length - published, total: publicPorts.length };
 	});
 
 	const mountCount = $derived(container.mounts?.length || 0);

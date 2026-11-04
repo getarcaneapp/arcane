@@ -1,3 +1,5 @@
+import { SvelteSet } from 'svelte/reactivity';
+
 import { m } from '#lib/paraglide/messages.js';
 import type { WorkspaceFileDraft } from '#lib/types/ui/workspace.js';
 import {
@@ -121,7 +123,7 @@ export class WorkspaceDraftState {
 	}
 
 	get paths(): ReadonlySet<string> {
-		return new Set(this.entries.map((file) => file.relativePath));
+		return new SvelteSet(this.entries.map((file) => file.relativePath));
 	}
 
 	get validOpenTabs(): string[] {

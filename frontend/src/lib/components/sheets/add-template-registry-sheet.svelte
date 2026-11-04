@@ -77,32 +77,30 @@
 	description={m.templates_add_registry_description()}
 	contentClass="sm:max-w-125"
 >
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
-			<FormInput
-				label={m.templates_registry_url_label()}
-				type="text"
-				placeholder={m.templates_registry_url_placeholder()}
-				description={m.templates_registry_url_description()}
-				bind:input={form.inputs.url}
-			/>
+	<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+		<FormInput
+			label={m.templates_registry_url_label()}
+			type="text"
+			placeholder={m.templates_registry_url_placeholder()}
+			description={m.templates_registry_url_description()}
+			bind:input={form.inputs.url}
+		/>
 
-			<SwitchWithLabel
-				id="enabledSwitch"
-				label={m.templates_enable_registry_label()}
-				description={m.templates_enable_registry_description()}
-				bind:checked={form.inputs.enabled.value}
-			/>
+		<SwitchWithLabel
+			id="enabledSwitch"
+			label={m.templates_enable_registry_label()}
+			description={m.templates_enable_registry_description()}
+			bind:checked={form.inputs.enabled.value}
+		/>
 
-			{#if submitError}
-				<Alert.Root variant="destructive-subtle">
-					<AlertIcon class="size-4" />
-					<Alert.Title>{m.templates_registry_validation_error_title()}</Alert.Title>
-					<Alert.Description>{submitError}</Alert.Description>
-				</Alert.Root>
-			{/if}
-		</form>
-	{/snippet}
+		{#if submitError}
+			<Alert.Root variant="destructive-subtle">
+				<AlertIcon class="size-4" />
+				<Alert.Title>{m.templates_registry_validation_error_title()}</Alert.Title>
+				<Alert.Description>{submitError}</Alert.Description>
+			</Alert.Root>
+		{/if}
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions

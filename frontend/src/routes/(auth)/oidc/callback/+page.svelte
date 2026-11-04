@@ -26,13 +26,8 @@
 	let pendingRedirect = $state<ResolvedPathname | null>(null);
 	const queryClient = useQueryClient();
 
-	const buildLoginQuery = (errorCode: string, message?: string) => {
-		const params = new URLSearchParams({ error: errorCode });
-		if (message) {
-			params.set('message', message);
-		}
-		return params.toString();
-	};
+	const buildLoginQuery = (errorCode: string, message?: string) =>
+		new URLSearchParams({ error: errorCode, ...(message ? { message } : {}) }).toString();
 
 	// Returns null when no explicit target was carried across the OIDC round trip.
 	// This runs before the user is in the store, so the account landing page must

@@ -111,13 +111,13 @@
 	});
 </script>
 
-<SettingsPageLayout
-	title={m.api_key_page_title()}
-	description={m.api_key_page_description()}
-	icon={ApiKeyIcon}
-	pageType="management"
-	{actionButtons}
->
+<SettingsPageLayout title={m.api_key_page_title()} icon={ApiKeyIcon} pageType="management" {actionButtons}>
+	{#snippet description()}
+		{m.api_key_page_description_intro()}
+		<a href="/api/docs" class="text-primary hover:underline" target="_blank" rel="noopener">{m.api_reference()}</a>
+		{m.api_key_page_description_suffix()}
+	{/snippet}
+
 	{#snippet mainContent()}
 		<ApiKeyTable
 			{apiKeys}
@@ -155,27 +155,25 @@
 			description={m.api_key_created_description()}
 			contentClass="!max-w-fit"
 		>
-			{#snippet children()}
-				<div class="space-y-4 py-4">
-					<div class="rounded-lg bg-muted p-4">
-						<p class="mb-2 text-sm font-medium text-muted-foreground">{m.api_key_your_key()}</p>
-						<Snippet
-							text={newlyCreatedKey?.key || ''}
-							onCopy={(status) => {
-								if (status === 'success') {
-									toast.success(m.api_key_copied_success());
-								}
-							}}
-						/>
-					</div>
-					<div class="rounded-lg border border-warning/30 bg-warning/10 p-4">
-						<p class="text-sm text-warning">
-							<strong>{m.common_important()}:</strong>
-							{m.api_key_important_warning()}
-						</p>
-					</div>
+			<div class="space-y-4 py-4">
+				<div class="rounded-lg bg-muted p-4">
+					<p class="mb-2 text-sm font-medium text-muted-foreground">{m.api_key_your_key()}</p>
+					<Snippet
+						text={newlyCreatedKey?.key || ''}
+						onCopy={(status) => {
+							if (status === 'success') {
+								toast.success(m.api_key_copied_success());
+							}
+						}}
+					/>
 				</div>
-			{/snippet}
+				<div class="rounded-lg border border-warning/30 bg-warning/10 p-4">
+					<p class="text-sm text-warning">
+						<strong>{m.common_important()}:</strong>
+						{m.api_key_important_warning()}
+					</p>
+				</div>
+			</div>
 			{#snippet footer()}
 				<ArcaneButton action="confirm" onclick={() => (isDialogOpen.showKey = false)} customLabel={m.common_done()} />
 			{/snippet}

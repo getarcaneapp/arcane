@@ -144,10 +144,10 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 		// stream serves; a disabled environment would never leave "loading".
 		const included = (environment: Pick<Environment, 'id' | 'name'>) => config.includeEnvironment?.(environment) ?? true;
 		const environments = environmentStore.available.filter((environment) => environment.enabled && included(environment));
-		const targetIds = new Set(environments.map((environment) => environment.id || LOCAL_DOCKER_ENVIRONMENT_ID));
+		const targetIds = environments.map((environment) => environment.id || LOCAL_DOCKER_ENVIRONMENT_ID);
 
 		for (const environmentId of Object.keys(_environmentStates)) {
-			if (!targetIds.has(environmentId)) {
+			if (!targetIds.includes(environmentId)) {
 				removeEnvironment(environmentId);
 			}
 		}

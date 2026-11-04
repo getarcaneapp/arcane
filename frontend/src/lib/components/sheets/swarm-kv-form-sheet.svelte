@@ -124,67 +124,65 @@
 	{description}
 	contentClass="sm:max-w-150"
 >
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
-			{#if !existing}
-				<EnvironmentDestinationSelect
-					bind:value={environmentId}
-					permission={resource.permissions.create}
-					{environments}
-					variant="field"
-				/>
-			{/if}
-			<TextInputWithLabel
-				id="swarm-kv-name"
-				label={m.common_name()}
-				placeholder={resource.namePlaceholder()}
-				bind:value={name}
-				helpText={existing ? resource.nameLocked() : undefined}
-				disabled={!!existing || submitting || !canManage}
-				required={!existing}
+	<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+		{#if !existing}
+			<EnvironmentDestinationSelect
+				bind:value={environmentId}
+				permission={resource.permissions.create}
+				{environments}
+				variant="field"
 			/>
+		{/if}
+		<TextInputWithLabel
+			id="swarm-kv-name"
+			label={m.common_name()}
+			placeholder={resource.namePlaceholder()}
+			bind:value={name}
+			helpText={existing ? resource.nameLocked() : undefined}
+			disabled={!!existing || submitting || !canManage}
+			required={!existing}
+		/>
 
-			<div class="space-y-2.5">
-				<div>
-					<Label>{m.common_labels()}</Label>
-					<p class="mt-0.5 text-xs text-muted-foreground">{m.common_labels_description({ resource: resource.resource() })}</p>
-				</div>
-				<KeyValueEditor
-					bind:rows={labels}
-					keyPlaceholder={m.swarm_secrets_label_key_placeholder()}
-					valuePlaceholder={m.swarm_secrets_label_value_placeholder()}
-					addLabel={m.add_label()}
-					disabled={submitting || !canManage}
-				/>
+		<div class="space-y-2.5">
+			<div>
+				<Label>{m.common_labels()}</Label>
+				<p class="mt-0.5 text-xs text-muted-foreground">{m.common_labels_description({ resource: resource.resource() })}</p>
 			</div>
+			<KeyValueEditor
+				bind:rows={labels}
+				keyPlaceholder={m.swarm_secrets_label_key_placeholder()}
+				valuePlaceholder={m.swarm_secrets_label_value_placeholder()}
+				addLabel={m.add_label()}
+				disabled={submitting || !canManage}
+			/>
+		</div>
 
-			{#if existing && isSecret}
-				<Alert.Root variant="primary-subtle">
-					<InfoIcon class="size-4" />
-					<Alert.Description>{resource.immutableNotice()}</Alert.Description>
-				</Alert.Root>
-			{:else}
-				<div class="space-y-2.5">
-					<Label for="swarm-kv-data">{isSecret ? m.value() : m.swarm_configs_content_label()}</Label>
-					<Textarea
-						id="swarm-kv-data"
-						rows={isSecret ? 6 : 14}
-						mono
-						size="sm"
-						bind:value={data}
-						placeholder={isSecret ? m.swarm_secrets_data_placeholder() : m.swarm_configs_data_placeholder()}
-						readonly={!!existing || !canManage}
-						disabled={submitting}
-					/>
-					{#if existing}
-						<p class="text-xs text-muted-foreground">{resource.immutableNotice()}</p>
-					{:else if isSecret}
-						<p class="text-xs text-muted-foreground">{m.swarm_secrets_value_help()}</p>
-					{/if}
-				</div>
-			{/if}
-		</form>
-	{/snippet}
+		{#if existing && isSecret}
+			<Alert.Root variant="primary-subtle">
+				<InfoIcon class="size-4" />
+				<Alert.Description>{resource.immutableNotice()}</Alert.Description>
+			</Alert.Root>
+		{:else}
+			<div class="space-y-2.5">
+				<Label for="swarm-kv-data">{isSecret ? m.value() : m.swarm_configs_content_label()}</Label>
+				<Textarea
+					id="swarm-kv-data"
+					rows={isSecret ? 6 : 14}
+					mono
+					size="sm"
+					bind:value={data}
+					placeholder={isSecret ? m.swarm_secrets_data_placeholder() : m.swarm_configs_data_placeholder()}
+					readonly={!!existing || !canManage}
+					disabled={submitting}
+				/>
+				{#if existing}
+					<p class="text-xs text-muted-foreground">{resource.immutableNotice()}</p>
+				{:else if isSecret}
+					<p class="text-xs text-muted-foreground">{m.swarm_secrets_value_help()}</p>
+				{/if}
+			</div>
+		{/if}
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions

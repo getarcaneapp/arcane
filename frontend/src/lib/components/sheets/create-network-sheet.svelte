@@ -145,191 +145,189 @@
 	description={m.create_network_description()}
 	contentClass="sm:max-w-150"
 >
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
-			<EnvironmentDestinationSelect
-				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
-				permission="networks:create"
-				variant="field"
+	<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+		<EnvironmentDestinationSelect
+			bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
+			permission="networks:create"
+			variant="field"
+		/>
+		<div class="space-y-2">
+			<Label for="network-name">{m.network_name_label()}</Label>
+			<Input
+				id="network-name"
+				type="text"
+				placeholder={m.network_name_placeholder()}
+				disabled={isLoading}
+				bind:value={form.inputs.networkName.value}
+				aria-invalid={!!form.inputs.networkName.error}
 			/>
-			<div class="space-y-2">
-				<Label for="network-name">{m.network_name_label()}</Label>
-				<Input
-					id="network-name"
-					type="text"
-					placeholder={m.network_name_placeholder()}
-					disabled={isLoading}
-					bind:value={form.inputs.networkName.value}
-					aria-invalid={!!form.inputs.networkName.error}
-				/>
-				{#if form.inputs.networkName.error}
-					<p class="text-xs text-destructive">{form.inputs.networkName.error}</p>
-				{/if}
-				<p class="text-xs text-muted-foreground">{m.network_name_description()}</p>
-			</div>
+			{#if form.inputs.networkName.error}
+				<p class="text-xs text-destructive">{form.inputs.networkName.error}</p>
+			{/if}
+			<p class="text-xs text-muted-foreground">{m.network_name_description()}</p>
+		</div>
 
-			<SelectWithLabel
-				id="driver-select"
-				bind:value={form.inputs.networkDriver.value}
-				label={m.network_driver_label()}
-				description={m.network_driver_description()}
-				options={drivers}
-				placeholder={m.select_a_driver_placeholder()}
-			/>
+		<SelectWithLabel
+			id="driver-select"
+			bind:value={form.inputs.networkDriver.value}
+			label={m.network_driver_label()}
+			description={m.network_driver_description()}
+			options={drivers}
+			placeholder={m.select_a_driver_placeholder()}
+		/>
 
-			<div class="space-y-4">
-				<div class="flex items-center space-x-4">
-					<div class="flex items-center space-x-2">
-						<Checkbox id="check-duplicate" bind:checked={form.inputs.checkDuplicate.value} disabled={isLoading} />
-						<Label for="check-duplicate" weight="normal">{m.network_check_duplicate_label()}</Label>
-					</div>
-					<div class="flex items-center space-x-2">
-						<Checkbox id="internal" bind:checked={form.inputs.internal.value} disabled={isLoading} />
-						<Label for="internal" weight="normal">{m.network_internal_label()}</Label>
-					</div>
+		<div class="space-y-4">
+			<div class="flex items-center space-x-4">
+				<div class="flex items-center space-x-2">
+					<Checkbox id="check-duplicate" bind:checked={form.inputs.checkDuplicate.value} disabled={isLoading} />
+					<Label for="check-duplicate" weight="normal">{m.network_check_duplicate_label()}</Label>
+				</div>
+				<div class="flex items-center space-x-2">
+					<Checkbox id="internal" bind:checked={form.inputs.internal.value} disabled={isLoading} />
+					<Label for="internal" weight="normal">{m.network_internal_label()}</Label>
 				</div>
 			</div>
+		</div>
 
-			<Accordion.Root type="single" class="w-full">
-				<Accordion.Item value="labels">
-					<Accordion.Trigger>{m.common_labels()}</Accordion.Trigger>
-					<Accordion.Content>
-						<div class="space-y-4 pt-4">
-							<div class="space-y-2">
-								<Label>{m.labels_key_value_label()}</Label>
-								{#each labels as label, index (label)}
-									<div class="flex items-center gap-2">
-										<Input type="text" placeholder="Key" bind:value={label.key} disabled={isLoading} class="flex-1" />
-										<Input type="text" placeholder="Value" bind:value={label.value} disabled={isLoading} class="flex-1" />
-										<ArcaneButton
-											action="base"
-											tone="ghost"
-											size="icon"
-											onclick={() => removeLabel(index)}
-											disabled={isLoading || labels.length <= 1}
-											class="text-destructive hover:text-destructive"
-											title={m.common_remove()}
-											icon={CloseIcon}
-										/>
-									</div>
-								{/each}
-								<ArcaneButton
-									action="base"
-									tone="outline"
-									size="sm"
-									onclick={addLabel}
-									disabled={isLoading}
-									customLabel={m.add_label()}
-								/>
-							</div>
-
-							<div class="space-y-2">
-								<Label for="network-labels">{m.network_labels_text_label()}</Label>
-								<Textarea
-									id="network-labels"
-									placeholder={m.network_labels_placeholder()}
-									disabled={isLoading}
-									rows={3}
-									bind:value={form.inputs.networkLabels.value}
-									aria-invalid={!!form.inputs.networkLabels.error}
-								/>
-								{#if form.inputs.networkLabels.error}
-									<p class="text-xs text-destructive">{form.inputs.networkLabels.error}</p>
-								{/if}
-								<p class="text-xs text-muted-foreground">{m.network_labels_description()}</p>
-							</div>
+		<Accordion.Root type="single" class="w-full">
+			<Accordion.Item value="labels">
+				<Accordion.Trigger>{m.common_labels()}</Accordion.Trigger>
+				<Accordion.Content>
+					<div class="space-y-4 pt-4">
+						<div class="space-y-2">
+							<Label>{m.labels_key_value_label()}</Label>
+							{#each labels as label, index (label)}
+								<div class="flex items-center gap-2">
+									<Input type="text" placeholder="Key" bind:value={label.key} disabled={isLoading} class="flex-1" />
+									<Input type="text" placeholder="Value" bind:value={label.value} disabled={isLoading} class="flex-1" />
+									<ArcaneButton
+										action="base"
+										tone="ghost"
+										size="icon"
+										onclick={() => removeLabel(index)}
+										disabled={isLoading || labels.length <= 1}
+										class="text-destructive hover:text-destructive"
+										title={m.common_remove()}
+										icon={CloseIcon}
+									/>
+								</div>
+							{/each}
+							<ArcaneButton
+								action="base"
+								tone="outline"
+								size="sm"
+								onclick={addLabel}
+								disabled={isLoading}
+								customLabel={m.add_label()}
+							/>
 						</div>
-					</Accordion.Content>
-				</Accordion.Item>
 
-				<Accordion.Item value="options">
-					<Accordion.Trigger>{m.common_driver_options()}</Accordion.Trigger>
-					<Accordion.Content>
-						<div class="space-y-2 pt-4">
-							<Label for="driver-options">{m.common_driver_options()}</Label>
+						<div class="space-y-2">
+							<Label for="network-labels">{m.network_labels_text_label()}</Label>
 							<Textarea
-								id="driver-options"
-								placeholder={m.network_driver_options_placeholder()}
+								id="network-labels"
+								placeholder={m.network_labels_placeholder()}
 								disabled={isLoading}
 								rows={3}
-								bind:value={form.inputs.driverOptions.value}
-								aria-invalid={!!form.inputs.driverOptions.error}
+								bind:value={form.inputs.networkLabels.value}
+								aria-invalid={!!form.inputs.networkLabels.error}
 							/>
-							{#if form.inputs.driverOptions.error}
-								<p class="text-xs text-destructive">{form.inputs.driverOptions.error}</p>
+							{#if form.inputs.networkLabels.error}
+								<p class="text-xs text-destructive">{form.inputs.networkLabels.error}</p>
 							{/if}
-							<p class="text-xs text-muted-foreground">{m.network_driver_options_description()}</p>
+							<p class="text-xs text-muted-foreground">{m.network_labels_description()}</p>
 						</div>
-					</Accordion.Content>
-				</Accordion.Item>
+					</div>
+				</Accordion.Content>
+			</Accordion.Item>
 
-				<Accordion.Item value="ipam">
-					<Accordion.Trigger>{m.networks_ipam_title()}</Accordion.Trigger>
-					<Accordion.Content>
-						<div class="space-y-4 pt-4">
-							<div class="flex items-center space-x-2">
-								<Checkbox id="enable-ipam" bind:checked={form.inputs.enableIpam.value} disabled={isLoading} />
-								<Label for="enable-ipam">{m.network_enable_ipam_label()}</Label>
-							</div>
+			<Accordion.Item value="options">
+				<Accordion.Trigger>{m.common_driver_options()}</Accordion.Trigger>
+				<Accordion.Content>
+					<div class="space-y-2 pt-4">
+						<Label for="driver-options">{m.common_driver_options()}</Label>
+						<Textarea
+							id="driver-options"
+							placeholder={m.network_driver_options_placeholder()}
+							disabled={isLoading}
+							rows={3}
+							bind:value={form.inputs.driverOptions.value}
+							aria-invalid={!!form.inputs.driverOptions.error}
+						/>
+						{#if form.inputs.driverOptions.error}
+							<p class="text-xs text-destructive">{form.inputs.driverOptions.error}</p>
+						{/if}
+						<p class="text-xs text-muted-foreground">{m.network_driver_options_description()}</p>
+					</div>
+				</Accordion.Content>
+			</Accordion.Item>
 
-							{#if form.inputs.enableIpam.value}
-								<div class="space-y-4 border-l-2 border-muted pl-6">
-									<div class="space-y-2">
-										<Label for="subnet">{m.common_subnet()}</Label>
-										<Input
-											id="subnet"
-											type="text"
-											placeholder={m.network_example_subnet()}
-											disabled={isLoading}
-											bind:value={form.inputs.subnet.value}
-											aria-invalid={!!form.inputs.subnet.error}
-										/>
-										{#if form.inputs.subnet.error}
-											<p class="text-xs text-destructive">{form.inputs.subnet.error}</p>
-										{/if}
-										<p class="text-xs text-muted-foreground">{m.network_subnet_description()}</p>
-									</div>
+			<Accordion.Item value="ipam">
+				<Accordion.Trigger>{m.networks_ipam_title()}</Accordion.Trigger>
+				<Accordion.Content>
+					<div class="space-y-4 pt-4">
+						<div class="flex items-center space-x-2">
+							<Checkbox id="enable-ipam" bind:checked={form.inputs.enableIpam.value} disabled={isLoading} />
+							<Label for="enable-ipam">{m.network_enable_ipam_label()}</Label>
+						</div>
 
-									<div class="space-y-2">
-										<Label for="ip-range">{m.networks_ipam_iprange_label()}</Label>
-										<Input
-											id="ip-range"
-											type="text"
-											placeholder={m.network_example_ip_range()}
-											disabled={isLoading}
-											bind:value={form.inputs.ipRange.value}
-											aria-invalid={!!form.inputs.ipRange.error}
-										/>
-										{#if form.inputs.ipRange.error}
-											<p class="text-xs text-destructive">{form.inputs.ipRange.error}</p>
-										{/if}
-										<p class="text-xs text-muted-foreground">{m.network_ip_range_description()}</p>
-									</div>
-
-									<div class="space-y-2">
-										<Label for="gateway">{m.common_gateway()}</Label>
-										<Input
-											id="gateway"
-											type="text"
-											placeholder={m.network_example_gateway()}
-											disabled={isLoading}
-											bind:value={form.inputs.gateway.value}
-											aria-invalid={!!form.inputs.gateway.error}
-										/>
-										{#if form.inputs.gateway.error}
-											<p class="text-xs text-destructive">{form.inputs.gateway.error}</p>
-										{/if}
-										<p class="text-xs text-muted-foreground">{m.network_gateway_description()}</p>
-									</div>
+						{#if form.inputs.enableIpam.value}
+							<div class="space-y-4 border-l-2 border-muted pl-6">
+								<div class="space-y-2">
+									<Label for="subnet">{m.common_subnet()}</Label>
+									<Input
+										id="subnet"
+										type="text"
+										placeholder={m.network_example_subnet()}
+										disabled={isLoading}
+										bind:value={form.inputs.subnet.value}
+										aria-invalid={!!form.inputs.subnet.error}
+									/>
+									{#if form.inputs.subnet.error}
+										<p class="text-xs text-destructive">{form.inputs.subnet.error}</p>
+									{/if}
+									<p class="text-xs text-muted-foreground">{m.network_subnet_description()}</p>
 								</div>
-							{/if}
-							<!-- fallow-ignore-next-line code-duplication -- network vs volume sheet share only structural closing tags + the already-shared SheetFooterActions footer; form bodies differ -->
-						</div>
-					</Accordion.Content>
-				</Accordion.Item>
-			</Accordion.Root>
-		</form>
-	{/snippet}
+
+								<div class="space-y-2">
+									<Label for="ip-range">{m.networks_ipam_iprange_label()}</Label>
+									<Input
+										id="ip-range"
+										type="text"
+										placeholder={m.network_example_ip_range()}
+										disabled={isLoading}
+										bind:value={form.inputs.ipRange.value}
+										aria-invalid={!!form.inputs.ipRange.error}
+									/>
+									{#if form.inputs.ipRange.error}
+										<p class="text-xs text-destructive">{form.inputs.ipRange.error}</p>
+									{/if}
+									<p class="text-xs text-muted-foreground">{m.network_ip_range_description()}</p>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="gateway">{m.common_gateway()}</Label>
+									<Input
+										id="gateway"
+										type="text"
+										placeholder={m.network_example_gateway()}
+										disabled={isLoading}
+										bind:value={form.inputs.gateway.value}
+										aria-invalid={!!form.inputs.gateway.error}
+									/>
+									{#if form.inputs.gateway.error}
+										<p class="text-xs text-destructive">{form.inputs.gateway.error}</p>
+									{/if}
+									<p class="text-xs text-muted-foreground">{m.network_gateway_description()}</p>
+								</div>
+							</div>
+						{/if}
+						<!-- fallow-ignore-next-line code-duplication -- network vs volume sheet share only structural closing tags + the already-shared SheetFooterActions footer; form bodies differ -->
+					</div>
+				</Accordion.Content>
+			</Accordion.Item>
+		</Accordion.Root>
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions

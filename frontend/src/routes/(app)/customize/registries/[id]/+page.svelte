@@ -54,19 +54,18 @@
 	const repositories = $derived(data.catalog?.data.map((item) => item.name) ?? configuredNames);
 
 	function navigate(patch: { repository?: string; search?: string; page?: number }) {
-		const params = new URLSearchParams();
 		const target = patch.repository ?? repository;
-		if (target) params.set('repository', target);
 		const search = patch.search ?? data.search;
-		if (search) params.set('search', search);
-		if ((patch.page ?? 1) > 1) params.set('page', String(patch.page));
+		const params = new URLSearchParams({
+			...(target ? { repository: target } : {}),
+			...(search ? { search } : {}),
+			...((patch.page ?? 1) > 1 ? { page: String(patch.page) } : {})
+		});
 		selecting = false;
 		selected = [];
-		const href =
-			params.size > 0
-				? resolve(`/(app)/customize/registries/[id]?${params}`, { id: registry.id })
-				: resolve('/(app)/customize/registries/[id]', { id: registry.id });
-		goto(href, { reset: false });
+		goto(`${resolve('/(app)/customize/registries/[id]', { id: registry.id })}${params.size > 0 ? `?${params}` : ''}`, {
+			reset: false
+		});
 	}
 
 	const search = debounced((value: string) => navigate({ search: value.trim(), page: 1 }), 300);
@@ -144,13 +143,9 @@
 		if (!ids.length) return;
 		// Tags sharing a digest are deleted together, so a second request for the same digest would 404.
 		const digestByTag = new Map(tags.data.map((tag) => [tag.name, tag.digest]));
-		const seenDigests = new Set<string>();
-		const tagsToDelete = ids.filter((tag) => {
+		const tagsToDelete = ids.filter((tag, index) => {
 			const digest = digestByTag.get(tag);
-			if (!digest) return true;
-			if (seenDigests.has(digest)) return false;
-			seenDigests.add(digest);
-			return true;
+			return !digest || ids.findIndex((other) => digestByTag.get(other) === digest) === index;
 		});
 
 		bulkConfirmAndRun({

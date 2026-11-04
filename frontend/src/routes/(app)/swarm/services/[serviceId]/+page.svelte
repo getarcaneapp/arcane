@@ -432,26 +432,24 @@
 			title={m.swarm_service_scale()}
 			description={m.swarm_service_scale_description({ name: serviceName })}
 		>
-			{#snippet children()}
-				<form
-					class="grid gap-2 py-4"
-					onsubmit={(event) => {
-						event.preventDefault();
-						void handleScale();
-					}}
-				>
-					<Label for="swarm-service-scale-replicas">{m.swarm_replicas()}</Label>
-					<Input
-						id="swarm-service-scale-replicas"
-						type="number"
-						min="0"
-						step="1"
-						value={scaleReplicas}
-						oninput={onScaleReplicasInput}
-						disabled={isLoading.scale}
-					/>
-				</form>
-			{/snippet}
+			<form
+				class="grid gap-2 py-4"
+				onsubmit={(event) => {
+					event.preventDefault();
+					void handleScale();
+				}}
+			>
+				<Label for="swarm-service-scale-replicas">{m.swarm_replicas()}</Label>
+				<Input
+					id="swarm-service-scale-replicas"
+					type="number"
+					min="0"
+					step="1"
+					value={scaleReplicas}
+					oninput={onScaleReplicasInput}
+					disabled={isLoading.scale}
+				/>
+			</form>
 
 			{#snippet footer()}
 				<SheetFooterActions

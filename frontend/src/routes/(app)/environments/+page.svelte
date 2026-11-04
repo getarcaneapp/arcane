@@ -5,6 +5,7 @@
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	import UpdateAllDialog from '#lib/components/dialogs/update-all-dialog.svelte';
 	import NewEnvironmentSheet from '#lib/components/sheets/new-environment-sheet.svelte';
@@ -63,7 +64,7 @@
 	function handleBulkDelete(ids: string[] = pageState.selectedIds) {
 		if (ids.length === 0) return;
 		const environmentIds = [...ids];
-		const removedIds = new Set<string>();
+		const removedIds = new SvelteSet<string>();
 
 		bulkConfirmAndRun({
 			ids: environmentIds,

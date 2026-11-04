@@ -336,16 +336,6 @@
 				}
 			];
 		}
-		if (canEditOverride) {
-			return [
-				{
-					key: 'add-override',
-					label: m.compose_override_add(),
-					action: true,
-					onSelect: handleAddOverride
-				}
-			];
-		}
 		return [];
 	});
 	const envWorkspaceRows = $derived.by(() => {
@@ -368,18 +358,26 @@
 				}
 			];
 		}
-		if (canEditEnv) {
-			return [
-				{
-					key: 'add-env',
-					label: m.add_env_file(),
-					action: true,
-					onSelect: handleAddEnv
-				}
-			];
-		}
 		return [];
 	});
+	const projectWorkspaceRootMenuItems = $derived(
+		[
+			{
+				visible: canEditOverride && !overrideActive,
+				id: 'add-override',
+				label: m.compose_override_add(),
+				icon: CreateFileIcon,
+				onSelect: handleAddOverride
+			},
+			{
+				visible: canEditEnv && !envActive,
+				id: 'add-env',
+				label: m.add_env_file(),
+				icon: CreateFileIcon,
+				onSelect: handleAddEnv
+			}
+		].filter((item) => item.visible)
+	);
 	const projectWorkspaceLeadingRows = $derived([
 		{
 			key: 'compose',
@@ -1725,6 +1723,7 @@
 								{#snippet first()}
 									<WorkspaceFileTreePanel
 										leadingRows={projectWorkspaceLeadingRows}
+										rootMenuItems={projectWorkspaceRootMenuItems}
 										entries={projectWorkspaceEntries}
 										{selectedFile}
 										disabled={!canEditProjectWorkspace}

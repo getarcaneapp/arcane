@@ -339,7 +339,7 @@
 
 		{#if diag}
 			<Tabs.Root value={activeTab} class="w-full">
-				<TabBar items={diagnosticsTabItems} value={activeTab} onValueChange={urlTab.select} />
+				<TabBar items={diagnosticsTabItems} onValueChange={urlTab.select} />
 
 				<Tabs.Content value="overview" class="mt-6">
 					<div class="space-y-8">

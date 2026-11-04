@@ -181,13 +181,11 @@
 	description={m.s3_destination_dialog_description()}
 	contentClass="sm:max-w-160"
 >
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
-			{@render destinationFields()}
-			{@render credentialFields()}
-			{@render connectionOptions()}
-		</form>
-	{/snippet}
+	<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+		{@render destinationFields()}
+		{@render credentialFields()}
+		{@render connectionOptions()}
+	</form>
 	{#snippet footer()}
 		<div class="flex w-full flex-col gap-2">
 			<p class={connectionVerified ? 'text-xs text-success' : 'text-xs text-muted-foreground'}>

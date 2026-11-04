@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount, tick, untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import FileTreeRow from '#lib/components/file-tree-row.svelte';
@@ -40,8 +41,8 @@
 	} = $props();
 
 	let pages = $state<Record<string, FolderPageState>>({});
-	let expandedFolders = $state<Set<string>>(new Set());
-	let selectedDirectoryPaths = $state<Set<string>>(new Set());
+	const expandedFolders = new SvelteSet<string>();
+	const selectedDirectoryPaths = new SvelteSet<string>();
 	let debouncedSearch = $state(untrack(() => search.trim()));
 	let generation = 0;
 	let searchTimeout: ReturnType<typeof setTimeout> | undefined;
@@ -108,7 +109,7 @@
 	function resetPagesInternal() {
 		generation += 1;
 		pages = {};
-		expandedFolders = new Set();
+		expandedFolders.clear();
 		void loadPageInternal('', 0, true, generation);
 	}
 
@@ -158,13 +159,10 @@
 	async function toggleFolderInternal(folder: string) {
 		if (searchActive) return;
 		const requestGeneration = generation;
-		const next = new Set(expandedFolders);
-		if (next.has(folder)) {
-			next.delete(folder);
-			expandedFolders = next;
+		if (expandedFolders.has(folder)) {
+			expandedFolders.delete(folder);
 		} else {
-			next.add(folder);
-			expandedFolders = next;
+			expandedFolders.add(folder);
 			if (!pages[folder]) void loadPageInternal(folder, 0, true);
 		}
 		await tick();
@@ -191,22 +189,17 @@
 
 	function toggleEntryInternal(entry: BackupFileEntry, checked: boolean) {
 		if (selectAll || coveringAncestorInternal(entry.path)) return;
-		const next = new Set(selectedPaths);
 		if (!checked) {
-			next.delete(entry.path);
-			selectedPaths = [...next];
+			selectedPaths = [...new Set(selectedPaths)].filter((candidate) => candidate !== entry.path);
 			return;
 		}
-		if (entry.isDirectory) {
-			for (const candidate of next) {
-				if (candidate.startsWith(entry.path + '/')) next.delete(candidate);
-			}
-			const directories = new Set(selectedDirectoryPaths);
-			directories.add(entry.path);
-			selectedDirectoryPaths = directories;
-		}
-		next.add(entry.path);
-		selectedPaths = [...next];
+		if (entry.isDirectory) selectedDirectoryPaths.add(entry.path);
+		selectedPaths = [
+			...new Set([
+				...selectedPaths.filter((candidate) => !(entry.isDirectory && candidate.startsWith(entry.path + '/'))),
+				entry.path
+			])
+		];
 	}
 
 	function selectAllInternal() {

@@ -78,18 +78,13 @@
 	function mixed(key: SettingKey): MixedSettingValue[] | undefined {
 		const formKey = key as SettingsFormKey;
 		if (!mixedKeys.includes(formKey) || formInputs[formKey]?.value !== currentSettings[formKey]) return undefined;
-		const groups = new Map<unknown, string[]>();
-		for (const { environment, settings: environmentSettings } of scope.entries) {
-			const value = environmentSettings.values[key];
-			groups.set(value, [...(groups.get(value) ?? []), environment.name]);
-		}
-		return [...groups].map(([value, environments]) => {
+		return [...Map.groupBy(scope.entries, (entry) => entry.settings.values[key])].map(([value, entries]) => {
 			let label = String(value ?? '') || m.not_set();
 			if (typeof value === 'boolean') label = value ? m.common_enabled() : m.common_disabled();
 			if (settings.meta[key]?.sensitive) label = m.hidden();
 			return {
 				label,
-				environments,
+				environments: entries.map((entry) => entry.environment.name),
 				apply: () => {
 					const input = formInputs[formKey];
 					if (input) input.value = value as never;

@@ -61,50 +61,48 @@
 </script>
 
 <ResponsiveDialog.Root {open} onOpenChange={handleOpenChange} title={m.settings()} contentClass="sm:max-w-130">
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
-			<SettingsRow
-				for="environments-all-environments-limit"
-				label={m.all_environments_limit()}
-				description={m.all_environments_limit_description()}
-				helpText={m.all_environments_limit_help()}
-				error={environmentLimitError}
-				layout="wide"
-				class="p-0"
-			>
-				<Input
-					id="environments-all-environments-limit"
-					type="number"
-					min="2"
-					max="256"
-					bind:value={environmentLimitInput}
-					placeholder="64"
-					aria-invalid={Boolean(environmentLimitError)}
-				/>
-			</SettingsRow>
-			<SettingsRow
-				for="environments-upgrade-max-parallel-agents"
-				label={m.upgrade_max_parallel_agents()}
-				description={m.upgrade_max_parallel_agents_description()}
-				helpText={m.upgrade_max_parallel_agents_help()}
-				error={parallelUpgradesError}
-				lock={settingsStore.lock('upgradeMaxParallelAgents')}
-				layout="wide"
-				class="p-0"
-			>
-				<Input
-					id="environments-upgrade-max-parallel-agents"
-					type="number"
-					min="1"
-					max="16"
-					bind:value={parallelUpgradesInput}
-					placeholder="4"
-					disabled={settingsStore.isLocked('upgradeMaxParallelAgents')}
-					aria-invalid={Boolean(parallelUpgradesError)}
-				/>
-			</SettingsRow>
-		</form>
-	{/snippet}
+	<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
+		<SettingsRow
+			for="environments-all-environments-limit"
+			label={m.all_environments_limit()}
+			description={m.all_environments_limit_description()}
+			helpText={m.all_environments_limit_help()}
+			error={environmentLimitError}
+			layout="wide"
+			class="p-0"
+		>
+			<Input
+				id="environments-all-environments-limit"
+				type="number"
+				min="2"
+				max="256"
+				bind:value={environmentLimitInput}
+				placeholder="64"
+				aria-invalid={Boolean(environmentLimitError)}
+			/>
+		</SettingsRow>
+		<SettingsRow
+			for="environments-upgrade-max-parallel-agents"
+			label={m.upgrade_max_parallel_agents()}
+			description={m.upgrade_max_parallel_agents_description()}
+			helpText={m.upgrade_max_parallel_agents_help()}
+			error={parallelUpgradesError}
+			lock={settingsStore.lock('upgradeMaxParallelAgents')}
+			layout="wide"
+			class="p-0"
+		>
+			<Input
+				id="environments-upgrade-max-parallel-agents"
+				type="number"
+				min="1"
+				max="16"
+				bind:value={parallelUpgradesInput}
+				placeholder="4"
+				disabled={settingsStore.isLocked('upgradeMaxParallelAgents')}
+				aria-invalid={Boolean(parallelUpgradesError)}
+			/>
+		</SettingsRow>
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions

@@ -420,7 +420,7 @@
 		{:else}
 			<Tabs.Root value={activeTab}>
 				<div class="flex flex-wrap items-center justify-between gap-2">
-					<TabBar items={securityTabItems} value={activeTab} onValueChange={handleTabChange} />
+					<TabBar items={securityTabItems} onValueChange={handleTabChange} />
 				</div>
 				<Tabs.Content value="overview" class="mt-4">
 					{#if overview}

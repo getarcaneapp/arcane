@@ -79,6 +79,7 @@
 		{#if structured?.isStructured && isStructuredLogData(structured.parsed)}
 			<StructuredLogEntry data={structured.parsed} rawJson={entry.message} />
 		{:else}
+			<!-- eslint-disable-next-line svelte/no-at-html-tags -- ansiToHtml escapes markup before adding color spans -->
 			{@html entry.html}
 		{/if}
 	</div>

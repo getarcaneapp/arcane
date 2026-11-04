@@ -106,13 +106,8 @@
 	const bulkDuplicateKeys = $derived.by(() => {
 		// Entries in one paste share a single scope, so repeats within the batch
 		// always conflict; against existing variables the check is scope-aware.
-		const seen = new Set<string>();
-		const duplicates = new Set<string>();
-		for (const entry of parsed.entries) {
-			if (seen.has(entry.key) || scopeConflicts(entry.key)) duplicates.add(entry.key);
-			seen.add(entry.key);
-		}
-		return [...duplicates];
+		const keys = parsed.entries.map((entry) => entry.key);
+		return [...new Set(keys.filter((key, index) => keys.indexOf(key) < index || scopeConflicts(key)))];
 	});
 
 	function validateScope(): boolean {
@@ -170,127 +165,125 @@
 	description={isEditMode ? (variableToEdit?.key ?? '') : m.common_add_description()}
 	contentClass="sm:max-w-135"
 >
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
-			{#if !isEditMode}
-				<div class="inline-flex w-fit items-center gap-1 rounded-lg border border-border/50 bg-muted/30 p-1">
-					<Button
-						type="button"
-						size="sm"
-						variant={entryMode === 'single' ? 'secondary' : 'ghost'}
-						class="h-7"
-						onclick={() => (entryMode = 'single')}
-					>
-						{m.single()}
-					</Button>
-					<Button
-						type="button"
-						size="sm"
-						variant={entryMode === 'bulk' ? 'secondary' : 'ghost'}
-						class="h-7"
-						onclick={() => (entryMode = 'bulk')}
-					>
-						{m.paste_env()}
-					</Button>
-				</div>
-			{/if}
+	<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+		{#if !isEditMode}
+			<div class="inline-flex w-fit items-center gap-1 rounded-lg border border-border/50 bg-muted/30 p-1">
+				<Button
+					type="button"
+					size="sm"
+					variant={entryMode === 'single' ? 'secondary' : 'ghost'}
+					class="h-7"
+					onclick={() => (entryMode = 'single')}
+				>
+					{m.single()}
+				</Button>
+				<Button
+					type="button"
+					size="sm"
+					variant={entryMode === 'bulk' ? 'secondary' : 'ghost'}
+					class="h-7"
+					onclick={() => (entryMode = 'bulk')}
+				>
+					{m.paste_env()}
+				</Button>
+			</div>
+		{/if}
 
-			{#if entryMode === 'bulk' && !isEditMode}
-				<div>
-					<Label for="variable-bulk-text">{m.paste_env_content()}</Label>
-					<Textarea
-						id="variable-bulk-text"
-						rows={10}
-						mono
-						class="mt-2"
-						placeholder={m.paste_env_placeholder()}
-						bind:value={bulkText}
-					/>
-				</div>
+		{#if entryMode === 'bulk' && !isEditMode}
+			<div>
+				<Label for="variable-bulk-text">{m.paste_env_content()}</Label>
+				<Textarea
+					id="variable-bulk-text"
+					rows={10}
+					mono
+					class="mt-2"
+					placeholder={m.paste_env_placeholder()}
+					bind:value={bulkText}
+				/>
+			</div>
 
-				<div class="rounded-md border border-border/50">
-					{#if parsed.entries.length === 0}
-						<p class="px-3 py-4 text-sm text-muted-foreground">{m.paste_env_empty_preview()}</p>
-					{:else}
-						<ul class="max-h-48 divide-y divide-border/50 overflow-y-auto">
-							{#each parsed.entries as entry (entry)}
-								<li class="flex items-center gap-3 px-3 py-1.5 text-sm">
-									<span class="font-mono font-medium">{entry.key}</span>
-									<span class="min-w-0 flex-1 truncate text-right font-mono text-muted-foreground">
-										{bulkSecret ? '••••••••' : entry.value}
-									</span>
-								</li>
-							{/each}
-						</ul>
-					{/if}
-				</div>
-
-				<div class="text-xs text-muted-foreground">
-					<span>{m.count_parsed({ count: parsed.entries.length })}</span>
-					{#if parsed.invalidLines.length > 0}
-						<span> &middot; {m.count_lines_could_not_be_parsed({ count: parsed.invalidLines.length })}</span>
-					{/if}
-				</div>
-
-				{#if bulkDuplicateKeys.length > 0}
-					<p class="text-sm text-destructive">
-						{m.variables_duplicate_keys_error()} ({bulkDuplicateKeys.join(', ')})
-					</p>
-				{:else if bulkError}
-					<p class="text-sm text-destructive">{bulkError}</p>
+			<div class="rounded-md border border-border/50">
+				{#if parsed.entries.length === 0}
+					<p class="px-3 py-4 text-sm text-muted-foreground">{m.paste_env_empty_preview()}</p>
+				{:else}
+					<ul class="max-h-48 divide-y divide-border/50 overflow-y-auto">
+						{#each parsed.entries as entry (entry)}
+							<li class="flex items-center gap-3 px-3 py-1.5 text-sm">
+								<span class="font-mono font-medium">{entry.key}</span>
+								<span class="min-w-0 flex-1 truncate text-right font-mono text-muted-foreground">
+									{bulkSecret ? '••••••••' : entry.value}
+								</span>
+							</li>
+						{/each}
+					</ul>
 				{/if}
+			</div>
 
-				<SwitchWithLabel
-					id="variable-bulk-secret"
-					label={m.secret()}
-					description={m.secret_description()}
-					bind:checked={bulkSecret}
-				/>
+			<div class="text-xs text-muted-foreground">
+				<span>{m.count_parsed({ count: parsed.entries.length })}</span>
+				{#if parsed.invalidLines.length > 0}
+					<span> &middot; {m.count_lines_could_not_be_parsed({ count: parsed.invalidLines.length })}</span>
+				{/if}
+			</div>
 
-				{@render scopeSelector()}
-			{:else}
-				<div>
-					<Label for="variable-key">{m.key()}</Label>
-					<Input
-						id="variable-key"
-						type="text"
-						mono
-						class="mt-2"
-						placeholder={m.key_placeholder()}
-						bind:value={inputs.key.value}
-						oninput={(e) => normalizeVariableKeyInput(e, (value) => (inputs.key.value = value))}
-					/>
-					{#if inputs.key.error}
-						<p class="mt-1 text-sm text-destructive">{inputs.key.error}</p>
-					{/if}
-				</div>
-
-				<div>
-					<Label for="variable-value">{m.value()}</Label>
-					<Textarea
-						id="variable-value"
-						rows={3}
-						mono
-						class="mt-2"
-						placeholder={variableToEdit?.isSecret ? m.secret_value_placeholder() : m.value_placeholder()}
-						bind:value={inputs.value.value}
-					/>
-					{#if inputs.value.error}
-						<p class="mt-1 text-sm text-destructive">{inputs.value.error}</p>
-					{/if}
-				</div>
-
-				<SwitchWithLabel
-					id="variable-secret"
-					label={m.secret()}
-					description={m.secret_description()}
-					bind:checked={inputs.isSecret.value}
-				/>
-
-				{@render scopeSelector()}
+			{#if bulkDuplicateKeys.length > 0}
+				<p class="text-sm text-destructive">
+					{m.variables_duplicate_keys_error()} ({bulkDuplicateKeys.join(', ')})
+				</p>
+			{:else if bulkError}
+				<p class="text-sm text-destructive">{bulkError}</p>
 			{/if}
-		</form>
-	{/snippet}
+
+			<SwitchWithLabel
+				id="variable-bulk-secret"
+				label={m.secret()}
+				description={m.secret_description()}
+				bind:checked={bulkSecret}
+			/>
+
+			{@render scopeSelector()}
+		{:else}
+			<div>
+				<Label for="variable-key">{m.key()}</Label>
+				<Input
+					id="variable-key"
+					type="text"
+					mono
+					class="mt-2"
+					placeholder={m.key_placeholder()}
+					bind:value={inputs.key.value}
+					oninput={(e) => normalizeVariableKeyInput(e, (value) => (inputs.key.value = value))}
+				/>
+				{#if inputs.key.error}
+					<p class="mt-1 text-sm text-destructive">{inputs.key.error}</p>
+				{/if}
+			</div>
+
+			<div>
+				<Label for="variable-value">{m.value()}</Label>
+				<Textarea
+					id="variable-value"
+					rows={3}
+					mono
+					class="mt-2"
+					placeholder={variableToEdit?.isSecret ? m.secret_value_placeholder() : m.value_placeholder()}
+					bind:value={inputs.value.value}
+				/>
+				{#if inputs.value.error}
+					<p class="mt-1 text-sm text-destructive">{inputs.value.error}</p>
+				{/if}
+			</div>
+
+			<SwitchWithLabel
+				id="variable-secret"
+				label={m.secret()}
+				description={m.secret_description()}
+				bind:checked={inputs.isSecret.value}
+			/>
+
+			{@render scopeSelector()}
+		{/if}
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions

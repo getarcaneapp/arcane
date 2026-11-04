@@ -635,18 +635,16 @@
 		description={m.system_backups_recovery_key_saved()}
 		contentClass={action === 'create' ? 'sm:max-w-190' : 'sm:max-w-140'}
 	>
-		{#snippet children()}
-			<div class="space-y-3 py-2">
-				<div class="flex items-center gap-2">
-					<Input id="system-backup-recovery-key" value={newRecoveryKey} readonly spellcheck={false} mono />
-					<CopyButton text={newRecoveryKey} variant="outline" tabindex={0} class="shrink-0" />
-				</div>
-				<Alert.Root variant="destructive">
-					<AlertIcon class="size-4" />
-					<Alert.Description>{m.system_backups_recovery_key_alert()}</Alert.Description>
-				</Alert.Root>
+		<div class="space-y-3 py-2">
+			<div class="flex items-center gap-2">
+				<Input id="system-backup-recovery-key" value={newRecoveryKey} readonly spellcheck={false} mono />
+				<CopyButton text={newRecoveryKey} variant="outline" tabindex={0} class="shrink-0" />
 			</div>
-		{/snippet}
+			<Alert.Root variant="destructive">
+				<AlertIcon class="size-4" />
+				<Alert.Description>{m.system_backups_recovery_key_alert()}</Alert.Description>
+			</Alert.Root>
+		</div>
 		{#snippet footer()}
 			<ArcaneButton action="confirm" customLabel={m.common_done()} onclick={() => (keyOpen = false)} />
 		{/snippet}
@@ -660,24 +658,22 @@
 		description={m.system_backups_import_recovery_key_description()}
 		contentClass="sm:max-w-140"
 	>
-		{#snippet children()}
-			<div class="space-y-3 py-2">
-				<TextInputWithLabel
-					value={importKeyInput}
-					onChange={(value) => (importKeyInput = value)}
-					label={m.system_backups_recovery_key()}
-					description={m.system_backups_recovery_key_required()}
-					type="password"
-					autocomplete="current-password"
-				/>
-				{#if policyCollection.recoveryKeyStored}
-					<Alert.Root variant="destructive">
-						<AlertIcon class="size-4" />
-						<Alert.Description>{m.system_backups_import_recovery_key_alert()}</Alert.Description>
-					</Alert.Root>
-				{/if}
-			</div>
-		{/snippet}
+		<div class="space-y-3 py-2">
+			<TextInputWithLabel
+				value={importKeyInput}
+				onChange={(value) => (importKeyInput = value)}
+				label={m.system_backups_recovery_key()}
+				description={m.system_backups_recovery_key_required()}
+				type="password"
+				autocomplete="current-password"
+			/>
+			{#if policyCollection.recoveryKeyStored}
+				<Alert.Root variant="destructive">
+					<AlertIcon class="size-4" />
+					<Alert.Description>{m.system_backups_import_recovery_key_alert()}</Alert.Description>
+				</Alert.Root>
+			{/if}
+		</div>
 		{#snippet footer()}
 			<ArcaneButton action="cancel" onclick={() => (importKeyOpen = false)} disabled={importingKey} />
 			<ArcaneButton
@@ -698,96 +694,94 @@
 		description={dialogDescription()}
 		contentClass={action === 'create' ? 'sm:max-w-190' : 'sm:max-w-140'}
 	>
-		{#snippet children()}
-			<div class="space-y-5 py-2">
-				{#if action === 'create'}
+		<div class="space-y-5 py-2">
+			{#if action === 'create'}
+				<SelectWithLabel
+					id="manual-backup-type"
+					value={backupType}
+					onValueChange={changeBackupType}
+					label={m.backups_backup_type()}
+					description={m.backups_backup_type_description()}
+					options={backupTypeOptions}
+				/>
+				<SelectWithLabel
+					id="manual-backup-configuration"
+					value={backupConfiguration}
+					onValueChange={(value) => (backupConfiguration = value)}
+					label={m.system_backups_backup_configuration()}
+					options={configurationOptions}
+				/>
+				{#if backupConfiguration === 'custom'}
 					<SelectWithLabel
-						id="manual-backup-type"
-						value={backupType}
-						onValueChange={changeBackupType}
-						label={m.backups_backup_type()}
-						description={m.backups_backup_type_description()}
-						options={backupTypeOptions}
+						id="manual-backup-destination"
+						value={destination}
+						onValueChange={(value) => (destination = value as SystemBackupDestination)}
+						label={m.backups_destination_label()}
+						options={destinationOptions}
 					/>
-					<SelectWithLabel
-						id="manual-backup-configuration"
-						value={backupConfiguration}
-						onValueChange={(value) => (backupConfiguration = value)}
-						label={m.system_backups_backup_configuration()}
-						options={configurationOptions}
-					/>
-					{#if backupConfiguration === 'custom'}
-						<SelectWithLabel
-							id="manual-backup-destination"
-							value={destination}
-							onValueChange={(value) => (destination = value as SystemBackupDestination)}
-							label={m.backups_destination_label()}
-							options={destinationOptions}
+					{#if backupType === 'volume'}
+						<LabeledSwitch
+							id="manual-volume-backup-stop-containers"
+							checked={stopContainers}
+							onCheckedChange={(value) => (stopContainers = value)}
+							label={m.volume_backup_stop_containers()}
+							description={m.volume_backup_stop_containers_description()}
 						/>
-						{#if backupType === 'volume'}
-							<LabeledSwitch
-								id="manual-volume-backup-stop-containers"
-								checked={stopContainers}
-								onCheckedChange={(value) => (stopContainers = value)}
-								label={m.volume_backup_stop_containers()}
-								description={m.volume_backup_stop_containers_description()}
-							/>
-						{/if}
 					{/if}
 				{/if}
-				{#if action === 'upload' || action === 'discover' || (action === 'create' && backupConfiguration === 'custom' && destination !== 'local')}
-					<SelectWithLabel
-						id="manual-system-backup-s3"
-						value={s3DestinationId}
-						onValueChange={(value) => (s3DestinationId = value)}
-						label={m.volume_backup_s3_destination_label()}
-						error={destinationError || null}
-						options={s3Options}
-					/>
-				{/if}
-				{#if action === 'create' && backupType === 'volume' && backupConfiguration === 'custom'}
-					<SystemVolumeScopeFields
-						idPrefix="manual-volume-backup"
-						{selectionMode}
-						{volumeNames}
-						{ignoreAnonymous}
-						options={systemVolumeOptions}
-						loading={systemVolumeOptionsLoading}
-						onChange={(values) => {
-							selectionMode = values.selectionMode ?? selectionMode;
-							volumeNames = values.volumeNames ?? volumeNames;
-							ignoreAnonymous = values.ignoreAnonymous ?? ignoreAnonymous;
+			{/if}
+			{#if action === 'upload' || action === 'discover' || (action === 'create' && backupConfiguration === 'custom' && destination !== 'local')}
+				<SelectWithLabel
+					id="manual-system-backup-s3"
+					value={s3DestinationId}
+					onValueChange={(value) => (s3DestinationId = value)}
+					label={m.volume_backup_s3_destination_label()}
+					error={destinationError || null}
+					options={s3Options}
+				/>
+			{/if}
+			{#if action === 'create' && backupType === 'volume' && backupConfiguration === 'custom'}
+				<SystemVolumeScopeFields
+					idPrefix="manual-volume-backup"
+					{selectionMode}
+					{volumeNames}
+					{ignoreAnonymous}
+					options={systemVolumeOptions}
+					loading={systemVolumeOptionsLoading}
+					onChange={(values) => {
+						selectionMode = values.selectionMode ?? selectionMode;
+						volumeNames = values.volumeNames ?? volumeNames;
+						ignoreAnonymous = values.ignoreAnonymous ?? ignoreAnonymous;
+					}}
+				/>
+			{/if}
+			{#if actionNeedsTypedKey}
+				<TextInputWithLabel
+					value={recoveryKey}
+					onChange={(value) => (recoveryKey = value)}
+					label={m.system_backups_recovery_key()}
+					description={policyCollection.recoveryKeyStored
+						? m.system_backups_recovery_key_saved_description()
+						: m.system_backups_recovery_key_enter_description()}
+					type="password"
+					autocomplete="current-password"
+				/>
+			{:else if action !== 'delete' && !(action === 'create' && backupType === 'volume') && !policyCollection.recoveryKeyStored}
+				<div class="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+					<p class="text-sm text-muted-foreground">{m.system_backups_recovery_key_needed()}</p>
+					<ArcaneButton
+						action="edit"
+						size="sm"
+						customLabel={m.system_backups_setup_recovery_key()}
+						loading={generatingKey}
+						onclick={() => {
+							actionOpen = false;
+							openRecoveryKey();
 						}}
 					/>
-				{/if}
-				{#if actionNeedsTypedKey}
-					<TextInputWithLabel
-						value={recoveryKey}
-						onChange={(value) => (recoveryKey = value)}
-						label={m.system_backups_recovery_key()}
-						description={policyCollection.recoveryKeyStored
-							? m.system_backups_recovery_key_saved_description()
-							: m.system_backups_recovery_key_enter_description()}
-						type="password"
-						autocomplete="current-password"
-					/>
-				{:else if action !== 'delete' && !(action === 'create' && backupType === 'volume') && !policyCollection.recoveryKeyStored}
-					<div class="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
-						<p class="text-sm text-muted-foreground">{m.system_backups_recovery_key_needed()}</p>
-						<ArcaneButton
-							action="edit"
-							size="sm"
-							customLabel={m.system_backups_setup_recovery_key()}
-							loading={generatingKey}
-							onclick={() => {
-								actionOpen = false;
-								openRecoveryKey();
-							}}
-						/>
-					</div>
-				{/if}
-			</div>
-		{/snippet}
+				</div>
+			{/if}
+		</div>
 		{#snippet footer()}
 			<ArcaneButton action="cancel" onclick={() => (actionOpen = false)} disabled={loading} />
 			<ArcaneButton
@@ -811,57 +805,55 @@
 		description={m.system_backups_restore_files_description()}
 		contentClass="sm:max-w-160"
 	>
-		{#snippet children()}
-			<div class="space-y-3 py-2">
-				<Alert.Root size="sm">
-					<InfoIcon class="size-4" />
-					<Alert.Description>
-						{m.system_backups_restore_files_lifecycle_info()}
-						{m.system_backups_restore_files_current_directory()}
-					</Alert.Description>
-				</Alert.Root>
+		<div class="space-y-3 py-2">
+			<Alert.Root size="sm">
+				<InfoIcon class="size-4" />
+				<Alert.Description>
+					{m.system_backups_restore_files_lifecycle_info()}
+					{m.system_backups_restore_files_current_directory()}
+				</Alert.Description>
+			</Alert.Root>
 
-				<div class="flex items-end gap-2">
-					<div class="min-w-0 flex-1">
-						<TextInputWithLabel
-							value={restoreFilesRecoveryKey}
-							onChange={updateRestoreFilesRecoveryKey}
-							label={m.system_backups_recovery_key()}
-							description={policyCollection.recoveryKeyStored
-								? m.system_backups_recovery_key_saved_description()
-								: m.system_backups_recovery_key_enter_description()}
-							type="password"
-							autocomplete="current-password"
-						/>
-					</div>
-					<ArcaneButton
-						action="inspect"
-						customLabel={m.system_backups_load_files()}
-						onclick={loadRestoreFiles}
-						disabled={restoreFilesKeyInvalid}
+			<div class="flex items-end gap-2">
+				<div class="min-w-0 flex-1">
+					<TextInputWithLabel
+						value={restoreFilesRecoveryKey}
+						onChange={updateRestoreFilesRecoveryKey}
+						label={m.system_backups_recovery_key()}
+						description={policyCollection.recoveryKeyStored
+							? m.system_backups_recovery_key_saved_description()
+							: m.system_backups_recovery_key_enter_description()}
+						type="password"
+						autocomplete="current-password"
 					/>
 				</div>
-
-				{#if restoreFilesProvider}
-					{#key restoreFilesProvider}
-						<BackupFilePicker
-							provider={restoreFilesProvider}
-							bind:selectedPaths={restoreFilesSelectedPaths}
-							bind:selectAll={restoreFilesSelectAll}
-							bind:search={restoreFilesSearch}
-							onRootLoad={updateRestoreFilesRootLoad}
-						/>
-					{/key}
-
-					<Alert.Root variant="warning" size="sm">
-						<AlertIcon class="size-4" />
-						<Alert.Description>
-							{m.volumes_backup_overwrite_warning()}
-						</Alert.Description>
-					</Alert.Root>
-				{/if}
+				<ArcaneButton
+					action="inspect"
+					customLabel={m.system_backups_load_files()}
+					onclick={loadRestoreFiles}
+					disabled={restoreFilesKeyInvalid}
+				/>
 			</div>
-		{/snippet}
+
+			{#if restoreFilesProvider}
+				{#key restoreFilesProvider}
+					<BackupFilePicker
+						provider={restoreFilesProvider}
+						bind:selectedPaths={restoreFilesSelectedPaths}
+						bind:selectAll={restoreFilesSelectAll}
+						bind:search={restoreFilesSearch}
+						onRootLoad={updateRestoreFilesRootLoad}
+					/>
+				{/key}
+
+				<Alert.Root variant="warning" size="sm">
+					<AlertIcon class="size-4" />
+					<Alert.Description>
+						{m.volumes_backup_overwrite_warning()}
+					</Alert.Description>
+				</Alert.Root>
+			{/if}
+		</div>
 
 		{#snippet footer()}
 			<ArcaneButton action="cancel" onclick={closeRestoreFiles} disabled={restoringFiles} />

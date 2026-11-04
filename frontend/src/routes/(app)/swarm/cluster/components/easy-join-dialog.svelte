@@ -139,142 +139,140 @@
 	description={m.swarm_easy_join_description()}
 	contentClass="sm:max-w-3xl"
 >
-	{#snippet children()}
-		<div class="space-y-5 py-4">
-			{#if errorMessage}
-				<Alert.Root variant="destructive">
-					<Alert.Title>{m.common_action_failed()}</Alert.Title>
-					<Alert.Description>{errorMessage}</Alert.Description>
-				</Alert.Root>
-			{/if}
+	<div class="space-y-5 py-4">
+		{#if errorMessage}
+			<Alert.Root variant="destructive">
+				<Alert.Title>{m.common_action_failed()}</Alert.Title>
+				<Alert.Description>{errorMessage}</Alert.Description>
+			</Alert.Root>
+		{/if}
 
-			{#if isLoading && candidates.length === 0}
-				<div class="flex justify-center py-10"><Spinner class="size-6" /></div>
-			{:else if candidates.length === 0}
-				<div class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-					{m.swarm_easy_join_no_candidates()}
-				</div>
-			{:else}
-				<div class="space-y-1.5">
-					<label for="easy-join-manager-addresses" class="text-sm font-medium">{m.swarm_cluster_manager_addresses_label()}</label>
-					<Input
-						id="easy-join-manager-addresses"
-						placeholder={m.swarm_cluster_join_remote_addrs_placeholder()}
-						bind:value={managerAddressesInput}
-						disabled={isJoining}
-					/>
-					<p class="text-xs text-muted-foreground">{m.swarm_easy_join_manager_addresses_help()}</p>
-				</div>
-				<div class="space-y-3">
-					{#each candidates as candidate (candidate.environmentId)}
-						{@const target = targets[candidate.environmentId]}
-						<div class="rounded-lg border p-4">
-							<label class="flex items-start gap-3">
-								<input
-									type="checkbox"
-									checked={!!target}
-									disabled={isJoining}
-									onchange={(event) => toggleCandidate(candidate, event.currentTarget.checked)}
-								/>
-								<span>
-									<span class="block text-sm font-medium">{candidate.environmentName}</span>
-									<span class="text-xs text-muted-foreground">{candidate.environmentType} · {candidate.status}</span>
-								</span>
-							</label>
-
-							{#if target}
-								<div class="mt-4 space-y-3 border-t pt-4">
-									<div class="grid gap-3 sm:grid-cols-2">
-										<label class="space-y-1 text-xs">
-											<span class="text-muted-foreground">{m.common_role()}</span>
-											<select
-												class="h-9 w-full rounded-md border border-input bg-background px-3"
-												value={target.role}
-												disabled={isJoining}
-												onchange={(event) =>
-													updateTarget(candidate.environmentId, {
-														role: event.currentTarget.value as 'worker' | 'manager'
-													})}
-											>
-												<option value="worker">{m.worker()}</option>
-												<option value="manager">{m.manager()}</option>
-											</select>
-										</label>
-										<label class="space-y-1 text-xs">
-											<span class="text-muted-foreground">{m.swarm_availability()}</span>
-											<select
-												class="h-9 w-full rounded-md border border-input bg-background px-3"
-												value={target.availability}
-												disabled={isJoining}
-												onchange={(event) =>
-													updateTarget(candidate.environmentId, {
-														availability: event.currentTarget.value as 'active' | 'pause' | 'drain'
-													})}
-											>
-												<option value="active">{m.common_active()}</option>
-												<option value="pause">{m.common_pause()}</option>
-												<option value="drain">{m.drain()}</option>
-											</select>
-										</label>
-									</div>
-									<div class="grid gap-3 sm:grid-cols-3">
-										<Input
-											placeholder={m.swarm_cluster_listen_addr_placeholder()}
-											value={target.listenAddr ?? ''}
-											disabled={isJoining}
-											oninput={(event) => updateTarget(candidate.environmentId, { listenAddr: event.currentTarget.value })}
-										/>
-										<Input
-											placeholder={m.swarm_cluster_advertise_addr_placeholder()}
-											value={target.advertiseAddr ?? ''}
-											disabled={isJoining}
-											oninput={(event) => updateTarget(candidate.environmentId, { advertiseAddr: event.currentTarget.value })}
-										/>
-										<Input
-											placeholder={m.swarm_easy_join_data_path_placeholder()}
-											value={target.dataPathAddr ?? ''}
-											disabled={isJoining}
-											oninput={(event) => updateTarget(candidate.environmentId, { dataPathAddr: event.currentTarget.value })}
-										/>
-									</div>
-								</div>
-							{/if}
-						</div>
-					{/each}
-				</div>
-			{/if}
-
-			{#if results.length > 0}
-				<div class="space-y-2 rounded-lg border p-4">
-					<div class="font-medium">{m.swarm_easy_join_results_title()}</div>
-					{#each results as result (result.environmentId)}
-						<div class="flex items-start justify-between gap-4 text-sm">
-							<span
-								>{candidates.find((candidate) => candidate.environmentId === result.environmentId)?.environmentName ??
-									result.environmentId}</span
-							>
-							<span
-								class={result.state === 'failed'
-									? 'min-w-0 text-right break-words text-destructive'
-									: 'min-w-0 text-right break-words text-muted-foreground'}
-							>
-								{resultLabel(result)}{result.error ? `: ${result.error}` : ''}
-							</span>
-						</div>
-					{/each}
-				</div>
-			{/if}
-
-			<div class="flex justify-end gap-2 border-t pt-4">
-				<ArcaneButton action="base" tone="outline" customLabel={m.common_cancel()} onclick={() => (open = false)} />
-				<ArcaneButton
-					action="create"
-					customLabel={m.swarm_easy_join_action()}
-					onclick={joinSelected}
-					loading={isLoading}
-					disabled={isLoading || Object.keys(targets).length === 0}
-				/>
+		{#if isLoading && candidates.length === 0}
+			<div class="flex justify-center py-10"><Spinner class="size-6" /></div>
+		{:else if candidates.length === 0}
+			<div class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+				{m.swarm_easy_join_no_candidates()}
 			</div>
+		{:else}
+			<div class="space-y-1.5">
+				<label for="easy-join-manager-addresses" class="text-sm font-medium">{m.swarm_cluster_manager_addresses_label()}</label>
+				<Input
+					id="easy-join-manager-addresses"
+					placeholder={m.swarm_cluster_join_remote_addrs_placeholder()}
+					bind:value={managerAddressesInput}
+					disabled={isJoining}
+				/>
+				<p class="text-xs text-muted-foreground">{m.swarm_easy_join_manager_addresses_help()}</p>
+			</div>
+			<div class="space-y-3">
+				{#each candidates as candidate (candidate.environmentId)}
+					{@const target = targets[candidate.environmentId]}
+					<div class="rounded-lg border p-4">
+						<label class="flex items-start gap-3">
+							<input
+								type="checkbox"
+								checked={!!target}
+								disabled={isJoining}
+								onchange={(event) => toggleCandidate(candidate, event.currentTarget.checked)}
+							/>
+							<span>
+								<span class="block text-sm font-medium">{candidate.environmentName}</span>
+								<span class="text-xs text-muted-foreground">{candidate.environmentType} · {candidate.status}</span>
+							</span>
+						</label>
+
+						{#if target}
+							<div class="mt-4 space-y-3 border-t pt-4">
+								<div class="grid gap-3 sm:grid-cols-2">
+									<label class="space-y-1 text-xs">
+										<span class="text-muted-foreground">{m.common_role()}</span>
+										<select
+											class="h-9 w-full rounded-md border border-input bg-background px-3"
+											value={target.role}
+											disabled={isJoining}
+											onchange={(event) =>
+												updateTarget(candidate.environmentId, {
+													role: event.currentTarget.value as 'worker' | 'manager'
+												})}
+										>
+											<option value="worker">{m.worker()}</option>
+											<option value="manager">{m.manager()}</option>
+										</select>
+									</label>
+									<label class="space-y-1 text-xs">
+										<span class="text-muted-foreground">{m.swarm_availability()}</span>
+										<select
+											class="h-9 w-full rounded-md border border-input bg-background px-3"
+											value={target.availability}
+											disabled={isJoining}
+											onchange={(event) =>
+												updateTarget(candidate.environmentId, {
+													availability: event.currentTarget.value as 'active' | 'pause' | 'drain'
+												})}
+										>
+											<option value="active">{m.common_active()}</option>
+											<option value="pause">{m.common_pause()}</option>
+											<option value="drain">{m.drain()}</option>
+										</select>
+									</label>
+								</div>
+								<div class="grid gap-3 sm:grid-cols-3">
+									<Input
+										placeholder={m.swarm_cluster_listen_addr_placeholder()}
+										value={target.listenAddr ?? ''}
+										disabled={isJoining}
+										oninput={(event) => updateTarget(candidate.environmentId, { listenAddr: event.currentTarget.value })}
+									/>
+									<Input
+										placeholder={m.swarm_cluster_advertise_addr_placeholder()}
+										value={target.advertiseAddr ?? ''}
+										disabled={isJoining}
+										oninput={(event) => updateTarget(candidate.environmentId, { advertiseAddr: event.currentTarget.value })}
+									/>
+									<Input
+										placeholder={m.swarm_easy_join_data_path_placeholder()}
+										value={target.dataPathAddr ?? ''}
+										disabled={isJoining}
+										oninput={(event) => updateTarget(candidate.environmentId, { dataPathAddr: event.currentTarget.value })}
+									/>
+								</div>
+							</div>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
+
+		{#if results.length > 0}
+			<div class="space-y-2 rounded-lg border p-4">
+				<div class="font-medium">{m.swarm_easy_join_results_title()}</div>
+				{#each results as result (result.environmentId)}
+					<div class="flex items-start justify-between gap-4 text-sm">
+						<span
+							>{candidates.find((candidate) => candidate.environmentId === result.environmentId)?.environmentName ??
+								result.environmentId}</span
+						>
+						<span
+							class={result.state === 'failed'
+								? 'min-w-0 text-right break-words text-destructive'
+								: 'min-w-0 text-right break-words text-muted-foreground'}
+						>
+							{resultLabel(result)}{result.error ? `: ${result.error}` : ''}
+						</span>
+					</div>
+				{/each}
+			</div>
+		{/if}
+
+		<div class="flex justify-end gap-2 border-t pt-4">
+			<ArcaneButton action="base" tone="outline" customLabel={m.common_cancel()} onclick={() => (open = false)} />
+			<ArcaneButton
+				action="create"
+				customLabel={m.swarm_easy_join_action()}
+				onclick={joinSelected}
+				loading={isLoading}
+				disabled={isLoading || Object.keys(targets).length === 0}
+			/>
 		</div>
-	{/snippet}
+	</div>
 </ResponsiveDialog>

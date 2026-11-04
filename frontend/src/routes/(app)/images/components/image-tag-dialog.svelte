@@ -79,11 +79,9 @@
 	description={m.images_tag_dialog_description()}
 	contentClass="sm:max-w-130"
 >
-	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
-			<RepoTagFields bind:repository={form.inputs.repository} bind:tag={form.inputs.tag} />
-		</form>
-	{/snippet}
+	<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
+		<RepoTagFields bind:repository={form.inputs.repository} bind:tag={form.inputs.tag} />
+	</form>
 
 	{#snippet footer()}
 		<SheetFooterActions
