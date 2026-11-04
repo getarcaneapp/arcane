@@ -430,6 +430,7 @@ func (s *Service) UpdateStackSource(ctx context.Context, environmentID, stackNam
 		EnvContent:       source.EnvContent,
 		Files:            source.Files,
 		Prune:            true,
+		ResolveImage:     "changed",
 		WithRegistryAuth: true,
 	}); deployStackAfterSourceUpdateErr != nil {
 		// Roll back the persisted source so reads never return an edit that
