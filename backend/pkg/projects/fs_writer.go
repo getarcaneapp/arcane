@@ -98,7 +98,13 @@ func WriteComposeFile(ctx context.Context, projectsRoot, dirPath, content string
 	}
 
 	if err := (acfs.Root{Path: dirPath}).Write(ctx, "/"+composeFileName, []byte(content), acfs.WriteOptions{Mode: mode, InPlace: true}); err != nil {
-		return fmt.Errorf("failed to write compose file: %w", err)
+		if errors.Is(err, fs.ErrPermission) {
+			return fmt.Errorf(
+				"failed to write compose file %s: not writable by uid %d gid %d (check the file owner matches PUID/PGID): %w",
+				filepath.Join(dirPath, composeFileName), os.Geteuid(), os.Getegid(), err,
+			)
+		}
+		return fmt.Errorf("failed to write compose file %s: %w", filepath.Join(dirPath, composeFileName), err)
 	}
 
 	return nil
