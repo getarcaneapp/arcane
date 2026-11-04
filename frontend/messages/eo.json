@@ -4394,5 +4394,13 @@
   "api_reference": "API-referenco",
   "api_key_page_description_suffix": "por detaloj pri uzado.",
   "github_token": "GitHub-jetono",
-  "github_token_description": "Opcia jetono uzata por akiri bildajn eldonnotojn de GitHub. Pliigas la API-limon de 60 al 5 000 petoj je horo."
+  "github_token_description": "Opcia jetono uzata por akiri bildajn eldonnotojn de GitHub. Pliigas la API-limon de 60 al 5 000 petoj je horo.",
+  "image_auto_patch": "Bilda Aŭtomata Flikaĵo",
+  "analytics_heartbeat": "Analitika Korfrapo",
+  "docker_client_refresh": "Relfreŝigo de Docker-kliento",
+  "event_cleanup": "Post-eventoa purigado",
+  "upgrade_log_cleanup": "Plibonigo de protokolo-purigado",
+  "expired_sessions_cleanup": "Purigado de eksvalidiĝintaj sesioj",
+  "filesystem_watcher": "Dosier-sistema observanto",
+  "vulnerability_risk": "Vundebleca risko"
 }
