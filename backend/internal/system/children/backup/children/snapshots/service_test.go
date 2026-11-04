@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"syscall"
 	"testing"
 	"time"
 
@@ -74,8 +73,7 @@ func TestSnapshotSourceFilesSkipLiveAndProjectFiles(t *testing.T) {
 	require.Equal(t, os.FileMode(0o640), info.Mode().Perm())
 	original, err := os.Stat(filepath.Join(root, "arcane.db"))
 	require.NoError(t, err)
-	require.Equal(t, original.Sys().(*syscall.Stat_t).Uid, info.Sys().(*syscall.Stat_t).Uid)
-	require.Equal(t, original.Sys().(*syscall.Stat_t).Gid, info.Sys().(*syscall.Stat_t).Gid)
+	requireSameOwner(t, original, info)
 	staged, err := sql.Open("sqlite", filepath.Join(stage, "arcane.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = staged.Close() })

@@ -105,6 +105,27 @@ func TestResolveSystemUpgraderRuntimeOptions_DefaultDockerHost(t *testing.T) {
 	}, mounts)
 }
 
+func TestResolveSystemUpgraderRuntimeOptions_NamedPipeDockerHost(t *testing.T) {
+	containerEnv, mounts, networkMode, err := resolveUpgraderRuntimeOptions(
+		t.Context(),
+		"npipe:////./pipe/docker_engine",
+		nil,
+		nil,
+		func() bool { return true },
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{"DOCKER_HOST=npipe:////./pipe/docker_engine"}, containerEnv)
+	require.Equal(t, container.NetworkMode(""), networkMode)
+	require.Equal(t, []mount.Mount{
+		{
+			Type:   mount.TypeNamedPipe,
+			Source: `\\.\pipe\docker_engine`,
+			Target: `\\.\pipe\docker_engine`,
+		},
+	}, mounts)
+}
+
 func TestResolveSystemUpgraderRuntimeOptions_UnixDockerHostResolutionError(t *testing.T) {
 	_, _, _, err := resolveUpgraderRuntimeOptions(
 		t.Context(),
