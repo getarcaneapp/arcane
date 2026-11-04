@@ -4394,5 +4394,13 @@
   "api_reference": "API 参考",
   "api_key_page_description_suffix": "有关使用详情。",
   "github_token": "GitHub 令牌",
-  "github_token_description": "用于从 GitHub 获取图像发布说明的可选令牌。将 API 速率限制从每小时 60 次请求提高到 5,000 次。"
+  "github_token_description": "用于从 GitHub 获取图像发布说明的可选令牌。将 API 速率限制从每小时 60 次请求提高到 5,000 次。",
+  "image_auto_patch": "图像自动修补",
+  "analytics_heartbeat": "分析心跳",
+  "docker_client_refresh": "Docker 客户端刷新",
+  "event_cleanup": "事件清理",
+  "upgrade_log_cleanup": "升级日志清理",
+  "expired_sessions_cleanup": "过期会话清理",
+  "filesystem_watcher": "文件系统监视器",
+  "vulnerability_risk": "漏洞风险"
 }
