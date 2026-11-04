@@ -4394,5 +4394,13 @@
   "api_reference": "API Kılavuzu",
   "api_key_page_description_suffix": "kullanım ayrıntıları için.",
   "github_token": "GitHub Jetonu",
-  "github_token_description": "GitHub'dan görüntü sürüm notlarını almak için kullanılan isteğe bağlı bir token. API istek sınırını saatte 60'tan 5.000'e yükseltir."
+  "github_token_description": "GitHub'dan görüntü sürüm notlarını almak için kullanılan isteğe bağlı bir token. API istek sınırını saatte 60'tan 5.000'e yükseltir.",
+  "image_auto_patch": "Görüntü Otomatik Yama",
+  "analytics_heartbeat": "Analitik Nabzı",
+  "docker_client_refresh": "Docker İstemcisi Güncelleme",
+  "event_cleanup": "Etkinlik Temizliği",
+  "upgrade_log_cleanup": "Yükseltme Günlüğü Temizleme",
+  "expired_sessions_cleanup": "Süresi Dolmuş Oturumların Temizlenmesi",
+  "filesystem_watcher": "Dosya Sistemi İzleyicisi",
+  "vulnerability_risk": "Güvenlik Açığı Riski"
 }
