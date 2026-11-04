@@ -7,9 +7,20 @@ import { readableEnvironments, sumAcrossEnvironments, type EnvironmentFailure } 
 export type SwarmEnvironments = {
 	environments: EnvironmentRef[];
 	managers: EnvironmentRef[];
+	clusterIds: Record<string, string>;
 	failedEnvironments: EnvironmentFailure[];
 	scope: string;
 };
+
+export function onePerCluster(managers: EnvironmentRef[], clusterIds: Record<string, string>): EnvironmentRef[] {
+	const clusters = new Set<string>();
+	return managers.filter((environment) => {
+		const clusterId = clusterIds[environment.id] ?? '';
+		if (clusters.has(clusterId)) return false;
+		clusters.add(clusterId);
+		return true;
+	});
+}
 
 function swarmReadableEnvironments(permission: string): EnvironmentRef[] {
 	return readableEnvironments(permission).filter((environment) => hasPermission('swarm:read', environment.id));
@@ -21,18 +32,13 @@ export async function loadSwarmEnvironments(permission: string): Promise<SwarmEn
 	const status = await sumAcrossEnvironments(readable, (scope, config) => swarmService.getSwarmStatus(scope, config), {
 		enabled: false
 	});
-	const clusterIds = new Map(status.byEnvironment.map((entry) => [entry.environment.id, entry.data.clusterId]));
-	const managers = readable.filter((environment) => clusterIds.get(environment.id));
-	const clusters = new Set<string>();
-	const environments = managers.filter((environment) => {
-		const clusterId = clusterIds.get(environment.id) ?? '';
-		if (clusters.has(clusterId)) return false;
-		clusters.add(clusterId);
-		return true;
-	});
+	const clusterIds = Object.fromEntries(status.byEnvironment.map((entry) => [entry.environment.id, entry.data.clusterId ?? '']));
+	const managers = readable.filter((environment) => clusterIds[environment.id]);
+	const environments = onePerCluster(managers, clusterIds);
 	return {
 		environments,
 		managers,
+		clusterIds,
 		failedEnvironments: status.failedEnvironments,
 		scope: environments.map((environment) => environment.id).join(',')
 	};

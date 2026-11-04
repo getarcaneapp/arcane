@@ -37,7 +37,11 @@ func (e *enrollmentRejectedError) Error() string {
 
 func enrollSwarmAgent(ctx context.Context, cfg *config.Config, kvService *kv.KVService, localNodeID func(context.Context) (string, error)) string {
 	stored := ""
-	if encrypted, found, err := kvService.Get(ctx, enrolledAgentTokenKey); err == nil && found {
+	encrypted, found, loadErr := kvService.Get(ctx, enrolledAgentTokenKey)
+	switch {
+	case loadErr != nil:
+		slog.WarnContext(ctx, "Failed to load the stored agent token; enrolling again", "error", loadErr)
+	case found:
 		if decrypted, decryptErr := crypto.Decrypt(encrypted); decryptErr == nil {
 			stored = decrypted
 		} else {
@@ -79,6 +83,9 @@ func enrollSwarmAgent(ctx context.Context, cfg *config.Config, kvService *kv.KVS
 		}
 		if storeErr != nil {
 			slog.WarnContext(ctx, "Failed to store the enrolled agent token; the agent enrolls again on restart", "error", storeErr)
+		}
+		if discardErr := agent.DiscardAgentMTLSClientCertificate(ctx, buildAgentRuntimeConfig(cfg, token, agent.AgentHostInfo{})); discardErr != nil {
+			slog.WarnContext(ctx, "Failed to discard the agent mTLS client certificate of the previous enrollment", "error", discardErr)
 		}
 		slog.InfoContext(ctx, "Enrolled swarm node agent with manager", "managerUrl", cfg.ManagerApiUrl)
 	}

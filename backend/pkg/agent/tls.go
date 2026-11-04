@@ -329,6 +329,25 @@ func EnsureAgentMTLSAssets(ctx context.Context, cfg *Config) error {
 	return nil
 }
 
+// DiscardAgentMTLSClientCertificate removes the manager-issued client certificate, which names one
+// environment, so the next EnsureAgentMTLSAssets enrolls a certificate for the agent's current environment.
+func DiscardAgentMTLSClientCertificate(ctx context.Context, cfg *Config) error {
+	assetsDir, err := agentMTLSAssetsDir(cfg, agentMTLSDirName)
+	if err != nil {
+		return err
+	}
+	// os rather than acfs: the assets dir may be configured anywhere on the host.
+	if _, statErr := os.Stat(assetsDir); errors.Is(statErr, os.ErrNotExist) {
+		return nil
+	}
+	for _, name := range []string{generatedMTLSClientCertName, generatedMTLSClientKeyName} {
+		if removeErr := (acfs.Root{Path: assetsDir}).RemoveAll(ctx, "/"+name); removeErr != nil {
+			return fmt.Errorf("failed to remove agent mTLS %s: %w", name, removeErr)
+		}
+	}
+	return nil
+}
+
 // enrollAgentMTLSAssets downloads and writes the manager-issued client assets. It stays separate
 // from EnsureAgentMTLSAssets to keep that function under the cognitive-complexity limit.
 func enrollAgentMTLSAssets(ctx context.Context, cfg *Config, assetsDir, certPath, keyPath string) error {

@@ -357,8 +357,13 @@ func TestService_EnrollNodeAgent(t *testing.T) {
 		_, _ = w.Write([]byte(`{"success":true,"data":{"swarmNodeId":"workernode2","hostname":"worker-2","role":"worker","swarmActive":true}}`))
 	}))
 	createSwarmTestEnvironment(t, db, "worker2", "agent://worker2", string(environment.EnvironmentStatusOnline), new("worker2-token"))
+	_, err = svc.EnrollNodeAgent(ctx, enrollment.Token, "", "workernode2")
+	require.ErrorIs(t, err, common.ErrConflict, "a connected agent that is not bound yet still covers its node")
 	_, err = envSvc.BindSwarmNodeEnvironment(ctx, "parent", "workernode2", "worker2", false)
 	require.NoError(t, err)
 	_, err = svc.EnrollNodeAgent(ctx, enrollment.Token, "", "workernode2")
 	require.ErrorIs(t, err, common.ErrConflict, "a node with a connected agent is not taken over")
+	agentEnvs, err := envSvc.ListSwarmNodeAgentEnvironments(ctx, "parent")
+	require.NoError(t, err)
+	assert.Len(t, agentEnvs, 2, "no second environment is created for a covered node")
 }

@@ -3,7 +3,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
-	import { swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
+	import { onePerCluster, swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { AlertTriangleIcon, UsersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
@@ -49,7 +49,7 @@
 	let active = true;
 	const reconciled = new SvelteSet<string>();
 	const reconcilableManagers = $derived(swarm.managers.filter((env) => hasPermission('swarm-nodes:update', env.id)));
-	const enrollableEnvironments = $derived(swarm.environments.filter((env) => hasPermission('swarm-nodes:update', env.id)));
+	const enrollableEnvironments = $derived(onePerCluster(reconcilableManagers, swarm.clusterIds));
 
 	async function reconcileEnvironments(pending: typeof reconcilableManagers) {
 		for (const env of pending) reconciled.add(env.id);

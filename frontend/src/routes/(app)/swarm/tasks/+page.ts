@@ -20,6 +20,7 @@ async function taskEnvironments(queryClient: QueryClient, nodeId: string, url: U
 	return {
 		environments: [{ id: envId, name: environmentName(envId) }],
 		managers: [{ id: envId, name: environmentName(envId) }],
+		clusterIds: {},
 		failedEnvironments: [],
 		scope: envId
 	};

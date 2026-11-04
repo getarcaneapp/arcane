@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -60,10 +62,17 @@ func TestEnrollSwarmAgent_RetriesUntilEnrolledAndStoresEncryptedToken(t *testing
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	cfg := &config.Config{ManagerApiUrl: server.URL, AgentEnrollmentToken: "enrollment-secret"}
+	assetsDir := t.TempDir()
+	for _, name := range []string{"agent.crt", "agent.key", "ca.crt"} {
+		require.NoError(t, os.WriteFile(filepath.Join(assetsDir, name), []byte("previous enrollment"), 0o600))
+	}
+	cfg := &config.Config{ManagerApiUrl: server.URL, AgentEnrollmentToken: "enrollment-secret", AgentMTLSAssetsDir: assetsDir}
 
 	assert.Equal(t, "node-token", enrollSwarmAgent(ctx, cfg, kvService, localSwarmNodeID))
 	assert.Equal(t, int32(2), calls.Load())
+	assert.NoFileExists(t, filepath.Join(assetsDir, "agent.crt"), "a certificate naming the previous environment is discarded")
+	assert.NoFileExists(t, filepath.Join(assetsDir, "agent.key"))
+	assert.FileExists(t, filepath.Join(assetsDir, "ca.crt"))
 
 	stored, found, err := kvService.Get(t.Context(), enrolledAgentTokenKey)
 	require.NoError(t, err)

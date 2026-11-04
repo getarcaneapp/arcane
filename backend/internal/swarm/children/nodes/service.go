@@ -285,15 +285,27 @@ func (s *Service) enrollNodeAgent(ctx context.Context, parentEnvironmentID, node
 	if err != nil {
 		return nil, err
 	}
+	// Unbound environments count too: a connected agent that hasn't been reconciled yet already covers the node.
+	// Only live tunnels are probed, so offline environments can't stall enrollment.
+	candidateEnvs, err := s.environmentService.ListSwarmNodeCandidateEnvironments(ctx)
+	if err != nil {
+		return nil, err
+	}
+	candidateEnvs = slices.DeleteFunc(candidateEnvs, func(candidate environment.Environment) bool {
+		return !agent.GetRegistry().Active(candidate.ID).IsPresent()
+	})
 	coverage, err := s.buildNodeAgentCoverage(ctx, parentEnvironmentID, slices.DeleteFunc(agentEnvs, func(bound environment.Environment) bool {
 		return strings.TrimSpace(kit.FromPtr(bound.SwarmNodeID)) != node.ID
-	}), nil)
+	}), candidateEnvs)
 	if err != nil {
 		return nil, err
 	}
 	s.applyNodeAgentCoverage(parentEnvironmentID, node, coverage)
-	if node.Agent.State == types.NodeAgentStateConnected || node.Agent.State == types.NodeAgentStateMismatched {
+	switch {
+	case node.Agent.State == types.NodeAgentStateConnected, node.Agent.State == types.NodeAgentStateMismatched:
 		return nil, common.Classify(common.ErrConflict, errors.New("this swarm node is already covered by a connected Arcane agent"))
+	case node.Agent.State == types.NodeAgentStateAmbiguous, len(node.Agent.Candidates) > 0:
+		return nil, common.Classify(common.ErrConflict, errors.New("this swarm node is already covered by an unbound Arcane agent; reconcile node agents to bind it"))
 	}
 
 	env, token, err := s.environmentService.EnsureSwarmNodeAgentEnvironment(ctx, parentEnvironmentID, node.ID, node.Hostname, types.SystemUser.ID, types.SystemUser.Username, true)
