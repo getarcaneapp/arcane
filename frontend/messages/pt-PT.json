@@ -1534,6 +1534,8 @@
   "environments_config_description": "Configuração deste ambiente",
   "environments_api_url_help": "URL base da API do ambiente",
   "environments_warning_disabled": "Este ambiente está desativado. Pode editar a respetiva configuração, mas não poderá aceder aos recursos até o voltar a ativar.",
+  "environments_warning_direct_deprecated": "As ligações diretas ao agente estão obsoletas e serão removidas na v3. Mude este ambiente para um agente de perímetro.",
+  "environments_direct_deprecated_badge": "Obsoleto",
   "environments_warning_no_settings": "Não foi possível carregar as definições deste ambiente. Pode estar offline, desativado ou ter um URL inválido. Ainda pode editar os detalhes básicos do ambiente.",
   "environments_local_setting_disabled": "Esta definição não pode ser alterada no ambiente local",
   "environments_use_environment": "Utilizar ambiente",

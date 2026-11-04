@@ -1534,6 +1534,8 @@
   "environments_config_description": "Bu ortam için yapılandırma",
   "environments_api_url_help": "Ortamın API temel URL si",
   "environments_warning_disabled": "Bu ortam devre dışı bırakılmıştır. Yapılandırmasını düzenleyebilirsiniz, ancak yeniden etkinleştirme işlemi yapılana kadar kaynaklarına erişemezsiniz.",
+  "environments_warning_direct_deprecated": "Doğrudan ajan bağlantıları artık desteklenmemektedir ve v3 sürümünde kaldırılacaktır. Bu ortamı bir kenar ajana geçirin.",
+  "environments_direct_deprecated_badge": "Kullanımı sonlandırılmıştır",
   "environments_warning_no_settings": "Bu ortamın ayarları yüklenemiyor. Ortam çevrimdışı olabilir, devre dışı bırakılmış olabilir veya URL si geçersiz olabilir. Yine de temel ortam bilgilerini düzenleyebilirsiniz.",
   "environments_local_setting_disabled": "Bu ayar, yerel ortam için değiştirilemez",
   "environments_use_environment": "Kullanım Ortamı",

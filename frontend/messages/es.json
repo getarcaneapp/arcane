@@ -1534,6 +1534,8 @@
   "environments_config_description": "Configuración para este entorno",
   "environments_api_url_help": "La URL base para la API del entorno",
   "environments_warning_disabled": "Este entorno está desactivado. Puede editar su configuración, pero no podrá acceder a sus recursos hasta que vuelva a habilitarse.",
+  "environments_warning_direct_deprecated": "Las conexiones directas con los agentes están obsoletas y se eliminarán en la versión 3. Cambia este entorno a un agente periférico.",
+  "environments_direct_deprecated_badge": "En desuso",
   "environments_warning_no_settings": "No se puede cargar la configuración de este entorno. Puede estar desconectado, deshabilitado o tener una URL no válida. Todavía puede editar los detalles básicos del entorno.",
   "environments_local_setting_disabled": "Esta configuración no se puede cambiar para el entorno local",
   "environments_use_environment": "Usar entorno",

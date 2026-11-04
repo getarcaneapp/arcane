@@ -1534,6 +1534,8 @@
   "environments_config_description": "Agordo por ĉi tiu medio",
   "environments_api_url_help": "La baza URL por la API de la medio",
   "environments_warning_disabled": "Ĉi tiu medio estas malebligita. Vi povas redakti ĝian agordon, sed vi ne povos aliri ĝiajn rimedojn ĝis ĝi estos re-ebligita.",
+  "environments_warning_direct_deprecated": "Rektaj agento-konektoj estas malrekomendataj kaj estos forigitaj en v3. Ŝanĝu ĉi tiun medion al randa agento.",
+  "environments_direct_deprecated_badge": "Malnoviĝanta",
   "environments_warning_no_settings": "Ne eblis ŝargi agordojn por ĉi tiu medio. Ĝi eble estas eksterreta, malebligita aŭ havas nevalidan URL-on. Vi ankoraŭ povas redakti bazajn medi-detalojn.",
   "environments_local_setting_disabled": "Ĉi tiu agordo ne povas esti ŝanĝita por la loka medio",
   "environments_use_environment": "Uzi medion",

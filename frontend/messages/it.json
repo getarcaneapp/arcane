@@ -1534,6 +1534,8 @@
   "environments_config_description": "Configurazioni dell'ambiente",
   "environments_api_url_help": "L'URL di base dell'API d'ambiente",
   "environments_warning_disabled": "Questo ambiente è disabilitato. Puoi modificare la sua configurazione, ma non potrai accedere alle sue risorse finché non sarà riattivato.",
+  "environments_warning_direct_deprecated": "I collegamenti diretti agli agenti sono obsoleti e verranno rimossi nella versione 3. Passa a un agente edge in questo ambiente.",
+  "environments_direct_deprecated_badge": "Obsoleto",
   "environments_warning_no_settings": "Impossibile caricare le impostazioni per questo ambiente. Potrebbe essere disconnesso, disabilitato, o avere un URL non valido. Puoi comunque modificare i dettagli di base dell'ambiente.",
   "environments_local_setting_disabled": "Questa impostazione non può essere cambiata per l'ambiente locale",
   "environments_use_environment": "Usa Ambiente",
