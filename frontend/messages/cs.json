@@ -4394,5 +4394,13 @@
   "api_reference": "Referenční příručka k API",
   "api_key_page_description_suffix": "podrobnosti k použití.",
   "github_token": "Token GitHubu",
-  "github_token_description": "Volitelný token sloužící k načtení poznámek k vydání obrazu z GitHubu. Zvyšuje limit počtu požadavků na API z 60 na 5 000 za hodinu."
+  "github_token_description": "Volitelný token sloužící k načtení poznámek k vydání obrazu z GitHubu. Zvyšuje limit počtu požadavků na API z 60 na 5 000 za hodinu.",
+  "image_auto_patch": "Automatická oprava obrázku",
+  "analytics_heartbeat": "Analytický puls",
+  "docker_client_refresh": "Aktualizace klienta Dockeru",
+  "event_cleanup": "Úklid po akci",
+  "upgrade_log_cleanup": "Vyčištění protokolu aktualizací",
+  "expired_sessions_cleanup": "Vyčištění vypršených relací",
+  "filesystem_watcher": "Sledovač souborového systému",
+  "vulnerability_risk": "Riziko zranitelnosti"
 }
