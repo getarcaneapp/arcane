@@ -134,11 +134,19 @@ function createProjectButton(page: Page) {
 }
 
 async function addEnvFile(page: Page) {
-	const addEnvButton = page
-		.getByRole('button', { name: 'Add .env file', exact: true })
-		.filter({ visible: true });
-	await addEnvButton.click();
-	await expect(addEnvButton).toHaveCount(0);
+	const workspaceTree = page
+		.locator('[data-slot="context-menu-trigger"]')
+		.filter({ hasText: 'compose.yaml', visible: true })
+		.first();
+	const treeBox = await workspaceTree.boundingBox();
+	expect(treeBox).not.toBeNull();
+	await workspaceTree.click({
+		button: 'right',
+		position: { x: 16, y: (treeBox?.height ?? 0) - 16 }
+	});
+	const addEnvItem = page.getByRole('menuitem', { name: 'Add .env file', exact: true });
+	await addEnvItem.click();
+	await expect(addEnvItem).toHaveCount(0);
 	const envEditor = page.locator('.cm-editor').filter({ visible: true }).last();
 	await expect(envEditor).toBeVisible();
 	return envEditor;

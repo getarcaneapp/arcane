@@ -115,6 +115,7 @@ var (
 		"gitSyncMaxBinarySizeMb",
 		"gitSyncMaxFiles",
 		"gitSyncMaxTotalSizeMb",
+		"githubToken",
 		"gpuMonitoringEnabled",
 		"gpuType",
 		"httpClientTimeout",
