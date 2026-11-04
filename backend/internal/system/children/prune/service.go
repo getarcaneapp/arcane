@@ -32,6 +32,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/volume"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/types/v3"
 )
 
@@ -74,6 +75,8 @@ type (
 		Resources []pruneResource       `json:"resources"`
 	}
 )
+
+var errDiskUsageUnavailable = errors.New("docker disk usage unavailable")
 
 func NewService(p ServiceParams) *Service {
 	return &Service{
@@ -471,6 +474,10 @@ func (s *Service) pruneBuildCache(ctx context.Context, options types.PruneBuildC
 
 func (s *Service) pruneVolumes(ctx context.Context, options types.PruneVolumesOptions) (types.PruneAllResult, error) {
 	plan, err := s.preparePrunePlan(ctx, types.PruneAllRequest{Volumes: &options})
+	if errors.Is(err, errDiskUsageUnavailable) {
+		slog.WarnContext(ctx, "Docker disk usage unavailable; selecting volumes from the volume list", "error", err)
+		plan, err = s.prepareVolumePlanWithoutUsage(ctx, types.PruneAllRequest{Volumes: &options})
+	}
 	if err != nil {
 		return types.PruneAllResult{}, err
 	}
@@ -535,6 +542,22 @@ func (s *Service) PruneScheduled(ctx context.Context, environmentID string, req 
 	}
 
 	plan, err := s.preparePrunePlan(ctx, req)
+	if errors.Is(err, errDiskUsageUnavailable) {
+		slog.WarnContext(ctx, "Docker disk usage unavailable; falling back to direct prune", "error", err)
+		if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
+			ResourceType: "prune_fallback",
+			ID:           "prune-fallback",
+			Status:       types.RunStatusRunning,
+			ActivityID:   prune.activityID,
+		}); progressErr != nil {
+			return fail(progressErr)
+		}
+		result := s.runSystemPrune(ctx, req, prune.activityID)
+		if !result.Success {
+			return result, true, nil
+		}
+		return result, true, jobcontext.Progress(ctx, types.TargetOutcome{ID: "scheduled-prune", Status: types.RunStatusSucceeded, ActivityID: prune.activityID})
+	}
 	if err != nil {
 		return fail(err)
 	}
@@ -607,14 +630,12 @@ func (s *Service) preparePrunePlan(ctx context.Context, req types.PruneAllReques
 			slog.WarnContext(ctx, "could not remove idle volume helpers before prune", "error", reapErr.Error())
 		}
 	}
-	usage, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.DiskUsageResult, error) {
-		return cli.DiskUsage(ctx, client.DiskUsageOptions{
-			Containers: true,
-			Images:     true,
-			Volumes:    true,
-			BuildCache: req.BuildCache != nil,
-			Verbose:    true,
-		})
+	usage, err := s.pruneDiskUsage(ctx, client.DiskUsageOptions{
+		Containers: req.Containers != nil,
+		Images:     req.Images != nil,
+		Volumes:    req.Volumes != nil,
+		BuildCache: req.BuildCache != nil,
+		Verbose:    true,
 	})
 	if err != nil {
 		return prunePlan{}, err
@@ -640,6 +661,20 @@ func (s *Service) preparePrunePlan(ctx context.Context, req types.PruneAllReques
 		Request:   req,
 		Resources: slices.Concat(containers, images, s.selectPruneVolumes(req, usage, volumeRefs), networks, buildCache),
 	}, nil
+}
+
+func (s *Service) pruneDiskUsage(ctx context.Context, options client.DiskUsageOptions) (client.DiskUsageResult, error) {
+	cli, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return client.DiskUsageResult{}, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+	usageCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultDockerDiskUsage)
+	defer cancel()
+	usage, err := cli.DiskUsage(usageCtx, options)
+	if err != nil {
+		return client.DiskUsageResult{}, fmt.Errorf("%w: %w", errDiskUsageUnavailable, err)
+	}
+	return usage, nil
 }
 
 func (s *Service) selectPruneContainers(req types.PruneAllRequest, usage client.DiskUsageResult) ([]pruneResource, error) {
@@ -695,12 +730,7 @@ func (s *Service) selectPruneVolumes(req types.PruneAllRequest, usage client.Dis
 	}
 	var resources []pruneResource
 	for _, item := range usage.Volumes.Items {
-		// The backup volume is unused between backups but holds them, so it is never pruned.
-		if item.UsageData == nil || item.UsageData.RefCount > int64(volumeRefs[item.Name]) ||
-			strings.EqualFold(item.Labels[selfcontainer.InternalResourceLabel], "true") || s.volumeService.IsBackupVolume(item.Name) {
-			continue
-		}
-		if _, anonymous := item.Labels["com.docker.volume.anonymous"]; req.Volumes.Mode == types.PruneVolumeModeAnonymous && !anonymous {
+		if item.UsageData == nil || item.UsageData.RefCount > int64(volumeRefs[item.Name]) || !s.volumePrunable(req.Volumes.Mode, item.Name, item.Labels) {
 			continue
 		}
 		resources = append(resources, pruneResource{
@@ -710,6 +740,37 @@ func (s *Service) selectPruneVolumes(req types.PruneAllRequest, usage client.Dis
 		})
 	}
 	return resources
+}
+
+func (s *Service) prepareVolumePlanWithoutUsage(ctx context.Context, req types.PruneAllRequest) (prunePlan, error) {
+	volumes, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.VolumeListResult, error) {
+		return cli.VolumeList(ctx, client.VolumeListOptions{})
+	})
+	if err != nil {
+		return prunePlan{}, err
+	}
+	var resources []pruneResource
+	for _, item := range volumes.Items {
+		if !s.volumePrunable(req.Volumes.Mode, item.Name, item.Labels) {
+			continue
+		}
+		resources = append(resources, pruneResource{
+			Kind: "volume",
+			ID:   item.Name,
+		})
+	}
+	return prunePlan{
+		Request:   req,
+		Resources: resources,
+	}, nil
+}
+
+func (s *Service) volumePrunable(mode types.PruneVolumeMode, name string, labels map[string]string) bool {
+	_, anonymous := labels["com.docker.volume.anonymous"]
+	// The backup volume is unused between backups but holds them, so it is never pruned.
+	return !strings.EqualFold(labels[selfcontainer.InternalResourceLabel], "true") &&
+		!s.volumeService.IsBackupVolume(name) &&
+		(mode != types.PruneVolumeModeAnonymous || anonymous)
 }
 
 func (s *Service) selectPruneNetworks(ctx context.Context, req types.PruneAllRequest, selectedContainers map[string]bool) ([]pruneResource, error) {
@@ -964,9 +1025,7 @@ func (s *Service) executePruneCache(ctx context.Context, plan prunePlan, recover
 		return 0, nil
 	}
 	if recovery {
-		usage, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.DiskUsageResult, error) {
-			return cli.DiskUsage(ctx, client.DiskUsageOptions{BuildCache: true, Verbose: true})
-		})
+		usage, err := s.pruneDiskUsage(ctx, client.DiskUsageOptions{BuildCache: true, Verbose: true})
 		if err != nil {
 			return 0, err
 		}
@@ -1088,6 +1147,14 @@ func (s *Service) ReconcileScheduledPrune(ctx context.Context, previous types.Sc
 		return outcome, nil
 	}
 	for _, target := range previous.Outcome.Targets {
+		if target.ID == "prune-fallback" {
+			return types.SchedulerOutcome{
+				Status:     types.RunStatusFailed,
+				Message:    "The interrupted direct prune fallback has no confirmed completion; check its activity",
+				ActivityID: target.ActivityID,
+				Targets:    previous.Outcome.Targets,
+			}, nil
+		}
 		if target.ID != "prune-plan" || len(target.RecoveryData) == 0 {
 			continue
 		}

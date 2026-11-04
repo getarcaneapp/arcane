@@ -11,6 +11,7 @@
 - show configured image for compose services ([\#4638](https://github.com/getarcaneapp/arcane/pull/4638) by @kmendell)
 
 **Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.17.2...v2.17.3
+
 ## v2.17.2
 
 ### Bug fixes
