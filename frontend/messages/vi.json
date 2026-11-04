@@ -4394,5 +4394,13 @@
   "api_reference": "Tài liệu API",
   "api_key_page_description_suffix": "để biết thêm chi tiết về cách sử dụng.",
   "github_token": "Mã thông báo GitHub",
-  "github_token_description": "Mã thông báo tùy chọn được sử dụng để lấy ghi chú phát hành hình ảnh từ GitHub. Tăng giới hạn tốc độ API từ 60 lên 5.000 yêu cầu mỗi giờ."
+  "github_token_description": "Mã thông báo tùy chọn được sử dụng để lấy ghi chú phát hành hình ảnh từ GitHub. Tăng giới hạn tốc độ API từ 60 lên 5.000 yêu cầu mỗi giờ.",
+  "image_auto_patch": "Tự động vá hình ảnh",
+  "analytics_heartbeat": "Nhịp đập phân tích",
+  "docker_client_refresh": "Cập nhật ứng dụng khách Docker",
+  "event_cleanup": "Dọn dẹp sự kiện",
+  "upgrade_log_cleanup": "Dọn dẹp nhật ký nâng cấp",
+  "expired_sessions_cleanup": "Dọn dẹp các phiên đã hết hạn",
+  "filesystem_watcher": "Trình theo dõi hệ thống tệp",
+  "vulnerability_risk": "Rủi ro do lỗ hổng bảo mật"
 }
