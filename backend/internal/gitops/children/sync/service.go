@@ -157,42 +157,21 @@ func (s *Service) Run(ctx context.Context, sourceTimeout time.Duration, sync *pr
 			return result, s.failSync(ctx, result, sync, actor, "Failed to walk directory", err)
 		}
 	}
-	var project *projectpkg.Project
-	var syncedFiles []string
-	changed := false
-	switch {
-	case sync.TargetType == "swarm_stack":
-		swarmFiles := make([]types.SwarmSyncFile, len(syncFiles))
-		for i, file := range syncFiles {
-			swarmFiles[i] = types.SwarmSyncFile{RelativePath: file.RelativePath, Content: file.Content}
-			syncedFiles = append(syncedFiles, file.RelativePath)
+	pendingBefore := sync.PendingRedeploy
+	if sync.TargetType != "swarm_stack" && !pendingBefore && (sync.RedeployAfterSync || s.projectRunning(ctx, kit.FromPtr(sync.ProjectID))) {
+		if markErr := s.setPendingRedeploy(ctx, sync.ID, true); markErr != nil {
+			return result, s.failSync(ctx, result, sync, actor, "Failed to record pending redeploy", markErr)
 		}
-		// Swarm tasks pull with only the auth embedded in the service spec, so registry auth is always resolved.
-		request := types.SwarmStackDeployRequest{
-			Name:             sync.ProjectName,
-			ComposeContent:   source.composeContent,
-			OverrideContent:  kit.FromPtr(source.overrideContent),
-			EnvContent:       kit.FromPtr(source.envContent),
-			Files:            swarmFiles,
-			Prune:            true,
-			WithRegistryAuth: true,
-			WorkingDir:       filepath.Dir(filepath.Join(source.repoPath, sync.ComposePath)),
+		sync.PendingRedeploy = true
+	}
+	project, syncedFiles, changed, err := s.syncTarget(ctx, stageCtx, sync, actor, result, source, syncFiles)
+	if sync.PendingRedeploy && !pendingBefore && !errors.Is(err, common.ErrProjectRollbackFailed) && (err != nil || (!changed && !source.replay)) {
+		if clearErr := s.setPendingRedeploy(ctx, sync.ID, false); clearErr != nil {
+			slog.WarnContext(ctx, "Failed to clear unused pending redeploy after Git sync", "error", clearErr, "syncId", sync.ID)
 		}
-		if _, deployErr := s.swarmService.DeployStack(stageCtx, sync.EnvironmentID, request); deployErr != nil {
-			return result, s.failSync(ctx, result, sync, actor, "Failed to deploy swarm stack", deployErr)
-		}
-		result.Message = fmt.Sprintf("Successfully deployed swarm stack %s from %s", sync.ProjectName, sync.ComposePath)
-	case sync.SyncDirectory:
-		if project, syncedFiles, _, changed, err = s.syncProjectDirectory(stageCtx, sync, syncFiles, actor); err != nil {
-			message := kit.Ternary(errors.Is(err, common.ErrGitOpsSyncProjectBindingBroken), "GitOps project binding broken", "Failed to sync project directory")
-			return result, s.failSync(ctx, result, sync, actor, message, err)
-		}
-		result.Message = fmt.Sprintf("Successfully synced directory with %d files to project %s", len(syncedFiles), project.Name)
-	default:
-		if project, changed, err = s.syncComposeFile(stageCtx, sync, actor, result, source); err != nil {
-			return result, err
-		}
-		result.Message = fmt.Sprintf("Successfully synced compose file from %s to project %s", sync.ComposePath, project.Name)
+	}
+	if err != nil {
+		return result, err
 	}
 	if syncedFiles == nil {
 		syncedFiles = []string{filepath.Base(sync.ComposePath)}
@@ -201,7 +180,7 @@ func (s *Service) Run(ctx context.Context, sourceTimeout time.Duration, sync *pr
 		}
 	}
 
-	if project != nil && (changed || source.replay) {
+	if project != nil && (changed || source.replay || pendingBefore) {
 		if err = s.deployOnce(ctx, sync, project, actor, source.replay); err != nil {
 			// The files reached disk, so the row keeps their revision and list.
 			errMsg := err.Error()
@@ -233,6 +212,55 @@ func (s *Service) Run(ctx context.Context, sourceTimeout time.Duration, sync *pr
 	})
 	slog.InfoContext(ctx, "GitOps sync completed", "syncId", sync.ID, "target", targetName)
 	return result, nil
+}
+
+func (s *Service) syncTarget(
+	ctx, stageCtx context.Context,
+	sync *projectpkg.GitOpsSync,
+	actor types.Actor,
+	result *types.GitOpsSyncResult,
+	source *preparedSyncSource,
+	syncFiles []projects.SyncFile,
+) (*projectpkg.Project, []string, bool, error) {
+	var project *projectpkg.Project
+	var syncedFiles []string
+	changed := false
+	var err error
+	switch {
+	case sync.TargetType == "swarm_stack":
+		swarmFiles := make([]types.SwarmSyncFile, len(syncFiles))
+		for i, file := range syncFiles {
+			swarmFiles[i] = types.SwarmSyncFile{RelativePath: file.RelativePath, Content: file.Content}
+			syncedFiles = append(syncedFiles, file.RelativePath)
+		}
+		// Swarm tasks pull with only the auth embedded in the service spec, so registry auth is always resolved.
+		request := types.SwarmStackDeployRequest{
+			Name:             sync.ProjectName,
+			ComposeContent:   source.composeContent,
+			OverrideContent:  kit.FromPtr(source.overrideContent),
+			EnvContent:       kit.FromPtr(source.envContent),
+			Files:            swarmFiles,
+			Prune:            true,
+			WithRegistryAuth: true,
+			WorkingDir:       filepath.Dir(filepath.Join(source.repoPath, sync.ComposePath)),
+		}
+		if _, deployErr := s.swarmService.DeployStack(stageCtx, sync.EnvironmentID, request); deployErr != nil {
+			return nil, nil, false, s.failSync(ctx, result, sync, actor, "Failed to deploy swarm stack", deployErr)
+		}
+		result.Message = fmt.Sprintf("Successfully deployed swarm stack %s from %s", sync.ProjectName, sync.ComposePath)
+	case sync.SyncDirectory:
+		if project, syncedFiles, _, changed, err = s.syncProjectDirectory(stageCtx, sync, syncFiles, actor); err != nil {
+			message := kit.Ternary(errors.Is(err, common.ErrGitOpsSyncProjectBindingBroken), "GitOps project binding broken", "Failed to sync project directory")
+			return nil, nil, false, s.failSync(ctx, result, sync, actor, message, err)
+		}
+		result.Message = fmt.Sprintf("Successfully synced directory with %d files to project %s", len(syncedFiles), project.Name)
+	default:
+		if project, changed, err = s.syncComposeFile(stageCtx, sync, actor, result, source); err != nil {
+			return nil, nil, false, err
+		}
+		result.Message = fmt.Sprintf("Successfully synced compose file from %s to project %s", sync.ComposePath, project.Name)
+	}
+	return project, syncedFiles, changed, nil
 }
 
 // deployOnce redeploys the synced project, recording the deploy on the run. The deploy runs lifecycle hooks, so a
@@ -407,14 +435,16 @@ func (s *Service) syncComposeFile(ctx context.Context, sync *projectpkg.GitOpsSy
 // redeployIfRunningAfterSync rebuilds and redeploys a running project, or any project when RedeployAfterSync is on. A project
 // left stopped still gets its images pulled when PullImageAfterSync is on, so a re-pointed tag stays available.
 func (s *Service) redeployIfRunningAfterSync(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor types.Actor) error {
-	details, err := s.projectService.GetProjectDetails(ctx, project.ID, types.ProjectDetailsOptions{})
-	running := err == nil && (details.Status == string(projectpkg.ProjectStatusRunning) || details.Status == string(projectpkg.ProjectStatusPartiallyRunning))
+	running := s.projectRunning(ctx, project.ID)
 	switch {
-	case running || sync.RedeployAfterSync:
-		slog.InfoContext(ctx, "Redeploying project after Git sync", "projectName", project.Name, "projectId", project.ID, "wasRunning", running)
+	case running || sync.RedeployAfterSync || sync.PendingRedeploy:
+		slog.InfoContext(ctx, "Redeploying project after Git sync", "projectName", project.Name, "projectId", project.ID, "wasRunning", running, "pending", sync.PendingRedeploy)
 		if redeployErr := s.projectService.RedeployProject(ctx, project.ID, actor, &types.ProjectDeployOptions{Build: true}); redeployErr != nil {
 			slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "error", redeployErr, "projectId", project.ID)
 			return common.Classify(common.ErrRedeployAfterSyncFailed, fmt.Errorf("redeploy failed: %w", redeployErr))
+		}
+		if clearErr := s.setPendingRedeploy(ctx, sync.ID, false); clearErr != nil {
+			slog.WarnContext(ctx, "Failed to clear pending redeploy after Git sync", "error", clearErr, "syncId", sync.ID)
 		}
 	case sync.PullImageAfterSync:
 		credentials, credentialsErr := s.projectService.ResolveRegistryCredentials(ctx)
@@ -428,6 +458,20 @@ func (s *Service) redeployIfRunningAfterSync(ctx context.Context, sync *projectp
 		}
 	}
 	return nil
+}
+
+func (s *Service) projectRunning(ctx context.Context, projectID string) bool {
+	if projectID == "" {
+		return false
+	}
+	details, err := s.projectService.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{})
+	return err == nil && (details.Status == string(projectpkg.ProjectStatusRunning) || details.Status == string(projectpkg.ProjectStatusPartiallyRunning))
+}
+
+func (s *Service) setPendingRedeploy(ctx context.Context, id string, pending bool) error {
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	return s.db.WithContext(writeCtx).Model(&projectpkg.GitOpsSync{}).Where("id = ?", id).Update("pending_redeploy", pending).Error
 }
 
 // updateSyncStatus stores a run's result on the row. An empty commit keeps the recorded one, and nil
@@ -444,7 +488,9 @@ func (s *Service) updateSyncStatus(ctx context.Context, id, status, errorMsg, co
 	if syncedFiles != nil {
 		updates["synced_files"] = projectpkg.EncodeSyncedFiles(syncedFiles)
 	}
-	if err := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if err := s.db.WithContext(writeCtx).Model(&projectpkg.GitOpsSync{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		slog.ErrorContext(ctx, "Failed to update sync status", "error", err, "syncId", id)
 	}
 }
@@ -905,7 +951,7 @@ func (s *Service) updateDirectorySyncProject(ctx context.Context, sync *projectp
 			keepBackup = true
 			slog.ErrorContext(ctx, "Failed to restore project directory after sync promotion failure; backup kept", "projectPath", projectPath, "backupPath", backup.BackupDir, "error", restoreErr)
 		}
-		return errors.Join(cause, fmt.Errorf("rollback project directory: %w", restoreErr))
+		return errors.Join(cause, common.Classify(common.ErrProjectRollbackFailed, fmt.Errorf("rollback project directory: %w", restoreErr)))
 	}
 
 	if _, _, err := s.applyDirectorySync(ctx, projectPath, stage); err != nil {

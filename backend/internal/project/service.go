@@ -212,6 +212,7 @@ func (s *ProjectService) EnsureGitOpsProjectLinked(ctx context.Context, gitOpsSy
 		LastSyncStatus:         gitOpsSync.LastSyncStatus,
 		LastSyncError:          gitOpsSync.LastSyncError,
 		LastSyncCommit:         gitOpsSync.LastSyncCommit,
+		PendingRedeploy:        gitOpsSync.PendingRedeploy,
 		PreDeployScriptPath:    gitOpsSync.PreDeployScriptPath,
 		PreDeployRunnerImage:   gitOpsSync.PreDeployRunnerImage,
 		PreDeployEnv:           gitOpsSync.PreDeployEnv,
@@ -3148,8 +3149,8 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(
 		}
 		return nil
 	}(); applyErr != nil {
-		if restoreErr := projects.RestoreProjectDirectoryBackup(ctx, projectsDirectory, proj.Path, backup); restoreErr != nil {
-			return nil, false, errors.Join(applyErr, fmt.Errorf("failed to restore project files after update failure: %w", restoreErr))
+		if restoreErr := projects.RestoreProjectDirectoryBackup(context.WithoutCancel(ctx), projectsDirectory, proj.Path, backup); restoreErr != nil {
+			return nil, false, errors.Join(applyErr, common.Classify(common.ErrProjectRollbackFailed, fmt.Errorf("failed to restore project files after update failure: %w", restoreErr)))
 		}
 		return nil, false, applyErr
 	}
