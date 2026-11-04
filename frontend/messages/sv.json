@@ -4394,5 +4394,13 @@
   "api_reference": "API-referens",
   "api_key_page_description_suffix": "för mer information om användningen.",
   "github_token": "GitHub-token",
-  "github_token_description": "Valfri token som används för att hämta releaseanteckningar för bilder från GitHub. Höjer API-begränsningen från 60 till 5 000 förfrågningar per timme."
+  "github_token_description": "Valfri token som används för att hämta releaseanteckningar för bilder från GitHub. Höjer API-begränsningen från 60 till 5 000 förfrågningar per timme.",
+  "image_auto_patch": "Automatisk uppdatering av bilder",
+  "analytics_heartbeat": "Analytics Heartbeat",
+  "docker_client_refresh": "Uppdatering av Docker-klienten",
+  "event_cleanup": "Uppstädning efter evenemanget",
+  "upgrade_log_cleanup": "Rensning av uppgraderingsloggen",
+  "expired_sessions_cleanup": "Rensning av utgångna sessioner",
+  "filesystem_watcher": "Filsystemövervakare",
+  "vulnerability_risk": "Sårbarhetsrisk"
 }
