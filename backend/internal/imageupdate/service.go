@@ -957,7 +957,7 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 }
 
 func (s *ImageUpdateService) StoredUpdateByImageID(ctx context.Context, imageID string) (*ImageUpdateRecord, bool, error) {
-	if s == nil || strings.TrimSpace(imageID) == "" {
+	if strings.TrimSpace(imageID) == "" {
 		return nil, false, nil
 	}
 
@@ -1620,7 +1620,7 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) e
 
 // DeleteRecordsForImages removes rows keyed by id or image_id for the given images.
 func (s *ImageUpdateService) DeleteRecordsForImages(ctx context.Context, imageIDs []string) error {
-	if s == nil || len(imageIDs) == 0 {
+	if len(imageIDs) == 0 {
 		return nil
 	}
 	if err := s.db.WithContext(ctx).Where("id IN ? OR image_id IN ?", imageIDs, imageIDs).Delete(&ImageUpdateRecord{}).Error; err != nil {

@@ -22,6 +22,7 @@ type (
 	PasskeyHandler struct {
 		passkeyService *PasskeyService
 		authService    *auth.AuthService
+		tokens         *auth.TokenCache
 		userService    *user.UserService
 	}
 
@@ -477,7 +478,7 @@ func (h *PasskeyHandler) DisableMFA(ctx context.Context, input *MFASettingsInput
 	if disableMFAErr := h.passkeyService.DisableMFA(ctx, userModel.ID, sessionID, input.StepUpToken); disableMFAErr != nil {
 		return nil, passkeyHTTPError(disableMFAErr)
 	}
-	h.authService.InvalidateUserTokenCache(userModel.ID)
+	h.tokens.InvalidateUser(userModel.ID)
 	return handlerutil.MessageOutput("Passkey MFA disabled", ""), nil
 }
 

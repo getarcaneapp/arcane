@@ -82,6 +82,9 @@ type (
 		S3Destinations   *s3.S3DestinationService
 		Config           *config.Config
 		RecoveryKeys     *backup.RecoveryKeyStore
+		Ctx              context.Context
+		Scheduler        types.DynamicScheduler
+		Admission        *runs.Admission
 	}
 
 	// VolumeSizeData holds size information for a volume.
@@ -131,6 +134,9 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 		EncryptionKey:    cmp.Or(p.Config.EncryptionKey, legacyDefaultEncryptionKey),
 		StopContainer:    p.ContainerService.StopContainer,
 		StartContainer:   p.ContainerService.StartContainer,
+		Ctx:              p.Ctx,
+		Scheduler:        p.Scheduler,
+		Admission:        p.Admission,
 	}
 	service.backup = volumebackup.NewService(backupDeps)
 	service.workspace = workspace.NewService(workspace.Dependencies{
@@ -147,12 +153,6 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 		Settings:              p.SettingsService,
 	})
 	return service
-}
-
-// SetScheduler injects the dynamic scheduler and admission gate for per-policy
-// backup jobs. Agent mode passes them too: agents run their own volume backups.
-func (s *VolumeService) SetScheduler(ctx context.Context, dynamicScheduler types.DynamicScheduler, admissionGate *runs.Admission) error {
-	return s.backup.SetScheduler(ctx, dynamicScheduler, admissionGate)
 }
 
 func (s *VolumeService) RegisterBackupJobsOnStartup(ctx context.Context) {
@@ -1123,10 +1123,6 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 // Backup jobs are keyed by policy ID and re-read the policy row on every run,
 // so renaming volume_name requires no job rescheduling.
 func (s *VolumeService) renameVolumeMetadata(ctx context.Context, oldName, newName string) error {
-	if s.db == nil {
-		return nil
-	}
-
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&VolumeBackup{}).Where("volume_name = ?", oldName).Update("volume_name", newName).Error; err != nil {
 			return fmt.Errorf("rename volume backup history: %w", err)

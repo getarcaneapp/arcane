@@ -33,6 +33,8 @@ import (
 	"getarcane.dev/types/v3"
 )
 
+type activityTestVariableSyncer struct{}
+
 func setupActivityServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 
@@ -954,7 +956,9 @@ func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
 			require.True(t, agent.GetRegistry().WaitForActive(t.Context(), "remote", 5*time.Second).IsPresent())
 			require.NoError(t, db.Create(&environment.Environment{ID: "remote", Name: "Remote", ApiUrl: "agent://remote", AccessToken: new("agent-token"), Enabled: true}).Error)
 			service := environment.NewEnvironmentService(environment.EnvironmentServiceParams{
-				DB: db,
+				DB:              db,
+				RemoteTransport: environment.NewRemoteTransport(db, nil),
+				VariableSyncer:  activityTestVariableSyncer{},
 			})
 			activityService := NewActivityService(db, nil)
 			id, err := service.SyncResourcesToEnvironment(t.Context(), "remote", &types.Actor{ID: "operator", Username: "operator"}, activityService)
@@ -1057,3 +1061,9 @@ func TestAggregateActivitiesKeepsActiveFirst(t *testing.T) {
 	require.Equal(t, "done", body.Data[1].ID)
 	require.Len(t, body.FailedEnvironments, 1)
 }
+
+func (activityTestVariableSyncer) SyncEnvironment(context.Context, string) error {
+	return nil
+}
+
+func (activityTestVariableSyncer) ForgetSyncState(string) {}

@@ -381,7 +381,7 @@ func TestContainerServiceCommitContainerCallsDockerAPI(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	svc := NewContainerService(ContainerServiceParams{
-		EventService:  event.NewEventService(db, nil, nil),
+		EventService:  event.NewEventService(db, &config.Config{}, nil),
 		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
 	})
 
@@ -425,7 +425,7 @@ func TestContainerServiceCommitContainerOmitsReferenceWhenRepositoryEmpty(t *tes
 	t.Cleanup(server.Close)
 
 	svc := NewContainerService(ContainerServiceParams{
-		EventService:  event.NewEventService(db, nil, nil),
+		EventService:  event.NewEventService(db, &config.Config{}, nil),
 		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
 	})
 
@@ -733,7 +733,7 @@ func TestContainerServiceResizeExec(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	svc := NewContainerService(ContainerServiceParams{
-		EventService:  event.NewEventService(db, nil, nil),
+		EventService:  event.NewEventService(db, &config.Config{}, nil),
 		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
 	})
 
@@ -765,7 +765,7 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			db := setupProjectTestDB(t)
-			events := event.NewEventService(db, nil, nil)
+			events := event.NewEventService(db, &config.Config{}, nil)
 			observed := make(chan string, 8)
 			var createdUserns container.UsernsMode
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -909,7 +909,7 @@ func TestRecreateContainerRollsBackAfterRequestCancellation(t *testing.T) {
 	t.Cleanup(server.Close)
 	kvService := kv.NewKVService(db)
 	svc := NewContainerService(ContainerServiceParams{
-		EventService:  event.NewEventService(db, nil, nil),
+		EventService:  event.NewEventService(db, &config.Config{}, nil),
 		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
 		KVService:     kvService,
 	})
@@ -1673,7 +1673,7 @@ func newLogsTestService(t *testing.T, tty bool, logsBody []byte, gotQuery *url.V
 	t.Cleanup(server.Close)
 
 	return NewContainerService(ContainerServiceParams{
-		EventService:  event.NewEventService(setupProjectTestDB(t), nil, nil),
+		EventService:  event.NewEventService(setupProjectTestDB(t), &config.Config{}, nil),
 		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
 	})
 }
@@ -1928,7 +1928,7 @@ func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTe
 
 	systemd := &quadletTestSystemd{}
 	svc := NewContainerService(ContainerServiceParams{
-		EventService:  event.NewEventService(setupProjectTestDB(t), nil, nil),
+		EventService:  event.NewEventService(setupProjectTestDB(t), &config.Config{}, nil),
 		DockerService: newSettingsDockerService(t, newTestDockerClient(t, dockerServer)),
 		PodmanService: podman.NewService(podman.Config{
 			Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {

@@ -60,7 +60,6 @@ type (
 		eventService    *event.EventService
 		settingsService *settings.SettingsService
 
-		// jobs carries the scheduler and app lifecycle context, injected after construction by SetScheduler.
 		jobs         *entityjobs.Registry
 		engine       *flow.Engine
 		syncWorkflow *flow.Workflow
@@ -102,6 +101,9 @@ type (
 		SwarmService    *swarm.SwarmService
 		EventService    *event.EventService
 		SettingsService *settings.SettingsService
+		Ctx             context.Context
+		Scheduler       types.DynamicScheduler
+		Admission       *runs.Admission
 	}
 
 	SyncUpdate struct {
@@ -204,8 +206,14 @@ func NewGitOpsSyncService(p GitOpsSyncServiceParams) *GitOpsSyncService {
 		swarmService:    p.SwarmService,
 		eventService:    p.EventService,
 		settingsService: p.SettingsService,
-		jobs:            entityjobs.New(entityjobs.GitOpsSyncJobPrefix, gitOpsSyncAdmissionScope),
-		backups:         &backupRuntime{branches: map[string]*sync.Mutex{}, timers: map[string]*time.Timer{}, debounce: backup.DefaultBackupSaveDebounce},
+		jobs: entityjobs.New(entityjobs.Config{
+			Lifecycle:      p.Ctx,
+			Scheduler:      p.Scheduler,
+			Admission:      p.Admission,
+			JobPrefix:      entityjobs.GitOpsSyncJobPrefix,
+			AdmissionScope: gitOpsSyncAdmissionScope,
+		}),
+		backups: &backupRuntime{branches: map[string]*sync.Mutex{}, timers: map[string]*time.Timer{}, debounce: backup.DefaultBackupSaveDebounce},
 	}
 	logError := func(ctx context.Context, syncRecord *projectpkg.GitOpsSync, actor types.Actor, errorMsg string) {
 		_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
@@ -303,12 +311,6 @@ func (s *GitOpsSyncService) RegisterWorkflows(engine *flow.Engine) error {
 	return err
 }
 
-// SetScheduler injects the scheduler, the admission gate, and the app lifecycle context background syncs run on.
-// It must run during bootstrap, before any per-sync job is registered.
-func (s *GitOpsSyncService) SetScheduler(ctx context.Context, jobScheduler types.DynamicScheduler, admissionGate *runs.Admission) error {
-	return s.jobs.SetScheduler(ctx, jobScheduler, admissionGate)
-}
-
 // registerSyncJob schedules one sync every intervalMinutes as a gitops-sync workflow run.
 func (s *GitOpsSyncService) registerSyncJob(ctx context.Context, syncID, environmentID string, intervalMinutes int) {
 	schedule := fmt.Sprintf("@every %dm", max(intervalMinutes, 1))
@@ -323,9 +325,6 @@ func (s *GitOpsSyncService) registerSyncJob(ctx context.Context, syncID, environ
 
 // kickSync submits one run of a sync's job now, so it does not wait for its next interval.
 func (s *GitOpsSyncService) kickSync(ctx context.Context, syncID, trigger string) {
-	if !s.jobs.Enabled() {
-		return
-	}
 	if _, err := s.jobs.Scheduler().Submit(ctx, types.SchedulerRequest{JobID: s.jobs.JobName(syncID), EnvironmentID: "0", Trigger: trigger}); err != nil {
 		slog.ErrorContext(ctx, "gitops sync admission failed", "syncId", syncID, "trigger", trigger, "error", err)
 	}
@@ -334,9 +333,6 @@ func (s *GitOpsSyncService) kickSync(ctx context.Context, syncID, trigger string
 // RegisterAutoSyncJobsOnStartup registers a job for every auto-sync and kicks the overdue ones, and backups
 // with pending changes, right away.
 func (s *GitOpsSyncService) RegisterAutoSyncJobsOnStartup(ctx context.Context) {
-	if !s.jobs.Enabled() {
-		return
-	}
 	var syncs []projectpkg.GitOpsSync
 	if err := s.db.WithContext(ctx).
 		Where("auto_sync = ? AND environment_id IN (SELECT id FROM environments)", true).
@@ -1206,8 +1202,8 @@ func (s *GitOpsSyncService) ResolveBackupConflict(ctx context.Context, environme
 }
 
 // SubscribeProjectFileChanges marks backups pending on save and runs them after a debounce when auto backup is on.
-func (s *GitOpsSyncService) SubscribeProjectFileChanges(ctx context.Context) {
-	runCtx := s.jobs.Context(ctx)
+func (s *GitOpsSyncService) SubscribeProjectFileChanges() {
+	runCtx := s.jobs.Context()
 	s.projectService.FilesChanged.Subscribe(func(projectID string) {
 		var syncs []projectpkg.GitOpsSync
 		if err := s.db.WithContext(runCtx).
@@ -1226,22 +1222,9 @@ func (s *GitOpsSyncService) SubscribeProjectFileChanges(ctx context.Context) {
 			if !syncRecord.AutoSync || !syncRecord.BackupOnSave {
 				continue
 			}
-			syncID, environmentID := syncRecord.ID, syncRecord.EnvironmentID
+			syncID := syncRecord.ID
 			s.backups.schedule(syncID, func() {
-				if s.jobs.Enabled() {
-					s.kickSync(runCtx, syncID, "save")
-					return
-				}
-				go func() {
-					defer concurrency.RecoverToError(nil, "git backup after save", "syncId", syncID, "projectId", projectID)
-					if _, err := s.PerformSync(runCtx, SyncRequest{
-						EnvironmentID: environmentID,
-						SyncID:        syncID,
-						Actor:         types.SystemUser,
-					}); err != nil {
-						slog.ErrorContext(runCtx, "git backup after save failed", "syncId", syncID, "error", err)
-					}
-				}()
+				s.kickSync(runCtx, syncID, "save")
 			})
 		}
 	})

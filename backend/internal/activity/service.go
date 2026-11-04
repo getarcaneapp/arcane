@@ -106,7 +106,7 @@ func NewActivityService(db *database.DB, settingsService *settings.SettingsServi
 // returned context is otherwise no longer needed. Implements activitylib.Tracker.
 func (s *ActivityService) Track(ctx context.Context, activityID string) context.Context {
 	activityID = strings.TrimSpace(activityID)
-	if s == nil || activityID == "" {
+	if activityID == "" {
 		return ctx
 	}
 
@@ -129,7 +129,7 @@ func (s *ActivityService) Track(ctx context.Context, activityID string) context.
 // was found in this process.
 func (s *ActivityService) RequestCancel(activityID string) bool {
 	activityID = strings.TrimSpace(activityID)
-	if s == nil || activityID == "" {
+	if activityID == "" {
 		return false
 	}
 
@@ -143,18 +143,7 @@ func (s *ActivityService) RequestCancel(activityID string) bool {
 	return true
 }
 
-func (s *ActivityService) checkInit() error {
-	if s == nil || s.db == nil {
-		return errors.New("activity service not initialized")
-	}
-	return nil
-}
-
 func (s *ActivityService) StartActivity(ctx context.Context, req StartActivityRequest) (*types.Activity, error) {
-	if err := s.checkInit(); err != nil {
-		return nil, err
-	}
-
 	if req.ID != "" {
 		var existing Activity
 		err := s.db.WithContext(ctx).Where("id = ?", req.ID).Limit(1).Find(&existing).Error
@@ -238,9 +227,6 @@ func (s *ActivityService) StartActivity(ctx context.Context, req StartActivityRe
 // StartTrackedActivity holds the cancellation lock across persistence and
 // registration, so cancellation cannot treat the new row as untracked.
 func (s *ActivityService) StartTrackedActivity(ctx context.Context, req StartActivityRequest) (*types.Activity, context.Context, error) {
-	if err := s.checkInit(); err != nil {
-		return nil, nil, err
-	}
 	s.runningMu.Lock()
 	defer s.runningMu.Unlock()
 	started, err := s.StartActivity(ctx, req)
@@ -261,9 +247,6 @@ func (s *ActivityService) StartTrackedActivity(ctx context.Context, req StartAct
 // returned and the activity stays queued for its caller to finalize.
 // Implements activitylib.SlotWaiter.
 func (s *ActivityService) AwaitActivitySlot(ctx context.Context, activityID, environmentID string) error {
-	if err := s.checkInit(); err != nil {
-		return err
-	}
 	activityID = strings.TrimSpace(activityID)
 	if activityID == "" {
 		return errors.New("activity id is required")
@@ -298,9 +281,6 @@ func (s *ActivityService) AwaitActivitySlotBounded(ctx context.Context, activity
 }
 
 func (s *ActivityService) UpdateActivity(ctx context.Context, activityID string, req UpdateActivityRequest) (*types.Activity, error) {
-	if err := s.checkInit(); err != nil {
-		return nil, err
-	}
 	activityID = strings.TrimSpace(activityID)
 	if activityID == "" {
 		return nil, errors.New("activity id is required")
@@ -378,9 +358,6 @@ func (s *ActivityService) AppendMessage(ctx context.Context, activityID string, 
 // commits after this transaction but publishes before this snapshot is
 // handled by the pubsub terminal latch dropping the stale event.
 func (s *ActivityService) AppendMessages(ctx context.Context, activityID string, reqs []AppendActivityMessageRequest) ([]types.ActivityMessage, error) {
-	if err := s.checkInit(); err != nil {
-		return nil, err
-	}
 	activityID = strings.TrimSpace(activityID)
 	if activityID == "" {
 		return nil, errors.New("activity id is required")
@@ -517,9 +494,6 @@ func (s *ActivityService) retryWrite(ctx context.Context, activityID, what strin
 }
 
 func (s *ActivityService) CompleteActivity(ctx context.Context, activityID string, status types.ActivityStatus, finalMessage string, errMessage *string, finalStep ...string) (*types.Activity, error) {
-	if err := s.checkInit(); err != nil {
-		return nil, err
-	}
 	if !slices.Contains(terminalActivityStatuses, status) {
 		status = types.ActivityStatusSuccess
 	}
@@ -617,9 +591,6 @@ func (s *ActivityService) publishTerminalSnapshot(ctx context.Context, model *Ac
 // but only if it is still active. Returns ErrActivityNotCancelable if the activity
 // has already reached a terminal state, or gorm.ErrRecordNotFound if it is unknown.
 func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, activityID, requestedBy string) (*types.Activity, error) {
-	if err := s.checkInit(); err != nil {
-		return nil, err
-	}
 	activityID = strings.TrimSpace(activityID)
 	if activityID == "" {
 		return nil, errors.New("activity id is required")
@@ -815,9 +786,6 @@ func (s *ActivityService) ResolveOrphanedQueuedActivities(ctx context.Context, p
 // PatchActivityMetadata merges patch into the activity's existing metadata,
 // unlike UpdateActivity which replaces the metadata wholesale.
 func (s *ActivityService) PatchActivityMetadata(ctx context.Context, activityID string, patch database.JSON) error {
-	if err := s.checkInit(); err != nil {
-		return err
-	}
 	activityID = strings.TrimSpace(activityID)
 	if activityID == "" {
 		return errors.New("activity id is required")
@@ -885,10 +853,6 @@ func completeActivityUpdates(startedAt time.Time, status types.ActivityStatus, f
 }
 
 func (s *ActivityService) ListActivitiesPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.Activity, pagination.Response, error) {
-	if err := s.checkInit(); err != nil {
-		return nil, pagination.Response{}, err
-	}
-
 	environmentID = cmp.Or(strings.TrimSpace(environmentID), "0")
 
 	var activities []Activity
@@ -932,9 +896,6 @@ func (s *ActivityService) ListActivitiesPaginated(ctx context.Context, environme
 }
 
 func (s *ActivityService) GetActivityDetail(ctx context.Context, environmentID, activityID string, limit int) (*types.ActivityDetail, error) {
-	if err := s.checkInit(); err != nil {
-		return nil, err
-	}
 	if limit <= 0 || limit > defaultActivityMessages {
 		limit = defaultActivityMessages
 	}
@@ -1165,9 +1126,6 @@ func (s *ActivityService) FailInterruptedBackups(ctx context.Context, protectedI
 // SyncJobRun updates a durable job summary without taking an execution slot.
 // Only the queue owns its lifecycle, including reopening it for an explicit retry.
 func (s *ActivityService) SyncJobRun(ctx context.Context, run types.SchedulerRun, name string) error {
-	if err := s.checkInit(); err != nil {
-		return err
-	}
 	if run.ActivityID == "" {
 		return errors.New("job activity ID is required")
 	}
@@ -1219,9 +1177,6 @@ func (s *ActivityService) SyncJobRun(ctx context.Context, run types.SchedulerRun
 }
 
 func (s *ActivityService) ResolveOrphanedJobRuns(ctx context.Context, finished map[string]types.SchedulerRun, protectedIDs ...string) (int64, error) {
-	if err := s.checkInit(); err != nil {
-		return 0, err
-	}
 	candidates, err := s.sweeps.OrphanedJobRuns(ctx, protectedIDs)
 	if err != nil {
 		return 0, fmt.Errorf("find orphaned job run activities: %w", err)

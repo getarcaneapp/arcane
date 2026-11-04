@@ -79,7 +79,7 @@ func TestPruneVolumesSkipsBackupVolume(t *testing.T) {
 		Config:        &config.Config{},
 		DB:            db,
 		DockerService: dockerService,
-		EventService:  event.NewEventService(db, nil, nil),
+		EventService:  event.NewEventService(db, &config.Config{}, nil),
 	})
 	service := NewService(ServiceParams{
 		Location:      time.UTC,
@@ -142,7 +142,7 @@ func TestGetDiskUsageSumsReclaimableResources(t *testing.T) {
 		Config:        &config.Config{},
 		DB:            db,
 		DockerService: dockerService,
-		EventService:  event.NewEventService(db, nil, nil),
+		EventService:  event.NewEventService(db, &config.Config{}, nil),
 	})
 	service := NewService(ServiceParams{
 		Location:      time.UTC,
@@ -327,7 +327,7 @@ func newVolumeFallbackService(t *testing.T) (*Service, func() []string) {
 			Config:        &config.Config{},
 			DB:            db,
 			DockerService: dockerService,
-			EventService:  event.NewEventService(db, nil, nil),
+			EventService:  event.NewEventService(db, &config.Config{}, nil),
 		}),
 	})
 	return service, func() []string {

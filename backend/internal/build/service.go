@@ -54,7 +54,7 @@ type (
 		workspace       *workspace.Service
 		builder         buildtypes.Builder
 		gitProbeFn      func(context.Context, string, git.AuthConfig) error
-		gitCloneFn      func(context.Context, string, string, git.AuthConfig) (string, error)
+		gitCloneFn      func(context.Context, string, string, git.AuthConfig, int) (string, error)
 		gitCleanupFn    func(string) error
 	}
 
@@ -83,6 +83,9 @@ func NewBuildService(p BuildServiceParams) (*BuildService, error) {
 		registryService: p.RegistryService,
 		gitRepository:   p.GitRepository,
 		eventService:    p.EventService,
+		gitProbeFn:      p.GitRepository.ProbeRemote,
+		gitCloneFn:      p.GitRepository.Clone,
+		gitCleanupFn:    os.RemoveAll,
 	}
 	svc.workspace = workspace.NewService(func() string { return p.LocalSettings.GetSettingsConfig().BuildsDirectory.Value })
 
@@ -124,9 +127,6 @@ func (
 	*buildtypes.BuildResult,
 	error,
 ) {
-	if s.builder == nil {
-		return nil, errors.New("build service not available")
-	}
 	permissions, _ := middleware.PermissionsFromContext(ctx)
 	for _, perm := range authz.BuildPushConditions.Required("push", strconv.FormatBool(req.Push)) {
 		if !permissions.Allows(perm, environmentID) {
@@ -320,12 +320,12 @@ func (s *BuildService) resolveBuildRequest(
 	}
 	if gitkit.RequiresRemoteProbe(source.RepositoryURL) {
 		writeBuildProgressStatus(ctx, progressWriter, serviceName, "verifying remote git repository "+source.RepositoryURL)
-		if probeGitContextErr := s.probeGitContext(ctx, source.RepositoryURL, authConfig); probeGitContextErr != nil {
+		if probeGitContextErr := s.gitProbeFn(ctx, source.RepositoryURL, authConfig); probeGitContextErr != nil {
 			return buildtypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("failed to verify remote git repository %q: %w", source.RepositoryURL, probeGitContextErr)
 		}
 	}
 
-	repoPath, err := s.cloneGitContext(ctx, source.RepositoryURL, source.Ref, authConfig)
+	repoPath, err := s.gitCloneFn(ctx, source.RepositoryURL, source.Ref, authConfig, 0)
 	if err != nil {
 		return buildtypes.BuildRequest{}, func() error { return nil }, err
 	}
@@ -376,30 +376,11 @@ func (s *BuildService) resolveGitBuildAuth(ctx context.Context, rawURL string) (
 	return authConfig, true, nil
 }
 
-func (s *BuildService) probeGitContext(ctx context.Context, repositoryURL string, authConfig git.AuthConfig) error {
-	if s.gitProbeFn != nil {
-		return s.gitProbeFn(ctx, repositoryURL, authConfig)
-	}
-
-	return s.gitRepository.ProbeRemote(ctx, repositoryURL, authConfig)
-}
-
-func (s *BuildService) cloneGitContext(ctx context.Context, repositoryURL, ref string, authConfig git.AuthConfig) (string, error) {
-	if s.gitCloneFn != nil {
-		return s.gitCloneFn(ctx, repositoryURL, ref, authConfig)
-	}
-
-	return s.gitRepository.Clone(ctx, repositoryURL, ref, authConfig, 0)
-}
-
 func (s *BuildService) cleanupGitContext(repoPath string) error {
 	if repoPath == "" {
 		return nil
 	}
-	if s.gitCleanupFn != nil {
-		return s.gitCleanupFn(repoPath)
-	}
-	return os.RemoveAll(repoPath)
+	return s.gitCleanupFn(repoPath)
 }
 
 func writeBuildProgressStatus(ctx context.Context, progressWriter io.Writer, serviceName, status string) {

@@ -22,6 +22,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/entityjobs"
@@ -45,6 +46,7 @@ type (
 		Activity       *activity.ActivityService
 		Settings       *settings.SettingsService
 		Jobs           *entityjobs.Registry
+		Config         *config.Config
 		AlreadyRunning error
 	}
 
@@ -57,6 +59,7 @@ type (
 		activity       *activity.ActivityService
 		settings       *settings.SettingsService
 		jobs           *entityjobs.Registry
+		config         *config.Config
 		alreadyRunning error
 		flow           *flow.Engine
 		// backupWorkflow runs the selections Start accepted; policyWorkflow runs scheduled policies.
@@ -92,6 +95,7 @@ func NewService(deps Dependencies) *Service {
 		activity:       deps.Activity,
 		settings:       deps.Settings,
 		jobs:           deps.Jobs,
+		config:         deps.Config,
 		alreadyRunning: deps.AlreadyRunning,
 	}
 }
@@ -703,6 +707,9 @@ func selectionOutcome(result *types.SystemVolumeBackupRunResult, remoteDisabled 
 }
 
 func (s *Service) rescheduleSystemVolumeBackup(ctx context.Context, policy *types.SystemVolumeBackupPolicy) {
+	if s.config.AgentEnabled {
+		return
+	}
 	if !policy.Enabled {
 		s.jobs.Unregister(ctx, systemVolumeBackupJobPrefix+policy.ID)
 		return

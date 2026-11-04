@@ -60,6 +60,7 @@ import (
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	libpodman "getarcane.dev/arcane/v3/pkg/podman"
 	"getarcane.dev/arcane/v3/resources"
+	"getarcane.dev/types/v3"
 )
 
 var (
@@ -67,6 +68,7 @@ var (
 	ActorOptions = fx.Options(
 		fx.Provide(provideActorRuntime, provideRunCoordinator),
 		fx.Provide(provideAdmissionGate),
+		fx.Provide(fx.Annotate(provideJobScheduler, fx.As(fx.Self()), fx.As(new(types.DynamicScheduler)), fx.As(new(types.JobController)))),
 		fx.Provide(provideWorkflowEngine),
 		fx.Provide(provideTunnelRegistry),
 	)
@@ -90,6 +92,14 @@ var (
 			appimages.NewApplicationImagesService,
 			session.NewSessionService,
 			passkey.NewPasskeyService,
+			environment.NewLister,
+			fx.Annotate(environment.NewRemoteTransport, fx.As(fx.Self()), fx.As(new(environment.RemoteProxy))),
+			func(roles *role.RoleService, tokens *auth.TokenCache) environment.UserInvalidator {
+				return func(userID string) {
+					roles.InvalidateUser(userID)
+					tokens.InvalidateUser(userID)
+				}
+			},
 			fx.Annotate(environment.NewEnvironmentService,
 				fx.OnStart(func(ctx context.Context, service *environment.EnvironmentService) error {
 					return service.LoadAccessTokens(ctx)
@@ -112,11 +122,12 @@ var (
 			fx.Annotate(provideSystemService, fx.As(fx.Self()), fx.As(new(updater.SelfUpgrader))),
 			diagnostics.NewDiagnosticsService,
 			provideGitOpsSyncService,
-			variable.NewVariableService,
+			fx.Annotate(variable.NewVariableService, fx.As(fx.Self()), fx.As(new(environment.VariableSyncer))),
 			backup.NewRecoveryKeyStore,
 			upload.NewUploadService,
 			health.NewService,
-			fx.Annotate(auth.NewAuthService, fx.OnStop((*auth.AuthService).Stop)),
+			fx.Annotate(auth.NewTokenCache, fx.OnStop((*auth.TokenCache).Stop)),
+			auth.NewAuthService,
 			settings.NewSettingsSearchService,
 			fx.Annotate(settings.NewSettingsService, fx.OnStop(func(ctx context.Context, service *settings.SettingsService) error { return service.Stop(ctx) })),
 			provideVolumeService,
@@ -261,8 +272,8 @@ var (
 			func(service *auth.AuthService, userService *user.UserService, settingsService *settings.SettingsService, passkeyService *passkey.PasskeyService) *auth.Module {
 				return auth.New(service, userService, settingsService, passkeyService.BeginMFAAuthentication)
 			},
-			func(service *user.UserService, localAuth *auth.AuthService, settingsService *settings.SettingsService) *user.Module {
-				return user.New(service, localAuth.InvalidateUserTokenCache, settingsService)
+			func(service *user.UserService, tokens *auth.TokenCache, settingsService *settings.SettingsService) *user.Module {
+				return user.New(service, tokens.InvalidateUser, settingsService)
 			},
 		),
 	)

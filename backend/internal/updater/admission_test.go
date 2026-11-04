@@ -22,6 +22,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -68,6 +69,7 @@ func newAdmissionTestService(t *testing.T) (*UpdaterService, *runs.Admission) {
 	require.NoError(t, admission.Register(harness.Runtime))
 	svc, err := NewUpdaterService(UpdaterServiceParams{
 		DB:            db,
+		EventService:  event.NewEventService(db, &config.Config{}, nil),
 		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
 		Admission:     admission,
 	})

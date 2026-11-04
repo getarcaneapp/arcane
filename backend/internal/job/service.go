@@ -85,6 +85,8 @@ type (
 		Roles            *role.RoleService
 		LocalEnvironment *environment.EnvironmentService
 		LocalActivity    *activity.ActivityService
+		Ctx              context.Context
+		Scheduler        types.JobController
 	}
 )
 
@@ -102,30 +104,24 @@ func NewJobService(p JobServiceParams) *JobService {
 	}
 
 	service := &JobService{
-		activity:    p.LocalActivity,
-		runs:        p.Coordinator,
-		remote:      remote.New(p.Coordinator, kv.NewKVService(p.DB), p.LocalEnvironment),
-		environment: p.LocalEnvironment,
-		roles:       p.Roles,
-		db:          p.DB,
-		settings:    p.LocalSettings,
-		cfg:         p.Config,
-		location:    p.Config.GetLocation(),
-		runCount:    runCount,
-		runDuration: runDuration,
-		activeRuns:  activeRuns,
+		scheduler:    p.Scheduler,
+		lifecycleCtx: p.Ctx,
+		activity:     p.LocalActivity,
+		runs:         p.Coordinator,
+		remote:       remote.New(p.Coordinator, kv.NewKVService(p.DB), p.LocalEnvironment),
+		environment:  p.LocalEnvironment,
+		roles:        p.Roles,
+		db:           p.DB,
+		settings:     p.LocalSettings,
+		cfg:          p.Config,
+		location:     p.Config.GetLocation(),
+		runCount:     runCount,
+		runDuration:  runDuration,
+		activeRuns:   activeRuns,
 	}
 	p.Coordinator.SetExecutor(service.executeRun, service.reconcileRun)
 	p.Coordinator.SetObserver(service)
 	return service
-}
-
-func (s *JobService) SetScheduler(ctx context.Context, controller types.JobController) { //nolint:contextcheck // scheduler jobs must capture the app lifecycle context, not request contexts
-	if ctx == nil {
-		ctx = context.Background() //nolint:forbidigo // A nil scheduler context uses an independent lifecycle root.
-	}
-	s.lifecycleCtx = ctx
-	s.scheduler = controller
 }
 
 func (s *JobService) GetJobSchedules(ctx context.Context) types.JobScheduleConfig {
@@ -381,8 +377,6 @@ func (s *JobService) evaluatePrerequisites(ctx context.Context, localMeta types.
 
 	return prerequisites
 }
-
-func (s *JobService) Coordinator() *runs.Coordinator { return s.runs }
 
 // ActivityID assigns a summary identity before a visible run is persisted.
 func (s *JobService) ActivityID(run types.SchedulerRun) string {

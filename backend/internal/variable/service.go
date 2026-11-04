@@ -44,12 +44,11 @@ type (
 	// .env.global file: locally via template.TemplateService, remotely via the existing
 	// agent variables endpoint.
 	VariableService struct {
-		db                            *database.DB
-		proxyEnvironmentJSON          func(context.Context, string, string, string, []byte, any) error
-		listEnabledRemoteEnvironments func(context.Context) ([]environment.Environment, error)
-		settingsService               *settings.SettingsService
-		kvService                     *kv.KVService
-		syncStatus                    map[string]types.EnvironmentSyncStatus
+		db              *database.DB
+		environments    environment.RemoteProxy
+		settingsService *settings.SettingsService
+		kvService       *kv.KVService
+		syncStatus      map[string]types.EnvironmentSyncStatus
 
 		importLocks concurrency.KeyedMutex
 
@@ -78,19 +77,15 @@ func validateVariableKey(key string) error {
 	return common.Classify(common.ErrInvalidEnvKey, &types.FieldError{Field: "key", Err: fmt.Errorf("invalid key %q: use letters, numbers, and underscores, and do not start with a number", key)})
 }
 
-func NewVariableService(db *database.DB, environmentService *environment.EnvironmentService, settingsService *settings.SettingsService, kvService *kv.KVService) *VariableService {
-	service := &VariableService{
+func NewVariableService(db *database.DB, environments environment.RemoteProxy, settingsService *settings.SettingsService, kvService *kv.KVService) *VariableService {
+	return &VariableService{
 		syncGate:        concurrency.SyncGate{Expiry: environment.SyncDeliveryExpiry},
 		db:              db,
+		environments:    environments,
 		settingsService: settingsService,
 		kvService:       kvService,
 		syncStatus:      make(map[string]types.EnvironmentSyncStatus),
 	}
-	if environmentService != nil {
-		service.proxyEnvironmentJSON = environmentService.ProxyJSONRequest
-		service.listEnabledRemoteEnvironments = environmentService.ListEnabledRemoteEnvironments
-	}
-	return service
 }
 
 func (s *VariableService) ListVariables(ctx context.Context) ([]types.GlobalVariable, error) {
@@ -359,22 +354,19 @@ func (s *VariableService) syncEnvironment(ctx context.Context, envID string) err
 	var out struct {
 		Success bool `json:"success"`
 	}
-	err = s.proxyEnvironmentJSON(ctx, envID, http.MethodPut, agentVariablesPath, body, &out)
+	err = s.environments.ProxyJSONRequest(ctx, envID, http.MethodPut, agentVariablesPath, body, &out)
 	finishDelivery(err == nil)
 	return err
 }
 
 // syncTargets returns the local environment plus every enabled
 // environment, deduplicated.
-func (s *VariableService) syncTargets(ctx context.Context) []environment.Environment {
-	remotes, err := s.listEnabledRemoteEnvironments(ctx)
+func (s *VariableService) syncTargets(ctx context.Context) []string {
+	remoteIDs, err := s.environments.ListEnabledRemoteEnvironmentIDs(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to list environments for global variable sync", "error", err)
-		remotes = nil
 	}
-	return append([]environment.Environment{{ID: environment.LocalEnvironmentID}}, slices.DeleteFunc(remotes, func(remote environment.Environment) bool {
-		return strings.TrimSpace(kit.FromPtr(remote.AccessToken)) == ""
-	})...)
+	return append([]string{environment.LocalEnvironmentID}, remoteIDs...)
 }
 
 // SyncAll pushes the effective variable set to the local environment and every
@@ -385,7 +377,7 @@ func (s *VariableService) SyncAll(ctx context.Context) []types.EnvironmentSyncSt
 	// An explicit sync exists to repair agents, so every target is resent even
 	// when the manager's payload has not changed.
 	for _, target := range targets {
-		s.ForgetSyncState(target.ID)
+		s.ForgetSyncState(target)
 	}
 	s.syncEnvironments(ctx, targets)
 	return s.SyncStatuses()
@@ -400,11 +392,11 @@ func (s *VariableService) SyncAllBackground(ctx context.Context) []types.Environ
 		slog.WarnContext(ctx, "Failed to sync global variables locally", "error", err)
 	}
 
-	remotes := slices.DeleteFunc(s.syncTargets(ctx), func(target environment.Environment) bool {
-		return target.ID == environment.LocalEnvironmentID
+	remotes := slices.DeleteFunc(s.syncTargets(ctx), func(target string) bool {
+		return target == environment.LocalEnvironmentID
 	})
 	for _, target := range remotes {
-		s.recordSyncPending(target.ID)
+		s.recordSyncPending(target)
 	}
 
 	bgCtx := context.WithoutCancel(ctx)
@@ -413,20 +405,20 @@ func (s *VariableService) SyncAllBackground(ctx context.Context) []types.Environ
 	return s.SyncStatuses()
 }
 
-func (s *VariableService) syncEnvironments(ctx context.Context, targets []environment.Environment) {
+func (s *VariableService) syncEnvironments(ctx context.Context, targets []string) {
 	var wg sync.WaitGroup
 	for _, target := range targets {
 		wg.Go(func() {
 			syncCtx, cancel := context.WithTimeout(ctx, variableSyncTimeout)
 			defer cancel()
-			if target.ID != environment.LocalEnvironmentID && !agent.GetRegistry().Active(target.ID).IsPresent() {
-				if _, ok := agent.GetRegistry().WaitForActive(syncCtx, target.ID, agent.DefaultTunnelAcquireTimeout).Get(); !ok {
-					s.recordSyncPending(target.ID)
+			if target != environment.LocalEnvironmentID && !agent.GetRegistry().Active(target).IsPresent() {
+				if _, ok := agent.GetRegistry().WaitForActive(syncCtx, target, agent.DefaultTunnelAcquireTimeout).Get(); !ok {
+					s.recordSyncPending(target)
 					return
 				}
 			}
-			if err := s.SyncEnvironment(syncCtx, target.ID); err != nil {
-				slog.WarnContext(syncCtx, "Failed to sync global variables to environment", "environmentId", target.ID, "error", err)
+			if err := s.SyncEnvironment(syncCtx, target); err != nil {
+				slog.WarnContext(syncCtx, "Failed to sync global variables to environment", "environmentId", target, "error", err)
 			}
 		})
 	}
@@ -620,7 +612,7 @@ func (s *VariableService) importRemoteLegacyVarsOnce(ctx context.Context, envID 
 		Data    []types.EnvVariable `json:"data"`
 		Success bool                `json:"success"`
 	}
-	if proxyEnvironmentJSONErr := s.proxyEnvironmentJSON(ctx, envID, http.MethodGet, agentVariablesPath, nil, &out); proxyEnvironmentJSONErr != nil {
+	if proxyEnvironmentJSONErr := s.environments.ProxyJSONRequest(ctx, envID, http.MethodGet, agentVariablesPath, nil, &out); proxyEnvironmentJSONErr != nil {
 		return proxyEnvironmentJSONErr
 	}
 

@@ -229,7 +229,7 @@ func TestImageService_GetImageDetail_EnrichesPinnedReferences(t *testing.T) {
 	imageSvc := NewImageService(ImageServiceParams{
 		DB:            db,
 		DockerService: newImageTestDockerService(t, server),
-		EventService:  event.NewEventService(db, nil, nil),
+		EventService:  event.NewEventService(db, &config.Config{}, nil),
 	})
 
 	detail, err := imageSvc.GetImageDetail(t.Context(), pinnedID)
@@ -268,7 +268,7 @@ func TestImageService_GetImageDetail_ContainerFailureDoesNotBreakInspection(t *t
 	imageSvc := NewImageService(ImageServiceParams{
 		DB:            db,
 		DockerService: newImageTestDockerService(t, server),
-		EventService:  event.NewEventService(db, nil, nil),
+		EventService:  event.NewEventService(db, &config.Config{}, nil),
 	})
 
 	detail, err := imageSvc.GetImageDetail(t.Context(), testID)
@@ -443,7 +443,7 @@ func TestGetPullOptionsWithAuth_ExternalCredentialsOverrideDBRegistry(t *testing
 
 func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejected(t *testing.T) {
 	db := setupImageProjectTestDB(t)
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	var authHeaders []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/images/create") {
@@ -487,7 +487,7 @@ func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejected(t *testing.T) 
 
 func TestImageServiceTagImageCallsDockerAPI(t *testing.T) {
 	db := setupImageProjectTestDB(t)
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	var gotRepo, gotTag string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || imageDockerTestPath(r.URL.Path) != "/images/source:latest/tag" {
@@ -534,7 +534,7 @@ func TestImageServiceGetImageHistoryCallsDockerAPI(t *testing.T) {
 	imageSvc := NewImageService(ImageServiceParams{
 		DB:            db,
 		DockerService: newImageTestDockerService(t, server),
-		EventService:  event.NewEventService(db, nil, nil),
+		EventService:  event.NewEventService(db, &config.Config{}, nil),
 	})
 
 	history, err := imageSvc.GetImageHistory(t.Context(), "source:latest")
@@ -577,7 +577,7 @@ func TestImageServiceSearchImagesCallsDockerAPI(t *testing.T) {
 	imageSvc := NewImageService(ImageServiceParams{
 		DB:            db,
 		DockerService: newImageTestDockerService(t, server),
-		EventService:  event.NewEventService(db, nil, nil),
+		EventService:  event.NewEventService(db, &config.Config{}, nil),
 	})
 
 	results, err := imageSvc.SearchImages(t.Context(), "nginx")

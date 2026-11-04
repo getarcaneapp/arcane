@@ -21,48 +21,19 @@ import (
 	libcrypto "kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/api"
-	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/auth"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/container"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/environment"
-	"getarcane.dev/arcane/v3/internal/gitops"
 	"getarcane.dev/arcane/v3/internal/health"
-	"getarcane.dev/arcane/v3/internal/job"
-	"getarcane.dev/arcane/v3/internal/kv"
 	"getarcane.dev/arcane/v3/internal/project"
-	"getarcane.dev/arcane/v3/internal/role"
-	"getarcane.dev/arcane/v3/internal/scheduler/flow"
-	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/swarm"
 	"getarcane.dev/arcane/v3/internal/system"
-	"getarcane.dev/arcane/v3/internal/volume"
 	"getarcane.dev/arcane/v3/pkg/agent"
-	francistest "getarcane.dev/arcane/v3/pkg/francis/testing"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	tunnelpb "getarcane.dev/arcane/v3/proto/tunnel/v1"
-	"getarcane.dev/types/v3"
 )
-
-type (
-	blockingBusWatcher struct {
-		started chan struct{}
-		stopped chan struct{}
-	}
-)
-
-func (w *blockingBusWatcher) Name() string { return "blocking" }
-
-func (w *blockingBusWatcher) Start(ctx context.Context) error {
-	close(w.started)
-	<-ctx.Done()
-	close(w.stopped)
-	return nil
-}
-
-func (w *blockingBusWatcher) RunNow(context.Context) error { return nil }
 
 func TestProxyProtocolListener(t *testing.T) {
 	acceptRemoteAddr := func(t *testing.T, trustedProxies, payload string) string {
@@ -422,98 +393,6 @@ func TestNewHTTPServerRejectsInvalidTLSCertificate(t *testing.T) {
 		TunnelServer: agent.NewTunnelServer(agent.TunnelServerOptions{}),
 	})
 	require.Error(t, err)
-}
-
-func TestJobSchedulerStopCancelsItsPrivateContext(t *testing.T) {
-	appCtx := t.Context()
-
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime := francistest.New(t)
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&kv.KVEntry{}, &environment.Environment{}, &project.GitOpsSync{}, &activity.Activity{}, &activity.ActivityMessage{}))
-	sqlDB, err := db.DB()
-	require.NoError(t, err)
-	sqlDB.SetMaxOpenConns(1)
-	t.Cleanup(func() { _ = sqlDB.Close() })
-	coordinator := runs.New(kv.NewKVService(&database.DB{DB: db}), runtime.Service(), time.UTC)
-	require.NoError(t, coordinator.Register(runtime))
-	admission := runs.NewAdmission(runtime.Service(), t.Name())
-	require.NoError(t, admission.Register(runtime))
-	workflows, err := flow.New(appCtx, runtime, coordinator, nil)
-	require.NoError(t, err)
-	lifecycle.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error { return runtime.Start(ctx, appCtx, nil) },
-		OnStop:  runtime.Stop,
-	})
-	t.Cleanup(func() { lifecycle.RequireStop() })
-	jobService := job.NewJobService(job.JobServiceParams{
-		DB:          &database.DB{DB: db},
-		Config:      &config.Config{},
-		Coordinator: coordinator,
-		Roles:       role.NewRoleService(&database.DB{DB: db}),
-		LocalEnvironment: environment.NewEnvironmentService(environment.EnvironmentServiceParams{
-			DB: &database.DB{DB: db},
-		}),
-		LocalActivity: activity.NewActivityService(&database.DB{DB: db}, nil),
-	})
-	gitopsSync := gitops.NewGitOpsSyncService(gitops.GitOpsSyncServiceParams{
-		DB: &database.DB{DB: db},
-		ProjectService: project.NewProjectService(project.ProjectServiceParams{
-			DB:     &database.DB{DB: db},
-			Config: &config.Config{},
-		}),
-	})
-	require.NoError(t, db.Create(&environment.Environment{ID: "0", Name: "Local", Enabled: true}).Error)
-	require.NoError(t, db.Create(&project.GitOpsSync{ID: "overdue", EnvironmentID: "0", AutoSync: true, SyncInterval: 1}).Error)
-	jobScheduler, err := newJobScheduler(appCtx, lifecycle, &config.Config{}, coordinator, admission, nil, nil, nil, jobService, workflows, nil, gitopsSync)
-	require.NoError(t, err)
-	require.NoError(t, registerDynamicJobs(dynamicJobsParams{
-		AppCtx:     appCtx,
-		Config:     &config.Config{AgentEnabled: true},
-		Scheduler:  jobScheduler,
-		GitOpsSync: gitopsSync,
-		Volume: volume.NewVolumeService(volume.VolumeServiceParams{
-			DB:     &database.DB{DB: db},
-			Config: &config.Config{},
-		}),
-		Admission: admission,
-	}))
-	executed := make(chan types.SchedulerRun, 1)
-	coordinator.SetExecutor(func(_ context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
-		executed <- run
-		return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
-	}, nil)
-	watcher := &blockingBusWatcher{
-		started: make(chan struct{}),
-		stopped: make(chan struct{}),
-	}
-	require.NoError(t, jobScheduler.RegisterBusWatcher(watcher, false))
-
-	startCtx, cancelStart := context.WithTimeout(appCtx, 5*time.Second)
-	defer cancelStart()
-	require.NoError(t, lifecycle.Start(startCtx))
-	cancelStart()
-	select {
-	case run := <-executed:
-		require.Equal(t, "gitops-sync:overdue", run.JobID)
-		require.Equal(t, "startup", run.Trigger)
-		require.True(t, jobScheduler.HasJob(run.JobID))
-	case <-time.After(5 * time.Second):
-		require.FailNow(t, "overdue GitOps startup job did not execute through Francis")
-	}
-	select {
-	case <-watcher.started:
-	case <-time.After(time.Second):
-		require.FailNow(t, "watcher did not start")
-	}
-	lifecycle.RequireStop()
-	select {
-	case <-watcher.stopped:
-	case <-time.After(time.Second):
-		require.FailNow(t, "watcher did not stop")
-	}
-	require.NoError(t, appCtx.Err())
 }
 
 func TestApplicationOptionsValidate(t *testing.T) {

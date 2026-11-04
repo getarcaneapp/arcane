@@ -193,7 +193,7 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 		}),
 	})
 	require.NoError(t, err)
-	job.getDockerClientFn = func() (*client.Client, error) { return nil, nil }
+	job.getDockerClientFn = func(context.Context) (*client.Client, error) { return nil, nil }
 	job.listContainers = func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
 		return []container.Summary{
 			{ID: "c1", Names: []string{"/one"}},

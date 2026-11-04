@@ -143,8 +143,6 @@ func TestIsKnownToken_StoredIdentity(t *testing.T) {
 	for _, token := range []string{unstored, "", "arc_wh_bad", " " + raw, raw + " ", strings.ToUpper(raw), raw[:len(raw)-1], webhookTokenPrefix + strings.Repeat("ab", 512*1024)} {
 		require.False(t, svc.IsKnownToken(token))
 	}
-	var unavailable *WebhookService
-	require.False(t, unavailable.IsKnownToken(raw))
 
 	restarted := newTestWebhookService(db)
 	require.NoError(t, restarted.LoadTokenHashes(ctx))

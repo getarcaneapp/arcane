@@ -35,6 +35,9 @@ type (
 		LatestRun      func(ctx context.Context, policyID string) (*types.VolumeBackupEntry, error)
 		CreateBackup   func(ctx context.Context, volumeName, policyID string) (*types.VolumeBackup, error)
 		Reconcile      func(ctx context.Context, previous types.SchedulerRun, volumeName string) (types.SchedulerOutcome, error)
+		Ctx            context.Context
+		Scheduler      types.DynamicScheduler
+		Admission      *runs.Admission
 	}
 
 	// Service owns per-volume backup policies and their scheduled jobs.
@@ -56,13 +59,16 @@ const (
 )
 
 func NewService(deps Dependencies) *Service {
-	return &Service{deps: deps, jobs: entityjobs.New("volume-backup:", backup.VolumeAdmissionScope)}
-}
-
-// SetScheduler injects the dynamic scheduler and admission gate for per-policy
-// backup jobs. Agent mode passes them too: agents run their own volume backups.
-func (s *Service) SetScheduler(ctx context.Context, dynamicScheduler types.DynamicScheduler, admissionGate *runs.Admission) error {
-	return s.jobs.SetScheduler(ctx, dynamicScheduler, admissionGate)
+	return &Service{
+		deps: deps,
+		jobs: entityjobs.New(entityjobs.Config{
+			Lifecycle:      deps.Ctx,
+			Scheduler:      deps.Scheduler,
+			Admission:      deps.Admission,
+			JobPrefix:      "volume-backup:",
+			AdmissionScope: backup.VolumeAdmissionScope,
+		}),
+	}
 }
 
 // RegisterWorkflows defines the scheduled backup workflow while the host is still unstarted.
@@ -283,9 +289,6 @@ func (s *Service) reschedule(ctx context.Context, policy *VolumeBackupPolicy) {
 }
 
 func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
-	if !s.jobs.Enabled() {
-		return
-	}
 	var policies []VolumeBackupPolicy
 	if err := s.deps.DB.WithContext(ctx).Where("enabled = ?", true).Find(&policies).Error; err != nil {
 		slog.ErrorContext(ctx, "Failed to load scheduled volume backups", "error", err)

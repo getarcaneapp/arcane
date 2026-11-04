@@ -15,7 +15,6 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/client"
-	"github.com/samber/hot"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -113,10 +112,7 @@ func newTestAuthService() *AuthService {
 		browserSigningKey: bytes.Repeat([]byte{0x42}, browserSessionSigningKeySize),
 		refreshExpiry:     24 * time.Hour,
 		config:            &config.Config{},
-		tokenCache: hot.NewHotCache[string, verifiedTokenEntry](hot.LRU, 4096).
-			WithTTL(15 * time.Second).
-			WithJanitor().
-			Build(),
+		tokens:            NewTokenCache(),
 	}
 }
 
@@ -1018,11 +1014,9 @@ func TestGetSessionBootstrap(t *testing.T) {
 				{ID: "env-b", Name: "B", Enabled: true},
 			}).Error)
 			s := &AuthService{
-				userService: userSvc,
-				environmentService: environment.NewEnvironmentService(environment.EnvironmentServiceParams{
-					DB: db,
-				}),
-				versionService: newBootstrapTestVersionService(t, db),
+				userService:       userSvc,
+				environmentLister: environment.NewLister(db),
+				versionService:    newBootstrapTestVersionService(t, db),
 			}
 
 			bootstrap, err := s.GetSessionBootstrap(t.Context(), "u-bootstrap", tt.ps)
@@ -1043,11 +1037,9 @@ func TestGetSessionBootstrap(t *testing.T) {
 	t.Run("unknown user fails", func(t *testing.T) {
 		db := setupAuthServiceTestDB(t)
 		s := &AuthService{
-			userService: user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB),
-			environmentService: environment.NewEnvironmentService(environment.EnvironmentServiceParams{
-				DB: db,
-			}),
-			versionService: newBootstrapTestVersionService(t, db),
+			userService:       user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB),
+			environmentLister: environment.NewLister(db),
+			versionService:    newBootstrapTestVersionService(t, db),
 		}
 
 		_, err := s.GetSessionBootstrap(t.Context(), "missing", nil)

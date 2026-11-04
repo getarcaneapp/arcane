@@ -14,13 +14,13 @@ import (
 
 type (
 	Module struct {
-		service     *JobService
-		environment *environment.EnvironmentService
+		service      *JobService
+		environments environment.RemoteProxy
 	}
 )
 
-func New(service *JobService, localEnvironment *environment.EnvironmentService) *Module {
-	return &Module{service: service, environment: localEnvironment}
+func New(service *JobService, environments environment.RemoteProxy) *Module {
+	return &Module{service: service, environments: environments}
 }
 
 func (m *Module) Service() *JobService {
@@ -35,13 +35,13 @@ func (m *Module) RegisterRoutes(api huma.API) {
 		RegisterJobSchedules(api, nil, nil)
 		return
 	}
-	RegisterJobSchedules(api, m.service, m.environment)
+	RegisterJobSchedules(api, m.service, m.environments.ProxyJSONRequest)
 }
 
-func RegisterJobSchedules(api huma.API, jobSvc *JobService, envSvc *environment.EnvironmentService) {
+func RegisterJobSchedules(api huma.API, jobSvc *JobService, proxyRemoteJSON handlerutil.RemoteJSONProxy) {
 	h := &JobSchedulesHandler{
 		jobService:      jobSvc,
-		proxyRemoteJSON: envSvc.ProxyJSONRequest,
+		proxyRemoteJSON: proxyRemoteJSON,
 	}
 
 	middleware.RegisterWithPermission(api, huma.Operation{

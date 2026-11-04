@@ -97,14 +97,22 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
 	require.NoError(t, gate.Register(harness.Runtime))
-	engine := backup.NewEngine(gate, nil)
+	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error {
+		return nil
+	})
 	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
-	service := NewService(Dependencies{DB: db, Engine: engine, AlreadyRunning: errors.New("a backup is already running for this volume")})
+	jobScheduler := &volumeBackupPolicyScheduler{jobs: make(map[string]types.SchedulerJob)}
+	service := NewService(Dependencies{
+		DB:             db,
+		Engine:         engine,
+		AlreadyRunning: errors.New("a backup is already running for this volume"),
+		Ctx:            t.Context(),
+		Scheduler:      jobScheduler,
+		Admission:      gate,
+	})
 	require.NoError(t, service.RegisterWorkflows(harness.Engine))
 	harness.Start(t)
 	flowtest.AssertDefinitions(t, harness)
-	jobScheduler := &volumeBackupPolicyScheduler{jobs: make(map[string]types.SchedulerJob)}
-	require.NoError(t, service.SetScheduler(t.Context(), jobScheduler, gate))
 	service.RegisterJobsOnStartup(t.Context())
 	job, registered := jobScheduler.jobs["volume-backup:"+policy.ID]
 	require.True(t, registered)

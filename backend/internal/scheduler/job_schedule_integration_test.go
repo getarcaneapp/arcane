@@ -46,8 +46,9 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 			DB: db,
 		}),
 		LocalActivity: activity.NewActivityService(db, settingsService),
+		Ctx:           lifecycleCtx,
+		Scheduler:     jobScheduler,
 	})
-	jobService.SetScheduler(lifecycleCtx, jobScheduler)
 	require.NoError(t, jobScheduler.StartScheduler(t.Context()))
 
 	_, ok := jobScheduler.GetJobRuntimeState("image-polling")
@@ -99,8 +100,9 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 			DB: restartDB,
 		}),
 		LocalActivity: activity.NewActivityService(restartDB, restartSettingsService),
+		Ctx:           restartLifecycleCtx,
+		Scheduler:     restartScheduler,
 	})
-	restartJobService.SetScheduler(restartLifecycleCtx, restartScheduler)
 	require.NoError(t, restartScheduler.StartScheduler(t.Context()))
 	t.Cleanup(func() {
 		cancelRestartLifecycle()

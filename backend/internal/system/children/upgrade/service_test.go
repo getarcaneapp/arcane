@@ -373,7 +373,7 @@ func TestUpgradeJobFailedJobMarksUnfinishedResultsFailed(t *testing.T) {
 
 	svc := NewService(ServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 	})
 	job := &UpgradeJob{
 		Status:   UpgradeJobStatusRunning,
@@ -425,7 +425,7 @@ func TestUpgradeJobFinalizesUpToDateManagerWithoutRestart(t *testing.T) {
 
 	svc := NewService(ServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 	})
 	job := &UpgradeJob{
 		Status:                UpgradeJobStatusPendingRestart,
@@ -588,7 +588,7 @@ func TestResumeUpgradeJobFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 	svc := NewService(ServiceParams{
 		DB:             db,
 		VersionService: versionSvc,
-		EventService:   event.NewEventService(db, nil, nil),
+		EventService:   event.NewEventService(db, &config.Config{}, nil),
 	})
 	harness := flowtest.New(t, nil)
 	require.NoError(t, svc.RegisterWorkflows(harness.Engine, nil, nil))

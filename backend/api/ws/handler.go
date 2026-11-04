@@ -117,7 +117,8 @@ func NewWebSocketHandler(
 		diskUsagePathCache: hot.NewHotCache[struct{}, string](hot.LRU, 1).
 			WithTTL(5 * time.Minute).
 			Build(),
-		checkWSOrigin: httpx.ValidateWebSocketOrigin(cfg.GetAppURL()),
+		cpuUsageReader: readHostCPUUsage,
+		checkWSOrigin:  httpx.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	}
 	newGPUMonitor := func() *systemlib.GPUMonitor {
 		return systemlib.NewGPUMonitor(settingsService.GetBoolSetting(ctx, "gpuMonitoringEnabled"), settingsService.GetStringSetting(ctx, "gpuType"))

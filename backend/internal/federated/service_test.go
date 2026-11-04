@@ -150,12 +150,14 @@ func setupFederatedCredentialService(t *testing.T, issuer *federatedTestIssuer) 
 	eventSvc := event.NewEventService(db, &config.Config{}, nil)
 	signingKey, err := mldsa.GenerateKey(mldsa.MLDSA87())
 	require.NoError(t, err)
+	tokens := auth.NewTokenCache()
 	authSvc := auth.NewAuthService(auth.AuthServiceParams{
 		UserService:     userSvc,
 		SettingsService: settingsSvc,
 		EventService:    eventSvc,
 		SessionService:  sessionSvc,
 		RoleService:     roleSvc,
+		TokenCache:      tokens,
 		Config: &config.Config{
 			JWTRefreshExpiry: 24 * time.Hour,
 		},
@@ -170,6 +172,7 @@ func setupFederatedCredentialService(t *testing.T, issuer *federatedTestIssuer) 
 	service := NewFederatedCredentialService(FederatedCredentialServiceParams{
 		DB:              db,
 		AuthService:     authSvc,
+		TokenCache:      tokens,
 		UserService:     userSvc,
 		SettingsService: settingsSvc,
 		EventService:    eventSvc,

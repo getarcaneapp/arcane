@@ -13,13 +13,13 @@ import (
 
 type (
 	Module struct {
-		service     *VariableService
-		environment *environment.EnvironmentService
+		service      *VariableService
+		environments environment.RemoteProxy
 	}
 )
 
-func New(service *VariableService, environmentService *environment.EnvironmentService) *Module {
-	return &Module{service: service, environment: environmentService}
+func New(service *VariableService, environments environment.RemoteProxy) *Module {
+	return &Module{service: service, environments: environments}
 }
 
 func (m *Module) Service() *VariableService {
@@ -35,18 +35,18 @@ func (m *Module) RegisterRoutes(api huma.API, cfg *config.Config) {
 			RegisterMaterializedVariables(api, nil, nil)
 			return
 		}
-		RegisterMaterializedVariables(api, m.service, m.environment)
+		RegisterMaterializedVariables(api, m.service, m.environments.ProxyJSONRequest)
 		return
 	}
 	if m == nil {
 		RegisterVariables(api, nil, nil)
 		return
 	}
-	RegisterVariables(api, m.service, m.environment)
+	RegisterVariables(api, m.service, m.environments.ProxyJSONRequest)
 }
 
-func RegisterVariables(api huma.API, variableService *VariableService, environmentService *environment.EnvironmentService) {
-	h := &VariableHandler{variableService: variableService, proxyRemoteJSON: environmentService.ProxyJSONRequest}
+func RegisterVariables(api huma.API, variableService *VariableService, proxyRemoteJSON handlerutil.RemoteJSONProxy) {
+	h := &VariableHandler{variableService: variableService, proxyRemoteJSON: proxyRemoteJSON}
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "listVariables",
@@ -112,8 +112,8 @@ func RegisterVariables(api huma.API, variableService *VariableService, environme
 // RegisterMaterializedVariables registers the plaintext synchronization
 // channel on agents. It must never be registered on a manager API because its
 // response intentionally contains decrypted values for .env.global.
-func RegisterMaterializedVariables(api huma.API, variableService *VariableService, environmentService *environment.EnvironmentService) {
-	h := &VariableHandler{variableService: variableService, proxyRemoteJSON: environmentService.ProxyJSONRequest}
+func RegisterMaterializedVariables(api huma.API, variableService *VariableService, proxyRemoteJSON handlerutil.RemoteJSONProxy) {
+	h := &VariableHandler{variableService: variableService, proxyRemoteJSON: proxyRemoteJSON}
 
 	huma.Register(api, middleware.RequireSudo(api, huma.Operation{
 		OperationID: "getGlobalVariables",

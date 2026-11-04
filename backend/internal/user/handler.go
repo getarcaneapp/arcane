@@ -229,9 +229,7 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		}
 	}
 
-	if h.invalidateUserTokenCache != nil {
-		h.invalidateUserTokenCache(updatedUser.ID)
-	}
+	h.invalidateUserTokenCache(updatedUser.ID)
 
 	out, err := h.userService.ToUserResponseDto(ctx, *updatedUser)
 	if err != nil {
@@ -276,9 +274,7 @@ func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*
 		return nil, huma.Error500InternalServerError("Failed to delete user")
 	}
 
-	if h.invalidateUserTokenCache != nil {
-		h.invalidateUserTokenCache(input.UserID)
-	}
+	h.invalidateUserTokenCache(input.UserID)
 
 	return handlerutil.MessageOutput("User deleted successfully", ""), nil
 }

@@ -71,7 +71,7 @@ func (h *WebSocketHandler) acquireSystemStatsSampler(ctx context.Context, interv
 		closeReady := sync.OnceFunc(func() {
 			close(ready)
 		})
-		if val, ok := h.readCPUUsage(0); ok {
+		if val, ok := h.cpuUsageReader(0); ok {
 			h.cpuCache.Store(val)
 		}
 		if samplerCtx.Err() != nil {
@@ -181,7 +181,7 @@ func (h *WebSocketHandler) runSystemStatsSampler(ctx context.Context, wake <-cha
 		case <-wake:
 			rearm()
 		case <-ticker.C:
-			if val, ok := h.readCPUUsage(0); ok {
+			if val, ok := h.cpuUsageReader(0); ok {
 				h.cpuCache.Store(val)
 			}
 			h.systemStatsSampler.latest.Store(collect(ctx))
@@ -287,10 +287,7 @@ func applyCPUAffinityLimit(cpuCount int) int {
 	return cpuCount
 }
 
-func (h *WebSocketHandler) readCPUUsage(interval time.Duration) (float64, bool) {
-	if h.cpuUsageReader != nil {
-		return h.cpuUsageReader(interval)
-	}
+func readHostCPUUsage(interval time.Duration) (float64, bool) {
 	if vals, err := cpu.Percent(interval, false); err == nil && len(vals) > 0 {
 		return vals[0], true
 	}
