@@ -43,11 +43,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Cache pnpm store
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/share/pnpm/store
+          key: arcane-pnpm-${{ runner.os }}-${{ github.job }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
         with:
           node-version: 26
-          cache: true
+          cache: false
           run-install: true
 
       - name: Set up Go
