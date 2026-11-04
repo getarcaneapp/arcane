@@ -13,6 +13,7 @@ export type Settings = {
 	pollingEnabled: boolean;
 	imageEventWatcherEnabled: boolean;
 	pollingInterval: number;
+	githubToken?: string;
 	dockerClientRefreshInterval?: string;
 	environmentHealthInterval: number;
 	activityHistoryRetentionDays: number;

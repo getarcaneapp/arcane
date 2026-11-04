@@ -11,6 +11,7 @@
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import ActionButtons from '#lib/components/action-buttons.svelte';
 	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
+	import ImageReleaseNotesDialog from '#lib/components/dialogs/image-release-notes-dialog.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
 	import ResourceNotFound from '#lib/components/resource-not-found.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -172,12 +173,16 @@
 
 	let killDialogOpen = $state(false);
 	let commitDialogOpen = $state(false);
+	let releaseNotesOpen = $state(false);
 	let lifecycleStatus = $state<'pausing' | 'unpausing' | ''>('');
 	const isLifecycleActionPending = $derived(lifecycleStatus !== '');
 
 	// The details response carries the stored check for this container's current
 	// policy; an older agent that omits it reports no status rather than "up to date".
 	const updateInfo = $derived(hasPermission('image-updates:read', currentEnvId) ? (container?.updateInfo ?? null) : null);
+	const canReadReleaseNotes = $derived(
+		hasPermission('image-updates:read', currentEnvId) && !!container?.image && !container.image.startsWith('sha256:')
+	);
 	let updateLoading = $state(false);
 	let updateViewMounted = false;
 	const updateActivities = createContainerUpdateActivityTracker(
@@ -430,6 +435,16 @@
 				onclick: isContainerPaused ? handleUnpauseContainer : handlePauseContainer
 			});
 		}
+		if (canReadReleaseNotes) {
+			list.push({
+				id: 'release-notes',
+				action: 'base',
+				label: m.image_update_release_notes_button(),
+				icon: FileTextIcon,
+				group: 'manage',
+				onclick: () => (releaseNotesOpen = true)
+			});
+		}
 		if (canCommitImage) {
 			list.push({
 				id: 'commit',
@@ -674,6 +689,9 @@
 				return refreshContainerDetails();
 			}}
 		/>
+	{/if}
+	{#if releaseNotesOpen && canReadReleaseNotes}
+		<ImageReleaseNotesDialog bind:open={releaseNotesOpen} environmentId={currentEnvId} imageRef={container.image} />
 	{/if}
 	{#if commitDialogOpen && canCommitImage}
 		<ContainerCommitDialog

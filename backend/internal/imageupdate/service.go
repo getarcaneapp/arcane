@@ -159,7 +159,7 @@ func NewImageUpdateService(p ImageUpdateServiceParams) *ImageUpdateService {
 		notificationService: p.NotificationService,
 		registryLimiter:     registryLimiter,
 		tags:                tags.NewService(p.RegistryService, p.DockerService, p.SettingsService, registryLimiter),
-		releaseNotes:        releasenotes.NewService(p.DockerService, p.RegistryService.ImageLabels),
+		releaseNotes:        releasenotes.NewService(p.DockerService, p.SettingsService, p.RegistryService.ImageLabels),
 		activityService:     p.ActivityService,
 		credentials:         hot.NewHotCache[string, []types.ContainerRegistryCredential](hot.LRU, 8).WithTTL(time.Minute).Build(),
 		// They outlive the longest check: its slot wait plus its workflow timeout.

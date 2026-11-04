@@ -4,15 +4,19 @@ import (
 	"cmp"
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/distribution/reference"
 	"github.com/moby/moby/client"
@@ -24,6 +28,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/types/v3"
@@ -32,9 +37,12 @@ import (
 type (
 	Service struct {
 		docker        *docker.DockerClientService
+		settings      *settings.SettingsService
 		remoteLabels  func(context.Context, string) (map[string]string, error)
 		httpClient    *http.Client
 		releases      *hot.HotCache[string, []githubRelease]
+		taggedRelease *hot.HotCache[string, githubRelease]
+		upstreamRepos *hot.HotCache[string, []string]
 		githubAPIBase string
 	}
 
@@ -52,17 +60,37 @@ type (
 		PublishedAt string `json:"published_at"`
 		Draft       bool   `json:"draft"`
 	}
+
+	findRequest struct {
+		labeledRepo string
+		imagePath   string
+		version     string
+	}
+
+	githubRepoSearch struct {
+		Items []struct {
+			FullName string `json:"full_name"`
+			Name     string `json:"name"`
+			Fork     bool   `json:"fork"`
+		} `json:"items"`
+	}
 )
 
 const (
-	githubAPIBase     = "https://api.github.com"
-	githubURLBase     = "https://github.com/"
-	maxReleasesBytes  = 8 << 20
-	statusFound       = "found"
-	statusNotFound    = "not_found"
-	statusUnavailable = "unavailable"
-	statusLink        = "link"
-	statusNoSource    = "no_source"
+	githubAPIBase      = "https://api.github.com"
+	githubAPIVersion   = "2022-11-28"
+	githubURLBase      = "https://github.com/"
+	maxReleasesBytes   = 8 << 20
+	releasesPerPage    = 50
+	maxUpstreamRepos   = 3
+	statusFound        = "found"
+	statusNotFound     = "not_found"
+	statusUnavailable  = "unavailable"
+	statusLink         = "link"
+	statusNoSource     = "no_source"
+	releaseTagPrefix   = "release-"
+	rateLimitRemaining = "X-RateLimit-Remaining"
+	rateLimitReset     = "X-RateLimit-Reset"
 )
 
 var (
@@ -71,9 +99,10 @@ var (
 	githubHosts       = []string{"github.com", "www.github.com"}
 )
 
-func NewService(dockerService *docker.DockerClientService, remoteLabels func(context.Context, string) (map[string]string, error)) *Service {
+func NewService(dockerService *docker.DockerClientService, settingsService *settings.SettingsService, remoteLabels func(context.Context, string) (map[string]string, error)) *Service {
 	return &Service{
 		docker:       dockerService,
+		settings:     settingsService,
 		remoteLabels: remoteLabels,
 		httpClient: httpx.NewHTTPClient(httpx.ClientConfig{
 			Timeout:             timeouts.DefaultHTTPClient,
@@ -81,6 +110,8 @@ func NewService(dockerService *docker.DockerClientService, remoteLabels func(con
 		}),
 		githubAPIBase: githubAPIBase,
 		releases:      hot.NewHotCache[string, []githubRelease](hot.LRU, 256).WithTTL(time.Hour).Build(),
+		taggedRelease: hot.NewHotCache[string, githubRelease](hot.LRU, 256).WithTTL(time.Hour).Build(),
+		upstreamRepos: hot.NewHotCache[string, []string](hot.LRU, 256).WithTTL(time.Hour).Build(),
 	}
 }
 
@@ -106,7 +137,6 @@ func (s *Service) ReleaseNotes(ctx context.Context, req Request) (*types.ImageRe
 		}
 		return labels
 	}()
-	version := cmp.Or(strings.TrimSpace(req.Version), strings.TrimSpace(digestLabels[registry.OCIImageVersionLabel]))
 
 	inspected, inspectErr := s.docker.Call(ctx, func(ctx context.Context, c *client.Client) (client.ImageInspectResult, error) {
 		return c.ImageInspect(ctx, imageRef)
@@ -114,7 +144,13 @@ func (s *Service) ReleaseNotes(ctx context.Context, req Request) (*types.ImageRe
 	if inspectErr != nil {
 		slog.DebugContext(ctx, "Failed to inspect local image for release notes", "imageRef", imageRef, "error", inspectErr)
 	}
-	source := cmp.Or(sourceLabel(kit.FromPtr(inspected.Config).Labels), sourceLabel(digestLabels))
+	localLabels := kit.FromPtr(inspected.Config).Labels
+	version := cmp.Or(
+		strings.TrimSpace(req.Version),
+		strings.TrimSpace(digestLabels[registry.OCIImageVersionLabel]),
+		kit.Ternary(strings.TrimSpace(req.Digest) == "", cmp.Or(strings.TrimSpace(localLabels[registry.OCIImageVersionLabel]), versionTag(named)), ""),
+	)
+	source := cmp.Or(sourceLabel(localLabels), sourceLabel(digestLabels))
 	if source == "" && version != "" {
 		labels, labelsErr := s.remoteLabels(ctx, named.Name()+":"+version)
 		if labelsErr != nil {
@@ -124,8 +160,28 @@ func (s *Service) ReleaseNotes(ctx context.Context, req Request) (*types.ImageRe
 	}
 
 	repo, isGitHub := parseGitHubRepo(source)
+	link := externalLink(source)
+	release, releaseRepo, lookupErr := s.findRelease(ctx, findRequest{
+		labeledRepo: kit.Ternary(isGitHub, repo, ""),
+		imagePath:   reference.Path(named),
+		version:     version,
+	})
+	if lookupErr != nil {
+		slog.WarnContext(ctx, "Failed to fetch GitHub release notes", "imageRef", imageRef, "repo", cmp.Or(releaseRepo, repo), "error", lookupErr)
+	}
+	if release.TagName != "" {
+		return &types.ImageReleaseNotes{
+			ImageRef:    imageRef,
+			Version:     version,
+			Status:      statusFound,
+			SourceURL:   kit.Ternary(isGitHub, githubURLBase+repo, cmp.Or(link, githubURLBase+releaseRepo)),
+			ReleaseURL:  release.HTMLURL,
+			ReleaseName: release.Name,
+			Notes:       release.Body,
+			PublishedAt: release.PublishedAt,
+		}, nil
+	}
 	if !isGitHub {
-		link := externalLink(source)
 		return &types.ImageReleaseNotes{
 			ImageRef:   imageRef,
 			Version:    version,
@@ -134,38 +190,12 @@ func (s *Service) ReleaseNotes(ctx context.Context, req Request) (*types.ImageRe
 			ReleaseURL: link,
 		}, nil
 	}
-	if version == "" {
-		return &types.ImageReleaseNotes{
-			ImageRef:   imageRef,
-			Status:     statusNotFound,
-			SourceURL:  githubURLBase + repo,
-			ReleaseURL: githubURLBase + repo + "/releases",
-		}, nil
-	}
-
-	releases, releasesErr := s.githubReleases(ctx, repo)
-	if releasesErr != nil {
-		slog.WarnContext(ctx, "Failed to fetch GitHub releases", "repo", repo, "error", releasesErr)
-	}
-	release, found := matchRelease(releases, version)
-	if !found {
-		return &types.ImageReleaseNotes{
-			ImageRef:   imageRef,
-			Version:    version,
-			Status:     kit.Ternary(releasesErr != nil, statusUnavailable, statusNotFound),
-			SourceURL:  githubURLBase + repo,
-			ReleaseURL: githubURLBase + repo + "/releases",
-		}, nil
-	}
 	return &types.ImageReleaseNotes{
-		ImageRef:    imageRef,
-		Version:     version,
-		Status:      statusFound,
-		SourceURL:   githubURLBase + repo,
-		ReleaseURL:  release.HTMLURL,
-		ReleaseName: release.Name,
-		Notes:       release.Body,
-		PublishedAt: release.PublishedAt,
+		ImageRef:   imageRef,
+		Version:    version,
+		Status:     kit.Ternary(lookupErr != nil, statusUnavailable, statusNotFound),
+		SourceURL:  githubURLBase + repo,
+		ReleaseURL: githubURLBase + repo + "/releases",
 	}, nil
 }
 
@@ -183,33 +213,93 @@ func (s *Service) ReleaseLink(ctx context.Context, imageRef string) string {
 	return externalLink(source)
 }
 
+func (s *Service) findRelease(ctx context.Context, req findRequest) (githubRelease, string, error) {
+	if req.version == "" {
+		return githubRelease{}, "", nil
+	}
+	imageName := path.Base(req.imagePath)
+	if req.labeledRepo != "" {
+		release, err := s.repoRelease(ctx, req.labeledRepo, req.version, imageName)
+		if err != nil || release.TagName != "" {
+			return release, req.labeledRepo, err
+		}
+	}
+
+	candidates, err := s.searchUpstreamRepos(ctx, req.imagePath)
+	if err != nil {
+		return githubRelease{}, "", err
+	}
+	for _, repo := range candidates {
+		if strings.EqualFold(repo, req.labeledRepo) {
+			continue
+		}
+		release, releaseErr := s.repoRelease(ctx, repo, req.version, imageName)
+		if releaseErr != nil || release.TagName != "" {
+			return release, repo, releaseErr
+		}
+	}
+	return githubRelease{}, "", nil
+}
+
+func (s *Service) repoRelease(ctx context.Context, repo, version, imageName string) (githubRelease, error) {
+	releases, err := s.githubReleases(ctx, repo)
+	if err != nil {
+		return githubRelease{}, err
+	}
+	if release, found := matchRelease(releases, version, imageName); found || len(releases) < releasesPerPage {
+		return release, nil
+	}
+
+	key := repo + "@" + version
+	release, _, err := s.taggedRelease.GetWithLoaders(key, func(_ []string) (map[string]githubRelease, error) {
+		for _, tag := range slices.Compact([]string{version, "v" + strings.TrimPrefix(version, "v"), releaseTagPrefix + version}) {
+			var tagged githubRelease
+			status, fetchErr := s.githubGet(ctx, "/repos/"+repo+"/releases/tags/"+url.PathEscape(tag), nil, &tagged)
+			if fetchErr != nil {
+				return nil, fetchErr
+			}
+			if status == http.StatusOK && !tagged.Draft {
+				return map[string]githubRelease{key: tagged}, nil
+			}
+		}
+		return map[string]githubRelease{key: {}}, nil
+	})
+	return release, err
+}
+
+func (s *Service) searchUpstreamRepos(ctx context.Context, imagePath string) ([]string, error) {
+	imageName := path.Base(imagePath)
+	owners := []string{imageName, path.Base(path.Dir(imagePath))}
+	repos, _, err := s.upstreamRepos.GetWithLoaders(strings.ToLower(imagePath), func(keys []string) (map[string][]string, error) {
+		var result githubRepoSearch
+		if _, fetchErr := s.githubGet(ctx, "/search/repositories", url.Values{
+			"q":        {imageName + " in:name"},
+			"sort":     {"stars"},
+			"order":    {"desc"},
+			"per_page": {"10"},
+		}, &result); fetchErr != nil {
+			return nil, fetchErr
+		}
+
+		var found []string
+		for _, item := range result.Items {
+			owner, _, _ := strings.Cut(item.FullName, "/")
+			if !item.Fork && strings.EqualFold(item.Name, imageName) && slices.ContainsFunc(owners, func(candidate string) bool {
+				return strings.EqualFold(candidate, owner)
+			}) && githubRepoPattern.MatchString(item.FullName) && len(found) < maxUpstreamRepos {
+				found = append(found, item.FullName)
+			}
+		}
+		return map[string][]string{keys[0]: found}, nil
+	})
+	return repos, err
+}
+
 func (s *Service) githubReleases(ctx context.Context, repo string) ([]githubRelease, error) {
 	releases, _, err := s.releases.GetWithLoaders(repo, func(_ []string) (map[string][]githubRelease, error) {
-		loadCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultHTTPClient)
-		defer cancel()
-
-		req, err := http.NewRequestWithContext(loadCtx, http.MethodGet, s.githubAPIBase+"/repos/"+repo+"/releases?per_page=50", http.NoBody)
-		if err != nil {
-			return nil, fmt.Errorf("create GitHub releases request: %w", err)
-		}
-		req.Header.Set("Accept", "application/vnd.github+json")
-
-		resp, err := s.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("fetch GitHub releases: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if resp.StatusCode == http.StatusNotFound {
-			return map[string][]githubRelease{repo: {}}, nil
-		}
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
-		}
-
 		var fetched []githubRelease
-		if unmarshalReadErr := json.UnmarshalRead(io.LimitReader(resp.Body, maxReleasesBytes), &fetched); unmarshalReadErr != nil {
-			return nil, fmt.Errorf("decode GitHub releases: %w", unmarshalReadErr)
+		if _, fetchErr := s.githubGet(ctx, "/repos/"+repo+"/releases", url.Values{"per_page": {strconv.Itoa(releasesPerPage)}}, &fetched); fetchErr != nil {
+			return nil, fetchErr
 		}
 		return map[string][]githubRelease{
 			repo: slices.DeleteFunc(fetched, func(release githubRelease) bool {
@@ -218,6 +308,43 @@ func (s *Service) githubReleases(ctx context.Context, repo string) ([]githubRele
 		}, nil
 	})
 	return releases, err
+}
+
+func (s *Service) githubGet(ctx context.Context, apiPath string, query url.Values, out any) (int, error) {
+	loadCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultHTTPClient)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(loadCtx, http.MethodGet, s.githubAPIBase+apiPath+kit.Ternary(len(query) > 0, "?"+query.Encode(), ""), http.NoBody)
+	if err != nil {
+		return 0, fmt.Errorf("create GitHub request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", githubAPIVersion)
+	if token := strings.TrimSpace(s.settings.GetSettingsConfig().GithubToken.Value); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("fetch GitHub %s: %w", apiPath, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	switch {
+	case resp.StatusCode == http.StatusNotFound:
+		return resp.StatusCode, nil
+	case (resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests) && resp.Header.Get(rateLimitRemaining) == "0":
+		resetUnix, _ := strconv.ParseInt(resp.Header.Get(rateLimitReset), 10, 64)
+		slog.WarnContext(ctx, "GitHub API rate limit reached; set a GitHub token to raise it", "resetAt", time.Unix(resetUnix, 0))
+		return resp.StatusCode, errors.New("GitHub API rate limit reached")
+	case resp.StatusCode != http.StatusOK:
+		return resp.StatusCode, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	if decodeErr := json.UnmarshalRead(io.LimitReader(resp.Body, maxReleasesBytes), out); decodeErr != nil {
+		return resp.StatusCode, fmt.Errorf("decode GitHub %s: %w", apiPath, decodeErr)
+	}
+	return resp.StatusCode, nil
 }
 
 func sourceLabel(labels map[string]string) string {
@@ -254,9 +381,10 @@ func externalLink(source string) string {
 	return parsed.String()
 }
 
-func matchRelease(releases []githubRelease, version string) (githubRelease, bool) {
+func matchRelease(releases []githubRelease, version, imageName string) (githubRelease, bool) {
 	base, suffix, _ := strings.Cut(version, "-")
-	for _, value := range []string{version, kit.Ternary(prereleasePattern.MatchString(suffix), version, base)} {
+	values := slices.Compact([]string{version, kit.Ternary(prereleasePattern.MatchString(suffix), version, base)})
+	for _, value := range values {
 		for _, candidate := range []string{value, "v" + strings.TrimPrefix(value, "v"), strings.TrimPrefix(value, "v")} {
 			index := slices.IndexFunc(releases, func(release githubRelease) bool {
 				return strings.EqualFold(release.TagName, candidate)
@@ -266,5 +394,40 @@ func matchRelease(releases []githubRelease, version string) (githubRelease, bool
 			}
 		}
 	}
+
+	for _, value := range values {
+		_, core := splitVersionPrefix(value)
+		if core == "" {
+			continue
+		}
+		matches := slices.DeleteFunc(slices.Clone(releases), func(release githubRelease) bool {
+			_, tagCore := splitVersionPrefix(release.TagName)
+			return !strings.EqualFold(tagCore, core)
+		})
+		if len(matches) == 0 {
+			continue
+		}
+		preferred := slices.IndexFunc(matches, func(release githubRelease) bool {
+			prefix, _ := splitVersionPrefix(release.TagName)
+			return strings.Contains(strings.ToLower(prefix), strings.ToLower(imageName))
+		})
+		return matches[max(preferred, 0)], true
+	}
 	return githubRelease{}, false
+}
+
+func versionTag(named reference.Named) string {
+	tagged, ok := named.(reference.Tagged)
+	if !ok || !strings.ContainsFunc(tagged.Tag(), unicode.IsDigit) {
+		return ""
+	}
+	return tagged.Tag()
+}
+
+func splitVersionPrefix(tag string) (string, string) {
+	index := strings.IndexFunc(tag, unicode.IsDigit)
+	if index < 0 {
+		return tag, ""
+	}
+	return tag[:index], tag[index:]
 }

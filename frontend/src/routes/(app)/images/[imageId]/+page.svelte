@@ -9,6 +9,7 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import ImageReleaseNotesDialog from '#lib/components/dialogs/image-release-notes-dialog.svelte';
 	import { DetailMetaStrip, DetailSection, KeyValueCard } from '#lib/components/resource-detail/index.js';
 	import { TabBar } from '#lib/components/tab-bar/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -24,7 +25,8 @@
 		ImagesIcon,
 		LayersIcon,
 		ShieldCheckIcon,
-		InspectIcon
+		InspectIcon,
+		FileTextIcon
 	} from '#lib/icons/index.js';
 	import { ResourceDetailLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -74,6 +76,7 @@
 	const canPatchImage = $derived(hasPermission('images:patch', currentEnvId));
 	const canTagImage = $derived(hasPermission('images:tag', currentEnvId));
 	const canReadImage = $derived(hasPermission('images:read', currentEnvId));
+	const canReadReleaseNotes = $derived(hasPermission('image-updates:read', currentEnvId));
 
 	const isLoading = $state({
 		pulling: false,
@@ -82,6 +85,7 @@
 		patching: false
 	});
 	let tagDialogOpen = $state(false);
+	let releaseNotesOpen = $state(false);
 
 	const scanScope = $derived(`${currentEnvId}:${image?.id}`);
 	let scanRequest = $state<{ scope: string; time: string } | null>(null);
@@ -295,6 +299,16 @@
 				onclick: handlePatchImage
 			});
 		}
+		if (canReadReleaseNotes && hasTags) {
+			list.push({
+				id: 'release-notes',
+				action: 'base',
+				placement: 'secondary',
+				label: m.image_update_release_notes_button(),
+				icon: FileTextIcon,
+				onclick: () => (releaseNotesOpen = true)
+			});
+		}
 		if (canDeleteImage) {
 			list.push({
 				id: 'remove',
@@ -440,4 +454,8 @@
 		defaultRepository={image.repoTags?.[0]?.split(':')[0] ?? (pinnedRepository || '')}
 		onTagged={() => queryClient.invalidateQueries({ queryKey: queryKeys.images.detail(currentEnvId, data.imageId) })}
 	/>
+{/if}
+
+{#if image && hasTags && releaseNotesOpen}
+	<ImageReleaseNotesDialog bind:open={releaseNotesOpen} environmentId={currentEnvId} imageRef={detailTitle} />
 {/if}

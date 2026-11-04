@@ -1098,7 +1098,7 @@
   "volumes_workspace_upload_description": "Upload one or more files to the volume workspace.",
   "volumes_workspace_root_destination": "Volume root",
   "volumes_workspace_root_path": "Create at the volume root.",
-  "volumes_workspace_delete_confirm": "Delete {name} from the volume? This will be applied when you save.",
+  "volumes_workspace_delete_confirm": "Delete {name} from the volume? This cannot be undone.",
   "volumes_workspace_truncated": "The workspace listing is truncated by the configured depth or entry limit. Hidden paths are not shown.",
   "volumes_workspace_select_file": "Select a file to open it in the editor.",
   "volumes_workspace_restore_readonly": "This file's contents are unknown until the staged restore is saved.",
@@ -3021,7 +3021,7 @@
   "workspace_file_duplicate_name": "A file or folder already exists with that name.",
   "workspace_root_path": "Create at the workspace root.",
   "workspace_file_parent_path": "Create under {path}.",
-  "workspace_delete_confirm": "Delete {name} from the workspace? This will be applied when you save.",
+  "workspace_delete_confirm": "Delete {name} from the workspace? This cannot be undone.",
   "workspace_file_rename_label": "Rename {name}",
   "workspace_file_move_label": "Move {name}",
   "workspace_file_read_only": "Read-only file",
@@ -4392,5 +4392,7 @@
   "activity_type_container_unpause": "Container Unpause",
   "api_key_page_description_intro": "Manage API keys for programmatic access to Arcane. View the",
   "api_reference": "API Reference",
-  "api_key_page_description_suffix": "for usage details."
+  "api_key_page_description_suffix": "for usage details.",
+  "github_token": "GitHub Token",
+  "github_token_description": "Optional token used to fetch image release notes from GitHub. Raises the API rate limit from 60 to 5,000 requests per hour."
 }

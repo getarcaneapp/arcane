@@ -396,6 +396,24 @@
 				data-mixed={!!mixed('autoUpdate') || undefined}
 			/>
 		</SettingsRow>
+
+		<SettingsRow
+			for="github-token"
+			label={m.github_token()}
+			description={m.github_token_description()}
+			error={formInputs.githubToken.error}
+			lock={lock('githubToken')}
+			mixed={mixed('githubToken')}
+		>
+			<Input
+				id="github-token"
+				type="password"
+				autocomplete="new-password"
+				bind:value={formInputs.githubToken.value}
+				aria-invalid={!!formInputs.githubToken.error}
+				placeholder={mixed('githubToken') ? m.mixed() : undefined}
+			/>
+		</SettingsRow>
 	</SettingsSection>
 
 	<SettingsSection title={m.maintenance()}>

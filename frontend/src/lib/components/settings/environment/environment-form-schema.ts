@@ -56,6 +56,7 @@ export const environmentSettingsSchema = z.object({
 	lifecycleMaxTimeoutSec: z.coerce.number().int().nonnegative(),
 	autoUpdateDelay: z.coerce.number().int().min(0).max(8760),
 	autoUpdateExcludedContainers: z.string(),
+	githubToken: z.string(),
 	autoHealEnabled: z.boolean(),
 	autoHealExcludedContainers: z.string(),
 	autoHealMaxRestarts: z.coerce.number().int().min(1),

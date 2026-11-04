@@ -16,6 +16,7 @@
 		'autoUpdate',
 		'autoUpdateDelay',
 		'autoUpdateExcludedContainers',
+		'githubToken',
 		'scheduledPruneEnabled',
 		'vulnerabilityScanEnabled',
 		'autoHealEnabled',
