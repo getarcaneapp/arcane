@@ -190,7 +190,7 @@
 
 <div class="relative z-(--arcane-z-raised) flex min-h-dvh items-center justify-center p-6">
 	<div class="w-full max-w-sm md:max-w-3xl">
-		<Card.Root>
+		<Card.Root variant="glass">
 			<div
 				class={cn('pointer-events-none absolute inset-0 z-1 rounded-xl border-beam', animationsEnabled && 'animate-border-beam')}
 			></div>

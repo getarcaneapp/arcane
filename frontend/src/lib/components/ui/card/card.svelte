@@ -6,6 +6,7 @@
 	let {
 		ref = $bindable(null),
 		class: className,
+		variant = 'default',
 		size = 'default',
 		interactive = false,
 		selected = false,
@@ -14,6 +15,7 @@
 		...restProps
 	}: WithElementRef<
 		HTMLAttributes<HTMLDivElement> & {
+			variant?: 'default' | 'glass';
 			/** `sm` tightens the content padding for dense tiles. */
 			size?: 'default' | 'sm';
 			/** Hover affordance for cards that act as links or choices. */
@@ -43,6 +45,7 @@
 	data-size={size}
 	class={cn(
 		'group relative isolate gap-0 overflow-hidden rounded-xl border border-border/70 bg-card/10 p-0 text-card-foreground shadow-none transition-colors duration-200',
+		variant === 'glass' && 'bg-card/60 shadow-xs backdrop-blur-md dark:bg-surface/40',
 		onclick && 'cursor-pointer',
 		onclick &&
 			!interactive &&
