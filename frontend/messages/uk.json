@@ -4394,5 +4394,13 @@
   "api_reference": "Довідник API",
   "api_key_page_description_suffix": "щодо детальної інформації про використання.",
   "github_token": "Токен GitHub",
-  "github_token_description": "Необов’язковий токен, який використовується для отримання інформації про випуск зображень із GitHub. Збільшує ліміт запитів до API з 60 до 5 000 запитів на годину."
+  "github_token_description": "Необов’язковий токен, який використовується для отримання інформації про випуск зображень із GitHub. Збільшує ліміт запитів до API з 60 до 5 000 запитів на годину.",
+  "image_auto_patch": "Автоматичне оновлення зображень",
+  "analytics_heartbeat": "Аналітика Heartbeat",
+  "docker_client_refresh": "Оновлення клієнта Docker",
+  "event_cleanup": "Очищення після заходу",
+  "upgrade_log_cleanup": "Очищення журналу оновлень",
+  "expired_sessions_cleanup": "Очищення сеансів, термін дії яких закінчився",
+  "filesystem_watcher": "Спостерігач за файловою системою",
+  "vulnerability_risk": "Ризик, пов'язаний з вразливістю"
 }
