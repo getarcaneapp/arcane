@@ -10,7 +10,6 @@ import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
-	sync "sync"
 	unsafe "unsafe"
 )
 
@@ -23,14 +22,10 @@ const (
 
 // Messages sent from the agent to the manager.
 type AgentMessage struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Payload:
-	//
-	//	*AgentMessage_Register
-	//	*AgentMessage_MuxData
-	Payload       isAgentMessage_Payload `protobuf_oneof:"payload"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Payload isAgentMessage_Payload `protobuf_oneof:"payload"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *AgentMessage) Reset() {
@@ -58,21 +53,9 @@ func (x *AgentMessage) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AgentMessage.ProtoReflect.Descriptor instead.
-func (*AgentMessage) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *AgentMessage) GetPayload() isAgentMessage_Payload {
-	if x != nil {
-		return x.Payload
-	}
-	return nil
-}
-
 func (x *AgentMessage) GetRegister() *RegisterRequest {
 	if x != nil {
-		if x, ok := x.Payload.(*AgentMessage_Register); ok {
+		if x, ok := x.xxx_hidden_Payload.(*agentMessage_Register); ok {
 			return x.Register
 		}
 	}
@@ -81,40 +64,142 @@ func (x *AgentMessage) GetRegister() *RegisterRequest {
 
 func (x *AgentMessage) GetMuxData() *MuxData {
 	if x != nil {
-		if x, ok := x.Payload.(*AgentMessage_MuxData); ok {
+		if x, ok := x.xxx_hidden_Payload.(*agentMessage_MuxData); ok {
 			return x.MuxData
 		}
 	}
 	return nil
 }
 
+func (x *AgentMessage) SetRegister(v *RegisterRequest) {
+	if v == nil {
+		x.xxx_hidden_Payload = nil
+		return
+	}
+	x.xxx_hidden_Payload = &agentMessage_Register{v}
+}
+
+func (x *AgentMessage) SetMuxData(v *MuxData) {
+	if v == nil {
+		x.xxx_hidden_Payload = nil
+		return
+	}
+	x.xxx_hidden_Payload = &agentMessage_MuxData{v}
+}
+
+func (x *AgentMessage) HasPayload() bool {
+	if x == nil {
+		return false
+	}
+	return x.xxx_hidden_Payload != nil
+}
+
+func (x *AgentMessage) HasRegister() bool {
+	if x == nil {
+		return false
+	}
+	_, ok := x.xxx_hidden_Payload.(*agentMessage_Register)
+	return ok
+}
+
+func (x *AgentMessage) HasMuxData() bool {
+	if x == nil {
+		return false
+	}
+	_, ok := x.xxx_hidden_Payload.(*agentMessage_MuxData)
+	return ok
+}
+
+func (x *AgentMessage) ClearPayload() {
+	x.xxx_hidden_Payload = nil
+}
+
+func (x *AgentMessage) ClearRegister() {
+	if _, ok := x.xxx_hidden_Payload.(*agentMessage_Register); ok {
+		x.xxx_hidden_Payload = nil
+	}
+}
+
+func (x *AgentMessage) ClearMuxData() {
+	if _, ok := x.xxx_hidden_Payload.(*agentMessage_MuxData); ok {
+		x.xxx_hidden_Payload = nil
+	}
+}
+
+const AgentMessage_Payload_not_set_case case_AgentMessage_Payload = 0
+const AgentMessage_Register_case case_AgentMessage_Payload = 7
+const AgentMessage_MuxData_case case_AgentMessage_Payload = 15
+
+func (x *AgentMessage) WhichPayload() case_AgentMessage_Payload {
+	if x == nil {
+		return AgentMessage_Payload_not_set_case
+	}
+	switch x.xxx_hidden_Payload.(type) {
+	case *agentMessage_Register:
+		return AgentMessage_Register_case
+	case *agentMessage_MuxData:
+		return AgentMessage_MuxData_case
+	default:
+		return AgentMessage_Payload_not_set_case
+	}
+}
+
+type AgentMessage_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	// Fields of oneof xxx_hidden_Payload:
+	Register *RegisterRequest
+	// Raw multiplexed session bytes, sent only after the manager grants mux-grant-v1.
+	MuxData *MuxData
+	// -- end of xxx_hidden_Payload
+}
+
+func (b0 AgentMessage_builder) Build() *AgentMessage {
+	m0 := &AgentMessage{}
+	b, x := &b0, m0
+	_, _ = b, x
+	if b.Register != nil {
+		x.xxx_hidden_Payload = &agentMessage_Register{b.Register}
+	}
+	if b.MuxData != nil {
+		x.xxx_hidden_Payload = &agentMessage_MuxData{b.MuxData}
+	}
+	return m0
+}
+
+type case_AgentMessage_Payload protoreflect.FieldNumber
+
+func (x case_AgentMessage_Payload) String() string {
+	md := file_tunnel_v1_tunnel_proto_msgTypes[0].Descriptor()
+	if x == 0 {
+		return "not set"
+	}
+	return protoimpl.X.MessageFieldStringOf(md, protoreflect.FieldNumber(x))
+}
+
 type isAgentMessage_Payload interface {
 	isAgentMessage_Payload()
 }
 
-type AgentMessage_Register struct {
+type agentMessage_Register struct {
 	Register *RegisterRequest `protobuf:"bytes,7,opt,name=register,proto3,oneof"`
 }
 
-type AgentMessage_MuxData struct {
+type agentMessage_MuxData struct {
 	// Raw multiplexed session bytes, sent only after the manager grants mux-grant-v1.
 	MuxData *MuxData `protobuf:"bytes,15,opt,name=mux_data,json=muxData,proto3,oneof"`
 }
 
-func (*AgentMessage_Register) isAgentMessage_Payload() {}
+func (*agentMessage_Register) isAgentMessage_Payload() {}
 
-func (*AgentMessage_MuxData) isAgentMessage_Payload() {}
+func (*agentMessage_MuxData) isAgentMessage_Payload() {}
 
 // Messages sent from the manager to the agent.
 type ManagerMessage struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Payload:
-	//
-	//	*ManagerMessage_RegisterResponse
-	//	*ManagerMessage_MuxData
-	Payload       isManagerMessage_Payload `protobuf_oneof:"payload"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState   `protogen:"opaque.v1"`
+	xxx_hidden_Payload isManagerMessage_Payload `protobuf_oneof:"payload"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ManagerMessage) Reset() {
@@ -142,21 +227,9 @@ func (x *ManagerMessage) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ManagerMessage.ProtoReflect.Descriptor instead.
-func (*ManagerMessage) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *ManagerMessage) GetPayload() isManagerMessage_Payload {
-	if x != nil {
-		return x.Payload
-	}
-	return nil
-}
-
 func (x *ManagerMessage) GetRegisterResponse() *RegisterResponse {
 	if x != nil {
-		if x, ok := x.Payload.(*ManagerMessage_RegisterResponse); ok {
+		if x, ok := x.xxx_hidden_Payload.(*managerMessage_RegisterResponse); ok {
 			return x.RegisterResponse
 		}
 	}
@@ -165,40 +238,145 @@ func (x *ManagerMessage) GetRegisterResponse() *RegisterResponse {
 
 func (x *ManagerMessage) GetMuxData() *MuxData {
 	if x != nil {
-		if x, ok := x.Payload.(*ManagerMessage_MuxData); ok {
+		if x, ok := x.xxx_hidden_Payload.(*managerMessage_MuxData); ok {
 			return x.MuxData
 		}
 	}
 	return nil
 }
 
+func (x *ManagerMessage) SetRegisterResponse(v *RegisterResponse) {
+	if v == nil {
+		x.xxx_hidden_Payload = nil
+		return
+	}
+	x.xxx_hidden_Payload = &managerMessage_RegisterResponse{v}
+}
+
+func (x *ManagerMessage) SetMuxData(v *MuxData) {
+	if v == nil {
+		x.xxx_hidden_Payload = nil
+		return
+	}
+	x.xxx_hidden_Payload = &managerMessage_MuxData{v}
+}
+
+func (x *ManagerMessage) HasPayload() bool {
+	if x == nil {
+		return false
+	}
+	return x.xxx_hidden_Payload != nil
+}
+
+func (x *ManagerMessage) HasRegisterResponse() bool {
+	if x == nil {
+		return false
+	}
+	_, ok := x.xxx_hidden_Payload.(*managerMessage_RegisterResponse)
+	return ok
+}
+
+func (x *ManagerMessage) HasMuxData() bool {
+	if x == nil {
+		return false
+	}
+	_, ok := x.xxx_hidden_Payload.(*managerMessage_MuxData)
+	return ok
+}
+
+func (x *ManagerMessage) ClearPayload() {
+	x.xxx_hidden_Payload = nil
+}
+
+func (x *ManagerMessage) ClearRegisterResponse() {
+	if _, ok := x.xxx_hidden_Payload.(*managerMessage_RegisterResponse); ok {
+		x.xxx_hidden_Payload = nil
+	}
+}
+
+func (x *ManagerMessage) ClearMuxData() {
+	if _, ok := x.xxx_hidden_Payload.(*managerMessage_MuxData); ok {
+		x.xxx_hidden_Payload = nil
+	}
+}
+
+const ManagerMessage_Payload_not_set_case case_ManagerMessage_Payload = 0
+const ManagerMessage_RegisterResponse_case case_ManagerMessage_Payload = 6
+const ManagerMessage_MuxData_case case_ManagerMessage_Payload = 15
+
+func (x *ManagerMessage) WhichPayload() case_ManagerMessage_Payload {
+	if x == nil {
+		return ManagerMessage_Payload_not_set_case
+	}
+	switch x.xxx_hidden_Payload.(type) {
+	case *managerMessage_RegisterResponse:
+		return ManagerMessage_RegisterResponse_case
+	case *managerMessage_MuxData:
+		return ManagerMessage_MuxData_case
+	default:
+		return ManagerMessage_Payload_not_set_case
+	}
+}
+
+type ManagerMessage_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	// Fields of oneof xxx_hidden_Payload:
+	RegisterResponse *RegisterResponse
+	// Raw multiplexed session bytes, sent only after the manager grants mux-grant-v1.
+	MuxData *MuxData
+	// -- end of xxx_hidden_Payload
+}
+
+func (b0 ManagerMessage_builder) Build() *ManagerMessage {
+	m0 := &ManagerMessage{}
+	b, x := &b0, m0
+	_, _ = b, x
+	if b.RegisterResponse != nil {
+		x.xxx_hidden_Payload = &managerMessage_RegisterResponse{b.RegisterResponse}
+	}
+	if b.MuxData != nil {
+		x.xxx_hidden_Payload = &managerMessage_MuxData{b.MuxData}
+	}
+	return m0
+}
+
+type case_ManagerMessage_Payload protoreflect.FieldNumber
+
+func (x case_ManagerMessage_Payload) String() string {
+	md := file_tunnel_v1_tunnel_proto_msgTypes[1].Descriptor()
+	if x == 0 {
+		return "not set"
+	}
+	return protoimpl.X.MessageFieldStringOf(md, protoreflect.FieldNumber(x))
+}
+
 type isManagerMessage_Payload interface {
 	isManagerMessage_Payload()
 }
 
-type ManagerMessage_RegisterResponse struct {
+type managerMessage_RegisterResponse struct {
 	RegisterResponse *RegisterResponse `protobuf:"bytes,6,opt,name=register_response,json=registerResponse,proto3,oneof"`
 }
 
-type ManagerMessage_MuxData struct {
+type managerMessage_MuxData struct {
 	// Raw multiplexed session bytes, sent only after the manager grants mux-grant-v1.
 	MuxData *MuxData `protobuf:"bytes,15,opt,name=mux_data,json=muxData,proto3,oneof"`
 }
 
-func (*ManagerMessage_RegisterResponse) isManagerMessage_Payload() {}
+func (*managerMessage_RegisterResponse) isManagerMessage_Payload() {}
 
-func (*ManagerMessage_MuxData) isManagerMessage_Payload() {}
+func (*managerMessage_MuxData) isManagerMessage_Payload() {}
 
 type RegisterRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	AgentToken      string                 `protobuf:"bytes,1,opt,name=agent_token,json=agentToken,proto3" json:"agent_token,omitempty"`
-	AgentInstanceId string                 `protobuf:"bytes,2,opt,name=agent_instance_id,json=agentInstanceId,proto3" json:"agent_instance_id,omitempty"`
-	// Offered features, e.g. mux-v1 to switch to the multiplexed data plane.
-	Capabilities    []string       `protobuf:"bytes,3,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
-	ResumeSessionId string         `protobuf:"bytes,4,opt,name=resume_session_id,json=resumeSessionId,proto3" json:"resume_session_id,omitempty"`
-	Host            *AgentHostInfo `protobuf:"bytes,5,opt,name=host,proto3" json:"host,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state                      protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_AgentToken      string                 `protobuf:"bytes,1,opt,name=agent_token,json=agentToken,proto3"`
+	xxx_hidden_AgentInstanceId string                 `protobuf:"bytes,2,opt,name=agent_instance_id,json=agentInstanceId,proto3"`
+	xxx_hidden_Capabilities    []string               `protobuf:"bytes,3,rep,name=capabilities,proto3"`
+	xxx_hidden_ResumeSessionId string                 `protobuf:"bytes,4,opt,name=resume_session_id,json=resumeSessionId,proto3"`
+	xxx_hidden_Host            *AgentHostInfo         `protobuf:"bytes,5,opt,name=host,proto3"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *RegisterRequest) Reset() {
@@ -226,58 +404,107 @@ func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use RegisterRequest.ProtoReflect.Descriptor instead.
-func (*RegisterRequest) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{2}
-}
-
 func (x *RegisterRequest) GetAgentToken() string {
 	if x != nil {
-		return x.AgentToken
+		return x.xxx_hidden_AgentToken
 	}
 	return ""
 }
 
 func (x *RegisterRequest) GetAgentInstanceId() string {
 	if x != nil {
-		return x.AgentInstanceId
+		return x.xxx_hidden_AgentInstanceId
 	}
 	return ""
 }
 
 func (x *RegisterRequest) GetCapabilities() []string {
 	if x != nil {
-		return x.Capabilities
+		return x.xxx_hidden_Capabilities
 	}
 	return nil
 }
 
 func (x *RegisterRequest) GetResumeSessionId() string {
 	if x != nil {
-		return x.ResumeSessionId
+		return x.xxx_hidden_ResumeSessionId
 	}
 	return ""
 }
 
 func (x *RegisterRequest) GetHost() *AgentHostInfo {
 	if x != nil {
-		return x.Host
+		return x.xxx_hidden_Host
 	}
 	return nil
 }
 
+func (x *RegisterRequest) SetAgentToken(v string) {
+	x.xxx_hidden_AgentToken = v
+}
+
+func (x *RegisterRequest) SetAgentInstanceId(v string) {
+	x.xxx_hidden_AgentInstanceId = v
+}
+
+func (x *RegisterRequest) SetCapabilities(v []string) {
+	x.xxx_hidden_Capabilities = v
+}
+
+func (x *RegisterRequest) SetResumeSessionId(v string) {
+	x.xxx_hidden_ResumeSessionId = v
+}
+
+func (x *RegisterRequest) SetHost(v *AgentHostInfo) {
+	x.xxx_hidden_Host = v
+}
+
+func (x *RegisterRequest) HasHost() bool {
+	if x == nil {
+		return false
+	}
+	return x.xxx_hidden_Host != nil
+}
+
+func (x *RegisterRequest) ClearHost() {
+	x.xxx_hidden_Host = nil
+}
+
+type RegisterRequest_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	AgentToken      string
+	AgentInstanceId string
+	// Offered features, e.g. mux-v1 to switch to the multiplexed data plane.
+	Capabilities    []string
+	ResumeSessionId string
+	Host            *AgentHostInfo
+}
+
+func (b0 RegisterRequest_builder) Build() *RegisterRequest {
+	m0 := &RegisterRequest{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_AgentToken = b.AgentToken
+	x.xxx_hidden_AgentInstanceId = b.AgentInstanceId
+	x.xxx_hidden_Capabilities = b.Capabilities
+	x.xxx_hidden_ResumeSessionId = b.ResumeSessionId
+	x.xxx_hidden_Host = b.Host
+	return m0
+}
+
 type AgentHostInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Hostname      string                 `protobuf:"bytes,1,opt,name=hostname,proto3" json:"hostname,omitempty"`
-	Os            string                 `protobuf:"bytes,2,opt,name=os,proto3" json:"os,omitempty"`
-	KernelVersion string                 `protobuf:"bytes,3,opt,name=kernel_version,json=kernelVersion,proto3" json:"kernel_version,omitempty"`
-	Architecture  string                 `protobuf:"bytes,4,opt,name=architecture,proto3" json:"architecture,omitempty"`
-	DockerVersion string                 `protobuf:"bytes,5,opt,name=docker_version,json=dockerVersion,proto3" json:"docker_version,omitempty"`
-	AgentVersion  string                 `protobuf:"bytes,6,opt,name=agent_version,json=agentVersion,proto3" json:"agent_version,omitempty"`
-	Cpus          int32                  `protobuf:"varint,7,opt,name=cpus,proto3" json:"cpus,omitempty"`
-	MemoryBytes   int64                  `protobuf:"varint,8,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                    protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Hostname      string                 `protobuf:"bytes,1,opt,name=hostname,proto3"`
+	xxx_hidden_Os            string                 `protobuf:"bytes,2,opt,name=os,proto3"`
+	xxx_hidden_KernelVersion string                 `protobuf:"bytes,3,opt,name=kernel_version,json=kernelVersion,proto3"`
+	xxx_hidden_Architecture  string                 `protobuf:"bytes,4,opt,name=architecture,proto3"`
+	xxx_hidden_DockerVersion string                 `protobuf:"bytes,5,opt,name=docker_version,json=dockerVersion,proto3"`
+	xxx_hidden_AgentVersion  string                 `protobuf:"bytes,6,opt,name=agent_version,json=agentVersion,proto3"`
+	xxx_hidden_Cpus          int32                  `protobuf:"varint,7,opt,name=cpus,proto3"`
+	xxx_hidden_MemoryBytes   int64                  `protobuf:"varint,8,opt,name=memory_bytes,json=memoryBytes,proto3"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *AgentHostInfo) Reset() {
@@ -305,80 +532,134 @@ func (x *AgentHostInfo) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AgentHostInfo.ProtoReflect.Descriptor instead.
-func (*AgentHostInfo) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{3}
-}
-
 func (x *AgentHostInfo) GetHostname() string {
 	if x != nil {
-		return x.Hostname
+		return x.xxx_hidden_Hostname
 	}
 	return ""
 }
 
 func (x *AgentHostInfo) GetOs() string {
 	if x != nil {
-		return x.Os
+		return x.xxx_hidden_Os
 	}
 	return ""
 }
 
 func (x *AgentHostInfo) GetKernelVersion() string {
 	if x != nil {
-		return x.KernelVersion
+		return x.xxx_hidden_KernelVersion
 	}
 	return ""
 }
 
 func (x *AgentHostInfo) GetArchitecture() string {
 	if x != nil {
-		return x.Architecture
+		return x.xxx_hidden_Architecture
 	}
 	return ""
 }
 
 func (x *AgentHostInfo) GetDockerVersion() string {
 	if x != nil {
-		return x.DockerVersion
+		return x.xxx_hidden_DockerVersion
 	}
 	return ""
 }
 
 func (x *AgentHostInfo) GetAgentVersion() string {
 	if x != nil {
-		return x.AgentVersion
+		return x.xxx_hidden_AgentVersion
 	}
 	return ""
 }
 
 func (x *AgentHostInfo) GetCpus() int32 {
 	if x != nil {
-		return x.Cpus
+		return x.xxx_hidden_Cpus
 	}
 	return 0
 }
 
 func (x *AgentHostInfo) GetMemoryBytes() int64 {
 	if x != nil {
-		return x.MemoryBytes
+		return x.xxx_hidden_MemoryBytes
 	}
 	return 0
 }
 
+func (x *AgentHostInfo) SetHostname(v string) {
+	x.xxx_hidden_Hostname = v
+}
+
+func (x *AgentHostInfo) SetOs(v string) {
+	x.xxx_hidden_Os = v
+}
+
+func (x *AgentHostInfo) SetKernelVersion(v string) {
+	x.xxx_hidden_KernelVersion = v
+}
+
+func (x *AgentHostInfo) SetArchitecture(v string) {
+	x.xxx_hidden_Architecture = v
+}
+
+func (x *AgentHostInfo) SetDockerVersion(v string) {
+	x.xxx_hidden_DockerVersion = v
+}
+
+func (x *AgentHostInfo) SetAgentVersion(v string) {
+	x.xxx_hidden_AgentVersion = v
+}
+
+func (x *AgentHostInfo) SetCpus(v int32) {
+	x.xxx_hidden_Cpus = v
+}
+
+func (x *AgentHostInfo) SetMemoryBytes(v int64) {
+	x.xxx_hidden_MemoryBytes = v
+}
+
+type AgentHostInfo_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	Hostname      string
+	Os            string
+	KernelVersion string
+	Architecture  string
+	DockerVersion string
+	AgentVersion  string
+	Cpus          int32
+	MemoryBytes   int64
+}
+
+func (b0 AgentHostInfo_builder) Build() *AgentHostInfo {
+	m0 := &AgentHostInfo{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_Hostname = b.Hostname
+	x.xxx_hidden_Os = b.Os
+	x.xxx_hidden_KernelVersion = b.KernelVersion
+	x.xxx_hidden_Architecture = b.Architecture
+	x.xxx_hidden_DockerVersion = b.DockerVersion
+	x.xxx_hidden_AgentVersion = b.AgentVersion
+	x.xxx_hidden_Cpus = b.Cpus
+	x.xxx_hidden_MemoryBytes = b.MemoryBytes
+	return m0
+}
+
 type RegisterResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
-	EnvironmentId string                 `protobuf:"bytes,2,opt,name=environment_id,json=environmentId,proto3" json:"environment_id,omitempty"`
-	Error         string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
-	SessionId     string                 `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	SecurityMode  string                 `protobuf:"bytes,5,opt,name=security_mode,json=securityMode,proto3" json:"security_mode,omitempty"`
-	// Granted features; mux-grant-v1 switches both peers to mux_data after this response.
-	Capabilities  []string `protobuf:"bytes,6,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
-	DrainPrevious bool     `protobuf:"varint,7,opt,name=drain_previous,json=drainPrevious,proto3" json:"drain_previous,omitempty"`
-	Id            string   `protobuf:"bytes,8,opt,name=id,proto3" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                    protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3"`
+	xxx_hidden_EnvironmentId string                 `protobuf:"bytes,2,opt,name=environment_id,json=environmentId,proto3"`
+	xxx_hidden_Error         string                 `protobuf:"bytes,3,opt,name=error,proto3"`
+	xxx_hidden_SessionId     string                 `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3"`
+	xxx_hidden_SecurityMode  string                 `protobuf:"bytes,5,opt,name=security_mode,json=securityMode,proto3"`
+	xxx_hidden_Capabilities  []string               `protobuf:"bytes,6,rep,name=capabilities,proto3"`
+	xxx_hidden_DrainPrevious bool                   `protobuf:"varint,7,opt,name=drain_previous,json=drainPrevious,proto3"`
+	xxx_hidden_Id            string                 `protobuf:"bytes,8,opt,name=id,proto3"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *RegisterResponse) Reset() {
@@ -406,73 +687,129 @@ func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use RegisterResponse.ProtoReflect.Descriptor instead.
-func (*RegisterResponse) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{4}
-}
-
 func (x *RegisterResponse) GetAccepted() bool {
 	if x != nil {
-		return x.Accepted
+		return x.xxx_hidden_Accepted
 	}
 	return false
 }
 
 func (x *RegisterResponse) GetEnvironmentId() string {
 	if x != nil {
-		return x.EnvironmentId
+		return x.xxx_hidden_EnvironmentId
 	}
 	return ""
 }
 
 func (x *RegisterResponse) GetError() string {
 	if x != nil {
-		return x.Error
+		return x.xxx_hidden_Error
 	}
 	return ""
 }
 
 func (x *RegisterResponse) GetSessionId() string {
 	if x != nil {
-		return x.SessionId
+		return x.xxx_hidden_SessionId
 	}
 	return ""
 }
 
 func (x *RegisterResponse) GetSecurityMode() string {
 	if x != nil {
-		return x.SecurityMode
+		return x.xxx_hidden_SecurityMode
 	}
 	return ""
 }
 
 func (x *RegisterResponse) GetCapabilities() []string {
 	if x != nil {
-		return x.Capabilities
+		return x.xxx_hidden_Capabilities
 	}
 	return nil
 }
 
 func (x *RegisterResponse) GetDrainPrevious() bool {
 	if x != nil {
-		return x.DrainPrevious
+		return x.xxx_hidden_DrainPrevious
 	}
 	return false
 }
 
 func (x *RegisterResponse) GetId() string {
 	if x != nil {
-		return x.Id
+		return x.xxx_hidden_Id
 	}
 	return ""
 }
 
+func (x *RegisterResponse) SetAccepted(v bool) {
+	x.xxx_hidden_Accepted = v
+}
+
+func (x *RegisterResponse) SetEnvironmentId(v string) {
+	x.xxx_hidden_EnvironmentId = v
+}
+
+func (x *RegisterResponse) SetError(v string) {
+	x.xxx_hidden_Error = v
+}
+
+func (x *RegisterResponse) SetSessionId(v string) {
+	x.xxx_hidden_SessionId = v
+}
+
+func (x *RegisterResponse) SetSecurityMode(v string) {
+	x.xxx_hidden_SecurityMode = v
+}
+
+func (x *RegisterResponse) SetCapabilities(v []string) {
+	x.xxx_hidden_Capabilities = v
+}
+
+func (x *RegisterResponse) SetDrainPrevious(v bool) {
+	x.xxx_hidden_DrainPrevious = v
+}
+
+func (x *RegisterResponse) SetId(v string) {
+	x.xxx_hidden_Id = v
+}
+
+type RegisterResponse_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	Accepted      bool
+	EnvironmentId string
+	Error         string
+	SessionId     string
+	SecurityMode  string
+	// Granted features; mux-grant-v1 switches both peers to mux_data after this response.
+	Capabilities  []string
+	DrainPrevious bool
+	Id            string
+}
+
+func (b0 RegisterResponse_builder) Build() *RegisterResponse {
+	m0 := &RegisterResponse{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_Accepted = b.Accepted
+	x.xxx_hidden_EnvironmentId = b.EnvironmentId
+	x.xxx_hidden_Error = b.Error
+	x.xxx_hidden_SessionId = b.SessionId
+	x.xxx_hidden_SecurityMode = b.SecurityMode
+	x.xxx_hidden_Capabilities = b.Capabilities
+	x.xxx_hidden_DrainPrevious = b.DrainPrevious
+	x.xxx_hidden_Id = b.Id
+	return m0
+}
+
 // MuxData carries an opaque slice of the multiplexed session byte stream.
 type MuxData struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Data []byte                 `protobuf:"bytes,1,opt,name=data,proto3"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *MuxData) Reset() {
@@ -500,16 +837,32 @@ func (x *MuxData) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MuxData.ProtoReflect.Descriptor instead.
-func (*MuxData) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{5}
-}
-
 func (x *MuxData) GetData() []byte {
 	if x != nil {
-		return x.Data
+		return x.xxx_hidden_Data
 	}
 	return nil
+}
+
+func (x *MuxData) SetData(v []byte) {
+	if v == nil {
+		v = []byte{}
+	}
+	x.xxx_hidden_Data = v
+}
+
+type MuxData_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	Data []byte
+}
+
+func (b0 MuxData_builder) Build() *MuxData {
+	m0 := &MuxData{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_Data = b.Data
+	return m0
 }
 
 var File_tunnel_v1_tunnel_proto protoreflect.FileDescriptor
@@ -560,18 +913,6 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\rTunnelService\x12A\n" +
 	"\aConnect\x12\x17.tunnel.v1.AgentMessage\x1a\x19.tunnel.v1.ManagerMessage(\x010\x01B2Z0getarcane.dev/arcane/v3/proto/tunnel/v1;tunnelpbb\x06proto3"
 
-var (
-	file_tunnel_v1_tunnel_proto_rawDescOnce sync.Once
-	file_tunnel_v1_tunnel_proto_rawDescData []byte
-)
-
-func file_tunnel_v1_tunnel_proto_rawDescGZIP() []byte {
-	file_tunnel_v1_tunnel_proto_rawDescOnce.Do(func() {
-		file_tunnel_v1_tunnel_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_tunnel_v1_tunnel_proto_rawDesc), len(file_tunnel_v1_tunnel_proto_rawDesc)))
-	})
-	return file_tunnel_v1_tunnel_proto_rawDescData
-}
-
 var file_tunnel_v1_tunnel_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_tunnel_v1_tunnel_proto_goTypes = []any{
 	(*AgentMessage)(nil),     // 0: tunnel.v1.AgentMessage
@@ -602,12 +943,12 @@ func file_tunnel_v1_tunnel_proto_init() {
 		return
 	}
 	file_tunnel_v1_tunnel_proto_msgTypes[0].OneofWrappers = []any{
-		(*AgentMessage_Register)(nil),
-		(*AgentMessage_MuxData)(nil),
+		(*agentMessage_Register)(nil),
+		(*agentMessage_MuxData)(nil),
 	}
 	file_tunnel_v1_tunnel_proto_msgTypes[1].OneofWrappers = []any{
-		(*ManagerMessage_RegisterResponse)(nil),
-		(*ManagerMessage_MuxData)(nil),
+		(*managerMessage_RegisterResponse)(nil),
+		(*managerMessage_MuxData)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

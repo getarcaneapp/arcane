@@ -5,6 +5,7 @@ plugins:
     out: .
     opt:
       - paths=source_relative
+      - default_api_level=API_OPAQUE
   - remote: buf.build/grpc/go
     out: .
     opt:

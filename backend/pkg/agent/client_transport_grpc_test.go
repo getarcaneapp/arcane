@@ -58,7 +58,9 @@ func TestGRPCTunnel_MetadataAuthFallback(t *testing.T) {
 	require.NoError(t, err)
 
 	// Empty token in register is accepted via metadata fallback.
-	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "", Capabilities: []string{tunnelCapabilityMux}}}})
+	err = stream.Send(tunnelpb.AgentMessage_builder{
+		Register: tunnelpb.RegisterRequest_builder{Capabilities: []string{tunnelCapabilityMux}}.Build(),
+	}.Build())
 	require.NoError(t, err)
 
 	registerResp, err := stream.Recv()
@@ -104,7 +106,9 @@ func TestGRPCTunnel_MetadataAPIKeyFallback(t *testing.T) {
 	stream, err := client.Connect(streamCtx)
 	require.NoError(t, err)
 
-	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "", Capabilities: []string{tunnelCapabilityMux}}}})
+	err = stream.Send(tunnelpb.AgentMessage_builder{
+		Register: tunnelpb.RegisterRequest_builder{Capabilities: []string{tunnelCapabilityMux}}.Build(),
+	}.Build())
 	require.NoError(t, err)
 
 	registerResp, err := stream.Recv()
@@ -147,7 +151,9 @@ func TestGRPCTunnel_InvalidTokenRejected(t *testing.T) {
 	stream, err := client.Connect(testGRPCOutgoingContext(ctx, "invalid-token"))
 	require.NoError(t, err)
 
-	if sendErr := stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "invalid-token"}}}); sendErr != nil {
+	if sendErr := stream.Send(tunnelpb.AgentMessage_builder{
+		Register: tunnelpb.RegisterRequest_builder{AgentToken: "invalid-token"}.Build(),
+	}.Build()); sendErr != nil {
 		require.ErrorIs(t, sendErr, io.EOF)
 	}
 
@@ -192,7 +198,9 @@ func TestGRPCTunnel_FirstMessageMustBeRegister(t *testing.T) {
 	stream, err := client.Connect(testGRPCOutgoingContext(ctx, "valid-token"))
 	require.NoError(t, err)
 
-	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_MuxData{MuxData: &tunnelpb.MuxData{}}})
+	err = stream.Send(tunnelpb.AgentMessage_builder{
+		MuxData: &tunnelpb.MuxData{},
+	}.Build())
 	require.NoError(t, err)
 
 	_, err = stream.Recv()

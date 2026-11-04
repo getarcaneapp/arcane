@@ -210,7 +210,9 @@ func (t *GRPCManagerTunnelConn) Send(msg *TunnelMessage) error {
 func (t *GRPCManagerTunnelConn) muxConn(context.Context) *muxConn {
 	t.muxed.Store(true)
 	send := func(p []byte) error {
-		return t.send(&tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_MuxData{MuxData: &tunnelpb.MuxData{Data: p}}})
+		return t.send(tunnelpb.ManagerMessage_builder{
+			MuxData: tunnelpb.MuxData_builder{Data: p}.Build(),
+		}.Build())
 	}
 	recv := func() ([]byte, error) {
 		if t.stream == nil {
@@ -287,7 +289,9 @@ func (t *GRPCAgentTunnelConn) Send(msg *TunnelMessage) error {
 func (t *GRPCAgentTunnelConn) muxConn(context.Context) *muxConn {
 	t.muxed.Store(true)
 	send := func(p []byte) error {
-		return t.send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_MuxData{MuxData: &tunnelpb.MuxData{Data: p}}})
+		return t.send(tunnelpb.AgentMessage_builder{
+			MuxData: tunnelpb.MuxData_builder{Data: p}.Build(),
+		}.Build())
 	}
 	recv := func() ([]byte, error) {
 		if t.stream == nil {

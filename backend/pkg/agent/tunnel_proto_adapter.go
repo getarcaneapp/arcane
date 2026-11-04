@@ -19,16 +19,18 @@ func tunnelMessageToManagerProto(msg *TunnelMessage) (*tunnelpb.ManagerMessage, 
 	if msg.Type != MessageTypeRegisterResponse {
 		return nil, fmt.Errorf("unsupported manager message type: %s", msg.Type)
 	}
-	return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_RegisterResponse{RegisterResponse: &tunnelpb.RegisterResponse{
-		Id:            msg.ID,
-		Accepted:      msg.Accepted,
-		EnvironmentId: msg.EnvironmentID,
-		Error:         msg.Error,
-		SessionId:     msg.SessionID,
-		SecurityMode:  msg.SecurityMode,
-		Capabilities:  slices.Clone(msg.Capabilities),
-		DrainPrevious: msg.DrainPrevious,
-	}}}, nil
+	return tunnelpb.ManagerMessage_builder{
+		RegisterResponse: tunnelpb.RegisterResponse_builder{
+			Accepted:      msg.Accepted,
+			EnvironmentId: msg.EnvironmentID,
+			Error:         msg.Error,
+			SessionId:     msg.SessionID,
+			SecurityMode:  msg.SecurityMode,
+			Capabilities:  slices.Clone(msg.Capabilities),
+			DrainPrevious: msg.DrainPrevious,
+			Id:            msg.ID,
+		}.Build(),
+	}.Build(), nil
 }
 
 func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, error) {
@@ -36,21 +38,22 @@ func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, 
 		return nil, errors.New("manager message is nil")
 	}
 
-	switch payload := msg.GetPayload().(type) {
-	case *tunnelpb.ManagerMessage_RegisterResponse:
+	switch msg.WhichPayload() {
+	case tunnelpb.ManagerMessage_RegisterResponse_case:
+		resp := msg.GetRegisterResponse()
 		return &TunnelMessage{
-			ID:            payload.RegisterResponse.GetId(),
+			ID:            resp.GetId(),
 			Type:          MessageTypeRegisterResponse,
-			Accepted:      payload.RegisterResponse.GetAccepted(),
-			EnvironmentID: payload.RegisterResponse.GetEnvironmentId(),
-			Error:         payload.RegisterResponse.GetError(),
-			SessionID:     payload.RegisterResponse.GetSessionId(),
-			SecurityMode:  payload.RegisterResponse.GetSecurityMode(),
-			Capabilities:  slices.Clone(payload.RegisterResponse.GetCapabilities()),
-			DrainPrevious: payload.RegisterResponse.GetDrainPrevious(),
+			Accepted:      resp.GetAccepted(),
+			EnvironmentID: resp.GetEnvironmentId(),
+			Error:         resp.GetError(),
+			SessionID:     resp.GetSessionId(),
+			SecurityMode:  resp.GetSecurityMode(),
+			Capabilities:  slices.Clone(resp.GetCapabilities()),
+			DrainPrevious: resp.GetDrainPrevious(),
 		}, nil
 	default:
-		return nil, fmt.Errorf("manager payload %T: %w", payload, errUnknownTunnelPayload)
+		return nil, fmt.Errorf("manager payload %v: %w", msg.WhichPayload(), errUnknownTunnelPayload)
 	}
 }
 
@@ -61,13 +64,15 @@ func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, erro
 	if msg.Type != MessageTypeRegister {
 		return nil, fmt.Errorf("unsupported agent message type: %s", msg.Type)
 	}
-	return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{
-		AgentToken:      msg.AgentToken,
-		AgentInstanceId: msg.AgentInstance,
-		Capabilities:    slices.Clone(msg.Capabilities),
-		ResumeSessionId: msg.ResumeSession,
-		Host:            agentHostInfoToProto(msg.Host),
-	}}}, nil
+	return tunnelpb.AgentMessage_builder{
+		Register: tunnelpb.RegisterRequest_builder{
+			AgentToken:      msg.AgentToken,
+			AgentInstanceId: msg.AgentInstance,
+			Capabilities:    slices.Clone(msg.Capabilities),
+			ResumeSessionId: msg.ResumeSession,
+			Host:            agentHostInfoToProto(msg.Host),
+		}.Build(),
+	}.Build(), nil
 }
 
 func agentProtoToTunnelMessage(msg *tunnelpb.AgentMessage) (*TunnelMessage, error) {
@@ -75,18 +80,19 @@ func agentProtoToTunnelMessage(msg *tunnelpb.AgentMessage) (*TunnelMessage, erro
 		return nil, errors.New("agent message is nil")
 	}
 
-	switch payload := msg.GetPayload().(type) {
-	case *tunnelpb.AgentMessage_Register:
+	switch msg.WhichPayload() {
+	case tunnelpb.AgentMessage_Register_case:
+		req := msg.GetRegister()
 		return &TunnelMessage{
 			Type:          MessageTypeRegister,
-			AgentToken:    payload.Register.GetAgentToken(),
-			AgentInstance: payload.Register.GetAgentInstanceId(),
-			Capabilities:  slices.Clone(payload.Register.GetCapabilities()),
-			ResumeSession: payload.Register.GetResumeSessionId(),
-			Host:          protoToAgentHostInfo(payload.Register.GetHost()),
+			AgentToken:    req.GetAgentToken(),
+			AgentInstance: req.GetAgentInstanceId(),
+			Capabilities:  slices.Clone(req.GetCapabilities()),
+			ResumeSession: req.GetResumeSessionId(),
+			Host:          protoToAgentHostInfo(req.GetHost()),
 		}, nil
 	default:
-		return nil, fmt.Errorf("agent payload %T: %w", payload, errUnknownTunnelPayload)
+		return nil, fmt.Errorf("agent payload %v: %w", msg.WhichPayload(), errUnknownTunnelPayload)
 	}
 }
 
@@ -94,7 +100,7 @@ func agentHostInfoToProto(host *AgentHostInfo) *tunnelpb.AgentHostInfo {
 	if host == nil {
 		return nil
 	}
-	return &tunnelpb.AgentHostInfo{
+	return tunnelpb.AgentHostInfo_builder{
 		Hostname:      host.Hostname,
 		Os:            host.OS,
 		KernelVersion: host.KernelVersion,
@@ -103,7 +109,7 @@ func agentHostInfoToProto(host *AgentHostInfo) *tunnelpb.AgentHostInfo {
 		AgentVersion:  host.AgentVersion,
 		Cpus:          host.CPUs,
 		MemoryBytes:   host.MemoryBytes,
-	}
+	}.Build()
 }
 
 func protoToAgentHostInfo(host *tunnelpb.AgentHostInfo) *AgentHostInfo {
