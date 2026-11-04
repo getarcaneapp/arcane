@@ -30,6 +30,10 @@ import (
 )
 
 type (
+	variableTestRemoteProxy struct {
+		proxyJSON func(ctx context.Context, envID, method, path string, body []byte, out any) error
+	}
+
 	capturedVariableSyncRequest struct {
 		Method  string
 		Path    string
@@ -52,7 +56,7 @@ func newSettingsServiceForVariableTest(t testing.TB, ctx context.Context, db *da
 	return svc, err
 }
 
-func setupVariableServiceTest(t *testing.T) (*VariableService, *database.DB, string) {
+func setupVariableServiceTest(t *testing.T, environments environment.RemoteProxy) (*VariableService, *database.DB, string) {
 	t.Helper()
 
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
@@ -81,7 +85,7 @@ func setupVariableServiceTest(t *testing.T) (*VariableService, *database.DB, str
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.UpdateSetting(t.Context(), "projectsDirectory", projectsDir))
 
-	service := NewVariableService(dbWrap, nil, settingsSvc, kv.NewKVService(dbWrap))
+	service := NewVariableService(dbWrap, environments, settingsSvc, kv.NewKVService(dbWrap))
 	return service, dbWrap, projectsDir
 }
 
@@ -97,7 +101,7 @@ func createVariableTestEnvironment(t *testing.T, db *database.DB, id string) {
 }
 
 func TestCreateVariable_SecretEncryptedAtRestAndRedactedOnList(t *testing.T) {
-	service, db, _ := setupVariableServiceTest(t)
+	service, db, _ := setupVariableServiceTest(t, &variableTestRemoteProxy{})
 	ctx := t.Context()
 
 	created, err := service.CreateVariable(ctx, types.GlobalVariable{
@@ -124,7 +128,7 @@ func TestCreateVariable_SecretEncryptedAtRestAndRedactedOnList(t *testing.T) {
 }
 
 func TestUpdateVariable_OmittedSecretValuePreservesCiphertextAndRedactsResponse(t *testing.T) {
-	service, db, _ := setupVariableServiceTest(t)
+	service, db, _ := setupVariableServiceTest(t, &variableTestRemoteProxy{})
 	ctx := t.Context()
 	created := createMaterializedSecretVariable(t, service)
 
@@ -149,7 +153,7 @@ func TestUpdateVariable_OmittedSecretValuePreservesCiphertextAndRedactsResponse(
 }
 
 func TestUpdateVariable_SecretToPlainRequiresReplacementValue(t *testing.T) {
-	service, db, _ := setupVariableServiceTest(t)
+	service, db, _ := setupVariableServiceTest(t, &variableTestRemoteProxy{})
 	ctx := t.Context()
 	created := createMaterializedSecretVariable(t, service)
 
@@ -170,7 +174,7 @@ func TestUpdateVariable_SecretToPlainRequiresReplacementValue(t *testing.T) {
 }
 
 func TestResolveEffectiveVariables_EnvScopedOverridesAllEnv(t *testing.T) {
-	service, db, _ := setupVariableServiceTest(t)
+	service, db, _ := setupVariableServiceTest(t, &variableTestRemoteProxy{})
 	ctx := t.Context()
 	createVariableTestEnvironment(t, db, "env-a")
 	createVariableTestEnvironment(t, db, "env-b")
@@ -206,7 +210,7 @@ func TestResolveEffectiveVariables_EnvScopedOverridesAllEnv(t *testing.T) {
 }
 
 func TestWriteLocalEnvFile_RejectsNewlineInjectionKey(t *testing.T) {
-	service, _, projectsDir := setupVariableServiceTest(t)
+	service, _, projectsDir := setupVariableServiceTest(t, &variableTestRemoteProxy{})
 
 	err := service.WriteLocalEnvFile(t.Context(), []types.EnvVariable{
 		{Key: "BENIGN\nINJECTED", Value: "x"},
@@ -221,7 +225,7 @@ func TestWriteLocalEnvFile_PreservesExistingFileMode(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("file mode bits are not represented on Windows FS")
 	}
-	service, _, projectsDir := setupVariableServiceTest(t)
+	service, _, projectsDir := setupVariableServiceTest(t, &variableTestRemoteProxy{})
 	ctx := t.Context()
 	envPath := filepath.Join(projectsDir, ".env.global")
 
@@ -241,7 +245,7 @@ func TestWriteLocalEnvFile_PreservesExistingFileMode(t *testing.T) {
 }
 
 func TestSyncEnvironment_LocalWritesEnvGlobalFile(t *testing.T) {
-	service, _, projectsDir := setupVariableServiceTest(t)
+	service, _, projectsDir := setupVariableServiceTest(t, &variableTestRemoteProxy{})
 	ctx := t.Context()
 
 	_, err := service.CreateVariable(ctx, types.GlobalVariable{
@@ -261,8 +265,29 @@ func TestSyncEnvironment_LocalWritesEnvGlobalFile(t *testing.T) {
 }
 
 func TestSyncEnvironment_AgentMaterializesSecretsThroughAgentRoute(t *testing.T) {
-	service, db, _ := setupVariableServiceTest(t)
 	token := "agent-token"
+	var requestMu sync.Mutex
+	requests := make([]capturedVariableSyncRequest, 0, 2)
+	service, db, _ := setupVariableServiceTest(t, &variableTestRemoteProxy{
+		proxyJSON: func(_ context.Context, environmentID, method, path string, body []byte, response any) error {
+			require.Equal(t, "env-agent", environmentID)
+			requestMu.Lock()
+			requests = append(requests, capturedVariableSyncRequest{
+				Method: method,
+				Path:   path,
+				Headers: map[string]string{
+					agent.HeaderAPIKey:     token,
+					agent.HeaderAgentToken: token,
+				},
+				Body: append([]byte(nil), body...),
+			})
+			requestMu.Unlock()
+			if method == http.MethodGet {
+				return json.Unmarshal([]byte(`{"success":true,"data":[]}`), response)
+			}
+			return json.Unmarshal([]byte(`{"success":true,"data":{"message":"updated"}}`), response)
+		},
+	})
 	require.NoError(t, db.Create(&environment.Environment{
 		ID:          "env-agent",
 		Name:        "Agent",
@@ -271,27 +296,6 @@ func TestSyncEnvironment_AgentMaterializesSecretsThroughAgentRoute(t *testing.T)
 		Enabled:     true,
 		AccessToken: &token,
 	}).Error)
-
-	var requestMu sync.Mutex
-	requests := make([]capturedVariableSyncRequest, 0, 2)
-	service.proxyEnvironmentJSON = func(_ context.Context, environmentID, method, path string, body []byte, response any) error {
-		require.Equal(t, "env-agent", environmentID)
-		requestMu.Lock()
-		requests = append(requests, capturedVariableSyncRequest{
-			Method: method,
-			Path:   path,
-			Headers: map[string]string{
-				agent.HeaderAPIKey:     token,
-				agent.HeaderAgentToken: token,
-			},
-			Body: append([]byte(nil), body...),
-		})
-		requestMu.Unlock()
-		if method == http.MethodGet {
-			return json.Unmarshal([]byte(`{"success":true,"data":[]}`), response)
-		}
-		return json.Unmarshal([]byte(`{"success":true,"data":{"message":"updated"}}`), response)
-	}
 	createMaterializedSecretVariable(t, service)
 
 	require.NoError(t, service.SyncEnvironment(t.Context(), "env-agent"))
@@ -330,4 +334,12 @@ func requireMaterializationRequests(t *testing.T, requests []capturedVariableSyn
 	var materialized types.EnvSummary
 	require.NoError(t, json.Unmarshal(requests[1].Body, &materialized))
 	require.Equal(t, []types.EnvVariable{{Key: "API_TOKEN", Value: "super-secret"}}, materialized.Variables)
+}
+
+func (p *variableTestRemoteProxy) ProxyJSONRequest(ctx context.Context, envID, method, path string, body []byte, out any) error {
+	return p.proxyJSON(ctx, envID, method, path, body, out)
+}
+
+func (*variableTestRemoteProxy) ListEnabledRemoteEnvironmentIDs(context.Context) ([]string, error) {
+	return nil, nil
 }

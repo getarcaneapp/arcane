@@ -238,6 +238,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	gate := newSystemBackupAdmissionGateForTest(t)
+	jobScheduler := &systemBackupPolicyScheduler{jobs: make(map[string]types.SchedulerJob)}
 	dockerService := newSettingsDockerService(t, func() *client.Client {
 		cli, _ := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
 		return cli
@@ -251,16 +252,19 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 			DockerService: dockerService,
 		}),
 		SettingsService: settingsService,
-		BackupEngine:    backup.NewEngine(gate, nil),
-		S3Destinations:  s3Destinations,
-		RecoveryKeys:    recoveryKeys,
-		Config:          &config.Config{DatabaseURL: "file:system-backup-schedules-test.db"},
+		BackupEngine: backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error {
+			return nil
+		}),
+		S3Destinations: s3Destinations,
+		RecoveryKeys:   recoveryKeys,
+		Config:         &config.Config{DatabaseURL: "file:system-backup-schedules-test.db"},
+		Ctx:            t.Context(),
+		Scheduler:      jobScheduler,
+		Admission:      gate,
 	})
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	require.NoError(t, service.backup.RegisterWorkflows(harness.Engine))
 	harness.Start(t)
-	jobScheduler := &systemBackupPolicyScheduler{jobs: make(map[string]types.SchedulerJob)}
-	require.NoError(t, service.SetBackupScheduler(t.Context(), jobScheduler, gate))
 
 	status, err := service.backup.SetRecoveryKey(t.Context(), "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN")
 	require.NoError(t, err)

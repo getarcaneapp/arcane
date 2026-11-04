@@ -1,7 +1,6 @@
 package environment
 
 import (
-	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -15,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coder/websocket"
 	"github.com/labstack/echo/v5"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -47,6 +45,8 @@ import (
 )
 
 type (
+	environmentTestVariableSyncer struct{}
+
 	environmentTestScheduler struct {
 		submitted []types.SchedulerRequest
 		added     []string
@@ -274,10 +274,16 @@ func TestEnvironmentService_DeleteEnvironment_CascadesGitOpsSyncs(t *testing.T) 
 
 	jobScheduler := &environmentTestScheduler{}
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		InvalidateUser:  func(string) {},
+		Config:          &config.Config{},
+		Ctx:             ctx,
+		Scheduler:       jobScheduler,
+		Admission:       newAdmissionGateForEnvironmentTest(t),
 	})
-	require.NoError(t, svc.SetScheduler(ctx, jobScheduler, newAdmissionGateForEnvironmentTest(t)))
 
 	require.NoError(t, svc.DeleteEnvironment(ctx, "env-delete-gitops", nil, nil))
 
@@ -315,12 +321,19 @@ func TestEnvironmentService_DeleteEnvironment_RemovesScopedCredentialsAndVariabl
 		{GlobalVariableID: "var-shared", EnvironmentID: "env-keep"},
 	}).Error)
 
-	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
-	})
 	var invalidatedUserIDs []string
-	svc.SetUserInvalidator(func(userID string) { invalidatedUserIDs = append(invalidatedUserIDs, userID) })
+	svc := NewEnvironmentService(EnvironmentServiceParams{
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		InvalidateUser: func(userID string) {
+			invalidatedUserIDs = append(invalidatedUserIDs, userID)
+		},
+		Config:    &config.Config{},
+		Ctx:       t.Context(),
+		Scheduler: &environmentTestScheduler{},
+	})
 	require.NoError(t, svc.DeleteEnvironment(ctx, "env-delete-scoped", nil, nil))
 	require.Equal(t, []string{"federated-user"}, invalidatedUserIDs)
 
@@ -345,8 +358,13 @@ func TestEnvironmentService_IsKnownAccessToken_TracksTokenWrites(t *testing.T) {
 	createTestEnvironmentWithState(t, db, "env-known", "http://known.example", string(EnvironmentStatusOnline), new("seeded-token"))
 	createTestEnvironmentWithState(t, db, "env-shared", "http://shared.example", string(EnvironmentStatusOnline), new("seeded-token"))
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	require.False(t, svc.IsKnownAccessToken("seeded-token"))
@@ -439,8 +457,13 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SyncsEligibleRemo
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	createTestRegistry(t, db, "reg-1")
@@ -517,8 +540,13 @@ func TestEnvironmentService_SyncRegistriesToEnvironment_IncludesECRFields(t *tes
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	createTestECRRegistry(t, db, "reg-ecr")
@@ -576,8 +604,13 @@ func TestEnvironmentService_SyncS3DestinationsToEnvironment(t *testing.T) {
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	encryptedSecret, err := crypto.Encrypt("s3-secret")
@@ -640,8 +673,13 @@ func TestEnvironmentService_SyncRepositoriesToEnvironment_UsesAgentHeaders(t *te
 	db := setupEnvironmentServiceTestDB(t)
 	require.NoError(t, db.AutoMigrate(&gitrepo.GitRepository{}))
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	createTestGitRepository(t, db, gitrepo.GitRepository{
@@ -698,8 +736,13 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SkipsRemoteWithou
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	createTestRegistry(t, db, "reg-1")
@@ -723,8 +766,13 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_ReportsFailuresBu
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	createTestRegistry(t, db, "reg-1")
@@ -752,8 +800,13 @@ func TestEnvironmentService_ReconcileAgentStatusesOnStartup(t *testing.T) {
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	createTestEnvironmentWithState(t, db, "agent-online", "agent://online", string(EnvironmentStatusOnline), nil)
@@ -785,8 +838,13 @@ func TestEnvironmentService_UpdateEnvironmentConnectionState(t *testing.T) {
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	createTestEnvironmentWithState(t, db, "agent-runtime", "agent://runtime", string(EnvironmentStatusOffline), nil)
@@ -814,8 +872,13 @@ func TestEnvironmentService_UpdateEnvironmentStatus_DoesNotDemotePendingEnvOnFai
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	createTestEnvironmentWithState(t, db, "agent-pending", "agent://pending", string(EnvironmentStatusPending), nil)
@@ -833,8 +896,13 @@ func TestEnvironmentService_UpdateEnvironmentStatus_LeavesPendingAgentEnvAlone(t
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	createTestEnvironmentWithState(t, db, "agent-pending", "agent://agent", string(EnvironmentStatusPending), nil)
@@ -853,8 +921,13 @@ func TestEnvironmentService_ResolveAgentEnvironmentByToken_CachesAndInvalidatesO
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	oldToken := "agent-token-old"
@@ -906,8 +979,13 @@ func TestEnvironmentService_UpdateEnvironment_ClearingAccessTokenInvalidatesCach
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	oldToken := "agent-token-clear"
@@ -936,8 +1014,13 @@ func TestEnvironmentService_UpdateEnvironment_ClearingAccessTokenInvalidatesCach
 func TestEnvironmentService_getCachedEnvironmentIDForToken_ExpiresAndCleansReverseIndex(t *testing.T) {
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 	svc.agentTokens.mu.Lock()
 	svc.agentTokens.byEnvID["env-expired"] = "expired-token"
@@ -962,8 +1045,13 @@ func TestEnvironmentService_ResolveEnvironmentByAccessToken(t *testing.T) {
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	accessToken := "remote-token"
@@ -984,8 +1072,13 @@ func TestEnvironmentService_ResolveEventEnvironmentByAccessToken(t *testing.T) {
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	enabledToken := "enabled-token"
@@ -1009,8 +1102,13 @@ func TestEnvironmentService_ResolveEventEnvironmentByAccessToken(t *testing.T) {
 func TestEnvironmentService_GenerateDeploymentSnippets_TransportDefaults(t *testing.T) {
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	agentSnippets, err := svc.GenerateAgentDeploymentSnippets(t.Context(), "env-2", "https://manager.example.com", "token-456", nil)
@@ -1031,9 +1129,14 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_CreatesVisibleEnviro
 	userService := user.NewUserService(db, roleService, session.RevokeAllUserSessionsExceptInDB)
 	apiKeyService := apikey.NewApiKeyService(db, userService, roleService)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:            db,
-		EventService:  event.NewEventService(db, nil, nil),
-		APIKeyService: apiKeyService,
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		APIKeyService:   apiKeyService,
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 	localUser := createTestEnvironmentServiceUser(t, ctx, userService, "swarm-admin")
 
@@ -1104,8 +1207,13 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_ReusesLegacyHiddenRe
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 	parentEnvironmentID := "manager-env"
 	nodeID := "legacy-node"
@@ -1171,9 +1279,14 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_TokenResolvesEndToEn
 	userService := user.NewUserService(db, roleService, session.RevokeAllUserSessionsExceptInDB)
 	apiKeyService := apikey.NewApiKeyService(db, userService, roleService)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:            db,
-		EventService:  event.NewEventService(db, nil, nil),
-		APIKeyService: apiKeyService,
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		APIKeyService:   apiKeyService,
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 	localUser := createTestEnvironmentServiceUser(t, ctx, userService, "swarm-resolve-admin")
 
@@ -1228,8 +1341,13 @@ func TestEnvironmentService_BindSwarmNodeEnvironment_PreservesVisibleEnvironment
 	token := "existing-agent-token"
 	createTestEnvironment(t, db, "visible-env", "http://visible.example", &token)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	bound, err := svc.BindSwarmNodeEnvironment(ctx, "manager-env", "node-1", "visible-env", false)
@@ -1252,8 +1370,13 @@ func TestEnvironmentService_BindSwarmNodeEnvironment_RequiresExplicitRebind(t *t
 	db := setupEnvironmentServiceTestDB(t)
 	createTestEnvironment(t, db, "visible-env", "http://visible.example", nil)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	_, err := svc.BindSwarmNodeEnvironment(ctx, "manager-a", "node-a", "visible-env", false)
@@ -1271,8 +1394,14 @@ func TestEnvironmentService_ListMethods_ExcludeHiddenEnvironments(t *testing.T) 
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Lister:          NewLister(db),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	createTestEnvironment(t, db, "0", "http://localhost:3552", nil)
@@ -1304,170 +1433,6 @@ func TestEnvironmentService_ListMethods_ExcludeHiddenEnvironments(t *testing.T) 
 	require.Equal(t, "env-visible", remoteEnvironments[0].ID)
 }
 
-func TestEnvironmentService_ListEnvironmentsPaginated_FiltersByAccessibleEnvIDs(t *testing.T) {
-	ctx := t.Context()
-	db := setupEnvironmentServiceTestDB(t)
-	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
-	})
-
-	createTestEnvironment(t, db, "0", "http://localhost:3552", nil)
-	createNamedTestEnvironment(t, db, "env-a", "Env A", "agent://a", new("token-a"))
-	createNamedTestEnvironment(t, db, "env-b", "Env B", "agent://b", new("token-b"))
-
-	newParams := func(typeFilter string) pagination.QueryParams {
-		filters := map[string]string{}
-		filters["type"] = cmp.Or(typeFilter, filters["type"])
-		return pagination.QueryParams{
-			Start: 0, Limit: 20,
-			Filters: filters,
-		}
-	}
-
-	// nil = no restriction: every non-hidden environment is returned.
-	all, _, err := svc.ListEnvironmentsPaginated(ctx, newParams(""), nil)
-	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"0", "env-a", "env-b"}, environmentIDs(all))
-
-	// A non-nil allow-list restricts the result on the DB path.
-	scoped, _, err := svc.ListEnvironmentsPaginated(ctx, newParams(""), []string{"env-a"})
-	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"env-a"}, environmentIDs(scoped))
-
-	// The runtime-filter path (type filter) honors the allow-list too.
-	scopedTyped, _, err := svc.ListEnvironmentsPaginated(ctx, newParams("agent"), []string{"env-a"})
-	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"env-a"}, environmentIDs(scopedTyped))
-
-	// An empty (non-nil) allow-list yields no environments on either path.
-	none, _, err := svc.ListEnvironmentsPaginated(ctx, newParams(""), []string{})
-	require.NoError(t, err)
-	require.Empty(t, none)
-
-	noneTyped, _, err := svc.ListEnvironmentsPaginated(ctx, newParams("agent"), []string{})
-	require.NoError(t, err)
-	require.Empty(t, noneTyped)
-}
-
-func TestEnvironmentService_ListEnvironmentsPaginated_FiltersByRuntimeType(t *testing.T) {
-	ctx := t.Context()
-	db := setupEnvironmentServiceTestDB(t)
-	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
-	})
-
-	now := time.Now()
-	envs := []Environment{
-		{
-			ID: "0", CreatedAt: now, UpdatedAt: &now,
-			Name:    "Local",
-			ApiUrl:  "http://localhost:3552",
-			Status:  string(EnvironmentStatusOnline),
-			Enabled: true,
-		},
-		{
-			ID: "env-agent", CreatedAt: now, UpdatedAt: &now,
-			Name:    "Agent",
-			ApiUrl:  "agent://agent",
-			Status:  string(EnvironmentStatusOffline),
-			Enabled: true,
-		},
-		{
-			ID: "env-grpc", CreatedAt: now, UpdatedAt: &now,
-			Name:    "gRPC",
-			ApiUrl:  "agent://grpc",
-			Status:  string(EnvironmentStatusOffline),
-			Enabled: true,
-		},
-		{
-			ID: "env-websocket", CreatedAt: now, UpdatedAt: &now,
-			Name:    "WebSocket",
-			ApiUrl:  "agent://websocket",
-			Status:  string(EnvironmentStatusOffline),
-			Enabled: true,
-		},
-		{
-			ID: "env-last-ws", CreatedAt: now, UpdatedAt: &now,
-			Name:               "LastWebsocket",
-			ApiUrl:             "agent://last-ws",
-			Status:             string(EnvironmentStatusOffline),
-			Enabled:            true,
-			LastAgentTransport: new("websocket"),
-		},
-	}
-	require.NoError(t, db.WithContext(ctx).Create(&envs).Error)
-
-	agent.GetRegistry().Unregister("env-grpc")
-	agent.GetRegistry().Unregister("env-websocket")
-	t.Cleanup(func() {
-		agent.GetRegistry().Unregister("env-grpc")
-		agent.GetRegistry().Unregister("env-websocket")
-	})
-
-	grpcTunnel := agent.NewAgentTunnelWithConn("env-grpc", agent.NewGRPCManagerTunnelConn(nil))
-	agent.GetRegistry().Register("env-grpc", grpcTunnel)
-
-	websocketTunnel, closeWebSocketTunnel := newTestWebSocketTunnel(t, "env-websocket")
-	defer closeWebSocketTunnel()
-	agent.GetRegistry().Register("env-websocket", websocketTunnel)
-
-	tests := []struct {
-		name       string
-		typeFilter string
-		wantIDs    []string
-	}{
-		{name: "agent", typeFilter: "agent", wantIDs: []string{"env-agent"}},
-		{name: "grpc", typeFilter: "grpc", wantIDs: []string{"env-grpc"}},
-		// Disconnected agents classify by the transport they last used.
-		{name: "websocket", typeFilter: "websocket", wantIDs: []string{"env-websocket", "env-last-ws"}},
-		{name: "multiple", typeFilter: "agent,grpc", wantIDs: []string{"env-agent", "env-grpc"}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			listedEnvironments, _, err := svc.ListEnvironmentsPaginated(ctx, pagination.QueryParams{
-				Start: 0, Limit: 20,
-				Filters: map[string]string{"type": tt.typeFilter},
-			}, nil)
-			require.NoError(t, err)
-			require.ElementsMatch(t, tt.wantIDs, environmentIDs(listedEnvironments))
-		})
-	}
-}
-
-func environmentIDs(environments []types.Environment) []string {
-	ids := make([]string, 0, len(environments))
-	for _, env := range environments {
-		ids = append(ids, env.ID)
-	}
-	return ids
-}
-
-func newTestWebSocketTunnel(t *testing.T, envID string) (*agent.AgentTunnel, func()) {
-	t.Helper()
-
-	connCh := make(chan *websocket.Conn, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, nil)
-		if !assert.NoError(t, err) {
-			return
-		}
-		connCh <- conn
-	}))
-
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
-	clientConn, _, err := websocket.Dial(t.Context(), wsURL, nil)
-	require.NoError(t, err)
-
-	serverConn := <-connCh
-	return agent.NewAgentTunnelWithConn(envID, agent.NewTunnelConn(serverConn)), func() {
-		_ = clientConn.CloseNow()
-		server.Close()
-	}
-}
-
 func TestEnvironmentService_GenerateAgentDeploymentSnippets_WithAutoGeneratedMTLS(t *testing.T) {
 	crypto.InitEncryption(crypto.Config{
 		EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
@@ -1475,8 +1440,13 @@ func TestEnvironmentService_GenerateAgentDeploymentSnippets_WithAutoGeneratedMTL
 	})
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	assetsDir := filepath.Join(t.TempDir(), "agent-mtls")
@@ -1511,8 +1481,13 @@ func TestEnvironmentService_GenerateAgentDeploymentSnippets_WithAutoGeneratedMTL
 func TestEnvironmentService_GenerateAgentDeploymentSnippets_ReturnsBasicSnippetsWhenMTLSGenerationFails(t *testing.T) {
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 
 	assetsPath := filepath.Join(t.TempDir(), "agent-mtls-file")
@@ -1534,8 +1509,13 @@ func TestEnvironmentServiceTestConnectionProbesThroughTunnel(t *testing.T) {
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 	createTestEnvironment(t, db, "env-tunnel", startTestAgent(t, "env-tunnel", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1591,8 +1571,13 @@ func TestSyncCredentialDecryptionAbortsSnapshot(t *testing.T) {
 				AccessToken: new("agent-token"),
 			}).Error)
 			service := NewEnvironmentService(EnvironmentServiceParams{
-				DB:           db,
-				EventService: event.NewEventService(db, nil, nil),
+				VariableSyncer:  &environmentTestVariableSyncer{},
+				DB:              db,
+				RemoteTransport: NewRemoteTransport(db, nil),
+				EventService:    event.NewEventService(db, &config.Config{}, nil),
+				Config:          &config.Config{},
+				Ctx:             t.Context(),
+				Scheduler:       &environmentTestScheduler{},
 			})
 			var syncResource func(context.Context, string) error
 			switch kind {
@@ -1657,8 +1642,13 @@ func TestSyncRepositoriesPreservesEmptyCredentials(t *testing.T) {
 		AccessToken: new("token"),
 	}).Error)
 	service := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 	require.NoError(t, service.SyncRepositoriesToEnvironment(t.Context(), "remote"))
 }
@@ -1692,8 +1682,13 @@ func TestSyncSkipsUnchangedPayloadUntilForgotten(t *testing.T) {
 		AccessToken: new("agent-token"),
 	}).Error)
 	service := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 	localSync := func() error { return service.SyncRegistriesToEnvironment(t.Context(), "remote") }
 	changeRegistry := func(url string) {
@@ -1875,8 +1870,13 @@ func TestApplyEnvironmentRuntimeState_OmitsTunnelStatsWithoutHistory(t *testing.
 func TestEnvironmentService_RestartTunnel(t *testing.T) {
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
 	})
 	tunnels := agent.NewTunnelRegistry()
 	agent.SetDefaultRegistry(tunnels)
@@ -1927,3 +1927,9 @@ func TestEnvironmentService_RestartTunnel(t *testing.T) {
 		require.Equal(t, types.EnvironmentTunnelRestart{}, result)
 	})
 }
+
+func (*environmentTestVariableSyncer) SyncEnvironment(context.Context, string) error {
+	return nil
+}
+
+func (*environmentTestVariableSyncer) ForgetSyncState(string) {}

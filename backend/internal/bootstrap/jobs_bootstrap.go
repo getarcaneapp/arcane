@@ -41,13 +41,11 @@ type (
 		Scheduler types.JobScheduler
 
 		Activity    *activity.ActivityService
-		GitOpsSync  *gitops.GitOpsSyncService
 		Environment *environment.EnvironmentService
 		JobSchedule *job.JobService
 		Settings    *settings.SettingsService
 		Volume      *volume.VolumeService
 		System      *system.SystemService
-		Admission   *runs.Admission
 		Apns        *apns.ApnsService
 
 		AutoUpdate             *flow.Job `name:"auto-update"`
@@ -74,13 +72,27 @@ type (
 	dynamicJobsParams struct {
 		AppCtx      context.Context
 		Config      *config.Config
-		Scheduler   types.JobScheduler
-		GitOpsSync  *gitops.GitOpsSyncService
 		Environment *environment.EnvironmentService
 		JobSchedule *job.JobService
 		Volume      *volume.VolumeService
 		System      *system.SystemService
-		Admission   *runs.Admission
+	}
+
+	startJobSchedulerParams struct {
+		fx.In
+
+		Lifecycle          fx.Lifecycle
+		AppCtx             context.Context
+		Config             *config.Config
+		Scheduler          types.JobScheduler
+		Coordinator        *runs.Coordinator
+		Workflows          *flow.Engine
+		ImageUpdateWatcher *scheduler.ImageUpdateWatcher
+		Analytics          *scheduler.AnalyticsJob
+		JobSchedule        *job.JobService
+		Volume             *volume.VolumeService
+		System             *system.SystemService
+		GitOpsSync         *gitops.GitOpsSyncService
 	}
 
 	settingsSubscriptionsParams struct {
@@ -128,32 +140,10 @@ type (
 	}
 )
 
-func newJobScheduler(
-	appCtx context.Context,
-	lc fx.Lifecycle,
-	cfg *config.Config,
-	runtime *runs.Coordinator,
-	_ *runs.Admission,
-	imageUpdateWatcher *scheduler.ImageUpdateWatcher,
-	analytics *scheduler.AnalyticsJob,
-	systemService *system.SystemService,
-	jobService *job.JobService,
-	workflows *flow.Engine,
-	volumes *volume.VolumeService,
-	gitopsSync *gitops.GitOpsSyncService,
-) (
-	types.JobScheduler,
-	error,
-) {
-	schedulerCtx, cancelScheduler := context.WithCancel(appCtx)
-	jobScheduler, err := scheduler.NewJobScheduler(schedulerCtx, jobService.Coordinator(), cfg.GetLocation())
-	if err != nil {
-		cancelScheduler()
-		return nil, err
-	}
-	jobService.SetScheduler(schedulerCtx, jobScheduler)
+func startJobScheduler(p startJobSchedulerParams) {
+	schedulerCtx, cancelScheduler := context.WithCancel(p.AppCtx)
 	var resumeDone chan struct{}
-	lc.Append(fx.Hook{
+	p.Lifecycle.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			started := false
 			defer func() {
@@ -161,43 +151,36 @@ func newJobScheduler(
 					cancelScheduler()
 				}
 			}()
-			slog.InfoContext(appCtx, "Starting scheduler", "timezone", cfg.TimezoneName(), "utcOffset", time.Now().In(cfg.GetLocation()).Format("-07:00"))
-			if startErr := jobService.Coordinator().Start(ctx, schedulerCtx); startErr != nil {
+			slog.InfoContext(p.AppCtx, "Starting scheduler", "timezone", p.Config.TimezoneName(), "utcOffset", time.Now().In(p.Config.GetLocation()).Format("-07:00"))
+			if startErr := p.Coordinator.Start(ctx, schedulerCtx); startErr != nil {
 				return fmt.Errorf("initialize scheduler: %w", startErr)
 			}
-			if reconcileCoordinatorStartupErr := reconcileCoordinatorStartup(ctx, jobService, workflows, volumes, systemService, gitopsSync); reconcileCoordinatorStartupErr != nil {
+			if reconcileCoordinatorStartupErr := reconcileCoordinatorStartup(ctx, p); reconcileCoordinatorStartupErr != nil {
 				return fmt.Errorf("reconcile scheduler startup: %w", reconcileCoordinatorStartupErr)
 			}
-			if gitopsSync != nil {
-				gitopsSync.RegisterAutoSyncJobsOnStartup(ctx)
-				gitopsSync.SubscribeProjectFileChanges(schedulerCtx)
+			p.GitOpsSync.RegisterAutoSyncJobsOnStartup(ctx)
+			p.GitOpsSync.SubscribeProjectFileChanges()
+			if registerBusWatcherErr := p.Scheduler.RegisterBusWatcher(p.ImageUpdateWatcher, true); registerBusWatcherErr != nil {
+				return registerBusWatcherErr
 			}
-			if imageUpdateWatcher != nil {
-				imageUpdateWatcher.SetCoordinator(jobService.Coordinator())
-				if registerBusWatcherErr := jobScheduler.RegisterBusWatcher(imageUpdateWatcher, true); registerBusWatcherErr != nil {
-					return registerBusWatcherErr
-				}
-			}
-			if startSchedulerErr := jobScheduler.StartScheduler(ctx); startSchedulerErr != nil {
+			if startSchedulerErr := p.Scheduler.StartScheduler(ctx); startSchedulerErr != nil {
 				return fmt.Errorf("start scheduler: %w", startSchedulerErr)
 			}
-			jobService.Coordinator().Activate()
-			if analytics != nil {
-				if _, submitErr := jobService.Coordinator().Submit(ctx, types.SchedulerRequest{JobID: analytics.Name(), EnvironmentID: "0", Trigger: "startup"}); submitErr != nil {
-					return fmt.Errorf("submit startup job %q: %w", analytics.Name(), submitErr)
-				}
+			p.Coordinator.Activate()
+			if _, submitErr := p.Coordinator.Submit(ctx, types.SchedulerRequest{JobID: p.Analytics.Name(), EnvironmentID: "0", Trigger: "startup"}); submitErr != nil {
+				return fmt.Errorf("submit startup job %q: %w", p.Analytics.Name(), submitErr)
 			}
 			// Standalone tasks wait until upgrade job recovery has read its job, so a resumed step's new checkpoint
 			// is never mistaken for one the previous process left.
-			if !cfg.AgentEnabled && systemService != nil {
+			if !p.Config.AgentEnabled {
 				resumeDone = make(chan struct{})
 				go func() {
 					defer close(resumeDone)
-					systemService.ResumeUpgradeJobOnStartup(schedulerCtx)
-					workflows.Ready()
+					p.System.ResumeUpgradeJobOnStartup(schedulerCtx)
+					p.Workflows.Ready()
 				}()
 			} else {
-				workflows.Ready()
+				p.Workflows.Ready()
 			}
 			if startupCancellationErr := ctx.Err(); startupCancellationErr != nil {
 				return fmt.Errorf("complete scheduler startup: %w", startupCancellationErr)
@@ -218,7 +201,7 @@ func newJobScheduler(
 					return ctx.Err()
 				}
 			}()
-			if stopErr := errors.Join(resumeErr, jobService.Coordinator().Stop(ctx), jobScheduler.Stop(ctx)); stopErr != nil {
+			if stopErr := errors.Join(resumeErr, p.Coordinator.Stop(ctx), p.Scheduler.Stop(ctx)); stopErr != nil {
 				slog.ErrorContext(ctx, "Job scheduler exited with error", "error", stopErr)
 				return stopErr
 			}
@@ -226,24 +209,16 @@ func newJobScheduler(
 			return nil
 		},
 	})
-	return jobScheduler, nil
 }
 
 // reconcileCoordinatorStartup fails backups and activities the previous process left running,
 // except those that unfinished runs and standalone workflows still own.
-func reconcileCoordinatorStartup(
-	ctx context.Context,
-	jobs *job.JobService,
-	workflows *flow.Engine,
-	volumes *volume.VolumeService,
-	systemService *system.SystemService,
-	syncService *gitops.GitOpsSyncService,
-) error {
-	records, err := jobs.Coordinator().Records(ctx)
+func reconcileCoordinatorStartup(ctx context.Context, p startJobSchedulerParams) error {
+	records, err := p.Coordinator.Records(ctx)
 	if err != nil {
 		return err
 	}
-	standalone, err := workflows.Standalone(ctx)
+	standalone, err := p.Workflows.Standalone(ctx)
 	if err != nil {
 		return err
 	}
@@ -274,27 +249,19 @@ func reconcileCoordinatorStartup(
 			activities = append(activities, run.ActivityID)
 		}
 	}
-	if volumes != nil {
-		if reconcileInterruptedBackupsErr := volumes.ReconcileInterruptedBackups(ctx, backups...); reconcileInterruptedBackupsErr != nil {
-			return reconcileInterruptedBackupsErr
-		}
+	if reconcileInterruptedBackupsErr := p.Volume.ReconcileInterruptedBackups(ctx, backups...); reconcileInterruptedBackupsErr != nil {
+		return reconcileInterruptedBackupsErr
 	}
-	if systemService != nil {
-		if reconcileSystemBackupsErr := systemService.ReconcileInterruptedBackups(ctx, backups...); reconcileSystemBackupsErr != nil {
-			return reconcileSystemBackupsErr
-		}
+	if reconcileSystemBackupsErr := p.System.ReconcileInterruptedBackups(ctx, backups...); reconcileSystemBackupsErr != nil {
+		return reconcileSystemBackupsErr
 	}
-	if syncService != nil {
-		if reconcileInterruptedBackupsOnStartupErr := syncService.ReconcileInterruptedBackupsOnStartup(ctx, backups...); reconcileInterruptedBackupsOnStartupErr != nil {
-			return reconcileInterruptedBackupsOnStartupErr
-		}
+	if reconcileInterruptedBackupsOnStartupErr := p.GitOpsSync.ReconcileInterruptedBackupsOnStartup(ctx, backups...); reconcileInterruptedBackupsOnStartupErr != nil {
+		return reconcileInterruptedBackupsOnStartupErr
 	}
-	return jobs.ReconcileStartupActivities(ctx, activities...)
+	return p.JobSchedule.ReconcileStartupActivities(ctx, activities...)
 }
 
 func registerJobs(params registerJobsParams) error {
-	params.JobSchedule.SetScheduler(params.AppCtx, params.Scheduler)
-
 	for _, job := range []types.SchedulerJob{
 		params.AutoUpdate,
 		params.DockerClientRefresh,
@@ -325,19 +292,14 @@ func registerJobs(params registerJobsParams) error {
 
 	// GitOps sync and environment health are no longer single global jobs; each
 	// entity registers its own dynamic job.
-	if err := registerDynamicJobs(dynamicJobsParams{
+	registerDynamicJobs(dynamicJobsParams{
 		AppCtx:      params.AppCtx,
 		Config:      params.Config,
-		Scheduler:   params.Scheduler,
-		GitOpsSync:  params.GitOpsSync,
 		Environment: params.Environment,
 		JobSchedule: params.JobSchedule,
 		Volume:      params.Volume,
 		System:      params.System,
-		Admission:   params.Admission,
-	}); err != nil {
-		return err
-	}
+	})
 
 	if err := setupSettingsSubscriptions(settingsSubscriptionsParams{
 		Lifecycle:          params.Lifecycle,
@@ -363,35 +325,19 @@ func registerJobs(params registerJobsParams) error {
 	return nil
 }
 
-// registerDynamicJobs injects the scheduler into the services that own per-entity
-// jobs and registers the jobs for already-existing entities at startup. AddJob is
-// an idempotent upsert, so these run safely before the scheduler is started.
-func registerDynamicJobs(params dynamicJobsParams) error {
+func registerDynamicJobs(params dynamicJobsParams) {
 	// Volume backups run on the environment that owns the Docker volume. This is
 	// registered on managers and agents; environment proxying persists each policy
 	// in the correct Arcane database.
-	if err := params.Volume.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
-		return err
-	}
 	params.Volume.RegisterBackupJobsOnStartup(params.AppCtx)
 	if !params.Config.AgentEnabled {
-		if err := params.System.SetBackupScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
-			return err
-		}
 		params.System.RegisterBackupJobOnStartup(params.AppCtx)
-	}
-	// GitOps startup submissions wait for Francis in the scheduler start hook.
-	if err := params.GitOpsSync.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
-		return err
 	}
 
 	// Environment health: one job per enabled environment (manager only). The Jobs
 	// UI still addresses "environment-health" by ID, so bridge its reschedule and
 	// run-now back to EnvironmentService.
 	if !params.Config.AgentEnabled {
-		if err := params.Environment.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
-			return err
-		}
 		params.JobSchedule.OnEnvironmentHealthReschedule = func(ctx context.Context) {
 			params.Environment.RescheduleHealthJobs(ctx)
 		}
@@ -400,7 +346,6 @@ func registerDynamicJobs(params dynamicJobsParams) error {
 		}
 		params.Environment.RescheduleHealthJobs(params.AppCtx)
 	}
-	return nil
 }
 
 func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {

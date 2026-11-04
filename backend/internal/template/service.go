@@ -134,9 +134,6 @@ func NewTemplateService(ctx context.Context, db *database.DB, httpClient *http.C
 }
 
 func (s *TemplateService) remoteTemplates(ctx context.Context, refresh bool) ([]ComposeTemplate, error) {
-	if s.remoteCache == nil {
-		return nil, errors.New("remote template cache is not initialized")
-	}
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -1133,9 +1130,7 @@ func (s *TemplateService) invalidateRemoteCache() {
 	s.remoteGeneration.Add(1)
 	s.registryFetchMeta = make(map[string]*registryFetchMeta)
 	s.registryErrors = make(map[string]string)
-	if s.remoteCache != nil {
-		s.remoteCache.Purge()
-	}
+	s.remoteCache.Purge()
 }
 
 // SyncLocalTemplatesFromFilesystem imports template folders from the templates directory, at most once per fsSyncInterval.

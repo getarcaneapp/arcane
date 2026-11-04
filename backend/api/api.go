@@ -86,6 +86,7 @@ type (
 		Podman            *podman.Module
 		ImageUpdate       *imageupdate.Module
 		Auth              *auth.Module
+		AuthTokens        *auth.TokenCache
 		Passkey           *passkey.PasskeyService
 		Oidc              *oidc.OidcService
 		Docker            *docker.DockerClientService
@@ -206,7 +207,7 @@ func SetupAPI(p SetupParams) *authz.OperationRecorder {
 
 	p.Deps.Health.RegisterRoutes(api)
 	p.Deps.Auth.RegisterRoutes(api)
-	passkey.RegisterPasskeys(api, p.Deps.Passkey, p.Deps.Auth.Service(), p.Deps.User.Service())
+	passkey.RegisterPasskeys(api, p.Deps.Passkey, p.Deps.Auth.Service(), p.Deps.AuthTokens, p.Deps.User.Service())
 	p.Deps.ApiKey.RegisterRoutes(api)
 	federated.RegisterFederatedCredentials(api, p.Deps.Federated)
 	p.Deps.Role.RegisterRoutes(api)

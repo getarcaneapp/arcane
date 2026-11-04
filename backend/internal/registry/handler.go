@@ -216,10 +216,6 @@ func (h *ContainerRegistryHandler) SyncRegistries(ctx context.Context, input *Sy
 }
 
 func (h *ContainerRegistryHandler) triggerRemoteRegistrySync(ctx context.Context, reason string) {
-	if h.syncRemoteRegistries == nil {
-		return
-	}
-
 	slog.DebugContext(ctx, "Queueing registry sync to remote environments", "reason", reason)
 	h.syncRemoteRegistries(ctx)
 }

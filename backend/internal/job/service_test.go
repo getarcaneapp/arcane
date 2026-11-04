@@ -81,7 +81,7 @@ func newJobCoordinatorForTest(t *testing.T, db *database.DB) *runs.Coordinator {
 	return coordinator
 }
 
-func newJobServiceForTest(t *testing.T, db *database.DB, settingsService *settings.SettingsService, cfg *config.Config) *JobService {
+func newJobServiceForTest(t *testing.T, ctx context.Context, db *database.DB, settingsService *settings.SettingsService, cfg *config.Config, scheduler types.JobController) *JobService {
 	t.Helper()
 	service := NewJobService(JobServiceParams{
 		DB:            db,
@@ -94,8 +94,9 @@ func newJobServiceForTest(t *testing.T, db *database.DB, settingsService *settin
 			SettingsService: settingsService,
 		}),
 		LocalActivity: activity.NewActivityService(db, settingsService),
+		Ctx:           ctx,
+		Scheduler:     scheduler,
 	})
-	service.SetScheduler(t.Context(), newFakeJobScheduler())
 	return service
 }
 
@@ -106,7 +107,7 @@ func TestJobService_ListJobs_AnalyticsHeartbeatIsManagedInternally(t *testing.T)
 	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
+	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{}, newFakeJobScheduler())
 	jobs, err := jobSvc.ListJobs(ctx)
 	require.NoError(t, err)
 
@@ -126,7 +127,7 @@ func TestJobService_ListJobs_IncludesDisabledAutoHealJob(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", false))
 
-	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
+	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{}, newFakeJobScheduler())
 	jobs, err := jobSvc.ListJobs(ctx)
 	require.NoError(t, err)
 
@@ -150,8 +151,7 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 		Scheduled: true,
 	}
 
-	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
-	jobSvc.SetScheduler(ctx, fakeScheduler)
+	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{}, fakeScheduler)
 	jobs, err := jobSvc.ListJobs(ctx)
 	require.NoError(t, err)
 
@@ -304,7 +304,7 @@ func TestJobService_ListJobs_ImageUpdateWatcherIsContinuousAndRespectsEnabled(t 
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "pollingEnabled", false))
 
-	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
+	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{}, newFakeJobScheduler())
 	jobs, err := jobSvc.ListJobs(ctx)
 	require.NoError(t, err)
 
@@ -325,9 +325,8 @@ func TestJobService_UpdateJobSchedules_ReschedulesChangedJob(t *testing.T) {
 	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
 	fakeScheduler := newFakeJobScheduler("auto-update")
-	jobSvc.SetScheduler(ctx, fakeScheduler)
+	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{}, fakeScheduler)
 
 	_, err = jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
 		AutoUpdateInterval: "*/10 * * * *",
@@ -344,9 +343,8 @@ func TestJobService_UpdateJobSchedules_DeprecatedPollingIntervalDoesNotReschedul
 	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
 	fakeScheduler := newFakeJobScheduler("auto-update")
-	jobSvc.SetScheduler(ctx, fakeScheduler)
+	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{}, fakeScheduler)
 
 	updated, err := jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
 		PollingInterval: "*/10 * * * *",
@@ -367,9 +365,8 @@ func TestJobService_UpdateJobSchedules_UsesLifecycleContextForReschedule(t *test
 	lifecycleCtx := context.WithValue(t.Context(), lifecycleContextKey{}, true)
 	requestCtx, cancelRequest := context.WithCancel(t.Context())
 
-	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
 	fakeScheduler := newFakeJobScheduler("auto-update")
-	jobSvc.SetScheduler(lifecycleCtx, fakeScheduler)
+	jobSvc := newJobServiceForTest(t, lifecycleCtx, db, settingsSvc, &config.Config{}, fakeScheduler)
 
 	_, err = jobSvc.UpdateJobSchedules(requestCtx, types.JobScheduleConfig{
 		AutoUpdateInterval: "*/10 * * * *",
@@ -391,9 +388,8 @@ func TestJobService_UpdateJobSchedules_RejectsInvalidCronWithoutChangingSetting(
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.LoadDatabaseSettings(ctx))
 
-	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
 	fakeScheduler := newFakeJobScheduler()
-	jobSvc.SetScheduler(ctx, fakeScheduler)
+	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{}, fakeScheduler)
 
 	_, err = jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
 		PollingInterval: "not a cron expression",
@@ -411,13 +407,12 @@ func TestJobService_UpdateJobSchedules_RestoresPreviousScheduleWhenRescheduleFai
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.LoadDatabaseSettings(ctx))
 
-	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
 	fakeScheduler := &fakeJobScheduler{
 		jobs:          map[string]types.SchedulerJob{"auto-update": fakeJob{name: "auto-update"}},
 		runtimeStates: map[string]types.JobRuntimeState{},
 		rescheduleErr: errors.New("scheduler unavailable"),
 	}
-	jobSvc.SetScheduler(ctx, fakeScheduler)
+	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{}, fakeScheduler)
 
 	_, err = jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
 		AutoUpdateInterval: "0 8 * * *",
@@ -437,9 +432,8 @@ func TestJobService_UpdateJobSchedules_SkipsManagerOnlyJobsOnAgent(t *testing.T)
 	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{AgentEnabled: true})
 	fakeScheduler := newFakeJobScheduler("environment-health")
-	jobSvc.SetScheduler(ctx, fakeScheduler)
+	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{AgentEnabled: true}, fakeScheduler)
 
 	_, err = jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
 		EnvironmentHealthInterval: "*/5 * * * *",
@@ -456,9 +450,8 @@ func TestJobService_UpdateJobSchedules_DelegatesEnvironmentHealthReschedule(t *t
 	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
 	fakeScheduler := newFakeJobScheduler()
-	jobSvc.SetScheduler(ctx, fakeScheduler)
+	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{}, fakeScheduler)
 
 	rescheduled := 0
 	jobSvc.OnEnvironmentHealthReschedule = func(context.Context) { // keep: bootstrap wires this callback after construction
@@ -479,8 +472,7 @@ func TestJobService_Submit_PersistsImageUpdateWatcherRun(t *testing.T) {
 	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	fakeScheduler := newFakeJobScheduler()
-	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
-	jobSvc.SetScheduler(ctx, fakeScheduler)
+	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{}, fakeScheduler)
 	require.NoError(t, db.AutoMigrate(&userdomain.User{}, &role.Role{}, &role.UserRoleAssignment{}))
 	require.NoError(t, db.Create(&userdomain.User{Username: "operator", BaseModel: database.BaseModel{ID: "operator"}}).Error)
 	require.NoError(t, db.Create(&role.Role{
@@ -589,8 +581,9 @@ func newJobActivityTestService(t *testing.T) (*JobService, *activity.ActivitySer
 			SettingsService: settingsService,
 		}),
 		LocalActivity: activities,
+		Ctx:           t.Context(),
+		Scheduler:     newFakeJobScheduler(),
 	})
-	svc.SetScheduler(t.Context(), newFakeJobScheduler())
 	return svc, activities, db
 }
 
@@ -859,8 +852,9 @@ func TestJobActivityRestartRepairsFailedProjection(t *testing.T) {
 			SettingsService: svc.settings,
 		}),
 		LocalActivity: activities,
+		Ctx:           ctx,
+		Scheduler:     newFakeJobScheduler(),
 	})
-	restarted.SetScheduler(ctx, newFakeJobScheduler())
 	require.NoError(t, restarted.runs.Start(ctx, ctx))
 	t.Cleanup(func() {
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)

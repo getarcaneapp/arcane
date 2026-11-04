@@ -30,6 +30,7 @@ import (
 	"kit.getarcane.app/docker/streams/bus"
 	"kit.getarcane.app/updater/labels"
 
+	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
@@ -129,8 +130,9 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 	settingsService := newVersionSettingsService(t, true)
 	dockerService := newVersionDockerService(t, settingsService, server)
 	imageUpdateService := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
-		DB:            db,
-		DockerService: dockerService,
+		DB:              db,
+		ActivityService: activity.NewActivityService(db, settingsService),
+		DockerService:   dockerService,
 	})
 	svc := NewVersionService(VersionServiceParams{
 		HTTPClient:         httpClient,
@@ -212,7 +214,7 @@ func setupImageUpdateTestDB(t *testing.T) *database.DB {
 	dsn := fmt.Sprintf("file:image-update-test-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}, &event.Event{}, &project.Project{}))
+	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}, &event.Event{}, &project.Project{}, &registry.ContainerRegistry{}))
 	return &database.DB{DB: db}
 }
 
@@ -371,10 +373,11 @@ func TestVersionService_GetAppVersionInfoNextChannelUsesImageLabel(t *testing.T)
 	settingsService := newVersionSettingsService(t, true)
 	dockerService := newVersionDockerService(t, settingsService, server)
 	imageUpdateService := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
-		DB:            db,
-		DockerService: dockerService,
+		DB:              db,
+		ActivityService: activity.NewActivityService(db, settingsService),
+		DockerService:   dockerService,
 	})
-	registrySvc := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{})
+	registrySvc := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{DB: db})
 	svc := NewVersionService(VersionServiceParams{
 		HTTPClient:               httpClient,
 		AppVersion:               "2.8.0-next.65",
@@ -427,10 +430,11 @@ func TestVersionService_GetAppVersionInfoNextChannelLabelFailureFallsBackToDiges
 	settingsService := newVersionSettingsService(t, true)
 	dockerService := newVersionDockerService(t, settingsService, server)
 	imageUpdateService := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
-		DB:            db,
-		DockerService: dockerService,
+		DB:              db,
+		ActivityService: activity.NewActivityService(db, settingsService),
+		DockerService:   dockerService,
 	})
-	registrySvc := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{})
+	registrySvc := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{DB: db})
 	svc := NewVersionService(VersionServiceParams{
 		AppVersion:               "2.8.0-next.65",
 		Revision:                 "revision",
@@ -580,10 +584,11 @@ func TestVersionService_GetAppVersionInfoChannelCommitNotes(t *testing.T) {
 			settingsService := newVersionSettingsService(t, true)
 			dockerService := newVersionDockerService(t, settingsService, server)
 			imageUpdateService := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
-				DB:            db,
-				DockerService: dockerService,
+				DB:              db,
+				ActivityService: activity.NewActivityService(db, settingsService),
+				DockerService:   dockerService,
 			})
-			registrySvc := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{})
+			registrySvc := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{DB: db})
 			svc := NewVersionService(VersionServiceParams{
 				HTTPClient:               httpClient,
 				AppVersion:               "3.0.0-beta.44",

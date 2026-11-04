@@ -457,11 +457,7 @@ func (s *ContainerRegistryService) GetEnabledRegistries(ctx context.Context) ([]
 	return registries, nil
 }
 
-// GetRegistryAuthForImage allows a nil receiver: build.BuildService may hold no registry service.
 func (s *ContainerRegistryService) GetRegistryAuthForImage(ctx context.Context, imageRef string) (string, error) {
-	if s == nil {
-		return "", nil
-	}
 	named, err := reference.ParseNormalizedNamed(imageRef)
 	if err != nil {
 		return "", err
@@ -501,9 +497,6 @@ func (s *ContainerRegistryService) GetRegistryAuthForImage(ctx context.Context, 
 }
 
 func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context) (map[string]dockerregistry.AuthConfig, error) {
-	if s == nil {
-		return nil, nil
-	}
 	registries, err := s.GetEnabledRegistries(ctx)
 	if err != nil {
 		return nil, err
@@ -949,7 +942,7 @@ func registryOperationWithCredentials[T any](
 	fetch func(context.Context, *resolvedRegistryCredential) (T, error),
 ) (T, *types.ContainerRegistryDigestResult, error) {
 	registries, credErr := func() ([]ContainerRegistry, error) {
-		if len(externalCreds) > 0 || s == nil || s.db == nil {
+		if len(externalCreds) > 0 {
 			return nil, nil
 		}
 		return s.GetEnabledRegistries(ctx)

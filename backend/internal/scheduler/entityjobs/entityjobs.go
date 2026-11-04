@@ -3,7 +3,6 @@ package entityjobs
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
@@ -12,13 +11,20 @@ import (
 
 type (
 	// Registry owns one job per entity ID and admits one run per entity at a time.
-	// Without SetScheduler, as in agent mode, every registration is a no-op.
 	Registry struct {
 		lifecycleCtx   context.Context
 		scheduler      types.DynamicScheduler
 		admissionGate  *runs.Admission
 		jobPrefix      string
 		admissionScope string
+	}
+
+	Config struct {
+		Lifecycle      context.Context
+		Scheduler      types.DynamicScheduler
+		Admission      *runs.Admission
+		JobPrefix      string
+		AdmissionScope string
 	}
 )
 
@@ -29,42 +35,19 @@ const (
 
 // New creates a registry whose job names are jobPrefix+entityID and whose
 // admission keys are scoped to admissionScope.
-func New(jobPrefix, admissionScope string) *Registry {
-	return &Registry{jobPrefix: jobPrefix, admissionScope: admissionScope}
+func New(cfg Config) *Registry {
+	return &Registry{
+		lifecycleCtx:   cfg.Lifecycle,
+		scheduler:      cfg.Scheduler,
+		admissionGate:  cfg.Admission,
+		jobPrefix:      cfg.JobPrefix,
+		admissionScope: cfg.AdmissionScope,
+	}
 }
 
-// SetScheduler injects the scheduler, the admission gate, and the app lifecycle context scheduled runs execute on.
-//
-//nolint:contextcheck // scheduled runs must capture the app lifecycle context, not request contexts
-func (r *Registry) SetScheduler(ctx context.Context, scheduler types.DynamicScheduler, admissionGate *runs.Admission) error {
-	if scheduler == nil || admissionGate == nil {
-		return fmt.Errorf("%s scheduler dependencies unavailable", r.admissionScope)
-	}
-	if ctx == nil {
-		ctx = context.Background() //nolint:forbidigo // Fallback preserves the existing nil-context contract when no lifecycle was injected.
-	}
-	r.lifecycleCtx = ctx
-	r.scheduler = scheduler
-	r.admissionGate = admissionGate
-	return nil
-}
-
-// Enabled reports whether a scheduler has been injected.
-func (r *Registry) Enabled() bool { return r.scheduler != nil }
-
-// Scheduler returns the injected scheduler, or nil.
 func (r *Registry) Scheduler() types.DynamicScheduler { return r.scheduler }
 
-// Context returns the app lifecycle context, or a cancel-detached copy of ctx before one is injected.
-func (r *Registry) Context(ctx context.Context) context.Context {
-	if r.lifecycleCtx != nil {
-		return r.lifecycleCtx
-	}
-	if ctx != nil {
-		return context.WithoutCancel(ctx)
-	}
-	return context.Background() //nolint:forbidigo // Fallback preserves the existing nil-context contract when no lifecycle was injected.
-}
+func (r *Registry) Context() context.Context { return r.lifecycleCtx }
 
 // JobName returns the scheduler job name for entityID.
 func (r *Registry) JobName(entityID string) string { return r.jobPrefix + entityID }
@@ -81,22 +64,15 @@ func (r *Registry) Register(ctx context.Context, entityID string, schedule func(
 }
 
 // Add adds (or replaces) a prebuilt job, such as a flow.Job named with JobName.
-func (r *Registry) Add(ctx context.Context, job types.SchedulerJob) {
-	if r.scheduler == nil {
-		return
-	}
-	schedulerCtx := r.Context(ctx)
-	if err := r.scheduler.AddJob(schedulerCtx, job); err != nil {
-		slog.ErrorContext(schedulerCtx, "failed to register scheduled job", "job", job.Name(), "error", err)
+func (r *Registry) Add(_ context.Context, job types.SchedulerJob) {
+	if err := r.scheduler.AddJob(r.lifecycleCtx, job); err != nil {
+		slog.ErrorContext(r.lifecycleCtx, "failed to register scheduled job", "job", job.Name(), "error", err)
 	}
 }
 
 // Unregister removes the dynamic job for entityID.
-func (r *Registry) Unregister(ctx context.Context, entityID string) {
-	if r.scheduler == nil {
-		return
-	}
-	r.scheduler.RemoveJob(r.Context(ctx), r.JobName(entityID))
+func (r *Registry) Unregister(_ context.Context, entityID string) {
+	r.scheduler.RemoveJob(r.lifecycleCtx, r.JobName(entityID))
 }
 
 func (r *Registry) Acquire(ctx context.Context, entityID string) (*runs.Lease, error) {

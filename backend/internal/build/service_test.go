@@ -49,7 +49,7 @@ type (
 func TestBuildService_ResolveBuildRequest_PassesThroughLocalContext(t *testing.T) {
 	contextDir := t.TempDir()
 	svc := &BuildService{
-		gitCloneFn: func(context.Context, string, string, git.AuthConfig) (string, error) {
+		gitCloneFn: func(context.Context, string, string, git.AuthConfig, int) (string, error) {
 			require.FailNow(t, "git clone should not run for local contexts")
 			return "", nil
 		},
@@ -73,11 +73,12 @@ func TestBuildService_ResolveBuildRequest_ClonesRemoteGitContext(t *testing.T) {
 
 	cleanupCalled := false
 	svc := &BuildService{
+		gitRepository: newEmptyGitRepositoryService(t),
 		gitProbeFn: func(context.Context, string, git.AuthConfig) error {
 			require.FailNow(t, "git remote probe should not run for .git URLs")
 			return nil
 		},
-		gitCloneFn: func(_ context.Context, repositoryURL, ref string, auth git.AuthConfig) (string, error) {
+		gitCloneFn: func(_ context.Context, repositoryURL, ref string, auth git.AuthConfig, _ int) (string, error) {
 			assert.Equal(t, "https://github.com/getarcaneapp/arcane.git", repositoryURL)
 			assert.Equal(t, "main", ref)
 			assert.Equal(t, git.AuthConfig{}, auth)
@@ -109,13 +110,14 @@ func TestBuildService_ResolveBuildRequest_ProbesAndClonesRemoteGitContextWithout
 	probeCalled := false
 	cloneCalled := false
 	svc := &BuildService{
+		gitRepository: newEmptyGitRepositoryService(t),
 		gitProbeFn: func(_ context.Context, repositoryURL string, auth git.AuthConfig) error {
 			probeCalled = true
 			assert.Equal(t, "https://git.sr.ht/~jordanreger/nws-alerts", repositoryURL)
 			assert.Equal(t, git.AuthConfig{}, auth)
 			return nil
 		},
-		gitCloneFn: func(_ context.Context, repositoryURL, ref string, auth git.AuthConfig) (string, error) {
+		gitCloneFn: func(_ context.Context, repositoryURL, ref string, auth git.AuthConfig, _ int) (string, error) {
 			cloneCalled = true
 			assert.True(t, probeCalled)
 			assert.Equal(t, "https://git.sr.ht/~jordanreger/nws-alerts", repositoryURL)
@@ -141,12 +143,13 @@ func TestBuildService_ResolveBuildRequest_ProbesAndClonesRemoteGitContextWithout
 
 func TestBuildService_ResolveBuildRequest_RejectsNonGitHTTPContextViaProbeFailure(t *testing.T) {
 	svc := &BuildService{
+		gitRepository: newEmptyGitRepositoryService(t),
 		gitProbeFn: func(_ context.Context, repositoryURL string, auth git.AuthConfig) error {
 			assert.Equal(t, "https://example.com/archive.tar.gz", repositoryURL)
 			assert.Equal(t, git.AuthConfig{}, auth)
 			return assert.AnError
 		},
-		gitCloneFn: func(context.Context, string, string, git.AuthConfig) (string, error) {
+		gitCloneFn: func(context.Context, string, string, git.AuthConfig, int) (string, error) {
 			require.FailNow(t, "git clone should not run when remote probe fails")
 			return "", nil
 		},
@@ -204,7 +207,7 @@ func TestBuildService_ResolveBuildRequest_UsesSavedGitCredentials(t *testing.T) 
 				assert.Equal(t, "token-123", auth.Token)
 				return nil
 			},
-			gitCloneFn: func(_ context.Context, repositoryURL, _ string, auth git.AuthConfig) (string, error) {
+			gitCloneFn: func(_ context.Context, repositoryURL, _ string, auth git.AuthConfig, _ int) (string, error) {
 				assert.Equal(t, "https://github.com/getarcaneapp/private-build", repositoryURL)
 				assert.Equal(t, "http", auth.AuthType)
 				assert.Equal(t, "builder", auth.Username)
@@ -231,7 +234,7 @@ func TestBuildService_ResolveBuildRequest_UsesSavedGitCredentials(t *testing.T) 
 				require.FailNow(t, "git remote probe should not run for ssh URLs")
 				return nil
 			},
-			gitCloneFn: func(_ context.Context, _, _ string, auth git.AuthConfig) (string, error) {
+			gitCloneFn: func(_ context.Context, _, _ string, auth git.AuthConfig, _ int) (string, error) {
 				assert.Equal(t, "ssh", auth.AuthType)
 				assert.Equal(t, "ssh-private-key", auth.SSHKey)
 				assert.Equal(t, "strict", auth.SSHHostKeyVerification)
@@ -269,14 +272,16 @@ func TestBuildService_BuildImage_PreservesRemoteSourceInHistory(t *testing.T) {
 
 	captured := buildtypes.BuildRequest{}
 	svc := &BuildService{
-		db:       db,
-		settings: settingsService,
+		db:            db,
+		eventService:  event.NewEventService(db, &config.Config{}, nil),
+		settings:      settingsService,
+		gitRepository: newEmptyGitRepositoryService(t),
 		builder: testBuildRecorder{
 			onBuild: func(req buildtypes.BuildRequest) {
 				captured = req
 			},
 		},
-		gitCloneFn: func(_ context.Context, _, _ string, _ git.AuthConfig) (string, error) {
+		gitCloneFn: func(_ context.Context, _, _ string, _ git.AuthConfig, _ int) (string, error) {
 			return repoPath, nil
 		},
 		gitCleanupFn: func(string) error { return nil },
@@ -305,7 +310,7 @@ func TestBuildService_BuildImage_FailureRecordsHistoryAndEvent(t *testing.T) {
 	buildErr := errors.New("BuildKit could not load the image with the docker exporter")
 	svc := &BuildService{
 		db:           db,
-		eventService: event.NewEventService(db, nil, nil),
+		eventService: event.NewEventService(db, &config.Config{}, nil),
 		builder: testBuildRecorder{
 			err: buildErr,
 		},
@@ -364,7 +369,7 @@ func TestBuildService_BuildImage_PushRequiresImagesPushPermission(t *testing.T) 
 			built := false
 			svc := &BuildService{
 				db:           db,
-				eventService: event.NewEventService(db, nil, nil),
+				eventService: event.NewEventService(db, &config.Config{}, nil),
 				builder: testBuildRecorder{
 					onBuild: func(buildtypes.BuildRequest) {
 						built = true
@@ -407,7 +412,7 @@ func TestBuildService_BuildImage_FailureExporterErrorsAppearInOutputHistoryAndEv
 
 	svc := &BuildService{
 		db:           db,
-		eventService: event.NewEventService(db, nil, nil),
+		eventService: event.NewEventService(db, &config.Config{}, nil),
 		builder: testBuildRecorder{
 			err: buildErr,
 			onProgress: func(_ buildtypes.BuildRequest, w io.Writer) {
@@ -575,6 +580,14 @@ func setupBuildHistoryTestDB() (*database.DB, error) {
 		return nil, autoMigrateErr
 	}
 	return &database.DB{DB: db}, nil
+}
+
+func newEmptyGitRepositoryService(t *testing.T) *gitrepo.GitRepositoryService {
+	t.Helper()
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&gitrepo.GitRepository{}))
+	return gitrepo.NewGitRepositoryService(&database.DB{DB: gormDB}, t.TempDir(), nil, nil)
 }
 
 func createTestGitRepository(t *testing.T, db *database.DB, repository gitrepo.GitRepository) {

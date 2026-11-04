@@ -116,6 +116,7 @@ func TestService_FetchSwarmNodeIdentityViaAgent_UsesEnvironmentAccessToken(t *te
 	envSvc := environment.NewEnvironmentService(environment.EnvironmentServiceParams{
 		DB:              db,
 		SettingsService: settingsSvc,
+		RemoteTransport: environment.NewRemoteTransport(db, settingsSvc),
 	})
 
 	accessToken := "token-123"

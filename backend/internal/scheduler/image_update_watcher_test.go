@@ -168,18 +168,7 @@ func newImageUpdateWatcherForTest(t *testing.T,
 	if backfiller == nil {
 		backfiller = &projectImageRefsBackfillerFake{}
 	}
-	watcher := &ImageUpdateWatcher{
-		imageUpdateService: scanner,
-		settingsService:    settings,
-		dockerService:      dockerEventBusProviderFake{eventBus: eventBus},
-		projectService:     backfiller,
-		trigger:            make(chan struct{}, 1),
-		scheduleRefresh:    make(chan struct{}, 1),
-		debounce:           10 * time.Millisecond,
-		backfillRetry:      10 * time.Millisecond,
-		metadataReady:      make(chan struct{}),
-		stopped:            make(chan struct{}),
-	}
+	var watcher *ImageUpdateWatcher
 	coordinator, _ := newTestCoordinator(t, t.Context(), time.UTC, func(ctx context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
 		err := watcher.RunNow(jobcontext.WithExecution(ctx, run, nil))
 		if err != nil {
@@ -187,7 +176,19 @@ func newImageUpdateWatcherForTest(t *testing.T,
 		}
 		return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 	})
-	watcher.SetCoordinator(coordinator)
+	watcher = &ImageUpdateWatcher{
+		imageUpdateService: scanner,
+		settingsService:    settings,
+		dockerService:      dockerEventBusProviderFake{eventBus: eventBus},
+		projectService:     backfiller,
+		coordinator:        coordinator,
+		trigger:            make(chan struct{}, 1),
+		scheduleRefresh:    make(chan struct{}, 1),
+		debounce:           10 * time.Millisecond,
+		backfillRetry:      10 * time.Millisecond,
+		metadataReady:      make(chan struct{}),
+		stopped:            make(chan struct{}),
+	}
 	return watcher
 }
 

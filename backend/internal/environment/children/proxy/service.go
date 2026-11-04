@@ -12,10 +12,13 @@ import (
 	"net/http"
 	"time"
 
+	"gorm.io/gorm"
+
 	"kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/sys/crypto"
 
+	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/gitrepo"
 	"getarcane.dev/arcane/v3/internal/middleware"
@@ -45,8 +48,6 @@ type (
 	}
 )
 
-// New builds the remote transport. syncGate is owned by the parent so it can
-// forget delivery state when an environment reconnects.
 func New(db *database.DB, settingsService *settings.SettingsService, syncGate *concurrency.SyncGate) *Service {
 	return &Service{
 		db:              db,
@@ -68,13 +69,82 @@ func NewTarget(id, name string, accessToken *string) (*Target, error) {
 	}, nil
 }
 
+func (s *Service) TargetByID(ctx context.Context, envID string) (*Target, error) {
+	var row struct {
+		AccessToken *string
+		ID          string
+		Name        string
+	}
+	if err := s.db.WithContext(ctx).
+		Table("environments").
+		Select("id", "name", "access_token").
+		Where("id = ?", envID).
+		Take(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("failed to get environment: %w", common.Classify(common.ErrNotFound, errors.New("environment not found")))
+		}
+		return nil, fmt.Errorf("failed to get environment: %w", err)
+	}
+
+	return NewTarget(row.ID, row.Name, row.AccessToken)
+}
+
+func (s *Service) ProxyJSONRequest(ctx context.Context, envID, method, path string, body []byte, out any) error {
+	proxyCtx, cancel := s.Context(ctx)
+	defer cancel()
+
+	target, err := s.TargetByID(proxyCtx, envID)
+	if err != nil {
+		return err
+	}
+
+	return s.JSON(proxyCtx, target, method, path, body, out)
+}
+
+func (s *Service) ExecuteRemoteRequest(ctx context.Context, envID, method, path string, body []byte) (*agent.RemoteResponse, error) {
+	target, err := s.TargetByID(ctx, envID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.execute(ctx, target, method, path, body)
+}
+
+func (s *Service) ProxyRequest(ctx context.Context, envID, method, path string, body []byte) ([]byte, int, error) {
+	proxyCtx, cancel := s.Context(ctx)
+	defer cancel()
+
+	resp, err := s.ExecuteRemoteRequest(proxyCtx, envID, method, path, body)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return resp.Body, resp.StatusCode, nil
+}
+
+func (s *Service) ForgetSyncState(envID string) {
+	s.syncGate.Forget(envID)
+}
+
+func (s *Service) ListEnabledRemoteEnvironmentIDs(ctx context.Context) ([]string, error) {
+	var ids []string
+	if err := s.db.WithContext(ctx).
+		Table("environments").
+		Where("enabled = ?", true).
+		Where("id <> ?", "0").
+		Where("access_token IS NOT NULL AND TRIM(access_token) <> ''").
+		Pluck("id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("failed to list enabled remote environments: %w", err)
+	}
+	return ids, nil
+}
+
 // Context bounds a proxied request by the configured proxy timeout.
 func (s *Service) Context(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().ProxyRequestTimeout.AsInt(), timeouts.DefaultProxyRequest))
 }
 
-// Execute sends one request to the target agent.
-func (s *Service) Execute(
+func (s *Service) execute(
 	ctx context.Context,
 	target *Target,
 	method string,
@@ -106,7 +176,11 @@ func (s *Service) Execute(
 	return resp, nil
 }
 
-func (s *Service) Stream(ctx context.Context, target *Target, path string) (*http.Response, error) {
+func (s *Service) OpenRemoteStream(ctx context.Context, envID, path string) (*http.Response, error) {
+	target, err := s.TargetByID(ctx, envID)
+	if err != nil {
+		return nil, err
+	}
 	tunnel, ok := agent.GetRegistry().WaitForActive(ctx, target.id, agent.DefaultTunnelAcquireTimeout).Get()
 	if !ok {
 		return nil, &agent.TransportError{Err: agent.ErrEnvironmentUnavailable}
@@ -138,7 +212,7 @@ func (s *Service) JSON(
 	body []byte,
 	out any,
 ) error {
-	resp, err := s.Execute(ctx, target, method, path, body)
+	resp, err := s.execute(ctx, target, method, path, body)
 	if err != nil {
 		return err
 	}
@@ -157,8 +231,11 @@ func (s *Service) JSON(
 	return nil
 }
 
-// SyncRegistries syncs all registries from this manager to a remote environment
-func (s *Service) SyncRegistries(ctx context.Context, target *Target) error {
+func (s *Service) SyncRegistriesToEnvironment(ctx context.Context, envID string) error {
+	target, targetErr := s.TargetByID(ctx, envID)
+	if targetErr != nil {
+		return targetErr
+	}
 	return s.fanOutSyncToEnvironment(ctx, target, "registries", "/api/registries/sync",
 		func(reg registry.ContainerRegistry) (types.ContainerRegistrySync, bool, error) {
 			registryType, typeErr := registry.NormalizeRegistryType(reg.RegistryType)
@@ -195,8 +272,11 @@ func (s *Service) SyncRegistries(ctx context.Context, target *Target) error {
 	)
 }
 
-// SyncS3Destinations sends manager-owned destinations to one remote environment.
-func (s *Service) SyncS3Destinations(ctx context.Context, target *Target) error {
+func (s *Service) SyncS3DestinationsToEnvironment(ctx context.Context, envID string) error {
+	target, targetErr := s.TargetByID(ctx, envID)
+	if targetErr != nil {
+		return targetErr
+	}
 	return s.fanOutSyncToEnvironment(ctx, target, "S3 destinations", "/api/backups/s3/sync",
 		func(destination s3.S3Destination) (types.S3Destination, bool, error) {
 			secret, err := crypto.Decrypt(destination.SecretAccessKey)
@@ -211,8 +291,11 @@ func (s *Service) SyncS3Destinations(ctx context.Context, target *Target) error 
 	)
 }
 
-// SyncRepositories syncs all git repositories from this manager to a remote environment
-func (s *Service) SyncRepositories(ctx context.Context, target *Target) error {
+func (s *Service) SyncRepositoriesToEnvironment(ctx context.Context, envID string) error {
+	target, targetErr := s.TargetByID(ctx, envID)
+	if targetErr != nil {
+		return targetErr
+	}
 	return s.fanOutSyncToEnvironment(ctx, target, "git repositories", "/api/git/repositories/sync",
 		func(repo gitrepo.GitRepository) (types.GitRepositorySync, bool, error) {
 			decrypt := func(value, what string) (string, error) {

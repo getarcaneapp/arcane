@@ -133,7 +133,7 @@ func newGitOpsAdmissionGateForTest(t testing.TB) *runs.Admission {
 	return gate
 }
 
-func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *database.DB, string) {
+func setupGitOpsSyncDirectoryTestService(t *testing.T, scheduler types.DynamicScheduler, gate *runs.Admission) (*GitOpsSyncService, *database.DB, string) {
 	t.Helper()
 
 	ctx := t.Context()
@@ -160,6 +160,9 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 		ProjectService:  projectService,
 		EventService:    eventService,
 		SettingsService: settingsService,
+		Ctx:             t.Context(),
+		Scheduler:       scheduler,
+		Admission:       gate,
 	}), db, projectsDir
 }
 
@@ -169,8 +172,7 @@ func TestGitOpsSyncService_OverlappingSyncWaitsThenRuns(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, admitted)
 
-	service, _, _ := setupGitOpsSyncDirectoryTestService(t)
-	require.NoError(t, service.SetScheduler(t.Context(), &gitOpsSyncTestScheduler{}, gate))
+	service, _, _ := setupGitOpsSyncDirectoryTestService(t, &gitOpsSyncTestScheduler{}, gate)
 	done := make(chan error, 1)
 	go func() {
 		_, syncErr := service.PerformSync(t.Context(), SyncRequest{EnvironmentID: "0", SyncID: "sync-id"})
@@ -231,15 +233,17 @@ func setupGitOpsSyncRemoteTestService(t *testing.T, files map[string]string) (*G
 	})
 	repoService := gitrepo.NewGitRepositoryService(db, t.TempDir(), eventService, settingsService)
 
+	testScheduler := &gitOpsSyncTestScheduler{}
 	service := NewGitOpsSyncService(GitOpsSyncServiceParams{
 		DB:              db,
 		RepoService:     repoService,
 		ProjectService:  projectService,
 		EventService:    eventService,
 		SettingsService: settingsService,
+		Ctx:             ctx,
+		Scheduler:       testScheduler,
+		Admission:       newGitOpsAdmissionGateForTest(t),
 	})
-	testScheduler := &gitOpsSyncTestScheduler{}
-	require.NoError(t, service.SetScheduler(ctx, testScheduler, newGitOpsAdmissionGateForTest(t)))
 
 	bare := filepath.Join(t.TempDir(), "sync.git")
 	_, err = gogit.PlainInit(bare, true)
@@ -433,7 +437,7 @@ func TestGitOpsSyncService_GetOrCreateProject_FailsWhenBoundProjectMissing(t *te
 
 func TestGitOpsSyncService_GetSyncByID_ReturnsNotFoundError(t *testing.T) {
 	ctx := t.Context()
-	svc, _, _ := setupGitOpsSyncDirectoryTestService(t)
+	svc, _, _ := setupGitOpsSyncDirectoryTestService(t, &gitOpsSyncTestScheduler{}, nil)
 
 	_, err := svc.GetSyncByID(ctx, "0", "missing-sync")
 
@@ -442,7 +446,7 @@ func TestGitOpsSyncService_GetSyncByID_ReturnsNotFoundError(t *testing.T) {
 
 func TestGitOpsSyncService_CleanupOrphanedSyncsOnStartup_DeletesOnlyOrphans(t *testing.T) {
 	ctx := t.Context()
-	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
+	svc, db, _ := setupGitOpsSyncDirectoryTestService(t, &gitOpsSyncTestScheduler{}, nil)
 	require.NoError(t, db.AutoMigrate(&environment.Environment{}))
 
 	require.NoError(t, db.Create(&environment.Environment{
@@ -494,7 +498,8 @@ func TestGitOpsSyncService_CleanupOrphanedSyncsOnStartup_DeletesOnlyOrphans(t *t
 
 func TestGitOpsSyncService_RegisterAutoSyncJobsOnStartup_SkipsOrphans(t *testing.T) {
 	ctx := t.Context()
-	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
+	scheduler := &gitOpsSyncTestScheduler{}
+	svc, db, _ := setupGitOpsSyncDirectoryTestService(t, scheduler, newGitOpsAdmissionGateForTest(t))
 	require.NoError(t, db.AutoMigrate(&environment.Environment{}))
 
 	require.NoError(t, db.Create(&environment.Environment{
@@ -524,8 +529,6 @@ func TestGitOpsSyncService_RegisterAutoSyncJobsOnStartup_SkipsOrphans(t *testing
 		LastSyncAt:    &now,
 	}).Error)
 
-	scheduler := &gitOpsSyncTestScheduler{}
-	require.NoError(t, svc.SetScheduler(ctx, scheduler, newGitOpsAdmissionGateForTest(t)))
 	svc.RegisterAutoSyncJobsOnStartup(ctx)
 
 	require.Equal(t, []string{entityjobs.GitOpsSyncJobPrefix + "sync-live"}, scheduler.added)
@@ -534,7 +537,7 @@ func TestGitOpsSyncService_RegisterAutoSyncJobsOnStartup_SkipsOrphans(t *testing
 
 func TestGitOpsSyncService_DeleteSync_DeletesStaleProjectReference(t *testing.T) {
 	ctx := t.Context()
-	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
+	svc, db, _ := setupGitOpsSyncDirectoryTestService(t, &gitOpsSyncTestScheduler{}, nil)
 	missingProjectID := "missing-project"
 
 	syncRecord := &projectpkg.GitOpsSync{
@@ -561,9 +564,8 @@ func TestGitOpsSyncService_DeleteSync_DeletesStaleProjectReference(t *testing.T)
 // does not match the row's env ("5"), yet the delete must succeed and stop the job.
 func TestGitOpsSyncService_DeleteSync_SucceedsWhenEnvironmentMismatched(t *testing.T) {
 	ctx := t.Context()
-	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
 	scheduler := &gitOpsSyncTestScheduler{}
-	require.NoError(t, svc.SetScheduler(ctx, scheduler, newGitOpsAdmissionGateForTest(t)))
+	svc, db, _ := setupGitOpsSyncDirectoryTestService(t, scheduler, newGitOpsAdmissionGateForTest(t))
 
 	syncRecord := &projectpkg.GitOpsSync{
 		ID:            "sync-env-mismatch",
@@ -586,7 +588,7 @@ func TestGitOpsSyncService_DeleteSync_SucceedsWhenEnvironmentMismatched(t *testi
 // flag is cleared keyed on the sync id even when the sync's ProjectID is nil.
 func TestGitOpsSyncService_DeleteSync_ClearsOrphanedManagedFlag(t *testing.T) {
 	ctx := t.Context()
-	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
+	svc, db, _ := setupGitOpsSyncDirectoryTestService(t, &gitOpsSyncTestScheduler{}, nil)
 
 	syncID := "sync-orphan-flag"
 	syncRecord := &projectpkg.GitOpsSync{
@@ -617,14 +619,13 @@ func TestGitOpsSyncService_DeleteSync_ClearsOrphanedManagedFlag(t *testing.T) {
 // (e.g. deleted out-of-band via raw SQL) unregisters its own job instead of firing forever.
 func TestGitOpsSyncWorkflow_UnregistersMissingSync(t *testing.T) {
 	ctx := t.Context()
-	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
+	scheduler := &gitOpsSyncTestScheduler{}
+	svc, db, _ := setupGitOpsSyncDirectoryTestService(t, scheduler, newGitOpsAdmissionGateForTest(t))
 	require.NoError(t, db.AutoMigrate(&activity.Activity{}, &activity.ActivityMessage{}))
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	require.NoError(t, svc.RegisterWorkflows(harness.Engine))
 	harness.Start(t)
 	flowtest.AssertDefinitions(t, harness)
-	scheduler := &gitOpsSyncTestScheduler{}
-	require.NoError(t, svc.SetScheduler(ctx, scheduler, newGitOpsAdmissionGateForTest(t)))
 
 	outcome, err := harness.Engine.Run(ctx, svc.syncWorkflow, syncTarget{EnvironmentID: "0", SyncID: "ghost-sync"}, activitylib.StartRequest{}, nil)
 	require.NoError(t, err)
@@ -637,7 +638,7 @@ func TestGitOpsSyncWorkflow_UnregistersMissingSync(t *testing.T) {
 // forms) while leaving real project directories untouched.
 func TestGitOpsSyncService_CleanupLeakedScratchDirsOnStartup_RemovesOrphans(t *testing.T) {
 	ctx := t.Context()
-	svc, _, projectsDir := setupGitOpsSyncDirectoryTestService(t)
+	svc, _, projectsDir := setupGitOpsSyncDirectoryTestService(t, &gitOpsSyncTestScheduler{}, nil)
 
 	mkdir := func(name string) string {
 		p := filepath.Join(projectsDir, name)
@@ -666,7 +667,7 @@ func TestGitOpsSyncService_CleanupLeakedScratchDirsOnStartup_RemovesOrphans(t *t
 // startup sweep purges leaked git clone scratch dirs from the git work dir.
 func TestGitOpsSyncService_CleanupLeakedCloneDirsOnStartup_RemovesAll(t *testing.T) {
 	ctx := t.Context()
-	svc, _, _ := setupGitOpsSyncDirectoryTestService(t)
+	svc, _, _ := setupGitOpsSyncDirectoryTestService(t, &gitOpsSyncTestScheduler{}, nil)
 
 	workDir := t.TempDir()
 	svc.repoService = &gitrepo.GitRepositoryService{Client: git.NewClient(workDir)}
@@ -714,7 +715,7 @@ func TestProjectsRemoveStaleComposeFiles_RemovesStaleCustomComposeFiles(t *testi
 
 func TestGitOpsSyncService_ReconcileDirectorySyncProjectsOnStartup_SkipsAmbiguousDuplicates(t *testing.T) {
 	ctx := t.Context()
-	svc, db, projectsDir := setupGitOpsSyncDirectoryTestService(t)
+	svc, db, projectsDir := setupGitOpsSyncDirectoryTestService(t, &gitOpsSyncTestScheduler{}, nil)
 
 	for _, dirName := range []string{"Radarr-3", "Radarr-30"} {
 		projectPath := filepath.Join(projectsDir, dirName)
@@ -873,7 +874,7 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 func setupLifecycleValidationService(t *testing.T) (*GitOpsSyncService, context.Context) {
 	t.Helper()
 	ctx := t.Context()
-	svc, _, _ := setupGitOpsSyncDirectoryTestService(t)
+	svc, _, _ := setupGitOpsSyncDirectoryTestService(t, &gitOpsSyncTestScheduler{}, nil)
 	require.NoError(t, svc.settingsService.UpdateSetting(ctx, "lifecycleEnabled", "true"))
 	return svc, ctx
 }
@@ -884,7 +885,7 @@ func TestValidateLifecycleConfig_AllNilNoError(t *testing.T) {
 }
 
 func TestValidateLifecycleConfig_RejectsWhenGloballyDisabled(t *testing.T) {
-	svc, _, _ := setupGitOpsSyncDirectoryTestService(t)
+	svc, _, _ := setupGitOpsSyncDirectoryTestService(t, &gitOpsSyncTestScheduler{}, nil)
 	ctx := t.Context()
 	// lifecycleEnabled defaults to false; do not enable.
 	err := svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
@@ -1191,19 +1192,21 @@ func setupGitOpsBackupTestService(t *testing.T) *backupTestEnv {
 	})
 	repoService := gitrepo.NewGitRepositoryService(db, t.TempDir(), eventService, settingsService)
 
+	scheduler := &gitOpsBackupTestScheduler{}
 	service := NewGitOpsSyncService(GitOpsSyncServiceParams{
 		DB:              db,
 		RepoService:     repoService,
 		ProjectService:  projectService,
 		EventService:    eventService,
 		SettingsService: settingsService,
+		Ctx:             ctx,
+		Scheduler:       scheduler,
+		Admission:       newGitOpsAdmissionGateForTest(t),
 	})
 	// The test scheduler runs submitted jobs inline, which runs the sync workflow.
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	require.NoError(t, service.RegisterWorkflows(harness.Engine))
 	harness.Start(t)
-	scheduler := &gitOpsBackupTestScheduler{}
-	require.NoError(t, service.SetScheduler(ctx, scheduler, newGitOpsAdmissionGateForTest(t)))
 
 	bare := filepath.Join(t.TempDir(), "backups.git")
 	_, err = gogit.PlainInit(bare, true)
@@ -1645,7 +1648,7 @@ func TestGitOpsBackup_SaveSignalMarksPendingAndRunsAfterDebounce(t *testing.T) {
 	firstHead := env.remoteHead(t)
 
 	env.service.backups.debounce = 50 * time.Millisecond
-	env.service.SubscribeProjectFileChanges(t.Context())
+	env.service.SubscribeProjectFileChanges()
 
 	writeBackupProjectFile(t, env.projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.29-alpine\n")
 	env.service.projectService.FilesChanged.Publish(env.project.ID)
@@ -1681,7 +1684,7 @@ func TestGitOpsBackup_SaveSignalOnlyMarksPendingWhenAutoSyncIsOff(t *testing.T) 
 	require.NoError(t, err)
 
 	env.service.backups.debounce = 50 * time.Millisecond
-	env.service.SubscribeProjectFileChanges(t.Context())
+	env.service.SubscribeProjectFileChanges()
 
 	writeBackupProjectFile(t, env.projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.29-alpine\n")
 	env.service.projectService.FilesChanged.Publish(env.project.ID)

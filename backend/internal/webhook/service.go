@@ -187,7 +187,7 @@ func (s *WebhookService) LoadTokenHashes(ctx context.Context) error {
 // IsKnownToken checks stored token identity without decrypting or querying the database.
 // TriggerByToken still checks existence and enabled state before accepting an action.
 func (s *WebhookService) IsKnownToken(raw string) bool {
-	if s == nil || len(raw) > len(webhookTokenPrefix)+webhookTokenHexLen || !strings.HasPrefix(raw, webhookTokenPrefix) {
+	if len(raw) > len(webhookTokenPrefix)+webhookTokenHexLen || !strings.HasPrefix(raw, webhookTokenPrefix) {
 		return false
 	}
 	hash := kit.SHA256Hex(raw)

@@ -63,7 +63,6 @@ type (
 		triggeredAt            atomic.Int64
 		debounce               time.Duration
 		backfillRetry          time.Duration
-		dispatchMu             sync.RWMutex
 		metadataReadyOnce      sync.Once
 		stoppedOnce            sync.Once
 		runMu                  sync.Mutex
@@ -81,6 +80,7 @@ type (
 		SettingsService    *settings.SettingsService
 		DockerService      *docker.DockerClientService
 		ProjectService     *project.ProjectService
+		Coordinator        *runs.Coordinator
 	}
 )
 
@@ -96,6 +96,7 @@ func NewImageUpdateWatcher(p ImageUpdateWatcherParams) *ImageUpdateWatcher {
 		settingsService:    p.SettingsService,
 		dockerService:      p.DockerService,
 		projectService:     p.ProjectService,
+		coordinator:        p.Coordinator,
 		debounce:           imageUpdateWatcherDebounce,
 		backfillRetry:      imageUpdateWatcherBackfillRetry,
 		metadataReady:      make(chan struct{}),
@@ -233,14 +234,7 @@ func (w *ImageUpdateWatcher) submitTriggeredScan(ctx context.Context, generation
 	var err error
 	func() {
 		defer concurrency.RecoverToError(&err, "image scan admission")
-		w.dispatchMu.RLock()
-		coordinator := w.coordinator
-		w.dispatchMu.RUnlock()
-		if coordinator == nil {
-			err = errors.New("durable job coordinator unavailable")
-			return
-		}
-		_, err = coordinator.Submit(ctx, types.SchedulerRequest{JobID: w.Name(), EnvironmentID: "0", Trigger: "watcher"})
+		_, err = w.coordinator.Submit(ctx, types.SchedulerRequest{JobID: w.Name(), EnvironmentID: "0", Trigger: "watcher"})
 	}()
 	if err == nil {
 		w.acknowledgedGeneration.Store(generation)
@@ -307,19 +301,13 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) (err error) {
 	if w.scanRunning.Load() {
 		return common.Classify(common.ErrImageScanInProgress, errors.New("an image update check is already in progress"))
 	}
-	w.dispatchMu.RLock()
-	coordinator := w.coordinator
-	w.dispatchMu.RUnlock()
-	if coordinator == nil {
-		return errors.New("durable job coordinator unavailable")
-	}
-	run, err := coordinator.Submit(ctx, types.SchedulerRequest{JobID: w.Name(), EnvironmentID: "0", Trigger: "manual"})
+	run, err := w.coordinator.Submit(ctx, types.SchedulerRequest{JobID: w.Name(), EnvironmentID: "0", Trigger: "manual"})
 	if err != nil {
 		return err
 	}
 	// Back off from 50 ms to 1 s so quick runs return fast without polling long scans hard.
 	for attempt := 0; ; attempt++ {
-		current, getErr := coordinator.Get(ctx, run.EnvironmentID, run.JobID, run.ID)
+		current, getErr := w.coordinator.Get(ctx, run.EnvironmentID, run.JobID, run.ID)
 		if getErr != nil {
 			return getErr
 		}
@@ -372,25 +360,13 @@ func (w *ImageUpdateWatcher) backfillProjectImageRefs(ctx context.Context, attem
 }
 
 func (w *ImageUpdateWatcher) refreshSchedule(ctx context.Context) error {
-	w.dispatchMu.RLock()
-	coordinator := w.coordinator
-	w.dispatchMu.RUnlock()
-	if coordinator == nil {
-		return errors.New("durable job coordinator unavailable")
-	}
 	if !w.settingsService.GetBoolSetting(ctx, "pollingEnabled") {
-		return coordinator.Install(ctx, w.Name(), "")
+		return w.coordinator.Install(ctx, w.Name(), "")
 	}
 	spec := w.settingsService.GetStringSetting(ctx, "pollingInterval")
 	if _, err := cron.ParseStandard(spec); err != nil {
 		slog.WarnContext(ctx, "invalid pollingInterval cron expression; using default schedule", "pollingInterval", spec, "error", err)
 		spec = imageUpdateWatcherDefaultSchedule
 	}
-	return coordinator.Install(ctx, w.Name(), spec)
-}
-
-func (w *ImageUpdateWatcher) SetCoordinator(coordinator *runs.Coordinator) {
-	w.dispatchMu.Lock()
-	w.coordinator = coordinator
-	w.dispatchMu.Unlock()
+	return w.coordinator.Install(ctx, w.Name(), spec)
 }

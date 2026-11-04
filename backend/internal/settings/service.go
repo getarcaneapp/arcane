@@ -892,9 +892,6 @@ func (s *SettingsService) IsFeatureEnabled(ctx context.Context, id types.Feature
 	if !ok {
 		return false
 	}
-	if s == nil {
-		return definition.DefaultEnabled
-	}
 	cfg := s.GetSettingsOrDefaults(ctx)
 	value, _, _, err := cfg.FieldByKey(definition.SettingKey)
 	if err != nil || value == "" {

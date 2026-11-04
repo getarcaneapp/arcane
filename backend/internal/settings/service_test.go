@@ -1331,14 +1331,11 @@ func TestSettingsServiceEffectiveSnapshotMaterialized(t *testing.T) {
 }
 
 func TestSettingsService_FeatureDefaultsAndUnknownFeature(t *testing.T) {
-	var svc *SettingsService
-	require.True(t, svc.IsFeatureEnabled(t.Context(), types.FeatureVulnerabilityManagement))
-	require.NoError(t, svc.RequireFeature(t.Context(), types.FeatureVulnerabilityManagement))
-	require.False(t, svc.IsFeatureEnabled(t.Context(), types.FeatureID("unknown")))
-
 	svc, err := newSettingsServiceForTest(t, t.Context(), setupSettingsTestDB(t))
 	require.NoError(t, err)
 	require.True(t, svc.IsFeatureEnabled(t.Context(), types.FeatureVulnerabilityManagement))
+	require.NoError(t, svc.RequireFeature(t.Context(), types.FeatureVulnerabilityManagement))
+	require.False(t, svc.IsFeatureEnabled(t.Context(), types.FeatureID("unknown")))
 	require.True(t, slices.ContainsFunc(svc.SettingsSnapshot(SettingVisibilityPublic).Settings, func(state types.SettingState) bool {
 		return state.Key == types.FeatureVulnerabilityManagementSettingKey && state.Value == "true"
 	}))
@@ -1420,9 +1417,6 @@ func TestSettingsService_RejectInvalidFeatureBoolean(t *testing.T) {
 }
 
 func TestSettingsService_SwarmFeatureDefaultsOffAndPersists(t *testing.T) {
-	var nilService *SettingsService
-	require.False(t, nilService.IsFeatureEnabled(t.Context(), types.FeatureSwarm))
-
 	svc, err := newSettingsServiceForTest(t, t.Context(), setupSettingsTestDB(t))
 	require.NoError(t, err)
 	require.False(t, svc.IsFeatureEnabled(t.Context(), types.FeatureSwarm))

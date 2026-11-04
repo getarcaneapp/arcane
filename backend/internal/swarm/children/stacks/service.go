@@ -250,21 +250,16 @@ func (s *Service) DeployStack(ctx context.Context, environmentID string, req typ
 	)
 
 	if deployStackErr := libswarm.DeployStack(ctx, dockerClient, libswarm.StackDeployOptions{
-		Name:             stackName,
-		ComposeContent:   req.ComposeContent,
-		OverrideContent:  req.OverrideContent,
-		EnvContent:       req.EnvContent,
-		WithRegistryAuth: req.WithRegistryAuth,
-		RegistryAuthForImage: func(ctx context.Context, imageRef string) (string, error) {
-			if s.registryAuth == nil {
-				return "", nil
-			}
-			return s.registryAuth(ctx, imageRef)
-		},
-		Prune:        req.Prune,
-		ResolveImage: req.ResolveImage,
-		WorkingDir:   workingDir,
-		PathMapper:   pm,
+		Name:                 stackName,
+		ComposeContent:       req.ComposeContent,
+		OverrideContent:      req.OverrideContent,
+		EnvContent:           req.EnvContent,
+		WithRegistryAuth:     req.WithRegistryAuth,
+		RegistryAuthForImage: s.registryAuth,
+		Prune:                req.Prune,
+		ResolveImage:         req.ResolveImage,
+		WorkingDir:           workingDir,
+		PathMapper:           pm,
 	}); deployStackErr != nil {
 		return nil, classifySwarmStackError(deployStackErr)
 	}

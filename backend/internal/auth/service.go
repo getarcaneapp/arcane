@@ -11,13 +11,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"uuid"
 
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwt"
-	"github.com/samber/hot"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 
@@ -53,44 +51,36 @@ type (
 		BrowserRefresh   string    `json:"-"`
 	}
 
-	verifiedTokenEntry struct {
-		TokenExpiresAt   time.Time
-		SessionExpiresAt time.Time
-		SessionID        string
-		User             user.User
-	}
-
 	AuthService struct {
-		userService        *user.UserService
-		settingsService    *settings.SettingsService
-		eventService       *event.EventService
-		sessionService     *session.SessionService
-		roleService        *role.RoleService
-		environmentService *environment.EnvironmentService
-		versionService     *version.VersionService
-		signingKey         *mldsa.PrivateKey
-		config             *config.Config
-		tokenCache         *hot.HotCache[string, verifiedTokenEntry]
-		dummyHash          string
-		browserSigningKey  []byte
-		refreshExpiry      time.Duration
-		cacheGen           atomic.Uint64
-		signingKeyMu       sync.Mutex
-		cacheFillMu        sync.Mutex
-		dummyMu            sync.Mutex
+		userService       *user.UserService
+		settingsService   *settings.SettingsService
+		eventService      *event.EventService
+		sessionService    *session.SessionService
+		roleService       *role.RoleService
+		environmentLister *environment.Lister
+		versionService    *version.VersionService
+		signingKey        *mldsa.PrivateKey
+		config            *config.Config
+		tokens            *TokenCache
+		dummyHash         string
+		browserSigningKey []byte
+		refreshExpiry     time.Duration
+		signingKeyMu      sync.Mutex
+		dummyMu           sync.Mutex
 	}
 
 	AuthServiceParams struct {
 		fx.In
 
-		UserService        *user.UserService
-		SettingsService    *settings.SettingsService
-		EventService       *event.EventService
-		SessionService     *session.SessionService
-		RoleService        *role.RoleService
-		EnvironmentService *environment.EnvironmentService
-		VersionService     *version.VersionService
-		Config             *config.Config
+		UserService       *user.UserService
+		SettingsService   *settings.SettingsService
+		EventService      *event.EventService
+		SessionService    *session.SessionService
+		RoleService       *role.RoleService
+		EnvironmentLister *environment.Lister
+		TokenCache        *TokenCache
+		VersionService    *version.VersionService
+		Config            *config.Config
 	}
 
 	ChangePasswordRequest struct {
@@ -135,19 +125,16 @@ func (s *AuthService) dummyPasswordHash(ctx context.Context) (string, error) {
 
 func NewAuthService(p AuthServiceParams) *AuthService {
 	return &AuthService{
-		userService:        p.UserService,
-		settingsService:    p.SettingsService,
-		eventService:       p.EventService,
-		sessionService:     p.SessionService,
-		roleService:        p.RoleService,
-		environmentService: p.EnvironmentService,
-		versionService:     p.VersionService,
-		refreshExpiry:      p.Config.JWTRefreshExpiry,
-		config:             p.Config,
-		tokenCache: hot.NewHotCache[string, verifiedTokenEntry](hot.LRU, 4096).
-			WithTTL(60 * time.Second).
-			WithJanitor().
-			Build(),
+		userService:       p.UserService,
+		settingsService:   p.SettingsService,
+		eventService:      p.EventService,
+		sessionService:    p.SessionService,
+		roleService:       p.RoleService,
+		environmentLister: p.EnvironmentLister,
+		versionService:    p.VersionService,
+		refreshExpiry:     p.Config.JWTRefreshExpiry,
+		config:            p.Config,
+		tokens:            p.TokenCache,
 	}
 }
 
@@ -177,7 +164,7 @@ func (s *AuthService) GetSessionBootstrap(ctx context.Context, userID string, ps
 	})
 	group.Go(func() error {
 		var err error
-		environments, err = s.environmentService.ListAccessibleEnvironments(groupCtx, ps, pagination.QueryParams{Limit: -1})
+		environments, err = s.environmentLister.ListAccessibleEnvironments(groupCtx, ps, pagination.QueryParams{Limit: -1})
 		if err != nil {
 			return fmt.Errorf("failed to list environments: %w", err)
 		}
@@ -777,7 +764,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string, met
 
 func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*user.User, string, error) {
 	tokenHash := kit.SHA256Hex(accessToken)
-	if localUser, sessionID, ok := s.cachedVerification(tokenHash); ok {
+	if localUser, sessionID, ok := s.tokens.lookup(tokenHash); ok {
 		return localUser, sessionID, nil
 	}
 	signingKey, err := s.loadSigningKey(ctx)
@@ -793,7 +780,7 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*use
 
 func (s *AuthService) VerifyBrowserToken(ctx context.Context, browserToken string) (*user.User, string, error) {
 	tokenHash := "browser:" + kit.SHA256Hex(browserToken)
-	if localUser, sessionID, ok := s.cachedVerification(tokenHash); ok {
+	if localUser, sessionID, ok := s.tokens.lookup(tokenHash); ok {
 		return localUser, sessionID, nil
 	}
 	algorithm, ok := signedTokenAlgorithm(browserToken)
@@ -818,21 +805,8 @@ func (s *AuthService) VerifyBrowserToken(ctx context.Context, browserToken strin
 	}
 }
 
-func (s *AuthService) cachedVerification(tokenHash string) (*user.User, string, bool) {
-	cached, ok, _ := s.tokenCache.Get(tokenHash)
-	if !ok {
-		return nil, "", false
-	}
-	now := time.Now()
-	if now.After(cached.TokenExpiresAt) || now.After(cached.SessionExpiresAt) {
-		s.tokenCache.Delete(tokenHash)
-		return nil, "", false
-	}
-	return new(cached.User), cached.SessionID, true
-}
-
 func (s *AuthService) verifyTokenClaims(ctx context.Context, tokenHash string, claims *accessTokenClaims) (*user.User, string, error) {
-	gen := s.cacheGen.Load()
+	gen := s.tokens.gen.Load()
 	if claims.AppVersion != "" && claims.AppVersion != config.Version {
 		slog.InfoContext(ctx, "Token version mismatch detected", "tokenVersion", claims.AppVersion, "currentVersion", config.Version, "user", claims.Username)
 		return nil, "", common.ErrTokenVersionMismatch
@@ -857,11 +831,12 @@ func (s *AuthService) verifyTokenClaims(ctx context.Context, tokenHash string, c
 		return nil, "", validateActiveErr
 	}
 
-	s.cacheFillMu.Lock()
-	if s.cacheGen.Load() == gen {
-		s.tokenCache.Set(tokenHash, verifiedTokenEntry{User: *dbUser, SessionID: userSession.ID, TokenExpiresAt: claims.ExpiresAt, SessionExpiresAt: userSession.ExpiresAt})
-	}
-	s.cacheFillMu.Unlock()
+	s.tokens.store(gen, tokenHash, verifiedTokenEntry{
+		User:             *dbUser,
+		SessionID:        userSession.ID,
+		TokenExpiresAt:   claims.ExpiresAt,
+		SessionExpiresAt: userSession.ExpiresAt,
+	})
 
 	return dbUser, userSession.ID, nil
 }
@@ -890,44 +865,16 @@ func (s *AuthService) ChangePassword(ctx context.Context, req ChangePasswordRequ
 		return err
 	}
 	// The current session's cached user still carries the old password flags.
-	s.InvalidateUserTokenCache(req.UserID)
+	s.tokens.InvalidateUser(req.UserID)
 	return nil
-}
-
-// InvalidateUserTokenCache purges all cached token verifications for a user.
-// Call this after admin-initiated role changes, account disable, or user
-// deletion so stale verifications cannot grant access for the cache TTL.
-func (s *AuthService) InvalidateUserTokenCache(userID string) {
-	if s.tokenCache == nil || strings.TrimSpace(userID) == "" {
-		return
-	}
-	s.invalidateTokenCache(func(entry verifiedTokenEntry) bool { return entry.User.ID == userID })
-}
-
-func (s *AuthService) invalidateTokenCache(matches func(verifiedTokenEntry) bool) {
-	s.cacheFillMu.Lock()
-	defer s.cacheFillMu.Unlock()
-	s.cacheGen.Add(1)
-	keys := make([]string, 0)
-	s.tokenCache.Range(func(key string, entry verifiedTokenEntry) bool {
-		if matches(entry) {
-			keys = append(keys, key)
-		}
-		return true
-	})
-	s.tokenCache.DeleteMany(keys)
 }
 
 func (s *AuthService) RevokeSession(ctx context.Context, sessionID string) error {
 	if err := s.sessionService.RevokeSession(ctx, sessionID); err != nil {
 		return err
 	}
-	s.invalidateTokenCache(func(entry verifiedTokenEntry) bool { return entry.SessionID == sessionID })
+	s.tokens.invalidate(func(entry verifiedTokenEntry) bool { return entry.SessionID == sessionID })
 	return nil
-}
-
-func (s *AuthService) Stop() {
-	s.tokenCache.StopJanitor()
 }
 
 func (s *AuthService) RevokeSessionByRefreshToken(ctx context.Context, refreshToken string) error {
@@ -944,7 +891,7 @@ func (s *AuthService) LogoutAllOtherSessions(ctx context.Context, userID, curren
 	if err := s.sessionService.RevokeAllUserSessionsExcept(ctx, userID, currentSessionID); err != nil {
 		return err
 	}
-	s.invalidateTokenCache(func(entry verifiedTokenEntry) bool {
+	s.tokens.invalidate(func(entry verifiedTokenEntry) bool {
 		return entry.User.ID == userID && entry.SessionID != currentSessionID
 	})
 	return nil

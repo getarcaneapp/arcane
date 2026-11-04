@@ -149,12 +149,6 @@ func (h *EventHandler) WaitForEnvironmentChanges(ctx context.Context, input *Wai
 }
 
 func (h *EventHandler) IngestAgentEvent(c *echo.Context) error {
-	if h.resolveEnvironment == nil {
-		return c.JSON(http.StatusServiceUnavailable, types.ApiResponse[types.MessageResponse]{
-			Success: false,
-			Data:    types.MessageResponse{Message: "agent event ingestion is not configured"},
-		})
-	}
 	environmentID, err := h.resolveEnvironment(c.Request().Context(), c.Request().Header.Get(middleware.HeaderAgentToken))
 	if err != nil || environmentID == "" || environmentID == "0" {
 		return c.JSON(http.StatusUnauthorized, types.ApiResponse[types.MessageResponse]{

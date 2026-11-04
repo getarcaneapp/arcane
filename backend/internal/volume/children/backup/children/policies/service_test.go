@@ -61,9 +61,10 @@ func TestVolumeBackupPolicy_UpdateRegistersIndependentJobsAndSettings(t *testing
 		DB:             db,
 		S3Destinations: s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),
 		LatestRun:      noLatestRun,
+		Ctx:            t.Context(),
+		Scheduler:      jobScheduler,
+		Admission:      newVolumeAdmissionForTest(t),
 	})
-	gate := newVolumeAdmissionForTest(t)
-	require.NoError(t, service.SetScheduler(t.Context(), jobScheduler, gate))
 
 	collection, err := service.UpdateBackupPolicies(t.Context(), "app-data", []types.UpdateBackupPolicy{
 		{Enabled: true, Schedule: "*/15 * * * *", RetentionCount: 5, StopContainers: true, LocalEnabled: true},
@@ -138,6 +139,8 @@ func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
 		DB:             db,
 		S3Destinations: s3.NewS3DestinationService(db, nil),
 		LatestRun:      noLatestRun,
+		Ctx:            t.Context(),
+		Scheduler:      &volumeBackupPolicyScheduler{jobs: make(map[string]types.SchedulerJob)},
 	})
 	collection, err := service.UpdateBackupPolicies(t.Context(), "app-data", []types.UpdateBackupPolicy{{
 		Schedule:        "0 2 * * *",
@@ -168,7 +171,13 @@ func TestBackupPolicyDestinationLookupFailure(t *testing.T) {
 	require.NoError(t, db.AutoMigrate(&VolumeBackupPolicy{}, &s3.S3Destination{}))
 	policy := &VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 2 * * *", S3DestinationID: "missing"}
 	require.NoError(t, db.Create(policy).Error)
-	service := NewService(Dependencies{DB: &database.DB{DB: db}, S3Destinations: s3.NewS3DestinationService(&database.DB{DB: db}, nil), LatestRun: noLatestRun})
+	service := NewService(Dependencies{
+		DB:             &database.DB{DB: db},
+		S3Destinations: s3.NewS3DestinationService(&database.DB{DB: db}, nil),
+		LatestRun:      noLatestRun,
+		Ctx:            t.Context(),
+		Scheduler:      &volumeBackupPolicyScheduler{jobs: make(map[string]types.SchedulerJob)},
+	})
 	for _, drop := range []bool{false, true} {
 		if drop {
 			require.NoError(t, db.Migrator().DropTable(&s3.S3Destination{}))

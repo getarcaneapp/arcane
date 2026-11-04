@@ -137,7 +137,9 @@ func TestSetRecoveryKeyKeepsCurrentKeyWhenRekeyFails(t *testing.T) {
 	gate := runs.NewAdmission(runtime.Service(), t.Name())
 	require.NoError(t, gate.Register(runtime))
 	francistest.Start(t, runtime)
-	engine := backupengine.NewEngine(gate, nil)
+	engine := backupengine.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error {
+		return nil
+	})
 	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
 	dockerClient, err := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
 	require.NoError(t, err)

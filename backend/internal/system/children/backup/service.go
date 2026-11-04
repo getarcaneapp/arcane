@@ -116,6 +116,9 @@ type (
 		SettingsEnv           settings.Env
 		RecoveryKeys          *backup.RecoveryKeyStore
 		ResolveRuntimeOptions RuntimeOptionsResolver
+		Ctx                   context.Context
+		Scheduler             types.DynamicScheduler
+		Admission             *runs.Admission
 	}
 
 	// Service orchestrates Arcane system recovery backups: runs, policies,
@@ -175,7 +178,13 @@ func NewService(deps Dependencies) *Service {
 	if counterErr != nil {
 		otel.Handle(counterErr)
 	}
-	jobs := entityjobs.New("system-backup:", backup.SystemAdmissionScope)
+	jobs := entityjobs.New(entityjobs.Config{
+		Lifecycle:      deps.Ctx,
+		Scheduler:      deps.Scheduler,
+		Admission:      deps.Admission,
+		JobPrefix:      "system-backup:",
+		AdmissionScope: backup.SystemAdmissionScope,
+	})
 	var service *Service
 	service = &Service{
 		store:                 deps.Store,
@@ -216,6 +225,7 @@ func NewService(deps Dependencies) *Service {
 			Activity:       deps.Activity,
 			Settings:       deps.Settings,
 			Jobs:           jobs,
+			Config:         deps.Config,
 			AlreadyRunning: ErrSystemBackupAlreadyRunning,
 		}),
 	}
@@ -268,12 +278,10 @@ func (s *Service) startOperation(ctx context.Context, operation string, attrs ..
 	return ctx, func(err error, results ...attribute.KeyValue) {
 		span.SetAttributes(results...)
 		logging.EndSpan(span, err)
-		if s.operations != nil {
-			s.operations.Add(context.WithoutCancel(ctx), 1, metric.WithAttributes(
-				attribute.String("arcane.backup.operation", operation),
-				attribute.String("arcane.backup.outcome", kit.Ternary(err == nil, "success", "failure")),
-			))
-		}
+		s.operations.Add(context.WithoutCancel(ctx), 1, metric.WithAttributes(
+			attribute.String("arcane.backup.operation", operation),
+			attribute.String("arcane.backup.outcome", kit.Ternary(err == nil, "success", "failure")),
+		))
 	}
 }
 
@@ -1406,12 +1414,6 @@ func (s *Service) UpdatePolicies(ctx context.Context, updates []types.UpdateBack
 	return s.GetPolicies(ctx)
 }
 
-// SetScheduler injects the dynamic scheduler and admission gate for per-policy
-// system backup jobs. Agent mode leaves them unset.
-func (s *Service) SetScheduler(ctx context.Context, dynamicScheduler types.DynamicScheduler, admissionGate *runs.Admission) error {
-	return s.jobs.SetScheduler(ctx, dynamicScheduler, admissionGate)
-}
-
 func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (types.SchedulerOutcome, error) {
 	policy, loadErr := s.store.Policy(ctx, policyID)
 	if loadErr != nil {
@@ -1499,6 +1501,9 @@ func (s *Service) resumeScheduledBackup(ctx context.Context, previous types.Sche
 }
 
 func (s *Service) rescheduleSystemBackupPolicy(ctx context.Context, policy *types.SystemBackupPolicy) {
+	if s.config.AgentEnabled {
+		return
+	}
 	if !policy.Enabled {
 		s.jobs.Unregister(ctx, policy.ID)
 		return

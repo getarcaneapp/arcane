@@ -48,6 +48,7 @@ type (
 		exchanges       metric.Int64Counter
 		db              *database.DB
 		authService     *auth.AuthService
+		tokens          *auth.TokenCache
 		userService     *user.UserService
 		settingsService *settings.SettingsService
 		eventService    *event.EventService
@@ -63,6 +64,7 @@ type (
 
 		DB              *database.DB
 		AuthService     *auth.AuthService
+		TokenCache      *auth.TokenCache
 		UserService     *user.UserService
 		SettingsService *settings.SettingsService
 		EventService    *event.EventService
@@ -104,6 +106,7 @@ func NewFederatedCredentialService(p FederatedCredentialServiceParams) *Federate
 	return &FederatedCredentialService{
 		db:              p.DB,
 		authService:     p.AuthService,
+		tokens:          p.TokenCache,
 		userService:     p.UserService,
 		settingsService: p.SettingsService,
 		eventService:    p.EventService,
@@ -299,7 +302,7 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerPerms *au
 		s.roleService.InvalidateUser(updated.IdentityUserID)
 	}
 	if revokeActiveSessions || roleChanged {
-		s.authService.InvalidateUserTokenCache(updated.IdentityUserID)
+		s.tokens.InvalidateUser(updated.IdentityUserID)
 	}
 	return s.Get(ctx, id)
 }
@@ -323,7 +326,7 @@ func (s *FederatedCredentialService) Delete(ctx context.Context, id string) erro
 		return err
 	}
 	s.roleService.InvalidateUser(credential.IdentityUserID)
-	s.authService.InvalidateUserTokenCache(credential.IdentityUserID)
+	s.tokens.InvalidateUser(credential.IdentityUserID)
 	return nil
 }
 

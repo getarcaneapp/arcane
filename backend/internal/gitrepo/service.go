@@ -97,10 +97,6 @@ func (s *GitRepositoryService) GetRepositoryByName(ctx context.Context, name str
 }
 
 func (s *GitRepositoryService) FindEnabledRepositoryByURL(ctx context.Context, rawURL string) (*GitRepository, error) {
-	if s == nil || s.db == nil {
-		return nil, nil
-	}
-
 	normalizedURL := contextsource.NormalizeGitBuildContextSourceForMatch(rawURL)
 	if normalizedURL == "" {
 		return nil, nil

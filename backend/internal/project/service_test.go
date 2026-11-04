@@ -46,6 +46,7 @@ import (
 	"kit.getarcane.app/updater/labels"
 	updatertypes "kit.getarcane.app/updater/types"
 
+	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -278,7 +279,7 @@ func TestProjectService_RefreshProjectImageRefs_PersistsBuildMetadata(t *testing
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -286,6 +287,7 @@ func TestProjectService_RefreshProjectImageRefs_PersistsBuildMetadata(t *testing
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	svc.refreshProjectImageRefs(ctx, proj)
@@ -327,7 +329,7 @@ func TestProjectService_BackfillProjectImageRefs_RetriesOnlyMissingMetadata(t *t
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -335,6 +337,7 @@ func TestProjectService_BackfillProjectImageRefs_RetriesOnlyMissingMetadata(t *t
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	count, err := svc.BackfillProjectImageRefs(ctx)
@@ -391,6 +394,7 @@ func setupProjectDestroyTestService(t *testing.T) (*ProjectService, *database.DB
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	}), db, projectsDir
 }
@@ -520,7 +524,7 @@ func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -528,6 +532,7 @@ func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -554,7 +559,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		db := setupProjectTestDB(t)
 		svc := NewProjectService(ProjectServiceParams{
 			DB:           db,
-			EventService: event.NewEventService(db, nil, nil),
+			EventService: event.NewEventService(db, &config.Config{}, nil),
 			ImageService: image.NewImageService(image.ImageServiceParams{
 				DB: db,
 			}),
@@ -581,7 +586,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		db := setupProjectTestDB(t)
 		svc := NewProjectService(ProjectServiceParams{
 			DB:           db,
-			EventService: event.NewEventService(db, nil, nil),
+			EventService: event.NewEventService(db, &config.Config{}, nil),
 			ImageService: image.NewImageService(image.ImageServiceParams{
 				DB: db,
 			}),
@@ -608,7 +613,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		db := setupProjectTestDB(t)
 		svc := NewProjectService(ProjectServiceParams{
 			DB:           db,
-			EventService: event.NewEventService(db, nil, nil),
+			EventService: event.NewEventService(db, &config.Config{}, nil),
 			ImageService: image.NewImageService(image.ImageServiceParams{
 				DB: db,
 			}),
@@ -635,7 +640,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		db := setupProjectTestDB(t)
 		svc := NewProjectService(ProjectServiceParams{
 			DB:           db,
-			EventService: event.NewEventService(db, nil, nil),
+			EventService: event.NewEventService(db, &config.Config{}, nil),
 			ImageService: image.NewImageService(image.ImageServiceParams{
 				DB: db,
 			}),
@@ -683,7 +688,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		db := setupProjectTestDB(t)
 		svc := NewProjectService(ProjectServiceParams{
 			DB:           db,
-			EventService: event.NewEventService(db, nil, nil),
+			EventService: event.NewEventService(db, &config.Config{}, nil),
 			ImageService: image.NewImageService(image.ImageServiceParams{
 				DB: db,
 			}),
@@ -749,10 +754,12 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	}, nil)
 
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
-		DB:            db,
-		DockerService: dockerService,
+		DB:              db,
+		EventService:    eventService,
+		ActivityService: activity.NewActivityService(db, settingsService),
+		DockerService:   dockerService,
 	})
 	imageService := image.NewImageService(image.ImageServiceParams{
 		DB:                 db,
@@ -765,12 +772,13 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	svc := NewProjectService(ProjectServiceParams{
 		DB:                          db,
 		SettingsService:             settingsService,
-		EventService:                event.NewEventService(db, nil, nil),
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
 		ImageService:                imageService,
 		DockerService:               dockerService,
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, dockerService, settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -862,10 +870,12 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 	}, nil)
 
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
-		DB:            db,
-		DockerService: dockerService,
+		DB:              db,
+		EventService:    eventService,
+		ActivityService: activity.NewActivityService(db, settingsService),
+		DockerService:   dockerService,
 	})
 	imageService := image.NewImageService(image.ImageServiceParams{
 		DB:                 db,
@@ -878,12 +888,13 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 	svc := NewProjectService(ProjectServiceParams{
 		DB:                          db,
 		SettingsService:             settingsService,
-		EventService:                event.NewEventService(db, nil, nil),
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
 		ImageService:                imageService,
 		DockerService:               dockerService,
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, dockerService, settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -949,10 +960,12 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 	}, nil)
 
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
-		DB:            db,
-		DockerService: dockerService,
+		DB:              db,
+		EventService:    eventService,
+		ActivityService: activity.NewActivityService(db, settingsService),
+		DockerService:   dockerService,
 	})
 	imageService := image.NewImageService(image.ImageServiceParams{
 		DB:                 db,
@@ -965,12 +978,13 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 	svc := NewProjectService(ProjectServiceParams{
 		DB:                          db,
 		SettingsService:             settingsService,
-		EventService:                event.NewEventService(db, nil, nil),
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
 		ImageService:                imageService,
 		DockerService:               dockerService,
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, dockerService, settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -1032,10 +1046,12 @@ func TestProjectService_ComposePullSelectedServices_ReconcilesOnlyOnSuccess(t *t
 	})
 
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
-		DB:            db,
-		DockerService: dockerService,
+		DB:              db,
+		EventService:    eventService,
+		ActivityService: activity.NewActivityService(db, settingsService),
+		DockerService:   dockerService,
 	})
 	imageService := image.NewImageService(image.ImageServiceParams{
 		DB:                 db,
@@ -1048,12 +1064,13 @@ func TestProjectService_ComposePullSelectedServices_ReconcilesOnlyOnSuccess(t *t
 	svc := NewProjectService(ProjectServiceParams{
 		DB:                          db,
 		SettingsService:             settingsService,
-		EventService:                event.NewEventService(db, nil, nil),
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
 		ImageService:                imageService,
 		DockerService:               dockerService,
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, dockerService, settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -1158,26 +1175,29 @@ func TestProjectService_ComposePullSelectedServices_LeavesRecordsWhenPullFails(t
 
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, failingServer))
 	imageUpdateService := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
-		DB:            db,
-		DockerService: dockerService,
+		DB:              db,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		ActivityService: activity.NewActivityService(db, settingsService),
+		DockerService:   dockerService,
 	})
 	imageService := image.NewImageService(image.ImageServiceParams{
 		DB:                 db,
 		DockerService:      dockerService,
 		RegistryService:    newProjectTestRegistryService(db, dockerService, settingsService),
 		ImageUpdateService: imageUpdateService,
-		EventService:       event.NewEventService(db, nil, nil),
+		EventService:       event.NewEventService(db, &config.Config{}, nil),
 		SettingsService:    settingsService,
 	})
 	svc := NewProjectService(ProjectServiceParams{
 		DB:                          db,
 		SettingsService:             settingsService,
-		EventService:                event.NewEventService(db, nil, nil),
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
 		ImageService:                imageService,
 		DockerService:               dockerService,
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, dockerService, settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -1236,15 +1256,17 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFails(t *testing.T
 
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, failingServer))
 	imageUpdateService := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
-		DB:            db,
-		DockerService: dockerService,
+		DB:              db,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		ActivityService: activity.NewActivityService(db, settingsService),
+		DockerService:   dockerService,
 	})
 	imageService := image.NewImageService(image.ImageServiceParams{
 		DB:                 db,
 		DockerService:      dockerService,
 		RegistryService:    newProjectTestRegistryService(db, dockerService, settingsService),
 		ImageUpdateService: imageUpdateService,
-		EventService:       event.NewEventService(db, nil, nil),
+		EventService:       event.NewEventService(db, &config.Config{}, nil),
 		SettingsService:    settingsService,
 	})
 
@@ -1294,12 +1316,13 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFails(t *testing.T
 	svc := NewProjectService(ProjectServiceParams{
 		DB:                          db,
 		SettingsService:             settingsService,
-		EventService:                event.NewEventService(db, nil, nil),
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
 		ImageService:                imageService,
 		DockerService:               dockerService,
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, dockerService, settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	err = svc.UpdateProjectServices(ctx, projectRecord.ID, []string{"app"}, types.SystemUser, true)
@@ -1343,10 +1366,12 @@ func TestProjectService_UpdateProjectServicesForcesRecreate(t *testing.T) {
 
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
 	imageUpdateService := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
-		DB:            db,
-		DockerService: dockerService,
+		DB:              db,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		ActivityService: activity.NewActivityService(db, settingsService),
+		DockerService:   dockerService,
 	})
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	imageService := image.NewImageService(image.ImageServiceParams{
 		DB:                 db,
 		DockerService:      dockerService,
@@ -1432,6 +1457,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreate(t *testing.T) {
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, dockerService, settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	err = svc.UpdateProjectServices(ctx, projectRecord.ID, []string{"app"}, types.SystemUser, true)
@@ -1469,7 +1495,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 	require.NoError(t, err)
 	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/_ping"):
@@ -1514,6 +1540,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, dockerService, settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -1568,7 +1595,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_AppliesVolumeMigrati
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -1580,6 +1607,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_AppliesVolumeMigrati
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -1656,7 +1684,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -1664,6 +1692,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, dockerService, settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -1755,7 +1784,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_RollsBackVolumeMigra
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -1767,6 +1796,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_RollsBackVolumeMigra
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -1809,7 +1839,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_SucceedsCommittedRen
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -1821,6 +1851,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_SucceedsCommittedRen
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -1867,7 +1898,7 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 	require.NoError(t, err)
 	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -1880,6 +1911,7 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kvService,
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -1945,7 +1977,7 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryWithoutDoc
 	require.NoError(t, err)
 	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -1958,6 +1990,7 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryWithoutDoc
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kvService,
+		ContainerRegistryService:    newProjectTestRegistryService(db, newSettingsDockerService(t, newTestDockerClient(t, configureProjectRuntimeDocker(t, nil))), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -2019,7 +2052,7 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -2031,6 +2064,7 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newSettingsDockerService(t, newTestDockerClient(t, configureProjectRuntimeDocker(t, nil))), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -2079,7 +2113,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -2091,6 +2125,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newSettingsDockerService(t, newTestDockerClient(t, configureProjectRuntimeDocker(t, nil))), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -2137,7 +2172,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -2149,6 +2184,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -2194,7 +2230,7 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 	require.NoError(t, err)
 	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	server := configureProjectRuntimeDocker(t, []container.Summary{
 		{
 			ID:     "app-container",
@@ -2221,6 +2257,7 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newSettingsDockerService(t, newTestDockerClient(t, server)), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -2302,7 +2339,7 @@ func TestProjectService_RecoverStuckProjectStatuses(t *testing.T) {
 			svc := NewProjectService(ProjectServiceParams{
 				DB:              db,
 				SettingsService: settingsService,
-				EventService:    event.NewEventService(db, nil, nil),
+				EventService:    event.NewEventService(db, &config.Config{}, nil),
 				ImageService: image.NewImageService(image.ImageServiceParams{
 					DB: db,
 				}),
@@ -2310,6 +2347,7 @@ func TestProjectService_RecoverStuckProjectStatuses(t *testing.T) {
 				BuildService:                testBuildBuilder{},
 				Config:                      loadTestConfig(t),
 				KVService:                   kv.NewKVService(db),
+				ContainerRegistryService:    newProjectTestRegistryService(db, newSettingsDockerService(t, newTestDockerClient(t, server)), settingsService),
 				RegistryCredentialsProvider: testRegistryCredentials,
 			})
 
@@ -2343,7 +2381,7 @@ func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVo
 	require.NoError(t, err)
 	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	server := newProjectRuntimeDockerServer(t, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
@@ -2356,6 +2394,7 @@ func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVo
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newSettingsDockerService(t, newTestDockerClient(t, server)), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURL(t, server.URL))
@@ -2412,7 +2451,7 @@ func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t
 	require.NoError(t, err)
 	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	server := newProjectRuntimeDockerServer(t, []container.Summary{
 		{
 			ID:     "app-container",
@@ -2440,6 +2479,7 @@ func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newSettingsDockerService(t, newTestDockerClient(t, server)), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -2486,7 +2526,7 @@ func TestProjectService_UpdateProject_ValidatesComposeUsingExistingProjectName(t
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -2498,6 +2538,7 @@ func TestProjectService_UpdateProject_ValidatesComposeUsingExistingProjectName(t
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -2541,7 +2582,7 @@ func TestProjectService_UpdateProject_AllowsMissingEnvFileDuringComposeValidatio
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -2553,6 +2594,7 @@ func TestProjectService_UpdateProject_AllowsMissingEnvFileDuringComposeValidatio
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -2597,7 +2639,7 @@ func TestProjectService_UpdateProject_EnvRetargetWritesExplicitIdenticalComposeT
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -2609,6 +2651,7 @@ func TestProjectService_UpdateProject_EnvRetargetWritesExplicitIdenticalComposeT
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -2661,7 +2704,7 @@ func TestProjectService_UpdateProject_EnvRetargetWithoutComposePayloadPreservesN
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -2673,6 +2716,7 @@ func TestProjectService_UpdateProject_EnvRetargetWithoutComposePayloadPreservesN
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -2724,7 +2768,7 @@ func TestProjectService_UpdateProject_EnvRetargetWritesEditedComposeToSelectedBa
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -2736,6 +2780,7 @@ func TestProjectService_UpdateProject_EnvRetargetWritesEditedComposeToSelectedBa
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -2783,7 +2828,7 @@ func TestProjectService_UpdateProject_AllowsMissingLocalIncludeDuringComposeVali
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -2795,6 +2840,7 @@ func TestProjectService_UpdateProject_AllowsMissingLocalIncludeDuringComposeVali
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -2845,7 +2891,7 @@ func TestProjectService_CreateProject_AllowsExternalInclude(t *testing.T) {
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -2857,6 +2903,7 @@ func TestProjectService_CreateProject_AllowsExternalInclude(t *testing.T) {
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, os.WriteFile(filepath.Join(projectsDir, "shared.yaml"), []byte("services: {}\n"), 0o644))
@@ -2888,7 +2935,7 @@ func TestProjectService_UpdateProject_AllowsExternalInclude(t *testing.T) {
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -2900,6 +2947,7 @@ func TestProjectService_UpdateProject_AllowsExternalInclude(t *testing.T) {
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -2947,7 +2995,7 @@ func TestProjectService_CreateProject_CommitsWorkspaceAndConfigurationTogether(t
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -2955,6 +3003,7 @@ func TestProjectService_CreateProject_CommitsWorkspaceAndConfigurationTogether(t
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	uploadIndex := 0
@@ -3005,7 +3054,7 @@ func TestProjectService_CreateProject_RollsBackInvalidWorkspaceManifest(t *testi
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -3013,6 +3062,7 @@ func TestProjectService_CreateProject_RollsBackInvalidWorkspaceManifest(t *testi
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	manifest := types.CreateProjectWorkspaceManifest{FileChanges: []types.WorkspaceFileChange{{
@@ -3049,7 +3099,7 @@ func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -3061,6 +3111,7 @@ func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -3109,7 +3160,7 @@ func newProjectServiceForOverrideTest(t *testing.T, dirName string) (*ProjectSer
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -3121,6 +3172,7 @@ func newProjectServiceForOverrideTest(t *testing.T, dirName string) (*ProjectSer
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -3229,7 +3281,7 @@ func TestProjectService_UpdateProject_UsesProvidedEnvContentDuringComposeValidat
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -3241,6 +3293,7 @@ func TestProjectService_UpdateProject_UsesProvidedEnvContentDuringComposeValidat
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -3288,7 +3341,7 @@ func TestProjectService_UpdateProject_ReturnsEnvParseErrorDuringComposeValidatio
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -3300,6 +3353,7 @@ func TestProjectService_UpdateProject_ReturnsEnvParseErrorDuringComposeValidatio
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -3345,7 +3399,7 @@ func TestProjectService_UpdateProject_UsesGlobalEnvDuringComposeValidation(t *te
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -3357,6 +3411,7 @@ func TestProjectService_UpdateProject_UsesGlobalEnvDuringComposeValidation(t *te
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -3406,7 +3461,7 @@ func TestProjectService_UpdateProject_DoesNotResolveHostEnvThroughGlobalEnvDurin
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -3418,6 +3473,7 @@ func TestProjectService_UpdateProject_DoesNotResolveHostEnvThroughGlobalEnvDurin
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -3462,7 +3518,7 @@ func TestProjectService_UpdateProject_DerivesProjectOverrideEnvWhenGitSourceExis
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -3474,6 +3530,7 @@ func TestProjectService_UpdateProject_DerivesProjectOverrideEnvWhenGitSourceExis
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -3521,7 +3578,7 @@ func TestProjectService_UpdateProject_UnchangedGitEnvLeavesFilesUntouched(t *tes
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -3533,6 +3590,7 @@ func TestProjectService_UpdateProject_UnchangedGitEnvLeavesFilesUntouched(t *tes
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -3630,7 +3688,7 @@ func TestProjectService_UpdateProject_DeletingGitBackedKeyFallsBackToGit(t *test
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -3642,6 +3700,7 @@ func TestProjectService_UpdateProject_DeletingGitBackedKeyFallsBackToGit(t *test
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -3692,7 +3751,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_MigratesDirectEnvIntoProjectOve
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -3704,6 +3763,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_MigratesDirectEnvIntoProjectOve
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -3755,7 +3815,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_PreservesGitEnvSyntax(t *testin
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -3767,6 +3827,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_PreservesGitEnvSyntax(t *testin
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -3829,7 +3890,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrid
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -3841,6 +3902,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrid
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -3889,7 +3951,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesLegacyDeletedGitMasks(t 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -3901,6 +3963,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesLegacyDeletedGitMasks(t 
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -3950,7 +4013,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesGitEnvSource(t *testing.
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -3962,6 +4025,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesGitEnvSource(t *testing.
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -4006,7 +4070,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_WritesAndRemovesComposeOverride
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -4018,6 +4082,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_WritesAndRemovesComposeOverride
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -4069,7 +4134,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValid
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -4081,6 +4146,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValid
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -4128,7 +4194,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfUndefinedComposeVar(t
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -4140,6 +4206,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfUndefinedComposeVar(t
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -4188,7 +4255,7 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -4200,6 +4267,7 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -4346,12 +4414,13 @@ func TestProjectService_GetProjectDetails_IncludesUpdateInfo(t *testing.T) {
 	svc := NewProjectService(ProjectServiceParams{
 		DB:                          db,
 		SettingsService:             settingsService,
-		EventService:                event.NewEventService(db, nil, nil),
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
 		ImageService:                imageService,
 		DockerService:               newUnreachableDockerService(t),
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -4455,7 +4524,7 @@ func TestProjectService_GetProjectDetails_RefreshesRuntimeStatusWithoutRuntimeSe
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -4463,6 +4532,7 @@ func TestProjectService_GetProjectDetails_RefreshesRuntimeStatusWithoutRuntimeSe
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newSettingsDockerService(t, newTestDockerClient(t, server)), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -4519,7 +4589,7 @@ func TestProjectService_GetProjectDetails_PopulatesRuntimeServicesFromComposePs(
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -4527,6 +4597,7 @@ func TestProjectService_GetProjectDetails_PopulatesRuntimeServicesFromComposePs(
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newSettingsDockerService(t, newTestDockerClient(t, server)), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -4589,12 +4660,13 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 	svc := NewProjectService(ProjectServiceParams{
 		DB:                          db,
 		SettingsService:             settingsService,
-		EventService:                event.NewEventService(db, nil, nil),
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
 		ImageService:                imageService,
 		DockerService:               newUnreachableDockerService(t),
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -4834,6 +4906,7 @@ func TestBuildDiscoveredComposeProjectUpdateRows_FallsBackToImageID(t *testing.T
 		SettingsService:             settingsService,
 		ImageService:                imageService,
 		DockerService:               newUnreachableDockerService(t),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		BuildService:                testBuildBuilder{},
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
@@ -4888,7 +4961,7 @@ func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -4896,6 +4969,7 @@ func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -4952,7 +5026,7 @@ func TestProjectService_ListProjects_FiltersByExactName(t *testing.T) {
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -4960,6 +5034,7 @@ func TestProjectService_ListProjects_FiltersByExactName(t *testing.T) {
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -5014,7 +5089,7 @@ func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5022,6 +5097,7 @@ func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newSettingsDockerService(t, newTestDockerClient(t, server)), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	err = svc.ArchiveProject(ctx, "project-running", types.Actor{ID: "user-1", Username: "tester"})
@@ -5055,7 +5131,7 @@ func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5063,6 +5139,7 @@ func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newSettingsDockerService(t, newTestDockerClient(t, configureProjectRuntimeDocker(t, nil))), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	user := types.Actor{ID: "user-1", Username: "tester"}
@@ -5113,7 +5190,7 @@ func TestProjectService_ArchiveProject_LiveVerificationErrorPolicy(t *testing.T)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5121,6 +5198,7 @@ func TestProjectService_ArchiveProject_LiveVerificationErrorPolicy(t *testing.T)
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	user := types.Actor{ID: "user-1", Username: "tester"}
@@ -5163,13 +5241,14 @@ func TestProjectService_ListProjects_PersistsInferredServiceCount(t *testing.T) 
 	service := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
 		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, configureProjectRuntimeDocker(t, containers))),
 		BuildService:                testBuildBuilder{},
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newSettingsDockerService(t, newTestDockerClient(t, configureProjectRuntimeDocker(t, containers))), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -5213,7 +5292,7 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5221,6 +5300,7 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newSettingsDockerService(t, newTestDockerClient(t, configureProjectRuntimeDocker(t, nil))), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -5264,7 +5344,7 @@ func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5272,6 +5352,7 @@ func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T)
 		BuildService:                buildSvc,
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -5313,7 +5394,7 @@ func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB:            db,
 			DockerService: newUnreachableDockerService(t),
@@ -5322,6 +5403,7 @@ func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing
 		BuildService:                buildSvc,
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -5352,7 +5434,7 @@ func TestProjectService_SyncProjectsFromFileSystem_IgnoresSymlinkedProjectDirsWh
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5360,6 +5442,7 @@ func TestProjectService_SyncProjectsFromFileSystem_IgnoresSymlinkedProjectDirsWh
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -5390,7 +5473,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsSymlinkedProjectDirsWh
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5398,6 +5481,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsSymlinkedProjectDirsWh
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -5425,7 +5509,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversNestedProjectsAndRel
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5433,6 +5517,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversNestedProjectsAndRel
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -5471,7 +5556,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RespectsConfiguredScanMaxDept
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5479,6 +5564,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RespectsConfiguredScanMaxDept
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -5530,7 +5616,7 @@ services:
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5538,6 +5624,7 @@ services:
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -5568,7 +5655,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5576,6 +5663,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -5616,7 +5704,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PrunesLeakedScratchRow(t *tes
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5624,6 +5712,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PrunesLeakedScratchRow(t *tes
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -5658,7 +5747,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectsWhenDirector
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5666,6 +5755,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectsWhenDirector
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -5690,7 +5780,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectWithAmbiguous
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5698,6 +5788,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectWithAmbiguous
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -5736,7 +5827,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedS
 	defaultSvc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5744,6 +5835,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedS
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, defaultSvc.SyncProjectsFromFileSystem(ctx))
@@ -5757,7 +5849,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedS
 	depthLimitedSvc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5765,6 +5857,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedS
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, depthLimitedSvc.SyncProjectsFromFileSystem(ctx))
@@ -5801,7 +5894,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesDBRecordsWhenDirecto
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5809,6 +5902,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesDBRecordsWhenDirecto
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -5870,7 +5964,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDesp
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5878,6 +5972,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDesp
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx), "sync must succeed despite the unreadable nested directory")
@@ -5917,7 +6012,7 @@ func TestProjectService_SyncProjectsFromFileSystem_AllowsDuplicateLeafDirectorie
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5925,6 +6020,7 @@ func TestProjectService_SyncProjectsFromFileSystem_AllowsDuplicateLeafDirectorie
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -5960,7 +6056,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsNestedSymlinkedProject
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -5968,6 +6064,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsNestedSymlinkedProject
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -6003,7 +6100,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesSymlinkedProjectsWhenD
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -6011,6 +6108,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesSymlinkedProjectsWhenD
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -6045,7 +6143,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RefreshesServiceCountOnCompos
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -6053,6 +6151,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RefreshesServiceCountOnCompos
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -6089,7 +6188,7 @@ services:
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -6097,6 +6196,7 @@ services:
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -6134,7 +6234,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesValidCustomNameWitho
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -6142,6 +6242,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesValidCustomNameWitho
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -6196,7 +6297,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCus
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -6204,6 +6305,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCus
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -6258,7 +6360,7 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -6266,6 +6368,7 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -6298,7 +6401,7 @@ func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testi
 	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
 	require.NoError(t, settingsService.UpdateSetting(ctx, "followProjectSymlinks", "true"))
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -6310,6 +6413,7 @@ func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testi
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -6365,7 +6469,7 @@ func TestProjectService_UpdateProject_WritesThroughExternalEnvSymlink(t *testing
 	originalLinkTarget, err := os.Readlink(envPath)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -6377,6 +6481,7 @@ func TestProjectService_UpdateProject_WritesThroughExternalEnvSymlink(t *testing
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	dirName := "demo"
@@ -6436,7 +6541,7 @@ func TestProjectService_UpdateProject_RestoresExternalEnvSymlinkTargetWhenProjec
 	originalLinkTarget, err := os.Readlink(envPath)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -6448,6 +6553,7 @@ func TestProjectService_UpdateProject_RestoresExternalEnvSymlinkTargetWhenProjec
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	dirName := "demo"
@@ -6613,7 +6719,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackUncommittedDirecto
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -6678,7 +6784,7 @@ func TestProjectService_RecoverProjectRenameJournals_StartedPhaseSkipsVolumeRoll
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -6752,7 +6858,7 @@ func TestProjectService_RecoverProjectRenameJournals_RelocatesTargetWhenBothPath
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -6826,7 +6932,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -6902,7 +7008,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsPreservedTargetJourna
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -6966,7 +7072,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournal(t *t
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -7017,7 +7123,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalAfterSourc
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -7069,7 +7175,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceC
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -7165,7 +7271,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRo
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -7270,7 +7376,7 @@ func TestProjectService_RecoverProjectRenameJournals_CompletesCommittedVolumeJou
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -7354,7 +7460,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWh
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -7475,7 +7581,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -7563,7 +7669,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsRollbackCleanupWhenDoc
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -7637,7 +7743,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalWhenS
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -7734,7 +7840,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCl
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -7828,7 +7934,7 @@ func TestProjectService_RecoverProjectRenameJournals_MarksSourceCleanupPendingWh
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -7924,7 +8030,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsSourceCleanupPendingJ
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -8034,7 +8140,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackSourceCleanupPendi
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -8135,7 +8241,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJo
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -8237,7 +8343,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhe
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -8322,7 +8428,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackSo
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -8412,7 +8518,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackTa
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -8508,7 +8614,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 	dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
 	svc := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -8696,7 +8802,7 @@ func TestUpdateProjectServiceImagesRejectsManagedOrArchived(t *testing.T) {
 			require.NoError(t, db.Create(&proj).Error)
 			service := NewProjectService(ProjectServiceParams{
 				DB:           db,
-				EventService: event.NewEventService(db, nil, nil),
+				EventService: event.NewEventService(db, &config.Config{}, nil),
 				ImageService: image.NewImageService(image.ImageServiceParams{
 					DB: db,
 				}),
@@ -8752,21 +8858,24 @@ func TestUpdateProjectServiceImagesPersistsBeforeDeploymentAndRetries(t *testing
 	service := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB:              db,
 			DockerService:   pullDocker,
 			RegistryService: newProjectTestRegistryService(db, pullDocker, settingsService),
 			ImageUpdateService: imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
-				DB:            db,
-				DockerService: pullDocker,
+				DB:              db,
+				EventService:    event.NewEventService(db, &config.Config{}, nil),
+				ActivityService: activity.NewActivityService(db, settingsService),
+				DockerService:   pullDocker,
 			}),
-			EventService:    event.NewEventService(db, nil, nil),
+			EventService:    event.NewEventService(db, &config.Config{}, nil),
 			SettingsService: settingsService,
 		}),
 		DockerService:               newUnreachableDockerService(t),
 		BuildService:                testBuildBuilder{},
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	changes := map[string]updatertypes.ServiceImageChange{"app": {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"}}
@@ -8807,13 +8916,14 @@ func TestUpdateProjectServiceImagesRejectsOverrideBeforeWriting(t *testing.T) {
 	service := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
 		DockerService:               newUnreachableDockerService(t),
 		BuildService:                testBuildBuilder{},
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	err = service.UpdateProjectServiceImages(ctx, proj.ID, map[string]updatertypes.ServiceImageChange{"app": {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"}}, types.SystemUser)
@@ -8891,6 +9001,7 @@ func TestDiscoveredProjectTagUpdatesRemainScoped(t *testing.T) {
 			DB: db,
 		}),
 		DockerService:               newUnreachableDockerService(t),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		BuildService:                testBuildBuilder{},
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
@@ -9006,13 +9117,14 @@ func TestCountProjectsWithPendingTagUpdatesUsesRuntimeContainers(t *testing.T) {
 	service := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
 		DockerService:               newUnreachableDockerService(t),
 		BuildService:                testBuildBuilder{},
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	containers := []container.Summary{
@@ -9144,16 +9256,18 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 			service := NewProjectService(ProjectServiceParams{
 				DB:              db,
 				SettingsService: settingsService,
-				EventService:    event.NewEventService(db, nil, nil),
+				EventService:    event.NewEventService(db, &config.Config{}, nil),
 				ImageService: image.NewImageService(image.ImageServiceParams{
 					DB:              db,
 					DockerService:   pullDocker,
 					RegistryService: newProjectTestRegistryService(db, pullDocker, settingsService),
 					ImageUpdateService: imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
-						DB:            db,
-						DockerService: pullDocker,
+						DB:              db,
+						EventService:    event.NewEventService(db, &config.Config{}, nil),
+						ActivityService: activity.NewActivityService(db, settingsService),
+						DockerService:   pullDocker,
 					}),
-					EventService:    event.NewEventService(db, nil, nil),
+					EventService:    event.NewEventService(db, &config.Config{}, nil),
 					SettingsService: settingsService,
 				}),
 				DockerService:               newUnreachableDockerService(t),
@@ -9274,12 +9388,13 @@ func TestStoppedProjectTagPolicyNeverInheritsSharedDigestCheck(t *testing.T) {
 	service := NewProjectService(ProjectServiceParams{
 		DB:                          db,
 		SettingsService:             settingsService,
-		EventService:                event.NewEventService(db, nil, nil),
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
 		ImageService:                imageService,
 		DockerService:               newUnreachableDockerService(t),
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	detail, err := service.GetProjectDetails(t.Context(), projectRecord.ID, types.AllProjectDetails())
@@ -9381,7 +9496,7 @@ func TestConfiguredProjectUsesScheduledRuntimeChecks(t *testing.T) {
 			service := NewProjectService(ProjectServiceParams{
 				DB:              db,
 				SettingsService: settingsService,
-				EventService:    event.NewEventService(db, nil, nil),
+				EventService:    event.NewEventService(db, &config.Config{}, nil),
 				ImageService: image.NewImageService(image.ImageServiceParams{
 					DB: db,
 				}),
@@ -9587,7 +9702,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfPermissionLockedEnv(t
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -9599,6 +9714,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfPermissionLockedEnv(t
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -9738,7 +9854,7 @@ func newEnvDirectoryProject(t *testing.T, id string) (*ProjectService, *Project,
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -9746,6 +9862,7 @@ func newEnvDirectoryProject(t *testing.T, id string) (*ProjectService, *Project,
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
@@ -9959,7 +10076,7 @@ func TestProjectTags_ReconcilePreservesUIAndComposeOwnershipIsReadOnly(t *testin
 	db := setupProjectTestDB(t)
 	service := NewProjectService(ProjectServiceParams{
 		DB:           db,
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -10044,7 +10161,7 @@ func TestProjectTags_FilterUsesExactORNames(t *testing.T) {
 	svc := NewProjectService(ProjectServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ImageService: image.NewImageService(image.ImageServiceParams{
 			DB: db,
 		}),
@@ -10052,6 +10169,7 @@ func TestProjectTags_FilterUsesExactORNames(t *testing.T) {
 		BuildService:                testBuildBuilder{},
 		Config:                      loadTestConfig(t),
 		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 	items, _, err := svc.ListProjects(ctx, pagination.QueryParams{Search: "MAINT", Limit: -1})
@@ -10085,7 +10203,7 @@ func newLifecycleTestService(t *testing.T, db *database.DB) (*LifecycleService, 
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	events := event.NewEventService(db, nil, nil)
+	events := event.NewEventService(db, &config.Config{}, nil)
 	return NewLifecycleService(LifecycleServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
@@ -10247,7 +10365,7 @@ func TestRunPreDeploy_KillSwitchAndLastRunState(t *testing.T) {
 	svc := NewLifecycleService(LifecycleServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		DockerService:   dockerService,
 	})
 

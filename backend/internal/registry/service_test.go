@@ -247,19 +247,6 @@ func TestContainerRegistryService_GetRegistryAuthForImage_UsesHostLookup(t *test
 	assert.Equal(t, "ghcr.io", cfg.ServerAddress)
 }
 
-func TestContainerRegistryService_NilService_RegistryAuthMethodsReturnEmpty(t *testing.T) {
-	var svc *ContainerRegistryService
-	ctx := t.Context()
-
-	authConfigs, err := svc.GetAllRegistryAuthConfigs(ctx)
-	require.NoError(t, err)
-	require.Nil(t, authConfigs)
-
-	authForImage, err := svc.GetRegistryAuthForImage(ctx, "ghcr.io/getarcaneapp/arcane:latest")
-	require.NoError(t, err)
-	require.Empty(t, authForImage)
-}
-
 func TestContainerRegistryService_GetRegistryPullUsage_AnonymousDockerHubLimit(t *testing.T) {
 	db := setupContainerRegistryTestDB(t)
 	require.NoError(t, db.WithContext(t.Context()).Create(&ContainerRegistry{

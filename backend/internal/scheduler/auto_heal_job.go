@@ -49,14 +49,13 @@ type (
 	}
 
 	AutoHealJob struct {
-		dockerClientService *dockerInternal.DockerClientService
 		settingsService     *settings.SettingsService
 		eventService        *event.EventService
 		notificationService *notification.NotificationService
 
 		restarts map[string]*restartRecord
 
-		getDockerClientFn  func() (*client.Client, error)
+		getDockerClientFn  func(ctx context.Context) (*client.Client, error)
 		listContainers     func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error)
 		inspectContainerFn func(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error)
 		restartContainerFn func(ctx context.Context, dockerClient *client.Client, containerID string) error
@@ -86,11 +85,14 @@ const (
 
 func NewAutoHealJob(p AutoHealJobParams) (*AutoHealJob, error) {
 	return &AutoHealJob{
-		dockerClientService: p.DockerClientService,
 		settingsService:     p.SettingsService,
 		eventService:        p.EventService,
 		notificationService: p.NotificationService,
 		restarts:            make(map[string]*restartRecord),
+		getDockerClientFn:   p.DockerClientService.GetClient,
+		listContainers:      listUnhealthyContainers,
+		inspectContainerFn:  inspectAutoHealContainer,
+		restartContainerFn:  restartAutoHealContainer,
 	}, nil
 }
 
@@ -113,13 +115,13 @@ func (j *AutoHealJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
 
-	dockerClient, err := j.getDockerClient(ctx)
+	dockerClient, err := j.getDockerClientFn(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "auto-heal failed to get Docker client", "error", err)
 		return types.SchedulerOutcome{}, err
 	}
 
-	containers, err := j.ListContainers(ctx, dockerClient)
+	containers, err := j.listContainers(ctx, dockerClient)
 	if err != nil {
 		slog.ErrorContext(ctx, "auto-heal failed to list containers", "error", err)
 		return types.SchedulerOutcome{}, err
@@ -243,7 +245,7 @@ func (j *AutoHealJob) processCandidate(
 	// The daemon-side health filter already selected unhealthy containers; the
 	// inspect re-confirms right before restarting so a container that recovered
 	// (or was restarted by someone else) since the list isn't bounced again.
-	inspect, err := j.inspectContainer(ctx, dockerClient, containerID)
+	inspect, err := j.inspectContainerFn(ctx, dockerClient, containerID)
 	if err != nil {
 		slog.WarnContext(ctx, "auto-heal failed to inspect container", "container", containerName, "error", err)
 		target.Status = types.RunStatusFailed
@@ -280,7 +282,7 @@ func (j *AutoHealJob) processCandidate(
 		releaseSlot()
 		return target, progressErr
 	}
-	if restartContainerErr := j.restartContainer(ctx, dockerClient, containerID); restartContainerErr != nil {
+	if restartContainerErr := j.restartContainerFn(ctx, dockerClient, containerID); restartContainerErr != nil {
 		releaseSlot()
 		slog.ErrorContext(ctx, "auto-heal failed to restart container", "container", containerName, "error", restartContainerErr)
 		target.Status = types.RunStatusFailed
@@ -396,11 +398,7 @@ func (j *AutoHealJob) parseExcludedContainers(ctx context.Context) map[string]st
 	return excluded
 }
 
-func (j *AutoHealJob) inspectContainer(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error) {
-	if j.inspectContainerFn != nil {
-		return j.inspectContainerFn(ctx, dockerClient, containerID)
-	}
-
+func inspectAutoHealContainer(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error) {
 	inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 	if err != nil {
 		return container.InspectResponse{}, err
@@ -409,21 +407,9 @@ func (j *AutoHealJob) inspectContainer(ctx context.Context, dockerClient *client
 	return inspect.Container, nil
 }
 
-func (j *AutoHealJob) restartContainer(ctx context.Context, dockerClient *client.Client, containerID string) error {
-	if j.restartContainerFn != nil {
-		return j.restartContainerFn(ctx, dockerClient, containerID)
-	}
-
+func restartAutoHealContainer(ctx context.Context, dockerClient *client.Client, containerID string) error {
 	_, err := dockerClient.ContainerRestart(ctx, containerID, client.ContainerRestartOptions{})
 	return err
-}
-
-func (j *AutoHealJob) getDockerClient(ctx context.Context) (*client.Client, error) {
-	if j.getDockerClientFn != nil {
-		return j.getDockerClientFn()
-	}
-
-	return j.dockerClientService.GetClient(ctx)
 }
 
 // autoHealListOptions filters unhealthy containers at the daemon, so
@@ -435,11 +421,7 @@ func autoHealListOptions() client.ContainerListOptions {
 	}
 }
 
-func (j *AutoHealJob) ListContainers(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
-	if j.listContainers != nil {
-		return j.listContainers(ctx, dockerClient)
-	}
-
+func listUnhealthyContainers(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
 	containerList, err := dockerClient.ContainerList(ctx, autoHealListOptions())
 	if err != nil {
 		return nil, err
@@ -461,7 +443,7 @@ func (j *AutoHealJob) Reconcile(ctx context.Context, previous types.SchedulerRun
 		}
 	}
 
-	dockerClient, err := j.getDockerClient(ctx)
+	dockerClient, err := j.getDockerClientFn(ctx)
 	if err != nil {
 		return types.SchedulerOutcome{}, err
 	}
@@ -489,7 +471,7 @@ func (j *AutoHealJob) confirmRestartTargets(ctx context.Context, dockerClient *c
 			message = "A container restart has no persisted baseline"
 			break
 		}
-		inspect, inspectErr := j.inspectContainer(ctx, dockerClient, target.ID)
+		inspect, inspectErr := j.inspectContainerFn(ctx, dockerClient, target.ID)
 		if inspectErr != nil || inspect.State == nil || inspect.State.Restarting || (inspect.State.StartedAt == baseline.StartedAt && inspect.RestartCount == baseline.RestartCount) {
 			message = "A container restart has an unconfirmed outcome"
 			break

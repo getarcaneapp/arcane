@@ -253,7 +253,7 @@ func (s *NotificationService) dispatchNotificationToManager(ctx context.Context,
 }
 
 func (s *NotificationService) DispatchNotification(ctx context.Context, accessToken string, payload types.NotificationDispatchRequest) (types.NotificationDispatchResponse, error) {
-	if s.config != nil && s.config.AgentEnabled {
+	if s.config.AgentEnabled {
 		return types.NotificationDispatchResponse{}, errors.New("notification dispatch is manager-only")
 	}
 
@@ -274,7 +274,7 @@ func (s *NotificationService) DispatchNotification(ctx context.Context, accessTo
 
 // DispatchNotificationForEnvironment dispatches for an agent already identified by its agent tunnel session (#3002).
 func (s *NotificationService) DispatchNotificationForEnvironment(ctx context.Context, environmentID string, payload types.NotificationDispatchRequest) (types.NotificationDispatchResponse, error) {
-	if s.config != nil && s.config.AgentEnabled {
+	if s.config.AgentEnabled {
 		return types.NotificationDispatchResponse{}, errors.New("notification dispatch is manager-only")
 	}
 
@@ -705,7 +705,7 @@ func (s *NotificationService) SendBatchContainerUpdateNotification(ctx context.C
 		return nil
 	}
 
-	if s.config != nil && s.config.AgentEnabled {
+	if s.config.AgentEnabled {
 		updates := make([]types.NotificationDispatchContainerUpdate, 0, len(entries))
 		for _, entry := range entries {
 			updates = append(updates, types.NotificationDispatchContainerUpdate{
@@ -756,7 +756,7 @@ func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, i
 		return 0, errors.New("updateInfo is required")
 	}
 
-	if s.config != nil && s.config.AgentEnabled {
+	if s.config.AgentEnabled {
 		dispatchResponse, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
 			Kind: types.NotificationDispatchKindImageUpdate,
 			ImageUpdate: &types.NotificationDispatchImageUpdate{
@@ -798,7 +798,7 @@ func (s *NotificationService) sendImageUpdateNotificationForTarget(
 }
 
 func (s *NotificationService) SendContainerUpdateNotification(ctx context.Context, update ContainerUpdateEvent) error {
-	if s.config != nil && s.config.AgentEnabled {
+	if s.config.AgentEnabled {
 		_, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
 			Kind: types.NotificationDispatchKindContainerUpdate,
 			ContainerUpdate: &types.NotificationDispatchContainerUpdate{
@@ -840,7 +840,7 @@ func (s *NotificationService) SendVulnerabilityNotification(ctx context.Context,
 		return nil
 	}
 
-	if s.config != nil && s.config.AgentEnabled {
+	if s.config.AgentEnabled {
 		_, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
 			Kind: types.NotificationDispatchKindVulnerabilityFound,
 			VulnerabilityFound: &types.NotificationDispatchVulnerabilityFound{
@@ -886,7 +886,7 @@ func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Conte
 		return 0, nil
 	}
 
-	if s.config != nil && s.config.AgentEnabled {
+	if s.config.AgentEnabled {
 		dispatchResponse, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
 			Kind: types.NotificationDispatchKindBatchImageUpdate,
 			BatchImageUpdate: &types.NotificationDispatchBatchImageUpdate{
@@ -948,7 +948,7 @@ func (s *NotificationService) SendPruneReportNotification(ctx context.Context, r
 		slog.WarnContext(ctx, "sending prune report notification with errors but no resources were pruned", "errorCount", len(result.Errors))
 	}
 
-	if s.config != nil && s.config.AgentEnabled {
+	if s.config.AgentEnabled {
 		_, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
 			Kind: types.NotificationDispatchKindPruneReport,
 			PruneReport: &types.NotificationDispatchPruneReport{
@@ -979,7 +979,7 @@ func (s *NotificationService) sendPruneReportNotificationForTarget(ctx context.C
 
 // SendAutoHealNotification sends a notification when a container is auto-healed.
 func (s *NotificationService) SendAutoHealNotification(ctx context.Context, containerName, containerID string) error {
-	if s.config != nil && s.config.AgentEnabled {
+	if s.config.AgentEnabled {
 		_, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
 			Kind: types.NotificationDispatchKindAutoHeal,
 			AutoHeal: &types.NotificationDispatchAutoHeal{

@@ -452,7 +452,7 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 		}
 		return nil, huma.Error500InternalServerError("Failed to update user")
 	}
-	h.authService.InvalidateUserTokenCache(updated.ID)
+	h.authService.tokens.InvalidateUser(updated.ID)
 
 	out, err := h.userService.ToUserResponseDto(ctx, *updated)
 	if err != nil {
@@ -517,7 +517,7 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 		slog.ErrorContext(ctx, "Failed to save avatar", "userId", currentUser.ID, "error", uploadAvatarErr)
 		return nil, huma.Error500InternalServerError("failed to save avatar")
 	}
-	h.authService.InvalidateUserTokenCache(currentUser.ID)
+	h.authService.tokens.InvalidateUser(currentUser.ID)
 
 	// Reload user so the response reflects the new AvatarURL
 	updatedUser, err := h.userService.GetUser(ctx, currentUser.ID)
@@ -549,7 +549,7 @@ func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*han
 		slog.ErrorContext(ctx, "Failed to delete avatar", "userId", currentUser.ID, "error", deleteAvatarErr)
 		return nil, huma.Error500InternalServerError("failed to delete avatar")
 	}
-	h.authService.InvalidateUserTokenCache(currentUser.ID)
+	h.authService.tokens.InvalidateUser(currentUser.ID)
 
 	updatedUser, err := h.userService.GetUser(ctx, currentUser.ID)
 	if err != nil {
@@ -1070,31 +1070,29 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next 
 // apiKeyHeaderAuth authenticates an X-API-Key credential: a user-owned API key
 // first, then an environment access token presented through the same header.
 func (m *AuthMiddleware) apiKeyHeaderAuth(ctx context.Context, c *echo.Context, next echo.HandlerFunc, apiKey string) error {
-	if m.apiKeyValidator != nil {
-		authenticatedUser, key, err := m.apiKeyValidator.ValidateApiKeyWithID(ctx, apiKey)
-		if err == nil && authenticatedUser != nil {
-			// Personal keys inherit the owner's role permissions (same
-			// resolution as session auth); scoped keys use their own grants.
-			var ps *authz.PermissionSet
-			// Falling back to the owner's role permissions would defeat per-key
-			// scoping, so scoped-key resolution failures are explicitly denied.
-			switch {
-			case key.Kind == apikey.ApiKeyKindPersonal:
-				ps = m.resolvePermissionsOrDeny(ctx, authenticatedUser)
-			case m.roleResolver == nil || key.ID == "":
+	authenticatedUser, key, err := m.apiKeyValidator.ValidateApiKeyWithID(ctx, apiKey)
+	if err == nil && authenticatedUser != nil {
+		// Personal keys inherit the owner's role permissions (same
+		// resolution as session auth); scoped keys use their own grants.
+		var ps *authz.PermissionSet
+		// Falling back to the owner's role permissions would defeat per-key
+		// scoping, so scoped-key resolution failures are explicitly denied.
+		switch {
+		case key.Kind == apikey.ApiKeyKindPersonal:
+			ps = m.resolvePermissionsOrDeny(ctx, authenticatedUser)
+		case key.ID == "":
+			ps = authz.NewPermissionSet()
+		default:
+			if ps, err = m.roleResolver.ResolveApiKeyPermissions(ctx, key.ID); err != nil || ps == nil {
+				slog.WarnContext(ctx, "failed to resolve api key permissions for Echo auth", "error", err)
 				ps = authz.NewPermissionSet()
-			default:
-				if ps, err = m.roleResolver.ResolveApiKeyPermissions(ctx, key.ID); err != nil || ps == nil {
-					slog.WarnContext(ctx, "failed to resolve api key permissions for Echo auth", "error", err)
-					ps = authz.NewPermissionSet()
-				}
 			}
-			c.Set(string(middleware.ContextKeyUserID), authenticatedUser.ID)
-			c.Set(string(middleware.ContextKeyCurrentUser), authenticatedUser)
-			c.Set(string(middleware.ContextKeyUserPermissions), ps)
-			c.Set(string(middleware.ContextKeyAuthMethod), "api_key")
-			return m.authorizeAndContinue(c, next, ps)
 		}
+		c.Set(string(middleware.ContextKeyUserID), authenticatedUser.ID)
+		c.Set(string(middleware.ContextKeyCurrentUser), authenticatedUser)
+		c.Set(string(middleware.ContextKeyUserPermissions), ps)
+		c.Set(string(middleware.ContextKeyAuthMethod), "api_key")
+		return m.authorizeAndContinue(c, next, ps)
 	}
 	if env, ok := m.resolveEnvironmentAccessToken(ctx, apiKey).Get(); ok {
 		ps := environmentScoped(c, env)
@@ -1117,10 +1115,10 @@ func (m *AuthMiddleware) authorizeAndContinue(c *echo.Context, next echo.Handler
 }
 
 // resolvePermissionsOrDeny returns the user's permission set, or an empty
-// (deny-all) set if the resolver is unavailable or fails. Resolver failures
+// (deny-all) set if the resolver fails. Resolver failures
 // are logged.
 func (m *AuthMiddleware) resolvePermissionsOrDeny(ctx context.Context, authenticatedUser *userdomain.User) *authz.PermissionSet {
-	if m.roleResolver == nil || authenticatedUser == nil {
+	if authenticatedUser == nil {
 		return authz.NewPermissionSet()
 	}
 	ps, err := m.roleResolver.ResolvePermissions(ctx, authenticatedUser.ID)
@@ -1132,10 +1130,6 @@ func (m *AuthMiddleware) resolvePermissionsOrDeny(ctx context.Context, authentic
 }
 
 func (m *AuthMiddleware) resolveEnvironmentAccessToken(ctx context.Context, token string) mo.Option[*environment.Environment] {
-	if m.envTokenResolver == nil {
-		return mo.None[*environment.Environment]()
-	}
-
 	env, err := m.envTokenResolver.ResolveEnvironmentByAccessToken(ctx, token)
 	if err != nil || env == nil {
 		return mo.None[*environment.Environment]()

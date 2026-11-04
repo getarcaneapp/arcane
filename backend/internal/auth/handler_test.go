@@ -139,6 +139,7 @@ func TestNewHumaMiddleware_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToke
 
 	signingKey := newTestSigningKey()
 	authSvc := NewAuthService(AuthServiceParams{
+		TokenCache:     NewTokenCache(),
 		UserService:    userSvc,
 		SessionService: sessionSvc,
 		Config:         &config.Config{JWTRefreshExpiry: 24 * time.Hour},
@@ -317,6 +318,7 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 	signingKey := newTestSigningKey()
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
 	authSvc := NewAuthService(AuthServiceParams{
+		TokenCache:     NewTokenCache(),
 		UserService:    userSvc,
 		SessionService: sessionSvc,
 		Config:         cfg,
@@ -413,6 +415,7 @@ func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 	browserSigningKey := bytes.Repeat([]byte{0x24}, browserSessionSigningKeySize)
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
 	authSvc := NewAuthService(AuthServiceParams{
+		TokenCache:     NewTokenCache(),
 		UserService:    userSvc,
 		SessionService: sessionSvc,
 		Config:         cfg,
@@ -731,6 +734,7 @@ func TestAuthMiddleware_ManagerAuthEnvironmentAccessToken(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			router := echo.New()
 			authMiddleware := NewAuthMiddleware(nil, &config.Config{}).
+				WithApiKeyValidator(testApiKeyValidator{}).
 				WithEnvironmentAccessTokenResolver(testEnvironmentTokenResolver{
 					env: &environment.Environment{
 						ID:          "env-self",

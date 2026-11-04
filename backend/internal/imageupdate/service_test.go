@@ -280,7 +280,15 @@ func setupImageUpdateTestDB(t *testing.T) *database.DB {
 	dsn := fmt.Sprintf("file:image-update-test-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&ImageUpdateRecord{}, &event.Event{}, &testProjectRow{}, &settings.SettingVariable{}, &registry.ContainerRegistry{}))
+	require.NoError(t, db.AutoMigrate(
+		&ImageUpdateRecord{},
+		&event.Event{},
+		&testProjectRow{},
+		&settings.SettingVariable{},
+		&registry.ContainerRegistry{},
+		&activity.Activity{},
+		&activity.ActivityMessage{},
+	))
 	return &database.DB{DB: db}
 }
 
@@ -318,9 +326,10 @@ func newComposeBuildImageUpdateService(t *testing.T) (*ImageUpdateService, *atom
 	})
 
 	dockerService := newImageUpdateTestDockerService(t, dockerServer)
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	return NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService:     newImageUpdateDefaultSettingsService(t),
 		RegistryService:     registryService,
 		DockerService:       dockerService,
@@ -397,9 +406,10 @@ func TestImageUpdateService_CheckImages_ComposeBuildMissingLocallySkipsRegistry(
 	})
 
 	dockerService := newImageUpdateTestDockerService(t, dockerServer)
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService:     newImageUpdateDefaultSettingsService(t),
 		RegistryService:     registryService,
 		DockerService:       dockerService,
@@ -462,9 +472,10 @@ func newArcaneLocalImageUpdateService(t *testing.T, imageExists bool) (*ImageUpd
 	})
 
 	dockerService := newImageUpdateTestDockerService(t, dockerServer)
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	return NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService:     newImageUpdateDefaultSettingsService(t),
 		RegistryService:     registryService,
 		DockerService:       dockerService,
@@ -728,10 +739,11 @@ func TestImageUpdateService_CheckImageUpdate_SkipsDigestPinnedReference(t *testi
 	db := setupImageUpdateTestDB(t)
 	pinnedDigest := digest.FromString("pinned-newt").String()
 	imageRef := "ghcr.io/fosrl/newt@" + pinnedDigest
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	dockerService := newImageUpdateNotificationDockerService(t, nil)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService:     newImageUpdateDefaultSettingsService(t),
 		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
 		DockerService:       dockerService,
@@ -755,6 +767,8 @@ func TestImageUpdateService_CheckImages_SkipsDigestPinnedReference(t *testing.T)
 	imageRef := "ghcr.io/fosrl/newt@" + pinnedDigest
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:              db,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		ActivityService: activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService: newImageUpdateDefaultSettingsService(t),
 		RegistryService: registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
 			DB:              db,
@@ -796,6 +810,8 @@ func TestImageUpdateService_CheckImages_SkippedDigestPinnedReferenceClearsStaleE
 	}).Error)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:              db,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		ActivityService: activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService: newImageUpdateDefaultSettingsService(t),
 		RegistryService: registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
 			DB:              db,
@@ -834,6 +850,8 @@ func TestImageUpdateService_CheckImages_DigestPinnedTagPreservedWhenLocalImageHa
 	dockerService := newImageUpdateTestDockerService(t, server)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:              db,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		ActivityService: activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService: newImageUpdateDefaultSettingsService(t),
 		RegistryService: registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
 			DB:              db,
@@ -909,9 +927,10 @@ func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) 
 	})
 
 	dockerService := newImageUpdateTestDockerService(t, server)
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService:     newImageUpdateDefaultSettingsService(t),
 		RegistryService:     registryService,
 		DockerService:       dockerService,
@@ -962,9 +981,10 @@ func TestImageUpdateService_CheckImages_UsesRegistryFallback(t *testing.T) {
 	})
 
 	dockerService := newImageUpdateTestDockerService(t, server)
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService:     newImageUpdateDefaultSettingsService(t),
 		RegistryService:     registryService,
 		DockerService:       dockerService,
@@ -997,6 +1017,7 @@ func TestImageUpdateService_CheckImagesCompletesActivityAfterRequestContextCance
 	activityService := activity.NewActivityService(db, settingsService)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
 		SettingsService:     settingsService,
 		RegistryService:     newImageUpdateTestRegistryService(t, db, nil),
 		NotificationService: newTestNotificationService(t, db),
@@ -1065,6 +1086,7 @@ func TestImageUpdateService_CheckImagesPanicFailsOnlyThatImage(t *testing.T) {
 
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:              db,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		SettingsService: settingsService,
 		RegistryService: registryService,
 		DockerService: docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(
@@ -1089,7 +1111,15 @@ func TestImageUpdateService_CheckImagesPanicFailsOnlyThatImage(t *testing.T) {
 
 func TestImageUpdateService_CheckImages_UsesDockerHubCredentialsOnFirstAttempt(t *testing.T) {
 	db := setupImageUpdateRegistryTestDB(t)
-	require.NoError(t, db.AutoMigrate(&ImageUpdateRecord{}, &event.Event{}, &testProjectRow{}, &settings.SettingVariable{}, &registry.ContainerRegistry{}))
+	require.NoError(t, db.AutoMigrate(
+		&ImageUpdateRecord{},
+		&event.Event{},
+		&testProjectRow{},
+		&settings.SettingVariable{},
+		&registry.ContainerRegistry{},
+		&activity.Activity{},
+		&activity.ActivityMessage{},
+	))
 	createImageUpdateTestPullRegistry(t, db, "https://index.docker.io/v1/", "docker-user", "docker-token")
 
 	localDigest := digest.FromString("batchlocal-rate-limit").String()
@@ -1125,9 +1155,10 @@ func TestImageUpdateService_CheckImages_UsesDockerHubCredentialsOnFirstAttempt(t
 	})
 
 	dockerService := newImageUpdateTestDockerService(t, server)
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService:     newImageUpdateDefaultSettingsService(t),
 		RegistryService:     registryService,
 		DockerService:       dockerService,
@@ -1177,9 +1208,10 @@ func TestImageUpdateService_CheckImages_ReportsNotPulledWhenLocalImageMissing(t 
 	})
 
 	dockerService := newImageUpdateTestDockerService(t, server)
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService:     newImageUpdateDefaultSettingsService(t),
 		RegistryService:     registryService,
 		DockerService:       dockerService,
@@ -1220,6 +1252,8 @@ func TestImageUpdateService_SaveUpdateResultWithSnapshot_PersistsRegistryOnlySuc
 	dockerService := newImageUpdateTestDockerService(t, server)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService:     newImageUpdateDefaultSettingsService(t),
 		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
 		DockerService:       dockerService,
@@ -1352,6 +1386,8 @@ func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsA
 	dockerService := newImageUpdateTestDockerService(t, server)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:              db,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		ActivityService: activity.NewActivityService(db, settingsService),
 		SettingsService: settingsService,
 		RegistryService: registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
 			DB: db,
@@ -1836,6 +1872,8 @@ func TestImageUpdateService_SendBatchNotifications_FiltersByUpdateCheckEligibili
 	dockerService := newImageUpdateNotificationDockerService(t, containers)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService:     newImageUpdateDefaultSettingsService(t),
 		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
 		DockerService:       dockerService,
@@ -1898,6 +1936,8 @@ func TestImageUpdateService_SendBatchNotifications_FiltersByUpdateCheckEligibili
 	dockerService = newImageUpdateNotificationDockerService(t, resumedContainers)
 	svc = NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService:     newImageUpdateDefaultSettingsService(t),
 		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
 		DockerService:       dockerService,
@@ -1923,6 +1963,8 @@ func TestImageUpdateService_SendBatchNotifications_UnresolvedEligibilityLeavesUn
 	dockerService := newImageUpdateTestDockerService(t, server)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService:     newImageUpdateDefaultSettingsService(t),
 		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
 		DockerService:       dockerService,
@@ -1964,6 +2006,8 @@ func TestImageUpdateService_SendBatchNotifications_DetachesCanceledContext(t *te
 	dockerService := newImageUpdateNotificationDockerService(t, nil)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService:     newImageUpdateDefaultSettingsService(t),
 		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
 		DockerService:       dockerService,
@@ -2010,6 +2054,8 @@ func TestImageUpdateService_SendBatchNotifications_NoEligibleProviders_LeavesUnn
 	dockerService := newImageUpdateNotificationDockerService(t, nil)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService:     newImageUpdateDefaultSettingsService(t),
 		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
 		DockerService:       dockerService,
@@ -2069,6 +2115,8 @@ func TestImageUpdateService_SendBatchNotifications_PartialFailureStillMarksNotif
 	dockerService := newImageUpdateNotificationDockerService(t, nil)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService:     newImageUpdateDefaultSettingsService(t),
 		RegistryService:     newImageUpdateTestRegistryService(t, db, dockerService),
 		DockerService:       dockerService,
@@ -2274,7 +2322,7 @@ func TestImageUpdateService_GetAllImageRefsHonorsExclusiveContainerOptOut(t *tes
 	dockerService := newImageUpdateTestDockerService(t, server)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		SettingsService: newImageUpdateDefaultSettingsService(t),
-		RegistryService: newImageUpdateTestRegistryService(t, nil, dockerService),
+		RegistryService: newImageUpdateTestRegistryService(t, setupImageUpdateTestDB(t), dockerService),
 		DockerService:   dockerService,
 	})
 
@@ -2316,7 +2364,7 @@ func TestImageUpdateService_GetAllImageRefsAppliesLimitAfterOptOutFiltering(t *t
 	dockerService := newImageUpdateTestDockerService(t, server)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		SettingsService: newImageUpdateDefaultSettingsService(t),
-		RegistryService: newImageUpdateTestRegistryService(t, nil, dockerService),
+		RegistryService: newImageUpdateTestRegistryService(t, setupImageUpdateTestDB(t), dockerService),
 		DockerService:   dockerService,
 	})
 
@@ -2367,7 +2415,7 @@ func TestImageUpdateService_GetAllImageRefsExcludesAliasesOfOptedOutImage(t *tes
 	dockerService := newImageUpdateTestDockerService(t, server)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		SettingsService: newImageUpdateDefaultSettingsService(t),
-		RegistryService: newImageUpdateTestRegistryService(t, nil, dockerService),
+		RegistryService: newImageUpdateTestRegistryService(t, setupImageUpdateTestDB(t), dockerService),
 		DockerService:   dockerService,
 	})
 
@@ -2412,7 +2460,7 @@ func TestImageUpdateService_GetAllImageRefsKeepsImageSharedByEligibleContainer(t
 	dockerService := newImageUpdateTestDockerService(t, server)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		SettingsService: newImageUpdateDefaultSettingsService(t),
-		RegistryService: newImageUpdateTestRegistryService(t, nil, dockerService),
+		RegistryService: newImageUpdateTestRegistryService(t, setupImageUpdateTestDB(t), dockerService),
 		DockerService:   dockerService,
 	})
 
@@ -2447,7 +2495,7 @@ func TestImageUpdateService_GetAllImageRefsFallsBackToRefWhenImageIDsDiffer(t *t
 	dockerService := newImageUpdateTestDockerService(t, server)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		SettingsService: newImageUpdateDefaultSettingsService(t),
-		RegistryService: newImageUpdateTestRegistryService(t, nil, dockerService),
+		RegistryService: newImageUpdateTestRegistryService(t, setupImageUpdateTestDB(t), dockerService),
 		DockerService:   dockerService,
 	})
 
@@ -2489,7 +2537,7 @@ func TestImageUpdateService_GetAllImageRefsMergesIDAndReferenceEligibility(t *te
 	dockerService := newImageUpdateTestDockerService(t, server)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		SettingsService: newImageUpdateDefaultSettingsService(t),
-		RegistryService: newImageUpdateTestRegistryService(t, nil, dockerService),
+		RegistryService: newImageUpdateTestRegistryService(t, setupImageUpdateTestDB(t), dockerService),
 		DockerService:   dockerService,
 	})
 
@@ -2526,7 +2574,7 @@ func TestImageUpdateService_GetAllImageRefsFallsBackWhenContainerDiscoveryFails(
 	dockerService := newImageUpdateTestDockerService(t, server)
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		SettingsService: newImageUpdateDefaultSettingsService(t),
-		RegistryService: newImageUpdateTestRegistryService(t, nil, dockerService),
+		RegistryService: newImageUpdateTestRegistryService(t, setupImageUpdateTestDB(t), dockerService),
 		DockerService:   dockerService,
 	})
 
@@ -2671,10 +2719,11 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 	})
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService:     newImageUpdateDefaultSettingsService(t),
 		RegistryService:     registryService,
 		DockerService:       newImageUpdateTestDockerService(t, dockerServer),
-		EventService:        event.NewEventService(db, nil, nil),
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
 		NotificationService: newTestNotificationService(t, db),
 	})
 	checks, err := svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil)
@@ -2807,6 +2856,8 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 	require.NoError(t, settingsService.UpdateSetting(t.Context(), "autoUpdateExcludedContainers", "install-excluded"))
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
+		ActivityService:     activity.NewActivityService(db, settingsService),
 		SettingsService:     settingsService,
 		RegistryService:     registryService,
 		DockerService:       docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
@@ -2918,6 +2969,8 @@ func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadline(t *testing.T
 	})
 	svc := NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
+		ActivityService:     activity.NewActivityService(db, settingsService),
 		SettingsService:     settingsService,
 		RegistryService:     registryService,
 		DockerService:       docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
@@ -3065,10 +3118,11 @@ func newWorkflowCheckService(
 	dockerService := newImageUpdateTestDockerService(t, server)
 	return NewImageUpdateService(ImageUpdateServiceParams{
 		DB:                  db,
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService:     newImageUpdateDefaultSettingsService(t),
 		RegistryService:     registryService,
 		DockerService:       dockerService,
-		EventService:        event.NewEventService(db, nil, nil),
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
 		NotificationService: newTestNotificationService(t, db),
 	}), db
 }
@@ -3119,9 +3173,10 @@ func newTestNotificationService(t *testing.T, db *database.DB) *notification.Not
 		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))
 	})
 	require.NoError(t, db.AutoMigrate(&environment.Environment{}, &event.Event{}))
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	return notification.NewNotificationService(notification.NotificationServiceParams{
-		DB: db,
+		DB:     db,
+		Config: &config.Config{},
 		EnvironmentSvc: environment.NewEnvironmentService(environment.EnvironmentServiceParams{
 			DB: db,
 		}),

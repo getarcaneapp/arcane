@@ -312,7 +312,7 @@ func (s *ApiKeyService) hashRawAPIKey(rawKey string) string {
 // are deliberately not defended against, as doing so would require locking
 // every validation against every revocation.
 func (s *ApiKeyService) invalidateValidatedKeys(ids ...string) {
-	if s.validatedKeyCache == nil || len(ids) == 0 {
+	if len(ids) == 0 {
 		return
 	}
 	idSet := make(map[string]struct{}, len(ids))

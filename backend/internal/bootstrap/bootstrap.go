@@ -26,7 +26,6 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/apikey"
-	"getarcane.dev/arcane/v3/internal/auth"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/config/schema"
 	"getarcane.dev/arcane/v3/internal/container"
@@ -71,9 +70,7 @@ type (
 		Project     *project.ProjectService
 		Container   *container.ContainerService
 		Image       *image.ImageService
-		Variable    *variable.VariableService
 		Role        *role.RoleService
-		Auth        *auth.AuthService
 		User        *user.UserService
 		ApiKey      *apikey.ApiKeyService
 	}
@@ -241,6 +238,7 @@ func applicationOptions(
 				})
 			},
 			initializeStartupState,
+			startJobScheduler,
 			registerJobs,
 			func(lc fx.Lifecycle, router *echo.Echo, dockerService *docker.DockerClientService, _ *http.Server) {
 				if !cfg.AgentEnabled {
@@ -387,12 +385,6 @@ func initializeStartupState(p initializeStartupStateParams) {
 			slog.WarnContext(p.AppCtx, "Failed to reconcile agent environment statuses on startup", "error", err)
 		}
 		p.Environment.RegisterMetrics()
-
-		p.Environment.SetVariableSyncer(p.Variable)
-		p.Environment.SetUserInvalidator(func(userID string) {
-			p.Role.InvalidateUser(userID)
-			p.Auth.InvalidateUserTokenCache(userID)
-		})
 	}
 
 	startup.InitializeNonAgentFeatures(p.AppCtx, p.Config.AgentEnabled,

@@ -108,8 +108,7 @@ type (
 )
 
 func provideBackupEngine(p backupEngineParams) *backup.Engine {
-	engine := backup.NewEngine(p.Admission, p.ImageService)
-	engine.SetAuthorize(func(ctx context.Context, requester types.BackupRequester) error {
+	engine := backup.NewEngine(p.Admission, p.ImageService, func(ctx context.Context, requester types.BackupRequester) error {
 		if p.Config.AgentEnabled && requester.UserID == "agent" && requester.APIKeyID == "" {
 			return nil
 		}
@@ -166,6 +165,10 @@ func provideWorkflowEngine(p workflowEngineParams) (*flow.Engine, error) {
 	}
 	p.Lifecycle.Append(fx.Hook{OnStart: engine.Start, OnStop: engine.Stop})
 	return engine, nil
+}
+
+func provideJobScheduler(appCtx context.Context, coordinator *runs.Coordinator, cfg *config.Config) (types.JobScheduler, error) {
+	return scheduler.NewJobScheduler(appCtx, coordinator, cfg.GetLocation())
 }
 
 func provideAdmissionGate(runtime *francis.Runtime) (*runs.Admission, error) {

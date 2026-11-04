@@ -323,7 +323,7 @@ func (s *EventService) IngestAgentEvent(ctx context.Context, environmentID strin
 }
 
 func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *Event) {
-	if s.cfg == nil || !s.cfg.AgentEnabled {
+	if !s.cfg.AgentEnabled {
 		return
 	}
 
@@ -667,9 +667,6 @@ func describeEvent(eventType EventType, resourceType, resourceName string) (stri
 }
 
 func (s *EventService) PublishChange(environmentID, kind string) {
-	if s == nil {
-		return
-	}
 	head, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(kind)), ".")
 	kind = cmp.Or(changeKindAliases[head], head)
 	if kind == "" {
@@ -1035,49 +1032,31 @@ func mapDaemonEvent(msg events.Message) (CreateEventRequest, bool) {
 
 // MarkDockerExpectation correlates subsequent daemon observations with a local Arcane action.
 func (s *EventService) MarkDockerExpectation(resourceType, resourceID, resourceName string) {
-	if s == nil {
-		return
-	}
 	s.correlation.MarkExpectation(resourceType, resourceID, resourceName)
 }
 
 // BeginComposeSuppressionWindow covers daemon events labeled with the Compose project.
 func (s *EventService) BeginComposeSuppressionWindow(composeProject string) func() {
-	if s == nil {
-		return func() {}
-	}
 	return s.correlation.BeginComposeWindow(composeProject)
 }
 
 // BeginDockerResourceSuppressionWindow covers a mutation for its full duration and cleanup grace.
 func (s *EventService) BeginDockerResourceSuppressionWindow(resourceType, resourceID, resourceName string) func() {
-	if s == nil {
-		return func() {}
-	}
 	return s.correlation.BeginResourceWindow(resourceType, resourceID, resourceName)
 }
 
 // BeginDockerTypeSuppressionWindow covers bulk daemon operations whose per-item IDs are unknown until they finish.
 func (s *EventService) BeginDockerTypeSuppressionWindow(resourceType string) func() {
-	if s == nil {
-		return func() {}
-	}
 	return s.correlation.BeginTypeWindow(resourceType)
 }
 
 // SetDockerUpdatingContainers supplies the updater's live identities without coupling domains.
 func (s *EventService) SetDockerUpdatingContainers(source func() []string) {
-	if s == nil {
-		return
-	}
 	s.correlation.SetUpdatingContainers(source)
 }
 
 // ShouldSuppressDaemonEvent reports whether a daemon observation matches a recent local action.
 func (s *EventService) ShouldSuppressDaemonEvent(resourceType, actorID, actorName, composeProject string) bool {
-	if s == nil {
-		return false
-	}
 	return s.correlation.ShouldSuppress(resourceType, actorID, actorName, composeProject)
 }
 

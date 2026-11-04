@@ -78,6 +78,9 @@ type (
 		HelperImage      func(ctx context.Context) (string, error)
 		AcquireHelper    func(ctx context.Context, volumeName string) (string, func(), error)
 		Exec             func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
+		Ctx              context.Context
+		Scheduler        types.DynamicScheduler
+		Admission        *runs.Admission
 		BackupVolumeName string
 		EncryptionKey    string
 	}
@@ -141,6 +144,9 @@ func NewService(deps Dependencies) *Service {
 		S3Destinations: deps.S3Destinations,
 		Settings:       deps.Settings,
 		AlreadyRunning: deps.AlreadyRunning,
+		Ctx:            deps.Ctx,
+		Scheduler:      deps.Scheduler,
+		Admission:      deps.Admission,
 		LatestRun: func(ctx context.Context, policyID string) (*types.VolumeBackupEntry, error) {
 			entry, err := s.deps.Store.Latest(ctx, policyID)
 			if err != nil || entry == nil {
@@ -214,11 +220,6 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 		return err
 	}
 	return s.policies.RegisterWorkflows(engine)
-}
-
-// SetScheduler injects the scheduler and admission gate; agents run their own volume backups too.
-func (s *Service) SetScheduler(ctx context.Context, dynamicScheduler types.DynamicScheduler, admissionGate *runs.Admission) error {
-	return s.policies.SetScheduler(ctx, dynamicScheduler, admissionGate)
 }
 
 func (s *Service) RegisterJobsOnStartup(ctx context.Context) {

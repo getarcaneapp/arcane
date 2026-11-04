@@ -101,7 +101,7 @@ func NewApnsService(p ApnsServiceParams) *ApnsService {
 }
 
 func (s *ApnsService) Enabled(ctx context.Context) bool {
-	return s.config != nil && !s.config.AgentEnabled && s.settings.GetBoolSetting(ctx, "apnsEnabled")
+	return !s.config.AgentEnabled && s.settings.GetBoolSetting(ctx, "apnsEnabled")
 }
 
 func (s *ApnsService) signer(ctx context.Context) (*relaySigner, error) {
@@ -222,9 +222,6 @@ func (s *ApnsService) EnsureChannel(ctx context.Context) (string, error) {
 }
 
 func (s *ApnsService) ApplyEnabledUpdates(ctx context.Context, updates []types.SettingUpdate, rescheduleOutbox func() error) {
-	if s == nil {
-		return
-	}
 	for _, update := range updates {
 		if update.Value == "true" {
 			if _, err := s.EnsureChannel(ctx); err != nil {

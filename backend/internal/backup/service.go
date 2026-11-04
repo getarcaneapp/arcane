@@ -210,10 +210,11 @@ func NewRequester(ctx context.Context, requestedBy types.Actor, environmentID, p
 }
 
 // NewEngine builds the backup engine on the shared admission gate.
-func NewEngine(admission *runs.Admission, imageService *image.ImageService) *Engine {
+func NewEngine(admission *runs.Admission, imageService *image.ImageService, authorize func(context.Context, types.BackupRequester) error) *Engine {
 	return &Engine{
 		imageService: imageService,
 		admission:    admission,
+		authorize:    authorize,
 		repositories: make(map[string]*sync.Mutex),
 		held:         make(map[types.SchedulerAdmissionKey]heldLease),
 	}
@@ -260,16 +261,8 @@ func (e *Engine) AcquireRun(ctx context.Context, scope, id, run string) (*runs.L
 	return e.TryAcquireRun(ctx, scope, id)
 }
 
-// SetAuthorize sets the check Authorize applies to manual backup requesters.
-func (e *Engine) SetAuthorize(authorize func(context.Context, types.BackupRequester) error) {
-	e.authorize = authorize
-}
-
 // Authorize checks that the requester may still run the backup.
 func (e *Engine) Authorize(ctx context.Context, requester types.BackupRequester) error {
-	if e.authorize == nil {
-		return nil
-	}
 	return e.authorize(ctx, requester)
 }
 

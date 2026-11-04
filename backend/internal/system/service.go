@@ -96,6 +96,9 @@ type (
 		Actors             *francis.Runtime
 		Config             *config.Config
 		SettingsEnv        settings.Env
+		Ctx                context.Context
+		Scheduler          types.DynamicScheduler
+		Admission          *runs.Admission
 	}
 
 	startMatchingContainersOptions struct {
@@ -170,6 +173,9 @@ func NewSystemService(p SystemServiceParams) *SystemService {
 		SettingsEnv:           p.SettingsEnv,
 		RecoveryKeys:          p.RecoveryKeys,
 		ResolveRuntimeOptions: resolveUpgraderRuntimeOptions,
+		Ctx:                   p.Ctx,
+		Scheduler:             p.Scheduler,
+		Admission:             p.Admission,
 	})
 	return s
 }
@@ -190,12 +196,6 @@ func (s *SystemService) ReconcileInterruptedBackups(ctx context.Context, protect
 		return err
 	}
 	return s.backup.WatchAcceptedBackups(ctx)
-}
-
-// SetBackupScheduler injects the dynamic scheduler and admission gate for
-// per-policy system backup jobs. Agent mode leaves them unset.
-func (s *SystemService) SetBackupScheduler(ctx context.Context, dynamicScheduler types.DynamicScheduler, admissionGate *runs.Admission) error {
-	return s.backup.SetScheduler(ctx, dynamicScheduler, admissionGate)
 }
 
 // PruneLocalBackupRepository frees the space of deleted local system backups.

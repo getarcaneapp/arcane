@@ -266,6 +266,7 @@ func TestUpdaterService_ApplyPendingNoRecords(t *testing.T) {
 	require.NoError(t, admission.Register(harness.Runtime))
 	svc, svcErr := NewUpdaterService(UpdaterServiceParams{
 		DB:              db,
+		ActivityService: activity.NewActivityService(db, settingsService),
 		SettingsService: settingsService,
 		DockerService:   newUnreachableDockerService(t),
 		ProjectService: project.NewProjectService(project.ProjectServiceParams{
@@ -274,10 +275,11 @@ func TestUpdaterService_ApplyPendingNoRecords(t *testing.T) {
 		}),
 		ImageUpdateService: imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
 			DB:                  db,
+			ActivityService:     activity.NewActivityService(db, settingsService),
 			DockerService:       newEmptyContainerListDockerService(t),
 			NotificationService: notif,
 		}),
-		EventService:        event.NewEventService(db, nil, nil),
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
 		NotificationService: notif,
 		Admission:           admission,
 	})
@@ -328,6 +330,7 @@ func TestUpdaterService_TriggerSelfUpdateViaCLI(t *testing.T) {
 	t.Run("server label triggers upgrade with system user", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeService{}
 		svc, svcErr := NewUpdaterService(UpdaterServiceParams{
+			EventService:  event.NewEventService(setupProjectTestDB(t), &config.Config{}, nil),
 			DockerService: newEmptyContainerListDockerService(t),
 			SelfUpgrader:  mockUpgrade,
 			Admission:     newAdmission(t),
@@ -353,6 +356,7 @@ func TestUpdaterService_TriggerSelfUpdateViaCLI(t *testing.T) {
 	t.Run("engine target keeps the selected tag and pulls the frozen digest", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeService{}
 		svc, svcErr := NewUpdaterService(UpdaterServiceParams{
+			EventService:  event.NewEventService(setupProjectTestDB(t), &config.Config{}, nil),
 			DockerService: newEmptyContainerListDockerService(t),
 			SelfUpgrader:  mockUpgrade,
 			Admission:     newAdmission(t),
@@ -380,6 +384,7 @@ func TestUpdaterService_TriggerSelfUpdateViaCLI(t *testing.T) {
 	t.Run("agent label triggers upgrade", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeService{}
 		svc, svcErr := NewUpdaterService(UpdaterServiceParams{
+			EventService:  event.NewEventService(setupProjectTestDB(t), &config.Config{}, nil),
 			DockerService: newEmptyContainerListDockerService(t),
 			SelfUpgrader:  mockUpgrade,
 			Admission:     newAdmission(t),
@@ -397,6 +402,7 @@ func TestUpdaterService_TriggerSelfUpdateViaCLI(t *testing.T) {
 	t.Run("non Arcane labels fail without triggering upgrade", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeService{}
 		svc, svcErr := NewUpdaterService(UpdaterServiceParams{
+			EventService:  event.NewEventService(setupProjectTestDB(t), &config.Config{}, nil),
 			DockerService: newEmptyContainerListDockerService(t),
 			SelfUpgrader:  mockUpgrade,
 			Admission:     newAdmission(t),
@@ -415,6 +421,7 @@ func TestUpdaterService_TriggerSelfUpdateViaCLI(t *testing.T) {
 	t.Run("upgrade errors are wrapped", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeService{triggerError: errors.New("upgrade failed")}
 		svc, svcErr := NewUpdaterService(UpdaterServiceParams{
+			EventService:  event.NewEventService(setupProjectTestDB(t), &config.Config{}, nil),
 			DockerService: newEmptyContainerListDockerService(t),
 			SelfUpgrader:  mockUpgrade,
 			Admission:     newAdmission(t),
@@ -431,7 +438,9 @@ func TestUpdaterService_TriggerSelfUpdateViaCLI(t *testing.T) {
 }
 
 func TestUpdaterService_StatusTracking(t *testing.T) {
-	svc, svcErr := NewUpdaterService(UpdaterServiceParams{})
+	svc, svcErr := NewUpdaterService(UpdaterServiceParams{
+		EventService: event.NewEventService(setupProjectTestDB(t), &config.Config{}, nil),
+	})
 	require.NoError(t, svcErr)
 
 	stopContainer := svc.engine.BeginContainerUpdate("container-1")
@@ -455,7 +464,7 @@ func TestUpdaterService_StatusTracking(t *testing.T) {
 
 func TestUpdaterService_DockerClientAdapter(t *testing.T) {
 	t.Run("active engine updates correlate before the stop event is recorded", func(t *testing.T) {
-		events := event.NewEventService(nil, nil, nil)
+		events := event.NewEventService(nil, &config.Config{}, nil)
 		svc, err := NewUpdaterService(UpdaterServiceParams{
 			EventService: events,
 		})
@@ -498,10 +507,11 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 			}),
 			ImageUpdateService: imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
 				DB:              db,
+				ActivityService: activity.NewActivityService(db, settingsService),
 				SettingsService: settingsService,
 				DockerService:   dockerSvc,
 			}),
-			EventService:    event.NewEventService(db, nil, nil),
+			EventService:    event.NewEventService(db, &config.Config{}, nil),
 			SettingsService: settingsService,
 		})
 		projectSvc := project.NewProjectService(project.ProjectServiceParams{
@@ -513,6 +523,8 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 		}).GetEnabledRegistryCredentials
 		svc, svcErr := NewUpdaterService(UpdaterServiceParams{
 			DB:              db,
+			EventService:    event.NewEventService(db, &config.Config{}, nil),
+			ActivityService: activity.NewActivityService(db, settingsService),
 			SettingsService: settingsService,
 			DockerService:   dockerSvc,
 			ProjectService:  projectSvc,
@@ -562,10 +574,11 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 			RegistryService: registrySvc,
 			ImageUpdateService: imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
 				DB:              db,
+				ActivityService: activity.NewActivityService(db, settingsService),
 				RegistryService: registrySvc,
 				DockerService:   dockerSvc,
 			}),
-			EventService:    event.NewEventService(db, nil, nil),
+			EventService:    event.NewEventService(db, &config.Config{}, nil),
 			SettingsService: settingsService,
 		})
 		envSvc := environment.NewEnvironmentService(environment.EnvironmentServiceParams{
@@ -578,6 +591,8 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 		projectSvc.RegistryCredentialsProvider = envSvc.GetEnabledRegistryCredentials
 		svc, svcErr := NewUpdaterService(UpdaterServiceParams{
 			DB:              db,
+			EventService:    event.NewEventService(db, &config.Config{}, nil),
+			ActivityService: activity.NewActivityService(db, settingsService),
 			SettingsService: settingsService,
 			DockerService:   dockerSvc,
 			ProjectService:  projectSvc,
@@ -630,11 +645,14 @@ func TestUpdaterService_PendingImageUpdatesAdapter(t *testing.T) {
 	notif := newTestNotificationService(t, db)
 	imageUpdates := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
 		DB:                  db,
+		ActivityService:     newTestActivityService(t, db),
 		DockerService:       newEmptyContainerListDockerService(t),
 		NotificationService: notif,
 	})
 	svc, svcErr := NewUpdaterService(UpdaterServiceParams{
 		DB:                  db,
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
+		ActivityService:     newTestActivityService(t, db),
 		ImageUpdateService:  imageUpdates,
 		NotificationService: notif,
 	})
@@ -688,11 +706,14 @@ func TestUpdaterService_PendingImageUpdatesAbortsWhenNotificationEligibilityUnre
 	t.Cleanup(server.Close)
 	imageUpdates := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
 		DB:                  db,
+		ActivityService:     newTestActivityService(t, db),
 		DockerService:       newSettingsDockerService(t, newTestDockerClient(t, server)),
 		NotificationService: notif,
 	})
 	svc, err := NewUpdaterService(UpdaterServiceParams{
 		DB:                  db,
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
+		ActivityService:     newTestActivityService(t, db),
 		ImageUpdateService:  imageUpdates,
 		NotificationService: notif,
 	})
@@ -740,11 +761,14 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotifications(t *testin
 	notif := newTestNotificationService(t, db)
 	imageUpdates := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
 		DB:                  db,
+		ActivityService:     newTestActivityService(t, db),
 		DockerService:       newEmptyContainerListDockerService(t),
 		NotificationService: notif,
 	})
 	svc, svcErr := NewUpdaterService(UpdaterServiceParams{
 		DB:                  db,
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
+		ActivityService:     newTestActivityService(t, db),
 		ImageUpdateService:  imageUpdates,
 		NotificationService: notif,
 	})
@@ -779,11 +803,14 @@ func TestUpdaterService_PendingImageUpdatesNoProvidersLeavesUnnotified(t *testin
 	notif := newTestNotificationService(t, db)
 	imageUpdates := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
 		DB:                  db,
+		ActivityService:     newTestActivityService(t, db),
 		DockerService:       newEmptyContainerListDockerService(t),
 		NotificationService: notif,
 	})
 	svc, svcErr := NewUpdaterService(UpdaterServiceParams{
 		DB:                  db,
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
+		ActivityService:     newTestActivityService(t, db),
 		ImageUpdateService:  imageUpdates,
 		NotificationService: notif,
 	})
@@ -811,7 +838,9 @@ func TestUpdaterService_RecordUpdateRunAdapter(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&AutoUpdateRecord{}))
 	svc, svcErr := NewUpdaterService(UpdaterServiceParams{
-		DB: db,
+		DB:              db,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		ActivityService: newTestActivityService(t, db),
 	})
 	require.NoError(t, svcErr)
 
@@ -860,6 +889,7 @@ func TestUpdaterService_RecordUpdateRunAppendsActivityMessage(t *testing.T) {
 	activityService := activity.NewActivityService(db, nil)
 	svc, svcErr := NewUpdaterService(UpdaterServiceParams{
 		DB:              db,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ActivityService: activityService,
 	})
 	require.NoError(t, svcErr)
@@ -948,6 +978,7 @@ func TestUpdaterService_AcceptSingleContainerUpdateUsesQueuedActivity(t *testing
 			require.NoError(t, admission.Register(harness.Runtime))
 			svc, err := NewUpdaterService(UpdaterServiceParams{
 				DB:              db,
+				EventService:    event.NewEventService(db, &config.Config{}, nil),
 				DockerService:   newEmptyContainerListDockerService(t),
 				ActivityService: activityService,
 				Admission:       admission,
@@ -1006,6 +1037,7 @@ func TestUpdaterService_AcceptSingleContainerUpdateFailureFinalizes(t *testing.T
 	activityService := activity.NewActivityService(db, nil)
 	svc, err := NewUpdaterService(UpdaterServiceParams{
 		DB:              db,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		DockerService:   newUnreachableDockerService(t),
 		ActivityService: activityService,
 	})
@@ -1098,6 +1130,7 @@ func TestUpdaterService_SingleContainerActivityResultMessages(t *testing.T) {
 			activityService := activity.NewActivityService(db, nil)
 			svc, err := NewUpdaterService(UpdaterServiceParams{
 				DB:              db,
+				EventService:    event.NewEventService(db, &config.Config{}, nil),
 				ActivityService: activityService,
 			})
 			require.NoError(t, err)
@@ -1233,12 +1266,14 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjects(t *
 	admission := runs.NewAdmission(harness.Runtime.Service(), t.Name())
 	require.NoError(t, admission.Register(harness.Runtime))
 	svc, svcErr := NewUpdaterService(UpdaterServiceParams{
-		DB: db,
+		DB:              db,
+		ActivityService: newTestActivityService(t, db),
 		ImageUpdateService: imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
-			DB:            db,
-			DockerService: newEmptyContainerListDockerService(t),
+			DB:              db,
+			ActivityService: newTestActivityService(t, db),
+			DockerService:   newEmptyContainerListDockerService(t),
 		}),
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		Admission:    admission,
 	})
 	require.NoError(t, svcErr)
@@ -1379,13 +1414,15 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgrade(
 	admission := runs.NewAdmission(harness.Runtime.Service(), t.Name())
 	require.NoError(t, admission.Register(harness.Runtime))
 	svc, svcErr := NewUpdaterService(UpdaterServiceParams{
-		DB:            db,
-		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+		DB:              db,
+		ActivityService: newTestActivityService(t, db),
+		DockerService:   newSettingsDockerService(t, newTestDockerClient(t, server)),
 		ImageUpdateService: imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
-			DB:            db,
-			DockerService: newEmptyContainerListDockerService(t),
+			DB:              db,
+			ActivityService: newTestActivityService(t, db),
+			DockerService:   newEmptyContainerListDockerService(t),
 		}),
-		EventService: event.NewEventService(db, nil, nil),
+		EventService: event.NewEventService(db, &config.Config{}, nil),
 		SelfUpgrader: mockUpgrade,
 		Admission:    admission,
 	})
@@ -1634,11 +1671,14 @@ func TestUpdaterService_ScopedPendingRecordsIsolation(t *testing.T) {
 	notif := newTestNotificationService(t, db)
 	imageUpdates := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
 		DB:                  db,
+		ActivityService:     newTestActivityService(t, db),
 		DockerService:       dockerSvc,
 		NotificationService: notif,
 	})
 	svc, err := NewUpdaterService(UpdaterServiceParams{
 		DB:                  db,
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
+		ActivityService:     newTestActivityService(t, db),
 		DockerService:       dockerSvc,
 		ImageUpdateService:  imageUpdates,
 		NotificationService: notif,
@@ -1720,8 +1760,10 @@ func TestUpdaterService_SharedDigestRecordClearing(t *testing.T) {
 			server := newUpdaterApplyPendingDockerServer(t, containers, nil, nil, map[string]dockertypesimage.InspectResponse{imageRef: {ID: "new-image"}})
 			dockerSvc := newSettingsDockerService(t, newTestDockerClient(t, server))
 			svc, err := NewUpdaterService(UpdaterServiceParams{
-				DB:            db,
-				DockerService: dockerSvc,
+				DB:              db,
+				EventService:    event.NewEventService(db, &config.Config{}, nil),
+				ActivityService: newTestActivityService(t, db),
+				DockerService:   dockerSvc,
 			})
 			require.NoError(t, err)
 			require.NoError(t, svc.ClearImageUpdateRecord(t.Context(), updater.ImageUpdateRecord{
@@ -1869,7 +1911,7 @@ func TestSingleUpdatePersistsSuccessfulActivity(t *testing.T) {
 		DB:              db,
 		SettingsService: settingsService,
 		DockerService:   dockerSvc,
-		EventService:    event.NewEventService(db, nil, nil),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ActivityService: activityService,
 		Admission:       admission,
 	})
@@ -1891,11 +1933,14 @@ func TestUpdaterService_WorkflowDefinitionsAreVersioned(t *testing.T) {
 	db := setupProjectTestDB(t)
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	imageUpdates := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
-		DB: db,
+		DB:              db,
+		ActivityService: newTestActivityService(t, db),
 	})
 	require.NoError(t, imageUpdates.RegisterWorkflows(harness.Engine))
 	svc, err := NewUpdaterService(UpdaterServiceParams{
 		DB:                 db,
+		EventService:       event.NewEventService(db, &config.Config{}, nil),
+		ActivityService:    newTestActivityService(t, db),
 		ImageUpdateService: imageUpdates,
 	})
 	require.NoError(t, err)
@@ -1943,6 +1988,8 @@ func TestUpdaterService_AutoUpdateDeferral(t *testing.T) {
 	require.NoError(t, settingsService.SetIntSetting(ctx, "autoUpdateDelay", 24))
 	svc, err := NewUpdaterService(UpdaterServiceParams{
 		DB:              db,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		ActivityService: activity.NewActivityService(db, settingsService),
 		SettingsService: settingsService,
 	})
 	require.NoError(t, err)
@@ -2015,6 +2062,22 @@ func TestAggregateHistoryMergesNewestFirst(t *testing.T) {
 	require.Equal(t, "b1", body.Data[1].ID)
 	require.Equal(t, "Env b", body.Data[1].EnvironmentName)
 	require.Len(t, body.FailedEnvironments, 1)
+}
+
+func newTestActivityService(t *testing.T, db *database.DB) *activity.ActivityService {
+	t.Helper()
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}, &activity.Activity{}, &activity.ActivityMessage{}))
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))
+	})
+	return activity.NewActivityService(db, settingsService)
 }
 
 func newTestNotificationService(t *testing.T, db *database.DB) *notification.NotificationService {

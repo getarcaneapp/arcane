@@ -22,7 +22,6 @@ import (
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	tunnelpb "getarcane.dev/arcane/v3/proto/tunnel/v1"
-	"getarcane.dev/types/v3"
 )
 
 type (
@@ -33,7 +32,6 @@ type (
 		Config       *config.Config
 		Router       *echo.Echo
 		TunnelServer *agent.TunnelServer
-		Scheduler    types.JobScheduler
 	}
 )
 
@@ -41,7 +39,6 @@ var serverOptions = fx.Options(
 	fx.Provide(
 		newRouter,
 		newTunnelServer,
-		newJobScheduler,
 		NewHTTPServer,
 	),
 )

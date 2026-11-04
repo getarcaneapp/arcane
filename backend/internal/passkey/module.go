@@ -9,8 +9,13 @@ import (
 	"getarcane.dev/arcane/v3/internal/user"
 )
 
-func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService *auth.AuthService, userService *user.UserService) {
-	h := &PasskeyHandler{passkeyService: passkeyService, authService: authService, userService: userService}
+func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService *auth.AuthService, tokens *auth.TokenCache, userService *user.UserService) {
+	h := &PasskeyHandler{
+		passkeyService: passkeyService,
+		authService:    authService,
+		tokens:         tokens,
+		userService:    userService,
+	}
 	public := []map[string][]string{}
 	interactive := []map[string][]string{{"BearerAuth": {}}}
 
