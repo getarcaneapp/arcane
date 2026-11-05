@@ -231,7 +231,9 @@ func (s *EnrollmentService) EnrollMTLS(ctx context.Context, p EnrollMTLSParams) 
 		})
 	}
 	for _, req := range events {
-		_, _ = s.eventService.CreateEvent(context.WithoutCancel(ctx), req)
+		if _, eventErr := s.eventService.CreateEvent(context.WithoutCancel(ctx), req); eventErr != nil {
+			slog.WarnContext(ctx, "Failed to record agent mTLS enrollment event", "environmentId", envID, "eventType", req.Type, "error", eventErr)
+		}
 	}
 	return enrollment.Assets.Files, nil
 }
