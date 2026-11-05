@@ -7,17 +7,22 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/containerd/errdefs"
 	"github.com/libtnb/sqlite"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
+	"kit.getarcane.app/docker/streams/bus"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -371,4 +376,79 @@ func TestService_DownStack_RequiresSavedSource(t *testing.T) {
 	err = svc.DownStack(ctx, "0", "demo-stack")
 	require.ErrorIs(t, err, common.ErrValidation)
 	require.False(t, errdefs.IsNotFound(err))
+}
+
+func newDownStackTestService(t *testing.T, removed *[]string) *Service {
+	t.Helper()
+	ctx := t.Context()
+	db := setupSwarmServiceTestDB(t)
+	t.Setenv("ARCANE_SWARM_STACK_SOURCES_DIRECTORY", t.TempDir())
+
+	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
+	require.NoError(t, err)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := strings.TrimPrefix(r.URL.Path, "/v1.41")
+		switch {
+		case r.Method == http.MethodGet && path == "/services":
+			_, _ = w.Write([]byte(`[{"ID":"svc-1","Spec":{"Name":"demo-stack_web"}}]`))
+		case r.Method == http.MethodDelete:
+			*removed = append(*removed, path)
+		case r.Method == http.MethodGet && slices.Contains([]string{"/tasks", "/networks", "/configs", "/secrets"}, path):
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	cli, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.41"), client.WithHTTPClient(server.Client()))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = cli.Close() })
+
+	return NewService(ServiceParams{
+		DockerService:   dockerInternal.NewDockerClientService(ctx, db, settingsSvc, bus.Config{}).WithClient(cli),
+		EnsureManager:   func(context.Context) error { return nil },
+		SettingsService: settingsSvc,
+	})
+}
+
+func TestService_DownStack_RemovesServicesAndKeepsSource(t *testing.T) {
+	ctx := t.Context()
+	var removed []string
+	svc := newDownStackTestService(t, &removed)
+	stubStackSourceUpdateDeploy(t)
+
+	_, err := svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source:    types.SwarmStackSource{ComposeContent: "services:\n  web:\n    image: nginx:alpine\n"},
+		Submitted: fullStackSourceSubmitted,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, svc.DownStack(ctx, "0", " demo-stack "))
+	require.Equal(t, []string{"/services/svc-1"}, removed)
+
+	source, err := svc.GetStackSource(ctx, "0", "demo-stack")
+	require.NoError(t, err)
+	require.Equal(t, "services:\n  web:\n    image: nginx:alpine\n", source.ComposeContent)
+}
+
+func TestService_DownStack_RefusesWhenSavedSourceCannotRender(t *testing.T) {
+	ctx := t.Context()
+	var removed []string
+	svc := newDownStackTestService(t, &removed)
+	stubStackSourceUpdateDeploy(t)
+
+	_, err := svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source: types.SwarmStackSource{
+			ComposeContent: "services:\n  web:\n    image: nginx:alpine\n    configs: [app]\nconfigs:\n  app:\n    file: ./app.conf\n",
+		},
+		Submitted: fullStackSourceSubmitted,
+	})
+	require.NoError(t, err)
+
+	err = svc.DownStack(ctx, "0", "demo-stack")
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.Empty(t, removed)
 }

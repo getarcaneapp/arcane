@@ -43,6 +43,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/swarm"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	francistest "getarcane.dev/arcane/v3/pkg/francis/testing"
 	"getarcane.dev/arcane/v3/pkg/gitutil"
@@ -1904,4 +1905,102 @@ func TestValidateSwarmStackName(t *testing.T) {
 	var fieldErr *types.FieldError
 	require.ErrorAs(t, err, &fieldErr)
 	require.Equal(t, "name", fieldErr.Field)
+}
+
+func setupGitOpsDeleteSwarmStackTest(t *testing.T, gate *runs.Admission) (*GitOpsSyncService, *database.DB, *[]string) {
+	t.Helper()
+	t.Setenv("ARCANE_SWARM_STACK_SOURCES_DIRECTORY", t.TempDir())
+	svc, db, _ := setupGitOpsSyncDirectoryTestService(t, &gitOpsSyncTestScheduler{}, gate)
+
+	var mu sync.Mutex
+	removed := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := strings.TrimPrefix(r.URL.Path, "/v1.41")
+		switch {
+		case r.Method == http.MethodGet && path == "/info":
+			_, _ = w.Write([]byte(`{"Swarm":{"LocalNodeState":"active","ControlAvailable":true}}`))
+		case r.Method == http.MethodGet && path == "/services":
+			_, _ = w.Write([]byte(`[{"ID":"svc-1","Spec":{"Name":"demo-stack_web"}}]`))
+		case r.Method == http.MethodDelete:
+			mu.Lock()
+			removed = append(removed, path)
+			mu.Unlock()
+		case r.Method == http.MethodGet && (path == "/tasks" || path == "/networks" || path == "/configs" || path == "/secrets"):
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	cli, err := mobyclient.New(mobyclient.WithHost(server.URL), mobyclient.WithAPIVersion("1.41"), mobyclient.WithHTTPClient(server.Client()))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = cli.Close() })
+
+	settingsService, err := newGitOpsSettingsServiceForTest(t, t.Context(), db)
+	require.NoError(t, err)
+	svc.swarmService = swarm.NewSwarmService(swarm.SwarmServiceParams{
+		DockerService:   dockerInternal.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(cli),
+		SettingsService: settingsService,
+	})
+
+	require.NoError(t, db.Create(&projectpkg.GitOpsSync{
+		ID:            "sync-swarm-stack",
+		Name:          "demo-sync",
+		EnvironmentID: "0",
+		RepositoryID:  "repo-1",
+		ComposePath:   "stack.yaml",
+		ProjectName:   "demo-stack",
+		TargetType:    "swarm_stack",
+		SyncInterval:  60,
+	}).Error)
+
+	return svc, db, &removed
+}
+
+func TestGitOpsSyncService_DeleteSync_RemovesSwarmStack(t *testing.T) {
+	svc, db, removed := setupGitOpsDeleteSwarmStackTest(t, newGitOpsAdmissionGateForTest(t))
+
+	require.NoError(t, svc.DeleteSync(t.Context(), "0", "sync-swarm-stack", SyncDelete{RemoveStack: true}))
+
+	assert.Equal(t, []string{"/services/svc-1"}, *removed)
+	var count int64
+	require.NoError(t, db.Model(&projectpkg.GitOpsSync{}).Where("id = ?", "sync-swarm-stack").Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestGitOpsSyncService_DeleteSync_KeepsSwarmStackByDefault(t *testing.T) {
+	svc, _, removed := setupGitOpsDeleteSwarmStackTest(t, newGitOpsAdmissionGateForTest(t))
+
+	require.NoError(t, svc.DeleteSync(t.Context(), "0", "sync-swarm-stack", SyncDelete{}))
+
+	assert.Empty(t, *removed)
+}
+
+func TestGitOpsSyncService_DeleteSync_RemoveStackWaitsForActiveSync(t *testing.T) {
+	gate := newGitOpsAdmissionGateForTest(t)
+	svc, _, removed := setupGitOpsDeleteSwarmStackTest(t, gate)
+	lease, admitted, err := gate.TryAcquire(t.Context(), types.SchedulerAdmissionKey{Scope: gitOpsSyncAdmissionScope, ID: "sync-swarm-stack"})
+	require.NoError(t, err)
+	require.True(t, admitted)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- svc.DeleteSync(t.Context(), "0", "sync-swarm-stack", SyncDelete{RemoveStack: true})
+	}()
+	select {
+	case deleteErr := <-done:
+		require.FailNowf(t, "stack removed while a sync held admission", "%v", deleteErr)
+	case <-time.After(400 * time.Millisecond):
+	}
+
+	lease.Release(t.Context())
+	select {
+	case deleteErr := <-done:
+		require.NoError(t, deleteErr)
+		assert.Equal(t, []string{"/services/svc-1"}, *removed)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "delete did not run after admission was released")
+	}
 }
