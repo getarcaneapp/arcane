@@ -114,6 +114,11 @@ type (
 		Request   types.GitOpsSync
 	}
 
+	SyncDelete struct {
+		Actor       types.Actor
+		RemoveStack bool
+	}
+
 	SyncRequest struct {
 		EnvironmentID string
 		SyncID        string
@@ -830,7 +835,7 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	return s.GetSyncByID(ctx, environmentID, id)
 }
 
-func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id string, removeStack bool, actor types.Actor) error {
+func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id string, opts SyncDelete) error {
 	// Even a row that can no longer be loaded must stop firing; an in-flight run re-reads it and skips.
 	s.jobs.Unregister(ctx, id)
 	s.backups.cancel(id)
@@ -838,7 +843,7 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 	// The row is loaded only for the audit event, so a corrupt or environment-mismatched row is still deletable.
 	syncRecord, loadErr := s.getSyncByID(ctx, environmentID, id, false)
 
-	if removeStack && loadErr == nil && syncRecord.TargetType == "swarm_stack" {
+	if opts.RemoveStack && loadErr == nil && syncRecord.TargetType == "swarm_stack" {
 		admitCtx, cancelAdmit := context.WithTimeout(ctx, defaultGitSyncTimeout)
 		lease, leaseErr := s.jobs.Acquire(admitCtx, id)
 		cancelAdmit()
@@ -889,8 +894,8 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 		ResourceType:  new("git_sync"),
 		ResourceID:    new(syncRecord.ID),
 		ResourceName:  new(syncRecord.Name),
-		UserID:        new(actor.ID),
-		Username:      new(actor.Username),
+		UserID:        new(opts.Actor.ID),
+		Username:      new(opts.Actor.Username),
 		EnvironmentID: new(syncRecord.EnvironmentID),
 	})
 

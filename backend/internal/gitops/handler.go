@@ -283,7 +283,7 @@ func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsS
 	}
 	actor := handlerutil.CurrentActor(ctx)
 
-	if err := h.syncService.DeleteSync(ctx, input.EnvironmentID, input.SyncID, input.RemoveStack, actor); err != nil {
+	if err := h.syncService.DeleteSync(ctx, input.EnvironmentID, input.SyncID, SyncDelete{Actor: actor, RemoveStack: input.RemoveStack}); err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete GitOps sync")
 	}
