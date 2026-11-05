@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "Passen Sie die Pufferfenster des Agent-Tunnels hinsichtlich Durchsatz und Speicherverbrauch an",
   "buffer_windows": "Pufferfenster",
   "http2_receive_window": "HTTP/2-Empfangsfenster (nur für Manager)",
-  "http2_receive_window_description": "HTTP/2-Empfangspuffer pro Stream. Gilt nur für den Server des Arcane-Managers. In den Agent-Umgebungen festgelegte Werte haben keine Auswirkung. Höhere Werte beschleunigen die Agent-Übertragungen bei Verbindungen mit hoher Latenz. Jeder HTTP/2-Client kann den Manager dazu veranlassen, pro Verbindung einen Puffer von bis zum Doppelten dieses Werts anzulegen.",
-  "http2_receive_window_restart": "Die Änderung wird wirksam, sobald der Manager neu gestartet wurde.",
+  "http2_receive_window_description": "HTTP/2-Puffer pro Stream auf dem Manager. Ein höherer Wert sorgt bei Verbindungen mit hoher Latenz für eine höhere Geschwindigkeit, beansprucht jedoch mehr Speicher.",
+  "http2_receive_window_restart": "Gilt nach einem Neustart des Managers.",
   "agent_tunnel_stream_window": "Agent-Tunnel-Stream-Fenster",
-  "agent_tunnel_stream_window_description": "Empfangsfenster für jede Übertragung über den Agent-Tunnel dieser Umgebung. Der Agent sendet es an den Manager, sobald die Tunnelverbindung hergestellt ist, und beide Seiten nutzen es. Größere Werte beschleunigen Übertragungen auf Verbindungen mit hoher Latenz, allerdings muss jede Seite für jede aktive Übertragung bis zu dieser Datenmenge im Arbeitsspeicher vorhalten.",
-  "agent_tunnel_stream_window_reconnect": "Tritt in Kraft, sobald der Agent-Tunnel das nächste Mal eine Verbindung herstellt. Offene Tunnel behalten ihr aktuelles Fenster bei.",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "Puffer pro Übertragung im Agent-Tunnel. Ein höherer Wert sorgt bei Verbindungen mit hoher Latenz für eine höhere Geschwindigkeit, beansprucht jedoch mehr Speicherplatz.",
+  "agent_tunnel_stream_window_reconnect": "Gilt, wenn die Tunnelverbindung wiederhergestellt wird.",
+  "value_in_mib": "Wert in MiB ({range})"
 }
