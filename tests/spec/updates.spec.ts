@@ -658,7 +658,7 @@ test.describe('Arcane upgrades', () => {
 			await dialog.getByRole('button', { name: 'Close', exact: true }).first().click();
 			await expect(dialog).toBeHidden();
 			await expect.poll(() => currentReloadCount(page)).toBe(1);
-			await expect(page).toHaveURL(/\/environments(?:\?tab=environments)?$/);
+			await expect(page).toHaveURL('/environments?tab=environments');
 		});
 
 		test('Update All leaves failed manager results visible without reloading', async ({ page }) => {
@@ -779,11 +779,11 @@ test.describe('Arcane upgrades', () => {
 					await page.evaluate((key: string) => localStorage.getItem(key), TOKEN_EXPIRY_KEY)
 				).not.toBeNull();
 				expect(currentReloadCount(page)).toBe(1);
-				await expect(page).toHaveURL(/\/environments(?:\?tab=environments)?$/);
+				await expect(page).toHaveURL('/environments?tab=environments');
 				releaseRefresh();
 
 				await expect.poll(() => currentReloadCount(page), { timeout: 15_000 }).toBe(2);
-				await expect(page).toHaveURL(/\/environments(?:\?tab=environments)?$/);
+				await expect(page).toHaveURL('/environments?tab=environments');
 			} finally {
 				releaseRefresh();
 			}

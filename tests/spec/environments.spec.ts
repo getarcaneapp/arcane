@@ -61,7 +61,8 @@ test.describe('Settings', () => {
 		const deploymentResponsePromise = page.waitForResponse(
 			(response) =>
 				response.request().method() === 'POST' &&
-				/^\/api\/environments\/[^/]+\/deployment$/.test(new URL(response.url()).pathname)
+				new URL(response.url()).pathname.startsWith('/api/environments/') &&
+				new URL(response.url()).pathname.endsWith('/deployment')
 		);
 		await page.getByRole('button', { name: 'Generate Agent Configuration', exact: true }).click();
 		const createResponse = await createResponsePromise;
@@ -257,7 +258,7 @@ test.describe('Settings', () => {
 			const environmentPath = `/api/environments/${environmentId}`;
 			await expect.poll(() => activityStatuses.get(environmentId)).toBe(200);
 			expect((await page.request.get('/api/auth/me', { timeout: 5_000 })).status()).toBe(200);
-			await expect(page).toHaveURL(/\/environments(?:\?tab=environments)?$/);
+			await expect(page).toHaveURL('/environments?tab=environments');
 			await page.getByRole('button', { name: envName, exact: true }).click();
 			await expect(page).toHaveURL(/\/environments\/[^/?]+\?tab=[a-z]+$/);
 			await expect(page.getByText(/^agent:\/\/settings-ui-/).first()).toBeVisible();
@@ -412,7 +413,7 @@ test.describe('Settings', () => {
 			await renameEnvironmentInHeader(page, `${envName}-discarded`);
 			await expect(saveButton).toBeEnabled();
 			await page.getByRole('link', { name: 'Back', exact: true }).first().click();
-			await expect(page).toHaveURL(/\/environments(?:\?tab=environments)?$/);
+			await expect(page).toHaveURL('/environments?tab=environments');
 			await expect(page.getByRole('heading', { name: 'Environments', exact: true })).toBeVisible();
 			await page.getByRole('button', { name: envName, exact: true }).click();
 			await expect(page).toHaveURL(new RegExp(`/environments/${environmentId}(?:\\?|$)`));
