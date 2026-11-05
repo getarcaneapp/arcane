@@ -116,7 +116,7 @@ func (m *muxSession) start(session *yamux.Session, conn *muxConn) bool {
 // serveMuxTunnel runs the manager end of a multiplexed session until the agent disconnects or the tunnel closes.
 func (s *TunnelServer) serveMuxTunnel(ctx context.Context, tunnel *AgentTunnel, rw *muxConn) error {
 	defer tunnel.mux.close()
-	session, err := yamux.Server(rw, newMuxConfig(false))
+	session, err := yamux.Server(rw, newMuxConfig(false, muxStreamWindowMiB(tunnel.Capabilities, s.streamWindowMiB())))
 	if err != nil {
 		_ = rw.Close()
 		return fmt.Errorf("start agent tunnel session: %w", err)

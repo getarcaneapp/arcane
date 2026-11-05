@@ -101,6 +101,10 @@
 			title: m.timeouts_settings,
 			description: m.timeouts_settings_description
 		},
+		tunnel: {
+			title: m.agent_tunnel_settings,
+			description: m.agent_tunnel_settings_description
+		},
 		build: {
 			title: m.builds,
 			description: m.build_settings_page_description

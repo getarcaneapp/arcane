@@ -244,7 +244,7 @@ func applicationOptions(
 			initializeStartupState,
 			startJobScheduler,
 			registerJobs,
-			func(lc fx.Lifecycle, router *echo.Echo, dockerService *docker.DockerClientService, _ *http.Server) {
+			func(lc fx.Lifecycle, router *echo.Echo, dockerService *docker.DockerClientService, settingsService *settings.SettingsService, _ *http.Server) {
 				if !cfg.AgentEnabled {
 					return
 				}
@@ -254,6 +254,9 @@ func applicationOptions(
 						tunnelStop, err := agent.NewTunnelClient(agent.TunnelClientConfig{
 							Config:  buildAgentRuntimeConfig(cfg, cfg.AgentToken, agentHostInfo(appCtx, dockerService)),
 							Handler: router,
+							StreamWindowMiB: func() int {
+								return settingsService.GetSettingsOrDefaults(appCtx).AgentTunnelStreamWindowMb.AsInt()
+							},
 						}).Start(appCtx)
 						if err != nil {
 							slog.ErrorContext(appCtx, "Failed to start agent tunnel client", "error", err)

@@ -938,6 +938,9 @@ func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
 			tunnels := agent.NewTunnelRegistry()
 			manager := echo.New()
 			manager.GET("/api/tunnel/connect", agent.NewTunnelServer(agent.TunnelServerOptions{
+				StreamWindowMiB: func() int {
+					return 16
+				},
 				Registry: tunnels,
 				Resolver: func(context.Context, string) (string, error) {
 					return "remote", nil
@@ -950,6 +953,9 @@ func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
 			defer cancelAgent()
 			defer tunnels.Unregister("remote")
 			_, startErr := agent.NewTunnelClient(agent.TunnelClientConfig{
+				StreamWindowMiB: func() int {
+					return 16
+				},
 				Config: &agent.Config{
 					MTLS:           agent.NewMTLS(agent.MTLSConfig{ManagerURL: managerServer.URL}),
 					AgentEnabled:   true,

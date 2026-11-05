@@ -51,10 +51,11 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	}
 
 	server := NewTunnelServer(TunnelServerOptions{
-		Registry:       tunnels,
-		Resolver:       resolver,
-		StatusCallback: callback,
-		MTLS:           NewMTLS(MTLSConfig{}),
+		StreamWindowMiB: testStreamWindowMiB,
+		Registry:        tunnels,
+		Resolver:        resolver,
+		StatusCallback:  callback,
+		MTLS:            NewMTLS(MTLSConfig{}),
 	})
 
 	router := echo.New()
@@ -113,7 +114,8 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 func TestTunnelServer_HandleConnect_AcceptsTokenAfterProxyTerminatedMTLS(t *testing.T) {
 	tunnels := NewTunnelRegistry()
 	server := NewTunnelServer(TunnelServerOptions{
-		Registry: tunnels,
+		StreamWindowMiB: testStreamWindowMiB,
+		Registry:        tunnels,
 		Resolver: func(ctx context.Context, token string) (string, error) {
 			if token == "valid-token" {
 				return "env-proxy-mtls", nil
@@ -164,9 +166,10 @@ func TestTunnelServer_HandleConnect_InvalidToken(t *testing.T) {
 	}
 
 	server := NewTunnelServer(TunnelServerOptions{
-		Registry: tunnels,
-		Resolver: resolver,
-		MTLS:     NewMTLS(MTLSConfig{}),
+		StreamWindowMiB: testStreamWindowMiB,
+		Registry:        tunnels,
+		Resolver:        resolver,
+		MTLS:            NewMTLS(MTLSConfig{}),
 	})
 	router := echo.New()
 	router.GET("/connect", server.HandleConnect)
@@ -206,9 +209,10 @@ func TestTunnelServer_HandleConnect_PrefersHeaderTokenOverRegisterMessage(t *tes
 	}
 
 	server := NewTunnelServer(TunnelServerOptions{
-		Registry: tunnels,
-		Resolver: resolver,
-		MTLS:     NewMTLS(MTLSConfig{}),
+		StreamWindowMiB: testStreamWindowMiB,
+		Registry:        tunnels,
+		Resolver:        resolver,
+		MTLS:            NewMTLS(MTLSConfig{}),
 	})
 	router := echo.New()
 	router.GET("/connect", server.HandleConnect)
@@ -241,7 +245,7 @@ func TestTunnelServer_HandleConnect_PrefersHeaderTokenOverRegisterMessage(t *tes
 
 func TestTunnelServer_HandleConnect_NoToken(t *testing.T) {
 	tunnels := NewTunnelRegistry()
-	server := NewTunnelServer(TunnelServerOptions{Registry: tunnels, MTLS: NewMTLS(MTLSConfig{})})
+	server := NewTunnelServer(TunnelServerOptions{StreamWindowMiB: testStreamWindowMiB, Registry: tunnels, MTLS: NewMTLS(MTLSConfig{})})
 	router := echo.New()
 	router.GET("/connect", server.HandleConnect)
 
@@ -270,7 +274,8 @@ func TestTunnelServer_resolveEnvironment_TrimsToken(t *testing.T) {
 	tunnels := NewTunnelRegistry()
 	var resolvedToken string
 	server := NewTunnelServer(TunnelServerOptions{
-		Registry: tunnels,
+		StreamWindowMiB: testStreamWindowMiB,
+		Registry:        tunnels,
 		Resolver: func(ctx context.Context, token string) (string, error) {
 			resolvedToken = token
 			return "env-trimmed", nil
@@ -287,7 +292,7 @@ func TestTunnelServer_resolveEnvironment_TrimsToken(t *testing.T) {
 func TestTunnelServer_resolveEnvironment_Errors(t *testing.T) {
 	tunnels := NewTunnelRegistry()
 	t.Run("missing resolver", func(t *testing.T) {
-		server := NewTunnelServer(TunnelServerOptions{Registry: tunnels, MTLS: NewMTLS(MTLSConfig{})})
+		server := NewTunnelServer(TunnelServerOptions{StreamWindowMiB: testStreamWindowMiB, Registry: tunnels, MTLS: NewMTLS(MTLSConfig{})})
 		_, err := server.resolveEnvironment(t.Context(), "token")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "agent resolver is not configured")
@@ -295,7 +300,8 @@ func TestTunnelServer_resolveEnvironment_Errors(t *testing.T) {
 
 	t.Run("missing token", func(t *testing.T) {
 		server := NewTunnelServer(TunnelServerOptions{
-			Registry: tunnels,
+			StreamWindowMiB: testStreamWindowMiB,
+			Registry:        tunnels,
 			Resolver: func(ctx context.Context, token string) (string, error) {
 				return "env", nil
 			},
@@ -402,7 +408,7 @@ func (f *registerResponseOrderConn) Transport() string { return TransportGRPC }
 
 func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterResponse(t *testing.T) {
 	tunnels := NewTunnelRegistry()
-	server := NewTunnelServer(TunnelServerOptions{Registry: tunnels, MTLS: NewMTLS(MTLSConfig{})})
+	server := NewTunnelServer(TunnelServerOptions{StreamWindowMiB: testStreamWindowMiB, Registry: tunnels, MTLS: NewMTLS(MTLSConfig{})})
 	envID := "env-grpc-register-order"
 	t.Cleanup(func() { server.registry.Unregister(envID) })
 
@@ -426,7 +432,7 @@ func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterRe
 
 func TestTunnelServer_ManageConnectedTunnel_UnregistersAfterConnectionContextCancellation(t *testing.T) {
 	registry := NewTunnelRegistry()
-	server := NewTunnelServer(TunnelServerOptions{Registry: registry, MTLS: NewMTLS(MTLSConfig{})})
+	server := NewTunnelServer(TunnelServerOptions{StreamWindowMiB: testStreamWindowMiB, Registry: registry, MTLS: NewMTLS(MTLSConfig{})})
 	envID := "env-cancelled-disconnect"
 	conn := &registerResponseOrderConn{recvErr: context.Canceled}
 

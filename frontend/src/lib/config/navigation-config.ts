@@ -34,7 +34,8 @@ import {
 	SecurityIcon,
 	ClockIcon,
 	CodeIcon,
-	MonitorIcon
+	MonitorIcon,
+	AgentIcon
 } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -250,6 +251,12 @@ export const navigationItems: NavigationSections = {
 					url: resolve('/(app)/settings/timeouts'),
 					icon: ClockIcon,
 					accessSurfaceId: 'settings.category.timeouts'
+				},
+				{
+					title: m.agent_tunnel_settings(),
+					url: resolve('/(app)/settings/tunnel'),
+					icon: AgentIcon,
+					accessSurfaceId: 'settings.category.tunnel'
 				},
 				{
 					title: m.activity(),

@@ -70,6 +70,8 @@ export const environmentSettingsSchema = z.object({
 	registryTimeout: z.coerce.number().int().nonnegative(),
 	registryTagTimeout: z.coerce.number().int().nonnegative(),
 	proxyRequestTimeout: z.coerce.number().int().nonnegative(),
+	http2ReceiveWindowMb: z.coerce.number().int().min(1).max(256),
+	agentTunnelStreamWindowMb: z.coerce.number().int().min(1).max(64),
 	activityHistoryRetentionDays: z.coerce.number().int().nonnegative(),
 	upgradeLogRetentionDays: z.coerce.number().int().min(0).max(3650),
 	activityHistoryMaxEntries: z.coerce.number().int().nonnegative(),

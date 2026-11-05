@@ -20,6 +20,7 @@ type (
 	TunnelClient struct {
 		handler                http.Handler
 		cfg                    *Config
+		streamWindowMiB        func() int
 		errCh                  chan error
 		conn                   atomic.Pointer[connBox]
 		preference             atomic.Pointer[transportPreference]
@@ -107,19 +108,21 @@ type (
 	TunnelServer struct {
 		MTLS *MTLS
 
-		registry       *TunnelRegistry
-		resolver       EnvironmentResolver
-		statusCallback StatusUpdateCallback
-		eventCallback  EventCallback
-		statusMu       sync.Mutex
+		registry        *TunnelRegistry
+		resolver        EnvironmentResolver
+		statusCallback  StatusUpdateCallback
+		eventCallback   EventCallback
+		streamWindowMiB func() int
+		statusMu        sync.Mutex
 	}
 
 	TunnelServerOptions struct {
-		Registry       *TunnelRegistry
-		Resolver       EnvironmentResolver
-		StatusCallback StatusUpdateCallback
-		MTLS           *MTLS
-		EventCallback  EventCallback
+		Registry        *TunnelRegistry
+		Resolver        EnvironmentResolver
+		StatusCallback  StatusUpdateCallback
+		MTLS            *MTLS
+		EventCallback   EventCallback
+		StreamWindowMiB func() int
 	}
 
 	streamIdentityKey struct{}
@@ -178,9 +181,10 @@ type (
 	}
 
 	TunnelClientConfig struct {
-		Config  *Config
-		Handler http.Handler
-		Errors  chan error
+		Config          *Config
+		Handler         http.Handler
+		Errors          chan error
+		StreamWindowMiB func() int
 	}
 
 	MTLSConfig struct {

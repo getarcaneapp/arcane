@@ -242,7 +242,8 @@ func TestGRPCTunnel_RegisterMessageRequiredOnEOF(t *testing.T) {
 func startTestGRPCTunnelServer(tunnels *TunnelRegistry, envID string) (*bufconn.Listener, *grpc.Server) {
 	lis := bufconn.Listen(1024 * 1024)
 	tunnelServer := NewTunnelServer(TunnelServerOptions{
-		Registry: tunnels,
+		StreamWindowMiB: testStreamWindowMiB,
+		Registry:        tunnels,
 		Resolver: func(ctx context.Context, token string) (string, error) {
 			if token != "valid-token" {
 				return "", errors.New("invalid token")
