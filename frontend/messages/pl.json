@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "Dostosuj okna bufora tunelu agenta pod kątem przepustowości i zużycia pamięci",
   "buffer_windows": "Okna buforowe",
   "http2_receive_window": "Okno odbiorcze HTTP/2 (tylko menedżer)",
-  "http2_receive_window_description": "Bufor odbiorczy HTTP/2 dla każdego strumienia. Dotyczy wyłącznie serwera menedżera Arcane. Wartości ustawione w środowiskach agentów nie mają żadnego wpływu. Wyższe wartości przyspieszają transfery agentów w sieciach o dużym opóźnieniu. Każdy klient HTTP/2 może sprawić, że menedżer buforuje do 2× tej wartości na jedno połączenie.",
-  "http2_receive_window_restart": "Zmiana zacznie obowiązywać po ponownym uruchomieniu menedżera.",
+  "http2_receive_window_description": "Wielkość bufora HTTP/2 na strumień w menedżerze. Wyższa wartość zapewnia większą szybkość w przypadku połączeń o dużym opóźnieniu, ale zużywa więcej pamięci.",
+  "http2_receive_window_restart": "Zmiana wchodzi w życie po ponownym uruchomieniu menedżera.",
   "agent_tunnel_stream_window": "Okno strumienia tunelu agenta",
-  "agent_tunnel_stream_window_description": "Okno odbiorcze dla każdego transferu realizowanego przez tunel agenta w tym środowisku. Agent wysyła je do menedżera po nawiązaniu połączenia tunelowego, a obie strony korzystają z niego. Wyższe wartości przyspieszają transfery w sieciach o dużym opóźnieniu, ale każda ze stron może przechowywać w pamięci RAM maksymalnie tyle danych, ile wynosi ta wartość, dla każdego aktywnego transferu.",
-  "agent_tunnel_stream_window_reconnect": "Zmiana wejdzie w życie przy następnym ponownym nawiązaniu połączenia tunelu agenta. Otwarte tunele zachowują swoje bieżące okno.",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "Bufor na pojedynczy transfer w tunelu agenta. Wyższa wartość zapewnia większą szybkość w przypadku łączy o dużym opóźnieniu, ale zużywa więcej pamięci.",
+  "agent_tunnel_stream_window_reconnect": "Ma zastosowanie w momencie ponownego nawiązania połączenia tunelowego.",
+  "value_in_mib": "Wartość w MiB ({range})"
 }
