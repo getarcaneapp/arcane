@@ -48,6 +48,7 @@ import (
 	"getarcane.dev/arcane/v3/pkg/logging"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/projects"
+	libswarm "getarcane.dev/arcane/v3/pkg/swarm"
 	"getarcane.dev/types/v3"
 )
 
@@ -136,6 +137,17 @@ var syncRuns = func() metric.Int64Counter {
 	}
 	return counter
 }()
+
+// validateSwarmStackName rejects a stack sync whose name Docker Swarm would refuse at deploy time.
+func validateSwarmStackName(targetType, stackName string) error {
+	if strings.TrimSpace(targetType) != "swarm_stack" {
+		return nil
+	}
+	if err := libswarm.ValidateStackName(stackName); err != nil {
+		return common.Classify(common.ErrValidation, &types.FieldError{Field: "name", Err: err})
+	}
+	return nil
+}
 
 func (s *GitOpsSyncService) validateLifecycleConfig(ctx context.Context, current *projectpkg.GitOpsSync, in lifecycleConfigInput) error {
 	var currentScript, currentRunner *string
@@ -524,6 +536,9 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 	case mode == types.GitOpsSyncModeDeploy && strings.TrimSpace(change.Request.ComposePath) == "":
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "composePath", Err: errors.New("compose path is required")})
 	}
+	if err := validateSwarmStackName(change.Request.TargetType, cmp.Or(change.Request.ProjectName, change.Request.Name)); err != nil {
+		return nil, err
+	}
 
 	repo, err := s.repoService.GetRepositoryByID(ctx, change.Request.RepositoryID)
 	if err != nil {
@@ -697,6 +712,15 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 			change.Request.RedeployAfterSync ||
 			hasPreDeployConfig(change.Submitted)):
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: errors.New("deployment options cannot be set on a backup sync")})
+	}
+	// Only checked when the name or target changes, so unrelated edits to an existing sync still save.
+	if change.Submitted["targetType"] || change.Submitted["projectName"] {
+		if err := validateSwarmStackName(
+			kit.Ternary(change.Submitted["targetType"], change.Request.TargetType, syncRecord.TargetType),
+			kit.Ternary(change.Submitted["projectName"], change.Request.ProjectName, syncRecord.ProjectName),
+		); err != nil {
+			return nil, err
+		}
 	}
 
 	// Captured before the update so the job can follow the new state.

@@ -56,7 +56,8 @@ func mergeLabels(primary, secondary map[string]string) map[string]string {
 	return out
 }
 
-func validateStackName(stackName string) error {
+// ValidateStackName reports whether stackName is a valid Docker Swarm stack name.
+func ValidateStackName(stackName string) error {
 	switch {
 	case stackName == "":
 		return errors.New("stack name is required")

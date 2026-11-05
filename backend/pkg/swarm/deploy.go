@@ -50,7 +50,7 @@ type (
 // API call required to reconcile the stack fails.
 func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts StackDeployOptions) error {
 	stackName := strings.TrimSpace(opts.Name)
-	if err := validateStackName(stackName); err != nil {
+	if err := ValidateStackName(stackName); err != nil {
 		return invalidStackError(err)
 	}
 	ns := namespace{name: stackName}

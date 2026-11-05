@@ -15,7 +15,7 @@ func TestNamespaceResolve(t *testing.T) {
 }
 
 func TestValidateStackName(t *testing.T) {
-	require.NoError(t, validateStackName("stack-1"))
-	require.Error(t, validateStackName("Stack-1"))
-	require.Error(t, validateStackName("../stack"))
+	require.NoError(t, ValidateStackName("stack-1"))
+	require.Error(t, ValidateStackName("Stack-1"))
+	require.Error(t, ValidateStackName("../stack"))
 }

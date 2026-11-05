@@ -1892,3 +1892,15 @@ func TestAggregateSyncsSumsCounts(t *testing.T) {
 	require.Equal(t, types.EnvironmentRef{ID: "b", Name: "Env b"}, body.Data[0].Environment())
 	require.Len(t, body.FailedEnvironments, 1)
 }
+
+func TestValidateSwarmStackName(t *testing.T) {
+	require.NoError(t, validateSwarmStackName("swarm_stack", "ungms-api"))
+	require.NoError(t, validateSwarmStackName("project", "ungms API"))
+	require.NoError(t, validateSwarmStackName("", "ungms API"))
+
+	err := validateSwarmStackName("swarm_stack", "ungms API")
+	require.ErrorIs(t, err, common.ErrValidation)
+	var fieldErr *types.FieldError
+	require.ErrorAs(t, err, &fieldErr)
+	require.Equal(t, "name", fieldErr.Field)
+}
