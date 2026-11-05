@@ -1712,8 +1712,17 @@ func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.Res
 			slog.DebugContext(ctx, "failed to append update result activity message", "activityId", activityID, "resource", name, "error", appendErr)
 		}
 	}
+	selfPending := func() bool {
+		progress, ok := ctx.Value(updateProgressKey{}).(*updateProgress)
+		if !ok {
+			return false
+		}
+		progress.mu.Lock()
+		defer progress.mu.Unlock()
+		return status == types.RunStatusSucceeded && progress.selfTriggered && progress.selfID == result.ResourceID
+	}()
 	evidenceErr := func() error {
-		if status != types.RunStatusSucceeded {
+		if status != types.RunStatusSucceeded || selfPending {
 			return nil
 		}
 		return s.recovery.VerifyResult(ctx, result.ResourceID)
@@ -1721,10 +1730,21 @@ func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.Res
 	err := errors.Join(recordErr, jobcontext.Progress(ctx, types.TargetOutcome{
 		ID:           result.ResourceID,
 		ResourceType: string(result.ResourceType),
-		Status:       kit.Ternary(evidenceErr != nil, types.RunStatusNeedsAttention, status),
+		Status: func() types.RunStatus {
+			switch {
+			case evidenceErr != nil:
+				return types.RunStatusNeedsAttention
+			case selfPending:
+				return types.RunStatusRunning
+			}
+			return status
+		}(),
 		Message: func() string {
-			if evidenceErr != nil {
+			switch {
+			case evidenceErr != nil:
 				return evidenceErr.Error()
+			case selfPending:
+				return "Arcane is restarting with the updated image"
 			}
 			return result.Error
 		}(),
@@ -1752,7 +1772,7 @@ func (p *updateProgress) completeBatch(ctx context.Context, options types.Update
 	}
 	status := func() types.RunStatus {
 		switch {
-		case recordingFailed || selfTriggered:
+		case recordingFailed:
 			return types.RunStatusNeedsAttention
 		case err != nil || out.Failed > 0:
 			return types.RunStatusPartial
@@ -1763,10 +1783,10 @@ func (p *updateProgress) completeBatch(ctx context.Context, options types.Update
 		err = errors.Join(err, jobcontext.Progress(ctx, types.TargetOutcome{
 			ID:           selfID,
 			ResourceType: "container",
-			Status:       types.RunStatusNeedsAttention,
+			Status:       types.RunStatusSucceeded,
 			ActivityID:   activityID,
-			Message:      "Self-update completion requires review",
-		}), errors.New("self-update was triggered but completion requires review"))
+			Message:      "Arcane restart triggered with the updated image",
+		}))
 	}
 	checkpointErr := jobcontext.Progress(ctx, types.TargetOutcome{
 		ID: "auto-update",
@@ -1796,7 +1816,7 @@ func (p *updateProgress) completeBatch(ctx context.Context, options types.Update
 		// keep: the caller's result reports the failed batch
 		out.Success = false
 	}
-	if recordingFailed || selfTriggered || checkpointErr != nil {
+	if recordingFailed || checkpointErr != nil {
 		return &types.SchedulerOutcomeError{
 			Outcome: types.SchedulerOutcome{
 				Status:     types.RunStatusNeedsAttention,
