@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "처리량과 메모리 사용량을 고려하여 에이전트 터널 버퍼 윈도우 조정",
   "buffer_windows": "버퍼 윈도우",
   "http2_receive_window": "HTTP/2 수신 창 (관리자 전용)",
-  "http2_receive_window_description": "스트림별 HTTP/2 수신 버퍼. Arcane 매니저의 서버에만 적용됩니다. 에이전트 환경에서 설정된 값은 영향을 미치지 않습니다. 값을 크게 설정하면 지연 시간이 긴 연결에서 에이전트 전송 속도가 빨라집니다. 모든 HTTP/2 클라이언트는 연결당 이 값의 최대 2배까지 매니저 버퍼를 할당할 수 있습니다.",
-  "http2_receive_window_restart": "관리자가 시스템을 재시작한 후에 적용됩니다.",
+  "http2_receive_window_description": "관리자 측의 스트림별 HTTP/2 버퍼 크기. 지연 시간이 긴 연결에서는 이 값이 높을수록 속도가 빨라지지만, 메모리 사용량이 증가합니다.",
+  "http2_receive_window_restart": "관리자 재시작 후에 적용됩니다.",
   "agent_tunnel_stream_window": "에이전트 터널 스트림 창",
-  "agent_tunnel_stream_window_description": "이 환경의 에이전트 터널을 통해 이루어지는 각 전송에 대한 수신 창입니다. 터널이 연결되면 에이전트가 이를 관리자에게 전송하며, 양측 모두 이를 사용합니다. 값이 클수록 지연 시간이 긴 링크에서 전송 속도가 빨라지지만, 각 측은 활성 상태인 모든 전송에 대해 RAM에 이만큼의 데이터를 최대 한도로 보관해야 합니다.",
-  "agent_tunnel_stream_window_reconnect": "에이전트 터널이 다음에 다시 연결될 때 적용됩니다. 열린 터널은 현재 창을 유지합니다.",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "에이전트 터널의 전송당 버퍼 크기. 지연 시간이 긴 링크에서는 이 값이 높을수록 속도가 빨라지지만, 메모리 사용량이 증가합니다.",
+  "agent_tunnel_stream_window_reconnect": "터널이 다시 연결될 때 적용됩니다.",
+  "value_in_mib": "MiB 단위 값 ({range})"
 }
