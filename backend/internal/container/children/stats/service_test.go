@@ -57,22 +57,28 @@ func TestResourceSortComparatorKeepsUnavailableLast(t *testing.T) {
 
 func TestCollectMaxAge(t *testing.T) {
 	tests := []struct {
-		name      string
-		maxAge    time.Duration
-		wantCalls int32
+		name              string
+		cacheTTL          time.Duration
+		maxAge            time.Duration
+		wantCalls         int32
+		wantBaselineWaits int32
 	}{
-		{name: "TTL reuses the cached sample", maxAge: ContainerResourceSampleTTL, wantCalls: 1},
-		{name: "maxAge older than the cached sample refetches", maxAge: time.Nanosecond, wantCalls: 2},
+		{name: "TTL reuses the cached sample", cacheTTL: ContainerResourceBaselineTTL, maxAge: ContainerResourceSampleTTL, wantCalls: 1, wantBaselineWaits: 1},
+		{name: "maxAge older than the cached sample refetches against it", cacheTTL: ContainerResourceBaselineTTL, maxAge: time.Nanosecond, wantCalls: 2, wantBaselineWaits: 1},
+		{name: "evicted sample makes the refetch wait for a baseline", cacheTTL: time.Nanosecond, maxAge: time.Nanosecond, wantCalls: 2, wantBaselineWaits: 2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var calls atomic.Int32
+			var calls, baselineWaits atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if !strings.HasSuffix(r.URL.Path, "/containers/web/stats") {
 					http.NotFound(w, r)
 					return
 				}
 				calls.Add(1)
+				if r.URL.Query().Get("one-shot") != "true" {
+					baselineWaits.Add(1)
+				}
 				_, _ = io.WriteString(w, `{"read":"2026-01-01T00:00:00Z","memory_stats":{"usage":100,"limit":1000}}`)
 			}))
 			t.Cleanup(server.Close)
@@ -87,7 +93,7 @@ func TestCollectMaxAge(t *testing.T) {
 			svc := New(Params{
 				GetClient:  func(context.Context) (*client.Client, error) { return dockerClient, nil },
 				DockerHost: func() string { return "test" },
-				CacheTTL:   ContainerResourceSampleTTL,
+				CacheTTL:   tt.cacheTTL,
 			})
 			for range 2 {
 				samples, collectErr := svc.Collect(t.Context(), []types.ContainerSummary{{ID: "web", State: "running"}}, tt.maxAge, true)
@@ -95,6 +101,7 @@ func TestCollectMaxAge(t *testing.T) {
 				require.Contains(t, samples, "web")
 			}
 			require.Equal(t, tt.wantCalls, calls.Load())
+			require.Equal(t, tt.wantBaselineWaits, baselineWaits.Load())
 		})
 	}
 }

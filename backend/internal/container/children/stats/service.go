@@ -83,6 +83,7 @@ type (
 
 const (
 	ContainerResourceSampleTTL          = 5 * time.Second
+	ContainerResourceBaselineTTL        = time.Minute
 	ContainerResourceSampleCacheSize    = 4096
 	ContainerResourceCollectConcurrency = 16
 	ContainerResourceCollectTimeout     = 3 * time.Second
