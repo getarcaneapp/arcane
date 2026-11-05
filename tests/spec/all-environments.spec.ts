@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '../fixtures/test.fixture';
+import { sortByColumn } from '../utils/table-actions.util';
 
 const remoteEnvironment = {
 	id: 'remote-preview-test',
@@ -169,7 +170,7 @@ test.describe('All environments', () => {
 		await page.goto('/containers');
 
 		await expect(
-			page.getByRole('columnheader', { name: 'Environment', exact: true })
+			page.getByRole('button', { name: 'Sort by Environment', exact: true })
 		).toBeVisible();
 		const remoteRow = page.getByRole('row').filter({ hasText: 'remote-preview-web' });
 		await expect(remoteRow).toContainText(remoteEnvironment.name);
@@ -240,11 +241,7 @@ test.describe('All environments', () => {
 
 		await page.goto('/containers');
 		await expect(page.getByRole('row').filter({ hasText: 'remote-preview-web' })).toBeVisible();
-		await page
-			.getByRole('columnheader', { name: 'Environment', exact: true })
-			.getByRole('button')
-			.click();
-		await page.getByRole('menuitem', { name: 'Desc', exact: true }).click();
+		await sortByColumn(page, 'Environment', 'desc');
 
 		await expect(page.getByRole('row').nth(1)).toContainText(remoteEnvironment.name);
 		expect(

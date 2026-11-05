@@ -56,8 +56,6 @@
 
 	const currentPath = $derived(page.url.pathname);
 	const showLabels = $derived(navigationSettings?.showLabels ?? true);
-	const scrollToHideEnabled = $derived(navigationSettings?.scrollToHide ?? true);
-	const mode = $derived(navigationSettings?.mode ?? 'floating');
 
 	const leftItems = $derived(pinnedItems.slice(0, Math.floor(pinnedItems.length / 2)));
 	const rightItems = $derived(pinnedItems.slice(Math.floor(pinnedItems.length / 2)));
@@ -77,9 +75,6 @@
 			onVisibilityChange: (isVisible) => (navigation.visible = isVisible)
 		},
 		{
-			get scrollToHideEnabled() {
-				return scrollToHideEnabled;
-			},
 			get menuOpen() {
 				return menuOpen;
 			}
@@ -92,18 +87,12 @@
 
 	function measureOffset(navElement: HTMLElement) {
 		const root = document.documentElement;
-		const cssVarName = mode === 'floating' ? '--mobile-floating-nav-offset' : '--mobile-docked-nav-offset';
 
 		const applyOffset = () => {
-			if (mode === 'floating') {
-				const rect = navElement.getBoundingClientRect();
-				const computed = window.getComputedStyle(navElement);
-				const bottomGap = parseFloat(computed.bottom || '0') || 0;
-				const offset = rect.height + bottomGap;
-				root.style.setProperty(cssVarName, `${offset}px`);
-			} else {
-				root.style.setProperty(cssVarName, `${navElement.offsetHeight}px`);
-			}
+			const rect = navElement.getBoundingClientRect();
+			const computed = window.getComputedStyle(navElement);
+			const bottomGap = parseFloat(computed.bottom || '0') || 0;
+			root.style.setProperty('--mobile-floating-nav-offset', `${rect.height + bottomGap}px`);
 		};
 
 		applyOffset();
@@ -114,58 +103,34 @@
 			observer.observe(navElement);
 		}
 
-		const handleResize = mode === 'floating' ? () => applyOffset() : null;
-		if (handleResize) {
-			window.addEventListener('resize', handleResize);
-			window.visualViewport?.addEventListener('resize', handleResize);
-		}
+		window.addEventListener('resize', applyOffset);
+		window.visualViewport?.addEventListener('resize', applyOffset);
 
 		return () => {
 			observer?.disconnect();
-			if (handleResize) {
-				window.removeEventListener('resize', handleResize);
-				window.visualViewport?.removeEventListener('resize', handleResize);
-			}
-			root.style.removeProperty(cssVarName);
+			window.removeEventListener('resize', applyOffset);
+			window.visualViewport?.removeEventListener('resize', applyOffset);
+			root.style.removeProperty('--mobile-floating-nav-offset');
 		};
 	}
 
-	const visibilityClass = $derived.by(() => {
-		if (visible && mode === 'floating') return 'translate-y-0 scale-100 opacity-100';
-		if (visible) return 'translate-y-0 opacity-100';
-		if (mode === 'floating') return 'translate-y-full scale-95 opacity-0';
-		return 'translate-y-full opacity-0';
-	});
-
-	// Mode-specific styles
 	const navClasses = $derived(
 		cn(
 			// Capture vertical gestures so opening the sheet doesn't scroll the page; keep items tappable above the gesture layer.
 			'pointer-events-auto isolate w-49/50 max-w-md origin-bottom transform-gpu touch-pan-x touch-pinch-zoom overscroll-contain subpixel-antialiased will-change-transform contain-layout contain-paint contain-style backface-hidden',
 			'[&_:is(button,a)]:pointer-events-auto [&_:is(button,a)]:relative [&_:is(button,a)]:isolate [&_:is(button,a)]:z-(--arcane-z-raised) [&_:is(button,a)]:touch-manipulation pointer-fine:[&_:is(button,a)]:cursor-pointer',
 			'motion-reduce:transition-none motion-reduce:[&_button]:transform-none!',
-			mode === 'floating'
-				? 'fixed bottom-floating-nav left-1/2 z-(--arcane-z-app-chrome) -translate-x-1/2 pointer-fine:hover:border-muted pointer-fine:hover:shadow-lg pointer-fine:hover:backdrop-blur-xl'
-				: 'fixed right-0 bottom-0 left-0 z-(--arcane-z-app-chrome) gap-2',
+			'fixed bottom-floating-nav left-1/2 z-(--arcane-z-app-chrome) -translate-x-1/2 pointer-fine:hover:border-muted pointer-fine:hover:shadow-lg pointer-fine:hover:backdrop-blur-xl',
 			'border-border/30 bg-background/60 backdrop-blur-xl',
 			'shadow-sm transition duration-300 ease-out select-none',
 			'flex items-center',
-			mode === 'floating'
-				? cn(
-						'rounded-3xl border',
-						// On very small screens, tighten spacing so labeled items + center action fit.
-						showLabels ? 'gap-1.5 px-2.5 py-1.5 sm:gap-2 sm:px-3 sm:py-2' : 'gap-2.5 px-3.5 py-2 sm:gap-3 sm:px-4 sm:py-2.5'
-					)
-				: cn(
-						'justify-around border-t border-border/50',
-						showLabels ? 'px-4 pt-2 pb-(--safe-area-bottom)' : 'px-4 pt-2.5 pb-(--safe-area-bottom)'
-					),
-			visibilityClass,
+			'rounded-3xl border',
+			// On very small screens, tighten spacing so labeled items + center action fit.
+			showLabels ? 'gap-1.5 px-2.5 py-1.5 sm:gap-2 sm:px-3 sm:py-2' : 'gap-2.5 px-3.5 py-2 sm:gap-3 sm:px-4 sm:py-2.5',
+			visible ? 'translate-y-0 scale-100 opacity-100' : 'translate-y-full scale-95 opacity-0',
 			className
 		)
 	);
-
-	const testId = $derived(mode === 'floating' ? 'mobile-floating-nav' : 'mobile-docked-nav');
 </script>
 
 <svelte:window
@@ -176,7 +141,13 @@
 	onscrollcapture={gestures.handleScroll}
 />
 
-<nav {@attach gestures.attach} {@attach measureOffset} class={navClasses} data-testid={testId} aria-label={m.mobile_navigation()}>
+<nav
+	{@attach gestures.attach}
+	{@attach measureOffset}
+	class={navClasses}
+	data-testid="mobile-floating-nav"
+	aria-label={m.mobile_navigation()}
+>
 	<!-- Left side items -->
 	{#each leftItems as item (item.url)}
 		<MobileNavItem {item} {showLabels} active={currentPath === item.url || currentPath.startsWith(item.url + '/')} />

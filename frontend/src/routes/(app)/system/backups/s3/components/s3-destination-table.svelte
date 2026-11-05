@@ -10,7 +10,7 @@
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { EditIcon, RemoteEnvironmentIcon, ClockIcon, GlobeIcon, TestIcon } from '#lib/icons/index.js';
+	import { EditIcon, AgentIcon, ClockIcon, GlobeIcon, TestIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 	import type { S3Destination } from '#lib/types/backup.js';
@@ -36,19 +36,63 @@
 	} = $props();
 
 	const columns = [
-		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
-		{ accessorKey: 'bucket', title: m.backups_s3_bucket_label(), sortable: true },
-		{ accessorKey: 'endpoint', title: m.backups_s3_endpoint_label(), sortable: true, cell: EndpointCell },
-		{ accessorKey: 'region', title: m.backups_s3_region_label(), sortable: true },
-		{ accessorKey: 'prefix', title: m.backups_s3_prefix_label(), sortable: true, cell: PrefixCell },
-		{ accessorKey: 'updatedAt', title: m.common_updated(), sortable: true, cell: UpdatedCell }
+		{
+			accessorKey: 'name',
+			title: m.common_name(),
+			sortable: true,
+			cell: NameCell
+		},
+		{
+			accessorKey: 'bucket',
+			title: m.backups_s3_bucket_label(),
+			sortable: true
+		},
+		{
+			accessorKey: 'endpoint',
+			title: m.backups_s3_endpoint_label(),
+			sortable: true,
+			cell: EndpointCell
+		},
+		{
+			accessorKey: 'region',
+			title: m.backups_s3_region_label(),
+			sortable: true
+		},
+		{
+			accessorKey: 'prefix',
+			title: m.backups_s3_prefix_label(),
+			sortable: true,
+			cell: PrefixCell
+		},
+		{
+			accessorKey: 'updatedAt',
+			title: m.common_updated(),
+			sortable: true,
+			cell: UpdatedCell
+		}
 	] satisfies ColumnSpec<S3Destination>[];
 
 	const mobileFields = [
-		{ id: 'bucket', label: m.backups_s3_bucket_label(), defaultVisible: true },
-		{ id: 'endpoint', label: m.backups_s3_endpoint_label(), defaultVisible: true },
-		{ id: 'region', label: m.backups_s3_region_label(), defaultVisible: true },
-		{ id: 'prefix', label: m.backups_s3_prefix_label(), defaultVisible: false }
+		{
+			id: 'bucket',
+			label: m.backups_s3_bucket_label(),
+			defaultVisible: true
+		},
+		{
+			id: 'endpoint',
+			label: m.backups_s3_endpoint_label(),
+			defaultVisible: true
+		},
+		{
+			id: 'region',
+			label: m.backups_s3_region_label(),
+			defaultVisible: true
+		},
+		{
+			id: 'prefix',
+			label: m.backups_s3_prefix_label(),
+			defaultVisible: false
+		}
 	];
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	let testingId = $state<string | null>(null);
@@ -59,13 +103,23 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					await s3DestinationService.test(destination.id);
-					toast.success(m.s3_destination_test_success({ name: destination.name }));
+					toast.success(
+						m.s3_destination_test_success({
+							name: destination.name
+						})
+					);
 				})()
 			);
 			if (operationResult.error !== null) {
 				const error = operationResult.error;
 
-				toast.error(error instanceof Error ? error.message : m.s3_destination_test_failed({ name: destination.name }));
+				toast.error(
+					error instanceof Error
+						? error.message
+						: m.s3_destination_test_failed({
+								name: destination.name
+							})
+				);
 			}
 		} finally {
 			testingId = null;
@@ -90,7 +144,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: S3Destination })}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.name}>
 		<IfPermitted perm="s3-destinations:test">
 			<ActionMenuItem
 				icon={TestIcon}
@@ -114,13 +168,13 @@
 {#snippet MobileCard({ item, mobileFieldVisibility }: { item: S3Destination; mobileFieldVisibility: MobileFieldVisibility })}
 	<UniversalMobileCard
 		{item}
-		icon={{ component: RemoteEnvironmentIcon, variant: 'blue' }}
+		icon={{ component: AgentIcon, variant: 'blue' }}
 		title={(item) => item.name}
 		fields={[
 			{
 				label: m.backups_s3_bucket_label(),
 				getValue: (item) => item.bucket,
-				icon: RemoteEnvironmentIcon,
+				icon: AgentIcon,
 				iconVariant: 'gray',
 				show: mobileFieldVisibility['bucket'] ?? true
 			},
@@ -141,7 +195,7 @@
 			{
 				label: m.backups_s3_prefix_label(),
 				getValue: (item) => item.prefix || '-',
-				icon: RemoteEnvironmentIcon,
+				icon: AgentIcon,
 				iconVariant: 'gray',
 				show: mobileFieldVisibility['prefix'] ?? false
 			}

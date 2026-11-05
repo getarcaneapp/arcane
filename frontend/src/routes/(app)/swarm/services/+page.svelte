@@ -5,7 +5,7 @@
 
 	import ServiceEditorDialog from '#lib/components/dialogs/service-editor-dialog.svelte';
 	import { swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
-	import { DockIcon } from '#lib/icons/index.js';
+	import { ContainersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -92,7 +92,7 @@
 		{
 			title: m.swarm_services_total(),
 			value: totalServices,
-			icon: DockIcon,
+			icon: ContainersIcon,
 			iconColor: 'text-info'
 		}
 	]);

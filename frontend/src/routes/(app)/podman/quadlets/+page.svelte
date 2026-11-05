@@ -3,7 +3,7 @@
 	import { untrack } from 'svelte';
 
 	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { AlertTriangleIcon, FileTextIcon } from '#lib/icons/index.js';
+	import { AlertIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { podmanQuadletListQuery } from '#lib/query/podman.js';
@@ -74,7 +74,7 @@
 		<div class="space-y-4">
 			{#if quadletEnvironments.length === 0}
 				<Alert.Root variant="warning-subtle">
-					<AlertTriangleIcon class="size-4 text-warning" />
+					<AlertIcon class="size-4 text-warning" />
 					<Alert.Title>{m.common_unavailable()}</Alert.Title>
 					<Alert.Description>{m.podman_quadlets_unsupported()}</Alert.Description>
 				</Alert.Root>

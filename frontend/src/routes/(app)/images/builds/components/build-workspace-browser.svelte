@@ -16,7 +16,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { UseClipboard } from '#lib/hooks/use-clipboard.svelte.js';
-	import { UploadIcon, MoveToFolderIcon, EllipsisIcon, CopyIcon, AlertTriangleIcon } from '#lib/icons/index.js';
+	import { UploadIcon, MoveToFolderIcon, EllipsisIcon, CopyIcon, AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import type { UploadProgressCallback } from '#lib/types/ui/upload.js';
@@ -241,7 +241,7 @@
 		</div>
 	{:else if error}
 		<EmptyState
-			icon={AlertTriangleIcon}
+			icon={AlertIcon}
 			title={m.build_workspace_unavailable_title()}
 			description={m.build_workspace_unavailable_description()}
 		>

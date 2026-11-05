@@ -20,13 +20,17 @@
 			lock={lock('activityHistoryRetentionDays')}
 			mixed={mixed('activityHistoryRetentionDays')}
 		>
-			<Input
-				id="activity-history-retention-days"
-				type="number"
-				placeholder={mixed('activityHistoryRetentionDays') ? m.mixed() : m.activity_history_retention_days_placeholder()}
-				bind:value={formInputs.activityHistoryRetentionDays.value}
-				aria-invalid={!!formInputs.activityHistoryRetentionDays.error}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="activity-history-retention-days"
+					type="number"
+					placeholder={mixed('activityHistoryRetentionDays') ? m.mixed() : m.activity_history_retention_days_placeholder()}
+					bind:value={formInputs.activityHistoryRetentionDays.value}
+					aria-invalid={!!formInputs.activityHistoryRetentionDays.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			for="activity-history-max-entries"
@@ -37,13 +41,17 @@
 			lock={lock('activityHistoryMaxEntries')}
 			mixed={mixed('activityHistoryMaxEntries')}
 		>
-			<Input
-				id="activity-history-max-entries"
-				type="number"
-				placeholder={mixed('activityHistoryMaxEntries') ? m.mixed() : m.activity_history_max_entries_placeholder()}
-				bind:value={formInputs.activityHistoryMaxEntries.value}
-				aria-invalid={!!formInputs.activityHistoryMaxEntries.error}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="activity-history-max-entries"
+					type="number"
+					placeholder={mixed('activityHistoryMaxEntries') ? m.mixed() : m.activity_history_max_entries_placeholder()}
+					bind:value={formInputs.activityHistoryMaxEntries.value}
+					aria-invalid={!!formInputs.activityHistoryMaxEntries.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			for="activity-max-concurrent"
@@ -54,13 +62,17 @@
 			lock={lock('maxConcurrentActivities')}
 			mixed={mixed('maxConcurrentActivities')}
 		>
-			<Input
-				id="activity-max-concurrent"
-				type="number"
-				placeholder={mixed('maxConcurrentActivities') ? m.mixed() : m.activity_max_concurrent_placeholder()}
-				bind:value={formInputs.maxConcurrentActivities.value}
-				aria-invalid={!!formInputs.maxConcurrentActivities.error}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="activity-max-concurrent"
+					type="number"
+					placeholder={mixed('maxConcurrentActivities') ? m.mixed() : m.activity_max_concurrent_placeholder()}
+					bind:value={formInputs.maxConcurrentActivities.value}
+					aria-invalid={!!formInputs.maxConcurrentActivities.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
 	<SettingsSection title={m.upgrade_logs_section_title()}>
@@ -73,13 +85,17 @@
 			lock={lock('upgradeLogRetentionDays')}
 			mixed={mixed('upgradeLogRetentionDays')}
 		>
-			<Input
-				id="upgrade-log-retention-days"
-				type="number"
-				bind:value={formInputs.upgradeLogRetentionDays.value}
-				aria-invalid={!!formInputs.upgradeLogRetentionDays.error}
-				placeholder={mixed('upgradeLogRetentionDays') ? m.mixed() : undefined}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="upgrade-log-retention-days"
+					type="number"
+					bind:value={formInputs.upgradeLogRetentionDays.value}
+					aria-invalid={!!formInputs.upgradeLogRetentionDays.error}
+					placeholder={mixed('upgradeLogRetentionDays') ? m.mixed() : undefined}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
 </div>

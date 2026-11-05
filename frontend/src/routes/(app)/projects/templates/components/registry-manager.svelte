@@ -4,7 +4,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Snippet } from '#lib/components/ui/snippet/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
-	import { RegistryIcon, CommunityIcon, ExternalLinkIcon, AlertTriangleIcon } from '#lib/icons/index.js';
+	import { RegistryIcon, CommunityIcon, ExternalLinkIcon, AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { TemplateRegistry } from '#lib/types/template.js';
 
@@ -79,7 +79,7 @@
 							{/if}
 							{#if registry.lastFetchError}
 								<div class="mt-2 flex items-start gap-1.5 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5">
-									<AlertTriangleIcon class="mt-0.5 size-3.5 shrink-0 text-destructive" />
+									<AlertIcon class="mt-0.5 size-3.5 shrink-0 text-destructive" />
 									<p class="text-xs break-all text-destructive">{registry.lastFetchError}</p>
 								</div>
 							{/if}

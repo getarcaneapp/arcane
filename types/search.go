@@ -26,12 +26,4 @@ type (
 		// Required: true
 		Count int `json:"count"`
 	}
-
-	// SearchProfile selects the metadata defaults and ranking rules for a search surface.
-	SearchProfile uint8
-)
-
-const (
-	SearchProfileSettings SearchProfile = iota + 1
-	SearchProfileCustomize
 )

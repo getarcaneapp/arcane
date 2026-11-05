@@ -111,7 +111,7 @@
 
 <div class="container mx-auto flex h-full min-h-0 max-w-full flex-col gap-6 overflow-hidden p-2 pb-10 sm:p-6 sm:pb-10">
 	<div class="space-y-3 sm:space-y-4">
-		<ArcaneButton action="base" tone="ghost" onclick={() => goto(resolve('/(app)/customize/templates'))} class="w-fit gap-2">
+		<ArcaneButton action="base" tone="ghost" onclick={() => goto(resolve('/(app)/projects/templates'))} class="w-fit gap-2">
 			<ArrowLeftIcon class="size-4" />
 			<span>{m.common_back_to({ resource: m.templates_title() })}</span>
 		</ArcaneButton>

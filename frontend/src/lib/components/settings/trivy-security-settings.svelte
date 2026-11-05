@@ -152,16 +152,19 @@
 				description={m.trivy_db_registry_description()}
 				mixed={mixed('trivyDbRegistry')}
 			>
-				<SelectWithLabel
-					id="trivyDbRegistry"
-					name="trivyDbRegistry"
-					hideLabel
-					bind:value={formInputs.trivyDbRegistry.value}
-					label={m.trivy_db_registry_label()}
-					options={arcaneImageRegistryOptions()}
-					onValueChange={(v) => (formInputs.trivyDbRegistry.value = v as 'ghcr.io' | 'docker.io')}
-					placeholder={mixed('trivyDbRegistry') ? m.mixed() : undefined}
-				/>
+				{#snippet children({ describedBy })}
+					<SelectWithLabel
+						id="trivyDbRegistry"
+						name="trivyDbRegistry"
+						hideLabel
+						bind:value={formInputs.trivyDbRegistry.value}
+						label={m.trivy_db_registry_label()}
+						options={arcaneImageRegistryOptions()}
+						onValueChange={(v) => (formInputs.trivyDbRegistry.value = v as 'ghcr.io' | 'docker.io')}
+						placeholder={mixed('trivyDbRegistry') ? m.mixed() : undefined}
+						aria-describedby={describedBy}
+					/>
+				{/snippet}
 				{#snippet helpText()}
 					<ul class="space-y-0.5 font-mono">
 						{#each arcaneTrivyDbImages(formInputs.trivyDbRegistry.value) as image (image)}
@@ -178,11 +181,14 @@
 				layout="switch"
 				mixed={mixed('trivyIgnoreUnfixed')}
 			>
-				<Switch
-					id="trivyIgnoreUnfixedSwitch"
-					bind:checked={formInputs.trivyIgnoreUnfixed.value}
-					data-mixed={!!mixed('trivyIgnoreUnfixed') || undefined}
-				/>
+				{#snippet children({ describedBy })}
+					<Switch
+						id="trivyIgnoreUnfixedSwitch"
+						bind:checked={formInputs.trivyIgnoreUnfixed.value}
+						data-mixed={!!mixed('trivyIgnoreUnfixed') || undefined}
+						aria-describedby={describedBy}
+					/>
+				{/snippet}
 			</SettingsRow>
 
 			<SettingsRow
@@ -192,11 +198,14 @@
 				layout="switch"
 				mixed={mixed('vulnerabilityThreatIntelEnabled')}
 			>
-				<Switch
-					id="vulnerabilityThreatIntelEnabledSwitch"
-					bind:checked={formInputs.vulnerabilityThreatIntelEnabled.value}
-					data-mixed={!!mixed('vulnerabilityThreatIntelEnabled') || undefined}
-				/>
+				{#snippet children({ describedBy })}
+					<Switch
+						id="vulnerabilityThreatIntelEnabledSwitch"
+						bind:checked={formInputs.vulnerabilityThreatIntelEnabled.value}
+						data-mixed={!!mixed('vulnerabilityThreatIntelEnabled') || undefined}
+						aria-describedby={describedBy}
+					/>
+				{/snippet}
 			</SettingsRow>
 
 			<SettingsRow
@@ -205,23 +214,26 @@
 				layout="wide"
 				mixed={mixed('trivyConfig')}
 			>
-				<div class="overflow-hidden rounded-md border border-border/60">
-					{#await import('#lib/components/code-editor/editor.svelte')}
-						<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
-					{:then { default: CodeEditor }}
-						<CodeEditor
-							bind:value={formInputs.trivyConfig.value}
-							language="yaml"
-							validationMode="none"
-							autoHeight={true}
-							statusBar={false}
-							fontSize="13px"
-							placeholder={m.security_trivy_config_placeholder()}
-						/>
-					{:catch}
-						<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
-					{/await}
-				</div>
+				{#snippet children({ describedBy })}
+					<div class="overflow-hidden rounded-md border border-border/60">
+						{#await import('#lib/components/code-editor/editor.svelte')}
+							<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
+						{:then { default: CodeEditor }}
+							<CodeEditor
+								bind:value={formInputs.trivyConfig.value}
+								aria-describedby={describedBy}
+								language="yaml"
+								validationMode="none"
+								autoHeight={true}
+								statusBar={false}
+								fontSize="13px"
+								placeholder={m.security_trivy_config_placeholder()}
+							/>
+						{:catch}
+							<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
+						{/await}
+					</div>
+				{/snippet}
 			</SettingsRow>
 
 			<SettingsRow
@@ -230,23 +242,26 @@
 				layout="wide"
 				mixed={mixed('trivyIgnore')}
 			>
-				<div class="overflow-hidden rounded-md border border-border/60">
-					{#await import('#lib/components/code-editor/editor.svelte')}
-						<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
-					{:then { default: CodeEditor }}
-						<CodeEditor
-							bind:value={formInputs.trivyIgnore.value}
-							language="plaintext"
-							validationMode="none"
-							autoHeight={true}
-							statusBar={false}
-							fontSize="13px"
-							placeholder={m.security_trivy_ignore_placeholder()}
-						/>
-					{:catch}
-						<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
-					{/await}
-				</div>
+				{#snippet children({ describedBy })}
+					<div class="overflow-hidden rounded-md border border-border/60">
+						{#await import('#lib/components/code-editor/editor.svelte')}
+							<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
+						{:then { default: CodeEditor }}
+							<CodeEditor
+								bind:value={formInputs.trivyIgnore.value}
+								aria-describedby={describedBy}
+								language="plaintext"
+								validationMode="none"
+								autoHeight={true}
+								statusBar={false}
+								fontSize="13px"
+								placeholder={m.security_trivy_ignore_placeholder()}
+							/>
+						{:catch}
+							<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
+						{/await}
+					</div>
+				{/snippet}
 			</SettingsRow>
 
 			<SettingsRow
@@ -257,19 +272,23 @@
 				error={formInputs.trivyNetwork.error}
 				mixed={mixed('trivyNetwork')}
 			>
-				<SearchableSelect
-					triggerId="trivyNetwork"
-					items={trivyNetworkOptions.map((option) => ({
-						value: option.value,
-						label: option.label,
-						hint: option.description
-					}))}
-					bind:value={formInputs.trivyNetwork.value}
-					onSelect={(value) => (formInputs.trivyNetwork.value = value)}
-					placeholder={!!mixed('trivyNetwork')}
-					displayText={mixed('trivyNetwork') ? m.mixed() : undefined}
-					class="w-full justify-between"
-				/>
+				{#snippet children({ describedBy, errorId })}
+					<SearchableSelect
+						triggerId="trivyNetwork"
+						items={trivyNetworkOptions.map((option) => ({
+							value: option.value,
+							label: option.label,
+							hint: option.description
+						}))}
+						bind:value={formInputs.trivyNetwork.value}
+						onSelect={(value) => (formInputs.trivyNetwork.value = value)}
+						placeholder={!!mixed('trivyNetwork')}
+						displayText={mixed('trivyNetwork') ? m.mixed() : undefined}
+						class="w-full justify-between"
+						aria-describedby={describedBy}
+						aria-errormessage={errorId}
+					/>
+				{/snippet}
 			</SettingsRow>
 
 			<SettingsRow
@@ -280,14 +299,19 @@
 				layout="wide"
 				mixed={mixed('trivySecurityOpts')}
 			>
-				<Textarea
-					bind:value={formInputs.trivySecurityOpts.value}
-					aria-label={m.security_trivy_security_opts_label()}
-					mono
-					class="min-h-28"
-					placeholder={mixed('trivySecurityOpts') ? m.mixed() : m.security_trivy_security_opts_placeholder()}
-					rows={4}
-				/>
+				{#snippet children({ describedBy, errorId })}
+					<Textarea
+						bind:value={formInputs.trivySecurityOpts.value}
+						aria-label={m.security_trivy_security_opts_label()}
+						mono
+						class="min-h-28"
+						placeholder={mixed('trivySecurityOpts') ? m.mixed() : m.security_trivy_security_opts_placeholder()}
+						rows={4}
+						aria-invalid={!!formInputs.trivySecurityOpts.error}
+						aria-describedby={describedBy}
+						aria-errormessage={errorId}
+					/>
+				{/snippet}
 			</SettingsRow>
 
 			<SettingsRow
@@ -298,11 +322,14 @@
 				layout="switch"
 				mixed={mixed('trivyPrivileged')}
 			>
-				<Switch
-					id="trivyPrivilegedSwitch"
-					bind:checked={formInputs.trivyPrivileged.value}
-					data-mixed={!!mixed('trivyPrivileged') || undefined}
-				/>
+				{#snippet children({ describedBy })}
+					<Switch
+						id="trivyPrivilegedSwitch"
+						bind:checked={formInputs.trivyPrivileged.value}
+						data-mixed={!!mixed('trivyPrivileged') || undefined}
+						aria-describedby={describedBy}
+					/>
+				{/snippet}
 			</SettingsRow>
 		</SettingsSection>
 
@@ -314,11 +341,14 @@
 				layout="switch"
 				mixed={mixed('trivyServerEnabled')}
 			>
-				<Switch
-					id="trivyServerEnabledSwitch"
-					bind:checked={formInputs.trivyServerEnabled.value}
-					data-mixed={!!mixed('trivyServerEnabled') || undefined}
-				/>
+				{#snippet children({ describedBy })}
+					<Switch
+						id="trivyServerEnabledSwitch"
+						bind:checked={formInputs.trivyServerEnabled.value}
+						data-mixed={!!mixed('trivyServerEnabled') || undefined}
+						aria-describedby={describedBy}
+					/>
+				{/snippet}
 			</SettingsRow>
 			{#if formInputs.trivyServerEnabled.value}
 				<SettingsRow
@@ -328,14 +358,18 @@
 					error={formInputs.trivyServerUrl.error}
 					mixed={mixed('trivyServerUrl')}
 				>
-					<Input
-						id="trivyServerUrl"
-						type="url"
-						autocomplete="off"
-						bind:value={formInputs.trivyServerUrl.value}
-						placeholder={mixed('trivyServerUrl') ? m.mixed() : m.security_trivy_server_url_placeholder()}
-						aria-invalid={!!formInputs.trivyServerUrl.error}
-					/>
+					{#snippet children({ describedBy, errorId })}
+						<Input
+							id="trivyServerUrl"
+							type="url"
+							autocomplete="off"
+							bind:value={formInputs.trivyServerUrl.value}
+							placeholder={mixed('trivyServerUrl') ? m.mixed() : m.security_trivy_server_url_placeholder()}
+							aria-invalid={!!formInputs.trivyServerUrl.error}
+							aria-describedby={describedBy}
+							aria-errormessage={errorId}
+						/>
+					{/snippet}
 				</SettingsRow>
 				<SettingsRow
 					for="trivyServerToken"
@@ -345,14 +379,18 @@
 					helpText={m.security_trivy_server_note()}
 					mixed={mixed('trivyServerToken')}
 				>
-					<Input
-						id="trivyServerToken"
-						type="password"
-						autocomplete="new-password"
-						bind:value={formInputs.trivyServerToken.value}
-						aria-invalid={!!formInputs.trivyServerToken.error}
-						placeholder={mixed('trivyServerToken') ? m.mixed() : undefined}
-					/>
+					{#snippet children({ describedBy, errorId })}
+						<Input
+							id="trivyServerToken"
+							type="password"
+							autocomplete="new-password"
+							bind:value={formInputs.trivyServerToken.value}
+							aria-invalid={!!formInputs.trivyServerToken.error}
+							placeholder={mixed('trivyServerToken') ? m.mixed() : undefined}
+							aria-describedby={describedBy}
+							aria-errormessage={errorId}
+						/>
+					{/snippet}
 				</SettingsRow>
 			{/if}
 		</SettingsSection>
@@ -365,12 +403,15 @@
 				layout="switch"
 				mixed={mixed('trivyResourceLimitsEnabled')}
 			>
-				<Switch
-					id="trivyResourceLimitsEnabledSwitch"
-					bind:checked={formInputs.trivyResourceLimitsEnabled.value}
-					onCheckedChange={handleTrivyResourceLimitsChange}
-					data-mixed={!!mixed('trivyResourceLimitsEnabled') || undefined}
-				/>
+				{#snippet children({ describedBy })}
+					<Switch
+						id="trivyResourceLimitsEnabledSwitch"
+						bind:checked={formInputs.trivyResourceLimitsEnabled.value}
+						onCheckedChange={handleTrivyResourceLimitsChange}
+						data-mixed={!!mixed('trivyResourceLimitsEnabled') || undefined}
+						aria-describedby={describedBy}
+					/>
+				{/snippet}
 			</SettingsRow>
 			{#if formInputs.trivyResourceLimitsEnabled.value}
 				<SettingsRow
@@ -380,15 +421,19 @@
 					error={formInputs.trivyCpuLimit.error}
 					mixed={mixed('trivyCpuLimit')}
 				>
-					<Input
-						id="trivyCpuLimit"
-						type="number"
-						min={0}
-						step="any"
-						bind:value={formInputs.trivyCpuLimit.value}
-						aria-invalid={!!formInputs.trivyCpuLimit.error}
-						placeholder={mixed('trivyCpuLimit') ? m.mixed() : undefined}
-					/>
+					{#snippet children({ describedBy, errorId })}
+						<Input
+							id="trivyCpuLimit"
+							type="number"
+							min={0}
+							step="any"
+							bind:value={formInputs.trivyCpuLimit.value}
+							aria-invalid={!!formInputs.trivyCpuLimit.error}
+							placeholder={mixed('trivyCpuLimit') ? m.mixed() : undefined}
+							aria-describedby={describedBy}
+							aria-errormessage={errorId}
+						/>
+					{/snippet}
 				</SettingsRow>
 				<SettingsRow
 					for="trivyMemoryLimitMb"
@@ -396,13 +441,17 @@
 					error={formInputs.trivyMemoryLimitMb.error}
 					mixed={mixed('trivyMemoryLimitMb')}
 				>
-					<Input
-						id="trivyMemoryLimitMb"
-						type="number"
-						bind:value={formInputs.trivyMemoryLimitMb.value}
-						aria-invalid={!!formInputs.trivyMemoryLimitMb.error}
-						placeholder={mixed('trivyMemoryLimitMb') ? m.mixed() : undefined}
-					/>
+					{#snippet children({ describedBy, errorId })}
+						<Input
+							id="trivyMemoryLimitMb"
+							type="number"
+							bind:value={formInputs.trivyMemoryLimitMb.value}
+							aria-invalid={!!formInputs.trivyMemoryLimitMb.error}
+							placeholder={mixed('trivyMemoryLimitMb') ? m.mixed() : undefined}
+							aria-describedby={describedBy}
+							aria-errormessage={errorId}
+						/>
+					{/snippet}
 				</SettingsRow>
 				<SettingsRow
 					for="trivyConcurrentScanContainers"
@@ -411,13 +460,17 @@
 					error={formInputs.trivyConcurrentScanContainers.error}
 					mixed={mixed('trivyConcurrentScanContainers')}
 				>
-					<Input
-						id="trivyConcurrentScanContainers"
-						type="number"
-						bind:value={formInputs.trivyConcurrentScanContainers.value}
-						aria-invalid={!!formInputs.trivyConcurrentScanContainers.error}
-						placeholder={mixed('trivyConcurrentScanContainers') ? m.mixed() : undefined}
-					/>
+					{#snippet children({ describedBy, errorId })}
+						<Input
+							id="trivyConcurrentScanContainers"
+							type="number"
+							bind:value={formInputs.trivyConcurrentScanContainers.value}
+							aria-invalid={!!formInputs.trivyConcurrentScanContainers.error}
+							placeholder={mixed('trivyConcurrentScanContainers') ? m.mixed() : undefined}
+							aria-describedby={describedBy}
+							aria-errormessage={errorId}
+						/>
+					{/snippet}
 				</SettingsRow>
 			{/if}
 		</SettingsSection>

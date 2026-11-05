@@ -16,11 +16,13 @@
 		inline = false,
 		id = 'localePicker',
 		class: className = '',
+		'aria-describedby': ariaDescribedby,
 		onOpenChange
 	}: {
 		inline?: boolean;
 		id?: string;
 		class?: string;
+		'aria-describedby'?: string;
 		onOpenChange?: (open: boolean) => void;
 	} = $props();
 
@@ -97,7 +99,7 @@
 			onOpenChange?.(open);
 		}}
 	>
-		<Select.Trigger {id} class={compact ? 'h-9 w-32' : 'w-full'} aria-label={ariaLabel}>
+		<Select.Trigger {id} class={compact ? 'h-9 w-32' : 'w-full'} aria-label={ariaLabel} aria-describedby={ariaDescribedby}>
 			<span class="truncate">{locales[currentLocale]}</span>
 		</Select.Trigger>
 		<Select.Content class={compact ? 'max-w-70 min-w-40' : undefined}>

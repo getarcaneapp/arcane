@@ -20,7 +20,7 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
-	import { LockIcon, InfoIcon, ArrowDownIcon } from '#lib/icons/index.js';
+	import { InfoIcon, ArrowDownIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { oidcMappingListQuery } from '#lib/query/oidc-mappings.js';
@@ -275,7 +275,6 @@
 <SettingsPageLayout
 	title={m.authentication()}
 	description={m.authentication_description()}
-	icon={LockIcon}
 	pageType={activeTab === 'settings' ? 'form' : 'management'}
 	showReadOnlyTag={activeTab === 'settings' && isReadOnly}
 >
@@ -302,11 +301,14 @@
 								layout="switch"
 								lock={settingsStore.lock('authLocalEnabled')}
 							>
-								<Switch
-									id="localAuthSwitch"
-									bind:checked={formInputs.authLocalEnabled.value}
-									onCheckedChange={handleLocalSwitchChange}
-								/>
+								{#snippet children({ describedBy })}
+									<Switch
+										id="localAuthSwitch"
+										bind:checked={formInputs.authLocalEnabled.value}
+										onCheckedChange={handleLocalSwitchChange}
+										aria-describedby={describedBy}
+									/>
+								{/snippet}
 							</SettingsRow>
 
 							<SettingsRow
@@ -315,6 +317,28 @@
 								description={m.security_oidc_auth_description()}
 								layout="switch"
 							>
+								{#snippet children({ describedBy })}
+									<div class="flex flex-col items-end gap-2">
+										<Switch
+											id="oidcEnabledSwitch"
+											disabled={isOidcLocked}
+											bind:checked={formInputs.oidcEnabled.value}
+											onCheckedChange={handleOidcEnabledChange}
+											aria-describedby={describedBy}
+										/>
+										{#if showOidcDetails}
+											<button
+												type="button"
+												class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+												aria-expanded={oidcConfigOpen}
+												onclick={() => (oidcConfigOpen = !oidcConfigOpen)}
+											>
+												<span>{oidcConfigOpen ? m.common_hide() : m.common_show()} {m.common_configuration()}</span>
+												<ArrowDownIcon class={cn('size-3.5 transition-transform', oidcConfigOpen && 'rotate-180')} />
+											</button>
+										{/if}
+									</div>
+								{/snippet}
 								{#snippet labelExtra()}
 									{#if isOidcLocked}
 										<div class="mt-2">
@@ -322,25 +346,6 @@
 										</div>
 									{/if}
 								{/snippet}
-								<div class="flex flex-col items-end gap-2">
-									<Switch
-										id="oidcEnabledSwitch"
-										disabled={isOidcLocked}
-										bind:checked={formInputs.oidcEnabled.value}
-										onCheckedChange={handleOidcEnabledChange}
-									/>
-									{#if showOidcDetails}
-										<button
-											type="button"
-											class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-											aria-expanded={oidcConfigOpen}
-											onclick={() => (oidcConfigOpen = !oidcConfigOpen)}
-										>
-											<span>{oidcConfigOpen ? m.common_hide() : m.common_show()} {m.common_configuration()}</span>
-											<ArrowDownIcon class={cn('size-3.5 transition-transform', oidcConfigOpen && 'rotate-180')} />
-										</button>
-									{/if}
-								</div>
 							</SettingsRow>
 
 							{#if showOidcDetails && oidcConfigOpen}
@@ -350,12 +355,16 @@
 									error={formInputs.oidcClientId.error}
 									lock={settingsStore.lock('oidcClientId')}
 								>
-									<Input
-										id="oidcClientId"
-										placeholder={m.oidc_client_id_placeholder()}
-										bind:value={formInputs.oidcClientId.value}
-										aria-invalid={!!formInputs.oidcClientId.error}
-									/>
+									{#snippet children({ describedBy, errorId })}
+										<Input
+											id="oidcClientId"
+											placeholder={m.oidc_client_id_placeholder()}
+											bind:value={formInputs.oidcClientId.value}
+											aria-invalid={!!formInputs.oidcClientId.error}
+											aria-describedby={describedBy}
+											aria-errormessage={errorId}
+										/>
+									{/snippet}
 								</SettingsRow>
 								<SettingsRow
 									for="oidcClientSecret"
@@ -364,18 +373,28 @@
 									error={formInputs.oidcClientSecret.error}
 									lock={settingsStore.lock('oidcClientSecret')}
 								>
-									<Input
-										id="oidcClientSecret"
-										type="password"
-										placeholder={m.oidc_client_secret_placeholder()}
-										disabled={formInputs.oidcClearClientSecret.value}
-										bind:value={formInputs.oidcClientSecret.value}
-										aria-invalid={!!formInputs.oidcClientSecret.error}
-									/>
+									{#snippet children({ describedBy, errorId })}
+										<Input
+											id="oidcClientSecret"
+											type="password"
+											placeholder={m.oidc_client_secret_placeholder()}
+											disabled={formInputs.oidcClearClientSecret.value}
+											bind:value={formInputs.oidcClientSecret.value}
+											aria-invalid={!!formInputs.oidcClientSecret.error}
+											aria-describedby={describedBy}
+											aria-errormessage={errorId}
+										/>
+									{/snippet}
 								</SettingsRow>
 								{#if hasStoredClientSecret && !settingsStore.isLocked('oidcClientSecret')}
 									<SettingsRow for="clearOidcClientSecret" label={m.security_oidc_clear_client_secret()} layout="switch">
-										<Switch id="clearOidcClientSecret" bind:checked={formInputs.oidcClearClientSecret.value} />
+										{#snippet children({ describedBy })}
+											<Switch
+												id="clearOidcClientSecret"
+												bind:checked={formInputs.oidcClearClientSecret.value}
+												aria-describedby={describedBy}
+											/>
+										{/snippet}
 									</SettingsRow>
 								{/if}
 								<SettingsRow
@@ -385,12 +404,16 @@
 									error={formInputs.oidcIssuerUrl.error}
 									lock={settingsStore.lock('oidcIssuerUrl')}
 								>
-									<Input
-										id="oidcIssuerUrl"
-										placeholder={m.oidc_issuer_url_placeholder()}
-										bind:value={formInputs.oidcIssuerUrl.value}
-										aria-invalid={!!formInputs.oidcIssuerUrl.error}
-									/>
+									{#snippet children({ describedBy, errorId })}
+										<Input
+											id="oidcIssuerUrl"
+											placeholder={m.oidc_issuer_url_placeholder()}
+											bind:value={formInputs.oidcIssuerUrl.value}
+											aria-invalid={!!formInputs.oidcIssuerUrl.error}
+											aria-describedby={describedBy}
+											aria-errormessage={errorId}
+										/>
+									{/snippet}
 								</SettingsRow>
 								<SettingsRow
 									for="oidcProviderName"
@@ -399,12 +422,16 @@
 									error={formInputs.oidcProviderName.error}
 									lock={settingsStore.lock('oidcProviderName')}
 								>
-									<Input
-										id="oidcProviderName"
-										placeholder={m.oidc_provider_name_placeholder()}
-										bind:value={formInputs.oidcProviderName.value}
-										aria-invalid={!!formInputs.oidcProviderName.error}
-									/>
+									{#snippet children({ describedBy, errorId })}
+										<Input
+											id="oidcProviderName"
+											placeholder={m.oidc_provider_name_placeholder()}
+											bind:value={formInputs.oidcProviderName.value}
+											aria-invalid={!!formInputs.oidcProviderName.error}
+											aria-describedby={describedBy}
+											aria-errormessage={errorId}
+										/>
+									{/snippet}
 								</SettingsRow>
 								<SettingsRow
 									for="oidcProviderLogoUrl"
@@ -413,12 +440,16 @@
 									error={formInputs.oidcProviderLogoUrl.error}
 									lock={settingsStore.lock('oidcProviderLogoUrl')}
 								>
-									<Input
-										id="oidcProviderLogoUrl"
-										placeholder={m.oidc_provider_logo_url_placeholder()}
-										bind:value={formInputs.oidcProviderLogoUrl.value}
-										aria-invalid={!!formInputs.oidcProviderLogoUrl.error}
-									/>
+									{#snippet children({ describedBy, errorId })}
+										<Input
+											id="oidcProviderLogoUrl"
+											placeholder={m.oidc_provider_logo_url_placeholder()}
+											bind:value={formInputs.oidcProviderLogoUrl.value}
+											aria-invalid={!!formInputs.oidcProviderLogoUrl.error}
+											aria-describedby={describedBy}
+											aria-errormessage={errorId}
+										/>
+									{/snippet}
 								</SettingsRow>
 								<SettingsRow
 									for="oidcScopes"
@@ -426,12 +457,16 @@
 									error={formInputs.oidcScopes.error}
 									lock={settingsStore.lock('oidcScopes')}
 								>
-									<Input
-										id="oidcScopes"
-										placeholder={m.oidc_scopes_placeholder()}
-										bind:value={formInputs.oidcScopes.value}
-										aria-invalid={!!formInputs.oidcScopes.error}
-									/>
+									{#snippet children({ describedBy, errorId })}
+										<Input
+											id="oidcScopes"
+											placeholder={m.oidc_scopes_placeholder()}
+											bind:value={formInputs.oidcScopes.value}
+											aria-invalid={!!formInputs.oidcScopes.error}
+											aria-describedby={describedBy}
+											aria-errormessage={errorId}
+										/>
+									{/snippet}
 								</SettingsRow>
 								<SettingsRow
 									for="oidcGroupsClaim"
@@ -440,12 +475,16 @@
 									error={formInputs.oidcGroupsClaim.error}
 									lock={settingsStore.lock('oidcGroupsClaim')}
 								>
-									<Input
-										id="oidcGroupsClaim"
-										placeholder={m.oidc_groups_claim_placeholder()}
-										bind:value={formInputs.oidcGroupsClaim.value}
-										aria-invalid={!!formInputs.oidcGroupsClaim.error}
-									/>
+									{#snippet children({ describedBy, errorId })}
+										<Input
+											id="oidcGroupsClaim"
+											placeholder={m.oidc_groups_claim_placeholder()}
+											bind:value={formInputs.oidcGroupsClaim.value}
+											aria-invalid={!!formInputs.oidcGroupsClaim.error}
+											aria-describedby={describedBy}
+											aria-errormessage={errorId}
+										/>
+									{/snippet}
 								</SettingsRow>
 								<SettingsRow
 									for="oidcMergeAccountsSwitch"
@@ -454,11 +493,14 @@
 									layout="switch"
 									lock={settingsStore.lock('oidcMergeAccounts')}
 								>
-									<Switch
-										id="oidcMergeAccountsSwitch"
-										bind:checked={formInputs.oidcMergeAccounts.value}
-										onCheckedChange={handleMergeAccountsChange}
-									/>
+									{#snippet children({ describedBy })}
+										<Switch
+											id="oidcMergeAccountsSwitch"
+											bind:checked={formInputs.oidcMergeAccounts.value}
+											onCheckedChange={handleMergeAccountsChange}
+											aria-describedby={describedBy}
+										/>
+									{/snippet}
 								</SettingsRow>
 								<SettingsRow
 									for="oidcSkipTlsVerifySwitch"
@@ -467,7 +509,13 @@
 									layout="switch"
 									lock={settingsStore.lock('oidcSkipTlsVerify')}
 								>
-									<Switch id="oidcSkipTlsVerifySwitch" bind:checked={formInputs.oidcSkipTlsVerify.value} />
+									{#snippet children({ describedBy })}
+										<Switch
+											id="oidcSkipTlsVerifySwitch"
+											bind:checked={formInputs.oidcSkipTlsVerify.value}
+											aria-describedby={describedBy}
+										/>
+									{/snippet}
 								</SettingsRow>
 								<SettingsRow
 									for="oidcAutoRedirectSwitch"
@@ -476,7 +524,13 @@
 									layout="switch"
 									lock={settingsStore.lock('oidcAutoRedirectToProvider')}
 								>
-									<Switch id="oidcAutoRedirectSwitch" bind:checked={formInputs.oidcAutoRedirectToProvider.value} />
+									{#snippet children({ describedBy })}
+										<Switch
+											id="oidcAutoRedirectSwitch"
+											bind:checked={formInputs.oidcAutoRedirectToProvider.value}
+											aria-describedby={describedBy}
+										/>
+									{/snippet}
 								</SettingsRow>
 								<SettingsRow label={m.oidc_redirect_uri_title()} description={m.oidc_redirect_uri_description()} layout="wide">
 									<div class="flex items-center gap-2">
@@ -528,12 +582,16 @@
 							description={m.security_session_timeout_description()}
 							error={formInputs.authSessionTimeout.error}
 						>
-							<Input
-								id="authSessionTimeout"
-								type="number"
-								bind:value={formInputs.authSessionTimeout.value}
-								aria-invalid={!!formInputs.authSessionTimeout.error}
-							/>
+							{#snippet children({ describedBy, errorId })}
+								<Input
+									id="authSessionTimeout"
+									type="number"
+									bind:value={formInputs.authSessionTimeout.value}
+									aria-invalid={!!formInputs.authSessionTimeout.error}
+									aria-describedby={describedBy}
+									aria-errormessage={errorId}
+								/>
+							{/snippet}
 						</SettingsRow>
 					</SettingsSection>
 

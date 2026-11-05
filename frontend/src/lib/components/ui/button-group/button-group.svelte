@@ -1,5 +1,7 @@
 <script lang="ts" module>
-	import { tv, type VariantProps } from 'tailwind-variants';
+	import type { VariantProps } from 'tailwind-variants';
+
+	import { tv, cn } from '#lib/utils.js';
 
 	const buttonGroupVariants = tv({
 		base: "flex w-fit items-stretch has-[>[data-slot=button-group]]:gap-2 [&>*]:focus-visible:relative [&>*]:focus-visible:z-(--arcane-z-raised) has-[select[aria-hidden=true]:last-child]:[&>[data-slot=select-trigger]:last-of-type]:rounded-r-xl [&>[data-slot=select-trigger]:not([class*='w-'])]:w-fit [&>input]:flex-1",
@@ -21,8 +23,6 @@
 
 <script lang="ts">
 	import type { HTMLAttributes } from 'svelte/elements';
-
-	import { cn } from '#lib/utils.js';
 
 	let {
 		class: className,

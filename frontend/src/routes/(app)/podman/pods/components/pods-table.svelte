@@ -116,13 +116,13 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={() =>
-			goto(resolve(`/(app)/podman/pods/[id]?env=${encodeURIComponent(item.environmentId)}`, { id: encodeURIComponent(item.id) }))}
+		href={() =>
+			resolve(`/(app)/podman/pods/[id]?env=${encodeURIComponent(item.environmentId)}`, { id: encodeURIComponent(item.id) })}
 	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: PodRow })}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.name}>
 		<DropdownMenu.Item
 			onclick={() =>
 				goto(

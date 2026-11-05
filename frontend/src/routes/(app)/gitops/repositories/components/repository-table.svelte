@@ -10,6 +10,7 @@
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { EmptyState } from '#lib/components/states/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import {
@@ -228,7 +229,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: GitRepository })}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.name}>
 		<IfPermitted perm="git-repositories:test">
 			<DropdownMenu.Item onclick={() => handleTest(item.id, item.name)} disabled={isLoading.testing}>
 				<TestTubeIcon class="size-4" />
@@ -260,4 +261,8 @@
 	{mobileFields}
 	rowActions={RowActions}
 	mobileCard={RepositoryMobileCardSnippet}
-/>
+>
+	{#snippet emptyState()}
+		<EmptyState icon={GitBranchIcon} title={m.no_repositories_yet()} description={m.add_git_repository_for_syncs()} />
+	{/snippet}
+</ArcaneTable>

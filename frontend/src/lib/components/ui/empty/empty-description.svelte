@@ -9,7 +9,7 @@
 <div
 	data-slot="empty-description"
 	class={cn(
-		'text-sm/relaxed wrap-break-word text-muted-foreground [&>a]:underline [&>a]:underline-offset-4 [&>a:hover]:text-primary',
+		'text-sm/relaxed wrap-break-word text-muted-foreground [&>a]:underline [&>a]:underline-offset-4 [&>a:hover]:text-primary-text',
 		className
 	)}
 	{...restProps}

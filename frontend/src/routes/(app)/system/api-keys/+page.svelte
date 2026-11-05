@@ -8,7 +8,6 @@
 	import ApiKeyFormSheet from '#lib/components/sheets/api-key-form-sheet.svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { Snippet } from '#lib/components/ui/snippet/index.js';
-	import { ApiKeyIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { apiKeyListQuery } from '#lib/query/api-keys.js';
@@ -111,10 +110,10 @@
 	});
 </script>
 
-<SettingsPageLayout title={m.api_key_page_title()} icon={ApiKeyIcon} pageType="management" {actionButtons}>
+<SettingsPageLayout title={m.api_key_page_title()} pageType="management" {actionButtons}>
 	{#snippet description()}
 		{m.api_key_page_description_intro()}
-		<a href="/api/docs" class="text-primary hover:underline" target="_blank" rel="noopener">{m.api_reference()}</a>
+		<a href="/api/docs" class="text-primary-text hover:underline" target="_blank" rel="noopener">{m.api_reference()}</a>
 		{m.api_key_page_description_suffix()}
 	{/snippet}
 

@@ -6,7 +6,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
-	import { SuccessIcon, AlertTriangleIcon, ExternalLinkIcon } from '#lib/icons/index.js';
+	import { SuccessIcon, AlertIcon, ExternalLinkIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { APIError } from '#lib/services/api-service.js';
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
@@ -347,7 +347,7 @@
 						<div class="flex min-w-0 items-center gap-2">
 							{#if phase === 'finished'}
 								{#if failed}
-									<AlertTriangleIcon class="size-4 shrink-0 text-destructive" />
+									<AlertIcon class="size-4 shrink-0 text-destructive" />
 								{:else}
 									<SuccessIcon class="size-4 shrink-0 text-success" />
 								{/if}

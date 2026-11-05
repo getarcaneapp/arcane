@@ -130,7 +130,6 @@
 	let pickedUploadEnvironmentId = $state('');
 	const uploadEnvironmentId = $derived(destinationEnvironmentId(pickedUploadEnvironmentId, 'images:upload'));
 	// Merged lists carry one environment's upload limit, so the destination's own is read while uploading.
-	// If it cannot be read, the browser sets no limit and the destination enforces its own.
 	const uploadLimitQuery = createQuery(() => ({
 		queryKey: queryKeys.images.uploadLimit(uploadEnvironmentId),
 		queryFn: async () =>
@@ -286,14 +285,14 @@
 
 	const statCards: StatCardConfig[] = $derived([
 		{
-			title: m.images_total(),
+			title: imageUsageCounts.totalImages === 1 ? m.images_total_one() : m.images_total(),
 			value: imageUsageCounts.totalImages,
 			icon: VolumesIcon,
 			iconColor: 'text-info'
 		},
 		{
 			title: m.images_total_size(),
-			value: String(bytes.format(imageUsageCounts.totalImageSize)),
+			value: String(bytes.format(imageUsageCounts.totalImageSize, { unitSeparator: ' ' })),
 			icon: LocalFolderComputerIcon,
 			iconColor: 'text-warning'
 		}
@@ -419,12 +418,15 @@
 						layout="wide"
 						contentClass="flex justify-center"
 					>
-						<PruneModePicker
-							modeOptions={imagePruneModes}
-							bind:value={imagePruneMode}
-							bind:untilValue={imagePruneUntil}
-							disabled={isPruning}
-						/>
+						{#snippet children({ describedBy })}
+							<PruneModePicker
+								modeOptions={imagePruneModes}
+								bind:value={imagePruneMode}
+								bind:untilValue={imagePruneUntil}
+								disabled={isPruning}
+								aria-describedby={describedBy}
+							/>
+						{/snippet}
 					</SettingsRow>
 				</SettingsSection>
 				<div class="flex justify-end gap-3 pt-6">

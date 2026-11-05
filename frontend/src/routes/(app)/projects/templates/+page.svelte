@@ -160,7 +160,7 @@
 				action: 'create',
 				placement: 'primary',
 				label: m.templates_create_template(),
-				onclick: () => goto(resolve('/(app)/customize/templates/create'))
+				onclick: () => goto(resolve('/(app)/projects/templates/create'))
 			});
 		}
 		if (canUpdateTemplate) {
@@ -168,7 +168,7 @@
 				id: 'default',
 				action: 'edit',
 				label: m.templates_edit_default(),
-				onclick: () => goto(resolve('/(app)/customize/templates/default'))
+				onclick: () => goto(resolve('/(app)/projects/templates/default'))
 			});
 		}
 		buttons.push({

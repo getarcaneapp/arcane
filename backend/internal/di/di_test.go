@@ -49,7 +49,6 @@ import (
 	s3domain "getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
-	"getarcane.dev/arcane/v3/internal/search"
 	"getarcane.dev/arcane/v3/internal/session"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/swarm"
@@ -77,7 +76,6 @@ type (
 		Settings          *settings.SettingsService
 		KV                *kv.KVService
 		JobSchedule       *job.JobService
-		Search            *search.Module
 		Container         *container.Module
 		Image             *image.ImageService
 		Build             *build.BuildService

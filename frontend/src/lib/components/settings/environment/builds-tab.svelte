@@ -45,12 +45,16 @@
 			lock={lock('buildsDirectory')}
 			mixed={mixed('buildsDirectory')}
 		>
-			<Input
-				id="builds-directory"
-				placeholder={mixed('buildsDirectory') ? m.mixed() : m.build_settings_directory_placeholder()}
-				bind:value={formInputs.buildsDirectory.value}
-				aria-invalid={!!formInputs.buildsDirectory.error}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="builds-directory"
+					placeholder={mixed('buildsDirectory') ? m.mixed() : m.build_settings_directory_placeholder()}
+					bind:value={formInputs.buildsDirectory.value}
+					aria-invalid={!!formInputs.buildsDirectory.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
 
@@ -64,21 +68,25 @@
 			helpText={!depotCredentialsPresent && !depotConfigured ? m.build_settings_depot_enable_hint() : undefined}
 			mixed={mixed('buildProvider')}
 		>
-			<SelectWithLabel
-				id="build-provider"
-				name="buildProvider"
-				hideLabel
-				bind:value={
-					() => resolvedProvider,
-					(value) => {
-						if (value === 'depot' && depotCredentialsPresent) formInputs.buildProvider.value = 'depot';
-						else formInputs.buildProvider.value = 'local';
+			{#snippet children({ describedBy, errorId })}
+				<SelectWithLabel
+					id="build-provider"
+					name="buildProvider"
+					hideLabel
+					bind:value={
+						() => resolvedProvider,
+						(value) => {
+							if (value === 'depot' && depotCredentialsPresent) formInputs.buildProvider.value = 'depot';
+							else formInputs.buildProvider.value = 'local';
+						}
 					}
-				}
-				label={m.build_settings_default_provider_label()}
-				options={providerOptions}
-				placeholder={mixed('buildProvider') ? m.mixed() : undefined}
-			/>
+					label={m.build_settings_default_provider_label()}
+					options={providerOptions}
+					placeholder={mixed('buildProvider') ? m.mixed() : undefined}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			for="build-timeout"
@@ -89,13 +97,17 @@
 			lock={lock('buildTimeout')}
 			mixed={mixed('buildTimeout')}
 		>
-			<Input
-				id="build-timeout"
-				type="number"
-				placeholder={mixed('buildTimeout') ? m.mixed() : m.build_settings_timeout_placeholder()}
-				bind:value={formInputs.buildTimeout.value}
-				aria-invalid={!!formInputs.buildTimeout.error}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="build-timeout"
+					type="number"
+					placeholder={mixed('buildTimeout') ? m.mixed() : m.build_settings_timeout_placeholder()}
+					bind:value={formInputs.buildTimeout.value}
+					aria-invalid={!!formInputs.buildTimeout.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		{#if supportsBuildHistoryRetention}
 			<SettingsRow
@@ -107,13 +119,17 @@
 				lock={lock('buildHistoryRetentionDays')}
 				mixed={mixed('buildHistoryRetentionDays')}
 			>
-				<Input
-					id="build-history-retention-days"
-					type="number"
-					placeholder={mixed('buildHistoryRetentionDays') ? m.mixed() : m.build_history_retention_days_placeholder()}
-					bind:value={formInputs.buildHistoryRetentionDays.value}
-					aria-invalid={!!formInputs.buildHistoryRetentionDays.error}
-				/>
+				{#snippet children({ describedBy, errorId })}
+					<Input
+						id="build-history-retention-days"
+						type="number"
+						placeholder={mixed('buildHistoryRetentionDays') ? m.mixed() : m.build_history_retention_days_placeholder()}
+						bind:value={formInputs.buildHistoryRetentionDays.value}
+						aria-invalid={!!formInputs.buildHistoryRetentionDays.error}
+						aria-describedby={describedBy}
+						aria-errormessage={errorId}
+					/>
+				{/snippet}
 			</SettingsRow>
 		{/if}
 	</SettingsSection>
@@ -127,43 +143,50 @@
 			lock={lock('depotProjectId')}
 			mixed={mixed('depotProjectId')}
 		>
-			<Input
-				id="depot-project-id"
-				placeholder={mixed('depotProjectId') ? m.mixed() : m.build_settings_depot_project_id_placeholder()}
-				autocomplete="off"
-				bind:value={
-					() => formInputs.depotProjectId.value,
-					(value) => {
-						formInputs.depotProjectId.value = value;
-						if (!depotCredentialsPresent) formInputs.buildProvider.value = 'local';
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="depot-project-id"
+					placeholder={mixed('depotProjectId') ? m.mixed() : m.build_settings_depot_project_id_placeholder()}
+					autocomplete="off"
+					bind:value={
+						() => formInputs.depotProjectId.value,
+						(value) => {
+							formInputs.depotProjectId.value = value;
+							if (!depotCredentialsPresent) formInputs.buildProvider.value = 'local';
+						}
 					}
-				}
-				aria-invalid={!!formInputs.depotProjectId.error}
-			/>
+					aria-invalid={!!formInputs.depotProjectId.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			for="depot-token"
 			label={m.build_settings_depot_token_label()}
 			description={m.build_settings_depot_token_description()}
-			helpText={m.build_settings_depot_token_help()}
 			error={formInputs.depotToken.error}
 			lock={lock('depotToken')}
 			mixed={mixed('depotToken')}
 		>
-			<Input
-				id="depot-token"
-				type="password"
-				autocomplete="new-password"
-				placeholder={mixed('depotToken') ? m.mixed() : m.build_settings_depot_token_placeholder()}
-				bind:value={
-					() => formInputs.depotToken.value,
-					(value) => {
-						formInputs.depotToken.value = value;
-						if (!depotCredentialsPresent) formInputs.buildProvider.value = 'local';
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="depot-token"
+					type="password"
+					autocomplete="new-password"
+					placeholder={mixed('depotToken') ? m.mixed() : m.build_settings_depot_token_placeholder()}
+					bind:value={
+						() => formInputs.depotToken.value,
+						(value) => {
+							formInputs.depotToken.value = value;
+							if (!depotCredentialsPresent) formInputs.buildProvider.value = 'local';
+						}
 					}
-				}
-				aria-invalid={!!formInputs.depotToken.error}
-			/>
+					aria-invalid={!!formInputs.depotToken.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
 </div>

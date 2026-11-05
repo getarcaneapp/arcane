@@ -10,7 +10,7 @@
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { AlertTriangleIcon, AgentConnectionIcon } from '#lib/icons/index.js';
+	import { AlertIcon, AgentConnectionIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { SwarmNodeAgentDeployment, SwarmNode } from '#lib/types/swarm.js';
 	import { hasAnyPermission } from '#lib/utils/auth.js';
@@ -168,7 +168,7 @@
 
 		{#if errorMessage}
 			<Alert.Root variant="destructive">
-				<AlertTriangleIcon class="size-4" />
+				<AlertIcon class="size-4" />
 				<Alert.Title>{m.common_action_failed()}</Alert.Title>
 				<Alert.Description>{errorMessage}</Alert.Description>
 			</Alert.Root>

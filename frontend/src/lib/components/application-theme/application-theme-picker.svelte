@@ -26,12 +26,14 @@
 		selectedTheme = $bindable(),
 		accentColor = '',
 		disabled = false,
-		onSelect
+		onSelect,
+		'aria-describedby': ariaDescribedby
 	}: {
 		selectedTheme: ApplicationTheme;
 		accentColor?: string;
 		disabled?: boolean;
 		onSelect?: (theme: ApplicationTheme) => void;
+		'aria-describedby'?: string;
 	} = $props();
 
 	const themeCopy: Partial<Record<ApplicationTheme, { label: string; description: string }>> = {
@@ -135,7 +137,7 @@
 	}
 </script>
 
-<RadioGroup.Root value={selectedTheme} onValueChange={handleThemeChange}>
+<RadioGroup.Root value={selectedTheme} onValueChange={handleThemeChange} aria-describedby={ariaDescribedby}>
 	<Carousel.Root
 		class="flex w-full items-center"
 		opts={{ align: 'start', dragFree: true, containScroll: 'trimSnaps' }}

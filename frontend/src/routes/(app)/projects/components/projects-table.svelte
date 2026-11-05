@@ -21,7 +21,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
-	import { AlertIcon, BoxIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '#lib/icons/index.js';
+	import { AlertIcon, BoxIcon, EditIcon, PlayIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '#lib/icons/index.js';
 	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -242,7 +242,7 @@
 			loading: isBulkLoading.up,
 			disabled: !canDeployProject || isAnyLoading || hasArchivedSelection || hasConfigurationBlockedSelection,
 			disabledReason: selectionDisabledReason,
-			icon: StartIcon
+			icon: PlayIcon
 		},
 		{
 			id: 'down',
@@ -474,8 +474,7 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={() =>
-			goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(item.environmentId)}`, { projectId: item.id }))}
+		href={() => resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(item.environmentId)}`, { projectId: item.id })}
 	/>
 {/snippet}
 
@@ -485,7 +484,7 @@
 	{@const configurationBlocked = !!item.configurationError?.blocksOperations}
 	{@const lifecycleDisabled = item.isArchived || isAnyLoading || configurationBlocked}
 	{@const archivedTitle = getRowArchivedTitle(item, configurationBlocked)}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.name}>
 		<DropdownMenu.Item
 			onclick={() => goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(envId)}`, { projectId: item.id }))}
 			disabled={isAnyLoading}
@@ -512,7 +511,7 @@
 					onclick={() => performProjectAction('start', item.id, envId)}
 					disabled={lifecycleDisabled}
 					title={archivedTitle}
-					icon={StartIcon}
+					icon={PlayIcon}
 					label={m.common_up()}
 					loading={status === 'starting'}
 				/>

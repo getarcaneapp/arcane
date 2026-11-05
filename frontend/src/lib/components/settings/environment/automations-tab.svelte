@@ -139,7 +139,7 @@
 			{m.jobs_schedule()}:
 			<MixedValuesPopover
 				values={mixedSchedules(key, name)}
-				class="rounded-sm font-mono transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+				class="rounded-sm font-mono transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 			>
 				{m.mixed()}
 			</MixedValuesPopover>
@@ -147,7 +147,7 @@
 				<button
 					type="button"
 					title={m.jobs_edit_schedule()}
-					class="rounded-sm transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+					class="rounded-sm transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 					onclick={() => openSchedule(key, name)}
 				>
 					<EditIcon class="size-3" />
@@ -157,7 +157,7 @@
 	{:else if values.length > 0}
 		<button
 			type="button"
-			class="mt-1.5 inline-flex items-center gap-1.5 rounded-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+			class="mt-1.5 inline-flex items-center gap-1.5 rounded-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 			disabled={!canEditSchedules}
 			onclick={() => openSchedule(key, name)}
 		>
@@ -228,11 +228,14 @@
 		lock={lock('imageEventWatcherEnabled')}
 		mixed={mixed('imageEventWatcherEnabled')}
 	>
-		<Switch
-			id="image-event-watcher-enabled"
-			bind:checked={formInputs.imageEventWatcherEnabled.value}
-			data-mixed={!!mixed('imageEventWatcherEnabled') || undefined}
-		/>
+		{#snippet children({ describedBy })}
+			<Switch
+				id="image-event-watcher-enabled"
+				bind:checked={formInputs.imageEventWatcherEnabled.value}
+				data-mixed={!!mixed('imageEventWatcherEnabled') || undefined}
+				aria-describedby={describedBy}
+			/>
+		{/snippet}
 	</SettingsRow>
 {/snippet}
 
@@ -246,15 +249,19 @@
 		lock={lock('autoUpdateDelay')}
 		mixed={mixed('autoUpdateDelay')}
 	>
-		<Input
-			id="auto-update-delay"
-			type="number"
-			min="0"
-			max="8760"
-			bind:value={formInputs.autoUpdateDelay.value}
-			aria-invalid={!!formInputs.autoUpdateDelay.error}
-			placeholder={mixed('autoUpdateDelay') ? m.mixed() : undefined}
-		/>
+		{#snippet children({ describedBy, errorId })}
+			<Input
+				id="auto-update-delay"
+				type="number"
+				min="0"
+				max="8760"
+				bind:value={formInputs.autoUpdateDelay.value}
+				aria-invalid={!!formInputs.autoUpdateDelay.error}
+				placeholder={mixed('autoUpdateDelay') ? m.mixed() : undefined}
+				aria-describedby={describedBy}
+				aria-errormessage={errorId}
+			/>
+		{/snippet}
 	</SettingsRow>
 	<SettingsRow
 		for="auto-update-container-search"
@@ -266,26 +273,29 @@
 		lock={lock('autoUpdateExcludedContainers')}
 		mixed={mixed('autoUpdateExcludedContainers')}
 	>
-		<div class="space-y-2">
-			<Input
-				id="auto-update-container-search"
-				type="search"
-				placeholder={m.jobs_search_containers()}
-				bind:value={updateSearchTerm}
-			/>
-			{@render containerExclusionList({
-				term: updateSearchTerm,
-				idPrefix: 'container-',
-				item: (container) => ({
-					value: containerName(container),
-					label: containerName(container),
-					disabled: isAutoUpdateLabelDisabled(container.labels),
-					hint: isAutoUpdateLabelDisabled(container.labels) ? m.jobs_container_label_excluded() : undefined,
-					selected: autoUpdateExcluded.has(containerName(container))
-				}),
-				onToggle: (name) => (formInputs.autoUpdateExcludedContainers.value = toggleExcluded(autoUpdateExcluded, name))
-			})}
-		</div>
+		{#snippet children({ describedBy })}
+			<div class="space-y-2">
+				<Input
+					id="auto-update-container-search"
+					type="search"
+					placeholder={m.jobs_search_containers()}
+					bind:value={updateSearchTerm}
+					aria-describedby={describedBy}
+				/>
+				{@render containerExclusionList({
+					term: updateSearchTerm,
+					idPrefix: 'container-',
+					item: (container) => ({
+						value: containerName(container),
+						label: containerName(container),
+						disabled: isAutoUpdateLabelDisabled(container.labels),
+						hint: isAutoUpdateLabelDisabled(container.labels) ? m.jobs_container_label_excluded() : undefined,
+						selected: autoUpdateExcluded.has(containerName(container))
+					}),
+					onToggle: (name) => (formInputs.autoUpdateExcludedContainers.value = toggleExcluded(autoUpdateExcluded, name))
+				})}
+			</div>
+		{/snippet}
 	</SettingsRow>
 {/snippet}
 
@@ -299,14 +309,18 @@
 		lock={lock('autoHealMaxRestarts')}
 		mixed={mixed('autoHealMaxRestarts')}
 	>
-		<Input
-			id="auto-heal-max-restarts"
-			type="number"
-			min="1"
-			bind:value={formInputs.autoHealMaxRestarts.value}
-			aria-invalid={!!formInputs.autoHealMaxRestarts.error}
-			placeholder={mixed('autoHealMaxRestarts') ? m.mixed() : undefined}
-		/>
+		{#snippet children({ describedBy, errorId })}
+			<Input
+				id="auto-heal-max-restarts"
+				type="number"
+				min="1"
+				bind:value={formInputs.autoHealMaxRestarts.value}
+				aria-invalid={!!formInputs.autoHealMaxRestarts.error}
+				placeholder={mixed('autoHealMaxRestarts') ? m.mixed() : undefined}
+				aria-describedby={describedBy}
+				aria-errormessage={errorId}
+			/>
+		{/snippet}
 	</SettingsRow>
 	<SettingsRow
 		for="auto-heal-restart-window"
@@ -317,14 +331,18 @@
 		lock={lock('autoHealRestartWindow')}
 		mixed={mixed('autoHealRestartWindow')}
 	>
-		<Input
-			id="auto-heal-restart-window"
-			type="number"
-			min="1"
-			bind:value={formInputs.autoHealRestartWindow.value}
-			aria-invalid={!!formInputs.autoHealRestartWindow.error}
-			placeholder={mixed('autoHealRestartWindow') ? m.mixed() : undefined}
-		/>
+		{#snippet children({ describedBy, errorId })}
+			<Input
+				id="auto-heal-restart-window"
+				type="number"
+				min="1"
+				bind:value={formInputs.autoHealRestartWindow.value}
+				aria-invalid={!!formInputs.autoHealRestartWindow.error}
+				placeholder={mixed('autoHealRestartWindow') ? m.mixed() : undefined}
+				aria-describedby={describedBy}
+				aria-errormessage={errorId}
+			/>
+		{/snippet}
 	</SettingsRow>
 	<SettingsRow
 		for="auto-heal-container-search"
@@ -335,24 +353,27 @@
 		lock={lock('autoHealExcludedContainers')}
 		mixed={mixed('autoHealExcludedContainers')}
 	>
-		<div class="space-y-2">
-			<Input
-				id="auto-heal-container-search"
-				type="search"
-				placeholder={m.jobs_search_containers()}
-				bind:value={autoHealSearchTerm}
-			/>
-			{@render containerExclusionList({
-				term: autoHealSearchTerm,
-				idPrefix: 'auto-heal-container-',
-				item: (container) => ({
-					value: containerName(container),
-					label: containerName(container),
-					selected: autoHealExcluded.has(containerName(container))
-				}),
-				onToggle: (name) => (formInputs.autoHealExcludedContainers.value = toggleExcluded(autoHealExcluded, name))
-			})}
-		</div>
+		{#snippet children({ describedBy })}
+			<div class="space-y-2">
+				<Input
+					id="auto-heal-container-search"
+					type="search"
+					placeholder={m.jobs_search_containers()}
+					bind:value={autoHealSearchTerm}
+					aria-describedby={describedBy}
+				/>
+				{@render containerExclusionList({
+					term: autoHealSearchTerm,
+					idPrefix: 'auto-heal-container-',
+					item: (container) => ({
+						value: containerName(container),
+						label: containerName(container),
+						selected: autoHealExcluded.has(containerName(container))
+					}),
+					onToggle: (name) => (formInputs.autoHealExcludedContainers.value = toggleExcluded(autoHealExcluded, name))
+				})}
+			</div>
+		{/snippet}
 	</SettingsRow>
 {/snippet}
 
@@ -367,14 +388,17 @@
 			mixed={mixed('pollingEnabled')}
 			expanded={formInputs.pollingEnabled.value ? pollingOptions : undefined}
 		>
+			{#snippet children({ describedBy })}
+				<Switch
+					id="polling-enabled"
+					bind:checked={formInputs.pollingEnabled.value}
+					data-mixed={!!mixed('pollingEnabled') || undefined}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 			{#snippet labelExtra()}
 				{@render scheduleControl('pollingInterval', m.image_update_watcher())}
 			{/snippet}
-			<Switch
-				id="polling-enabled"
-				bind:checked={formInputs.pollingEnabled.value}
-				data-mixed={!!mixed('pollingEnabled') || undefined}
-			/>
 		</SettingsRow>
 
 		<SettingsRow
@@ -386,15 +410,18 @@
 			mixed={mixed('autoUpdate')}
 			expanded={formInputs.autoUpdate.value ? autoUpdateOptions : undefined}
 		>
+			{#snippet children({ describedBy })}
+				<Switch
+					id="auto-update-enabled"
+					bind:checked={formInputs.autoUpdate.value}
+					disabled={!formInputs.pollingEnabled.value}
+					data-mixed={!!mixed('autoUpdate') || undefined}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 			{#snippet labelExtra()}
 				{@render scheduleControl('autoUpdateInterval', m.auto_update())}
 			{/snippet}
-			<Switch
-				id="auto-update-enabled"
-				bind:checked={formInputs.autoUpdate.value}
-				disabled={!formInputs.pollingEnabled.value}
-				data-mixed={!!mixed('autoUpdate') || undefined}
-			/>
 		</SettingsRow>
 
 		<SettingsRow
@@ -405,14 +432,18 @@
 			lock={lock('githubToken')}
 			mixed={mixed('githubToken')}
 		>
-			<Input
-				id="github-token"
-				type="password"
-				autocomplete="new-password"
-				bind:value={formInputs.githubToken.value}
-				aria-invalid={!!formInputs.githubToken.error}
-				placeholder={mixed('githubToken') ? m.mixed() : undefined}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="github-token"
+					type="password"
+					autocomplete="new-password"
+					bind:value={formInputs.githubToken.value}
+					aria-invalid={!!formInputs.githubToken.error}
+					placeholder={mixed('githubToken') ? m.mixed() : undefined}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
 
@@ -425,14 +456,17 @@
 			lock={lock('scheduledPruneEnabled')}
 			mixed={mixed('scheduledPruneEnabled')}
 		>
+			{#snippet children({ describedBy })}
+				<Switch
+					id="scheduled-prune-enabled"
+					bind:checked={formInputs.scheduledPruneEnabled.value}
+					data-mixed={!!mixed('scheduledPruneEnabled') || undefined}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 			{#snippet labelExtra()}
 				{@render scheduleControl('scheduledPruneInterval', m.scheduled_prune())}
 			{/snippet}
-			<Switch
-				id="scheduled-prune-enabled"
-				bind:checked={formInputs.scheduledPruneEnabled.value}
-				data-mixed={!!mixed('scheduledPruneEnabled') || undefined}
-			/>
 		</SettingsRow>
 	</SettingsSection>
 
@@ -446,14 +480,17 @@
 				lock={lock('vulnerabilityScanEnabled')}
 				mixed={mixed('vulnerabilityScanEnabled')}
 			>
+				{#snippet children({ describedBy })}
+					<Switch
+						id="vulnerability-scan-enabled"
+						bind:checked={formInputs.vulnerabilityScanEnabled.value}
+						data-mixed={!!mixed('vulnerabilityScanEnabled') || undefined}
+						aria-describedby={describedBy}
+					/>
+				{/snippet}
 				{#snippet labelExtra()}
 					{@render scheduleControl('vulnerabilityScanInterval', m.activity_type_vulnerability_scan())}
 				{/snippet}
-				<Switch
-					id="vulnerability-scan-enabled"
-					bind:checked={formInputs.vulnerabilityScanEnabled.value}
-					data-mixed={!!mixed('vulnerabilityScanEnabled') || undefined}
-				/>
 			</SettingsRow>
 		</SettingsSection>
 	{/if}
@@ -468,14 +505,17 @@
 			mixed={mixed('autoHealEnabled')}
 			expanded={formInputs.autoHealEnabled.value ? autoHealOptions : undefined}
 		>
+			{#snippet children({ describedBy })}
+				<Switch
+					id="auto-heal-enabled"
+					bind:checked={formInputs.autoHealEnabled.value}
+					data-mixed={!!mixed('autoHealEnabled') || undefined}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 			{#snippet labelExtra()}
 				{@render scheduleControl('autoHealInterval', m.notifications_test_auto_heal_notification())}
 			{/snippet}
-			<Switch
-				id="auto-heal-enabled"
-				bind:checked={formInputs.autoHealEnabled.value}
-				data-mixed={!!mixed('autoHealEnabled') || undefined}
-			/>
 		</SettingsRow>
 	</SettingsSection>
 </div>

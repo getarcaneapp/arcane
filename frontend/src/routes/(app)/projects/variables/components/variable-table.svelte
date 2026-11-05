@@ -206,7 +206,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: GlobalVariable })}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.key}>
 		<IfPermitted perm="variables:update" envId={GLOBAL_SCOPE}>
 			<DropdownMenu.Item onclick={() => onEdit(item)}>
 				<EditIcon class="size-4" />

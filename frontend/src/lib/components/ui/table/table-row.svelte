@@ -10,7 +10,6 @@
 		children,
 		...restProps
 	}: WithElementRef<HTMLAttributes<HTMLTableRowElement>> & {
-		/** `detail` is an expanded-row panel; `static` rows (skeletons, embedded tables) don't react to hover. */
 		variant?: 'default' | 'detail' | 'static';
 	} = $props();
 </script>

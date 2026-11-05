@@ -1,11 +1,12 @@
-import { tv, type VariantProps } from 'tailwind-variants';
+import type { VariantProps } from 'tailwind-variants';
 
 import {
 	StopIcon,
-	StartIcon,
+	PlayIcon,
 	RefreshIcon,
 	DownloadIcon,
 	TrashIcon,
+	BroomIcon,
 	UpdateIcon,
 	EditIcon,
 	CheckIcon,
@@ -23,16 +24,16 @@ import {
 	CodeIcon,
 	HammerIcon,
 	PauseIcon,
-	PlayIcon,
 	ZapIcon,
 	TagIcon,
-	ScanIcon,
+	SearchIcon,
 	ShieldCheckIcon,
 	ImagesIcon,
 	TestIcon,
 	BoxIcon
 } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
+import { tv } from '#lib/utils.js';
 
 export const arcaneButtonVariants = tv({
 	base:
@@ -41,20 +42,20 @@ export const arcaneButtonVariants = tv({
 		'active:scale-98 ' +
 		'disabled:pointer-events-none disabled:opacity-55 disabled:saturate-[0.82] disabled:shadow-none ' +
 		'aria-disabled:pointer-events-none aria-disabled:opacity-55 aria-disabled:saturate-[0.82] aria-disabled:shadow-none ' +
-		'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background ' +
+		'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ' +
 		"[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
 	variants: {
 		tone: {
 			'outline-primary':
-				'border-primary/20 bg-primary/[0.06] text-foreground! shadow-button ' +
-				'hover:border-primary/40 hover:bg-primary/[0.1] hover:shadow-button-hover ' +
-				'dark:border-primary/30 dark:bg-primary/[0.12] dark:text-primary-foreground ' +
-				'dark:hover:border-primary/50 dark:hover:bg-primary/[0.18]',
+				'border-primary-tint/20 bg-primary-tint/6 text-foreground! shadow-button ' +
+				'hover:border-primary-tint/40 hover:bg-primary-tint/10 hover:shadow-button-hover ' +
+				'dark:border-primary-tint/30 dark:bg-primary-tint/12 dark:text-primary-foreground ' +
+				'dark:hover:border-primary-tint/50 dark:hover:bg-primary-tint/18',
 			'outline-primary-login':
-				'w-full border-primary/20 bg-primary/[0.06] text-foreground! shadow-button ' +
-				'hover:border-primary/40 hover:bg-primary/[0.1] hover:shadow-button-hover ' +
-				'dark:border-primary/30 dark:bg-primary/[0.12] dark:text-primary-foreground ' +
-				'dark:hover:border-primary/50 dark:hover:bg-primary/[0.18]',
+				'w-full border-primary-tint/20 bg-primary-tint/6 text-foreground! shadow-button ' +
+				'hover:border-primary-tint/40 hover:bg-primary-tint/10 hover:shadow-button-hover ' +
+				'dark:border-primary-tint/30 dark:bg-primary-tint/12 dark:text-primary-foreground ' +
+				'dark:hover:border-primary-tint/50 dark:hover:bg-primary-tint/18',
 			'outline-destructive':
 				'border-destructive/20 bg-destructive/[0.06] text-foreground! shadow-button ' +
 				'hover:border-destructive/40 hover:bg-destructive/[0.1] hover:shadow-button-hover ' +
@@ -114,7 +115,7 @@ export const arcaneButtonVariants = tv({
 			ghost:
 				'border-transparent bg-transparent text-foreground! shadow-none ' +
 				'hover:bg-accent/50 hover:text-accent-foreground dark:hover:bg-accent/30',
-			link: 'border-transparent bg-transparent text-primary shadow-none underline-offset-4 hover:bg-primary/5 hover:underline'
+			link: 'border-transparent bg-transparent text-primary-text shadow-none underline-offset-4 hover:bg-primary/5 hover:underline'
 		},
 		size: {
 			default: 'h-9 px-4 py-2 has-[svg]:px-3',
@@ -152,19 +153,19 @@ export const actionConfigs = {
 	},
 	start: {
 		defaultLabel: m.common_start(),
-		IconComponent: StartIcon,
+		IconComponent: PlayIcon,
 		tone: 'outline-primary',
 		loadingLabel: m.common_action_starting()
 	},
 	start_all: {
 		defaultLabel: m.quick_actions_start_all(),
-		IconComponent: StartIcon,
+		IconComponent: PlayIcon,
 		tone: 'outline-success',
 		loadingLabel: m.common_action_starting()
 	},
 	deploy: {
 		defaultLabel: m.common_up(),
-		IconComponent: StartIcon,
+		IconComponent: PlayIcon,
 		tone: 'outline-primary',
 		loadingLabel: m.common_action_deploying()
 	},
@@ -212,7 +213,7 @@ export const actionConfigs = {
 	},
 	prune: {
 		defaultLabel: m.quick_actions_prune_system(),
-		IconComponent: TrashIcon,
+		IconComponent: BroomIcon,
 		tone: 'outline-destructive',
 		loadingLabel: m.common_action_removing()
 	},
@@ -236,7 +237,7 @@ export const actionConfigs = {
 	},
 	scan: {
 		defaultLabel: m.vuln_scan(),
-		IconComponent: ScanIcon,
+		IconComponent: SearchIcon,
 		tone: 'outline-scan',
 		loadingLabel: m.common_processing()
 	},
@@ -341,7 +342,7 @@ export const actionConfigs = {
 	oidc_login: {
 		defaultLabel: m.auth_oidc_signin(),
 		IconComponent: OpenIdIcon,
-		tone: 'outline-primary-login',
+		tone: 'outline',
 		loadingLabel: m.auth_signing_in()
 	}
 } satisfies Record<string, ActionConfig>;

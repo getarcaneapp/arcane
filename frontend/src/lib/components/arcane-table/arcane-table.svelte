@@ -11,14 +11,16 @@
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { TABLE_PAGE_SIZE_ALL } from '#lib/constants/table-pagination.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
-	import { AlertTriangleIcon } from '#lib/icons/index.js';
+	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { Paginated } from '#lib/types/base.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { rowKey, type EnvironmentFailure } from '#lib/utils/environments.js';
+	import { trackOverflow, type ScrollOverflow } from '#lib/utils/overflow.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import ArcaneTableCell from './arcane-table-cell.svelte';
@@ -106,7 +108,9 @@
 		onPageSizeChangeRequest?: (limit: number, apply: () => void) => void;
 		columns: ColumnSpec<TData>[];
 		rowActions?: Snippet<[{ row: ArcaneRow<TData>; item: TData; view: TableViewMode }]>;
-		mobileCard: Snippet<[{ row: ArcaneRow<TData>; item: TData; mobileFieldVisibility: Record<string, boolean> }]>;
+		mobileCard: Snippet<
+			[{ row: ArcaneRow<TData>; item: TData; mobileFieldVisibility: Record<string, boolean>; expander?: Snippet }]
+		>;
 		mobileFields?: FieldSpec[];
 		mobileFieldVisibility?: Record<string, boolean>;
 		selectedIds?: string[];
@@ -139,7 +143,6 @@
 		emptyState?: Snippet;
 	} = $props();
 
-	// Default page size constant
 	const DEFAULT_LIMIT = 20;
 
 	const [rowSelection, setRowSelection] = createTableState<RowSelectionState>({});
@@ -179,8 +182,10 @@
 
 	let desktopScrollEl = $state<HTMLElement>();
 	let gridScrollEl = $state<HTMLElement>();
+	let overflow = $state.raw<ScrollOverflow>({ below: false, left: false, right: false, scrollable: false });
 	let mobileScrollEl = $state<HTMLElement>();
 	const isMobile = new IsMobile();
+	const isNarrowViewport = new IsMobile({ honorLayoutMode: false });
 	const scrollPositions = { desktop: { top: 0, left: 0 }, grid: { top: 0, left: 0 }, mobile: { top: 0, left: 0 } };
 
 	function setViewMode(mode: TableViewMode) {
@@ -234,6 +239,7 @@
 			cancelAnimationFrame(frame);
 			observer.disconnect();
 			window.removeEventListener('resize', update);
+			node.style.maxHeight = '';
 		};
 	}
 
@@ -280,9 +286,9 @@
 	const pageSize = $derived(requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? DEFAULT_LIMIT);
 	const canPrev = $derived(currentPage > 1);
 	const canNext = $derived(totalPages < 0 ? (items.pagination?.hasNextPage ?? false) : currentPage < totalPages);
+	const emptyFirstPage = $derived(items.pagination?.totalItems === 0 && currentPage === 1);
 
 	onMount(() => {
-		// Initialize prefs first
 		if (persistKey && !prefs) {
 			prefs = new PersistedState<CompactTablePrefs>(
 				persistKey,
@@ -291,7 +297,6 @@
 			);
 		}
 
-		// Then restore preferences
 		if (!enablePersist) {
 			preferencesReady = true;
 			return;
@@ -346,6 +351,9 @@
 		if (desktopScrollEl) desktopScrollEl.scrollTop = 0;
 		if (gridScrollEl) gridScrollEl.scrollTop = 0;
 		if (mobileScrollEl) mobileScrollEl.scrollTop = 0;
+		if (mobilePageScroll && mobileScrollEl && mobileScrollEl.getBoundingClientRect().top < 0) {
+			mobileScrollEl.scrollIntoView({ block: 'start' });
+		}
 		const next = { ...prev, ...patch };
 		requestOptions = { ...requestOptions, pagination: next };
 	}
@@ -417,6 +425,7 @@
 					return renderComponent(TableCheckbox, {
 						checked,
 						indeterminate,
+						disabled: total === 0,
 						onCheckedChange: (value) => onToggleAll(!!value, table),
 						'aria-label': m.common_select_all()
 					});
@@ -590,7 +599,6 @@
 			if (typeof updater === 'function') nextVisibility = updater(effectiveColumnVisibility);
 			else nextVisibility = updater;
 			columnVisibility = nextVisibility;
-			// Persist visibility
 			if (enablePersist && prefs) {
 				prefs.current = { ...prefs.current, v: encodeHidden(columnVisibility) };
 			}
@@ -620,16 +628,12 @@
 				search: globalFilter(),
 				pagination: { page: 1, limit }
 			};
-			// Persist global filter
 			if (enablePersist && prefs) {
 				prefs.current = { ...prefs.current, g: globalFilter() };
 			}
 		}
 	});
 
-	// Rendered column count (add 1 for the expand chevron column when expandable). Based on
-	// visible leaf columns, not columnsDef — hidden columns (e.g. id) would otherwise inflate
-	// colspans and create phantom columns that misalign grouped/empty/expanded rows.
 	const effectiveColumnsCount = $derived(table.getVisibleLeafColumns().length + (expandedRowContent ? 1 : 0));
 
 	function onToggleMobileField(fieldId: string) {
@@ -637,7 +641,6 @@
 			...mobileFieldVisibility,
 			[fieldId]: !mobileFieldVisibility[fieldId]
 		};
-		// Persist mobile field visibility
 		if (enablePersist && prefs) {
 			prefs.current = { ...prefs.current, m: encodeMobileVisibility(mobileFieldVisibility) };
 		}
@@ -659,7 +662,6 @@
 		return builtRowIndex.index;
 	});
 
-	// Compute grouped rows when groupBy is provided
 	const effectiveGroupedRows = $derived.by((): GroupedData<TData>[] | null => {
 		if (groupedRows) return groupedRows;
 		if (!groupBy) return null;
@@ -670,7 +672,6 @@
 		}));
 	});
 
-	// Row ids in display order (flat model, or expanded groups in group order), matching the desktop view.
 	const orderedRowIds = $derived.by((): string[] => {
 		const groups = effectiveGroupedRows;
 		if (!groups || groups.length === 0) return table.getRowModel().rows.map((row) => row.id);
@@ -679,7 +680,6 @@
 		);
 	});
 
-	// Get selection state for a group
 	function getGroupSelectionState(groupItems: TData[]): GroupSelectionState {
 		const groupIds = groupItems.map((item) => rowKey(item));
 		const selectedCount = groupIds.filter((id) => selectedIdSet.has(id)).length;
@@ -689,28 +689,23 @@
 		return 'some';
 	}
 
-	// Toggle selection for all items in a group
 	function onToggleGroupSelection(groupItems: TData[]) {
 		const groupIds = groupItems.map((item) => rowKey(item));
 		const state = getGroupSelectionState(groupItems);
 
 		if (state === 'all') {
-			// Deselect all in group
 			const groupSet = new Set(groupIds);
 			selectedIds = (selectedIds ?? []).filter((id) => !groupSet.has(id));
 		} else {
-			// Select all in group
 			const set = new Set([...(selectedIds ?? []), ...groupIds]);
 			selectedIds = Array.from(set);
 		}
 	}
 
-	// Handle group collapse toggle
 	function handleGroupToggle(groupName: string) {
 		if (onGroupToggle) {
 			onGroupToggle(groupName);
 		} else {
-			// Default behavior: toggle collapsed state (unrecorded groups render collapsed)
 			groupCollapsedState = {
 				...groupCollapsedState,
 				[groupName]: !(groupCollapsedState[groupName] ?? true)
@@ -740,8 +735,9 @@
 
 	onDestroy(() => clearTimeout(persistTimeout));
 
-	// With `withoutFilters` the column filters aren't user-controlled — the page bakes
-	// in its own scoping filter (e.g. /updates pins `updates`), which must not count as filtering.
+	const mobileVirtualized = $derived(table.getRowModel().rows.length > 100);
+	const mobilePageScroll = $derived(isMobile.current && isNarrowViewport.current && !mobileVirtualized);
+
 	const isFiltered = $derived(
 		!!table.atoms.globalFilter.get() || (!withoutFilters && table.atoms.columnFilters.get().length > 0)
 	);
@@ -751,7 +747,6 @@
 		table.setGlobalFilter('');
 	}
 
-	// Styled/unstyled differ only in wrapper chrome; the inner table/mobile/pagination tree is shared.
 	const shellClass = $derived(
 		unstyled ? 'flex h-full min-h-0 flex-col' : 'bg-background/60 flex h-full min-h-0 flex-col overflow-hidden rounded-xl border'
 	);
@@ -784,6 +779,10 @@
 		{expandedRows}
 		onToggleRowExpanded={toggleRowExpanded}
 		{loading}
+		virtualize={mobileVirtualized}
+		{selectedIdSet}
+		{selectionDisabled}
+		onToggleRowSelection={(id, selected, modifiers) => onToggleRow(selected, id, modifiers)}
 		empty={EmptySnippet}
 	/>
 {/snippet}
@@ -791,7 +790,7 @@
 {#if customTableView}
 	{@render customTableView({ table, renderPagination: PaginationSnippet, mobileFieldsForOptions, onToggleMobileField })}
 {:else}
-	<div {@attach fitToViewport} class={shellClass}>
+	<div {@attach mobilePageScroll ? undefined : fitToViewport} class={shellClass}>
 		{#if !withoutSearch}
 			<div class={toolbarWrapClass}>
 				<DataTableToolbar
@@ -817,7 +816,7 @@
 
 		{#if items.failedEnvironments?.length}
 			<div class="shrink-0 px-3 pt-3">
-				<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon}>
+				<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon}>
 					<div class="flex flex-wrap items-center justify-between gap-2">
 						<Alert.Description>
 							{m.all_environments_unavailable({
@@ -830,7 +829,6 @@
 							{@const retry = onRetry}
 							<ArcaneButton
 								action="refresh"
-								size="sm"
 								customLabel={m.common_retry()}
 								onClickPromise={async () =>
 									handleApiResultWithCallbacks({ result: await tryCatch(retry()), message: m.common_failed() })}
@@ -843,7 +841,7 @@
 
 		{#if items.excludedEnvironments?.length}
 			<div class="shrink-0 px-3 pt-3">
-				<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon}>
+				<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon}>
 					<Alert.Description>
 						{m.all_environments_excluded({
 							count: items.excludedEnvironments.length,
@@ -857,9 +855,15 @@
 		{#if !isMobile.current && viewMode === 'grid'}
 			<div
 				{@attach (node) => restoreScroll(node, 'grid')}
+				{@attach trackOverflow((value) => (overflow = value))}
 				bind:this={gridScrollEl}
 				data-table-scroll="grid"
-				class="isolate h-full min-h-0 flex-1 overflow-auto bg-background"
+				class={cn(
+					'isolate h-full min-h-0 flex-1 overflow-auto bg-background',
+					overflow.below && 'scroll-fade-b',
+					overflow.left && 'scroll-fade-l',
+					overflow.right && 'scroll-fade-r'
+				)}
 			>
 				<ArcaneTableGridView
 					scrollElement={gridScrollEl}
@@ -885,9 +889,15 @@
 		{:else if !isMobile.current}
 			<div
 				{@attach (node) => restoreScroll(node, 'desktop')}
+				{@attach trackOverflow((value) => (overflow = value))}
 				bind:this={desktopScrollEl}
 				data-table-scroll="desktop"
-				class="isolate h-full min-h-0 flex-1 overflow-auto bg-background"
+				class={cn(
+					'isolate h-full min-h-0 flex-1 overflow-auto bg-background',
+					overflow.below && 'scroll-fade-b',
+					overflow.left && 'scroll-fade-l',
+					overflow.right && 'scroll-fade-r'
+				)}
 			>
 				<ArcaneTableDesktopView
 					{rowIndex}
@@ -916,9 +926,16 @@
 		{:else}
 			<div
 				{@attach (node) => restoreScroll(node, 'mobile')}
+				{@attach trackOverflow((value) => (overflow = value))}
 				bind:this={mobileScrollEl}
 				data-table-scroll="mobile"
-				class="isolate block min-h-0 flex-1 overflow-auto bg-background/80"
+				class={cn(
+					'isolate block bg-background/80',
+					!mobilePageScroll && 'min-h-0 flex-1 overflow-auto',
+					overflow.below && 'scroll-fade-b',
+					overflow.left && 'scroll-fade-l',
+					overflow.right && 'scroll-fade-r'
+				)}
 			>
 				{#if unstyled}
 					<div class="divide-y divide-border/40">
@@ -930,7 +947,7 @@
 			</div>
 		{/if}
 
-		{#if !withoutPagination}
+		{#if !withoutPagination && !emptyFirstPage}
 			<nav aria-label={m.table_pagination_bottom()} class="shrink-0 border-t border-border/50 px-4 py-3">
 				{@render PaginationSnippet()}
 			</nav>

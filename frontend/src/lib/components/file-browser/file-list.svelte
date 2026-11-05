@@ -212,7 +212,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: WorkspaceFileEntry })}
-	<RowActionsMenu openMenuLabel={m.common_open_menu()}>
+	<RowActionsMenu openMenuLabel={m.actions_for_name({ name: item.name })}>
 		{#if !item.isDirectory}
 			<DropdownMenu.Item onclick={() => onPreview(item)}>
 				<EyeOnIcon class="size-4" />

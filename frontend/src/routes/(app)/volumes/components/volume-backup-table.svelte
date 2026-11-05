@@ -507,7 +507,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: VolumeBackupEntry })}
-	<RowActionsMenu openMenuLabel={m.common_open_menu()}>
+	<RowActionsMenu openMenuLabel={m.actions_for_name({ name: item.id })}>
 		{#if canBackupVolume}
 			<DropdownMenu.Item onclick={() => handleRestore(item)}>
 				<RestartIcon class="size-4" />

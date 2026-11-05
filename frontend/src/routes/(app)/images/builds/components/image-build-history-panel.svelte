@@ -305,7 +305,6 @@
 	>
 		{#snippet emptyState()}
 			<EmptyState
-				variant="plain"
 				icon={HammerIcon}
 				title={m.image_build_history_empty_title()}
 				description={m.image_build_history_empty_description()}

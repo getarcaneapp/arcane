@@ -5,7 +5,7 @@
 	import TrivySecuritySettings from '#lib/components/settings/trivy-security-settings.svelte';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
-	import { CodeIcon, ScanIcon, SecurityIcon, ShieldCheckIcon } from '#lib/icons/index.js';
+	import { CodeIcon, SearchIcon, ShieldCheckIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 
@@ -18,7 +18,7 @@
 						{
 							value: 'trivy',
 							label: m.security_vulnerability_scanning_heading(),
-							icon: ScanIcon
+							icon: SearchIcon
 						}
 					]
 				: []),
@@ -39,7 +39,6 @@
 <EnvironmentSettingsPage
 	title={m.security()}
 	description={m.settings_category_security_description()}
-	icon={SecurityIcon}
 	keys={[
 		'trivyDbRegistry',
 		'trivyNetwork',

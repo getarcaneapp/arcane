@@ -138,7 +138,6 @@
 
 {#snippet registriesEmptyState()}
 	<EmptyState
-		variant="plain"
 		icon={RegistryIcon}
 		title={m.registries_empty_title()}
 		description={m.registries_empty_description()}

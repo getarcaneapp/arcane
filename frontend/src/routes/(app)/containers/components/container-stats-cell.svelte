@@ -3,6 +3,8 @@
 	import MetricRing from '#lib/components/metric-ring.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 
+	import { getUsageTone } from '../container-table.helpers';
+
 	interface Props {
 		value?: number;
 		limit?: number;
@@ -15,20 +17,20 @@
 	let { value, limit, loading = false, stopped = false, unavailable = false, type }: Props = $props();
 </script>
 
-{#if stopped}
-	<div class="text-xs text-muted-foreground">{m.common_na()}</div>
-{:else if unavailable && value === undefined}
-	<div class="text-xs text-muted-foreground">{m.common_unavailable()}</div>
-{:else if loading}
-	<div class="size-9.5 shrink-0 animate-pulse rounded-full bg-muted"></div>
-{:else if type === 'cpu' && value !== undefined}
-	<span class="inline-flex">
-		<MetricRing percent={value} variant="cpu" size={38} stroke={3}>
+<div class="mx-auto flex size-stat-ring shrink-0 items-center justify-center whitespace-nowrap">
+	{#if stopped}
+		<span class="text-xs text-muted-foreground">{m.common_na()}</span>
+	{:else if unavailable && value === undefined}
+		<span class="text-xs text-muted-foreground">{m.common_unavailable()}</span>
+	{:else if loading}
+		<span class="size-full animate-pulse rounded-full bg-muted"></span>
+	{:else if type === 'cpu' && value !== undefined}
+		<MetricRing percent={value} variant="cpu" tone={getUsageTone(value)} size={38} stroke={3}>
 			<span class="text-2xs font-medium text-foreground tabular-nums">{Math.round(value)}%</span>
 		</MetricRing>
-	</span>
-{:else if type === 'memory' && value !== undefined}
-	<MemoryRing used={value} total={limit} />
-{:else}
-	<div class="text-xs text-muted-foreground">—</div>
-{/if}
+	{:else if type === 'memory' && value !== undefined}
+		<MemoryRing used={value} total={limit} tone={getUsageTone(limit ? (value / limit) * 100 : 0)} />
+	{:else}
+		<span class="text-xs text-muted-foreground">—</span>
+	{/if}
+</div>

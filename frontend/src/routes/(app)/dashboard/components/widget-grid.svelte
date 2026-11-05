@@ -3,6 +3,7 @@
 
 	import { EyeOffIcon, SettingsIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import type { DashboardWidgetType } from '#lib/types/ui/user.js';
 	import { cn } from '#lib/utils.js';
 	import { DASHBOARD_WIDGET_TYPES, type DashboardWidget, GRID_COLUMNS, moveWidget } from '#lib/utils/dashboard-layout.js';
 
@@ -12,6 +13,10 @@
 		ArrowRight: { x: 1, y: 0 },
 		ArrowUp: { x: 0, y: -1 },
 		ArrowDown: { x: 0, y: 1 }
+	};
+	const MOBILE_ORDER: Partial<Record<DashboardWidgetType, string>> = {
+		attention: 'max-lg:order-1',
+		environments: 'max-lg:order-2'
 	};
 	const CONTROL_CLASS =
 		'inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
@@ -132,8 +137,10 @@
 		<div
 			data-widget-id={item.id}
 			data-moving={moving || undefined}
+			data-compact={DASHBOARD_WIDGET_TYPES[item.type].summary || undefined}
 			class={cn(
 				'dashboard-widget flex min-w-0 flex-col max-lg:relative',
+				MOBILE_ORDER[item.type] ?? (!DASHBOARD_WIDGET_TYPES[item.type].summary && 'max-lg:order-3'),
 				editing && 'rounded-xl p-3 outline-2 outline-border/70 outline-dashed',
 				active && 'outline-primary',
 				moving && 'z-30 bg-background/80 shadow-xl'

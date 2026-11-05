@@ -59,7 +59,6 @@
 	const allTemplates = $derived(templates ?? []);
 	const normalizedQuery = $derived(searchQuery.trim().toLowerCase());
 
-	// Case-insensitive substring match against name, description, tags and registry label.
 	const filteredTemplates = $derived.by(() => {
 		if (!normalizedQuery) return allTemplates;
 		return allTemplates.filter((template) =>
@@ -198,7 +197,7 @@
 </script>
 
 {#snippet templateCard(template: Template, showRegistry: boolean = false)}
-	<Card interactive>
+	<Card>
 		<div class="p-4">
 			<div class="mb-2 flex items-start justify-between gap-2">
 				<div class="flex min-w-0 items-start gap-3">
@@ -341,7 +340,7 @@
 					<p class="mb-2">{m.templates_no_templates()}</p>
 					<p class="text-sm">
 						{m.templates_add_registry_prompt_part1()}
-						<a href={resolve('/(app)/customize/templates')} class="text-primary hover:underline"
+						<a href={resolve('/(app)/projects/templates')} class="text-primary-text hover:underline"
 							>{m.templates_template_settings()}</a
 						>
 						{m.templates_add_registry_prompt_part2()}

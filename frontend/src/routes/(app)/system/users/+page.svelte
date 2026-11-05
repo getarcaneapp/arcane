@@ -9,7 +9,6 @@
 	import UserFormSheet from '#lib/components/sheets/user-form-sheet.svelte';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
-	import { UsersIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -232,13 +231,7 @@
 	]);
 </script>
 
-<SettingsPageLayout
-	title={m.users_title()}
-	description={m.users_subtitle()}
-	icon={UsersIcon}
-	pageType="management"
-	{actionButtons}
->
+<SettingsPageLayout title={m.users_title()} description={m.users_subtitle()} pageType="management" {actionButtons}>
 	{#snippet mainContent()}
 		<SettingsSection title={m.settings_section_avatars()} description={m.settings_section_avatars_description()} class="mb-8">
 			<SettingsRow
@@ -248,11 +241,14 @@
 				layout="switch"
 				lock={settingsStore.lock('enableGravatar')}
 			>
-				<Switch
-					id="enableGravatar"
-					checked={gravatarEnabled}
-					onCheckedChange={(checked) => void saveAvatarSettings({ enableGravatar: checked })}
-				/>
+				{#snippet children({ describedBy })}
+					<Switch
+						id="enableGravatar"
+						checked={gravatarEnabled}
+						onCheckedChange={(checked) => void saveAvatarSettings({ enableGravatar: checked })}
+						aria-describedby={describedBy}
+					/>
+				{/snippet}
 			</SettingsRow>
 			<SettingsRow
 				for="avatarMaxUploadSizeMb"
@@ -262,16 +258,20 @@
 				error={avatarSizeError}
 				lock={settingsStore.lock('avatarMaxUploadSizeMb')}
 			>
-				<Input
-					id="avatarMaxUploadSizeMb"
-					type="number"
-					min="1"
-					max="50"
-					bind:value={avatarSizeInput}
-					placeholder="2"
-					aria-invalid={Boolean(avatarSizeError)}
-					onblur={handleAvatarSizeCommit}
-				/>
+				{#snippet children({ describedBy, errorId })}
+					<Input
+						id="avatarMaxUploadSizeMb"
+						type="number"
+						min="1"
+						max="50"
+						bind:value={avatarSizeInput}
+						placeholder="2"
+						aria-invalid={Boolean(avatarSizeError)}
+						onblur={handleAvatarSizeCommit}
+						aria-describedby={describedBy}
+						aria-errormessage={errorId}
+					/>
+				{/snippet}
 			</SettingsRow>
 		</SettingsSection>
 

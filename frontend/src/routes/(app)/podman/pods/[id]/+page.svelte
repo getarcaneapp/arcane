@@ -12,7 +12,7 @@
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import {
-		AlertTriangleIcon,
+		AlertIcon,
 		ContainersIcon,
 		InfoIcon,
 		InspectIcon,
@@ -136,7 +136,7 @@
 		{#snippet subHeader()}
 			{#if podQuery.isError}
 				<Alert.Root variant="destructive" class="mt-3">
-					<AlertTriangleIcon class="size-4" />
+					<AlertIcon class="size-4" />
 					<Alert.Title>{m.podman_updates_paused()}</Alert.Title>
 					<Alert.Description>{extractApiErrorMessage(podQuery.error)}</Alert.Description>
 				</Alert.Root>

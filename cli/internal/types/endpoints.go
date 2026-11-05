@@ -658,18 +658,18 @@ func GitOpsSyncsImport(envID string) string {
 
 // Git repository endpoints
 
-func GitRepositories() string { return "/api/customize/git/repositories" }
+func GitRepositories() string { return "/api/gitops/repositories" }
 
-func GitRepository(id string) string { return pathf("/api/customize/git/repositories/%s", id) }
+func GitRepository(id string) string { return pathf("/api/gitops/repositories/%s", id) }
 
 func GitRepositoryAction(id, action string) string {
 	return GitRepository(id) + "?" + url.Values{"action": {action}}.Encode()
 }
 
 func GitRepositoryBranches(id string) string {
-	return pathf("/api/customize/git/repositories/%s/branches", id)
+	return pathf("/api/gitops/repositories/%s/branches", id)
 }
 
 func GitRepositoryFiles(id string) string {
-	return pathf("/api/customize/git/repositories/%s/files", id)
+	return pathf("/api/gitops/repositories/%s/files", id)
 }

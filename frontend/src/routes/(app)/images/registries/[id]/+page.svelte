@@ -16,7 +16,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import * as InputGroup from '#lib/components/ui/input-group/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { AlertTriangleIcon, ArrowRightIcon, RegistryIcon, SearchIcon, TagIcon, TrashIcon } from '#lib/icons/index.js';
+	import { AlertIcon, ArrowRightIcon, RegistryIcon, SearchIcon, TagIcon, TrashIcon } from '#lib/icons/index.js';
 	import { ResourceDetailLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -63,7 +63,7 @@
 		});
 		selecting = false;
 		selected = [];
-		goto(`${resolve('/(app)/customize/registries/[id]', { id: registry.id })}${params.size > 0 ? `?${params}` : ''}`, {
+		goto(`${resolve('/(app)/images/registries/[id]', { id: registry.id })}${params.size > 0 ? `?${params}` : ''}`, {
 			reset: false
 		});
 	}
@@ -313,7 +313,7 @@
 
 		{#if data.tagsError}
 			<Alert.Root variant="destructive">
-				<AlertTriangleIcon class="size-4" />
+				<AlertIcon class="size-4" />
 				<Alert.Title>{m.registries_tags_load_failed({ repository })}</Alert.Title>
 				<Alert.Description>{data.tagsError}</Alert.Description>
 			</Alert.Root>
@@ -361,6 +361,7 @@
 						{/if}
 						{#if canDeleteTags && !selecting}
 							<RowActionsMenu
+								name={tag.name}
 								triggerClass="order-1 size-8 shrink-0 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 lg:order-none"
 							>
 								<DropdownMenu.Item
@@ -406,7 +407,7 @@
 	</div>
 {/snippet}
 
-<ResourceDetailLayout backUrl="/customize/registries" backLabel={m.registries_title()} title={registryLabel} {actions}>
+<ResourceDetailLayout backUrl="/images/registries" backLabel={m.registries_title()} title={registryLabel} {actions}>
 	{#if repository}
 		{@render tagList()}
 	{:else}

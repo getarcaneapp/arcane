@@ -64,22 +64,30 @@
 			<Badge variant={isBuiltIn ? 'blue' : 'green'} size="sm">{isBuiltIn ? m.roles_built_in() : m.custom()}</Badge>
 		{/snippet}
 		<SettingsRow for="role-name" label={m.common_name()} error={form.inputs.name.error}>
-			<Input
-				id="role-name"
-				placeholder={m.roles_name_placeholder()}
-				disabled={isBuiltIn || isLoading}
-				bind:value={form.inputs.name.value}
-				aria-invalid={!!form.inputs.name.error}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="role-name"
+					placeholder={m.roles_name_placeholder()}
+					disabled={isBuiltIn || isLoading}
+					bind:value={form.inputs.name.value}
+					aria-invalid={!!form.inputs.name.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow for="role-description" label={m.common_description()} error={form.inputs.description.error}>
-			<Input
-				id="role-description"
-				placeholder={m.roles_description_placeholder()}
-				disabled={isBuiltIn || isLoading}
-				bind:value={form.inputs.description.value}
-				aria-invalid={!!form.inputs.description.error}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="role-description"
+					placeholder={m.roles_description_placeholder()}
+					disabled={isBuiltIn || isLoading}
+					bind:value={form.inputs.description.value}
+					aria-invalid={!!form.inputs.description.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<div class="flex flex-col gap-3 px-5 py-4">
 			<p class="text-xs text-muted-foreground">

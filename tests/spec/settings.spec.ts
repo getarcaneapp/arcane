@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '../fixtures/test.fixture';
 import { createTestApiKeys, deleteTestApiKeys, waitForDialogReady } from '../utils/playwright.util';
 import { fetchApiKeysWithRetry } from '../utils/fetch.util';
-import { openRowActionsMenu } from '../utils/table-actions.util';
+import { openRowActionsMenu, ROW_ACTIONS_TRIGGER_NAME } from '../utils/table-actions.util';
 
 test.describe('API keys', () => {
 	const API_KEYS_ROUTE = '/system/api-keys';
@@ -135,7 +135,7 @@ test.describe('API keys', () => {
 			await expect(
 				page.getByRole('heading', { name: `Delete API Key "${apiKeyName}"?`, exact: true })
 			).toBeVisible();
-			await page.getByRole('button', { name: 'Delete' }).click();
+			await page.getByRole('button', { name: 'Delete', exact: true }).click();
 
 			// Should show success toast for deletion
 			await expect(
@@ -152,7 +152,7 @@ test.describe('API keys', () => {
 			// Select first two checkboxes
 			const checkboxes = page
 				.getByRole('row')
-				.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
+				.filter({ has: page.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }) })
 				.getByRole('checkbox');
 			await expect(checkboxes.nth(1)).toBeVisible();
 

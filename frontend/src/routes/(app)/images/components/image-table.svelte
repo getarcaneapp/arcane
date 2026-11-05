@@ -6,6 +6,7 @@
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import UniversalMobileCard from '#lib/components/arcane-table/cards/universal-mobile-card.svelte';
+	import DigestCell from '#lib/components/arcane-table/cells/digest-cell.svelte';
 	import InUseStatus from '#lib/components/arcane-table/cells/in-use-status.svelte';
 	import UnixCreatedCell from '#lib/components/arcane-table/cells/unix-created-cell.svelte';
 	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
@@ -13,6 +14,7 @@
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
+	import { EmptyState } from '#lib/components/states/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
@@ -25,7 +27,7 @@
 		ImagesIcon,
 		VolumesIcon,
 		ClockIcon,
-		ScanIcon,
+		SearchIcon,
 		ShieldCheckIcon,
 		ProjectsIcon,
 		ContainersIcon,
@@ -215,18 +217,13 @@
 		...environmentColumns<ImageRow>(),
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{ accessorKey: 'repo', title: m.resource_repository_cap(), sortable: true, cell: RepoCell },
-		{ accessorKey: 'repoTags', title: m.common_tags(), cell: TagCell },
 		{
 			accessorKey: 'inUse',
 			title: m.common_status(),
 			sortable: true,
 			cell: StatusCell
 		},
-		{
-			id: 'usedBy',
-			title: m.images_used_by(),
-			cell: UsedByCell
-		},
+		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell, align: 'right' },
 		{
 			id: 'updates',
 			accessorFn: (row) => {
@@ -238,9 +235,10 @@
 				return 'unknown';
 			},
 			title: m.updates(),
-			cell: UpdatesCell,
-			align: 'center'
+			class: 'min-w-table-update',
+			cell: UpdatesCell
 		},
+		{ accessorKey: 'repoTags', title: m.common_tags(), cell: TagCell },
 		{
 			id: 'vulnerabilities',
 			accessorFn: (row) => {
@@ -259,11 +257,17 @@
 			},
 			title: m.vuln_title(),
 			sortable: true,
+			class: 'min-w-table-security',
 			cell: VulnerabilitiesCell,
 			align: 'center'
 		},
-		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
-		{ accessorKey: 'created', title: m.common_created(), sortable: true, cellComponent: UnixCreatedCell }
+		{ accessorKey: 'created', title: m.common_created(), hidden: true, sortable: true, cellComponent: UnixCreatedCell },
+		{
+			id: 'usedBy',
+			title: m.images_used_by(),
+			hidden: true,
+			cell: UsedByCell
+		}
 	] satisfies ColumnSpec<ImageRow>[]);
 
 	const columns = $derived(allColumns.filter((column) => vulnerabilityManagementEnabled || column.id !== 'vulnerabilities'));
@@ -301,7 +305,7 @@
 {#snippet RepoCell({ item }: { item: ImageRow })}
 	{#if item.repo && item.repo !== '<none>'}
 		<a
-			class="font-medium hover:underline"
+			class="font-medium whitespace-nowrap hover:underline"
 			href={resolve(`/(app)/images/[imageId]?env=${encodeURIComponent(item.environmentId)}`, { imageId: item.id })}>{item.repo}</a
 		>
 	{:else}
@@ -312,42 +316,23 @@
 {#snippet TagCell({ item }: { item: ImageRow })}
 	{#if item.repoTags && item.repoTags.length > 0 && item.repoTags[0] !== '<none>:<none>'}
 		<div class="flex flex-wrap gap-1.5">
-			{#each item.repoTags.slice(0, 2) as repoTag, tagIndex (`${repoTag}-${tagIndex}`)}
-				{@const tag = repoTag.split(':').pop() || repoTag}
-				<Badge variant="outline" mono>{tag}</Badge>
+			{#each item.repoTags as repoTag, tagIndex (`${repoTag}-${tagIndex}`)}
+				<Badge variant="outline" mono>{repoTag.split(':').pop() || repoTag}</Badge>
 			{/each}
-			{#if item.repoTags.length > 2}
-				<Badge variant="outline">+{item.repoTags.length - 2}</Badge>
-			{/if}
 		</div>
 	{:else if item.pinnedReferences && item.pinnedReferences.length > 0 && item.pinnedReferences[0]}
-		{@const firstPin = item.pinnedReferences[0]}
-		{@const overflowPins = item.pinnedReferences.slice(1)}
-		<div class="flex max-w-md flex-wrap items-center gap-1.5">
-			<Badge
-				variant="outline"
-				mono
-				class="h-auto max-w-full break-all whitespace-normal select-all"
-				title={m.common_click_to_select()}
-			>
-				{firstPin}
-			</Badge>
-			{#if overflowPins.length > 0}
-				<Tooltip.Provider>
-					<Tooltip.Root>
-						<Tooltip.Trigger>
-							<Badge variant="outline">+{overflowPins.length}</Badge>
-						</Tooltip.Trigger>
-						<Tooltip.Content class="pointer-events-auto max-w-sm">
-							<div class="flex flex-col gap-1.5">
-								{#each overflowPins as pin (pin)}
-									<span class="font-mono text-xs break-all select-all">{pin}</span>
-								{/each}
-							</div>
-						</Tooltip.Content>
-					</Tooltip.Root>
-				</Tooltip.Provider>
-			{/if}
+		<div class="flex flex-wrap items-center gap-1.5">
+			{#each item.pinnedReferences as pin, pinIndex (`${pin}-${pinIndex}`)}
+				{@const digestAt = pin.indexOf('@')}
+				{@const pinName = digestAt === -1 ? pin : pin.slice(0, digestAt)}
+				{@const tagAt = pinName.lastIndexOf(':')}
+				<div class="flex items-center gap-1.5">
+					{#if tagAt > pinName.lastIndexOf('/')}
+						<Badge variant="outline" mono>{pinName.slice(tagAt + 1)}</Badge>
+					{/if}
+					<DigestCell value={digestAt === -1 ? pin : pin.slice(digestAt + 1)} />
+				</div>
+			{/each}
 		</div>
 	{:else if item.tag && item.tag !== '<none>'}
 		<Badge variant="outline" mono>{item.tag}</Badge>
@@ -357,7 +342,7 @@
 {/snippet}
 
 {#snippet SizeCell({ value }: { value: unknown })}
-	{bytes.format(Number(value ?? 0))}
+	{bytes.format(Number(value ?? 0), { unitSeparator: ' ' })}
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: ImageRow })}
@@ -368,25 +353,35 @@
 	{#each usages as usage, usageIndex (`${usage.type}-${usage.id ?? usage.name}-${usageIndex}`)}
 		{#if usage.type === 'project'}
 			{#if usage.id}
-				<Badge variant="outline" href={environmentHref(`/projects/${encodeURIComponent(usage.id)}`, environmentId)}>
-					<ProjectsIcon class="size-3" />
-					<span>{usage.name}</span>
+				<Badge
+					variant="outline"
+					maxWidth="resource-name"
+					title={usage.name}
+					href={environmentHref(`/projects/${encodeURIComponent(usage.id)}`, environmentId)}
+				>
+					<ProjectsIcon class="size-3 shrink-0" />
+					<span class="min-w-0 truncate">{usage.name}</span>
 				</Badge>
 			{:else}
-				<Badge variant="outline">
-					<ProjectsIcon class="size-3" />
-					<span>{usage.name}</span>
+				<Badge variant="outline" maxWidth="resource-name" title={usage.name}>
+					<ProjectsIcon class="size-3 shrink-0" />
+					<span class="min-w-0 truncate">{usage.name}</span>
 				</Badge>
 			{/if}
 		{:else if usage.id}
-			<Badge variant="outline" href={environmentHref(`/containers/${encodeURIComponent(usage.id)}`, environmentId)}>
-				<ContainersIcon class="size-3" />
-				<span>{usage.name}</span>
+			<Badge
+				variant="outline"
+				maxWidth="resource-name"
+				title={usage.name}
+				href={environmentHref(`/containers/${encodeURIComponent(usage.id)}`, environmentId)}
+			>
+				<ContainersIcon class="size-3 shrink-0" />
+				<span class="min-w-0 truncate">{usage.name}</span>
 			</Badge>
 		{:else}
-			<Badge variant="outline">
-				<ContainersIcon class="size-3" />
-				<span>{usage.name}</span>
+			<Badge variant="outline" maxWidth="resource-name" title={usage.name}>
+				<ContainersIcon class="size-3 shrink-0" />
+				<span class="min-w-0 truncate">{usage.name}</span>
 			</Badge>
 		{/if}
 	{/each}
@@ -423,7 +418,7 @@
 {/snippet}
 
 {#snippet UpdatesCell({ item }: { item: ImageRow })}
-	<div class="flex items-center justify-center">
+	<div class="flex min-w-table-update items-center">
 		<ImageUpdateItem
 			updateInfo={item.updateInfo}
 			imageId={item.id}
@@ -439,7 +434,7 @@
 {#snippet VulnerabilitiesCell({ item }: { item: ImageRow })}
 	<!-- The column shows when any environment scans; each row needs its own environment to. -->
 	{#if featureStore.isEnabled('vulnerabilityManagement', item.environmentId)}
-		<div class="flex items-center justify-center">
+		<div class="flex min-w-table-security items-center justify-center">
 			<VulnerabilityScanItem
 				scanSummary={item.vulnerabilityScan}
 				imageId={item.id}
@@ -505,7 +500,7 @@
 		fields={[
 			{
 				label: m.common_size(),
-				getValue: (item: ImageRow) => bytes.format(Number(item.size ?? 0)),
+				getValue: (item: ImageRow) => bytes.format(Number(item.size ?? 0), { unitSeparator: ' ' }),
 				icon: VolumesIcon,
 				iconVariant: 'blue' as const,
 				show: mobileFieldVisibility['size'] ?? true
@@ -535,14 +530,14 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={(item: ImageRow) =>
-			goto(resolve(`/(app)/images/[imageId]?env=${encodeURIComponent(item.environmentId)}`, { imageId: item.id }))}
+		href={(item: ImageRow) =>
+			resolve(`/(app)/images/[imageId]?env=${encodeURIComponent(item.environmentId)}`, { imageId: item.id })}
 	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ImageRow })}
 	{@const envId = item.environmentId}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.repo && item.repo !== '<none>' ? `${item.repo}:${item.tag}` : item.id}>
 		<DropdownMenu.Item
 			onclick={() => goto(resolve(`/(app)/images/[imageId]?env=${encodeURIComponent(envId)}`, { imageId: item.id }))}
 		>
@@ -580,7 +575,7 @@
 
 		{#if canScanImage && featureStore.isEnabled('vulnerabilityManagement', envId) && hasPermission('vulnerabilities:scan', envId)}
 			<DropdownMenu.Item onclick={() => handleInlineVulnerabilityScan(item)}>
-				<ScanIcon class="size-4" />
+				<SearchIcon class="size-4" />
 				{m.vuln_scan()}
 			</DropdownMenu.Item>
 		{/if}
@@ -625,7 +620,11 @@
 	{mobileFields}
 	rowActions={RowActions}
 	mobileCard={ImageMobileCardSnippet}
-/>
+>
+	{#snippet emptyState()}
+		<EmptyState icon={ImagesIcon} title={m.no_images_yet()} description={m.pull_or_build_image_to_start()} />
+	{/snippet}
+</ArcaneTable>
 
 {#if tagDialogImage}
 	<ImageTagDialog

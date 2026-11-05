@@ -25,6 +25,7 @@ export interface DashboardWidgetDefinition {
 	multi: boolean;
 	defaultW: number;
 	defaultH: number;
+	summary?: boolean;
 }
 
 export type DashboardWidgetInput = DashboardWidgetLayout & { type: DashboardWidgetType };
@@ -32,16 +33,16 @@ export type DashboardWidgetInput = DashboardWidgetLayout & { type: DashboardWidg
 export type DashboardWidget = DashboardWidgetInput & { id: string };
 
 export const DASHBOARD_WIDGET_TYPES: Record<DashboardWidgetType, DashboardWidgetDefinition> = {
-	healthy: { label: m.health_status_healthy, minW: 2, minH: 2, maxH: 4, multi: false, defaultW: 3, defaultH: 2 },
-	attentionCount: { label: m.attention_count, minW: 2, minH: 2, maxH: 4, multi: false, defaultW: 3, defaultH: 2 },
-	updates: { label: m.updates, minW: 2, minH: 2, maxH: 4, multi: false, defaultW: 3, defaultH: 2 },
-	risk: { label: m.risk_score, minW: 2, minH: 2, maxH: 4, multi: false, defaultW: 3, defaultH: 2 },
-	reclaimableTotal: { label: m.reclaimable, minW: 2, minH: 2, maxH: 4, multi: false, defaultW: 3, defaultH: 2 },
-	environments: { label: m.environments_title, minW: 6, minH: 3, maxH: 12, multi: false, defaultW: 12, defaultH: 6 },
-	attention: { label: m.needs_attention, minW: 4, minH: 4, maxH: 12, multi: false, defaultW: 8, defaultH: 5 },
-	activity: { label: m.recent_activity, minW: 4, minH: 4, maxH: 12, multi: false, defaultW: 8, defaultH: 6 },
-	jobs: { label: m.upcoming_jobs, minW: 3, minH: 3, maxH: 12, multi: false, defaultW: 4, defaultH: 4 },
-	reclaimable: { label: m.reclaimable_space, minW: 3, minH: 3, maxH: 12, multi: false, defaultW: 4, defaultH: 3 },
+	healthy: { label: m.online_environments, minW: 2, minH: 2, maxH: 4, multi: false, defaultW: 3, defaultH: 2, summary: true },
+	attentionCount: { label: m.attention_count, minW: 2, minH: 2, maxH: 4, multi: false, defaultW: 3, defaultH: 2, summary: true },
+	updates: { label: m.updates, minW: 2, minH: 2, maxH: 4, multi: false, defaultW: 3, defaultH: 2, summary: true },
+	risk: { label: m.risk_score, minW: 2, minH: 2, maxH: 4, multi: false, defaultW: 3, defaultH: 2, summary: true },
+	reclaimableTotal: { label: m.reclaimable, minW: 2, minH: 2, maxH: 4, multi: false, defaultW: 3, defaultH: 2, summary: true },
+	environments: { label: m.environments_title, minW: 6, minH: 4, maxH: 12, multi: false, defaultW: 12, defaultH: 6 },
+	attention: { label: m.needs_attention, minW: 4, minH: 3, maxH: 12, multi: false, defaultW: 8, defaultH: 5 },
+	activity: { label: m.recent_activity, minW: 4, minH: 4, maxH: 12, multi: false, defaultW: 8, defaultH: 4 },
+	jobs: { label: m.upcoming_jobs, minW: 3, minH: 3, maxH: 12, multi: false, defaultW: 4, defaultH: 3 },
+	reclaimable: { label: m.reclaimable_space, minW: 3, minH: 6, maxH: 12, multi: false, defaultW: 4, defaultH: 6 },
 	memory: { label: m.top_memory, minW: 3, minH: 3, maxH: 12, multi: false, defaultW: 4, defaultH: 4 },
 	resourceQuery: { label: m.filtered_resources, minW: 2, minH: 2, maxH: 12, multi: true, defaultW: 4, defaultH: 4 },
 	resource: { label: m.resource, minW: 3, minH: 2, maxH: 6, multi: true, defaultW: 4, defaultH: 3 },
@@ -53,7 +54,7 @@ export const DASHBOARD_WIDGET_TYPES: Record<DashboardWidgetType, DashboardWidget
 const WIDGET_TYPES = Object.keys(DASHBOARD_WIDGET_TYPES) as DashboardWidgetType[];
 
 export function defaultDashboardLayout(environmentCount: number): DashboardWidget[] {
-	const tableHeight = Math.min(Math.max(environmentCount + 3, 4), 10);
+	const tableHeight = Math.min(Math.max(environmentCount + 2, 4), 10);
 	const below = 2 + tableHeight;
 	return [
 		{ id: 'healthy', type: 'healthy', x: 0, y: 0, w: 3, h: 2 },
@@ -62,11 +63,11 @@ export function defaultDashboardLayout(environmentCount: number): DashboardWidge
 		{ id: 'risk', type: 'risk', x: 9, y: 0, w: 3, h: 2 },
 		{ id: 'environments', type: 'environments', x: 0, y: 2, w: 12, h: tableHeight },
 		{ id: 'attention', type: 'attention', x: 0, y: below, w: 8, h: 5 },
-		{ id: 'activity', type: 'activity', x: 0, y: below + 5, w: 8, h: 6 },
-		{ id: 'reclaimable', type: 'reclaimable', x: 8, y: below, w: 4, h: 3 },
-		{ id: 'jobs', type: 'jobs', x: 8, y: below + 3, w: 4, h: 4 },
-		{ id: 'memory', type: 'memory', x: 8, y: below + 7, w: 4, h: 4 },
-		{ id: 'reclaimableTotal', type: 'reclaimableTotal', x: 0, y: below + 11, w: 3, h: 2, hidden: true }
+		{ id: 'activity', type: 'activity', x: 0, y: below + 5, w: 8, h: 4 },
+		{ id: 'reclaimable', type: 'reclaimable', x: 8, y: below, w: 4, h: 6 },
+		{ id: 'jobs', type: 'jobs', x: 8, y: below + 6, w: 4, h: 3 },
+		{ id: 'memory', type: 'memory', x: 0, y: below + 9, w: 8, h: 4 },
+		{ id: 'reclaimableTotal', type: 'reclaimableTotal', x: 0, y: below + 13, w: 3, h: 2, hidden: true }
 	];
 }
 
@@ -215,20 +216,23 @@ export function pinViewAction(
 	request: SearchPaginationSortRequest,
 	environments: EnvironmentRef[]
 ): ActionButton {
-	return pinDashboardAction('pin-view', m.pin_this_view(), () => {
-		const { [ENVIRONMENT_FILTER]: environmentFilter, ...filters } = request.filters ?? {};
-		const picked = environmentFilterIds(environmentFilter, environments);
-		const entries = Object.entries(filters).map(([key, value]): [string, string] => [
-			key,
-			Array.isArray(value) ? value.join(',') : String(value)
-		]);
-		return createDashboardWidget('resourceQuery', {
-			resourceKind,
-			environmentIds: picked.length > 0 ? picked : environments.map((environment) => environment.id),
-			search: request.search || undefined,
-			filters: entries.length > 0 ? Object.fromEntries(entries) : undefined,
-			display: 'list',
-			limit: 10
-		});
-	});
+	return {
+		...pinDashboardAction('pin-view', m.pin_this_view(), () => {
+			const { [ENVIRONMENT_FILTER]: environmentFilter, ...filters } = request.filters ?? {};
+			const picked = environmentFilterIds(environmentFilter, environments);
+			const entries = Object.entries(filters).map(([key, value]): [string, string] => [
+				key,
+				Array.isArray(value) ? value.join(',') : String(value)
+			]);
+			return createDashboardWidget('resourceQuery', {
+				resourceKind,
+				environmentIds: picked.length > 0 ? picked : environments.map((environment) => environment.id),
+				search: request.search || undefined,
+				filters: entries.length > 0 ? Object.fromEntries(entries) : undefined,
+				display: 'list',
+				limit: 10
+			});
+		}),
+		placement: 'overflow'
+	};
 }

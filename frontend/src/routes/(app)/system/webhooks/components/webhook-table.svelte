@@ -176,7 +176,7 @@
 	mobileCard={WebhookMobileCardSnippet}
 >
 	{#snippet emptyState()}
-		<EmptyState variant="plain" icon={GlobeIcon} title={m.webhook_empty_title()} description={m.webhook_empty_description()} />
+		<EmptyState icon={GlobeIcon} title={m.webhook_empty_title()} description={m.webhook_empty_description()} />
 	{/snippet}
 </ArcaneTable>
 
@@ -282,7 +282,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: WebhookRow })}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.name}>
 		<IfPermitted perm="webhooks:update" envId={item.environmentId}>
 			<DropdownMenu.Item onclick={() => handleToggleWebhook(item)} disabled={isLoading.toggling}>
 				{item.enabled ? m.common_disable() : m.common_enable()}

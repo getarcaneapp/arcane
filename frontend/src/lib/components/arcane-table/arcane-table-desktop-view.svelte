@@ -9,6 +9,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import type { TableDisplayEntry } from '#lib/types/ui/tabledisplay.js';
 	import { cn } from '#lib/utils.js';
+	import { rowKey } from '#lib/utils/environments.js';
 
 	import { createVirtualizer } from '../ui/virtualizer.svelte';
 	import TableCheckbox from './arcane-table-checkbox.svelte';
@@ -61,21 +62,17 @@
 		expandedRowContent?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
 		expandedRows?: Set<string>;
 		onToggleRowExpanded?: (rowId: string) => void;
-		/** The scrollable ancestor, supplied by the wrapper, used to virtualize displayed entries. */
 		scrollElement?: HTMLElement;
-		/** First-load flag — when set and there's no data, render skeleton rows. */
 		loading?: boolean;
-		/** Renders the empty state; receives an optional wrapper class. */
 		empty: Snippet;
-		/** Wrap cell content instead of truncating. */
 		wrapText?: boolean;
 	} = $props();
 
+	const tableId = $props.id();
 	const hasExpand = $derived(!!expandedRowContent);
+	const expanderIndex = $derived(selectionDisabled ? 0 : 1);
 
-	// FlexRender's generics can't be inferred from its union-shaped props, so unaided it
-	// resolves to the broad `Cell<TableFeatures, RowData, …>` and fails invariance against our
-	// concrete cells. Pin them with an instantiation expression — no cast involved.
+	// Pin FlexRender's generics; they can't be inferred from its union-shaped props.
 	const FlexRender = FlexRenderBase<ArcaneFeatures, TData, unknown>;
 
 	function handleRowClick(event: MouseEvent, rowId: string) {
@@ -93,7 +90,6 @@
 		if (event.shiftKey && !hasExpand && !selectionDisabled && !shouldIgnoreTableRowClick(event)) event.preventDefault();
 	}
 
-	// Keep small views on the regular table path.
 	const VIRTUALIZE_THRESHOLD = 100;
 	const ROW_ESTIMATE_PX = 44;
 	let measuredRowHeight = $state<number | null>(null);
@@ -105,8 +101,7 @@
 		getTableDisplayEntries(flatRows, rowIndex, groupedRows, groupCollapsedState, hasExpand ? expandedRows : undefined)
 	);
 	const shouldVirtualize = $derived(entries.length > VIRTUALIZE_THRESHOLD);
-	// Natural column widths (px) measured from an auto-layout pass, then locked for table-fixed. Pixels rather than
-	// percentages keep an overflowing table from squashing every column; the table scrolls horizontally instead.
+	// Widths in px from an auto-layout pass, locked so overflowing tables scroll instead of squashing.
 	let lockedColumns = $state<{ key: string; widths: number[] } | null>(null);
 	const columnKey = $derived(
 		table
@@ -116,7 +111,7 @@
 	);
 	const columnWidths = $derived(shouldVirtualize && lockedColumns?.key === columnKey ? lockedColumns.widths : null);
 	const lockedTableWidth = $derived(columnWidths?.reduce((total, width) => total + width, 0));
-	// Per-column cell flags, computed once per layout change instead of per cell on every row render.
+	const ariaSort = { asc: 'ascending', desc: 'descending' } as const;
 	const cellPropsByColumn = $derived(
 		new Map(
 			table.getVisibleLeafColumns().map((column, index) => {
@@ -210,8 +205,7 @@
 		};
 	});
 
-	// Runes can't be created conditionally, so the virtualizer always exists but is `enabled` only
-	// when we actually virtualize; disabled, it stays cheap and reports an empty window.
+	// Runes can't be conditional, so the virtualizer always exists and is toggled via `enabled`.
 	const rowVirtualizer = createVirtualizer<HTMLElement, HTMLTableRowElement>(() => {
 		return {
 			count: entries.length,
@@ -239,7 +233,6 @@
 
 {#snippet cellContent(cell: ArcaneCell<TData>)}
 	{#if cell.column.id === 'actions'}
-		<!-- Pinned row actions at the row's end, always present in their own gutter. -->
 		<div class="flex items-center justify-end gap-0.5 py-1 pr-3 pl-2" data-row-select-ignore>
 			<FlexRender {cell} />
 		</div>
@@ -260,32 +253,35 @@
 		{@attach rowMeasurement}
 		data-index={virtualIndex}
 		data-entry-kind="row"
+		id={isGroupedRow ? `${tableId}-row-${rowId}` : undefined}
 		data-state={selectedIdSet.has(rowId) && 'selected'}
 		data-expanded={isExpanded ? true : undefined}
 		onclick={(event) => handleRowClick(event, rowId)}
 		onmousedown={handleRowMouseDown}
 		class={hasExpand ? 'cursor-pointer' : undefined}
 	>
-		{#if hasExpand}
-			<Table.Cell variant="expander" data-row-select-ignore>
-				<button
-					type="button"
-					class={cn(
-						'flex items-center justify-center text-muted-foreground transition-transform duration-200 hover:text-foreground',
-						isExpanded && 'rotate-90'
-					)}
-					onclick={(e) => {
-						e.stopPropagation();
-						onToggleRowExpanded?.(rowId);
-					}}
-					aria-label={isExpanded ? m.table_collapse_row() : m.table_expand_row()}
-				>
-					<ArrowRightIcon class="size-4" />
-				</button>
-			</Table.Cell>
-		{/if}
-		{#each row.getVisibleCells() as cell (cell.id)}
+		{#each row.getVisibleCells() as cell, i (cell.id)}
 			{@const props = cellPropsByColumn.get(cell.column.id)}
+			{#if hasExpand && i === expanderIndex}
+				<Table.Cell variant="expander" data-row-select-ignore>
+					<button
+						type="button"
+						class={cn(
+							'flex items-center justify-center text-muted-foreground transition-transform duration-200 hover:text-foreground',
+							isExpanded && 'rotate-90'
+						)}
+						onclick={(e) => {
+							e.stopPropagation();
+							onToggleRowExpanded?.(rowId);
+						}}
+						aria-label={isExpanded ? m.table_collapse_row() : m.table_expand_row()}
+						aria-expanded={isExpanded}
+						aria-controls={isExpanded ? `${tableId}-detail-${rowId}` : undefined}
+					>
+						<ArrowRightIcon class="size-4" />
+					</button>
+				</Table.Cell>
+			{/if}
 			<Table.Cell
 				pinned={props?.pinned}
 				variant={props?.variant}
@@ -315,7 +311,7 @@
 	{#if expandedRowContent}
 		<Table.Row variant="detail" {@attach rowMeasurement} data-index={virtualIndex}>
 			<Table.Cell colspan={columnsCount} variant="flush">
-				<div class="px-6 py-4">
+				<div id="{tableId}-detail-{row.id}" class="px-6 py-4">
 					{@render expandedRowContent({ row, item: row.original })}
 				</div>
 			</Table.Cell>
@@ -347,19 +343,21 @@
 	<Table.Header>
 		{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 			<Table.Row>
-				{#if hasExpand}
-					<Table.Head
-						variant="expander"
-						style={columnWidths ? `--col-width: ${columnWidths[0]}px` : undefined}
-						class={columnWidths ? 'w-(--col-width)' : undefined}
-					></Table.Head>
-				{/if}
 				{#each headerGroup.headers as header, i (header.id)}
 					{@const meta = header.column.columnDef.meta}
 					{@const pxWidth = typeof meta?.width === 'number' ? `${meta.width}px` : undefined}
-					{@const colWidth = columnWidths ? `${columnWidths[i + (hasExpand ? 1 : 0)]}px` : pxWidth}
+					{@const colWidth = columnWidths ? `${columnWidths[i + (hasExpand && i >= expanderIndex ? 1 : 0)]}px` : pxWidth}
+					{#if hasExpand && i === expanderIndex}
+						<Table.Head
+							variant="expander"
+							style={columnWidths ? `--col-width: ${columnWidths[expanderIndex]}px` : undefined}
+							class={columnWidths ? 'w-(--col-width)' : undefined}
+						></Table.Head>
+					{/if}
+					{@const sorted = header.column.getIsSorted()}
 					<Table.Head
 						colspan={header.colSpan}
+						aria-sort={sorted ? ariaSort[sorted] : undefined}
 						pinned={header.column.id === 'actions'}
 						variant={header.column.id === 'select' ? 'checkbox' : 'default'}
 						style={colWidth ? `--col-width: ${colWidth}` : undefined}
@@ -391,7 +389,6 @@
 		data-index={virtualIndex}
 		variant={unstyled ? 'static' : 'default'}
 		data-state={hasSelection ? 'selected' : undefined}
-		onclick={() => onGroupToggle?.(group.groupName)}
 	>
 		{#if !selectionDisabled}
 			<Table.Cell variant="checkbox">
@@ -399,24 +396,29 @@
 					checked={selectionState === 'all'}
 					indeterminate={selectionState === 'some'}
 					onCheckedChange={() => onToggleGroupSelection?.(group.items)}
-					onclick={(e: MouseEvent) => e.stopPropagation()}
 					aria-label={m.common_select_all()}
 				/>
 			</Table.Cell>
 		{/if}
 		<Table.Cell colspan={columnsCount - (selectionDisabled ? 0 : 1)}>
-			<div class="flex items-center gap-2 font-medium">
+			<button
+				type="button"
+				class="flex w-full cursor-pointer items-center gap-2 text-left font-medium"
+				aria-expanded={!isCollapsed}
+				aria-controls={isCollapsed ? undefined : group.items.map((item) => `${tableId}-row-${rowKey(item)}`).join(' ')}
+				onclick={() => onGroupToggle?.(group.groupName)}
+			>
 				{#if isCollapsed}
-					<ArrowRightIcon class="size-4 text-muted-foreground" />
+					<ArrowRightIcon class="size-4 text-muted-foreground" aria-hidden="true" />
 				{:else}
-					<ArrowDownIcon class="size-4 text-muted-foreground" />
+					<ArrowDownIcon class="size-4 text-muted-foreground" aria-hidden="true" />
 				{/if}
 				{#if IconComponent}
-					<IconComponent class="size-4 text-muted-foreground" />
+					<IconComponent class="size-4 text-muted-foreground" aria-hidden="true" />
 				{/if}
 				<span>{group.groupName}</span>
-				<span class="text-xs font-normal text-muted-foreground">({group.items.length})</span>
-			</div>
+				<span class="text-xs font-normal text-muted-foreground" aria-hidden="true">({group.items.length})</span>
+			</button>
 		</Table.Cell>
 	</Table.Row>
 {/snippet}

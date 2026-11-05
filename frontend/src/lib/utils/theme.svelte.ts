@@ -73,9 +73,6 @@ const DEFAULT_ACCENT_COLOR = 'oklch(0.606 0.25 292.717)';
 
 let htmlClassObserver: MutationObserver | null = null;
 
-// Mirrors the appearance state onto localStorage so the blocking inline script
-// in app.html can restore it before first paint (see app.html) — without this
-// the SPA shell paints the default light theme until hydration + API calls finish.
 const APPEARANCE_CACHE_KEY = 'arcane-appearance';
 
 type AppearanceCache = {
@@ -96,8 +93,6 @@ function updateAppearanceCache(partial: AppearanceCache): void {
 	const stored = trySync(() => JSON.parse(localStorage.getItem(APPEARANCE_CACHE_KEY) ?? '{}') as { v?: AppearanceCache });
 	const v: AppearanceCache = { ...stored.data?.v, ...partial };
 
-	// Pre-compute the exact attribute, class list, and inline style the inline
-	// script applies, so it stays a dumb three-line replay of this cache.
 	const attr = v.appTheme ?? '';
 	const cls = [v.oled && OLED_CLASS, v.noBlur && 'no-blur', v.reduceEffects && 'reduce-effects'].filter(Boolean).join(' ');
 	const css = Object.entries({
@@ -217,9 +212,6 @@ function syncBrowserThemeColor(): void {
 }
 
 export function applyAccentColor(accentValue: string) {
-	// The 'theme' sentinel means "inherit the application theme" and behaves
-	// exactly like 'default' (no override). It is normalized here so invalid
-	// CSS can never reach the custom-accent branch below.
 	const normalizedAccent = accentValue === 'theme' ? 'default' : accentValue;
 	const resolvedAccent = normalizedAccent === 'default' ? DEFAULT_ACCENT_COLOR : normalizedAccent;
 	appearanceState.accent = normalizedAccent;
@@ -301,11 +293,6 @@ export function applyOledMode(enabled: boolean): void {
 const NO_BLUR_CLASS = 'no-blur';
 const REDUCE_EFFECTS_CLASS = 'reduce-effects';
 
-/**
- * Toggle glass / backdrop-blur effects. When disabled, the `no-blur` class on
- * <html> drives layout.css to strip every backdrop-filter and make glass surfaces
- * opaque — the main lever for cutting GPU usage on Firefox-based browsers.
- */
 export function applyGlassEffects(enabled: boolean): void {
 	if (typeof document === 'undefined') {
 		return;
@@ -315,11 +302,6 @@ export function applyGlassEffects(enabled: boolean): void {
 	updateAppearanceCache({ noBlur: !enabled });
 }
 
-/**
- * Toggle decorative, always-on interface animations (ambient login shimmer,
- * loading-bar glow, pulse indicators). When disabled we add a `reduce-effects`
- * class to <html> and layout.css halts those animations.
- */
 export function applyInterfaceAnimations(enabled: boolean): void {
 	if (typeof document === 'undefined') {
 		return;
@@ -331,13 +313,8 @@ export function applyInterfaceAnimations(enabled: boolean): void {
 
 export const FONT_SIZE_MIN = 12;
 export const FONT_SIZE_MAX = 20;
-export const FONT_SIZE_DEFAULT = 14; // matches `html { font-size: 14px }` in layout.css
+export const FONT_SIZE_DEFAULT = 15;
 
-/**
- * Apply the user's preferred root font size. The UI is sized in `rem` off the
- * root element, so this scales text and spacing together (a whole-UI zoom). At
- * the default size we remove the inline override so the CSS rule wins.
- */
 export function applyFontSize(px?: number | null): void {
 	if (typeof document === 'undefined') {
 		return;

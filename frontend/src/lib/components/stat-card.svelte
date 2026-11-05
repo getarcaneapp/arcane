@@ -13,9 +13,7 @@
 		subtitle?: string;
 		class?: ClassValue;
 		variant?: 'default' | 'mini';
-		/** When provided (mini variant), the card becomes a button — e.g. to apply a table filter. */
 		onclick?: () => void;
-		/** Highlights the mini card as the currently-applied filter. */
 		active?: boolean;
 	}
 
@@ -39,7 +37,7 @@
 		<span class="text-sm leading-none font-semibold tabular-nums">
 			{value}
 		</span>
-		<span class="text-2xs leading-none font-medium tracking-widest whitespace-nowrap text-muted-foreground uppercase">
+		<span class="text-xs leading-none font-medium whitespace-nowrap text-muted-foreground">
 			{title}
 		</span>
 	</div>
@@ -52,7 +50,7 @@
 			{onclick}
 			aria-pressed={active}
 			class={cn(
-				'pressable -mx-0.5 flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 transition-colors hover:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none',
+				'pressable -mx-0.5 flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 transition-colors hover:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
 				active && 'bg-primary/10 ring-1 ring-primary/30',
 				className
 			)}

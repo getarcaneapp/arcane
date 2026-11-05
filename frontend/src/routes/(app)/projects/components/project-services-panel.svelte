@@ -11,7 +11,7 @@
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { StartIcon, StopIcon, RefreshIcon, TrashIcon, InspectIcon, LayersIcon, BoxIcon, HealthIcon } from '#lib/icons/index.js';
+	import { PlayIcon, StopIcon, RefreshIcon, TrashIcon, InspectIcon, LayersIcon, BoxIcon, HealthIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import type { ImageUpdateResponse } from '#lib/types/imageupdate.js';
@@ -198,7 +198,10 @@
 					{/if}
 					{#if item.containerId}
 						{@const containerId = item.containerId}
-						<RowActionsMenu triggerClass="size-6 shrink-0 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100">
+						<RowActionsMenu
+							name={item.name}
+							triggerClass="size-6 shrink-0 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+						>
 							<DropdownMenu.Item
 								onclick={() => goto(resolve(`/(app)/containers/[containerId]?${containerQuery}`, { containerId }))}
 								disabled={isAnyLoading}
@@ -228,7 +231,7 @@
 								{/if}
 							{:else if canStartContainer}
 								<ActionMenuItem
-									icon={StartIcon}
+									icon={PlayIcon}
 									label={m.common_start()}
 									onclick={() => performContainerAction('start', item.containerId!)}
 									loading={status === 'starting'}

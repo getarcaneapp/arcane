@@ -44,12 +44,15 @@
 		layout="switch"
 		mixed={mixed('imageAutoPatchEnabled')}
 	>
-		<Switch
-			id="imageAutoPatchEnabledSwitch"
-			disabled={!vulnerabilityManagementEnabled}
-			bind:checked={formInputs.imageAutoPatchEnabled.value}
-			data-mixed={!!mixed('imageAutoPatchEnabled') || undefined}
-		/>
+		{#snippet children({ describedBy })}
+			<Switch
+				id="imageAutoPatchEnabledSwitch"
+				disabled={!vulnerabilityManagementEnabled}
+				bind:checked={formInputs.imageAutoPatchEnabled.value}
+				data-mixed={!!mixed('imageAutoPatchEnabled') || undefined}
+				aria-describedby={describedBy}
+			/>
+		{/snippet}
 	</SettingsRow>
 
 	<SettingsRow
@@ -59,11 +62,14 @@
 		layout="switch"
 		mixed={mixed('imagePatchAllPlatforms')}
 	>
-		<Switch
-			id="imagePatchAllPlatformsSwitch"
-			bind:checked={formInputs.imagePatchAllPlatforms.value}
-			data-mixed={!!mixed('imagePatchAllPlatforms') || undefined}
-		/>
+		{#snippet children({ describedBy })}
+			<Switch
+				id="imagePatchAllPlatformsSwitch"
+				bind:checked={formInputs.imagePatchAllPlatforms.value}
+				data-mixed={!!mixed('imagePatchAllPlatforms') || undefined}
+				aria-describedby={describedBy}
+			/>
+		{/snippet}
 	</SettingsRow>
 
 	<SettingsRow
@@ -73,12 +79,16 @@
 		error={formInputs.imagePatchSuffix.error}
 		mixed={mixed('imagePatchSuffix')}
 	>
-		<Input
-			id="imagePatchSuffix"
-			bind:value={formInputs.imagePatchSuffix.value}
-			placeholder={mixed('imagePatchSuffix') ? m.mixed() : 'patched'}
-			aria-invalid={!!formInputs.imagePatchSuffix.error}
-		/>
+		{#snippet children({ describedBy, errorId })}
+			<Input
+				id="imagePatchSuffix"
+				bind:value={formInputs.imagePatchSuffix.value}
+				placeholder={mixed('imagePatchSuffix') ? m.mixed() : 'patched'}
+				aria-invalid={!!formInputs.imagePatchSuffix.error}
+				aria-describedby={describedBy}
+				aria-errormessage={errorId}
+			/>
+		{/snippet}
 	</SettingsRow>
 
 	<SettingsRow
@@ -88,12 +98,16 @@
 		error={formInputs.imagePatchTimeoutSec.error}
 		mixed={mixed('imagePatchTimeoutSec')}
 	>
-		<Input
-			id="imagePatchTimeoutSec"
-			type="number"
-			bind:value={formInputs.imagePatchTimeoutSec.value}
-			placeholder={mixed('imagePatchTimeoutSec') ? m.mixed() : '600'}
-			aria-invalid={!!formInputs.imagePatchTimeoutSec.error}
-		/>
+		{#snippet children({ describedBy, errorId })}
+			<Input
+				id="imagePatchTimeoutSec"
+				type="number"
+				bind:value={formInputs.imagePatchTimeoutSec.value}
+				placeholder={mixed('imagePatchTimeoutSec') ? m.mixed() : '600'}
+				aria-invalid={!!formInputs.imagePatchTimeoutSec.error}
+				aria-describedby={describedBy}
+				aria-errormessage={errorId}
+			/>
+		{/snippet}
 	</SettingsRow>
 </SettingsSection>

@@ -610,16 +610,23 @@
 						error={formInputs.featureVulnerabilityManagementEnabled.error}
 						layout="switch"
 					>
-						<Switch
-							id="vulnerability-management"
-							bind:checked={formInputs.featureVulnerabilityManagementEnabled.value}
-							disabled={featureSwitchDisabled('vulnerabilityManagement')}
-						/>
+						{#snippet children({ describedBy, errorId })}
+							<Switch
+								id="vulnerability-management"
+								bind:checked={formInputs.featureVulnerabilityManagementEnabled.value}
+								disabled={featureSwitchDisabled('vulnerabilityManagement')}
+								aria-invalid={!!formInputs.featureVulnerabilityManagementEnabled.error}
+								aria-describedby={describedBy}
+								aria-errormessage={errorId}
+							/>
+						{/snippet}
 					</SettingsRow>
 					{#if swarmActive}
 						<!-- An active cluster keeps Swarm on, so the stored toggle is shown locked. -->
 						<SettingsRow for="swarm" label={m.swarm()} description={m.features_swarm_locked()} layout="switch">
-							<Switch id="swarm" checked={true} disabled />
+							{#snippet children({ describedBy })}
+								<Switch id="swarm" checked={true} disabled aria-describedby={describedBy} />
+							{/snippet}
 						</SettingsRow>
 					{:else}
 						<SettingsRow
@@ -629,7 +636,16 @@
 							error={formInputs.featureSwarmEnabled.error}
 							layout="switch"
 						>
-							<Switch id="swarm" bind:checked={formInputs.featureSwarmEnabled.value} disabled={featureSwitchDisabled('swarm')} />
+							{#snippet children({ describedBy, errorId })}
+								<Switch
+									id="swarm"
+									bind:checked={formInputs.featureSwarmEnabled.value}
+									disabled={featureSwitchDisabled('swarm')}
+									aria-invalid={!!formInputs.featureSwarmEnabled.error}
+									aria-describedby={describedBy}
+									aria-errormessage={errorId}
+								/>
+							{/snippet}
 						</SettingsRow>
 					{/if}
 				{:else}

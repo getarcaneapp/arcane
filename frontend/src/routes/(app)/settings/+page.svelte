@@ -3,7 +3,7 @@
 
 	import SettingsIndexPage from '#lib/components/settings/settings-index-page.svelte';
 	import { getSettingsSubpageUrlsInNavOrder } from '#lib/config/navigation-config.js';
-	import { SettingsIcon, UserIcon } from '#lib/icons/index.js';
+	import { UserIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 
 	import type { PageProps } from './$types';
@@ -15,7 +15,6 @@
 
 <SettingsIndexPage
 	rootUrl={resolve('/(app)/settings')}
-	headerIcon={SettingsIcon}
 	title={m.settings()}
 	subtitle={m.settings_subtitle()}
 	searchPlaceholder={m.settings_search_placeholder()}

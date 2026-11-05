@@ -29,7 +29,8 @@
 		withTheme = true,
 		disabledColors = [],
 		onSelect,
-		onCustomColor
+		onCustomColor,
+		'aria-describedby': ariaDescribedby
 	}: {
 		selectedColor: string;
 		previousColor: string;
@@ -39,6 +40,7 @@
 		disabledColors?: string[];
 		onSelect?: (color: string) => void;
 		onCustomColor?: () => void;
+		'aria-describedby'?: string;
 	} = $props();
 	let showCustomColorDialog = $state(false);
 
@@ -57,6 +59,7 @@
 
 <RadioGroup.Root
 	class="flex flex-wrap"
+	aria-describedby={ariaDescribedby}
 	value={isCustomColor ? 'custom' : selectedColor}
 	onValueChange={(value) => {
 		if (value != 'custom') {

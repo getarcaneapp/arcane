@@ -13,7 +13,6 @@
 		...restProps
 	}: WithoutChildren<WithElementRef<HTMLTextareaAttributes>> & {
 		size?: 'default' | 'sm';
-		/** Monospace text for code-like values. */
 		mono?: boolean;
 	} = $props();
 </script>

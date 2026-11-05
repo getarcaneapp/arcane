@@ -21,14 +21,9 @@ export const [getMobileNavigation, setMobileNavigation] = createContext<{
 }>();
 
 export function getEffectiveNavigationSettings(): MobileNavigationSettings {
-	const preferences = userStore.current?.preferences;
-	const mode = preferences?.mobileNavigationMode ?? defaultMobileNavigationSettings.mode;
-
 	return {
 		pinnedItems: pinnedItemsStore.current.pinnedItems,
-		mode,
-		showLabels: preferences?.mobileNavigationShowLabels ?? defaultMobileNavigationSettings.showLabels,
-		scrollToHide: mode === 'floating'
+		showLabels: userStore.current?.preferences?.mobileNavigationShowLabels ?? defaultMobileNavigationSettings.showLabels
 	};
 }
 

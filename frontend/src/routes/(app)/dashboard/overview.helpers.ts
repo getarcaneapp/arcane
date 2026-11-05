@@ -29,8 +29,7 @@ export function createBaseEnvironmentOverview(environment: Environment): Dashboa
 		containers: { runningContainers: 0, stoppedContainers: 0, totalContainers: 0, unhealthyContainers: 0, updatesAvailable: 0 },
 		imageUsageCounts: { imagesInuse: 0, imagesUnused: 0, totalImages: 0, totalImageSize: 0 },
 		updates: 0,
-		vulnerabilities: 0,
-		actionItemCount: 0
+		vulnerabilities: 0
 	};
 }
 
@@ -149,6 +148,8 @@ export interface AttentionItem {
 	actionLabel: string;
 	target: AttentionTarget;
 	count?: number;
+	fullId?: string;
+	activityKey?: string;
 }
 
 export interface CollapsedActivity {
@@ -191,6 +192,7 @@ const CONTAINER_EVENT_WINDOW_HOURS = 1;
 const DISK_WARNING_PERCENT = 85;
 const DISK_CRITICAL_PERCENT = 95;
 const REPEATED_FAILURE_THRESHOLD = 3;
+const CONTAINER_RECOVERY_QUIET_MINUTES = 10;
 const REPEATED_FAILURE_WINDOW_HOURS = 24;
 const FAILED_RUN_STATUSES: ReadonlySet<RunStatus> = new Set(['failed', 'partial', 'needs_attention']);
 
@@ -265,14 +267,15 @@ function failedJobAndRepeatedFailureItems(sources: AttentionSources): AttentionI
 	return [
 		...failedJobs.map(({ environmentId, job, group }): AttentionItem => ({
 			key: `job:${environmentId}:${job.id}`,
-			severity: 'warning',
+			severity: job.lastRun?.status === 'failed' ? 'critical' : 'warning',
 			environmentId,
 			title: m.job_failed({ job: group ? activityTitle(group.activity) : jobNameLabel(job) }),
 			detail: job.lastError || job.lastRun?.outcome.message || '',
 			timestamp: job.lastRun?.finishedAt ?? job.lastRun?.updatedAt ?? null,
 			actionLabel: m.common_view(),
 			target: { kind: 'link', href: failedJobHref(environmentId, job.id) },
-			count: group?.ids.length
+			count: group?.ids.length,
+			activityKey: group?.key
 		})),
 		...failedGroups
 			.filter((group) => {
@@ -290,14 +293,15 @@ function failedJobAndRepeatedFailureItems(sources: AttentionSources): AttentionI
 				const timestamp = activity.endedAt || activity.startedAt;
 				return {
 					key: `failing:${key}`,
-					severity: 'warning',
+					severity: 'critical',
 					environmentId,
 					title: m.job_failed({ job: activity.resourceName ? `${title} ${activity.resourceName}` : title }),
 					detail: activity.error || formatRelativeTime(timestamp),
 					timestamp,
 					actionLabel: m.common_view(),
 					target: { kind: 'link', href: failingActivityHref(activity, environmentId) },
-					count: ids.length
+					count: ids.length,
+					activityKey: key
 				};
 			})
 	];
@@ -306,20 +310,44 @@ function failedJobAndRepeatedFailureItems(sources: AttentionSources): AttentionI
 function containerEventItems(events: EnvironmentEvent[], now: Temporal.Instant): AttentionItem[] {
 	const cutoff = now.subtract({ hours: CONTAINER_EVENT_WINDOW_HOURS });
 	const latest = new Map<string, EnvironmentEvent>();
+	const failures = new Map<string, number>();
+	const started = new Map<string, number>();
 	for (const entry of events) {
 		const { event } = entry;
 		const at = parseInstant(event.timestamp);
-		const exitCode = String(event.metadata?.['exitCode'] ?? '0');
-		const abnormal = event.type === 'container.oom' || (event.type === 'container.die' && exitCode !== '0');
-		if (!at || Temporal.Instant.compare(at, cutoff) < 0 || !abnormal || !event.resourceId) continue;
+		if (!at || Temporal.Instant.compare(at, cutoff) < 0 || !event.resourceId) continue;
 		const key = `${entry.environmentId}:${event.resourceId}`;
+		if (event.type === 'container.start' || event.type === 'container.restart') {
+			started.set(key, Math.max(started.get(key) ?? 0, at.epochMilliseconds));
+			continue;
+		}
+		const failedExit = event.type === 'container.die' && String(event.metadata?.['exitCode'] ?? '0') !== '0';
+		if (failedExit) failures.set(key, (failures.get(key) ?? 0) + 1);
+		if (!failedExit && event.type !== 'container.oom') continue;
 		const existing = latest.get(key);
 		if (!existing || (parseInstant(existing.event.timestamp)?.epochMilliseconds ?? 0) < at.epochMilliseconds) {
 			latest.set(key, entry);
 		}
 	}
-	return [...latest.entries()].map(([key, { environmentId, event }]) => {
-		const name = event.resourceName || String(event.metadata?.['name'] ?? event.resourceId);
+	const quietSince = now.subtract({ minutes: CONTAINER_RECOVERY_QUIET_MINUTES }).epochMilliseconds;
+	const failing = [...latest.entries()]
+		.filter(([key, { event }]) => {
+			const startedAt = started.get(key) ?? 0;
+			if (startedAt <= (parseInstant(event.timestamp)?.epochMilliseconds ?? 0)) return true;
+			return (failures.get(key) ?? 0) > 1 && startedAt > quietSince;
+		})
+		.map(([key, entry]) => ({
+			key,
+			entry,
+			name: entry.event.resourceName || String(entry.event.metadata?.['name'] ?? entry.event.resourceId)
+		}));
+	const nameCounts = new Map<string, number>();
+	for (const { entry, name } of failing) {
+		nameCounts.set(`${entry.environmentId}:${name}`, (nameCounts.get(`${entry.environmentId}:${name}`) ?? 0) + 1);
+	}
+	return failing.map(({ key, entry: { environmentId, event }, name: displayName }): AttentionItem => {
+		const sharedName = (nameCounts.get(`${environmentId}:${displayName}`) ?? 0) > 1;
+		const name = sharedName ? m.name_with_short_id({ name: displayName, id: (event.resourceId ?? '').slice(0, 8) }) : displayName;
 		const oom = event.type === 'container.oom';
 		return {
 			key: `event:${key}`,
@@ -336,7 +364,9 @@ function containerEventItems(events: EnvironmentEvent[], now: Temporal.Instant):
 				href: resolve(`/(app)/containers/[containerId]?tab=logs&env=${encodeURIComponent(environmentId)}`, {
 					containerId: event.resourceId ?? ''
 				})
-			}
+			},
+			count: failures.get(key),
+			fullId: sharedName ? event.resourceId : undefined
 		};
 	});
 }

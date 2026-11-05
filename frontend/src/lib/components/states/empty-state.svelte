@@ -7,18 +7,14 @@
 	import type { IconType } from '#lib/icons/index.js';
 
 	interface Props {
-		/** Optional icon rendered in the muted media box. */
 		icon?: IconType;
 		title: string;
 		description?: string;
-		/** Renders a single primary action button when provided. */
 		actionLabel?: string;
 		onAction?: () => void;
 		actionHref?: string;
 		class?: ClassValue;
-		/** Use `plain` when the surrounding container already draws the frame (e.g. tables). */
-		variant?: 'default' | 'card' | 'plain';
-		/** Custom action content; overrides the actionLabel button when present. */
+		variant?: 'plain' | 'dropzone';
 		children?: Snippet;
 	}
 

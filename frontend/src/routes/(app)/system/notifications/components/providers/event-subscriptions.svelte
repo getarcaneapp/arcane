@@ -31,7 +31,9 @@
 	description={m.notifications_event_image_update_description()}
 	layout="switch"
 >
-	<Switch id="{providerId}-event-image-update" bind:checked={eventImageUpdate} {disabled} />
+	{#snippet children({ describedBy })}
+		<Switch id="{providerId}-event-image-update" bind:checked={eventImageUpdate} {disabled} aria-describedby={describedBy} />
+	{/snippet}
 </SettingsRow>
 <SettingsRow
 	for="{providerId}-event-container-update"
@@ -39,7 +41,14 @@
 	description={m.notifications_event_container_update_description()}
 	layout="switch"
 >
-	<Switch id="{providerId}-event-container-update" bind:checked={eventContainerUpdate} {disabled} />
+	{#snippet children({ describedBy })}
+		<Switch
+			id="{providerId}-event-container-update"
+			bind:checked={eventContainerUpdate}
+			{disabled}
+			aria-describedby={describedBy}
+		/>
+	{/snippet}
 </SettingsRow>
 <SettingsRow
 	for="{providerId}-event-prune-report"
@@ -47,7 +56,9 @@
 	description={m.notifications_event_prune_report_description()}
 	layout="switch"
 >
-	<Switch id="{providerId}-event-prune-report" bind:checked={eventPruneReport} {disabled} />
+	{#snippet children({ describedBy })}
+		<Switch id="{providerId}-event-prune-report" bind:checked={eventPruneReport} {disabled} aria-describedby={describedBy} />
+	{/snippet}
 </SettingsRow>
 <SettingsRow
 	for="{providerId}-event-vulnerability-found"
@@ -55,7 +66,14 @@
 	description={m.notifications_event_vulnerability_found_description()}
 	layout="switch"
 >
-	<Switch id="{providerId}-event-vulnerability-found" bind:checked={eventVulnerabilityFound} {disabled} />
+	{#snippet children({ describedBy })}
+		<Switch
+			id="{providerId}-event-vulnerability-found"
+			bind:checked={eventVulnerabilityFound}
+			{disabled}
+			aria-describedby={describedBy}
+		/>
+	{/snippet}
 </SettingsRow>
 <SettingsRow
 	for="{providerId}-event-auto-heal"
@@ -63,5 +81,7 @@
 	description={m.notifications_event_auto_heal_description()}
 	layout="switch"
 >
-	<Switch id="{providerId}-event-auto-heal" bind:checked={eventAutoHeal} {disabled} />
+	{#snippet children({ describedBy })}
+		<Switch id="{providerId}-event-auto-heal" bind:checked={eventAutoHeal} {disabled} aria-describedby={describedBy} />
+	{/snippet}
 </SettingsRow>

@@ -910,7 +910,7 @@ func (s *SettingsService) RequireFeature(ctx context.Context, id types.FeatureID
 }
 
 func NewSettingsSearchService() *SettingsSearchService {
-	return &SettingsSearchService{categories: search.BuildCategories[Settings](types.SearchProfileSettings)}
+	return &SettingsSearchService{categories: search.BuildCategories[Settings]()}
 }
 
 // GetSettingsCategories returns the category index initialized by the service.

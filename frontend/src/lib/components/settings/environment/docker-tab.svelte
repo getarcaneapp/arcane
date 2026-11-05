@@ -93,8 +93,12 @@
 	];
 </script>
 
+{#snippet updateCheckImageHelp()}
+	<span class="font-mono">{updateCheckImage}</span>
+{/snippet}
+
 <div class="space-y-8">
-	<SettingsSection title={m.environments_docker_settings_title()} description={m.environments_config_description()}>
+	<SettingsSection title={m.environments_docker_settings_title()}>
 		<SettingsRow
 			for="shellSelectValue"
 			label={m.docker_default_shell_label()}
@@ -103,25 +107,31 @@
 			helpText={shellSelectValue === 'custom' ? m.docker_shell_custom_path_help() : undefined}
 			mixed={mixed('defaultShell')}
 		>
-			<SelectWithLabel
-				id="shellSelectValue"
-				name="shellSelectValue"
-				hideLabel
-				value={shellSelectValue}
-				onValueChange={handleShellSelectChange}
-				label={m.docker_default_shell_label()}
-				placeholder={mixed('defaultShell') ? m.mixed() : m.select_shell_placeholder()}
-				options={[...shellOptions, { value: 'custom', label: m.custom(), description: m.docker_shell_custom_description() }]}
-			/>
-			{#if shellSelectValue === 'custom'}
-				<Input
-					class="mt-2"
-					bind:value={formInputs.defaultShell.value}
-					placeholder={mixed('defaultShell') ? m.mixed() : m.bin_sh_placeholder()}
-					aria-label={m.custom()}
-					aria-invalid={!!formInputs.defaultShell.error}
+			{#snippet children({ describedBy, errorId })}
+				<SelectWithLabel
+					id="shellSelectValue"
+					name="shellSelectValue"
+					hideLabel
+					value={shellSelectValue}
+					onValueChange={handleShellSelectChange}
+					label={m.docker_default_shell_label()}
+					placeholder={mixed('defaultShell') ? m.mixed() : m.select_shell_placeholder()}
+					options={[...shellOptions, { value: 'custom', label: m.custom(), description: m.docker_shell_custom_description() }]}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
 				/>
-			{/if}
+				{#if shellSelectValue === 'custom'}
+					<Input
+						class="mt-2"
+						bind:value={formInputs.defaultShell.value}
+						placeholder={mixed('defaultShell') ? m.mixed() : m.bin_sh_placeholder()}
+						aria-label={m.custom()}
+						aria-invalid={!!formInputs.defaultShell.error}
+						aria-describedby={describedBy}
+						aria-errormessage={errorId}
+					/>
+				{/if}
+			{/snippet}
 		</SettingsRow>
 
 		<SettingsRow
@@ -130,16 +140,19 @@
 			description={m.settings_default_deploy_pull_policy_description()}
 			mixed={mixed('defaultDeployPullPolicy')}
 		>
-			<SelectWithLabel
-				id="defaultDeployPullPolicy"
-				name="defaultDeployPullPolicy"
-				hideLabel
-				bind:value={formInputs.defaultDeployPullPolicy.value}
-				label={m.settings_default_deploy_pull_policy()}
-				options={deployPullPolicyOptions}
-				onValueChange={(v) => (formInputs.defaultDeployPullPolicy.value = v as 'missing' | 'always' | 'never')}
-				placeholder={mixed('defaultDeployPullPolicy') ? m.mixed() : undefined}
-			/>
+			{#snippet children({ describedBy })}
+				<SelectWithLabel
+					id="defaultDeployPullPolicy"
+					name="defaultDeployPullPolicy"
+					hideLabel
+					bind:value={formInputs.defaultDeployPullPolicy.value}
+					label={m.settings_default_deploy_pull_policy()}
+					options={deployPullPolicyOptions}
+					onValueChange={(v) => (formInputs.defaultDeployPullPolicy.value = v as 'missing' | 'always' | 'never')}
+					placeholder={mixed('defaultDeployPullPolicy') ? m.mixed() : undefined}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 		</SettingsRow>
 
 		<SettingsRow
@@ -148,16 +161,19 @@
 			description={m.tools_image_registry_description()}
 			mixed={mixed('toolsImageRegistry')}
 		>
-			<SelectWithLabel
-				id="toolsImageRegistry"
-				name="toolsImageRegistry"
-				hideLabel
-				bind:value={formInputs.toolsImageRegistry.value}
-				label={m.tools_image_registry_label()}
-				options={registryOptions}
-				onValueChange={(v) => (formInputs.toolsImageRegistry.value = v as 'ghcr.io' | 'docker.io')}
-				placeholder={mixed('toolsImageRegistry') ? m.mixed() : undefined}
-			/>
+			{#snippet children({ describedBy })}
+				<SelectWithLabel
+					id="toolsImageRegistry"
+					name="toolsImageRegistry"
+					hideLabel
+					bind:value={formInputs.toolsImageRegistry.value}
+					label={m.tools_image_registry_label()}
+					options={registryOptions}
+					onValueChange={(v) => (formInputs.toolsImageRegistry.value = v as 'ghcr.io' | 'docker.io')}
+					placeholder={mixed('toolsImageRegistry') ? m.mixed() : undefined}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 			{#snippet helpText()}
 				<span class="font-mono">{arcaneToolsImage(formInputs.toolsImageRegistry.value)}</span>
 			{/snippet}
@@ -167,20 +183,21 @@
 			for="updateCheckRegistry"
 			label={m.update_check_registry_label()}
 			description={m.update_check_registry_description()}
+			helpText={updateCheckImage ? updateCheckImageHelp : undefined}
 			mixed={mixed('updateCheckRegistry')}
 		>
-			<SelectWithLabel
-				id="updateCheckRegistry"
-				name="updateCheckRegistry"
-				hideLabel
-				bind:value={formInputs.updateCheckRegistry.value}
-				label={m.update_check_registry_label()}
-				options={updateCheckRegistryOptions}
-				onValueChange={(v) => (formInputs.updateCheckRegistry.value = v as UpdateCheckRegistry)}
-				placeholder={mixed('updateCheckRegistry') ? m.mixed() : undefined}
-			/>
-			{#snippet helpText()}
-				{#if updateCheckImage}<span class="font-mono">{updateCheckImage}</span>{:else}{m.follows_running_image()}{/if}
+			{#snippet children({ describedBy })}
+				<SelectWithLabel
+					id="updateCheckRegistry"
+					name="updateCheckRegistry"
+					hideLabel
+					bind:value={formInputs.updateCheckRegistry.value}
+					label={m.update_check_registry_label()}
+					options={updateCheckRegistryOptions}
+					onValueChange={(v) => (formInputs.updateCheckRegistry.value = v as UpdateCheckRegistry)}
+					placeholder={mixed('updateCheckRegistry') ? m.mixed() : undefined}
+					aria-describedby={describedBy}
+				/>
 			{/snippet}
 		</SettingsRow>
 
@@ -191,12 +208,16 @@
 			error={formInputs.baseServerUrl.error}
 			mixed={mixed('baseServerUrl')}
 		>
-			<Input
-				id="base-server-url"
-				bind:value={formInputs.baseServerUrl.value}
-				aria-invalid={!!formInputs.baseServerUrl.error}
-				placeholder={mixed('baseServerUrl') ? m.mixed() : undefined}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="base-server-url"
+					bind:value={formInputs.baseServerUrl.value}
+					aria-invalid={!!formInputs.baseServerUrl.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+					placeholder={mixed('baseServerUrl') ? m.mixed() : undefined}
+				/>
+			{/snippet}
 		</SettingsRow>
 
 		<SettingsRow
@@ -206,11 +227,14 @@
 			layout="switch"
 			mixed={mixed('autoInjectEnv')}
 		>
-			<Switch
-				id="auto-inject-env"
-				bind:checked={formInputs.autoInjectEnv.value}
-				data-mixed={!!mixed('autoInjectEnv') || undefined}
-			/>
+			{#snippet children({ describedBy })}
+				<Switch
+					id="auto-inject-env"
+					bind:checked={formInputs.autoInjectEnv.value}
+					aria-describedby={describedBy}
+					data-mixed={!!mixed('autoInjectEnv') || undefined}
+				/>
+			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
 

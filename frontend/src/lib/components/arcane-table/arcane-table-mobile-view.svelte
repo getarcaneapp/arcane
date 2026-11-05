@@ -6,12 +6,12 @@
 	import Skeleton from '#lib/components/ui/skeleton/skeleton.svelte';
 	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte.js';
 	import VirtualRows from '#lib/components/virtual-rows.svelte';
-	import { ArrowDownIcon } from '#lib/icons/index.js';
+	import { ArrowDownIcon, ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { TableDisplayEntry } from '#lib/types/ui/tabledisplay.js';
 	import { cn } from '#lib/utils.js';
 
-	import { shouldIgnoreTableRowClick, type GroupedData } from './arcane-table.types.svelte';
+	import { setMobileRowSelection, type GroupedData, type SelectionModifiers } from './arcane-table.types.svelte';
 	import { getTableDisplayEntries } from './arcane-table.utils';
 	import type { ArcaneRow, ArcaneSvelteTable } from './table-features';
 
@@ -28,31 +28,43 @@
 		scrollElement,
 		initialScrollTop = 0,
 		loading = false,
+		virtualize = false,
+		selectedIdSet,
+		selectionDisabled = false,
+		onToggleRowSelection,
 		empty
 	}: {
 		table: ArcaneSvelteTable<TData>;
 		rowIndex: ReadonlyMap<string, { row: ArcaneRow<TData>; index: number }>;
-		mobileCard: Snippet<[{ row: ArcaneRow<TData>; item: TData; mobileFieldVisibility: Record<string, boolean> }]>;
+		mobileCard: Snippet<
+			[{ row: ArcaneRow<TData>; item: TData; mobileFieldVisibility: Record<string, boolean>; expander?: Snippet }]
+		>;
 		mobileFieldVisibility: Record<string, boolean>;
 		groupedRows?: GroupedData<TData>[] | null;
 		groupIcon?: (groupName: string) => Component;
 		expandedRowContent?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
 		expandedRows?: Set<string>;
 		onToggleRowExpanded?: (rowId: string) => void;
-		/** First-load flag — when set and there's no data, render skeleton cards. */
 		loading?: boolean;
 		scrollElement?: HTMLElement;
 		initialScrollTop?: number;
-		/** Renders the empty state; receives an optional wrapper class. */
+		virtualize?: boolean;
+		selectedIdSet: ReadonlySet<string>;
+		selectionDisabled?: boolean;
+		onToggleRowSelection: (id: string, selected: boolean, modifiers?: SelectionModifiers) => void;
 		empty: Snippet;
 	} = $props();
 
-	const hasExpand = $derived(!!expandedRowContent);
+	setMobileRowSelection({
+		get enabled() {
+			return !selectionDisabled;
+		},
+		isSelected: (id) => selectedIdSet.has(id),
+		toggle: (id, selected, modifiers) => onToggleRowSelection(id, selected, modifiers)
+	});
 
-	function handleRowClick(event: MouseEvent, rowId: string) {
-		if (shouldIgnoreTableRowClick(event)) return;
-		if (hasExpand) onToggleRowExpanded?.(rowId);
-	}
+	const tableId = $props.id();
+	const hasExpand = $derived(!!expandedRowContent);
 
 	const groupExpansion = new PersistedState<Record<string, boolean>>('collapsible-cards-expanded', {}, { syncTabs: false });
 	const collapsedGroups = $derived.by(() => {
@@ -63,7 +75,6 @@
 		return collapsed;
 	});
 	const entries = $derived(getTableDisplayEntries(table.getRowModel().rows, rowIndex, groupedRows, collapsedGroups));
-	const shouldVirtualize = $derived(entries.length > 100);
 	const getItemKey = $derived.by(() => {
 		const displayed = entries;
 		return (index: number) => displayed[index]?.key ?? index;
@@ -75,7 +86,7 @@
 		overscan: 10,
 		getItemKey,
 		initialOffset: initialScrollTop,
-		enabled: shouldVirtualize && !!scrollElement
+		enabled: virtualize && !!scrollElement
 	}));
 
 	function toggleGroup(groupName: string) {
@@ -87,7 +98,7 @@
 
 	$effect(() => {
 		const container = scrollElement;
-		if (!container || !shouldVirtualize) return;
+		if (!container || !virtualize) return;
 		let width = container.clientWidth;
 		const observer = new ResizeObserver(() => {
 			if (container.clientWidth !== width) {
@@ -105,14 +116,14 @@
 	});
 
 	$effect(() => {
-		if (!scrollElement || !shouldVirtualize || !mobileFieldVisibility) return;
+		if (!scrollElement || !virtualize || !mobileFieldVisibility) return;
 		untrack(() => rowVirtualizer.measure());
 	});
 
 	$effect(() => {
 		const container = scrollElement;
 		const size = rowVirtualizer.totalSize;
-		if (!container || !shouldVirtualize) return;
+		if (!container || !virtualize) return;
 		const frame = requestAnimationFrame(() => {
 			const max = Math.max(0, size - container.clientHeight);
 			if (container.scrollTop > max) container.scrollTop = max;
@@ -138,13 +149,24 @@
 {#snippet mobileRow(row: ArcaneRow<TData>)}
 	{@const rowId = row.id}
 	{@const isExpanded = expandedRows?.has(rowId) ?? false}
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class={cn(hasExpand && 'cursor-pointer')} onclick={(e) => handleRowClick(e, rowId)}>
-		{@render mobileCard({ row, item: row.original, mobileFieldVisibility })}
-	</div>
+	{#snippet expander()}
+		<button
+			type="button"
+			class={cn(
+				'flex size-8 items-center justify-center rounded-xl text-muted-foreground transition-transform duration-200 hover:text-foreground',
+				isExpanded && 'rotate-90'
+			)}
+			onclick={() => onToggleRowExpanded?.(rowId)}
+			aria-label={isExpanded ? m.table_collapse_row() : m.table_expand_row()}
+			aria-expanded={isExpanded}
+			aria-controls={isExpanded ? `${tableId}-detail-${rowId}` : undefined}
+		>
+			<ArrowRightIcon class="size-4" />
+		</button>
+	{/snippet}
+	{@render mobileCard({ row, item: row.original, mobileFieldVisibility, expander: hasExpand ? expander : undefined })}
 	{#if hasExpand && isExpanded && expandedRowContent}
-		<div class="bg-muted/30 px-4 py-3">
+		<div id="{tableId}-detail-{rowId}" class="bg-muted/30 px-4 py-3">
 			{@render expandedRowContent({ row, item: row.original })}
 		</div>
 	{/if}
@@ -194,7 +216,7 @@
 	{@render mobileSkeleton()}
 {:else if entries.length === 0}
 	{@render emptyState()}
-{:else if shouldVirtualize}
+{:else if virtualize}
 	<VirtualRows virtualizer={rowVirtualizer} rows={entries} row={displayEntry} />
 {:else}
 	{#each entries as entry (entry.key)}

@@ -5,7 +5,7 @@
 	import ReleaseNotes from '#lib/components/release-notes.svelte';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
-	import { AlertTriangleIcon, ExternalLinkIcon, SuccessIcon } from '#lib/icons/index.js';
+	import { AlertIcon, ExternalLinkIcon, SuccessIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { APIError } from '#lib/services/api-service.js';
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
@@ -190,7 +190,7 @@
 							</p>
 						{:else}
 							<p class="flex min-w-0 items-center gap-2 text-sm font-medium text-destructive">
-								<AlertTriangleIcon class="size-4 shrink-0" />
+								<AlertIcon class="size-4 shrink-0" />
 								<span class="truncate">{result?.error || job?.error || m.environments_update_all_finished_with_issues()}</span>
 							</p>
 						{/if}

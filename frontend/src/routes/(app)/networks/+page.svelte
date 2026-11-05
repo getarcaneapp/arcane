@@ -100,13 +100,13 @@
 
 	const statCards: StatCardConfig[] = $derived([
 		{
-			title: m.networks_total(),
+			title: networkUsageCounts.total === 1 ? m.networks_total_one() : m.networks_total(),
 			value: networkUsageCounts.total,
 			icon: NetworksIcon,
 			iconColor: 'text-info'
 		},
 		{
-			title: m.unused_networks(),
+			title: networkUsageCounts.unused === 1 ? m.unused_networks_one() : m.unused_networks(),
 			value: networkUsageCounts.unused,
 			icon: ConnectionIcon,
 			iconColor: 'text-warning'

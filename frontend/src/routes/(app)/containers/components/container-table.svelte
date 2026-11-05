@@ -9,23 +9,25 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import type { SortState, TableViewMode } from '#lib/components/arcane-table/arcane-table.types.svelte';
+	import { iconBgClass, iconTextClass } from '#lib/components/arcane-table/cards/icon-variants.js';
 	import ActionMenuItem from '#lib/components/arcane-table/cells/action-menu-item.svelte';
 	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import type { ColumnSpec, BulkAction } from '#lib/components/arcane-table/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
-	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import { PortBadge } from '#lib/components/badges/index.js';
 	import IconImage from '#lib/components/icon-image.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
+	import ResourceName from '#lib/components/resource-name.svelte';
+	import { EmptyState } from '#lib/components/states/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Progress } from '#lib/components/ui/progress/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import {
-		StartIcon,
+		PlayIcon,
 		StopIcon,
 		RefreshIcon,
 		TrashIcon,
@@ -39,9 +41,8 @@
 		UpdateIcon,
 		RedeployIcon,
 		PauseIcon,
-		PlayIcon,
 		ZapIcon,
-		AlertTriangleIcon,
+		AlertIcon,
 		InfoIcon,
 		HealthIcon
 	} from '#lib/icons/index.js';
@@ -57,7 +58,7 @@
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
 	import { COMPOSE_PROJECT_LABEL, getContainerIpAddresses, getThemedIconUrl, parseImageRef } from '#lib/utils/docker.js';
 	import { type EnvironmentPage, type EnvironmentRow, hasShownPermission, listScopes, rowKey } from '#lib/utils/environments.js';
-	import { formatDateTimeShort, truncateImageDigest } from '#lib/utils/formatting.js';
+	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { quadletUnitHref } from '#lib/utils/podman.js';
 
 	import { createContainerActions } from '../container-table.actions';
@@ -101,7 +102,6 @@
 		onRetry: () => Promise<unknown>;
 	} = $props();
 
-	// Track action status per container ID (e.g., "starting", "stopping", "updating", "")
 	const actionStatus = $state<Record<string, ActionStatus>>({});
 
 	const isBulkLoading = $state({
@@ -268,12 +268,6 @@
 	const canStopContainers = $derived(hasShownPermission('containers:stop'));
 	const canRestartContainers = $derived(hasShownPermission('containers:restart'));
 	const canDeleteContainers = $derived(hasShownPermission('containers:delete'));
-	// Reserve room for per-row state buttons so every State cell fits the width measured from the first rows.
-	const stateActionsMinWidth = $derived.by(() => {
-		if (canUpdateContainers) return 'min-w-15';
-		if (canStartContainers || canStopContainers) return 'min-w-7';
-		return '';
-	});
 	const canConvertToCompose = $derived(
 		hasShownPermission('projects:create') && settingsStore.current?.experimentalFeaturesEnabled === true
 	);
@@ -305,8 +299,7 @@
 		handleBulkUpdate(validUpdateIds, ids);
 	}
 
-	// The dialog is mounted only while a row is targeted, so it gets fresh state on
-	// every open; clearing the target unmounts it.
+	// Mounted only while a row is targeted, so each open gets fresh state.
 	let killTarget = $state<ContainerRow | null>(null);
 
 	function openKillDialog(container: ContainerRow) {
@@ -372,13 +365,6 @@
 			cell: NameCell
 		},
 		{
-			accessorKey: 'image',
-			title: m.common_image(),
-			sortable: !groupByProject,
-			card: 'hidden',
-			cell: ImageCell
-		},
-		{
 			accessorKey: 'state',
 			title: m.common_state(),
 			sortable: !groupByProject,
@@ -398,11 +384,11 @@
 		},
 		{
 			id: 'cpuUsage',
-			// TanStack only treats accessor columns as sortable, so the sampled value is
-			// exposed even though ordering happens on the server.
+			// TanStack only sorts accessor columns; ordering still happens on the server.
 			accessorFn: (row) => containerSortValue(row, 'cpuUsage'),
 			title: m.cpu_usage(),
 			sortable: !groupByProject && resourceSortSupported,
+			align: 'center',
 			card: 'meter',
 			cell: CPUCell
 		},
@@ -411,6 +397,7 @@
 			accessorFn: (row) => containerSortValue(row, 'memoryUsage'),
 			title: m.memory_usage(),
 			sortable: !groupByProject && resourceSortSupported,
+			align: 'center',
 			card: 'meter',
 			cell: MemoryCell
 		},
@@ -422,7 +409,8 @@
 			sortable: false,
 			card: 'footer',
 			cardIcon: NetworksIcon,
-			cell: IPAddressCell
+			cell: IPAddressCell,
+			hidden: true
 		},
 		{
 			accessorKey: 'ports',
@@ -433,11 +421,19 @@
 			cell: PortsCell
 		},
 		{
+			accessorKey: 'image',
+			title: m.common_image(),
+			sortable: !groupByProject,
+			card: 'hidden',
+			cell: ImageCell
+		},
+		{
 			accessorKey: 'created',
 			title: m.common_created(),
 			sortable: !groupByProject,
 			card: 'hidden',
-			cell: CreatedCell
+			cell: CreatedCell,
+			hidden: true
 		},
 		{
 			id: 'label',
@@ -468,7 +464,7 @@
 			defaultVisible: false
 		},
 		{ id: 'ports', label: m.common_ports(), defaultVisible: true },
-		{ id: 'created', label: m.common_created(), defaultVisible: true }
+		{ id: 'created', label: m.common_created(), defaultVisible: false }
 	];
 
 	const bulkActions = $derived.by<BulkAction[]>(() => [
@@ -483,7 +479,7 @@
 						onclick: handleBulkStart,
 						loading: isBulkLoading.start,
 						disabled: !resourcesCurrent || isAnyLoading,
-						icon: StartIcon
+						icon: PlayIcon
 					}
 				]
 			: []),
@@ -563,7 +559,6 @@
 			: [])
 	]);
 
-	// Icon for each group
 	function getGroupIcon(_groupName: string) {
 		return ProjectsIcon;
 	}
@@ -572,9 +567,10 @@
 		return getProjectName(item);
 	}
 
-	function getContainerIconVariant(state: string): 'emerald' | 'red' | 'amber' {
+	function getContainerIconVariant(state: string): 'emerald' | 'red' | 'amber' | 'gray' {
 		if (state === 'running') return 'emerald';
-		if (state === 'exited') return 'red';
+		if (state === 'dead') return 'red';
+		if (state === 'exited') return 'gray';
 		return 'amber';
 	}
 </script>
@@ -608,6 +604,14 @@
 	{:else}
 		<span class="font-mono text-xs">{m.common_na()}</span>
 	{/if}
+{/snippet}
+
+{#snippet ImageReferenceField(reference: string)}
+	<code class="font-mono text-xs-plus leading-5 break-all whitespace-normal">{reference}</code>
+{/snippet}
+
+{#snippet PortsField(item: ContainerRow)}
+	<PortBadge ports={item.ports ?? []} environmentId={item.environmentId} hideExposed={hideExposedPorts} />
 {/snippet}
 
 {#snippet UsageTile({
@@ -737,15 +741,22 @@
 	{@const displayName = getContainerDisplayName(item)}
 	{@const iconUrl = getThemedIconUrl(item, mode.current)}
 	{@const projectLabel = groupByProject ? undefined : item.labels?.[COMPOSE_PROJECT_LABEL]}
+	{@const iconVariant = getContainerIconVariant(item.state)}
 	{@const href = resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, {
 		containerId: item.id
 	})}
 	{#if view === 'grid'}
 		<div class="flex min-w-0 items-center gap-3">
-			<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-10 shrink-0 rounded-xl" />
+			<IconImage
+				src={iconUrl}
+				alt=""
+				fallback={BoxIcon}
+				class="size-6 {iconTextClass[iconVariant]}"
+				containerClass="size-10 shrink-0 rounded-xl {iconBgClass[iconVariant]}"
+			/>
 			<div class="flex min-w-0 flex-col">
 				<div class="flex min-w-0 items-center gap-2">
-					<a class="min-w-0 truncate hover:underline" {href}>{displayName}</a>
+					<ResourceName name={displayName} {href} />
 					{@render NameBadges(item)}
 				</div>
 				{#if projectLabel}
@@ -757,8 +768,14 @@
 		</div>
 	{:else}
 		<div class="flex min-w-0 items-center gap-2">
-			<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8 shrink-0" />
-			<a class="min-w-0 truncate font-medium hover:underline" {href}>{displayName}</a>
+			<IconImage
+				src={iconUrl}
+				alt=""
+				fallback={BoxIcon}
+				class="size-6 {iconTextClass[iconVariant]}"
+				containerClass="size-8 shrink-0 {iconBgClass[iconVariant]}"
+			/>
+			<ResourceName name={displayName} {href} class="font-medium" />
 			{@render NameBadges(item)}
 			{#if projectLabel}
 				<Badge variant="gray" size="sm" class="max-w-40" title={projectLabel}>
@@ -791,7 +808,7 @@
 			<Badge variant={getStateBadgeVariant(item.state)} minWidth="20">{getContainerStatusLabel(item.state)}</Badge>
 		{/if}
 		{#if view === 'list'}
-			<div class="flex items-center gap-1 {stateActionsMinWidth}">
+			<div class="flex items-center gap-1">
 				{@render StateActions(item, status)}
 			</div>
 		{:else}
@@ -801,40 +818,48 @@
 {/snippet}
 
 {#snippet StateActions(item: ContainerRow, status: ActionStatus)}
-	{#if !status && item.state !== 'running' && hasPermission('containers:start', item.environmentId)}
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="sm"
-			class="size-7 p-0 text-success! hover:bg-success/10 hover:text-success"
-			onclick={() => performContainerAction('start', item.id, item.environmentId)}
-			disabled={!resourcesCurrent || isAnyLoading}
-			icon={StartIcon}
-			title={m.common_start()}
-		/>
-	{:else if !status && item.state === 'running' && hasPermission('containers:stop', item.environmentId)}
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="sm"
-			class="size-7 p-0 text-destructive! hover:bg-destructive/10 hover:text-destructive"
-			onclick={() => performContainerAction('stop', item.id, item.environmentId)}
-			disabled={!resourcesCurrent || isAnyLoading}
-			title={m.common_stop()}
-			icon={StopIcon}
-		/>
+	{#if canStartContainers || canStopContainers}
+		<span class="flex size-7 shrink-0 items-center justify-center">
+			{#if !status && item.state !== 'running' && hasPermission('containers:start', item.environmentId)}
+				<ArcaneButton
+					action="base"
+					tone="ghost"
+					size="icon"
+					class="size-7 text-success! hover:bg-success/10"
+					onclick={() => performContainerAction('start', item.id, item.environmentId)}
+					disabled={!resourcesCurrent || isAnyLoading}
+					icon={PlayIcon}
+					title={m.common_start()}
+				/>
+			{:else if !status && item.state === 'running' && hasPermission('containers:stop', item.environmentId)}
+				<ArcaneButton
+					action="base"
+					tone="ghost"
+					size="icon"
+					class="size-7 text-muted-foreground! hover:bg-destructive/10 hover:text-destructive!"
+					onclick={() => performContainerAction('stop', item.id, item.environmentId)}
+					disabled={!resourcesCurrent || isAnyLoading}
+					title={m.common_stop()}
+					icon={StopIcon}
+				/>
+			{/if}
+		</span>
 	{/if}
-	{#if !status && item.updateInfo?.hasUpdate && hasPermission('image-updates:apply', item.environmentId)}
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="sm"
-			class="size-7 p-0"
-			onclick={() => handleUpdateContainer(item)}
-			disabled={!resourcesCurrent || isAnyLoading}
-			title={m.update_container()}
-			icon={UpdateIcon}
-		/>
+	{#if canUpdateContainers}
+		<span class="flex size-7 shrink-0 items-center justify-center">
+			{#if !status && item.updateInfo?.hasUpdate && hasPermission('image-updates:apply', item.environmentId)}
+				<ArcaneButton
+					action="base"
+					tone="ghost"
+					size="icon"
+					class="size-7"
+					onclick={() => handleUpdateContainer(item)}
+					disabled={!resourcesCurrent || isAnyLoading}
+					title={m.update_container()}
+					icon={UpdateIcon}
+				/>
+			{/if}
+		</span>
 	{/if}
 {/snippet}
 
@@ -851,7 +876,6 @@
 			: item.labels?.['com.getarcaneapp.arcane.updater.strategy']?.trim() === 'tag'}
 		repo={imageRef.repo}
 		tag={imageRef.tag}
-		onUpdateContainer={hasPermission('image-updates:apply', item.environmentId) ? () => handleUpdateContainer(item) : undefined}
 		debugHasUpdate={false}
 	/>
 {/snippet}
@@ -861,22 +885,17 @@
 {/snippet}
 
 {#snippet ImageCell({ item }: { item: ContainerSummary })}
-	<ArcaneTooltip.Root>
-		<ArcaneTooltip.Trigger class="flex w-full min-w-0">
-			<span class="min-w-0 flex-1 cursor-default truncate text-left font-mono text-xs">
-				{truncateImageDigest(item.image)}
-			</span>
-		</ArcaneTooltip.Trigger>
-		<ArcaneTooltip.Content>
-			<p class="max-w-xl break-all">{item.image}</p>
-		</ArcaneTooltip.Content>
-	</ArcaneTooltip.Root>
+	<span class="font-mono text-xs-plus leading-5 whitespace-nowrap">{item.image}</span>
 {/snippet}
 
 {#snippet CreatedCell({ item }: { item: ContainerSummary })}
 	<span class="text-sm">
 		{item.created ? formatDateTimeShort(Temporal.Instant.fromEpochMilliseconds(item.created * 1000)) : m.common_na()}
 	</span>
+{/snippet}
+
+{#snippet ContainerMobileName(item: ContainerRow)}
+	<ResourceName name={getContainerDisplayName(item)} maxWidth="full" />
 {/snippet}
 
 {#snippet ContainerMobileCardSnippet({
@@ -898,6 +917,7 @@
 			};
 		}}
 		title={(item) => getContainerDisplayName(item)}
+		titleContent={ContainerMobileName}
 		subtitle={(item) => ((mobileFieldVisibility['id'] ?? true) && item.id.length > 12 ? item.id : null)}
 		badges={[
 			(item) =>
@@ -914,6 +934,9 @@
 				getValue: (item: ContainerSummary) => item.image,
 				icon: ImagesIcon,
 				iconVariant: 'blue' as const,
+				type: 'component' as const,
+				component: ImageReferenceField,
+				layout: 'stacked' as const,
 				show: mobileFieldVisibility['image'] ?? true
 			},
 			{
@@ -921,7 +944,25 @@
 				getValue: (item: ContainerSummary) => item.status,
 				icon: ClockIcon,
 				iconVariant: 'purple' as const,
-				show: (mobileFieldVisibility['status'] ?? true) && item.status !== undefined
+				show: (mobileFieldVisibility['status'] ?? true) && !(mobileFieldVisibility['state'] ?? true) && item.status !== undefined
+			},
+			{
+				label: m.common_ports(),
+				getValue: (item: ContainerRow) => item,
+				icon: NetworksIcon,
+				iconVariant: 'blue' as const,
+				type: 'component' as const,
+				component: PortsField,
+				show: (mobileFieldVisibility['ports'] ?? true) && (item.ports?.length ?? 0) > 0
+			},
+			{
+				label: m.updates(),
+				getValue: (item: ContainerRow) => item,
+				icon: UpdateIcon,
+				iconVariant: 'purple' as const,
+				type: 'component' as const,
+				component: ContainerUpdateItem,
+				show: mobileFieldVisibility['updates'] ?? true
 			},
 			{
 				label: m.containers_ip_address(),
@@ -965,7 +1006,7 @@
 				show: mobileFieldVisibility['memoryUsage'] ?? false
 			}
 		]}
-		footer={(mobileFieldVisibility['created'] ?? true)
+		footer={(mobileFieldVisibility['created'] ?? false)
 			? {
 					label: m.common_created(),
 					getValue: (item) => formatDateTimeShort(Temporal.Instant.fromEpochMilliseconds(item.created * 1000)),
@@ -973,51 +1014,20 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={(item: ContainerRow) =>
-			goto(resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, { containerId: item.id }))}
-	>
-		{#if ((mobileFieldVisibility['ports'] ?? true) && item.ports && item.ports.length > 0) || (mobileFieldVisibility['updates'] ?? true)}
-			<div class="flex flex-row gap-4 border-t pt-3">
-				{#if (mobileFieldVisibility['ports'] ?? true) && item.ports && item.ports.length > 0}
-					<div class="flex min-w-0 flex-1 items-start gap-2.5">
-						<div class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-info/10">
-							<NetworksIcon class="size-3.5 text-info" />
-						</div>
-						<div class="min-w-0 flex-1">
-							<div class="text-3xs font-medium tracking-wide text-muted-foreground uppercase">
-								{m.common_ports()}
-							</div>
-							<div class="mt-1">
-								<PortBadge ports={item.ports} environmentId={item.environmentId} hideExposed={hideExposedPorts} />
-							</div>
-						</div>
-					</div>
-				{/if}
-				{#if mobileFieldVisibility['updates'] ?? true}
-					<div class="flex min-w-0 flex-1 items-start gap-2.5">
-						<div class="flex min-w-0 flex-col">
-							<div class="text-3xs font-medium tracking-wide text-muted-foreground uppercase">
-								{m.updates()}
-							</div>
-							<div class="mt-1">
-								{@render ContainerUpdateItem(item)}
-							</div>
-						</div>
-					</div>
-				{/if}
-			</div>
-		{/if}
-	</UniversalMobileCard>
+		href={(item: ContainerRow) =>
+			resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, { containerId: item.id })}
+	/>
 {/snippet}
 
-{#snippet RowActions({ item, view = 'list' }: { item: ContainerRow; view?: TableViewMode })}
+{#snippet RowActions({ item, view }: { item: ContainerRow; view?: TableViewMode })}
 	{#if resourcesCurrent}
 		{@const status = actionStatus[rowKey(item)]}
 		{@const envId = item.environmentId}
+		{@const inlineStateActions = view === 'grid' || (view === 'list' && columnVisibility['state'] !== false)}
 		{#if view === 'grid'}
 			{@render StateActions(item, getRowActionStatus(item))}
 		{/if}
-		<RowActionsMenu>
+		<RowActionsMenu name={getContainerDisplayName(item)}>
 			<DropdownMenu.Item
 				onclick={() =>
 					goto(resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(envId)}`, { containerId: item.id }))}
@@ -1050,7 +1060,7 @@
 
 			<DropdownMenu.Separator />
 
-			{#if item.updateInfo?.hasUpdate && hasPermission('image-updates:apply', envId)}
+			{#if !inlineStateActions && item.updateInfo?.hasUpdate && hasPermission('image-updates:apply', envId)}
 				<ActionMenuItem
 					onclick={() => handleUpdateContainer(item)}
 					disabled={isAnyLoading}
@@ -1069,24 +1079,28 @@
 						loading={status === 'unpausing'}
 					/>
 				</IfPermitted>
-			{:else if item.state !== 'running' && hasPermission('containers:start', envId)}
-				<ActionMenuItem
-					onclick={() => performContainerAction('start', item.id, envId)}
-					disabled={isAnyLoading}
-					icon={StartIcon}
-					label={m.common_start()}
-					loading={status === 'starting'}
-				/>
-			{:else if item.state === 'running'}
-				<IfPermitted perm="containers:stop" {envId}>
+			{:else if item.state !== 'running'}
+				{#if !inlineStateActions && hasPermission('containers:start', envId)}
 					<ActionMenuItem
-						icon={StopIcon}
-						label={m.common_stop()}
-						onclick={() => performContainerAction('stop', item.id, envId)}
-						loading={status === 'stopping'}
+						onclick={() => performContainerAction('start', item.id, envId)}
 						disabled={isAnyLoading}
+						icon={PlayIcon}
+						label={m.common_start()}
+						loading={status === 'starting'}
 					/>
-				</IfPermitted>
+				{/if}
+			{:else}
+				{#if !inlineStateActions}
+					<IfPermitted perm="containers:stop" {envId}>
+						<ActionMenuItem
+							icon={StopIcon}
+							label={m.common_stop()}
+							onclick={() => performContainerAction('stop', item.id, envId)}
+							loading={status === 'stopping'}
+							disabled={isAnyLoading}
+						/>
+					</IfPermitted>
+				{/if}
 
 				<IfPermitted perm="containers:restart" {envId}>
 					<ActionMenuItem
@@ -1158,7 +1172,7 @@
 
 {#if resourceSortActive && resourcePoller.error}
 	<Alert.Root variant="destructive" class="mb-4">
-		<AlertTriangleIcon class="size-4" />
+		<AlertIcon class="size-4" />
 		<Alert.Title>{m.containers_resource_refresh_failed({ message: resourcePoller.error })}</Alert.Title>
 	</Alert.Root>
 {/if}
@@ -1186,7 +1200,11 @@
 	groupIcon={groupByProject ? getGroupIcon : undefined}
 	groupCollapsedState={collapsedGroups}
 	onGroupToggle={toggleGroup}
-/>
+>
+	{#snippet emptyState()}
+		<EmptyState icon={BoxIcon} title={m.no_containers_yet()} description={m.containers_you_run_appear_here()} />
+	{/snippet}
+</ArcaneTable>
 
 {#snippet CustomViewOptions()}
 	<DropdownMenu.CheckboxItem checked={groupByProject} onCheckedChange={(v) => setGroupByProject(!!v)}>

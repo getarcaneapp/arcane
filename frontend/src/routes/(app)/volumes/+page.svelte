@@ -104,13 +104,13 @@
 
 	const statCards: StatCardConfig[] = $derived([
 		{
-			title: m.volumes_stat_total(),
+			title: volumeUsageCounts.total === 1 ? m.volumes_stat_total_one() : m.volumes_stat_total(),
 			value: volumeUsageCounts.total,
 			icon: VolumesIcon,
 			iconColor: 'text-info'
 		},
 		{
-			title: m.unused_volumes(),
+			title: volumeUsageCounts.unused === 1 ? m.unused_volumes_one() : m.unused_volumes(),
 			value: volumeUsageCounts.unused,
 			icon: VolumeUnusedIcon,
 			iconColor: 'text-warning'

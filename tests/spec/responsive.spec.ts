@@ -4,7 +4,7 @@ test('navigation matches the configured mobile or tablet viewport', async ({ pag
 	await page.goto('/dashboard');
 
 	if (testInfo.project.name === 'mobile-chromium') {
-		await expect(page.getByTestId(/mobile-(floating|docked)-nav/)).toBeVisible();
+		await expect(page.getByTestId('mobile-floating-nav')).toBeVisible();
 		await expect(page.locator('[data-slot="sidebar"]')).toHaveCount(0);
 
 		await page.getByTestId('mobile-nav-open').click();
@@ -12,12 +12,12 @@ test('navigation matches the configured mobile or tablet viewport', async ({ pag
 		await expect(navigationSheet).toBeVisible();
 		await navigationSheet.getByRole('link', { name: 'Containers', exact: true }).click();
 		await expect(page).toHaveURL('/containers');
-		await expect(page.getByTestId(/mobile-(floating|docked)-nav/)).toBeVisible();
+		await expect(page.getByTestId('mobile-floating-nav')).toBeVisible();
 	} else {
 		const sidebar = page.locator('[data-slot="sidebar"]');
 		await expect(sidebar).toBeVisible();
 		await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
-		await expect(page.getByTestId(/mobile-(floating|docked)-nav/)).toHaveCount(0);
+		await expect(page.getByTestId('mobile-floating-nav')).toHaveCount(0);
 
 		await page.locator('a[href="/containers"]').filter({ visible: true }).first().click();
 		await expect(page).toHaveURL('/containers');
