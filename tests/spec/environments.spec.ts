@@ -272,7 +272,7 @@ test.describe('Settings', () => {
 			await page.getByRole('tab', { name: 'Connection & Agent', exact: true }).click();
 			const deploymentPath = `${environmentPath}/deployment`;
 			await page.getByRole('button', { name: 'Generate Enrollment Token', exact: true }).click();
-			const tokenDialog = page.getByRole('alertdialog');
+			const tokenDialog = page.getByRole('dialog');
 			await expect(
 				tokenDialog.getByRole('heading', { name: 'Generate Enrollment Token', exact: true })
 			).toBeVisible();
@@ -986,7 +986,7 @@ test.describe('Agents', () => {
 			await expect(
 				page.getByText('Arcane Agent - connects outbound to manager', { exact: true })
 			).toBeVisible();
-			await expect(page.getByText('API Key', { exact: true })).toBeVisible();
+			await expect(page.getByText('Enrollment Token', { exact: true })).toBeVisible();
 			await expect(page.getByText('Docker Run Command', { exact: true })).toBeVisible();
 			await expect(page.getByText('Docker Compose', { exact: true })).toBeVisible();
 

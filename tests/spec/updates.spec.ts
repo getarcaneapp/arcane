@@ -779,11 +779,11 @@ test.describe('Arcane upgrades', () => {
 					await page.evaluate((key: string) => localStorage.getItem(key), TOKEN_EXPIRY_KEY)
 				).not.toBeNull();
 				expect(currentReloadCount(page)).toBe(1);
-				await expect(page).toHaveURL('/environments');
+				await expect(page).toHaveURL(/\/environments(?:\?tab=environments)?$/);
 				releaseRefresh();
 
 				await expect.poll(() => currentReloadCount(page), { timeout: 15_000 }).toBe(2);
-				await expect(page).toHaveURL('/environments');
+				await expect(page).toHaveURL(/\/environments(?:\?tab=environments)?$/);
 			} finally {
 				releaseRefresh();
 			}
