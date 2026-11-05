@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "Điều chỉnh các cửa sổ đệm đường hầm của Tune Agent để tối ưu hóa thông lượng và mức sử dụng bộ nhớ",
   "buffer_windows": "Cửa sổ đệm",
   "http2_receive_window": "Cửa sổ nhận HTTP/2 (Chỉ dành cho trình quản lý)",
-  "http2_receive_window_description": "Bộ đệm nhận HTTP/2 cho mỗi luồng. Chỉ áp dụng cho máy chủ của Arcane Manager. Các giá trị được thiết lập trong môi trường của tác nhân sẽ không có tác dụng. Giá trị lớn hơn sẽ giúp tăng tốc độ truyền dữ liệu của tác nhân trên các kết nối có độ trễ cao. Bất kỳ máy khách HTTP/2 nào cũng có thể khiến máy chủ quản lý tạo bộ đệm lên đến gấp 2 lần giá trị này cho mỗi kết nối.",
-  "http2_receive_window_restart": "Có hiệu lực sau khi người quản lý khởi động lại hệ thống.",
+  "http2_receive_window_description": "Bộ đệm HTTP/2 cho từng luồng trên máy chủ quản lý. Giá trị càng cao thì tốc độ càng nhanh trên các kết nối có độ trễ cao, nhưng sẽ tiêu tốn nhiều bộ nhớ hơn.",
+  "http2_receive_window_restart": "Áp dụng sau khi quản trị viên khởi động lại hệ thống.",
   "agent_tunnel_stream_window": "Cửa sổ luồng đường hầm đại lý",
-  "agent_tunnel_stream_window_description": "Cửa sổ nhận cho mỗi lần truyền dữ liệu qua đường hầm đại lý của môi trường này. Đại lý sẽ gửi thông tin này đến máy chủ quản lý khi đường hầm được kết nối, và cả hai bên đều sử dụng thông tin này. Các giá trị lớn hơn sẽ giúp tăng tốc độ truyền dữ liệu trên các kết nối có độ trễ cao, nhưng mỗi bên có thể phải lưu trữ lượng dữ liệu tối đa bằng giá trị này trong bộ nhớ RAM cho mỗi lần truyền dữ liệu đang hoạt động.",
-  "agent_tunnel_stream_window_reconnect": "Có hiệu lực vào lần tiếp theo khi đường hầm của tác nhân kết nối lại. Các đường hầm đang mở sẽ giữ nguyên cửa sổ hiện tại.",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "Dung lượng bộ đệm cho mỗi lần truyền trên đường hầm của tác nhân. Giá trị càng cao thì tốc độ càng nhanh trên các kết nối có độ trễ cao, nhưng sẽ tiêu tốn nhiều bộ nhớ hơn.",
+  "agent_tunnel_stream_window_reconnect": "Áp dụng khi kết nối đường hầm được thiết lập lại.",
+  "value_in_mib": "Giá trị tính bằng MiB ({range})"
 }
