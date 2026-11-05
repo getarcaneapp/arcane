@@ -839,6 +839,16 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 	syncRecord, loadErr := s.getSyncByID(ctx, environmentID, id, false)
 
 	if removeStack && loadErr == nil && syncRecord.TargetType == "swarm_stack" {
+		admitCtx, cancelAdmit := context.WithTimeout(ctx, defaultGitSyncTimeout)
+		lease, leaseErr := s.jobs.Acquire(admitCtx, id)
+		cancelAdmit()
+		if leaseErr != nil {
+			if syncRecord.AutoSync {
+				s.registerSyncJob(ctx, syncRecord.ID, syncRecord.EnvironmentID, syncRecord.SyncInterval)
+			}
+			return fmt.Errorf("failed to wait for active GitOps sync: %w", leaseErr)
+		}
+		defer lease.Release(ctx)
 		if stackErr := s.swarmService.RemoveStack(ctx, syncRecord.EnvironmentID, syncRecord.ProjectName); stackErr != nil && !errdefs.IsNotFound(stackErr) {
 			if syncRecord.AutoSync {
 				s.registerSyncJob(ctx, syncRecord.ID, syncRecord.EnvironmentID, syncRecord.SyncInterval)
