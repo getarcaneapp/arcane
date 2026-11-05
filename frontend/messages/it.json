@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "Ottimizzare le finestre del buffer del tunnel di Tune Agent in base alla velocità di trasmissione e all'utilizzo della memoria",
   "buffer_windows": "Finestre di buffer",
   "http2_receive_window": "Finestra di ricezione HTTP/2 (solo Manager)",
-  "http2_receive_window_description": "Buffer di ricezione HTTP/2 per stream. Si applica solo al server del manager Arcane. I valori impostati negli ambienti degli agenti non hanno alcun effetto. Valori più elevati accelerano i trasferimenti degli agenti su collegamenti ad alta latenza. Qualsiasi client HTTP/2 può far sì che il buffer del manager raggiunga un valore fino a 2 volte superiore a questo per ogni connessione.",
-  "http2_receive_window_restart": "Entra in vigore dopo il riavvio del gestore.",
+  "http2_receive_window_description": "Buffer HTTP/2 per flusso sul manager. Un valore più alto garantisce una maggiore velocità su collegamenti ad alta latenza, ma richiede più memoria.",
+  "http2_receive_window_restart": "Si applica dopo il riavvio del gestore.",
   "agent_tunnel_stream_window": "Finestra \"Agent Tunnel Stream\"",
-  "agent_tunnel_stream_window_description": "Finestra di ricezione per ogni trasferimento effettuato tramite il tunnel dell'agente di questo ambiente. L'agente la invia al gestore quando il tunnel si connette, ed entrambe le parti la utilizzano. Valori più elevati accelerano i trasferimenti su collegamenti ad alta latenza, ma ciascuna parte può mantenere in RAM una quantità di dati pari a tale valore per ogni trasferimento attivo.",
-  "agent_tunnel_stream_window_reconnect": "Entra in vigore alla successiva riconnessione del tunnel dell'agente. I tunnel aperti mantengono la finestra corrente.",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "Buffer per trasferimento sul tunnel dell'agente. Un valore più alto garantisce una maggiore velocità su collegamenti ad alta latenza, ma richiede più memoria.",
+  "agent_tunnel_stream_window_reconnect": "Si applica quando il tunnel si riconnette.",
+  "value_in_mib": "Valore in MiB ({range})"
 }
