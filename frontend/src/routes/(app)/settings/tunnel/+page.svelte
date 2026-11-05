@@ -9,7 +9,7 @@
 	description={m.agent_tunnel_settings_description()}
 	keys={['http2ReceiveWindowMb', 'agentTunnelStreamWindowMb']}
 >
-	{#snippet content({ formInputs, mixed, lock })}
-		<TunnelTab {formInputs} {mixed} {lock} />
+	{#snippet content({ formInputs, mixed, lock, settings })}
+		<TunnelTab {formInputs} {mixed} {lock} {settings} />
 	{/snippet}
 </EnvironmentSettingsPage>

@@ -4,9 +4,11 @@ import (
 	"context"
 	"maps"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
+	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/labstack/echo/v5"
 	"go.uber.org/fx"
 
@@ -153,6 +155,7 @@ var featureRoutes []func(huma.API, SetupParams)
 // SetupAPI creates and configures the Huma API attached to the Echo router.
 func SetupAPI(p SetupParams) *authz.OperationRecorder {
 	p.Echo.JSONSerializer = jsonx.Serializer{}
+	sse.WriteTimeout = time.Hour
 
 	humaConfig := huma.DefaultConfig("Arcane API", config.Version)
 	humaConfig.Formats = maps.Clone(humaConfig.Formats)

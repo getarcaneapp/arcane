@@ -649,6 +649,10 @@ func TestGeneratedMLDSAAssets_HandshakeWithVerifiedClientCertificate(t *testing.
 	require.NoError(t, result.err)
 	require.Equal(t, uint16(tls.VersionTLS13), result.state.Version)
 	require.True(t, hasVerifiedPeerCertificate(&result.state))
-	server := NewTunnelServer(TunnelServerOptions{StreamWindowMiB: testStreamWindowMiB, Registry: tunnels, MTLS: cfg})
+	server := NewTunnelServer(TunnelServerOptions{
+		Registry:        tunnels,
+		MTLS:            cfg,
+		StreamWindowMiB: testStreamWindowMiB,
+	})
 	require.NoError(t, server.requireCertificateIdentity(&result.state, "env-hs"))
 }

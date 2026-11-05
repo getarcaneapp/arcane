@@ -245,7 +245,11 @@ func TestTunnelServer_HandleConnect_PrefersHeaderTokenOverRegisterMessage(t *tes
 
 func TestTunnelServer_HandleConnect_NoToken(t *testing.T) {
 	tunnels := NewTunnelRegistry()
-	server := NewTunnelServer(TunnelServerOptions{StreamWindowMiB: testStreamWindowMiB, Registry: tunnels, MTLS: NewMTLS(MTLSConfig{})})
+	server := NewTunnelServer(TunnelServerOptions{
+		Registry:        tunnels,
+		MTLS:            NewMTLS(MTLSConfig{}),
+		StreamWindowMiB: testStreamWindowMiB,
+	})
 	router := echo.New()
 	router.GET("/connect", server.HandleConnect)
 
@@ -292,7 +296,11 @@ func TestTunnelServer_resolveEnvironment_TrimsToken(t *testing.T) {
 func TestTunnelServer_resolveEnvironment_Errors(t *testing.T) {
 	tunnels := NewTunnelRegistry()
 	t.Run("missing resolver", func(t *testing.T) {
-		server := NewTunnelServer(TunnelServerOptions{StreamWindowMiB: testStreamWindowMiB, Registry: tunnels, MTLS: NewMTLS(MTLSConfig{})})
+		server := NewTunnelServer(TunnelServerOptions{
+			Registry:        tunnels,
+			MTLS:            NewMTLS(MTLSConfig{}),
+			StreamWindowMiB: testStreamWindowMiB,
+		})
 		_, err := server.resolveEnvironment(t.Context(), "token")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "agent resolver is not configured")
@@ -408,7 +416,11 @@ func (f *registerResponseOrderConn) Transport() string { return TransportGRPC }
 
 func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterResponse(t *testing.T) {
 	tunnels := NewTunnelRegistry()
-	server := NewTunnelServer(TunnelServerOptions{StreamWindowMiB: testStreamWindowMiB, Registry: tunnels, MTLS: NewMTLS(MTLSConfig{})})
+	server := NewTunnelServer(TunnelServerOptions{
+		Registry:        tunnels,
+		MTLS:            NewMTLS(MTLSConfig{}),
+		StreamWindowMiB: testStreamWindowMiB,
+	})
 	envID := "env-grpc-register-order"
 	t.Cleanup(func() { server.registry.Unregister(envID) })
 
@@ -432,7 +444,11 @@ func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterRe
 
 func TestTunnelServer_ManageConnectedTunnel_UnregistersAfterConnectionContextCancellation(t *testing.T) {
 	registry := NewTunnelRegistry()
-	server := NewTunnelServer(TunnelServerOptions{StreamWindowMiB: testStreamWindowMiB, Registry: registry, MTLS: NewMTLS(MTLSConfig{})})
+	server := NewTunnelServer(TunnelServerOptions{
+		Registry:        registry,
+		MTLS:            NewMTLS(MTLSConfig{}),
+		StreamWindowMiB: testStreamWindowMiB,
+	})
 	envID := "env-cancelled-disconnect"
 	conn := &registerResponseOrderConn{recvErr: context.Canceled}
 

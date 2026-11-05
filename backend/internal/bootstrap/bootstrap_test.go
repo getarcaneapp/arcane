@@ -233,9 +233,24 @@ func TestNewHTTPServerHTTP2ReceiveWindowFromSettings(t *testing.T) {
 		wantStream     int
 		wantConnection int
 	}{
-		{name: "default", env: settings.Env{}, wantStream: 32 << 20, wantConnection: 64 << 20},
-		{name: "minimum", env: settings.Env{"http2ReceiveWindowMb": "1"}, wantStream: 1 << 20, wantConnection: 2 << 20},
-		{name: "maximum", env: settings.Env{"http2ReceiveWindowMb": "256"}, wantStream: 256 << 20, wantConnection: 512 << 20},
+		{
+			name:           "default",
+			env:            settings.Env{},
+			wantStream:     32 << 20,
+			wantConnection: 64 << 20,
+		},
+		{
+			name:           "minimum",
+			env:            settings.Env{"http2ReceiveWindowMb": "1"},
+			wantStream:     1 << 20,
+			wantConnection: 2 << 20,
+		},
+		{
+			name:           "maximum",
+			env:            settings.Env{"http2ReceiveWindowMb": "256"},
+			wantStream:     256 << 20,
+			wantConnection: 512 << 20,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

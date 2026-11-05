@@ -64,8 +64,18 @@ func TestAgentTunnelSettingsMetadata(t *testing.T) {
 		min float64
 		max float64
 	}{
-		{key: "http2ReceiveWindowMb", def: "32", min: 1, max: 256},
-		{key: "agentTunnelStreamWindowMb", def: "16", min: 1, max: 64},
+		{
+			key: "http2ReceiveWindowMb",
+			def: "32",
+			min: 1,
+			max: 256,
+		},
+		{
+			key: "agentTunnelStreamWindowMb",
+			def: "16",
+			min: 1,
+			max: 64,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {

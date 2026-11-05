@@ -53,9 +53,23 @@ func TestNewMuxConfigStreamWindow(t *testing.T) {
 		want            uint32
 		keepAlive       bool
 	}{
-		{name: "agent minimum", keepAlive: true, streamWindowMiB: 1, want: 1 << 20},
-		{name: "manager default", streamWindowMiB: 16, want: 16 << 20},
-		{name: "agent maximum", keepAlive: true, streamWindowMiB: 64, want: 64 << 20},
+		{
+			name:            "agent minimum",
+			keepAlive:       true,
+			streamWindowMiB: 1,
+			want:            1 << 20,
+		},
+		{
+			name:            "manager default",
+			streamWindowMiB: 16,
+			want:            16 << 20,
+		},
+		{
+			name:            "agent maximum",
+			keepAlive:       true,
+			streamWindowMiB: 64,
+			want:            64 << 20,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -74,11 +88,36 @@ func TestMuxStreamWindowMiB(t *testing.T) {
 		fallback     int
 		want         int
 	}{
-		{name: "older agent uses manager value", capabilities: []string{tunnelCapabilityMux}, fallback: 16, want: 16},
-		{name: "advertised value wins", capabilities: []string{tunnelCapabilityMux, tunnelCapabilityMuxWindowPrefix + "48"}, fallback: 16, want: 48},
-		{name: "clamped to minimum", capabilities: []string{tunnelCapabilityMuxWindowPrefix + "0"}, fallback: 16, want: 1},
-		{name: "clamped to maximum", capabilities: []string{tunnelCapabilityMuxWindowPrefix + "4096"}, fallback: 16, want: 64},
-		{name: "malformed value uses manager value", capabilities: []string{tunnelCapabilityMuxWindowPrefix + "lots"}, fallback: 24, want: 24},
+		{
+			name:         "older agent uses manager value",
+			capabilities: []string{tunnelCapabilityMux},
+			fallback:     16,
+			want:         16,
+		},
+		{
+			name:         "advertised value wins",
+			capabilities: []string{tunnelCapabilityMux, tunnelCapabilityMuxWindowPrefix + "48"},
+			fallback:     16,
+			want:         48,
+		},
+		{
+			name:         "clamped to minimum",
+			capabilities: []string{tunnelCapabilityMuxWindowPrefix + "0"},
+			fallback:     16,
+			want:         1,
+		},
+		{
+			name:         "clamped to maximum",
+			capabilities: []string{tunnelCapabilityMuxWindowPrefix + "4096"},
+			fallback:     16,
+			want:         64,
+		},
+		{
+			name:         "malformed value uses manager value",
+			capabilities: []string{tunnelCapabilityMuxWindowPrefix + "lots"},
+			fallback:     24,
+			want:         24,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
