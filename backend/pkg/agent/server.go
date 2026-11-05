@@ -60,11 +60,12 @@ func NewTunnelServer(opts TunnelServerOptions) *TunnelServer {
 	})
 
 	return &TunnelServer{
-		MTLS:           opts.MTLS,
-		registry:       opts.Registry,
-		resolver:       opts.Resolver,
-		statusCallback: opts.StatusCallback,
-		eventCallback:  opts.EventCallback,
+		MTLS:            opts.MTLS,
+		registry:        opts.Registry,
+		resolver:        opts.Resolver,
+		statusCallback:  opts.StatusCallback,
+		eventCallback:   opts.EventCallback,
+		streamWindowMiB: opts.StreamWindowMiB,
 	}
 }
 
@@ -127,6 +128,7 @@ func (s *TunnelServer) GRPCServerOptions() []grpc.ServerOption {
 
 	return []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(maxGRPCTunnelMessageSize),
+		grpc.ForceServerCodecV2(tunnelCodec),
 		grpc.ChainStreamInterceptor(recovery, logStream, auth),
 	}
 }

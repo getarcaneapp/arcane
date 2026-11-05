@@ -3,17 +3,23 @@ package agent
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json/v2"
 	"errors"
 	"io"
 	"log/slog"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/encoding"
+	"google.golang.org/grpc/encoding/proto"
+	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
 
 	wshub "getarcane.dev/arcane/v3/pkg/ws"
 	tunnelpb "getarcane.dev/arcane/v3/proto/tunnel/v1"
@@ -39,6 +45,10 @@ type (
 		Context() context.Context
 	}
 
+	muxDataCodec struct {
+		encoding.CodecV2
+	}
+
 	grpcAgentStream interface {
 		Send(msg *tunnelpb.AgentMessage) error
 		Recv() (*tunnelpb.ManagerMessage, error)
@@ -52,6 +62,9 @@ const (
 	// maxWebSocketTunnelMessageSize caps inbound websocket tunnel frames at 2x the
 	// gRPC limit, since JSON base64-encodes binary bodies a gRPC peer would accept.
 	maxWebSocketTunnelMessageSize = 2 * maxGRPCTunnelMessageSize
+	muxPooledFrameMinSize         = 32 << 10
+	muxDataPayloadField           = protowire.Number(15)
+	muxDataBytesField             = protowire.Number(1)
 	// MessageTypeRegister is the first message sent by the agent on gRPC transport.
 	MessageTypeRegister TunnelMessageType = "register"
 	// MessageTypeRegisterResponse is sent by manager after register validation.
@@ -64,6 +77,11 @@ var (
 	// tunnelReadWait bounds an idle websocket read; heartbeats arrive every DefaultHeartbeatInterval.
 	// It is a variable so tests can shorten it.
 	tunnelReadWait = 3 * DefaultHeartbeatInterval
+
+	tunnelCodec  = muxDataCodec{CodecV2: encoding.GetCodecV2(proto.Name)}
+	muxFramePool = sync.Pool{New: func() any {
+		return new(make([]byte, muxMaxFrameSize))
+	}}
 )
 
 func NewWebSocketTunnelConn(conn *websocket.Conn) *WebSocketTunnelConn {
@@ -206,11 +224,12 @@ func (t *GRPCManagerTunnelConn) muxConn(context.Context) *muxConn {
 			MuxData: tunnelpb.MuxData_builder{Data: p}.Build(),
 		}.Build())
 	}
+	var frame []byte
 	recv := func() ([]byte, error) {
 		if t.stream == nil {
 			return nil, ErrTunnelConnectionClosed
 		}
-		return receiveMuxData(t.stream.Recv, &t.closed)
+		return receiveMuxData(t.stream.Recv, &t.closed, &frame)
 	}
 	return newMuxConn(send, recv, t.Close)
 }
@@ -277,8 +296,9 @@ func (t *GRPCAgentTunnelConn) muxConn(context.Context) *muxConn {
 			MuxData: tunnelpb.MuxData_builder{Data: p}.Build(),
 		}.Build())
 	}
+	var frame []byte
 	recv := func() ([]byte, error) {
-		return receiveMuxData(t.stream.Recv, &t.closed)
+		return receiveMuxData(t.stream.Recv, &t.closed, &frame)
 	}
 	return newMuxConn(send, recv, t.Close)
 }
@@ -385,7 +405,11 @@ func receiveGRPC[P any](ctx context.Context, recv func() (P, error), decode func
 
 // receiveMuxData returns the next MuxData payload, skipping any other payload still in flight.
 // A gRPC stream is dead after any Recv error.
-func receiveMuxData[P interface{ GetMuxData() *tunnelpb.MuxData }](recv func() (P, error), closed *atomic.Bool) ([]byte, error) {
+func receiveMuxData[P interface{ GetMuxData() *tunnelpb.MuxData }](recv func() (P, error), closed *atomic.Bool, frame *[]byte) ([]byte, error) {
+	if cap(*frame) == muxMaxFrameSize {
+		muxFramePool.Put(new((*frame)[:0]))
+	}
+	*frame = nil
 	for {
 		msg, err := recv()
 		if err != nil {
@@ -393,9 +417,38 @@ func receiveMuxData[P interface{ GetMuxData() *tunnelpb.MuxData }](recv func() (
 			return nil, err
 		}
 		if data := msg.GetMuxData(); data != nil {
-			return data.GetData(), nil
+			*frame = data.GetData()
+			return *frame, nil
 		}
 	}
+}
+
+func (c muxDataCodec) Unmarshal(data mem.BufferSlice, v any) error {
+	msg, ok := v.(interface{ SetMuxData(v *tunnelpb.MuxData) })
+	if !ok {
+		return c.CodecV2.Unmarshal(data, v)
+	}
+	r := data.Reader()
+	defer func() {
+		_ = r.Close()
+	}()
+	outerTag, outerErr := binary.ReadUvarint(r)
+	outerLen, outerLenErr := binary.ReadUvarint(r)
+	if outerErr != nil || outerLenErr != nil || outerTag != protowire.EncodeTag(muxDataPayloadField, protowire.BytesType) || outerLen != uint64(r.Remaining()) {
+		return c.CodecV2.Unmarshal(data, v)
+	}
+	innerTag, innerErr := binary.ReadUvarint(r)
+	innerLen, innerLenErr := binary.ReadUvarint(r)
+	if innerErr != nil || innerLenErr != nil || innerTag != protowire.EncodeTag(muxDataBytesField, protowire.BytesType) ||
+		innerLen != uint64(r.Remaining()) || innerLen < muxPooledFrameMinSize || innerLen > muxMaxFrameSize {
+		return c.CodecV2.Unmarshal(data, v)
+	}
+	payload := (*muxFramePool.Get().(*[]byte))[:innerLen]
+	if _, err := io.ReadFull(r, payload); err != nil {
+		return err
+	}
+	msg.SetMuxData(tunnelpb.MuxData_builder{Data: payload}.Build())
+	return nil
 }
 
 // isExpectedReceiveError reports normal teardown on either transport: EOF, cancellation,

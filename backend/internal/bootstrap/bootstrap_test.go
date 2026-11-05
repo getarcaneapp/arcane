@@ -35,6 +35,15 @@ import (
 
 func newTestSettingsModule(t *testing.T, cfg *config.Config) *settings.Module {
 	t.Helper()
+	return settings.New(settings.ModuleParams{
+		Service: newTestSettingsService(t, cfg, settings.Env{}),
+		Config:  cfg,
+		MTLS:    agent.NewMTLS(agent.MTLSConfig{}),
+	})
+}
+
+func newTestSettingsService(t *testing.T, cfg *config.Config, env settings.Env) *settings.SettingsService {
+	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
@@ -46,27 +55,24 @@ func newTestSettingsModule(t *testing.T, cfg *config.Config) *settings.Module {
 		Ctx:    t.Context(),
 		DB:     &database.DB{DB: db},
 		Config: cfg,
-		Env:    settings.Env{},
+		Env:    env,
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))
 	})
-	return settings.New(settings.ModuleParams{
-		Service: settingsService,
-		Config:  cfg,
-		MTLS:    agent.NewMTLS(agent.MTLSConfig{}),
-	})
+	return settingsService
 }
 
 func startTestHTTPServer(t *testing.T, cfg *config.Config, router *echo.Echo) string {
 	t.Helper()
 	lc := fxtest.NewLifecycle(t)
 	srv, err := NewHTTPServer(lc, HTTPServerParams{
-		AppCtx:       t.Context(),
-		Config:       cfg,
-		Router:       router,
-		TunnelServer: agent.NewTunnelServer(agent.TunnelServerOptions{Registry: agent.NewTunnelRegistry(), MTLS: agent.NewMTLS(agent.MTLSConfig{})}),
+		AppCtx:          t.Context(),
+		Config:          cfg,
+		Router:          router,
+		TunnelServer:    agent.NewTunnelServer(agent.TunnelServerOptions{Registry: agent.NewTunnelRegistry(), MTLS: agent.NewMTLS(agent.MTLSConfig{})}),
+		SettingsService: newTestSettingsService(t, cfg, settings.Env{}),
 	})
 	require.NoError(t, err)
 	lc.RequireStart()
@@ -211,12 +217,59 @@ func TestNewHTTPServerRejectsInvalidTLSCertificate(t *testing.T) {
 	}
 
 	_, err := NewHTTPServer(fxtest.NewLifecycle(t), HTTPServerParams{
-		AppCtx:       t.Context(),
-		Config:       cfg,
-		Router:       echo.New(),
-		TunnelServer: agent.NewTunnelServer(agent.TunnelServerOptions{Registry: agent.NewTunnelRegistry(), MTLS: agent.NewMTLS(agent.MTLSConfig{})}),
+		AppCtx:          t.Context(),
+		Config:          cfg,
+		Router:          echo.New(),
+		TunnelServer:    agent.NewTunnelServer(agent.TunnelServerOptions{Registry: agent.NewTunnelRegistry(), MTLS: agent.NewMTLS(agent.MTLSConfig{})}),
+		SettingsService: newTestSettingsService(t, cfg, settings.Env{}),
 	})
 	require.Error(t, err)
+}
+
+func TestNewHTTPServerHTTP2ReceiveWindowFromSettings(t *testing.T) {
+	tests := []struct {
+		env            settings.Env
+		name           string
+		wantStream     int
+		wantConnection int
+	}{
+		{
+			name:           "default",
+			env:            settings.Env{},
+			wantStream:     32 << 20,
+			wantConnection: 64 << 20,
+		},
+		{
+			name:           "minimum",
+			env:            settings.Env{"http2ReceiveWindowMb": "1"},
+			wantStream:     1 << 20,
+			wantConnection: 2 << 20,
+		},
+		{
+			name:           "maximum",
+			env:            settings.Env{"http2ReceiveWindowMb": "256"},
+			wantStream:     256 << 20,
+			wantConnection: 512 << 20,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{
+				Listen: "127.0.0.1",
+				Port:   "0",
+			}
+			srv, err := NewHTTPServer(fxtest.NewLifecycle(t), HTTPServerParams{
+				AppCtx:          t.Context(),
+				Config:          cfg,
+				Router:          echo.New(),
+				TunnelServer:    agent.NewTunnelServer(agent.TunnelServerOptions{Registry: agent.NewTunnelRegistry(), MTLS: agent.NewMTLS(agent.MTLSConfig{})}),
+				SettingsService: newTestSettingsService(t, cfg, tt.env),
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantStream, srv.HTTP2.MaxReceiveBufferPerStream)
+			assert.Equal(t, tt.wantConnection, srv.HTTP2.MaxReceiveBufferPerConnection)
+		})
+	}
 }
 
 func TestApplicationOptionsValidate(t *testing.T) {

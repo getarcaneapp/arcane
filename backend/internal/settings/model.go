@@ -48,7 +48,6 @@ type (
 		isSensitive         bool
 		isEncrypted         bool
 		isInternal          bool
-		isPropagated        bool
 	}
 
 	//nolint:lll // Reflection metadata must remain in single struct-tag literals.
@@ -123,11 +122,11 @@ type (
 		AnalyticsEnabled               SettingVariable `key:"analyticsEnabled,manager" default:"true" meta:"label=Anonymous Analytics;type=boolean;keywords=analytics,telemetry,heartbeat,usage,anonymous;category=internal;description=Send an anonymous usage heartbeat"`
 		UpdateCheckEnabled             SettingVariable `key:"updateCheckEnabled,manager" default:"true" meta:"label=Update Check;type=boolean;keywords=update,check,version,release,upgrade;category=internal;description=Check for new Arcane releases"`
 		DockerHost                     SettingVariable `key:"dockerHost,authrequired" env:"DOCKER_HOST" default:"unix:///var/run/docker.sock" meta:"label=Docker Host;type=text;keywords=docker,host,daemon,socket,unix,remote;category=internal;description=URI for Docker daemon"`
-		BuildProvider                  SettingVariable `key:"buildProvider,authrequired,propagate" default:"local" meta:"label=Build Provider;type=select;values=local|depot;keywords=build,buildkit,depot,provider,remote,local;category=build;description=Default build provider (local or depot)" catmeta:"id=build;title=Build;icon=code;url=/settings/builds;description=Configure BuildKit and Depot build settings"`
+		BuildProvider                  SettingVariable `key:"buildProvider,authrequired" default:"local" meta:"label=Build Provider;type=select;values=local|depot;keywords=build,buildkit,depot,provider,remote,local;category=build;description=Default build provider (local or depot)" catmeta:"id=build;title=Build;icon=code;url=/settings/builds;description=Configure BuildKit and Depot build settings"`
 		BuildHistoryRetentionDays      SettingVariable `key:"buildHistoryRetentionDays,authrequired" default:"30" meta:"label=Build History Retention;type=integer;min=0;keywords=build,history,retention,days,cleanup,image;category=build;description=Delete completed and failed image build records older than this many days. Set 0 to disable age-based cleanup."`
-		BuildsDirectory                SettingVariable `key:"buildsDirectory,authrequired,propagate" default:"/builds" meta:"label=Builds Directory;type=text;keywords=builds,directory,path,workspace,context;category=build;description=Root directory for manual build workspaces"`
-		BuildTimeout                   SettingVariable `key:"buildTimeout,propagate" default:"1800" meta:"label=Build Timeout;type=integer;min=0;keywords=build,timeout,seconds,buildkit;category=build;description=Timeout for BuildKit builds in seconds"`
-		DepotProjectId                 SettingVariable `key:"depotProjectId,authrequired,propagate" default:"" meta:"label=Depot Project ID;type=text;keywords=depot,project,id,build,provider;category=build;description=Depot project identifier"`
+		BuildsDirectory                SettingVariable `key:"buildsDirectory,authrequired" default:"/builds" meta:"label=Builds Directory;type=text;keywords=builds,directory,path,workspace,context;category=build;description=Root directory for manual build workspaces"`
+		BuildTimeout                   SettingVariable `key:"buildTimeout" default:"1800" meta:"label=Build Timeout;type=integer;min=0;keywords=build,timeout,seconds,buildkit;category=build;description=Timeout for BuildKit builds in seconds"`
+		DepotProjectId                 SettingVariable `key:"depotProjectId,authrequired" default:"" meta:"label=Depot Project ID;type=text;keywords=depot,project,id,build,provider;category=build;description=Depot project identifier"`
 		DepotToken                     SettingVariable `key:"depotToken,sensitive" default:"" meta:"label=Depot Token;type=password;keywords=depot,token,api,secret,build,provider;category=build;description=Depot API token"`
 
 		// Authentication and security categories
@@ -143,10 +142,10 @@ type (
 		TrivyNetwork                          SettingVariable `key:"trivyNetwork" default:"" meta:"label=Trivy Network;type=text;keywords=trivy,network,mode,bridge,host,none,scanner,vulnerability,security;category=security;description=Docker network mode/network name used for Trivy scan containers. Leave empty to inherit Arcane's network automatically."`
 		TrivySecurityOpts                     SettingVariable `key:"trivySecurityOpts" default:"" meta:"label=Trivy Security Options;type=textarea;keywords=trivy,security,opt,security_opt,selinux,labels,apparmor,scanner;category=security;description=Docker security options applied to Trivy scan containers. Use commas or new lines to separate entries (for example: label=disable)"`
 		TrivyPrivileged                       SettingVariable `key:"trivyPrivileged" default:"false" meta:"label=Trivy Privileged;type=boolean;keywords=trivy,privileged,security,selinux,scanner;category=security;description=Run Trivy scan containers in privileged mode when required by the host security policy"`
-		TrivyResourceLimitsEnabled            SettingVariable `key:"trivyResourceLimitsEnabled,propagate" default:"true" meta:"label=Trivy Resource Limits;type=boolean;keywords=trivy,resources,limits,cpu,memory,ram,security,scan;category=security;description=Enable CPU and memory limits for Trivy scan containers"`
-		TrivyCpuLimit                         SettingVariable `key:"trivyCpuLimit,propagate" default:"1" meta:"label=Trivy CPU Limit (cores);type=number;min=0;keywords=trivy,cpu,cores,limit,scanner,resources;category=security;description=Maximum CPU cores for Trivy scan containers (supports decimals, e.g. 1.5). Set 0 to disable CPU limit"`
-		TrivyMemoryLimitMb                    SettingVariable `key:"trivyMemoryLimitMb,propagate" default:"0" meta:"label=Trivy Memory Limit (MB);type=integer;min=0;keywords=trivy,memory,ram,mb,limit,scanner,resources;category=security;description=Maximum memory for Trivy scan containers in MB. Set 0 to disable memory limit"`
-		TrivyConcurrentScanContainers         SettingVariable `key:"trivyConcurrentScanContainers,propagate" default:"1" meta:"label=Trivy Concurrent Scan Containers;type=integer;min=1;keywords=trivy,concurrent,scan,containers,parallel,workers,limit,security;category=security;description=Maximum number of concurrent Trivy scan containers for manual and scheduled scans. Minimum 1"`
+		TrivyResourceLimitsEnabled            SettingVariable `key:"trivyResourceLimitsEnabled" default:"true" meta:"label=Trivy Resource Limits;type=boolean;keywords=trivy,resources,limits,cpu,memory,ram,security,scan;category=security;description=Enable CPU and memory limits for Trivy scan containers"`
+		TrivyCpuLimit                         SettingVariable `key:"trivyCpuLimit" default:"1" meta:"label=Trivy CPU Limit (cores);type=number;min=0;keywords=trivy,cpu,cores,limit,scanner,resources;category=security;description=Maximum CPU cores for Trivy scan containers (supports decimals, e.g. 1.5). Set 0 to disable CPU limit"`
+		TrivyMemoryLimitMb                    SettingVariable `key:"trivyMemoryLimitMb" default:"0" meta:"label=Trivy Memory Limit (MB);type=integer;min=0;keywords=trivy,memory,ram,mb,limit,scanner,resources;category=security;description=Maximum memory for Trivy scan containers in MB. Set 0 to disable memory limit"`
+		TrivyConcurrentScanContainers         SettingVariable `key:"trivyConcurrentScanContainers" default:"1" meta:"label=Trivy Concurrent Scan Containers;type=integer;min=1;keywords=trivy,concurrent,scan,containers,parallel,workers,limit,security;category=security;description=Maximum number of concurrent Trivy scan containers for manual and scheduled scans. Minimum 1"`
 		TrivyConfig                           SettingVariable `key:"trivyConfig" default:"" meta:"label=Trivy Config (YAML);type=textarea;keywords=trivy,config,yaml,configuration,scanner,settings;category=security;description=Trivy configuration file content in YAML format"`
 		TrivyIgnore                           SettingVariable `key:"trivyIgnore" default:"" meta:"label=.trivyignore;type=textarea;keywords=trivy,ignore,ignorefile,vulnerabilities,exceptions,exclusions;category=security;description=Trivy ignore file content - one vulnerability ID per line"`
 		TrivyServerEnabled                    SettingVariable `key:"trivyServerEnabled" default:"false" meta:"label=Trivy Client/Server Mode;type=boolean;keywords=trivy,server,client,remote,scanner,vulnerability,security,armv7,32bit;category=security;description=Scan against a remote Trivy server instead of downloading the vulnerability database locally. Recommended for 32-bit hosts (arm/v7) where the local DB cannot be memory-mapped."`
@@ -209,15 +208,18 @@ type (
 		WebhooksCategoryPlaceholder SettingVariable `key:"webhooksCategory,internal" default:"" meta:"label=Webhooks;type=internal;keywords=webhooks,trigger,inbound,http,container,stack,gitops,updater,automation,ci,cd;category=webhooks;description=Manage inbound webhooks to trigger updates" catmeta:"id=webhooks;title=Webhooks;icon=globe;url=/system/webhooks;description=Create and manage inbound webhooks to trigger container, stack, or GitOps updates"`
 
 		// Timeout category
-		DockerAPITimeout       SettingVariable `key:"dockerApiTimeout,propagate" default:"30" meta:"label=Docker API Timeout;type=integer;min=0;keywords=docker,api,timeout,seconds,list,operations;category=timeouts;description=Timeout for Docker list operations in seconds" catmeta:"id=timeouts;title=Timeouts;icon=clock;url=/settings/timeouts;description=Configure operation timeouts for slow networks or hardware"`
-		DockerImagePullTimeout SettingVariable `key:"dockerImagePullTimeout,propagate" default:"600" meta:"label=Docker Image Pull Timeout;type=integer;min=0;keywords=docker,image,pull,timeout,seconds,download;category=timeouts;description=Timeout for Docker image pulls in seconds"`
-		TrivyScanTimeout       SettingVariable `key:"trivyScanTimeout,propagate" default:"900" meta:"label=Trivy Scan Timeout;type=integer;min=0;keywords=trivy,vulnerability,scan,timeout,seconds,cve;category=timeouts;description=Timeout for Trivy image scans in seconds"`
-		GitOperationTimeout    SettingVariable `key:"gitOperationTimeout,propagate" default:"300" meta:"label=Git Operation Timeout;type=integer;min=0;keywords=git,clone,timeout,seconds,repository;category=timeouts;description=Timeout for Git clone/fetch operations in seconds"`
-		HTTPClientTimeout      SettingVariable `key:"httpClientTimeout,propagate" default:"30" meta:"label=HTTP Client Timeout;type=integer;min=0;keywords=http,client,timeout,seconds,api,request;category=timeouts;description=Default timeout for HTTP requests in seconds"`
-		RegistryTimeout        SettingVariable `key:"registryTimeout,propagate" default:"30" meta:"label=Registry Timeout;type=integer;min=0;keywords=registry,timeout,seconds,docker,auth;category=timeouts;description=Timeout for container registry operations in seconds"`
-		RegistryTagTimeout     SettingVariable `key:"registryTagTimeout,propagate" default:"120" meta:"label=Registry Tag Timeout;type=integer;min=0;keywords=registry,tags,timeout,seconds,pagination,update,version;category=timeouts;description=Timeout for listing every tag in a repository during version update checks in seconds"`
-		ProxyRequestTimeout    SettingVariable `key:"proxyRequestTimeout,propagate" default:"60" meta:"label=Proxy Request Timeout;type=integer;min=0;keywords=proxy,request,timeout,seconds,forward;category=timeouts;description=Timeout for proxied requests in seconds"`
-		DeployWaitTimeout      SettingVariable `key:"deployWaitTimeout,propagate" default:"600" meta:"label=Deploy Wait Timeout;type=integer;min=0;keywords=deploy,compose,up,wait,healthy,depends_on,timeout,seconds;category=timeouts;description=Timeout waiting for services to become healthy or complete during a deploy in seconds"`
+		DockerAPITimeout       SettingVariable `key:"dockerApiTimeout" default:"30" meta:"label=Docker API Timeout;type=integer;min=0;keywords=docker,api,timeout,seconds,list,operations;category=timeouts;description=Timeout for Docker list operations in seconds" catmeta:"id=timeouts;title=Timeouts;icon=clock;url=/settings/timeouts;description=Configure operation timeouts for slow networks or hardware"`
+		DockerImagePullTimeout SettingVariable `key:"dockerImagePullTimeout" default:"600" meta:"label=Docker Image Pull Timeout;type=integer;min=0;keywords=docker,image,pull,timeout,seconds,download;category=timeouts;description=Timeout for Docker image pulls in seconds"`
+		TrivyScanTimeout       SettingVariable `key:"trivyScanTimeout" default:"900" meta:"label=Trivy Scan Timeout;type=integer;min=0;keywords=trivy,vulnerability,scan,timeout,seconds,cve;category=timeouts;description=Timeout for Trivy image scans in seconds"`
+		GitOperationTimeout    SettingVariable `key:"gitOperationTimeout" default:"300" meta:"label=Git Operation Timeout;type=integer;min=0;keywords=git,clone,timeout,seconds,repository;category=timeouts;description=Timeout for Git clone/fetch operations in seconds"`
+		HTTPClientTimeout      SettingVariable `key:"httpClientTimeout" default:"30" meta:"label=HTTP Client Timeout;type=integer;min=0;keywords=http,client,timeout,seconds,api,request;category=timeouts;description=Default timeout for HTTP requests in seconds"`
+		RegistryTimeout        SettingVariable `key:"registryTimeout" default:"30" meta:"label=Registry Timeout;type=integer;min=0;keywords=registry,timeout,seconds,docker,auth;category=timeouts;description=Timeout for container registry operations in seconds"`
+		RegistryTagTimeout     SettingVariable `key:"registryTagTimeout" default:"120" meta:"label=Registry Tag Timeout;type=integer;min=0;keywords=registry,tags,timeout,seconds,pagination,update,version;category=timeouts;description=Timeout for listing every tag in a repository during version update checks in seconds"`
+		ProxyRequestTimeout    SettingVariable `key:"proxyRequestTimeout" default:"60" meta:"label=Proxy Request Timeout;type=integer;min=0;keywords=proxy,request,timeout,seconds,forward;category=timeouts;description=Timeout for proxied requests in seconds"`
+		DeployWaitTimeout      SettingVariable `key:"deployWaitTimeout" default:"600" meta:"label=Deploy Wait Timeout;type=integer;min=0;keywords=deploy,compose,up,wait,healthy,depends_on,timeout,seconds;category=timeouts;description=Timeout waiting for services to become healthy or complete during a deploy in seconds"`
+
+		HTTP2ReceiveWindowMb      SettingVariable `key:"http2ReceiveWindowMb" default:"32" meta:"label=HTTP/2 Receive Window (MiB, Manager Only);type=integer;min=1;max=256;keywords=agent,tunnel,http2,grpc,receive,window,buffer,throughput,latency,memory,mib;category=tunnel;description=HTTP/2 receive buffer per stream in MiB. Only applies to the Arcane manager's server. Values set on agent environments have no effect. Larger values speed up agent transfers on high-latency links. Any HTTP/2 client can make the manager buffer up to 2x this value per connection. Requires restarting the manager" catmeta:"id=tunnel;title=Agent Tunnel;icon=remoteenvironment;url=/settings/tunnel;description=Tune agent tunnel buffer windows for throughput and memory use"`
+		AgentTunnelStreamWindowMb SettingVariable `key:"agentTunnelStreamWindowMb" default:"16" meta:"label=Agent Tunnel Stream Window (MiB);type=integer;min=1;max=64;keywords=agent,tunnel,yamux,stream,window,buffer,throughput,latency,memory,mib;category=tunnel;description=Receive window per multiplexed stream on this environment's agent tunnel in MiB. The agent sends it to the manager when the tunnel connects and both sides use it. Larger values speed up transfers on high-latency links but each side may hold up to this much data in RAM for every active transfer. Applies on the next tunnel reconnect. Open tunnels keep their window"`
 	}
 
 	SettingKeyNotFoundError struct {
@@ -320,7 +322,6 @@ func buildSettingsFieldCache() {
 			isSensitive:         slices.Contains(attrList, "sensitive"),
 			isEncrypted:         slices.Contains(attrList, "sensitive") && !slices.Contains(attrList, "internal"),
 			isInternal:          slices.Contains(attrList, "internal"),
-			isPropagated:        slices.Contains(attrList, "propagate"),
 			scope:               settingScope(slices.Contains(attrList, "manager"), metaTag["category"]),
 		}
 		ordered = append(ordered, meta)
@@ -345,17 +346,6 @@ func settingScope(managerOnly bool, category string) SettingScope {
 func settingsFields() ([]settingFieldMeta, map[string]settingFieldMeta) {
 	settingsFieldCache.once.Do(buildSettingsFieldCache)
 	return settingsFieldCache.ordered, settingsFieldCache.byKey
-}
-
-func PropagatedKeys() []string {
-	fields, _ := settingsFields()
-	keys := make([]string, 0, len(fields))
-	for _, field := range fields {
-		if field.isPropagated {
-			keys = append(keys, field.key)
-		}
-	}
-	return keys
 }
 
 func validateValue(meta settingFieldMeta, value string) error {

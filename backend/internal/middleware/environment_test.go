@@ -316,6 +316,9 @@ func TestEnvironmentMiddleware_ForwardsResolvedHeadersOnly(t *testing.T) {
 			registry := agent.NewTunnelRegistry()
 			manager := echo.New()
 			manager.GET("/api/tunnel/connect", agent.NewTunnelServer(agent.TunnelServerOptions{
+				StreamWindowMiB: func() int {
+					return 16
+				},
 				Registry: registry,
 				Resolver: func(context.Context, string) (string, error) {
 					return "env-remote", nil
@@ -327,6 +330,9 @@ func TestEnvironmentMiddleware_ForwardsResolvedHeadersOnly(t *testing.T) {
 			agentCtx, cancelAgent := context.WithCancel(t.Context())
 			defer cancelAgent()
 			_, startErr := agent.NewTunnelClient(agent.TunnelClientConfig{
+				StreamWindowMiB: func() int {
+					return 16
+				},
 				Config: &agent.Config{
 					MTLS:           agent.NewMTLS(agent.MTLSConfig{ManagerURL: managerServer.URL}),
 					AgentEnabled:   true,

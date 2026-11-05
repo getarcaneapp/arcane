@@ -15,8 +15,8 @@ import (
 )
 
 // serveMuxSession serves manager requests over a multiplexed session with the agent's own router until the session ends.
-func (c *TunnelClient) serveMuxSession(ctx context.Context, rw io.ReadWriteCloser) error {
-	session, err := yamux.Client(rw, newMuxConfig(true))
+func (c *TunnelClient) serveMuxSession(ctx context.Context, rw io.ReadWriteCloser, streamWindowMiB int) error {
+	session, err := yamux.Client(rw, newMuxConfig(true, streamWindowMiB))
 	if err != nil {
 		_ = rw.Close()
 		return fmt.Errorf("start agent tunnel session: %w", err)

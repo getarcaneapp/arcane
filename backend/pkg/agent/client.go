@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"uuid"
@@ -64,6 +65,7 @@ func NewTunnelClient(cfg TunnelClientConfig) *TunnelClient {
 		cfg:                    cfg.Config,
 		errCh:                  cfg.Errors,
 		handler:                cfg.Handler,
+		streamWindowMiB:        cfg.StreamWindowMiB,
 		reconnectInterval:      reconnectInterval,
 		registrationTimeout:    DefaultGRPCRegistrationTimeout,
 		websocketPreferenceTTL: DefaultWebSocketPreferenceTTL,
@@ -291,11 +293,12 @@ func (c *TunnelClient) serveTunnelSession(ctx context.Context, conn TunnelConnec
 	}()
 
 	sessionID, _ := c.sessionID.Load()
+	streamWindowMiB := c.streamWindowMiB()
 	if err := conn.Send(&TunnelMessage{
 		Type:          MessageTypeRegister,
 		AgentToken:    c.cfg.AgentToken,
 		AgentInstance: c.agentInstanceID,
-		Capabilities:  []string{tunnelCapabilityMux, TunnelCapabilityForwardedPermissions},
+		Capabilities:  []string{tunnelCapabilityMux, TunnelCapabilityForwardedPermissions, tunnelCapabilityMuxWindowPrefix + strconv.Itoa(streamWindowMiB)},
 		ResumeSession: sessionID,
 		Host:          &c.cfg.HostInfo,
 	}); err != nil {
@@ -332,7 +335,7 @@ func (c *TunnelClient) serveTunnelSession(ctx context.Context, conn TunnelConnec
 		})
 	}
 
-	return fmt.Errorf("%w: %w", errEstablishedTunnelSessionEnded, c.serveMuxSession(connCtx, conn.muxConn(connCtx)))
+	return fmt.Errorf("%w: %w", errEstablishedTunnelSessionEnded, c.serveMuxSession(connCtx, conn.muxConn(connCtx), streamWindowMiB))
 }
 
 // agentAuthCredentials returns the canonical header/metadata credential

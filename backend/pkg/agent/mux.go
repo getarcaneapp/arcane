@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/yamux"
@@ -22,16 +24,16 @@ const (
 	tunnelCapabilityMuxGrant = "mux-grant-v1"
 
 	TunnelCapabilityForwardedPermissions = "forwarded-permissions-v1"
+	tunnelCapabilityMuxWindowPrefix      = "mux-window-mib:"
 
 	// MuxAgentBaseURL is the synthetic origin for requests a manager sends through a multiplexed tunnel.
 	MuxAgentBaseURL   = "http://agent.tunnel.arcane.internal"
 	muxManagerBaseURL = "http://manager.tunnel.arcane.internal"
 	muxEventsPath     = "/api/tunnel/events"
 
-	muxStreamWindowSize = 4 << 20
-	muxMaxFrameSize     = 1 << 20
-	muxMaxPendingWrite  = 1 << 20
-	muxWriteTimeout     = 30 * time.Second
+	muxMaxFrameSize    = 1 << 20
+	muxMaxPendingWrite = 1 << 20
+	muxWriteTimeout    = 30 * time.Second
 	// muxDialTimeout bounds a stream open on its own, because http.Transport detaches dials from request cancellation.
 	muxDialTimeout = 30 * time.Second
 	// ProxyResponseHeaderTimeout is generous because proxied operations such as deploys can run for minutes before responding.
@@ -47,17 +49,28 @@ var (
 
 // newMuxConfig returns the yamux settings both peers use. Only the agent enables yamux keepalive; the manager
 // pings explicitly from serveMuxTunnel to record RTT and heartbeats.
-func newMuxConfig(keepAlive bool) *yamux.Config {
+func newMuxConfig(keepAlive bool, streamWindowMiB int) *yamux.Config {
 	return &yamux.Config{
 		AcceptBacklog:          256,
 		EnableKeepAlive:        keepAlive,
 		KeepAliveInterval:      DefaultHeartbeatInterval,
 		ConnectionWriteTimeout: muxWriteTimeout,
-		MaxStreamWindowSize:    muxStreamWindowSize,
+		MaxStreamWindowSize:    uint32(streamWindowMiB) << 20,
 		StreamOpenTimeout:      75 * time.Second,
 		StreamCloseTimeout:     5 * time.Minute,
 		Logger:                 slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug),
 	}
+}
+
+func muxStreamWindowMiB(capabilities []string, fallback int) int {
+	for _, capability := range capabilities {
+		if value, ok := strings.CutPrefix(capability, tunnelCapabilityMuxWindowPrefix); ok {
+			if windowMiB, err := strconv.ParseUint(value, 10, 16); err == nil {
+				return int(min(max(windowMiB, 1), 64))
+			}
+		}
+	}
+	return fallback
 }
 
 // newMuxHTTPClient returns a traced client whose connections are streams opened by dial.
@@ -115,18 +128,18 @@ func openMuxStream(ctx context.Context, session *yamux.Session) (net.Conn, error
 }
 
 // newMuxConn starts the sender that coalesces writes, so a yamux header and body share one transport message.
-// Batches are never reused, since gRPC forbids modifying a message after Send.
 func newMuxConn(send func([]byte) error, recv func() ([]byte, error), closeTransport func() error) *muxConn {
 	c := &muxConn{recv: recv, closeTransport: closeTransport}
 	c.cond.L = &c.mu
 	go func() {
+		var spare []byte
 		for {
 			c.mu.Lock()
 			for c.err == nil && len(c.pending) == 0 {
 				c.cond.Wait()
 			}
 			batch, err := c.pending, c.err
-			c.pending = nil
+			c.pending = spare[:0]
 			c.cond.Broadcast()
 			c.mu.Unlock()
 			if err != nil {
@@ -138,6 +151,7 @@ func newMuxConn(send func([]byte) error, recv func() ([]byte, error), closeTrans
 					return
 				}
 			}
+			spare = batch
 		}
 	}()
 	return c

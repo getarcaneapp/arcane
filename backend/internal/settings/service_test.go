@@ -1014,69 +1014,6 @@ func TestSettingsService_UpdateSettings_MaskedAndInternalKeys(t *testing.T) {
 	}
 }
 
-func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(t *testing.T) {
-	ctx := t.Context()
-	db := setupSettingsTestDB(t)
-	svc, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-
-	var callbackPayload []types.SettingUpdate
-	svc.SubscribeSettingsChanges(PropagatedKeys(), func(timeoutSettings []types.SettingUpdate) {
-		callbackPayload = timeoutSettings
-	})
-
-	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"trivyScanTimeout": "1200"})
-	require.NoError(t, err)
-	waitForSettingsNotifications(t, svc)
-
-	require.NotNil(t, callbackPayload)
-	require.Contains(t, callbackPayload, types.SettingUpdate{Key: "trivyScanTimeout", Value: "1200"})
-}
-
-func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimits(t *testing.T) {
-	ctx := t.Context()
-	db := setupSettingsTestDB(t)
-	svc, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-
-	var callbackPayload []types.SettingUpdate
-	svc.SubscribeSettingsChanges(PropagatedKeys(), func(timeoutSettings []types.SettingUpdate) {
-		callbackPayload = timeoutSettings
-	})
-
-	err = svc.UpdateSettings(ctx, types.SettingsUpdate{
-		"trivyResourceLimitsEnabled": "false",
-		"trivyCpuLimit":              "2.5",
-		"trivyMemoryLimitMb":         "3072",
-	})
-	require.NoError(t, err)
-	waitForSettingsNotifications(t, svc)
-
-	require.NotNil(t, callbackPayload)
-	require.Contains(t, callbackPayload, types.SettingUpdate{Key: "trivyResourceLimitsEnabled", Value: "false"})
-	require.Contains(t, callbackPayload, types.SettingUpdate{Key: "trivyCpuLimit", Value: "2.5"})
-	require.Contains(t, callbackPayload, types.SettingUpdate{Key: "trivyMemoryLimitMb", Value: "3072"})
-}
-
-func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyConcurrentScanContainers(t *testing.T) {
-	ctx := t.Context()
-	db := setupSettingsTestDB(t)
-	svc, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-
-	var callbackPayload []types.SettingUpdate
-	svc.SubscribeSettingsChanges(PropagatedKeys(), func(timeoutSettings []types.SettingUpdate) {
-		callbackPayload = timeoutSettings
-	})
-
-	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"trivyConcurrentScanContainers": "4"})
-	require.NoError(t, err)
-	waitForSettingsNotifications(t, svc)
-
-	require.NotNil(t, callbackPayload)
-	require.Contains(t, callbackPayload, types.SettingUpdate{Key: "trivyConcurrentScanContainers", Value: "4"})
-}
-
 func TestSettingsService_UpdateSettings_TrivyNetworkTriggersVulnerabilityCallback(t *testing.T) {
 	ctx := t.Context()
 	db := setupSettingsTestDB(t)
@@ -1092,23 +1029,6 @@ func TestSettingsService_UpdateSettings_TrivyNetworkTriggersVulnerabilityCallbac
 	require.NoError(t, err)
 	waitForSettingsNotifications(t, svc)
 	require.True(t, callbackCalled)
-}
-
-func TestSettingsService_UpdateSettings_TrivyNetworkDoesNotTriggerTimeoutCallback(t *testing.T) {
-	ctx := t.Context()
-	db := setupSettingsTestDB(t)
-	svc, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-
-	var callbackPayload []types.SettingUpdate
-	svc.SubscribeSettingsChanges(PropagatedKeys(), func(timeoutSettings []types.SettingUpdate) {
-		callbackPayload = timeoutSettings
-	})
-
-	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"trivyNetwork": "arcane-external"})
-	require.NoError(t, err)
-	waitForSettingsNotifications(t, svc)
-	require.Nil(t, callbackPayload)
 }
 
 func TestSettingsService_UpdateSettings_TrivyRuntimeSecurityTriggersVulnerabilityCallback(t *testing.T) {
@@ -1129,26 +1049,6 @@ func TestSettingsService_UpdateSettings_TrivyRuntimeSecurityTriggersVulnerabilit
 	require.NoError(t, err)
 	waitForSettingsNotifications(t, svc)
 	require.True(t, callbackCalled)
-}
-
-func TestSettingsService_UpdateSettings_TrivyRuntimeSecurityDoesNotTriggerTimeoutCallback(t *testing.T) {
-	ctx := t.Context()
-	db := setupSettingsTestDB(t)
-	svc, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-
-	var callbackPayload []types.SettingUpdate
-	svc.SubscribeSettingsChanges(PropagatedKeys(), func(timeoutSettings []types.SettingUpdate) {
-		callbackPayload = timeoutSettings
-	})
-
-	err = svc.UpdateSettings(ctx, types.SettingsUpdate{
-		"trivySecurityOpts": "label=disable",
-		"trivyPrivileged":   "true",
-	})
-	require.NoError(t, err)
-	waitForSettingsNotifications(t, svc)
-	require.Nil(t, callbackPayload)
 }
 
 func TestSettingsService_LoadDatabaseSettings_InternalKeys_EnvMode(t *testing.T) {

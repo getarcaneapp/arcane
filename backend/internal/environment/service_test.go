@@ -208,6 +208,9 @@ func startTestAgent(t *testing.T, tunnels *agent.TunnelRegistry, envID string, h
 
 	manager := echo.New()
 	manager.GET("/api/tunnel/connect", agent.NewTunnelServer(agent.TunnelServerOptions{
+		StreamWindowMiB: func() int {
+			return 16
+		},
 		Registry: tunnels,
 		Resolver: func(context.Context, string) (string, error) {
 			return envID, nil
@@ -223,6 +226,9 @@ func startTestAgent(t *testing.T, tunnels *agent.TunnelRegistry, envID string, h
 		tunnels.Unregister(envID)
 	})
 	_, startErr := agent.NewTunnelClient(agent.TunnelClientConfig{
+		StreamWindowMiB: func() int {
+			return 16
+		},
 		Config: &agent.Config{
 			MTLS:           agent.NewMTLS(agent.MTLSConfig{ManagerURL: server.URL}),
 			AgentEnabled:   true,

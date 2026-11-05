@@ -111,9 +111,10 @@ func TestTunnelClient_GRPC_EndToEnd(t *testing.T) {
 	}
 
 	tunnelServer := NewTunnelServer(TunnelServerOptions{
-		Registry: tunnels,
-		Resolver: resolver,
-		MTLS:     NewMTLS(MTLSConfig{}),
+		StreamWindowMiB: testStreamWindowMiB,
+		Registry:        tunnels,
+		Resolver:        resolver,
+		MTLS:            NewMTLS(MTLSConfig{}),
 	})
 	defer cancel()
 
@@ -140,15 +141,17 @@ func TestTunnelClient_GRPC_EndToEnd(t *testing.T) {
 
 	errCh := make(chan error, 4)
 	client := NewTunnelClient(TunnelClientConfig{
-		Config:  cfg,
-		Handler: localHandler,
-		Errors:  errCh,
+		StreamWindowMiB: testStreamWindowMiB,
+		Config:          cfg,
+		Handler:         localHandler,
+		Errors:          errCh,
 	})
 	go client.run(ctx)
 
 	require.Eventually(t, func() bool {
 		return tunnels.Active(envID).IsPresent()
 	}, 5*time.Second, 20*time.Millisecond)
+	assert.Contains(t, tunnels.Active(envID).MustGet().Capabilities, tunnelCapabilityMuxWindowPrefix+"16")
 
 	proxyCtx, proxyCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer proxyCancel()
@@ -176,8 +179,9 @@ func TestTunnelClientStart_GRPCValidation(t *testing.T) {
 
 	t.Run("agent mode required", func(t *testing.T) {
 		_, err := NewTunnelClient(TunnelClientConfig{
-			Config:  &Config{MTLS: NewMTLS(MTLSConfig{})},
-			Handler: http.NotFoundHandler(),
+			StreamWindowMiB: testStreamWindowMiB,
+			Config:          &Config{MTLS: NewMTLS(MTLSConfig{})},
+			Handler:         http.NotFoundHandler(),
 		}).Start(ctx)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "agent tunnel disabled")
@@ -185,6 +189,7 @@ func TestTunnelClientStart_GRPCValidation(t *testing.T) {
 
 	t.Run("manager url required for grpc transport", func(t *testing.T) {
 		_, err := NewTunnelClient(TunnelClientConfig{
+			StreamWindowMiB: testStreamWindowMiB,
 			Config: &Config{
 				MTLS:           NewMTLS(MTLSConfig{}),
 				AgentEnabled:   true,
@@ -199,6 +204,7 @@ func TestTunnelClientStart_GRPCValidation(t *testing.T) {
 
 	t.Run("agent token required", func(t *testing.T) {
 		_, err := NewTunnelClient(TunnelClientConfig{
+			StreamWindowMiB: testStreamWindowMiB,
 			Config: &Config{
 				MTLS:           NewMTLS(MTLSConfig{ManagerURL: "https://manager.example.com/arcane/api"}),
 				AgentEnabled:   true,
@@ -212,6 +218,7 @@ func TestTunnelClientStart_GRPCValidation(t *testing.T) {
 
 	t.Run("mtls requires https manager url", func(t *testing.T) {
 		_, err := NewTunnelClient(TunnelClientConfig{
+			StreamWindowMiB: testStreamWindowMiB,
 			Config: &Config{
 				MTLS:           NewMTLS(MTLSConfig{Mode: MTLSModeRequired, ManagerURL: "http://manager.example.com/api"}),
 				AgentEnabled:   true,
@@ -228,6 +235,7 @@ func TestTunnelClientStart_GRPCValidation(t *testing.T) {
 func TestTunnelClient_Run_RetriesMTLSEnrollmentEachAttempt(t *testing.T) {
 	errCh := make(chan error, 1)
 	client := NewTunnelClient(TunnelClientConfig{
+		StreamWindowMiB: testStreamWindowMiB,
 		Config: &Config{
 			MTLS: NewMTLS(MTLSConfig{
 				Mode:       MTLSModeRequired,
@@ -263,6 +271,7 @@ func TestTunnelClient_Run_RetriesMTLSEnrollmentEachAttempt(t *testing.T) {
 
 func TestTunnelClient_connectAndServeGRPC_EmptyManagerAddress(t *testing.T) {
 	client := NewTunnelClient(TunnelClientConfig{
+		StreamWindowMiB: testStreamWindowMiB,
 		Config: &Config{
 			MTLS:           NewMTLS(MTLSConfig{}),
 			AgentTransport: TransportGRPC,
@@ -291,9 +300,10 @@ func TestTunnelClient_connectAndServeGRPC_RegistrationRejected(t *testing.T) {
 	}
 
 	tunnelServer := NewTunnelServer(TunnelServerOptions{
-		Registry: tunnels,
-		Resolver: resolver,
-		MTLS:     NewMTLS(MTLSConfig{}),
+		StreamWindowMiB: testStreamWindowMiB,
+		Registry:        tunnels,
+		Resolver:        resolver,
+		MTLS:            NewMTLS(MTLSConfig{}),
 	})
 	defer cancel()
 
@@ -301,6 +311,7 @@ func TestTunnelClient_connectAndServeGRPC_RegistrationRejected(t *testing.T) {
 	defer stopManager()
 
 	client := NewTunnelClient(TunnelClientConfig{
+		StreamWindowMiB: testStreamWindowMiB,
 		Config: &Config{
 			MTLS:                   NewMTLS(MTLSConfig{ManagerURL: managerURL}),
 			AgentTransport:         TransportGRPC,
@@ -325,6 +336,7 @@ func TestTunnelClient_connectAndServeGRPC_TimesOutWithoutRegisterResponse(t *tes
 	defer stopManager()
 
 	client := NewTunnelClient(TunnelClientConfig{
+		StreamWindowMiB: testStreamWindowMiB,
 		Config: &Config{
 			MTLS:           NewMTLS(MTLSConfig{ManagerURL: managerURL}),
 			AgentTransport: TransportGRPC,
@@ -350,6 +362,7 @@ func TestTunnelClient_awaitRegistration_ClosesConnOnContextDone(t *testing.T) {
 
 	conn := newBlockingRegistrationConn()
 	client := &TunnelClient{
+		streamWindowMiB:     testStreamWindowMiB,
 		registrationTimeout: time.Second,
 	}
 	client.conn.Store(&connBox{conn: conn})
@@ -373,6 +386,7 @@ func TestTunnelClient_awaitRegistration_ClosesAttemptConnWhenClientConnChanges(t
 	})
 
 	client := &TunnelClient{
+		streamWindowMiB:     testStreamWindowMiB,
 		registrationTimeout: time.Second,
 	}
 	client.conn.Store(&connBox{conn: firstConn})
@@ -443,8 +457,9 @@ func TestTunnelClient_connectAndServeManagedTunnel_WebSocketConfigFallsBackToWeb
 	}
 
 	client := NewTunnelClient(TunnelClientConfig{
-		Config:  cfg,
-		Handler: http.NotFoundHandler(),
+		StreamWindowMiB: testStreamWindowMiB,
+		Config:          cfg,
+		Handler:         http.NotFoundHandler(),
 	})
 	err := client.connectAndServeManagedTunnel(ctx, http.DefaultClient)
 	require.Error(t, err)
@@ -458,6 +473,7 @@ func TestTunnelClient_connectAndServeManagedTunnel_WebSocketConfigFallsBackToWeb
 
 func TestTunnelClient_managedTunnelTransports_AutoEnablesGRPCAndWebSocket(t *testing.T) {
 	client := NewTunnelClient(TunnelClientConfig{
+		StreamWindowMiB: testStreamWindowMiB,
 		Config: &Config{
 			MTLS:           NewMTLS(MTLSConfig{ManagerURL: "http://manager.example.com"}),
 			AgentTransport: TransportAuto,
@@ -479,6 +495,7 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoFallsBackToWebSocketWhenG
 	defer stopManager()
 
 	client := NewTunnelClient(TunnelClientConfig{
+		StreamWindowMiB: testStreamWindowMiB,
 		Config: &Config{
 			MTLS:           NewMTLS(MTLSConfig{ManagerURL: managerURL}),
 			AgentTransport: TransportAuto,
@@ -523,6 +540,7 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoFallsBackToWebSocketWhenG
 	defer stopManager()
 
 	client := NewTunnelClient(TunnelClientConfig{
+		StreamWindowMiB: testStreamWindowMiB,
 		Config: &Config{
 			MTLS:           NewMTLS(MTLSConfig{ManagerURL: managerURL}),
 			AgentTransport: TransportAuto,
@@ -562,6 +580,7 @@ func TestTunnelClient_connectAndServeManagedTunnel_GRPCDoesNotFallbackToWebSocke
 	defer stopManager()
 
 	client := NewTunnelClient(TunnelClientConfig{
+		StreamWindowMiB: testStreamWindowMiB,
 		Config: &Config{
 			MTLS:           NewMTLS(MTLSConfig{ManagerURL: managerURL}),
 			AgentTransport: TransportGRPC,
@@ -600,15 +619,17 @@ func TestTunnelClient_connectAndServeManagedTunnel_OpensGRPCWhenAvailable(t *tes
 	}
 
 	tunnelServer := NewTunnelServer(TunnelServerOptions{
-		Registry: tunnels,
-		Resolver: resolver,
-		MTLS:     NewMTLS(MTLSConfig{}),
+		StreamWindowMiB: testStreamWindowMiB,
+		Registry:        tunnels,
+		Resolver:        resolver,
+		MTLS:            NewMTLS(MTLSConfig{}),
 	})
 
 	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPath(t, ctx, tunnelServer)
 	defer stopManager()
 
 	client := NewTunnelClient(TunnelClientConfig{
+		StreamWindowMiB: testStreamWindowMiB,
 		Config: &Config{
 			MTLS:           NewMTLS(MTLSConfig{ManagerURL: managerURL}),
 			AgentTransport: TransportGRPC,
@@ -809,9 +830,10 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoDoesNotFallbackWhenEstabl
 	}
 
 	tunnelServer := NewTunnelServer(TunnelServerOptions{
-		Registry: tunnels,
-		Resolver: resolver,
-		MTLS:     NewMTLS(MTLSConfig{}),
+		StreamWindowMiB: testStreamWindowMiB,
+		Registry:        tunnels,
+		Resolver:        resolver,
+		MTLS:            NewMTLS(MTLSConfig{}),
 	})
 
 	grpcManagerURL, stopGRPCManager := startTestGRPCTunnelServerOnAPIPath(t, ctx, tunnelServer)
@@ -821,6 +843,7 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoDoesNotFallbackWhenEstabl
 	defer stopWSManager()
 
 	client := NewTunnelClient(TunnelClientConfig{
+		StreamWindowMiB: testStreamWindowMiB,
 		Config: &Config{
 			MTLS:           NewMTLS(MTLSConfig{ManagerURL: wsManagerURL}),
 			AgentTransport: TransportAuto,
@@ -910,8 +933,9 @@ func TestTunnelClient_serveTunnelSession_GRPCSendEOFSurfacesRegistrationError(t 
 		transport:  TransportGRPC,
 	}
 	client := NewTunnelClient(TunnelClientConfig{
-		Config:  &Config{MTLS: NewMTLS(MTLSConfig{})},
-		Handler: http.NotFoundHandler(),
+		StreamWindowMiB: testStreamWindowMiB,
+		Config:          &Config{MTLS: NewMTLS(MTLSConfig{})},
+		Handler:         http.NotFoundHandler(),
 	})
 
 	err := client.serveTunnelSession(t.Context(), conn, "manager.test")
@@ -956,8 +980,9 @@ func TestConnectAndServeWebSocket_CancelUnblocksMessageLoop(t *testing.T) {
 		AgentToken:     "test-token",
 	}
 	client := NewTunnelClient(TunnelClientConfig{
-		Config:  cfg,
-		Handler: http.NotFoundHandler(),
+		StreamWindowMiB: testStreamWindowMiB,
+		Config:          cfg,
+		Handler:         http.NotFoundHandler(),
 	})
 	client.managerURL = "ws" + strings.TrimPrefix(managerServer.URL, "http")
 

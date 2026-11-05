@@ -6,14 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
-	"net/http"
 	"slices"
-	"sync"
 	"time"
 
 	"go.uber.org/fx"
-	"golang.org/x/sync/errgroup"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/apns"
@@ -27,7 +23,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/system"
 	"getarcane.dev/arcane/v3/internal/volume"
-	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
 )
 
@@ -101,7 +96,6 @@ type (
 		Config       *config.Config
 		Scheduler    settingsEffectsScheduler
 		Settings     settingsChangeSubscriber
-		Environment  timeoutSettingsEnvironment
 		JobSchedule  *job.JobService
 
 		AutoUpdate         *flow.Job
@@ -122,21 +116,6 @@ type (
 
 	settingsEffectsScheduler interface {
 		AddJob(ctx context.Context, job types.SchedulerJob) error
-	}
-
-	timeoutSettingsEnvironment interface {
-		ListRemoteEnvironments(ctx context.Context) ([]environment.Environment, error)
-		ProxyRequest(ctx context.Context, envID, method, path string, body []byte) ([]byte, int, error)
-	}
-
-	timeoutSyncWorker struct {
-		ctx     context.Context
-		updates map[string]string
-		wake    chan struct{}
-		done    chan struct{}
-		cancel  context.CancelFunc
-		mu      sync.Mutex
-		closed  bool
 	}
 )
 
@@ -307,7 +286,6 @@ func registerJobs(params registerJobsParams) error {
 		Config:             params.Config,
 		Scheduler:          params.Scheduler,
 		Settings:           params.Settings,
-		Environment:        params.Environment,
 		JobSchedule:        params.JobSchedule,
 		AutoUpdate:         params.AutoUpdate,
 		ImageUpdateWatcher: params.ImageUpdateWatcher,
@@ -360,8 +338,6 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 			}
 		})
 	}
-	timeoutSyncExecutor, cancelTimeoutSync := setupTimeoutSettingsSubscription(params, subscribe)
-
 	subscribe([]string{"pollingEnabled", "pollingInterval"}, func(_ []types.SettingUpdate) {
 		params.ImageUpdateWatcher.RefreshSchedule()
 		params.ImageUpdateWatcher.Trigger()
@@ -412,140 +388,12 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 	rescheduleOn([]string{"autoHealEnabled", "autoHealInterval", "autoHealExcludedContainers", "autoHealMaxRestarts", "autoHealRestartWindow"}, params.AutoHeal)
 
 	params.Lifecycle.Append(fx.Hook{
-		OnStop: func(ctx context.Context) error {
+		OnStop: func(context.Context) error {
 			for _, unsubscribe := range slices.Backward(unsubscribes) {
 				unsubscribe()
 			}
-			if cancelTimeoutSync != nil {
-				cancelTimeoutSync()
-			}
-			return timeoutSyncExecutor.Stop(ctx)
+			return nil
 		},
 	})
 	return nil
-}
-
-func (w *timeoutSyncWorker) Stop(ctx context.Context) error {
-	if w == nil {
-		return nil
-	}
-	w.mu.Lock()
-	w.closed = true
-	w.cancel()
-	w.mu.Unlock()
-	select {
-	case <-w.done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-func setupTimeoutSettingsSubscription(params settingsSubscriptionsParams, subscribe func([]string, func([]types.SettingUpdate))) (*timeoutSyncWorker, context.CancelFunc) {
-	if params.Config.AgentEnabled {
-		return nil, nil
-	}
-	ctx, cancel := context.WithCancel(params.LifecycleCtx)
-	worker := &timeoutSyncWorker{wake: make(chan struct{}, 1), done: make(chan struct{}), ctx: ctx, cancel: cancel}
-	go func() {
-		defer close(worker.done)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-worker.wake:
-			}
-			worker.mu.Lock()
-			updates := worker.updates
-			worker.updates = nil
-			worker.mu.Unlock()
-			if len(updates) > 0 {
-				syncTimeoutSettingsToAgents(ctx, params.Environment, updates)
-			}
-		}
-	}()
-	subscribe(settings.PropagatedKeys(), func(updates []types.SettingUpdate) {
-		worker.mu.Lock()
-		defer worker.mu.Unlock()
-		if worker.closed {
-			return
-		}
-		if worker.updates == nil {
-			worker.updates = make(map[string]string, len(updates))
-		}
-		for _, update := range updates {
-			worker.updates[update.Key] = update.Value
-		}
-		select {
-		case worker.wake <- struct{}{}:
-		default:
-		}
-	})
-	return worker, cancel
-}
-
-// syncTimeoutSettingsToAgents syncs timeout settings to all connected remote environments
-func syncTimeoutSettingsToAgents(ctx context.Context, localEnvironment timeoutSettingsEnvironment, settingsMap map[string]string) {
-	envs, err := localEnvironment.ListRemoteEnvironments(ctx)
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to list remote environments for timeout sync", "error", err)
-		return
-	}
-
-	if len(envs) == 0 {
-		return
-	}
-
-	slog.InfoContext(ctx, "Syncing environment settings to remote environments", "count", len(envs), "keys", slices.Sorted(maps.Keys(settingsMap)))
-
-	var group errgroup.Group
-	group.SetLimit(httpx.EnvironmentConcurrency)
-	for _, env := range envs {
-		group.Go(func() error {
-			snapshotBody, statusCode, proxyRequestErr := localEnvironment.ProxyRequest(ctx, env.ID, http.MethodGet, "/api/environments/0/settings", nil)
-			if proxyRequestErr != nil {
-				slog.WarnContext(ctx, "Failed to read environment settings for timeout sync", "environmentId", env.ID, "environmentName", env.Name, "error", proxyRequestErr)
-				return nil
-			}
-			if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
-				slog.WarnContext(ctx, "Environment returned non-OK status for settings read", "environmentId", env.ID, "environmentName", env.Name, "statusCode", statusCode, "response", string(snapshotBody))
-				return nil
-			}
-			var snapshot types.SettingsSnapshot
-			if decodeErr := json.Unmarshal(snapshotBody, &snapshot); decodeErr != nil || snapshot.Settings == nil {
-				slog.ErrorContext(ctx, "agent version mismatch: environment did not return a settings snapshot; skipping settings sync",
-					"environmentId", env.ID, "environmentName", env.Name, "error", decodeErr)
-				return nil
-			}
-
-			update := maps.Clone(settingsMap)
-			for _, setting := range snapshot.Settings {
-				if setting.Locked {
-					delete(update, setting.Key)
-				}
-			}
-			if len(update) == 0 {
-				slog.DebugContext(ctx, "All synced settings are locked on environment", "environmentId", env.ID, "environmentName", env.Name)
-				return nil
-			}
-
-			body, marshalErr := json.Marshal(types.SettingsUpdate(update))
-			if marshalErr != nil {
-				slog.WarnContext(ctx, "Failed to marshal timeout settings for sync", "environmentId", env.ID, "error", marshalErr)
-				return nil
-			}
-			responseBody, statusCode, proxyRequestErr := localEnvironment.ProxyRequest(ctx, env.ID, http.MethodPatch, "/api/environments/0/settings", body)
-			if proxyRequestErr != nil {
-				slog.WarnContext(ctx, "Failed to sync timeout settings to environment", "environmentId", env.ID, "environmentName", env.Name, "error", proxyRequestErr)
-				return nil
-			}
-			if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
-				slog.WarnContext(ctx, "Environment returned non-OK status for timeout sync", "environmentId", env.ID, "environmentName", env.Name, "statusCode", statusCode, "response", string(responseBody))
-				return nil
-			}
-			slog.DebugContext(ctx, "Successfully synced timeout settings to environment", "environmentId", env.ID, "environmentName", env.Name)
-			return nil
-		})
-	}
-	_ = group.Wait()
 }

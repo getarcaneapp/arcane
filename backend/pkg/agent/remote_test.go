@@ -17,13 +17,13 @@ import (
 
 // setupMockAgentServer creates a WS server that acts as an agent serving the multiplexed data plane with handler.
 func setupMockAgentServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *AgentTunnel) {
-	agent := &TunnelClient{handler: handler}
+	agent := &TunnelClient{streamWindowMiB: testStreamWindowMiB, handler: handler}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		_ = agent.serveMuxSession(r.Context(), NewWebSocketTunnelConn(conn).muxConn(r.Context()))
+		_ = agent.serveMuxSession(r.Context(), NewWebSocketTunnelConn(conn).muxConn(r.Context()), testStreamWindowMiB())
 	}))
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -32,7 +32,7 @@ func setupMockAgentServer(t *testing.T, handler http.HandlerFunc) (*httptest.Ser
 
 	tunnel := newWebSocketAgentTunnel("env-1", conn)
 	go func() {
-		_ = (&TunnelServer{}).serveMuxTunnel(t.Context(), tunnel, tunnel.Conn.muxConn(t.Context()))
+		_ = (&TunnelServer{streamWindowMiB: testStreamWindowMiB}).serveMuxTunnel(t.Context(), tunnel, tunnel.Conn.muxConn(t.Context()))
 	}()
 
 	return server, tunnel

@@ -139,7 +139,7 @@ func TestCanAccessSurfaceEvaluatesScopeModesAndLandingChildren(t *testing.T) {
 func TestCanAccessSurfaceGatesSettingsCategoriesByScope(t *testing.T) {
 	envSettingsPS := authz.NewPermissionSet()
 	envSettingsPS.AddEnv("env-a", authz.PermEnvironmentSettingsRead)
-	for _, category := range []string{"storage", "docker", "security", "timeouts", "activity", "build"} {
+	for _, category := range []string{"storage", "docker", "security", "timeouts", "tunnel", "activity", "build"} {
 		require.True(t, authz.CanAccessSurface(envSettingsPS, "settings.category."+category, "env-a"), category)
 		require.False(t, authz.CanAccessSurface(envSettingsPS, "settings.category."+category, "env-b"), category)
 	}
